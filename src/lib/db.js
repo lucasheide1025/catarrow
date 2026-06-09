@@ -774,13 +774,14 @@ const C_CHECKIN = "checkins";
 
 // 今日任務預設設定
 export const DAILY_QUEST_DEFAULT = {
-  targetType: "score",      // "score"=總分達標 / "hits"=幾中幾
-  targetName: "標準靶紙",    // 靶紙類型
-  arrowCount: 6,            // 箭數
-  distance: 10,             // 距離(米)
-  targetScore: 50,          // targetType=score 時的目標總分
-  targetHits: 3,            // targetType=hits 時的目標中靶數
-  rewardEvery: 10,          // 滿幾次換實體成就銀章
+  arrowCount: 6,
+  rewardEvery: 10,
+  distanceMin: 1,
+  distanceMax: 15,
+  scoreMin: 1,
+  scoreMax: 100,
+  hitsMin: 1,
+  hitsMax: 6,
 };
 
 // ── 今日任務設定（後台讀/寫）──────────────────────────
@@ -888,7 +889,7 @@ export async function confirmCheckinReward(checkinId, memberId, operatorId) {
   });
   // 累積今日任務完成次數
   try {
-    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1) });
+    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
   } catch (e) { console.warn("dailyQuestCount:", e?.message); }
 }
 
@@ -962,4 +963,9 @@ export async function revokeSpecialAchievement(memberId, specialId, operatorId) 
   const items = await getDexGrants(memberId);
   const filtered = items.filter(x => !(x.type === "special" && x.id === specialId));
   await setDoc(doc(db, C_DEX_GRANT, memberId), { items: filtered, updatedAt: serverTimestamp(), operatorId }, { merge: true });
+}
+
+export async function cancelCheckin(checkinId) {
+  try { await deleteDoc(doc(db, C_CHECKIN, checkinId)); }
+  catch (e) { console.warn("cancelCheckin:", e?.message); }
 }

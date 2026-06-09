@@ -1,6 +1,6 @@
 // src/components/member/MemberDex.jsx
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification } from "../../lib/db";
 import {
@@ -127,17 +127,25 @@ export default function MemberDex({ onBack }) {
     });
   }, [profile?.id, certification, certRecords, granted]); // eslint-disable-line
 
-  // ── 依序顯示提示 ──
+  // ── 依序顯示提示（修正：用 ref 避免 stale closure）──
+  const toastTimers = useRef([]);
   useEffect(() => {
     if (currentToast || toastQueue.length === 0) return;
     const [next, ...rest] = toastQueue;
     setToastQueue(rest);
     setCurrentToast(next);
     setToastOut(false);
+    // 清掉舊的 timer
+    toastTimers.current.forEach(t => clearTimeout(t));
+    toastTimers.current = [];
     const outTimer  = setTimeout(() => setToastOut(true), 3200);
-    const doneTimer = setTimeout(() => setCurrentToast(null), 3700);
-    return () => { clearTimeout(outTimer); clearTimeout(doneTimer); };
-  }, [toastQueue, currentToast]);
+    const doneTimer = setTimeout(() => {
+      setCurrentToast(null);
+      setToastOut(false);
+    }, 3700);
+    toastTimers.current = [outTimer, doneTimer];
+    return () => { toastTimers.current.forEach(t => clearTimeout(t)); };
+  }, [toastQueue.length, currentToast]); // eslint-disable-line
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }

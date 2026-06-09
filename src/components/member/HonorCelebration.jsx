@@ -1,10 +1,8 @@
 // src/components/member/HonorCelebration.jsx
-// 華麗慶祝彈窗：當事人達標/取證時跳出，灑彩帶+金光+彈性彈出，點「領取證書」跳到對應頁面
 import { useState, useEffect, useRef } from "react";
 import { subscribeNotifications, markNotificationRead } from "../../lib/db";
 import { sfxEpic, sfxTap } from "../../lib/sound";
 
-// 圖鑑成就稀有度 → 中文
 const RARITY_ZH = { common:"普通", uncommon:"非凡", rare:"稀有", epic:"史詩", legendary:"傳說", mythic:"神話" };
 
 export default function HonorCelebration({ memberId, onGoPage }) {
@@ -27,7 +25,6 @@ export default function HonorCelebration({ memberId, onGoPage }) {
 
   const current = queue[0] || null;
 
-  // 灑彩帶動畫
   useEffect(() => {
     if (!current || !canvasRef.current) return;
     sfxEpic();
@@ -67,20 +64,15 @@ export default function HonorCelebration({ memberId, onGoPage }) {
 
   const isCert  = current.type === "cert_pass";
   const info    = current.subjectInfo || {};
-
-  // 判斷是圖鑑成就通知（item 有值且 level 是英文 rarity）
   const isDexAchievement = !isCert && !!info.item && !!RARITY_ZH[info.level];
 
-  // 顯示文字
   const mainText = isCert
-    ? (info.level || "")                                        // 「藍證」/「金證」
+    ? (info.level || "")
     : isDexAchievement
-      ? info.item                                               // 成就名稱，例：「初試啼聲」
-      : `${info.bowLabel || info.bowType || ""}　${info.level || ""} 級`; // 檢定晉級
+      ? info.item
+      : `${info.bowLabel || info.bowType || ""}　${info.level || ""} 級`;
 
-  const rarityText = isDexAchievement
-    ? (RARITY_ZH[info.level] || "")                            // 稀有度中文
-    : null;
+  const rarityText = isDexAchievement ? (RARITY_ZH[info.level] || "") : null;
 
   const titleText = isCert
     ? "🎉 恭喜取得證書！"
@@ -88,10 +80,11 @@ export default function HonorCelebration({ memberId, onGoPage }) {
       ? "🎉 恭喜獲得新成就！"
       : "🎉 恭喜晉級！";
 
+  // ── 點領取：只標記已讀，不跳轉 ──
   async function claim() {
     sfxTap();
     await markNotificationRead(current.id, memberId);
-    if (onGoPage) onGoPage("profile");
+    // 不呼叫 onGoPage，留在原頁面
   }
 
   return (
@@ -107,7 +100,6 @@ export default function HonorCelebration({ memberId, onGoPage }) {
           boxShadow: "0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.1) inset",
           animation: "honorPop .55s cubic-bezier(.18,.89,.32,1.4)",
         }}>
-        {/* 旋轉光芒 */}
         <div className="absolute left-1/2 top-1/2 pointer-events-none"
           style={{
             width:520, height:520, marginLeft:-260, marginTop:-260, opacity:.25,
@@ -128,12 +120,9 @@ export default function HonorCelebration({ memberId, onGoPage }) {
             {titleText}
           </div>
 
-          {/* 主成就名稱 */}
           <div className="my-4 inline-flex items-center gap-2 px-5 py-2 rounded-full bg-white/15 backdrop-blur border border-white/30">
             <span className="text-white font-black text-xl">{mainText}</span>
-            {rarityText && (
-              <span className="text-amber-200 text-sm font-bold">{rarityText}</span>
-            )}
+            {rarityText && <span className="text-amber-200 text-sm font-bold">{rarityText}</span>}
           </div>
 
           {!isCert && !isDexAchievement && info.score != null && (
@@ -151,7 +140,7 @@ export default function HonorCelebration({ memberId, onGoPage }) {
               boxShadow:"0 6px 20px rgba(251,191,36,.5)",
               animation:"honorGlow 1.6s ease infinite",
             }}>
-            ✨ 領取成就，繼續前進 →
+            ✨ 領取，繼續前進 →
           </button>
         </div>
       </div>
