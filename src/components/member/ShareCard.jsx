@@ -35,8 +35,8 @@ export default function ShareCard({ onClose }) {
 
   // 裝備資料
   const bowSets       = normalizeEquipment(profile?.equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
-  const armorSets     = (profile?.armorSets || []);
-  const accessorySets = (profile?.accessorySets || []);
+const armorSets     = armorSetsDb;
+const accessorySets = accessorySetsDb;
 
   // 選擇顯示哪套
   const [bowIdx,       setBowIdx]       = useState(0);
@@ -50,10 +50,20 @@ export default function ShareCard({ onClose }) {
   const mainArmor     = armorSets[armorIdx] || null;
   const mainAccessory = accessorySets[accessoryIdx] || null;
 
-  useEffect(() => {
+  const [armorSetsDb, setArmorSetsDb] = useState([]);
+const [accessorySetsDb, setAccessorySetsDb] = useState([]);
+
+useEffect(() => {
     if (!profile?.id) return;
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     getCertification(profile.id).then(setCertification).catch(() => {});
+    // 直接從 db 讀最新資料
+    import("../../lib/db").then(({ getMember }) => {
+      getMember(profile.id).then(m => {
+        setArmorSetsDb(m?.armorSets || []);
+        setAccessorySetsDb(m?.accessorySets || []);
+      });
+    });
     Promise.all([getDexGrants(profile.id), getDexConfig()]).then(([granted, cfg]) => {
       getCertRecords(profile.id).then(cr => {
         getCertification(profile.id).then(ct => {
