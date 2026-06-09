@@ -401,44 +401,44 @@ function CertDetailRow({ tier, tierColor, data }) {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" });
   }
-  // 優先顯示自訂名稱，沒有才 fallback 到弓種代碼
-  const bowDisplay = data.bowLabel || BOW_LABEL[data.bowType] || data.bowType || "—";
+  const bowDisplay       = data.bowLabel       || BOW_LABEL[data.bowType] || data.bowType || "—";
+  const armorDisplay     = data.armorLabel     || "—";
+  const accessoryDisplay = data.accessoryLabel || "—";
 
   return (
     <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/15">
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-2">
         <span className={`text-xs font-black ${tierColor}`}>🎖️ {tier}</span>
         <span className="text-cyan-100 text-xs">領證 {fmtGrant(data.grantedAt)}</span>
       </div>
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div>
-          <div className="text-cyan-100/70 text-[10px]">弓組</div>
-          <div className="text-white text-xs font-bold">{bowDisplay}</div>
+
+      {/* 裝備三欄：弓組 / 防具 / 飾品 */}
+      <div className="grid grid-cols-3 gap-2 text-center mb-2">
+        <div className="bg-white/5 rounded-lg py-1.5 px-1">
+          <div className="text-cyan-100/60 text-[9px] mb-0.5">🏹 弓組</div>
+          <div className="text-white text-[10px] font-bold leading-tight">{bowDisplay}</div>
         </div>
-        <div>
-          <div className="text-cyan-100/70 text-[10px]">任務1 中靶</div>
+        <div className="bg-white/5 rounded-lg py-1.5 px-1">
+          <div className="text-cyan-100/60 text-[9px] mb-0.5">🛡️ 防具</div>
+          <div className="text-white text-[10px] font-bold leading-tight">{armorDisplay}</div>
+        </div>
+        <div className="bg-white/5 rounded-lg py-1.5 px-1">
+          <div className="text-cyan-100/60 text-[9px] mb-0.5">✨ 飾品</div>
+          <div className="text-white text-[10px] font-bold leading-tight">{accessoryDisplay}</div>
+        </div>
+      </div>
+
+      {/* 任務成績兩欄 */}
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <div className="bg-white/5 rounded-lg py-1.5">
+          <div className="text-cyan-100/60 text-[9px] mb-0.5">任務1 中靶</div>
           <div className="text-white text-xs font-bold">{data.task1?.hits != null ? `${data.task1.hits} 箭` : "—"}</div>
         </div>
-        <div>
-          <div className="text-cyan-100/70 text-[10px]">任務2 分數</div>
+        <div className="bg-white/5 rounded-lg py-1.5">
+          <div className="text-cyan-100/60 text-[9px] mb-0.5">任務2 分數</div>
           <div className="text-white text-xs font-bold">{data.task2?.score != null ? `${data.task2.score} 分` : "—"}</div>
         </div>
       </div>
-      {/* 防具 / 飾品（有才顯示）*/}
-      {(data.armorLabel || data.accessoryLabel) && (
-        <div className="flex gap-2 flex-wrap mt-2 pt-2 border-t border-white/10">
-          {data.armorLabel && (
-            <span className="text-[10px] text-orange-200 bg-white/10 px-2 py-0.5 rounded-full">
-              🛡️ {data.armorLabel}
-            </span>
-          )}
-          {data.accessoryLabel && (
-            <span className="text-[10px] text-purple-200 bg-white/10 px-2 py-0.5 rounded-full">
-              ✨ {data.accessoryLabel}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

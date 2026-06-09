@@ -41,16 +41,16 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
 
   const [level,  setLevel]  = useState("none");
   const [locked, setLocked] = useState(false);
-  const [blue,   setBlue]   = useState(emptyTier());
-  const [gold,   setGold]   = useState(emptyTier());
+  const [blue,   setBlue]   = useState(() => emptyTier(buildBowOptions(member)));
+  const [gold,   setGold]   = useState(() => emptyTier(buildBowOptions(member)));
 
   const bowOptions    = buildBowOptions(member);
   const armorSets     = member?.armorSets     || [];
   const accessorySets = member?.accessorySets || [];
 
-  function emptyTier() {
+  function emptyTier(opts) {
     return {
-      bowType: bowOptions?.[0]?.value || "rental",
+      bowType: opts?.[0]?.value || "rental",
       bowLabel: null, armorLabel: null, accessoryLabel: null,
       task1: { passed: false, hits: "" },
       task2: { passed: false, score: "" },
