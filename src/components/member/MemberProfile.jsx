@@ -401,7 +401,9 @@ function CertDetailRow({ tier, tierColor, data }) {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" });
   }
+  // 優先顯示自訂名稱，沒有才 fallback 到弓種代碼
   const bowDisplay = data.bowLabel || BOW_LABEL[data.bowType] || data.bowType || "—";
+
   return (
     <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/15">
       <div className="flex items-center justify-between mb-1.5">
@@ -422,17 +424,18 @@ function CertDetailRow({ tier, tierColor, data }) {
           <div className="text-white text-xs font-bold">{data.task2?.score != null ? `${data.task2.score} 分` : "—"}</div>
         </div>
       </div>
+      {/* 防具 / 飾品（有才顯示）*/}
       {(data.armorLabel || data.accessoryLabel) && (
-        <div className="flex gap-2 mt-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap mt-2 pt-2 border-t border-white/10">
           {data.armorLabel && (
-            <div className="text-[10px] bg-white/10 rounded-lg px-2 py-1">
-              🛡️ <span className="text-orange-200 font-bold">{data.armorLabel}</span>
-            </div>
+            <span className="text-[10px] text-orange-200 bg-white/10 px-2 py-0.5 rounded-full">
+              🛡️ {data.armorLabel}
+            </span>
           )}
           {data.accessoryLabel && (
-            <div className="text-[10px] bg-white/10 rounded-lg px-2 py-1">
-              ✨ <span className="text-purple-200 font-bold">{data.accessoryLabel}</span>
-            </div>
+            <span className="text-[10px] text-purple-200 bg-white/10 px-2 py-0.5 rounded-full">
+              ✨ {data.accessoryLabel}
+            </span>
           )}
         </div>
       )}

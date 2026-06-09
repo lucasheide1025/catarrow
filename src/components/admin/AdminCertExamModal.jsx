@@ -1,35 +1,71 @@
 // src/components/admin/AdminCertExamModal.jsx
-// 後台修改/刪除學生射手證（灰/藍/金）
 import { useState, useEffect } from "react";
 import { getCertification, adminUpdateCertification, deleteCertification } from "../../lib/db";
 import { Modal, Btn, Inp, Sel, ST, Spinner, ConfirmModal } from "./../shared/UI";
+import { normalizeEquipment } from "../shared/Equipment";
 
-const BOW_OPTIONS = [
-  { value: "rental",       label: "租借器材" },
-  { value: "traditional",  label: "傳統弓" },
-  { value: "recurve_bare", label: "競技反曲弓（裸弓）" },
-  { value: "recurve_full", label: "競技反曲弓（全配）" },
-  { value: "compound",     label: "美式獵弓" },
-];
+const BOW_LABEL_MAP = {
+  rental:       "租借器材",
+  traditional:  "傳統弓",
+  recurve_bare: "競技反曲弓（裸弓）",
+  recurve_full: "競技反曲弓（全配）",
+  compound:     "美式獵弓",
+};
+
 const LEVEL_OPTIONS = [
   { value: "none", label: "灰證（未通過）" },
   { value: "blue", label: "藍證（初階）" },
   { value: "gold", label: "金證（高階）" },
 ];
 
+// 從學生裝備產生弓組選單（有自訂就用自訂，沒有就租借）
+function buildBowOptions(member) {
+  const sets = normalizeEquipment(member?.equipment)
+    .filter(s => s.type !== "armor" && s.type !== "accessory");
+  if (sets.length === 0) return [{ value: "rental", label: "租借器材" }];
+  const sorted = [...sets.filter(s => s.isDefault), ...sets.filter(s => !s.isDefault)];
+  return sorted.map(s => ({
+    value: s.bowCategory,
+    label: s.label
+      ? `${s.label}（${BOW_LABEL_MAP[s.bowCategory] || s.bowCategory}）`
+      : (BOW_LABEL_MAP[s.bowCategory] || s.bowCategory),
+    customLabel: s.label || BOW_LABEL_MAP[s.bowCategory] || s.bowCategory,
+  }));
+}
+
 export default function AdminCertExamModal({ member, onClose, onDone, operatorId, toast }) {
-  const [cert, setCert] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [cert, setCert]         = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
   const [delConfirm, setDelConfirm] = useState(false);
 
-  const [level, setLevel]   = useState("none");
+  const [level,  setLevel]  = useState("none");
   const [locked, setLocked] = useState(false);
-  const [blue, setBlue]     = useState(emptyTier());
-  const [gold, setGold]     = useState(emptyTier());
+  const [blue,   setBlue]   = useState(emptyTier());
+  const [gold,   setGold]   = useState(emptyTier());
+
+  const bowOptions    = buildBowOptions(member);
+  const armorSets     = member?.armorSets     || [];
+  const accessorySets = member?.accessorySets || [];
 
   function emptyTier() {
-    return { bowType: "rental", task1: { passed: false, hits: "" }, task2: { passed: false, score: "" } };
+    return {
+      bowType: bowOptions?.[0]?.value || "rental",
+      bowLabel: null, armorLabel: null, accessoryLabel: null,
+      task1: { passed: false, hits: "" },
+      task2: { passed: false, score: "" },
+    };
+  }
+
+  function normalizeTier(t) {
+    return {
+      bowType:        t.bowType        || "rental",
+      bowLabel:       t.bowLabel       || null,
+      armorLabel:     t.armorLabel     || null,
+      accessoryLabel: t.accessoryLabel || null,
+      task1: { passed: t.task1?.passed || false, hits: t.task1?.hits ?? "" },
+      task2: { passed: t.task2?.passed || false, score: t.task2?.score ?? "" },
+    };
   }
 
   useEffect(() => {
@@ -43,42 +79,20 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
       }
       setLoading(false);
     });
-  }, [member.id]);
-
-   function normalizeTier(t) {
-    return {
-      bowType:        t.bowType        || "rental",
-      bowLabel:       t.bowLabel       || null,
-      armorLabel:     t.armorLabel     || null,
-      accessoryLabel: t.accessoryLabel || null,
-      task1: { passed: t.task1?.passed || false, hits: t.task1?.hits ?? "" },
-      task2: { passed: t.task2?.passed || false, score: t.task2?.score ?? "" },
-    };
-  }
+  }, [member.id]); // eslint-disable-line
 
   async function save() {
     setSaving(true);
     try {
-      const data = {
-        level, locked,
-        blue: {
-          bowType:        blue.bowType,
-          bowLabel:       blue.bowLabel       || null,
-          armorLabel:     blue.armorLabel     || null,
-          accessoryLabel: blue.accessoryLabel || null,
-          task1: { passed: blue.task1.passed, hits: blue.task1.hits === "" ? null : Number(blue.task1.hits), reviewStatus: blue.task1.passed ? "approved" : "rejected" },
-          task2: { passed: blue.task2.passed, score: blue.task2.score === "" ? null : Number(blue.task2.score), reviewStatus: blue.task2.passed ? "approved" : "rejected" },
-        },
-        gold: {
-          bowType:        gold.bowType,
-          bowLabel:       gold.bowLabel       || null,
-          armorLabel:     gold.armorLabel     || null,
-          accessoryLabel: gold.accessoryLabel || null,
-          task1: { passed: gold.task1.passed, hits: gold.task1.hits === "" ? null : Number(gold.task1.hits), reviewStatus: gold.task1.passed ? "approved" : "rejected" },
-          task2: { passed: gold.task2.passed, score: gold.task2.score === "" ? null : Number(gold.task2.score), reviewStatus: gold.task2.passed ? "approved" : "rejected" },
-        },
-      };
-      await adminUpdateCertification(member.id, data, operatorId);
+      const tierData = (tier) => ({
+        bowType:        tier.bowType,
+        bowLabel:       tier.bowLabel       || null,
+        armorLabel:     tier.armorLabel     || null,
+        accessoryLabel: tier.accessoryLabel || null,
+        task1: { passed: tier.task1.passed, hits: tier.task1.hits === "" ? null : Number(tier.task1.hits), reviewStatus: tier.task1.passed ? "approved" : "rejected" },
+        task2: { passed: tier.task2.passed, score: tier.task2.score === "" ? null : Number(tier.task2.score), reviewStatus: tier.task2.passed ? "approved" : "rejected" },
+      });
+      await adminUpdateCertification(member.id, { level, locked, blue: tierData(blue), gold: tierData(gold) }, operatorId);
       toast("射手證已更新 ✓");
       onDone && onDone();
       onClose();
@@ -96,27 +110,51 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
     onClose();
   }
 
-function TierEditor({ label, tier, setTier }) {
+  function TierEditor({ label, tier, setTier }) {
     return (
       <div className="border border-gray-200 rounded-xl p-3 flex flex-col gap-3">
         <div className="text-gray-700 text-sm font-bold">{label}</div>
-        <Sel label="使用弓組類型" value={tier.bowType}
-          onChange={e => setTier(p => ({ ...p, bowType: e.target.value }))} options={BOW_OPTIONS} />
-        {tier.bowLabel && (
-          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-            🏹 弓組名稱：<span className="font-bold text-gray-700">{tier.bowLabel}</span>
-          </div>
+
+        {/* 弓組選單：用學生自訂裝備 */}
+        <Sel label="使用弓組" value={tier.bowType}
+          onChange={e => {
+            const opt = bowOptions.find(o => o.value === e.target.value);
+            setTier(p => ({ ...p, bowType: e.target.value, bowLabel: opt?.customLabel || null }));
+          }}
+          options={bowOptions} />
+
+        {/* 防具選單 */}
+        {armorSets.length > 0 && (
+          <Sel label="🛡️ 防具套組"
+            value={tier.armorLabel || ""}
+            onChange={e => setTier(p => ({ ...p, armorLabel: e.target.value || null }))}
+            options={[
+              { value: "", label: "（不使用防具）" },
+              ...armorSets.map((s, i) => ({ value: s.label || `防具套組 ${i+1}`, label: s.label || `防具套組 ${i+1}` })),
+            ]} />
         )}
         {tier.armorLabel && (
-          <div className="text-xs text-gray-500 bg-orange-50 rounded-lg px-3 py-2">
-            🛡️ 防具：<span className="font-bold text-orange-700">{tier.armorLabel}</span>
+          <div className="text-xs bg-orange-50 text-orange-700 rounded-lg px-3 py-2">
+            🛡️ 防具：<span className="font-bold">{tier.armorLabel}</span>
           </div>
+        )}
+
+        {/* 飾品選單 */}
+        {accessorySets.length > 0 && (
+          <Sel label="✨ 飾品套組"
+            value={tier.accessoryLabel || ""}
+            onChange={e => setTier(p => ({ ...p, accessoryLabel: e.target.value || null }))}
+            options={[
+              { value: "", label: "（不使用飾品）" },
+              ...accessorySets.map((s, i) => ({ value: s.label || `飾品套組 ${i+1}`, label: s.label || `飾品套組 ${i+1}` })),
+            ]} />
         )}
         {tier.accessoryLabel && (
-          <div className="text-xs text-gray-500 bg-purple-50 rounded-lg px-3 py-2">
-            ✨ 飾品：<span className="font-bold text-purple-700">{tier.accessoryLabel}</span>
+          <div className="text-xs bg-purple-50 text-purple-700 rounded-lg px-3 py-2">
+            ✨ 飾品：<span className="font-bold">{tier.accessoryLabel}</span>
           </div>
         )}
+
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
             <Inp label="任務1 中靶數" type="number" min="0" value={tier.task1.hits}
@@ -171,7 +209,6 @@ function TierEditor({ label, tier, setTier }) {
           </div>
         </div>
       )}
-
       <ConfirmModal open={delConfirm} title="刪除射手證紀錄"
         message="確定刪除此學生的整個射手證紀錄？此操作無法復原，學生需重新考證。"
         onConfirm={doDelete} onCancel={() => setDelConfirm(false)} />
