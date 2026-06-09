@@ -175,23 +175,41 @@ export default function ShareCard({ onClose }) {
               {slogan && <span style={{ fontSize: 11, color: "#7dd3fc", fontWeight: 900 }}>{slogan}</span>}
             </div>
 
-            {/* 射手證 */}
-            <div style={{
-              marginTop: 12, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12,
-              background: certLevel === "gold"
-                ? "linear-gradient(110deg,#78350f,#b45309 50%,#f59e0b)"
-                : certLevel === "blue"
-                ? "linear-gradient(110deg,#1e3a8a,#2563eb)"
-                : "rgba(255,255,255,.08)",
-              border: certLevel === "gold" ? "2px solid #fcd34d" : certLevel === "blue" ? "2px solid #60a5fa" : "1px solid rgba(255,255,255,.15)",
-              boxShadow: certLevel === "gold" ? "0 0 20px rgba(251,191,36,.5)" : certLevel === "blue" ? "0 0 16px rgba(96,165,250,.4)" : "none",
-            }}>
-              <div style={{ fontSize: 34, lineHeight: 1 }}>🎖️</div>
-              <div>
-                <div style={{ fontSize: 9, letterSpacing: 2, color: certLevel === "gold" ? "#fde68a" : certLevel === "blue" ? "#bfdbfe" : "#94a3b8", fontWeight: 900 }}>射手證等級</div>
-                <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", textShadow: "0 2px 8px rgba(0,0,0,.4)" }}>{LEVEL_NAME[certLevel]}</div>
+            {/* 射手證 + 圖鑑 並排 */}
+            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+              {/* 左：射手證 */}
+              <div style={{
+                flex: 1, borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8,
+                background: certLevel === "gold"
+                  ? "linear-gradient(110deg,#78350f,#b45309 50%,#f59e0b)"
+                  : certLevel === "blue"
+                  ? "linear-gradient(110deg,#1e3a8a,#2563eb)"
+                  : "rgba(255,255,255,.08)",
+                border: certLevel === "gold" ? "2px solid #fcd34d" : certLevel === "blue" ? "2px solid #60a5fa" : "1px solid rgba(255,255,255,.15)",
+                boxShadow: certLevel === "gold" ? "0 0 16px rgba(251,191,36,.5)" : certLevel === "blue" ? "0 0 12px rgba(96,165,250,.4)" : "none",
+              }}>
+                <div style={{ fontSize: 26, lineHeight: 1 }}>🎖️</div>
+                <div>
+                  <div style={{ fontSize: 8, letterSpacing: 1, color: certLevel === "gold" ? "#fde68a" : certLevel === "blue" ? "#bfdbfe" : "#94a3b8", fontWeight: 900 }}>射手證等級</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", textShadow: "0 2px 8px rgba(0,0,0,.4)" }}>{LEVEL_NAME[certLevel]}</div>
+                  {certLevel === "gold" && <div style={{ fontSize: 9, fontWeight: 900, color: "#fde68a" }}>★ MAX</div>}
+                </div>
               </div>
-              {certLevel === "gold" && <div style={{ marginLeft: "auto", fontSize: 10, fontWeight: 900, color: "#fde68a" }}>★ MAX</div>}
+              {/* 右：圖鑑 */}
+              <div style={{
+                flex: 1, borderRadius: 14, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
+                background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.15)",
+              }}>
+                <div style={{ fontSize: 8, letterSpacing: 1, color: "#7dd3fc", fontWeight: 900 }}>圖鑑收藏</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "#e2e8f0", marginTop: 3 }}>
+                  🎖️ {dexStats ? `${dexStats.totalUnlocked}/${dexStats.totalAll}` : "—"}
+                </div>
+                {dexStats && (dexStats.gold + dexStats.silver + dexStats.bronze) > 0 && (
+                  <div style={{ fontSize: 10, color: "#fcd34d", fontWeight: 900, marginTop: 2 }}>
+                    🥇{dexStats.gold} 🥈{dexStats.silver} 🥉{dexStats.bronze}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 年度檢定格 */}
@@ -267,20 +285,6 @@ export default function ShareCard({ onClose }) {
               </div>
             </div>
 
-            {/* 圖鑑 */}
-            {dexStats && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 10, color: "#7dd3fc", fontWeight: 900, letterSpacing: 2 }}>圖鑑收藏</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
-                  <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 900 }}>🎖️ {dexStats.totalUnlocked}/{dexStats.totalAll}</span>
-                  {(dexStats.gold + dexStats.silver + dexStats.bronze) > 0 && (
-                    <span style={{ fontSize: 12, color: "#fcd34d", fontWeight: 900 }}>
-                      🥇{dexStats.gold} 🥈{dexStats.silver} 🥉{dexStats.bronze}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* 底部 */}
             <div style={{ marginTop: "auto", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.15)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
