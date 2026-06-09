@@ -401,6 +401,7 @@ function CertDetailRow({ tier, tierColor, data }) {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" });
   }
+  const bowDisplay = data.bowLabel || BOW_LABEL[data.bowType] || data.bowType || "—";
   return (
     <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/15">
       <div className="flex items-center justify-between mb-1.5">
@@ -409,8 +410,8 @@ function CertDetailRow({ tier, tierColor, data }) {
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
-          <div className="text-cyan-100/70 text-[10px]">裝備</div>
-          <div className="text-white text-xs font-bold">{BOW_LABEL[data.bowType] || data.bowType || "—"}</div>
+          <div className="text-cyan-100/70 text-[10px]">弓組</div>
+          <div className="text-white text-xs font-bold">{bowDisplay}</div>
         </div>
         <div>
           <div className="text-cyan-100/70 text-[10px]">任務1 中靶</div>
@@ -421,6 +422,20 @@ function CertDetailRow({ tier, tierColor, data }) {
           <div className="text-white text-xs font-bold">{data.task2?.score != null ? `${data.task2.score} 分` : "—"}</div>
         </div>
       </div>
+      {(data.armorLabel || data.accessoryLabel) && (
+        <div className="flex gap-2 mt-2 flex-wrap">
+          {data.armorLabel && (
+            <div className="text-[10px] bg-white/10 rounded-lg px-2 py-1">
+              🛡️ <span className="text-orange-200 font-bold">{data.armorLabel}</span>
+            </div>
+          )}
+          {data.accessoryLabel && (
+            <div className="text-[10px] bg-white/10 rounded-lg px-2 py-1">
+              ✨ <span className="text-purple-200 font-bold">{data.accessoryLabel}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
