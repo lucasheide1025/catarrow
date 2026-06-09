@@ -78,9 +78,10 @@ export default function MemberDex({ onBack }) {
   const [detail, setDetail]             = useState(null);
 
   // 成就提示佇列
-  const [toastQueue, setToastQueue]   = useState([]);
+  const [toastQueue, setToastQueue]     = useState([]);
   const [currentToast, setCurrentToast] = useState(null);
-  const [toastOut, setToastOut]       = useState(false);
+  const [toastOut, setToastOut]         = useState(false);
+  const toastTimerRef = useRef(null);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -127,25 +128,33 @@ export default function MemberDex({ onBack }) {
     });
   }, [profile?.id, certification, certRecords, granted]); // eslint-disable-line
 
-  // ── 依序顯示提示（修正：用 ref 避免 stale closure）──
-  const toastTimers = useRef([]);
+  // ── 依序顯示提示 ──
   useEffect(() => {
-    if (currentToast || toastQueue.length === 0) return;
+    // 有 toast 在顯示中就不動
+    if (currentToast !== null) return;
+    // 佇列空了就停
+    if (toastQueue.length === 0) return;
+
     const [next, ...rest] = toastQueue;
     setToastQueue(rest);
     setCurrentToast(next);
     setToastOut(false);
-    // 清掉舊的 timer
-    toastTimers.current.forEach(t => clearTimeout(t));
-    toastTimers.current = [];
-    const outTimer  = setTimeout(() => setToastOut(true), 3200);
-    const doneTimer = setTimeout(() => {
+
+    // 清舊 timer
+    if (toastTimerRef.current) {
+      toastTimerRef.current.forEach(t => clearTimeout(t));
+    }
+    const t1 = setTimeout(() => setToastOut(true), 3000);
+    const t2 = setTimeout(() => {
       setCurrentToast(null);
       setToastOut(false);
-    }, 3700);
-    toastTimers.current = [outTimer, doneTimer];
-    return () => { toastTimers.current.forEach(t => clearTimeout(t)); };
-  }, [toastQueue.length, currentToast]); // eslint-disable-line
+    }, 3500);
+    toastTimerRef.current = [t1, t2];
+
+    return () => {
+      if (toastTimerRef.current) toastTimerRef.current.forEach(t => clearTimeout(t));
+    };
+  }); // 故意不寫 deps，每次 render 都檢查，確保不漏
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }
@@ -384,4 +393,4 @@ function DexDetailModal({ a, onClose }) {
       </div>
     </div>
   );
-}
+}Equipment 

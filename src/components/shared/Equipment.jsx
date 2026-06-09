@@ -85,6 +85,18 @@ const BOW_FIELDS = {
         { key: "vbar",      label: "V-Bar 型號" },
       ]},
       { title: "瞄準器", fields: [{ key: "sightModel", label: "瞄準器型號" }] },
+      { title: "箭座", fields: [
+        { key: "arrowRestType",  label: "箭座類型" },
+        { key: "arrowRestModel", label: "箭座型號" },
+      ]},
+      { title: "弦距", fields: [
+        { key: "braceHeightTop",    label: "上弦距" },
+        { key: "braceHeightMid",    label: "中弦距" },
+        { key: "braceHeightBottom", label: "下弦距" },
+      ]},
+      { title: "避震", fields: [
+        { key: "vibrationDamper", label: "箭震吸收器型號" },
+      ]},
       { title: "配件 1", fields: [{ key: "acc1Weight", label: "配重塊總重量" }, { key: "acc1Damper", label: "減震球型號" }, { key: "acc1Other", label: "其他" }] },
       { title: "配件 2", fields: [{ key: "acc2Weight", label: "配重塊總重量" }, { key: "acc2Damper", label: "減震球型號" }, { key: "acc2Other", label: "其他" }] },
       { title: "配件 3", fields: [{ key: "acc3Weight", label: "配重塊總重量" }, { key: "acc3Damper", label: "減震球型號" }, { key: "acc3Other", label: "其他" }] },
@@ -101,6 +113,18 @@ const BOW_FIELDS = {
         { key: "strStrand", label: "弓弦股數" }, { key: "strModel",  label: "弓弦型號" },
       ]},
       { title: "箭矢", fields: ARROW_FIELDS },
+      { title: "箭座", fields: [
+        { key: "arrowRestType",  label: "箭座類型" },
+        { key: "arrowRestModel", label: "箭座型號" },
+      ]},
+      { title: "弦距", fields: [
+        { key: "braceHeightTop",    label: "上弦距" },
+        { key: "braceHeightMid",    label: "中弦距" },
+        { key: "braceHeightBottom", label: "下弦距" },
+      ]},
+      { title: "避震", fields: [
+        { key: "vibrationDamper", label: "箭震吸收器型號" },
+      ]},
       { title: "配件 1", fields: [{ key: "acc1Weight", label: "配重塊總重量" }, { key: "acc1Damper", label: "減震球型號" }, { key: "acc1Other", label: "其他" }] },
       { title: "配件 2", fields: [{ key: "acc2Weight", label: "配重塊總重量" }, { key: "acc2Damper", label: "減震球型號" }, { key: "acc2Other", label: "其他" }] },
       { title: "配件 3", fields: [{ key: "acc3Weight", label: "配重塊總重量" }, { key: "acc3Damper", label: "減震球型號" }, { key: "acc3Other", label: "其他" }] },
@@ -117,6 +141,18 @@ const BOW_FIELDS = {
         { key: "strStrand", label: "弓弦股數" }, { key: "strModel",  label: "弓弦型號" },
       ]},
       { title: "箭矢", fields: ARROW_FIELDS },
+      { title: "箭座", fields: [
+        { key: "arrowRestType",  label: "箭座類型" },
+        { key: "arrowRestModel", label: "箭座型號" },
+      ]},
+      { title: "弦距", fields: [
+        { key: "braceHeightTop",    label: "上弦距" },
+        { key: "braceHeightMid",    label: "中弦距" },
+        { key: "braceHeightBottom", label: "下弦距" },
+      ]},
+      { title: "避震", fields: [
+        { key: "vibrationDamper", label: "箭震吸收器型號" },
+      ]},
       { title: "配件 1", fields: [{ key: "acc1Weight", label: "配重塊總重量" }, { key: "acc1Damper", label: "減震球型號" }, { key: "acc1Other", label: "其他" }] },
       { title: "配件 2", fields: [{ key: "acc2Weight", label: "配重塊總重量" }, { key: "acc2Damper", label: "減震球型號" }, { key: "acc2Other", label: "其他" }] },
       { title: "配件 3", fields: [{ key: "acc3Weight", label: "配重塊總重量" }, { key: "acc3Damper", label: "減震球型號" }, { key: "acc3Other", label: "其他" }] },
