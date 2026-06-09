@@ -1,7 +1,7 @@
 // src/components/member/ShareCard.jsx
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, updateMember, getDexGrants, getDexConfig } from "../../lib/db";
+import { getCertRecords, getCertification, updateMember, getDexGrants, getDexConfig, getMember } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { formatArcherNo, BOW_TYPES, getCertLevel, calcBadgePoints } from "../../lib/constants";
@@ -25,45 +25,47 @@ const ACCESSORY_LABEL = { tSquare:"T尺", arrowDoctor:"箭尾醫生", toolKit:"�
 export default function ShareCard({ onClose }) {
   const { profile } = useAuth();
   const cardRef = useRef(null);
-  const [certRecords, setCertRecords]   = useState([]);
+  const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
-  const [dexStats, setDexStats]         = useState(null);
-  const [busy, setBusy]                 = useState(false);
-  const [msg, setMsg]                   = useState("");
+  const [dexStats, setDexStats]           = useState(null);
+  const [busy, setBusy]                   = useState(false);
+  const [msg, setMsg]                     = useState("");
+  const [slogan, setSlogan]               = useState(profile?.shareSlogan || "#讓射箭成為日常");
 
-  const [slogan, setSlogan] = useState(profile?.shareSlogan || "#讓射箭成為日常");
+  // 裝備資料（從 db 直接讀，確保最新）
+  const [armorSets,     setArmorSets]     = useState([]);
+  const [accessorySets, setAccessorySets] = useState([]);
 
-  // 裝備資料
-  const bowSets       = normalizeEquipment(profile?.equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
-const armorSets     = armorSetsDb;
-const accessorySets = accessorySetsDb;
+  const bowSets = normalizeEquipment(profile?.equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
 
   // 選擇顯示哪套
   const [bowIdx,       setBowIdx]       = useState(0);
   const [armorIdx,     setArmorIdx]     = useState(0);
   const [accessoryIdx, setAccessoryIdx] = useState(0);
+
   // 顯示開關
-  const [showArmor,     setShowArmor]     = useState(armorSets.length > 0);
-  const [showAccessory, setShowAccessory] = useState(accessorySets.length > 0);
+  const [showArmor,     setShowArmor]     = useState(false);
+  const [showAccessory, setShowAccessory] = useState(false);
 
   const mainBow       = bowSets[bowIdx] || null;
   const mainArmor     = armorSets[armorIdx] || null;
   const mainAccessory = accessorySets[accessoryIdx] || null;
 
-  const [armorSetsDb, setArmorSetsDb] = useState([]);
-const [accessorySetsDb, setAccessorySetsDb] = useState([]);
-
-useEffect(() => {
+  useEffect(() => {
     if (!profile?.id) return;
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     getCertification(profile.id).then(setCertification).catch(() => {});
-    // 直接從 db 讀最新資料
-    import("../../lib/db").then(({ getMember }) => {
-      getMember(profile.id).then(m => {
-        setArmorSetsDb(m?.armorSets || []);
-        setAccessorySetsDb(m?.accessorySets || []);
-      });
-    });
+
+    // 直接從 db 讀最新防具/飾品
+    getMember(profile.id).then(m => {
+      const armor = m?.armorSets || [];
+      const acc   = m?.accessorySets || [];
+      setArmorSets(armor);
+      setAccessorySets(acc);
+      setShowArmor(armor.length > 0);
+      setShowAccessory(acc.length > 0);
+    }).catch(() => {});
+
     Promise.all([getDexGrants(profile.id), getDexConfig()]).then(([granted, cfg]) => {
       getCertRecords(profile.id).then(cr => {
         getCertification(profile.id).then(ct => {
@@ -126,7 +128,6 @@ useEffect(() => {
     setBusy(false);
   }
 
-  // 防具摘要（顯示有填寫的項目）
   function armorSummary(set) {
     if (!set) return null;
     return Object.entries(ARMOR_LABEL)
@@ -135,7 +136,6 @@ useEffect(() => {
       .join("　");
   }
 
-  // 飾品摘要
   function accessorySummary(set) {
     if (!set) return null;
     return Object.entries(ACCESSORY_LABEL)
@@ -166,7 +166,6 @@ useEffect(() => {
             <div style={{ fontSize: 11, letterSpacing: 4, color: "#7dd3fc", fontWeight: 900, marginBottom: 4 }}>🎯 貓小隊射箭場</div>
             <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 2, marginBottom: 14 }}>BAREBOW ARCHERY · 射手成績卡</div>
 
-            {/* 暱稱 + 本名 + 期數 + 標語 */}
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.1 }}>{profile?.nickname || profile?.name}</div>
             <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 2 }}>
               {profile?.name}{getCohort(profile?.joinDate) != null ? `　·　${cohortLabel(getCohort(profile?.joinDate))}` : ""}
@@ -231,7 +230,7 @@ useEffect(() => {
               </div>
             )}
 
-            {/* 防具（選擇顯示時才出現） */}
+            {/* 防具 */}
             {showArmor && mainArmor && armorSummary(mainArmor) && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, color: "#fb923c", fontWeight: 900, letterSpacing: 2 }}>射手防具</div>
@@ -239,7 +238,7 @@ useEffect(() => {
               </div>
             )}
 
-            {/* 加成飾品（選擇顯示時才出現） */}
+            {/* 飾品 */}
             {showAccessory && mainAccessory && accessorySummary(mainAccessory) && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, color: "#c084fc", fontWeight: 900, letterSpacing: 2 }}>加成飾品</div>
@@ -288,7 +287,6 @@ useEffect(() => {
         {/* ── 自訂選項 ── */}
         <div className="bg-white/10 rounded-xl p-3 flex flex-col gap-3">
 
-          {/* 弓組選擇 */}
           {bowSets.length > 1 && (
             <div>
               <div className="text-white/70 text-xs mb-1">🏹 主力弓組</div>
@@ -301,7 +299,6 @@ useEffect(() => {
             </div>
           )}
 
-          {/* 防具選擇 */}
           {armorSets.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -322,7 +319,6 @@ useEffect(() => {
             </div>
           )}
 
-          {/* 飾品選擇 */}
           {accessorySets.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -343,7 +339,6 @@ useEffect(() => {
             </div>
           )}
 
-          {/* 標語 */}
           <div>
             <div className="text-white/70 text-xs mb-1">個人標語（會記住）</div>
             <input value={slogan} onChange={e => setSlogan(e.target.value)} maxLength={20}
