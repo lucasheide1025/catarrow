@@ -969,3 +969,35 @@ export async function cancelCheckin(checkinId) {
   try { await deleteDoc(doc(db, C_CHECKIN, checkinId)); }
   catch (e) { console.warn("cancelCheckin:", e?.message); }
 }
+
+const C_MONSTER_LOGS = "monsterLogs";
+
+export async function saveMonsterLog(memberId, data) {
+  try {
+    const ref = await addDoc(collection(db, C_MONSTER_LOGS), {
+      memberId,
+      monsterName: data.monsterName || "",
+      monsterId:   data.monsterId   || "",
+      result:      data.result      || "lose",
+      rounds:      data.rounds      || 0,
+      lootName:    data.lootName    || null,
+      lootIcon:    data.lootIcon    || null,
+      lootType:    data.lootType    || null,
+      mode:        data.mode        || "novice",
+      createdAt:   serverTimestamp(),
+    });
+    return ref.id;
+  } catch (e) { console.warn("saveMonsterLog:", e?.message); }
+}
+
+export async function getMonsterLogs(memberId) {
+  try {
+    const snap = await getDocs(query(
+      collection(db, C_MONSTER_LOGS),
+      where("memberId", "==", memberId),
+      orderBy("createdAt", "desc"),
+      limit(20)
+    ));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { console.warn("getMonsterLogs:", e?.message); return []; }
+}
