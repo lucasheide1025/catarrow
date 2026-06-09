@@ -231,18 +231,18 @@ export default function ShareCard({ onClose }) {
             )}
 
             {/* 防具 */}
-            {showArmor && mainArmor && armorSummary(mainArmor) && (
+            {showArmor && mainArmor && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, color: "#fb923c", fontWeight: 900, letterSpacing: 2 }}>射手防具</div>
-                <div style={{ fontSize: 10, color: "#fed7aa", marginTop: 2, lineHeight: 1.6 }}>{armorSummary(mainArmor)}</div>
+                <div style={{ fontSize: 12, color: "#fed7aa", marginTop: 2 }}>🛡️ {mainArmor.label || "防具套組"}</div>
               </div>
             )}
 
             {/* 飾品 */}
-            {showAccessory && mainAccessory && accessorySummary(mainAccessory) && (
+            {showAccessory && mainAccessory && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, color: "#c084fc", fontWeight: 900, letterSpacing: 2 }}>加成飾品</div>
-                <div style={{ fontSize: 10, color: "#e9d5ff", marginTop: 2, lineHeight: 1.6 }}>{accessorySummary(mainAccessory)}</div>
+                <div style={{ fontSize: 12, color: "#e9d5ff", marginTop: 2 }}>✨ {mainAccessory.label || "飾品套組"}</div>
               </div>
             )}
 
