@@ -222,27 +222,33 @@ export default function ShareCard({ onClose }) {
               })}
             </div>
 
-            {/* 主力弓組 */}
-            {mainBow && (
+           {/* 主力裝備三欄並排 */}
+            {(mainBow || (showArmor && mainArmor) || (showAccessory && mainAccessory)) && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 10, color: "#7dd3fc", fontWeight: 900, letterSpacing: 2 }}>主力裝備</div>
-                <div style={{ fontSize: 12, color: "#e2e8f0", marginTop: 3 }}>🏹 {mainBow.label || mainBow.bowCategory || "—"}</div>
-              </div>
-            )}
-
-            {/* 防具 */}
-            {showArmor && mainArmor && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: "#fb923c", fontWeight: 900, letterSpacing: 2 }}>射手防具</div>
-                <div style={{ fontSize: 12, color: "#fed7aa", marginTop: 2 }}>🛡️ {mainArmor.label || "防具套組"}</div>
-              </div>
-            )}
-
-            {/* 飾品 */}
-            {showAccessory && mainAccessory && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: "#c084fc", fontWeight: 900, letterSpacing: 2 }}>加成飾品</div>
-                <div style={{ fontSize: 12, color: "#e9d5ff", marginTop: 2 }}>✨ {mainAccessory.label || "飾品套組"}</div>
+                <div style={{ fontSize: 10, color: "#7dd3fc", fontWeight: 900, letterSpacing: 2, marginBottom: 6 }}>主力裝備</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {mainBow && (
+                    <div style={{ flex: 1, background: "rgba(255,255,255,.06)", border: "1px solid rgba(125,211,252,.2)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+                      <div style={{ fontSize: 14 }}>🏹</div>
+                      <div style={{ fontSize: 9, color: "#7dd3fc", fontWeight: 900, marginTop: 3 }}>弓組</div>
+                      <div style={{ fontSize: 10, color: "#e2e8f0", marginTop: 2, fontWeight: 700, lineHeight: 1.3 }}>{mainBow.label || mainBow.bowCategory || "—"}</div>
+                    </div>
+                  )}
+                  {showArmor && mainArmor && (
+                    <div style={{ flex: 1, background: "rgba(255,255,255,.06)", border: "1px solid rgba(251,146,60,.2)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+                      <div style={{ fontSize: 14 }}>🛡️</div>
+                      <div style={{ fontSize: 9, color: "#fb923c", fontWeight: 900, marginTop: 3 }}>防具</div>
+                      <div style={{ fontSize: 10, color: "#fed7aa", marginTop: 2, fontWeight: 700, lineHeight: 1.3 }}>{mainArmor.label || "防具套組"}</div>
+                    </div>
+                  )}
+                  {showAccessory && mainAccessory && (
+                    <div style={{ flex: 1, background: "rgba(255,255,255,.06)", border: "1px solid rgba(192,132,252,.2)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+                      <div style={{ fontSize: 14 }}>✨</div>
+                      <div style={{ fontSize: 9, color: "#c084fc", fontWeight: 900, marginTop: 3 }}>飾品</div>
+                      <div style={{ fontSize: 10, color: "#e9d5ff", marginTop: 2, fontWeight: 700, lineHeight: 1.3 }}>{mainAccessory.label || "飾品套組"}</div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
