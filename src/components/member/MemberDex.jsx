@@ -154,7 +154,7 @@ export default function MemberDex({ onBack }) {
     return () => {
       if (toastTimerRef.current) toastTimerRef.current.forEach(t => clearTimeout(t));
     };
-  }); // 故意不寫 deps，每次 render 都檢查，確保不漏
+  }, [toastQueue, currentToast]); // eslint-disable-line
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }
@@ -393,4 +393,4 @@ function DexDetailModal({ a, onClose }) {
       </div>
     </div>
   );
-}Equipment 
+}
