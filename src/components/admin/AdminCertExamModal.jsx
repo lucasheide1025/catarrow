@@ -62,12 +62,18 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
       const data = {
         level, locked,
         blue: {
-          bowType: blue.bowType,
+          bowType:        blue.bowType,
+          bowLabel:       blue.bowLabel       || null,
+          armorLabel:     blue.armorLabel     || null,
+          accessoryLabel: blue.accessoryLabel || null,
           task1: { passed: blue.task1.passed, hits: blue.task1.hits === "" ? null : Number(blue.task1.hits), reviewStatus: blue.task1.passed ? "approved" : "rejected" },
           task2: { passed: blue.task2.passed, score: blue.task2.score === "" ? null : Number(blue.task2.score), reviewStatus: blue.task2.passed ? "approved" : "rejected" },
         },
         gold: {
-          bowType: gold.bowType,
+          bowType:        gold.bowType,
+          bowLabel:       gold.bowLabel       || null,
+          armorLabel:     gold.armorLabel     || null,
+          accessoryLabel: gold.accessoryLabel || null,
           task1: { passed: gold.task1.passed, hits: gold.task1.hits === "" ? null : Number(gold.task1.hits), reviewStatus: gold.task1.passed ? "approved" : "rejected" },
           task2: { passed: gold.task2.passed, score: gold.task2.score === "" ? null : Number(gold.task2.score), reviewStatus: gold.task2.passed ? "approved" : "rejected" },
         },
