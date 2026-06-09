@@ -8,6 +8,8 @@ import {
 } from "../../lib/db";
 import { drawBuff } from "../../lib/buffPool";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
+import { updateDoc, doc } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 
 // 靶紙清單
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
@@ -155,8 +157,6 @@ export default function DailyQuest() {
     setArrows([]);
     // 存選擇到 checkin（讓後台知道選了哪個）
     try {
-      const { updateDoc, doc } = await import("firebase/firestore");
-      const { db } = await import("../../lib/firebase");
       await updateDoc(doc(db, "checkins", checkin.id), { chosenTask: idx, tasks });
     } catch {}
   }
