@@ -513,7 +513,7 @@ export function subscribeCertification(memberId, callback) {
     err => { console.warn("subscribeCertification:", err.message); callback(null); });
 }
 
-export async function submitCertTask(memberId, tier, task, payload, bowType) {
+export async function submitCertTask(memberId, tier, task, payload, bowType, equipLabels) {
   const ref = doc(db, CERT_CERTIFICATIONS, memberId);
   const snap = await getDoc(ref);
   const base = snap.exists() ? snap.data() : { level: "none", locked: false };
@@ -534,6 +534,9 @@ export async function submitCertTask(memberId, tier, task, payload, bowType) {
     [tier]: {
       ...tierData,
       bowType: bowType || tierData.bowType || null,
+      bowLabel:       equipLabels?.bowLabel       || null,
+      armorLabel:     equipLabels?.armorLabel     || null,
+      accessoryLabel: equipLabels?.accessoryLabel || null,
       [task]: taskData,
     },
   }, { merge: true });

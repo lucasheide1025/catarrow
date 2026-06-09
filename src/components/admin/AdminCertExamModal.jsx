@@ -45,9 +45,12 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
     });
   }, [member.id]);
 
-  function normalizeTier(t) {
+   function normalizeTier(t) {
     return {
-      bowType: t.bowType || "rental",
+      bowType:        t.bowType        || "rental",
+      bowLabel:       t.bowLabel       || null,
+      armorLabel:     t.armorLabel     || null,
+      accessoryLabel: t.accessoryLabel || null,
       task1: { passed: t.task1?.passed || false, hits: t.task1?.hits ?? "" },
       task2: { passed: t.task2?.passed || false, score: t.task2?.score ?? "" },
     };
@@ -87,12 +90,27 @@ export default function AdminCertExamModal({ member, onClose, onDone, operatorId
     onClose();
   }
 
-  function TierEditor({ label, tier, setTier }) {
+function TierEditor({ label, tier, setTier }) {
     return (
       <div className="border border-gray-200 rounded-xl p-3 flex flex-col gap-3">
         <div className="text-gray-700 text-sm font-bold">{label}</div>
-        <Sel label="使用裝備" value={tier.bowType}
+        <Sel label="使用弓組類型" value={tier.bowType}
           onChange={e => setTier(p => ({ ...p, bowType: e.target.value }))} options={BOW_OPTIONS} />
+        {tier.bowLabel && (
+          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            🏹 弓組名稱：<span className="font-bold text-gray-700">{tier.bowLabel}</span>
+          </div>
+        )}
+        {tier.armorLabel && (
+          <div className="text-xs text-gray-500 bg-orange-50 rounded-lg px-3 py-2">
+            🛡️ 防具：<span className="font-bold text-orange-700">{tier.armorLabel}</span>
+          </div>
+        )}
+        {tier.accessoryLabel && (
+          <div className="text-xs text-gray-500 bg-purple-50 rounded-lg px-3 py-2">
+            ✨ 飾品：<span className="font-bold text-purple-700">{tier.accessoryLabel}</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
             <Inp label="任務1 中靶數" type="number" min="0" value={tier.task1.hits}

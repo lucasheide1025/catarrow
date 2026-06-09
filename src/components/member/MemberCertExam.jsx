@@ -1,8 +1,7 @@
 // src/components/member/MemberCertExam.jsx
-// 射手證畢業考：學生選裝備 → 看門檻 → 登記任務1(中靶數)/任務2(分數) → 送審
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup } from "../../lib/db";
+import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup, getMember } from "../../lib/db";
 import { Card, Btn, Inp, Sel, ST, Spinner } from "../shared/UI";
 import { normalizeEquipment } from "../shared/Equipment";
 
@@ -13,55 +12,61 @@ const BOW_LABEL_MAP = {
   traditional:  "傳統弓",
 };
 
-// 從學生自訂裝備產生可選裝備清單
-// 有自訂弓組 → 只列自訂的（預設排第一）；沒有 → 只列租借器材
-function buildBowOptions(profile) {
-  const sets = normalizeEquipment(profile?.equipment);
-  // 過濾掉防具/飾品，只留弓組
-  const bowSets = sets.filter(s => s.type !== "armor" && s.type !== "accessory");
+function buildBowOptions(equipment) {
+  const sets = normalizeEquipment(equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
+  if (sets.length === 0) return [{ value: "rental", label: "租借器材", customLabel: "租借器材" }];
+  const sorted = [...sets.filter(s => s.isDefault), ...sets.filter(s => !s.isDefault)];
+  return sorted.map(s => ({
+    value: s.bowCategory,
+    label: s.label ? `${s.label}（${BOW_LABEL_MAP[s.bowCategory] || s.bowCategory}）` : (BOW_LABEL_MAP[s.bowCategory] || s.bowCategory),
+    customLabel: s.label || BOW_LABEL_MAP[s.bowCategory] || s.bowCategory,
+  }));
+}
 
-  if (bowSets.length === 0) {
-    return [{ value: "rental", label: "租借器材" }];
-  }
+function buildArmorOptions(armorSets) {
+  if (!armorSets || armorSets.length === 0) return [];
+  return armorSets.map((s, i) => ({
+    value: String(i),
+    label: s.label || `防具套組 ${i + 1}`,
+  }));
+}
 
-  // 預設排第一，其餘照順序
-  const sorted = [
-    ...bowSets.filter(s => s.isDefault),
-    ...bowSets.filter(s => !s.isDefault),
-  ];
-
-  return sorted.map(s => {
-    const cat = s.bowCategory;
-    return {
-      value: cat,
-      label: s.label
-        ? `${s.label}（${BOW_LABEL_MAP[cat] || cat}）`
-        : (BOW_LABEL_MAP[cat] || cat),
-    };
-  });
+function buildAccessoryOptions(accessorySets) {
+  if (!accessorySets || accessorySets.length === 0) return [];
+  return accessorySets.map((s, i) => ({
+    value: String(i),
+    label: s.label || `飾品套組 ${i + 1}`,
+  }));
 }
 
 const TIER_LABEL = { blue: "藍證（初階）", gold: "金證（高階）" };
 
 export default function MemberCertExam({ onBack }) {
   const { profile } = useAuth();
-  const bowOptions = buildBowOptions(profile);
-  const [config, setConfig] = useState(null);
-  const [cert, setCert]     = useState(null);
+  const [config, setConfig]   = useState(null);
+  const [cert, setCert]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [memberData, setMemberData] = useState(null);
 
   useEffect(() => {
     getCertConfig().then(setConfig);
     if (!profile?.id) return;
     const unsub = subscribeCertification(profile.id, c => { setCert(c); setLoading(false); });
+    getMember(profile.id).then(setMemberData).catch(() => {});
     return () => unsub && unsub();
   }, [profile?.id]);
 
   if (loading || !config) return <Spinner />;
 
-  const level = cert?.level || "none";
-  const locked = cert?.locked || false;
+  const level   = cert?.level || "none";
+  const locked  = cert?.locked || false;
   const nextTier = level === "none" ? "blue" : level === "blue" ? "gold" : null;
+
+  const bowOptions       = buildBowOptions(memberData?.equipment || profile?.equipment);
+  const armorOptions     = buildArmorOptions(memberData?.armorSets || []);
+  const accessoryOptions = buildAccessoryOptions(memberData?.accessorySets || []);
+  const armorSets        = memberData?.armorSets || [];
+  const accessorySets    = memberData?.accessorySets || [];
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -86,49 +91,104 @@ export default function MemberCertExam({ onBack }) {
       </Card>
 
       {!locked && nextTier && (
-        <TierExam tier={nextTier} config={config} cert={cert} memberId={profile.id} bowOptions={bowOptions} />
+        <TierExam
+          tier={nextTier} config={config} cert={cert} memberId={profile.id}
+          bowOptions={bowOptions} armorOptions={armorOptions} accessoryOptions={accessoryOptions}
+          armorSets={armorSets} accessorySets={accessorySets}
+        />
       )}
     </div>
   );
 }
 
-function TierExam({ tier, config, cert, memberId, bowOptions }) {
+function TierExam({ tier, config, cert, memberId, bowOptions, armorOptions, accessoryOptions, armorSets, accessorySets }) {
   const validVals = bowOptions.map(o => o.value);
   const initBow = (cert?.[tier]?.bowType && validVals.includes(cert[tier].bowType))
-    ? cert[tier].bowType
-    : bowOptions[0]?.value || "rental";
-  const [bowType, setBowType] = useState(initBow);
+    ? cert[tier].bowType : bowOptions[0]?.value || "rental";
+
+  const [bowType,      setBowType]      = useState(initBow);
+  const [armorIdx,     setArmorIdx]     = useState("0");
+  const [accessoryIdx, setAccessoryIdx] = useState("0");
+  const [useArmor,     setUseArmor]     = useState(false);
+  const [useAccessory, setUseAccessory] = useState(false);
+
   const distance = tier === "blue" ? config.blueDistance : config.goldDistance;
-  const group = certBowGroup(bowType);
-  const th = config[tier]?.[group] || { task1Hits: 0, task2Score: 0 };
+  const group    = certBowGroup(bowType);
+  const th       = config[tier]?.[group] || { task1Hits: 0, task2Score: 0 };
 
   const tierData = cert?.[tier] || {};
   const t1 = tierData.task1;
   const t2 = tierData.task2;
 
+  const selectedBowOption  = bowOptions.find(b => b.value === bowType);
+  const selectedArmorLabel = useArmor && armorSets[Number(armorIdx)]
+    ? (armorSets[Number(armorIdx)].label || `防具套組 ${Number(armorIdx) + 1}`) : null;
+  const selectedAccessoryLabel = useAccessory && accessorySets[Number(accessoryIdx)]
+    ? (accessorySets[Number(accessoryIdx)].label || `飾品套組 ${Number(accessoryIdx) + 1}`) : null;
+
+  const equipLabels = {
+    bowLabel:       selectedBowOption?.customLabel || selectedBowOption?.label || bowType,
+    armorLabel:     selectedArmorLabel,
+    accessoryLabel: selectedAccessoryLabel,
+  };
+
   return (
     <Card className="p-4 flex flex-col gap-4">
       <ST>挑戰 {TIER_LABEL[tier]} · {distance} 米</ST>
 
-      <Sel label="使用裝備" value={bowType} onChange={e => setBowType(e.target.value)} options={bowOptions} />
+      {/* 弓組選擇 */}
+      <Sel label="🏹 使用弓組" value={bowType} onChange={e => setBowType(e.target.value)} options={bowOptions} />
 
+      {/* 防具選擇 */}
+      {armorOptions.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={useArmor} onChange={e => setUseArmor(e.target.checked)} className="accent-orange-500" />
+            🛡️ 使用防具套組
+          </label>
+          {useArmor && armorOptions.length > 1 && (
+            <Sel label="選擇防具" value={armorIdx} onChange={e => setArmorIdx(e.target.value)} options={armorOptions} />
+          )}
+          {useArmor && armorOptions.length === 1 && (
+            <div className="text-sm text-orange-600 font-bold bg-orange-50 rounded-lg px-3 py-2">{armorOptions[0].label}</div>
+          )}
+        </div>
+      )}
+
+      {/* 飾品選擇 */}
+      {accessoryOptions.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={useAccessory} onChange={e => setUseAccessory(e.target.checked)} className="accent-purple-500" />
+            ✨ 使用飾品套組
+          </label>
+          {useAccessory && accessoryOptions.length > 1 && (
+            <Sel label="選擇飾品" value={accessoryIdx} onChange={e => setAccessoryIdx(e.target.value)} options={accessoryOptions} />
+          )}
+          {useAccessory && accessoryOptions.length === 1 && (
+            <div className="text-sm text-purple-600 font-bold bg-purple-50 rounded-lg px-3 py-2">{accessoryOptions[0].label}</div>
+          )}
+        </div>
+      )}
+
+      {/* 門檻說明 */}
       <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
-        <div className="font-bold text-gray-700 mb-1">通過門檻（{bowOptions.find(b => b.value === bowType)?.label}）</div>
+        <div className="font-bold text-gray-700 mb-1">通過門檻（{selectedBowOption?.label}）</div>
         <div>任務1：射 6 箭，至少 <span className="font-black text-blue-600">{th.task1Hits}</span> 箭中靶</div>
         <div>任務2：{distance} 米，達 <span className="font-black text-blue-600">{th.task2Score}</span> 分</div>
       </div>
 
       <TaskRow tier={tier} task="task1" label="任務 1 · 中靶數（射6箭）" field="hits"
-        unit="箭中靶" pass={th.task1Hits} data={t1} bowType={bowType} memberId={memberId} />
+        unit="箭中靶" pass={th.task1Hits} data={t1} bowType={bowType} memberId={memberId} equipLabels={equipLabels} />
       <TaskRow tier={tier} task="task2" label={`任務 2 · ${distance}米分數`} field="score"
-        unit="分" pass={th.task2Score} data={t2} bowType={bowType} memberId={memberId} />
+        unit="分" pass={th.task2Score} data={t2} bowType={bowType} memberId={memberId} equipLabels={equipLabels} />
     </Card>
   );
 }
 
 const ARROW_VALUES = ["M", 6, 7, 8, 9, 10];
 
-function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId }) {
+function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId, equipLabels }) {
   const isTask1 = field === "hits";
   const [val, setVal]       = useState("");
   const [arrows, setArrows] = useState(Array(10).fill(null));
@@ -137,7 +197,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
 
   const status = data?.reviewStatus;
   const passed = data?.passed === true;
-  const task2Total = arrows.reduce((sum, a) => sum + (a === "M" || a == null ? 0 : Number(a)), 0);
+  const task2Total  = arrows.reduce((sum, a) => sum + (a === "M" || a == null ? 0 : Number(a)), 0);
   const arrowsFilled = arrows.every(a => a != null);
 
   function setArrow(i, v) {
@@ -156,7 +216,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
     }
     setBusy(true);
     try {
-      await submitCertTask(memberId, tier, task, payload, bowType);
+      await submitCertTask(memberId, tier, task, payload, bowType, equipLabels);
       setMsg("✅ 已送出，等待教練審核");
       setVal(""); setArrows(Array(10).fill(null));
     } catch (e) { setMsg(e?.message || "送出失敗"); }
