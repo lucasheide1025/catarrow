@@ -1,0 +1,345 @@
+// src/lib/achievementDex.js
+// 數位圖鑑：里程碑成就定義 + 自動判定 + 統計
+
+import { calcBadgePoints, getCertLevel } from "./constants";
+import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
+
+export const RARITY_STYLE = {
+  common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
+  uncommon:  { ring: "#22c55e", glow: "0 0 8px rgba(34,197,94,.45)",       label: "非凡" },
+  rare:      { ring: "#3b82f6", glow: "0 0 10px rgba(59,130,246,.5)",      label: "稀有" },
+  epic:      { ring: "#a855f7", glow: "0 0 12px rgba(168,85,247,.6)",      label: "史詩" },
+  legendary: { ring: "#f59e0b", glow: "0 0 16px rgba(245,158,11,.7)",      label: "傳說" },
+  mythic:    { ring: "#ef4444", glow: "0 0 20px rgba(239,68,68,.8)",       label: "神話" },
+};
+
+export const RANK_STYLE = {
+  1: { ring: "#f59e0b", glow: "0 0 16px rgba(245,158,11,.7)",  icon: "🥇", label: "冠軍" },
+  2: { ring: "#94a3b8", glow: "0 0 12px rgba(148,163,184,.6)", icon: "🥈", label: "亞軍" },
+  3: { ring: "#b45309", glow: "0 0 12px rgba(180,83,9,.5)",    icon: "🥉", label: "季軍" },
+  0: { ring: "#0ea5e9", glow: "0 0 8px rgba(14,165,233,.4)",   icon: "🎯", label: "參賽" },
+};
+
+export const DEX_CATEGORIES = [
+  { id: "start",    label: "🌱 啟程" },
+  { id: "cohort",   label: "🎓 期數" },
+  { id: "cert",     label: "🎖️ 射手證" },
+  { id: "level",    label: "🏹 檢定" },
+  { id: "collect",  label: "🐱 收藏" },
+  { id: "physical", label: "🏆 實體賽" },
+  { id: "point",    label: "⭐ 積分賽" },
+  { id: "special",  label: "✨ 特殊" },
+  { id: "monster",  label: "👹 打怪" },
+  { id: "duel",     label: "⚔️ 決鬥" },
+];
+
+// ── helpers ──────────────────────────────────────────────────
+const LEVEL_ORDER = ["入門", "初級", "中級", "進階", "精英", "菁英"];
+function levelIdx(lv) { return LEVEL_ORDER.indexOf(lv); }
+
+function bowAtLeast(certRecords, bowType, minLevel) {
+  const recs = (certRecords || []).filter(r => r.bowType === bowType);
+  if (!recs.length) return false;
+  const best = Math.max(...recs.map(r => r.score || 0));
+  const lv = getCertLevel(bowType, best);
+  return lv && levelIdx(lv) >= levelIdx(minLevel);
+}
+function anyBowLevelAtLeast(certRecords, minLevel) {
+  const bows = [...new Set((certRecords || []).map(r => r.bowType))];
+  return bows.some(b => bowAtLeast(certRecords, b, minLevel));
+}
+// 幾種弓達到某級別以上
+function bowCountAtLeast(certRecords, minLevel, count) {
+  const bows = [...new Set((certRecords || []).map(r => r.bowType))];
+  const qualified = bows.filter(b => bowAtLeast(certRecords, b, minLevel));
+  return qualified.length >= count;
+}
+// task 命中/分數 helper
+function certTaskVal(certification, tier, task, field) {
+  return certification?.[tier]?.[task]?.[field] ?? 0;
+}
+function certTaskPassed(certification, tier, task) {
+  return certification?.[tier]?.[task]?.passed === true;
+}
+// 射手證編號數字化（archerNo 是 string）
+function archerNoNum(member) {
+  const n = parseInt(member?.archerNo, 10);
+  return isNaN(n) ? null : n;
+}
+
+// ── AUTO_ACHIEVEMENTS ────────────────────────────────────────
+export const AUTO_ACHIEVEMENTS = [
+
+  // ══ 啟程 ══
+  { id: "checkin_1",  cat: "start", icon: "📍", name: "初次報到",   rarity: "common",   desc: "完成第一次今日任務報到",   check: c => (c.checkinCount || 0) >= 1  },
+  { id: "checkin_5",  cat: "start", icon: "🌤️", name: "漸入佳境",   rarity: "common",   desc: "累積報到 5 次",            check: c => (c.checkinCount || 0) >= 5  },
+  { id: "checkin_10", cat: "start", icon: "🔥", name: "持之以恆",   rarity: "uncommon", desc: "累積報到 10 次",           check: c => (c.checkinCount || 0) >= 10 },
+  { id: "checkin_15", cat: "start", icon: "⚡", name: "勢如破竹",   rarity: "uncommon", desc: "累積報到 15 次",           check: c => (c.checkinCount || 0) >= 15 },
+  { id: "checkin_20", cat: "start", icon: "💎", name: "鍛鍊有成",   rarity: "rare",     desc: "累積報到 20 次",           check: c => (c.checkinCount || 0) >= 20 },
+  { id: "checkin_25", cat: "start", icon: "🌟", name: "百練成鋼",   rarity: "rare",     desc: "累積報到 25 次",           check: c => (c.checkinCount || 0) >= 25 },
+  { id: "checkin_30", cat: "start", icon: "💪", name: "風雨無阻",   rarity: "epic",     desc: "累積報到 30 次",           check: c => (c.checkinCount || 0) >= 30 },
+  { id: "first_cert", cat: "start", icon: "🎯", name: "初試啼聲",   rarity: "common",   desc: "第一次參加年度檢定",       check: c => (c.certRecords || []).length >= 1 },
+  // 月卡（功能尚未實裝，check 先回傳 false）
+  { id: "card_first",  cat: "start", icon: "🪪", name: "月卡初啟",  rarity: "uncommon", desc: "第一次啟動月卡",           check: _c => false },
+  { id: "card_renew",  cat: "start", icon: "🔄", name: "月卡續射",  rarity: "rare",     desc: "月卡至少續約一次",         check: _c => false },
+
+  // ══ 射手證 ══
+  { id: "cert_blue",       cat: "cert", icon: "🎖️", name: "藍證射手",     rarity: "rare",
+    desc: "通過射手證畢業考，取得藍證",
+    check: c => c.certification?.level === "blue" || c.certification?.level === "gold" },
+
+  { id: "cert_blue_top",   cat: "cert", icon: "💯", name: "藍證完美",     rarity: "epic",
+    desc: "藍證任務一全中（6支）且任務二滿分（100分）",
+    check: c => {
+      if (!certTaskPassed(c.certification, "blue", "task1")) return false;
+      if (!certTaskPassed(c.certification, "blue", "task2")) return false;
+      return certTaskVal(c.certification, "blue", "task1", "hits") >= 6
+          && certTaskVal(c.certification, "blue", "task2", "score") >= 100;
+    }
+  },
+  { id: "cert_blue_great", cat: "cert", icon: "✨", name: "藍證優秀",     rarity: "rare",
+    desc: "藍證任務一命中 5 支以上且任務二 90 分以上",
+    check: c => {
+      if (!certTaskPassed(c.certification, "blue", "task1")) return false;
+      if (!certTaskPassed(c.certification, "blue", "task2")) return false;
+      return certTaskVal(c.certification, "blue", "task1", "hits") >= 5
+          && certTaskVal(c.certification, "blue", "task2", "score") >= 90;
+    }
+  },
+
+  { id: "cert_gold",       cat: "cert", icon: "🏅", name: "金證射手",     rarity: "legendary",
+    desc: "取得射手證最高榮譽——金證",
+    check: c => c.certification?.level === "gold" },
+
+  { id: "cert_gold_top",   cat: "cert", icon: "👑", name: "金證完美",     rarity: "legendary",
+    desc: "金證任務一全中（6支）且任務二滿分（100分）",
+    check: c => {
+      if (c.certification?.level !== "gold") return false;
+      return certTaskVal(c.certification, "gold", "task1", "hits") >= 6
+          && certTaskVal(c.certification, "gold", "task2", "score") >= 100;
+    }
+  },
+  { id: "cert_gold_great", cat: "cert", icon: "🌠", name: "金證優秀",     rarity: "epic",
+    desc: "金證任務一命中 5 支以上且任務二 90 分以上",
+    check: c => {
+      if (c.certification?.level !== "gold") return false;
+      return certTaskVal(c.certification, "gold", "task1", "hits") >= 5
+          && certTaskVal(c.certification, "gold", "task2", "score") >= 90;
+    }
+  },
+
+  // 射手證編號
+  { id: "archer_no_20",  cat: "cert", icon: "🔢", name: "元老號碼",   rarity: "legendary",
+    desc: "射手證編號在 20 號以內",
+    check: c => { const n = archerNoNum(c.member); return n !== null && n <= 20; } },
+  { id: "archer_no_50",  cat: "cert", icon: "🔢", name: "早鳥號碼",   rarity: "epic",
+    desc: "射手證編號在 50 號以內",
+    check: c => { const n = archerNoNum(c.member); return n !== null && n <= 50; } },
+  { id: "archer_no_100", cat: "cert", icon: "🔢", name: "百內射手",   rarity: "rare",
+    desc: "射手證編號在 100 號以內",
+    check: c => { const n = archerNoNum(c.member); return n !== null && n <= 100; } },
+  { id: "archer_no_200", cat: "cert", icon: "🔢", name: "雙百射手",   rarity: "uncommon",
+    desc: "射手證編號在 200 號以內",
+    check: c => { const n = archerNoNum(c.member); return n !== null && n <= 200; } },
+  { id: "archer_no_500", cat: "cert", icon: "🔢", name: "五百射手",   rarity: "common",
+    desc: "射手證編號在 500 號以內",
+    check: c => { const n = archerNoNum(c.member); return n !== null && n <= 500; } },
+
+  // ══ 檢定 — 裸弓 ══
+  { id: "bare_entry",  cat: "level", icon: "🏹", name: "裸弓入門",   rarity: "common",   desc: "裸弓年度檢定達到入門",  check: c => bowAtLeast(c.certRecords, "recurve_bare", "入門") },
+  { id: "bare_basic",  cat: "level", icon: "🏹", name: "裸弓初級",   rarity: "common",   desc: "裸弓年度檢定達到初級",  check: c => bowAtLeast(c.certRecords, "recurve_bare", "初級") },
+  { id: "bare_mid",    cat: "level", icon: "🏹", name: "裸弓中級",   rarity: "uncommon", desc: "裸弓年度檢定達到中級",  check: c => bowAtLeast(c.certRecords, "recurve_bare", "中級") },
+  { id: "bare_adv",    cat: "level", icon: "🏹", name: "裸弓進階",   rarity: "rare",     desc: "裸弓年度檢定達到進階",  check: c => bowAtLeast(c.certRecords, "recurve_bare", "進階") },
+  { id: "bare_elite",  cat: "level", icon: "🏹", name: "裸弓精英",   rarity: "epic",     desc: "裸弓年度檢定達到精英",  check: c => bowAtLeast(c.certRecords, "recurve_bare", "精英") },
+
+  // ══ 檢定 — 獵弓 ══
+  { id: "comp_entry",  cat: "level", icon: "🦅", name: "獵弓入門",   rarity: "common",   desc: "獵弓年度檢定達到入門",  check: c => bowAtLeast(c.certRecords, "compound", "入門") },
+  { id: "comp_basic",  cat: "level", icon: "🦅", name: "獵弓初級",   rarity: "common",   desc: "獵弓年度檢定達到初級",  check: c => bowAtLeast(c.certRecords, "compound", "初級") },
+  { id: "comp_mid",    cat: "level", icon: "🦅", name: "獵弓中級",   rarity: "uncommon", desc: "獵弓年度檢定達到中級",  check: c => bowAtLeast(c.certRecords, "compound", "中級") },
+  { id: "comp_adv",    cat: "level", icon: "🦅", name: "獵弓進階",   rarity: "rare",     desc: "獵弓年度檢定達到進階",  check: c => bowAtLeast(c.certRecords, "compound", "進階") },
+  { id: "comp_elite",  cat: "level", icon: "🦅", name: "獵弓精英",   rarity: "epic",     desc: "獵弓年度檢定達到精英",  check: c => bowAtLeast(c.certRecords, "compound", "精英") },
+
+  // ══ 檢定 — 傳統弓 ══
+  { id: "trad_entry",  cat: "level", icon: "🌿", name: "傳統弓入門", rarity: "common",   desc: "傳統弓年度檢定達到入門", check: c => bowAtLeast(c.certRecords, "traditional", "入門") },
+  { id: "trad_basic",  cat: "level", icon: "🌿", name: "傳統弓初級", rarity: "common",   desc: "傳統弓年度檢定達到初級", check: c => bowAtLeast(c.certRecords, "traditional", "初級") },
+  { id: "trad_mid",    cat: "level", icon: "🌿", name: "傳統弓中級", rarity: "uncommon", desc: "傳統弓年度檢定達到中級", check: c => bowAtLeast(c.certRecords, "traditional", "中級") },
+  { id: "trad_adv",    cat: "level", icon: "🌿", name: "傳統弓進階", rarity: "rare",     desc: "傳統弓年度檢定達到進階", check: c => bowAtLeast(c.certRecords, "traditional", "進階") },
+  { id: "trad_elite",  cat: "level", icon: "🌿", name: "傳統弓精英", rarity: "epic",     desc: "傳統弓年度檢定達到精英", check: c => bowAtLeast(c.certRecords, "traditional", "精英") },
+
+  // ══ 檢定 — 跨弓成就 ══
+  { id: "multi_mid2",   cat: "level", icon: "🔀", name: "左右開弓",   rarity: "rare",
+    desc: "兩種弓以上達到中級",    check: c => bowCountAtLeast(c.certRecords, "中級", 2) },
+  { id: "multi_adv2",   cat: "level", icon: "🔀", name: "左右逢源",   rarity: "epic",
+    desc: "兩種弓以上達到進階",    check: c => bowCountAtLeast(c.certRecords, "進階", 2) },
+  { id: "multi_elite2", cat: "level", icon: "🔀", name: "左右互搏",   rarity: "legendary",
+    desc: "兩種弓以上達到精英",    check: c => bowCountAtLeast(c.certRecords, "精英", 2) },
+
+  { id: "all_mid3",     cat: "level", icon: "🎖️", name: "全職弓手",   rarity: "epic",
+    desc: "三種弓以上達到中級",    check: c => bowCountAtLeast(c.certRecords, "中級", 3) },
+  { id: "all_adv3",     cat: "level", icon: "🎖️", name: "全職射手",   rarity: "legendary",
+    desc: "三種弓以上達到進階",    check: c => bowCountAtLeast(c.certRecords, "進階", 3) },
+  { id: "all_elite3",   cat: "level", icon: "🎖️", name: "全職獵人",   rarity: "legendary", hidden: true,
+    riddle: "三道試煉，缺一不可　🏹 🦅 🌿", desc: "三種弓以上達到精英",
+    check: c => bowCountAtLeast(c.certRecords, "精英", 3) },
+
+  // ══ 收藏 — 個別章 ══
+  { id: "fatcat_bronze",  cat: "collect", icon: "🐱", name: "貓奴入門",   rarity: "common",
+    desc: "獲得第一個肥貓銅章",    check: c => (c.member?.fatCat?.bronze || 0) >= 1 },
+  { id: "fatcat_silver",  cat: "collect", icon: "🐱", name: "肥貓騎士",   rarity: "uncommon",
+    desc: "取得肥貓銀章一顆",      check: c => (c.member?.fatCat?.silver || 0) >= 1 },
+  { id: "fatcat_gold",    cat: "collect", icon: "👑", name: "肥貓之王",   rarity: "epic",
+    desc: "肥貓章累積達到金章",    check: c => (c.member?.fatCat?.gold || 0) >= 1 },
+
+  { id: "score_bronze",   cat: "collect", icon: "⭐", name: "積分新星",   rarity: "common",
+    desc: "獲得第一個積分銅章",    check: c => (c.member?.score?.bronze || 0) >= 1 },
+  { id: "score_silver",   cat: "collect", icon: "⭐", name: "積分銀星",   rarity: "uncommon",
+    desc: "取得積分銀章一顆",      check: c => (c.member?.score?.silver || 0) >= 1 },
+  { id: "score_gold",     cat: "collect", icon: "🌠", name: "積分大師",   rarity: "epic",
+    desc: "積分章累積達到金章",    check: c => (c.member?.score?.gold || 0) >= 1 },
+
+  { id: "ach_silver",     cat: "collect", icon: "🏆", name: "成就獵人",   rarity: "common",
+    desc: "獲得第一個成就銀章",    check: c => (c.member?.achievement?.silver || 0) >= 1 },
+  { id: "ach_gold",       cat: "collect", icon: "🏆", name: "金光閃閃",   rarity: "uncommon",
+    desc: "取得成就金章一顆",      check: c => (c.member?.achievement?.gold || 0) >= 1 },
+  { id: "ach_black",      cat: "collect", icon: "⬛", name: "黑牌傳說",   rarity: "legendary",
+    desc: "成就章累積達到黑牌",    check: c => (c.member?.achievement?.black || 0) >= 1 },
+
+  // ══ 收藏 — 組合章 ══
+  { id: "set_lowest",  cat: "collect", icon: "✨", name: "初現光芒",   rarity: "uncommon",
+    desc: "三種章各有最低級：肥貓銅章、積分銅章、成就銀章",
+    check: c =>
+      (c.member?.fatCat?.bronze    || 0) >= 1 &&
+      (c.member?.score?.bronze     || 0) >= 1 &&
+      (c.member?.achievement?.silver || 0) >= 1
+  },
+  { id: "set_mid",     cat: "collect", icon: "💫", name: "披掛上陣",   rarity: "epic",
+    desc: "三種章各有中級：肥貓銀章、積分銀章、成就金章",
+    check: c =>
+      (c.member?.fatCat?.silver    || 0) >= 1 &&
+      (c.member?.score?.silver     || 0) >= 1 &&
+      (c.member?.achievement?.gold || 0) >= 1
+  },
+  { id: "set_top",     cat: "collect", icon: "👑", name: "穿金戴銀",   rarity: "legendary",
+    desc: "三種章各有最高級：肥貓金章、積分金章、成就黑牌",
+    check: c =>
+      (c.member?.fatCat?.gold      || 0) >= 1 &&
+      (c.member?.score?.gold       || 0) >= 1 &&
+      (c.member?.achievement?.black || 0) >= 1
+  },
+
+  // ══ 打怪模式（功能尚未實裝，check 先回傳 false）══
+  { id: "monster_first",   cat: "monster", icon: "👹", name: "初入戰場",   rarity: "common",
+    desc: "第一次參加打怪模式",    check: _c => false },
+  { id: "monster_5",       cat: "monster", icon: "⚔️", name: "身經百戰",   rarity: "uncommon",
+    desc: "累積參加打怪模式 5 次", check: _c => false },
+  { id: "monster_10",      cat: "monster", icon: "🗡️", name: "殺伐決斷",   rarity: "rare",
+    desc: "累積參加打怪模式 10 次",check: _c => false },
+  { id: "monster_mvp1",    cat: "monster", icon: "🌟", name: "首次 MVP",   rarity: "rare",
+    desc: "打怪模式取得第一次 MVP", check: _c => false },
+  { id: "monster_mvp10",   cat: "monster", icon: "💥", name: "MVP 王者",   rarity: "legendary",
+    desc: "打怪模式累積 10 次 MVP", check: _c => false },
+  // 掉寶成就（稀有→神話）
+  { id: "drop_rare",      cat: "monster", icon: "📦", name: "初嚐甜頭",   rarity: "rare",
+    desc: "打怪模式獲得稀有掉寶",  check: _c => false },
+  { id: "drop_epic",      cat: "monster", icon: "🎁", name: "奇蹟降臨",   rarity: "epic",
+    desc: "打怪模式獲得史詩掉寶",  check: _c => false },
+  { id: "drop_legendary", cat: "monster", icon: "🏺", name: "傳說之物",   rarity: "legendary",
+    desc: "打怪模式獲得傳說掉寶",  check: _c => false },
+  { id: "drop_mythic",    cat: "monster", icon: "🌋", name: "神話現世",   rarity: "mythic",
+    desc: "打怪模式獲得神話掉寶",  check: _c => false },
+
+  // ══ 決鬥模式（功能尚未實裝，check 先回傳 false）══
+  { id: "duel_first",     cat: "duel", icon: "🤺", name: "初次決鬥",   rarity: "common",
+    desc: "第一次參加決鬥模式",    check: _c => false },
+  { id: "duel_win1",      cat: "duel", icon: "🏴", name: "初勝",       rarity: "uncommon",
+    desc: "決鬥模式首次獲勝",      check: _c => false },
+  { id: "duel_win5",      cat: "duel", icon: "⚔️", name: "連戰連勝",   rarity: "rare",
+    desc: "決鬥模式累積勝利 5 次", check: _c => false },
+  { id: "duel_win10",     cat: "duel", icon: "🏆", name: "決鬥大師",   rarity: "epic",
+    desc: "決鬥模式累積勝利 10 次",check: _c => false },
+  { id: "duel_flawless",  cat: "duel", icon: "💎", name: "完美勝利",   rarity: "legendary", hidden: true,
+    riddle: "一箭不差，乾淨利落…", desc: "決鬥模式以完美比分獲勝",
+    check: _c => false },
+];
+
+// ── 後台授予的特殊成就 ──────────────────────────────────────
+export const SPECIAL_GRANTS = [
+  { id: "beat_coach",  cat: "special", icon: "⚔️", name: "擊敗主教練",     rarity: "legendary", hidden: true,
+    riddle: "在他面前，沒有人能輕易取勝…",             desc: "在對戰中擊敗主教練" },
+  { id: "beat_yumi",   cat: "special", icon: "🗡️", name: "擊敗 Yumi 教練", rarity: "legendary", hidden: true,
+    riddle: "優雅的箭術背後，是難以跨越的高牆…",       desc: "在對戰中擊敗 Yumi 教練" },
+  { id: "beat_shimu",  cat: "special", icon: "🏹", name: "擊敗師母",       rarity: "legendary", hidden: true,
+    riddle: "傳說中的隱藏魔王，深藏不露…",             desc: "在對戰中擊敗師母" },
+  { id: "helper_mat",  cat: "special", icon: "🔨", name: "箭場小工匠",     rarity: "uncommon",
+    desc: "幫忙整理箭場塌塌米" },
+  { id: "helper_build",cat: "special", icon: "🏗️", name: "箭場魯班",       rarity: "rare",
+    desc: "協助箭場建設工程" },
+  { id: "helper_task", cat: "special", icon: "📋", name: "箭場小幫手",     rarity: "common",
+    desc: "幫忙箭場日常事務" },
+  { id: "helper_heart",cat: "special", icon: "💝", name: "箭場小天使",     rarity: "uncommon",
+    desc: "提供情緒價值，溫暖整個箭場" },
+];
+
+// ── 屆數成就（動態產生）────────────────────────────────────
+export function buildRoundAchievements(type, max, granted) {
+  const list = [];
+  for (let r = 1; r <= max; r++) {
+    const g = (granted || []).find(x => x.type === type && x.round === r);
+    list.push({
+      id: `${type}_${r}`,
+      cat: type,
+      round: r,
+      name: `第 ${r} 屆`,
+      unlocked: !!g,
+      rank: g ? (g.rank ?? 0) : null,
+    });
+  }
+  return list;
+}
+
+// ── 期數成就 ───────────────────────────────────────────────
+export function buildCohortAchievement(joinDate) {
+  const n = getCohort(joinDate);
+  return {
+    id: `cohort_${n}`,
+    cat: "cohort",
+    icon: n === 1 ? "👑" : n === 0 ? "❓" : "🎓",
+    name: cohortLabel(n),
+    rarity: cohortRarity(n),
+    title: cohortTitle(n),
+    desc: n === 0
+      ? "尚未設定加入日期，期數無法判定。請聯絡教練更新資料。"
+      : `${cohortLabel(n)}（${cohortTitle(n)}）— 你在這個時期加入了貓小隊射箭場`,
+    unlocked: true,
+  };
+}
+
+// ── 統計 ───────────────────────────────────────────────────
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax }) {
+  const ctx = { member, certification, certRecords, checkinCount };
+
+  let autoUnlocked = 0;
+  AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });
+
+  const grantedIds = new Set((granted || []).filter(g => g.type === "special").map(g => g.id || g.specialId));
+  let specialUnlocked = 0;
+  SPECIAL_GRANTS.forEach(a => { if (grantedIds.has(a.id)) specialUnlocked++; });
+
+  const physicalUnlocked = (granted || []).filter(g => g.type === "physical").length;
+  const pointUnlocked    = (granted || []).filter(g => g.type === "point").length;
+  const cohortUnlocked   = 1; // 期數格永遠亮著
+
+  const totalUnlocked = autoUnlocked + specialUnlocked + physicalUnlocked + pointUnlocked + cohortUnlocked;
+  const totalAll = AUTO_ACHIEVEMENTS.length + SPECIAL_GRANTS.length + (physicalMax || 0) + (pointMax || 0) + 1;
+
+  let gold = 0, silver = 0, bronze = 0;
+  (granted || []).forEach(g => {
+    if (g.type === "physical" || g.type === "point") {
+      if (g.rank === 1) gold++;
+      else if (g.rank === 2) silver++;
+      else if (g.rank === 3) bronze++;
+    }
+  });
+
+  return { totalUnlocked, totalAll, gold, silver, bronze };
+}

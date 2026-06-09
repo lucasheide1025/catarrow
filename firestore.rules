@@ -1,0 +1,115 @@
+// firestore.rules
+// 部署指令：firebase deploy --only firestore:rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 輔助函式
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isMember(memberId) {
+      return request.auth.uid == memberId;
+    }
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    // admins 集合：只有 admin 可讀
+    match /admins/{uid} {
+      allow read: if isAdmin();
+      allow write: if false; // 只能透過 Firebase Console 建立
+    }
+
+    // members：admin 全權操作，會員只能讀自己
+    match /members/{memberId} {
+      allow read:  if isAdmin() || isMember(memberId);
+      allow write: if isAdmin();
+      allow update: if isMember(memberId) && 
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["lastLoginAt", "equipment"]); // 會員只能改裝備和登入時間
+    }
+
+    // competitions：admin 全權，會員可讀
+    match /competitions/{compId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // results：admin 全權，會員可新增自己的
+    match /results/{resultId} {
+      allow read:  if isLoggedIn();
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // registrations：admin 全權，會員可讀寫自己的
+    match /registrations/{regId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // messages：admin 全權，會員可讀寫自己的
+    match /messages/{msgId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin() || 
+        (isMember(resource.data.memberId) && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberRead"]));
+      allow delete: if isAdmin();
+    }
+
+    // learnLogs：admin 全權，會員可讀寫自己的
+    match /learnLogs/{logId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // practiceLogs：同上
+    match /practiceLogs/{logId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // badgeLogs：admin 全權，會員可讀並更新領取狀態
+    match /badgeLogs/{logId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow write:  if isAdmin();
+      allow update: if isMember(resource.data.memberId) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["status", "claimedAt", "claimedBy", "disputeReason", "disputedAt", "disputedBy"]);
+    }
+
+    // certRecords：admin 全權，會員可讀自己的
+    match /certRecords/{recordId} {
+      allow read:  if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow write: if isAdmin();
+    }
+
+    // achievements：admin 全權，會員可讀
+    match /achievements/{achId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // externalComps：admin 全權，會員可讀寫自己的
+    match /externalComps/{compId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // auditLogs：只有 admin 可讀，系統自動寫入
+    match /auditLogs/{logId} {
+      allow read:  if isAdmin();
+      allow write: if isLoggedIn(); // 由 server-side functions 寫入
+    }
+  }
+}
