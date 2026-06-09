@@ -14,22 +14,22 @@ const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
 export default function MemberHome({ onPageChange }) {
   const { profile } = useAuth();
-  const [results, setResults]         = useState([]);
-  const [badgeLogs, setBadgeLogs]     = useState([]);
-  const [certRecords, setCertRecords] = useState([]);
+  const [results, setResults]             = useState([]);
+  const [badgeLogs, setBadgeLogs]         = useState([]);
+  const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
-  const [unreadNotif, setUnreadNotif] = useState(0);
-  const [showShare, setShowShare] = useState(false);
-  const [dexGrants, setDexGrants] = useState([]);
-  const [dexConfig, setDexConfig] = useState({ physicalMax: 10, pointMax: 10 });
-  const [loading, setLoading]         = useState(true);
+  const [unreadNotif, setUnreadNotif]     = useState(0);
+  const [showShare, setShowShare]         = useState(false);
+  const [dexGrants, setDexGrants]         = useState([]);
+  const [dexConfig, setDexConfig]         = useState({ physicalMax: 10, pointMax: 10 });
+  const [loading, setLoading]             = useState(true);
 
   useEffect(() => {
     if (!profile?.id) return;
     Promise.all([getMemberResults(profile.id), getCertRecords(profile.id)]).then(([r, c]) => {
       setResults(r); setCertRecords(c); setLoading(false);
     });
-    const unsub = subscribeBadgeLogs(profile.id, setBadgeLogs);
+    const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
     const unsub2 = subscribeCertification(profile.id, setCertification);
     const unsub3 = subscribeNotifications(profile.id, list => {
       const n = list.filter(x =>
@@ -44,7 +44,7 @@ export default function MemberHome({ onPageChange }) {
   }, [profile?.id]);
 
   const pendingBadges = badgeLogs.filter(l => l.status === "pending_claim");
-  const recentResults = [...results].sort((a,b)=>(b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,5);
+  const recentResults = [...results].sort((a,b) => (b.submittedAt?.seconds||0)-(a.submittedAt?.seconds||0)).slice(0,5);
   const thisYear = new Date().getFullYear();
 
   function certOf(bowType) {
@@ -61,6 +61,23 @@ export default function MemberHome({ onPageChange }) {
       {showShare && <ShareCard onClose={() => setShowShare(false)} />}
       <HonorTicker memberId={profile?.id} onGoPage={onPageChange} />
       <DailyQuest />
+
+      {/* 打怪快捷入口 */}
+      <button onClick={() => onPageChange("monster")}
+        className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+        style={{ background: "linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
+        <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 pointer-events-none">👹</div>
+        <div className="relative flex items-center justify-between">
+          <div>
+            <div className="text-xs font-black tracking-widest text-purple-200 mb-0.5">⚔️ RPG 打怪模式</div>
+            <div className="text-white font-black text-base">選怪物，射箭打怪，開寶箱！</div>
+          </div>
+          <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">
+            立即挑戰 →
+          </div>
+        </div>
+      </button>
+
       {pendingBadges.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="text-amber-700 font-bold text-sm mb-2">🎖️ 你有 {pendingBadges.length} 個徽章待確認領取！</div>
@@ -79,6 +96,7 @@ export default function MemberHome({ onPageChange }) {
         </div>
       )}
 
+      {/* 狀態卡 */}
       <Card className="p-5 bg-gradient-to-br from-blue-600 to-blue-800 border-0 text-white">
         <div className="flex justify-between mb-4">
           <div>
@@ -102,10 +120,8 @@ export default function MemberHome({ onPageChange }) {
             })()}
           </div>
           <div className="flex items-start gap-2">
-            <button onClick={() => setShowShare(true)}
-              className="text-2xl leading-none" title="生成分享卡">📸</button>
-            <button onClick={() => onPageChange("notifications")}
-              className="relative text-3xl leading-none" title="訊息中心">
+            <button onClick={() => setShowShare(true)} className="text-2xl leading-none" title="生成分享卡">📸</button>
+            <button onClick={() => onPageChange("notifications")} className="relative text-3xl leading-none" title="訊息中心">
               🔔
               {unreadNotif > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
@@ -132,7 +148,7 @@ export default function MemberHome({ onPageChange }) {
         </div>
       </Card>
 
-      {/* 年度檢定級別小卡（依級別配色）*/}
+      {/* 年度檢定 */}
       <Card className="p-4">
         <ST>{thisYear} 年度檢定</ST>
         <div className="grid grid-cols-3 gap-3 mt-1">
@@ -140,7 +156,6 @@ export default function MemberHome({ onPageChange }) {
             const bt = BOW_TYPES[bk];
             const { score, level } = certOf(bk);
             const has = score > 0;
-            // 外框：精英/菁英金、進階紫、中級藍、初級綠、入門/無灰
             const frameByLevel = {
               入門: "bg-gray-50 border-gray-200",
               初級: "bg-emerald-50 border-emerald-200",
@@ -170,44 +185,52 @@ export default function MemberHome({ onPageChange }) {
         </div>
       </Card>
 
-      {recentResults.length>0&&(
+      {recentResults.length > 0 && (
         <Card className="p-4">
           <ST>最近成績</ST>
-          {recentResults.map(r=>{
-            const tc=COMP_TYPE_COLOR[r.compType]||{};
-            return <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
-              <div className="flex-1">
-                <div className="text-gray-700 text-sm font-medium">{r.compTitle||"—"}</div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {r.compType&&<span className={`text-xs font-bold ${tc.text}`}>{r.compType}</span>}
-                  <span className="text-gray-400 text-xs">{r.submittedAt?fmtDT(r.submittedAt):(r.date||"")}</span>
+          {recentResults.map(r => {
+            const tc = COMP_TYPE_COLOR[r.compType] || {};
+            return (
+              <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
+                <div className="flex-1">
+                  <div className="text-gray-700 text-sm font-medium">{r.compTitle||"—"}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {r.compType && <span className={`text-xs font-bold ${tc.text}`}>{r.compType}</span>}
+                    <span className="text-gray-400 text-xs">{r.submittedAt ? fmtDT(r.submittedAt) : (r.date||"")}</span>
+                  </div>
                 </div>
+                <div className="text-blue-600 font-black text-2xl">{r.total}</div>
               </div>
-              <div className="text-blue-600 font-black text-2xl">{r.total}</div>
-            </div>;
+            );
           })}
-          <button onClick={()=>onPageChange("history")} className="text-blue-600 text-xs font-semibold mt-2">查看全部成績 →</button>
+          <button onClick={() => onPageChange("history")} className="text-blue-600 text-xs font-semibold mt-2">查看全部成績 →</button>
         </Card>
       )}
     </div>
   );
 }
 
-function ClaimBtn({logId,memberId}){
-  const [done,setDone]=useState(false);
-  async function claim(){const{claimBadge}=await import("../../lib/db");await claimBadge(logId,memberId);setDone(true);}
-  if(done)return<span className="text-green-600 text-xs font-bold">✅ 已確認</span>;
-  return<button onClick={claim} className="text-xs bg-green-600 text-white font-bold px-2 py-1 rounded-lg">確認領取</button>;
+function ClaimBtn({ logId, memberId }) {
+  const [done, setDone] = useState(false);
+  async function claim() { const { claimBadge } = await import("../../lib/db"); await claimBadge(logId, memberId); setDone(true); }
+  if (done) return <span className="text-green-600 text-xs font-bold">✅ 已確認</span>;
+  return <button onClick={claim} className="text-xs bg-green-600 text-white font-bold px-2 py-1 rounded-lg">確認領取</button>;
 }
 
-function DisputeBtn({logId,memberId}){
-  const [show,setShow]=useState(false); const [reason,setReason]=useState("");
-  async function submit(){const{reportBadgeError}=await import("../../lib/db");await reportBadgeError(logId,memberId,reason);setShow(false);}
-  if(show)return<div className="flex gap-1"><input value={reason} onChange={e=>setReason(e.target.value)} placeholder="說明原因" className="text-xs border border-gray-300 rounded px-2 py-1 w-24"/><button onClick={submit} className="text-xs bg-red-500 text-white px-2 py-1 rounded">回報</button><button onClick={()=>setShow(false)} className="text-xs text-gray-400">取消</button></div>;
-  return<button onClick={()=>setShow(true)} className="text-xs text-red-400 font-medium">有誤？</button>;
+function DisputeBtn({ logId, memberId }) {
+  const [show, setShow] = useState(false);
+  const [reason, setReason] = useState("");
+  async function submit() { const { reportBadgeError } = await import("../../lib/db"); await reportBadgeError(logId, memberId, reason); setShow(false); }
+  if (show) return (
+    <div className="flex gap-1">
+      <input value={reason} onChange={e => setReason(e.target.value)} placeholder="說明原因" className="text-xs border border-gray-300 rounded px-2 py-1 w-24" />
+      <button onClick={submit} className="text-xs bg-red-500 text-white px-2 py-1 rounded">回報</button>
+      <button onClick={() => setShow(false)} className="text-xs text-gray-400">取消</button>
+    </div>
+  );
+  return <button onClick={() => setShow(true)} className="text-xs text-red-400 font-medium">有誤？</button>;
 }
 
-// 首頁簡化射手證徽章（灰/藍/金）
 function CertLevelPip({ level }) {
   const map = {
     none: { label: "灰證", cls: "bg-gray-400/40 text-white" },
