@@ -1019,25 +1019,6 @@ export async function recordMonsterSession(memberId) {
   } catch (e) { console.warn("recordMonsterSession:", e?.message); }
 }
  
-// 儲存戰鬥記錄
-export async function saveMonsterLog(memberId, data) {
-  try {
-    await addDoc(collection(db, C_MONSTER_LOGS), {
-      memberId,
-      monsterName: data.monsterName || "",
-      monsterId:   data.monsterId   || "",
-      result:      data.result      || "lose",
-      rounds:      data.rounds      || 0,
-      lootName:    data.lootName    || null,
-      lootIcon:    data.lootIcon    || null,
-      lootType:    data.lootType    || null,
-      mode:        data.mode        || "novice",
-      battleMode:  data.battleMode  || "score",
-      createdAt:   serverTimestamp(),
-    });
-  } catch (e) { console.warn("saveMonsterLog:", e?.message); }
-}
- 
 // 取得戰鬥記錄
 export async function getMonsterLogs(memberId) {
   try {

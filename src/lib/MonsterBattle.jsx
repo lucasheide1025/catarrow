@@ -12,7 +12,7 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { MONSTERS, BODY_PARTS, TIER_LABEL, calcArcherStats, calcDamage, calcCounterDamage, resolveHitPart } from "../../lib/monsterData";
 import { getLootTable, drawLoot, isRareLoot } from "../../lib/lootTable";
 import LootBox from "./LootBox";
-import { drawMaterials, getMaterialCount, MATERIALS } from "../../lib/monsterMaterials";
+import { drawMaterial, MATERIALS } from "../../lib/monsterMaterials";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
 import BattleCard from "./BattleCard";
@@ -378,8 +378,9 @@ setMonsterHP(boostedHP);
       const lootItem = drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
       // 材料掉落
-      const matCount = getMaterialCount(monster.tier);
-      const mats = drawMaterials(monster.id, matCount);
+      const matCountMap = { easy: 1, normal: 2, hard: 3, boss: 3 };
+const matCount = matCountMap[monster.tier] || 1;
+const mats = Array.from({ length: matCount }, () => drawMaterial(monster.id, monster.tier)).filter(Boolean);
       setDroppedMaterials(mats);
       if (mats.length > 0 && profile?.id && !isGuest) {
         addMaterials(profile.id, mats).catch(() => {});
