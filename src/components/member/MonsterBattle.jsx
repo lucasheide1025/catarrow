@@ -44,7 +44,36 @@ const BATTLE_CSS = `
 @keyframes mb-chest  { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-14px) scale(1.12)} 60%{transform:translateY(-4px) scale(1.05)} }
 @keyframes mb-hit    { 0%{transform:scale(1)} 30%{transform:scale(1.15)} 60%{transform:scale(.95)} 100%{transform:scale(1)} }
 @keyframes mb-crit   { 0%{transform:scale(1) rotate(0)} 20%{transform:scale(1.3) rotate(-5deg)} 50%{transform:scale(1.2) rotate(3deg)} 100%{transform:scale(1) rotate(0)} }
+@keyframes mb-float  { 0%{transform:translateY(0);opacity:1} 100%{transform:translateY(-30px);opacity:0} }
 `;
+
+// 攻擊文字池（依部位+傷害量）
+const HIT_TEXTS = {
+  head:    ["頭骨碎裂！💀","眼冒金星！😵","頭部重創！🤕","正中眉心！🎯","爆頭！💥"],
+  neck:    ["頸部命中！🎯","咽喉要害！⚡","頸動脈！🩸","精準頸擊！"],
+  chest:   ["胸腔震動！","心跳加速！🫀","肋骨斷了！","正中胸口！💢"],
+  belly:   ["腹部重擊！","腸子都出來了！😱","腹腔命中！","肚子痛！🤢"],
+  arm:     ["手臂受傷！","武器打飛！💨","手臂擦過！","側翼命中！"],
+  groin:   ["要害！😱","下三路！⚡","鼠蹊重創！","痛到跳腳！🦵"],
+  heart:   ["心臟穿透！❤️‍🔥","致命一擊！💔","心跳停止！☠️","CRITICAL！❤️"],
+  kidney:  ["腎臟破碎！🫘","內臟劇痛！😭","腰部重擊！","致命內傷！"],
+  lung:    ["肺葉穿透！🫁","呼吸困難！😤","氣胸！🫧","胸腔積血！"],
+  balls:   ["GG了！💥","天下第一痛！😭","不孝有三！⚡","後代斷絕！"],
+  miss:    ["嗖～沒中","靶紙在哪？😅","飛過去了！","差一點！"],
+};
+const DMGCOLOR = { low:"#86efac", mid:"#fbbf24", high:"#f97316", crit:"#ef4444", organ:"#c084fc" };
+
+function getHitText(partId) {
+  const pool = HIT_TEXTS[partId] || HIT_TEXTS.chest;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function getDmgColor(dmg, isCrit, isOrgan) {
+  if (isOrgan) return DMGCOLOR.organ;
+  if (isCrit) return DMGCOLOR.crit;
+  if (dmg >= 40) return DMGCOLOR.high;
+  if (dmg >= 20) return DMGCOLOR.mid;
+  return DMGCOLOR.low;
+}
 
 export default function MonsterBattle({ onBack }) {
   const { profile } = useAuth();
@@ -148,36 +177,38 @@ export default function MonsterBattle({ onBack }) {
       const score = arrows[i];
       let part, dmg;
 
-      if (battleMode === "zombie") {
-        part = resolveHitPart(score, curUnlocked);
-        if (part.id === "chest") curUnlocked = new Set([...curUnlocked, "chest"]);
-        if (part.id === "belly") curUnlocked = new Set([...curUnlocked, "belly"]);
-        if (part.id === "groin") curUnlocked = new Set([...curUnlocked, "groin"]);
-        setUnlockedParts(curUnlocked);
-        dmg = calcDamage({ score, archerATK: (archerStats?.atk || 10) + archerATKMod, monsterDEF: monster.def, partMult: part.mult });
-        if (part.id === "head") headHitCount++;
-        if (score === 0 || part.mult === 0) {
-          sfxSoftFail();
-          addLog({ type: "miss", text: `${i+1}箭　💨 脫靶！` });
-        } else if (part.mult >= 2.5) {
-          sfxEpic();   // 高倍率部位：史詩音效
-          addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon}${part.name}　傷害 ${dmg} 🔥` });
-        } else {
-          sfxTap();
-          addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon}${part.name}　傷害 ${dmg}` });
-        }
+      // 兩種模式都判定部位
+      part = resolveHitPart(score, curUnlocked);
+      if (part.id === "chest") curUnlocked = new Set([...curUnlocked, "chest"]);
+      if (part.id === "belly") curUnlocked = new Set([...curUnlocked, "belly"]);
+      if (part.id === "groin") curUnlocked = new Set([...curUnlocked, "groin"]);
+      setUnlockedParts(curUnlocked);
+
+      const effATK2 = (archerStats?.atk || 10) + archerATKMod;
+      dmg = calcDamage({ score, archerATK: effATK2, monsterDEF: monster.def, partMult: part.mult });
+      if (part.id === "head") headHitCount++;
+
+      const isOrganPart = ["heart","kidney","lung","balls"].includes(part.id);
+      const hitText = getHitText(part.id);
+
+      if (part.mult === 0) {
+        // 脫靶
+        sfxSoftFail();
+        addLog({ type: "miss", text: `${i+1}箭　${hitText}　(${score}分)` });
+      } else if (isOrganPart) {
+        // 器官命中：最強音效
+        sfxEpic();
+        addLog({ type: "hit_organ", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+      } else if (part.mult >= 1.8 || score >= 10) {
+        // 高倍部位或X分
+        sfxEpic();
+        addLog({ type: "hit_crit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+      } else if (score >= 8) {
+        sfxSuccess();
+        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
       } else {
-        dmg = calcDamage({ score, archerATK: (archerStats?.atk || 10) + archerATKMod, monsterDEF: monster.def, partMult: score === 0 ? 0 : 1.0 });
-        if (score === 0) {
-          sfxSoftFail();
-          addLog({ type: "miss", text: `${i+1}箭　💨 脫靶！` });
-        } else if (score >= 9) {
-          sfxSuccess();  // 高分：成功音效
-          addLog({ type: "hit", text: `${i+1}箭 ${score}分　傷害 ${dmg} ⚡` });
-        } else {
-          sfxTap();
-          addLog({ type: "hit", text: `${i+1}箭 ${score}分　傷害 ${dmg}` });
-        }
+        sfxTap();
+        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
       }
 
       curMonHP = Math.max(0, curMonHP - dmg);
@@ -654,8 +685,10 @@ export default function MonsterBattle({ onBack }) {
               e.type==="counter"    ? "text-orange-300"            :
               e.type==="total"      ? "text-cyan-300 font-bold"   :
               e.type==="loot"       ? "text-yellow-300 font-black":
-              e.type==="hit"        ? "text-emerald-300"           :
-              e.type==="miss"       ? "text-gray-500"              :
+              e.type==="hit_organ"  ? "text-purple-300 font-black"  :
+              e.type==="hit_crit"   ? "text-orange-300 font-bold"   :
+              e.type==="hit"        ? "text-emerald-300"            :
+              e.type==="miss"       ? "text-gray-500"               :
               "text-gray-400"
             }`}>{e.text}</div>
           ))}

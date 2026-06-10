@@ -40,42 +40,70 @@ export const BODY_PARTS = [
   { id: "miss",   name: "脫靶",   icon: "💨", mult: 0,    locked: null,    scoreRange: [0,  8]  },
 ];
 
-// ─── 根據單箭分數隨機判定命中部位（殭屍靶紙模式）────────
-// 分數越高，越容易觸發高倍率部位
-// 有解鎖器官才能觸發器官部位
+// ─── 根據單箭分數隨機判定命中部位 ────────────────────────
+// 規則：
+//   M(0)   → 必定脫靶
+//   1~5    → 高機率脫靶，偶爾命中手部/腹部
+//   6~7    → 低分部位為主（手部/腹部）
+//   8~9    → 中等部位（腹部/胸部/鼠蹊）
+//   10(X)  → 高等部位為主（胸部/頸部/頭部），完全不脫靶
+//   器官   → 需先解鎖對應部位才有機率觸發
 export function resolveHitPart(score, unlockedParts) {
-  const rand = Math.random();
-  const scorePct = score / 60; // 0~1
+  if (score === 0) return BODY_PARTS.find(p => p.id === "miss");
 
-  // 高分觸發器官（需解鎖）
-  if (score >= 55 && rand < 0.15 && unlockedParts.has("groin")) return BODY_PARTS.find(p => p.id === "balls");
-  if (score >= 55 && rand < 0.25 && unlockedParts.has("chest")) return BODY_PARTS.find(p => p.id === "heart");
-  if (score >= 52 && rand < 0.20 && unlockedParts.has("belly")) return BODY_PARTS.find(p => p.id === "kidney");
-  if (score >= 50 && rand < 0.20 && unlockedParts.has("chest")) return BODY_PARTS.find(p => p.id === "lung");
+  // 建立候選部位權重表（依分數調整）
+  let candidates;
 
-  // 一般部位：分數越高命中越好的部位
-  if (score === 0)            return BODY_PARTS.find(p => p.id === "miss");
-  if (score <= 8  && rand < 0.5) return BODY_PARTS.find(p => p.id === "miss");
-  if (score >= 50 && rand < 0.40) return BODY_PARTS.find(p => p.id === "head");
-  if (score >= 42 && rand < 0.25) return BODY_PARTS.find(p => p.id === "groin");
-  if (score >= 44 && rand < 0.20) return BODY_PARTS.find(p => p.id === "neck");
-  if (score >= 35 && rand < 0.35) return BODY_PARTS.find(p => p.id === "chest");
-  if (score >= 25 && rand < 0.30) return BODY_PARTS.find(p => p.id === "belly");
-  if (score >= 15 && rand < 0.25) return BODY_PARTS.find(p => p.id === "arm");
+  if (score <= 5) {
+    candidates = [
+      { id: "miss",  w: 60 },
+      { id: "arm",   w: 25 },
+      { id: "belly", w: 15 },
+    ];
+  } else if (score <= 7) {
+    candidates = [
+      { id: "miss",  w: 10 },
+      { id: "arm",   w: 35 },
+      { id: "belly", w: 35 },
+      { id: "chest", w: 15 },
+      { id: "groin", w: 5  },
+    ];
+  } else if (score <= 9) {
+    candidates = [
+      { id: "arm",   w: 10 },
+      { id: "belly", w: 25 },
+      { id: "chest", w: 30 },
+      { id: "groin", w: 20 },
+      { id: "neck",  w: 10 },
+      { id: "head",  w: 5  },
+    ];
+  } else {
+    // 10分(X)：完全不脫靶，以高部位為主
+    candidates = [
+      { id: "chest", w: 25 },
+      { id: "groin", w: 20 },
+      { id: "neck",  w: 25 },
+      { id: "head",  w: 30 },
+    ];
+  }
 
-  // fallback：按分數比例選部位
-  const candidates = [
-    { id: "miss",  weight: Math.max(0, 1 - scorePct * 3) },
-    { id: "arm",   weight: 0.15 },
-    { id: "belly", weight: 0.20 },
-    { id: "chest", weight: 0.25 * scorePct },
-    { id: "neck",  weight: 0.15 * scorePct },
-    { id: "head",  weight: 0.25 * scorePct * scorePct },
-    { id: "groin", weight: 0.15 * scorePct },
-  ];
-  const total = candidates.reduce((s, c) => s + c.weight, 0);
+  // 器官加成（需解鎖，在高分時有額外機率）
+  if (score >= 9) {
+    if (unlockedParts.has("chest")) candidates.push({ id: "heart", w: score === 10 ? 8 : 3 });
+    if (unlockedParts.has("belly")) candidates.push({ id: "kidney", w: score === 10 ? 6 : 2 });
+    if (unlockedParts.has("chest")) candidates.push({ id: "lung",   w: score === 10 ? 5 : 2 });
+  }
+  if (score >= 10 && unlockedParts.has("groin")) {
+    candidates.push({ id: "balls", w: 10 });
+  }
+
+  // 加權抽籤
+  const total = candidates.reduce((s, c) => s + c.w, 0);
   let r = Math.random() * total;
-  for (const c of candidates) { r -= c.weight; if (r <= 0) return BODY_PARTS.find(p => p.id === c.id); }
+  for (const c of candidates) {
+    r -= c.w;
+    if (r <= 0) return BODY_PARTS.find(p => p.id === c.id) || BODY_PARTS.find(p => p.id === "belly");
+  }
   return BODY_PARTS.find(p => p.id === "belly");
 }
 
