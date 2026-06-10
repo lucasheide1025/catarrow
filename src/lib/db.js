@@ -1108,8 +1108,8 @@ export function subscribeMaterials(memberId, callback) {
   );
 }
  
-// ─── 注意：把舊的 saveMonsterLog 整個替換為下方版本 ─────────
-// 新增 materials 欄位（儲存本場掉落的材料 id 陣列）
+// ── db.js 中把舊的 saveMonsterLog 整個替換成這個版本 ──────
+// 新增 roundScores 欄位（每回合分數陣列）
 export async function saveMonsterLog(memberId, data) {
   try {
     await addDoc(collection(db, C_MONSTER_LOGS), {
@@ -1123,7 +1123,8 @@ export async function saveMonsterLog(memberId, data) {
       lootType:    data.lootType    || null,
       mode:        data.mode        || "novice",
       battleMode:  data.battleMode  || "score",
-      materials:   data.materials   || [],   // ✅ 新增：本場掉落的材料 id 陣列
+      materials:   data.materials   || [],
+      roundScores: data.roundScores || [],  // ✅ 新增：[{round, scores:[], total}]
       createdAt:   serverTimestamp(),
     });
   } catch (e) { console.warn("saveMonsterLog:", e?.message); }

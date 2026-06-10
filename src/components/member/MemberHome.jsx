@@ -131,7 +131,7 @@ export default function MemberHome({ onPageChange }) {
       )}
 
       {/* ── 射手狀態卡（可換主題）──────────────────────────── */}
-      <Card className="p-5 border-0 text-white relative overflow-hidden"
+      <div className="p-5 border-0 text-white relative overflow-hidden"
         style={{ background: currentTheme.bg }}>
 
         {/* 宇宙黑主題：星星背景 */}
@@ -237,7 +237,7 @@ export default function MemberHome({ onPageChange }) {
             </div>
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* 年度檢定 */}
       <Card className="p-4">
