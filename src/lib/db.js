@@ -6,6 +6,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
+import { POTIONS } from "./itemData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -1125,6 +1126,7 @@ export async function saveMonsterLog(memberId, data) {
       mode:        data.mode        || "novice",
       battleMode:  data.battleMode  || "score",
       materials:   data.materials   || [],
+      chestType:   data.chestType   || null,  // ✅ 新增：掉落的寶箱種類
       roundScores: data.roundScores || [],  // ✅ 新增：[{round, scores:[], total}]
       createdAt:   serverTimestamp(),
     });
@@ -1161,5 +1163,125 @@ export async function upgradeMaterial(memberId, materialId) {
   } catch (e) {
     console.warn("upgradeMaterial:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
+  }
+}
+ 
+// ─── 寶箱庫存 ──────────────────────────────────────────────
+// 集合：chestInventory / 文件 ID = memberId
+// 結構：{ chests: [{ id, type, family, tier, from, ts }], updatedAt }
+ 
+const C_CHESTS = "chestInventory";
+ 
+// 新增寶箱（打贏怪物時呼叫，chests = [chest, ...]）
+export async function addChests(memberId, chests) {
+  if (!memberId || !chests?.length) return;
+  try {
+    const ref  = doc(db, C_CHESTS, memberId);
+    const snap = await getDoc(ref);
+    const list = snap.exists() ? (snap.data().chests || []) : [];
+    await setDoc(ref, { chests: [...list, ...chests], updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("addChests:", e?.message); }
+}
+ 
+// 訂閱寶箱庫存（即時）
+export function subscribeChests(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_CHESTS, memberId),
+    snap => callback(snap.exists() ? (snap.data().chests || []) : []),
+    err  => { console.warn("subscribeChests:", err.message); callback([]); }
+  );
+}
+ 
+// 開箱：移除寶箱 + 把抽出的內容寫進材料/藥劑庫存
+// contents = { materials:[材料物件], potions:[藥劑物件] }（由 itemData.openChestContents 抽出）
+export async function openChest(memberId, chestId, contents) {
+  if (!memberId || !chestId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const ref  = doc(db, C_CHESTS, memberId);
+    const snap = await getDoc(ref);
+    const list = snap.exists() ? (snap.data().chests || []) : [];
+    if (!list.some(c => c.id === chestId)) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
+    await setDoc(ref, { chests: list.filter(c => c.id !== chestId), updatedAt: serverTimestamp() }, { merge: true });
+
+    if (contents?.materials?.length) await addMaterials(memberId, contents.materials);
+    if (contents?.potions?.length)   await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
+    return { ok: true };
+  } catch (e) {
+    console.warn("openChest:", e?.message);
+    return { ok: false, reason: "系統忙碌中，請稍後再試" };
+  }
+}
+ 
+// ─── 藥劑庫存 ──────────────────────────────────────────────
+// 集合：potionInventory / 文件 ID = memberId
+// 結構：{ items: { potionId: count }, updatedAt }
+ 
+const C_POTIONS = "potionInventory";
+ 
+// 批次新增藥劑（potions = [{ id, count }]）
+export async function addPotions(memberId, potions) {
+  if (!memberId || !potions?.length) return;
+  try {
+    const ref  = doc(db, C_POTIONS, memberId);
+    const snap = await getDoc(ref);
+    const items = snap.exists() ? (snap.data().items || {}) : {};
+    potions.forEach(p => { items[p.id] = (items[p.id] || 0) + (p.count || 1); });
+    await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("addPotions:", e?.message); }
+}
+ 
+// 訂閱藥劑庫存（即時）
+export function subscribePotions(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_POTIONS, memberId),
+    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    err  => { console.warn("subscribePotions:", err.message); callback({}); }
+  );
+}
+ 
+// 合成藥劑：檢查配方材料 → 扣材料 → 加 1 瓶藥
+export async function craftPotion(memberId, potionId) {
+  if (!memberId || !potionId) return { ok: false, reason: "參數錯誤" };
+  const potion = POTIONS.find(p => p.id === potionId);
+  if (!potion?.recipe?.length) return { ok: false, reason: "這個藥劑沒有合成配方" };
+  try {
+    // 1. 檢查並扣除材料
+    const matRef  = doc(db, C_MATERIALS, memberId);
+    const matSnap = await getDoc(matRef);
+    const inventory = matSnap.exists() ? (matSnap.data().items || {}) : {};
+    for (const r of potion.recipe) {
+      if ((inventory[r.id] || 0) < r.count) {
+        const mat = MATERIALS.find(m => m.id === r.id);
+        return { ok: false, reason: `材料不足：「${mat?.name || r.id}」需要 ${r.count} 個，目前 ${inventory[r.id] || 0} 個` };
+      }
+    }
+    potion.recipe.forEach(r => { inventory[r.id] = (inventory[r.id] || 0) - r.count; });
+    await setDoc(matRef, { items: inventory, updatedAt: serverTimestamp() }, { merge: true });
+
+    // 2. 加入藥劑
+    await addPotions(memberId, [{ id: potionId, count: 1 }]);
+    return { ok: true, potion };
+  } catch (e) {
+    console.warn("craftPotion:", e?.message);
+    return { ok: false, reason: "系統忙碌中，請稍後再試" };
+  }
+}
+ 
+// 使用藥劑（戰鬥開始時呼叫，potionIds = ["heal_s", ...] 每個扣 1 瓶）
+export async function usePotions(memberId, potionIds) {
+  if (!memberId || !potionIds?.length) return { ok: true };
+  try {
+    const ref  = doc(db, C_POTIONS, memberId);
+    const snap = await getDoc(ref);
+    const items = snap.exists() ? (snap.data().items || {}) : {};
+    for (const pid of potionIds) {
+      if ((items[pid] || 0) < 1) return { ok: false, reason: "藥劑數量不足" };
+    }
+    potionIds.forEach(pid => { items[pid] = (items[pid] || 0) - 1; });
+    await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.warn("usePotions:", e?.message);
+    return { ok: false, reason: "系統忙碌中" };
   }
 }
