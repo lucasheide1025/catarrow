@@ -79,6 +79,9 @@ export default function MonsterBattle({ onBack }) {
   const [animHit,       setAnimHit]       = useState(false);
   const [animCounter,   setAnimCounter]   = useState(false);
   const logEndRef = useRef(null);
+  // 怪物選擇（不能放在 if 條件裡，必須在頂層）
+  const [randMonsters]  = useState(() => [...MONSTERS].sort(() => Math.random() - 0.5).slice(0, 4));
+  const [pickedMonster, setPickedMonster] = useState(null);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -338,13 +341,6 @@ export default function MonsterBattle({ onBack }) {
   // ── 畫面 ──────────────────────────────────────────────
 
   if (phase === "select") {
-    // 隨機抽出怪物（每次進來重新抽）
-    const [randMonsters] = useState(() => {
-      const shuffled = [...MONSTERS].sort(() => Math.random() - 0.5);
-      return shuffled.slice(0, 4); // 顯示4隻讓學生看，但實際隨機抽一隻
-    });
-    const [pickedMonster, setPickedMonster] = useState(null);
-
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
