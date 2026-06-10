@@ -24,6 +24,7 @@ const CARD_THEMES = [
   { id:"steel",  label:"鋼鐵灰", bg:"linear-gradient(135deg,#374151,#1f2937)",    dot:"#d1d5db" },
   { id:"cosmos", label:"宇宙黑", bg:"linear-gradient(135deg,#0f172a,#1e1b4b)",    dot:"#818cf8" },
   { id:"bluebay", label:"藍灣綠", bg:"linear-gradient(135deg,#00a1b4,#097988)",    dot:"#00a1b4" },
+  { id: "bluebay", label: "紅月豔", bg: "linear-gradient(135deg, #B91C1C 0%, #E11D48 25%, #9333EA 55%, #2563EB 80%, #06B6D4 100%)", dot: "#ff0000" },
 ];
 
 function useCardTheme() {
