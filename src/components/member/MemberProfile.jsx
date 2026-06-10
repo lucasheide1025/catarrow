@@ -127,7 +127,7 @@ export default function MemberProfile({ onPageChange }) {
     <div className="p-4 flex flex-col gap-4">
 
       {/* ── 狀態卡（可換主題）─────────────────────────────── */}
-      <Card className="p-5 border-0 text-white relative overflow-hidden"
+      <div className="p-5 border-0 text-white relative overflow-hidden"
         style={{ background: currentTheme.bg }}>
 
         {/* 宇宙黑：星星 */}
@@ -190,7 +190,7 @@ export default function MemberProfile({ onPageChange }) {
             })()}
           </div>
         </div>
-      </Card>
+      </div>
 
       <ArcherCard profile={profile} certification={certification} onExam={() => onPageChange("certexam")} />
 
