@@ -26,6 +26,7 @@ import MemberNotifications from "../components/member/MemberNotifications";
 import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import MemberDex          from "../components/member/MemberDex";
+import MonsterBattle from "../components/member/MonsterBattle";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -92,7 +93,7 @@ const adminNav = [
         </div>
         <div style={{paddingBottom:"80px"}}>
           {page==="home"        && <MemberHome onPageChange={setPage}/>}
-          {page==="comps"       && <MemberComps onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
+          {page==="comps"       && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
           {page==="comp-detail" && selComp && !scoring && (
             <CompDetail comp={selComp} profile={profile}
               onBack={()=>setPage("comps")}
@@ -114,12 +115,13 @@ const adminNav = [
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
           {page==="notifications" && <MemberNotifications/>}
           {page==="dex" && <MemberDex onBack={()=>setPage("profile")}/>}
+            {page==="monster" && <MonsterBattle onBack={()=>setPage("comps")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||page==="comp-detail"&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <span style={{fontSize:"18px"}}>{n.icon}</span>
               <span style={{fontSize:"11px",fontWeight:"600"}}>{n.label}</span>
             </button>
