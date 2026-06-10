@@ -1,5 +1,6 @@
 // src/components/admin/AdminMembers.jsx
 import { useState, useEffect, useMemo } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   getMembers, createMember, updateMember, deleteMember,
   getAuditLogs, addBadge, getCertRecords, upsertCertRecord,
@@ -46,7 +47,7 @@ export default function AdminMembers() {
   const [examModal,   setExamModal]   = useState(null);
   const [dispModal,   setDispModal]   = useState(null);
   const [delConfirm,  setDelConfirm]  = useState(null);
-  const [guestModal,  setGuestModal]  = useState(false); // ✅ 訪客連結 Modal
+  const [guestModal,  setGuestModal]  = useState(false);
 
   useEffect(() => {
     loadMembers();
@@ -107,9 +108,8 @@ export default function AdminMembers() {
       <ToastContainer />
       <div className="flex justify-between items-center">
         <h2 className="text-gray-800 font-black text-xl">👥 會員管理</h2>
-        {/* ✅ 加入訪客連結按鈕 */}
         <div className="flex gap-2">
-          <Btn v="secondary" size="sm" onClick={() => setGuestModal(true)}>🔗 訪客連結</Btn>
+          <Btn v="secondary" size="sm" onClick={() => setGuestModal(true)}>📱 訪客 QR</Btn>
           <Btn v="primary"   size="sm" onClick={() => setAddModal(true)}>+ 新增</Btn>
         </div>
       </div>
@@ -159,8 +159,7 @@ export default function AdminMembers() {
       {examModal   && <AdminCertExamModal member={examModal} onClose={() => setExamModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
       {dispModal   && <DisputeModal    member={dispModal} disputeList={disputes[dispModal.id] || []}
                          onClose={() => setDispModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
-      {/* ✅ 訪客連結 Modal */}
-      {guestModal  && <GuestLinkModal onClose={() => setGuestModal(false)} toast={toast} />}
+      {guestModal  && <GuestQRModal onClose={() => setGuestModal(false)} toast={toast} />}
 
       <ConfirmModal open={!!delConfirm} title="確認刪除" message="確定要刪除此會員？此操作無法復原。"
         onConfirm={() => handleDelete(delConfirm)} onCancel={() => setDelConfirm(null)} />
@@ -168,19 +167,20 @@ export default function AdminMembers() {
   );
 }
 
-// ── 訪客連結產生器 ─────────────────────────────────────────
-function GuestLinkModal({ onClose, toast }) {
-  const [link,       setLink]       = useState("");
+// ── 訪客 QR Code Modal ────────────────────────────────────
+function GuestQRModal({ onClose, toast }) {
+  const [url,        setUrl]        = useState("");
   const [expiresAt,  setExpiresAt]  = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [copied,     setCopied]     = useState(false);
 
   async function generate() {
     setGenerating(true);
+    setCopied(false);
     try {
       const { generateGuestToken } = await import("../../lib/db");
       const { token, expiresAt: exp } = await generateGuestToken();
-      const url = `${window.location.origin}?guest=${token}`;
-      setLink(url);
+      setUrl(`${window.location.origin}?guest=${token}`);
       setExpiresAt(exp);
     } catch (e) {
       toast("產生失敗：" + (e?.message || "未知錯誤"));
@@ -188,46 +188,62 @@ function GuestLinkModal({ onClose, toast }) {
     setGenerating(false);
   }
 
-  async function copyLink() {
+  async function copyUrl() {
     try {
-      await navigator.clipboard.writeText(link);
-      toast("連結已複製 ✓");
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
       toast("請手動複製連結");
     }
   }
 
   const expireStr = expiresAt
-    ? new Date(expiresAt).toLocaleString("zh-TW", { hour12:false })
+    ? new Date(expiresAt).toLocaleString("zh-TW", { hour12:false, month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" })
     : "";
 
   return (
-    <Modal open onClose={onClose} title="🔗 產生訪客體驗連結">
+    <Modal open onClose={onClose} title="📱 訪客體驗 QR Code">
       <div className="flex flex-col gap-4">
+
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-700 text-sm">
-          訪客連結有效期限 <strong>3 小時</strong>，掃碼或點連結即可體驗打怪模式，無需登入。
+          產生 QR Code 後讓客人掃描，即可進入 <strong>3 小時</strong>體驗模式，無需登入。
         </div>
 
         <Btn v="primary" onClick={generate} disabled={generating}>
-          {generating ? "產生中…" : "🎲 產生新連結"}
+          {generating ? "產生中…" : "🎲 產生新 QR Code"}
         </Btn>
 
-        {link && (
-          <div className="flex flex-col gap-2">
-            {/* 連結文字（可全選複製）*/}
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 break-all text-xs text-gray-700 font-mono select-all leading-relaxed">
-              {link}
+        {url && (
+          <div className="flex flex-col items-center gap-3">
+            {/* QR Code 主體 */}
+            <div className="bg-white p-4 rounded-2xl shadow-inner border border-gray-200">
+              <QRCodeSVG
+                value={url}
+                size={220}
+                level="M"
+                includeMargin={false}
+                fgColor="#1e293b"
+              />
             </div>
-            <div className="text-gray-400 text-xs text-center">
-              ⏰ 有效至：{expireStr}
+
+            {/* 到期時間 */}
+            <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+              <span>⏰</span>
+              <span>有效至 <strong className="text-gray-700">{expireStr}</strong></span>
             </div>
-            <Btn v="secondary" onClick={copyLink}>📋 複製連結</Btn>
-            <div className="text-center">
-              <a href={link} target="_blank" rel="noreferrer"
-                className="text-blue-500 text-xs underline">
-                在新分頁測試連結
-              </a>
-            </div>
+
+            {/* 複製連結（備用）*/}
+            <button onClick={copyUrl}
+              className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-all ${copied ? "bg-green-50 border-green-300 text-green-700" : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+              {copied ? "✅ 已複製連結" : "📋 複製連結（備用）"}
+            </button>
+
+            {/* 測試連結 */}
+            <a href={url} target="_blank" rel="noreferrer"
+              className="text-blue-500 text-xs underline">
+              在新分頁測試
+            </a>
           </div>
         )}
 
@@ -237,7 +253,7 @@ function GuestLinkModal({ onClose, toast }) {
   );
 }
 
-// ── 緊湊會員卡（格線版）────────────────────────────────────
+// ── 會員卡 ────────────────────────────────────────────────
 function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert, onCertExam, onDispute, onDelete, onResetMonster }) {
   const [expanded, setExpanded] = useState(false);
   const lastLogin  = m.lastLoginAt?.toDate?.() ? fmtDT(m.lastLoginAt) : "未登入";
@@ -586,7 +602,7 @@ function DisputeModal({ member, disputeList, onClose, onDone, operatorId, toast 
 }
 
 function HistoryModal({ member, onClose }) {
-  const [logs, setLogs]     = useState([]);
+  const [logs, setLogs]       = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     import("../../lib/db").then(({ getMemberResults }) => {
