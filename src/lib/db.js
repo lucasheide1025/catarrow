@@ -969,43 +969,14 @@ export async function cancelCheckin(checkinId) {
   try { await deleteDoc(doc(db, C_CHECKIN, checkinId)); }
   catch (e) { console.warn("cancelCheckin:", e?.message); }
 }
-
-const C_MONSTER_LOGS = "monsterLogs";
-
-export async function saveMonsterLog(memberId, data) {
-  try {
-    const ref = await addDoc(collection(db, C_MONSTER_LOGS), {
-      memberId,
-      monsterName: data.monsterName || "",
-      monsterId:   data.monsterId   || "",
-      result:      data.result      || "lose",
-      rounds:      data.rounds      || 0,
-      lootName:    data.lootName    || null,
-      lootIcon:    data.lootIcon    || null,
-      lootType:    data.lootType    || null,
-      mode:        data.mode        || "novice",
-      createdAt:   serverTimestamp(),
-    });
-    return ref.id;
-  } catch (e) { console.warn("saveMonsterLog:", e?.message); }
-}
-
-export async function getMonsterLogs(memberId) {
-  try {
-    const snap = await getDocs(query(
-      collection(db, C_MONSTER_LOGS),
-      where("memberId", "==", memberId),
-      orderBy("createdAt", "desc"),
-      limit(20)
-    ));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) { console.warn("getMonsterLogs:", e?.message); return []; }
-}
-
+ 
+// ─── 打怪模式 ──────────────────────────────────────────────
+ 
 const C_MONSTER_CONFIG  = "monsterConfig";
 const C_MONSTER_SESSION = "monsterSessions";
 const C_MONSTER_LOGS    = "monsterLogs";
-
+ 
+// 每日上限設定
 export async function getMonsterDailyConfig() {
   try {
     const snap = await getDoc(doc(db, C_MONSTER_CONFIG, "default"));
@@ -1013,37 +984,40 @@ export async function getMonsterDailyConfig() {
   } catch {}
   return { dailyMax: 5 };
 }
-
+ 
 export async function saveMonsterDailyConfig(config, operatorId) {
   await setDoc(doc(db, C_MONSTER_CONFIG, "default"),
     { ...config, updatedAt: serverTimestamp(), operatorId }, { merge: true });
 }
-
-
-function todayStr2() {
+ 
+// 日期字串（打怪用，避免與 todayStr 衝突）
+function monsterTodayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-
+ 
+// 檢查今日剩餘次數
 export async function checkMonsterDailyLimit(memberId, dailyMax) {
   try {
-    const id = `${memberId}_${todayStr2()}`;
+    const id = `${memberId}_${monsterTodayStr()}`;
     const snap = await getDoc(doc(db, C_MONSTER_SESSION, id));
     const used = snap.exists() ? (snap.data().count || 0) : 0;
     return Math.max(0, (dailyMax || 5) - used);
   } catch { return dailyMax || 5; }
 }
-
+ 
+// 記錄一次打怪
 export async function recordMonsterSession(memberId) {
   try {
-    const id = `${memberId}_${todayStr2()}`;
+    const id = `${memberId}_${monsterTodayStr()}`;
     const ref = doc(db, C_MONSTER_SESSION, id);
     const snap = await getDoc(ref);
     const count = snap.exists() ? (snap.data().count || 0) + 1 : 1;
-    await setDoc(ref, { memberId, count, date: todayStr2(), updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(ref, { memberId, count, date: monsterTodayStr(), updatedAt: serverTimestamp() }, { merge: true });
   } catch (e) { console.warn("recordMonsterSession:", e?.message); }
 }
-
+ 
+// 儲存戰鬥記錄
 export async function saveMonsterLog(memberId, data) {
   try {
     await addDoc(collection(db, C_MONSTER_LOGS), {
@@ -1061,7 +1035,8 @@ export async function saveMonsterLog(memberId, data) {
     });
   } catch (e) { console.warn("saveMonsterLog:", e?.message); }
 }
-
+ 
+// 取得戰鬥記錄
 export async function getMonsterLogs(memberId) {
   try {
     const snap = await getDocs(query(
