@@ -11,7 +11,8 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { MONSTERS, BODY_PARTS, TIER_LABEL, calcArcherStats, calcDamage, calcCounterDamage, resolveHitPart } from "../../lib/monsterData";
 import { LOOT_TABLE_NOVICE, LOOT_TABLE_VETERAN, drawLoot, isRareLoot } from "../../lib/lootTable";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast } from "../../lib/sound";
+import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
+import BattleCard from "./BattleCard";
 
 const ARROWS_PER_ROUND = 6;   // 每回合6箭
 const ARROWS_PER_COUNTER = 2; // 每2箭怪物反擊一次
@@ -73,9 +74,13 @@ export default function MonsterBattle({ onBack }) {
   const [revived,       setRevived]       = useState(false);
   const [loot,          setLoot]          = useState(null);
   const [lootRevealed,  setLootRevealed]  = useState(false);
+  const [showBattleCard, setShowBattleCard] = useState(false);
   const [currentEvent,  setCurrentEvent]  = useState(null);
   const [skipCounter,   setSkipCounter]   = useState(false);
   const [processing,    setProcessing]    = useState(false); // 防止重複點擊
+  const [totalDmgDealt,   setTotalDmgDealt]   = useState(0);
+  const [totalDmgRecvd,   setTotalDmgRecvd]   = useState(0);
+  const [critCount,       setCritCount]       = useState(0);
   const [animHit,       setAnimHit]       = useState(false);
   const [animCounter,   setAnimCounter]   = useState(false);
   const logEndRef = useRef(null);
@@ -144,9 +149,7 @@ export default function MonsterBattle({ onBack }) {
       let part, dmg;
 
       if (battleMode === "zombie") {
-        // 殭屍模式：根據分數隨機判定部位
         part = resolveHitPart(score, curUnlocked);
-        // 解鎖器官
         if (part.id === "chest") curUnlocked = new Set([...curUnlocked, "chest"]);
         if (part.id === "belly") curUnlocked = new Set([...curUnlocked, "belly"]);
         if (part.id === "groin") curUnlocked = new Set([...curUnlocked, "groin"]);
@@ -154,16 +157,25 @@ export default function MonsterBattle({ onBack }) {
         dmg = calcDamage({ score, archerATK: (archerStats?.atk || 10) + archerATKMod, monsterDEF: monster.def, partMult: part.mult });
         if (part.id === "head") headHitCount++;
         if (score === 0 || part.mult === 0) {
+          sfxSoftFail();
           addLog({ type: "miss", text: `${i+1}箭　💨 脫靶！` });
+        } else if (part.mult >= 2.5) {
+          sfxEpic();   // 高倍率部位：史詩音效
+          addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon}${part.name}　傷害 ${dmg} 🔥` });
         } else {
+          sfxTap();
           addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon}${part.name}　傷害 ${dmg}` });
         }
       } else {
-        // 分數模式：直接用分數算傷害，不判定部位
         dmg = calcDamage({ score, archerATK: (archerStats?.atk || 10) + archerATKMod, monsterDEF: monster.def, partMult: score === 0 ? 0 : 1.0 });
         if (score === 0) {
+          sfxSoftFail();
           addLog({ type: "miss", text: `${i+1}箭　💨 脫靶！` });
+        } else if (score >= 9) {
+          sfxSuccess();  // 高分：成功音效
+          addLog({ type: "hit", text: `${i+1}箭 ${score}分　傷害 ${dmg} ⚡` });
         } else {
+          sfxTap();
           addLog({ type: "hit", text: `${i+1}箭 ${score}分　傷害 ${dmg}` });
         }
       }
@@ -172,6 +184,8 @@ export default function MonsterBattle({ onBack }) {
       setMonsterHP(curMonHP);
       setAnimHit(true);
       setTimeout(() => setAnimHit(false), 600);
+      if (dmg > 0) setTotalDmgDealt(v => v + dmg);
+      if (score >= 10) setCritCount(v => v + 1);
       await delay(1500);
 
       if (curMonHP <= 0) {
@@ -218,9 +232,12 @@ export default function MonsterBattle({ onBack }) {
             : headStunned
               ? `${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
               : `${monster.icon} ${monster.name} 反擊！受到 ${cdmg} 傷害`;
+          if (isCrit) sfxEpic();
+          else sfxBuff();
           addLog({ type: "counter", text: counterTxt });
           curArchHP = Math.max(0, curArchHP - cdmg);
           setArcherHP(curArchHP);
+          if (cdmg > 0) setTotalDmgRecvd(v => v + cdmg);
 
           // 老手模式縮短距離
           if (mode === "veteran" && cdmg > 0) {
@@ -306,6 +323,9 @@ export default function MonsterBattle({ onBack }) {
     setSkipCounter(false);
     setArcherATKMod(0);
     setPhase("battle");
+    setTotalDmgDealt(0);
+    setTotalDmgRecvd(0);
+    setCritCount(0);
     sfxTap();
   }
 
@@ -673,7 +693,12 @@ export default function MonsterBattle({ onBack }) {
               <div className="font-black text-2xl text-gray-800 mb-2">{loot.name}</div>
               <div className="text-gray-500 text-sm px-4">{loot.desc}</div>
             </div>
-            <div className="flex gap-3 w-full mt-2">
+            <button onClick={() => setShowBattleCard(true)}
+              className="w-full py-3 rounded-xl font-black text-white mb-2"
+              style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)" }}>
+              📤 產生戰績分享卡
+            </button>
+            <div className="flex gap-3 w-full">
               <button onClick={() => setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
               <button onClick={() => { setPhase("prebattle"); }}
                 className="flex-1 py-3 rounded-xl font-black"
@@ -690,6 +715,13 @@ export default function MonsterBattle({ onBack }) {
             {log.map((e,i) => <div key={i} className="text-xs text-gray-400 py-0.5">{e.text}</div>)}
           </div>
         </details>
+
+        {showBattleCard && (
+          <BattleCard
+            onClose={() => setShowBattleCard(false)}
+            battleData={{ monster, totalDmg: totalDmgDealt, totalReceived: totalDmgRecvd, critCount, loot, round, mode, battleMode }}
+          />
+        )}
       </div>
     );
   }

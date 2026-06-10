@@ -84,12 +84,15 @@ export function resolveHitPart(score, unlockedParts) {
 // 最低傷害1
 export function calcDamage({ score, archerATK, monsterDEF, partMult, isCrit = false }) {
   if (partMult === 0) return 0;
-  const scorePct  = Math.max(0, Math.min(1, score / 60));
-  const randFact  = 0.85 + Math.random() * 0.30;  // 0.85~1.15
-  const critMult  = isCrit ? 1.5 : 1.0;
-  const raw       = scorePct * archerATK * partMult * randFact * critMult;
-  const dmg       = Math.round(raw - monsterDEF * 0.3);  // DEF 只抵消30%
-  return Math.max(1, dmg);
+  // 新公式：底數5 + ATK貢獻 + 分數加成，再乘部位倍率
+  // X(10分)對ATK20/DEF0史萊姆 約 15~20傷害，感覺合理
+  const scorePct = Math.max(0, Math.min(1, score / 10));  // 0~1（10分=滿）
+  const randFact = 0.85 + Math.random() * 0.30;           // 0.85~1.15
+  const critMult = isCrit ? 2.0 : 1.0;
+  const base     = 5 + archerATK * 0.6 + score * 0.8;    // 底數+ATK貢獻+分數加成
+  const def      = Math.max(0, monsterDEF * 0.4);         // DEF抵消40%底數
+  const raw      = (base - def) * partMult * randFact * critMult;
+  return Math.max(1, Math.round(raw));
 }
 
 // 怪物反擊傷害
