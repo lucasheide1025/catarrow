@@ -23,6 +23,7 @@ const CARD_THEMES = [
   { id:"aurora", label:"極光粉", bg:"linear-gradient(135deg,#be185d,#7e22ce)" },
   { id:"steel",  label:"鋼鐵灰", bg:"linear-gradient(135deg,#374151,#1f2937)" },
   { id:"cosmos", label:"宇宙黑", bg:"linear-gradient(135deg,#0f172a,#1e1b4b)" },
+  { id:"bluebay", label:"藍灣綠", bg:"linear-gradient(135deg,#00a1b4,#097988)"}
 ];
 
 function useCardTheme() {
