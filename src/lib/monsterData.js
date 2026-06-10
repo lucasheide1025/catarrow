@@ -1,427 +1,441 @@
 // src/lib/monsterData.js
-// 六族 36 隻怪物 + 匹配系統 + 戰鬥公式
+// 六族36隻怪物 + 射手數值公式 + 匹配系統
 
-// ── 階級定義 ──────────────────────────────────────────────
+// ── 階級定義 ─────────────────────────────────────────────
 export const TIER_LABEL = {
-  common:    { label:"普通",   color:"#6b7280", bg:"#f3f4f6", stars:1 },
-  rare:      { label:"稀有",   color:"#3b82f6", bg:"#eff6ff", stars:2 },
-  elite:     { label:"精英",   color:"#8b5cf6", bg:"#f5f3ff", stars:3 },
-  tough:     { label:"強悍",   color:"#f59e0b", bg:"#fffbeb", stars:4 },
-  boss:      { label:"頭目",   color:"#ef4444", bg:"#fef2f2", stars:5 },
-  myth:      { label:"神話",   color:"#ec4899", bg:"#fdf2f8", stars:6 },
+  common:    { label:"普通",   color:"#6b7280", bg:"#f3f4f6" },
+  rare:      { label:"稀有",   color:"#3b82f6", bg:"#eff6ff" },
+  elite:     { label:"精英",   color:"#8b5cf6", bg:"#f5f3ff" },
+  fierce:    { label:"強悍",   color:"#f97316", bg:"#fff7ed" },
+  boss:      { label:"頭目",   color:"#ef4444", bg:"#fef2f2" },
+  mythic:    { label:"神話",   color:"#fbbf24", bg:"#fffbeb" },
 };
 
-// ── 族群定義 ──────────────────────────────────────────────
-export const FAMILY_LABEL = {
-  ghost:     { label:"鬼怪族", icon:"👻", color:"#7c3aed" },
-  mountain:  { label:"山林族", icon:"🌿", color:"#065f46" },
-  poison:    { label:"毒蟲族", icon:"🐛", color:"#15803d" },
-  workplace: { label:"職場族", icon:"💼", color:"#1e40af" },
-  exam:      { label:"考試族", icon:"📝", color:"#92400e" },
-  temple:    { label:"廟會族", icon:"🏮", color:"#9f1239" },
+// ── 六大家族定義 ──────────────────────────────────────────
+export const FAMILIES = {
+  ghost:     { label:"鬼怪族", icon:"👻", color:"#6366f1" },
+  mountain:  { label:"山林族", icon:"🏔️", color:"#16a34a" },
+  insect:    { label:"毒蟲族", icon:"🦂", color:"#ca8a04" },
+  workplace: { label:"職場族", icon:"💼", color:"#dc2626" },
+  exam:      { label:"考試族", icon:"📝", color:"#7c3aed" },
+  temple:    { label:"廟會族", icon:"🏮", color:"#ea580c" },
 };
 
-// ── 36 隻怪物 ─────────────────────────────────────────────
-// HP/ATK/DEF 依階級分層：
-// common: HP 80~120   ATK 8~15   DEF 5~10
-// rare:   HP 150~220  ATK 18~28  DEF 12~20
-// elite:  HP 280~380  ATK 32~45  DEF 22~32
-// tough:  HP 450~600  ATK 50~70  DEF 35~50
-// boss:   HP 700~950  ATK 80~110 DEF 55~80
-// myth:   HP 1200~1800 ATK 130~160 DEF 90~120
-
+// ── 36隻怪物 ─────────────────────────────────────────────
 export const MONSTERS = [
 
-  // ══ 鬼怪族 ══
+  // ════ 鬼怪族 ════
   {
     id:"ghost_1", family:"ghost", tier:"common",
-    name:"好兄弟", icon:"👤",
-    hp:90, atk:10, def:6,
-    desc:"在路邊徘徊，對人畜無害，但靠太近會讓你背脊發涼",
+    name:"好兄弟", icon:"👻",
+    hp:80,  atk:12, def:5,
+    desc:"在路邊徘徊的無名鬼魂，看到食物就停下來。",
   },
   {
     id:"ghost_2", family:"ghost", tier:"rare",
-    name:"魔神仔", icon:"🌫️",
-    hp:180, atk:22, def:15,
-    desc:"專門迷路人的小妖精，被牠帶著走就回不了家了",
+    name:"魔神仔", icon:"🌀",
+    hp:160, atk:24, def:12,
+    desc:"會把人帶到奇怪的地方，找不到回家的路。",
   },
   {
     id:"ghost_3", family:"ghost", tier:"elite",
-    name:"林投姐", icon:"👩",
-    hp:320, atk:38, def:25,
-    desc:"冤死的女子化為厲鬼，長髮遮面，怨氣沖天",
+    name:"林投姐", icon:"🌿",
+    hp:280, atk:40, def:22,
+    desc:"在林投樹下等待復仇，長髮遮面令人膽寒。",
   },
   {
-    id:"ghost_4", family:"ghost", tier:"tough",
+    id:"ghost_4", family:"ghost", tier:"fierce",
     name:"城隍爺", icon:"⚖️",
-    hp:520, atk:62, def:42,
-    desc:"掌管陰間司法，公正嚴明，但也鐵面無私",
+    hp:440, atk:62, def:38,
+    desc:"掌管生死簿，善惡到頭終有報。",
   },
   {
     id:"ghost_5", family:"ghost", tier:"boss",
     name:"十八王公", icon:"🐺",
-    hp:820, atk:95, def:65,
-    desc:"義犬成神，靈驗無比，保佑漁民，但外人冒犯必受懲罰",
+    hp:650, atk:88, def:58,
+    desc:"義犬成神，靈力無邊，香火鼎盛。",
   },
   {
-    id:"ghost_6", family:"ghost", tier:"myth",
+    id:"ghost_6", family:"ghost", tier:"mythic",
     name:"地獄閻羅", icon:"👹",
-    hp:1500, atk:145, def:100,
-    desc:"主宰生死輪迴，掌管十殿地獄，威震陰陽兩界",
+    hp:1000, atk:140, def:95,
+    desc:"陰間最高審判者，生死輪迴皆在一念之間。",
   },
 
-  // ══ 山林族 ══
+  // ════ 山林族 ════
   {
     id:"mountain_1", family:"mountain", tier:"common",
     name:"山豬精", icon:"🐗",
-    hp:110, atk:13, def:8,
-    desc:"台灣山林中的野豬化成精怪，脾氣暴躁，一言不合就衝",
+    hp:90,  atk:14, def:8,
+    desc:"台灣山林的橫衝直撞王者，遇到就跑。",
   },
   {
     id:"mountain_2", family:"mountain", tier:"rare",
     name:"百步蛇王", icon:"🐍",
-    hp:165, atk:25, def:13,
-    desc:"台灣最毒的蛇王，百步之內必死，排灣族的守護靈",
+    hp:150, atk:28, def:10,
+    desc:"劇毒無比，百步之內必取人命。",
   },
   {
     id:"mountain_3", family:"mountain", tier:"elite",
-    name:"山魈", icon:"🦍",
-    hp:360, atk:42, def:28,
-    desc:"深山中的古老妖怪，力大無窮，專吃迷路的登山客",
+    name:"山魈", icon:"🦊",
+    hp:260, atk:44, def:24,
+    desc:"山中精靈，能幻化人形，誘人深入山林。",
   },
   {
-    id:"mountain_4", family:"mountain", tier:"tough",
+    id:"mountain_4", family:"mountain", tier:"fierce",
     name:"霧社巨人", icon:"🗿",
-    hp:580, atk:68, def:45,
-    desc:"霧社山中沉睡的石巨人，被驚醒後憤怒無比",
+    hp:480, atk:70, def:50,
+    desc:"霧氣中現形的巨人，腳踩山嶺如履平地。",
   },
   {
     id:"mountain_5", family:"mountain", tier:"boss",
     name:"玉山靈獸", icon:"🦁",
-    hp:880, atk:100, def:70,
-    desc:"守護台灣最高峰的神獸，雲霧為身，雷電為爪",
+    hp:700, atk:95, def:72,
+    desc:"玉山頂上的守護神獸，萬年修煉化為神靈。",
   },
   {
-    id:"mountain_6", family:"mountain", tier:"myth",
-    name:"台灣龍神", icon:"🐉",
-    hp:1600, atk:150, def:105,
-    desc:"沉眠於中央山脈萬年的巨龍，甦醒時山河震動",
+    id:"mountain_6", family:"mountain", tier:"mythic",
+    name:"台灣龍", icon:"🐲",
+    hp:1100, atk:150, def:105,
+    desc:"台灣山脈化身的神龍，呼風喚雨震撼天地。",
   },
 
-  // ══ 毒蟲族 ══
+  // ════ 毒蟲族 ════
   {
-    id:"poison_1", family:"poison", tier:"common",
-    name:"大蟑螂精", icon:"🪳",
-    hp:85, atk:9, def:7,
-    desc:"台灣最不死的生物進化成精，打不死、藥不死，令人崩潰",
+    id:"insect_1", family:"insect", tier:"common",
+    name:"大蟑螂", icon:"🪳",
+    hp:70,  atk:10, def:4,
+    desc:"台灣最強生存者，打不死的神話。",
   },
   {
-    id:"poison_2", family:"poison", tier:"rare",
-    name:"虎頭蜂王", icon:"🐝",
-    hp:175, atk:24, def:14,
-    desc:"台灣山林第一殺手，整窩出動時連山豬都要逃命",
+    id:"insect_2", family:"insect", tier:"rare",
+    name:"虎頭蜂", icon:"🐝",
+    hp:140, atk:26, def:8,
+    desc:"台灣山林頭號殺手，蜂群一出無人生還。",
   },
   {
-    id:"poison_3", family:"poison", tier:"elite",
+    id:"insect_3", family:"insect", tier:"elite",
     name:"蜈蚣精", icon:"🐛",
-    hp:310, atk:40, def:24,
-    desc:"百足妖怪，毒液腐蝕一切，鑽地如履平地",
+    hp:250, atk:42, def:20,
+    desc:"百腳精怪，毒液能腐蝕一切，令人聞風喪膽。",
   },
   {
-    id:"poison_4", family:"poison", tier:"tough",
+    id:"insect_4", family:"insect", tier:"fierce",
     name:"蠍子王", icon:"🦂",
-    hp:490, atk:65, def:40,
-    desc:"沙漠毒王來到台灣，毒尾一掃就能癱瘓整片山頭",
+    hp:420, atk:66, def:44,
+    desc:"毒刺一揮，五臟俱毀，連神明都要退三步。",
   },
   {
-    id:"poison_5", family:"poison", tier:"boss",
+    id:"insect_5", family:"insect", tier:"boss",
     name:"蜘蛛女王", icon:"🕷️",
-    hp:800, atk:92, def:62,
-    desc:"結網千里，獵物一旦踏入就永遠出不來",
+    hp:680, atk:90, def:65,
+    desc:"織出命運之網，凡落網者皆逃不過宿命。",
   },
   {
-    id:"poison_6", family:"poison", tier:"myth",
+    id:"insect_6", family:"insect", tier:"mythic",
     name:"蟲神", icon:"🦋",
-    hp:1400, atk:140, def:95,
-    desc:"統御萬蟲的始祖神明，蟲鳴即詛咒，一念萬蟲至",
+    hp:1050, atk:145, def:100,
+    desc:"所有蟲類的神祇，萬蟲朝聖，天地變色。",
   },
 
-  // ══ 職場族 ══
+  // ════ 職場族 ════
   {
     id:"workplace_1", family:"workplace", tier:"common",
     name:"奧客", icon:"😤",
-    hp:95, atk:11, def:6,
-    desc:"無理取鬧、得理不饒人，服務業最大的噩夢",
+    hp:75,  atk:11, def:6,
+    desc:"無理取鬧專業戶，投訴書寫到手抽筋。",
   },
   {
     id:"workplace_2", family:"workplace", tier:"rare",
-    name:"爛主管", icon:"👔",
-    hp:170, atk:23, def:16,
-    desc:"什麼都不懂卻什麼都要管，PUA功力一流",
+    name:"爛主管", icon:"🗣️",
+    hp:155, atk:25, def:14,
+    desc:"PUA語錄信手拈來，讓你懷疑人生的那種。",
   },
   {
     id:"workplace_3", family:"workplace", tier:"elite",
-    name:"壞老闆", icon:"💰",
-    hp:340, atk:44, def:27,
-    desc:"畫餅充饑大師，慣老闆代表，員工只是工具",
+    name:"壞老闆", icon:"💸",
+    hp:270, atk:43, def:26,
+    desc:"畫餅充飢大師，承諾從不兌現，年終永遠0元。",
   },
   {
-    id:"workplace_4", family:"workplace", tier:"tough",
-    name:"黑心包租婆", icon:"🏠",
-    hp:510, atk:60, def:44,
-    desc:"月月漲租，百般刁難，房屋破舊還要你感恩戴德",
+    id:"workplace_4", family:"workplace", tier:"fierce",
+    name:"黑心包租婆", icon:"🏚️",
+    hp:450, atk:68, def:46,
+    desc:"每個月準時漲租，浴室有謎之內衣三年未取。",
   },
   {
     id:"workplace_5", family:"workplace", tier:"boss",
-    name:"財閥總裁", icon:"🏦",
-    hp:860, atk:98, def:68,
-    desc:"壟斷市場、操控政策，資本帝國的主人",
+    name:"財閥總裁", icon:"🤵",
+    hp:720, atk:98, def:78,
+    desc:"壟斷市場、操控輿論，笑容背後是無盡的算計。",
   },
   {
-    id:"workplace_6", family:"workplace", tier:"myth",
-    name:"資本主義魔王", icon:"🌐",
-    hp:1650, atk:155, def:110,
-    desc:"無形之手操控一切，貧富差距是牠存在的養分",
+    id:"workplace_6", family:"workplace", tier:"mythic",
+    name:"資本魔王", icon:"💰",
+    hp:1200, atk:155, def:110,
+    desc:"剝削制度的化身，讓打工人永遠無法翻身的終極BOSS。",
   },
 
-  // ══ 考試族 ══
+  // ════ 考試族 ════
   {
     id:"exam_1", family:"exam", tier:"common",
-    name:"小考惡靈", icon:"📋",
-    hp:80, atk:8, def:5,
-    desc:"突襲毫無準備的學生，一張小考卷能讓人崩潰一整天",
+    name:"小考", icon:"📝",
+    hp:65,  atk:9,  def:3,
+    desc:"突然宣布的小考，讓你昨晚的遊戲白打了。",
   },
   {
     id:"exam_2", family:"exam", tier:"rare",
-    name:"段考魔人", icon:"📚",
-    hp:160, atk:20, def:12,
-    desc:"考前複習範圍廣如宇宙，睡眠剝奪專家",
+    name:"段考", icon:"📚",
+    hp:145, atk:22, def:11,
+    desc:"三個月的努力在這兩天決勝負，壓力山大。",
   },
   {
     id:"exam_3", family:"exam", tier:"elite",
-    name:"期末考怪獸", icon:"📖",
-    hp:300, atk:36, def:22,
-    desc:"一次考完整學期，報復性補眠之前必須先過牠這關",
+    name:"期末考", icon:"😱",
+    hp:265, atk:41, def:23,
+    desc:"所有科目同時來臨，睡眠成為奢侈品。",
   },
   {
-    id:"exam_4", family:"exam", tier:"tough",
-    name:"學測巨獸", icon:"🎯",
-    hp:480, atk:58, def:38,
-    desc:"決定命運的一天，十二年寒窗全押在這裡",
+    id:"exam_4", family:"exam", tier:"fierce",
+    name:"學測魔王", icon:"🎯",
+    hp:430, atk:65, def:42,
+    desc:"十二年寒窗的終極審判，一試定終身的殘酷。",
   },
   {
     id:"exam_5", family:"exam", tier:"boss",
-    name:"國考魔王", icon:"📜",
-    hp:850, atk:90, def:60,
-    desc:"考了十年還沒上，但又停不下來，人生陷阱之王",
+    name:"國考煉獄", icon:"📜",
+    hp:690, atk:92, def:70,
+    desc:"考了五年還在考，人生黃金歲月全押在這裡。",
   },
   {
-    id:"exam_6", family:"exam", tier:"myth",
-    name:"升學制度本體", icon:"🏛️",
-    hp:1800, atk:160, def:120,
-    desc:"台灣教育焦慮的終極型態，打倒它，解放所有學生",
+    id:"exam_6", family:"exam", tier:"mythic",
+    name:"升學制度本體", icon:"🏫",
+    hp:1150, atk:148, def:108,
+    desc:"無法打倒的終極存在，它不是怪物，它是系統。",
   },
 
-  // ══ 廟會族 ══
+  // ════ 廟會族 ════
   {
     id:"temple_1", family:"temple", tier:"common",
-    name:"七爺", icon:"⚫",
-    hp:100, atk:12, def:9,
-    desc:"謝必安，高帽黑袍，舌長面黑，看似嚇人卻護佑善良",
+    name:"七爺", icon:"🎭",
+    hp:85,  atk:13, def:7,
+    desc:"謝必安高身長面黑，手持枷鎖令人膽寒。",
   },
   {
     id:"temple_2", family:"temple", tier:"rare",
-    name:"八爺", icon:"⬜",
-    hp:190, atk:26, def:18,
-    desc:"范無救，矮胖白臉，七爺八爺合力才能捉拿惡鬼",
+    name:"八爺", icon:"🪬",
+    hp:165, atk:27, def:15,
+    desc:"范無救矮身胖體，手持鐵鎚震天響。",
   },
   {
     id:"temple_3", family:"temple", tier:"elite",
     name:"千里眼", icon:"👁️",
-    hp:350, atk:45, def:30,
-    desc:"看穿千里之外，無所遁形，善惡皆在眼中",
+    hp:290, atk:46, def:28,
+    desc:"萬里之外皆在眼底，任何隱匿都無所遁形。",
   },
   {
-    id:"temple_4", family:"temple", tier:"tough",
+    id:"temple_4", family:"temple", tier:"fierce",
     name:"順風耳", icon:"👂",
-    hp:540, atk:66, def:46,
-    desc:"聽聞萬里之聲，謊言在牠面前毫無意義",
+    hp:460, atk:72, def:52,
+    desc:"天下之聲無一遺漏，謊言在他面前毫無意義。",
   },
   {
     id:"temple_5", family:"temple", tier:"boss",
     name:"虎爺", icon:"🐯",
-    hp:900, atk:105, def:72,
-    desc:"土地公的坐騎，財神的護法，咬錢招財，咬惡驅邪",
+    hp:710, atk:96, def:75,
+    desc:"財神座騎，咬錢進寶，但招惹了他後果自負。",
   },
   {
-    id:"temple_6", family:"temple", tier:"myth",
+    id:"temple_6", family:"temple", tier:"mythic",
     name:"媽祖護法", icon:"🌊",
-    hp:1700, atk:148, def:108,
-    desc:"護佑台灣海峽千年，風浪為令，神兵天將隨侍在側",
+    hp:1080, atk:143, def:102,
+    desc:"海上守護神的最強護衛，怒浪狂潮皆是武器。",
   },
 ];
 
-// ── 部位定義（同前）────────────────────────────────────────
+// ── 身體部位（殭屍靶紙模式）────────────────────────────
 export const BODY_PARTS = [
   { id:"head",   name:"頭部",   icon:"💀", mult:2.0, locked:false },
   { id:"neck",   name:"頸部",   icon:"🎯", mult:1.8, locked:false },
-  { id:"chest",  name:"胸腔",   icon:"💢", mult:1.2, locked:false },
-  { id:"belly",  name:"腹部",   icon:"🤢", mult:1.0, locked:false },
-  { id:"arm",    name:"手臂",   icon:"💪", mult:0.7, locked:false },
-  { id:"groin",  name:"鼠蹊",   icon:"⚡", mult:1.5, locked:false },
-  { id:"heart",  name:"心臟",   icon:"❤️", mult:2.5, locked:true  },
-  { id:"kidney", name:"腎臟",   icon:"🫘", mult:2.2, locked:true  },
-  { id:"lung",   name:"肺葉",   icon:"🫁", mult:2.0, locked:true  },
-  { id:"balls",  name:"要害",   icon:"😱", mult:2.8, locked:true  },
+  { id:"chest",  name:"胸腔",   icon:"❤️", mult:1.5, locked:false },
+  { id:"belly",  name:"腹部",   icon:"🫁", mult:1.2, locked:false },
+  { id:"arm",    name:"手臂",   icon:"💪", mult:1.0, locked:false },
+  { id:"groin",  name:"鼠蹊",   icon:"⚡", mult:1.6, locked:false },
+  { id:"heart",  name:"心臟",   icon:"❤️‍🔥", mult:3.0, locked:true  }, // 需先命中胸腔
+  { id:"lung",   name:"肺葉",   icon:"🫁", mult:2.5, locked:true  }, // 需先命中胸腔
+  { id:"kidney", name:"腎臟",   icon:"🫘", mult:2.2, locked:true  }, // 需先命中腹部
+  { id:"balls",  name:"要害",   icon:"💥", mult:2.8, locked:true  }, // 需先命中鼠蹊
   { id:"miss",   name:"脫靶",   icon:"💨", mult:0,   locked:false },
 ];
 
-// ── 部位命中判定 ──────────────────────────────────────────
+// ── 依分數判定命中部位 ───────────────────────────────────
 export function resolveHitPart(score, unlockedParts) {
   const unlocked = unlockedParts || new Set();
-  if (score === 0) return { ...BODY_PARTS.find(p=>p.id==="miss"), id:"miss" };
 
-  const rand = Math.random();
+  if (score === 0) return BODY_PARTS.find(p => p.id === "miss");
 
-  if (score >= 10) {
-    // X/10：不脫靶，高部位為主
-    if (rand < 0.15 && unlocked.has("chest")) return BODY_PARTS.find(p=>p.id==="heart");
-    if (rand < 0.30 && unlocked.has("belly")) return BODY_PARTS.find(p=>p.id==="kidney");
-    if (rand < 0.42 && unlocked.has("chest")) return BODY_PARTS.find(p=>p.id==="lung");
-    if (rand < 0.55 && unlocked.has("groin")) return BODY_PARTS.find(p=>p.id==="balls");
-    if (rand < 0.70) return BODY_PARTS.find(p=>p.id==="head");
-    if (rand < 0.83) return BODY_PARTS.find(p=>p.id==="neck");
-    if (rand < 0.92) return BODY_PARTS.find(p=>p.id==="groin");
-    return BODY_PARTS.find(p=>p.id==="chest");
+  // 器官部位（需解鎖）
+  const organMap = {
+    heart:  "chest",
+    lung:   "chest",
+    kidney: "belly",
+    balls:  "groin",
+  };
+
+  // X/10 分：高等部位
+  if (score === 10) {
+    const pool = ["head","neck","groin","chest"];
+    // 嘗試觸發器官
+    if (unlocked.has("chest") && Math.random() < 0.3)
+      return BODY_PARTS.find(p => p.id === (Math.random()<0.5?"heart":"lung"));
+    if (unlocked.has("groin") && Math.random() < 0.25)
+      return BODY_PARTS.find(p => p.id === "balls");
+    const id = pool[Math.floor(Math.random() * pool.length)];
+    return BODY_PARTS.find(p => p.id === id);
   }
+
+  // 8~9 分：中上部位，不脫靶
   if (score >= 8) {
-    // 8~9：不脫靶，中等部位
-    if (rand < 0.10 && unlocked.has("chest")) return BODY_PARTS.find(p=>p.id==="heart");
-    if (rand < 0.22 && unlocked.has("belly")) return BODY_PARTS.find(p=>p.id==="kidney");
-    if (rand < 0.35) return BODY_PARTS.find(p=>p.id==="head");
-    if (rand < 0.50) return BODY_PARTS.find(p=>p.id==="neck");
-    if (rand < 0.65) return BODY_PARTS.find(p=>p.id==="chest");
-    if (rand < 0.80) return BODY_PARTS.find(p=>p.id==="belly");
-    return BODY_PARTS.find(p=>p.id==="arm");
+    const pool = ["chest","neck","belly","arm","groin"];
+    if (unlocked.has("chest") && Math.random() < 0.15)
+      return BODY_PARTS.find(p => p.id === (Math.random()<0.5?"heart":"lung"));
+    if (unlocked.has("belly") && Math.random() < 0.12)
+      return BODY_PARTS.find(p => p.id === "kidney");
+    const id = pool[Math.floor(Math.random() * pool.length)];
+    return BODY_PARTS.find(p => p.id === id);
   }
+
+  // 6~7 分：中等部位，10%脫靶
   if (score >= 6) {
-    // 6~7：10%脫靶
-    if (rand < 0.10) return BODY_PARTS.find(p=>p.id==="miss");
-    if (rand < 0.30) return BODY_PARTS.find(p=>p.id==="chest");
-    if (rand < 0.50) return BODY_PARTS.find(p=>p.id==="belly");
-    if (rand < 0.65) return BODY_PARTS.find(p=>p.id==="arm");
-    if (rand < 0.80) return BODY_PARTS.find(p=>p.id==="groin");
-    return BODY_PARTS.find(p=>p.id==="neck");
+    if (Math.random() < 0.10) return BODY_PARTS.find(p => p.id === "miss");
+    const pool = ["belly","arm","chest"];
+    const id = pool[Math.floor(Math.random() * pool.length)];
+    return BODY_PARTS.find(p => p.id === id);
   }
-  // 1~5：40%脫靶
-  if (rand < 0.40) return BODY_PARTS.find(p=>p.id==="miss");
-  if (rand < 0.60) return BODY_PARTS.find(p=>p.id==="arm");
-  if (rand < 0.75) return BODY_PARTS.find(p=>p.id==="belly");
-  if (rand < 0.88) return BODY_PARTS.find(p=>p.id==="chest");
-  return BODY_PARTS.find(p=>p.id==="groin");
+
+  // 1~5 分：低等部位，60%脫靶
+  if (Math.random() < 0.60) return BODY_PARTS.find(p => p.id === "miss");
+  const pool = ["arm","belly"];
+  const id = pool[Math.floor(Math.random() * pool.length)];
+  return BODY_PARTS.find(p => p.id === id);
 }
 
-// ── 射手戰力計算 ──────────────────────────────────────────
-// 輸出 power 值（0~100+）用於匹配怪物階級
-export function calcArcherPower({ hp, atk, def }) {
-  // 正規化到 0~100，考慮未來上限 HP:400 ATK:160 DEF:120
-  const hpScore  = Math.min(hp  / 400  * 40, 40);
-  const atkScore = Math.min(atk / 160  * 35, 35);
-  const defScore = Math.min(def / 120  * 25, 25);
-  return Math.round(hpScore + atkScore + defScore);
+// ── 傷害公式 ─────────────────────────────────────────────
+// 射手 ATK 上限 160、怪物 DEF 上限 120
+// 分數 0~10，傷害範圍設計在 5~200
+export function calcDamage({ score, archerATK, monsterDEF, partMult }) {
+  if (!score || partMult === 0) return 0;
+  const base = 8 + archerATK * 0.7 + score * 1.2 - monsterDEF * 0.35;
+  const dmg  = Math.max(1, Math.round(base * partMult * (0.85 + Math.random() * 0.3)));
+  return dmg;
 }
 
-// ── 依射手戰力取可用階級清單 ─────────────────────────────
-// 有重疊區間讓玩家可挑戰稍難或稍易的怪物
-export function getAvailableTiers(power) {
-  if (power < 20) return ["common"];
-  if (power < 35) return ["common","rare"];
-  if (power < 50) return ["rare","elite"];
-  if (power < 65) return ["elite","tough"];
-  if (power < 80) return ["tough","boss"];
-  return ["boss","myth"];
+// 怪物反擊傷害
+export function calcCounterDamage({ monsterATK, archerDEF, headStunned, isCrit }) {
+  let base = monsterATK * 0.6 - archerDEF * 0.4 + 5;
+  if (headStunned) base *= 0.5;
+  if (isCrit)      base *= 1.8;
+  return Math.max(1, Math.round(base * (0.8 + Math.random() * 0.4)));
 }
 
-// ── 匹配選怪：六族各出1隻，依射手戰力匹配階級 ──────────
-// 回傳 6 隻怪物（每族1隻），若該族該階無怪則往上/下補
-export function matchMonsters(archerStats) {
-  const power  = calcArcherPower(archerStats);
-  const tiers  = getAvailableTiers(power);
-  const TIER_ORDER = ["common","rare","elite","tough","boss","myth"];
-  const families = ["ghost","mountain","poison","workplace","exam","temple"];
-
-  return families.map(family => {
-    // 在可用階級中隨機挑一個
-    const tier = tiers[Math.floor(Math.random() * tiers.length)];
-    // 找該族該階的怪
-    let candidate = MONSTERS.find(m => m.family===family && m.tier===tier);
-    // 沒有就往下找最近的
-    if (!candidate) {
-      for (const t of TIER_ORDER) {
-        candidate = MONSTERS.find(m => m.family===family && m.tier===t);
-        if (candidate) break;
-      }
-    }
-    return candidate;
-  }).filter(Boolean);
-}
-
-// ── 射手數值計算 ──────────────────────────────────────────
+// ── 射手數值計算 ─────────────────────────────────────────
+// HP 上限 400 / ATK 上限 160 / DEF 上限 120
 export function calcArcherStats({ member, certification, certRecords, dexStats }) {
-  // HP：基礎100 + 圖鑑/8(上限+50) + 藍/金證(+10/+20) + 報到次數/4(上限+30) + 成就章分/8(上限+20) + 飾品欄位數(上限+20)
+  const joinYear  = member?.joinDate ? new Date(member.joinDate).getFullYear() : new Date().getFullYear();
+  const ageYears  = Math.max(0, new Date().getFullYear() - joinYear);
+
+  // ── HP ──────────────────────────────────────────────────
+  // 基礎 100 + 圖鑑/8（上限+30）+ 藍/金證（+10/+20）
+  // + 報到次數/4（上限+30）+ 成就章分/8（上限+20）
+  // + 飾品欄位數×3（上限+20）+ 射齡×5（上限+30）
   let hp = 100;
-  if (dexStats)            hp += Math.min(50, Math.floor(dexStats.totalUnlocked / 8 * 10));
+  if (dexStats) hp += Math.min(30, Math.floor(dexStats.totalUnlocked / 8));
   if (certification?.level === "blue") hp += 10;
   if (certification?.level === "gold") hp += 20;
-  const checkins = member?.dailyQuestCount || 0;
-  hp += Math.min(30, Math.floor(checkins / 4));
-  const achPts = ((member?.achievement?.black||0)*3 + (member?.achievement?.gold||0)*2 + (member?.achievement?.silver||0));
-  hp += Math.min(20, Math.floor(achPts / 8));
-  const accCount = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
-  hp += Math.min(20, accCount);
+  const checkinCount = member?.dailyQuestCount || 0;
+  hp += Math.min(30, Math.floor(checkinCount / 4));
+  const achPoints = ((member?.achievement?.black||0)*3 + (member?.achievement?.gold||0)*2 + (member?.achievement?.silver||0));
+  hp += Math.min(20, Math.floor(achPoints / 8));
+  const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
+  hp += Math.min(20, accSlots * 3);
+  hp += Math.min(30, ageYears * 5);
   hp = Math.min(400, hp);
 
-  // ATK：基礎10 + 肥貓章分/4(上限+30) + 三弓檢定級別合計(上限+50) + 弓組欄位數/2(上限+30) + 賽事積分/20(上限+40)
-  let atk = 10;
-  const fatPts = ((member?.fatCat?.gold||0)*50 + (member?.fatCat?.silver||0)*10 + (member?.fatCat?.bronze||0));
-  atk += Math.min(30, Math.floor(fatPts / 4));
-  const BOW_CERT_SCORES = certRecords || [];
-  const certBonus = BOW_CERT_SCORES.reduce((s, r) => {
-    const lvMap = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
-    return s + (lvMap[r.level] || 0);
+  // ── ATK ─────────────────────────────────────────────────
+  // 基礎 15 + 肥貓章分/4（上限+25）+ 三弓檢定總等×3（上限+40）
+  // + 弓組欄位數×4（上限+30）+ 賽事積分/10（上限+20）
+  // + 報到任務/5（上限+30）
+  let atk = 15;
+  const fatPoints = ((member?.fatCat?.gold||0)*50 + (member?.fatCat?.silver||0)*10 + (member?.fatCat?.bronze||0));
+  atk += Math.min(25, Math.floor(fatPoints / 4));
+  const certLevelScore = (certRecords || []).reduce((s, r) => {
+    const lv = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
+    return s + (lv[r.level] || 0);
   }, 0);
-  atk += Math.min(50, certBonus * 3);
-  const bowCount = (member?.equipment || []).length;
-  atk += Math.min(30, Math.floor(bowCount / 2) * 10);
-  atk += Math.min(40, Math.floor((member?.eventPoints||0) / 20));
+  atk += Math.min(40, certLevelScore * 3);
+  const bowSlots = (member?.equipment || []).length;
+  atk += Math.min(30, bowSlots * 4);
+  atk += Math.min(20, Math.floor((member?.eventPoints||0) / 10));
+  atk += Math.min(30, Math.floor(checkinCount / 5));
   atk = Math.min(160, atk);
 
-  // DEF：基礎10 + 積分章分/4(上限+30) + 防具欄位數(上限+30) + 射齡年*3(上限+30) + 期數生(上限+20)
+  // ── DEF ─────────────────────────────────────────────────
+  // 基礎 10 + 積分章分/4（上限+25）+ 防具欄位數×3（上限+30）
+  // + 射齡×4（上限+25）+ 期數生+（上限+15）+ 金證（+15）
   let def = 10;
-  const scorePts = ((member?.score?.gold||0)*50 + (member?.score?.silver||0)*10 + (member?.score?.bronze||0));
-  def += Math.min(30, Math.floor(scorePts / 4));
-  const armorCount = (member?.armorSets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
-  def += Math.min(30, armorCount * 3);
-  const joinYear = member?.joinDate ? new Date().getFullYear() - new Date(member.joinDate).getFullYear() : 0;
-  def += Math.min(30, joinYear * 3);
-  if (dexStats?.cohort != null) def += Math.min(20, Math.max(1, 6 - dexStats.cohort));
+  const scorePoints = ((member?.score?.gold||0)*50 + (member?.score?.silver||0)*10 + (member?.score?.bronze||0));
+  def += Math.min(25, Math.floor(scorePoints / 4));
+  const armorSlots = (member?.armorSets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
+  def += Math.min(30, armorSlots * 3);
+  def += Math.min(25, ageYears * 4);
+  if (dexStats?.cohortBonus) def += Math.min(15, dexStats.cohortBonus);
+  if (certification?.level === "gold") def += 15;
   def = Math.min(120, def);
 
   return { hp, atk, def };
 }
 
-// ── 傷害公式 ─────────────────────────────────────────────
-// 調整係數讓神話怪 (HP 1800) 需要約 8~12 回合才能擊倒
-export function calcDamage({ score, archerATK, monsterDEF, partMult }) {
-  if (!score || score <= 0 || !partMult) return 0;
-  const base = 8 + archerATK * 0.7 + score * 1.2 - monsterDEF * 0.5;
-  const dmg  = Math.max(1, Math.round(base * partMult * (0.85 + Math.random() * 0.3)));
-  return dmg;
+// ── 戰力評分（用於怪物匹配）─────────────────────────────
+export function calcArcherPower(stats) {
+  return Math.round(stats.hp * 0.4 + stats.atk * 1.5 + stats.def * 1.0);
 }
 
-// ── 怪物反擊公式 ──────────────────────────────────────────
-export function calcCounterDamage({ monsterATK, archerDEF, headStunned, isCrit }) {
-  const base = Math.max(1, monsterATK * 0.6 - archerDEF * 0.4);
-  const mult = isCrit ? 1.8 : headStunned ? 0.5 : 1.0;
-  return Math.max(1, Math.round(base * mult * (0.8 + Math.random() * 0.4)));
+// ── 依戰力取可出現的階級範圍 ────────────────────────────
+// 每個戰力區間對應可出現的 tier，有重疊區間讓玩家有選擇
+export function getTierPoolByPower(power) {
+  if (power >= 400) return ["boss","mythic"];
+  if (power >= 280) return ["fierce","boss","mythic"];
+  if (power >= 180) return ["elite","fierce","boss"];
+  if (power >= 100) return ["rare","elite","fierce"];
+  if (power >= 50)  return ["common","rare","elite"];
+  return ["common","rare"];
 }
+
+// ── 六族各抽1隻（依射手戰力匹配，不烙單）────────────────
+// 每族保證有1隻，共6隻選怪
+export function drawMatchedMonsters(archerPower) {
+  const tierPool = getTierPoolByPower(archerPower);
+  const families = ["ghost","mountain","insect","workplace","exam","temple"];
+  const result = [];
+
+  families.forEach(family => {
+    // 篩選該族在可出現階級內的怪物
+    const candidates = MONSTERS.filter(m =>
+      m.family === family && tierPool.includes(m.tier)
+    );
+    if (candidates.length === 0) {
+      // fallback：取該族最低階
+      const fallback = MONSTERS.filter(m => m.family === family)
+        .sort((a,b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+      if (fallback.length > 0) result.push(fallback[0]);
+    } else {
+      // 隨機從候選中抽1隻
+      result.push(candidates[Math.floor(Math.random() * candidates.length)]);
+    }
+  });
+
+  return result;
+}
+
+// tier 排序（用於 fallback）
+const TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];
