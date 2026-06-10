@@ -342,7 +342,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setDailyLeft(l => Math.max(0, (l || 1) - 1));
 
     setArcherHP(archerStats?.hp || 100);
-    setMonsterHP(monster.hp);
+    const boostedHP  = mode === "veteran" ? Math.round(monster.hp  * 1.5) : monster.hp;
+const boostedATK = mode === "veteran" ? Math.round(monster.atk * 1.5) : monster.atk;
+const boostedDEF = mode === "veteran" ? Math.round(monster.def * 1.3) : monster.def;
+// 把增強後的怪物存起來覆蓋（只影響本場）
+setMonster(prev => ({ ...prev, hp: boostedHP, atk: boostedATK, def: boostedDEF }));
+setMonsterHP(boostedHP);
     setRound(1);
     setDistance(DISTANCE_START);
     setLog([

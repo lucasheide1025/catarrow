@@ -1097,3 +1097,53 @@ export async function generateGuestToken() {
   return { token, guestId: session.id, expiresAt: session.expiresAt };
 }
  
+
+// ─── 材料庫存 ──────────────────────────────────────────────
+// 集合：materialInventory / 文件 ID = memberId
+// 結構：{ items: { materialId: count, ... }, updatedAt }
+ 
+const C_MATERIALS = "materialInventory";
+ 
+// 批次新增材料到玩家庫存（mats = [{ id, name, ... }, ...]）
+export async function addMaterials(memberId, mats) {
+  if (!memberId || !mats?.length) return;
+  try {
+    const ref  = doc(db, C_MATERIALS, memberId);
+    const snap = await getDoc(ref);
+    const inventory = snap.exists() ? (snap.data().items || {}) : {};
+    mats.forEach(mat => {
+      inventory[mat.id] = (inventory[mat.id] || 0) + 1;
+    });
+    await setDoc(ref, { items: inventory, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("addMaterials:", e?.message); }
+}
+ 
+// 訂閱玩家材料庫存（即時）
+export function subscribeMaterials(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_MATERIALS, memberId),
+    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    err  => { console.warn("subscribeMaterials:", err.message); callback({}); }
+  );
+}
+ 
+// ─── 注意：把舊的 saveMonsterLog 整個替換為下方版本 ─────────
+// 新增 materials 欄位（儲存本場掉落的材料 id 陣列）
+export async function saveMonsterLog(memberId, data) {
+  try {
+    await addDoc(collection(db, C_MONSTER_LOGS), {
+      memberId,
+      monsterName: data.monsterName || "",
+      monsterId:   data.monsterId   || "",
+      result:      data.result      || "lose",
+      rounds:      data.rounds      || 0,
+      lootName:    data.lootName    || null,
+      lootIcon:    data.lootIcon    || null,
+      lootType:    data.lootType    || null,
+      mode:        data.mode        || "novice",
+      battleMode:  data.battleMode  || "score",
+      materials:   data.materials   || [],   // ✅ 新增：本場掉落的材料 id 陣列
+      createdAt:   serverTimestamp(),
+    });
+  } catch (e) { console.warn("saveMonsterLog:", e?.message); }
+}

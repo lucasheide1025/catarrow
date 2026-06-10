@@ -6,18 +6,24 @@ import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
+  addMaterials,
 } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { MONSTERS, BODY_PARTS, TIER_LABEL, calcArcherStats, calcDamage, calcCounterDamage, resolveHitPart } from "../../lib/monsterData";
-import { LOOT_TABLE_NOVICE, LOOT_TABLE_VETERAN, drawLoot, isRareLoot } from "../../lib/lootTable";
+import { getLootTable, drawLoot, isRareLoot } from "../../lib/lootTable";
+import LootBox from "./LootBox";
+import { drawMaterials, getMaterialCount, MATERIALS } from "../../lib/monsterMaterials";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 
-const ARROWS_PER_ROUND = 6;   // 每回合6箭
-const ARROWS_PER_COUNTER = 2; // 每2箭怪物反擊一次
+const ARROWS_PER_ROUND   = 6;  // 每回合6箭
+const ARROWS_PER_COUNTER = 2;  // 每2箭怪物反擊一次
 const DISTANCE_START = 15;
 const DISTANCE_STEP  = 5;
+
+// 老手模式怪物數值倍率
+const VETERAN_MULT = { hp: 1.5, atk: 1.5, def: 1.3 };
 
 // 半靶分數選項
 const HALF_SCORES = [
@@ -47,19 +53,19 @@ const BATTLE_CSS = `
 @keyframes mb-float  { 0%{transform:translateY(0);opacity:1} 100%{transform:translateY(-30px);opacity:0} }
 `;
 
-// 攻擊文字池（依部位+傷害量）
+// 攻擊文字池（依部位）
 const HIT_TEXTS = {
-  head:    ["頭骨碎裂！💀","眼冒金星！😵","頭部重創！🤕","正中眉心！🎯","爆頭！💥"],
-  neck:    ["頸部命中！🎯","咽喉要害！⚡","頸動脈！🩸","精準頸擊！"],
-  chest:   ["胸腔震動！","心跳加速！🫀","肋骨斷了！","正中胸口！💢"],
-  belly:   ["腹部重擊！","腸子都出來了！😱","腹腔命中！","肚子痛！🤢"],
-  arm:     ["手臂受傷！","武器打飛！💨","手臂擦過！","側翼命中！"],
-  groin:   ["要害！😱","下三路！⚡","鼠蹊重創！","痛到跳腳！🦵"],
-  heart:   ["心臟穿透！❤️‍🔥","致命一擊！💔","心跳停止！☠️","CRITICAL！❤️"],
-  kidney:  ["腎臟破碎！🫘","內臟劇痛！😭","腰部重擊！","致命內傷！"],
-  lung:    ["肺葉穿透！🫁","呼吸困難！😤","氣胸！🫧","胸腔積血！"],
-  balls:   ["GG了！💥","天下第一痛！😭","不孝有三！⚡","後代斷絕！"],
-  miss:    ["嗖～沒中","靶紙在哪？😅","飛過去了！","差一點！"],
+  head:   ["頭骨碎裂！💀","眼冒金星！😵","頭部重創！🤕","正中眉心！🎯","爆頭！💥"],
+  neck:   ["頸部命中！🎯","咽喉要害！⚡","頸動脈！🩸","精準頸擊！"],
+  chest:  ["胸腔震動！","心跳加速！🫀","肋骨斷了！","正中胸口！💢"],
+  belly:  ["腹部重擊！","腸子都出來了！😱","腹腔命中！","肚子痛！🤢"],
+  arm:    ["手臂受傷！","武器打飛！💨","手臂擦過！","側翼命中！"],
+  groin:  ["要害！😱","下三路！⚡","鼠蹊重創！","痛到跳腳！🦵"],
+  heart:  ["心臟穿透！❤️‍🔥","致命一擊！💔","心跳停止！☠️","CRITICAL！❤️"],
+  kidney: ["腎臟破碎！🫘","內臟劇痛！😭","腰部重擊！","致命內傷！"],
+  lung:   ["肺葉穿透！🫁","呼吸困難！😤","氣胸！🫧","胸腔積血！"],
+  balls:  ["GG了！💥","天下第一痛！😭","不孝有三！⚡","後代斷絕！"],
+  miss:   ["嗖～沒中","靶紙在哪？😅","飛過去了！","差一點！"],
 };
 const DMGCOLOR = { low:"#86efac", mid:"#fbbf24", high:"#f97316", crit:"#ef4444", organ:"#c084fc" };
 
@@ -67,28 +73,21 @@ function getHitText(partId) {
   const pool = HIT_TEXTS[partId] || HIT_TEXTS.chest;
   return pool[Math.floor(Math.random() * pool.length)];
 }
-function getDmgColor(dmg, isCrit, isOrgan) {
-  if (isOrgan) return DMGCOLOR.organ;
-  if (isCrit) return DMGCOLOR.crit;
-  if (dmg >= 40) return DMGCOLOR.high;
-  if (dmg >= 20) return DMGCOLOR.mid;
-  return DMGCOLOR.low;
-}
 
-export default function MonsterBattle({ onBack }) {
+export default function MonsterBattle({ onBack, isGuest = false }) {
   const { profile } = useAuth();
-  const [phase, setPhase]     = useState("select");
+  const [phase, setPhase]         = useState("select");
   const [battleMode, setBattleMode] = useState("score"); // score | zombie
-  const [mode, setMode]       = useState("novice");      // novice | veteran
-  const [monster, setMonster] = useState(null);
+  const [mode, setMode]           = useState("novice");  // novice | veteran
+  const [monster, setMonster]     = useState(null);
   const [archerStats, setArcherStats] = useState(null);
   const [certRecords, setCertRecords] = useState([]);
   const [certification, setCertification] = useState(null);
-  const [dexGrants, setDexGrants] = useState([]);
+  const [dexGrants,  setDexGrants]  = useState([]);
   const [dexConfig,  setDexConfig]  = useState({ physicalMax: 20, pointMax: 20 });
-  const [history, setHistory] = useState([]);
-  const [dailyLeft, setDailyLeft] = useState(null);  // 今日剩餘次數
-  const [dailyMax,  setDailyMax]  = useState(5);
+  const [history,    setHistory]    = useState([]);
+  const [dailyLeft,  setDailyLeft]  = useState(null);
+  const [dailyMax,   setDailyMax]   = useState(5);
 
   // 戰鬥狀態
   const [archerHP,      setArcherHP]      = useState(100);
@@ -97,23 +96,26 @@ export default function MonsterBattle({ onBack }) {
   const [distance,      setDistance]      = useState(DISTANCE_START);
   const [round,         setRound]         = useState(1);
   const [log,           setLog]           = useState([]);
-  const [battlePhase,   setBattlePhase]   = useState("input"); // input|processing|counter|event|done
-  const [arrows,        setArrows]        = useState([]);   // 已輸入的分數陣列
+  const [battlePhase,   setBattlePhase]   = useState("input");
+  const [arrows,        setArrows]        = useState([]);
   const [unlockedParts, setUnlockedParts] = useState(new Set());
   const [revived,       setRevived]       = useState(false);
   const [loot,          setLoot]          = useState(null);
   const [lootRevealed,  setLootRevealed]  = useState(false);
+  const [showLootBox,   setShowLootBox]   = useState(false);
   const [showBattleCard, setShowBattleCard] = useState(false);
+  const [droppedMaterials, setDroppedMaterials] = useState([]);
   const [currentEvent,  setCurrentEvent]  = useState(null);
   const [skipCounter,   setSkipCounter]   = useState(false);
-  const [processing,    setProcessing]    = useState(false); // 防止重複點擊
+  const [processing,    setProcessing]    = useState(false);
   const [totalDmgDealt,   setTotalDmgDealt]   = useState(0);
   const [totalDmgRecvd,   setTotalDmgRecvd]   = useState(0);
   const [critCount,       setCritCount]       = useState(0);
   const [animHit,       setAnimHit]       = useState(false);
   const [animCounter,   setAnimCounter]   = useState(false);
   const logEndRef = useRef(null);
-  // 怪物選擇（不能放在 if 條件裡，必須在頂層）
+
+  // 怪物選擇（必須在頂層，不能在 if 裡）
   const [randMonsters]  = useState(() => [...MONSTERS].sort(() => Math.random() - 0.5).slice(0, 4));
   const [pickedMonster, setPickedMonster] = useState(null);
 
@@ -123,7 +125,6 @@ export default function MonsterBattle({ onBack }) {
     getCertification(profile.id).then(setCertification).catch(() => {});
     getDexConfig().then(setDexConfig).catch(() => {});
     const unsub = subscribeDexGrants(profile.id, setDexGrants);
-    // 每日上限
     getMonsterDailyConfig().then(cfg => {
       setDailyMax(cfg.dailyMax || 5);
       checkMonsterDailyLimit(profile.id, cfg.dailyMax || 5).then(left => setDailyLeft(left));
@@ -133,19 +134,23 @@ export default function MonsterBattle({ onBack }) {
 
   useEffect(() => {
     if (!profile || !certRecords) return;
-    const ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax });
+    const ds = computeDexStats({
+      member: profile, certification, certRecords,
+      checkinCount: profile?.dailyQuestCount || 0,
+      granted: dexGrants,
+      physicalMax: dexConfig.physicalMax,
+      pointMax: dexConfig.pointMax,
+    });
     setArcherStats(calcArcherStats({ member: profile, certification, certRecords, dexStats: ds }));
   }, [profile, certification, certRecords, dexGrants]); // eslint-disable-line
 
   useEffect(() => {
-    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth" });
   }, [log]);
 
   function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
   function addLog(entry) { setLog(l => [...l, entry]); }
 
-  // 點擊輸入分數
   function inputArrow(val) {
     if (arrows.length >= ARROWS_PER_ROUND || processing) return;
     sfxTap();
@@ -156,28 +161,25 @@ export default function MonsterBattle({ onBack }) {
     setArrows(prev => prev.slice(0, -1));
   }
 
-  // 送出本回合6箭，開始計算
   async function submitRound() {
     if (arrows.length < ARROWS_PER_ROUND || processing) return;
     setProcessing(true);
     setBattlePhase("processing");
 
-    let curMonHP = monsterHP;
+    let curMonHP  = monsterHP;
     let curArchHP = archerHP;
     let curUnlocked = new Set(unlockedParts);
-    let curDist = distance;
+    let curDist   = distance;
     let headHitCount = 0;
-    let skipCtr = skipCounter;
+    let skipCtr   = skipCounter;
 
-    addLog({ type: "system", text: `── 第 ${round} 回合，${mode === "veteran" ? `距離 ${distance}米` : "10米"} ──` });
+    addLog({ type:"system", text:`── 第 ${round} 回合，${mode === "veteran" ? `距離 ${distance}米` : "10米"} ──` });
     await delay(400);
 
-    // 逐箭處理（每2箭反擊一次）
     for (let i = 0; i < ARROWS_PER_ROUND; i++) {
       const score = arrows[i];
       let part, dmg;
 
-      // 兩種模式都判定部位
       part = resolveHitPart(score, curUnlocked);
       if (part.id === "chest") curUnlocked = new Set([...curUnlocked, "chest"]);
       if (part.id === "belly") curUnlocked = new Set([...curUnlocked, "belly"]);
@@ -192,23 +194,20 @@ export default function MonsterBattle({ onBack }) {
       const hitText = getHitText(part.id);
 
       if (part.mult === 0) {
-        // 脫靶
         sfxSoftFail();
-        addLog({ type: "miss", text: `${i+1}箭　${hitText}　(${score}分)` });
+        addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${score}分)` });
       } else if (isOrganPart) {
-        // 器官命中：最強音效
         sfxEpic();
-        addLog({ type: "hit_organ", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+        addLog({ type:"hit_organ", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
       } else if (part.mult >= 1.8 || score >= 10) {
-        // 高倍部位或X分
         sfxEpic();
-        addLog({ type: "hit_crit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+        addLog({ type:"hit_crit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
       } else if (score >= 8) {
         sfxSuccess();
-        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
+        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
       } else {
         sfxTap();
-        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
+        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
       }
 
       curMonHP = Math.max(0, curMonHP - dmg);
@@ -225,21 +224,21 @@ export default function MonsterBattle({ onBack }) {
         return;
       }
 
-      // 每2箭怪物反擊一次
+      // 每2箭怪物反擊
       if ((i + 1) % ARROWS_PER_COUNTER === 0) {
         // 隨機事件（20%機率）
         if (shouldTriggerEvent()) {
           const ev = drawRandomEvent();
           setCurrentEvent(ev);
           setBattlePhase("event");
-          addLog({ type: ev.type === "buff" ? "event_good" : "event_bad", text: `✨【${ev.title}】${ev.desc}` });
+          addLog({ type: ev.type === "buff" ? "event_good" : "event_bad", text:`✨【${ev.title}】${ev.desc}` });
           sfxCast();
           const ef = ev.effect || {};
-          if (ef.healArcher)   curArchHP = Math.min(archerStats?.hp || 100, curArchHP + ef.healArcher);
-          if (ef.archerHP)     curArchHP = Math.max(0, curArchHP + ef.archerHP);
-          if (ef.archerATK)    setArcherATKMod(m => m + ef.archerATK);
-          if (ef.monsterHP)    curMonHP  = Math.max(0, curMonHP + ef.monsterHP);
-          if (ef.skipCounter)  skipCtr = true;
+          if (ef.healArcher)  curArchHP = Math.min(archerStats?.hp || 100, curArchHP + ef.healArcher);
+          if (ef.archerHP)    curArchHP = Math.max(0, curArchHP + ef.archerHP);
+          if (ef.archerATK)   setArcherATKMod(m => m + ef.archerATK);
+          if (ef.monsterHP)   curMonHP  = Math.max(0, curMonHP + ef.monsterHP);
+          if (ef.skipCounter) skipCtr = true;
           setArcherHP(curArchHP);
           setMonsterHP(curMonHP);
           await delay(2500);
@@ -252,7 +251,6 @@ export default function MonsterBattle({ onBack }) {
           setAnimCounter(true);
           setTimeout(() => setAnimCounter(false), 800);
 
-          // 老手模式爆擊判定（距離近時機率高）
           const critChance = mode === "veteran" ? Math.max(0, (DISTANCE_START - curDist) / DISTANCE_START * 0.5) : 0;
           const isCrit = Math.random() < critChance;
           const headStunned = headHitCount > 0 && battleMode === "zombie";
@@ -263,9 +261,8 @@ export default function MonsterBattle({ onBack }) {
             : headStunned
               ? `${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
               : `${monster.icon} ${monster.name} 反擊！受到 ${cdmg} 傷害`;
-          if (isCrit) sfxEpic();
-          else sfxBuff();
-          addLog({ type: "counter", text: counterTxt });
+          if (isCrit) sfxEpic(); else sfxBuff();
+          addLog({ type:"counter", text:counterTxt });
           curArchHP = Math.max(0, curArchHP - cdmg);
           setArcherHP(curArchHP);
           if (cdmg > 0) setTotalDmgRecvd(v => v + cdmg);
@@ -275,12 +272,12 @@ export default function MonsterBattle({ onBack }) {
             curDist = Math.max(0, curDist - DISTANCE_STEP);
             setDistance(curDist);
             if (curDist === 0) {
-              addLog({ type: "event_bad", text: `😱 距離歸零！${monster.name} 衝到面前！` });
+              addLog({ type:"event_bad", text:`😱 距離歸零！${monster.name} 衝到面前！` });
               await delay(500);
               curDist = DISTANCE_STEP;
               setDistance(curDist);
             } else {
-              addLog({ type: "system", text: `📍 距離縮短至 ${curDist}米` });
+              addLog({ type:"system", text:`📍 距離縮短至 ${curDist}米` });
             }
           }
 
@@ -292,7 +289,7 @@ export default function MonsterBattle({ onBack }) {
               setArcherHP(reviveHP);
               curArchHP = reviveHP;
               setRevived(true);
-              addLog({ type: "revive", text: "💖 教練施展【完全治癒術】！恢復30% HP，最後一條命！" });
+              addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！恢復30% HP，最後一條命！" });
               sfxEpic();
               await delay(2500);
             } else {
@@ -302,7 +299,7 @@ export default function MonsterBattle({ onBack }) {
             }
           }
         } else {
-          addLog({ type: "system", text: "🛡️ 怪物反擊被阻止！" });
+          addLog({ type:"system", text:"🛡️ 怪物反擊被阻止！" });
           skipCtr = false;
         }
         setSkipCounter(false);
@@ -315,15 +312,13 @@ export default function MonsterBattle({ onBack }) {
     if (mode === "veteran" && battleMode === "zombie" && headHitCount > 0) {
       curDist = Math.min(DISTANCE_START, curDist + DISTANCE_STEP);
       setDistance(curDist);
-      addLog({ type: "system", text: `💀 頭部命中！距離延長至 ${curDist}米` });
+      addLog({ type:"system", text:`💀 頭部命中！距離延長至 ${curDist}米` });
     }
 
-    // 回合結算
     const roundTotal = arrows.reduce((s, v) => s + v, 0);
-    addLog({ type: "total", text: `本回合 ${roundTotal}分　${monster.name} 剩 HP：${curMonHP}` });
+    addLog({ type:"total", text:`本回合 ${roundTotal}分　${monster.name} 剩 HP：${curMonHP}` });
     await delay(1500);
 
-    // 下一回合
     setArrows([]);
     setArcherATKMod(0);
     setRound(r => r + 1);
@@ -332,17 +327,27 @@ export default function MonsterBattle({ onBack }) {
   }
 
   async function startBattle() {
-    // 扣除每日次數
     await recordMonsterSession(profile.id).catch(() => {});
     setDailyLeft(l => Math.max(0, (l || 1) - 1));
 
+    // ✅ 老手模式：怪物數值增強（HP×1.5 / ATK×1.5 / DEF×1.3）
+    const boostedMonster = mode === "veteran"
+      ? {
+          ...pickedMonster,
+          hp:  Math.round(pickedMonster.hp  * VETERAN_MULT.hp),
+          atk: Math.round(pickedMonster.atk * VETERAN_MULT.atk),
+          def: Math.round(pickedMonster.def * VETERAN_MULT.def),
+        }
+      : pickedMonster;
+
+    setMonster(boostedMonster);
     setArcherHP(archerStats?.hp || 100);
-    setMonsterHP(monster.hp);
+    setMonsterHP(boostedMonster.hp);
     setRound(1);
     setDistance(DISTANCE_START);
     setLog([
-      { type: "system", text: `⚔️ 戰鬥開始！對手：${monster.icon} ${monster.name}` },
-      { type: "system", text: `🎯 模式：${battleMode === "zombie" ? "殭屍靶紙（部位判定）" : "分數靶紙（純傷害）"}　${mode === "veteran" ? "老手" : "新手"}` },
+      { type:"system", text:`⚔️ 戰鬥開始！對手：${boostedMonster.icon} ${boostedMonster.name}` },
+      { type:"system", text:`🎯 模式：${battleMode === "zombie" ? "殭屍靶紙（部位判定）" : "分數靶紙（純傷害）"}　${mode === "veteran" ? `⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）` : "新手"}` },
     ]);
     setBattlePhase("input");
     setArrows([]);
@@ -357,39 +362,78 @@ export default function MonsterBattle({ onBack }) {
     setTotalDmgDealt(0);
     setTotalDmgRecvd(0);
     setCritCount(0);
+    setDroppedMaterials([]);
     sfxTap();
   }
 
   async function endBattle(result, finalArchHP, finalMonHP) {
     if (result === "win") {
       sfxEpic();
-      const table = mode === "veteran" ? LOOT_TABLE_VETERAN : LOOT_TABLE_NOVICE;
-      const lootItem = drawLoot(table);
+      const table    = getLootTable({ isGuest, mode, battleMode, tier: monster.tier });
+      const lootItem = drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
-      addLog({ type: "win",  text: `🏆 擊倒 ${monster.name}！勝利！` });
-      addLog({ type: "loot", text: `🎁 掉落：${lootItem.icon} ${lootItem.name}` });
+
+      // ✅ 材料掉落 + 儲存
+      const matCount = getMaterialCount(monster.tier);
+      const mats     = drawMaterials(monster.id, matCount);
+      setDroppedMaterials(mats);
+      if (mats.length > 0 && profile?.id && !isGuest) {
+        addMaterials(profile.id, mats).catch(() => {});
+      }
+
+      addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
+      addLog({ type:"system", text:`📦 寶箱等你打開...` });
+
+      // 稀有掉落全場通知
       if (isRareLoot(lootItem) && profile?.id) {
         createNotification({
           type: "high_score",
           title: `🎁 ${profile.nickname || profile.name} 獲得稀有掉落！`,
-          content: `${profile.nickname || profile.name} 擊倒了 ${monster.name}，獲得【${lootItem.name}】！`,
-          targetMemberId: null, subjectMemberId: profile.id,
-          subjectInfo: { nickname: profile.nickname || profile.name, item: lootItem.name },
+          content: `${profile.nickname || profile.name} 擊倒了 ${monster.name}，獲得稀有道具！`,
+          targetMemberId: null,
+          subjectMemberId: profile.id,
+          subjectInfo: {
+            nickname: profile.nickname || profile.name,
+            item: lootItem.name,
+            // ✅ 不設 level / bowType，HonorCelebration 會走「稀有掉落」分支
+          },
         }, profile.id).catch(() => {});
       }
-      await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "win", rounds: round, lootName: lootItem.name, lootIcon: lootItem.icon, lootType: lootItem.type, mode, battleMode }).catch(() => {});
+
+      // ✅ saveMonsterLog 補存 materials
+      await saveMonsterLog(profile.id, {
+        monsterName: monster.name,
+        monsterId:   monster.id,
+        result:      "win",
+        rounds:      round,
+        lootName:    lootItem.name,
+        lootIcon:    lootItem.icon,
+        lootType:    lootItem.type,
+        mode,
+        battleMode,
+        materials:   mats.map(m => m.id),
+      }).catch(() => {});
+
       await delay(1000);
       setPhase("loot");
     } else {
       sfxSoftFail();
-      addLog({ type: "lose", text: `💀 被 ${monster.name} 擊倒…下次再戰！` });
-      await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "lose", rounds: round, mode, battleMode }).catch(() => {});
+      addLog({ type:"lose", text:`💀 被 ${monster.name} 擊倒…下次再戰！` });
+      await saveMonsterLog(profile.id, {
+        monsterName: monster.name,
+        monsterId:   monster.id,
+        result:      "lose",
+        rounds:      round,
+        mode,
+        battleMode,
+        materials:   [],
+      }).catch(() => {});
       await delay(1000);
       setPhase("result");
     }
   }
 
-  // ── 畫面 ──────────────────────────────────────────────
+  // ── 畫面 ─────────────────────────────────────────────────
 
   if (phase === "select") {
     return (
@@ -397,8 +441,11 @@ export default function MonsterBattle({ onBack }) {
         <style>{BATTLE_CSS}</style>
         <div className="flex items-center justify-between">
           {onBack && <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>}
-          <button onClick={() => { getMonsterLogs(profile.id).then(setHistory); setPhase("history"); }}
-            className="text-xs text-blue-600 font-bold">📊 戰績記錄</button>
+          <button
+            onClick={() => { getMonsterLogs(profile.id).then(setHistory); setPhase("history"); }}
+            className="text-xs text-blue-600 font-bold">
+            📊 戰績記錄
+          </button>
         </div>
 
         <div className="rounded-2xl p-5 text-white" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
@@ -426,10 +473,9 @@ export default function MonsterBattle({ onBack }) {
           </div>
         ) : (
           <>
-            {/* 今日隨機對手 */}
             <div className="grid grid-cols-2 gap-3">
               {randMonsters.map(m => {
-                const tier = TIER_LABEL[m.tier];
+                const tier   = TIER_LABEL[m.tier];
                 const isPicked = pickedMonster?.id === m.id;
                 return (
                   <button key={m.id} onClick={() => setPickedMonster(m)}
@@ -440,7 +486,7 @@ export default function MonsterBattle({ onBack }) {
                     }}>
                     <div className="text-3xl mb-2">{m.icon}</div>
                     <div className="font-black text-gray-800 text-sm">{m.name}</div>
-                    <div className="text-xs mt-0.5 font-bold" style={{ color: tier.color }}>【{tier.label}】</div>
+                    <div className="text-xs mt-0.5 font-bold" style={{ color:tier.color }}>【{tier.label}】</div>
                     <div className="flex gap-2 mt-1 text-xs text-gray-400">
                       <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
                     </div>
@@ -450,10 +496,16 @@ export default function MonsterBattle({ onBack }) {
             </div>
 
             {pickedMonster && (
-              <button onClick={() => { setMonster(pickedMonster); setPhase("mode"); }}
-                className="w-full py-4 rounded-2xl font-black text-lg text-white"
-                style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", animation:"mb-glow 2s ease infinite" }}>
-                ⚔️ 挑戰 {pickedMonster.name}！
+              <button
+                onClick={() => {
+                  if (dailyLeft !== null && dailyLeft <= 0) return;
+                  setMonster(pickedMonster);
+                  setPhase("mode");
+                }}
+                disabled={dailyLeft !== null && dailyLeft <= 0}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white disabled:opacity-50"
+                style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", animation: dailyLeft > 0 ? "mb-glow 2s ease infinite" : "none" }}>
+                {dailyLeft !== null && dailyLeft <= 0 ? "😴 今日次數已用完" : `⚔️ 挑戰 ${pickedMonster.name}！`}
               </button>
             )}
           </>
@@ -505,7 +557,9 @@ export default function MonsterBattle({ onBack }) {
           className="rounded-2xl p-5 text-left border-2 border-orange-200 bg-orange-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟠 老手模式</div>
           <div className="font-black text-gray-800 mb-1">距離15米起，被打近時觸發爆擊</div>
-          <div className="text-gray-500 text-sm">距離越近怪物爆擊率越高，命中頭部可延長距離。</div>
+          <div className="text-gray-500 text-sm">
+            怪物 HP×1.5 / ATK×1.5 / DEF×1.3，距離越近爆擊率越高，命中頭部可延長距離。
+          </div>
           <div className="text-orange-600 text-xs font-bold mt-2">掉寶更豐富，含5折券</div>
         </button>
       </div>
@@ -513,28 +567,41 @@ export default function MonsterBattle({ onBack }) {
   }
 
   if (phase === "prebattle") {
+    // 預覽時顯示增強後的數值（讓玩家知道老手模式數值不一樣）
+    const previewHP  = mode === "veteran" ? Math.round(pickedMonster.hp  * VETERAN_MULT.hp)  : pickedMonster.hp;
+    const previewATK = mode === "veteran" ? Math.round(pickedMonster.atk * VETERAN_MULT.atk) : pickedMonster.atk;
+    const previewDEF = mode === "veteran" ? Math.round(pickedMonster.def * VETERAN_MULT.def) : pickedMonster.def;
+
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
         <button onClick={() => setPhase("difficulty")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
-          <div className="text-6xl mb-3" style={{ animation:"mb-bounce 1.5s ease infinite" }}>{monster.icon}</div>
-          <div className="text-2xl font-black mb-1">{monster.name}</div>
-          <div className="text-purple-200 text-sm mb-4">{monster.desc}</div>
+          <div className="text-6xl mb-3" style={{ animation:"mb-bounce 1.5s ease infinite" }}>{pickedMonster.icon}</div>
+          <div className="text-2xl font-black mb-1">{pickedMonster.name}</div>
+          <div className="text-purple-200 text-sm mb-4">{pickedMonster.desc}</div>
           <div className="flex justify-center gap-3 mb-4">
-            {[["HP",monster.hp],["ATK",monster.atk],["DEF",monster.def]].map(([k,v])=>(
+            {[["HP",previewHP],["ATK",previewATK],["DEF",previewDEF]].map(([k,v]) => (
               <div key={k} className="bg-white/15 rounded-xl px-4 py-2">
                 <div className="text-purple-200 text-xs">{k}</div>
                 <div className="font-black text-xl">{v}</div>
               </div>
             ))}
           </div>
+          {mode === "veteran" && (
+            <div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">
+              ⚠️ 老手模式：怪物數值已強化
+            </div>
+          )}
           {archerStats && (
             <div className="bg-white/10 rounded-xl p-3 mb-3 text-left">
               <div className="text-purple-200 text-xs mb-2 text-center">你的數值</div>
               <div className="flex justify-around text-sm">
-                {[["HP",archerStats.hp],["ATK",archerStats.atk],["DEF",archerStats.def]].map(([k,v])=>(
-                  <div key={k} className="text-center"><div className="text-purple-200 text-xs">{k}</div><div className="font-black">{v}</div></div>
+                {[["HP",archerStats.hp],["ATK",archerStats.atk],["DEF",archerStats.def]].map(([k,v]) => (
+                  <div key={k} className="text-center">
+                    <div className="text-purple-200 text-xs">{k}</div>
+                    <div className="font-black">{v}</div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -557,8 +624,8 @@ export default function MonsterBattle({ onBack }) {
   if (phase === "battle") {
     const maxHP   = archerStats?.hp || 100;
     const archPct = Math.max(0, Math.round(archerHP / maxHP * 100));
-    const monPct  = Math.max(0, Math.round(monsterHP / monster.hp * 100));
-    const total6  = arrows.reduce((s,v) => s + v, 0);
+    const monPct  = monster ? Math.max(0, Math.round(monsterHP / monster.hp * 100)) : 0;
+    const total6  = arrows.reduce((s,v) => s+v, 0);
 
     return (
       <div className="p-4 flex flex-col gap-3">
@@ -574,9 +641,9 @@ export default function MonsterBattle({ onBack }) {
           <div className="mb-2">
             <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
               <span style={animHit ? { animation:"mb-shake .5s ease" } : {}}>
-                {monster.icon} {monster.name}
+                {monster?.icon} {monster?.name}
               </span>
-              <span>{monsterHP}/{monster.hp}</span>
+              <span>{monsterHP}/{monster?.hp}</span>
             </div>
             <div className="h-3 bg-white/20 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all duration-700"
@@ -597,7 +664,7 @@ export default function MonsterBattle({ onBack }) {
 
         {/* 隨機事件提示 */}
         {battlePhase === "event" && currentEvent && (
-          <div className={`rounded-2xl p-4 text-center border-2 ${currentEvent.type === "buff" ? "bg-emerald-50 border-emerald-300" : "bg-red-50 border-red-300"}`}
+          <div className={`rounded-2xl p-4 text-center border-2 ${currentEvent.type==="buff"?"bg-emerald-50 border-emerald-300":"bg-red-50 border-red-300"}`}
             style={{ animation:"mb-pop .4s ease" }}>
             <div className="text-3xl mb-1">{currentEvent.icon}</div>
             <div className="font-black text-gray-800">{currentEvent.title}</div>
@@ -609,7 +676,7 @@ export default function MonsterBattle({ onBack }) {
         {battlePhase === "counter" && (
           <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 text-center"
             style={{ animation:"mb-shake .5s ease" }}>
-            <div className="text-3xl mb-1">{monster.icon}</div>
+            <div className="text-3xl mb-1">{monster?.icon}</div>
             <div className="text-red-700 font-black text-lg">反擊中！</div>
           </div>
         )}
@@ -621,9 +688,8 @@ export default function MonsterBattle({ onBack }) {
               輸入本回合 {ARROWS_PER_ROUND} 箭分數
               <span className="text-gray-400 font-normal ml-1">（每 {ARROWS_PER_COUNTER} 箭後怪物反擊）</span>
             </div>
-            {/* 已輸入箭數顯示 */}
             <div className="flex gap-1.5 flex-wrap mb-3">
-              {Array.from({length: ARROWS_PER_ROUND}).map((_,i) => (
+              {Array.from({ length:ARROWS_PER_ROUND }).map((_,i) => (
                 <div key={i} className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black
                   ${i < arrows.length
                     ? "bg-blue-600 text-white"
@@ -637,7 +703,6 @@ export default function MonsterBattle({ onBack }) {
                 <button onClick={undoArrow} className="text-xs text-gray-400 underline ml-1 self-center">↩退</button>
               )}
             </div>
-            {/* 中間提示（第幾箭，2箭一組）*/}
             {arrows.length < ARROWS_PER_ROUND && (
               <div className="text-xs text-center text-blue-500 font-bold mb-2">
                 第 {arrows.length + 1} 箭
@@ -646,19 +711,17 @@ export default function MonsterBattle({ onBack }) {
                  arrows.length === 5 ? "　→ 最後一箭！" : ""}
               </div>
             )}
-            {/* 分數按鈕 */}
             {arrows.length < ARROWS_PER_ROUND && (
               <div className="grid grid-cols-6 gap-1.5">
                 {HALF_SCORES.map(s => (
                   <button key={s.label} onClick={() => inputArrow(s.val)}
                     className="py-2 rounded-lg font-black text-white text-sm active:scale-90 transition-transform"
-                    style={{ background: s.color }}>
+                    style={{ background:s.color }}>
                     {s.label}
                   </button>
                 ))}
               </div>
             )}
-            {/* 加總 + 送出 */}
             <div className="flex items-center justify-between mt-3 bg-gray-50 rounded-xl px-3 py-2">
               <span className="text-gray-600 text-sm font-bold">本回合總分</span>
               <span className="text-blue-600 font-black text-xl">{total6}<span className="text-xs text-gray-400 ml-1">/ 60</span></span>
@@ -685,10 +748,10 @@ export default function MonsterBattle({ onBack }) {
               e.type==="counter"    ? "text-orange-300"            :
               e.type==="total"      ? "text-cyan-300 font-bold"   :
               e.type==="loot"       ? "text-yellow-300 font-black":
-              e.type==="hit_organ"  ? "text-purple-300 font-black"  :
-              e.type==="hit_crit"   ? "text-orange-300 font-bold"   :
-              e.type==="hit"        ? "text-emerald-300"            :
-              e.type==="miss"       ? "text-gray-500"               :
+              e.type==="hit_organ"  ? "text-purple-300 font-black":
+              e.type==="hit_crit"   ? "text-orange-300 font-bold" :
+              e.type==="hit"        ? "text-emerald-300"           :
+              e.type==="miss"       ? "text-gray-500"              :
               "text-gray-400"
             }`}>{e.text}</div>
           ))}
@@ -702,46 +765,68 @@ export default function MonsterBattle({ onBack }) {
     return (
       <div className="p-4 flex flex-col gap-4 items-center">
         <style>{BATTLE_CSS}</style>
-        <div className="text-center">
-          <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster.name}！</div>
+        <div className="text-center mt-4">
+          <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster?.name}！</div>
           <div className="text-gray-500 text-sm">第 {round} 回合完成</div>
         </div>
-        {!lootRevealed ? (
-          <div className="flex flex-col items-center gap-3">
-            <button onClick={() => { setLootRevealed(true); sfxEpic(); }}
-              className="flex flex-col items-center active:scale-95 transition-transform"
-              style={{ animation:"mb-chest 1.5s ease infinite" }}>
-              <div className="text-9xl">📦</div>
-            </button>
-            <div className="text-amber-600 font-black text-xl">點擊開箱！</div>
-            <div className="text-gray-400 text-sm">寶箱在等你打開…</div>
+
+        <div className="w-full grid grid-cols-3 gap-2">
+          {[["⚔️ 總傷害",totalDmgDealt],["🛡️ 承傷",totalDmgRecvd],["💥 爆擊",`${critCount}次`]].map(([lbl,val]) => (
+            <div key={lbl} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-200">
+              <div className="text-gray-400 text-xs">{lbl}</div>
+              <div className="font-black text-gray-800 text-xl">{val}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* 材料掉落摘要 */}
+        {droppedMaterials.length > 0 && (
+          <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3">
+            <div className="text-purple-700 text-xs font-bold mb-1">🧪 材料掉落</div>
+            <div className="flex gap-2 flex-wrap">
+              {droppedMaterials.map((m,i) => (
+                <span key={i} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">
+                  {m.icon} {m.name}
+                </span>
+              ))}
+            </div>
           </div>
+        )}
+
+        {!lootRevealed ? (
+          <button onClick={() => { setLootRevealed(true); setShowLootBox(true); }}
+            className="flex flex-col items-center gap-3 active:scale-95 transition-transform"
+            style={{ animation:"mb-chest 1.5s ease infinite" }}>
+            <div className="text-9xl">📦</div>
+            <div className="text-amber-600 font-black text-xl">點擊開箱！</div>
+            <div className="text-gray-400 text-sm">裡面有什麼？快來看！</div>
+          </button>
         ) : (
-          <div className="w-full flex flex-col items-center gap-4" style={{ animation:"mb-pop .6s cubic-bezier(.18,.89,.32,1.4)" }}>
-            <div className="text-9xl" style={{ filter:"drop-shadow(0 0 24px rgba(251,191,36,.8))", animation:"mb-bounce 1s ease infinite" }}>
-              {loot.icon}
-            </div>
-            <div className="text-center">
-              <div className="text-gray-400 text-xs font-black tracking-widest mb-1">🎁 獲得掉落</div>
-              <div className="font-black text-2xl text-gray-800 mb-2">{loot.name}</div>
-              <div className="text-gray-500 text-sm px-4">{loot.desc}</div>
-            </div>
+          <div className="w-full flex flex-col items-center gap-3">
+            <div className="text-5xl">{loot?.icon}</div>
+            <div className="font-black text-xl text-gray-800">{loot?.name}</div>
+            <div className="text-gray-500 text-sm text-center px-4">{loot?.desc}</div>
+            {dailyLeft !== null && dailyLeft <= 0 && (
+              <div className="text-red-500 text-xs font-bold text-center">今日次數已用完，明天再來！</div>
+            )}
             <button onClick={() => setShowBattleCard(true)}
-              className="w-full py-3 rounded-xl font-black text-white mb-2"
+              className="w-full py-3 rounded-xl font-black text-white"
               style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)" }}>
               📤 產生戰績分享卡
             </button>
             <div className="flex gap-3 w-full">
               <button onClick={() => setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
-              <button onClick={() => { setPhase("prebattle"); }}
-                className="flex-1 py-3 rounded-xl font-black"
-                style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+              {(dailyLeft === null || dailyLeft > 0) && (
+                <button onClick={() => { setMonster(pickedMonster); setPhase("prebattle"); }}
+                  className="flex-1 py-3 rounded-xl font-black"
+                  style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
+                  再挑戰！
+                </button>
+              )}
             </div>
-            {dailyLeft !== null && dailyLeft <= 0 && (
-              <div className="text-red-500 text-xs font-bold">今日次數已用完，明天再來！</div>
-            )}
           </div>
         )}
+
         <details className="w-full">
           <summary className="text-gray-400 text-xs cursor-pointer text-center">▼ 查看戰鬥記錄</summary>
           <div className="bg-gray-900 rounded-xl p-3 mt-2 max-h-40 overflow-y-auto">
@@ -749,10 +834,12 @@ export default function MonsterBattle({ onBack }) {
           </div>
         </details>
 
+        {showLootBox && loot && <LootBox loot={loot} onDone={() => setShowLootBox(false)} />}
+
         {showBattleCard && (
           <BattleCard
             onClose={() => setShowBattleCard(false)}
-            battleData={{ monster, totalDmg: totalDmgDealt, totalReceived: totalDmgRecvd, critCount, loot, round, mode, battleMode }}
+            battleData={{ monster, totalDmg:totalDmgDealt, totalReceived:totalDmgRecvd, critCount, loot, round, mode, battleMode }}
           />
         )}
       </div>
@@ -766,12 +853,16 @@ export default function MonsterBattle({ onBack }) {
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7f1d1d,#4c1d95)" }}>
           <div className="text-5xl mb-3" style={{ animation:"mb-bounce 1s ease infinite" }}>💀</div>
           <div className="text-2xl font-black mb-1">敗北…</div>
-          <div className="text-sm opacity-80 mb-4">被 {monster.name} 擊倒了，{round} 回合</div>
+          <div className="text-sm opacity-80 mb-4">被 {monster?.name} 擊倒了，{round} 回合</div>
           <div className="flex gap-2">
             <button onClick={() => setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
-            <button onClick={() => setPhase("prebattle")}
-              className="flex-1 py-3 rounded-xl font-black"
-              style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+            {(dailyLeft === null || dailyLeft > 0) && (
+              <button onClick={() => { setMonster(pickedMonster); setPhase("prebattle"); }}
+                className="flex-1 py-3 rounded-xl font-black"
+                style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
+                再挑戰！
+              </button>
+            )}
           </div>
         </div>
         <details className="w-full">
@@ -797,20 +888,20 @@ export default function MonsterBattle({ onBack }) {
             {history.map(h => {
               const m = MONSTERS.find(m => m.id === h.monsterId);
               return (
-                <div key={h.id} className={`rounded-xl p-4 border ${h.result === "win" ? "bg-emerald-50 border-emerald-200" : "bg-gray-50 border-gray-200"}`}>
+                <div key={h.id} className={`rounded-xl p-4 border ${h.result==="win"?"bg-emerald-50 border-emerald-200":"bg-gray-50 border-gray-200"}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{m?.icon || "👹"}</span>
                       <div>
                         <div className="font-bold text-gray-800 text-sm">{h.monsterName}</div>
                         <div className="text-gray-400 text-xs">
-                          {h.mode === "veteran" ? "老手" : "新手"}·{h.battleMode === "zombie" ? "殭屍" : "分數"}　{h.rounds}回合
+                          {h.mode==="veteran"?"老手":"新手"}·{h.battleMode==="zombie"?"殭屍":"分數"}　{h.rounds}回合
                         </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className={`font-black text-sm ${h.result === "win" ? "text-emerald-600" : "text-gray-400"}`}>
-                        {h.result === "win" ? "🏆 勝利" : "💀 落敗"}
+                      <div className={`font-black text-sm ${h.result==="win"?"text-emerald-600":"text-gray-400"}`}>
+                        {h.result==="win"?"🏆 勝利":"💀 落敗"}
                       </div>
                       {h.lootName && <div className="text-xs text-amber-600">{h.lootIcon} {h.lootName}</div>}
                     </div>
