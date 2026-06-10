@@ -1,118 +1,85 @@
 // src/lib/monsterMaterials.js
-// 六族材料定義 + 材料升級鏈
+// 怪物材料定義 + 材料圖鑑
 
-export const RARITY_CONFIG = {
-  common:    { label:"普通",   color:"#9ca3af", weight:60 },
-  uncommon:  { label:"非凡",   color:"#4ade80", weight:28 },
-  rare:      { label:"稀有",   color:"#60a5fa", weight:9  },
-  epic:      { label:"史詩",   color:"#a78bfa", weight:2.5 },
-  legendary: { label:"傳說",   color:"#fbbf24", weight:0.5 },
-};
-
-// ── 六族材料（每族6種，形成升級鏈）─────────────────────
 export const MATERIALS = [
+  // ── 殭屍系列 ──
+  { id: "zombie_head",    name: "腐臭頭顱",   icon: "💀", monster: ["zombie_a","zombie_b"],   rarity: "common",   desc: "散發腐臭，但收藏家很喜歡" },
+  { id: "zombie_heart",   name: "破爛心臟",   icon: "🖤", monster: ["zombie_a","zombie_b"],   rarity: "uncommon", desc: "還在微弱跳動，令人不安" },
+  { id: "zombie_arm",     name: "斷手",       icon: "🦴", monster: ["zombie_a","zombie_b"],   rarity: "common",   desc: "不知道原本屬於誰的手" },
+  { id: "zombie_axe",     name: "生鏽斧頭",   icon: "🪓", monster: ["zombie_b"],             rarity: "rare",     desc: "殭屍乙專用武器，鏽跡斑斑" },
 
-  // ════ 鬼怪族材料鏈 ════
-  // 好兄弟→魔神仔→林投姐→城隍爺→十八王公→地獄閻羅
-  { id:"ghost_m1", name:"路邊供品",   icon:"🍌", family:"ghost", tier:"common",    rarity:"common",    desc:"好兄弟最愛的供品，隨便撿的。",         upgradesTo:"ghost_m2", upgradeCount:5 },
-  { id:"ghost_m2", name:"魔神仔迷霧", icon:"🌀", family:"ghost", tier:"rare",      rarity:"uncommon",  desc:"讓人迷路的靈氣，濃縮成一團。",         upgradesTo:"ghost_m3", upgradeCount:5 },
-  { id:"ghost_m3", name:"林投葉",     icon:"🌿", family:"ghost", tier:"elite",     rarity:"rare",      desc:"林投姐親自摘下的樹葉，仍帶著怨氣。",   upgradesTo:"ghost_m4", upgradeCount:5 },
-  { id:"ghost_m4", name:"生死簿碎頁", icon:"📖", family:"ghost", tier:"fierce",    rarity:"epic",      desc:"城隍爺的生死簿，記載著無數命運。",     upgradesTo:"ghost_m5", upgradeCount:5 },
-  { id:"ghost_m5", name:"義犬魂魄",   icon:"🐺", family:"ghost", tier:"boss",      rarity:"legendary", desc:"十八王公義犬凝聚的靈魂，充滿忠義之氣。", upgradesTo:"ghost_m6", upgradeCount:5 },
-  { id:"ghost_m6", name:"閻羅令牌",   icon:"⚖️", family:"ghost", tier:"mythic",    rarity:"legendary", desc:"地獄閻羅的最高權杖，掌管生死輪迴。",   upgradesTo:null,       upgradeCount:0 },
+  // ── 史萊姆系列 ──
+  { id: "slime_shard",    name: "黏液碎片",   icon: "💧", monster: ["slime_a","slime_b"],    rarity: "common",   desc: "黏黏的，用來黏東西超好用" },
+  { id: "slime_core",     name: "史萊姆核心", icon: "🫧", monster: ["slime_a"],             rarity: "uncommon", desc: "散發微弱的魔力光芒" },
+  { id: "slime_core_big", name: "巨型核心",   icon: "🟢", monster: ["slime_b"],             rarity: "rare",     desc: "黏液史萊姆才有，純度極高" },
+  { id: "slime_crystal",  name: "透明結晶",   icon: "💎", monster: ["slime_a","slime_b"],   rarity: "rare",     desc: "凝固的黏液形成的完美結晶" },
 
-  // ════ 山林族材料鏈 ════
-  { id:"mountain_m1", name:"山豬獠牙",   icon:"🐗", family:"mountain", tier:"common",    rarity:"common",    desc:"山豬的獠牙，堅硬無比。",               upgradesTo:"mountain_m2", upgradeCount:5 },
-  { id:"mountain_m2", name:"百步蛇毒囊", icon:"🐍", family:"mountain", tier:"rare",      rarity:"uncommon",  desc:"劇毒濃縮，一滴可讓人昏迷三天。",       upgradesTo:"mountain_m3", upgradeCount:5 },
-  { id:"mountain_m3", name:"山魈幻影石", icon:"🦊", family:"mountain", tier:"elite",     rarity:"rare",      desc:"山魈幻化的殘留靈石，帶著迷幻光芒。",   upgradesTo:"mountain_m4", upgradeCount:5 },
-  { id:"mountain_m4", name:"霧社巨石",   icon:"🗿", family:"mountain", tier:"fierce",    rarity:"epic",      desc:"巨人踩過的山石，蘊含大地之力。",       upgradesTo:"mountain_m5", upgradeCount:5 },
-  { id:"mountain_m5", name:"靈獸爪痕",   icon:"🦁", family:"mountain", tier:"boss",      rarity:"legendary", desc:"玉山靈獸留下的爪痕化石，充滿神力。",   upgradesTo:"mountain_m6", upgradeCount:5 },
-  { id:"mountain_m6", name:"台灣龍鱗",   icon:"🐲", family:"mountain", tier:"mythic",    rarity:"legendary", desc:"台灣龍身上的龍鱗，閃耀著神聖光芒。",   upgradesTo:null,          upgradeCount:0 },
+  // ── 獸人系列 ──
+  { id: "orc_fang",       name: "獸人獠牙",   icon: "🦷", monster: ["orc"],                 rarity: "uncommon", desc: "咬合力超強，但現在沒用了" },
+  { id: "orc_shield",     name: "破裂盾牌",   icon: "🛡️", monster: ["orc"],                 rarity: "rare",     desc: "被你的箭射破的盾牌碎片" },
+  { id: "orc_hide",       name: "野豬皮",     icon: "🐗", monster: ["orc"],                 rarity: "common",   desc: "厚實耐用，做皮帶很適合" },
 
-  // ════ 毒蟲族材料鏈 ════
-  { id:"insect_m1", name:"蟑螂觸角",   icon:"🪳", family:"insect", tier:"common",    rarity:"common",    desc:"蟑螂的觸角，感知能力超強。",             upgradesTo:"insect_m2", upgradeCount:5 },
-  { id:"insect_m2", name:"虎頭蜂刺",   icon:"🐝", family:"insect", tier:"rare",      rarity:"uncommon",  desc:"劇毒蜂刺，碰到就腫成豬頭。",             upgradesTo:"insect_m3", upgradeCount:5 },
-  { id:"insect_m3", name:"蜈蚣百腳",   icon:"🐛", family:"insect", tier:"elite",     rarity:"rare",      desc:"蜈蚣精的一隻腳，還在微微蠕動。",         upgradesTo:"insect_m4", upgradeCount:5 },
-  { id:"insect_m4", name:"蠍王毒刺",   icon:"🦂", family:"insect", tier:"fierce",    rarity:"epic",      desc:"蠍子王的尾刺，毒性可融化鋼鐵。",         upgradesTo:"insect_m5", upgradeCount:5 },
-  { id:"insect_m5", name:"蛛后毒腺",   icon:"🕷️", family:"insect", tier:"boss",      rarity:"legendary", desc:"蜘蛛女王的毒腺，能操縱命運之線。",       upgradesTo:"insect_m6", upgradeCount:5 },
-  { id:"insect_m6", name:"蟲神核心",   icon:"🦋", family:"insect", tier:"mythic",    rarity:"legendary", desc:"蟲神的神力結晶，萬蟲朝聖的聖物。",       upgradesTo:null,        upgradeCount:0 },
+  // ── 壞老闆系列 ──
+  { id: "boss_card",      name: "假笑名片",   icon: "📇", monster: ["bad_boss"],            rarity: "common",   desc: "印著『誠信第一』，笑死人" },
+  { id: "boss_kpi",       name: "KPI報告",    icon: "📊", monster: ["bad_boss"],            rarity: "uncommon", desc: "全是假數字，但裝訂很精美" },
+  { id: "boss_button",    name: "西裝鈕扣",   icon: "🔘", monster: ["bad_boss"],            rarity: "rare",     desc: "名牌西裝的最後一顆鈕扣" },
 
-  // ════ 職場族材料鏈 ════
-  { id:"workplace_m1", name:"投訴書",     icon:"📝", family:"workplace", tier:"common",    rarity:"common",    desc:"奧客手寫的無理投訴，密密麻麻。",         upgradesTo:"workplace_m2", upgradeCount:5 },
-  { id:"workplace_m2", name:"PUA語錄",    icon:"🗣️", family:"workplace", tier:"rare",      rarity:"uncommon",  desc:"爛主管的洗腦名言，讓人懷疑自己的那種。", upgradesTo:"workplace_m3", upgradeCount:5 },
-  { id:"workplace_m3", name:"空頭支票",   icon:"💸", family:"workplace", tier:"elite",     rarity:"rare",      desc:"壞老闆的承諾書，從來不會兌現。",         upgradesTo:"workplace_m4", upgradeCount:5 },
-  { id:"workplace_m4", name:"漲租通知",   icon:"📬", family:"workplace", tier:"fierce",    rarity:"epic",      desc:"包租婆每月必發，讓人絕望的信封。",       upgradesTo:"workplace_m5", upgradeCount:5 },
-  { id:"workplace_m5", name:"財閥印章",   icon:"🤵", family:"workplace", tier:"boss",      rarity:"legendary", desc:"財閥總裁的私印，蓋下去就是命令。",       upgradesTo:"workplace_m6", upgradeCount:5 },
-  { id:"workplace_m6", name:"資本核心",   icon:"💰", family:"workplace", tier:"mythic",    rarity:"legendary", desc:"資本主義的本質結晶，壓榨一切的來源。",   upgradesTo:null,           upgradeCount:0 },
+  // ── 奧客系列 ──
+  { id: "karen_complaint",name: "投訴書",     icon: "📝", monster: ["obnoxious"],           rarity: "common",   desc: "密密麻麻的無理要求" },
+  { id: "karen_tear",     name: "眼淚結晶",   icon: "😭", monster: ["obnoxious"],           rarity: "uncommon", desc: "凝固的鱷魚眼淚，無藥可救" },
+  { id: "karen_glass",    name: "玻璃心碎片", icon: "💔", monster: ["obnoxious"],           rarity: "rare",     desc: "易碎品，請小心保存" },
 
-  // ════ 考試族材料鏈 ════
-  { id:"exam_m1", name:"小考卷",     icon:"📝", family:"exam", tier:"common",    rarity:"common",    desc:"滿江紅的小考卷，每個紅叉都是心痛。",     upgradesTo:"exam_m2", upgradeCount:5 },
-  { id:"exam_m2", name:"段考筆記",   icon:"📚", family:"exam", tier:"rare",      rarity:"uncommon",  desc:"熬夜寫的段考筆記，字越到後面越潦草。",   upgradesTo:"exam_m3", upgradeCount:5 },
-  { id:"exam_m3", name:"崩潰眼淚",   icon:"😱", family:"exam", tier:"elite",     rarity:"rare",      desc:"期末考前崩潰的眼淚，已凝固成結晶。",     upgradesTo:"exam_m4", upgradeCount:5 },
-  { id:"exam_m4", name:"學測准考證", icon:"🎯", family:"exam", tier:"fierce",    rarity:"epic",      desc:"那一年的准考證，帶著無數人的夢想。",     upgradesTo:"exam_m5", upgradeCount:5 },
-  { id:"exam_m5", name:"國考教材",   icon:"📜", family:"exam", tier:"boss",      rarity:"legendary", desc:"考了五年的國考教材，書頁都翻爛了。",     upgradesTo:"exam_m6", upgradeCount:5 },
-  { id:"exam_m6", name:"制度本質",   icon:"🏫", family:"exam", tier:"mythic",    rarity:"legendary", desc:"升學制度的核心，無法改變的存在。",       upgradesTo:null,      upgradeCount:0 },
+  // ── 爛主管系列 ──
+  { id: "mgr_pua",        name: "PUA語錄",    icon: "🗣️", monster: ["bad_mgr"],             rarity: "common",   desc: "『你要感謝我給你這個機會』" },
+  { id: "mgr_overtime",   name: "加班申請表", icon: "📋", monster: ["bad_mgr"],             rarity: "uncommon", desc: "已蓋章，永遠無法請假" },
+  { id: "mgr_review",     name: "過期績效單", icon: "⚠️", monster: ["bad_mgr"],             rarity: "rare",     desc: "寫著『有待加強』的考核表" },
 
-  // ════ 廟會族材料鏈 ════
-  { id:"temple_m1", name:"七爺枷鎖",   icon:"🎭", family:"temple", tier:"common",    rarity:"common",    desc:"七爺手持的枷鎖碎片，仍有靈氣。",         upgradesTo:"temple_m2", upgradeCount:5 },
-  { id:"temple_m2", name:"八爺鐵鎚",   icon:"🪬", family:"temple", tier:"rare",      rarity:"uncommon",  desc:"八爺的鐵鎚碎片，重量驚人。",             upgradesTo:"temple_m3", upgradeCount:5 },
-  { id:"temple_m3", name:"千里眼珠",   icon:"👁️", family:"temple", tier:"elite",     rarity:"rare",      desc:"千里眼脫落的眼珠，能看見遠方。",         upgradesTo:"temple_m4", upgradeCount:5 },
-  { id:"temple_m4", name:"順風耳殼",   icon:"👂", family:"temple", tier:"fierce",    rarity:"epic",      desc:"順風耳的耳殼，能聽見萬里之外的聲音。",   upgradesTo:"temple_m5", upgradeCount:5 },
-  { id:"temple_m5", name:"虎爺虎牙",   icon:"🐯", family:"temple", tier:"boss",      rarity:"legendary", desc:"虎爺的金牙，咬財進寶的神奇力量。",       upgradesTo:"temple_m6", upgradeCount:5 },
-  { id:"temple_m6", name:"媽祖令旗",   icon:"🌊", family:"temple", tier:"mythic",    rarity:"legendary", desc:"媽祖護法的令旗，呼風喚雨，鎮守海疆。",   upgradesTo:null,        upgradeCount:0 },
+  // ── 黑心包租婆系列 ──
+  { id: "land_notice",    name: "漲租通知",   icon: "📬", monster: ["landlady"],            rarity: "common",   desc: "每個月都會收到，令人崩潰" },
+  { id: "land_key",       name: "神秘鑰匙",   icon: "🗝️", monster: ["landlady"],            rarity: "uncommon", desc: "不知道開哪裡的門" },
+  { id: "land_contract",  name: "過期契約",   icon: "📜", monster: ["landlady"],            rarity: "uncommon", desc: "霸王條款寫滿整張紙" },
+  { id: "land_underwear", name: "神秘內衣",   icon: "👙", monster: ["landlady"],            rarity: "rare",     desc: "在浴室晾了三年，謎團重重" },
 
-  // ════ 章碎片（所有怪物均可掉落）════
-  { id:"frag_fatcat",  name:"肥貓章碎片", icon:"🐱", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成肥貓章。", upgradesTo:null, upgradeCount:0 },
-  { id:"frag_score",   name:"積分章碎片", icon:"⭐", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成積分章。", upgradesTo:null, upgradeCount:0 },
-  { id:"frag_achieve", name:"成就章碎片", icon:"🏆", family:"all", tier:"all", rarity:"rare",     desc:"集齊可以合成成就章。", upgradesTo:null, upgradeCount:0 },
+  // ── 期末考系列 ──
+  { id: "exam_paper",     name: "考卷碎片",   icon: "📄", monster: ["final_exam"],          rarity: "common",   desc: "滿江紅，每個字都是眼淚" },
+  { id: "exam_tear",      name: "崩潰眼淚",   icon: "💧", monster: ["final_exam"],          rarity: "uncommon", desc: "考前崩潰的真實眼淚，已乾燥" },
+  { id: "exam_luck",      name: "僥倖通過書", icon: "🍀", monster: ["final_exam"],          rarity: "rare",     desc: "據說摸了會考試過關" },
+  { id: "exam_perfect",   name: "滿分卷",     icon: "💯", monster: ["final_exam"],          rarity: "legendary",desc: "傳說中存在的東西，有人見過嗎？" },
+
+  // ── 章碎片系列（所有怪物都可能掉）──
+  { id: "frag_fatcat",    name: "肥貓章碎片", icon: "🐱", monster: "all",                   rarity: "uncommon", desc: "集齊可以合成肥貓章" },
+  { id: "frag_score",     name: "積分章碎片", icon: "⭐", monster: "all",                   rarity: "uncommon", desc: "集齊可以合成積分章" },
+  { id: "frag_achieve",   name: "成就章碎片", icon: "🏆", monster: "all",                   rarity: "rare",     desc: "集齊可以合成成就章" },
 ];
 
-// ── 依怪物取材料池 ────────────────────────────────────────
+// 稀有度定義
+export const RARITY_CONFIG = {
+  common:    { label: "普通",   color: "#9ca3af", weight: 60 },
+  uncommon:  { label: "非凡",   color: "#4ade80", weight: 30 },
+  rare:      { label: "稀有",   color: "#60a5fa", weight: 8  },
+  legendary: { label: "傳說",   color: "#fbbf24", weight: 2  },
+};
+
+// 依難度調整掉落材料池
 export function getMaterialPool(monsterId, tier) {
-  const monster = monsterId ? { family: monsterId.split("_")[0] } : null;
-  const family  = monster?.family;
-
-  // 家族專屬材料 + 全體章碎片
-  const familyMats = family
-    ? MATERIALS.filter(m => m.family === family)
-    : [];
-  const allMats = MATERIALS.filter(m => m.family === "all");
-
-  // 依怪物階級決定可出現的材料等級
-  const tierMap = {
-    common:  ["common"],
-    rare:    ["common","rare"],
-    elite:   ["common","rare","uncommon"],
-    fierce:  ["uncommon","rare","epic"],
-    boss:    ["rare","epic","legendary"],
-    mythic:  ["epic","legendary"],
-  };
-  const allowedRarities = tierMap[tier] || ["common"];
-
-  const pool = [...familyMats, ...allMats].filter(m =>
-    allowedRarities.includes(m.rarity)
+  const monsterMats = MATERIALS.filter(m =>
+    m.monster === "all" || (Array.isArray(m.monster) && m.monster.includes(monsterId))
   );
-
-  return pool.length > 0 ? pool : allMats;
+  if (monsterMats.length === 0) return MATERIALS.filter(m => m.monster === "all");
+  return monsterMats;
 }
 
-// ── 隨機抽材料（依稀有度加權）────────────────────────────
+// 隨機抽一個材料
 export function drawMaterial(monsterId, tier) {
   const pool = getMaterialPool(monsterId, tier);
-  const tierMult = { common:0.8, rare:1.0, elite:1.2, fierce:1.5, boss:2.0, mythic:3.0 }[tier] || 1.0;
-
+  // 依稀有度加權
+  const tierMult = { easy: 0.8, normal: 1.0, hard: 1.3, boss: 1.8 }[tier] || 1.0;
   const weighted = pool.map(m => ({
     ...m,
-    w: (RARITY_CONFIG[m.rarity]?.weight || 30) / (m.rarity==="common" ? 1 : Math.sqrt(tierMult)),
+    w: (RARITY_CONFIG[m.rarity]?.weight || 30) * (m.rarity === "common" ? 1 : tierMult),
   }));
-  const total = weighted.reduce((s,m) => s+m.w, 0);
+  const total = weighted.reduce((s, m) => s + m.w, 0);
   let r = Math.random() * total;
   for (const m of weighted) { r -= m.w; if (r <= 0) return m; }
   return weighted[0];
-}
-
-// ── 依怪物階級決定掉落材料數量 ───────────────────────────
-export function getMaterialDropCount(tier) {
-  const map = { common:1, rare:1, elite:2, fierce:2, boss:3, mythic:4 };
-  return map[tier] || 1;
 }

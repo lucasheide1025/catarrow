@@ -1,9 +1,10 @@
 // src/components/admin/AdminDailyQuest.jsx
-// 後台：每日任務設定 + 報到核准 + 最終確認
+// 後台：每日任務設定 + 打怪每日上限設定 + 報到核准 + 最終確認
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   getDailyQuestConfig, saveDailyQuestConfig,
+  getMonsterDailyConfig, saveMonsterDailyConfig,
   subscribePendingCheckins, approveCheckin, confirmCheckinReward, cancelCheckin,
 } from "../../lib/db";
 import { drawBuff } from "../../lib/buffPool";
@@ -13,12 +14,16 @@ export default function AdminDailyQuest({ mode = "all" }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
   const [config,     setConfig]     = useState(null);
+  const [monsterCfg, setMonsterCfg] = useState(null);
   const [pending,    setPending]    = useState([]);
   const [saving,     setSaving]     = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
+  const [savingMon,  setSavingMon]  = useState(false);
+  const [showConfig,  setShowConfig]  = useState(false);
+  const [showMonster, setShowMonster] = useState(false);
 
   useEffect(() => {
     getDailyQuestConfig().then(setConfig);
+    getMonsterDailyConfig().then(setMonsterCfg);
     const unsub = subscribePendingCheckins(setPending);
     return () => unsub && unsub();
   }, []);
@@ -33,6 +38,19 @@ export default function AdminDailyQuest({ mode = "all" }) {
     await saveDailyQuestConfig(config, profile.id);
     toast("今日任務設定已儲存 ✓");
     setSaving(false);
+  }
+
+  async function saveMonsterConfig() {
+    if (!monsterCfg) return;
+    const max = Number(monsterCfg.dailyMax);
+    if (isNaN(max) || max < 1 || max > 99) {
+      toast("每日上限請輸入 1～99 之間的數字");
+      return;
+    }
+    setSavingMon(true);
+    await saveMonsterDailyConfig({ dailyMax: max }, profile.id);
+    toast(`打怪每日上限已設為 ${max} 次 ✓`);
+    setSavingMon(false);
   }
 
   async function approve(c) {
@@ -128,6 +146,41 @@ export default function AdminDailyQuest({ mode = "all" }) {
               <Btn v="primary" onClick={saveConfig} disabled={saving}>
                 {saving ? "儲存中…" : "儲存設定"}
               </Btn>
+            </Card>
+          )}
+
+          {/* ── 打怪每日上限設定 ──────────────────────── */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-gray-800 font-black text-xl">⚔️ 打怪每日上限</h2>
+            <button onClick={() => setShowMonster(v => !v)}
+              className="text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 bg-white">
+              {showMonster ? "✕ 收起" : "⚙️ 展開設定"}
+            </button>
+          </div>
+          {showMonster && (
+            <Card className="p-4 flex flex-col gap-4 border border-rose-200">
+              <ST>👹 每位射手每天可以打幾次怪</ST>
+              <div className="bg-rose-50 rounded-xl px-3 py-2 text-rose-700 text-xs leading-relaxed">
+                射手帳號每天打怪次數達到上限後，當天就不能再開新戰鬥（隔天自動重置）。
+                訪客體驗模式不受此限制。如要幫個別學生重置今日次數，到「會員管理」按「⚔️ 重置打怪」。
+              </div>
+
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Inp label="每日上限（次）" type="number" min="1" max="99"
+                    value={monsterCfg?.dailyMax ?? 5}
+                    onChange={e => setMonsterCfg({ ...(monsterCfg || {}), dailyMax: e.target.value })} />
+                </div>
+                <div className="flex-1">
+                  <Btn v="primary" onClick={saveMonsterConfig} disabled={savingMon || !monsterCfg}>
+                    {savingMon ? "儲存中…" : "儲存上限"}
+                  </Btn>
+                </div>
+              </div>
+
+              <div className="text-gray-400 text-xs">
+                目前設定：每天最多 <b className="text-gray-600">{Number(monsterCfg?.dailyMax) || 5}</b> 次
+              </div>
             </Card>
           )}
         </>

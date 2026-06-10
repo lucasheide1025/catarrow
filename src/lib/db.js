@@ -5,6 +5,7 @@ import {
   increment, arrayUnion, Timestamp
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { MATERIALS } from "./monsterMaterials";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -1128,4 +1129,37 @@ export async function saveMonsterLog(memberId, data) {
       createdAt:   serverTimestamp(),
     });
   } catch (e) { console.warn("saveMonsterLog:", e?.message); }
+} 
+// ─── 材料升級 ──────────────────────────────────────────────
+// 5 個低階材料 → 1 個高階材料（升級鏈定義在 monsterMaterials.js）
+// 回傳 { ok:true, from, to } 或 { ok:false, reason }
+export async function upgradeMaterial(memberId, materialId) {
+  if (!memberId || !materialId) return { ok: false, reason: "參數錯誤" };
+
+  const mat = MATERIALS.find(m => m.id === materialId);
+  if (!mat) return { ok: false, reason: "找不到這個材料" };
+  if (!mat.upgradesTo || !mat.upgradeCount) return { ok: false, reason: "這個材料已是最高階，無法再升級" };
+
+  const target = MATERIALS.find(m => m.id === mat.upgradesTo);
+  if (!target) return { ok: false, reason: "找不到升級目標材料" };
+
+  try {
+    const ref  = doc(db, C_MATERIALS, memberId);
+    const snap = await getDoc(ref);
+    const inventory = snap.exists() ? (snap.data().items || {}) : {};
+    const have = inventory[materialId] || 0;
+
+    if (have < mat.upgradeCount) {
+      return { ok: false, reason: `需要 ${mat.upgradeCount} 個「${mat.name}」，目前只有 ${have} 個` };
+    }
+
+    inventory[materialId]    = have - mat.upgradeCount;
+    inventory[mat.upgradesTo] = (inventory[mat.upgradesTo] || 0) + 1;
+
+    await setDoc(ref, { items: inventory, updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true, from: mat, to: target };
+  } catch (e) {
+    console.warn("upgradeMaterial:", e?.message);
+    return { ok: false, reason: "系統忙碌中，請稍後再試" };
+  }
 }

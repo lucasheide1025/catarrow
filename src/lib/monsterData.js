@@ -18,7 +18,7 @@ export const FAMILIES = {
   insect:    { label:"毒蟲族", icon:"🦂", color:"#ca8a04" },
   workplace: { label:"職場族", icon:"💼", color:"#dc2626" },
   exam:      { label:"考試族", icon:"📝", color:"#7c3aed" },
-  temple:    { label:"廟會族", icon:"🏮", color:"#ea580c" },
+  temple:    { label:"西方怪物族", icon:"🏰", color:"#ea580c" },
 };
 
 // ── 36隻怪物 ─────────────────────────────────────────────
@@ -89,15 +89,15 @@ export const MONSTERS = [
   },
   {
     id:"mountain_5", family:"mountain", tier:"boss",
-    name:"玉山靈獸", icon:"🦁",
+    name:"食人巨熊", icon:"🐻",
     hp:700, atk:95, def:72,
-    desc:"玉山頂上的守護神獸，萬年修煉化為神靈。",
+    desc:"深山中的巨熊之王，曾吞食無數獵人，掌風能劈裂巨木。",
   },
   {
     id:"mountain_6", family:"mountain", tier:"mythic",
-    name:"台灣龍", icon:"🐲",
+    name:"深山惡蛟", icon:"🐲",
     hp:1100, atk:150, def:105,
-    desc:"台灣山脈化身的神龍，呼風喚雨震撼天地。",
+    desc:"盤踞深山水潭的千年惡蛟，興風作浪，吞雲吐霧禍害山民。",
   },
 
   // ════ 毒蟲族 ════
@@ -214,42 +214,42 @@ export const MONSTERS = [
     desc:"無法打倒的終極存在，它不是怪物，它是系統。",
   },
 
-  // ════ 廟會族 ════
+  // ════ 西方怪物族 ════
   {
     id:"temple_1", family:"temple", tier:"common",
-    name:"七爺", icon:"🎭",
+    name:"哥布林", icon:"👺",
     hp:85,  atk:13, def:7,
-    desc:"謝必安高身長面黑，手持枷鎖令人膽寒。",
+    desc:"西方森林裡的小型魔物，貪財又狡猾，成群結隊偷襲旅人。",
   },
   {
     id:"temple_2", family:"temple", tier:"rare",
-    name:"八爺", icon:"🪬",
+    name:"骷髏劍士", icon:"💀",
     hp:165, atk:27, def:15,
-    desc:"范無救矮身胖體，手持鐵鎚震天響。",
+    desc:"從墓地爬出的不死戰士，揮舞生鏽長劍，越夜越強。",
   },
   {
     id:"temple_3", family:"temple", tier:"elite",
-    name:"千里眼", icon:"👁️",
+    name:"狼人", icon:"🐺",
     hp:290, atk:46, def:28,
-    desc:"萬里之外皆在眼底，任何隱匿都無所遁形。",
+    desc:"月圓之夜化身狼形，速度與利爪令獵人聞風喪膽。",
   },
   {
     id:"temple_4", family:"temple", tier:"fierce",
-    name:"順風耳", icon:"👂",
+    name:"吸血鬼伯爵", icon:"🧛",
     hp:460, atk:72, def:52,
-    desc:"天下之聲無一遺漏，謊言在他面前毫無意義。",
+    desc:"古堡中的不死貴族，優雅外表下藏著嗜血的獠牙。",
   },
   {
     id:"temple_5", family:"temple", tier:"boss",
-    name:"虎爺", icon:"🐯",
+    name:"巫妖王", icon:"🧙",
     hp:710, atk:96, def:75,
-    desc:"財神座騎，咬錢進寶，但招惹了他後果自負。",
+    desc:"捨棄肉身追求永生的大法師，麾下亡靈大軍聽令行事。",
   },
   {
     id:"temple_6", family:"temple", tier:"mythic",
-    name:"媽祖護法", icon:"🌊",
+    name:"末日惡龍", icon:"🐉",
     hp:1080, atk:143, def:102,
-    desc:"海上守護神的最強護衛，怒浪狂潮皆是武器。",
+    desc:"噴吐烈焰的西方巨龍，所到之處化為焦土，勇者的終極試煉。",
   },
 ];
 
