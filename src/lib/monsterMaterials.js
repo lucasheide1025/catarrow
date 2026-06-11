@@ -63,9 +63,9 @@ export const MATERIALS = [
   { id:"temple_m6", name:"惡龍逆鱗",   icon:"🐉", family:"temple", tier:"mythic",    rarity:"legendary", desc:"末日惡龍喉下的逆鱗，蘊含毀天滅地的龍之力。",   upgradesTo:null,        upgradeCount:0 },
 
   // ════ 章碎片（所有怪物均可掉落）════
-  { id:"frag_fatcat",  name:"肥貓章碎片", icon:"🐱", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成肥貓章。", upgradesTo:null, upgradeCount:0 },
-  { id:"frag_score",   name:"積分章碎片", icon:"⭐", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成積分章。", upgradesTo:null, upgradeCount:0 },
-  { id:"frag_achieve", name:"成就章碎片", icon:"🏆", family:"all", tier:"all", rarity:"rare",     desc:"集齊可以合成成就章。", upgradesTo:null, upgradeCount:0 },
+  { id:"frag_fatcat_silver",  name:"肥貓章碎片", icon:"🐱", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成肥貓章。", upgradesTo:null, upgradeCount:0 },
+  { id:"frag_score_silver",   name:"積分章碎片", icon:"⭐", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成積分章。", upgradesTo:null, upgradeCount:0 },
+  { id:"frag_achieve_silver", name:"成就章碎片", icon:"🏆", family:"all", tier:"all", rarity:"rare",     desc:"集齊可以合成成就章。", upgradesTo:null, upgradeCount:0 },
 ];
 
 // ── 依怪物取材料池 ────────────────────────────────────────

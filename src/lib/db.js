@@ -1308,6 +1308,32 @@ export async function addFragments(memberId, frags) {
   } catch (e) { console.warn("addFragments:", e?.message); }
 }
  
+// 一次性遷移：把舊 materialInventory 的 frag_* 搬到 fragmentInventory
+export async function migrateOldFragments(memberId) {
+  const OLD_MAP = {
+    "frag_fatcat":  "frag_fatcat_silver",
+    "frag_score":   "frag_score_silver",
+    "frag_achieve": "frag_achieve_silver",
+  };
+  try {
+    const matRef  = doc(db, C_MATERIALS, memberId);
+    const matSnap = await getDoc(matRef);
+    if (!matSnap.exists()) return;
+    const matItems = matSnap.data().items || {};
+    const toMove = Object.entries(OLD_MAP).filter(([old]) => (matItems[old] || 0) > 0);
+    if (!toMove.length) return;
+    const fragRef  = doc(db, C_FRAGS, memberId);
+    const fragSnap = await getDoc(fragRef);
+    const fragItems = fragSnap.exists() ? (fragSnap.data().items || {}) : {};
+    toMove.forEach(([old, newId]) => {
+      fragItems[newId] = (fragItems[newId] || 0) + matItems[old];
+      delete matItems[old];
+    });
+    await setDoc(fragRef, { items: fragItems, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(matRef,  { items: matItems,  updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("migrateOldFragments:", e?.message); }
+}
+
 // 訂閱碎片庫存（即時）
 export function subscribeFragments(memberId, callback) {
   return onSnapshot(

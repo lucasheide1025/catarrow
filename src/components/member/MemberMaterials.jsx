@@ -2,9 +2,9 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, craftPotion } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
-import { FRAGMENTS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
+import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
 
 const FAMILY_CONFIG = {
@@ -45,11 +45,17 @@ export default function MemberMaterials({ onBack }) {
   // ── 寶箱庫存 ─────────────────────────────────────────────
   const [chests,       setChests]       = useState([]);
   const [chestLoading, setChestLoading] = useState(!!profile?.id);
-  const [openingChest, setOpeningChest] = useState(null);   // chestId being opened
-  const [openResult,   setOpenResult]   = useState(null);   // { materials, potions, fragments }
+  const [openingChest, setOpeningChest] = useState(null);
+  const [openResult,   setOpenResult]   = useState(null);
+
+  // ── 藥水庫存 ─────────────────────────────────────────────
+  const [potions,        setPotions]        = useState({});
+  const [potionLoading,  setPotionLoading]  = useState(!!profile?.id);
+  const [craftingPotion, setCraftingPotion] = useState(null);
 
   useEffect(() => {
     if (!profile?.id) return;
+    migrateOldFragments(profile.id);
     const unsub = subscribeMaterials(profile.id, data => {
       setInventory(data);
       setLoading(false);
@@ -62,7 +68,11 @@ export default function MemberMaterials({ onBack }) {
       setChests(Array.isArray(data) ? data : []);
       setChestLoading(false);
     });
-    return () => { unsub && unsub(); unsubFrag && unsubFrag(); unsubChest && unsubChest(); };
+    const unsubPotion = subscribePotions(profile.id, data => {
+      setPotions(data);
+      setPotionLoading(false);
+    });
+    return () => { unsub && unsub(); unsubFrag && unsubFrag(); unsubChest && unsubChest(); unsubPotion && unsubPotion(); };
   }, [profile?.id]);
 
   // ── 統計 ─────────────────────────────────────────────────
@@ -117,6 +127,18 @@ export default function MemberMaterials({ onBack }) {
     setConfirmFrag(null);
     if (res.ok) {
       setCraftCelebrate({ frag, label: res.label });
+    } else {
+      toast(res.reason || "合成失敗，請稍後再試");
+    }
+  }
+
+  async function doCraftPotion(potion) {
+    if (craftingPotion) return;
+    setCraftingPotion(potion.id);
+    const res = await craftPotion(profile.id, potion.id);
+    setCraftingPotion(null);
+    if (res.ok) {
+      toast(`✨ 合成成功！獲得「${potion.name}」`);
     } else {
       toast(res.reason || "合成失敗，請稍後再試");
     }
@@ -208,6 +230,11 @@ export default function MemberMaterials({ onBack }) {
               {craftableCount}
             </span>
           )}
+        </button>
+        <button onClick={() => setTab("potions")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all
+            ${tab === "potions" ? "bg-green-500 text-white" : "bg-gray-100 text-gray-500"}`}>
+          🔮 藥水
         </button>
       </div>
 
@@ -471,6 +498,77 @@ export default function MemberMaterials({ onBack }) {
                       ${canCraft ? "text-white" : "bg-gray-100 text-gray-300"}`}
                     style={canCraft ? { background: frag.color } : {}}>
                     {canCraft ? `✨ 合成 ${frag.craftResult.label}！` : `還差 ${frag.craftCount - count} 個`}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ══════════ 藥水 tab ══════════ */}
+      {tab === "potions" && (
+        <div className="flex flex-col gap-3">
+          <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 text-green-700 text-xs leading-relaxed">
+            🔮 消耗怪物材料可合成藥劑！戰鬥前最多帶 <b>3 瓶</b>，被動型開戰自動生效，投擲型可手動擲出。
+          </div>
+          {potionLoading ? (
+            <div className="text-center py-6 text-gray-400 text-sm">載入中…</div>
+          ) : (
+            POTIONS.map(potion => {
+              const owned    = potions[potion.id] || 0;
+              const canCraft = potion.recipe?.every(r => (inventory[r.id] || 0) >= r.count);
+              const isCrafting = craftingPotion === potion.id;
+              const RARITY_LABEL = { common:"普通", rare:"稀有", epic:"史詩", legendary:"傳說" };
+              const RARITY_COLOR = { common:"bg-gray-100 text-gray-500", rare:"bg-blue-100 text-blue-600", epic:"bg-purple-100 text-purple-600", legendary:"bg-amber-100 text-amber-600" };
+              return (
+                <div key={potion.id} className="bg-white rounded-2xl p-4 border border-gray-200">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 bg-green-50">
+                      {potion.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-sm text-gray-800">{potion.name}</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${RARITY_COLOR[potion.rarity] || RARITY_COLOR.common}`}>
+                          {RARITY_LABEL[potion.rarity] || potion.rarity}
+                        </span>
+                        {potion.kind === "throw" && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-600">投擲</span>
+                        )}
+                      </div>
+                      <div className="text-gray-400 text-xs mt-0.5">{potion.effectText}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-black text-2xl text-green-600">{owned}</div>
+                      <div className="text-gray-400 text-xs">瓶</div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-2.5 mb-3">
+                    <div className="text-gray-400 text-xs font-bold mb-1.5">合成配方</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {(potion.recipe || []).map(r => {
+                        const mat    = MATERIALS.find(m => m.id === r.id);
+                        const have   = inventory[r.id] || 0;
+                        const enough = have >= r.count;
+                        return (
+                          <div key={r.id}
+                            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-bold border
+                              ${enough ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-500 border-red-200"}`}>
+                            <span>{mat?.icon || "🧪"}</span>
+                            <span>{mat?.name || r.id}</span>
+                            <span className="opacity-70">{have}/{r.count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => canCraft && !craftingPotion && doCraftPotion(potion)}
+                    disabled={!canCraft || !!craftingPotion}
+                    className={`w-full py-2.5 rounded-xl text-sm font-black transition-all active:scale-95
+                      ${canCraft ? "bg-green-500 text-white" : "bg-gray-100 text-gray-300"}`}>
+                    {isCrafting ? "合成中…" : canCraft ? `🔮 合成 ${potion.name}` : "材料不足"}
                   </button>
                 </div>
               );

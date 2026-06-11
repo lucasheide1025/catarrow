@@ -403,7 +403,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const lootItem=drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
       if (lootItem.type === "material" && lootItem.materialId && profile?.id && !isGuest) {
-        addMaterials(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+        if (lootItem.materialId.startsWith("frag_")) {
+          addFragments(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+        } else {
+          addMaterials(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+        }
       }
 
       // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱）
