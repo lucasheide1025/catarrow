@@ -244,6 +244,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           if (ef.archerHP)     curArchHP = Math.max(0, curArchHP + ef.archerHP);
           if (ef.archerATK)    setArcherATKMod(m => m + ef.archerATK);
           if (ef.monsterHP)    curMonHP  = Math.max(0, curMonHP + ef.monsterHP);
+          if (ef.extraDmg)     curMonHP  = Math.max(0, curMonHP - ef.extraDmg);
           if (ef.skipCounter)  skipCtr = true;
           setArcherHP(curArchHP);
           setMonsterHP(curMonHP);
@@ -280,10 +281,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             curDist = Math.max(0, curDist - DISTANCE_STEP);
             setDistance(curDist);
             if (curDist === 0) {
-              addLog({ type: "event_bad", text: `😱 距離歸零！${monster.name} 衝到面前！` });
-              await delay(500);
-              curDist = DISTANCE_STEP;
+              sfxEpic();
+              setAnimCounter(true);
+              setTimeout(() => setAnimCounter(false), 800);
+              const forcedDmg = calcCounterDamage({ monsterATK: monster.atk, archerDEF: archerStats?.def || 10, headStunned: false, isCrit: true });
+              addLog({ type: "event_bad", text: `💥 距離歸零！${monster.icon} ${monster.name} 強制爆擊！受到 ${forcedDmg} 傷害！` });
+              curArchHP = Math.max(0, curArchHP - forcedDmg);
+              setArcherHP(curArchHP);
+              if (forcedDmg > 0) setTotalDmgRecvd(v => v + forcedDmg);
+              await delay(800);
+              curDist = DISTANCE_START;
               setDistance(curDist);
+              addLog({ type: "system", text: `📍 怪物後退！距離重置至 ${curDist}米` });
             } else {
               addLog({ type: "system", text: `📍 距離縮短至 ${curDist}米` });
             }
@@ -396,13 +405,13 @@ const mats = Array.from({ length: matCount }, () => drawMaterial(monster.id, mon
           subjectInfo: { nickname: profile.nickname || profile.name, item: lootItem.name },
         }, profile.id).catch(() => {});
       }
-      await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "win", rounds: round, lootName: lootItem.name, lootIcon: lootItem.icon, lootType: lootItem.type, mode, battleMode }).catch(() => {});
+      if (!isGuest && profile?.id) await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "win", rounds: round, lootName: lootItem.name, lootIcon: lootItem.icon, lootType: lootItem.type, mode, battleMode }).catch(() => {});
       await delay(1000);
       setPhase("loot");
     } else {
       sfxSoftFail();
       addLog({ type: "lose", text: `💀 被 ${monster.name} 擊倒…下次再戰！` });
-      await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "lose", rounds: round, mode, battleMode }).catch(() => {});
+      if (!isGuest && profile?.id) await saveMonsterLog(profile.id, { monsterName: monster.name, monsterId: monster.id, result: "lose", rounds: round, mode, battleMode }).catch(() => {});
       await delay(1000);
       setPhase("result");
     }

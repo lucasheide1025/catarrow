@@ -106,7 +106,7 @@ export default function MemberApp() {
 
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
-        {page==="home"        && <MemberHome onPageChange={setPage} />}
+        {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}

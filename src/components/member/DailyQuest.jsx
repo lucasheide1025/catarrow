@@ -10,6 +10,7 @@ import { drawBuff } from "../../lib/buffPool";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { createPartyRoom } from "../../lib/partyDb";
 
 // 靶紙清單
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
@@ -72,7 +73,7 @@ function applyBuff(task, buff) {
   return { ...task, buffed: true, originalGoal: task.goal, newGoal, reduction, reductionPct: power };
 }
 
-export default function DailyQuest() {
+export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
   const [checkin, setCheckin]   = useState(undefined);
   const [config,  setConfig]    = useState(null);
@@ -86,6 +87,9 @@ export default function DailyQuest() {
   const [chosenIdx, setChosenIdx] = useState(null);
   // 計分器
   const [arrows, setArrows] = useState([]);
+  // 組隊邀請流程
+  const [partyAsk,      setPartyAsk]      = useState(false);
+  const [partyCreating, setPartyCreating] = useState(false);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -155,10 +159,25 @@ export default function DailyQuest() {
   async function chooseTask(idx) {
     setChosenIdx(idx);
     setArrows([]);
-    // 存選擇到 checkin（讓後台知道選了哪個）
+    if (onJoinParty) setPartyAsk(true);
     try {
       await updateDoc(doc(db, "checkins", checkin.id), { chosenTask: idx, tasks });
     } catch {}
+  }
+
+  async function handleCreateParty() {
+    if (!tasks || chosenIdx == null) return;
+    setPartyCreating(true);
+    const task = tasks[chosenIdx];
+    const bt = applyBuff(task, buff);
+    const effectiveGoal = bt.newGoal ?? bt.goal;
+    const taskForRoom = { ...task, goal: effectiveGoal };
+    const res = await createPartyRoom(
+      profile.id, profile.nickname || profile.name, "quest",
+      { task: taskForRoom, checkinId: checkin.id }
+    );
+    setPartyCreating(false);
+    if (res.ok) onJoinParty(res.roomId, "quest", true);
   }
 
   async function submitScore() {
@@ -274,8 +293,28 @@ export default function DailyQuest() {
             </div>
           )}
 
+          {/* 已選任務：分享給隊友？ */}
+          {chosenIdx != null && buffedChosenTask && partyAsk && (
+            <div className="bg-white/10 rounded-xl p-4 border border-white/20">
+              <div className="font-black text-white text-base mb-1">👥 要招募隊友一起解任務嗎？</div>
+              <div className="text-emerald-100 text-xs mb-3">
+                建立組隊房間，隊友輸入邀請碼加入，完成後各得一個額外寶箱！（最多 4 人）
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleCreateParty} disabled={partyCreating}
+                  className="flex-1 py-2.5 bg-white text-emerald-700 font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
+                  {partyCreating ? "建立中…" : "👥 建立組隊房間"}
+                </button>
+                <button onClick={() => setPartyAsk(false)}
+                  className="flex-1 py-2.5 bg-white/20 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                  自己練
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 已選任務：進行計分 */}
-          {chosenIdx != null && buffedChosenTask && (
+          {chosenIdx != null && buffedChosenTask && !partyAsk && (
             <>
               <div className="bg-white/10 rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between mb-1">

@@ -36,7 +36,7 @@ function useCardTheme() {
   return [theme, setTheme];
 }
 
-export default function MemberHome({ onPageChange }) {
+export default function MemberHome({ onPageChange, onJoinParty }) {
   const { profile } = useAuth();
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
@@ -89,7 +89,7 @@ export default function MemberHome({ onPageChange }) {
   return (
     <div className="p-4 flex flex-col gap-4">
       {showShare && <ShareCard onClose={() => setShowShare(false)} />}
-      <DailyQuest />
+      <DailyQuest onJoinParty={onJoinParty} />
 
       {/* 打怪快捷入口 */}
       <button onClick={() => onPageChange("monster")}

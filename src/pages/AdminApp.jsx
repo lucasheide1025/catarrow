@@ -29,7 +29,10 @@ import HonorCelebration   from "../components/member/HonorCelebration";
 import MemberDex          from "../components/member/MemberDex";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
-import MonsterBattle from "../components/member/MonsterBattle";
+import MonsterBattle      from "../components/member/MonsterBattle";
+import PartyLobby         from "../components/party/PartyLobby";
+import PartyQuestRoom     from "../components/party/PartyQuestRoom";
+import PartyBattleRoom    from "../components/party/PartyBattleRoom";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -45,11 +48,23 @@ export default function AdminApp() {
   const [pendingExtList,  setPendingExtList]  = useState([]);
   const [certTasksList,   setCertTasksList]   = useState([]);
   const [pendingCheckinN, setPendingCheckinN] = useState(0);
+  const [partyRoomId,   setPartyRoomId]   = useState(null);
+  const [partyRoomType, setPartyRoomType] = useState(null);
+  const [partyIsHost,   setPartyIsHost]   = useState(false);
 
   const pendingCertN = pendingCertList.length;
   const pendingMsgN  = allMessages.filter(m => !m.reply).length;
   const pendingExtN  = pendingExtList.length;
   const pendingExamN = certTasksList.length;
+
+  function handleEnterPartyRoom(roomId, type, host) {
+    setPartyRoomId(roomId); setPartyRoomType(type); setPartyIsHost(host);
+    setPage(type === "quest" ? "party-quest" : "party-battle");
+  }
+  function handleLeaveParty() {
+    setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
+    setPage("profile");
+  }
 
   // 記住當前頁面 + 射手模式（重整後留在原地）
   useEffect(() => { sessionStorage.setItem("admin_page", page); }, [page]);
@@ -100,8 +115,14 @@ const adminNav = [
             ⚙️ 返回後台
           </button>
         </div>
+        {partyRoomId && !["party-quest","party-battle"].includes(page) && (
+          <button onClick={() => setPage(partyRoomType === "quest" ? "party-quest" : "party-battle")}
+            style={{display:"block",width:"100%",background:"#4f46e5",color:"white",padding:"7px 16px",fontSize:"12px",fontWeight:"900",textAlign:"center",border:"none",cursor:"pointer"}}>
+            🎮 組隊進行中 — 點此回到房間
+          </button>
+        )}
         <div style={{paddingBottom:"80px"}}>
-          {page==="home"        && <MemberHome onPageChange={setPage}/>}
+          {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom}/>}
           {page==="comps"       && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
           {page==="comp-detail" && selComp && !scoring && (
             <CompDetail comp={selComp} profile={profile}
@@ -123,16 +144,23 @@ const adminNav = [
           {page==="achievements"&& <MemberAchievements/>}
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
           {page==="notifications" && <MemberNotifications/>}
-          {page==="dex" && <MemberDex onBack={()=>setPage("profile")}/>}
-          {page==="materials"  && <MemberMaterials  onBack={()=>setPage("profile")}/>}
-          {page==="monsterdex" && <MemberMonsterDex  onBack={()=>setPage("profile")}/>}
-            {page==="monster" && <MonsterBattle onBack={()=>setPage("comps")}/>}
+          {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
+          {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
+          {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
+          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
+          {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
+          {page==="party-quest" && partyRoomId && (
+            <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
+          )}
+          {page==="party-battle" && partyRoomId && (
+            <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
+          )}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <span style={{fontSize:"18px"}}>{n.icon}</span>
               <span style={{fontSize:"11px",fontWeight:"600"}}>{n.label}</span>
             </button>

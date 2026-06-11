@@ -20,7 +20,7 @@ export function partyHPMult(playerCount) {
 }
 
 // ── 建立房間 ──────────────────────────────────────────────────
-export async function createPartyRoom(hostId, hostName, type) {
+export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
   try {
     const code = genCode();
     const base = {
@@ -31,10 +31,14 @@ export async function createPartyRoom(hostId, hostName, type) {
       createdAt: serverTimestamp(),
       members: {
         [hostId]: type === "quest"
-          ? { name: hostName, taskDesc: "", distance: "", done: false, doneAt: null }
+          ? { name: hostName, done: false, doneAt: null }
           : { name: hostName, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true }
       },
     };
+    if (type === "quest") {
+      base.task = extraData.task || null;
+      base.hostCheckinId = extraData.checkinId || null;
+    }
     if (type === "battle") {
       Object.assign(base, {
         monster: null,
@@ -69,10 +73,10 @@ export async function joinPartyRoom(code, memberId, memberName) {
     const room = roomDoc.data();
     const memberCount = Object.keys(room.members || {}).length;
     if (room.type === "battle" && memberCount >= 8) return { ok: false, reason: "房間已滿（最多 8 人）" };
-    if (room.type === "quest" && memberCount >= 2) return { ok: false, reason: "任務分享房間只能 2 人" };
+    if (room.type === "quest" && memberCount >= 4) return { ok: false, reason: "組隊任務房間最多 4 人" };
 
     const memberData = room.type === "quest"
-      ? { name: memberName, taskDesc: "", distance: "", done: false, doneAt: null }
+      ? { name: memberName, done: false, doneAt: null }
       : { name: memberName, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true };
 
     await updateDoc(doc(db, PARTY, roomDoc.id), {

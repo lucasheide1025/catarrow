@@ -1,22 +1,37 @@
-// src/components/party/PartyQuestRoom.jsx — 日常任務分享房間
+// src/components/party/PartyQuestRoom.jsx — 組隊今日任務（共享任務版）
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribePartyRoom, updateQuestTask, markQuestDone,
+  subscribePartyRoom, markQuestDone as markPartyDone,
   giveQuestRewards, leavePartyRoom
 } from "../../lib/partyDb";
+import { markQuestDone as markCheckinDone } from "../../lib/db";
 import { CHEST_TYPES } from "../../lib/itemData";
+import { sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 
-const DISTANCE_OPTIONS = [5, 7, 10, 13.5, 15, 18, 20, 25, 30];
+const HALF_SCORES = [
+  { label:"X",  val:10, color:"#fbbf24" },
+  { label:"10", val:10, color:"#fbbf24" },
+  { label:"9",  val:9,  color:"#fbbf24" },
+  { label:"8",  val:8,  color:"#ef4444" },
+  { label:"7",  val:7,  color:"#ef4444" },
+  { label:"6",  val:6,  color:"#3b82f6" },
+  { label:"5",  val:5,  color:"#3b82f6" },
+  { label:"4",  val:4,  color:"#1e293b" },
+  { label:"3",  val:3,  color:"#1e293b" },
+  { label:"2",  val:2,  color:"#9ca3af" },
+  { label:"1",  val:1,  color:"#9ca3af" },
+  { label:"M",  val:0,  color:"#64748b" },
+];
 
 export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   const { profile } = useAuth();
-  const [room, setRoom] = useState(null);
-  const [taskDesc, setTaskDesc] = useState("");
-  const [distance, setDistance] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [rewarding, setRewarding] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [room,       setRoom]       = useState(null);
+  const [arrows,     setArrows]     = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [rewarding,  setRewarding]  = useState(false);
+  const [copied,     setCopied]     = useState(false);
+  const [failMsg,    setFailMsg]    = useState("");
 
   const myId = profile?.id;
 
@@ -25,49 +40,54 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
     return unsub;
   }, [roomId]);
 
-  // 同步自己的設定到本地 state（只在初次載入）
-  useEffect(() => {
-    if (!room || !myId) return;
-    const me = room.members?.[myId];
-    if (me && !taskDesc && !distance) {
-      setTaskDesc(me.taskDesc || "");
-      setDistance(me.distance || "");
-    }
-  }, [room?.members?.[myId]?.taskDesc]);
-
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-white text-lg font-bold animate-pulse">載入中…</div>
+      <div className="text-white font-bold animate-pulse">載入中…</div>
     </div>
   );
 
-  const members = room.members || {};
+  const task       = room.task;
+  const members    = room.members || {};
   const memberList = Object.entries(members).map(([id, data]) => ({ id, ...data }));
-  const me = members[myId] || {};
-  const partner = memberList.find(m => m.id !== myId);
-  const bothDone = memberList.length >= 2 && memberList.every(m => m.done);
-  const completed = room.status === "completed";
+  const me         = members[myId] || {};
+  const allDone    = memberList.length >= 2 && memberList.every(m => m.done);
+  const completed  = room.status === "completed";
+  const chestInfo  = room.rewardChestType ? CHEST_TYPES[room.rewardChestType] : null;
+  const arrowCount = task?.arrowCount || 6;
+  const total      = arrows.reduce((s, v) => s + v, 0);
+  const hits       = arrows.filter(v => v > 0).length;
+  const current    = task?.type === "score" ? total : hits;
+  const pct        = task?.goal ? Math.min(100, Math.round(current / task.goal * 100)) : 0;
 
-  const chestInfo = room.rewardChestType
-    ? CHEST_TYPES[room.rewardChestType]
-    : null;
+  async function handleSubmit() {
+    if (!task || arrows.length < arrowCount) return;
+    setSubmitting(true);
+    setFailMsg("");
+    sfxTap();
+    const val  = task.type === "score" ? total : hits;
+    const pass = val >= task.goal;
 
-  async function handleSaveTask() {
-    if (!taskDesc.trim() || !distance) return;
-    setSaving(true);
-    await updateQuestTask(roomId, myId, taskDesc.trim(), distance);
-    setSaving(false);
-  }
+    if (!pass) {
+      sfxSoftFail();
+      setFailMsg(`未達標（${val} / ${task.goal}），重新輸入！`);
+      setArrows([]);
+      setSubmitting(false);
+      return;
+    }
 
-  async function handleToggleDone() {
-    const newDone = !me.done;
-    await markQuestDone(roomId, myId, newDone);
+    sfxSuccess();
+    if (isHost && room.hostCheckinId) {
+      await markCheckinDone(room.hostCheckinId, {
+        type: task.type, value: val, target: task.goal, taskId: task.id,
+      }).catch(() => {});
+    }
+    await markPartyDone(roomId, myId, true);
+    setSubmitting(false);
   }
 
   async function handleReward() {
     setRewarding(true);
-    const memberIds = memberList.map(m => m.id);
-    await giveQuestRewards(roomId, memberIds);
+    await giveQuestRewards(roomId, memberList.map(m => m.id));
     setRewarding(false);
   }
 
@@ -82,43 +102,44 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  // ── 完成畫面 ──
+  // ── 完成畫面 ──────────────────────────────────────────────────
   if (completed && chestInfo) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-900 to-slate-900 flex flex-col items-center justify-center px-4 gap-6">
-        <div className="text-6xl animate-bounce">{chestInfo.icon}</div>
-        <div className="text-2xl font-black text-white text-center">任務完成！</div>
+      <div className="min-h-screen bg-gradient-to-b from-emerald-900 to-slate-900 flex flex-col items-center justify-center px-4 gap-5">
+        <div className="text-7xl animate-bounce">{chestInfo.icon}</div>
+        <div className="text-2xl font-black text-white text-center">🎉 任務完成！</div>
         <div className="text-slate-300 text-center text-sm leading-relaxed">
-          雙方都完成了今天的練習！<br/>
+          全員完成今日任務！<br />
           各獲得一個 <span className="font-black" style={{ color: chestInfo.color }}>{chestInfo.name}</span>
         </div>
-        <div className="bg-white/10 rounded-2xl p-5 flex flex-col gap-2 w-full max-w-xs">
+        <div className="bg-white/10 rounded-2xl p-4 w-full max-w-xs flex flex-col gap-2">
           {memberList.map(m => (
             <div key={m.id} className="flex items-center gap-2 text-white text-sm">
               <span className="text-emerald-400">✅</span>
               <span className="font-bold">{m.name}</span>
-              <span className="text-slate-400 ml-auto">{m.distance ? `${m.distance}m` : ""}</span>
+              {m.id === myId && <span className="text-slate-400 text-xs ml-auto">（我）</span>}
             </div>
           ))}
         </div>
         <button onClick={onLeave}
-          className="px-8 py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
+          className="px-8 py-3 bg-white text-slate-900 font-black rounded-2xl active:scale-95 transition-transform">
           🏠 返回
         </button>
       </div>
     );
   }
 
+  // ── 主畫面 ────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col px-4 py-5 gap-4 max-w-lg mx-auto">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white font-black text-lg">📋 日常任務分享</div>
-          <button onClick={copyCode}
-            className="text-sm text-slate-400 mt-0.5 flex items-center gap-1 active:opacity-70">
+          <div className="text-white font-black text-lg">👥 組隊今日任務</div>
+          <button onClick={copyCode} className="flex items-center gap-1.5 text-sm text-slate-400 mt-0.5 active:opacity-70">
             <span className="font-mono tracking-widest text-indigo-300">{room.code}</span>
-            <span>{copied ? "✅" : "📋"}</span>
+            <span>{copied ? "✅" : "📋 複製邀請碼"}</span>
           </button>
         </div>
         <button onClick={handleLeave}
@@ -127,94 +148,139 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         </button>
       </div>
 
-      {/* 玩家狀態列 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* 任務詳情 */}
+      {task ? (
+        <div className="bg-white/10 rounded-2xl p-4 border border-white/10">
+          <div className="text-slate-400 text-xs font-black tracking-widest uppercase mb-2">今日共同任務</div>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-4xl">{task.icon}</span>
+            <div>
+              <div className="text-white font-black text-base">{task.label}</div>
+              <div className="flex gap-3 text-xs text-slate-400 mt-1 flex-wrap">
+                <span>📍 {task.distance}米</span>
+                <span>🎯 {task.target}</span>
+                <span>🏹 {task.arrowCount}箭</span>
+              </div>
+            </div>
+          </div>
+          <div className="bg-indigo-500/20 border border-indigo-400/30 rounded-xl px-4 py-2.5 text-center">
+            <span className="text-white font-black text-lg">
+              目標：{task.goal} {task.type === "score" ? "分" : "箭命中"}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white/10 rounded-2xl p-4 text-slate-400 text-sm text-center">
+          等待房主設定任務…
+        </div>
+      )}
+
+      {/* 隊員狀態 */}
+      <div className="grid grid-cols-2 gap-2">
         {memberList.map(m => (
           <div key={m.id}
-            className={`rounded-2xl p-3 flex flex-col gap-1 border-2 transition-all ${
-              m.done
-                ? "bg-emerald-900/40 border-emerald-500"
-                : "bg-slate-700/40 border-slate-600"
+            className={`rounded-2xl p-3 border-2 transition-all ${
+              m.done ? "bg-emerald-900/40 border-emerald-500" : "bg-slate-700/40 border-slate-600"
             }`}>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 mb-1">
               <span className="text-base">{m.done ? "✅" : "⏳"}</span>
-              <span className={`font-black text-sm ${m.id === myId ? "text-indigo-300" : "text-white"}`}>
-                {m.name} {m.id === myId ? "(我)" : ""}
+              <span className={`font-black text-sm truncate ${m.id === myId ? "text-indigo-300" : "text-white"}`}>
+                {m.name}{m.id === myId ? " (我)" : ""}
               </span>
             </div>
-            {m.taskDesc
-              ? <div className="text-xs text-slate-300 leading-snug">{m.taskDesc}</div>
-              : <div className="text-xs text-slate-500">尚未填寫任務</div>
-            }
-            {m.distance && (
-              <div className="text-xs text-slate-400">📍 {m.distance}m</div>
-            )}
+            <div className="text-xs text-slate-400">
+              {m.done ? "已完成！" : "進行中…"}
+            </div>
           </div>
         ))}
         {memberList.length < 2 && (
           <div className="rounded-2xl p-3 bg-slate-700/20 border-2 border-dashed border-slate-600 flex items-center justify-center">
-            <span className="text-slate-500 text-sm">等待夥伴加入…</span>
+            <span className="text-slate-500 text-xs">等待隊友加入…</span>
           </div>
         )}
       </div>
 
-      {/* 我的任務設定 */}
-      {!completed && (
+      {/* 我的計分 */}
+      {!me.done && task && !completed && (
         <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-3">
-          <div className="text-xs font-black text-slate-400 tracking-widest uppercase">我的今日任務</div>
+          <div className="text-xs font-black text-slate-400 tracking-widest uppercase">我的成績</div>
 
-          <textarea
-            value={taskDesc}
-            onChange={e => setTaskDesc(e.target.value)}
-            placeholder="今天要練什麼？（例：100支 18m 三環以上）"
-            rows={2}
-            className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-indigo-400 placeholder:text-slate-500"
-          />
+          {failMsg && (
+            <div className="bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 text-red-300 text-xs font-bold text-center">
+              {failMsg}
+            </div>
+          )}
 
-          <div className="flex flex-col gap-1.5">
-            <div className="text-xs text-slate-400">射距</div>
-            <div className="flex flex-wrap gap-2">
-              {DISTANCE_OPTIONS.map(d => (
-                <button key={d} onClick={() => setDistance(String(d))}
-                  className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${
-                    String(distance) === String(d)
-                      ? "bg-indigo-500 text-white border-indigo-500"
-                      : "bg-slate-700 text-slate-300 border-slate-600 hover:border-indigo-400"
-                  }`}>
-                  {d}m
+          {/* 已輸入箭數 */}
+          <div className="flex gap-1.5 flex-wrap">
+            {Array.from({ length: arrowCount }).map((_, i) => (
+              <div key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black
+                ${i < arrows.length
+                  ? "bg-indigo-500 text-white"
+                  : i === arrows.length
+                    ? "bg-slate-600 text-slate-300 ring-2 ring-indigo-400"
+                    : "bg-slate-700 text-slate-500"}`}>
+                {i < arrows.length ? (arrows[i] === 0 ? "M" : arrows[i]) : ""}
+              </div>
+            ))}
+            {arrows.length > 0 && (
+              <button onClick={() => setArrows(p => p.slice(0, -1))}
+                className="text-xs text-slate-400 underline self-center ml-1">↩ 退</button>
+            )}
+          </div>
+
+          {/* 分數按鈕 */}
+          {arrows.length < arrowCount && (
+            <div className="grid grid-cols-6 gap-1.5">
+              {HALF_SCORES.map(s => (
+                <button key={s.label}
+                  onClick={() => { sfxTap(); setArrows(p => [...p, s.val]); }}
+                  className="py-2 rounded-lg font-black text-white text-sm active:scale-90 transition-transform"
+                  style={{ background: s.color }}>
+                  {s.label}
                 </button>
               ))}
             </div>
+          )}
+
+          {/* 進度條 */}
+          <div>
+            <div className="flex justify-between text-white text-sm font-bold mb-1">
+              <span>{task.type === "score" ? `總分 ${total}` : `中靶 ${hits} 箭`}</span>
+              <span className="text-slate-400">{arrows.length}/{arrowCount} 箭</span>
+            </div>
+            <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="text-right text-slate-400 text-xs mt-0.5">{pct}% / 目標 {task.goal}</div>
           </div>
 
-          <div className="flex gap-2">
-            <button onClick={handleSaveTask} disabled={!taskDesc.trim() || !distance || saving}
-              className="flex-1 py-2.5 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform">
-              {saving ? "儲存中…" : "💾 儲存任務"}
+          {arrows.length >= arrowCount && (
+            <button onClick={handleSubmit} disabled={submitting}
+              className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
+              {submitting ? "計算中…" : "✅ 送出成績"}
             </button>
-            <button onClick={handleToggleDone}
-              disabled={!me.taskDesc}
-              className={`flex-1 py-2.5 font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform ${
-                me.done
-                  ? "bg-slate-600 text-white"
-                  : "bg-emerald-500 text-white"
-              }`}>
-              {me.done ? "↩️ 取消完成" : "✅ 我完成了！"}
-            </button>
-          </div>
+          )}
         </div>
       )}
 
-      {/* 雙方完成 → 領獎 */}
-      {bothDone && !completed && isHost && (
+      {me.done && !completed && (
+        <div className="bg-emerald-900/30 border-2 border-emerald-500 rounded-2xl p-4 text-center">
+          <div className="text-emerald-300 font-black text-base">🎉 你已完成！</div>
+          <div className="text-emerald-400 text-xs mt-1">等待其他隊友完成…</div>
+        </div>
+      )}
+
+      {/* 全員完成 → 房主發獎 */}
+      {allDone && !completed && isHost && (
         <button onClick={handleReward} disabled={rewarding}
           className="w-full py-4 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-black text-base rounded-2xl shadow-xl animate-pulse active:scale-95 transition-transform disabled:opacity-50">
-          {rewarding ? "發放中…" : "🎁 雙方完成！領取寶箱獎勵"}
+          {rewarding ? "發放中…" : "🎁 全員完成！領取寶箱獎勵"}
         </button>
       )}
-      {bothDone && !completed && !isHost && (
+      {allDone && !completed && !isHost && (
         <div className="w-full py-4 bg-emerald-900/40 border-2 border-emerald-500 text-emerald-300 font-black text-sm rounded-2xl text-center">
-          🎉 雙方都完成了！等待房主發放獎勵…
+          🎉 全員完成！等待房主發放獎勵…
         </div>
       )}
     </div>
