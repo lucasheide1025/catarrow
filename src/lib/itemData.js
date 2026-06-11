@@ -32,6 +32,16 @@ const CHEST_ROLL = {
   mythic: [["epic",   0.6], ["mythic", 0.4]],
 };
 
+// 學生模式：同樣可掉較高級寶箱，但機率往低階偏移
+const CHEST_ROLL_STUDENT = {
+  common: [["wood",   1.0]],
+  rare:   [["wood",   0.85], ["iron",  0.15]],
+  elite:  [["iron",   0.85], ["gold",  0.15]],
+  fierce: [["iron",   0.55], ["gold",  0.45]],
+  boss:   [["gold",   0.70], ["epic",  0.30]],
+  mythic: [["epic",   0.70], ["mythic",0.30]],
+};
+
 // 貓貓箱額外掉落機率（依怪物階級）
 const CAT_CHEST_CHANCE = {
   common: 0.01, rare: 0.015, elite: 0.02, fierce: 0.03, boss: 0.04, mythic: 0.05,
@@ -42,8 +52,9 @@ const POTION_CHEST_CHANCE = {
   common: 0.02, rare: 0.04, elite: 0.06, fierce: 0.08, boss: 0.12, mythic: 0.18,
 };
 
-export function rollChestType(tier) {
-  const table = CHEST_ROLL[tier] || CHEST_ROLL.common;
+export function rollChestType(tier, mode) {
+  const table = (mode === "student" ? CHEST_ROLL_STUDENT : CHEST_ROLL)[tier]
+    || CHEST_ROLL.common;
   let r = Math.random();
   for (const [type, p] of table) { r -= p; if (r <= 0) return type; }
   return table[table.length - 1][0];
@@ -51,20 +62,20 @@ export function rollChestType(tier) {
 
 // 產生寶箱（打贏怪物時呼叫）
 // 回傳 { mainChest, catChest|null, potionChest|null }
-export function makeChests(monster) {
-  const type = rollChestType(monster.tier);
+export function makeChests(monster, mode) {
+  const type = rollChestType(monster.tier, mode);
   const mainChest = {
     id:   `chest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type, family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now(),
   };
-  // 貓貓箱額外掉落
-  const catChance = CAT_CHEST_CHANCE[monster.tier] || 0.01;
+  // 學生模式：貓貓箱和藥水箱機率各降低 40%
+  const modeMult = mode === "student" ? 0.6 : 1;
+  const catChance = (CAT_CHEST_CHANCE[monster.tier] || 0.01) * modeMult;
   const catChest = Math.random() < catChance ? {
     id:   `chest_cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type: "cat", family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now() + 1,
   } : null;
-  // 藥水箱額外掉落
-  const potionChance = POTION_CHEST_CHANCE[monster.tier] || 0.02;
+  const potionChance = (POTION_CHEST_CHANCE[monster.tier] || 0.02) * modeMult;
   const potionChest = Math.random() < potionChance ? {
     id:   `chest_potion_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type: "potion", family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now() + 2,

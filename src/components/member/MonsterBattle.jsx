@@ -368,10 +368,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     if (selectedPotions.length>0 && profile?.id && !isGuest) {
       await usePotions(profile.id, selectedPotions).catch(()=>{});
     }
-    const baseStats = { ...(archerStats || { hp:500, atk:10, def:10 }) };
-    if (mode==="novice")  baseStats.hp = Math.max(1000, baseStats.hp);
-    if (mode==="student") baseStats.hp = Math.max(1500, baseStats.hp);
-    if (mode==="veteran") baseStats.hp = Math.max(1000, baseStats.hp);
+    const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
+    if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
     const bStats = {
       hp:  Math.round(baseStats.hp  * buffs.hpMult),
       atk: Math.round(baseStats.atk * buffs.atkMult),
@@ -387,10 +385,17 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     });
     if (throwSkip === "big") setSkipBigRound(true);
 
-    const HP_MULT = mode==="novice" ? 10 : mode==="student" ? 15 : 5;
-    const base={...pickedMonster, hp: pickedMonster.hp * HP_MULT};
-    const boosted=mode==="veteran"
-      ? {...base, hp:Math.round(base.hp*VETERAN_MULT.hp), atk:Math.round(base.atk*VETERAN_MULT.atk), def:Math.round(base.def*VETERAN_MULT.def)}
+    // 怪物 HP：基礎×2，再依模式×2(新手)/×3(學生/老手)
+    // 新手：所有數值×2（ATK/DEF 同乘）；老手：HP×6，ATK/DEF 套 VETERAN_MULT
+    const HP_MULT = mode==="novice" ? 4 : 6;
+    const base = {
+      ...pickedMonster,
+      hp:  Math.round(pickedMonster.hp  * HP_MULT),
+      atk: mode==="novice" ? Math.round(pickedMonster.atk * 2) : pickedMonster.atk,
+      def: mode==="novice" ? Math.round(pickedMonster.def * 2) : pickedMonster.def,
+    };
+    const boosted = mode==="veteran"
+      ? {...base, atk:Math.round(base.atk*VETERAN_MULT.atk), def:Math.round(base.def*VETERAN_MULT.def)}
       : {...base};
     // 敵方削弱藥劑（在老手增幅之後套用）
     const boostedMonster = {
@@ -438,7 +443,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       }
 
       // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱或藥水箱）
-      const { mainChest, catChest, potionChest } = makeChests(monster);
+      const { mainChest, catChest, potionChest } = makeChests(monster, mode);
       let mats=[];
       if (isGuest||!profile?.id) {
         // 訪客：當場直接打開主寶箱，材料只顯示不儲存
@@ -738,9 +743,10 @@ if (profile?.id && !isGuest) {
   if (phase==="prebattle") {
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
-    const previewHP  = mode==="veteran"?Math.round(pickedMonster.hp*VETERAN_MULT.hp):pickedMonster.hp;
-    const previewATK = mode==="veteran"?Math.round(pickedMonster.atk*VETERAN_MULT.atk):pickedMonster.atk;
-    const previewDEF = mode==="veteran"?Math.round(pickedMonster.def*VETERAN_MULT.def):pickedMonster.def;
+    const previewHPMult = mode==="novice" ? 4 : 6;
+    const previewHP  = Math.round(pickedMonster.hp  * previewHPMult);
+    const previewATK = mode==="novice" ? Math.round(pickedMonster.atk*2) : mode==="veteran" ? Math.round(pickedMonster.atk*VETERAN_MULT.atk) : pickedMonster.atk;
+    const previewDEF = mode==="novice" ? Math.round(pickedMonster.def*2) : mode==="veteran" ? Math.round(pickedMonster.def*VETERAN_MULT.def) : pickedMonster.def;
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>

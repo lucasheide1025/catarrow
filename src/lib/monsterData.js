@@ -348,7 +348,7 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   // 基礎 100 + 圖鑑/8（上限+30）+ 藍/金證（+10/+20）
   // + 報到次數/4（上限+30）+ 成就章分/8（上限+20）
   // + 飾品欄位數×3（上限+20）+ 射齡×5（上限+30）
-  let hp = 100;
+  let hp = 200;
   if (dexStats) hp += Math.min(30, Math.floor(dexStats.totalUnlocked / 8));
   if (certification?.level === "blue") hp += 10;
   if (certification?.level === "gold") hp += 20;
@@ -359,7 +359,7 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
   hp += Math.min(20, accSlots * 3);
   hp += Math.min(30, ageYears * 5);
-  hp = Math.min(400, hp);
+  hp = Math.min(800, hp);
 
   // ── ATK ─────────────────────────────────────────────────
   // 基礎 15 + 肥貓章分/4（上限+25）+ 三弓檢定總等×3（上限+40）

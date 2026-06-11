@@ -22,10 +22,13 @@ import MemberDex          from "../components/member/MemberDex";
 import MonsterBattle      from "../components/member/MonsterBattle";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
+import PartyLobby        from "../components/party/PartyLobby";
+import PartyQuestRoom    from "../components/party/PartyQuestRoom";
+import PartyBattleRoom   from "../components/party/PartyBattleRoom";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -35,6 +38,20 @@ export default function MemberApp() {
   useEffect(()=>{ sessionStorage.setItem("member_page",page); },[page]);
   useEffect(()=>{ if(page==="comp-detail"&&!selComp) setPage("comps"); },[]); // eslint-disable-line
   const [lastResult, setLastResult] = useState(null);
+  const [partyRoomId,   setPartyRoomId]   = useState(null);
+  const [partyRoomType, setPartyRoomType] = useState(null);
+  const [partyIsHost,   setPartyIsHost]   = useState(false);
+
+  function handleEnterPartyRoom(roomId, type, host) {
+    setPartyRoomId(roomId);
+    setPartyRoomType(type);
+    setPartyIsHost(host);
+    setPage(type === "quest" ? "party-quest" : "party-battle");
+  }
+  function handleLeaveParty() {
+    setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
+    setPage("profile");
+  }
 
   const nav = [
     { id:"home",        icon:"🏠", label:"首頁" },
@@ -98,6 +115,13 @@ export default function MemberApp() {
         {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
+        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} />}
+        {page==="party-quest" && partyRoomId && (
+          <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
+        )}
+        {page==="party-battle" && partyRoomId && (
+          <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
+        )}
       </div>
 
       {/* 底部導覽 */}
