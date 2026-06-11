@@ -17,14 +17,14 @@ function genCode() {
 // HP 倍率顯示範圍（用於大廳預覽）
 export function partyHPRange(playerCount) {
   const extra = Math.max(0, playerCount - 1);
-  return { min: 1 + extra * 0.1, max: 1 + extra * 0.5 };
+  return { min: 1 + extra * 0.5, max: 1 + extra * 1.0 };
 }
 
-// 開戰時一次性產生實際隨機倍率（每多一人 +0.1~0.5，不重複計算）
+// 開戰時一次性產生實際隨機倍率（每多一人 +0.5~1.0）
 function genPartyHPMult(playerCount) {
   let mult = 1.0;
   for (let i = 1; i < Math.max(1, playerCount); i++) {
-    mult += 0.1 + Math.random() * 0.4;
+    mult += 0.5 + Math.random() * 0.5;
   }
   return Math.round(mult * 100) / 100;
 }

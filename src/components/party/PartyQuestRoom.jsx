@@ -30,6 +30,7 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   const [arrows,     setArrows]     = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [rewarding,  setRewarding]  = useState(false);
+  const [pendingComplete, setPendingComplete] = useState(null); // { chestType } 房主本地完成狀態
   const [copied,     setCopied]     = useState(false);
   const [failMsg,    setFailMsg]    = useState("");
   const [gaveUpConfirm, setGaveUpConfirm] = useState(false);
@@ -86,9 +87,10 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   const members    = room.members || {};
   const memberList = Object.entries(members).map(([id, data]) => ({ id, ...data }));
   const me         = members[myId] || {};
-  const allDone    = memberList.length >= 2 && memberList.every(m => m.done || m.gaveUp);
-  const completed  = room.status === "completed";
-  const chestInfo  = room.rewardChestType ? CHEST_TYPES[room.rewardChestType] : null;
+  const allDone      = memberList.length >= 2 && memberList.every(m => m.done || m.gaveUp);
+  const completed    = room.status === "completed" || !!pendingComplete;
+  const chestTypeKey = room.rewardChestType || pendingComplete;
+  const chestInfo    = chestTypeKey ? CHEST_TYPES[chestTypeKey] : null;
   const arrowCount = task?.arrowCount || 6;
   const total      = arrows.reduce((s, v) => s + v, 0);
   const hits       = arrows.filter(v => v > 0).length;
@@ -137,7 +139,8 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   async function handleReward() {
     setRewarding(true);
     const doneIds = memberList.filter(m => m.done).map(m => m.id);
-    await giveQuestRewards(roomId, doneIds);
+    const res = await giveQuestRewards(roomId, doneIds);
+    if (res?.ok) setPendingComplete(res.chestType);
     setRewarding(false);
   }
 

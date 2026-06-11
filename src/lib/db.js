@@ -1046,6 +1046,24 @@ export async function resetMonsterSession(memberId) {
   } catch (e) { console.warn("resetMonsterSession:", e?.message); }
 }
  
+// 組隊打怪每日上限（同一份文件存 partyCount 欄位，max = 5）
+export async function checkPartyBattleLimit(memberId) {
+  try {
+    const id   = `${memberId}_${monsterTodayStr()}`;
+    const snap = await getDoc(doc(db, C_MONSTER_SESSION, id));
+    const used = snap.exists() ? (snap.data().partyCount || 0) : 0;
+    return Math.max(0, 5 - used);
+  } catch { return 5; }
+}
+export async function recordPartyBattleSession(memberId) {
+  try {
+    const id  = `${memberId}_${monsterTodayStr()}`;
+    const ref = doc(db, C_MONSTER_SESSION, id);
+    await updateDoc(ref, { partyCount: increment(1), updatedAt: serverTimestamp() })
+      .catch(() => setDoc(ref, { memberId, partyCount: 1, date: monsterTodayStr(), updatedAt: serverTimestamp() }, { merge: true }));
+  } catch (e) { console.warn("recordPartyBattleSession:", e?.message); }
+}
+
 // ─── 訪客帳號管理 ──────────────────────────────────────────
 const C_GUESTS = "guestSessions";
  
@@ -1326,17 +1344,20 @@ export async function migrateOldFragments(memberId) {
     "frag_score":        "frag_score_bronze",
     "frag_achieve":      "frag_achieve_silver",
   };
-  // fragmentInventory 錯誤 key → 正確 key
+  // fragmentInventory 錯誤 key → 正確 key（含 _silver 舊版 + 無後綴舊版）
   const FRAG_MAP = {
     "frag_fatcat_silver": "frag_fatcat_bronze",
     "frag_score_silver":  "frag_score_bronze",
+    "frag_fatcat":        "frag_fatcat_bronze",
+    "frag_score":         "frag_score_bronze",
+    "frag_achieve":       "frag_achieve_silver",
   };
   try {
     const fragRef  = doc(db, C_FRAGS, memberId);
     const fragSnap = await getDoc(fragRef);
 
-    // 已完成遷移 → 直接跳過，防止每次進背包都疊加舊值
-    if (fragSnap.exists() && fragSnap.data().migrated) return;
+    // migratedV2 旗標：確保每位用戶只跑一次（v2 修正了 fragmentInventory 內的舊 key）
+    if (fragSnap.exists() && fragSnap.data().migratedV2) return;
 
     const matRef   = doc(db, C_MATERIALS, memberId);
     const matSnap  = await getDoc(matRef);
@@ -1362,8 +1383,8 @@ export async function migrateOldFragments(memberId) {
       }
     });
 
-    // 寫入 migrated: true，無論有無舊資料都標記完成，確保此函式只執行一次
-    await setDoc(fragRef, { items: fragItems, migrated: true, updatedAt: serverTimestamp() }, { merge: true });
+    // 寫入 migratedV2: true，無論有無舊資料都標記完成，確保此函式只執行一次
+    await setDoc(fragRef, { items: fragItems, migratedV2: true, updatedAt: serverTimestamp() }, { merge: true });
     if (matDirty) await updateDoc(matRef, { ...matDeleteUpdates, updatedAt: serverTimestamp() });
   } catch (e) { console.warn("migrateOldFragments:", e?.message); }
 }
@@ -1448,8 +1469,10 @@ const C_CHEST_STATS = "chestStats";
 export async function updateChestOpenStats(memberId, chestType) {
   if (!memberId || !chestType) return;
   try {
-    const ref  = doc(db, C_CHEST_STATS, memberId);
-    await setDoc(ref, { [`opens.${chestType}`]: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+    const ref = doc(db, C_CHEST_STATS, memberId);
+    // updateDoc 才能正確解析 dot-notation 為 nested field；setDoc+merge 會建立字面欄位名稱
+    await updateDoc(ref, { [`opens.${chestType}`]: increment(1), updatedAt: serverTimestamp() })
+      .catch(() => setDoc(ref, { opens: { [chestType]: 1 }, updatedAt: serverTimestamp() }));
   } catch (e) { console.warn("updateChestOpenStats:", e?.message); }
 }
 

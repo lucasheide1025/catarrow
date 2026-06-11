@@ -6,7 +6,7 @@ import {
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession } from "../../lib/db";
 import { MONSTERS, calcDamage, calcCounterDamage, calcArcherStats, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 
@@ -79,11 +79,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   const [selectedPotions, setSelectedPotions] = useState([]);
   const [claiming,        setClaiming]        = useState(false);
   const [skipping,        setSkipping]        = useState(null);
+  const [partyBattleLeft, setPartyBattleLeft] = useState(null);
+  const [startError,      setStartError]      = useState("");
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRef     = useRef(false);
+  const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const logEndRef         = useRef(null);
 
   const myId = profile?.id;
@@ -92,6 +95,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     const unsub = subscribePartyRoom(roomId, setRoom);
     return unsub;
   }, [roomId]);
+
+  // 房主：進入等待室時預查今日剩餘次數
+  useEffect(() => {
+    if (!myId || !isHost) return;
+    checkPartyBattleLimit(myId).then(setPartyBattleLeft);
+  }, [myId, isHost]); // eslint-disable-line
+
+  // 戰鬥開始時所有人記錄一次（每人每場只記一次）
+  useEffect(() => {
+    if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
+    partyRecordedRef.current = true;
+    recordPartyBattleSession(myId).catch(() => {});
+    if (isHost) setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
+  }, [room?.status]); // eslint-disable-line
 
   // 訂閱藥水庫存
   useEffect(() => {
@@ -114,7 +131,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || statsWrittenRef.current) return;
     const me = room.members?.[myId];
-    if (!me || me.maxHP > 0) return;
+    if (!me) return;
     statsWrittenRef.current = true;
     const stats = getArcherStats(profile, selectedPotions);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
@@ -174,10 +191,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
     setSubmitting(true);
     await submitArrows(roomId, myId, arrows);
+    setArrows([]);
     setSubmitting(false);
   }
   async function handleStart() {
     if (!setupMonster || starting) return;
+    if (memberList.length < 2) {
+      setStartError("組隊打怪至少需要 2 位玩家！");
+      return;
+    }
+    if (partyBattleLeft !== null && partyBattleLeft <= 0) {
+      setStartError("今日組隊打怪次數已達上限（5次）");
+      return;
+    }
+    setStartError("");
     setStarting(true);
     await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18);
     setStarting(false);
@@ -358,9 +385,24 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
               );
             })()}
 
-            <button onClick={handleStart} disabled={!setupMonster || starting}
+            {/* 剩餘次數 & 防呆訊息 */}
+            {partyBattleLeft !== null && (
+              <div className={`flex items-center gap-1.5 text-xs font-bold ${partyBattleLeft > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                <span>{partyBattleLeft > 0 ? "⚔️" : "😴"}</span>
+                <span>今日組隊剩餘 {partyBattleLeft}/5 次</span>
+              </div>
+            )}
+            {startError && (
+              <div className="bg-red-900/50 border border-red-500/50 rounded-xl px-3 py-2 text-red-300 text-xs font-bold text-center">
+                {startError}
+              </div>
+            )}
+            <button onClick={handleStart}
+              disabled={!setupMonster || starting || memberList.length < 2 || (partyBattleLeft !== null && partyBattleLeft <= 0)}
               className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
-              {starting ? "開始中…" : `⚔️ 開始戰鬥（${memberList.length}人）`}
+              {starting ? "開始中…"
+                : memberList.length < 2 ? `⚔️ 等待更多玩家（${memberList.length}/2）`
+                : `⚔️ 開始戰鬥（${memberList.length}人）`}
             </button>
           </div>
         )}
@@ -435,9 +477,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   }
 
   // ── 戰鬥中畫面 ────────────────────────────────────────────
-  const monsterPct    = room.monsterMaxHP > 0 ? (room.monsterHP / room.monsterMaxHP) : 0;
-  const myArrowTotal  = arrows.reduce((s, a) => s + a.score, 0);
-  const nextCounterIn = 2 - ((room.round || 1) % 2); // 1 或 2
+  const monsterPct     = room.monsterMaxHP > 0 ? (room.monsterHP / room.monsterMaxHP) : 0;
+  const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
+  const isCounterRound = (room.round || 1) % 2 === 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col max-w-lg mx-auto">
@@ -447,7 +489,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
           <div>
             <span className="text-white font-black">第 {room.round} 回合</span>
             <span className="text-xs text-slate-400 ml-2">
-              {nextCounterIn === 1 ? "⚠️ 下回合怪物反擊" : "（再 2 回合反擊）"}
+              {isCounterRound ? "⚠️ 此回合怪物反擊！" : "（下回合反擊）"}
             </span>
           </div>
           <div className="flex items-center gap-2">
