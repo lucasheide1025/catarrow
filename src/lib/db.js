@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, Timestamp
+  increment, arrayUnion, Timestamp, deleteField
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -1329,20 +1329,26 @@ export async function migrateOldFragments(memberId) {
     "frag_score_silver":  "frag_score_bronze",
   };
   try {
-    const matRef   = doc(db, C_MATERIALS, memberId);
     const fragRef  = doc(db, C_FRAGS, memberId);
-    const [matSnap, fragSnap] = await Promise.all([getDoc(matRef), getDoc(fragRef)]);
+    const fragSnap = await getDoc(fragRef);
+
+    // 已完成遷移 → 直接跳過，防止每次進背包都疊加舊值
+    if (fragSnap.exists() && fragSnap.data().migrated) return;
+
+    const matRef   = doc(db, C_MATERIALS, memberId);
+    const matSnap  = await getDoc(matRef);
     const matItems  = matSnap.exists()  ? (matSnap.data().items  || {}) : {};
     const fragItems = fragSnap.exists() ? (fragSnap.data().items || {}) : {};
 
-    let matDirty = false, fragDirty = false;
+    let matDirty = false;
+    const matDeleteUpdates = {};
 
     // 從 materialInventory 搬到 fragmentInventory
     Object.entries(MAT_MAP).forEach(([old, newId]) => {
       if ((matItems[old] || 0) > 0) {
         fragItems[newId] = (fragItems[newId] || 0) + matItems[old];
-        delete matItems[old];
-        matDirty = true; fragDirty = true;
+        matDeleteUpdates[`items.${old}`] = deleteField();
+        matDirty = true;
       }
     });
     // 在 fragmentInventory 內改名（_silver → _bronze）
@@ -1350,12 +1356,12 @@ export async function migrateOldFragments(memberId) {
       if ((fragItems[wrong] || 0) > 0) {
         fragItems[correct] = (fragItems[correct] || 0) + fragItems[wrong];
         delete fragItems[wrong];
-        fragDirty = true;
       }
     });
 
-    if (fragDirty) await setDoc(fragRef, { items: fragItems, updatedAt: serverTimestamp() }, { merge: true });
-    if (matDirty)  await setDoc(matRef,  { items: matItems,  updatedAt: serverTimestamp() }, { merge: true });
+    // 寫入 migrated: true，無論有無舊資料都標記完成，確保此函式只執行一次
+    await setDoc(fragRef, { items: fragItems, migrated: true, updatedAt: serverTimestamp() }, { merge: true });
+    if (matDirty) await updateDoc(matRef, { ...matDeleteUpdates, updatedAt: serverTimestamp() });
   } catch (e) { console.warn("migrateOldFragments:", e?.message); }
 }
 

@@ -737,7 +737,12 @@ if (profile?.id && !isGuest) {
           <div>
             <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
               <span>🏹 {profile?.nickname||profile?.name||"射手"}{revived?" 💖":""}</span>
-              <span style={animCounter?{animation:"mb-shake .5s ease"}:{}}>{archerHP}/{maxHP}</span>
+              <span style={animCounter?{animation:"mb-shake .5s ease"}:{}}>
+                {archerHP}/{maxHP}
+                {battleStats?.hp > (archerStats?.hp || 0) && (
+                  <span className="text-emerald-300 text-[10px] ml-1">(+{battleStats.hp - archerStats.hp})</span>
+                )}
+              </span>
             </div>
             <div className="h-3 bg-white/20 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width:`${archPct}%` }} />
