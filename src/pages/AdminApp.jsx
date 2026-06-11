@@ -9,6 +9,7 @@ import AdminCompetitions  from "../components/admin/AdminCompetitions";
 import AdminLearn         from "../components/admin/AdminLearn";
 import AdminAchievements  from "../components/admin/AdminAchievements";
 import AdminDexGrant      from "../components/admin/AdminDexGrant";
+import AdminGiveTool     from "../components/admin/AdminGiveTool";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -75,6 +76,7 @@ const adminNav = [
   { id:"review",       icon:"🔔", label:"審核" },
   { id:"learn",        icon:"📓", label:"學習" },
   { id:"achievements", icon:"⭐", label:"成就" },
+  { id:"givetool",     icon:"🧪", label:"測試" },
 ];
 
   const memberNav = [
@@ -191,6 +193,7 @@ const adminNav = [
         {page==="achievements" && <AdminAchievementsTab/>}
         {page==="learn"        && <AdminLearn/>}
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
+        {page==="givetool"     && <AdminGiveTool/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

@@ -1439,6 +1439,42 @@ export function subscribeCraftStats(memberId, callback) {
   );
 }
 
+// ─── 後台給予道具 ───────────────────────────────────────────
+export async function adminGiveItem(memberId, category, itemId, qty) {
+  if (!memberId || !category || !itemId || qty < 1) return { ok: false, reason: "參數錯誤" };
+  try {
+    if (category === "material") {
+      const ref = doc(db, C_MATERIALS, memberId);
+      const snap = await getDoc(ref);
+      const items = snap.exists() ? (snap.data().items || {}) : {};
+      items[itemId] = (items[itemId] || 0) + qty;
+      await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    } else if (category === "potion") {
+      const ref = doc(db, C_POTIONS, memberId);
+      const snap = await getDoc(ref);
+      const items = snap.exists() ? (snap.data().items || {}) : {};
+      items[itemId] = (items[itemId] || 0) + qty;
+      await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    } else if (category === "fragment") {
+      const ref = doc(db, C_FRAGS, memberId);
+      const snap = await getDoc(ref);
+      const items = snap.exists() ? (snap.data().items || {}) : {};
+      items[itemId] = (items[itemId] || 0) + qty;
+      await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    } else if (category === "chest") {
+      const chests = Array.from({ length: qty }, (_, i) => ({
+        id: `chest_admin_${Date.now()}_${i}`,
+        type: itemId, family: "admin", tier: "admin", from: "後台贈送", ts: Date.now() + i,
+      }));
+      await addChests(memberId, chests);
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn("adminGiveItem:", e?.message);
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
+}
+
 async function updateCraftStats(memberId, type, data) {
   if (!memberId) return;
   const ref  = doc(db, C_CRAFT_STATS, memberId);
