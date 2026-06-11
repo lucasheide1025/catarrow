@@ -6,7 +6,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
-import { POTIONS } from "./itemData";
+import { POTIONS, FRAGMENTS } from "./itemData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -1192,8 +1192,8 @@ export function subscribeChests(memberId, callback) {
   );
 }
  
-// 開箱：移除寶箱 + 把抽出的內容寫進材料/藥劑庫存
-// contents = { materials:[材料物件], potions:[藥劑物件] }（由 itemData.openChestContents 抽出）
+// 開箱：移除寶箱 + 把抽出的內容寫進材料/藥劑/碎片庫存
+// contents = { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件] }
 export async function openChest(memberId, chestId, contents) {
   if (!memberId || !chestId) return { ok: false, reason: "參數錯誤" };
   try {
@@ -1203,8 +1203,9 @@ export async function openChest(memberId, chestId, contents) {
     if (!list.some(c => c.id === chestId)) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
     await setDoc(ref, { chests: list.filter(c => c.id !== chestId), updatedAt: serverTimestamp() }, { merge: true });
 
-    if (contents?.materials?.length) await addMaterials(memberId, contents.materials);
-    if (contents?.potions?.length)   await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
+    if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
+    if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
+    if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);
     return { ok: true };
   } catch (e) {
     console.warn("openChest:", e?.message);
@@ -1283,5 +1284,61 @@ export async function usePotions(memberId, potionIds) {
   } catch (e) {
     console.warn("usePotions:", e?.message);
     return { ok: false, reason: "系統忙碌中" };
+  }
+} 
+// ─── 碎片庫存 ──────────────────────────────────────────────
+// 集合：fragmentInventory / 文件 ID = memberId
+// 結構：{ items: { fragmentId: count }, updatedAt }
+// 碎片本身不計分，10個合成 → 更新 member 對應 badge 欄位
+ 
+ 
+const C_FRAGS = "fragmentInventory";
+ 
+// 批次新增碎片（frags = [{ id, ... }]，每個+1）
+export async function addFragments(memberId, frags) {
+  if (!memberId || !frags?.length) return;
+  try {
+    const ref  = doc(db, C_FRAGS, memberId);
+    const snap = await getDoc(ref);
+    const items = snap.exists() ? (snap.data().items || {}) : {};
+    frags.forEach(f => { items[f.id] = (items[f.id] || 0) + 1; });
+    await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("addFragments:", e?.message); }
+}
+ 
+// 訂閱碎片庫存（即時）
+export function subscribeFragments(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_FRAGS, memberId),
+    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    err  => { console.warn("subscribeFragments:", err.message); callback({}); }
+  );
+}
+ 
+// 合成碎片 → 銀章
+// fragId: "frag_fatcat_silver" | "frag_score_silver" | "frag_achieve_silver"
+// 成功後：扣10個碎片 + member.{badgeField}.silver += 1 + 回傳 result 供 UI 提示
+export async function craftFragment(memberId, fragId) {
+  if (!memberId || !fragId) return { ok: false, reason: "參數錯誤" };
+  const frag = FRAGMENTS.find(f => f.id === fragId);
+  if (!frag) return { ok: false, reason: "找不到碎片定義" };
+  const need = frag.craftCount || 10;
+  const { badgeField, badgeLevel, label } = frag.craftResult;
+  try {
+    // 1. 扣碎片
+    const fragRef  = doc(db, C_FRAGS, memberId);
+    const fragSnap = await getDoc(fragRef);
+    const items    = fragSnap.exists() ? (fragSnap.data().items || {}) : {};
+    const have     = items[fragId] || 0;
+    if (have < need) return { ok: false, reason: `還需要 ${need - have} 個「${frag.name}」` };
+    items[fragId] = have - need;
+    await setDoc(fragRef, { items, updatedAt: serverTimestamp() }, { merge: true });
+    // 2. 更新 member badge（badgeField = "fatCat" | "score" | "achievement"）
+    const memRef = doc(db, "members", memberId);
+    await updateDoc(memRef, { [`${badgeField}.${badgeLevel}`]: increment(1) });
+    return { ok: true, label };
+  } catch (e) {
+    console.warn("craftFragment:", e?.message);
+    return { ok: false, reason: "系統忙碌中，請稍後再試" };
   }
 }

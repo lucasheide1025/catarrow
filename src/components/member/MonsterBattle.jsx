@@ -5,9 +5,9 @@ import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
-  addChests, subscribePotions, usePotions,
+  addChests, subscribePotions, usePotions, addFragments,
 } from "../../lib/db";
-import { makeChest, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
+import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
   MONSTERS, FAMILIES, TIER_LABEL,
@@ -129,7 +129,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [potionInv, setPotionInv]             = useState({});
   const [selectedPotions, setSelectedPotions] = useState([]);
   const [battleStats, setBattleStats]         = useState(null); // 本場有效數值（含藥劑加成）
-  const [wonChest, setWonChest]               = useState(null); // 本場掉落的寶箱
+  const [wonChests, setWonChests]             = useState([]); // 本場掉落的寶箱陣列（含貓貓箱）
+  const [skipBigRound, setSkipBigRound]       = useState(false); // 麻痺毒素：跳過整個大回合反擊
   const logEndRef = useRef(null);
 
   useEffect(() => {
@@ -205,7 +206,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     await delay(400);
 
     for (let i=0; i<ARROWS_PER_ROUND; i++) {
-      const score = arrows[i];
+      // 分數藥水：每箭 +1分，10→X 再+1 = 雙倍爆擊
+      const rawScore = arrows[i];
+      let score = rawScore;
+      const sp = (battleStats?.scorePlus) || 0;
+      let forceCrit = false;
+      if (sp > 0) {
+        score = Math.min(rawScore + sp, 10);
+        if (rawScore >= 10) { score = 10; forceCrit = true; }
+      }
+      const baseCritMult = forceCrit ? 2.0 : 1.0;
       const part = resolveHitPart(score, curUnlocked);
       if (part.id==="chest") curUnlocked=new Set([...curUnlocked,"chest"]);
       if (part.id==="belly") curUnlocked=new Set([...curUnlocked,"belly"]);
@@ -213,7 +223,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       setUnlockedParts(curUnlocked);
 
       const effATK = (bSt?.atk||10) + archerATKMod;
-      const dmg = calcDamage({ score, archerATK:effATK, monsterDEF:monster.def, partMult:part.mult });
+      const dmg = calcDamage({ score, archerATK:effATK, monsterDEF:monster.def, partMult:part.mult * baseCritMult });
       if (part.id==="head") headHitCount++;
 
       const isOrganPart = ["heart","kidney","lung","balls"].includes(part.id);
@@ -264,7 +274,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           }
         }
 
-        if (!skipCtr) {
+        if (skipBigRound) {
+          addLog({ type:"system", text:"🕸️ 麻痺毒素！怪物本回合完全無法反擊！" });
+          setSkipBigRound(false);
+        } else if (!skipCtr) {
           setBattlePhase("counter"); setAnimCounter(true);
           setTimeout(()=>setAnimCounter(false),800);
           const critChance=mode==="veteran"?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):0;
@@ -341,6 +354,14 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       def: baseStats.def,
     };
     setBattleStats(bStats);
+    // 投擲型藥劑：立即對怪物扣血＋麻痺效果（開戰前）
+    let throwDmgTotal = 0;
+    let throwSkip = null;
+    buffs.throwEffects.forEach(te => {
+      throwDmgTotal += te.dmg || 0;
+      if (te.skipRound) throwSkip = te.skipRound;
+    });
+    if (throwSkip === "big") setSkipBigRound(true);
 
     const base=pickedMonster;
     const boosted=mode==="veteran"
@@ -352,21 +373,24 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       atk: Math.max(1, Math.round(boosted.atk * buffs.monAtkMult)),
       def: Math.max(0, Math.round(boosted.def * buffs.monDefMult)),
     };
+    // 投擲型藥劑直接扣怪物 HP（開戰前）
+    const monStartHP = Math.max(1, boostedMonster.hp - throwDmgTotal);
     setMonster(boostedMonster);
     setArcherHP(bStats.hp);
-    setMonsterHP(boostedMonster.hp);
+    setMonsterHP(monStartHP);
     setRound(1); setDistance(DISTANCE_START);
     setAllArrows([]); setRoundScores([]);
     setLog([
       { type:"system", text:`⚔️ 戰鬥開始！對手：${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:"新手"}` },
       ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
+      ...(throwDmgTotal>0?[{type:"event_bad", text:`💥 投擲命中！怪物直接失去 ${throwDmgTotal} HP！`}]:[]),
       ...(mode==="veteran"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
     ]);
     if (buffs.used.length>0) sfxBuff();
     setSelectedPotions([]);
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
-    setRevived(false); setLoot(null); setLootRevealed(false); setWonChest(null);
+    setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
@@ -379,24 +403,26 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const lootItem=drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
 
-      // 📦 掉落寶箱（取代直接掉材料）
-      const chest=makeChest(monster);
+      // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱）
+      const { mainChest, catChest } = makeChests(monster);
       let mats=[];
       if (isGuest||!profile?.id) {
-        // 訪客：當場直接打開，材料只顯示不儲存
-        const contents=openChestContents(chest);
+        // 訪客：當場直接打開主寶箱，材料只顯示不儲存
+        const contents=openChestContents(mainChest);
         mats=contents.materials;
         setDroppedMaterials(mats);
-        setWonChest(null);
+        setWonChests([]);
       } else {
-        // 射手：寶箱放進背包，到「背包」頁再開
-        setWonChest(chest);
+        // 射手：寶箱放進背包
+        const chestsToAdd = catChest ? [mainChest, catChest] : [mainChest];
+        setWonChests(chestsToAdd);
         setDroppedMaterials([]);
-        addChests(profile.id,[chest]).catch(()=>{});
+        addChests(profile.id, chestsToAdd).catch(()=>{});
       }
-      const chestCfg=CHEST_TYPES[chest.type]||CHEST_TYPES.wood;
+      const chestCfg=CHEST_TYPES[mainChest.type]||CHEST_TYPES.wood;
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
       addLog({ type:"system", text:isGuest?`📦 寶箱當場打開！`:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
+      if (catChest) addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
       if (isRareLoot(lootItem)&&profile?.id) {
         createNotification({ type:"high_score", title:`🎁 ${profile.nickname||profile.name} 獲得稀有掉落！`,
           content:`${profile.nickname||profile.name} 擊倒了 ${monster.name}，獲得稀有道具！`,
@@ -409,7 +435,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
             lootName:lootItem.name, lootIcon:lootItem.icon, lootType:lootItem.type,
-            mode, battleMode, materials:mats.map(m=>m.id), chestType:chest.type, roundScores:rs,
+            mode, battleMode, materials:mats.map(m=>m.id), chestType:mainChest.type, catChest:!!catChest, roundScores:rs,
           }).catch(()=>{});
           return rs;
         });
@@ -636,7 +662,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                       }}
                       className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 border-2
                         ${selected?"bg-amber-400 text-amber-900 border-amber-300":"bg-white/10 text-white border-white/20"}`}>
-                      {p.icon} {p.name} ×{count}
+                      {p.icon} {p.name}{p.kind==="throw"?" 🎯投":""}  ×{count}
                     </button>
                   );
                 })}
@@ -813,19 +839,25 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             </div>
           </div>
         )}
-        {wonChest && (()=>{
-          const cc=CHEST_TYPES[wonChest.type]||CHEST_TYPES.wood;
-          return (
-            <div className="w-full rounded-xl p-3 border-2 flex items-center gap-3"
-              style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
-              <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
-              <div className="flex-1">
-                <div className="font-black text-sm" style={{ color:cc.color }}>獲得「{cc.name}」！</div>
-                <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「材料庫存」頁開箱領材料 🎒</div>
-              </div>
-            </div>
-          );
-        })()}
+        {wonChests.length>0 && (
+          <div className="w-full flex flex-col gap-2">
+            {wonChests.map((ch,idx)=>{
+              const cc=CHEST_TYPES[ch.type]||CHEST_TYPES.wood;
+              return (
+                <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
+                  style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
+                  <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
+                  <div className="flex-1">
+                    <div className="font-black text-sm" style={{ color:cc.color }}>
+                      獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
+                    </div>
+                    <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱領材料</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {droppedMaterials.length>0&&(
           <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3">
             <div className="text-purple-700 text-xs font-bold mb-1">🧪 寶箱開出材料</div>

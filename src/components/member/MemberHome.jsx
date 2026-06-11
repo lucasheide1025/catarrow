@@ -114,6 +114,16 @@ export default function MemberHome({ onPageChange }) {
         </div>
       </button>
 
+      {/* 背包快捷入口 */}
+<button onClick={() => onPageChange("materials")}
+  className="w-full rounded-2xl p-4 text-left border-2 border-pink-200 bg-pink-50 active:scale-95 transition-transform flex items-center gap-3">
+  <span className="text-3xl">🎒</span>
+  <div>
+    <div className="font-black text-gray-800">材料背包</div>
+    <div className="text-gray-500 text-xs">查看材料、開寶箱、升級材料、合成銀章</div>
+  </div>
+</button>
+
       {pendingBadges.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="text-amber-700 font-bold text-sm mb-2">🎖️ 你有 {pendingBadges.length} 個徽章待確認領取！</div>
