@@ -229,6 +229,20 @@ export async function submitArrows(roomId, memberId, arrows) {
   }
 }
 
+// ── Battle：房主強制跳過斷線玩家（以空箭分 + ready=true 標記）──
+export async function forceSkipPlayer(roomId, memberId) {
+  try {
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${memberId}.arrows`]: [],
+      [`members.${memberId}.ready`]:  true,
+      [`members.${memberId}.skipped`]: true,
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── Battle：房主處理回合（所有人 ready 後呼叫）───────────────
 // calcDmgFn(arrows, atk, monsterDEF) → number
 // calcCtrFn(monsterATK, archerDEF)   → number

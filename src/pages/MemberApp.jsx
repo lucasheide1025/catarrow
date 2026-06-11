@@ -38,17 +38,25 @@ export default function MemberApp() {
   useEffect(()=>{ sessionStorage.setItem("member_page",page); },[page]);
   useEffect(()=>{ if(page==="comp-detail"&&!selComp) setPage("comps"); },[]); // eslint-disable-line
   const [lastResult, setLastResult] = useState(null);
-  const [partyRoomId,   setPartyRoomId]   = useState(null);
-  const [partyRoomType, setPartyRoomType] = useState(null);
-  const [partyIsHost,   setPartyIsHost]   = useState(false);
+  const [partyRoomId,   setPartyRoomId]   = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("party_room"))?.roomId || null; } catch { return null; }
+  });
+  const [partyRoomType, setPartyRoomType] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("party_room"))?.type || null; } catch { return null; }
+  });
+  const [partyIsHost,   setPartyIsHost]   = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("party_room"))?.isHost || false; } catch { return false; }
+  });
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
     setPartyRoomType(type);
     setPartyIsHost(host);
+    sessionStorage.setItem("party_room", JSON.stringify({ roomId, type, isHost: host }));
     setPage(type === "quest" ? "party-quest" : "party-battle");
   }
   function handleLeaveParty() {
+    sessionStorage.removeItem("party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
     setPage("profile");
   }
@@ -76,15 +84,24 @@ export default function MemberApp() {
       <HonorCelebration memberId={profile?.id} memberCreatedAt={profile?.createdAt} onGoPage={setPage} />
 
       {/* Header */}
-      <div style={{ background:"white", borderBottom:"1px solid #e2e8f0", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:40 }}>
-        <div>
-          <div style={{ fontWeight:"900", color:"#1e293b", fontSize:"14px" }}>🎯 貓小隊射箭場</div>
-          <div style={{ fontSize:"11px", color:"#94a3b8" }}>Barebow Indoor Archery</div>
+      <div style={{ position:"sticky", top:0, zIndex:40 }}>
+        <div style={{ background:"white", borderBottom:"1px solid #e2e8f0", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontWeight:"900", color:"#1e293b", fontSize:"14px" }}>🎯 貓小隊射箭場</div>
+            <div style={{ fontSize:"11px", color:"#94a3b8" }}>Barebow Indoor Archery</div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+            <span style={{ fontSize:"13px", color:"#64748b" }}>👤 {profile?.nickname||profile?.name}</span>
+            <button onClick={logout} style={{ fontSize:"12px", color:"#94a3b8", border:"1px solid #e2e8f0", borderRadius:"8px", padding:"4px 10px", background:"white", cursor:"pointer" }}>登出</button>
+          </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
-          <span style={{ fontSize:"13px", color:"#64748b" }}>👤 {profile?.nickname||profile?.name}</span>
-          <button onClick={logout} style={{ fontSize:"12px", color:"#94a3b8", border:"1px solid #e2e8f0", borderRadius:"8px", padding:"4px 10px", background:"white", cursor:"pointer" }}>登出</button>
-        </div>
+        {/* 組隊中 banner — 離開組隊頁面後顯示，可一鍵回去 */}
+        {partyRoomId && !["party-quest","party-battle"].includes(page) && (
+          <button onClick={() => setPage(partyRoomType === "quest" ? "party-quest" : "party-battle")}
+            style={{ display:"block", width:"100%", background:"#4f46e5", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            🎮 組隊進行中 — 點此回到房間
+          </button>
+        )}
       </div>
 
       {/* 頁面內容 */}

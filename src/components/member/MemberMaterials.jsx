@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, craftPotion } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, craftPotion, updateChestOpenStats } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -126,6 +126,7 @@ export default function MemberMaterials({ onBack }) {
     if (res.ok) {
       sfxSuccess();
       setOpenResult(contents);
+      updateChestOpenStats(profile.id, chest.type).catch(() => {});
     } else {
       toast(res.reason || "開箱失敗，請稍後再試");
     }

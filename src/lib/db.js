@@ -1439,6 +1439,25 @@ export function subscribeCraftStats(memberId, callback) {
   );
 }
 
+// ─── 開箱統計 ──────────────────────────────────────────────
+const C_CHEST_STATS = "chestStats";
+
+export async function updateChestOpenStats(memberId, chestType) {
+  if (!memberId || !chestType) return;
+  try {
+    const ref  = doc(db, C_CHEST_STATS, memberId);
+    await setDoc(ref, { [`opens.${chestType}`]: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("updateChestOpenStats:", e?.message); }
+}
+
+export function subscribeChestStats(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_CHEST_STATS, memberId),
+    snap => callback(snap.exists() ? (snap.data().opens || {}) : {}),
+    err  => { console.warn("subscribeChestStats:", err.message); callback({}); }
+  );
+}
+
 // ─── 後台給予道具 ───────────────────────────────────────────
 export async function adminGiveItem(memberId, category, itemId, qty) {
   if (!memberId || !category || !itemId || qty < 1) return { ok: false, reason: "參數錯誤" };

@@ -2,7 +2,7 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification } from "../../lib/db";
+import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats } from "../../lib/db";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
   buildRoundAchievements, computeDexStats, buildCohortAchievement,
@@ -70,10 +70,13 @@ function saveShownIds(uid, ids) {
 /* ─── 主元件 ─────────────────────────────────────────────── */
 export default function MemberDex({ onBack }) {
   const { profile } = useAuth();
-  const [certRecords, setCertRecords]   = useState([]);
+  const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
-  const [granted, setGranted]           = useState([]);
-  const [config, setConfig]             = useState({ physicalMax: 20, pointMax: 20 });
+  const [granted, setGranted]             = useState([]);
+  const [config, setConfig]               = useState({ physicalMax: 20, pointMax: 20 });
+  const [monsterDex, setMonsterDex]       = useState({});
+  const [craftStats, setCraftStats]       = useState({});
+  const [chestStats, setChestStats]       = useState({});
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
@@ -88,11 +91,14 @@ export default function MemberDex({ onBack }) {
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     getCertification(profile.id).then(setCertification).catch(() => {});
     getDexConfig().then(setConfig).catch(() => {});
-    const unsub = subscribeDexGrants(profile.id, setGranted);
-    return () => unsub && unsub();
+    const unsub      = subscribeDexGrants(profile.id, setGranted);
+    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
+    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
+    const unsubChest = subscribeChestStats(profile.id, setChestStats);
+    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); };
   }, [profile?.id]);
 
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0 };
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
 
   // ── 偵測新解鎖，加入提示佇列 ──

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
-  submitArrows, processPartyRound, leavePartyRoom, partyHPMult
+  submitArrows, processPartyRound, leavePartyRoom, partyHPMult, forceSkipPlayer
 } from "../../lib/partyDb";
 import { addChests } from "../../lib/db";
 import { MONSTERS, calcDamage, calcCounterDamage, calcArcherStats, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
@@ -66,7 +66,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [wonChests, setWonChests] = useState([]);
-  const statsWritten = useRef(false);
+  const [skipping, setSkipping] = useState(null); // 正在強制跳過的 memberId
+  const statsWritten  = useRef(false);
+  const processingRef = useRef(false); // 防止 useEffect 在同一幀觸發兩次
   const logEndRef = useRef(null);
 
   const myId = profile?.id;
@@ -86,16 +88,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
   }, [room?.status]);
 
-  // 房主：全員 ready → 自動計算
+  // 房主：全員 ready → 自動計算（processingRef 防同幀重複觸發）
   useEffect(() => {
-    if (!room || !isHost || room.status !== "active" || room.processing) return;
+    if (!room || !isHost || room.status !== "active" || room.processing || processingRef.current) return;
     if (!room.monster) return;
     const members = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
     const allReady = aliveIds.every(id => members[id].ready);
     if (!allReady) return;
-    processPartyRound(roomId, room, calcDmgFn, calcCtrFn);
+    processingRef.current = true;
+    processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
+      .finally(() => { processingRef.current = false; });
   }, [room?.members, room?.processing]);
 
   // 戰鬥結束 → 發寶箱
@@ -151,6 +155,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   async function handleLeave() {
     await leavePartyRoom(roomId, myId, isHost);
     onLeave();
+  }
+
+  async function handleForceSkip(targetId) {
+    if (skipping) return;
+    setSkipping(targetId);
+    await forceSkipPlayer(roomId, targetId);
+    setSkipping(null);
   }
 
   function copyCode() {
@@ -365,8 +376,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
               </div>
               <HPBar current={m.hp} max={m.maxHP} color={m.id === myId ? "#818cf8" : "#64748b"} />
               {m.alive && (
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  {m.ready ? "✅ 已送出" : m.arrows?.length > 0 ? `🏹 ${m.arrows.length}支` : "等待輸入…"}
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="text-[10px] text-slate-500">
+                    {m.ready ? (m.skipped ? "⏭️ 已跳過" : "✅ 已送出") : m.arrows?.length > 0 ? `🏹 ${m.arrows.length}支` : "等待輸入…"}
+                  </span>
+                  {isHost && !m.ready && m.id !== myId && !room.processing && (
+                    <button onClick={() => handleForceSkip(m.id)}
+                      disabled={skipping === m.id}
+                      className="text-[9px] px-1.5 py-0.5 bg-slate-600 text-slate-300 rounded font-bold active:scale-95 disabled:opacity-40">
+                      {skipping === m.id ? "…" : "跳過"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

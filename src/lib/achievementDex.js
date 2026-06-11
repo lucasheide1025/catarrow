@@ -3,6 +3,7 @@
 
 import { calcBadgePoints, getCertLevel } from "./constants";
 import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
+import { MONSTERS } from "./monsterData";
 
 export const RARITY_STYLE = {
   common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
@@ -228,7 +229,7 @@ export const AUTO_ACHIEVEMENTS = [
       (c.member?.achievement?.black || 0) >= 1
   },
 
-  // ══ 打怪模式 ══
+  // ══ 打怪模式 — 累積場數 ══
   { id: "monster_first",   cat: "monster", icon: "👹", name: "初入戰場",   rarity: "common",
     desc: "第一次擊敗怪物",
     check: c => Object.values(c.monsterDex || {}).some(m => (m.wins || 0) > 0) },
@@ -255,25 +256,7 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "擊敗全部 6 隻神話怪物", hidden: true,
     riddle: "六大神話，一個都不能少…",
     check: c => ["ghost_6","mountain_6","insect_6","workplace_6","exam_6","temple_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  // 族群成就
-  { id: "dex_ghost",       cat: "monster", icon: "👻", name: "鬼滅之刃",   rarity: "uncommon",
-    desc: "擊敗所有鬼怪族怪物（共 6 隻）",
-    check: c => ["ghost_1","ghost_2","ghost_3","ghost_4","ghost_5","ghost_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  { id: "dex_mountain",    cat: "monster", icon: "🏔️", name: "山林征服者", rarity: "uncommon",
-    desc: "擊敗所有山林族怪物（共 6 隻）",
-    check: c => ["mountain_1","mountain_2","mountain_3","mountain_4","mountain_5","mountain_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  { id: "dex_insect",      cat: "monster", icon: "🦂", name: "蟲族剋星",   rarity: "uncommon",
-    desc: "擊敗所有毒蟲族怪物（共 6 隻）",
-    check: c => ["insect_1","insect_2","insect_3","insect_4","insect_5","insect_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  { id: "dex_workplace",   cat: "monster", icon: "💼", name: "職場無敵",   rarity: "uncommon",
-    desc: "擊敗所有職場族怪物（共 6 隻）",
-    check: c => ["workplace_1","workplace_2","workplace_3","workplace_4","workplace_5","workplace_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  { id: "dex_exam",        cat: "monster", icon: "📝", name: "考試終結者", rarity: "uncommon",
-    desc: "擊敗所有考試族怪物（共 6 隻）",
-    check: c => ["exam_1","exam_2","exam_3","exam_4","exam_5","exam_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
-  { id: "dex_temple",      cat: "monster", icon: "🏰", name: "西方屠龍士", rarity: "uncommon",
-    desc: "擊敗所有西方怪物族（共 6 隻）",
-    check: c => ["temple_1","temple_2","temple_3","temple_4","temple_5","temple_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  // 六族全圖鑑
   { id: "dex_all6",        cat: "monster", icon: "🏆", name: "六族征服者", rarity: "epic",
     desc: "六大族各擊敗至少一隻",
     check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(fam =>
@@ -282,7 +265,7 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "擊敗全部 36 隻怪物", hidden: true,
     riddle: "三十六道關卡，一個都不能逃…",
     check: c => Object.values(c.monsterDex || {}).filter(m => (m.wins || 0) > 0).length >= 36 },
-  // 掉寶成就（稀有→神話，check 暫為 false）
+  // 掉寶成就（check 暫為 false）
   { id: "drop_rare",      cat: "monster", icon: "📦", name: "初嚐甜頭",   rarity: "rare",
     desc: "打怪模式獲得稀有掉寶",  check: _c => false },
   { id: "drop_epic",      cat: "monster", icon: "🎁", name: "奇蹟降臨",   rarity: "epic",
@@ -329,6 +312,74 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "累積合成章碎片 5 次",
     check: c => (c.craftStats?.fragsCrafted || 0) >= 5 },
 ];
+
+// ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
+const FAM_ICONS = { ghost:"👻", mountain:"🏔️", insect:"🦂", workplace:"💼", exam:"📝", temple:"🏰" };
+const FAM_LABELS = { ghost:"鬼怪族", mountain:"山林族", insect:"毒蟲族", workplace:"職場族", exam:"考試族", temple:"西方怪物族" };
+const TIER_RARITIES_LIST = ["common","uncommon","rare","epic","legendary","mythic"];
+const TIER_NAMES_LIST    = ["一星","二星","三星","四星","五星","六星"];
+
+for (const fam of ["ghost","mountain","insect","workplace","exam","temple"]) {
+  for (let t = 1; t <= 6; t++) {
+    const monsterId = `${fam}_${t}`;
+    const monster = MONSTERS.find(m => m.id === monsterId);
+    AUTO_ACHIEVEMENTS.push({
+      id:     `dex_${fam}_t${t}`,
+      cat:    "monster",
+      icon:   FAM_ICONS[fam],
+      name:   `${FAM_LABELS[fam]}${TIER_NAMES_LIST[t-1]}`,
+      rarity: TIER_RARITIES_LIST[t-1],
+      desc:   monster ? `擊敗「${monster.name}」（${FAM_LABELS[fam]}${t}級）` : `擊敗${FAM_LABELS[fam]}${t}級怪物`,
+      check:  c => (c.monsterDex?.[monsterId]?.wins || 0) > 0,
+    });
+  }
+}
+
+// ── 動態加入：單一怪物擊殺次數成就 ──────────────────────────────
+const KILL_MILESTONES = [5, 10, 25, 50, 100];
+const KILL_RARITIES = { 5:"common", 10:"uncommon", 25:"rare", 50:"epic", 100:"legendary" };
+const KILL_ICONS    = { 5:"⚔️", 10:"🗡️", 25:"💀", 50:"🔱", 100:"👑" };
+
+for (const monster of MONSTERS) {
+  for (const n of KILL_MILESTONES) {
+    AUTO_ACHIEVEMENTS.push({
+      id:     `kill_${monster.id}_${n}`,
+      cat:    "monster",
+      icon:   monster.icon,
+      name:   `${monster.name}剋星 ×${n}`,
+      rarity: KILL_RARITIES[n],
+      desc:   `擊敗「${monster.name}」${n} 次`,
+      check:  c => (c.monsterDex?.[monster.id]?.wins || 0) >= n,
+    });
+  }
+}
+
+// ── 動態加入：開箱次數成就 ────────────────────────────────────────
+const CHEST_ACH_TYPES = [
+  { id:"wood",   icon:"📦", name:"木寶箱" },
+  { id:"iron",   icon:"🧰", name:"鐵寶箱" },
+  { id:"gold",   icon:"🎁", name:"黃金寶箱" },
+  { id:"epic",   icon:"💜", name:"史詩寶箱" },
+  { id:"mythic", icon:"🔮", name:"神話寶箱" },
+  { id:"cat",    icon:"🐱", name:"貓貓箱" },
+  { id:"potion", icon:"🧪", name:"藥水箱" },
+];
+const CHEST_OPEN_MILESTONES = [1, 5, 10, 20];
+const CHEST_OPEN_RARITIES   = { 1:"common", 5:"uncommon", 10:"rare", 20:"epic" };
+
+for (const ct of CHEST_ACH_TYPES) {
+  for (const n of CHEST_OPEN_MILESTONES) {
+    AUTO_ACHIEVEMENTS.push({
+      id:     `chest_${ct.id}_open_${n}`,
+      cat:    "monster",
+      icon:   ct.icon,
+      name:   `${ct.name}開了 ${n} 次`,
+      rarity: CHEST_OPEN_RARITIES[n],
+      desc:   n === 1 ? `第一次開啟${ct.name}` : `累積開啟${ct.name} ${n} 次`,
+      check:  c => (c.chestStats?.[ct.id] || 0) >= n,
+    });
+  }
+}
 
 // ── 後台授予的特殊成就 ──────────────────────────────────────
 export const SPECIAL_GRANTS = [
@@ -383,8 +434,8 @@ export function buildCohortAchievement(joinDate) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats }) {
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {} };
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats }) {
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {} };
 
   let autoUnlocked = 0;
   AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });
