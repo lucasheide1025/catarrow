@@ -27,6 +27,7 @@ import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import MemberDex          from "../components/member/MemberDex";
 import MemberMaterials    from "../components/member/MemberMaterials";
+import MemberMonsterDex  from "../components/member/MemberMonsterDex";
 import MonsterBattle from "../components/member/MonsterBattle";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
@@ -121,7 +122,8 @@ const adminNav = [
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
           {page==="notifications" && <MemberNotifications/>}
           {page==="dex" && <MemberDex onBack={()=>setPage("profile")}/>}
-          {page==="materials" && <MemberMaterials onBack={()=>setPage("profile")}/>}
+          {page==="materials"  && <MemberMaterials  onBack={()=>setPage("profile")}/>}
+          {page==="monsterdex" && <MemberMonsterDex  onBack={()=>setPage("profile")}/>}
             {page==="monster" && <MonsterBattle onBack={()=>setPage("comps")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

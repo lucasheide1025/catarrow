@@ -61,26 +61,25 @@ export function makeChests(monster) {
 export function makeChest(monster) { return makeChests(monster).mainChest; }
 
 // ── 章碎片定義 ────────────────────────────────────────────
-// 10 個碎片 → 合成對應銀章
-// craftType: 合成後要更新 member 的哪個欄位
+// 10 個碎片 → 合成對應章
 export const FRAGMENTS = [
   {
-    id: "frag_fatcat_silver",
-    name: "肥貓銀章碎片",
+    id: "frag_fatcat_bronze",
+    name: "肥貓銅章碎片",
     icon: "🐱",
     color: "#ec4899",
-    desc: "集滿 10 個可合成肥貓銀章！",
+    desc: "集滿 10 個可合成肥貓銅章！",
     craftCount: 10,
-    craftResult: { type: "fatcat_silver", badgeField: "fatCat", badgeLevel: "silver", label: "肥貓銀章" },
+    craftResult: { type: "fatcat_bronze", badgeField: "fatCat", badgeLevel: "bronze", label: "肥貓銅章" },
   },
   {
-    id: "frag_score_silver",
-    name: "積分銀章碎片",
+    id: "frag_score_bronze",
+    name: "積分銅章碎片",
     icon: "⭐",
     color: "#f59e0b",
-    desc: "集滿 10 個可合成積分銀章！",
+    desc: "集滿 10 個可合成積分銅章！",
     craftCount: 10,
-    craftResult: { type: "score_silver", badgeField: "score", badgeLevel: "silver", label: "積分銀章" },
+    craftResult: { type: "score_bronze", badgeField: "score", badgeLevel: "bronze", label: "積分銅章" },
   },
   {
     id: "frag_achieve_silver",

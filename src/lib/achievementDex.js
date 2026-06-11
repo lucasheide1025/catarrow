@@ -31,6 +31,7 @@ export const DEX_CATEGORIES = [
   { id: "special",  label: "✨ 特殊" },
   { id: "monster",  label: "👹 打怪" },
   { id: "duel",     label: "⚔️ 決鬥" },
+  { id: "forge",    label: "🔮 煉製" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -227,18 +228,61 @@ export const AUTO_ACHIEVEMENTS = [
       (c.member?.achievement?.black || 0) >= 1
   },
 
-  // ══ 打怪模式（功能尚未實裝，check 先回傳 false）══
+  // ══ 打怪模式 ══
   { id: "monster_first",   cat: "monster", icon: "👹", name: "初入戰場",   rarity: "common",
-    desc: "第一次參加打怪模式",    check: _c => false },
+    desc: "第一次擊敗怪物",
+    check: c => Object.values(c.monsterDex || {}).some(m => (m.wins || 0) > 0) },
   { id: "monster_5",       cat: "monster", icon: "⚔️", name: "身經百戰",   rarity: "uncommon",
-    desc: "累積參加打怪模式 5 次", check: _c => false },
+    desc: "累積擊敗怪物 5 次",
+    check: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0) >= 5 },
   { id: "monster_10",      cat: "monster", icon: "🗡️", name: "殺伐決斷",   rarity: "rare",
-    desc: "累積參加打怪模式 10 次",check: _c => false },
-  { id: "monster_mvp1",    cat: "monster", icon: "🌟", name: "首次 MVP",   rarity: "rare",
-    desc: "打怪模式取得第一次 MVP", check: _c => false },
-  { id: "monster_mvp10",   cat: "monster", icon: "💥", name: "MVP 王者",   rarity: "legendary",
-    desc: "打怪模式累積 10 次 MVP", check: _c => false },
-  // 掉寶成就（稀有→神話）
+    desc: "累積擊敗怪物 10 次",
+    check: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0) >= 10 },
+  { id: "monster_30",      cat: "monster", icon: "🔱", name: "百戰老將",   rarity: "epic",
+    desc: "累積擊敗怪物 30 次",
+    check: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0) >= 30 },
+  { id: "monster_mvp1",    cat: "monster", icon: "🌟", name: "首殺頭目",   rarity: "rare",
+    desc: "擊敗任意一隻頭目（boss）",
+    check: c => Object.entries(c.monsterDex || {}).some(([id, m]) => id.endsWith("_5") && (m.wins || 0) > 0) },
+  { id: "monster_mvp10",   cat: "monster", icon: "💥", name: "頭目獵人",   rarity: "legendary",
+    desc: "累積擊敗頭目（boss）10 次以上",
+    check: c => Object.entries(c.monsterDex || {}).filter(([id]) => id.endsWith("_5")).reduce((s, [, m]) => s + (m.wins || 0), 0) >= 10 },
+  // 神話成就
+  { id: "mythic_first",    cat: "monster", icon: "🌋", name: "神話挑戰者", rarity: "epic",
+    desc: "第一次擊敗神話怪物",
+    check: c => Object.entries(c.monsterDex || {}).some(([id, m]) => id.endsWith("_6") && (m.wins || 0) > 0) },
+  { id: "mythic_all",      cat: "monster", icon: "👑", name: "封神之路",   rarity: "mythic",
+    desc: "擊敗全部 6 隻神話怪物", hidden: true,
+    riddle: "六大神話，一個都不能少…",
+    check: c => ["ghost_6","mountain_6","insect_6","workplace_6","exam_6","temple_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  // 族群成就
+  { id: "dex_ghost",       cat: "monster", icon: "👻", name: "鬼滅之刃",   rarity: "uncommon",
+    desc: "擊敗所有鬼怪族怪物（共 6 隻）",
+    check: c => ["ghost_1","ghost_2","ghost_3","ghost_4","ghost_5","ghost_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_mountain",    cat: "monster", icon: "🏔️", name: "山林征服者", rarity: "uncommon",
+    desc: "擊敗所有山林族怪物（共 6 隻）",
+    check: c => ["mountain_1","mountain_2","mountain_3","mountain_4","mountain_5","mountain_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_insect",      cat: "monster", icon: "🦂", name: "蟲族剋星",   rarity: "uncommon",
+    desc: "擊敗所有毒蟲族怪物（共 6 隻）",
+    check: c => ["insect_1","insect_2","insect_3","insect_4","insect_5","insect_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_workplace",   cat: "monster", icon: "💼", name: "職場無敵",   rarity: "uncommon",
+    desc: "擊敗所有職場族怪物（共 6 隻）",
+    check: c => ["workplace_1","workplace_2","workplace_3","workplace_4","workplace_5","workplace_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_exam",        cat: "monster", icon: "📝", name: "考試終結者", rarity: "uncommon",
+    desc: "擊敗所有考試族怪物（共 6 隻）",
+    check: c => ["exam_1","exam_2","exam_3","exam_4","exam_5","exam_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_temple",      cat: "monster", icon: "🏰", name: "西方屠龍士", rarity: "uncommon",
+    desc: "擊敗所有西方怪物族（共 6 隻）",
+    check: c => ["temple_1","temple_2","temple_3","temple_4","temple_5","temple_6"].every(id => (c.monsterDex?.[id]?.wins || 0) > 0) },
+  { id: "dex_all6",        cat: "monster", icon: "🏆", name: "六族征服者", rarity: "epic",
+    desc: "六大族各擊敗至少一隻",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(fam =>
+      Object.entries(c.monsterDex || {}).some(([id, m]) => id.startsWith(fam + "_") && (m.wins || 0) > 0)) },
+  { id: "dex_all36",       cat: "monster", icon: "📖", name: "圖鑑完成",   rarity: "legendary",
+    desc: "擊敗全部 36 隻怪物", hidden: true,
+    riddle: "三十六道關卡，一個都不能逃…",
+    check: c => Object.values(c.monsterDex || {}).filter(m => (m.wins || 0) > 0).length >= 36 },
+  // 掉寶成就（稀有→神話，check 暫為 false）
   { id: "drop_rare",      cat: "monster", icon: "📦", name: "初嚐甜頭",   rarity: "rare",
     desc: "打怪模式獲得稀有掉寶",  check: _c => false },
   { id: "drop_epic",      cat: "monster", icon: "🎁", name: "奇蹟降臨",   rarity: "epic",
@@ -260,6 +304,30 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "duel_flawless",  cat: "duel", icon: "💎", name: "完美勝利",   rarity: "legendary", hidden: true,
     riddle: "一箭不差，乾淨利落…", desc: "決鬥模式以完美比分獲勝",
     check: _c => false },
+
+  // ══ 煉製 ══
+  { id: "brew_first",    cat: "forge", icon: "🧪", name: "初學煉金",   rarity: "common",
+    desc: "第一次合成藥水",
+    check: c => (c.craftStats?.potionsCrafted || 0) >= 1 },
+  { id: "brew_5",        cat: "forge", icon: "⚗️", name: "藥水調製師", rarity: "uncommon",
+    desc: "累積合成藥水 5 瓶",
+    check: c => (c.craftStats?.potionsCrafted || 0) >= 5 },
+  { id: "brew_10",       cat: "forge", icon: "💊", name: "藥劑大師",   rarity: "rare",
+    desc: "累積合成藥水 10 瓶",
+    check: c => (c.craftStats?.potionsCrafted || 0) >= 10 },
+  { id: "brew_all",      cat: "forge", icon: "🌈", name: "全能藥師",   rarity: "epic",
+    desc: "9 種藥水各合成過至少一次", hidden: true,
+    riddle: "九味靈藥，缺一不可…",
+    check: c => Object.keys(c.craftStats?.potionTypesCrafted || {}).length >= 9 },
+  { id: "frag_forge_1",  cat: "forge", icon: "✨", name: "碎片煉士",   rarity: "uncommon",
+    desc: "第一次合成章碎片",
+    check: c => (c.craftStats?.fragsCrafted || 0) >= 1 },
+  { id: "frag_forge_all",cat: "forge", icon: "🌟", name: "三章合一",   rarity: "rare",
+    desc: "三種章碎片各合成過至少一次",
+    check: c => Object.keys(c.craftStats?.fragTypesCrafted || {}).length >= 3 },
+  { id: "frag_forge_5",  cat: "forge", icon: "💎", name: "鑄章大師",   rarity: "epic",
+    desc: "累積合成章碎片 5 次",
+    check: c => (c.craftStats?.fragsCrafted || 0) >= 5 },
 ];
 
 // ── 後台授予的特殊成就 ──────────────────────────────────────
@@ -315,8 +383,8 @@ export function buildCohortAchievement(joinDate) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax }) {
-  const ctx = { member, certification, certRecords, checkinCount };
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats }) {
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {} };
 
   let autoUnlocked = 0;
   AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });

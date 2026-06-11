@@ -979,6 +979,8 @@ export async function cancelCheckin(checkinId) {
 const C_MONSTER_CONFIG  = "monsterConfig";
 const C_MONSTER_SESSION = "monsterSessions";
 const C_MONSTER_LOGS    = "monsterLogs";
+const C_MONSTER_DEX     = "monsterDex";
+const C_CRAFT_STATS     = "craftStats";
  
 // 每日上限設定
 export async function getMonsterDailyConfig() {
@@ -1132,6 +1134,10 @@ export async function saveMonsterLog(memberId, data) {
       roundScores: data.roundScores || [],  // ✅ 新增：[{round, scores:[], total}]
       createdAt:   serverTimestamp(),
     });
+    if (memberId && data.monsterId && !memberId.startsWith("guest")) {
+      const totalScore = data.score || (data.roundScores || []).reduce((s, r) => s + (r.total || 0), 0);
+      await updateMonsterDex(memberId, data.monsterId, data.result, totalScore, data.dmgDealt).catch(() => {});
+    }
   } catch (e) { console.warn("saveMonsterLog:", e?.message); }
 } 
 // ─── 材料升級 ──────────────────────────────────────────────
@@ -1263,6 +1269,7 @@ export async function craftPotion(memberId, potionId) {
 
     // 2. 加入藥劑
     await addPotions(memberId, [{ id: potionId, count: 1 }]);
+    await updateCraftStats(memberId, "potion", { potionId }).catch(() => {});
     return { ok: true, potion };
   } catch (e) {
     console.warn("craftPotion:", e?.message);
@@ -1308,29 +1315,47 @@ export async function addFragments(memberId, frags) {
   } catch (e) { console.warn("addFragments:", e?.message); }
 }
  
-// 一次性遷移：把舊 materialInventory 的 frag_* 搬到 fragmentInventory
+// 一次性遷移：把舊 ID 統一對應到最新 ID
 export async function migrateOldFragments(memberId) {
-  const OLD_MAP = {
-    "frag_fatcat":  "frag_fatcat_silver",
-    "frag_score":   "frag_score_silver",
-    "frag_achieve": "frag_achieve_silver",
+  // materialInventory 舊 key → fragmentInventory 新 key
+  const MAT_MAP = {
+    "frag_fatcat":       "frag_fatcat_bronze",
+    "frag_score":        "frag_score_bronze",
+    "frag_achieve":      "frag_achieve_silver",
+  };
+  // fragmentInventory 錯誤 key → 正確 key
+  const FRAG_MAP = {
+    "frag_fatcat_silver": "frag_fatcat_bronze",
+    "frag_score_silver":  "frag_score_bronze",
   };
   try {
-    const matRef  = doc(db, C_MATERIALS, memberId);
-    const matSnap = await getDoc(matRef);
-    if (!matSnap.exists()) return;
-    const matItems = matSnap.data().items || {};
-    const toMove = Object.entries(OLD_MAP).filter(([old]) => (matItems[old] || 0) > 0);
-    if (!toMove.length) return;
+    const matRef   = doc(db, C_MATERIALS, memberId);
     const fragRef  = doc(db, C_FRAGS, memberId);
-    const fragSnap = await getDoc(fragRef);
+    const [matSnap, fragSnap] = await Promise.all([getDoc(matRef), getDoc(fragRef)]);
+    const matItems  = matSnap.exists()  ? (matSnap.data().items  || {}) : {};
     const fragItems = fragSnap.exists() ? (fragSnap.data().items || {}) : {};
-    toMove.forEach(([old, newId]) => {
-      fragItems[newId] = (fragItems[newId] || 0) + matItems[old];
-      delete matItems[old];
+
+    let matDirty = false, fragDirty = false;
+
+    // 從 materialInventory 搬到 fragmentInventory
+    Object.entries(MAT_MAP).forEach(([old, newId]) => {
+      if ((matItems[old] || 0) > 0) {
+        fragItems[newId] = (fragItems[newId] || 0) + matItems[old];
+        delete matItems[old];
+        matDirty = true; fragDirty = true;
+      }
     });
-    await setDoc(fragRef, { items: fragItems, updatedAt: serverTimestamp() }, { merge: true });
-    await setDoc(matRef,  { items: matItems,  updatedAt: serverTimestamp() }, { merge: true });
+    // 在 fragmentInventory 內改名（_silver → _bronze）
+    Object.entries(FRAG_MAP).forEach(([wrong, correct]) => {
+      if ((fragItems[wrong] || 0) > 0) {
+        fragItems[correct] = (fragItems[correct] || 0) + fragItems[wrong];
+        delete fragItems[wrong];
+        fragDirty = true;
+      }
+    });
+
+    if (fragDirty) await setDoc(fragRef, { items: fragItems, updatedAt: serverTimestamp() }, { merge: true });
+    if (matDirty)  await setDoc(matRef,  { items: matItems,  updatedAt: serverTimestamp() }, { merge: true });
   } catch (e) { console.warn("migrateOldFragments:", e?.message); }
 }
 
@@ -1364,9 +1389,63 @@ export async function craftFragment(memberId, fragId) {
     // 2. 更新 member badge（badgeField = "fatCat" | "score" | "achievement"）
     const memRef = doc(db, "members", memberId);
     await updateDoc(memRef, { [`${badgeField}.${badgeLevel}`]: increment(1) });
+    await updateCraftStats(memberId, "frag", { fragId }).catch(() => {});
     return { ok: true, label };
   } catch (e) {
     console.warn("craftFragment:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
   }
+}
+
+// ─── 怪物圖鑑 ──────────────────────────────────────────────
+export function subscribeMonsterDex(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_MONSTER_DEX, memberId),
+    snap => callback(snap.exists() ? (snap.data().monsters || {}) : {}),
+    err  => { console.warn("subscribeMonsterDex:", err.message); callback({}); }
+  );
+}
+
+async function updateMonsterDex(memberId, monsterId, result, score, dmgDealt) {
+  if (!memberId || !monsterId) return;
+  const ref  = doc(db, C_MONSTER_DEX, memberId);
+  const snap = await getDoc(ref);
+  const monsters = snap.exists() ? (snap.data().monsters || {}) : {};
+  const prev = monsters[monsterId] || { wins: 0, losses: 0, firstWin: null, bestScore: 0, totalDmgDealt: 0 };
+  if (result === "win") {
+    prev.wins = (prev.wins || 0) + 1;
+    if (!prev.firstWin) prev.firstWin = new Date().toISOString().slice(0, 10);
+    if ((score || 0) > (prev.bestScore || 0)) prev.bestScore = score;
+  } else {
+    prev.losses = (prev.losses || 0) + 1;
+  }
+  prev.totalDmgDealt = (prev.totalDmgDealt || 0) + (dmgDealt || 0);
+  monsters[monsterId] = prev;
+  await setDoc(ref, { monsters, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ─── 合成統計 ──────────────────────────────────────────────
+export function subscribeCraftStats(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_CRAFT_STATS, memberId),
+    snap => callback(snap.exists() ? snap.data() : {}),
+    err  => { console.warn("subscribeCraftStats:", err.message); callback({}); }
+  );
+}
+
+async function updateCraftStats(memberId, type, data) {
+  if (!memberId) return;
+  const ref  = doc(db, C_CRAFT_STATS, memberId);
+  const snap = await getDoc(ref);
+  const stats = snap.exists() ? snap.data() : {};
+  if (type === "potion") {
+    stats.potionsCrafted = (stats.potionsCrafted || 0) + 1;
+    stats.potionTypesCrafted = stats.potionTypesCrafted || {};
+    stats.potionTypesCrafted[data.potionId] = (stats.potionTypesCrafted[data.potionId] || 0) + 1;
+  } else if (type === "frag") {
+    stats.fragsCrafted = (stats.fragsCrafted || 0) + 1;
+    stats.fragTypesCrafted = stats.fragTypesCrafted || {};
+    stats.fragTypesCrafted[data.fragId] = (stats.fragTypesCrafted[data.fragId] || 0) + 1;
+  }
+  await setDoc(ref, { ...stats, updatedAt: serverTimestamp() }, { merge: true });
 }

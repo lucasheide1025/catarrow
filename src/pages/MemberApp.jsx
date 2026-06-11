@@ -20,11 +20,12 @@ import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import MemberDex          from "../components/member/MemberDex";
 import MonsterBattle      from "../components/member/MonsterBattle";
-import MemberMaterials    from "../components/member/MemberMaterials"; // ✅ 新增
+import MemberMaterials    from "../components/member/MemberMaterials";
+import MemberMonsterDex  from "../components/member/MemberMonsterDex";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -95,7 +96,8 @@ export default function MemberApp() {
         {page==="notifications" && <MemberNotifications />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
         {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
-        {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")} />} {/* ✅ 新增 */}
+        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
+        {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
       </div>
 
       {/* 底部導覽 */}

@@ -115,6 +115,7 @@ export default function MemberProfile({ onPageChange }) {
 
   const quickLinks = [
     { id:"materials",     icon:"🎒", label:"材料背包",  desc:"開箱、升級、合成" },
+    { id:"monsterdex",    icon:"📖", label:"怪物圖鑑",  desc:"擊敗怪物的戰績" },
     { id:"notifications", icon:"🔔", label:"訊息中心",  desc:"公告與祝賀" },
     { id:"dex",           icon:"🎖️", label:"成就圖鑑",  desc:"我的數位收藏" },
     { id:"comps",         icon:"🎯", label:"年度檢定",  desc:"參加檢定考試" },
