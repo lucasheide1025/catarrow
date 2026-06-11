@@ -5,8 +5,9 @@ import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
-  addMaterials,
+  addChests, subscribePotions, usePotions,
 } from "../../lib/db";
+import { makeChest, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
   MONSTERS, FAMILIES, TIER_LABEL,
@@ -15,7 +16,6 @@ import {
 } from "../../lib/monsterData";
 import { getLootTable, drawLoot, isRareLoot } from "../../lib/lootTable";
 import LootBox from "./LootBox";
-import { drawMaterial, getMaterialDropCount } from "../../lib/monsterMaterials";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
 import BattleCard from "./BattleCard";
@@ -125,6 +125,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [critCount, setCritCount]       = useState(0);
   const [animHit, setAnimHit]           = useState(false);
   const [animCounter, setAnimCounter]   = useState(false);
+  // ⚗️ 藥劑與 📦 寶箱
+  const [potionInv, setPotionInv]             = useState({});
+  const [selectedPotions, setSelectedPotions] = useState([]);
+  const [battleStats, setBattleStats]         = useState(null); // 本場有效數值（含藥劑加成）
+  const [wonChest, setWonChest]               = useState(null); // 本場掉落的寶箱
   const logEndRef = useRef(null);
 
   useEffect(() => {
@@ -134,11 +139,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     getCertification(profile.id).then(setCertification).catch(()=>{});
     getDexConfig().then(setDexConfig).catch(()=>{});
     const unsub = subscribeDexGrants(profile.id, setDexGrants);
+    const unsubPotions = subscribePotions(profile.id, setPotionInv);
     getMonsterDailyConfig().then(cfg => {
       setDailyMax(cfg.dailyMax||5);
       checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
     }).catch(()=>setDailyLeft(5));
-    return () => unsub && unsub();
+    return () => { unsub && unsub(); unsubPotions && unsubPotions(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
 
   useEffect(() => {
@@ -186,6 +192,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     if (arrows.length<ARROWS_PER_ROUND||processing) return;
     setProcessing(true);
     setBattlePhase("processing");
+    const bSt = battleStats || archerStats; // 本場有效數值（含藥劑加成）
 
     let curMonHP    = monsterHP;
     let curArchHP   = archerHP;
@@ -205,7 +212,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       if (part.id==="groin") curUnlocked=new Set([...curUnlocked,"groin"]);
       setUnlockedParts(curUnlocked);
 
-      const effATK = (archerStats?.atk||10) + archerATKMod;
+      const effATK = (bSt?.atk||10) + archerATKMod;
       const dmg = calcDamage({ score, archerATK:effATK, monsterDEF:monster.def, partMult:part.mult });
       if (part.id==="head") headHitCount++;
 
@@ -241,7 +248,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           addLog({ type:ev.type==="buff"?"event_good":"event_bad", text:`✨【${ev.title}】${ev.desc}` });
           sfxCast();
           const ef=ev.effect||{};
-          if (ef.healArcher)  curArchHP=Math.min(archerStats?.hp||100,curArchHP+ef.healArcher);
+          if (ef.healArcher)  curArchHP=Math.min(bSt?.hp||100,curArchHP+ef.healArcher);
           if (ef.archerHP)    curArchHP=Math.max(0,curArchHP+ef.archerHP);
           if (ef.archerATK)   setArcherATKMod(m=>m+ef.archerATK);
           if (ef.monsterHP)   curMonHP=Math.max(0,curMonHP+ef.monsterHP);
@@ -263,7 +270,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           const critChance=mode==="veteran"?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):0;
           const isCrit=Math.random()<critChance;
           const headStunned=headHitCount>0&&battleMode==="zombie";
-          const cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:archerStats?.def||10, headStunned, isCrit });
+          const cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:bSt?.def||10, headStunned, isCrit });
           const counterTxt=isCrit
             ? `${monster.icon} 爆擊！${monster.name} 猛烈反擊！受到 ${cdmg} 傷害（${curDist}米）`
             : headStunned?`${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
@@ -277,7 +284,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
           if (curArchHP<=0) {
             if (!revived) {
-              const reviveHP=Math.ceil((archerStats?.hp||100)*0.3);
+              const reviveHP=Math.ceil((bSt?.hp||100)*0.3);
               setArcherHP(reviveHP); curArchHP=reviveHP; setRevived(true);
               addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！恢復30% HP，最後一條命！" });
               sfxEpic(); await delay(2500);
@@ -321,22 +328,45 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   async function startBattle() {
     if (profile?.id) { await recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
+
+    // ⚗️ 戰前喝藥：消耗藥劑、計算本場加成（只影響當場）
+    const buffs = calcPotionBuffs(selectedPotions);
+    if (selectedPotions.length>0 && profile?.id && !isGuest) {
+      await usePotions(profile.id, selectedPotions).catch(()=>{});
+    }
+    const baseStats = archerStats || { hp:100, atk:10, def:10 };
+    const bStats = {
+      hp:  Math.round(baseStats.hp  * buffs.hpMult),
+      atk: Math.round(baseStats.atk * buffs.atkMult),
+      def: baseStats.def,
+    };
+    setBattleStats(bStats);
+
     const base=pickedMonster;
-    const boostedMonster=mode==="veteran"
+    const boosted=mode==="veteran"
       ? {...base, hp:Math.round(base.hp*VETERAN_MULT.hp), atk:Math.round(base.atk*VETERAN_MULT.atk), def:Math.round(base.def*VETERAN_MULT.def)}
-      : base;
+      : {...base};
+    // 敵方削弱藥劑（在老手增幅之後套用）
+    const boostedMonster = {
+      ...boosted,
+      atk: Math.max(1, Math.round(boosted.atk * buffs.monAtkMult)),
+      def: Math.max(0, Math.round(boosted.def * buffs.monDefMult)),
+    };
     setMonster(boostedMonster);
-    setArcherHP(archerStats?.hp||100);
+    setArcherHP(bStats.hp);
     setMonsterHP(boostedMonster.hp);
     setRound(1); setDistance(DISTANCE_START);
     setAllArrows([]); setRoundScores([]);
     setLog([
       { type:"system", text:`⚔️ 戰鬥開始！對手：${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:"新手"}` },
+      ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
       ...(mode==="veteran"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
     ]);
+    if (buffs.used.length>0) sfxBuff();
+    setSelectedPotions([]);
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
-    setRevived(false); setLoot(null); setLootRevealed(false);
+    setRevived(false); setLoot(null); setLootRevealed(false); setWonChest(null);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
@@ -348,12 +378,25 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const table=getLootTable({ isGuest, mode, battleMode, tier:monster.tier });
       const lootItem=drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
-      const matCount=getMaterialDropCount(monster.tier);
-      const mats=Array.from({length:matCount},()=>drawMaterial(monster.id,monster.tier)).filter(Boolean);
-      setDroppedMaterials(mats);
-      if (mats.length>0&&profile?.id&&!isGuest) addMaterials(profile.id,mats).catch(()=>{});
+
+      // 📦 掉落寶箱（取代直接掉材料）
+      const chest=makeChest(monster);
+      let mats=[];
+      if (isGuest||!profile?.id) {
+        // 訪客：當場直接打開，材料只顯示不儲存
+        const contents=openChestContents(chest);
+        mats=contents.materials;
+        setDroppedMaterials(mats);
+        setWonChest(null);
+      } else {
+        // 射手：寶箱放進背包，到「背包」頁再開
+        setWonChest(chest);
+        setDroppedMaterials([]);
+        addChests(profile.id,[chest]).catch(()=>{});
+      }
+      const chestCfg=CHEST_TYPES[chest.type]||CHEST_TYPES.wood;
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
-      addLog({ type:"system", text:`📦 寶箱等你打開...` });
+      addLog({ type:"system", text:isGuest?`📦 寶箱當場打開！`:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
       if (isRareLoot(lootItem)&&profile?.id) {
         createNotification({ type:"high_score", title:`🎁 ${profile.nickname||profile.name} 獲得稀有掉落！`,
           content:`${profile.nickname||profile.name} 擊倒了 ${monster.name}，獲得稀有道具！`,
@@ -366,7 +409,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
             lootName:lootItem.name, lootIcon:lootItem.icon, lootType:lootItem.type,
-            mode, battleMode, materials:mats.map(m=>m.id), roundScores:rs,
+            mode, battleMode, materials:mats.map(m=>m.id), chestType:chest.type, roundScores:rs,
           }).catch(()=>{});
           return rs;
         });
@@ -568,9 +611,47 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             {battleMode==="zombie"?"🧟 殭屍靶紙":"🎯 分數靶紙"}　
             {mode==="veteran"?"⚔️ 老手・起始15米":"🟢 新手・固定10米"}　每 {ARROWS_PER_COUNTER} 箭反擊
           </div>
+
+          {/* ⚗️ 戰前喝藥（只影響本場） */}
+          {!isGuest && Object.values(potionInv).some(v=>v>0) && (
+            <div className="bg-white/10 rounded-xl p-3 mb-4 text-left">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-purple-200 text-xs font-black">⚗️ 戰前喝藥（最多 {MAX_POTIONS_PER_BATTLE} 瓶）</span>
+                <span className="text-purple-300 text-xs">只影響本場</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {Object.entries(potionInv).filter(([,c])=>c>0).map(([pid,count])=>{
+                  const p=getPotion(pid);
+                  if (!p) return null;
+                  const selected=selectedPotions.includes(pid);
+                  return (
+                    <button key={pid}
+                      onClick={()=>{
+                        sfxTap();
+                        setSelectedPotions(prev=>
+                          prev.includes(pid)
+                            ? prev.filter(x=>x!==pid)
+                            : prev.length>=MAX_POTIONS_PER_BATTLE ? prev : [...prev,pid]
+                        );
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 border-2
+                        ${selected?"bg-amber-400 text-amber-900 border-amber-300":"bg-white/10 text-white border-white/20"}`}>
+                      {p.icon} {p.name} ×{count}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedPotions.length>0 && (
+                <div className="mt-2 text-amber-300 text-xs font-bold">
+                  {selectedPotions.map(pid=>getPotion(pid)?.effectText).filter(Boolean).join("、")}
+                </div>
+              )}
+            </div>
+          )}
+
           <button onClick={startBattle} className="w-full py-4 rounded-2xl font-black text-lg"
             style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
-            ⚔️ 開始挑戰！
+            ⚔️ 開始挑戰！{selectedPotions.length>0?`（帶 ${selectedPotions.length} 瓶藥）`:""}
           </button>
         </div>
       </div>
@@ -578,7 +659,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   }
 
   if (phase==="battle") {
-    const maxHP=archerStats?.hp||100;
+    const maxHP=(battleStats||archerStats)?.hp||100;
     const archPct=Math.max(0,Math.round(archerHP/maxHP*100));
     const monPct=monster?Math.max(0,Math.round(monsterHP/monster.hp*100)):0;
     const total6=arrows.reduce((s,v)=>s+v,0);
@@ -732,9 +813,22 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             </div>
           </div>
         )}
+        {wonChest && (()=>{
+          const cc=CHEST_TYPES[wonChest.type]||CHEST_TYPES.wood;
+          return (
+            <div className="w-full rounded-xl p-3 border-2 flex items-center gap-3"
+              style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
+              <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
+              <div className="flex-1">
+                <div className="font-black text-sm" style={{ color:cc.color }}>獲得「{cc.name}」！</div>
+                <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「材料庫存」頁開箱領材料 🎒</div>
+              </div>
+            </div>
+          );
+        })()}
         {droppedMaterials.length>0&&(
           <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3">
-            <div className="text-purple-700 text-xs font-bold mb-1">🧪 材料掉落</div>
+            <div className="text-purple-700 text-xs font-bold mb-1">🧪 寶箱開出材料</div>
             <div className="flex gap-2 flex-wrap">
               {droppedMaterials.map((m,i)=>(
                 <span key={i} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">{m.icon} {m.name}</span>
