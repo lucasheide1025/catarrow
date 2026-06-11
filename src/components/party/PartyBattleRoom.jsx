@@ -4,11 +4,13 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
-  forceSkipPlayer, storeBattleRewards, claimBattleReward,
+  forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession } from "../../lib/db";
+import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
 import { MONSTERS, calcDamage, calcCounterDamage, calcArcherStats, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
+import PartyBattleCard from "./PartyBattleCard";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","M"];
@@ -49,9 +51,19 @@ function equipSummary(profile) {
   return { bows, armor, acc };
 }
 
+// 回傳 { dmg, crits } — 隨機倍率 > 1.05 視為爆擊
 function calcDmgFn(arrows, atk, monsterDEF) {
-  return arrows.reduce((total, arrow) =>
-    total + calcDamage({ score: arrow.score, archerATK: atk, monsterDEF, partMult: arrow.partMult || 1.0 }), 0);
+  let dmg = 0, crits = 0;
+  for (const arrow of arrows) {
+    const score = arrow.score ?? 0;
+    if (!score) continue;
+    const base = 8 + atk * 0.7 + score * 1.2 - monsterDEF * 0.35;
+    const mult = 0.85 + Math.random() * 0.3;
+    const d    = Math.max(1, Math.round(base * (arrow.partMult || 1.0) * mult));
+    dmg  += d;
+    if (mult > 1.05) crits++;
+  }
+  return { dmg, crits };
 }
 function calcCtrFn(monsterATK, archerDEF) {
   return calcCounterDamage({ monsterATK, archerDEF: archerDEF || 10, headStunned: false, isCrit: Math.random() < 0.1 });
@@ -79,14 +91,21 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   const [selectedPotions, setSelectedPotions] = useState([]);
   const [claiming,        setClaiming]        = useState(false);
   const [skipping,        setSkipping]        = useState(null);
+  const [confirming,      setConfirming]      = useState(false);
   const [partyBattleLeft, setPartyBattleLeft] = useState(null);
   const [startError,      setStartError]      = useState("");
+  const [animHit,         setAnimHit]         = useState(false);
+  const [animCounter,     setAnimCounter]     = useState(false);
+  const [showEvent,       setShowEvent]       = useState(null);
+  const [showFullLog,     setShowFullLog]     = useState(false);
+  const [showShareCard,   setShowShareCard]   = useState(false);
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRef     = useRef(false);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
+  const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const logEndRef         = useRef(null);
 
   const myId = profile?.id;
@@ -165,6 +184,43 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [room?.log?.length]);
 
+  // 回合更新：動畫 + 音效 + 事件彈窗
+  useEffect(() => {
+    const len = room?.log?.length || 0;
+    if (len <= prevLogLenRef.current) return;
+    prevLogLenRef.current = len;
+    const entry = room.log[len - 1];
+    if (!entry) return;
+
+    // 怪物受擊動畫
+    setAnimHit(true);
+    setTimeout(() => setAnimHit(false), 700);
+
+    // 音效
+    if (entry.event?.type === "buff")   sfxBuff();
+    else if (entry.totalDmg > 150)      sfxEpic();
+    else                                sfxTap();
+    vibrate(20);
+
+    // 怪物反擊動畫 + 音效
+    if (entry.counterRound) {
+      setTimeout(() => { setAnimCounter(true); sfxSoftFail(); vibrate([0,30,40,30]); }, 500);
+      setTimeout(() => setAnimCounter(false), 1100);
+    }
+
+    // 隨機事件彈窗
+    if (entry.event) {
+      setShowEvent(entry.event);
+      setTimeout(() => setShowEvent(null), 3500);
+    }
+  }, [room?.log?.length]); // eslint-disable-line
+
+  // 勝敗音效
+  useEffect(() => {
+    if (room?.result === "win")  { sfxSuccess(); setTimeout(() => sfxEpic(), 350); }
+    if (room?.result === "lose") { sfxSoftFail(); }
+  }, [room?.result]); // eslint-disable-line
+
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <div className="text-white text-lg font-bold animate-pulse">載入中…</div>
@@ -222,8 +278,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   async function handleClaim() {
     if (!myChests.length || claiming) return;
     setClaiming(true);
-    await claimBattleReward(roomId, myId, myChests);
+    const myDmg = (room.log || []).reduce((s, entry) => {
+      const p = (entry.playerLog || []).find(p => p.id === myId);
+      return s + (p?.dmg || 0);
+    }, 0);
+    await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
     setClaiming(false);
+  }
+  async function handleConfirmResult() {
+    if (!isHost || confirming) return;
+    setConfirming(true);
+    await confirmBattleResult(roomId);
+    setConfirming(false);
   }
   function copyCode() {
     navigator.clipboard?.writeText(room.code).catch(() => {});
@@ -415,34 +481,158 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     );
   }
 
-  // ── 戰鬥結束畫面 ──────────────────────────────────────────
+  // ── 怪物死亡確認畫面（房主按下才正式結算）───────────────────
+  if (room.status === "pending_confirm") {
+    const lastEntry = room.log?.[room.log.length - 1];
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-yellow-950 to-slate-900 flex flex-col items-center justify-center px-4 gap-6">
+        <div className="text-7xl animate-bounce">💥</div>
+        <div className="text-2xl font-black text-yellow-300 text-center">
+          {room.monster?.name} 已倒下！
+        </div>
+        {lastEntry && (
+          <div className="bg-white/10 rounded-2xl px-5 py-3 text-center">
+            <div className="text-slate-400 text-xs mb-1">最終回合共造成</div>
+            <div className="text-3xl font-black text-rose-400">{lastEntry.totalDmg}</div>
+            <div className="text-slate-300 text-xs">點傷害</div>
+          </div>
+        )}
+        {isHost ? (
+          <button onClick={handleConfirmResult} disabled={confirming}
+            className="w-full max-w-xs py-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform disabled:opacity-50 animate-pulse">
+            {confirming ? "確認中…" : "🏆 確認討伐！進入結算"}
+          </button>
+        ) : (
+          <div className="text-slate-300 text-sm animate-pulse font-bold">
+            等待房主確認結算…
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── 戰鬥結算畫面 ──────────────────────────────────────────
   if (room.status === "completed") {
     const won = room.result === "win";
+
+    // 從戰鬥 log 彙總各人數據
+    const statsMap = {};
+    (room.log || []).forEach(entry => {
+      (entry.playerLog || []).forEach(p => {
+        if (!statsMap[p.id]) statsMap[p.id] = { name: p.name, dmgDealt: 0, dmgRecvd: 0, crits: 0 };
+        statsMap[p.id].dmgDealt += p.dmg   || 0;
+        statsMap[p.id].dmgRecvd += p.ctr   || 0;
+        statsMap[p.id].crits    += p.crits || 0;
+      });
+    });
+    // 補上沒有 log 的成員（可能全程觀戰）
+    memberList.forEach(m => {
+      if (!statsMap[m.id]) statsMap[m.id] = { name: m.name, dmgDealt: 0, dmgRecvd: 0, crits: 0 };
+    });
+    const statsList = Object.entries(statsMap).map(([id, s]) => ({
+      id, ...s,
+      maxHP: members[id]?.maxHP || 0,
+      atk:   members[id]?.atk   || 0,
+      def:   members[id]?.def   || 0,
+    })).sort((a, b) => b.dmgDealt - a.dmgDealt);
+    const mvpId = statsList[0]?.dmgDealt > 0 ? statsList[0].id : null;
+
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center px-4 gap-5 ${
+      <div className={`min-h-screen flex flex-col px-4 py-6 gap-4 max-w-lg mx-auto overflow-y-auto ${
         won ? "bg-gradient-to-b from-yellow-900 to-slate-900" : "bg-gradient-to-b from-red-900 to-slate-900"
       }`}>
-        <div className="text-6xl animate-bounce">{won ? "🏆" : "💀"}</div>
-        <div className="text-2xl font-black text-white">{won ? "討伐成功！" : "全滅了…"}</div>
-
-        {/* 隊員結果 */}
-        <div className="bg-white/10 rounded-2xl p-4 w-full max-w-xs flex flex-col gap-2">
-          {memberList.map(m => (
-            <div key={m.id} className="flex items-center gap-2 text-sm text-white">
-              <span>{m.alive ? "✅" : "💀"}</span>
-              <span className={`font-bold ${m.id === myId ? "text-indigo-300" : ""}`}>{m.name}</span>
-              <span className="ml-auto text-slate-400">{m.alive ? `${m.hp}/${m.maxHP}` : "陣亡"}</span>
+        {/* 標題 */}
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <div className="text-6xl">{won ? "🏆" : "💀"}</div>
+          <div className="text-2xl font-black text-white">{won ? "討伐成功！" : "全滅了…"}</div>
+          {room.monster && (
+            <div className="text-slate-400 text-sm">
+              {room.monster.icon} {room.monster.name} · {room.log?.length || 0} 回合
             </div>
-          ))}
+          )}
         </div>
 
-        {/* 勝利：各人領取寶箱 */}
+        {/* 詳細戰績表 */}
+        <div className="bg-white/10 rounded-2xl overflow-hidden">
+          <div className="px-4 py-2 bg-white/5 text-xs font-black text-slate-400 uppercase tracking-widest">
+            戰鬥詳情
+          </div>
+          {statsList.map(s => {
+            const isMvp = s.id === mvpId && won;
+            const isMe  = s.id === myId;
+            return (
+              <div key={s.id}
+                className={`px-4 py-3 border-t border-white/5 flex flex-col gap-1.5 ${
+                  isMvp ? "bg-yellow-500/20" : ""
+                }`}>
+                <div className="flex items-center gap-2">
+                  {isMvp && <span className="text-yellow-400 text-xs font-black bg-yellow-500/30 px-2 py-0.5 rounded-full">👑 MVP</span>}
+                  <span className={`font-black text-sm ${isMe ? "text-indigo-300" : "text-white"}`}>
+                    {s.name}{isMe ? " (我)" : ""}
+                  </span>
+                  <span className="ml-auto text-xs text-slate-400">
+                    {members[s.id]?.alive ? "✅ 存活" : "💀 陣亡"}
+                  </span>
+                </div>
+                <div className="flex gap-3 text-xs flex-wrap">
+                  <span className="text-rose-400 font-bold">⚔️ 造成 {s.dmgDealt}</span>
+                  <span className="text-orange-400">🛡️ 承受 {s.dmgRecvd}</span>
+                  {s.crits > 0 && <span className="text-yellow-300">✨ 爆擊 {s.crits} 次</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 完整戰鬥紀錄（可展開）*/}
+        {(room.log || []).length > 0 && (
+          <div className="bg-white/10 rounded-2xl overflow-hidden">
+            <button
+              onClick={() => setShowFullLog(v => !v)}
+              className="w-full px-4 py-3 flex items-center justify-between text-xs font-black text-slate-300 active:opacity-70">
+              <span>📜 完整戰鬥紀錄（{room.log.length} 回合）</span>
+              <span>{showFullLog ? "▲" : "▼"}</span>
+            </button>
+            {showFullLog && (
+              <div className="flex flex-col gap-2 px-4 pb-4 max-h-72 overflow-y-auto">
+                {room.log.map((entry, i) => (
+                  <div key={i} className="bg-white/5 rounded-xl p-3 text-xs text-slate-300 flex flex-col gap-1.5">
+                    <div className="flex justify-between font-black text-slate-400">
+                      <span>第 {entry.round} 回合 · 總傷 {entry.totalDmg}</span>
+                      <span>{entry.monsterHPBefore} → <span className="text-yellow-300">{entry.monsterHPAfter}</span></span>
+                    </div>
+                    {entry.event && (
+                      <div className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded ${
+                        entry.event.type === "buff"   ? "bg-emerald-900/40 text-emerald-300" :
+                        entry.event.type === "debuff" ? "bg-red-900/40 text-red-300"
+                                                      : "bg-yellow-900/40 text-yellow-300"
+                      }`}>
+                        {entry.event.icon} {entry.event.title}：{entry.event.desc}
+                      </div>
+                    )}
+                    {(entry.playerLog || []).map((p, j) => (
+                      <div key={j} className="flex items-center gap-2 text-[11px]">
+                        <span className="text-indigo-300">🏹 {p.name}</span>
+                        <span className="text-rose-400 font-black">+{p.dmg}</span>
+                        {p.crits > 0 && <span className="text-yellow-300">✨{p.crits}</span>}
+                        {entry.counterRound && p.ctr > 0 && <span className="text-orange-400 ml-auto">-{p.ctr}</span>}
+                      </div>
+                    ))}
+                    {entry.counterRound && <div className="text-orange-300 text-[10px]">💥 反擊回合</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 勝利：領取寶箱 */}
         {won && (
-          <div className="w-full max-w-xs flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             {!myClaimed && myChests.length > 0 && (
               <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
                 <div className="text-yellow-200 font-black text-sm text-center">🎁 你的戰利品</div>
-                <div className="flex justify-center gap-3">
+                <div className="flex justify-center gap-3 flex-wrap">
                   {myChests.map(c => {
                     const info = CHEST_TYPES[c.type];
                     return info ? (
@@ -460,18 +650,39 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
               </div>
             )}
             {myClaimed && (
-              <div className="text-emerald-400 font-black text-sm text-center">✅ 寶箱已入庫！</div>
+              <div className="bg-emerald-900/40 border border-emerald-500 rounded-2xl p-3 text-emerald-400 font-black text-sm text-center">
+                ✅ 寶箱已入庫！
+              </div>
             )}
-            {won && !myChests.length && !room.rewardPending && (
+            {!myChests.length && !room.rewardPending && !myClaimed && (
               <div className="text-slate-400 text-xs text-center animate-pulse">等待房主發放獎勵…</div>
             )}
           </div>
         )}
 
+        {/* 分享戰績小卡 */}
+        <button onClick={() => setShowShareCard(true)}
+          className="w-full py-3 bg-slate-700 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-transform border border-slate-500">
+          📤 分享戰績小卡
+        </button>
+
         <button onClick={onLeave}
-          className="px-8 py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
+          className="w-full py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
           🏠 返回
         </button>
+
+        {showShareCard && (
+          <PartyBattleCard
+            onClose={() => setShowShareCard(false)}
+            partyData={{
+              monster:   room.monster,
+              statsList,
+              mvpId,
+              result:    room.result,
+              rounds:    room.log?.length || 0,
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -499,8 +710,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
         </div>
 
         {/* 怪物 HP */}
+        {/* 隨機事件彈窗 */}
+        {showEvent && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-6">
+            <div className={`rounded-2xl shadow-2xl p-5 text-center max-w-xs w-full border-4 ${
+              showEvent.type === "buff"    ? "bg-emerald-50 border-emerald-400"
+            : showEvent.type === "debuff" ? "bg-red-50 border-red-400"
+            : "bg-yellow-50 border-yellow-400"
+            }`}>
+              <div className="text-5xl mb-2">{showEvent.icon}</div>
+              <div className={`font-black text-lg mb-1 ${
+                showEvent.type === "buff" ? "text-emerald-700" :
+                showEvent.type === "debuff" ? "text-red-700" : "text-yellow-700"
+              }`}>{showEvent.title}</div>
+              <div className="text-gray-600 text-sm leading-relaxed">{showEvent.desc}</div>
+            </div>
+          </div>
+        )}
+
         {room.monster && (
-          <div className="bg-slate-800 rounded-2xl p-3 flex flex-col gap-2">
+          <div className={`rounded-2xl p-3 flex flex-col gap-2 transition-all duration-300 ${
+            animHit ? "bg-orange-800/70 scale-[1.01]" : "bg-slate-800"
+          }`}>
             <div className="flex items-center gap-2">
               <span className="text-2xl">{room.monster.icon}</span>
               <div className="flex-1">
@@ -523,9 +754,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
         <div className="grid grid-cols-2 gap-2">
           {memberList.map(m => (
             <div key={m.id}
-              className={`rounded-xl p-2.5 flex flex-col gap-1 ${
-                !m.alive ? "bg-slate-800/40 opacity-50" :
-                m.id === myId ? "bg-indigo-900/40 border border-indigo-500/50" : "bg-slate-700/40"
+              className={`rounded-xl p-2.5 flex flex-col gap-1 transition-all duration-300 ${
+                !m.alive        ? "bg-slate-800/40 opacity-50" :
+                animCounter     ? "bg-red-900/60 border border-red-500/50" :
+                m.id === myId   ? "bg-indigo-900/40 border border-indigo-500/50"
+                                : "bg-slate-700/40"
               }`}>
               <div className="flex items-center justify-between">
                 <span className={`text-xs font-bold truncate ${m.id === myId ? "text-indigo-300" : "text-white"}`}>
@@ -617,10 +850,22 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
                   <span>第 {entry.round} 回合</span>
                   <span>怪物剩 <span className="text-yellow-300">{entry.monsterHPAfter}</span></span>
                 </div>
+                {/* 事件 */}
+                {entry.event && (
+                  <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                    entry.event.type === "buff"    ? "bg-emerald-900/40 text-emerald-300" :
+                    entry.event.type === "debuff"  ? "bg-red-900/40 text-red-300"
+                                                   : "bg-yellow-900/40 text-yellow-300"
+                  }`}>
+                    <span>{entry.event.icon}</span>
+                    <span>{entry.event.title}</span>
+                  </div>
+                )}
                 {(entry.playerLog || []).map((p, j) => (
                   <div key={j} className="flex items-center gap-2">
                     <span className="text-indigo-300">🏹 {p.name}</span>
                     <span>造成 <span className="text-rose-400 font-black">{p.dmg}</span> 傷</span>
+                    {p.crits > 0 && <span className="text-yellow-300 text-[10px]">✨×{p.crits}</span>}
                     {entry.counterRound && p.ctr > 0 && (
                       <span className="text-orange-400 ml-auto">受到 -{p.ctr}</span>
                     )}

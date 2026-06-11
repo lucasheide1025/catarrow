@@ -1454,6 +1454,12 @@ async function updateMonsterDex(memberId, monsterId, result, score, dmgDealt) {
   await setDoc(ref, { monsters, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
+export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
+  if (!memberId || !monsterId || memberId.startsWith("guest")) return;
+  await updateMonsterDex(memberId, monsterId, result, 0, dmgDealt || 0).catch(() => {});
+}
+
 // ─── 合成統計 ──────────────────────────────────────────────
 export function subscribeCraftStats(memberId, callback) {
   return onSnapshot(

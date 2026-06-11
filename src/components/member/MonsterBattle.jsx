@@ -385,18 +385,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     });
     if (throwSkip === "big") setSkipBigRound(true);
 
-    // 怪物 HP：基礎×2，再依模式×2(新手)/×3(學生/老手)
-    // 新手：所有數值×2（ATK/DEF 同乘）；老手：HP×6，ATK/DEF 套 VETERAN_MULT
-    const HP_MULT = mode==="novice" ? 4 : 6;
-    const base = {
+    // 怪物倍率：新手HP×1.5, 學生HP×2, 老手HP×4+ATK×2+DEF×2
+    const modeHPMult  = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
+    const modeATKMult = mode==="veteran" ? 2 : 1;
+    const modeDEFMult = mode==="veteran" ? 2 : 1;
+    const boosted = {
       ...pickedMonster,
-      hp:  Math.round(pickedMonster.hp  * HP_MULT),
-      atk: mode==="novice" ? Math.round(pickedMonster.atk * 2) : pickedMonster.atk,
-      def: mode==="novice" ? Math.round(pickedMonster.def * 2) : pickedMonster.def,
+      hp:  Math.round(pickedMonster.hp  * modeHPMult),
+      atk: Math.round(pickedMonster.atk * modeATKMult),
+      def: Math.round(pickedMonster.def * modeDEFMult),
     };
-    const boosted = mode==="veteran"
-      ? {...base, atk:Math.round(base.atk*VETERAN_MULT.atk), def:Math.round(base.def*VETERAN_MULT.def)}
-      : {...base};
     // 敵方削弱藥劑（在老手增幅之後套用）
     const boostedMonster = {
       ...boosted,
@@ -743,10 +741,10 @@ if (profile?.id && !isGuest) {
   if (phase==="prebattle") {
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
-    const previewHPMult = mode==="novice" ? 4 : 6;
+    const previewHPMult = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
     const previewHP  = Math.round(pickedMonster.hp  * previewHPMult);
-    const previewATK = mode==="novice" ? Math.round(pickedMonster.atk*2) : mode==="veteran" ? Math.round(pickedMonster.atk*VETERAN_MULT.atk) : pickedMonster.atk;
-    const previewDEF = mode==="novice" ? Math.round(pickedMonster.def*2) : mode==="veteran" ? Math.round(pickedMonster.def*VETERAN_MULT.def) : pickedMonster.def;
+    const previewATK = mode==="veteran" ? Math.round(pickedMonster.atk * 2) : pickedMonster.atk;
+    const previewDEF = mode==="veteran" ? Math.round(pickedMonster.def * 2) : pickedMonster.def;
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
