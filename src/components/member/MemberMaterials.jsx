@@ -29,7 +29,7 @@ export default function MemberMaterials({ onBack }) {
 
   // ── 材料庫存 ─────────────────────────────────────────────
   const [inventory,      setInventory]      = useState({});
-  const [loading,        setLoading]        = useState(true);
+  const [loading,        setLoading]        = useState(!!profile?.id);
   const [familyFilter,   setFamilyFilter]   = useState("all_families");
   const [confirmMat,     setConfirmMat]     = useState(null);
   const [upgrading,      setUpgrading]      = useState(false);
@@ -37,7 +37,7 @@ export default function MemberMaterials({ onBack }) {
 
   // ── 碎片庫存 ─────────────────────────────────────────────
   const [fragments,      setFragments]      = useState({});
-  const [fragLoading,    setFragLoading]    = useState(true);
+  const [fragLoading,    setFragLoading]    = useState(!!profile?.id);
   const [confirmFrag,    setConfirmFrag]    = useState(null);
   const [crafting,       setCrafting]       = useState(false);
   const [craftCelebrate, setCraftCelebrate] = useState(null); // { frag, label }
@@ -100,6 +100,17 @@ export default function MemberMaterials({ onBack }) {
   }
 
   // ── render ────────────────────────────────────────────────
+  if (!profile?.id) return (
+    <div className="p-4 flex flex-col gap-4">
+      {onBack && <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>}
+      <div className="text-center py-12 text-gray-400">
+        <div className="text-4xl mb-3">🔒</div>
+        <div className="font-bold">請先登入射手帳號</div>
+        <div className="text-xs mt-1">背包功能需要射手身分才能使用</div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
