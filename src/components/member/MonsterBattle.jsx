@@ -24,6 +24,7 @@ const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
 const DISTANCE_START = 15;
 const VETERAN_MULT = { hp:1.5, atk:1.5, def:1.3 };
+const PRESET_DISTANCES = [10, 15, 18, 25, 30, 50, 70];
 
 const HALF_SCORES = [
   { label:"X",  val:10, color:"#fbbf24" },
@@ -131,6 +132,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [battleStats, setBattleStats]         = useState(null); // 本場有效數值（含藥劑加成）
   const [wonChests, setWonChests]             = useState([]); // 本場掉落的寶箱陣列（含貓貓箱）
   const [skipBigRound, setSkipBigRound]       = useState(false); // 麻痺毒素：跳過整個大回合反擊
+  const [distanceMode, setDistanceMode]       = useState("fixed"); // "fixed"|"random"|"dynamic"
+  const [selectedDistance, setSelectedDistance] = useState(15);
   const logEndRef = useRef(null);
 
   useEffect(() => {
@@ -202,7 +205,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     let headHitCount = 0;
     let skipCtr     = skipCounter;
 
-    addLog({ type:"system", text:`── 第 ${round} 回合，${mode==="veteran"?`距離 ${distance}米`:"10米"} ──` });
+    addLog({ type:"system", text:`── 第 ${round} 回合，距離 ${distance}米 ──` });
     await delay(400);
 
     for (let i=0; i<ARROWS_PER_ROUND; i++) {
@@ -280,7 +283,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         } else if (!skipCtr) {
           setBattlePhase("counter"); setAnimCounter(true);
           setTimeout(()=>setAnimCounter(false),800);
-          const critChance=mode==="veteran"?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):0;
+          const critChance=(mode==="veteran")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):(mode==="student")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.3):0;
           const isCrit=Math.random()<critChance;
           const headStunned=headHitCount>0&&battleMode==="zombie";
           const cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:bSt?.def||10, headStunned, isCrit });
@@ -317,16 +320,21 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       }
     }
 
-    if (mode==="veteran") {
-      const step=randDistStep();
-      const newDist=Math.max(1,curDist-step);
-      if (newDist!==curDist) { curDist=newDist; setDistance(curDist); addLog({ type:"event_bad", text:`📍 怪物逼近！請往前移動 ${step}米 → 現在距離 ${curDist}米` }); await delay(600); }
-      if (battleMode==="zombie"&&headHitCount>0) {
-        const pushBack=Math.min(3,headHitCount);
-        curDist=Math.min(DISTANCE_START,curDist+pushBack);
-        setDistance(curDist);
-        addLog({ type:"event_good", text:`💀 頭部命中！距離延長 ${pushBack}米 → 現在 ${curDist}米` });
-        await delay(600);
+    if (distanceMode==="dynamic") {
+      if (mode==="veteran") {
+        const step=randDistStep();
+        const newDist=Math.max(1,curDist-step);
+        if (newDist!==curDist) { curDist=newDist; setDistance(curDist); addLog({ type:"event_bad", text:`📍 怪物逼近！請往前移動 ${step}米 → 現在距離 ${curDist}米` }); await delay(600); }
+        if (battleMode==="zombie"&&headHitCount>0) {
+          const pushBack=Math.min(3,headHitCount);
+          curDist=Math.min(selectedDistance||DISTANCE_START,curDist+pushBack);
+          setDistance(curDist);
+          addLog({ type:"event_good", text:`💀 頭部命中！距離延長 ${pushBack}米 → 現在 ${curDist}米` });
+          await delay(600);
+        }
+      } else if (mode==="student") {
+        const newDist=Math.min(70,curDist+5);
+        if (newDist!==curDist) { curDist=newDist; setDistance(curDist); addLog({ type:"event_good", text:`📍 距離增加！請後退至 ${curDist}米` }); await delay(600); }
       }
     }
 
@@ -344,10 +352,17 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
     // ⚗️ 戰前喝藥：消耗藥劑、計算本場加成（只影響當場）
     const buffs = calcPotionBuffs(selectedPotions);
+    // 老手模式：解除加成最低限制（敵方可被削弱至 0）
+    if (mode==="veteran") {
+      buffs.monAtkMult = Math.max(0, buffs.monAtkMult);
+      buffs.monDefMult = Math.max(0, buffs.monDefMult);
+    }
     if (selectedPotions.length>0 && profile?.id && !isGuest) {
       await usePotions(profile.id, selectedPotions).catch(()=>{});
     }
-    const baseStats = archerStats || { hp:100, atk:10, def:10 };
+    const baseStats = { ...(archerStats || { hp:100, atk:10, def:10 }) };
+    // 老手模式：射手基礎 HP 最低 200
+    if (mode==="veteran") baseStats.hp = Math.max(200, baseStats.hp);
     const bStats = {
       hp:  Math.round(baseStats.hp  * buffs.hpMult),
       atk: Math.round(baseStats.atk * buffs.atkMult),
@@ -378,14 +393,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setMonster(boostedMonster);
     setArcherHP(bStats.hp);
     setMonsterHP(monStartHP);
-    setRound(1); setDistance(DISTANCE_START);
+    const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
+    setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]);
     setLog([
       { type:"system", text:`⚔️ 戰鬥開始！對手：${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】` },
-      { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:"新手"}` },
+      { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
       ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
       ...(throwDmgTotal>0?[{type:"event_bad", text:`💥 投擲命中！怪物直接失去 ${throwDmgTotal} HP！`}]:[]),
-      ...(mode==="veteran"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
+      ...(mode==="veteran"&&distanceMode==="dynamic"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
+      ...(mode==="student"&&distanceMode==="dynamic"?[{type:"system",text:"📍 每回合結束距離增加 5 米，磨練遠距射擊！"}]:[]),
     ]);
     if (buffs.used.length>0) sfxBuff();
     setSelectedPotions([]);
@@ -604,19 +621,104 @@ if (profile?.id && !isGuest) {
         <style>{BATTLE_CSS}</style>
         <button onClick={()=>setPhase("mode")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="text-gray-800 font-black text-xl text-center">選擇難度</div>
-        <button onClick={()=>{ setMode("novice"); setPhase("prebattle"); }}
+        <button onClick={()=>{ setMode("novice"); setDistanceMode("fixed"); setSelectedDistance(10); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-green-200 bg-green-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟢 新手模式</div>
-          <div className="font-black text-gray-800 mb-1">固定10米，無爆擊</div>
-          <div className="text-gray-500 text-sm">每2箭怪物反擊一次，傷害穩定。</div>
+          <div className="font-black text-gray-800 mb-1">自選距離，無爆擊，怪物正常數值</div>
+          <div className="text-gray-500 text-sm">每2箭怪物反擊一次，傷害穩定。距離固定不變。</div>
           <div className="text-green-600 text-xs font-bold mt-2">掉寶：紀念徽章 / 成就銀章 / 9折券</div>
         </button>
-        <button onClick={()=>{ setMode("veteran"); setPhase("prebattle"); }}
+        <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(15); setPhase("distance"); }}
+          className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
+          <div className="text-2xl mb-1">🎓 學生模式</div>
+          <div className="font-black text-gray-800 mb-1">自選距離方式，含爆擊（距離越近）</div>
+          <div className="text-gray-500 text-sm">固定距離、隨機距離、或從15米起動態增加。怪物正常數值。</div>
+          <div className="text-blue-600 text-xs font-bold mt-2">掉寶：同新手，含距離爆擊獎勵</div>
+        </button>
+        <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-orange-200 bg-orange-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟠 老手模式</div>
-          <div className="font-black text-gray-800 mb-1">距離15米起，每回合縮短 1~5 米</div>
-          <div className="text-gray-500 text-sm">怪物數值增強，每回合結束需實際移動靶位，距離越近爆擊率越高。</div>
+          <div className="font-black text-gray-800 mb-1">怪物增強，射手基礎HP 200，加成無上限</div>
+          <div className="text-gray-500 text-sm">固定、隨機、或動態距離（每回合縮短 1~5 米，距離越近爆擊率越高）。</div>
           <div className="text-orange-600 text-xs font-bold mt-2">掉寶更豐富，含5折券</div>
+        </button>
+      </div>
+    );
+  }
+
+  if (phase==="distance") {
+    const isAdvanced = mode !== "novice";
+    const btnBase = "flex-1 py-2.5 rounded-xl text-sm font-black border transition-all";
+    return (
+      <div className="p-4 flex flex-col gap-4">
+        <style>{BATTLE_CSS}</style>
+        <button onClick={()=>setPhase("difficulty")} className="text-gray-500 text-sm self-start">← 返回</button>
+        <div className="text-gray-800 font-black text-xl text-center">選擇距離</div>
+
+        {isAdvanced && (
+          <div className="flex gap-2">
+            <button onClick={()=>setDistanceMode("fixed")}
+              className={`${btnBase} ${distanceMode==="fixed"?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-700 border-gray-200"}`}>
+              📍 固定幾米
+            </button>
+            <button onClick={()=>{
+              const d=PRESET_DISTANCES[Math.floor(Math.random()*PRESET_DISTANCES.length)];
+              setSelectedDistance(d); setDistanceMode("random");
+            }}
+              className={`${btnBase} ${distanceMode==="random"?"bg-purple-600 text-white border-purple-600":"bg-white text-gray-700 border-gray-200"}`}>
+              🎲 隨機距離
+            </button>
+            <button onClick={()=>{ setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); }}
+              className={`${btnBase} ${distanceMode==="dynamic"?"bg-orange-500 text-white border-orange-500":"bg-white text-gray-700 border-gray-200"}`}>
+              🏃 動態15m起
+            </button>
+          </div>
+        )}
+
+        {distanceMode!=="dynamic" && (
+          <div>
+            {distanceMode==="random" ? (
+              <div className="text-center">
+                <div className="text-5xl font-black text-purple-600 my-4">🎲 {selectedDistance}米</div>
+                <button onClick={()=>{
+                  const d=PRESET_DISTANCES[Math.floor(Math.random()*PRESET_DISTANCES.length)];
+                  setSelectedDistance(d);
+                }} className="text-sm text-purple-500 font-bold underline">重新抽取</button>
+              </div>
+            ) : (
+              <div>
+                <div className="text-sm text-gray-500 font-bold mb-2">選擇距離</div>
+                <div className="flex flex-wrap gap-2">
+                  {PRESET_DISTANCES.map(d=>(
+                    <button key={d} onClick={()=>setSelectedDistance(d)}
+                      className={`px-4 py-2 rounded-xl font-black text-sm border-2 transition-all ${
+                        selectedDistance===d?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-700 border-gray-200"
+                      }`}>
+                      {d}米
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {distanceMode==="dynamic" && (
+          <div className={`rounded-2xl p-4 ${mode==="veteran"?"bg-orange-50 border-2 border-orange-200":"bg-blue-50 border-2 border-blue-200"}`}>
+            <div className={`font-black text-lg mb-1 ${mode==="veteran"?"text-orange-700":"text-blue-700"}`}>
+              {mode==="veteran"?"🏹 動態距離（老手）":"🎓 動態距離（學生）"}
+            </div>
+            <div className="text-sm text-gray-600">
+              {mode==="veteran"
+                ?"從15米出發，每回合怪物逼近縮短 1~5 米，距離越近爆擊率越高。"
+                :"從15米出發，每回合後退 5 米，磨練不同距離的射擊感。"}
+            </div>
+          </div>
+        )}
+
+        <button onClick={()=>setPhase("prebattle")}
+          className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-base active:scale-95 transition-transform">
+          確認 → 選擇藥水
         </button>
       </div>
     );
@@ -631,7 +733,7 @@ if (profile?.id && !isGuest) {
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("difficulty")} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={()=>setPhase("distance")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="text-6xl mb-2" style={{ animation:"mb-bounce 1.5s ease infinite" }}>{pickedMonster.icon}</div>
           <div className="flex items-center justify-center gap-2 mb-1">
@@ -648,7 +750,9 @@ if (profile?.id && !isGuest) {
               </div>
             ))}
           </div>
-          {mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強 + 每回合縮短距離 1~5 米</div>}
+          {mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強，HP基礎 200，加成無上限</div>}
+          {mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
+          {mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
           {archerStats&&(
             <div className="bg-white/10 rounded-xl p-3 mb-3">
               <div className="text-purple-200 text-xs mb-2 text-center">你的數值</div>

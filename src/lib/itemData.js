@@ -159,7 +159,7 @@ export const POTIONS = [
   {
     id:"poison_throw", name:"投擲毒藥", icon:"🌑", rarity:"rare",
     kind: "throw",
-    effect:{ throwDmg:30, monAtkPct:30 }, effectText:"直接對怪扣30血 + 敵方ATK −30%",
+    effect:{ monAtkPct:30 }, effectText:"敵方ATK −30%",
     desc:"戰鬥前擲向怪物，毒素讓牠ATK大幅下降。",
     recipe:[ { id:"workplace_m2", count:2 }, { id:"insect_m1", count:3 } ],
     dropFrom: ["gold","mythic"],
