@@ -197,6 +197,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     if (arrows.length<ARROWS_PER_ROUND||processing) return;
     setProcessing(true);
     setBattlePhase("processing");
+    try {
     const bSt = battleStats || archerStats; // 本場有效數值（含藥劑加成）
 
     let curMonHP    = monsterHP;
@@ -318,6 +319,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           skipCtr=false;
         }
         setSkipCounter(false); setCurrentEvent(null); headHitCount=0;
+        setBattlePhase("processing"); // 反擊/事件結束後恢復 processing，避免卡在 counter 畫面
       }
     }
 
@@ -347,6 +349,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     addLog({ type:"total", text:`本回合 ${roundTotal}分　${monster.name} 剩 HP：${curMonHP}` });
     await delay(1500);
     setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
+    } catch(err) {
+      console.error("submitRound error:", err);
+      setBattlePhase("input"); setProcessing(false);
+    }
   }
 
   async function startBattle() {
@@ -363,7 +369,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       await usePotions(profile.id, selectedPotions).catch(()=>{});
     }
     const baseStats = { ...(archerStats || { hp:500, atk:10, def:10 }) };
-    if (mode==="novice" || mode==="student") baseStats.hp = Math.max(500, baseStats.hp);
+    if (mode==="novice")  baseStats.hp = Math.max(1000, baseStats.hp);
+    if (mode==="student") baseStats.hp = Math.max(1500, baseStats.hp);
     if (mode==="veteran") baseStats.hp = Math.max(1000, baseStats.hp);
     const bStats = {
       hp:  Math.round(baseStats.hp  * buffs.hpMult),
@@ -380,7 +387,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     });
     if (throwSkip === "big") setSkipBigRound(true);
 
-    const base={...pickedMonster, hp: pickedMonster.hp * 5};
+    const HP_MULT = mode==="novice" ? 10 : mode==="student" ? 15 : 5;
+    const base={...pickedMonster, hp: pickedMonster.hp * HP_MULT};
     const boosted=mode==="veteran"
       ? {...base, hp:Math.round(base.hp*VETERAN_MULT.hp), atk:Math.round(base.atk*VETERAN_MULT.atk), def:Math.round(base.def*VETERAN_MULT.def)}
       : {...base};
@@ -429,8 +437,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         }
       }
 
-      // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱）
-      const { mainChest, catChest } = makeChests(monster);
+      // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱或藥水箱）
+      const { mainChest, catChest, potionChest } = makeChests(monster);
       let mats=[];
       if (isGuest||!profile?.id) {
         // 訪客：當場直接打開主寶箱，材料只顯示不儲存
@@ -440,7 +448,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         setWonChests([]);
       } else {
         // 射手：寶箱放進背包
-        const chestsToAdd = catChest ? [mainChest, catChest] : [mainChest];
+        const chestsToAdd = [mainChest, catChest, potionChest].filter(Boolean);
         setWonChests(chestsToAdd);
         setDroppedMaterials([]);
         addChests(profile.id, chestsToAdd).catch(()=>{});
@@ -468,6 +476,7 @@ if (profile?.id && !isGuest) {
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
       addLog({ type:"system", text:isGuest?`📦 寶箱當場打開！`:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
       if (catChest) addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
+      if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
       if (isRareLoot(lootItem)&&profile?.id) {
         createNotification({ type:"high_score", title:`🎁 ${profile.nickname||profile.name} 獲得稀有掉落！`,
           content:`${profile.nickname||profile.name} 擊倒了 ${monster.name}，獲得稀有道具！`,
@@ -627,14 +636,14 @@ if (profile?.id && !isGuest) {
           className="rounded-2xl p-5 text-left border-2 border-green-200 bg-green-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟢 新手模式</div>
           <div className="font-black text-gray-800 mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
-          <div className="text-gray-500 text-sm">怪物 HP×5，射手基礎 HP 500。每2箭怪物反擊一次，傷害穩定。</div>
+          <div className="text-gray-500 text-sm">怪物 HP×10，射手基礎 HP 1000。每2箭怪物反擊一次，傷害穩定。</div>
           <div className="text-green-600 text-xs font-bold mt-2">掉寶：紀念徽章 / 成就銀章 / 9折券</div>
         </button>
         <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🎓 學生模式</div>
           <div className="font-black text-gray-800 mb-1">自選距離，含爆擊（距離越近越高）</div>
-          <div className="text-gray-500 text-sm">怪物 HP×5，射手基礎 HP 500。動態模式每回合距離縮短 1~5 米。</div>
+          <div className="text-gray-500 text-sm">怪物 HP×15，射手基礎 HP 1500。動態模式每回合距離縮短 1~5 米。</div>
           <div className="text-blue-600 text-xs font-bold mt-2">掉寶：同新手，含距離爆擊獎勵</div>
         </button>
         <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
@@ -827,7 +836,7 @@ if (profile?.id && !isGuest) {
         <div className="rounded-2xl p-4" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
           <div className="flex justify-between text-white text-xs font-bold mb-2">
             <span>第 {round} 回合</span>
-            {mode==="veteran"&&<span>📍 {distance}米</span>}
+            {distanceMode==="dynamic"&&<span>📍 {distance}米</span>}
             <span>{ARROWS_PER_ROUND}箭/回合</span>
           </div>
           <div className="mb-2">
