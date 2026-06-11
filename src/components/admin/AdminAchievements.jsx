@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { getAchievements, createAchievement } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { today, fmtDT } from "../../lib/constants";
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, useToast } from "../shared/UI";
 
@@ -217,11 +217,12 @@ function ReviewApplicationsModal({ task, operatorId, onClose, toast }) {
   useEffect(() => {
     const q = query(
       collection(db, "achievementApplications"),
-      orderBy("submittedAt", "desc")
+      where("taskId", "==", task.id)
     );
     const unsub = onSnapshot(q, snap => {
-      const all = snap.docs.map(d=>({id:d.id,...d.data()}));
-      setApplications(all.filter(a => a.taskId === task.id));
+      const apps = snap.docs.map(d=>({id:d.id,...d.data()}));
+      apps.sort((a,b) => (b.submittedAt?.seconds||0) - (a.submittedAt?.seconds||0));
+      setApplications(apps);
       setLoading(false);
     });
     return unsub;

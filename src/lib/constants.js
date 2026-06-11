@@ -137,32 +137,6 @@ export function getCertLevel(bowType, score) {
   return level;
 }
 
-/* ════════════════════════════════════════════════════════════
-   ▼▼▼ 把下面這整段，貼到 src/lib/db.js 的「最後面」▼▼▼
-   （不要刪原本的東西，就接在檔案結尾貼上即可）
-   ════════════════════════════════════════════════════════════ */
- 
-// ─── 撈所有「被回報錯誤」的徽章紀錄（給後台處理用）──────────
-// 回傳一個 { memberId: [disputedLog, ...] } 的對照表
-export function subscribeAllDisputes(callback) {
-  return onSnapshot(
-    query(collection(db, "badgeLogs"), where("status", "==", "disputed")),
-    snap => {
-      const map = {};
-      snap.docs.forEach(d => {
-        const log = { id: d.id, ...d.data() };
-        if (!map[log.memberId]) map[log.memberId] = [];
-        map[log.memberId].push(log);
-      });
-      callback(map);
-    },
-    err => {
-      console.warn("subscribeAllDisputes error:", err.message);
-      callback({});
-    }
-  );
-}
-
 // 級別由低到高的順序（用於比大小、配色深淺）
 export const CERT_LEVEL_ORDER = ["入門", "初級", "中級", "進階", "精英", "菁英"];
  

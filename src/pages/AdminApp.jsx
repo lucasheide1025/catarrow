@@ -37,11 +37,16 @@ export default function AdminApp() {
   const [selComp, setSelComp]       = useState(null);
   const [scoring, setScoring]       = useState(false);
   const [lastResult, setLastResult] = useState(null);
-  const [pendingCertN, setPendingCertN] = useState(0);
-  const [pendingMsgN, setPendingMsgN]   = useState(0);
-  const [pendingExtN, setPendingExtN]   = useState(0);
-  const [pendingExamN, setPendingExamN] = useState(0);
+  const [pendingCertList, setPendingCertList] = useState([]);
+  const [allMessages,     setAllMessages]     = useState([]);
+  const [pendingExtList,  setPendingExtList]  = useState([]);
+  const [certTasksList,   setCertTasksList]   = useState([]);
   const [pendingCheckinN, setPendingCheckinN] = useState(0);
+
+  const pendingCertN = pendingCertList.length;
+  const pendingMsgN  = allMessages.filter(m => !m.reply).length;
+  const pendingExtN  = pendingExtList.length;
+  const pendingExamN = certTasksList.length;
 
   // 記住當前頁面 + 射手模式（重整後留在原地）
   useEffect(() => { sessionStorage.setItem("admin_page", page); }, [page]);
@@ -53,11 +58,11 @@ export default function AdminApp() {
   }, []);
 
   useEffect(() => {
-    const u1 = subscribePendingCertResults(list => setPendingCertN(Array.isArray(list) ? list.length : 0));
-    const u2 = subscribeAllMessages(msgs => setPendingMsgN((msgs || []).filter(m => !m.reply).length));
+    const u1 = subscribePendingCertResults(list => setPendingCertList(Array.isArray(list) ? list : []));
+    const u2 = subscribeAllMessages(msgs => setAllMessages(Array.isArray(msgs) ? msgs : []));
     const qExt = query(collection(db, "externalComps"), where("status", "==", "pending_review"));
-    const u3 = onSnapshot(qExt, snap => setPendingExtN(snap.size), () => setPendingExtN(0));
-    const u4 = subscribePendingCertTasks(list => setPendingExamN(Array.isArray(list) ? list.length : 0));
+    const u3 = onSnapshot(qExt, snap => setPendingExtList(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => setPendingExtList([]));
+    const u4 = subscribePendingCertTasks(list => setCertTasksList(Array.isArray(list) ? list : []));
     const u5 = subscribePendingCheckins(list => setPendingCheckinN(Array.isArray(list) ? list.length : 0));
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); };
   }, []);
@@ -171,7 +176,14 @@ const adminNav = [
       <div style={{paddingBottom:"80px"}}>
         {page==="members"      && <AdminMembers/>}
         {page==="comps"        && <AdminCompetitions/>}
-        {page==="review"       && <AdminReviewCenter/>}
+        {page==="review"       && (
+          <AdminReviewCenter
+            pendingCert={pendingCertList}
+            messages={allMessages}
+            pendingExtItems={pendingExtList}
+            certTasks={certTasksList}
+          />
+        )}
         {page==="achievements" && <AdminAchievementsTab/>}
         {page==="learn"        && <AdminLearn/>}
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}

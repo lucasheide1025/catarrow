@@ -5,7 +5,7 @@ import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
-  addChests, subscribePotions, usePotions, addFragments,
+  addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
 } from "../../lib/db";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
@@ -402,6 +402,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const table=getLootTable({ isGuest, mode, battleMode, tier:monster.tier });
       const lootItem=drawLoot(table, monster.id, monster.tier);
       setLoot(lootItem);
+      if (lootItem.type === "material" && lootItem.materialId && profile?.id && !isGuest) {
+        addMaterials(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+      }
 
       // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱）
       const { mainChest, catChest } = makeChests(monster);

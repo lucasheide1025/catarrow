@@ -2,9 +2,9 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
-import { FRAGMENTS } from "../../lib/itemData";
+import { FRAGMENTS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
 
 const FAMILY_CONFIG = {
@@ -42,6 +42,12 @@ export default function MemberMaterials({ onBack }) {
   const [crafting,       setCrafting]       = useState(false);
   const [craftCelebrate, setCraftCelebrate] = useState(null); // { frag, label }
 
+  // ── 寶箱庫存 ─────────────────────────────────────────────
+  const [chests,       setChests]       = useState([]);
+  const [chestLoading, setChestLoading] = useState(!!profile?.id);
+  const [openingChest, setOpeningChest] = useState(null);   // chestId being opened
+  const [openResult,   setOpenResult]   = useState(null);   // { materials, potions, fragments }
+
   useEffect(() => {
     if (!profile?.id) return;
     const unsub = subscribeMaterials(profile.id, data => {
@@ -52,7 +58,11 @@ export default function MemberMaterials({ onBack }) {
       setFragments(data);
       setFragLoading(false);
     });
-    return () => { unsub && unsub(); unsubFrag && unsubFrag(); };
+    const unsubChest = subscribeChests(profile.id, data => {
+      setChests(Array.isArray(data) ? data : []);
+      setChestLoading(false);
+    });
+    return () => { unsub && unsub(); unsubFrag && unsubFrag(); unsubChest && unsubChest(); };
   }, [profile?.id]);
 
   // ── 統計 ─────────────────────────────────────────────────
@@ -83,6 +93,19 @@ export default function MemberMaterials({ onBack }) {
       setCelebrate({ from: res.from, to: res.to });
     } else {
       toast(res.reason || "升級失敗，請稍後再試");
+    }
+  }
+
+  async function doOpenChest(chest) {
+    if (openingChest) return;
+    setOpeningChest(chest.id);
+    const contents = openChestContents(chest);
+    const res = await openChest(profile.id, chest.id, contents);
+    setOpeningChest(null);
+    if (res.ok) {
+      setOpenResult(contents);
+    } else {
+      toast(res.reason || "開箱失敗，請稍後再試");
     }
   }
 
@@ -164,12 +187,22 @@ export default function MemberMaterials({ onBack }) {
         <button onClick={() => setTab("materials")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all
             ${tab === "materials" ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-500"}`}>
-          🧪 材料庫存
+          🧪 材料
+        </button>
+        <button onClick={() => setTab("chests")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all relative
+            ${tab === "chests" ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-500"}`}>
+          📦 寶箱
+          {chests.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[9px] font-black text-white flex items-center justify-center">
+              {chests.length}
+            </span>
+          )}
         </button>
         <button onClick={() => setTab("fragments")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all relative
             ${tab === "fragments" ? "bg-pink-500 text-white" : "bg-gray-100 text-gray-500"}`}>
-          ✨ 章碎片
+          ✨ 碎片
           {craftableCount > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-400 rounded-full text-[9px] font-black text-white flex items-center justify-center">
               {craftableCount}
@@ -299,6 +332,99 @@ export default function MemberMaterials({ onBack }) {
                   </section>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════ 寶箱 tab ══════════ */}
+      {tab === "chests" && (
+        <div className="flex flex-col gap-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-700 text-xs leading-relaxed">
+            📦 打怪獲勝後寶箱會存入背包，點「開箱！」取得材料、藥劑或章碎片！
+          </div>
+          {chestLoading ? (
+            <div className="text-center py-6 text-gray-400 text-sm">載入中…</div>
+          ) : chests.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <div className="text-5xl mb-3">📦</div>
+              <div className="font-bold text-sm">目前沒有寶箱</div>
+              <div className="text-xs mt-1">打怪獲勝就能拿到！</div>
+            </div>
+          ) : (
+            chests.map((ch, idx) => {
+              const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
+              const isOpening = openingChest === ch.id;
+              return (
+                <div key={ch.id || idx} className="bg-white rounded-2xl p-4 border border-gray-200 flex items-center gap-4">
+                  <div className="text-4xl">{cc.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-black text-sm" style={{ color: cc.color }}>{cc.name}</div>
+                    {ch.from && <div className="text-gray-400 text-xs mt-0.5">來自 {ch.from}</div>}
+                    <div className="text-gray-300 text-xs mt-0.5 leading-snug">{cc.desc}</div>
+                  </div>
+                  <button
+                    onClick={() => doOpenChest(ch)}
+                    disabled={!!openingChest}
+                    className="px-4 py-2 rounded-xl text-sm font-black text-white active:scale-95 transition-all disabled:opacity-40"
+                    style={{ background: cc.color }}>
+                    {isOpening ? "開箱中…" : "開箱！"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+
+          {openResult && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
+              onClick={() => setOpenResult(null)}>
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="text-center font-black text-xl mb-4">🎁 開箱結果！</div>
+                {openResult.fragments?.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-pink-600 text-xs font-bold mb-2">✨ 獲得章碎片</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {openResult.fragments.map(f => (
+                        <div key={f.id} className="text-xs px-3 py-1.5 rounded-full font-bold text-white"
+                          style={{ background: f.color }}>
+                          {f.icon} {f.name} ×1
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {openResult.materials?.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-purple-600 text-xs font-bold mb-2">🧪 獲得材料</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {openResult.materials.map((m, i) => (
+                        <div key={i} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full font-bold">
+                          {m.icon} {m.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {openResult.potions?.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-green-600 text-xs font-bold mb-2">🧪 獲得藥劑</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {openResult.potions.map((p, i) => (
+                        <div key={i} className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full font-bold">
+                          {p.icon} {p.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {!openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && (
+                  <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
+                )}
+                <button onClick={() => setOpenResult(null)}
+                  className="w-full mt-4 py-3 rounded-2xl bg-purple-600 text-white font-black active:scale-95 transition-all">
+                  收下！
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -2,28 +2,22 @@
 // 審核中心：檢定待審 + 外賽待審 + 待回留言，三區攤開直接處理
 import { useState, useEffect } from "react";
 import {
-  subscribePendingCertResults, approveCertResult, rejectCertResult,
-  getCompetitions, subscribeAllMessages, replyMessage, reviewExternalComp,
-  subscribePendingCertTasks, reviewCertTask, getMembers,
+  approveCertResult, rejectCertResult,
+  getCompetitions, replyMessage, reviewExternalComp,
+  reviewCertTask, getMembers,
 } from "../../lib/db";
 import AdminCertConfig from "./AdminCertConfig";
 import AdminNotify from "./AdminNotify";
 import AdminDailyQuest from "./AdminDailyQuest";
 import { useAuth } from "../../hooks/useAuth";
 import { fmtDT, getCertLevelByScores, certLevelStyle } from "../../lib/constants";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import { Card, Btn, Sel, Inp, TA, Modal, ST, Spinner, Empty, useToast } from "../shared/UI";
 
-export default function AdminReviewCenter() {
+export default function AdminReviewCenter({ pendingCert, messages, pendingExtItems, certTasks }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
 
-  const [pendingCert, setPendingCert] = useState([]);
   const [comps, setComps]             = useState([]);
-  const [extComps, setExtComps]       = useState([]);
-  const [messages, setMessages]       = useState([]);
-  const [certTasks, setCertTasks]     = useState([]);
   const [members, setMembers]         = useState([]);
   const [showConfig, setShowConfig]   = useState(false);
   const [showNotify, setShowNotify]   = useState(false);
@@ -31,20 +25,16 @@ export default function AdminReviewCenter() {
   const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
-    getCompetitions().then(setComps);
-    getMembers().then(setMembers);
-    const u1 = subscribePendingCertResults(setPendingCert);
-    const u2 = subscribeAllMessages(msgs => { setMessages(msgs); setLoading(false); });
-    const qExt = query(collection(db, "externalComps"), orderBy("submittedAt", "desc"));
-    const u3 = onSnapshot(qExt, snap => setExtComps(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const u4 = subscribePendingCertTasks(setCertTasks);
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); };
+    Promise.all([
+      getCompetitions().then(setComps),
+      getMembers().then(setMembers),
+    ]).then(() => setLoading(false));
   }, []);
 
   const compMap = Object.fromEntries(comps.map(c => [c.id, c]));
   const memberMap = Object.fromEntries(members.map(m => [m.id, m]));
-  const pendingExt = extComps.filter(r => r.status === "pending_review");
-  const unrepliedMsgs = messages.filter(m => !m.reply);
+  const pendingExt = pendingExtItems ?? [];
+  const unrepliedMsgs = (messages ?? []).filter(m => !m.reply);
 
   if (loading) return <Spinner />;
 
