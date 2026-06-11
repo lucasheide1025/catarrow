@@ -615,7 +615,7 @@ export async function createNotification(data, operatorId) {
 // 榮耀通知(cert_pass/high_score)全體可見（為了能去祝賀）
 export function subscribeNotifications(memberId, callback, memberCreatedAt) {
   return onSnapshot(
-    query(collection(db, C_NOTIF), orderBy("createdAt", "desc")),
+    query(collection(db, C_NOTIF), orderBy("createdAt", "desc"), limit(50)),
     snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -1025,12 +1025,14 @@ export async function recordMonsterSession(memberId) {
 export async function getMonsterLogs(memberId) {
   try {
     const snap = await getDocs(query(
-      collection(db, C_MONSTER_LOGS),
-      where("memberId", "==", memberId),
-      orderBy("createdAt", "desc"),
-      limit(20)
-    ));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  collection(db, C_MONSTER_LOGS),
+  where("memberId", "==", memberId),
+  limit(50)
+));
+    return snap.docs
+  .map(d => ({ id: d.id, ...d.data() }))
+  .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+  .slice(0, 20);
   } catch { return []; }
 }
  

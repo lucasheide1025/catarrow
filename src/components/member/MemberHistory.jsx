@@ -8,6 +8,7 @@ import { Card, ST, Spinner, Empty } from "../shared/UI";
 // 分類 tab：全部 + 各比賽類型 + 場外賽
 const TABS = [
   { id: "all",     label: "全部" },
+  { id: "monster", label: "⚔️ 打怪" },
   { id: "實體賽",   label: "實體賽" },
   { id: "積分賽",   label: "積分賽" },
   { id: "挑戰賽",   label: "挑戰賽" },

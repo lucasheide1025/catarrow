@@ -1,4 +1,10 @@
 // src/components/member/MonsterBattle.jsx
+import {
+  getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
+  createNotification, saveMonsterLog, getMonsterLogs,
+  getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
+  addMaterials, addPracticeLog,
+} from "../../lib/db";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
@@ -419,6 +425,25 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         setDroppedMaterials([]);
         addChests(profile.id, chestsToAdd).catch(()=>{});
       }
+      // 打怪同步寫 practiceLogs（帶入射手裝備）
+if (profile?.id && !isGuest) {
+  const equipment = profile?.equipment || [];
+  const bowLabel = Array.isArray(equipment) && equipment[0]?.label
+    ? equipment[0].label
+    : (typeof equipment === "string" ? equipment : "打怪練習");
+  const practiceRounds = roundScores.map(rs => rs.scores || []);
+  addPracticeLog(profile.id, {
+    date: new Date().toISOString().slice(0, 10),
+    source: "monster",
+    monsterName: monster.name,
+    mode,
+    battleMode,
+    result,
+    equipment: bowLabel,
+    rounds: practiceRounds,
+    total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+  }, profile.id).catch(() => {});
+}
       const chestCfg=CHEST_TYPES[mainChest.type]||CHEST_TYPES.wood;
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
       addLog({ type:"system", text:isGuest?`📦 寶箱當場打開！`:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
