@@ -41,7 +41,8 @@ export default function MemberMaterials({ onBack }) {
   const [fragLoading,    setFragLoading]    = useState(!!profile?.id);
   const [confirmFrag,    setConfirmFrag]    = useState(null);
   const [crafting,       setCrafting]       = useState(false);
-  const [craftCelebrate, setCraftCelebrate] = useState(null); // { frag, label }
+  const [craftCelebrate,  setCraftCelebrate]  = useState(null); // { frag, label }
+  const [potionCelebrate, setPotionCelebrate] = useState(null); // potion 物件
 
   // ── 寶箱庫存 ─────────────────────────────────────────────
   const [chests,       setChests]       = useState([]);
@@ -152,7 +153,7 @@ export default function MemberMaterials({ onBack }) {
     if (res.ok) {
       if (potion.rarity === "epic" || potion.rarity === "legendary") sfxEpic();
       else sfxBuff();
-      toast(`✨ 合成成功！獲得「${potion.name}」`);
+      setPotionCelebrate(potion);
     } else {
       toast(res.reason || "合成失敗，請稍後再試");
     }
@@ -721,6 +722,37 @@ export default function MemberMaterials({ onBack }) {
               <span>開箱中…</span>
               <span className="animate-spin inline-block" style={{ animationDirection: "reverse" }}>✨</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 藥水合成成功動畫 ────────────────────────────────── */}
+      {potionCelebrate && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-6"
+          onClick={() => setPotionCelebrate(null)}>
+          <div className="text-center" onClick={e => e.stopPropagation()}>
+            <div className="text-8xl mb-4 animate-bounce"
+              style={{ filter: `drop-shadow(0 0 20px ${RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af"})` }}>
+              {potionCelebrate.icon}
+            </div>
+            <div className="font-black text-2xl mb-1"
+              style={{ color: RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af" }}>
+              ⚗️ 合成成功！
+            </div>
+            <div className="text-white font-bold text-lg mb-1">{potionCelebrate.name}</div>
+            <div className="inline-block px-3 py-0.5 rounded-full text-xs font-black mb-3"
+              style={{
+                background: (RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af") + "33",
+                color: RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af",
+              }}>
+              {RARITY_CONFIG[potionCelebrate.rarity]?.label || ""}
+            </div>
+            <div className="text-white/70 text-sm mb-2">{potionCelebrate.effectText}</div>
+            <div className="text-white/50 text-xs mb-6">{potionCelebrate.desc}</div>
+            <button onClick={() => setPotionCelebrate(null)}
+              className="px-8 py-3 rounded-full bg-white text-gray-800 text-sm font-black">
+              收下！
+            </button>
           </div>
         </div>
       )}

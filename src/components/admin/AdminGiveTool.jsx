@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { useAuth } from "../../hooks/useAuth";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { POTIONS, FRAGMENTS, CHEST_TYPES } from "../../lib/itemData";
 import { adminGiveItem } from "../../lib/db";
@@ -25,6 +26,7 @@ const RARITY_COLOR = {
 };
 
 export default function AdminGiveTool() {
+  const { profile } = useAuth();
   const [members,   setMembers]   = useState([]);
   const [selMember, setSelMember] = useState(null);
   const [category,  setCategory]  = useState("material");
@@ -35,8 +37,13 @@ export default function AdminGiveTool() {
   const [search,    setSearch]    = useState("");
 
   useEffect(() => {
-    getDocs(query(collection(db, "members"), orderBy("name")))
-      .then(snap => setMembers(snap.docs.map(d => ({ id:d.id, ...d.data() }))))
+    // 不加 orderBy 避免沒有 name 欄位的文件（例如教練帳號）被 Firestore 排除
+    getDocs(collection(db, "members"))
+      .then(snap => {
+        const list = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+        list.sort((a, b) => (a.name || a.nickname || "").localeCompare(b.name || b.nickname || ""));
+        setMembers(list);
+      })
       .catch(() => {});
   }, []);
 
@@ -70,6 +77,16 @@ export default function AdminGiveTool() {
           placeholder="搜尋射手名稱…"
           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
         />
+        {profile?.id && (
+          <button onClick={() => { setSelMember({ id:profile.id, name: profile.nickname || profile.name || "教練" }); setMsg(""); }}
+            className={`w-full py-2 rounded-xl text-sm font-black border transition-all ${
+              selMember?.id === profile.id
+                ? "bg-orange-500 text-white border-orange-500"
+                : "bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-400"
+            }`}>
+            ⚙️ 自己（教練帳號 · {profile.nickname || profile.name || profile.id}）
+          </button>
+        )}
         <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
           {filteredMembers.map(m => (
             <button key={m.id} onClick={() => { setSelMember(m); setMsg(""); }}
