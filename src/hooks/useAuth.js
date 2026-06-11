@@ -27,7 +27,6 @@ export function AuthProvider({ children }) {
       }
 
       setCurrentUser(fbUser);
-      console.log("🔑 當前登入的 Auth UID:", fbUser.uid);
 
       // 1. 檢查是否為 Admin（教練）
       const adminSnap = await getDoc(doc(db, "admins", fbUser.uid));
@@ -36,24 +35,32 @@ export function AuthProvider({ children }) {
         setRole("admin");
         const adminData = adminSnap.data();
 
-        // 🎯 教練也訂閱自己的 members 文件，合併進 profile。
-        //    ⚠️ 合併順序：admin 先鋪底，members 的資料「蓋在上面」。
-        //    因為徽章、裝備、檢定的「真實值」都存在 members，admins 那份可能是舊的 0，
-        //    所以要讓 members 優先，避免被 admin 的舊值蓋掉。
-        const memberRef = doc(db, "members", fbUser.uid);
+        // ✅ 教練也用 query 找 members，確保 profile.id = members document ID
+        // 這樣所有用 profile.id 讀庫存、打怪記錄的地方都能對到正確文件
+        const memberQuery = query(
+          collection(db, "members"),
+          where("uid", "==", fbUser.uid)
+        );
 
-        profileUnsub = onSnapshot(memberRef, (snap) => {
-          if (snap.exists()) {
+        profileUnsub = onSnapshot(memberQuery, (snapshot) => {
+          if (!snapshot.empty) {
+            const memberDoc = snapshot.docs[0];
             setProfile({
-              id: fbUser.uid,
+              id: memberDoc.id,       // ✅ members document ID（不是 auth uid）
               uid: fbUser.uid,
-              ...adminData,     // admin 身分欄位先鋪底
-              ...snap.data(),   // members 的真實資料蓋上去（徽章、裝備、檢定…）
+              ...adminData,           // admin 身分欄位先鋪底
+              ...memberDoc.data(),    // members 真實資料蓋上去（徽章、裝備、檢定…）
               isAdmin: true,
             });
           } else {
-            // 沒有對應 member 文件（純管理者）
-            setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
+            // 教練沒有對應 member 文件（純管理者，無射手身分）
+            // 這種情況 id 用 auth uid，背包等功能會是空的（正常）
+            setProfile({
+              id: fbUser.uid,
+              uid: fbUser.uid,
+              ...adminData,
+              isAdmin: true,
+            });
           }
           setLoading(false);
         }, (err) => {
@@ -75,7 +82,6 @@ export function AuthProvider({ children }) {
         profileUnsub = onSnapshot(memberQuery, (snapshot) => {
           if (!snapshot.empty) {
             const memberDoc = snapshot.docs[0];
-            console.log("🎯 成功對接會員資料！Document ID 為:", memberDoc.id);
             setProfile({
               id: memberDoc.id,
               uid: fbUser.uid,
