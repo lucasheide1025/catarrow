@@ -3,9 +3,9 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribePartyRoom, markQuestDone as markPartyDone,
-  giveQuestRewards, leavePartyRoom
+  markQuestGaveUp, giveQuestRewards, leavePartyRoom
 } from "../../lib/partyDb";
-import { markQuestDone as markCheckinDone } from "../../lib/db";
+import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin } from "../../lib/db";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 
@@ -32,6 +32,10 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   const [rewarding,  setRewarding]  = useState(false);
   const [copied,     setCopied]     = useState(false);
   const [failMsg,    setFailMsg]    = useState("");
+  const [gaveUpConfirm, setGaveUpConfirm] = useState(false);
+  const [givingUp,  setGivingUp]   = useState(false);
+  const [checkin,   setCheckin]    = useState(undefined);
+  const [checkingIn, setCheckingIn] = useState(false);
 
   const myId = profile?.id;
 
@@ -40,17 +44,49 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
     return unsub;
   }, [roomId]);
 
-  if (!room) return (
+  useEffect(() => {
+    if (!profile?.id) return;
+    const unsub = subscribeMyCheckin(profile.id, c => setCheckin(c ?? null));
+    return unsub;
+  }, [profile?.id]);
+
+  if (!room || checkin === undefined) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <div className="text-white font-bold animate-pulse">載入中…</div>
     </div>
   );
 
+  // ── 報到關卡：尚未報到者必須先報到才能進入 ────────────────────
+  if (!checkin) {
+    async function doCheckin() {
+      setCheckingIn(true);
+      await submitCheckin(profile.id, profile.name, profile.nickname);
+      setCheckingIn(false);
+    }
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col items-center justify-center px-6 gap-5">
+        <div className="text-5xl">📍</div>
+        <div className="text-white font-black text-xl text-center">參加前請先今日報到！</div>
+        <div className="text-slate-400 text-sm text-center leading-relaxed">
+          組隊任務需要確認你今天有到場。<br/>報到送出後即可進入房間。
+        </div>
+        <button onClick={doCheckin} disabled={checkingIn}
+          className="w-full max-w-xs py-4 bg-purple-600 text-white font-black text-base rounded-2xl disabled:opacity-50 active:scale-95 transition-transform">
+          {checkingIn ? "報到中…" : "📍 今日報到"}
+        </button>
+        <button onClick={onLeave}
+          className="text-slate-500 text-sm underline">
+          離開房間
+        </button>
+      </div>
+    );
+  }
+
   const task       = room.task;
   const members    = room.members || {};
   const memberList = Object.entries(members).map(([id, data]) => ({ id, ...data }));
   const me         = members[myId] || {};
-  const allDone    = memberList.length >= 2 && memberList.every(m => m.done);
+  const allDone    = memberList.length >= 2 && memberList.every(m => m.done || m.gaveUp);
   const completed  = room.status === "completed";
   const chestInfo  = room.rewardChestType ? CHEST_TYPES[room.rewardChestType] : null;
   const arrowCount = task?.arrowCount || 6;
@@ -85,9 +121,23 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
     setSubmitting(false);
   }
 
+  async function handleGaveUp() {
+    setGivingUp(true);
+    await markQuestGaveUp(roomId, myId);
+    setGivingUp(false);
+    setGaveUpConfirm(false);
+    setFailMsg("");
+    setArrows([]);
+  }
+
+  async function handleKick(targetId) {
+    await leavePartyRoom(roomId, targetId, false);
+  }
+
   async function handleReward() {
     setRewarding(true);
-    await giveQuestRewards(roomId, memberList.map(m => m.id));
+    const doneIds = memberList.filter(m => m.done).map(m => m.id);
+    await giveQuestRewards(roomId, doneIds);
     setRewarding(false);
   }
 
@@ -180,17 +230,26 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         {memberList.map(m => (
           <div key={m.id}
             className={`rounded-2xl p-3 border-2 transition-all ${
-              m.done ? "bg-emerald-900/40 border-emerald-500" : "bg-slate-700/40 border-slate-600"
+              m.done    ? "bg-emerald-900/40 border-emerald-500" :
+              m.gaveUp  ? "bg-slate-700/20 border-slate-500 opacity-60" :
+                          "bg-slate-700/40 border-slate-600"
             }`}>
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-base">{m.done ? "✅" : "⏳"}</span>
+              <span className="text-base">{m.done ? "✅" : m.gaveUp ? "🏳️" : "⏳"}</span>
               <span className={`font-black text-sm truncate ${m.id === myId ? "text-indigo-300" : "text-white"}`}>
                 {m.name}{m.id === myId ? " (我)" : ""}
               </span>
             </div>
             <div className="text-xs text-slate-400">
-              {m.done ? "已完成！" : "進行中…"}
+              {m.done ? "已完成！" : m.gaveUp ? "已放棄" : "進行中…"}
             </div>
+            {/* 房主踢出未完成的隊友（排除自己） */}
+            {isHost && m.id !== myId && !m.done && !m.gaveUp && !completed && (
+              <button onClick={() => handleKick(m.id)}
+                className="mt-1.5 text-xs text-red-400 underline">
+                移除
+              </button>
+            )}
           </div>
         ))}
         {memberList.length < 2 && (
@@ -201,13 +260,30 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
       </div>
 
       {/* 我的計分 */}
-      {!me.done && task && !completed && (
+      {!me.done && !me.gaveUp && task && !completed && (
         <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-3">
           <div className="text-xs font-black text-slate-400 tracking-widest uppercase">我的成績</div>
 
           {failMsg && (
-            <div className="bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 text-red-300 text-xs font-bold text-center">
-              {failMsg}
+            <div className="bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 flex flex-col gap-2">
+              <div className="text-red-300 text-xs font-bold text-center">{failMsg}</div>
+              {!gaveUpConfirm ? (
+                <button onClick={() => setGaveUpConfirm(true)}
+                  className="text-xs text-slate-400 underline text-center">
+                  放棄本次任務
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={handleGaveUp} disabled={givingUp}
+                    className="flex-1 py-1.5 bg-red-700 text-white text-xs font-black rounded-lg disabled:opacity-50">
+                    {givingUp ? "處理中…" : "確認放棄"}
+                  </button>
+                  <button onClick={() => setGaveUpConfirm(false)}
+                    className="flex-1 py-1.5 bg-slate-600 text-white text-xs font-bold rounded-lg">
+                    取消
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -268,6 +344,12 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         <div className="bg-emerald-900/30 border-2 border-emerald-500 rounded-2xl p-4 text-center">
           <div className="text-emerald-300 font-black text-base">🎉 你已完成！</div>
           <div className="text-emerald-400 text-xs mt-1">等待其他隊友完成…</div>
+        </div>
+      )}
+      {me.gaveUp && !completed && (
+        <div className="bg-slate-700/40 border-2 border-slate-500 rounded-2xl p-4 text-center">
+          <div className="text-slate-300 font-black text-base">🏳️ 你已放棄本次任務</div>
+          <div className="text-slate-400 text-xs mt-1">等待其他隊友完成後房主可發放獎勵</div>
         </div>
       )}
 

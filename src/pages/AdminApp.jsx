@@ -48,9 +48,15 @@ export default function AdminApp() {
   const [pendingExtList,  setPendingExtList]  = useState([]);
   const [certTasksList,   setCertTasksList]   = useState([]);
   const [pendingCheckinN, setPendingCheckinN] = useState(0);
-  const [partyRoomId,   setPartyRoomId]   = useState(null);
-  const [partyRoomType, setPartyRoomType] = useState(null);
-  const [partyIsHost,   setPartyIsHost]   = useState(false);
+  const [partyRoomId,   setPartyRoomId]   = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
+  });
+  const [partyRoomType, setPartyRoomType] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.type || null; } catch { return null; }
+  });
+  const [partyIsHost,   setPartyIsHost]   = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.isHost || false; } catch { return false; }
+  });
 
   const pendingCertN = pendingCertList.length;
   const pendingMsgN  = allMessages.filter(m => !m.reply).length;
@@ -59,9 +65,11 @@ export default function AdminApp() {
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId); setPartyRoomType(type); setPartyIsHost(host);
+    sessionStorage.setItem("admin_party_room", JSON.stringify({ roomId, type, isHost: host }));
     setPage(type === "quest" ? "party-quest" : "party-battle");
   }
   function handleLeaveParty() {
+    sessionStorage.removeItem("admin_party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
     setPage("profile");
   }

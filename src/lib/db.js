@@ -1208,12 +1208,15 @@ export async function openChest(memberId, chestId, contents) {
     const ref  = doc(db, C_CHESTS, memberId);
     const snap = await getDoc(ref);
     const list = snap.exists() ? (snap.data().chests || []) : [];
-    if (!list.some(c => c.id === chestId)) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
+    const chest = list.find(c => c.id === chestId);
+    if (!chest) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
     await setDoc(ref, { chests: list.filter(c => c.id !== chestId), updatedAt: serverTimestamp() }, { merge: true });
 
     if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
     if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
     if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);
+
+    if (chest.type) await updateChestOpenStats(memberId, chest.type);
     return { ok: true };
   } catch (e) {
     console.warn("openChest:", e?.message);

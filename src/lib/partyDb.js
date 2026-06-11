@@ -5,7 +5,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addChests } from "./db";
-import { CHEST_TYPES } from "./itemData";
+import { CHEST_TYPES, makeChests } from "./itemData";
 
 const PARTY = "partyRooms";
 
@@ -14,9 +14,19 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-// 組隊打怪 HP 倍率：1 + (人數-1) * 0.5
-export function partyHPMult(playerCount) {
-  return 1 + (Math.max(1, playerCount) - 1) * 0.5;
+// HP 倍率顯示範圍（用於大廳預覽）
+export function partyHPRange(playerCount) {
+  const extra = Math.max(0, playerCount - 1);
+  return { min: 1 + extra * 0.1, max: 1 + extra * 0.5 };
+}
+
+// 開戰時一次性產生實際隨機倍率（每多一人 +0.1~0.5，不重複計算）
+function genPartyHPMult(playerCount) {
+  let mult = 1.0;
+  for (let i = 1; i < Math.max(1, playerCount); i++) {
+    mult += 0.1 + Math.random() * 0.4;
+  }
+  return Math.round(mult * 100) / 100;
 }
 
 // ── 建立房間 ──────────────────────────────────────────────────
@@ -122,6 +132,19 @@ export async function markQuestDone(roomId, memberId, done) {
   }
 }
 
+// ── Quest：放棄任務 ────────────────────────────────────────────
+export async function markQuestGaveUp(roomId, memberId) {
+  try {
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${memberId}.gaveUp`]: true,
+      [`members.${memberId}.gaveUpAt`]: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── Quest：雙方完成 → 各發寶箱 ────────────────────────────────
 // 寶箱型別加權：wood 50%, iron 30%, gold 15%, epic 4%, cat 1%
 const QUEST_REWARD_TABLE = [
@@ -167,7 +190,8 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
   try {
     const memberIds = Object.keys(room.members || {});
     const playerCount = memberIds.length;
-    const scaledHP = Math.round(monster.hp * partyHPMult(playerCount));
+    const hpMult  = genPartyHPMult(playerCount);
+    const scaledHP = Math.round(monster.hp * hpMult);
 
     // 從 archerStats 計算每人初始 hp（這裡給預設值，實際由各 client 補寫自己的 stats）
     const membersUpdate = {};
@@ -192,6 +216,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
                  tier: monster.tier, family: monster.family },
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
+      hpMult,
       mode, distanceMode, distance,
       round: 1,
       log: [],
@@ -250,55 +275,58 @@ export async function forceSkipPlayer(roomId, memberId) {
 // ── Battle：房主處理回合（所有人 ready 後呼叫）───────────────
 // calcDmgFn(arrows, atk, monsterDEF) → number
 // calcCtrFn(monsterATK, archerDEF)   → number
+// 每兩回合怪物才反擊一次（偶數回合反擊）
 export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
   if (room.processing) return { ok: false, reason: "already processing" };
   try {
     await updateDoc(doc(db, PARTY, roomId), { processing: true });
 
-    const members = room.members || {};
-    const aliveIds = Object.keys(members).filter(id => members[id].alive);
-    const playerCount = aliveIds.length;
+    const members    = room.members || {};
+    const aliveIds   = Object.keys(members).filter(id => members[id].alive);
+    const round      = room.round || 1;
+    const shouldCtr  = round % 2 === 0; // 偶數回合才反擊
 
-    // 1. 各玩家傷害加總
+    // 1. 各玩家傷害
     let totalDmg = 0;
-    const dmgMap = {};
+    const playerLog = [];
     for (const id of aliveIds) {
-      const m = members[id];
+      const m   = members[id];
       const dmg = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
-      dmgMap[id] = dmg;
       totalDmg += dmg;
+      playerLog.push({ id, name: m.name || "射手", dmg, ctr: 0 });
     }
 
     const newMonsterHP = Math.max(0, (room.monsterHP || 0) - totalDmg);
 
-    // 2. 怪物反擊（均分給存活玩家）
-    const ctrPerPlayer = playerCount > 0
-      ? Math.ceil(calcCtrFn(room.monster.atk, 10) / playerCount)
-      : 0;
-
+    // 2. 怪物反擊（各人用自己的 DEF）
     const memberUpdates = {};
     let liveAfter = 0;
-    for (const id of aliveIds) {
-      const m = members[id];
-      const newHP = Math.max(0, (m.hp || 0) - ctrPerPlayer);
-      memberUpdates[`members.${id}.hp`]    = newHP;
-      memberUpdates[`members.${id}.arrows`] = [];
-      memberUpdates[`members.${id}.ready`]  = false;
-      if (newHP <= 0) memberUpdates[`members.${id}.alive`] = false;
+    for (const entry of playerLog) {
+      const m   = members[entry.id];
+      let   ctr = 0;
+      if (shouldCtr) {
+        ctr = Math.ceil(calcCtrFn(room.monster.atk, m.def || 10));
+        entry.ctr = ctr;
+      }
+      const newHP = Math.max(0, (m.hp || 0) - ctr);
+      memberUpdates[`members.${entry.id}.hp`]     = newHP;
+      memberUpdates[`members.${entry.id}.arrows`] = [];
+      memberUpdates[`members.${entry.id}.ready`]  = false;
+      if (newHP <= 0) memberUpdates[`members.${entry.id}.alive`] = false;
       else liveAfter++;
     }
 
-    // 3. 建立 log 條目
+    // 3. log 條目（含每人明細）
     const logEntry = {
-      round: room.round,
-      dmgMap,
+      round,
+      playerLog,       // [{ id, name, dmg, ctr }]
       totalDmg,
       monsterHPBefore: room.monsterHP,
-      monsterHPAfter: newMonsterHP,
-      ctrPerPlayer,
+      monsterHPAfter:  newMonsterHP,
+      counterRound:    shouldCtr,
     };
 
-    // 4. 判斷勝負
+    // 4. 勝負判斷
     let result = null;
     if (newMonsterHP <= 0) result = "win";
     else if (liveAfter === 0) result = "lose";
@@ -306,7 +334,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     await updateDoc(doc(db, PARTY, roomId), {
       ...memberUpdates,
       monsterHP: newMonsterHP,
-      round: (room.round || 1) + 1,
+      round: round + 1,
       log: arrayUnion(logEntry),
       result,
       status: result ? "completed" : "active",
@@ -316,6 +344,34 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     return { ok: true, won: result === "win", lost: result === "lose" };
   } catch (e) {
     await updateDoc(doc(db, PARTY, roomId), { processing: false }).catch(() => {});
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── Battle：房主勝利後為所有人存入待領獎勵 ───────────────────
+export async function storeBattleRewards(roomId, memberIds, monster) {
+  try {
+    const rewardPending = {};
+    for (const mid of memberIds) {
+      const { mainChest, catChest, potionChest } = makeChests(monster);
+      rewardPending[mid] = [mainChest, catChest, potionChest].filter(Boolean);
+    }
+    await updateDoc(doc(db, PARTY, roomId), { rewardPending });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── Battle：玩家領取自己的戰鬥獎勵 ─────────────────────────
+export async function claimBattleReward(roomId, memberId, chests) {
+  try {
+    await addChests(memberId, chests);
+    await updateDoc(doc(db, PARTY, roomId), {
+      rewardClaimed: arrayUnion(memberId),
+    });
+    return { ok: true };
+  } catch (e) {
     return { ok: false, reason: e.message };
   }
 }

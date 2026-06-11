@@ -319,8 +319,14 @@ export default function DailyQuest({ onJoinParty }) {
               <div className="bg-white/10 rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs text-emerald-100">🎯 已選任務：{chosenTask.label}</div>
-                  <button onClick={() => { setChosenIdx(null); setArrows([]); }}
-                    className="text-xs text-emerald-200 underline">換一個</button>
+                  <div className="flex items-center gap-2">
+                    {onJoinParty && (
+                      <button onClick={() => setPartyAsk(true)}
+                        className="text-xs text-indigo-200 underline">👥 招募隊友</button>
+                    )}
+                    <button onClick={() => { setChosenIdx(null); setArrows([]); }}
+                      className="text-xs text-emerald-200 underline">換一個</button>
+                  </div>
                 </div>
                 <div className="text-xs text-emerald-100 flex gap-2 flex-wrap mb-1">
                   <span>📍 {chosenTask.distance}米</span>
