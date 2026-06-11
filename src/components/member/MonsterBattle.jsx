@@ -1,10 +1,4 @@
 // src/components/member/MonsterBattle.jsx
-import {
-  getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
-  createNotification, saveMonsterLog, getMonsterLogs,
-  getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
-  addMaterials, addPracticeLog,
-} from "../../lib/db";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
