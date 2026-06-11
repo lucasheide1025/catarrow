@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import { MATERIALS } from "../../lib/monsterMaterials";
@@ -35,6 +35,12 @@ export default function AdminGiveTool() {
   const [giving,    setGiving]    = useState(false);
   const [msg,       setMsg]       = useState("");
   const [search,    setSearch]    = useState("");
+  const [linkTarget, setLinkTarget] = useState(null);
+  const [linking,    setLinking]   = useState(false);
+  const [linkMsg,    setLinkMsg]   = useState("");
+
+  // 帳號未連結：profile.id === profile.uid 代表沒找到 members 文件
+  const isUnlinked = profile?.id && profile?.uid && profile.id === profile.uid;
 
   useEffect(() => {
     // 不加 orderBy 避免沒有 name 欄位的文件（例如教練帳號）被 Firestore 排除
@@ -60,6 +66,19 @@ export default function AdminGiveTool() {
     }
   }
 
+  async function doLink() {
+    if (!linkTarget || !profile?.uid) return;
+    setLinking(true);
+    setLinkMsg("");
+    try {
+      await updateDoc(doc(db, "members", linkTarget.id), { uid: profile.uid });
+      setLinkMsg("✅ 已連結！請重新整理頁面讓資料生效。");
+    } catch (e) {
+      setLinkMsg("❌ " + (e.message || "連結失敗"));
+    }
+    setLinking(false);
+  }
+
   const filteredMembers = members.filter(m =>
     !search || (m.nickname || m.name || "").includes(search)
   );
@@ -68,6 +87,43 @@ export default function AdminGiveTool() {
   return (
     <div className="p-4 flex flex-col gap-5 max-w-lg mx-auto pb-8">
       <div className="font-black text-xl text-gray-800">🧪 後台道具給予</div>
+
+      {/* ── 帳號未連結警告 ─────────────────────────────────────── */}
+      {isUnlinked && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 flex flex-col gap-3">
+          <div className="font-black text-red-700 text-base">⚠️ 此教練帳號尚未連結射手資料</div>
+          <div className="text-sm text-red-600">
+            Firestore 找不到 uid/email 相符的 members 文件。請選擇您的射手身份，系統會自動補寫 <code className="bg-red-100 px-1 rounded">uid</code> 欄位。
+          </div>
+          <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
+            {members.map(m => (
+              <button key={m.id} onClick={() => setLinkTarget(m)}
+                className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-all ${
+                  linkTarget?.id === m.id
+                    ? "bg-red-600 text-white border-red-600"
+                    : "bg-white text-gray-700 border-gray-300 hover:border-red-400"
+                }`}>
+                {m.nickname || m.name || m.id}
+              </button>
+            ))}
+          </div>
+          <button onClick={doLink} disabled={!linkTarget || linking}
+            className="py-2.5 bg-red-600 text-white font-black rounded-xl disabled:opacity-40 active:scale-95 transition-transform">
+            {linking ? "連結中…" : "🔗 連結此射手身份"}
+          </button>
+          {linkMsg && (
+            <div className={`text-sm font-bold ${linkMsg.startsWith("✅") ? "text-emerald-700" : "text-red-600"}`}>
+              {linkMsg}
+            </div>
+          )}
+          {linkMsg.startsWith("✅") && (
+            <button onClick={() => window.location.reload()}
+              className="py-2 bg-gray-800 text-white font-black rounded-xl text-sm">
+              🔄 重新整理頁面
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 選射手 */}
       <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-col gap-3">

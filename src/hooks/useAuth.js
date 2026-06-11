@@ -2,7 +2,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../lib/firebase";
-import { doc, getDoc, onSnapshot, query, where, collection } from "firebase/firestore";
+import { doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { updateLastLogin } from "../lib/db";
 
@@ -42,27 +42,44 @@ export function AuthProvider({ children }) {
           where("uid", "==", fbUser.uid)
         );
 
-        profileUnsub = onSnapshot(memberQuery, (snapshot) => {
+        profileUnsub = onSnapshot(memberQuery, async (snapshot) => {
           if (!snapshot.empty) {
             const memberDoc = snapshot.docs[0];
             setProfile({
-              id: memberDoc.id,       // ✅ members document ID（不是 auth uid）
-              uid: fbUser.uid,
-              ...adminData,           // admin 身分欄位先鋪底
-              ...memberDoc.data(),    // members 真實資料蓋上去（徽章、裝備、檢定…）
-              isAdmin: true,
-            });
-          } else {
-            // 教練沒有對應 member 文件（純管理者，無射手身分）
-            // 這種情況 id 用 auth uid，背包等功能會是空的（正常）
-            setProfile({
-              id: fbUser.uid,
+              id: memberDoc.id,
               uid: fbUser.uid,
               ...adminData,
+              ...memberDoc.data(),
               isAdmin: true,
             });
+            setLoading(false);
+          } else {
+            // uid 欄位缺失或不符：用 email 備用查詢，找到後自動補寫 uid
+            try {
+              const emailSnap = await getDocs(
+                query(collection(db, "members"), where("email", "==", fbUser.email))
+              );
+              if (!emailSnap.empty) {
+                const memberDoc = emailSnap.docs[0];
+                // 自動修正 members 文件的 uid 欄位，下次登入直接命中
+                updateDoc(doc(db, "members", memberDoc.id), { uid: fbUser.uid }).catch(() => {});
+                setProfile({
+                  id: memberDoc.id,
+                  uid: fbUser.uid,
+                  ...adminData,
+                  ...memberDoc.data(),
+                  isAdmin: true,
+                });
+              } else {
+                // 真的沒有 member 文件（純管理者）
+                setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
+              }
+            } catch (e) {
+              console.warn("教練 members 備用查詢失敗：", e.message);
+              setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
+            }
+            setLoading(false);
           }
-          setLoading(false);
         }, (err) => {
           console.warn("讀取教練 members 文件失敗，改用 admin 資料：", err.message);
           setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
