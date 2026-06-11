@@ -6,8 +6,6 @@ import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle } from "../../lib/constants";
 import { Card, ST, Spinner, BadgePip } from "../shared/UI";
-import HonorTicker from "./HonorTicker";
-import HonorCelebration from "./HonorCelebration";
 import ShareCard from "./ShareCard";
 import DailyQuest from "./DailyQuest";
 
@@ -91,13 +89,6 @@ export default function MemberHome({ onPageChange }) {
   return (
     <div className="p-4 flex flex-col gap-4">
       {showShare && <ShareCard onClose={() => setShowShare(false)} />}
-
-      <HonorCelebration
-        memberId={profile?.id}
-        memberCreatedAt={profile?.createdAt}
-        onGoPage={onPageChange}
-      />
-      <HonorTicker memberId={profile?.id} memberCreatedAt={profile?.createdAt} onGoPage={onPageChange} />
       <DailyQuest />
 
       {/* 打怪快捷入口 */}
