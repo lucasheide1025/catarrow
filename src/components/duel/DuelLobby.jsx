@@ -44,7 +44,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   }, [profile?.id]); // eslint-disable-line
 
   const myId   = profile?.id || profile?.uid || "guest";
-  const myName = profile?.name || (isGuest ? "訪客" : "射手");
+  const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
 
   // 訂閱等待室
   useEffect(() => {

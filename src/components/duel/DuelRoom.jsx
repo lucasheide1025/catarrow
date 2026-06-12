@@ -119,7 +119,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const lastRoundFired  = useRef(0); // 防止同一回合重複觸發 processDuelRound
 
   const myId   = profile?.id || profile?.uid || "guest";
-  const myName = profile?.name || (isGuest ? "訪客" : "射手");
+  const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
 
   // 我在哪一隊
   const myTeam = room
