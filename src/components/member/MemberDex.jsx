@@ -107,6 +107,8 @@ export default function MemberDex({ onBack }) {
 
   const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
+  // 快取給首頁/我的頁面使用，避免重複讀取
+  if (profile?.id) { try { sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify({ totalUnlocked: stats.totalUnlocked, totalAll: stats.totalAll, gold: stats.gold, silver: stats.silver, bronze: stats.bronze })); } catch {} }
 
   // ── 偵測新解鎖，加入提示佇列 ──
   // localStorage 記錄已提示過的成就，跨 mount/重整/換頁都不重複觸發

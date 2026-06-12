@@ -176,6 +176,13 @@ export async function resetDuelRoom(roomId, room) {
   } catch (e) { return { ok: false }; }
 }
 
+// ── 清除卡住的 processing 旗標（host 進場時呼叫）─────────────
+export async function clearDuelProcessing(roomId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), { processing: false });
+  } catch {}
+}
+
 // ── 處理回合（host）────────────────────────────────────────
 // calcDmgFn(arrows, atk, targetDef) → { dmg, crits, arrowBreakdown }
 export async function processDuelRound(roomId, room, calcDmgFn) {

@@ -206,7 +206,9 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
             <div>加入日期：{profile?.joinDate}</div>
             <div>射齡：{calcAge(profile?.joinDate)}{getCohort(profile?.joinDate) != null ? `　${cohortLabel(getCohort(profile?.joinDate))}` : ""}</div>
             {(() => {
-              const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, cardData });
+              let ds;
+              try { const v = sessionStorage.getItem(`dex_stats_${profile?.id}`); if (v) ds = JSON.parse(v); } catch {}
+              if (!ds) ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, cardData });
               return (
                 <div className="flex items-center gap-3 flex-wrap mt-0.5">
                   <span>🎖️ 圖鑑 {ds.totalUnlocked}/{ds.totalAll}</span>

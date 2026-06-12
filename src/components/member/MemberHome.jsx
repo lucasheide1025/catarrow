@@ -231,13 +231,9 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
                 <CertLevelPip level={certification?.level || "none"} />
               </div>
               {(() => {
-                const ds = computeDexStats({
-                  member: profile, certification, certRecords,
-                  checkinCount: profile?.dailyQuestCount || 0,
-                  granted: dexGrants,
-                  physicalMax: dexConfig.physicalMax,
-                  pointMax: dexConfig.pointMax,
-                });
+                let ds;
+                try { const v = sessionStorage.getItem(`dex_stats_${profile?.id}`); if (v) ds = JSON.parse(v); } catch {}
+                if (!ds) ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax });
                 return (
                   <div className="text-white/60 text-xs mt-1 flex items-center gap-3 flex-wrap">
                     <span>🎖️ 圖鑑 {ds.totalUnlocked}/{ds.totalAll}</span>

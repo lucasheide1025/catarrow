@@ -828,21 +828,21 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           className="rounded-2xl p-5 text-left border-2 border-green-200 bg-green-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟢 新手模式</div>
           <div className="font-black text-gray-800 mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
-          <div className="text-gray-500 text-sm">怪物 HP×10，射手基礎 HP 1000。每2箭怪物反擊一次，傷害穩定。</div>
+          <div className="text-gray-500 text-sm">怪物 HP×1.5，使用本人射手數值。每2箭怪物反擊一次，傷害穩定。</div>
           <div className="text-green-600 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🎓 學生模式</div>
           <div className="font-black text-gray-800 mb-1">自選距離，含爆擊（距離越近越高）</div>
-          <div className="text-gray-500 text-sm">怪物 HP×15，射手基礎 HP 1500。動態模式每回合距離縮短 1~5 米。</div>
+          <div className="text-gray-500 text-sm">怪物 HP×2，使用本人射手數值。動態模式每回合距離縮短 1~5 米。</div>
           <div className="text-blue-600 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-orange-200 bg-orange-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟠 老手模式</div>
-          <div className="font-black text-gray-800 mb-1">怪物增強，射手基礎HP 1000，加成無上限</div>
-          <div className="text-gray-500 text-sm">怪物 HP×5×1.5。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
+          <div className="font-black text-gray-800 mb-1">怪物大幅增強，射手最低 600 HP，加成無上限</div>
+          <div className="text-gray-500 text-sm">怪物 HP×4、ATK×2、DEF×2。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
           <div className="text-orange-600 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
         </button>
 
@@ -994,7 +994,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           )}
           <div className="text-purple-200 text-xs mb-4">
             {battleMode==="zombie"?"🧟 殭屍靶紙":"🎯 分數靶紙"}　
-            {mode==="veteran"?"⚔️ 老手・起始15米":"🟢 新手・固定10米"}　每 {ARROWS_PER_COUNTER} 箭反擊
+            {mode==="veteran"?"⚔️ 老手・起始15米":mode==="student"?`🎓 學生・${distanceMode==="dynamic"?"動態15m起":`固定${selectedDistance}米`}`:`🟢 新手・固定${selectedDistance}米`}　每 {ARROWS_PER_COUNTER} 箭反擊
           </div>
 
           {/* ⚗️ 戰前喝藥（只影響本場） */}

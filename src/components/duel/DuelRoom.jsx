@@ -5,11 +5,12 @@ import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
-  updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult
+  updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
+  clearDuelProcessing,
 } from "../../lib/duelDb";
 
 const ARROWS = 5;
-const ALL_PARTS = BODY_PARTS.map(p => p.id);
+const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
 const SCORE_BTNS = [
   { label:"X", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
   { label:"7", score:7 }, { label:"6", score:6 }, { label:"5", score:5 },
@@ -56,7 +57,7 @@ function calcDmgFn(arrows, atk, targetDef) {
   for (const arrow of processedArrows) {
     const score = arrow.score ?? 0;
     const part  = resolveHitPart(score, ALL_PARTS);
-    const pMult = part?.multiplier ?? 1.0;
+    const pMult = part?.mult ?? 1.0;
     if (!score || pMult === 0) {
       arrowBreakdown.push({ label: "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
       continue;
@@ -109,9 +110,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [resultShown, setResultShown] = useState(false);
   const [duelStats, setDuelStats]     = useState(null);
   const [cheerMsg, setCheerMsg]       = useState("");
-  const lastLogLen   = useRef(0);
-  const lastCheerTs  = useRef(0);
-  const heartbeatRef = useRef(null);
+  const lastLogLen      = useRef(0);
+  const lastCheerTs     = useRef(0);
+  const heartbeatRef    = useRef(null);
+  const lastRoundFired  = useRef(0); // 防止同一回合重複觸發 processDuelRound
 
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.name || (isGuest ? "訪客" : "射手");
@@ -124,6 +126,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // ── 訂閱房間 ────────────────────────────────────────────
   useEffect(() => {
     const unsub = subscribeDuelRoom(roomId, r => setRoom(r));
+    // host 進場時清除可能卡住的 processing（前次異常遺留）
+    if (isHost) clearDuelProcessing(roomId).catch(() => {});
     return unsub;
   }, [roomId]);
 
@@ -199,6 +203,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // ── Host 偵測所有人就緒 → 處理回合 ──────────────────────
   useEffect(() => {
     if (!isHost || !room || room.status !== "active" || room.processing) return;
+    const currentRound = room.round || 1;
+    if (lastRoundFired.current >= currentRound) return; // 本回合已觸發過
     const teamA = room.teamA || {};
     const teamB = room.teamB || {};
     const aliveA = Object.values(teamA).filter(m => m.alive);
@@ -206,6 +212,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (!aliveA.length || !aliveB.length) return;
     const allReady = [...aliveA, ...aliveB].every(m => m.ready);
     if (!allReady) return;
+    lastRoundFired.current = currentRound;
     processDuelRound(roomId, room, calcDmgFn);
   }, [room]);
 
