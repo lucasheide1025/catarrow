@@ -193,45 +193,61 @@ export async function clearDuelProcessing(roomId) {
 // calcDmgFn(arrows, atk, targetDef) → { dmg, crits, arrowBreakdown }
 export async function processDuelRound(roomId, room, calcDmgFn) {
   try {
-    // 全部在記憶體計算完，一次寫入 Firestore（省去 processing:true 的中間寫入）
     const teamA = room.teamA || {};
     const teamB = room.teamB || {};
     const aliveA = Object.keys(teamA).filter(id => teamA[id].alive);
     const aliveB = Object.keys(teamB).filter(id => teamB[id].alive);
 
-    // 隨機事件
-    const eventRaw = shouldTriggerEvent() ? drawRandomEvent() : null;
-    const event = eventRaw
+    // 隨機事件（決鬥模式才能抽到 duelOnly 事件）
+    const eventRaw = shouldTriggerEvent() ? drawRandomEvent("duel") : null;
+    let eventData = eventRaw
       ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
       : null;
     const eff = eventRaw?.effect || {};
 
-    // 隨機配對目標（每攻擊者 → 隨機存活對手）
+    // ── 叛變：換隊先行，本回合用換後隊伍計算攻擊 ──────────
+    let effTeamA = teamA, effTeamB = teamB;
+    let effAliveA = aliveA, effAliveB = aliveB;
+
+    if (eventData?.id === "betrayal" && room.type !== "1v1" && aliveA.length > 0 && aliveB.length > 0) {
+      const swapAId = aliveA[Math.floor(Math.random() * aliveA.length)];
+      const swapBId = aliveB[Math.floor(Math.random() * aliveB.length)];
+      eventData = { ...eventData, swapAId, swapAName: teamA[swapAId]?.name || "?", swapBId, swapBName: teamB[swapBId]?.name || "?" };
+      // 建立換隊後的有效隊伍（淺拷貝後交換成員）
+      effTeamA = { ...teamA, [swapBId]: teamB[swapBId] };
+      effTeamB = { ...teamB, [swapAId]: teamA[swapAId] };
+      delete effTeamA[swapAId];
+      delete effTeamB[swapBId];
+      effAliveA = aliveA.filter(id => id !== swapAId).concat([swapBId]);
+      effAliveB = aliveB.filter(id => id !== swapBId).concat([swapAId]);
+    } else if (eventData?.id === "betrayal") {
+      eventData = null; // 1v1 或無存活，不觸發叛變
+    }
+
+    // 隨機配對目標
     function pickTarget(myTeam) {
-      const pool = myTeam === "A" ? aliveB : aliveA;
+      const pool = myTeam === "A" ? effAliveB : effAliveA;
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
     // 計算每人傷害
-    const attacks = []; // { attackerId, attackerTeam, targetId, dmg, crits, arrowBreakdown, luckyEvent }
-    for (const id of aliveA) {
-      const m = teamA[id];
+    const attacks = [];
+    for (const id of effAliveA) {
+      const m = effTeamA[id];
       const targetId = pickTarget("A");
       if (!targetId) continue;
-      const targetDef = (teamB[targetId]?.def || 10);
-      const raw = calcDmgFn(m.arrows || [], m.atk || 20, targetDef);
+      const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamB[targetId]?.def || 10);
       const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
       const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
       const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
       const luckyEvent = typeof raw === "object" ? (raw.luckyEvent || null)  : null;
       attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits, arrowBreakdown, luckyEvent });
     }
-    for (const id of aliveB) {
-      const m = teamB[id];
+    for (const id of effAliveB) {
+      const m = effTeamB[id];
       const targetId = pickTarget("B");
       if (!targetId) continue;
-      const targetDef = (teamA[targetId]?.def || 10);
-      const raw = calcDmgFn(m.arrows || [], m.atk || 20, targetDef);
+      const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamA[targetId]?.def || 10);
       const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
       const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
       const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
@@ -239,7 +255,7 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
       attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits, arrowBreakdown, luckyEvent });
     }
 
-    // 加總傷害到各目標
+    // 加總傷害
     const hpDelta = {};
     for (const atk of attacks) {
       let dmg = atk.dmg;
@@ -249,32 +265,59 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
 
     // 更新 HP
     const updates = { round: (room.round || 1) + 1 };
-    for (const id of aliveA) {
-      let hp = Math.max(0, (teamA[id].hp || 0) + (hpDelta[id] || 0));
-      if (eff.healArcher) hp = Math.min(teamA[id].maxHP, hp + eff.healArcher);
-      updates[`teamA.${id}.hp`] = hp;
-      updates[`teamA.${id}.arrows`] = [];
-      updates[`teamA.${id}.ready`] = false;
-      if (hp <= 0) updates[`teamA.${id}.alive`] = false;
-    }
-    for (const id of aliveB) {
-      let hp = Math.max(0, (teamB[id].hp || 0) + (hpDelta[id] || 0));
-      if (eff.healArcher) hp = Math.min(teamB[id].maxHP, hp + eff.healArcher);
-      updates[`teamB.${id}.hp`] = hp;
-      updates[`teamB.${id}.arrows`] = [];
-      updates[`teamB.${id}.ready`] = false;
-      if (hp <= 0) updates[`teamB.${id}.alive`] = false;
+
+    if (eventData?.swapAId) {
+      // 叛變：整體重建 teamA/teamB（成員跨隊，無法用 dot notation 逐欄寫入）
+      const newTeamA = {}, newTeamB = {};
+      for (const [id, m] of Object.entries(effTeamA)) {
+        if (!m.alive) { newTeamA[id] = { ...m, arrows: [], ready: false }; continue; }
+        let hp = Math.max(0, (m.hp || 0) + (hpDelta[id] || 0));
+        if (eff.healArcher) hp = Math.min(m.maxHP || 0, hp + eff.healArcher);
+        newTeamA[id] = { ...m, hp, arrows: [], ready: false, alive: hp > 0 };
+      }
+      for (const [id, m] of Object.entries(effTeamB)) {
+        if (!m.alive) { newTeamB[id] = { ...m, arrows: [], ready: false }; continue; }
+        let hp = Math.max(0, (m.hp || 0) + (hpDelta[id] || 0));
+        if (eff.healArcher) hp = Math.min(m.maxHP || 0, hp + eff.healArcher);
+        newTeamB[id] = { ...m, hp, arrows: [], ready: false, alive: hp > 0 };
+      }
+      updates.teamA = newTeamA;
+      updates.teamB = newTeamB;
+    } else {
+      // 一般：逐欄位更新（dot notation）
+      for (const id of effAliveA) {
+        let hp = Math.max(0, (effTeamA[id].hp || 0) + (hpDelta[id] || 0));
+        if (eff.healArcher) hp = Math.min(effTeamA[id].maxHP, hp + eff.healArcher);
+        updates[`teamA.${id}.hp`] = hp;
+        updates[`teamA.${id}.arrows`] = [];
+        updates[`teamA.${id}.ready`] = false;
+        if (hp <= 0) updates[`teamA.${id}.alive`] = false;
+      }
+      for (const id of effAliveB) {
+        let hp = Math.max(0, (effTeamB[id].hp || 0) + (hpDelta[id] || 0));
+        if (eff.healArcher) hp = Math.min(effTeamB[id].maxHP, hp + eff.healArcher);
+        updates[`teamB.${id}.hp`] = hp;
+        updates[`teamB.${id}.arrows`] = [];
+        updates[`teamB.${id}.ready`] = false;
+        if (hp <= 0) updates[`teamB.${id}.alive`] = false;
+      }
     }
 
-    // 勝負判斷
-    const aliveAAfter = aliveA.filter(id => (updates[`teamA.${id}.hp`] ?? teamA[id].hp) > 0);
-    const aliveBAfter = aliveB.filter(id => (updates[`teamB.${id}.hp`] ?? teamB[id].hp) > 0);
+    // 勝負判斷（統一用 updates 最終結果）
+    let aliveAAfter, aliveBAfter;
+    if (eventData?.swapAId) {
+      aliveAAfter = Object.values(updates.teamA).filter(m => m.alive);
+      aliveBAfter = Object.values(updates.teamB).filter(m => m.alive);
+    } else {
+      aliveAAfter = effAliveA.filter(id => (updates[`teamA.${id}.hp`] ?? effTeamA[id].hp) > 0);
+      aliveBAfter = effAliveB.filter(id => (updates[`teamB.${id}.hp`] ?? effTeamB[id].hp) > 0);
+    }
     let result = null;
     if (aliveAAfter.length === 0 && aliveBAfter.length === 0) result = "draw";
     else if (aliveAAfter.length === 0) result = "teamB";
     else if (aliveBAfter.length === 0) result = "teamA";
 
-    const logEntry = { round: room.round || 1, event, attacks, hpDelta };
+    const logEntry = { round: room.round || 1, event: eventData, attacks, hpDelta };
     updates.log = arrayUnion(logEntry);
     if (result) { updates.result = result; updates.status = "finished"; }
 

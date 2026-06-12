@@ -95,14 +95,20 @@ export const RANDOM_EVENTS = [
   { id: "cute_cat",      type: "neutral", icon: "😸", title: "哈吉在旁邊喵",
     desc: "哈吉喵了一聲給你加油，心情好了，HP 回復 20！",
     effect: { healArcher: 20 } },
+
+  // ── 決鬥專屬 ──
+  { id: "betrayal", type: "duel_special", duelOnly: true, icon: "🗡️", title: "隊員叛變！",
+    desc: "有人突然倒戈！兩隊各有一名成員強制交換！",
+    effect: {} },
 ];
 
 // 每回合觸發機率（0~1）
 export const EVENT_CHANCE = 0.2;
 
-// 隨機抽一個事件
-export function drawRandomEvent() {
-  return RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
+// 隨機抽一個事件（mode: "monster" 排除 duelOnly 事件）
+export function drawRandomEvent(mode = "monster") {
+  const pool = mode === "duel" ? RANDOM_EVENTS : RANDOM_EVENTS.filter(e => !e.duelOnly);
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // 判斷是否觸發

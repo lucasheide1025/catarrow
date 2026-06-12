@@ -109,6 +109,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [flashIds, setFlashIds]       = useState({});   // { memberId: true }
   const [resultShown, setResultShown] = useState(false);
   const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
+  const [eventPhase,  setEventPhase]  = useState(false); // 事件暫停畫面
   const [duelStats, setDuelStats]     = useState(null);
   const [cheerMsg, setCheerMsg]       = useState("");
   const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
@@ -153,9 +154,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     });
     setDisplayHp(preHp);
     setRevealEntry(entry);
-    setRevealIdx(0);
     setSubmitted(false);
     setMyArrows([]);
+    // 有事件 → 先全員暫停看事件畫面，之後再播逐箭動畫
+    if (entry.event) {
+      setEventPhase(true);
+    } else {
+      setRevealIdx(0);
+    }
   }, [room?.log?.length]);
 
   // ── 逐箭揭露計時器 ──────────────────────────────────────
@@ -199,6 +205,13 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     }, 1200);
     return () => clearTimeout(t);
   }, [revealIdx, revealEntry]);
+
+  // 事件暫停：4 秒後自動進入逐箭揭露
+  useEffect(() => {
+    if (!eventPhase) return;
+    const t = setTimeout(() => { setEventPhase(false); setRevealIdx(0); }, 4000);
+    return () => clearTimeout(t);
+  }, [eventPhase]);
 
   // 揭露完畢 → 清暫存血量、死亡音效
   useEffect(() => {
@@ -282,11 +295,17 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   async function handleCheer() {
     await sendDuelCheer(roomId, myName);
   }
+  function startReveal() {
+    setEventPhase(false);
+    setRevealIdx(0);
+  }
+
   async function handleReset() {
     if (!isHost || !room) return;
     await resetDuelRoom(roomId, room);
     setResultShown(false);
     setShowResult(false);
+    setEventPhase(false);
     setRevealEntry(null);
     setRevealIdx(-1);
     lastLogLen.current = 0;
@@ -380,6 +399,51 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     );
   }
 
+  // ── 事件暫停畫面（全員同步看到，4 秒後或點擊繼續）────────
+  if (eventPhase && revealEntry?.event) {
+    const ev = revealEntry.event;
+    const isBetrayal  = ev.id === "betrayal";
+    const bgStyle = isBetrayal
+      ? { background: "linear-gradient(135deg,#1a0533,#3b1a6e)" }
+      : ev.type === "debuff"
+        ? { background: "linear-gradient(135deg,#1a0000,#4a0000)" }
+        : { background: "linear-gradient(135deg,#001a0a,#004422)" };
+    const titleColor = isBetrayal ? "text-purple-200" : ev.type === "debuff" ? "text-red-300" : "text-green-300";
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-6" style={bgStyle}>
+        <style>{DUEL_CSS}</style>
+
+        <div className="text-center max-w-xs" style={{ animation:"result-pop .5s cubic-bezier(.34,1.56,.64,1) forwards" }}>
+          <div className="text-8xl mb-4">{ev.icon}</div>
+          <div className={`text-3xl font-black mb-3 ${titleColor}`}>{ev.title}</div>
+          <div className="text-slate-300 text-sm leading-relaxed">{ev.desc}</div>
+
+          {/* 叛變事件：顯示交換的成員 */}
+          {isBetrayal && ev.swapAName && ev.swapBName && (
+            <div className="mt-5 flex items-center justify-center gap-4 p-4 rounded-2xl bg-white/10 border border-white/20">
+              <div className="text-center">
+                <div className="text-xs text-blue-300 mb-1">隊伍 A</div>
+                <div className="font-black text-white">{ev.swapAName}</div>
+              </div>
+              <div className="text-3xl animate-pulse text-purple-300">⇄</div>
+              <div className="text-center">
+                <div className="text-xs text-red-300 mb-1">隊伍 B</div>
+                <div className="font-black text-white">{ev.swapBName}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button onClick={startReveal}
+          className="px-8 py-3 rounded-2xl font-black text-sm text-white border border-white/30 bg-white/10 active:scale-95 transition-all">
+          繼續 →
+        </button>
+        <div className="text-slate-500 text-xs">4 秒後自動繼續</div>
+      </div>
+    );
+  }
+
   // ── 戰鬥主畫面 ──────────────────────────────────────────
   const teamA = room.teamA || {};
   const teamB = room.teamB || {};
@@ -420,7 +484,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
       {/* 事件橫幅 */}
       {isRevealing && revealEntry?.event && (
-        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border ${revealEntry.event.type === "positive" ? "bg-green-900/40 border-green-500/40 text-green-300" : "bg-red-900/40 border-red-500/40 text-red-300"}`}
+        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border ${revealEntry.event.type === "buff" ? "bg-green-900/40 border-green-500/40 text-green-300" : revealEntry.event.type === "duel_special" ? "bg-purple-900/40 border-purple-500/40 text-purple-300" : "bg-red-900/40 border-red-500/40 text-red-300"}`}
           style={{ animation:"slide-in .3s ease" }}>
           {revealEntry.event.icon} {revealEntry.event.title} — {revealEntry.event.desc}
         </div>
