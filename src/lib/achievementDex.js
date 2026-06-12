@@ -4,6 +4,7 @@
 import { calcBadgePoints, getCertLevel } from "./constants";
 import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
 import { MONSTERS } from "./monsterData";
+import { POTIONS } from "./itemData";
 
 export const RARITY_STYLE = {
   common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
@@ -33,6 +34,7 @@ export const DEX_CATEGORIES = [
   { id: "monster",  label: "👹 打怪" },
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製" },
+  { id: "potion",   label: "🧪 藥水" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -311,6 +313,24 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "frag_forge_5",  cat: "forge", icon: "💎", name: "鑄章大師",   rarity: "epic",
     desc: "累積合成章碎片 5 次",
     check: c => (c.craftStats?.fragsCrafted || 0) >= 5 },
+
+  // ══ 藥水使用 — 累積場數 ══
+  { id: "potion_any_1",  cat: "potion", icon: "🧪", name: "初識藥水",   rarity: "common",
+    desc: "第一次在戰鬥中使用藥水",
+    check: c => Object.values(c.potionDex?.used || {}).reduce((s,n)=>s+n,0) >= 1 },
+  { id: "potion_any_10", cat: "potion", icon: "💊", name: "藥水依賴",   rarity: "uncommon",
+    desc: "累積使用藥水 10 次",
+    check: c => Object.values(c.potionDex?.used || {}).reduce((s,n)=>s+n,0) >= 10 },
+  { id: "potion_any_30", cat: "potion", icon: "⚗️", name: "藥水大戶",   rarity: "rare",
+    desc: "累積使用藥水 30 次",
+    check: c => Object.values(c.potionDex?.used || {}).reduce((s,n)=>s+n,0) >= 30 },
+  { id: "potion_any_50", cat: "potion", icon: "🔮", name: "藥水狂熱者", rarity: "epic",
+    desc: "累積使用藥水 50 次",
+    check: c => Object.values(c.potionDex?.used || {}).reduce((s,n)=>s+n,0) >= 50 },
+  { id: "potion_all_9",  cat: "potion", icon: "🌈", name: "全種藥師",   rarity: "epic",
+    desc: "9 種藥水各使用至少一次", hidden: true,
+    riddle: "九味靈藥，各嚐過一遍…",
+    check: c => POTIONS.every(p => (c.potionDex?.used?.[p.id] || 0) >= 1) },
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
@@ -381,6 +401,29 @@ for (const ct of CHEST_ACH_TYPES) {
   }
 }
 
+// ── 動態加入：每種藥水使用次數成就 ──────────────────────────────
+const POTION_RARITY_MILESTONES = {
+  common:    [[1,"common","初嘗"], [3,"uncommon","慣用"], [5,"rare","老手"], [10,"epic","沉迷"]],
+  rare:      [[1,"uncommon","初嘗"], [3,"rare","慣用"], [5,"epic","老手"]],
+  epic:      [[1,"rare","初嘗"], [3,"epic","慣用"]],
+  legendary: [[1,"epic","初嘗"]],
+};
+
+for (const potion of POTIONS) {
+  const milestones = POTION_RARITY_MILESTONES[potion.rarity] || POTION_RARITY_MILESTONES.common;
+  for (const [count, rarity, suffix] of milestones) {
+    AUTO_ACHIEVEMENTS.push({
+      id:     `potion_${potion.id}_${count}`,
+      cat:    "potion",
+      icon:   potion.icon,
+      name:   `${potion.name} · ${suffix}`,
+      rarity,
+      desc:   `使用「${potion.name}」${count} 次`,
+      check:  c => (c.potionDex?.used?.[potion.id] || 0) >= count,
+    });
+  }
+}
+
 // ── 後台授予的特殊成就 ──────────────────────────────────────
 export const SPECIAL_GRANTS = [
   { id: "beat_coach",  cat: "special", icon: "⚔️", name: "擊敗主教練",     rarity: "legendary", hidden: true,
@@ -434,8 +477,8 @@ export function buildCohortAchievement(joinDate) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats }) {
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {} };
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex }) {
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {} };
 
   let autoUnlocked = 0;
   AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });

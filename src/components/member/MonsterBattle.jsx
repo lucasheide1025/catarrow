@@ -6,7 +6,7 @@ import {
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
-  addCoins, addMonsterCard,
+  addCoins, addMonsterCard, recordPotionUsed,
 } from "../../lib/db";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
@@ -375,6 +375,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     }
     if (selectedPotions.length>0 && profile?.id && !isGuest) {
       await usePotions(profile.id, selectedPotions).catch(()=>{});
+      await recordPotionUsed(profile.id, selectedPotions).catch(()=>{});
     }
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);

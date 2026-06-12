@@ -1521,6 +1521,25 @@ export function subscribeChestStats(memberId, callback) {
   );
 }
 
+// ─── 藥水使用圖鑑 ──────────────────────────────────────────
+const C_POTION_DEX = "potionDex";
+
+export function subscribePotionDex(memberId, callback) {
+  return onSnapshot(
+    doc(db, C_POTION_DEX, memberId),
+    snap => callback(snap.exists() ? snap.data() : {}),
+    err  => { console.warn("subscribePotionDex:", err.message); callback({}); }
+  );
+}
+
+export async function recordPotionUsed(memberId, potionIds) {
+  if (!memberId || !potionIds?.length || memberId.startsWith("guest")) return;
+  const ref = doc(db, C_POTION_DEX, memberId);
+  const updates = { updatedAt: serverTimestamp() };
+  for (const id of potionIds) updates[`used.${id}`] = increment(1);
+  await setDoc(ref, updates, { merge: true });
+}
+
 // ─── 後台給予道具 ───────────────────────────────────────────
 export async function adminGiveItem(memberId, category, itemId, qty) {
   if (!memberId || !category || !itemId || qty < 1) return { ok: false, reason: "參數錯誤" };

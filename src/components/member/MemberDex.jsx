@@ -2,7 +2,7 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats } from "../../lib/db";
+import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex } from "../../lib/db";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
   buildRoundAchievements, computeDexStats, buildCohortAchievement,
@@ -77,6 +77,7 @@ export default function MemberDex({ onBack }) {
   const [monsterDex, setMonsterDex]       = useState({});
   const [craftStats, setCraftStats]       = useState({});
   const [chestStats, setChestStats]       = useState({});
+  const [potionDex,  setPotionDex]        = useState({});
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
@@ -91,14 +92,15 @@ export default function MemberDex({ onBack }) {
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     getCertification(profile.id).then(setCertification).catch(() => {});
     getDexConfig().then(setConfig).catch(() => {});
-    const unsub      = subscribeDexGrants(profile.id, setGranted);
-    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
-    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
-    const unsubChest = subscribeChestStats(profile.id, setChestStats);
-    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); };
+    const unsub        = subscribeDexGrants(profile.id, setGranted);
+    const unsubMon     = subscribeMonsterDex(profile.id, setMonsterDex);
+    const unsubCraft   = subscribeCraftStats(profile.id, setCraftStats);
+    const unsubChest   = subscribeChestStats(profile.id, setChestStats);
+    const unsubPotion  = subscribePotionDex(profile.id, setPotionDex);
+    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); };
   }, [profile?.id]);
 
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats };
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
 
   // ── 偵測新解鎖，加入提示佇列 ──
