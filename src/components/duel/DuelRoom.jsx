@@ -111,6 +111,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
   const [duelStats, setDuelStats]     = useState(null);
   const [cheerMsg, setCheerMsg]       = useState("");
+  const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
   const lastLogLen      = useRef(0);
   const lastCheerTs     = useRef(0);
   const heartbeatRef    = useRef(null);
@@ -145,6 +146,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (room.log.length <= lastLogLen.current) return;
     lastLogLen.current = room.log.length;
     const entry = room.log[room.log.length - 1];
+    // 從 hpDelta 反推回合開始前的 HP（hpDelta 為負值，故 preHp = m.hp - hpDelta）
+    const preHp = {};
+    [...Object.entries(room.teamA || {}), ...Object.entries(room.teamB || {})].forEach(([id, m]) => {
+      preHp[id] = Math.max(0, (m.hp || 0) - (entry.hpDelta?.[id] || 0));
+    });
+    setDisplayHp(preHp);
     setRevealEntry(entry);
     setRevealIdx(0);
     setSubmitted(false);
@@ -177,14 +184,26 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         setFloats(prev => [...prev, ...newFloats]);
         setTimeout(() => setFloats(prev => prev.filter(f => !newFloats.find(n => n.id === f.id))), 1400);
       }
+      // 逐箭扣血條
+      setDisplayHp(prev => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        for (const atk of revealEntry.attacks || []) {
+          const bk = atk.arrowBreakdown?.[revealIdx];
+          if (!bk || bk.dmg === 0) continue;
+          next[atk.targetId] = Math.max(0, (next[atk.targetId] ?? 0) - bk.dmg);
+        }
+        return next;
+      });
       setRevealIdx(i => i + 1);
     }, 1200);
     return () => clearTimeout(t);
   }, [revealIdx, revealEntry]);
 
-  // 揭露完畢 → 死亡音效
+  // 揭露完畢 → 清暫存血量、死亡音效
   useEffect(() => {
     if (revealIdx < ARROWS || !room) return;
+    setDisplayHp(null); // 回到 room 真實 HP
     const allMembers = [
       ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, ...m })),
       ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, ...m })),
@@ -417,8 +436,11 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             {entries.map(([id, m]) => (
               <div key={id} className="relative">
                 <HpBar
-                  name={m.name} hp={m.hp} maxHP={m.maxHP}
-                  isMe={id === myId} dead={!m.alive}
+                  name={m.name}
+                  hp={displayHp?.[id] ?? m.hp}
+                  maxHP={m.maxHP}
+                  isMe={id === myId}
+                  dead={isRevealing ? (displayHp?.[id] ?? m.hp) <= 0 : !m.alive}
                   flash={!!flashIds[id]}
                 />
                 {/* 浮動傷害數字 */}
