@@ -8,7 +8,7 @@ import {
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession } from "../../lib/db";
 import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
-import { MONSTERS, calcDamage, calcCounterDamage, calcArcherStats, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
+import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 
@@ -78,8 +78,10 @@ function HPBar({ current, max, color = "#22c55e" }) {
   );
 }
 
-export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
-  const { profile } = useAuth();
+// guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile.id
+export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestOverride ? null : authProfile;
   const [room,            setRoom]            = useState(null);
   const [arrows,          setArrows]          = useState([]);
   const [submitting,      setSubmitting]      = useState(false);
@@ -99,6 +101,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   const [showEvent,       setShowEvent]       = useState(null);
   const [showFullLog,     setShowFullLog]     = useState(false);
   const [showShareCard,   setShowShareCard]   = useState(false);
+  const [drawnMonsters,   setDrawnMonsters]   = useState([]);
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -108,7 +111,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const logEndRef         = useRef(null);
 
-  const myId = profile?.id;
+  const myId = guestOverride?.id || authProfile?.id;
 
   useEffect(() => {
     const unsub = subscribePartyRoom(roomId, setRoom);
@@ -120,6 +123,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     if (!myId || !isHost) return;
     checkPartyBattleLimit(myId).then(setPartyBattleLeft);
   }, [myId, isHost]); // eslint-disable-line
+
+  // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
+  useEffect(() => {
+    if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
+    const stats = getArcherStats(profile);
+    const power = calcArcherPower(stats);
+    setDrawnMonsters(drawMatchedMonsters(power));
+  }, [isHost, room?.status]); // eslint-disable-line
 
   // 戰鬥開始時所有人記錄一次（每人每場只記一次）
   useEffect(() => {
@@ -296,6 +307,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
+  function handleRedrawMonsters() {
+    const stats = getArcherStats(profile);
+    const power = calcArcherPower(stats);
+    setDrawnMonsters(drawMatchedMonsters(power));
+    setSetupMonster(null);
+  }
 
   const tierInfo = room.monster ? TIER_LABEL[room.monster.tier] : null;
   const famInfo  = room.monster ? FAMILIES[room.monster.family] : null;
@@ -407,46 +424,56 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave }) {
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-xs font-black text-slate-400 uppercase tracking-widest">選擇怪物</div>
-              <button
-                onClick={() => setSetupMonster(MONSTERS[Math.floor(Math.random() * MONSTERS.length)])}
+              <div className="text-xs font-black text-slate-400 uppercase tracking-widest">系統抽出候選怪物（六族各1）</div>
+              <button onClick={handleRedrawMonsters}
                 className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/60 text-indigo-200 text-xs font-black rounded-lg active:scale-95 transition-transform">
-                🎲 {setupMonster ? "重抽" : "隨機抽取"}
+                🎲 重新抽取
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
-              {MONSTERS.map(m => {
-                const tier = TIER_LABEL[m.tier];
-                const fam  = FAMILIES[m.family];
-                const { min, max } = partyHPRange(memberList.length);
-                return (
-                  <button key={m.id} onClick={() => setSetupMonster(m)}
-                    className={`w-full text-left rounded-xl p-3 border-2 transition-all flex items-center gap-3 ${
-                      setupMonster?.id === m.id ? "border-indigo-500 bg-indigo-900/40" : "border-slate-600 bg-slate-700/30"
-                    }`}>
-                    <span className="text-2xl">{m.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-bold text-sm">{m.name}</div>
-                      <div className="text-xs text-slate-400">
-                        {fam?.label} · <span style={{ color: tier?.color }}>{tier?.label}</span>
+            {drawnMonsters.length === 0 ? (
+              <div className="text-slate-500 text-xs text-center py-4 animate-pulse">抽取中…</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {drawnMonsters.map(m => {
+                  const tier = TIER_LABEL[m.tier];
+                  const fam  = FAMILIES[m.family];
+                  const ms   = setupMode === "novice" ? 1.5 : setupMode === "student" ? 2.0 : 4.0;
+                  const atkM = setupMode === "veteran" ? 2 : 1;
+                  const { min, max } = partyHPRange(memberList.length);
+                  return (
+                    <button key={m.id} onClick={() => setSetupMonster(m)}
+                      className={`text-left rounded-xl p-3 border-2 transition-all flex flex-col gap-1 ${
+                        setupMonster?.id === m.id ? "border-indigo-500 bg-indigo-900/40" : "border-slate-600 bg-slate-700/30"
+                      }`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xl">{m.icon}</span>
+                        <span className="text-white font-bold text-sm leading-tight truncate">{m.name}</span>
+                        {setupMonster?.id === m.id && <span className="ml-auto text-indigo-400 shrink-0">✅</span>}
                       </div>
-                    </div>
-                    <div className="text-right text-xs text-slate-400 shrink-0">
-                      <div>❤️ {Math.round(m.hp * min)}~{Math.round(m.hp * max)}</div>
-                      <div>⚔️ {m.atk} 🛡️ {m.def}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      <div className="text-xs" style={{ color: tier?.color }}>{tier?.label}</div>
+                      <div className="text-xs text-slate-500">{fam?.label}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        ❤️ {Math.round(m.hp * ms * min)}~{Math.round(m.hp * ms * max)}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        ⚔️ {Math.round(m.atk * atkM)} 🛡️ {Math.round(m.def * atkM)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {setupMonster && (() => {
+              const ms  = setupMode === "novice" ? 1.5 : setupMode === "student" ? 2.0 : 4.0;
               const { min, max } = partyHPRange(memberList.length);
               return (
                 <div className="bg-indigo-900/40 border border-indigo-500/50 rounded-xl p-3 flex items-center justify-between text-sm">
                   <span className="text-indigo-200 font-black">{setupMonster.icon} {setupMonster.name}</span>
-                  <span className="text-slate-400 text-xs">HP ×{min.toFixed(1)}~×{max.toFixed(1)}（開戰隨機）</span>
+                  <span className="text-slate-400 text-xs">
+                    HP {Math.round(setupMonster.hp * ms * min)}~{Math.round(setupMonster.hp * ms * max)}
+                  </span>
                 </div>
               );
             })()}

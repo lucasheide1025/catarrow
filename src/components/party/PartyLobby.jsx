@@ -26,19 +26,22 @@ const TYPE_OPTIONS = [
   },
 ];
 
-export default function PartyLobby({ onEnterRoom }) {
+// guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile
+// battleOnly — 訪客模式只顯示打怪選項（不顯示日常任務）
+export default function PartyLobby({ onEnterRoom, guestOverride, battleOnly }) {
   const { profile } = useAuth();
   const [tab, setTab] = useState("create"); // "create" | "join"
-  const [selType, setSelType] = useState("quest");
+  const [selType, setSelType] = useState(battleOnly ? "battle" : "quest");
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  const myName = profile?.nickname || profile?.name || "射手";
+  const myId   = guestOverride?.id   || profile?.id;
+  const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
 
   async function handleCreate() {
     setLoading(true); setErr("");
-    const res = await createPartyRoom(profile.id, myName, selType);
+    const res = await createPartyRoom(myId, myName, selType);
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, selType, true);
     else setErr(res.reason);
@@ -47,7 +50,7 @@ export default function PartyLobby({ onEnterRoom }) {
   async function handleJoin() {
     if (joinCode.trim().length < 6) { setErr("請輸入 6 碼邀請碼"); return; }
     setLoading(true); setErr("");
-    const res = await joinPartyRoom(joinCode.trim(), profile.id, myName);
+    const res = await joinPartyRoom(joinCode.trim(), myId, myName);
     setLoading(false);
     if (res.ok) {
       // 用 subscribePartyRoom 判斷 type
@@ -85,7 +88,7 @@ export default function PartyLobby({ onEnterRoom }) {
         {tab === "create" ? (
           <div className="flex flex-col gap-4">
             <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">選擇模式</div>
-            {TYPE_OPTIONS.map(t => (
+            {(battleOnly ? TYPE_OPTIONS.filter(t => t.id === "battle") : TYPE_OPTIONS).map(t => (
               <button key={t.id} onClick={() => setSelType(t.id)}
                 className={`relative w-full rounded-2xl border-2 p-4 text-left transition-all ${
                   selType === t.id

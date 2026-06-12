@@ -402,11 +402,14 @@ export async function storeBattleRewards(roomId, memberIds, monster) {
 
 // ── Battle：玩家領取自己的戰鬥獎勵 ─────────────────────────
 // monsterId / result / dmgDealt 用於更新怪物圖鑑
+// 訪客（guest_ 開頭）跳過寶箱 & 圖鑑寫入，但仍標記已領取
 export async function claimBattleReward(roomId, memberId, chests, monsterId, result, dmgDealt) {
   try {
-    await addChests(memberId, chests);
-    if (monsterId && result) {
-      await recordBattleDex(memberId, monsterId, result, dmgDealt || 0);
+    if (!memberId?.startsWith("guest")) {
+      await addChests(memberId, chests);
+      if (monsterId && result) {
+        await recordBattleDex(memberId, monsterId, result, dmgDealt || 0);
+      }
     }
     await updateDoc(doc(db, PARTY, roomId), {
       rewardClaimed: arrayUnion(memberId),

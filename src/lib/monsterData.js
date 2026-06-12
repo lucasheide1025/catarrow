@@ -401,14 +401,15 @@ export function calcArcherPower(stats) {
 }
 
 // ── 依戰力取可出現的階級範圍 ────────────────────────────
-// 每個戰力區間對應可出現的 tier，有重疊區間讓玩家有選擇
+// 一律包含 common 到目前解鎖上限的所有 tier
+// 確保玩家無論戰力多高，低階怪物仍可出現→圖鑑可收集完整
 export function getTierPoolByPower(power) {
-  if (power >= 400) return ["boss","mythic"];
-  if (power >= 280) return ["fierce","boss","mythic"];
-  if (power >= 180) return ["elite","fierce","boss"];
-  if (power >= 100) return ["rare","elite","fierce"];
-  if (power >= 50)  return ["common","rare","elite"];
-  return ["common","rare"];
+  if (power >= 400) return ["common","rare","elite","fierce","boss","mythic"];
+  if (power >= 280) return ["common","rare","elite","fierce","boss"];
+  if (power >= 180) return ["common","rare","elite","fierce"];
+  if (power >= 100) return ["common","rare","elite"];
+  if (power >= 50)  return ["common","rare"];
+  return ["common"];
 }
 
 // ── 六族各抽1隻（依射手戰力匹配，不烙單）────────────────
