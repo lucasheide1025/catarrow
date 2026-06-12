@@ -1,5 +1,5 @@
 // src/components/member/HonorCelebration.jsx
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import { markNotificationRead } from "../../lib/db";
 import { sfxEpic, sfxTap } from "../../lib/sound";
 
