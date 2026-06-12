@@ -612,31 +612,40 @@ export async function createNotification(data, operatorId) {
 
 // ── 訂閱「我看得到的」通知 ────────────────────────────────
 // 全體通知(targetMemberId=null) + 指定給我的(targetMemberId=myId)
-// 榮耀通知(cert_pass/high_score)全體可見（為了能去祝賀）
+// 需要 Firestore 複合索引：notifications → targetMemberId ASC + createdAt DESC
 export function subscribeNotifications(memberId, callback, memberCreatedAt) {
-  return onSnapshot(
-    query(collection(db, C_NOTIF), orderBy("createdAt", "desc"), limit(20)),
-    snap => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const joinedMs = memberCreatedAt
+    ? (memberCreatedAt?.toMillis?.() ?? memberCreatedAt?.seconds * 1000 ?? Number(memberCreatedAt))
+    : 0;
 
-      const joinedMs = memberCreatedAt
-        ? (memberCreatedAt?.toMillis?.() ?? memberCreatedAt?.seconds * 1000 ?? Number(memberCreatedAt))
-        : 0;
+  function process(snap) {
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const visible = all.filter(n => {
+      if (n.targetMemberId != null && n.targetMemberId !== memberId) return false;
+      if ((n.deletedBy || []).includes(memberId)) return false;
+      if (joinedMs > 0) {
+        const notifMs = n.createdAt?.toMillis?.() ?? n.createdAt?.seconds * 1000 ?? 0;
+        if (notifMs < joinedMs) return false;
+      }
+      return true;
+    });
+    callback(visible);
+  }
 
-      const visible = all.filter(n => {
-        if (n.targetMemberId != null && n.targetMemberId !== memberId) return false;
-        if ((n.deletedBy || []).includes(memberId)) return false;
-        if (joinedMs > 0) {
-          const notifMs = n.createdAt?.toMillis?.() ?? n.createdAt?.seconds * 1000 ?? 0;
-          if (notifMs < joinedMs) return false;
-        }
-        return true;
-      });
-
-      callback(visible);
-    },
-    err => { console.warn("subscribeNotifications:", err.message); callback([]); }
+  // 優先用 WHERE 條件過濾（Firestore 層面減少讀取）
+  // 若複合索引尚未建立則自動降級為舊方式
+  let unsub = onSnapshot(
+    query(collection(db, C_NOTIF), where("targetMemberId", "in", [memberId, null]), orderBy("createdAt", "desc"), limit(20)),
+    process,
+    () => {
+      unsub = onSnapshot(
+        query(collection(db, C_NOTIF), orderBy("createdAt", "desc"), limit(20)),
+        process,
+        () => callback([])
+      );
+    }
   );
+  return () => { unsub?.(); };
 }
 
 // 標記已讀
