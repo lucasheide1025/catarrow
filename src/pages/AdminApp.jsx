@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications } from "../lib/db";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
@@ -57,6 +57,12 @@ export default function AdminApp() {
   const [partyIsHost,   setPartyIsHost]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.isHost || false; } catch { return false; }
   });
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
+  }, [profile?.id]); // eslint-disable-line
 
   const pendingCertN = pendingCertList.length;
   const pendingMsgN  = allMessages.filter(m => !m.reply).length;
@@ -114,8 +120,8 @@ const adminNav = [
   if (archerMode) {
     return (
       <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
-        <MustReadGate memberId={profile?.id} />
-        <HonorCelebration memberId={profile?.id} onGoPage={setPage} />
+        <MustReadGate memberId={profile?.id} notifications={notifications} />
+        <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
         <div style={{background:"#1e3a5f",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
           <div style={{color:"white",fontSize:"13px",fontWeight:"900"}}>🏹 射手模式</div>
           <button onClick={()=>{setArcherMode(false);setPage("members");}}
@@ -130,7 +136,7 @@ const adminNav = [
           </button>
         )}
         <div style={{paddingBottom:"80px"}}>
-          {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom}/>}
+          {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}/>}
           {page==="comps"       && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
           {page==="comp-detail" && selComp && !scoring && (
             <CompDetail comp={selComp} profile={profile}
@@ -151,7 +157,7 @@ const adminNav = [
           {page==="external"    && <MemberExternalComp/>}
           {page==="achievements"&& <MemberAchievements/>}
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
-          {page==="notifications" && <MemberNotifications/>}
+          {page==="notifications" && <MemberNotifications notifications={notifications}/>}
           {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}

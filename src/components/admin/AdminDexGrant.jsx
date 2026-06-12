@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeMembers, subscribeDexGrants,
+  getMembers, subscribeDexGrants,
   grantRoundAchievement, revokeRoundAchievement,
   grantSpecialAchievement, revokeSpecialAchievement,
   getDexConfig, saveDexConfig,
@@ -21,9 +21,8 @@ export default function AdminDexGrant() {
   const [tab, setTab] = useState("physical");
 
   useEffect(() => {
-    const unsub = subscribeMembers(setMembers);
+    getMembers().then(setMembers);
     getDexConfig().then(setConfig);
-    return () => unsub && unsub();
   }, []);
 
   useEffect(() => {

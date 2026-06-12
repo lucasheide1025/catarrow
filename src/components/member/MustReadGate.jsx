@@ -1,24 +1,13 @@
 // src/components/member/MustReadGate.jsx
 // 強制閱讀彈窗：有未讀的 mustRead 訊息時，覆蓋全螢幕，讀了才能繼續
-import { useState, useEffect } from "react";
-import { subscribeNotifications, markNotificationRead } from "../../lib/db";
+import { markNotificationRead } from "../../lib/db";
 
-export default function MustReadGate({ memberId, memberCreatedAt }) {
-  const [queue, setQueue] = useState([]);
-
-  useEffect(() => {
-    if (!memberId) return;
-    // ✅ 補傳 memberCreatedAt，防止新會員看到加入前的強制通知
-    const unsub = subscribeNotifications(memberId, list => {
-      const mustRead = list.filter(n =>
-        n.mustRead &&
-        !(n.readBy    || []).includes(memberId) &&
-        !(n.deletedBy || []).includes(memberId)
-      );
-      setQueue(mustRead);
-    }, memberCreatedAt);
-    return () => unsub && unsub();
-  }, [memberId, memberCreatedAt]);
+export default function MustReadGate({ memberId, notifications = [] }) {
+  const queue = notifications.filter(n =>
+    n.mustRead &&
+    !(n.readBy    || []).includes(memberId) &&
+    !(n.deletedBy || []).includes(memberId)
+  );
 
   if (queue.length === 0) return null;
   const n = queue[0]; // 一次顯示一則

@@ -1,6 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeNotifications, subscribeDexGrants, getDexConfig } from "../../lib/db";
+import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -36,13 +36,12 @@ function useCardTheme() {
   return [theme, setTheme];
 }
 
-export default function MemberHome({ onPageChange, onJoinParty }) {
+export default function MemberHome({ onPageChange, onJoinParty, notifications = [] }) {
   const { profile } = useAuth();
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
   const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
-  const [unreadNotif, setUnreadNotif]     = useState(0);
   const [showShare, setShowShare]         = useState(false);
   const [dexGrants, setDexGrants]         = useState([]);
   const [dexConfig, setDexConfig]         = useState({ physicalMax: 10, pointMax: 10 });
@@ -57,17 +56,15 @@ export default function MemberHome({ onPageChange, onJoinParty }) {
     });
     const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
     const unsub2 = subscribeCertification(profile.id, setCertification);
-    const unsub3 = subscribeNotifications(profile.id, list => {
-      const n = list.filter(x =>
-        !(x.readBy    || []).includes(profile.id) &&
-        !(x.deletedBy || []).includes(profile.id)
-      ).length;
-      setUnreadNotif(n);
-    }, profile?.createdAt);
     getDexConfig().then(setDexConfig).catch(() => {});
     const unsub4 = subscribeDexGrants(profile.id, setDexGrants);
-    return () => { unsub?.(); unsub2?.(); unsub3?.(); unsub4?.(); };
+    return () => { unsub?.(); unsub2?.(); unsub4?.(); };
   }, [profile?.id]); // eslint-disable-line
+
+  const unreadNotif = notifications.filter(x =>
+    !(x.readBy    || []).includes(profile?.id) &&
+    !(x.deletedBy || []).includes(profile?.id)
+  ).length;
 
   const pendingBadges = badgeLogs.filter(l => l.status === "pending_claim");
   const recentResults = [...results]

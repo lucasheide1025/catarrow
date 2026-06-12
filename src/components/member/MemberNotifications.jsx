@@ -1,8 +1,8 @@
 // src/components/member/MemberNotifications.jsx
 // 訊息中心：分類 + 年月篩選 + 祝賀 + 會員可自刪
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeNotifications, markNotificationRead, deleteNotificationForMe, addCongrats } from "../../lib/db";
+import { markNotificationRead, deleteNotificationForMe, addCongrats } from "../../lib/db";
 import { Card, Btn, TA, ST, Spinner, Empty, useToast } from "../shared/UI";
 
 const TYPE_META = {
@@ -21,27 +21,14 @@ const FILTERS = [
   { id:"honor",     label:"榮耀時刻" },
 ];
 
-export default function MemberNotifications() {
+export default function MemberNotifications({ notifications = [] }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
-  const [notifs, setNotifs]           = useState([]);
-  const [loading, setLoading]         = useState(true);
   const [filter, setFilter]           = useState("all");
   const [month, setMonth]             = useState("all");
   const [congratModal, setCongratModal] = useState(null);
 
-  useEffect(() => {
-    if (!profile?.id) return;
-    // ✅ 補傳 profile.createdAt，防止新會員看到加入前的通知
-    const unsub = subscribeNotifications(profile.id, list => {
-      const mine = list.filter(n => !(n.deletedBy || []).includes(profile.id));
-      setNotifs(mine);
-      setLoading(false);
-    }, profile?.createdAt);
-    return () => unsub && unsub();
-  }, [profile?.id]); // eslint-disable-line
-
-  if (loading) return <Spinner />;
+  const notifs = notifications.filter(n => !(n.deletedBy || []).includes(profile?.id));
 
   function matchFilter(n) {
     if (filter === "all")       return true;

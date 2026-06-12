@@ -1,28 +1,22 @@
 // src/components/member/HonorCelebration.jsx
-import { useState, useEffect, useRef } from "react";
-import { subscribeNotifications, markNotificationRead } from "../../lib/db";
+import { useRef, useMemo } from "react";
+import { markNotificationRead } from "../../lib/db";
 import { sfxEpic, sfxTap } from "../../lib/sound";
 
 const RARITY_ZH = { common:"普通", uncommon:"非凡", rare:"稀有", epic:"史詩", legendary:"傳說", mythic:"神話" };
 
-export default function HonorCelebration({ memberId, memberCreatedAt, onGoPage }) {
-  const [queue, setQueue] = useState([]);
+export default function HonorCelebration({ memberId, onGoPage, notifications = [] }) {
   const canvasRef = useRef(null);
 
-  useEffect(() => {
-    if (!memberId) return;
-    // ✅ 補傳 memberCreatedAt，防止新會員看到舊通知
-    const unsub = subscribeNotifications(memberId, list => {
-      const mine = list.filter(n =>
-        (n.type === "high_score" || n.type === "cert_pass") &&
-        n.subjectMemberId === memberId &&
-        !(n.readBy  || []).includes(memberId) &&
-        !(n.deletedBy || []).includes(memberId)
-      );
-      setQueue(mine);
-    }, memberCreatedAt);
-    return () => unsub && unsub();
-  }, [memberId, memberCreatedAt]);
+  const queue = useMemo(() =>
+    notifications.filter(n =>
+      (n.type === "high_score" || n.type === "cert_pass") &&
+      n.subjectMemberId === memberId &&
+      !(n.readBy  || []).includes(memberId) &&
+      !(n.deletedBy || []).includes(memberId)
+    ),
+    [notifications, memberId]
+  );
 
   const current = queue[0] || null;
 

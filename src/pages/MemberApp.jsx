@@ -1,7 +1,7 @@
 // src/pages/MemberApp.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults } from "../lib/db";
+import { subscribeResults, subscribeNotifications } from "../lib/db";
 import { certLevelStyle } from "../lib/constants";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -48,6 +48,12 @@ export default function MemberApp() {
   const [partyIsHost,   setPartyIsHost]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("party_room"))?.isHost || false; } catch { return false; }
   });
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
+  }, [profile?.id]); // eslint-disable-line
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
@@ -81,8 +87,8 @@ export default function MemberApp() {
 
   return (
     <div style={{ minHeight:"100vh", background:"#f8fafc", fontFamily:"sans-serif" }}>
-      <MustReadGate memberId={profile?.id} memberCreatedAt={profile?.createdAt} />
-      <HonorCelebration memberId={profile?.id} memberCreatedAt={profile?.createdAt} onGoPage={setPage} />
+      <MustReadGate memberId={profile?.id} notifications={notifications} />
+      <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
 
       {/* Header */}
       <div style={{ position:"sticky", top:0, zIndex:40 }}>
@@ -107,7 +113,7 @@ export default function MemberApp() {
 
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
-        {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
+        {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}
@@ -128,7 +134,7 @@ export default function MemberApp() {
         {page==="external"    && <MemberExternalComp />}
         {page==="achievements" && <MemberAchievements />}
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
-        {page==="notifications" && <MemberNotifications />}
+        {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
         {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
