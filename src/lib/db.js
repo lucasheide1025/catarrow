@@ -337,7 +337,7 @@ export function subscribeMessages(memberId, callback) {
 }
 
 export function subscribeAllMessages(callback) {
-  return onSnapshot(query(collection(db, C.messages), orderBy("createdAt", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  return onSnapshot(query(collection(db, C.messages), orderBy("createdAt", "desc"), limit(150)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
 export async function getAuditLogs(targetId) {
@@ -615,7 +615,7 @@ export async function createNotification(data, operatorId) {
 // 榮耀通知(cert_pass/high_score)全體可見（為了能去祝賀）
 export function subscribeNotifications(memberId, callback, memberCreatedAt) {
   return onSnapshot(
-    query(collection(db, C_NOTIF), orderBy("createdAt", "desc"), limit(50)),
+    query(collection(db, C_NOTIF), orderBy("createdAt", "desc"), limit(20)),
     snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 

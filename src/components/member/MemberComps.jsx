@@ -1,6 +1,6 @@
 // src/components/member/MemberComps.jsx
 import { useState, useEffect } from "react";
-import { subscribeCompetitions, register } from "../../lib/db";
+import { getCompetitions, register } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR } from "../../lib/constants";
 import { Card, Btn, Spinner, Empty, Pill } from "../shared/UI";
@@ -29,8 +29,7 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
   const [tab, setTab]         = useState("comps");
 
   useEffect(() => {
-    const unsub = subscribeCompetitions(data => { setComps(data); setLoading(false); });
-    return unsub;
+    getCompetitions().then(data => { setComps(data); setLoading(false); });
   }, []);
 
   const types = ["全部", "積分賽", "挑戰賽", "實體賽", "臨時任務賽", "年度檢定"];
