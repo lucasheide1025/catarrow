@@ -22,6 +22,7 @@ import MemberDex          from "../components/member/MemberDex";
 import MonsterBattle      from "../components/member/MonsterBattle";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
+import CardCollection    from "../components/member/CardCollection";
 import PartyLobby        from "../components/party/PartyLobby";
 import PartyQuestRoom    from "../components/party/PartyQuestRoom";
 import PartyBattleRoom   from "../components/party/PartyBattleRoom";
@@ -131,6 +132,7 @@ export default function MemberApp() {
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
         {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
+        {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} />}
         {page==="party-quest" && partyRoomId && (

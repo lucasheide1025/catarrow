@@ -116,6 +116,7 @@ export default function MemberProfile({ onPageChange }) {
   const quickLinks = [
     { id:"party",         icon:"👥", label:"組隊模式",  desc:"日常分享與組隊打怪" },
     { id:"materials",     icon:"🎒", label:"材料背包",  desc:"開箱、升級、合成" },
+    { id:"cards",         icon:"🃏", label:"怪物卡片",  desc:"收藏、升星、裝備加成" },
     { id:"monsterdex",    icon:"📖", label:"怪物圖鑑",  desc:"擊敗怪物的戰績" },
     { id:"notifications", icon:"🔔", label:"訊息中心",  desc:"公告與祝賀" },
     { id:"dex",           icon:"🎖️", label:"成就圖鑑",  desc:"我的數位收藏" },

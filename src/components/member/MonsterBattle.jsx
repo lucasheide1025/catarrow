@@ -6,6 +6,7 @@ import {
   createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
+  addCoins, addMonsterCard,
 } from "../../lib/db";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
@@ -14,7 +15,7 @@ import {
   calcArcherStats, calcArcherPower, drawMatchedMonsters,
   calcDamage, calcCounterDamage, resolveHitPart,
 } from "../../lib/monsterData";
-import { getLootTable, drawLoot, isRareLoot } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
@@ -49,6 +50,8 @@ const BATTLE_CSS = `
 @keyframes mb-glow   { 0%,100%{box-shadow:0 0 10px #fbbf2488} 50%{box-shadow:0 0 28px #fbbf24cc} }
 @keyframes mb-chest  { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-14px) scale(1.12)} 60%{transform:translateY(-4px) scale(1.05)} }
 @keyframes mb-tier   { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
+@keyframes mb-drop   { 0%{transform:translateY(-30px) scale(.5);opacity:0} 60%{transform:translateY(6px) scale(1.08);opacity:1} 100%{transform:translateY(0) scale(1);opacity:1} }
+@keyframes mb-coin   { 0%{transform:translateY(-20px) scale(.6) rotate(-15deg);opacity:0} 70%{transform:translateY(4px) scale(1.1) rotate(5deg);opacity:1} 100%{transform:translateY(0) scale(1) rotate(0);opacity:1} }
 `;
 
 const HIT_TEXTS = {
@@ -119,6 +122,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [showLootBox, setShowLootBox]   = useState(false);
   const [showBattleCard, setShowBattleCard] = useState(false);
   const [droppedMaterials, setDroppedMaterials] = useState([]);
+  const [droppedCoins,    setDroppedCoins]     = useState(0);
+  const [droppedCard,     setDroppedCard]      = useState(null);
+  const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
   const [processing, setProcessing]     = useState(false);
@@ -351,7 +357,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
     } catch(err) {
       console.error("submitRound error:", err);
-      setBattlePhase("input"); setProcessing(false);
+      // endBattle 有自己的 try-catch，此處只處理回合中途的錯誤
+      if (phase === "battle") setBattlePhase("input");
+      setProcessing(false);
     }
   }
 
@@ -422,95 +430,116 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
     setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
+    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
   }
 
   async function endBattle(result, finalArchHP, finalMonHP) {
+    try {
     if (result==="win") {
       sfxEpic();
-      const table=getLootTable({ isGuest, mode, battleMode, tier:monster.tier });
-      const lootItem=drawLoot(table, monster.id, monster.tier);
-      setLoot(lootItem);
-      if (lootItem.type === "material" && lootItem.materialId && profile?.id && !isGuest) {
-        if (lootItem.materialId.startsWith("frag_")) {
-          addFragments(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+
+      // ── 寶箱（固定必掉）────────────────────────────────
+      const { mainChest, catChest, potionChest } = makeChests(monster, mode);
+      const chestCfg = CHEST_TYPES[mainChest.type] || CHEST_TYPES.wood;
+
+      if (isGuest || !profile?.id) {
+        // 訪客：判斷是否第一次勝利（全域）
+        const wonBefore = sessionStorage.getItem("guest_won_once");
+        if (!wonBefore) {
+          const guestLootItem = drawLoot(LOOT_TABLE_GUEST, monster.id, monster.tier);
+          setLoot(guestLootItem);
+          sessionStorage.setItem("guest_won_once", "1");
+          if (isRareLoot(guestLootItem)) {/* no notification for guests */}
         } else {
-          addMaterials(profile.id, [{ id: lootItem.materialId }]).catch(() => {});
+          setLoot(null);
+          setGuestWonBefore(true);
+        }
+        setWonChests([]);
+        setDroppedMaterials([]);
+      } else {
+        // 一般射手：寶箱進背包
+        const chestsToAdd = [mainChest, catChest, potionChest].filter(Boolean);
+        setWonChests(chestsToAdd);
+        addChests(profile.id, chestsToAdd).catch(() => {});
+
+        // 材料掉落（機率）
+        const mat = rollMaterialDrop(monster);
+        if (mat) {
+          setDroppedMaterials([mat]);
+          if (mat.id?.startsWith("frag_")) {
+            addFragments(profile.id, [{ id: mat.id }]).catch(() => {});
+          } else {
+            addMaterials(profile.id, [{ id: mat.id }]).catch(() => {});
+          }
+        } else {
+          setDroppedMaterials([]);
+        }
+
+        // 金幣（必掉）
+        const coins = rollCoins(monster.tier, mode);
+        setDroppedCoins(coins);
+        addCoins(profile.id, coins).catch(() => {});
+
+        // 怪物卡片（1%）
+        const card = rollCardDrop(monster);
+        if (card) {
+          setDroppedCard(card);
+          addMonsterCard(profile.id, card).catch(() => {});
         }
       }
 
-      // 📦 掉落寶箱（依怪物階級，可能額外掉貓貓箱或藥水箱）
-      const { mainChest, catChest, potionChest } = makeChests(monster, mode);
-      let mats=[];
-      if (isGuest||!profile?.id) {
-        // 訪客：當場直接打開主寶箱，材料只顯示不儲存
-        const contents=openChestContents(mainChest);
-        mats=contents.materials;
-        setDroppedMaterials(mats);
-        setWonChests([]);
-      } else {
-        // 射手：寶箱放進背包
-        const chestsToAdd = [mainChest, catChest, potionChest].filter(Boolean);
-        setWonChests(chestsToAdd);
-        setDroppedMaterials([]);
-        addChests(profile.id, chestsToAdd).catch(()=>{});
+      // 戰鬥記錄
+      if (profile?.id && !isGuest) {
+        const equipment  = profile?.equipment || [];
+        const bowLabel   = Array.isArray(equipment) && equipment[0]?.label
+          ? equipment[0].label : (typeof equipment === "string" ? equipment : "打怪練習");
+        const practiceRounds = roundScores.map(rs => rs.scores || []);
+        addPracticeLog(profile.id, {
+          date: new Date().toISOString().slice(0, 10), source: "monster",
+          monsterName: monster.name, mode, battleMode, result,
+          equipment: bowLabel, rounds: practiceRounds,
+          total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+        }, profile.id).catch(() => {});
       }
-      // 打怪同步寫 practiceLogs（帶入射手裝備）
-if (profile?.id && !isGuest) {
-  const equipment = profile?.equipment || [];
-  const bowLabel = Array.isArray(equipment) && equipment[0]?.label
-    ? equipment[0].label
-    : (typeof equipment === "string" ? equipment : "打怪練習");
-  const practiceRounds = roundScores.map(rs => rs.scores || []);
-  addPracticeLog(profile.id, {
-    date: new Date().toISOString().slice(0, 10),
-    source: "monster",
-    monsterName: monster.name,
-    mode,
-    battleMode,
-    result,
-    equipment: bowLabel,
-    rounds: practiceRounds,
-    total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-  }, profile.id).catch(() => {});
-}
-      const chestCfg=CHEST_TYPES[mainChest.type]||CHEST_TYPES.wood;
+
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
-      addLog({ type:"system", text:isGuest?`📦 寶箱當場打開！`:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
-      if (catChest) addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
-      if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
-      if (isRareLoot(lootItem)&&profile?.id) {
-        createNotification({ type:"high_score", title:`🎁 ${profile.nickname||profile.name} 獲得稀有掉落！`,
-          content:`${profile.nickname||profile.name} 擊倒了 ${monster.name}，獲得稀有道具！`,
-          targetMemberId:null, subjectMemberId:profile.id,
-          subjectInfo:{ nickname:profile.nickname||profile.name, item:lootItem.name },
-        }, profile.id).catch(()=>{});
+      if (!isGuest) {
+        addLog({ type:"system", text:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
+        if (catChest)   addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
+        if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
       }
+
       if (profile?.id) {
-        setRoundScores(rs=>{
+        setRoundScores(rs => {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
-            lootName:lootItem.name, lootIcon:lootItem.icon, lootType:lootItem.type,
-            mode, battleMode, materials:mats.map(m=>m.id), chestType:mainChest.type, catChest:!!catChest, roundScores:rs,
-          }).catch(()=>{});
+            mode, battleMode, chestType:mainChest.type, catChest:!!catChest, roundScores:rs,
+          }).catch(() => {});
           return rs;
         });
       }
+
       await delay(1000); setPhase("loot");
     } else {
       sfxSoftFail();
       addLog({ type:"lose", text:`💀 被 ${monster.name} 擊倒…下次再戰！` });
       if (profile?.id) {
-        setRoundScores(rs=>{
+        setRoundScores(rs => {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"lose", rounds:round,
             mode, battleMode, materials:[], roundScores:rs,
-          }).catch(()=>{});
+          }).catch(() => {});
           return rs;
         });
       }
       await delay(1000); setPhase("result");
+    }
+    } catch (err) {
+      console.error("endBattle error:", err);
+      // 不讓錯誤向外傳播，直接跳到結果畫面
+      setPhase(result === "win" ? "loot" : "result");
     }
   }
 
@@ -640,21 +669,21 @@ if (profile?.id && !isGuest) {
           <div className="text-2xl mb-1">🟢 新手模式</div>
           <div className="font-black text-gray-800 mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
           <div className="text-gray-500 text-sm">怪物 HP×10，射手基礎 HP 1000。每2箭怪物反擊一次，傷害穩定。</div>
-          <div className="text-green-600 text-xs font-bold mt-2">掉寶：紀念徽章 / 成就銀章 / 9折券</div>
+          <div className="text-green-600 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🎓 學生模式</div>
           <div className="font-black text-gray-800 mb-1">自選距離，含爆擊（距離越近越高）</div>
           <div className="text-gray-500 text-sm">怪物 HP×15，射手基礎 HP 1500。動態模式每回合距離縮短 1~5 米。</div>
-          <div className="text-blue-600 text-xs font-bold mt-2">掉寶：同新手，含距離爆擊獎勵</div>
+          <div className="text-blue-600 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-orange-200 bg-orange-50 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟠 老手模式</div>
           <div className="font-black text-gray-800 mb-1">怪物增強，射手基礎HP 1000，加成無上限</div>
           <div className="text-gray-500 text-sm">怪物 HP×5×1.5。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
-          <div className="text-orange-600 text-xs font-bold mt-2">掉寶更豐富，含5折券</div>
+          <div className="text-orange-600 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
         </button>
       </div>
     );
@@ -989,62 +1018,108 @@ if (profile?.id && !isGuest) {
             </div>
           </div>
         )}
-        {wonChests.length>0 && (
-          <div className="w-full flex flex-col gap-2">
-            {wonChests.map((ch,idx)=>{
-              const cc=CHEST_TYPES[ch.type]||CHEST_TYPES.wood;
-              return (
-                <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
-                  style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
-                  <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
-                  <div className="flex-1">
-                    <div className="font-black text-sm" style={{ color:cc.color }}>
-                      獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
-                    </div>
-                    <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱領材料</div>
+        {/* ── 掉落物顯示（怪物死亡後的戰利品）── */}
+        {(isGuest || !profile?.id) ? (
+          /* 訪客掉落區 */
+          loot ? (
+            <div className="w-full" style={{ animation:"mb-drop .6s ease" }}>
+              {!lootRevealed ? (
+                <button onClick={()=>{ setLootRevealed(true); setShowLootBox(true); }}
+                  className="w-full flex flex-col items-center gap-3 active:scale-95 transition-transform py-4"
+                  style={{ animation:"mb-chest 1.5s ease infinite" }}>
+                  <div className="text-8xl">🎁</div>
+                  <div className="text-amber-600 font-black text-xl">點擊開紀念寶箱！</div>
+                </button>
+              ) : (
+                <div className="w-full bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex flex-col items-center gap-3">
+                  <div className="text-5xl">{loot.icon}</div>
+                  <div className="font-black text-xl text-gray-800">{loot.name}</div>
+                  <div className="text-gray-500 text-sm text-center">{loot.desc}</div>
+                  <div className="text-amber-600 text-xs font-bold bg-amber-100 rounded-xl px-3 py-1.5">
+                    📸 請截圖後出示給教練！
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        {droppedMaterials.length>0&&(
-          <div className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3">
-            <div className="text-purple-700 text-xs font-bold mb-1">🧪 寶箱開出材料</div>
-            <div className="flex gap-2 flex-wrap">
-              {droppedMaterials.map((m,i)=>(
-                <span key={i} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">{m.icon} {m.name}</span>
-              ))}
-            </div>
-          </div>
-        )}
-        {!lootRevealed?(
-          <button onClick={()=>{ setLootRevealed(true); setShowLootBox(true); }}
-            className="flex flex-col items-center gap-3 active:scale-95 transition-transform"
-            style={{ animation:"mb-chest 1.5s ease infinite" }}>
-            <div className="text-9xl">📦</div>
-            <div className="text-amber-600 font-black text-xl">點擊開箱！</div>
-          </button>
-        ):(
-          <div className="w-full flex flex-col items-center gap-3">
-            <div className="text-5xl">{loot?.icon}</div>
-            <div className="font-black text-xl text-gray-800">{loot?.name}</div>
-            <div className="text-gray-500 text-sm text-center px-4">{loot?.desc}</div>
-            <button onClick={()=>setShowBattleCard(true)}
-              className="w-full py-3 rounded-xl font-black text-white"
-              style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)" }}>
-              📤 產生戰績分享卡
-            </button>
-            <div className="flex gap-3 w-full">
-              <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
-              {(dailyLeft===null||dailyLeft>0)&&(
-                <button onClick={()=>{ setMonster(pickedMonster); setPhase("prebattle"); }}
-                  className="flex-1 py-3 rounded-xl font-black"
-                  style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
               )}
             </div>
+          ) : guestWonBefore ? (
+            <div className="w-full bg-slate-100 border border-slate-300 rounded-2xl p-4 text-center">
+              <div className="text-2xl mb-2">🎮</div>
+              <div className="text-slate-600 font-black text-sm">紀念寶箱已領取</div>
+              <div className="text-slate-400 text-xs mt-1">成為正式射手才能獲得更多獎勵！</div>
+            </div>
+          ) : null
+        ) : (
+          /* 射手掉落區 */
+          <div className="w-full flex flex-col gap-3">
+            {/* 即時掉落（材料、金幣、卡片）*/}
+            {(droppedMaterials.length > 0 || droppedCoins > 0 || droppedCard) && (
+              <div className="w-full rounded-2xl border-2 border-yellow-300 bg-yellow-50 p-3">
+                <div className="text-yellow-700 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {droppedCoins > 0 && (
+                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-yellow-400/30 rounded-xl"
+                      style={{ animation:"mb-coin .7s ease" }}>
+                      <span className="text-2xl">🪙</span>
+                      <span className="font-black text-yellow-800 text-sm">+{droppedCoins}</span>
+                      <span className="text-yellow-600 text-xs">金幣</span>
+                    </div>
+                  )}
+                  {droppedMaterials.map((m,i) => (
+                    <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-100 rounded-xl"
+                      style={{ animation:`mb-drop .6s ease ${0.15+i*0.1}s both` }}>
+                      <span className="text-2xl">{m.icon}</span>
+                      <span className="font-black text-purple-800 text-xs">{m.name}</span>
+                      <span className="text-purple-500 text-xs">材料</span>
+                    </div>
+                  ))}
+                  {droppedCard && (
+                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-rose-100 rounded-xl"
+                      style={{ animation:"mb-drop .6s ease .3s both" }}>
+                      <span className="text-2xl">{droppedCard.icon}</span>
+                      <span className="font-black text-rose-800 text-xs">{droppedCard.name}</span>
+                      <span className="text-rose-500 text-xs">🃏 卡片！</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 寶箱（進背包）*/}
+            {wonChests.length > 0 && (
+              <div className="w-full flex flex-col gap-2">
+                {wonChests.map((ch, idx) => {
+                  const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
+                  return (
+                    <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
+                      style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
+                      <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
+                      <div className="flex-1">
+                        <div className="font-black text-sm" style={{ color:cc.color }}>
+                          獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
+                        </div>
+                        <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
+
+        <button onClick={()=>setShowBattleCard(true)}
+          className="w-full py-3 rounded-xl font-black text-white"
+          style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)" }}>
+          📤 產生戰績分享卡
+        </button>
+        <div className="flex gap-3 w-full">
+          <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
+          {(dailyLeft===null||dailyLeft>0)&&(
+            <button onClick={()=>{ setMonster(pickedMonster); setPhase("prebattle"); }}
+              className="flex-1 py-3 rounded-xl font-black"
+              style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+          )}
+        </div>
         <details className="w-full">
           <summary className="text-gray-400 text-xs cursor-pointer text-center">▼ 查看戰鬥記錄</summary>
           <div className="bg-gray-900 rounded-xl p-3 mt-2 max-h-40 overflow-y-auto">

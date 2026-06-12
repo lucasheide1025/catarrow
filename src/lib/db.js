@@ -1526,6 +1526,112 @@ export async function adminGiveItem(memberId, category, itemId, qty) {
   }
 }
 
+// ─── 金幣系統 ──────────────────────────────────────────────
+
+export async function addCoins(memberId, amount) {
+  if (!memberId || !amount || memberId.startsWith("guest")) return;
+  try {
+    await updateDoc(doc(db, C.members, memberId), { coins: increment(amount) });
+  } catch {
+    await setDoc(doc(db, C.members, memberId), { coins: amount }, { merge: true }).catch(() => {});
+  }
+}
+
+// ─── 怪物卡片收藏 ──────────────────────────────────────────
+// cardCollections/{memberId} → { cards:{ [monsterId]: {...} }, equipped:[monsterId,...] }
+
+const C_CARDS = "cardCollections";
+
+const STAR_UPGRADE_COST = [1, 2, 3, 4, 5];
+
+// cardData = { monsterId, name, icon, tier, family }
+export async function addMonsterCard(memberId, cardData, chosenStat) {
+  if (!memberId || !cardData?.monsterId || memberId.startsWith("guest")) return;
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
+    const cards = { ...(data.cards || {}) };
+    const key   = cardData.monsterId;
+    if (cards[key]) {
+      cards[key] = { ...cards[key], duplicates: (cards[key].duplicates || 0) + 1 };
+    } else {
+      cards[key] = {
+        ...cardData, stars: 1, duplicates: 0,
+        chosenStat: cardData.tier === "mythic" ? (chosenStat || null) : null,
+        ts: Date.now(),
+      };
+    }
+    await setDoc(ref, { cards, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) { console.warn("addMonsterCard:", e?.message); }
+}
+
+export async function upgradeCard(memberId, monsterId) {
+  if (!memberId || !monsterId) return { ok: false };
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return { ok: false, reason: "找不到卡片" };
+    const cards = { ...snap.data().cards };
+    const card  = cards[monsterId];
+    if (!card) return { ok: false, reason: "找不到卡片" };
+    const stars = card.stars || 1;
+    if (stars >= 5) return { ok: false, reason: "已達最高星級" };
+    const cost  = STAR_UPGRADE_COST[stars - 1];
+    if ((card.duplicates || 0) < cost) return { ok: false, reason: "張數不足" };
+    cards[monsterId] = { ...card, stars: stars + 1, duplicates: card.duplicates - cost };
+    await setDoc(ref, { cards, updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true, newStars: stars + 1 };
+  } catch (e) {
+    console.warn("upgradeCard:", e?.message);
+    return { ok: false, reason: "系統忙碌" };
+  }
+}
+
+export async function equipCard(memberId, monsterId) {
+  if (!memberId || !monsterId) return { ok: false };
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
+    const equipped = data.equipped || [];
+    if (equipped.includes(monsterId)) return { ok: true };
+    if (equipped.length >= 5) return { ok: false, reason: "已達最大裝備數（5張）" };
+    await setDoc(ref, { equipped: [...equipped, monsterId], updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: "系統忙碌" }; }
+}
+
+export async function unequipCard(memberId, monsterId) {
+  if (!memberId || !monsterId) return { ok: false };
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
+    const equipped = (data.equipped || []).filter(id => id !== monsterId);
+    await setDoc(ref, { equipped, updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: "系統忙碌" }; }
+}
+
+export async function setMythicCardStat(memberId, monsterId, chosenStat) {
+  if (!memberId || !monsterId || !chosenStat) return { ok: false };
+  try {
+    await updateDoc(doc(db, C_CARDS, memberId), { [`cards.${monsterId}.chosenStat`]: chosenStat });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
+export function subscribeCardCollection(memberId, callback) {
+  if (!memberId) { callback({ cards: {}, equipped: [] }); return () => {}; }
+  return onSnapshot(
+    doc(db, C_CARDS, memberId),
+    snap => callback(snap.exists() ? snap.data() : { cards: {}, equipped: [] }),
+    err  => { console.warn("subscribeCardCollection:", err?.message); callback({ cards: {}, equipped: [] }); }
+  );
+}
+
+// ──────────────────────────────────────────────────────────
 async function updateCraftStats(memberId, type, data) {
   if (!memberId) return;
   const ref  = doc(db, C_CRAFT_STATS, memberId);

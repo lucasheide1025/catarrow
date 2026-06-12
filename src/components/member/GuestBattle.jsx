@@ -6,6 +6,8 @@ import MemberPractice from "./MemberPractice";
 import PartyLobby     from "../party/PartyLobby";
 import PartyBattleRoom from "../party/PartyBattleRoom";
 
+const PARTY_SESSION_KEY = "guest_party_session";
+
 export default function GuestBattle({ guestId, onExpire }) {
   const [tab, setTab] = useState("monster");
 
@@ -13,6 +15,22 @@ export default function GuestBattle({ guestId, onExpire }) {
   const [partyRoomId,  setPartyRoomId]  = useState(null);
   const [partyIsHost,  setPartyIsHost]  = useState(false);
   const [partySubTab,  setPartySubTab]  = useState("lobby"); // "lobby" | "battle"
+
+  // 掛載時：檢查 sessionStorage 是否有進行中房間
+  useEffect(() => {
+    const saved = sessionStorage.getItem(PARTY_SESSION_KEY);
+    if (saved) {
+      try {
+        const { roomId, isHost } = JSON.parse(saved);
+        if (roomId) {
+          setPartyRoomId(roomId);
+          setPartyIsHost(!!isHost);
+          setPartySubTab("battle");
+          setTab("party");
+        }
+      } catch { sessionStorage.removeItem(PARTY_SESSION_KEY); }
+    }
+  }, []); // eslint-disable-line
 
   // 3小時後自動過期
   useEffect(() => {
@@ -32,11 +50,13 @@ export default function GuestBattle({ guestId, onExpire }) {
     setPartyRoomId(roomId);
     setPartyIsHost(isHost);
     setPartySubTab("battle");
+    sessionStorage.setItem(PARTY_SESSION_KEY, JSON.stringify({ roomId, isHost: !!isHost }));
   }
   function handleLeaveParty() {
     setPartyRoomId(null);
     setPartyIsHost(false);
     setPartySubTab("lobby");
+    sessionStorage.removeItem(PARTY_SESSION_KEY);
   }
 
   const nav = [
@@ -53,9 +73,9 @@ export default function GuestBattle({ guestId, onExpire }) {
         <div style={{ fontSize:"11px", color:"rgba(255,255,255,.7)" }}>訪客</div>
       </div>
 
-      {/* 組隊中 banner */}
-      {partyRoomId && tab === "party" && partySubTab === "lobby" && (
-        <button onClick={() => setPartySubTab("battle")}
+      {/* 組隊中 banner（任何 tab 都顯示）*/}
+      {partyRoomId && partySubTab !== "battle" && (
+        <button onClick={() => { setTab("party"); setPartySubTab("battle"); }}
           style={{ display:"block", width:"100%", background:"#4f46e5", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:900, textAlign:"center", border:"none", cursor:"pointer" }}>
           🎮 組隊進行中 — 點此回到房間
         </button>

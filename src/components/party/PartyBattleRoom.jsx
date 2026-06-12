@@ -6,12 +6,12 @@ import {
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard } from "../../lib/db";
 import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
-import { LOOT_TABLE_GUEST, drawLoot } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","M"];
@@ -104,6 +104,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [showShareCard,   setShowShareCard]   = useState(false);
   const [guestLoot,       setGuestLoot]       = useState(null);
   const [guestAlreadyWon, setGuestAlreadyWon] = useState(false);
+  const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
   const [liveRevealCount, setLiveRevealCount] = useState(0);     // 已揭曉幾位
@@ -266,13 +267,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || room.status !== "completed" || room.result !== "win") return;
     if (!myId?.startsWith("guest")) return;
-    const already = sessionStorage.getItem("guest_party_won");
+    const already = sessionStorage.getItem("guest_won_once");
     if (already) {
       setGuestAlreadyWon(true);
     } else {
       const loot = drawLoot(LOOT_TABLE_GUEST, "party", "common");
       setGuestLoot(loot);
-      sessionStorage.setItem("guest_party_won", "1");
+      sessionStorage.setItem("guest_won_once", "1");
     }
   }, [room?.status, room?.result]); // eslint-disable-line
 
@@ -322,7 +323,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStarting(false);
   }
   async function handleLeave() {
+    // 戰鬥進行中：防誤觸確認
+    if (room?.status === "active") {
+      if (!window.confirm("⚠️ 戰鬥進行中！確定要離開房間嗎？")) return;
+    }
     await leavePartyRoom(roomId, myId, isHost);
+    sessionStorage.removeItem("guest_party_session");
     onLeave();
   }
   async function handleForceSkip(targetId) {
@@ -338,7 +344,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const p = (entry.playerLog || []).find(p => p.id === myId);
       return s + (p?.dmg || 0);
     }, 0);
+    // 即時掉落（在領取時計算）
+    const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
+    const material = rollMaterialDrop(room.monster);
+    const card     = rollCardDrop(room.monster);
     await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
+    addCoins(myId, coins).catch(() => {});
+    if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
+    if (card)     addMonsterCard(myId, card).catch(() => {});
+    setClaimResult({ coins, material, card });
     setClaiming(false);
   }
   async function handleConfirmResult() {
@@ -748,8 +762,33 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   </div>
                 )}
                 {myClaimed && (
-                  <div className="bg-emerald-900/40 border border-emerald-500 rounded-2xl p-3 text-emerald-400 font-black text-sm text-center">
-                    ✅ 寶箱已入庫！
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-emerald-900/40 border border-emerald-500 rounded-2xl p-3 text-emerald-400 font-black text-sm text-center">
+                      ✅ 寶箱已入庫！
+                    </div>
+                    {claimResult && (
+                      <div className="bg-yellow-900/30 border border-yellow-600/40 rounded-2xl p-3">
+                        <div className="text-yellow-300 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
+                        <div className="flex gap-3 justify-center flex-wrap">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-xl">🪙</span>
+                            <span className="text-yellow-200 font-black text-sm">+{claimResult.coins}</span>
+                          </div>
+                          {claimResult.material && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xl">{claimResult.material.icon}</span>
+                              <span className="text-slate-300 text-xs">{claimResult.material.name}</span>
+                            </div>
+                          )}
+                          {claimResult.card && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xl">{claimResult.card.icon}</span>
+                              <span className="text-rose-300 text-xs font-black">🃏 {claimResult.card.name}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 {!myChests.length && !room.rewardPending && !myClaimed && (
