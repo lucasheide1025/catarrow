@@ -1,7 +1,7 @@
 // src/lib/duelDb.js — 決鬥模式 Firestore 操作
 import {
-  collection, doc, getDoc, addDoc, updateDoc, setDoc, onSnapshot,
-  serverTimestamp, arrayUnion, increment
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, onSnapshot,
+  serverTimestamp, arrayUnion, increment, query, where, runTransaction
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
@@ -70,31 +70,37 @@ export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, is
 // ── 加入房間 ────────────────────────────────────────────────
 export async function joinDuelRoom(code, memberId, memberName, team, stats, isGuest = false) {
   try {
-    const { getDocs, query, where, collection: col } = await import("firebase/firestore");
     const snap = await getDocs(
-      query(col(db, DUEL), where("code", "==", code.toUpperCase()), where("status", "==", "waiting"))
+      query(collection(db, DUEL), where("code", "==", code.toUpperCase()), where("status", "==", "waiting"))
     );
     if (snap.empty) return { ok: false, reason: "找不到此邀請碼或房間已開始" };
-    const roomDoc = snap.docs[0];
-    const room = roomDoc.data();
 
+    const roomRef = snap.docs[0].ref;
     const maxMap = { "1v1":1, "2v2":2, "3v3":3, "4v4":4, "uneven":8 };
-    const max = maxMap[room.type] || 8;
-    const teamKey = `team${team}`;
-    const curSize = Object.keys(room[teamKey] || {}).length;
-    if (curSize >= max) return { ok: false, reason: "此隊伍已滿" };
-
     const member = {
       name: memberName, isGuest,
       hp: stats.hp, maxHP: stats.hp,
       atk: stats.atk, def: stats.def,
       arrows: [], ready: false, alive: true,
     };
-    await updateDoc(doc(db, DUEL, roomDoc.id), {
-      [`${teamKey}.${memberId}`]: member,
-      [`lastSeen.${memberId}`]: Date.now(),
+
+    // 用 transaction 讓「讀人數 → 寫入成員」變成原子操作，避免多人同時加入超員
+    await runTransaction(db, async (tx) => {
+      const roomDoc = await tx.get(roomRef);
+      if (!roomDoc.exists()) throw new Error("房間不存在");
+      const room = roomDoc.data();
+      if (room.status !== "waiting") throw new Error("房間已開始，無法加入");
+      const max = maxMap[room.type] || 8;
+      const teamKey = `team${team}`;
+      const curSize = Object.keys(room[teamKey] || {}).length;
+      if (curSize >= max) throw new Error("此隊伍已滿，請選擇另一隊");
+      tx.update(roomRef, {
+        [`${teamKey}.${memberId}`]: member,
+        [`lastSeen.${memberId}`]: Date.now(),
+      });
     });
-    return { ok: true, roomId: roomDoc.id };
+
+    return { ok: true, roomId: roomRef.id };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
