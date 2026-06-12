@@ -9,6 +9,7 @@ import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
 import { EquipmentManager, ArmorManager, AccessoryManager, normalizeEquipment } from "../shared/Equipment";
 import { auth } from "../../lib/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
+import { APP_THEMES } from "../../lib/theme";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 const HALF_LABEL = { first:"上半年", second:"下半年" };
@@ -38,7 +39,7 @@ function useCardTheme() {
   return [theme, setTheme];
 }
 
-export default function MemberProfile({ onPageChange }) {
+export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange }) {
   const { profile } = useAuth();
   const [eq,            setEq]            = useState(normalizeEquipment(profile?.equipment));
   const [armorSets,     setArmorSets]     = useState(profile?.armorSets     || []);
@@ -164,9 +165,9 @@ export default function MemberProfile({ onPageChange }) {
                   className="text-xl leading-none opacity-70 hover:opacity-100 transition-opacity"
                   title="更換主題">🎨</button>
                 {showThemePicker && (
-                  <div className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-2xl p-3 w-48"
+                  <div className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-2xl p-3 w-52"
                     style={{ border:"1px solid #e2e8f0" }}>
-                    <div className="text-gray-500 text-xs font-bold mb-2 px-1">選擇主題</div>
+                    <div className="text-gray-500 text-xs font-bold mb-2 px-1">🃏 卡片主題</div>
                     <div className="grid grid-cols-4 gap-2">
                       {CARD_THEMES.map(t => (
                         <button key={t.id} onClick={() => { setCardTheme(t.id); setShowThemePicker(false); }}
@@ -178,6 +179,23 @@ export default function MemberProfile({ onPageChange }) {
                         </button>
                       ))}
                     </div>
+                    {onAppThemeChange && (
+                      <>
+                        <div className="border-t border-gray-100 my-2" />
+                        <div className="text-gray-500 text-xs font-bold mb-2 px-1">🎨 App 主題</div>
+                        <div className="flex gap-2 justify-center">
+                          {APP_THEMES.map(t => (
+                            <button key={t.id} onClick={() => { onAppThemeChange(t.id); setShowThemePicker(false); }}
+                              title={t.label}
+                              className="flex flex-col items-center gap-1 p-1.5 rounded-xl transition-all active:scale-90"
+                              style={{ background:appTheme?.id===t.id?"#ede9fe":"transparent", border:appTheme?.id===t.id?"2px solid #7c3aed":"2px solid transparent" }}>
+                              <div className="w-8 h-8 rounded-full shadow-sm" style={{ background:`linear-gradient(135deg,${t.preview[0]},${t.preview[1]})` }} />
+                              <span className="text-gray-600 text-[9px] font-bold leading-tight text-center">{t.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

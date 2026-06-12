@@ -440,7 +440,7 @@ for (const potion of POTIONS) {
   for (const [count, rarity, suffix] of milestones) {
     AUTO_ACHIEVEMENTS.push({
       id:     `potion_${potion.id}_${count}`,
-      cat:    "potion",
+      cat:    "forge",
       icon:   potion.icon,
       name:   `${potion.name} · ${suffix}`,
       rarity,

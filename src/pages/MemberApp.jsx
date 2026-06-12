@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications } from "../lib/db";
+import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -49,6 +50,12 @@ export default function MemberApp() {
     try { return JSON.parse(sessionStorage.getItem("party_room"))?.isHost || false; } catch { return false; }
   });
   const [notifications, setNotifications] = useState([]);
+  const [appTheme, setAppTheme] = useState(() => getAppTheme());
+
+  function handleAppThemeChange(id) {
+    saveAppTheme(id);
+    setAppTheme(APP_THEMES.find(t => t.id === id) || APP_THEMES[0]);
+  }
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -78,11 +85,11 @@ export default function MemberApp() {
 
   function handleSelectComp(comp) { setSelComp(comp); setScoring(false); setPage("comp-detail"); }
 
-  function navColor(navId, curPage) {
-    if (navId===curPage) return "#2563eb";
-    if (navId==="comps"   && COMP_PAGES.includes(curPage))    return "#2563eb";
-    if (navId==="profile" && PROFILE_PAGES.includes(curPage)) return "#2563eb";
-    return "#94a3b8";
+  function isNavActive(navId, curPage) {
+    if (navId === curPage) return true;
+    if (navId === "comps"   && COMP_PAGES.includes(curPage))    return true;
+    if (navId === "profile" && PROFILE_PAGES.includes(curPage)) return true;
+    return false;
   }
 
   return (
@@ -92,20 +99,19 @@ export default function MemberApp() {
 
       {/* Header */}
       <div style={{ position:"sticky", top:0, zIndex:40 }}>
-        <div style={{ background:"white", borderBottom:"1px solid #e2e8f0", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontWeight:"900", color:"#1e293b", fontSize:"14px" }}>🎯 貓小隊射箭場</div>
-            <div style={{ fontSize:"11px", color:"#94a3b8" }}>Barebow Indoor Archery</div>
+            <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🎯 貓小隊射箭場</div>
+            <div style={{ fontSize:"11px", color:appTheme.subtitleColor, marginTop:"1px" }}>Barebow Indoor Archery</div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
-            <span style={{ fontSize:"13px", color:"#64748b" }}>👤 {profile?.nickname||profile?.name}</span>
-            <button onClick={logout} style={{ fontSize:"12px", color:"#94a3b8", border:"1px solid #e2e8f0", borderRadius:"8px", padding:"4px 10px", background:"white", cursor:"pointer" }}>登出</button>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
+            <button onClick={logout} style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", ...appTheme.logoutStyle }}>登出</button>
           </div>
         </div>
-        {/* 組隊中 banner — 離開組隊頁面後顯示，可一鍵回去 */}
         {partyRoomId && !["party-quest","party-battle"].includes(page) && (
           <button onClick={() => setPage(partyRoomType === "quest" ? "party-quest" : "party-battle")}
-            style={{ display:"block", width:"100%", background:"#4f46e5", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            style={{ display:"block", width:"100%", background:appTheme.partyBg, color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
             🎮 組隊進行中 — 點此回到房間
           </button>
         )}
@@ -127,7 +133,7 @@ export default function MemberApp() {
         )}
         {page==="practice"    && <MemberPractice />}
         {page==="leaderboard" && <MemberLeaderboard />}
-        {page==="profile"     && <MemberProfile onPageChange={setPage} />}
+        {page==="profile"     && <MemberProfile onPageChange={setPage} appTheme={appTheme} onAppThemeChange={handleAppThemeChange} />}
         {page==="learn"       && <MemberLearn />}
         {page==="msgs"        && <MemberMessages />}
         {page==="history"     && <MemberHistory />}
@@ -151,18 +157,23 @@ export default function MemberApp() {
 
       {/* 底部導覽 */}
       <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40 }}>
-        {nav.map(n=>(
-          <button key={n.id} onClick={()=>setPage(n.id)}
-            style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"8px 4px", gap:"2px", border:"none", background:"white", cursor:"pointer", color:navColor(n.id,page) }}>
-            <div style={{ position:"relative", display:"inline-block" }}>
-              <span style={{ fontSize:"18px" }}>{n.icon}</span>
-              {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
-                <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }}/>
-              )}
-            </div>
-            <span style={{ fontSize:"11px", fontWeight:"600" }}>{n.label}</span>
-          </button>
-        ))}
+        {nav.map(n => {
+          const active = isNavActive(n.id, page);
+          return (
+            <button key={n.id} onClick={() => setPage(n.id)}
+              style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"white", cursor:"pointer", color: active ? appTheme.navActive : "#94a3b8" }}>
+              {/* 頂部 active 指示條 */}
+              <div style={{ height:"2px", width: active ? "20px" : "0px", background:appTheme.navIndicator, borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
+              <div style={{ position:"relative", display:"inline-block" }}>
+                <span style={{ fontSize:"18px" }}>{n.icon}</span>
+                {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
+                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }} />
+                )}
+              </div>
+              <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500" }}>{n.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
