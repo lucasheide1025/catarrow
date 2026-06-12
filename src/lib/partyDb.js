@@ -390,6 +390,7 @@ export async function storeBattleRewards(roomId, memberIds, monster) {
   try {
     const rewardPending = {};
     for (const mid of memberIds) {
+      if (mid.startsWith("guest")) continue; // 訪客無背包，不需要寶箱紀錄
       const { mainChest, catChest, potionChest } = makeChests(monster);
       rewardPending[mid] = [mainChest, catChest, potionChest].filter(Boolean);
     }

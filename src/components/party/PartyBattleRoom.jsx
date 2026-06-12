@@ -11,6 +11,7 @@ import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../.
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
+import { LOOT_TABLE_GUEST, drawLoot } from "../../lib/lootTable";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","M"];
@@ -101,7 +102,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [showEvent,       setShowEvent]       = useState(null);
   const [showFullLog,     setShowFullLog]     = useState(false);
   const [showShareCard,   setShowShareCard]   = useState(false);
+  const [guestLoot,       setGuestLoot]       = useState(null);
+  const [guestAlreadyWon, setGuestAlreadyWon] = useState(false);
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
+  const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
+  const [liveRevealCount, setLiveRevealCount] = useState(0);     // 已揭曉幾位
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -109,6 +114,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const processingRef     = useRef(false);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
+  const revealTimersRef   = useRef([]);    // 逐人揭曉計時器
   const logEndRef         = useRef(null);
 
   const myId = guestOverride?.id || authProfile?.id;
@@ -195,7 +201,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [room?.log?.length]);
 
-  // 回合更新：動畫 + 音效 + 事件彈窗
+  // 回合更新：動畫 + 音效 + 事件先觸發 → 再逐人揭曉傷害（每 2 秒一位）
   useEffect(() => {
     const len = room?.log?.length || 0;
     if (len <= prevLogLenRef.current) return;
@@ -203,11 +209,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const entry = room.log[len - 1];
     if (!entry) return;
 
+    // 清除上一回合的揭曉計時器
+    revealTimersRef.current.forEach(t => clearTimeout(t));
+    revealTimersRef.current = [];
+
+    // 重置即時揭曉
+    setLiveEntry(entry);
+    setLiveRevealCount(0);
+
     // 怪物受擊動畫
     setAnimHit(true);
     setTimeout(() => setAnimHit(false), 700);
 
-    // 音效
+    // 音效（事件優先）
     if (entry.event?.type === "buff")   sfxBuff();
     else if (entry.totalDmg > 150)      sfxEpic();
     else                                sfxTap();
@@ -219,11 +233,27 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       setTimeout(() => setAnimCounter(false), 1100);
     }
 
-    // 隨機事件彈窗
+    // 有突發事件：先顯示彈窗 3.5s，再揭曉傷害
+    const eventDelay = entry.event ? 3500 : 0;
     if (entry.event) {
       setShowEvent(entry.event);
-      setTimeout(() => setShowEvent(null), 3500);
+      const et = setTimeout(() => setShowEvent(null), 3500);
+      revealTimersRef.current.push(et);
     }
+
+    // 事件結束後每 2 秒揭曉一位玩家傷害
+    const players = entry.playerLog || [];
+    players.forEach((_, idx) => {
+      const t = setTimeout(() => setLiveRevealCount(idx + 1), eventDelay + idx * 2000);
+      revealTimersRef.current.push(t);
+    });
+
+    // 全部揭曉後 2.5s 清除 liveEntry（回到普通 log 顯示）
+    const ct = setTimeout(
+      () => setLiveEntry(null),
+      eventDelay + players.length * 2000 + 2500
+    );
+    revealTimersRef.current.push(ct);
   }, [room?.log?.length]); // eslint-disable-line
 
   // 勝敗音效
@@ -231,6 +261,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room?.result === "win")  { sfxSuccess(); setTimeout(() => sfxEpic(), 350); }
     if (room?.result === "lose") { sfxSoftFail(); }
   }, [room?.result]); // eslint-disable-line
+
+  // 訪客組隊勝利：抽取紀念獎勵（sessionStorage 確保每位訪客只領一次）
+  useEffect(() => {
+    if (!room || room.status !== "completed" || room.result !== "win") return;
+    if (!myId?.startsWith("guest")) return;
+    const already = sessionStorage.getItem("guest_party_won");
+    if (already) {
+      setGuestAlreadyWon(true);
+    } else {
+      const loot = drawLoot(LOOT_TABLE_GUEST, "party", "common");
+      setGuestLoot(loot);
+      sessionStorage.setItem("guest_party_won", "1");
+    }
+  }, [room?.status, room?.result]); // eslint-disable-line
 
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -243,6 +287,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const me         = members[myId] || {};
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
+  const isGuestPlayer = myId?.startsWith("guest");
   const myChests   = room.rewardPending?.[myId] || [];
   const myClaimed  = (room.rewardClaimed || []).includes(myId);
 
@@ -656,33 +701,61 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {/* 勝利：領取寶箱 */}
         {won && (
           <div className="flex flex-col gap-3">
-            {!myClaimed && myChests.length > 0 && (
-              <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
-                <div className="text-yellow-200 font-black text-sm text-center">🎁 你的戰利品</div>
-                <div className="flex justify-center gap-3 flex-wrap">
-                  {myChests.map(c => {
-                    const info = CHEST_TYPES[c.type];
-                    return info ? (
-                      <div key={c.id} className="flex flex-col items-center gap-1">
-                        <span className="text-3xl">{info.icon}</span>
-                        <span className="text-xs text-white font-bold">{info.name}</span>
-                      </div>
-                    ) : null;
-                  })}
+            {isGuestPlayer ? (
+              /* 訪客：無背包，直接顯示紀念獎勵 */
+              guestAlreadyWon ? (
+                <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-4 text-center">
+                  <div className="text-2xl mb-2">🎮</div>
+                  <div className="text-slate-300 font-black text-sm">感謝體驗組隊打怪！</div>
+                  <div className="text-slate-500 text-xs mt-1">此次不提供額外獎勵（每位訪客限領一次）</div>
                 </div>
-                <button onClick={handleClaim} disabled={claiming}
-                  className="w-full py-3 bg-gradient-to-r from-yellow-400 to-orange-400 text-slate-900 font-black rounded-xl active:scale-95 transition-transform disabled:opacity-50">
-                  {claiming ? "領取中…" : "✅ 確認領取寶箱"}
-                </button>
-              </div>
-            )}
-            {myClaimed && (
-              <div className="bg-emerald-900/40 border border-emerald-500 rounded-2xl p-3 text-emerald-400 font-black text-sm text-center">
-                ✅ 寶箱已入庫！
-              </div>
-            )}
-            {!myChests.length && !room.rewardPending && !myClaimed && (
-              <div className="text-slate-400 text-xs text-center animate-pulse">等待房主發放獎勵…</div>
+              ) : guestLoot ? (
+                <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
+                  <div className="text-yellow-200 font-black text-sm text-center">🎁 體驗獎勵</div>
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <span className="text-5xl">{guestLoot.icon}</span>
+                    <span className="text-white font-black text-base">{guestLoot.name}</span>
+                    <span className="text-slate-300 text-xs text-center px-4">{guestLoot.desc}</span>
+                  </div>
+                  <div className="bg-yellow-500/20 rounded-xl p-2 text-center text-yellow-300 text-xs font-bold">
+                    📸 請截圖後出示給教練領取！
+                  </div>
+                </div>
+              ) : (
+                <div className="text-slate-400 text-xs text-center animate-pulse">計算獎勵中…</div>
+              )
+            ) : (
+              /* 一般會員：正常寶箱領取流程 */
+              <>
+                {!myClaimed && myChests.length > 0 && (
+                  <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="text-yellow-200 font-black text-sm text-center">🎁 你的戰利品</div>
+                    <div className="flex justify-center gap-3 flex-wrap">
+                      {myChests.map(c => {
+                        const info = CHEST_TYPES[c.type];
+                        return info ? (
+                          <div key={c.id} className="flex flex-col items-center gap-1">
+                            <span className="text-3xl">{info.icon}</span>
+                            <span className="text-xs text-white font-bold">{info.name}</span>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                    <button onClick={handleClaim} disabled={claiming}
+                      className="w-full py-3 bg-gradient-to-r from-yellow-400 to-orange-400 text-slate-900 font-black rounded-xl active:scale-95 transition-transform disabled:opacity-50">
+                      {claiming ? "領取中…" : "✅ 確認領取寶箱"}
+                    </button>
+                  </div>
+                )}
+                {myClaimed && (
+                  <div className="bg-emerald-900/40 border border-emerald-500 rounded-2xl p-3 text-emerald-400 font-black text-sm text-center">
+                    ✅ 寶箱已入庫！
+                  </div>
+                )}
+                {!myChests.length && !room.rewardPending && !myClaimed && (
+                  <div className="text-slate-400 text-xs text-center animate-pulse">等待房主發放獎勵…</div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -866,12 +939,63 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       )}
 
+      {/* 即時回合揭曉面板 */}
+      {liveEntry && (
+        <div className="px-4 pb-2 mt-1">
+          <div className="bg-slate-800/95 rounded-2xl p-4 flex flex-col gap-2 border border-slate-600/60">
+            <div className="flex items-center justify-between text-xs font-black text-slate-400">
+              <span>⚔️ 第 {liveEntry.round} 回合結算</span>
+              <span>怪物剩 <span className="text-yellow-300 text-sm font-black">{liveEntry.monsterHPAfter}</span></span>
+            </div>
+            {liveEntry.event && (
+              <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1.5 rounded-lg ${
+                liveEntry.event.type === "buff"   ? "bg-emerald-900/50 text-emerald-300" :
+                liveEntry.event.type === "debuff" ? "bg-red-900/50 text-red-300"
+                                                 : "bg-yellow-900/50 text-yellow-300"
+              }`}>
+                <span>{liveEntry.event.icon}</span>
+                <span className="font-black">{liveEntry.event.title}</span>
+                <span className="opacity-70">：{liveEntry.event.desc}</span>
+              </div>
+            )}
+            {(liveEntry.playerLog || []).slice(0, liveRevealCount).map((p, j) => (
+              <div key={j} className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
+                <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
+                <span className="text-slate-400 text-xs">造成</span>
+                <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
+                <span className="text-slate-500 text-xs">傷</span>
+                {p.crits > 0 && <span className="text-yellow-300 text-xs">✨×{p.crits}</span>}
+                {liveEntry.counterRound && p.ctr > 0 && (
+                  <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
+                )}
+              </div>
+            ))}
+            {liveRevealCount > 0 && liveRevealCount < (liveEntry.playerLog || []).length && (
+              <div className="text-slate-600 text-xs text-center animate-pulse py-1">▶ 下一位…</div>
+            )}
+            {liveRevealCount >= (liveEntry.playerLog || []).length && liveRevealCount > 0 && (
+              <>
+                <div className="flex items-center justify-between text-sm pt-1.5 border-t border-white/10 mt-1">
+                  <span className="text-slate-400 font-bold">🗡️ 本回合總傷</span>
+                  <span className="text-rose-400 font-black text-xl">{liveEntry.totalDmg}</span>
+                </div>
+                {liveEntry.counterRound && (
+                  <div className="text-orange-300 font-bold text-xs">💥 怪物反擊！</div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 戰鬥 Log（含每人明細）*/}
       {(room.log || []).length > 0 && (
         <div className="px-4 pb-6 flex flex-col gap-2 mt-2">
           <div className="text-xs font-black text-slate-500 uppercase tracking-widest">戰鬥記錄</div>
           <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
-            {[...room.log].reverse().map((entry, i) => (
+            {[...room.log].reverse().map((entry, i) => {
+              if (i === 0 && liveEntry) return null; // 揭曉中跳過，避免重複
+              return (
               <div key={i} className="bg-slate-800/70 rounded-xl p-3 text-xs text-slate-300 flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-slate-400 font-black">
                   <span>第 {entry.round} 回合</span>
@@ -904,7 +1028,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   </div>
                 )}
               </div>
-            ))}
+            ); })}
             <div ref={logEndRef} />
           </div>
         </div>
