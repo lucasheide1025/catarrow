@@ -127,6 +127,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     const res = await joinDuelRoom(code.trim(), myId, myName, myTeam, stats, isGuest);
     setLoading(false);
     if (!res.ok) { toast(res.reason, "error"); return; }
+    if (res.roomType === "uneven") toast("⚡ 不對等模式：已自動分配至 B 隊");
     try { sessionStorage.setItem("duel_wait_id", res.roomId); } catch {}
     setRoomId(res.roomId);
     setIsHost(false);

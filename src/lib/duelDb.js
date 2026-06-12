@@ -85,11 +85,13 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
     };
 
     // 用 transaction 讓「讀人數 → 寫入成員」變成原子操作，避免多人同時加入超員
+    let actualType = null;
     await runTransaction(db, async (tx) => {
       const roomDoc = await tx.get(roomRef);
       if (!roomDoc.exists()) throw new Error("房間不存在");
       const room = roomDoc.data();
       if (room.status !== "waiting") throw new Error("房間已開始，無法加入");
+      actualType = room.type;
       const max = maxMap[room.type] || 8;
       // 不對等模式：所有加入者強制 B 隊
       const joinTeam = room.type === "uneven" ? "B" : team;
@@ -102,7 +104,7 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
       });
     });
 
-    return { ok: true, roomId: roomRef.id };
+    return { ok: true, roomId: roomRef.id, roomType: actualType };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
@@ -354,6 +356,45 @@ export async function getDuelStats(memberId) {
     if (snap.exists()) return snap.data();
   } catch {}
   return { wins: 0, losses: 0, draws: 0, soloWins: 0, soloLosses: 0, teamWins: 0, teamLosses: 0, flawless: 0, totalDmg: 0 };
+}
+
+// ── 再來一局：重新分隊後重置（部分同意的情況）─────────────
+export async function resetWithRedistribution(roomId, room) {
+  try {
+    const hostId = room.hostId;
+    const allPlayers = [
+      ...Object.entries(room.teamA || {}).map(([id, m]) => [id, m]),
+      ...Object.entries(room.teamB || {}).map(([id, m]) => [id, m]),
+    ];
+    // Fisher-Yates shuffle（保持隨機分配）
+    for (let i = allPlayers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allPlayers[i], allPlayers[j]] = [allPlayers[j], allPlayers[i]];
+    }
+    let newTeamA = {}, newTeamB = {};
+    if (room.type === "uneven") {
+      // 不對等：房主固定 A，其他人全 B
+      for (const [id, m] of allPlayers) {
+        if (id === hostId) newTeamA[id] = m;
+        else newTeamB[id] = m;
+      }
+    } else {
+      // 一般：重新均分
+      const half = Math.ceil(allPlayers.length / 2);
+      allPlayers.slice(0, half).forEach(([id, m]) => { newTeamA[id] = m; });
+      allPlayers.slice(half).forEach(([id, m])   => { newTeamB[id] = m; });
+    }
+    // 重置個人狀態
+    const resetM = m => ({ ...m, hp: m.maxHP, arrows: [], ready: false, alive: true, disconnected: false });
+    Object.keys(newTeamA).forEach(id => { newTeamA[id] = resetM(newTeamA[id]); });
+    Object.keys(newTeamB).forEach(id => { newTeamB[id] = resetM(newTeamB[id]); });
+    await updateDoc(doc(db, DUEL, roomId), {
+      teamA: newTeamA, teamB: newTeamB,
+      round: 1, log: [], result: null, status: "active",
+      processing: false, rematch: null,
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
 }
 
 // ── 關閉房間（host）────────────────────────────────────────

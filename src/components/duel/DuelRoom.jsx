@@ -7,6 +7,7 @@ import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
   updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
   clearDuelProcessing, proposeRematch, voteRematch, clearRematch,
+  removePlayerFromRoom, resetWithRedistribution,
 } from "../../lib/duelDb";
 
 const ARROWS = 5;
@@ -140,6 +141,15 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     heartbeatRef.current = setInterval(() => updateDuelHeartbeat(roomId, myId), 30000);
     return () => clearInterval(heartbeatRef.current);
   }, [roomId, myId]);
+
+  // ── 30 秒未送出箭分提醒 ─────────────────────────────────
+  const needsSubmit = !submitted && (room?.status === "active") && !eventPhase
+    && revealIdx < 0;   // 不在揭露動畫期間
+  useEffect(() => {
+    if (!needsSubmit) return;
+    const t = setTimeout(() => toast("⏰ 快點送出本回合的箭分！"), 30000);
+    return () => clearTimeout(t);
+  }, [needsSubmit]); // eslint-disable-line
 
   // ── 偵測新 log 並開始揭露動畫 ───────────────────────────
   useEffect(() => {
@@ -300,9 +310,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setRevealIdx(0);
   }
 
-  async function handleReset() {
-    if (!isHost || !room) return;
-    await resetDuelRoom(roomId, room);
+  function resetLocalState() {
     setResultShown(false);
     setShowResult(false);
     setEventPhase(false);
@@ -310,6 +318,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setRevealIdx(-1);
     lastLogLen.current = 0;
     lastRoundFired.current = 0;
+  }
+
+  async function handleReset() {
+    if (!isHost || !room) return;
+    await resetDuelRoom(roomId, room);
+    resetLocalState();
   }
 
   // ── 再來一局：投票 ──────────────────────────────────────
@@ -320,22 +334,21 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     await voteRematch(roomId, myId);
   }
 
-  // 所有人投票完畢 → host 自動重開
-  const rematchVotes = room?.rematch?.votes || {};
-  useEffect(() => {
-    if (!isHost || !room?.rematch?.pending) return;
-    const total = Object.keys(room.teamA||{}).length + Object.keys(room.teamB||{}).length;
-    if (Object.keys(rematchVotes).length >= total) handleReset();
-  }, [JSON.stringify(rematchVotes)]); // eslint-disable-line
+  // host 主動開始下一局（不等全員同意，重新分隊）
+  async function handleStartRematch() {
+    if (!isHost || !room) return;
+    await resetWithRedistribution(roomId, room);
+    resetLocalState();
+  }
 
-  // 30 秒後 host 自動取消 pending（防止永遠等待）
-  useEffect(() => {
-    if (!isHost || !room?.rematch?.pending) return;
-    const elapsed = Date.now() - (room.rematch.proposedAt || 0);
-    const remaining = Math.max(0, 30000 - elapsed);
-    const t = setTimeout(() => clearRematch(roomId).catch(() => {}), remaining);
-    return () => clearTimeout(t);
-  }, [room?.rematch?.pending]); // eslint-disable-line
+  // 不同意：將自己移出房間後離開
+  async function handleDisagree() {
+    if (!myTeam) { onLeave(); return; }
+    await removePlayerFromRoom(roomId, myTeam, myId).catch(() => {});
+    onLeave();
+  }
+
+  const rematchVotes = room?.rematch?.votes || {};
 
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
@@ -429,16 +442,29 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
                 <div className="text-center text-slate-300 text-sm font-bold py-1">
                   ⚔️ 再來一局？　同意 {vCount}/{total}
                 </div>
-                {!myVoted && (
+                {isHost && (
+                  <button onClick={handleStartRematch}
+                    className="w-full py-3 rounded-2xl font-black text-white border border-amber-400/50"
+                    style={{ background:"linear-gradient(135deg,#1d4ed8,#6d28d9)" }}>
+                    🚀 開始下一局（{vCount} 人同意）
+                  </button>
+                )}
+                {!isHost && !myVoted && (
                   <button onClick={handleVoteRematch}
                     className="w-full py-3 rounded-2xl font-black text-white border border-green-400/50"
                     style={{ background:"linear-gradient(135deg,#065f46,#16a34a)" }}>
                     ✅ 同意
                   </button>
                 )}
-                {myVoted && (
+                {!isHost && !myVoted && (
+                  <button onClick={handleDisagree}
+                    className="w-full py-2.5 rounded-2xl font-black text-red-400 border border-red-600/40 bg-red-900/20">
+                    ❌ 不同意（離開房間）
+                  </button>
+                )}
+                {!isHost && myVoted && (
                   <div className="text-center text-green-400 text-sm font-bold py-1 animate-pulse">
-                    ✅ 已同意，等待其他人…
+                    ✅ 已同意，等待主持人開始…
                   </div>
                 )}
               </div>
