@@ -37,6 +37,9 @@ import MonsterBattle      from "../components/member/MonsterBattle";
 import PartyLobby         from "../components/party/PartyLobby";
 import PartyQuestRoom     from "../components/party/PartyQuestRoom";
 import PartyBattleRoom    from "../components/party/PartyBattleRoom";
+import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
+import DuelLobby         from "../components/duel/DuelLobby";
+import DuelRoom          from "../components/duel/DuelRoom";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -44,6 +47,11 @@ export default function AdminApp() {
   const { logout, profile } = useAuth();
   const [page, setPage]             = useState(() => sessionStorage.getItem("admin_page") || "members");
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
+  const [appTheme, setAppTheme]     = useState(() => getAppTheme());
+  function handleAppThemeChange(id) {
+    saveAppTheme(id);
+    setAppTheme(APP_THEMES.find(t => t.id === id) || APP_THEMES[0]);
+  }
   const [selComp, setSelComp]       = useState(null);
   const [scoring, setScoring]       = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -84,6 +92,18 @@ export default function AdminApp() {
     sessionStorage.removeItem("admin_party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
     setPage("profile");
+  }
+
+  const [duelRoomId,  setDuelRoomId]  = useState(null);
+  const [duelIsHost,  setDuelIsHost]  = useState(false);
+  const [duelMyTeam,  setDuelMyTeam]  = useState("A");
+  function handleEnterDuelRoom(roomId, team, host) {
+    setDuelRoomId(roomId); setDuelMyTeam(team); setDuelIsHost(host);
+    setPage("duel-room");
+  }
+  function handleLeaveDuel() {
+    setDuelRoomId(null); setDuelIsHost(false);
+    setPage("duel");
   }
 
   // 記住當前頁面 + 射手模式（重整後留在原地）
@@ -163,7 +183,7 @@ const adminNav = [
           )}
           {page==="practice"    && <MemberPractice/>}
           {page==="leaderboard" && <MemberLeaderboard/>}
-          {page==="profile"     && <MemberProfile onPageChange={setPage}/>}
+          {page==="profile"     && <MemberProfile onPageChange={setPage} appTheme={appTheme} onAppThemeChange={handleAppThemeChange} />}
           {page==="learn"       && <MemberLearn/>}
           {page==="msgs"        && <MemberMessages/>}
           {page==="history"     && <MemberHistory/>}
@@ -175,7 +195,7 @@ const adminNav = [
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
           {page==="cards"       && <CardCollection />}
-          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
+          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} onGoDuel={()=>setPage("duel")}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
@@ -183,12 +203,14 @@ const adminNav = [
           {page==="party-battle" && partyRoomId && (
             <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
           )}
+          {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")}/>}
+          {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <div style={{position:"relative",display:"inline-block"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (

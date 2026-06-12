@@ -31,8 +31,8 @@ import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
-const COMP_PAGES    = ["comp-detail","monster"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","duel","duel-room"];
+const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
