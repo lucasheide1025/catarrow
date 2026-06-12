@@ -17,8 +17,8 @@ function genCode() {
 export function balanceDuelStats(raw) {
   return {
     hp:  Math.max(200, Math.round(200 + Math.min((raw.hp  - 200) * 0.12, 80))),  // 200~280
-    atk: Math.max(20,  Math.round(20  + Math.min((raw.atk - 15)  * 0.20, 35))),  // 20~55
-    def: Math.max(10,  Math.round(10  + Math.min((raw.def - 10)  * 0.16, 18))),  // 10~28
+    atk: Math.max(5,   Math.round(5   + Math.min((raw.atk - 15)  * 0.05, 9))),   // 5~14
+    def: Math.max(2,   Math.round(2   + Math.min((raw.def - 8)   * 0.15, 5))),   // 2~7
   };
 }
 
@@ -186,10 +186,8 @@ export async function clearDuelProcessing(roomId) {
 // ── 處理回合（host）────────────────────────────────────────
 // calcDmgFn(arrows, atk, targetDef) → { dmg, crits, arrowBreakdown }
 export async function processDuelRound(roomId, room, calcDmgFn) {
-  if (room.processing) return { ok: false, reason: "processing" };
   try {
-    await updateDoc(doc(db, DUEL, roomId), { processing: true });
-
+    // 全部在記憶體計算完，一次寫入 Firestore（省去 processing:true 的中間寫入）
     const teamA = room.teamA || {};
     const teamB = room.teamB || {};
     const aliveA = Object.keys(teamA).filter(id => teamA[id].alive);
@@ -244,7 +242,7 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
     }
 
     // 更新 HP
-    const updates = { processing: false, round: (room.round || 1) + 1 };
+    const updates = { round: (room.round || 1) + 1 };
     for (const id of aliveA) {
       let hp = Math.max(0, (teamA[id].hp || 0) + (hpDelta[id] || 0));
       if (eff.healArcher) hp = Math.min(teamA[id].maxHP, hp + eff.healArcher);
@@ -277,7 +275,6 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
     await updateDoc(doc(db, DUEL, roomId), updates);
     return { ok: true, result };
   } catch (e) {
-    await updateDoc(doc(db, DUEL, roomId), { processing: false }).catch(() => {});
     return { ok: false, reason: e.message };
   }
 }

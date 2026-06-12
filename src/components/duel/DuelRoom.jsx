@@ -62,7 +62,7 @@ function calcDmgFn(arrows, atk, targetDef) {
       arrowBreakdown.push({ label: "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
       continue;
     }
-    const base = 8 + atk * 0.7 + score * 1.2 - targetDef * 0.35;
+    const base = 2 + atk * 0.5 + score * 0.4 - targetDef * 0.3;
     const mult = 0.85 + Math.random() * 0.3;
     const isCrit = mult > 1.05 || pMult >= 1.8;
     const d = Math.max(1, Math.round(base * pMult * mult));
@@ -108,6 +108,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [floats, setFloats]           = useState([]);   // { id, text, team, memberId, isCrit }
   const [flashIds, setFlashIds]       = useState({});   // { memberId: true }
   const [resultShown, setResultShown] = useState(false);
+  const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
   const [duelStats, setDuelStats]     = useState(null);
   const [cheerMsg, setCheerMsg]       = useState("");
   const lastLogLen      = useRef(0);
@@ -266,9 +267,11 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (!isHost || !room) return;
     await resetDuelRoom(roomId, room);
     setResultShown(false);
+    setShowResult(false);
     setRevealEntry(null);
     setRevealIdx(-1);
     lastLogLen.current = 0;
+    lastRoundFired.current = 0;
   }
 
   if (!room) return (
@@ -278,7 +281,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   );
 
   // ── 結算畫面 ────────────────────────────────────────────
-  if (room.status === "finished") {
+  if (showResult) {
     const win  = room.result === `team${myTeam}`;
     const draw = room.result === "draw";
     const isSolo = room.type === "1v1";
@@ -473,8 +476,22 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             </span>
           )
         ))}
-        {room.processing && <span className="text-xs text-slate-400 animate-pulse">⚙️ 計算中…</span>}
       </div>
+
+      {/* 戰鬥結束 → reveal 跑完後顯示確認按鈕 */}
+      {room.status === "finished" && !showResult && (
+        <div className="mx-4 mt-3">
+          {revealIdx >= ARROWS ? (
+            <button onClick={() => setShowResult(true)}
+              className="w-full py-3 rounded-2xl font-black text-white border border-amber-400/60 active:scale-95 transition-transform"
+              style={{ background:"linear-gradient(135deg,#92400e,#b45309)", animation:"slide-in .4s ease" }}>
+              🏆 查看戰鬥結果
+            </button>
+          ) : (
+            <div className="text-center text-slate-400 text-sm animate-pulse py-2">⚔️ 結算中，請稍候…</div>
+          )}
+        </div>
+      )}
 
       {/* 箭分輸入區 */}
       <div className="flex-1" />
