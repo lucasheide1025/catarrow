@@ -100,6 +100,8 @@ export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
   const [dexGrants, setDexGrants]   = useState([]);
   const [dexConfig, setDexConfig]   = useState({ physicalMax:20, pointMax:20 });
   const [history, setHistory]       = useState([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyCard, setHistoryCard] = useState(null); // 從歷史開小卡用
   const [dailyLeft, setDailyLeft]   = useState(null);
   const [dailyMax, setDailyMax]     = useState(5);
 
@@ -154,15 +156,39 @@ export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
   useEffect(() => {
     if (isGuest) { setArcherStats({ hp:100, atk:10, def:10 }); setDailyLeft(null); return; }
     if (!profile?.id) return;
-    getCertRecords(profile.id).then(setCertRecords).catch(()=>{});
-    getCertification(profile.id).then(setCertification).catch(()=>{});
-    getDexConfig().then(setDexConfig).catch(()=>{});
+
+    // ── sessionStorage 快取（同一 session 不重複讀）────────
+    function ssGet(k) { try { const v=sessionStorage.getItem(k); return v?JSON.parse(v):null; } catch { return null; } }
+    function ssSet(k,v) { try { sessionStorage.setItem(k,JSON.stringify(v)); } catch {} }
+
+    const cached_cr   = ssGet(`mb_cr_${profile.id}`);
+    const cached_cert = ssGet(`mb_cert_${profile.id}`);
+    const cached_dcfg = ssGet("mb_dexCfg");
+
+    if (cached_cr)   setCertRecords(cached_cr);
+    else getCertRecords(profile.id).then(v => { setCertRecords(v); ssSet(`mb_cr_${profile.id}`, v); }).catch(()=>{});
+
+    if (cached_cert) setCertification(cached_cert);
+    else getCertification(profile.id).then(v => { setCertification(v); ssSet(`mb_cert_${profile.id}`, v); }).catch(()=>{});
+
+    if (cached_dcfg) setDexConfig(cached_dcfg);
+    else getDexConfig().then(v => { setDexConfig(v); ssSet("mb_dexCfg", v); }).catch(()=>{});
+
     const unsub = subscribeDexGrants(profile.id, setDexGrants);
     const unsubPotions = subscribePotions(profile.id, setPotionInv);
-    getMonsterDailyConfig().then(cfg => {
-      setDailyMax(cfg.dailyMax||5);
-      checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
-    }).catch(()=>setDailyLeft(5));
+
+    const cached_dcnt = ssGet("mb_dailyCfg");
+    if (cached_dcnt) {
+      setDailyMax(cached_dcnt.dailyMax||5);
+      checkMonsterDailyLimit(profile.id, cached_dcnt.dailyMax||5).then(left=>setDailyLeft(left));
+    } else {
+      getMonsterDailyConfig().then(cfg => {
+        setDailyMax(cfg.dailyMax||5);
+        ssSet("mb_dailyCfg", cfg);
+        checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
+      }).catch(()=>setDailyLeft(5));
+    }
+
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
     return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
@@ -617,7 +643,7 @@ export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
         <div className="flex items-center justify-between">
           {onBack && <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>}
           {!isGuest && (
-            <button onClick={()=>{ getMonsterLogs(profile.id).then(setHistory); setPhase("history"); }}
+            <button onClick={()=>{ getMonsterLogs(profile.id, 20).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
               className="text-xs text-blue-600 font-bold">📊 戰績記錄</button>
           )}
         </div>
@@ -1392,57 +1418,86 @@ export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
   }
 
   if (phase==="history") {
+    const shownHistory = historyExpanded ? history : history.slice(0, 5);
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
+
+        {/* 從歷史開戰績小卡 */}
+        {historyCard && (
+          <BattleCard onClose={()=>setHistoryCard(null)}
+            battleData={{
+              monster: MONSTERS.find(m=>m.id===historyCard.monsterId),
+              totalDmg: historyCard.totalDmg || 0,
+              totalReceived: historyCard.totalReceived || 0,
+              critCount: historyCard.critCount || 0,
+              loot: historyCard.lootName ? { icon: historyCard.lootIcon||"🎁", name: historyCard.lootName } : null,
+              round: historyCard.rounds || 0,
+              mode: historyCard.mode,
+              battleMode: historyCard.battleMode,
+            }} />
+        )}
+
         <button onClick={()=>setPhase("select")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="text-gray-800 font-black text-xl">📊 戰績記錄</div>
         {history.length===0?(
           <div className="text-gray-400 text-center py-8">尚無戰績，快去挑戰吧！</div>
         ):(
-          <div className="flex flex-col gap-2">
-            {history.map(h=>{
-              const m=MONSTERS.find(m=>m.id===h.monsterId);
-              const family=FAMILIES[m?.family]||{};
-              const tier=TIER_LABEL[m?.tier]||{};
-              const rs=h.roundScores||[];
-              const totalArrows=rs.flatMap(r=>r.scores||[]);
-              const stats=calcStats(totalArrows);
-              return (
-                <div key={h.id} className={`rounded-xl border ${h.result==="win"?"bg-emerald-50 border-emerald-200":"bg-gray-50 border-gray-200"}`}>
-                  <div className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{m?.icon||"👹"}</span>
-                      <div>
-                        <div className="font-bold text-gray-800 text-sm">{h.monsterName}</div>
-                        <div className="flex gap-1 mt-0.5">
-                          {family.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:family.color+"22", color:family.color }}>{family.icon} {family.label}</span>}
-                          {tier.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:tier.bg, color:tier.color }}>【{tier.label}】</span>}
-                        </div>
-                        <div className="text-gray-400 text-xs mt-0.5">{h.mode==="veteran"?"老手":"新手"}·{h.battleMode==="zombie"?"殭屍":"分數"}　{h.rounds}回合</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`font-black text-sm ${h.result==="win"?"text-emerald-600":"text-gray-400"}`}>{h.result==="win"?"🏆 勝利":"💀 落敗"}</div>
-                      {h.lootName&&<div className="text-xs text-amber-600">{h.lootIcon} {h.lootName}</div>}
-                    </div>
-                  </div>
-                  {stats&&(
-                    <div className="px-4 pb-3 border-t border-gray-100 pt-2">
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens+"箭"],["脫靶",stats.misses+"箭"]].map(([l,v])=>(
-                          <div key={l} className="bg-white rounded-lg p-1.5 text-center border border-gray-100">
-                            <div className="text-gray-400 text-[10px]">{l}</div>
-                            <div className="font-black text-gray-700 text-sm">{v}</div>
+          <>
+            <div className="flex flex-col gap-2">
+              {shownHistory.map(h=>{
+                const m=MONSTERS.find(m=>m.id===h.monsterId);
+                const family=FAMILIES[m?.family]||{};
+                const tier=TIER_LABEL[m?.tier]||{};
+                const rs=h.roundScores||[];
+                const totalArrows=rs.flatMap(r=>r.scores||[]);
+                const stats=calcStats(totalArrows);
+                return (
+                  <div key={h.id} className={`rounded-xl border ${h.result==="win"?"bg-emerald-50 border-emerald-200":"bg-gray-50 border-gray-200"}`}>
+                    <div className="flex items-center justify-between p-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{m?.icon||"👹"}</span>
+                        <div>
+                          <div className="font-bold text-gray-800 text-sm">{h.monsterName}</div>
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {family.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:family.color+"22", color:family.color }}>{family.icon} {family.label}</span>}
+                            {tier.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:tier.bg, color:tier.color }}>【{tier.label}】</span>}
                           </div>
-                        ))}
+                          <div className="text-gray-400 text-xs mt-0.5">{h.mode==="veteran"?"老手":h.mode==="student"?"學生":"新手"}·{h.battleMode==="zombie"?"殭屍":"分數"}　{h.rounds}回合</div>
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-1">
+                        <div className={`font-black text-sm ${h.result==="win"?"text-emerald-600":"text-gray-400"}`}>{h.result==="win"?"🏆 勝利":"💀 落敗"}</div>
+                        {h.lootName&&<div className="text-xs text-amber-600">{h.lootIcon} {h.lootName}</div>}
+                        <button onClick={()=>setHistoryCard(h)}
+                          className="text-xs px-2 py-0.5 rounded-lg border border-gray-300 text-gray-500 font-bold bg-white active:scale-95">
+                          🃏 小卡
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {stats&&(
+                      <div className="px-4 pb-3 border-t border-gray-100 pt-2">
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens+"箭"],["脫靶",stats.misses+"箭"]].map(([l,v])=>(
+                            <div key={l} className="bg-white rounded-lg p-1.5 text-center border border-gray-100">
+                              <div className="text-gray-400 text-[10px]">{l}</div>
+                              <div className="font-black text-gray-700 text-sm">{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {history.length > 5 && (
+              <button onClick={()=>setHistoryExpanded(e=>!e)}
+                className="text-sm text-blue-600 font-bold text-center py-1">
+                {historyExpanded ? "▲ 收起" : `▼ 查看更多（共 ${history.length} 筆）`}
+              </button>
+            )}
+          </>
         )}
       </div>
     );

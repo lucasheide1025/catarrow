@@ -28,14 +28,37 @@ const DUEL_CSS = `
 
 // ── 傷害計算（client-side，用於 host 處理回合）─────────────
 function calcDmgFn(arrows, atk, targetDef) {
+  // 防玻璃心：≥3 M → 40% 機率「天外飛箭」，救回 1~2 支
+  const missCount = arrows.filter(a => a.score === 0).length;
+  let processedArrows = arrows;
+  let luckyEvent = null;
+  if (missCount >= 3 && Math.random() < 0.40) {
+    let saved = 0;
+    processedArrows = arrows.map(a => {
+      if (a.score === 0 && saved < 2 && Math.random() < 0.60) {
+        saved++;
+        const s = 5 + Math.floor(Math.random() * 3); // 5~7 分
+        return { ...a, score: s, label: `✨${s}`, lucky: true };
+      }
+      return a;
+    });
+    if (saved > 0) {
+      luckyEvent = {
+        icon: "✨",
+        title: "天外飛箭",
+        desc: `${saved} 支脫靶的箭竟然擦中了目標！`,
+      };
+    }
+  }
+
   let dmg = 0, crits = 0;
   const arrowBreakdown = [];
-  for (const arrow of arrows) {
+  for (const arrow of processedArrows) {
     const score = arrow.score ?? 0;
     const part  = resolveHitPart(score, ALL_PARTS);
     const pMult = part?.multiplier ?? 1.0;
     if (!score || pMult === 0) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+      arrowBreakdown.push({ label: "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
       continue;
     }
     const base = 8 + atk * 0.7 + score * 1.2 - targetDef * 0.35;
@@ -44,9 +67,13 @@ function calcDmgFn(arrows, atk, targetDef) {
     const d = Math.max(1, Math.round(base * pMult * mult));
     dmg += d;
     if (isCrit) crits++;
-    arrowBreakdown.push({ label: arrow.label || String(score), partIcon: part?.icon || "❤️", partName: part?.name || "胸腔", partMult: pMult, dmg: d, isCrit });
+    arrowBreakdown.push({
+      label: arrow.lucky ? `✨${score}` : (arrow.label || String(score)),
+      partIcon: part?.icon || "❤️", partName: part?.name || "胸腔",
+      partMult: pMult, dmg: d, isCrit, lucky: arrow.lucky || false,
+    });
   }
-  return { dmg, crits, arrowBreakdown };
+  return { dmg, crits, arrowBreakdown, luckyEvent };
 }
 
 // ── HP 條 ───────────────────────────────────────────────────
@@ -411,12 +438,19 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             return (
               <div key={i} className={`rounded-xl px-2 py-1.5 border text-xs ${atk.attackerId === myId ? "border-amber-500/40 bg-amber-900/20" : "border-white/10 bg-white/5"}`}
                 style={{ animation:"slide-in .2s ease" }}>
-                <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
-                <span className="text-slate-400 mx-1">→</span>
-                <span className="text-slate-200">{tName}</span>
-                <span className="ml-2 text-white font-black">{shownDmg > 0 ? `-${shownDmg}` : "…"}</span>
-                {shownCrits > 0 && <span className="ml-1 text-amber-400 font-black">💥×{shownCrits}</span>}
-                <span className="ml-2 text-slate-500">{shown.map(b => b.label).join(" ")}</span>
+                <div className="flex items-center flex-wrap gap-x-1">
+                  <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
+                  <span className="text-slate-400">→</span>
+                  <span className="text-slate-200">{tName}</span>
+                  <span className="text-white font-black">{shownDmg > 0 ? `-${shownDmg}` : "…"}</span>
+                  {shownCrits > 0 && <span className="text-amber-400 font-black">💥×{shownCrits}</span>}
+                  <span className="text-slate-500">{shown.map(b => b.label).join(" ")}</span>
+                </div>
+                {atk.luckyEvent && revealIdx > 0 && (
+                  <div className="mt-1 text-amber-300 font-black" style={{ animation:"slide-in .3s ease" }}>
+                    {atk.luckyEvent.icon} {atk.luckyEvent.title} — {atk.luckyEvent.desc}
+                  </div>
+                )}
               </div>
             );
           })}

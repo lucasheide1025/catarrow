@@ -13,6 +13,36 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+// ── 決鬥數值平衡（壓縮強度差距，老手僅略有優勢）──────────
+export function balanceDuelStats(raw) {
+  return {
+    hp:  Math.max(200, Math.round(200 + Math.min((raw.hp  - 200) * 0.12, 80))),  // 200~280
+    atk: Math.max(20,  Math.round(20  + Math.min((raw.atk - 15)  * 0.20, 35))),  // 20~55
+    def: Math.max(10,  Math.round(10  + Math.min((raw.def - 10)  * 0.16, 18))),  // 10~28
+  };
+}
+
+// ── 隨機分隊（host）────────────────────────────────────────
+export async function shuffleDuelTeams(roomId, room) {
+  try {
+    const all = [
+      ...Object.entries(room.teamA || {}).map(([id, m]) => [id, m]),
+      ...Object.entries(room.teamB || {}).map(([id, m]) => [id, m]),
+    ];
+    // Fisher-Yates shuffle
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    const half = Math.ceil(all.length / 2);
+    const newA = {}, newB = {};
+    all.slice(0, half).forEach(([id, m]) => { newA[id] = m; });
+    all.slice(half).forEach(([id, m])   => { newB[id] = m; });
+    await updateDoc(doc(db, DUEL, roomId), { teamA: newA, teamB: newB });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 建立房間 ────────────────────────────────────────────────
 export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, isGuest = false) {
   try {
@@ -172,17 +202,18 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
     }
 
     // 計算每人傷害
-    const attacks = []; // { attackerId, attackerTeam, targetId, dmg, crits, arrowBreakdown }
+    const attacks = []; // { attackerId, attackerTeam, targetId, dmg, crits, arrowBreakdown, luckyEvent }
     for (const id of aliveA) {
       const m = teamA[id];
       const targetId = pickTarget("A");
       if (!targetId) continue;
       const targetDef = (teamB[targetId]?.def || 10);
       const raw = calcDmgFn(m.arrows || [], m.atk || 20, targetDef);
-      const dmg = typeof raw === "number" ? raw : (raw.dmg || 0);
-      const crits = typeof raw === "number" ? 0 : (raw.crits || 0);
+      const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
+      const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
       const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
-      attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits, arrowBreakdown });
+      const luckyEvent = typeof raw === "object" ? (raw.luckyEvent || null)  : null;
+      attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits, arrowBreakdown, luckyEvent });
     }
     for (const id of aliveB) {
       const m = teamB[id];
@@ -190,10 +221,11 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
       if (!targetId) continue;
       const targetDef = (teamA[targetId]?.def || 10);
       const raw = calcDmgFn(m.arrows || [], m.atk || 20, targetDef);
-      const dmg = typeof raw === "number" ? raw : (raw.dmg || 0);
-      const crits = typeof raw === "number" ? 0 : (raw.crits || 0);
+      const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
+      const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
       const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
-      attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits, arrowBreakdown });
+      const luckyEvent = typeof raw === "object" ? (raw.luckyEvent || null)  : null;
+      attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits, arrowBreakdown, luckyEvent });
     }
 
     // 加總傷害到各目標

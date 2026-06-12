@@ -1082,7 +1082,7 @@ export async function recordMonsterSession(memberId) {
 }
  
 // 取得戰鬥記錄
-export async function getMonsterLogs(memberId) {
+export async function getMonsterLogs(memberId, maxCount = 20) {
   try {
     const snap = await getDocs(query(
   collection(db, C_MONSTER_LOGS),
@@ -1092,7 +1092,7 @@ export async function getMonsterLogs(memberId) {
     return snap.docs
   .map(d => ({ id: d.id, ...d.data() }))
   .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-  .slice(0, 20);
+  .slice(0, maxCount);
   } catch { return []; }
 }
  
@@ -1803,11 +1803,12 @@ export async function approveMonthlyCardRequest(requestId, memberId, operatorId)
     const memRef = doc(db, C.members, memberId);
     const memSnap = await getDoc(memRef);
     const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
-    if (!card?.active || card.sessions <= 0) return { ok: false, reason: "月卡無效或次數不足" };
-    await updateDoc(memRef, { "monthlyCard.sessions": increment(-1) });
+    const hoursUsed = req.hours || 1;
+    if (!card?.active || card.sessions < hoursUsed) return { ok: false, reason: "月卡無效或點數不足" };
+    await updateDoc(memRef, { "monthlyCard.sessions": increment(-hoursUsed) });
     await updateDoc(reqRef, { status: "approved", reviewedAt: serverTimestamp() });
-    await _logMonthlyCard(memberId, req.memberName || memberId, "use_approved", -1,
-      `核准使用 ${req.hours} 小時`, operatorId);
+    await _logMonthlyCard(memberId, req.memberName || memberId, "use_approved", -hoursUsed,
+      `核准使用 ${hoursUsed} 小時（扣 ${hoursUsed} 點）`, operatorId);
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -1869,8 +1870,13 @@ export async function giftMonthlyCardSessions(memberId, memberName, sessions, op
 
 // 訂閱待審核月卡申請（後台）
 export function subscribePendingMonthlyRequests(callback) {
-  const q = query(collection(db, C_MONTHLY), where("status", "==", "pending"), orderBy("createdAt", "asc"));
-  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
+  // 只用 where，不加 orderBy，避免需要複合索引
+  const q = query(collection(db, C_MONTHLY), where("status", "==", "pending"));
+  return onSnapshot(q, snap => {
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    docs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+    callback(docs);
+  }, () => callback([]));
 }
 
 // 訂閱全部月卡申請（後台，含歷史最近100筆）

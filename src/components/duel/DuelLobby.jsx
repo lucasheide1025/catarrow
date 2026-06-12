@@ -4,7 +4,7 @@ import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
   createDuelRoom, joinDuelRoom, subscribeDuelRoom,
-  startDuelBattle, skipDisconnected
+  startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats
 } from "../../lib/duelDb";
 
 const TYPE_OPTIONS = [
@@ -17,12 +17,13 @@ const TYPE_OPTIONS = [
 
 function quickStats(profile, isGuest) {
   if (isGuest || !profile) return { hp: 200, atk: 20, def: 10 };
-  return calcArcherStats({
+  const raw = calcArcherStats({
     member: profile,
     certification: null,
     certRecords: profile.certRecords || [],
     dexStats: null,
   });
+  return balanceDuelStats(raw);
 }
 
 export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
@@ -89,6 +90,12 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     await skipDisconnected(roomId, team, memberId);
   }
 
+  async function handleShuffle() {
+    if (!room || !isHost) return;
+    await shuffleDuelTeams(roomId, room);
+    toast("🎲 隊伍已隨機重新分配");
+  }
+
   function handleLeaveWait() {
     setPhase("menu");
     setRoomId(null);
@@ -144,9 +151,17 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
           {/* 按鈕 */}
           {isHost ? (
-            <Btn v="primary" className="w-full" onClick={handleStart}>
-              ⚔️ 開始決鬥
-            </Btn>
+            <>
+              <div className="flex gap-2">
+                <button onClick={handleShuffle}
+                  className="flex-1 py-2.5 rounded-xl font-black text-sm border border-slate-500/50 bg-slate-800/60 text-slate-300 active:scale-95 transition-all">
+                  🎲 隨機分隊
+                </button>
+                <Btn v="primary" className="flex-1" onClick={handleStart}>
+                  ⚔️ 開始決鬥
+                </Btn>
+              </div>
+            </>
           ) : (
             <div className="text-center text-slate-400 text-sm py-2 animate-pulse">等待主持人開始…</div>
           )}
