@@ -159,10 +159,27 @@ export async function sendDuelCheer(roomId, fromName) {
   } catch { return { ok: false }; }
 }
 
+// ── 再來一局投票 ─────────────────────────────────────────────
+export async function proposeRematch(roomId, hostId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), {
+      rematch: { pending: true, votes: { [hostId]: true }, proposedAt: Date.now() }
+    });
+  } catch {}
+}
+export async function voteRematch(roomId, memberId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), { [`rematch.votes.${memberId}`]: true });
+  } catch {}
+}
+export async function clearRematch(roomId) {
+  try { await updateDoc(doc(db, DUEL, roomId), { rematch: null }); } catch {}
+}
+
 // ── 再來一局（host 重置）────────────────────────────────────
 export async function resetDuelRoom(roomId, room) {
   try {
-    const updates = { round: 1, log: [], result: null, status: "active", processing: false };
+    const updates = { round: 1, log: [], result: null, status: "active", processing: false, rematch: null };
     for (const [id, m] of Object.entries(room.teamA || {})) {
       updates[`teamA.${id}.hp`]    = m.maxHP;
       updates[`teamA.${id}.alive`] = true;

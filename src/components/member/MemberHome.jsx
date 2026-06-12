@@ -1,6 +1,7 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
 import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard } from "../../lib/db";
+import { getDuelStats } from "../../lib/duelDb";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -46,6 +47,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
   const [dexGrants, setDexGrants]         = useState([]);
   const [dexConfig, setDexConfig]         = useState({ physicalMax: 10, pointMax: 10 });
   const [loading, setLoading]             = useState(true);
+  const [duelStats, setDuelStats]         = useState(null);
   const [cardTheme, setCardTheme]         = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
   // 月卡
@@ -66,6 +68,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
     getDexConfig().then(setDexConfig).catch(() => {});
     const unsub4 = subscribeDexGrants(profile.id, setDexGrants);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
+    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
     return () => { unsub?.(); unsub2?.(); unsub4?.(); unsub5?.(); };
   }, [profile?.id]); // eslint-disable-line
 
@@ -164,6 +167,11 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
             <div className="text-xs font-black tracking-widest text-indigo-300 mb-0.5">🤺 玩家對戰</div>
             <div className="text-white font-black text-base">1v1 或組隊決鬥，爭奪勝場積分！</div>
             <div className="text-indigo-300 text-xs mt-0.5">無藥水限制・訪客可參加</div>
+            {duelStats && (
+              <div className="text-indigo-200 text-xs mt-1 font-bold">
+                {duelStats.wins}勝 {duelStats.losses}敗 · 勝率 {Math.round(duelStats.wins / Math.max(1, duelStats.wins + duelStats.losses + duelStats.draws) * 100)}%
+              </div>
+            )}
           </div>
           <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">決鬥 →</div>
         </div>

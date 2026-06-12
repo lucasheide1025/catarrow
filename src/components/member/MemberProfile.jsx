@@ -117,6 +117,7 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
   }
 
   const quickLinks = [
+    { id:"duel",          icon:"⚔️", label:"決鬥模式",  desc:"1v1・組隊對戰・查看戰績" },
     { id:"party",         icon:"👥", label:"組隊模式",  desc:"日常分享與組隊打怪" },
     { id:"materials",     icon:"🎒", label:"材料背包",  desc:"開箱、升級、合成" },
     { id:"cards",         icon:"🃏", label:"怪物卡片",  desc:"收藏、升星、裝備加成" },

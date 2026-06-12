@@ -6,7 +6,7 @@ import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
   updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
-  clearDuelProcessing,
+  clearDuelProcessing, proposeRematch, voteRematch, clearRematch,
 } from "../../lib/duelDb";
 
 const ARROWS = 5;
@@ -312,6 +312,31 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     lastRoundFired.current = 0;
   }
 
+  // ── 再來一局：投票 ──────────────────────────────────────
+  async function handleProposeRematch() {
+    await proposeRematch(roomId, myId);
+  }
+  async function handleVoteRematch() {
+    await voteRematch(roomId, myId);
+  }
+
+  // 所有人投票完畢 → host 自動重開
+  const rematchVotes = room?.rematch?.votes || {};
+  useEffect(() => {
+    if (!isHost || !room?.rematch?.pending) return;
+    const total = Object.keys(room.teamA||{}).length + Object.keys(room.teamB||{}).length;
+    if (Object.keys(rematchVotes).length >= total) handleReset();
+  }, [JSON.stringify(rematchVotes)]); // eslint-disable-line
+
+  // 30 秒後 host 自動取消 pending（防止永遠等待）
+  useEffect(() => {
+    if (!isHost || !room?.rematch?.pending) return;
+    const elapsed = Date.now() - (room.rematch.proposedAt || 0);
+    const remaining = Math.max(0, 30000 - elapsed);
+    const t = setTimeout(() => clearRematch(roomId).catch(() => {}), remaining);
+    return () => clearTimeout(t);
+  }, [room?.rematch?.pending]); // eslint-disable-line
+
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
       <div className="animate-pulse text-2xl">⚔️ 連接中…</div>
@@ -382,14 +407,44 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
         {/* 按鈕 */}
         <div className="w-full max-w-sm flex flex-col gap-2">
-          {isHost && (
-            <button onClick={handleReset}
+          {/* 未發起：host 顯示「再來一局」 */}
+          {!room.rematch?.pending && isHost && (
+            <button onClick={handleProposeRematch}
               className="w-full py-3 rounded-2xl font-black text-white border border-amber-400/50"
               style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
               ⚔️ 再來一局
             </button>
           )}
-          {!isHost && <div className="text-center text-slate-400 text-sm">等待主持人開始下一局…</div>}
+          {!room.rematch?.pending && !isHost && (
+            <div className="text-center text-slate-400 text-sm py-1">等待主持人發起下一局…</div>
+          )}
+
+          {/* 投票中 */}
+          {room.rematch?.pending && (() => {
+            const total = Object.keys(room.teamA||{}).length + Object.keys(room.teamB||{}).length;
+            const vCount = Object.keys(rematchVotes).length;
+            const myVoted = !!rematchVotes[myId];
+            return (
+              <div className="flex flex-col gap-2">
+                <div className="text-center text-slate-300 text-sm font-bold py-1">
+                  ⚔️ 再來一局？　同意 {vCount}/{total}
+                </div>
+                {!myVoted && (
+                  <button onClick={handleVoteRematch}
+                    className="w-full py-3 rounded-2xl font-black text-white border border-green-400/50"
+                    style={{ background:"linear-gradient(135deg,#065f46,#16a34a)" }}>
+                    ✅ 同意
+                  </button>
+                )}
+                {myVoted && (
+                  <div className="text-center text-green-400 text-sm font-bold py-1 animate-pulse">
+                    ✅ 已同意，等待其他人…
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <button onClick={onLeave}
             className="w-full py-3 rounded-2xl font-black text-slate-300 border border-slate-600 bg-slate-800">
             ← 離開

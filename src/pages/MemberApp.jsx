@@ -157,7 +157,7 @@ export default function MemberApp() {
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
         {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
-        {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")} />}
+        {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
         {page==="cards"       && <CardCollection />}

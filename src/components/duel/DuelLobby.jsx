@@ -4,7 +4,7 @@ import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
   createDuelRoom, joinDuelRoom, subscribeDuelRoom,
-  startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats
+  startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats
 } from "../../lib/duelDb";
 
 const TYPE_OPTIONS = [
@@ -36,6 +36,12 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   const [roomId, setRoomId] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [myStats, setMyStats] = useState(null);
+
+  useEffect(() => {
+    if (!profile?.id || isGuest) return;
+    getDuelStats(profile.id).then(setMyStats).catch(() => {});
+  }, [profile?.id]); // eslint-disable-line
 
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.name || (isGuest ? "訪客" : "射手");
@@ -268,9 +274,9 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
         {profile && (
           <div className="rounded-2xl bg-white/5 border border-white/10 p-3 flex justify-around">
             {[
-              ["🏆", profile?.duelWins || 0, "勝"],
-              ["💀", profile?.duelLosses || 0, "敗"],
-              ["🤝", profile?.duelDraws || 0, "平"],
+              ["🏆", myStats?.wins  ?? 0, "勝"],
+              ["💀", myStats?.losses ?? 0, "敗"],
+              ["🤝", myStats?.draws  ?? 0, "平"],
             ].map(([icon, val, label]) => (
               <div key={label} className="text-center">
                 <div className="text-xl font-black text-white">{val}</div>
@@ -296,7 +302,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
           </button>
         </div>
 
-        <Btn v="ghost" className="w-full" onClick={onBack}>← 返回打怪模式</Btn>
+        <Btn v="ghost" className="w-full" onClick={onBack}>← 返回首頁</Btn>
       </div>
     </div>
   );
