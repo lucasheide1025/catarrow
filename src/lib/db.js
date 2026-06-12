@@ -1012,6 +1012,19 @@ const C_MONSTER_SESSION = "monsterSessions";
 const C_MONSTER_LOGS    = "monsterLogs";
 const C_MONSTER_DEX     = "monsterDex";
 const C_CRAFT_STATS     = "craftStats";
+export function subscribeMonsterEventConfig(callback) {
+  return onSnapshot(doc(db, C_MONSTER_CONFIG, "event"), snap => {
+    callback(snap.exists() ? snap.data() : { active: false });
+  });
+}
+export async function setMonsterEventConfig(cfg, operatorId) {
+  try {
+    await setDoc(doc(db, C_MONSTER_CONFIG, "event"), {
+      ...cfg, updatedAt: serverTimestamp(), updatedBy: operatorId,
+    }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
  
 // 賽事模式設定
 export async function getMonsterEventConfig() {

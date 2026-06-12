@@ -11,6 +11,7 @@ import AdminLearn         from "../components/admin/AdminLearn";
 import AdminAchievements  from "../components/admin/AdminAchievements";
 import AdminDexGrant      from "../components/admin/AdminDexGrant";
 import AdminGiveTool      from "../components/admin/AdminGiveTool";
+import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
 import AdminMonthlyCard   from "../components/admin/AdminMonthlyCard";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
 import MemberHome         from "../components/member/MemberHome";
@@ -116,7 +117,8 @@ const adminNav = [
   { id:"review",      icon:"🔔", label:"審核" },
   { id:"monthlycard", icon:"🎫", label:"月卡" },
   { id:"learn",       icon:"📓", label:"學習" },
-  { id:"givetool",    icon:"🧪", label:"測試" },
+  { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
+  { id:"givetool",      icon:"🧪", label:"測試" },
 ];
 
   const memberNav = [
@@ -262,6 +264,7 @@ const adminNav = [
         {page==="achievements" && <AdminAchievementsTab/>}
         {page==="learn"        && <AdminLearn/>}
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
+        {page==="battlesetting" && <AdminBattleEvent/>}
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
       </div>

@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
-  getMonsterDailyConfig, getMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
+  getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed,
 } from "../../lib/db";
@@ -163,8 +163,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       setDailyMax(cfg.dailyMax||5);
       checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
     }).catch(()=>setDailyLeft(5));
-    getMonsterEventConfig().then(setEventConfig).catch(()=>{});
-    return () => { unsub && unsub(); unsubPotions && unsubPotions(); };
+    const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
+    return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
 
   useEffect(() => {
@@ -651,33 +651,6 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           </div>
         ) : (
           <>
-            {/* 賽事模式入口 */}
-            {eventConfig?.active && (
-              <button onClick={enterEventMode}
-                className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform border-2 border-amber-400"
-                style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
-                <div className="absolute -right-3 -bottom-3 text-7xl opacity-20 pointer-events-none">🏆</div>
-                <div className="relative">
-                  <div className="text-xs font-black tracking-widest text-amber-200 mb-0.5">⚔️ 賽事模式</div>
-                  <div className="text-white font-black text-base">{eventConfig.name || "賽事打怪"}</div>
-                  {eventConfig.desc && <div className="text-amber-100 text-xs mt-0.5">{eventConfig.desc}</div>}
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-                      {eventConfig.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
-                    </span>
-                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-                      {eventConfig.mode === "novice" ? "🟢 新手" : eventConfig.mode === "student" ? "🎓 學生" : "🟠 老手"}
-                    </span>
-                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-                      {eventConfig.distanceMode === "dynamic"
-                        ? `🏃 動態 ${eventConfig.dynamicStart ?? 15}m起`
-                        : `📍 ${eventConfig.fixedDistance ?? 15}m`}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-amber-200 text-xs font-bold">點此進入 →</div>
-                </div>
-              </button>
-            )}
 
             {/* 六族各1隻，依家族排列 */}
             <div className="flex items-center justify-between mb-1">
@@ -846,6 +819,30 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           <div className="text-gray-500 text-sm">怪物 HP×5×1.5。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
           <div className="text-orange-600 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
         </button>
+
+        {eventConfig?.active && (
+          <button onClick={enterEventMode}
+            className="rounded-2xl p-5 text-left border-2 border-amber-400 active:scale-95 transition-transform relative overflow-hidden"
+            style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
+            <div className="absolute -right-3 -bottom-3 text-7xl opacity-15 pointer-events-none">🏆</div>
+            <div className="relative">
+              <div className="text-xs font-black tracking-widest text-amber-200 mb-0.5">教練設定</div>
+              <div className="text-white font-black text-lg mb-1">🏆 {eventConfig.name || "比賽模式"}</div>
+              {eventConfig.desc && <div className="text-amber-100 text-sm mb-2">{eventConfig.desc}</div>}
+              <div className="flex gap-2 flex-wrap">
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                  {eventConfig.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
+                </span>
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                  {eventConfig.mode === "novice" ? "🟢 新手" : eventConfig.mode === "student" ? "🎓 學生" : "🟠 老手"}
+                </span>
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                  {eventConfig.distanceMode === "dynamic" ? `🏃 動態 ${eventConfig.dynamicStart ?? 15}m起` : `📍 ${eventConfig.fixedDistance ?? 15}m`}
+                </span>
+              </div>
+            </div>
+          </button>
+        )}
       </div>
     );
   }
