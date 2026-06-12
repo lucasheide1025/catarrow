@@ -89,3 +89,44 @@ export function sfxNotify() {
   tone(1100, 0.2, "triangle", 0.18, 0.15);
   vibrate([0, 30, 60, 30]);
 }
+
+// 箭矢命中「咚！」（分數 6~9 一般命中）
+export function sfxArrowHit() {
+  tone(260, 0.07, "square", 0.24, 0);
+  tone(180, 0.16, "sine", 0.2, 0.05);
+  vibrate(20);
+}
+
+// 爆擊「嘭！」（頭部/高倍率部位）
+export function sfxCritBoom() {
+  tone(150, 0.07, "square", 0.3, 0);
+  tone(300, 0.04, "square", 0.18, 0.05);
+  tone(115, 0.24, "sine", 0.22, 0.08);
+  vibrate([0, 30, 55]);
+}
+
+// 器官命中「轟！」（心臟/腎/肺/要害）
+export function sfxOrganHit() {
+  tone(105, 0.1, "sawtooth", 0.3, 0);
+  tone(80, 0.28, "sine", 0.24, 0.09);
+  tone(660, 0.07, "triangle", 0.12, 0);
+  vibrate([0, 50, 70, 40]);
+}
+
+// 怪物反擊「嘎！」
+export function sfxCounter() {
+  tone(220, 0.06, "sawtooth", 0.2, 0);
+  tone(165, 0.12, "sawtooth", 0.22, 0.05);
+  tone(110, 0.18, "sine", 0.18, 0.14);
+  vibrate([0, 35, 55, 30]);
+}
+
+// 怪物死亡「噹噹噹～轟」
+export function sfxMonsterDead() {
+  tone(523, 0.1, "square", 0.18, 0);
+  tone(659, 0.1, "square", 0.18, 0.1);
+  tone(784, 0.1, "square", 0.18, 0.2);
+  tone(1047, 0.35, "triangle", 0.22, 0.3);
+  tone(180, 0.45, "sine", 0.15, 0.28);
+  vibrate([0, 60, 80, 60, 80, 100]);
+}

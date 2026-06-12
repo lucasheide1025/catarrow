@@ -5,11 +5,11 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
-  resetPartyRoom,
+  resetPartyRoom, sendPartyCheer,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
-import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
-import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
+import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCritBoom, vibrate } from "../../lib/sound";
+import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
@@ -53,19 +53,29 @@ function equipSummary(profile) {
   return { bows, armor, acc };
 }
 
-// 回傳 { dmg, crits } — 隨機倍率 > 1.05 視為爆擊
+// 回傳 { dmg, crits, arrowBreakdown } — partMult >= 1.8 或隨機 > 1.05 視為爆擊
 function calcDmgFn(arrows, atk, monsterDEF) {
   let dmg = 0, crits = 0;
+  const arrowBreakdown = [];
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
-    if (!score) continue;
-    const base = 8 + atk * 0.7 + score * 1.2 - monsterDEF * 0.35;
-    const mult = 0.85 + Math.random() * 0.3;
-    const d    = Math.max(1, Math.round(base * (arrow.partMult || 1.0) * mult));
+    const pMult = arrow.partMult ?? 1.0;
+    if (!score || pMult === 0) {
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      continue;
+    }
+    const base   = 8 + atk * 0.7 + score * 1.2 - monsterDEF * 0.35;
+    const mult   = 0.85 + Math.random() * 0.3;
+    const isCrit = mult > 1.05 || pMult >= 1.8;
+    const d      = Math.max(1, Math.round(base * pMult * mult));
     dmg  += d;
-    if (mult > 1.05) crits++;
+    if (isCrit) crits++;
+    arrowBreakdown.push({
+      label: arrow.label, partIcon: arrow.partIcon || "❤️",
+      partName: arrow.partName || "胸腔", partMult: pMult, dmg: d, isCrit,
+    });
   }
-  return { dmg, crits };
+  return { dmg, crits, arrowBreakdown };
 }
 function calcCtrFn(monsterATK, archerDEF) {
   return calcCounterDamage({ monsterATK, archerDEF: archerDEF || 10, headStunned: false, isCrit: Math.random() < 0.1 });
@@ -101,7 +111,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [partyBattleLeft, setPartyBattleLeft] = useState(null);
   const [startError,      setStartError]      = useState("");
   const [animHit,         setAnimHit]         = useState(false);
-  const [animCounter,     setAnimCounter]     = useState(false);
+  const [animCounter,       setAnimCounter]       = useState(false);
+  const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
+  const [animScreenShake,   setAnimScreenShake]   = useState(false);
+  const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
   const [showEvent,       setShowEvent]       = useState(null);
   const [showFullLog,     setShowFullLog]     = useState(false);
   const [showShareCard,   setShowShareCard]   = useState(false);
@@ -111,6 +124,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
   const [liveRevealCount, setLiveRevealCount] = useState(0);     // 已揭曉幾位
+  const [unlockedParts,   setUnlockedParts]   = useState(new Set());
+  const [cheerMsg,        setCheerMsg]        = useState("");
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -148,6 +163,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setShowFullLog(false);
     setClaimResult(null);
     setStartError("");
+    setUnlockedParts(new Set());
   }, [room?.status]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
@@ -257,12 +273,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     else                                sfxTap();
     vibrate(20);
 
-    // 怪物反擊動畫 + 音效
-    if (entry.counterRound) {
-      setTimeout(() => { setAnimCounter(true); sfxSoftFail(); vibrate([0,30,40,30]); }, 500);
-      setTimeout(() => setAnimCounter(false), 1100);
-    }
-
     // 有突發事件：先顯示彈窗 3.5s，再揭曉傷害
     const eventDelay = entry.event ? 3500 : 0;
     if (entry.event) {
@@ -278,11 +288,35 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       revealTimersRef.current.push(t);
     });
 
-    // 全部揭曉後 2.5s 清除 liveEntry（回到普通 log 顯示）
-    const ct = setTimeout(
-      () => setLiveEntry(null),
-      eventDelay + players.length * 2000 + 2500
-    );
+    // 怪物攻擊序列：全部揭曉後才蓄力 → 攻擊
+    const allRevealMs = eventDelay + players.length * 2000;
+    if (entry.counterRound) {
+      // 蓄力（+300ms）
+      const t1 = setTimeout(() => setAnimMonsterCharge(true), allRevealMs + 300);
+      // 攻擊（+1500ms）
+      const t2 = setTimeout(() => {
+        setAnimMonsterCharge(false);
+        setAnimCounter(true);
+        setAnimScreenShake(true);
+        sfxCounter();
+        vibrate([0,35,55,30]);
+        const floats = (entry.playerLog || [])
+          .filter(p => p.ctr > 0)
+          .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
+        if (floats.length) {
+          setFloatCounterDmgs(floats);
+          setTimeout(() => setFloatCounterDmgs([]), 1400);
+        }
+        setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
+      }, allRevealMs + 1500);
+      revealTimersRef.current.push(t1, t2);
+    }
+
+    // liveEntry 清除：反擊結束後才清
+    const clearDelay = entry.counterRound
+      ? allRevealMs + 3500
+      : allRevealMs + 2500;
+    const ct = setTimeout(() => setLiveEntry(null), clearDelay);
     revealTimersRef.current.push(ct);
   }, [room?.log?.length]); // eslint-disable-line
 
@@ -291,6 +325,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room?.result === "win")  { sfxSuccess(); setTimeout(() => sfxEpic(), 350); }
     if (room?.result === "lose") { sfxSoftFail(); }
   }, [room?.result]); // eslint-disable-line
+
+  // 隊友加油通知（不顯示自己發的）
+  useEffect(() => {
+    if (!room?.cheer?.fromName) return;
+    if (room.members?.[myId]?.name === room.cheer.fromName) return;
+    setCheerMsg(`💪 ${room.cheer.fromName} 為大家加油！`);
+    const t = setTimeout(() => setCheerMsg(""), 3000);
+    return () => clearTimeout(t);
+  }, [room?.cheer?.ts]); // eslint-disable-line
 
   // 組隊敗場 → 記錄怪物圖鑑（勝場由 handleClaim 負責）
   useEffect(() => {
@@ -336,7 +379,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   function addArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
-    setArrows(prev => [...prev, { score: SCORE_MAP[label] ?? 0, partMult: 1.0, label }]);
+    const score = SCORE_MAP[label] ?? 0;
+    const part  = resolveHitPart(score, unlockedParts);
+    if (part.id === "chest") setUnlockedParts(p => new Set([...p, "chest"]));
+    if (part.id === "belly") setUnlockedParts(p => new Set([...p, "belly"]));
+    if (part.id === "groin") setUnlockedParts(p => new Set([...p, "groin"]));
+    setArrows(prev => [...prev, {
+      score, label,
+      partMult: part.mult, partId: part.id,
+      partIcon: part.icon, partName: part.name,
+    }]);
   }
   function removeLastArrow() {
     if (myReady) return;
@@ -921,17 +973,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // ── 戰鬥中畫面 ────────────────────────────────────────────
   const monsterPct     = room.monsterMaxHP > 0 ? (room.monsterHP / room.monsterMaxHP) : 0;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
-  const isCounterRound = (room.round || 1) % 2 === 0;
+  const isCounterRound = true;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col max-w-lg mx-auto">
+      <style>{`
+@keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
+@keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
+@keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
+      `}</style>
+      {/* 加油通知 */}
+      {cheerMsg && (
+        <div className="fixed top-14 inset-x-0 z-50 flex justify-center pointer-events-none px-4">
+          <div className="bg-indigo-600/90 text-white font-black text-sm px-5 py-2.5 rounded-full shadow-xl animate-bounce">
+            {cheerMsg}
+          </div>
+        </div>
+      )}
       {/* 頂部 */}
       <div className="px-4 pt-5 pb-3 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
             <span className="text-white font-black">第 {room.round} 回合</span>
             <span className="text-xs text-slate-400 ml-2">
-              {isCounterRound ? "⚠️ 此回合怪物反擊！" : "（下回合反擊）"}
+              ⚔️ 每回合結束後怪物反擊
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -964,7 +1029,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             animHit ? "bg-orange-800/70 scale-[1.01]" : "bg-slate-800"
           }`}>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{room.monster.icon}</span>
+              <span className="text-2xl" style={animMonsterCharge ? { animation:"mb-charge .7s ease infinite", display:"inline-block" } : { display:"inline-block" }}>
+                {room.monster.icon}
+              </span>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-white font-black text-sm">{room.monster.name}</span>
@@ -982,15 +1049,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         )}
 
         {/* 隊員 HP */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2" style={animScreenShake ? { animation:"mb-screen-shake .55s ease" } : {}}>
           {memberList.map(m => (
-            <div key={m.id}
+            <div key={m.id} style={{ position:"relative" }}
               className={`rounded-xl p-2.5 flex flex-col gap-1 transition-all duration-300 ${
                 !m.alive        ? "bg-slate-800/40 opacity-50" :
                 animCounter     ? "bg-red-900/60 border border-red-500/50" :
                 m.id === myId   ? "bg-indigo-900/40 border border-indigo-500/50"
                                 : "bg-slate-700/40"
               }`}>
+              {floatCounterDmgs.filter(f => f.memberId === m.id).map(f => (
+                <span key={f.id} style={{
+                  position:"absolute", left:`${f.left}%`, top:"0px", zIndex:10,
+                  animation:"mb-float 1.3s ease-out forwards",
+                  fontWeight:900, fontSize:"1.1rem",
+                  color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)",
+                  whiteSpace:"nowrap", pointerEvents:"none",
+                }}>
+                  {f.text}💢
+                </span>
+              ))}
               <div className="flex items-center justify-between">
                 <span className={`text-xs font-bold truncate ${m.id === myId ? "text-indigo-300" : "text-white"}`}>
                   {m.alive ? "" : "💀"}{m.name}
@@ -1025,7 +1103,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div className="flex gap-1 flex-1 flex-wrap">
               {arrows.map((a, i) => (
                 <span key={i} className={`text-xs font-black px-2 py-0.5 rounded-full ${SCORE_COLORS[a.label] || "bg-slate-600 text-white"}`}>
-                  {a.label}
+                  {a.label}{a.partId && a.partId !== "miss" ? a.partIcon : ""}
                 </span>
               ))}
               {Array.from({ length: ARROWS_PER_ROUND - arrows.length }).map((_, i) => (
@@ -1059,9 +1137,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       )}
 
       {me.alive && myReady && (
-        <div className="px-4 py-3 text-center text-emerald-400 font-black text-sm">
-          ✅ 已送出，等待其他隊員…
-          {room.processing && <span className="ml-2 text-yellow-400 animate-pulse">⚙️ 計算中…</span>}
+        <div className="px-4 py-3 flex flex-col items-center gap-2">
+          <div className="text-emerald-400 font-black text-sm">
+            ✅ 已送出，等待其他隊員…
+            {room.processing && <span className="ml-2 text-yellow-400 animate-pulse">⚙️ 計算中…</span>}
+          </div>
+          <button
+            onClick={() => sendPartyCheer(roomId, me.name)}
+            className="px-5 py-2 bg-indigo-900/40 border border-indigo-500/50 text-indigo-300 text-sm font-black rounded-xl active:scale-95 transition-transform">
+            💪 為隊友加油！
+          </button>
         </div>
       )}
       {!me.alive && room.status === "active" && (
@@ -1090,14 +1175,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               </div>
             )}
             {(liveEntry.playerLog || []).slice(0, liveRevealCount).map((p, j) => (
-              <div key={j} className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
-                <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
-                <span className="text-slate-400 text-xs">造成</span>
-                <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
-                <span className="text-slate-500 text-xs">傷</span>
-                {p.crits > 0 && <span className="text-yellow-300 text-xs">✨×{p.crits}</span>}
-                {liveEntry.counterRound && p.ctr > 0 && (
-                  <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
+              <div key={j} className="flex flex-col gap-1.5 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
+                  <span className="text-slate-400 text-xs">造成</span>
+                  <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
+                  <span className="text-slate-500 text-xs">傷</span>
+                  {p.crits > 0 && <span className="text-yellow-300 text-xs">💥×{p.crits}</span>}
+                  {liveEntry.counterRound && p.ctr > 0 && (
+                    <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
+                  )}
+                </div>
+                {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.arrowBreakdown.map((a, ai) => (
+                      <span key={ai} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                        a.dmg === 0     ? "bg-slate-700 text-slate-500" :
+                        a.isCrit        ? "bg-yellow-500/30 text-yellow-200 border border-yellow-400/40" :
+                                          "bg-slate-700/60 text-slate-300"
+                      }`}>
+                        {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -1144,12 +1244,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   </div>
                 )}
                 {(entry.playerLog || []).map((p, j) => (
-                  <div key={j} className="flex items-center gap-2">
-                    <span className="text-indigo-300">🏹 {p.name}</span>
-                    <span>造成 <span className="text-rose-400 font-black">{p.dmg}</span> 傷</span>
-                    {p.crits > 0 && <span className="text-yellow-300 text-[10px]">✨×{p.crits}</span>}
-                    {entry.counterRound && p.ctr > 0 && (
-                      <span className="text-orange-400 ml-auto">受到 -{p.ctr}</span>
+                  <div key={j} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-indigo-300">🏹 {p.name}</span>
+                      <span>造成 <span className="text-rose-400 font-black">{p.dmg}</span> 傷</span>
+                      {p.crits > 0 && <span className="text-yellow-300 text-[10px]">💥×{p.crits}</span>}
+                      {entry.counterRound && p.ctr > 0 && (
+                        <span className="text-orange-400 ml-auto">受到 -{p.ctr}</span>
+                      )}
+                    </div>
+                    {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
+                      <div className="flex flex-wrap gap-1 ml-3">
+                        {p.arrowBreakdown.map((a, ai) => (
+                          <span key={ai} className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                            a.dmg === 0 ? "text-slate-600" :
+                            a.isCrit    ? "text-yellow-400" : "text-slate-400"
+                          }`}>
+                            {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
                 ))}

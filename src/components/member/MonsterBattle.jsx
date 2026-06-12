@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
-  getMonsterDailyConfig, checkMonsterDailyLimit, recordMonsterSession,
+  getMonsterDailyConfig, getMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed,
 } from "../../lib/db";
@@ -18,7 +18,7 @@ import {
 import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
+import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxMonsterDead } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 
 const ARROWS_PER_ROUND   = 6;
@@ -44,14 +44,16 @@ const HALF_SCORES = [
 ];
 
 const BATTLE_CSS = `
-@keyframes mb-pop    { 0%{transform:scale(.7);opacity:0} 100%{transform:scale(1);opacity:1} }
-@keyframes mb-shake  { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
-@keyframes mb-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-@keyframes mb-glow   { 0%,100%{box-shadow:0 0 10px #fbbf2488} 50%{box-shadow:0 0 28px #fbbf24cc} }
-@keyframes mb-chest  { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-14px) scale(1.12)} 60%{transform:translateY(-4px) scale(1.05)} }
-@keyframes mb-tier   { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
-@keyframes mb-drop   { 0%{transform:translateY(-30px) scale(.5);opacity:0} 60%{transform:translateY(6px) scale(1.08);opacity:1} 100%{transform:translateY(0) scale(1);opacity:1} }
-@keyframes mb-coin   { 0%{transform:translateY(-20px) scale(.6) rotate(-15deg);opacity:0} 70%{transform:translateY(4px) scale(1.1) rotate(5deg);opacity:1} 100%{transform:translateY(0) scale(1) rotate(0);opacity:1} }
+@keyframes mb-pop         { 0%{transform:scale(.7);opacity:0} 100%{transform:scale(1);opacity:1} }
+@keyframes mb-shake       { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+@keyframes mb-shake-heavy { 0%,100%{transform:translateX(0) scale(1)} 20%{transform:translateX(-13px) scale(1.04)} 40%{transform:translateX(11px) scale(1.02)} 65%{transform:translateX(-8px) scale(1.01)} 85%{transform:translateX(5px)} }
+@keyframes mb-bounce      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+@keyframes mb-glow        { 0%,100%{box-shadow:0 0 10px #fbbf2488} 50%{box-shadow:0 0 28px #fbbf24cc} }
+@keyframes mb-chest       { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-14px) scale(1.12)} 60%{transform:translateY(-4px) scale(1.05)} }
+@keyframes mb-tier        { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
+@keyframes mb-drop        { 0%{transform:translateY(-30px) scale(.5);opacity:0} 60%{transform:translateY(6px) scale(1.08);opacity:1} 100%{transform:translateY(0) scale(1);opacity:1} }
+@keyframes mb-coin        { 0%{transform:translateY(-20px) scale(.6) rotate(-15deg);opacity:0} 70%{transform:translateY(4px) scale(1.1) rotate(5deg);opacity:1} 100%{transform:translateY(0) scale(1) rotate(0);opacity:1} }
+@keyframes mb-float       { 0%{transform:translateY(0) scale(1.15);opacity:1} 100%{transform:translateY(-60px) scale(0.85);opacity:0} }
 `;
 
 const HIT_TEXTS = {
@@ -132,7 +134,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [totalDmgRecvd, setTotalDmgRecvd] = useState(0);
   const [critCount, setCritCount]       = useState(0);
   const [animHit, setAnimHit]           = useState(false);
-  const [animCounter, setAnimCounter]   = useState(false);
+  const [animHitCrit, setAnimHitCrit]   = useState(false);
+  const [animCounter, setAnimCounter]       = useState(false);
+  const [animCounterCrit, setAnimCounterCrit] = useState(false);
+  const [floatCounterDmgs, setFloatCounterDmgs] = useState([]);
+  const [floatDmgs, setFloatDmgs]       = useState([]);
   // ⚗️ 藥劑與 📦 寶箱
   const [potionInv, setPotionInv]             = useState({});
   const [selectedPotions, setSelectedPotions] = useState([]);
@@ -141,6 +147,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [skipBigRound, setSkipBigRound]       = useState(false); // 麻痺毒素：跳過整個大回合反擊
   const [distanceMode, setDistanceMode]       = useState("fixed"); // "fixed"|"random"|"dynamic"
   const [selectedDistance, setSelectedDistance] = useState(15);
+  const [eventConfig, setEventConfig]         = useState(null); // 賽事模式設定
+  const [eventMode, setEventMode]             = useState(false); // 是否走賽事流程
   const logEndRef = useRef(null);
 
   useEffect(() => {
@@ -155,6 +163,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       setDailyMax(cfg.dailyMax||5);
       checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
     }).catch(()=>setDailyLeft(5));
+    getMonsterEventConfig().then(setEventConfig).catch(()=>{});
     return () => { unsub && unsub(); unsubPotions && unsubPotions(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
 
@@ -180,6 +189,19 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
   function addLog(entry) { setLog(l=>[...l,entry]); }
+  function showFloatDmg(dmg, isCrit, isOrgan) {
+    const id   = Date.now() + Math.random();
+    const left = 15 + Math.floor(Math.random() * 55);
+    const text = dmg > 0 ? `+${dmg}` : "MISS";
+    setFloatDmgs(prev => [...prev, { id, text, isCrit, isOrgan, left }]);
+    setTimeout(() => setFloatDmgs(prev => prev.filter(f => f.id !== id)), 1300);
+  }
+  function showFloatCounterDmg(dmg, isCrit) {
+    const id   = Date.now() + Math.random();
+    const left = 15 + Math.floor(Math.random() * 55);
+    setFloatCounterDmgs(prev => [...prev, { id, text: `-${dmg}`, isCrit, left }]);
+    setTimeout(() => setFloatCounterDmgs(prev => prev.filter(f => f.id !== id)), 1300);
+  }
 
   function rerollMonsters() {
     if (!archerStats) return;
@@ -187,6 +209,20 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const matched = drawMatchedMonsters(power);
     setMatchedMonsters(matched);
     setPickedMonster(null);
+  }
+
+  function enterEventMode() {
+    if (!eventConfig?.active) return;
+    const ec = eventConfig;
+    setBattleMode(ec.battleMode || "score");
+    setMode(ec.mode || "student");
+    const dm = ec.distanceMode || "fixed";
+    setDistanceMode(dm);
+    const dist = dm === "dynamic" ? (ec.dynamicStart ?? 15) : (ec.fixedDistance ?? 15);
+    setSelectedDistance(dist);
+    setEventMode(true);
+    setPickedMonster(null);
+    setPhase("event_select");
   }
 
   function inputArrow(val) {
@@ -240,16 +276,34 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const isOrganPart = ["heart","kidney","lung","balls"].includes(part.id);
       const hitText = getHitText(part.id);
 
-      if (part.mult===0) { sfxSoftFail(); addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${score}分)` }); }
-      else if (isOrganPart) { sfxEpic(); addLog({ type:"hit_organ", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` }); }
-      else if (part.mult>=1.8||score>=10) { sfxEpic(); addLog({ type:"hit_crit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` }); }
-      else if (score>=8) { sfxSuccess(); addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` }); }
-      else { sfxTap(); addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` }); }
+      if (part.mult===0) {
+        sfxSoftFail();
+        showFloatDmg(0, false, false);
+        addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${score}分)` });
+      } else if (isOrganPart) {
+        sfxOrganHit();
+        showFloatDmg(dmg, true, true);
+        addLog({ type:"hit_organ", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+      } else if (part.mult>=1.8||score>=10) {
+        sfxCritBoom();
+        showFloatDmg(dmg, true, false);
+        addLog({ type:"hit_crit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+      } else if (score>=8) {
+        sfxArrowHit();
+        showFloatDmg(dmg, false, false);
+        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
+      } else {
+        sfxTap();
+        showFloatDmg(dmg, false, false);
+        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
+      }
 
+      const isBigHit = isOrganPart || part.mult >= 1.8 || score >= 10;
       curMonHP = Math.max(0, curMonHP-dmg);
       setMonsterHP(curMonHP);
       setAnimHit(true);
-      setTimeout(()=>setAnimHit(false),600);
+      if (isBigHit) { setAnimHitCrit(true); setTimeout(()=>setAnimHitCrit(false), 700); }
+      setTimeout(()=>setAnimHit(false), 600);
       if (dmg>0) setTotalDmgDealt(v=>v+dmg);
       if (score>=10) setCritCount(v=>v+1);
       await delay(1500);
@@ -289,8 +343,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           addLog({ type:"system", text:"🕸️ 麻痺毒素！怪物本回合完全無法反擊！" });
           setSkipBigRound(false);
         } else if (!skipCtr) {
-          setBattlePhase("counter"); setAnimCounter(true);
-          setTimeout(()=>setAnimCounter(false),800);
+          setBattlePhase("counter");
           const critChance=(mode==="veteran")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):(mode==="student")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.3):0;
           const isCrit=Math.random()<critChance;
           const headStunned=headHitCount>0&&battleMode==="zombie";
@@ -299,7 +352,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             ? `${monster.icon} 爆擊！${monster.name} 猛烈反擊！受到 ${cdmg} 傷害（${curDist}米）`
             : headStunned?`${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
             : `${monster.icon} ${monster.name} 反擊！受到 ${cdmg} 傷害`;
-          if (isCrit) sfxEpic(); else sfxBuff();
+          if (isCrit) {
+            sfxCritBoom();
+            setAnimCounterCrit(true);
+            setTimeout(() => setAnimCounterCrit(false), 900);
+          } else {
+            sfxCounter();
+            setAnimCounter(true);
+            setTimeout(() => setAnimCounter(false), 800);
+          }
+          showFloatCounterDmg(cdmg, isCrit);
           addLog({ type:"counter", text:counterTxt });
           curArchHP=Math.max(0,curArchHP-cdmg);
           setArcherHP(curArchHP);
@@ -439,7 +501,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   async function endBattle(result, finalArchHP, finalMonHP) {
     try {
     if (result==="win") {
-      sfxEpic();
+      sfxMonsterDead();
+      setTimeout(() => sfxSuccess(), 600);
 
       // ── 寶箱（固定必掉）────────────────────────────────
       const { mainChest, catChest, potionChest } = makeChests(monster, mode);
@@ -588,6 +651,34 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           </div>
         ) : (
           <>
+            {/* 賽事模式入口 */}
+            {eventConfig?.active && (
+              <button onClick={enterEventMode}
+                className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform border-2 border-amber-400"
+                style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
+                <div className="absolute -right-3 -bottom-3 text-7xl opacity-20 pointer-events-none">🏆</div>
+                <div className="relative">
+                  <div className="text-xs font-black tracking-widest text-amber-200 mb-0.5">⚔️ 賽事模式</div>
+                  <div className="text-white font-black text-base">{eventConfig.name || "賽事打怪"}</div>
+                  {eventConfig.desc && <div className="text-amber-100 text-xs mt-0.5">{eventConfig.desc}</div>}
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                      {eventConfig.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
+                    </span>
+                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                      {eventConfig.mode === "novice" ? "🟢 新手" : eventConfig.mode === "student" ? "🎓 學生" : "🟠 老手"}
+                    </span>
+                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                      {eventConfig.distanceMode === "dynamic"
+                        ? `🏃 動態 ${eventConfig.dynamicStart ?? 15}m起`
+                        : `📍 ${eventConfig.fixedDistance ?? 15}m`}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-amber-200 text-xs font-bold">點此進入 →</div>
+                </div>
+              </button>
+            )}
+
             {/* 六族各1隻，依家族排列 */}
             <div className="flex items-center justify-between mb-1">
               <div className="text-gray-600 text-sm font-black">今日對手（六族匹配）</div>
@@ -632,6 +723,75 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
               </button>
             )}
           </>
+        )}
+      </div>
+    );
+  }
+
+  if (phase==="event_select") {
+    const ec = eventConfig || {};
+    return (
+      <div className="p-4 flex flex-col gap-4">
+        <style>{BATTLE_CSS}</style>
+        <button onClick={() => { setEventMode(false); setPhase("select"); }} className="text-gray-500 text-sm self-start">← 返回</button>
+
+        <div className="rounded-2xl p-4 text-white" style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
+          <div className="text-xs font-black tracking-widest text-amber-200 mb-1">🏆 賽事模式</div>
+          <div className="text-white font-black text-lg">{ec.name || "賽事打怪"}</div>
+          {ec.desc && <div className="text-amber-100 text-sm mt-1">{ec.desc}</div>}
+          <div className="flex gap-2 mt-2 flex-wrap">
+            <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+              {ec.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
+            </span>
+            <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+              {ec.mode === "novice" ? "🟢 新手" : ec.mode === "student" ? "🎓 學生" : "🟠 老手"}
+            </span>
+            <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+              {ec.distanceMode === "dynamic" ? `🏃 動態 ${ec.dynamicStart ?? 15}m起` : `📍 ${ec.fixedDistance ?? 15}m`}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="text-gray-600 text-sm font-black">選擇對手（六族匹配）</div>
+          <button onClick={rerollMonsters} className="text-xs text-purple-600 font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+            🎲 重新抽怪
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {matchedMonsters.map(m => {
+            const tier   = TIER_LABEL[m.tier] || {};
+            const family = FAMILIES[m.family] || {};
+            const isPicked = pickedMonster?.id === m.id;
+            return (
+              <button key={m.id} onClick={() => setPickedMonster(m)}
+                className="rounded-2xl p-4 text-left transition-all active:scale-95 relative overflow-hidden"
+                style={{ background: isPicked ? "#fef3c7" : "white", border: `2px solid ${isPicked ? "#f59e0b" : "#e2e8f0"}` }}>
+                <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: family.color+"22", color: family.color }}>
+                  {family.icon} {family.label}
+                </div>
+                <div className="text-3xl mb-2">{m.icon}</div>
+                <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
+                <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
+                  style={{ background: tier.bg, color: tier.color }}>
+                  【{tier.label}】
+                </div>
+                <div className="flex gap-2 mt-1.5 text-xs text-gray-400">
+                  <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {pickedMonster && (
+          <button onClick={() => { setMonster(pickedMonster); setPhase("prebattle"); }}
+            className="w-full py-4 rounded-2xl font-black text-lg text-white"
+            style={{ background:"linear-gradient(90deg,#f59e0b,#d97706)", animation:"mb-glow 2s ease infinite" }}>
+            🏆 挑戰 {pickedMonster.name}！（賽事模式）
+          </button>
         )}
       </div>
     );
@@ -778,7 +938,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("distance")} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={() => setPhase(eventMode ? "event_select" : "distance")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="text-6xl mb-2" style={{ animation:"mb-bounce 1.5s ease infinite" }}>{pickedMonster.icon}</div>
           <div className="flex items-center justify-center gap-2 mb-1">
@@ -873,20 +1033,58 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             {distanceMode==="dynamic"&&<span>📍 {distance}米</span>}
             <span>{ARROWS_PER_ROUND}箭/回合</span>
           </div>
-          <div className="mb-2">
+          <div className="mb-2" style={{ position:"relative" }}>
             <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
-              <span style={animHit?{animation:"mb-shake .5s ease"}:{}}>{monster?.icon} {monster?.name}</span>
+              <span style={animHitCrit ? {animation:"mb-shake-heavy .65s ease"} : animHit ? {animation:"mb-shake .5s ease"} : {}}>
+                {monster?.icon} {monster?.name}
+              </span>
               <span>{monsterHP}/{monster?.hp}</span>
+            </div>
+            {/* 浮動傷害數字 */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:"60px", pointerEvents:"none", overflow:"visible", zIndex:10 }}>
+              {floatDmgs.map(f => (
+                <span key={f.id} style={{
+                  position:"absolute",
+                  left:`${f.left}%`,
+                  top:"0px",
+                  animation:"mb-float 1.3s ease-out forwards",
+                  fontWeight:900,
+                  fontSize: f.isOrgan ? "1.4rem" : f.isCrit ? "1.25rem" : "1rem",
+                  color: f.isOrgan ? "#f97316" : f.isCrit ? "#fbbf24" : f.text === "MISS" ? "#94a3b8" : "#f87171",
+                  textShadow:"0 2px 8px rgba(0,0,0,0.9)",
+                  whiteSpace:"nowrap",
+                }}>
+                  {f.text}{f.isOrgan ? "💥" : f.isCrit ? "⚡" : ""}
+                </span>
+              ))}
             </div>
             <div className="h-3 bg-white/20 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all duration-700"
                 style={{ width:`${monPct}%`, background:monPct>50?"#ef4444":monPct>25?"#f59e0b":"#dc2626" }} />
             </div>
           </div>
-          <div>
+          <div style={{ position:"relative" }}>
+            {/* 浮動受傷數字 */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:"60px", pointerEvents:"none", overflow:"visible", zIndex:10 }}>
+              {floatCounterDmgs.map(f => (
+                <span key={f.id} style={{
+                  position:"absolute",
+                  left:`${f.left}%`,
+                  top:"0px",
+                  animation:"mb-float 1.3s ease-out forwards",
+                  fontWeight:900,
+                  fontSize: f.isCrit ? "1.25rem" : "1rem",
+                  color: f.isCrit ? "#f43f5e" : "#fca5a5",
+                  textShadow:"0 2px 8px rgba(0,0,0,0.9)",
+                  whiteSpace:"nowrap",
+                }}>
+                  {f.text}{f.isCrit ? "💢" : ""}
+                </span>
+              ))}
+            </div>
             <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
               <span>🏹 {profile?.nickname||profile?.name||"射手"}{revived?" 💖":""}</span>
-              <span style={animCounter?{animation:"mb-shake .5s ease"}:{}}>
+              <span style={animCounterCrit?{animation:"mb-shake-heavy .65s ease"}:animCounter?{animation:"mb-shake .5s ease"}:{}}>
                 {archerHP}/{maxHP}
                 {battleStats?.hp > (archerStats?.hp || 0) && (
                   <span className="text-emerald-300 text-[10px] ml-1">(+{battleStats.hp - archerStats.hp})</span>

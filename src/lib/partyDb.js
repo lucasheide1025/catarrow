@@ -270,6 +270,16 @@ export async function submitArrows(roomId, memberId, arrows) {
   }
 }
 
+// ── 隊友加油（任何人都可以發送，覆蓋上一則）──────────────────
+export async function sendPartyCheer(roomId, fromName) {
+  try {
+    await updateDoc(doc(db, PARTY, roomId), {
+      cheer: { fromName, ts: Date.now() },
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
 // ── Battle：房主強制跳過斷線玩家（以空箭分 + ready=true 標記）──
 export async function forceSkipPlayer(roomId, memberId) {
   try {
@@ -287,7 +297,6 @@ export async function forceSkipPlayer(roomId, memberId) {
 // ── Battle：房主處理回合（所有人 ready 後呼叫）───────────────
 // calcDmgFn(arrows, atk, monsterDEF) → { dmg, crits } | number
 // calcCtrFn(monsterATK, archerDEF)   → number
-// 每兩回合怪物才反擊一次（偶數回合反擊）
 export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
   if (room.processing) return { ok: false, reason: "already processing" };
   try {
@@ -296,18 +305,19 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const members    = room.members || {};
     const aliveIds   = Object.keys(members).filter(id => members[id].alive);
     const round      = room.round || 1;
-    let   shouldCtr  = round % 2 === 0; // 偶數回合才反擊（事件可覆蓋）
+    let   shouldCtr  = true; // 每回合都反擊（事件可覆蓋）
 
-    // 1. 各玩家傷害（calcDmgFn 可回傳數字或 { dmg, crits }）
+    // 1. 各玩家傷害（calcDmgFn 可回傳數字 或 { dmg, crits, arrowBreakdown }）
     let totalDmg = 0;
     const playerLog = [];
     for (const id of aliveIds) {
-      const m     = members[id];
-      const raw   = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
-      const dmg   = typeof raw === "number" ? raw : (raw.dmg   || 0);
-      const crits = typeof raw === "number" ? 0   : (raw.crits || 0);
+      const m              = members[id];
+      const raw            = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
+      const dmg            = typeof raw === "number" ? raw : (raw.dmg   || 0);
+      const crits          = typeof raw === "number" ? 0   : (raw.crits || 0);
+      const arrowBreakdown = typeof raw === "object"  ? (raw.arrowBreakdown || []) : [];
       totalDmg += dmg;
-      playerLog.push({ id, name: m.name || "射手", dmg, ctr: 0, crits });
+      playerLog.push({ id, name: m.name || "射手", dmg, ctr: 0, crits, arrowBreakdown });
     }
 
     // 2. 隨機事件（由房主決定，存入 log 後所有人同步看見）

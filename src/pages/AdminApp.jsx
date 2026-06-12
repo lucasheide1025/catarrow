@@ -263,7 +263,7 @@ const adminNav = [
         {page==="learn"        && <AdminLearn/>}
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
         {page==="givetool"     && <AdminGiveTool/>}
-        {page==="monthlycard"  && <AdminMonthlyCard/>}
+        {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
