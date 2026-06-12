@@ -29,6 +29,7 @@ import HonorCelebration   from "../components/member/HonorCelebration";
 import MemberDex          from "../components/member/MemberDex";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
+import CardCollection    from "../components/member/CardCollection";
 import MonsterBattle      from "../components/member/MonsterBattle";
 import PartyLobby         from "../components/party/PartyLobby";
 import PartyQuestRoom     from "../components/party/PartyQuestRoom";
@@ -161,6 +162,7 @@ const adminNav = [
           {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
+          {page==="cards"       && <CardCollection />}
           {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
@@ -174,7 +176,7 @@ const adminNav = [
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <span style={{fontSize:"18px"}}>{n.icon}</span>
               <span style={{fontSize:"11px",fontWeight:"600"}}>{n.label}</span>
             </button>
