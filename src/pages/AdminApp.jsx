@@ -195,7 +195,7 @@ const adminNav = [
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
           {page==="cards"       && <CardCollection />}
-          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} onGoDuel={()=>setPage("duel")}/>}
+          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>

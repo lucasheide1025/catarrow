@@ -96,7 +96,7 @@ export default function GuestBattle({ guestId, onExpire }) {
 
   const nav = [
     { id: "monster",  icon: "⚔️",  label: "打怪" },
-    { id: "duel",     icon: "⚔️",  label: "決鬥" },
+    { id: "duel",     icon: "🤺",  label: "決鬥" },
     { id: "party",    icon: "👥",  label: "組隊" },
     { id: "practice", icon: "🎯",  label: "練習" },
   ];
@@ -153,7 +153,7 @@ export default function GuestBattle({ guestId, onExpire }) {
 
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
-        {tab === "monster" && <MonsterBattle isGuest={true} onGoDuel={() => setTab("duel")} />}
+        {tab === "monster" && <MonsterBattle isGuest={true} />}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
           <PartyLobby

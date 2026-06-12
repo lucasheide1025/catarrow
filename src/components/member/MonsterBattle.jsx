@@ -88,7 +88,7 @@ function calcStats(allArrows) {
   return { total, count, avg, tens, misses, dist };
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
+export default function MonsterBattle({ onBack, isGuest = false }) {
   const { profile } = useAuth();
   const [phase, setPhase]           = useState("select");
   const [battleMode, setBattleMode] = useState("score");
@@ -870,24 +870,6 @@ export default function MonsterBattle({ onBack, isGuest = false, onGoDuel }) {
           </button>
         )}
 
-        {onGoDuel && (
-          <button onClick={onGoDuel}
-            className="rounded-2xl p-5 text-left border-2 border-indigo-400 active:scale-95 transition-transform relative overflow-hidden"
-            style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)" }}>
-            <div className="absolute -right-3 -bottom-3 text-7xl opacity-15 pointer-events-none">⚔️</div>
-            <div className="relative">
-              <div className="text-xs font-black tracking-widest text-indigo-300 mb-0.5">射手對戰</div>
-              <div className="text-white font-black text-lg mb-1">⚔️ 決鬥模式</div>
-              <div className="text-indigo-200 text-sm mb-2">與其他射手 1v1 或組隊對戰，無寶箱獎勵但有決鬥積分</div>
-              <div className="flex gap-2 flex-wrap">
-                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">1v1</span>
-                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">2v2 ～ 4v4</span>
-                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">⚡ 不對等</span>
-                <span className="text-xs bg-amber-400/40 text-amber-200 px-2 py-0.5 rounded-full font-bold">訪客可參加</span>
-              </div>
-            </div>
-          </button>
-        )}
       </div>
     );
   }

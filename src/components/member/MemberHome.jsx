@@ -141,7 +141,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
 
       <DailyQuest onJoinParty={onJoinParty} />
 
-      {/* 打怪快捷入口 */}
+      {/* 打怪 + 決鬥 快捷入口 */}
       <button onClick={() => onPageChange("monster")}
         className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
         style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
@@ -152,6 +152,20 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
             <div className="text-white font-black text-base">選怪物，射箭打怪，開寶箱！</div>
           </div>
           <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">立即挑戰 →</div>
+        </div>
+      </button>
+
+      <button onClick={() => onPageChange("duel")}
+        className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+        style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)" }}>
+        <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 pointer-events-none">⚔️</div>
+        <div className="relative flex items-center justify-between">
+          <div>
+            <div className="text-xs font-black tracking-widest text-indigo-300 mb-0.5">🤺 玩家對戰</div>
+            <div className="text-white font-black text-base">1v1 或組隊決鬥，爭奪勝場積分！</div>
+            <div className="text-indigo-300 text-xs mt-0.5">無藥水限制・訪客可參加</div>
+          </div>
+          <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">決鬥 →</div>
         </div>
       </button>
 

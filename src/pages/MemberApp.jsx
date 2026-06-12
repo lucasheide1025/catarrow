@@ -156,7 +156,7 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
-        {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} onGoDuel={()=>setPage("duel")} />}
+        {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
