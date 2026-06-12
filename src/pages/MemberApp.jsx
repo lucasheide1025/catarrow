@@ -77,14 +77,17 @@ export default function MemberApp() {
     setPage("profile");
   }
 
-  const [duelRoomId,  setDuelRoomId]  = useState(null);
-  const [duelIsHost,  setDuelIsHost]  = useState(false);
-  const [duelMyTeam,  setDuelMyTeam]  = useState("A");
+  const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("duel_room") || "null"); } catch { return null; } })();
+  const [duelRoomId,  setDuelRoomId]  = useState(_savedDuel?.roomId || null);
+  const [duelIsHost,  setDuelIsHost]  = useState(_savedDuel?.isHost || false);
+  const [duelMyTeam,  setDuelMyTeam]  = useState(_savedDuel?.team   || "A");
   function handleEnterDuelRoom(roomId, team, host) {
     setDuelRoomId(roomId); setDuelMyTeam(team); setDuelIsHost(host);
+    sessionStorage.setItem("duel_room", JSON.stringify({ roomId, team, isHost: host }));
     setPage("duel-room");
   }
   function handleLeaveDuel() {
+    sessionStorage.removeItem("duel_room");
     setDuelRoomId(null); setDuelIsHost(false);
     setPage("duel");
   }
@@ -127,6 +130,12 @@ export default function MemberApp() {
           <button onClick={() => setPage(partyRoomType === "quest" ? "party-quest" : "party-battle")}
             style={{ display:"block", width:"100%", background:appTheme.partyBg, color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
             🎮 組隊進行中 — 點此回到房間
+          </button>
+        )}
+        {duelRoomId && page !== "duel-room" && (
+          <button onClick={() => setPage("duel-room")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#1d4ed8,#7c3aed)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            ⚔️ 決鬥進行中 — 點此回到戰場
           </button>
         )}
       </div>

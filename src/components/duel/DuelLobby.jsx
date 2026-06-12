@@ -4,7 +4,8 @@ import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
   createDuelRoom, joinDuelRoom, subscribeDuelRoom,
-  startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats
+  startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats,
+  updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost
 } from "../../lib/duelDb";
 
 const TYPE_OPTIONS = [
@@ -43,6 +44,14 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     getDuelStats(profile.id).then(setMyStats).catch(() => {});
   }, [profile?.id]); // eslint-disable-line
 
+  // 重新進入時從 sessionStorage 還原等待室
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("duel_wait_id");
+      if (saved) { setRoomId(saved); }
+    } catch {}
+  }, []); // eslint-disable-line
+
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
 
@@ -50,23 +59,62 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   useEffect(() => {
     if (!roomId) return;
     const unsub = subscribeDuelRoom(roomId, r => {
-      if (!r) { toast("房間已關閉", "error"); setPhase("menu"); setRoomId(null); return; }
+      if (!r || r.status === "closed") {
+        toast("房間已關閉", "error");
+        setPhase("menu"); setRoomId(null); setRoom(null);
+        try { sessionStorage.removeItem("duel_wait_id"); } catch {}
+        return;
+      }
       setRoom(r);
-      // 自動進入戰鬥
+      if (r.status === "waiting") {
+        setPhase("waiting");
+        setIsHost(r.hostId === myId);
+      }
       if (r.status === "active") {
+        try { sessionStorage.removeItem("duel_wait_id"); } catch {}
         const team = Object.keys(r.teamA || {}).includes(myId) ? "A" : "B";
         onEnterRoom(roomId, team, r.hostId === myId);
       }
     });
     return unsub;
-  }, [roomId]);
+  }, [roomId]); // eslint-disable-line
+
+  // 心跳（等待室每 30 秒更新 lastSeen）
+  useEffect(() => {
+    if (phase !== "waiting" || !roomId || !myId) return;
+    updateDuelHeartbeat(roomId, myId).catch(() => {});
+    const t = setInterval(() => updateDuelHeartbeat(roomId, myId).catch(() => {}), 30000);
+    return () => clearInterval(t);
+  }, [phase, roomId, myId]); // eslint-disable-line
+
+  // 自動踢除 5 分鐘未心跳的玩家（host 每分鐘檢查）
+  useEffect(() => {
+    if (phase !== "waiting" || !isHost || !roomId || !room) return;
+    const t = setInterval(() => {
+      const now = Date.now();
+      const lastSeen = room.lastSeen || {};
+      const all = [
+        ...Object.keys(room.teamA || {}).map(id => ["A", id]),
+        ...Object.keys(room.teamB || {}).map(id => ["B", id]),
+      ];
+      for (const [team, id] of all) {
+        if (id === myId) continue;
+        if (now - (lastSeen[id] || 0) > 5 * 60 * 1000) {
+          removePlayerFromRoom(roomId, team, id).catch(() => {});
+        }
+      }
+    }, 60000);
+    return () => clearInterval(t);
+  }, [phase, isHost, roomId, room]); // eslint-disable-line
 
   async function handleCreate() {
     setLoading(true);
+    const teamForCreate = type === "uneven" ? "A" : myTeam;
     const stats = quickStats(profile, isGuest);
-    const res = await createDuelRoom(myId, myName, type, myTeam, stats, isGuest);
+    const res = await createDuelRoom(myId, myName, type, teamForCreate, stats, isGuest);
     setLoading(false);
     if (!res.ok) { toast("建立失敗：" + res.reason, "error"); return; }
+    try { sessionStorage.setItem("duel_wait_id", res.roomId); } catch {}
     setRoomId(res.roomId);
     setIsHost(true);
     setPhase("waiting");
@@ -79,6 +127,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     const res = await joinDuelRoom(code.trim(), myId, myName, myTeam, stats, isGuest);
     setLoading(false);
     if (!res.ok) { toast(res.reason, "error"); return; }
+    try { sessionStorage.setItem("duel_wait_id", res.roomId); } catch {}
     setRoomId(res.roomId);
     setIsHost(false);
     setPhase("waiting");
@@ -89,6 +138,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     const aCount = Object.keys(room.teamA || {}).length;
     const bCount = Object.keys(room.teamB || {}).length;
     if (aCount === 0 || bCount === 0) { toast("兩隊都需至少一名玩家"); return; }
+    if (room.type === "uneven") await scaleUnevenHost(roomId, room);
     await startDuelBattle(roomId);
   }
 
@@ -103,6 +153,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   }
 
   function handleLeaveWait() {
+    try { sessionStorage.removeItem("duel_wait_id"); } catch {}
     setPhase("menu");
     setRoomId(null);
     setRoom(null);
@@ -155,18 +206,31 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
             ))}
           </div>
 
+          {/* 不對等模式說明 */}
+          {room.type === "uneven" && (
+            <div className="rounded-xl bg-amber-900/20 border border-amber-500/30 p-2.5 text-amber-300 text-xs text-center">
+              ⚡ 不對等模式・對手 {teamBEntries.length} 人・房主數值將在開始時自動強化
+            </div>
+          )}
+
           {/* 按鈕 */}
           {isHost ? (
             <>
               <div className="flex gap-2">
-                <button onClick={handleShuffle}
-                  className="flex-1 py-2.5 rounded-xl font-black text-sm border border-slate-500/50 bg-slate-800/60 text-slate-300 active:scale-95 transition-all">
-                  🎲 隨機分隊
-                </button>
+                {room.type !== "uneven" && (
+                  <button onClick={handleShuffle}
+                    className="flex-1 py-2.5 rounded-xl font-black text-sm border border-slate-500/50 bg-slate-800/60 text-slate-300 active:scale-95 transition-all">
+                    🎲 隨機分隊
+                  </button>
+                )}
                 <Btn v="primary" className="flex-1" onClick={handleStart}>
                   ⚔️ 開始決鬥
                 </Btn>
               </div>
+              <button onClick={async () => { await closeDuelRoom(roomId); handleLeaveWait(); }}
+                className="w-full py-2 rounded-xl font-black text-sm border border-red-800/40 text-red-400 bg-red-900/20 active:scale-95 transition-all">
+                🚪 關閉房間
+              </button>
             </>
           ) : (
             <div className="text-center text-slate-400 text-sm py-2 animate-pulse">等待主持人開始…</div>
@@ -200,19 +264,26 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
           </div>
         </Card>
 
-        <Card className="p-4 flex flex-col gap-3">
-          <ST>🎽 選擇隊伍</ST>
-          <div className="flex gap-3">
-            {["A","B"].map(t => (
-              <button key={t} onClick={() => setMyTeam(t)}
-                className={`flex-1 py-3 rounded-xl font-black text-sm border transition-all ${myTeam === t
-                  ? (t==="A" ? "bg-blue-600 border-blue-400 text-white" : "bg-red-600 border-red-400 text-white")
-                  : "bg-slate-800/60 border-slate-700 text-slate-300"}`}>
-                {t === "A" ? "🔵 隊伍 A" : "🔴 隊伍 B"}
-              </button>
-            ))}
+        {type !== "uneven" ? (
+          <Card className="p-4 flex flex-col gap-3">
+            <ST>🎽 選擇隊伍</ST>
+            <div className="flex gap-3">
+              {["A","B"].map(t => (
+                <button key={t} onClick={() => setMyTeam(t)}
+                  className={`flex-1 py-3 rounded-xl font-black text-sm border transition-all ${myTeam === t
+                    ? (t==="A" ? "bg-blue-600 border-blue-400 text-white" : "bg-red-600 border-red-400 text-white")
+                    : "bg-slate-800/60 border-slate-700 text-slate-300"}`}>
+                  {t === "A" ? "🔵 隊伍 A" : "🔴 隊伍 B"}
+                </button>
+              ))}
+            </div>
+          </Card>
+        ) : (
+          <div className="rounded-xl bg-amber-900/20 border border-amber-500/30 p-3 text-amber-300 text-sm text-center font-bold">
+            ⚡ 不對等模式：你是 Boss（隊伍 A）<br/>
+            <span className="text-xs font-normal opacity-80">對手越多，你的 HP／ATK／DEF 越強！</span>
           </div>
-        </Card>
+        )}
 
         <Btn v="primary" className="w-full" onClick={handleCreate} disabled={loading}>
           {loading ? "建立中…" : "🚀 建立房間"}

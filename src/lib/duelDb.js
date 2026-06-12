@@ -1,7 +1,7 @@
 // src/lib/duelDb.js — 決鬥模式 Firestore 操作
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, onSnapshot,
-  serverTimestamp, arrayUnion, increment, query, where, runTransaction
+  serverTimestamp, arrayUnion, increment, query, where, runTransaction, deleteField
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
@@ -91,7 +91,9 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
       const room = roomDoc.data();
       if (room.status !== "waiting") throw new Error("房間已開始，無法加入");
       const max = maxMap[room.type] || 8;
-      const teamKey = `team${team}`;
+      // 不對等模式：所有加入者強制 B 隊
+      const joinTeam = room.type === "uneven" ? "B" : team;
+      const teamKey = `team${joinTeam}`;
       const curSize = Object.keys(room[teamKey] || {}).length;
       if (curSize >= max) throw new Error("此隊伍已滿，請選擇另一隊");
       tx.update(roomRef, {
@@ -352,6 +354,47 @@ export async function getDuelStats(memberId) {
     if (snap.exists()) return snap.data();
   } catch {}
   return { wins: 0, losses: 0, draws: 0, soloWins: 0, soloLosses: 0, teamWins: 0, teamLosses: 0, flawless: 0, totalDmg: 0 };
+}
+
+// ── 關閉房間（host）────────────────────────────────────────
+export async function closeDuelRoom(roomId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), { status: "closed" });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
+// ── 踢出玩家（刪除房間內成員資料）────────────────────────────
+export async function removePlayerFromRoom(roomId, team, memberId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), {
+      [`team${team}.${memberId}`]: deleteField(),
+      [`lastSeen.${memberId}`]:    deleteField(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
+// ── 不對等模式：依對手人數強化房主數值（開始時呼叫一次）────
+export async function scaleUnevenHost(roomId, room) {
+  try {
+    const hostId = room.hostId;
+    const host   = room.teamA?.[hostId];
+    if (!host) return { ok: false, reason: "找不到房主" };
+    const N = Object.keys(room.teamB || {}).length;
+    if (N <= 1) return { ok: true }; // 1v1 以下不需加成
+    const scale = (base, factor) => Math.round(base * (1 + (N - 1) * factor));
+    const newHp  = scale(host.maxHP, 0.7);
+    const newAtk = scale(host.atk,   0.4);
+    const newDef = scale(host.def,   0.25);
+    await updateDoc(doc(db, DUEL, roomId), {
+      [`teamA.${hostId}.hp`]:    newHp,
+      [`teamA.${hostId}.maxHP`]: newHp,
+      [`teamA.${hostId}.atk`]:   newAtk,
+      [`teamA.${hostId}.def`]:   newDef,
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 export async function recordDuelResult(memberId, outcome, mode, extraStats = {}) {
