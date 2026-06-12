@@ -421,6 +421,36 @@ export async function claimBattleReward(roomId, memberId, chests, monsterId, res
   }
 }
 
+// ── Battle：房主重置房間（繼續下一場，保留成員不需重新加入）──
+export async function resetPartyRoom(roomId, memberIds) {
+  try {
+    const membersUpdate = {};
+    for (const mid of memberIds) {
+      membersUpdate[`members.${mid}.arrows`]  = [];
+      membersUpdate[`members.${mid}.ready`]   = false;
+      membersUpdate[`members.${mid}.alive`]   = true;
+      membersUpdate[`members.${mid}.hp`]      = 0;
+      membersUpdate[`members.${mid}.maxHP`]   = 0;
+    }
+    await updateDoc(doc(db, PARTY, roomId), {
+      ...membersUpdate,
+      status:        "waiting",
+      result:        null,
+      monster:       null,
+      monsterHP:     0,
+      monsterMaxHP:  0,
+      round:         1,
+      log:           [],
+      processing:    false,
+      rewardPending: null,
+      rewardClaimed: [],
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── 房主確認結算（怪物死亡後按下才正式跳到結算畫面）──────────
 export async function confirmBattleResult(roomId) {
   try {

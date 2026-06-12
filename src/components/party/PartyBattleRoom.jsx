@@ -5,6 +5,7 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
+  resetPartyRoom,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard } from "../../lib/db";
 import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
@@ -96,6 +97,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [skipping,        setSkipping]        = useState(null);
   const [confirming,      setConfirming]      = useState(false);
   const [localCompleted,  setLocalCompleted]  = useState(false);
+  const [resetting,       setResetting]       = useState(false);
   const [partyBattleLeft, setPartyBattleLeft] = useState(null);
   const [startError,      setStartError]      = useState("");
   const [animHit,         setAnimHit]         = useState(false);
@@ -126,9 +128,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return unsub;
   }, [roomId]);
 
-  // 房主：進入等待室時預查今日剩餘次數
+  // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
-    if (!myId || !isHost) return;
+    if (room?.status !== "waiting") return;
+    statsWrittenRef.current  = false;
+    statsWaitingRef.current  = false;
+    rewardStoredRef.current  = false;
+    partyRecordedRef.current = false;
+    prevLogLenRef.current    = 0;
+    setLocalCompleted(false);
+    setArrows([]);
+    setSetupMonster(null);
+    setSelectedPotions([]);
+    setGuestLoot(null);
+    setGuestAlreadyWon(false);
+    setLiveEntry(null);
+    setShowFullLog(false);
+    setClaimResult(null);
+    setStartError("");
+  }, [room?.status]); // eslint-disable-line
+
+  // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
+  useEffect(() => {
+    if (!myId || !isHost || myId.startsWith("guest")) return;
     checkPartyBattleLimit(myId).then(setPartyBattleLeft);
   }, [myId, isHost]); // eslint-disable-line
 
@@ -140,12 +162,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
 
-  // 戰鬥開始時所有人記錄一次（每人每場只記一次）
+  // 戰鬥開始時所有人記錄一次（訪客略過次數限制）
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
     partyRecordedRef.current = true;
-    recordPartyBattleSession(myId).catch(() => {});
-    if (isHost) setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
+    if (!myId.startsWith("guest")) {
+      recordPartyBattleSession(myId).catch(() => {});
+      if (isHost) setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
+    }
   }, [room?.status]); // eslint-disable-line
 
   // 訂閱藥水庫存
@@ -366,6 +390,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setConfirming(true);
     await confirmBattleResult(roomId);
     setConfirming(false);
+  }
+  async function handleNextRound() {
+    if (!isHost || resetting) return;
+    setResetting(true);
+    const memberIds = Object.keys(room.members || {});
+    await resetPartyRoom(roomId, memberIds);
+    setResetting(false);
   }
   function copyCode() {
     navigator.clipboard?.writeText(room.code).catch(() => {});
@@ -812,10 +843,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           📤 分享戰績小卡
         </button>
 
-        <button onClick={onLeave}
-          className="w-full py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
-          🏠 返回
-        </button>
+        {isHost ? (
+          <>
+            <button onClick={handleNextRound} disabled={resetting}
+              className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
+              {resetting ? "重置中…" : "🔄 繼續下一場"}
+            </button>
+            <button onClick={onLeave}
+              className="w-full py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
+              🏠 解散房間
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-slate-400 text-xs text-center">
+              房間仍開啟，房主可繼續下一場
+            </div>
+            <button onClick={onLeave}
+              className="w-full py-3 bg-white text-slate-900 font-black rounded-2xl shadow-lg active:scale-95 transition-transform">
+              🏠 離開房間
+            </button>
+          </>
+        )}
 
         {showShareCard && (
           <PartyBattleCard
