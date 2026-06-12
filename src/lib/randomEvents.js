@@ -96,8 +96,70 @@ export const RANDOM_EVENTS = [
     desc: "哈吉喵了一聲給你加油，心情好了，HP 回復 20！",
     effect: { healArcher: 20 } },
 
-  // ── 決鬥專屬 ──
-  { id: "betrayal", type: "duel_special", duelOnly: true, icon: "🗡️", title: "隊員叛變！",
+];
+
+// ── 決鬥專屬事件池（靶場競技情境）────────────────────────────
+export const DUEL_EVENTS = [
+
+  // 傷害加成
+  { id: "d_tailwind",   type: "buff",    icon: "💨", title: "順風！",
+    desc: "風向突然有利，箭矢飛得又快又準，本回合全員傷害 +20！",
+    effect: { extraDmg: 20 } },
+  { id: "d_hot_hand",   type: "buff",    icon: "🔥", title: "全員手感爆發！",
+    desc: "今天不知為何所有人都手感神準，本回合全員傷害 +22！",
+    effect: { extraDmg: 22 } },
+  { id: "d_crowd",      type: "buff",    icon: "👏", title: "觀眾起立鼓掌！",
+    desc: "觀眾全體起立，掌聲震天，氣勢大漲，本回合全員傷害 +25！",
+    effect: { extraDmg: 25 } },
+  { id: "d_silence",    type: "buff",    icon: "🔕", title: "靶場靜默！",
+    desc: "靶場突然一片死寂，所有人注意力完全集中，本回合全員傷害 +18！",
+    effect: { extraDmg: 18 } },
+  { id: "d_adrenaline", type: "buff",    icon: "⚡", title: "腎上腺素飆升！",
+    desc: "決鬥進入白熱化，所有人腎上腺素暴衝，本回合全員傷害 +30！",
+    effect: { extraDmg: 30 } },
+  { id: "d_photo",      type: "neutral", icon: "📸", title: "有人在拍片！",
+    desc: "場邊有人開直播，大家都帥帥地射出這輪，本回合傷害 +10！",
+    effect: { extraDmg: 10 } },
+  { id: "d_rain",       type: "neutral", icon: "🌧️", title: "轉移室內！",
+    desc: "外面突然下大雨，改到室內靶場，視野更好，本回合全員傷害 +12！",
+    effect: { extraDmg: 12 } },
+  { id: "d_coach_fire", type: "buff",    icon: "📣", title: "教練點火！",
+    desc: "教練突然大吼：「不行你們今天要分出高下！」，本回合全員傷害 +15！",
+    effect: { extraDmg: 15 } },
+
+  // 回血
+  { id: "d_water",      type: "buff",    icon: "🧋", title: "中場補水！",
+    desc: "比賽暫停補充水分，喝個珍奶，雙方全員回復 35 HP！",
+    effect: { healArcher: 35 } },
+  { id: "d_energy",     type: "buff",    icon: "🍫", title: "能量棒補給！",
+    desc: "場邊工作人員送來能量棒，雙方全員回復 25 HP！",
+    effect: { healArcher: 25 } },
+  { id: "d_ice",        type: "buff",    icon: "🩹", title: "教練緊急冰敷！",
+    desc: "教練拿出冰袋幫大家冰敷手腕，雙方全員回復 30 HP！",
+    effect: { healArcher: 30 } },
+  { id: "d_stretch",    type: "buff",    icon: "🤸", title: "中場拉筋！",
+    desc: "裁判宣布短暫休息，大家伸展放鬆，雙方全員回復 20 HP！",
+    effect: { healArcher: 20 } },
+  { id: "d_aircon",     type: "neutral", icon: "❄️", title: "空調修好了！",
+    desc: "靶場空調終於修好，溫度舒適，雙方全員回復 20 HP！",
+    effect: { healArcher: 20 } },
+  { id: "d_cat",        type: "neutral", icon: "🐱", title: "哈吉亂入！",
+    desc: "道館的貓突然衝進靶場，繞了一圈又跑掉，全場笑翻，雙方全員回復 15 HP！",
+    effect: { healArcher: 15 } },
+
+  // 純效果/中性
+  { id: "d_phone",      type: "neutral", icon: "📱", title: "手機突然響！",
+    desc: "有人忘記靜音，全場尷尬 3 秒，本回合無特殊效果，繼續！",
+    effect: {} },
+  { id: "d_headwind",   type: "debuff",  icon: "🌬️", title: "逆風干擾！",
+    desc: "突然吹起強烈逆風，雙方箭矢都受到干擾，本回合無特殊效果。",
+    effect: {} },
+  { id: "d_mistarget",  type: "debuff",  icon: "🎯", title: "靶子跑掉了！",
+    desc: "靶架被風吹歪，裁判重新固定，雙方都沒有額外效果。",
+    effect: {} },
+
+  // 叛變（決鬥專屬特殊）
+  { id: "betrayal",     type: "duel_special", icon: "🗡️", title: "隊員叛變！",
     desc: "有人突然倒戈！兩隊各有一名成員強制交換！",
     effect: {} },
 ];
@@ -105,9 +167,9 @@ export const RANDOM_EVENTS = [
 // 每回合觸發機率（0~1）
 export const EVENT_CHANCE = 0.2;
 
-// 隨機抽一個事件（mode: "monster" 排除 duelOnly 事件）
+// 隨機抽一個事件
 export function drawRandomEvent(mode = "monster") {
-  const pool = mode === "duel" ? RANDOM_EVENTS : RANDOM_EVENTS.filter(e => !e.duelOnly);
+  const pool = mode === "duel" ? DUEL_EVENTS : RANDOM_EVENTS;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
