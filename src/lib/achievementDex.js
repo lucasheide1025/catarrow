@@ -277,18 +277,64 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "drop_mythic",    cat: "monster", icon: "🌋", name: "神話現世",   rarity: "mythic",
     desc: "打怪模式獲得神話掉寶",  check: _c => false },
 
-  // ══ 決鬥模式（功能尚未實裝，check 先回傳 false）══
-  { id: "duel_first",     cat: "duel", icon: "🤺", name: "初次決鬥",   rarity: "common",
-    desc: "第一次參加決鬥模式",    check: _c => false },
-  { id: "duel_win1",      cat: "duel", icon: "🏴", name: "初勝",       rarity: "uncommon",
-    desc: "決鬥模式首次獲勝",      check: _c => false },
-  { id: "duel_win5",      cat: "duel", icon: "⚔️", name: "連戰連勝",   rarity: "rare",
-    desc: "決鬥模式累積勝利 5 次", check: _c => false },
-  { id: "duel_win10",     cat: "duel", icon: "🏆", name: "決鬥大師",   rarity: "epic",
-    desc: "決鬥模式累積勝利 10 次",check: _c => false },
-  { id: "duel_flawless",  cat: "duel", icon: "💎", name: "完美勝利",   rarity: "legendary", hidden: true,
-    riddle: "一箭不差，乾淨利落…", desc: "決鬥模式以完美比分獲勝",
-    check: _c => false },
+  // ══ 決鬥模式 ══
+  { id: "duel_first",     cat: "duel", icon: "🤺", name: "踏上決鬥場",   rarity: "common",
+    desc: "第一次參加決鬥模式（勝負不拘）",
+    check: c => (c.duelStats?.wins || 0) + (c.duelStats?.losses || 0) + (c.duelStats?.draws || 0) >= 1 },
+
+  { id: "duel_loss3",     cat: "duel", icon: "🩹", name: "越挫越勇",    rarity: "common",
+    desc: "決鬥中累積落敗 3 次，但你還是回來了",
+    check: c => (c.duelStats?.losses || 0) >= 3 },
+
+  { id: "duel_win1",      cat: "duel", icon: "🏴", name: "初勝",        rarity: "uncommon",
+    desc: "決鬥模式首次獲勝",
+    check: c => (c.duelStats?.wins || 0) >= 1 },
+
+  { id: "duel_draw",      cat: "duel", icon: "🤝", name: "棋逢對手",    rarity: "uncommon",
+    desc: "在決鬥中達成平局",
+    check: c => (c.duelStats?.draws || 0) >= 1 },
+
+  { id: "duel_solo_win1", cat: "duel", icon: "🗡", name: "單挑王",      rarity: "uncommon",
+    desc: "1v1 決鬥模式首次獲勝",
+    check: c => (c.duelStats?.soloWins || 0) >= 1 },
+
+  { id: "duel_team_win1", cat: "duel", icon: "🛡", name: "隊長魂",      rarity: "uncommon",
+    desc: "組隊決鬥模式首次獲勝",
+    check: c => (c.duelStats?.teamWins || 0) >= 1 },
+
+  { id: "duel_win5",      cat: "duel", icon: "⚔️", name: "百戰老將",    rarity: "rare",
+    desc: "決鬥模式累積勝利 5 次",
+    check: c => (c.duelStats?.wins || 0) >= 5 },
+
+  { id: "duel_dmg1000",   cat: "duel", icon: "💥", name: "千點傷害",    rarity: "rare",
+    desc: "決鬥中累積造成 1000 點傷害",
+    check: c => (c.duelStats?.totalDmg || 0) >= 1000 },
+
+  { id: "duel_win10",     cat: "duel", icon: "🏆", name: "決鬥大師",    rarity: "epic",
+    desc: "決鬥模式累積勝利 10 次",
+    check: c => (c.duelStats?.wins || 0) >= 10 },
+
+  { id: "duel_winrate70", cat: "duel", icon: "📊", name: "決鬥強者",    rarity: "epic",
+    desc: "累積 10 場決鬥，且勝率達 70% 以上",
+    check: c => {
+      const total = (c.duelStats?.wins || 0) + (c.duelStats?.losses || 0) + (c.duelStats?.draws || 0);
+      if (total < 10) return false;
+      return (c.duelStats?.wins || 0) / total >= 0.7;
+    } },
+
+  { id: "duel_win25",     cat: "duel", icon: "👑", name: "決鬥王者",    rarity: "epic",
+    desc: "決鬥模式累積勝利 25 次",
+    check: c => (c.duelStats?.wins || 0) >= 25 },
+
+  { id: "duel_flawless",  cat: "duel", icon: "💎", name: "完美決鬥",    rarity: "legendary", hidden: true,
+    riddle: "一滴血未流，卻讓對方倒下…",
+    desc: "決鬥模式以完美HP獲勝，自身HP未減少",
+    check: c => (c.duelStats?.flawless || 0) >= 1 },
+
+  { id: "duel_flawless5", cat: "duel", icon: "✨", name: "無懈可擊",    rarity: "legendary", hidden: true,
+    riddle: "五次無傷完勝，傳說級箭術…",
+    desc: "累積 5 次完美決鬥獲勝",
+    check: c => (c.duelStats?.flawless || 0) >= 5 },
 
   // ══ 煉製 ══
   { id: "brew_first",    cat: "forge", icon: "🧪", name: "初學煉金",   rarity: "common",
@@ -503,12 +549,12 @@ export function buildCohortAchievement(joinDate) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData }) {
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats }) {
   const cards       = cardData?.cards || {};
   const cardCount   = Object.keys(cards).length;
   const mythicCards = Object.values(cards).filter(c => c.tier === "mythic").length;
   const cardFamilies = [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))];
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies };
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {} };
 
   let autoUnlocked = 0;
   AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });

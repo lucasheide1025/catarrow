@@ -27,10 +27,12 @@ import CardCollection    from "../components/member/CardCollection";
 import PartyLobby        from "../components/party/PartyLobby";
 import PartyQuestRoom    from "../components/party/PartyQuestRoom";
 import PartyBattleRoom   from "../components/party/PartyBattleRoom";
+import DuelLobby         from "../components/duel/DuelLobby";
+import DuelRoom          from "../components/duel/DuelRoom";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","duel","duel-room"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -73,6 +75,18 @@ export default function MemberApp() {
     sessionStorage.removeItem("party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
     setPage("profile");
+  }
+
+  const [duelRoomId,  setDuelRoomId]  = useState(null);
+  const [duelIsHost,  setDuelIsHost]  = useState(false);
+  const [duelMyTeam,  setDuelMyTeam]  = useState("A");
+  function handleEnterDuelRoom(roomId, team, host) {
+    setDuelRoomId(roomId); setDuelMyTeam(team); setDuelIsHost(host);
+    setPage("duel-room");
+  }
+  function handleLeaveDuel() {
+    setDuelRoomId(null); setDuelIsHost(false);
+    setPage("duel");
   }
 
   const nav = [
@@ -142,7 +156,9 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
-        {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
+        {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} onGoDuel={()=>setPage("duel")} />}
+        {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")} />}
+        {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
         {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}

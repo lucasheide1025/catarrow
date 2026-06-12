@@ -1,0 +1,485 @@
+// src/components/duel/DuelRoom.jsx — 決鬥戰鬥室
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useToast } from "../shared/UI";
+import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
+import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
+import {
+  subscribeDuelRoom, submitDuelArrows, processDuelRound,
+  updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult
+} from "../../lib/duelDb";
+
+const ARROWS = 5;
+const ALL_PARTS = BODY_PARTS.map(p => p.id);
+const SCORE_BTNS = [
+  { label:"X", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
+  { label:"7", score:7 }, { label:"6", score:6 }, { label:"5", score:5 },
+  { label:"M", score:0 },
+];
+
+const DUEL_CSS = `
+@keyframes dmg-float{0%{opacity:1;transform:translateY(0) scale(1)}80%{opacity:1;transform:translateY(-28px) scale(1.1)}100%{opacity:0;transform:translateY(-36px) scale(0.9)}}
+@keyframes crit-pop{0%{opacity:1;transform:scale(1) rotate(-5deg)}50%{transform:scale(1.4) rotate(3deg)}100%{opacity:0;transform:scale(0.8) rotate(0deg)}}
+@keyframes slide-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes hp-flash{0%,100%{background:transparent}50%{background:rgba(255,50,50,0.25)}}
+@keyframes result-pop{0%{opacity:0;transform:scale(0.7) rotate(-4deg)}60%{transform:scale(1.06) rotate(1deg)}100%{opacity:1;transform:scale(1)}}
+.dmg-float{position:absolute;pointer-events:none;font-size:1.1rem;font-weight:900;animation:dmg-float 1.4s ease forwards;white-space:nowrap;}
+.crit-pop{position:absolute;pointer-events:none;font-size:1.4rem;font-weight:900;animation:crit-pop 1.1s ease forwards;}
+`;
+
+// ── 傷害計算（client-side，用於 host 處理回合）─────────────
+function calcDmgFn(arrows, atk, targetDef) {
+  let dmg = 0, crits = 0;
+  const arrowBreakdown = [];
+  for (const arrow of arrows) {
+    const score = arrow.score ?? 0;
+    const part  = resolveHitPart(score, ALL_PARTS);
+    const pMult = part?.multiplier ?? 1.0;
+    if (!score || pMult === 0) {
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+      continue;
+    }
+    const base = 8 + atk * 0.7 + score * 1.2 - targetDef * 0.35;
+    const mult = 0.85 + Math.random() * 0.3;
+    const isCrit = mult > 1.05 || pMult >= 1.8;
+    const d = Math.max(1, Math.round(base * pMult * mult));
+    dmg += d;
+    if (isCrit) crits++;
+    arrowBreakdown.push({ label: arrow.label || String(score), partIcon: part?.icon || "❤️", partName: part?.name || "胸腔", partMult: pMult, dmg: d, isCrit });
+  }
+  return { dmg, crits, arrowBreakdown };
+}
+
+// ── HP 條 ───────────────────────────────────────────────────
+function HpBar({ name, hp, maxHP, isMe, dead, flash }) {
+  const pct = maxHP > 0 ? Math.max(0, Math.round(hp / maxHP * 100)) : 0;
+  const color = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+  return (
+    <div className={`rounded-xl p-2 border transition-all ${dead ? "opacity-40 border-slate-700" : flash ? "border-red-400" : "border-white/10"}`}
+      style={flash ? { animation:"hp-flash 0.4s ease" } : {}}>
+      <div className="flex justify-between items-center mb-1">
+        <span className={`text-xs font-bold truncate max-w-[80px] ${dead ? "line-through text-slate-500" : isMe ? "text-amber-300" : "text-slate-200"}`}>
+          {dead ? "💀" : "🏹"} {name}
+        </span>
+        <span className="text-xs font-black text-slate-300">{hp}/{maxHP}</span>
+      </div>
+      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
+      </div>
+    </div>
+  );
+}
+
+// ── 主組件 ─────────────────────────────────────────────────
+export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
+  const { toast, ToastContainer } = useToast();
+  const [room, setRoom]           = useState(null);
+  const [myArrows, setMyArrows]   = useState([]);
+  const [submitted, setSubmitted] = useState(false);
+  const [revealEntry, setRevealEntry] = useState(null);
+  const [revealIdx, setRevealIdx]     = useState(-1);
+  const [floats, setFloats]           = useState([]);   // { id, text, team, memberId, isCrit }
+  const [flashIds, setFlashIds]       = useState({});   // { memberId: true }
+  const [resultShown, setResultShown] = useState(false);
+  const [duelStats, setDuelStats]     = useState(null);
+  const [cheerMsg, setCheerMsg]       = useState("");
+  const lastLogLen   = useRef(0);
+  const lastCheerTs  = useRef(0);
+  const heartbeatRef = useRef(null);
+
+  const myId   = profile?.id || profile?.uid || "guest";
+  const myName = profile?.name || (isGuest ? "訪客" : "射手");
+
+  // 我在哪一隊
+  const myTeam = room
+    ? (Object.keys(room.teamA || {}).includes(myId) ? "A" : "B")
+    : null;
+
+  // ── 訂閱房間 ────────────────────────────────────────────
+  useEffect(() => {
+    const unsub = subscribeDuelRoom(roomId, r => setRoom(r));
+    return unsub;
+  }, [roomId]);
+
+  // ── 心跳（30s）──────────────────────────────────────────
+  useEffect(() => {
+    if (!roomId || !myId) return;
+    heartbeatRef.current = setInterval(() => updateDuelHeartbeat(roomId, myId), 30000);
+    return () => clearInterval(heartbeatRef.current);
+  }, [roomId, myId]);
+
+  // ── 偵測新 log 並開始揭露動畫 ───────────────────────────
+  useEffect(() => {
+    if (!room?.log?.length) return;
+    if (room.log.length <= lastLogLen.current) return;
+    lastLogLen.current = room.log.length;
+    const entry = room.log[room.log.length - 1];
+    setRevealEntry(entry);
+    setRevealIdx(0);
+    setSubmitted(false);
+    setMyArrows([]);
+  }, [room?.log?.length]);
+
+  // ── 逐箭揭露計時器 ──────────────────────────────────────
+  useEffect(() => {
+    if (revealIdx < 0 || !revealEntry) return;
+    if (revealIdx >= ARROWS) return;
+
+    // 第 revealIdx 箭 — 對每個攻擊者顯示該箭傷害
+    const t = setTimeout(() => {
+      const newFloats = [];
+      for (const atk of revealEntry.attacks || []) {
+        const bk = atk.arrowBreakdown?.[revealIdx];
+        if (!bk || bk.dmg === 0) continue;
+        if (bk.isCrit) sfxCritBoom(); else sfxArrowHit();
+        newFloats.push({
+          id: `${atk.attackerId}-${revealIdx}-${Date.now()}`,
+          text: bk.isCrit ? `💥 ${bk.dmg}!` : `-${bk.dmg}`,
+          memberId: atk.targetId,
+          isCrit: bk.isCrit,
+        });
+        // HP 閃爍
+        setFlashIds(prev => ({ ...prev, [atk.targetId]: true }));
+        setTimeout(() => setFlashIds(prev => { const n = {...prev}; delete n[atk.targetId]; return n; }), 400);
+      }
+      if (newFloats.length) {
+        setFloats(prev => [...prev, ...newFloats]);
+        setTimeout(() => setFloats(prev => prev.filter(f => !newFloats.find(n => n.id === f.id))), 1400);
+      }
+      setRevealIdx(i => i + 1);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [revealIdx, revealEntry]);
+
+  // 揭露完畢 → 死亡音效
+  useEffect(() => {
+    if (revealIdx < ARROWS || !room) return;
+    const allMembers = [
+      ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, ...m })),
+      ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, ...m })),
+    ];
+    if (allMembers.some(m => !m.alive && m.hp <= 0)) sfxMonsterDead();
+  }, [revealIdx]);
+
+  // ── 加油訊息 ────────────────────────────────────────────
+  useEffect(() => {
+    if (!room?.cheer?.ts) return;
+    if (room.cheer.ts <= lastCheerTs.current) return;
+    lastCheerTs.current = room.cheer.ts;
+    setCheerMsg(`🎉 ${room.cheer.fromName} 加油！`);
+    setTimeout(() => setCheerMsg(""), 3000);
+  }, [room?.cheer?.ts]);
+
+  // ── Host 偵測所有人就緒 → 處理回合 ──────────────────────
+  useEffect(() => {
+    if (!isHost || !room || room.status !== "active" || room.processing) return;
+    const teamA = room.teamA || {};
+    const teamB = room.teamB || {};
+    const aliveA = Object.values(teamA).filter(m => m.alive);
+    const aliveB = Object.values(teamB).filter(m => m.alive);
+    if (!aliveA.length || !aliveB.length) return;
+    const allReady = [...aliveA, ...aliveB].every(m => m.ready);
+    if (!allReady) return;
+    processDuelRound(roomId, room, calcDmgFn);
+  }, [room]);
+
+  // ── 結算時記錄成就/統計 ─────────────────────────────────
+  useEffect(() => {
+    if (!room || room.status !== "finished" || resultShown) return;
+    setResultShown(true);
+    if (isGuest || !profile?.id || !myTeam) return;
+
+    const isSolo  = room.type === "1v1";
+    const mode    = isSolo ? "solo" : "team";
+    let outcome   = "draw";
+    if (room.result === `team${myTeam}`) outcome = "win";
+    if (room.result !== `team${myTeam}` && room.result !== "draw") outcome = "loss";
+
+    // 完美勝利：我的 HP 未減少
+    const myHP    = (myTeam === "A" ? room.teamA : room.teamB)?.[myId]?.hp;
+    const myMaxHP = (myTeam === "A" ? room.teamA : room.teamB)?.[myId]?.maxHP;
+    const flawless = outcome === "win" && myHP === myMaxHP;
+
+    // 我打出的總傷害
+    const myDmg = (room.log || []).reduce((sum, entry) => {
+      return sum + (entry.attacks || [])
+        .filter(a => a.attackerId === myId)
+        .reduce((s, a) => s + (a.dmg || 0), 0);
+    }, 0);
+
+    recordDuelResult(profile.id, outcome, mode, { flawless, dmg: myDmg });
+    getDuelStats(profile.id).then(setDuelStats);
+  }, [room?.status]);
+
+  // ── 輸入箭分 ────────────────────────────────────────────
+  function addArrow(score, label) {
+    if (myArrows.length >= ARROWS || submitted) return;
+    sfxArrowHit();
+    setMyArrows(prev => [...prev, { score, label }]);
+  }
+  function removeArrow() {
+    setMyArrows(prev => prev.slice(0, -1));
+  }
+  async function handleSubmit() {
+    if (myArrows.length < ARROWS || submitted || !myTeam) return;
+    setSubmitted(true);
+    await submitDuelArrows(roomId, myTeam, myId, myArrows);
+  }
+
+  async function handleCheer() {
+    await sendDuelCheer(roomId, myName);
+  }
+  async function handleReset() {
+    if (!isHost || !room) return;
+    await resetDuelRoom(roomId, room);
+    setResultShown(false);
+    setRevealEntry(null);
+    setRevealIdx(-1);
+    lastLogLen.current = 0;
+  }
+
+  if (!room) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+      <div className="animate-pulse text-2xl">⚔️ 連接中…</div>
+    </div>
+  );
+
+  // ── 結算畫面 ────────────────────────────────────────────
+  if (room.status === "finished") {
+    const win  = room.result === `team${myTeam}`;
+    const draw = room.result === "draw";
+    const isSolo = room.type === "1v1";
+
+    const allA = Object.entries(room.teamA || {});
+    const allB = Object.entries(room.teamB || {});
+
+    const myDmg = (room.log || []).reduce((sum, entry) => {
+      return sum + (entry.attacks || [])
+        .filter(a => a.attackerId === myId)
+        .reduce((s, a) => s + (a.dmg || 0), 0);
+    }, 0);
+    const totalRounds = room.log?.length || 0;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4 gap-4">
+        <style>{DUEL_CSS}</style>
+        <ToastContainer />
+
+        {/* 結果大字 */}
+        <div className="text-center" style={{ animation:"result-pop .6s cubic-bezier(.34,1.56,.64,1) forwards" }}>
+          <div className="text-7xl mb-2">{draw ? "🤝" : win ? "🏆" : "💀"}</div>
+          <div className={`text-4xl font-black ${draw ? "text-slate-300" : win ? "text-amber-400" : "text-red-400"}`}>
+            {draw ? "平局" : win ? "勝利！" : "落敗"}
+          </div>
+          <div className="text-slate-400 text-sm mt-1">{totalRounds} 回合</div>
+        </div>
+
+        {/* 雙隊 HP 對比 */}
+        <div className="w-full max-w-sm flex gap-3">
+          {[["A", allA], ["B", allB]].map(([team, entries]) => (
+            <div key={team} className={`flex-1 rounded-2xl p-3 border ${team === myTeam ? "border-amber-500/50 bg-amber-900/20" : "border-white/10 bg-white/5"}`}>
+              <div className={`text-xs font-black tracking-widest mb-2 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>隊伍 {team}</div>
+              {entries.map(([id, m]) => (
+                <HpBar key={id} name={m.name} hp={m.hp} maxHP={m.maxHP} isMe={id === myId} dead={!m.alive} flash={false} />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* 我的本場統計 */}
+        <div className="w-full max-w-sm rounded-2xl bg-white/5 border border-white/10 p-4 flex justify-around">
+          <div className="text-center">
+            <div className="text-xl font-black text-white">{myDmg}</div>
+            <div className="text-xs text-slate-400">⚔️ 造成傷害</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xl font-black text-white">{room.log?.reduce((s, e) => s + (e.attacks || []).filter(a => a.attackerId === myId).reduce((ss, a) => ss + (a.crits || 0), 0), 0)}</div>
+            <div className="text-xs text-slate-400">💥 爆擊次數</div>
+          </div>
+          {duelStats && (
+            <div className="text-center">
+              <div className="text-xl font-black text-white">
+                {duelStats.wins + (win ? 0 : 0)}W {duelStats.losses}L
+              </div>
+              <div className="text-xs text-slate-400">📊 累積戰績</div>
+            </div>
+          )}
+        </div>
+
+        {/* 按鈕 */}
+        <div className="w-full max-w-sm flex flex-col gap-2">
+          {isHost && (
+            <button onClick={handleReset}
+              className="w-full py-3 rounded-2xl font-black text-white border border-amber-400/50"
+              style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
+              ⚔️ 再來一局
+            </button>
+          )}
+          {!isHost && <div className="text-center text-slate-400 text-sm">等待主持人開始下一局…</div>}
+          <button onClick={onLeave}
+            className="w-full py-3 rounded-2xl font-black text-slate-300 border border-slate-600 bg-slate-800">
+            ← 離開
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 戰鬥主畫面 ──────────────────────────────────────────
+  const teamA = room.teamA || {};
+  const teamB = room.teamB || {};
+  const allA  = Object.entries(teamA);
+  const allB  = Object.entries(teamB);
+  const aliveA = allA.filter(([, m]) => m.alive);
+  const aliveB = allB.filter(([, m]) => m.alive);
+
+  const isRevealing = revealIdx >= 0 && revealIdx < ARROWS;
+  const myPlayer = (myTeam === "A" ? teamA : teamB)?.[myId];
+  const canSubmit = myArrows.length >= ARROWS && !submitted;
+  const amAlive   = myPlayer?.alive !== false;
+
+  // 本回合我攻擊的目標（從最新 log entry）
+  const myLastAtk = revealEntry?.attacks?.find(a => a.attackerId === myId);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col">
+      <style>{DUEL_CSS}</style>
+      <ToastContainer />
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-black/30">
+        <button onClick={onLeave} className="text-slate-400 text-sm">← 離開</button>
+        <div className="text-white font-black text-sm">
+          ⚔️ {room.type} 決鬥 · 第 {(room.round || 1) - (isRevealing ? 1 : 0)} 回合
+        </div>
+        <button onClick={handleCheer} className="text-slate-400 text-xl">🎉</button>
+      </div>
+
+      {/* 加油訊息 */}
+      {cheerMsg && (
+        <div className="mx-4 mt-2 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-300 text-sm font-bold text-center py-2"
+          style={{ animation:"slide-in .3s ease" }}>
+          {cheerMsg}
+        </div>
+      )}
+
+      {/* 事件橫幅 */}
+      {isRevealing && revealEntry?.event && (
+        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border ${revealEntry.event.type === "positive" ? "bg-green-900/40 border-green-500/40 text-green-300" : "bg-red-900/40 border-red-500/40 text-red-300"}`}
+          style={{ animation:"slide-in .3s ease" }}>
+          {revealEntry.event.icon} {revealEntry.event.title} — {revealEntry.event.desc}
+        </div>
+      )}
+
+      {/* 雙隊 HP */}
+      <div className="flex gap-3 px-4 py-3">
+        {[["A", allA], ["B", allB]].map(([team, entries]) => (
+          <div key={team} className="flex-1 flex flex-col gap-1.5">
+            <div className={`text-xs font-black tracking-widest ${team === "A" ? "text-blue-400" : "text-red-400"}`}>
+              {team === "A" ? "🔵" : "🔴"} 隊伍 {team}
+            </div>
+            {entries.map(([id, m]) => (
+              <div key={id} className="relative">
+                <HpBar
+                  name={m.name} hp={m.hp} maxHP={m.maxHP}
+                  isMe={id === myId} dead={!m.alive}
+                  flash={!!flashIds[id]}
+                />
+                {/* 浮動傷害數字 */}
+                {floats.filter(f => f.memberId === id).map(f => (
+                  <span key={f.id}
+                    className={f.isCrit ? "crit-pop" : "dmg-float"}
+                    style={{ top:"-4px", right:"8px", color: f.isCrit ? "#f59e0b" : "#f87171", zIndex:20 }}>
+                    {f.text}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* 揭露中：顯示最新攻擊記錄 */}
+      {isRevealing && revealEntry && (
+        <div className="mx-4 rounded-2xl bg-black/40 border border-white/10 p-3 flex flex-col gap-2 overflow-y-auto max-h-40">
+          <div className="text-xs text-slate-400 font-black tracking-wider">⚔️ 回合 {revealEntry.round} 結算</div>
+          {(revealEntry.attacks || []).map((atk, i) => {
+            const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
+            const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
+            const shown = (atk.arrowBreakdown || []).slice(0, revealIdx);
+            const shownDmg = shown.reduce((s, b) => s + b.dmg, 0);
+            const shownCrits = shown.filter(b => b.isCrit).length;
+            return (
+              <div key={i} className={`rounded-xl px-2 py-1.5 border text-xs ${atk.attackerId === myId ? "border-amber-500/40 bg-amber-900/20" : "border-white/10 bg-white/5"}`}
+                style={{ animation:"slide-in .2s ease" }}>
+                <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
+                <span className="text-slate-400 mx-1">→</span>
+                <span className="text-slate-200">{tName}</span>
+                <span className="ml-2 text-white font-black">{shownDmg > 0 ? `-${shownDmg}` : "…"}</span>
+                {shownCrits > 0 && <span className="ml-1 text-amber-400 font-black">💥×{shownCrits}</span>}
+                <span className="ml-2 text-slate-500">{shown.map(b => b.label).join(" ")}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 等待/就緒狀態列 */}
+      <div className="mx-4 mt-2 flex items-center gap-2 flex-wrap">
+        {[...allA, ...allB].map(([id, m]) => (
+          m.alive && (
+            <span key={id} className={`text-xs px-2 py-0.5 rounded-full font-bold border ${m.ready ? "border-green-400 bg-green-900/40 text-green-300" : "border-slate-600 bg-slate-800 text-slate-400"}`}>
+              {m.ready ? "✅" : "🏹"} {m.name}
+            </span>
+          )
+        ))}
+        {room.processing && <span className="text-xs text-slate-400 animate-pulse">⚙️ 計算中…</span>}
+      </div>
+
+      {/* 箭分輸入區 */}
+      <div className="flex-1" />
+      {amAlive && !isRevealing && (
+        <div className="px-4 pb-4 pt-2 bg-slate-900/80 border-t border-white/10">
+          {/* 已輸入箭 */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-slate-400 font-bold">第 {myArrows.length}/{ARROWS} 箭：</span>
+            {myArrows.map((a, i) => (
+              <span key={i} className={`text-xs font-black px-1.5 py-0.5 rounded-lg ${a.score === 0 ? "bg-slate-700 text-slate-400" : a.score >= 9 ? "bg-amber-600 text-white" : "bg-slate-600 text-white"}`}>
+                {a.label}
+              </span>
+            ))}
+            {myArrows.length > 0 && !submitted && (
+              <button onClick={removeArrow} className="text-slate-500 text-xs underline ml-1">撤銷</button>
+            )}
+          </div>
+
+          {submitted ? (
+            <div className="text-center text-green-400 font-black py-2 animate-pulse">✅ 已送出，等待其他人…</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-7 gap-1.5 mb-3">
+                {SCORE_BTNS.map(({ label, score }) => (
+                  <button key={label} onClick={() => addArrow(score, label)}
+                    disabled={myArrows.length >= ARROWS}
+                    className={`py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-30 ${score === 10 ? "bg-amber-600 border-amber-400 text-white" : score === 0 ? "bg-slate-700 border-slate-600 text-slate-400" : "bg-slate-700 border-slate-600 text-white"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleSubmit} disabled={!canSubmit}
+                className={`w-full py-3 rounded-2xl font-black text-sm transition-all ${canSubmit ? "text-white border border-amber-400/50 active:scale-95" : "bg-slate-700 text-slate-500 border border-slate-600"}`}
+                style={canSubmit ? { background:"linear-gradient(135deg,#1d4ed8,#7c3aed)" } : {}}>
+                {canSubmit ? "⚔️ 送出攻擊" : `再輸入 ${ARROWS - myArrows.length} 箭`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {!amAlive && (
+        <div className="px-4 pb-6 text-center text-slate-500 text-sm">
+          💀 你已倒下，等待本場結束…
+        </div>
+      )}
+    </div>
+  );
+}

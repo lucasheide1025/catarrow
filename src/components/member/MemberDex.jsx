@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
+import { getDuelStats } from "../../lib/duelDb";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
   buildRoundAchievements, computeDexStats, buildCohortAchievement,
@@ -79,6 +80,7 @@ export default function MemberDex({ onBack }) {
   const [chestStats, setChestStats]       = useState({});
   const [potionDex,  setPotionDex]        = useState({});
   const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
+  const [duelStats,  setDuelStats]        = useState({});
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
@@ -99,10 +101,11 @@ export default function MemberDex({ onBack }) {
     const unsubChest   = subscribeChestStats(profile.id, setChestStats);
     const unsubPotion  = subscribePotionDex(profile.id, setPotionDex);
     const unsubCard    = subscribeCardCollection(profile.id, setCardData);
+    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
     return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); unsubCard(); };
   }, [profile?.id]);
 
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData };
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
 
   // ── 偵測新解鎖，加入提示佇列 ──

@@ -7,6 +7,8 @@ import MonsterBattle  from "./MonsterBattle";
 import MemberPractice from "./MemberPractice";
 import PartyLobby     from "../party/PartyLobby";
 import PartyBattleRoom from "../party/PartyBattleRoom";
+import DuelLobby      from "../duel/DuelLobby";
+import DuelRoom       from "../duel/DuelRoom";
 
 const PARTY_SESSION_KEY = "guest_party_session";
 
@@ -78,8 +80,23 @@ export default function GuestBattle({ guestId, onExpire }) {
     sessionStorage.removeItem(PARTY_SESSION_KEY);
   }
 
+  const [duelRoomId,  setDuelRoomId]  = useState(null);
+  const [duelIsHost,  setDuelIsHost]  = useState(false);
+  const [duelMyTeam,  setDuelMyTeam]  = useState("A");
+  const [duelSubTab,  setDuelSubTab]  = useState("lobby");
+  function handleEnterDuelRoom(roomId, team, host) {
+    setDuelRoomId(roomId); setDuelMyTeam(team); setDuelIsHost(host);
+    setDuelSubTab("room");
+  }
+  function handleLeaveDuel() {
+    setDuelRoomId(null); setDuelIsHost(false);
+    setDuelSubTab("lobby");
+    setTab("duel");
+  }
+
   const nav = [
     { id: "monster",  icon: "⚔️",  label: "打怪" },
+    { id: "duel",     icon: "⚔️",  label: "決鬥" },
     { id: "party",    icon: "👥",  label: "組隊" },
     { id: "practice", icon: "🎯",  label: "練習" },
   ];
@@ -136,7 +153,7 @@ export default function GuestBattle({ guestId, onExpire }) {
 
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
-        {tab === "monster" && <MonsterBattle isGuest={true} />}
+        {tab === "monster" && <MonsterBattle isGuest={true} onGoDuel={() => setTab("duel")} />}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
           <PartyLobby
@@ -151,6 +168,24 @@ export default function GuestBattle({ guestId, onExpire }) {
             isHost={partyIsHost}
             onLeave={handleLeaveParty}
             guestOverride={guestOverride}
+          />
+        )}
+        {tab === "duel" && duelSubTab === "lobby" && (
+          <DuelLobby
+            profile={guestOverride}
+            isGuest={true}
+            onEnterRoom={handleEnterDuelRoom}
+            onBack={() => setTab("monster")}
+          />
+        )}
+        {tab === "duel" && duelSubTab === "room" && duelRoomId && (
+          <DuelRoom
+            roomId={duelRoomId}
+            myTeam={duelMyTeam}
+            isHost={duelIsHost}
+            onLeave={handleLeaveDuel}
+            profile={guestOverride}
+            isGuest={true}
           />
         )}
       </div>
