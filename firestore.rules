@@ -109,7 +109,79 @@ service cloud.firestore {
     // auditLogs：只有 admin 可讀，系統自動寫入
     match /auditLogs/{logId} {
       allow read:  if isAdmin();
-      allow write: if isLoggedIn(); // 由 server-side functions 寫入
+      allow write: if isLoggedIn();
+    }
+
+    // monthlyCardRequests：admin 全權；會員可建立自己的 + 讀自己的
+    match /monthlyCardRequests/{reqId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // monthlyCardLogs：admin 全權讀寫（追加式紀錄）
+    match /monthlyCardLogs/{logId} {
+      allow read:  if isAdmin();
+      allow write: if isLoggedIn(); // admin 操作時寫入
+    }
+
+    // monthlyCardConfig：admin 全權；登入者可讀（前台需要預設次數）
+    match /monthlyCardConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // checkins：admin 全權；會員可建立/讀自己的，可更新自己的（問卷達標等）
+    match /checkins/{checkinId} {
+      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow update: if isAdmin() || isMember(resource.data.memberId);
+      allow delete: if isAdmin();
+    }
+
+    // dailyQuestConfig：admin 全權；登入者可讀
+    match /dailyQuestConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // monsterConfig / monsterEventConfig：admin 全權；登入者可讀
+    match /monsterConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // monsterSessions：admin 全權；登入者可讀寫（遊戲進行時）
+    match /monsterSessions/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // monsterLogs / monsterDex / craftStats：登入者可讀寫
+    match /monsterLogs/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /monsterDex/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /craftStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // duelRooms / duelStats：登入者可讀寫
+    match /duelRooms/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /duelStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // partyRooms / partyConfig：登入者可讀寫
+    match /partyRooms/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /partyConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
     }
   }
 }

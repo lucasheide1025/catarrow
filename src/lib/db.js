@@ -1774,8 +1774,13 @@ async function _logMonthlyCard(memberId, memberName, action, delta, note, operat
 // 訂閱某射手的月卡記錄（後台查看用）
 export function subscribeMonthlyCardLogs(memberId, callback) {
   if (!memberId) { callback([]); return () => {}; }
-  const q = query(collection(db, C_MONTHLY_LOGS), where("memberId", "==", memberId), orderBy("createdAt", "desc"), limit(50));
-  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
+  // 只用 where，避免需要複合索引；前端排序
+  const q = query(collection(db, C_MONTHLY_LOGS), where("memberId", "==", memberId), limit(50));
+  return onSnapshot(q, snap => {
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    callback(docs);
+  }, () => callback([]));
 }
 
 // 射手申請使用月卡（1或2小時）→ 送後台審核
