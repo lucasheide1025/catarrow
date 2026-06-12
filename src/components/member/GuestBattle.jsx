@@ -1,6 +1,8 @@
 // src/components/member/GuestBattle.jsx
 // 訪客打怪模式（無學籍，只顯示練習+打怪+組隊，3小時後清除）
 import { useState, useEffect } from "react";
+import { signInAnonymously } from "firebase/auth";
+import { auth } from "../../lib/firebase";
 import MonsterBattle  from "./MonsterBattle";
 import MemberPractice from "./MemberPractice";
 import PartyLobby     from "../party/PartyLobby";
@@ -11,10 +13,20 @@ const PARTY_SESSION_KEY = "guest_party_session";
 export default function GuestBattle({ guestId, onExpire }) {
   const [tab, setTab] = useState("monster");
 
+  // 訪客名稱
+  const [guestName,      setGuestName]      = useState(() => sessionStorage.getItem("guest_name") || "");
+  const [nameInput,      setNameInput]      = useState("");
+  const [nameConfirmed,  setNameConfirmed]  = useState(() => !!sessionStorage.getItem("guest_name"));
+
   // 組隊相關狀態
   const [partyRoomId,  setPartyRoomId]  = useState(null);
   const [partyIsHost,  setPartyIsHost]  = useState(false);
   const [partySubTab,  setPartySubTab]  = useState("lobby"); // "lobby" | "battle"
+
+  // 匿名登入，讓 Firestore 寫入（submitArrows 等）可通過權限驗證
+  useEffect(() => {
+    signInAnonymously(auth).catch(() => {});
+  }, []); // eslint-disable-line
 
   // 掛載時：檢查 sessionStorage 是否有進行中房間
   useEffect(() => {
@@ -43,8 +55,15 @@ export default function GuestBattle({ guestId, onExpire }) {
   // 訪客用 ID（加 guest_ 前綴讓後端可識別）
   const guestOverride = {
     id:   `guest_${guestId}`,
-    name: "訪客射手",
+    name: guestName || "訪客射手",
   };
+
+  function handleConfirmName() {
+    const name = nameInput.trim() || "訪客射手";
+    sessionStorage.setItem("guest_name", name);
+    setGuestName(name);
+    setNameConfirmed(true);
+  }
 
   function handleEnterPartyRoom(roomId, _type, isHost) {
     setPartyRoomId(roomId);
@@ -65,12 +84,46 @@ export default function GuestBattle({ guestId, onExpire }) {
     { id: "practice", icon: "🎯",  label: "練習" },
   ];
 
+  // 名稱設定頁（第一次進入才顯示）
+  if (!nameConfirmed) return (
+    <div style={{ minHeight:"100vh", background:"#f8fafc", fontFamily:"sans-serif" }}>
+      <div style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ color:"white", fontSize:"13px", fontWeight:900 }}>⚔️ 貓小隊射箭場・體驗模式</div>
+        <div style={{ fontSize:"11px", color:"rgba(255,255,255,.7)" }}>訪客</div>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"60px 24px", gap:"20px" }}>
+        <div style={{ fontSize:"52px" }}>🏹</div>
+        <div style={{ fontSize:"20px", fontWeight:900, color:"#1e293b" }}>歡迎加入冒險！</div>
+        <div style={{ fontSize:"14px", color:"#64748b", textAlign:"center", maxWidth:"280px" }}>
+          請輸入你的射手名稱，其他玩家在組隊時會看見
+        </div>
+        <input
+          value={nameInput}
+          onChange={e => setNameInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleConfirmName(); }}
+          placeholder="射手名稱（最多 10 字）"
+          maxLength={10}
+          style={{ width:"100%", maxWidth:"280px", padding:"10px 14px", border:"2px solid #7c3aed", borderRadius:"8px", fontSize:"16px", outline:"none", boxSizing:"border-box" }}
+          autoFocus
+        />
+        <button onClick={handleConfirmName}
+          style={{ width:"100%", maxWidth:"280px", background:"#7c3aed", color:"white", border:"none", borderRadius:"8px", padding:"12px", fontSize:"15px", fontWeight:900, cursor:"pointer" }}>
+          開始冒險
+        </button>
+        <button onClick={() => { sessionStorage.setItem("guest_name","訪客射手"); setGuestName("訪客射手"); setNameConfirmed(true); }}
+          style={{ fontSize:"12px", color:"#94a3b8", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>
+          使用預設名稱「訪客射手」
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ minHeight:"100vh", background:"#f8fafc", fontFamily:"sans-serif" }}>
       {/* Header */}
       <div style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:40 }}>
         <div style={{ color:"white", fontSize:"13px", fontWeight:900 }}>⚔️ 貓小隊射箭場・體驗模式</div>
-        <div style={{ fontSize:"11px", color:"rgba(255,255,255,.7)" }}>訪客</div>
+        <div style={{ fontSize:"11px", color:"rgba(255,255,255,.7)" }}>訪客・{guestName}</div>
       </div>
 
       {/* 組隊中 banner（任何 tab 都顯示）*/}

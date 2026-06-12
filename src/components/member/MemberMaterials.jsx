@@ -80,7 +80,7 @@ export default function MemberMaterials({ onBack }) {
 
   // ── 統計 ─────────────────────────────────────────────────
   const totalKinds      = MATERIALS.length;
-  const ownedKinds      = MATERIALS.filter(m => (inventory[m.id] || 0) > 0).length;
+  const ownedKinds      = MATERIALS.filter(m => (m.family === "all" ? (fragments[m.id] || 0) : (inventory[m.id] || 0)) > 0).length;
   const totalCount      = Object.values(inventory).reduce((s, v) => s + (v || 0), 0);
   const upgradableCount = MATERIALS.filter(m =>
     m.upgradesTo && (inventory[m.id] || 0) >= (m.upgradeCount || 5)
@@ -290,7 +290,7 @@ export default function MemberMaterials({ onBack }) {
                 const cfg  = FAMILY_CONFIG[fam];
                 const mats = matsOfFamily(fam);
                 if (mats.length === 0) return null;
-                const famOwned = mats.filter(m => (inventory[m.id] || 0) > 0).length;
+                const famOwned = mats.filter(m => (m.family === "all" ? (fragments[m.id] || 0) : (inventory[m.id] || 0)) > 0).length;
 
                 return (
                   <section key={fam}>
@@ -305,7 +305,7 @@ export default function MemberMaterials({ onBack }) {
 
                     <div className="flex flex-col gap-2">
                       {mats.map(mat => {
-                        const count      = inventory[mat.id] || 0;
+                        const count      = mat.family === "all" ? (fragments[mat.id] || 0) : (inventory[mat.id] || 0);
                         const rarity     = RARITY_CONFIG[mat.rarity] || RARITY_CONFIG.common;
                         const owned      = count > 0;
                         const canChain   = !!mat.upgradesTo;
@@ -477,7 +477,7 @@ export default function MemberMaterials({ onBack }) {
       {tab === "fragments" && (
         <div className="flex flex-col gap-3">
           <div className="bg-pink-50 border border-pink-200 rounded-xl px-3 py-2 text-pink-700 text-xs leading-relaxed">
-            🐱 打怪有機率額外掉落<b>貓貓箱</b>，開箱後可能獲得章碎片！集滿 <b>10 個</b>可合成對應銀章。<b>碎片本身不計分</b>，合成後才算。
+            🐱 打怪有機率額外掉落<b>貓貓箱</b>，開箱後可能獲得章碎片！集滿 <b>10 個</b>可合成對應章。<b>碎片本身不計分</b>，合成後才算。
           </div>
 
           {fragLoading ? (
@@ -660,15 +660,15 @@ export default function MemberMaterials({ onBack }) {
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="text-center mb-4">
               <div className="font-black text-gray-800 text-lg mb-1">✨ 碎片合成</div>
-              <div className="text-gray-400 text-xs">確定要合成銀章嗎？</div>
+              <div className="text-gray-400 text-xs">確定要合成「{confirmFrag.craftResult.label}」嗎？</div>
             </div>
             <div className="text-center mb-5">
               <div className="text-5xl mb-2">{confirmFrag.icon}</div>
-              <div className="font-black text-gray-700 text-base mb-1">{confirmFrag.name} ×10</div>
+              <div className="font-black text-gray-700 text-base mb-1">{confirmFrag.name} ×{confirmFrag.craftCount}</div>
               <div className="text-2xl my-2 text-gray-300">↓</div>
               <div className="inline-block px-4 py-2 rounded-2xl font-black text-white text-base"
                 style={{ background: confirmFrag.color }}>
-                🥈 {confirmFrag.craftResult.label}
+                {confirmFrag.craftResult.badgeLevel === "gold" ? "🥇" : confirmFrag.craftResult.badgeLevel === "bronze" ? "🥉" : "🥈"} {confirmFrag.craftResult.label}
               </div>
               <div className="text-gray-400 text-xs mt-2">合成後請找教練領取實體銀章！</div>
             </div>
@@ -763,7 +763,9 @@ export default function MemberMaterials({ onBack }) {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
           onClick={() => setCraftCelebrate(null)}>
           <div className="text-center">
-            <div className="text-7xl mb-3 animate-bounce">🥈</div>
+            <div className="text-7xl mb-3 animate-bounce">
+              {craftCelebrate.frag.craftResult?.badgeLevel === "gold" ? "🥇" : craftCelebrate.frag.craftResult?.badgeLevel === "bronze" ? "🥉" : "🥈"}
+            </div>
             <div className="font-black text-2xl mb-1" style={{ color: craftCelebrate.frag.color }}>合成成功！</div>
             <div className="text-white font-bold text-lg mb-2">{craftCelebrate.label} 已入帳！</div>
             <div className="text-white/70 text-sm mb-6">請帶著這個畫面去找教練領取實體銀章 🎖️</div>

@@ -95,6 +95,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [claiming,        setClaiming]        = useState(false);
   const [skipping,        setSkipping]        = useState(null);
   const [confirming,      setConfirming]      = useState(false);
+  const [localCompleted,  setLocalCompleted]  = useState(false);
   const [partyBattleLeft, setPartyBattleLeft] = useState(null);
   const [startError,      setStartError]      = useState("");
   const [animHit,         setAnimHit]         = useState(false);
@@ -303,7 +304,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   async function handleSubmit() {
     if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
     setSubmitting(true);
-    await submitArrows(roomId, myId, arrows);
+    const res = await submitArrows(roomId, myId, arrows);
+    if (res?.ok === false) {
+      alert("送出失敗，請重試（" + (res.reason || "未知錯誤") + "）");
+      setSubmitting(false);
+      return;
+    }
     setArrows([]);
     setSubmitting(false);
   }
@@ -583,14 +589,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div className="text-slate-300 text-xs">點傷害</div>
           </div>
         )}
-        {isHost ? (
-          <button onClick={handleConfirmResult} disabled={confirming}
-            className="w-full max-w-xs py-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform disabled:opacity-50 animate-pulse">
-            {confirming ? "確認中…" : "🏆 確認討伐！進入結算"}
-          </button>
-        ) : (
-          <div className="text-slate-300 text-sm animate-pulse font-bold">
-            等待房主確認結算…
+        <button
+          onClick={isHost ? handleConfirmResult : () => setLocalCompleted(true)}
+          disabled={isHost && confirming}
+          className="w-full max-w-xs py-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform disabled:opacity-50 animate-pulse">
+          {isHost && confirming ? "確認中…" : "🏆 確認討伐！進入結算"}
+        </button>
+        {!isHost && (
+          <div className="text-slate-400 text-xs text-center">
+            （房主確認後自動跳轉，或點上方按鈕直接查看結果）
           </div>
         )}
       </div>
@@ -598,7 +605,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
 
   // ── 戰鬥結算畫面 ──────────────────────────────────────────
-  if (room.status === "completed") {
+  if (room.status === "completed" || localCompleted) {
     const won = room.result === "win";
 
     // 從戰鬥 log 彙總各人數據
