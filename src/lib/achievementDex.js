@@ -35,6 +35,7 @@ export const DEX_CATEGORIES = [
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製" },
   { id: "potion",   label: "🧪 藥水" },
+  { id: "card",     label: "🃏 怪物卡" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -331,6 +332,32 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "9 種藥水各使用至少一次", hidden: true,
     riddle: "九味靈藥，各嚐過一遍…",
     check: c => POTIONS.every(p => (c.potionDex?.used?.[p.id] || 0) >= 1) },
+
+  // ══ 怪物卡收藏 ══
+  { id: "card_1",         cat: "card", icon: "🃏", name: "初探怪窟",   rarity: "common",
+    desc: "收集第一張怪物卡",
+    check: c => (c.cardCount || 0) >= 1 },
+  { id: "card_5",         cat: "card", icon: "🃏", name: "收藏家入門", rarity: "uncommon",
+    desc: "收集 5 種怪物卡",
+    check: c => (c.cardCount || 0) >= 5 },
+  { id: "card_10",        cat: "card", icon: "🃏", name: "卡片達人",   rarity: "rare",
+    desc: "收集 10 種怪物卡",
+    check: c => (c.cardCount || 0) >= 10 },
+  { id: "card_15",        cat: "card", icon: "🃏", name: "卡片狂人",   rarity: "epic",
+    desc: "收集 15 種怪物卡",
+    check: c => (c.cardCount || 0) >= 15 },
+  { id: "card_20",        cat: "card", icon: "🃏", name: "怪物圖鑑家", rarity: "legendary",
+    desc: "收集 20 種怪物卡",
+    check: c => (c.cardCount || 0) >= 20 },
+  { id: "card_mythic",    cat: "card", icon: "✨", name: "傳說獵手",   rarity: "epic",
+    desc: "獲得至少一張神話怪物卡", hidden: true,
+    riddle: "凡俗之手，握住了傳說…",
+    check: c => (c.mythicCards || 0) >= 1 },
+  { id: "card_all6fam",   cat: "card", icon: "🌐", name: "六族全收",   rarity: "epic",
+    desc: "六大族群各收集至少一張卡", hidden: true,
+    riddle: "六種血脈，盡收囊中…",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
+      fam => c.cardFamilies?.includes(fam)) },
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
@@ -477,8 +504,12 @@ export function buildCohortAchievement(joinDate) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex }) {
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {} };
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData }) {
+  const cards       = cardData?.cards || {};
+  const cardCount   = Object.keys(cards).length;
+  const mythicCards = Object.values(cards).filter(c => c.tier === "mythic").length;
+  const cardFamilies = [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))];
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies };
 
   let autoUnlocked = 0;
   AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });

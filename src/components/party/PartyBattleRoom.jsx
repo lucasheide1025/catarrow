@@ -7,7 +7,7 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
 import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
@@ -117,6 +117,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRef     = useRef(false);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
+  const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const revealTimersRef   = useRef([]);    // 逐人揭曉計時器
   const logEndRef         = useRef(null);
@@ -135,6 +136,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     statsWaitingRef.current  = false;
     rewardStoredRef.current  = false;
     partyRecordedRef.current = false;
+    dexRecordedRef.current   = false;
     prevLogLenRef.current    = 0;
     setLocalCompleted(false);
     setArrows([]);
@@ -219,7 +221,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room.rewardPending) return; // 已存過
     rewardStoredRef.current = true;
     const memberIds = Object.keys(room.members || {});
-    storeBattleRewards(roomId, memberIds, room.monster).catch(() => {});
+    storeBattleRewards(roomId, memberIds, room.monster)
+      .then(res => { if (!res?.ok) rewardStoredRef.current = false; })
+      .catch(()  => { rewardStoredRef.current = false; });
   }, [room?.result, room?.rewardPending]); // eslint-disable-line
 
   // 滾動 log 到底
@@ -287,6 +291,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room?.result === "win")  { sfxSuccess(); setTimeout(() => sfxEpic(), 350); }
     if (room?.result === "lose") { sfxSoftFail(); }
   }, [room?.result]); // eslint-disable-line
+
+  // 組隊敗場 → 記錄怪物圖鑑（勝場由 handleClaim 負責）
+  useEffect(() => {
+    if (!room || !myId || myId.startsWith("guest") || dexRecordedRef.current) return;
+    if (room.status !== "completed" || room.result !== "lose") return;
+    if (!room.monster?.id) return;
+    dexRecordedRef.current = true;
+    const myDmg = (room.log || []).reduce((s, entry) => {
+      const p = (entry.playerLog || []).find(p => p.id === myId);
+      return s + (p?.dmg || 0);
+    }, 0);
+    recordBattleDex(myId, room.monster.id, "lose", myDmg).catch(() => {});
+  }, [room?.status]); // eslint-disable-line
 
   // 訪客組隊勝利：抽取紀念獎勵（sessionStorage 確保每位訪客只領一次）
   useEffect(() => {
@@ -370,20 +387,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   async function handleClaim() {
     if (!myChests.length || claiming) return;
     setClaiming(true);
-    const myDmg = (room.log || []).reduce((s, entry) => {
-      const p = (entry.playerLog || []).find(p => p.id === myId);
-      return s + (p?.dmg || 0);
-    }, 0);
-    // 即時掉落（在領取時計算）
-    const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
-    const material = rollMaterialDrop(room.monster);
-    const card     = rollCardDrop(room.monster);
-    await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
-    addCoins(myId, coins).catch(() => {});
-    if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
-    if (card)     addMonsterCard(myId, card).catch(() => {});
-    setClaimResult({ coins, material, card });
-    setClaiming(false);
+    try {
+      const myDmg = (room.log || []).reduce((s, entry) => {
+        const p = (entry.playerLog || []).find(p => p.id === myId);
+        return s + (p?.dmg || 0);
+      }, 0);
+      const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
+      const material = rollMaterialDrop(room.monster);
+      const card     = rollCardDrop(room.monster);
+      await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
+      addCoins(myId, coins).catch(() => {});
+      if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
+      if (card)     addMonsterCard(myId, card).catch(() => {});
+      // 勝場圖鑑記錄（敗場由 useEffect 負責）
+      if (!dexRecordedRef.current && room.monster?.id) {
+        dexRecordedRef.current = true;
+        recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
+      }
+      setClaimResult({ coins, material, card });
+    } catch (e) {
+      console.warn("handleClaim error:", e?.message);
+    } finally {
+      setClaiming(false);
+    }
   }
   async function handleConfirmResult() {
     if (!isHost || confirming) return;
@@ -830,7 +856,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   </div>
                 )}
                 {!myChests.length && !room.rewardPending && !myClaimed && (
-                  <div className="text-slate-400 text-xs text-center animate-pulse">等待房主發放獎勵…</div>
+                  isHost ? (
+                    <button onClick={() => {
+                      rewardStoredRef.current = false;
+                      const memberIds = Object.keys(room.members || {});
+                      storeBattleRewards(roomId, memberIds, room.monster).catch(() => {});
+                    }} className="w-full py-2 bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-xs font-black rounded-xl active:opacity-70">
+                      🔄 發放獎勵（點此重試）
+                    </button>
+                  ) : (
+                    <div className="text-slate-400 text-xs text-center animate-pulse">等待房主發放獎勵…</div>
+                  )
                 )}
               </>
             )}

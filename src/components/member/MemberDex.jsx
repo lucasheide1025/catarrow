@@ -2,7 +2,7 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex } from "../../lib/db";
+import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
   buildRoundAchievements, computeDexStats, buildCohortAchievement,
@@ -78,6 +78,7 @@ export default function MemberDex({ onBack }) {
   const [craftStats, setCraftStats]       = useState({});
   const [chestStats, setChestStats]       = useState({});
   const [potionDex,  setPotionDex]        = useState({});
+  const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
@@ -97,10 +98,11 @@ export default function MemberDex({ onBack }) {
     const unsubCraft   = subscribeCraftStats(profile.id, setCraftStats);
     const unsubChest   = subscribeChestStats(profile.id, setChestStats);
     const unsubPotion  = subscribePotionDex(profile.id, setPotionDex);
-    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); };
+    const unsubCard    = subscribeCardCollection(profile.id, setCardData);
+    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); unsubCard(); };
   }, [profile?.id]);
 
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex };
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
 
   // ── 偵測新解鎖，加入提示佇列 ──

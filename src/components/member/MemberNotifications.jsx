@@ -1,6 +1,6 @@
 // src/components/member/MemberNotifications.jsx
 // 訊息中心：分類 + 年月篩選 + 祝賀 + 會員可自刪
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { markNotificationRead, deleteNotificationForMe, addCongrats } from "../../lib/db";
 import { Card, Btn, TA, ST, Spinner, Empty, useToast } from "../shared/UI";

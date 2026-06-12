@@ -1,7 +1,7 @@
 // src/components/member/MemberProfile.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { updateMember, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig } from "../../lib/db";
+import { updateMember, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeCardCollection } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
@@ -51,6 +51,7 @@ export default function MemberProfile({ onPageChange }) {
   const [certification, setCertification] = useState(null);
   const [dexGrants,     setDexGrants]     = useState([]);
   const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
+  const [cardData,      setCardData]      = useState({ cards: {}, equipped: [] });
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
 
@@ -66,7 +67,8 @@ export default function MemberProfile({ onPageChange }) {
     const unsub  = subscribeCertification(profile.id, setCertification);
     getDexConfig().then(setDexConfig).catch(() => {});
     const unsub2 = subscribeDexGrants(profile.id, setDexGrants);
-    return () => { unsub?.(); unsub2?.(); };
+    const unsub3 = subscribeCardCollection(profile.id, setCardData);
+    return () => { unsub?.(); unsub2?.(); unsub3?.(); };
   }, [profile?.id]);
 
   async function saveEquip() {
@@ -186,11 +188,12 @@ export default function MemberProfile({ onPageChange }) {
             <div>加入日期：{profile?.joinDate}</div>
             <div>射齡：{calcAge(profile?.joinDate)}{getCohort(profile?.joinDate) != null ? `　${cohortLabel(getCohort(profile?.joinDate))}` : ""}</div>
             {(() => {
-              const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax });
+              const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, cardData });
               return (
                 <div className="flex items-center gap-3 flex-wrap mt-0.5">
                   <span>🎖️ 圖鑑 {ds.totalUnlocked}/{ds.totalAll}</span>
                   {(ds.gold+ds.silver+ds.bronze)>0 && <span>🥇{ds.gold} 🥈{ds.silver} 🥉{ds.bronze}</span>}
+                  {(profile?.coins || 0) > 0 && <span className="text-yellow-300 font-black">🪙 {profile.coins}</span>}
                 </div>
               );
             })()}
