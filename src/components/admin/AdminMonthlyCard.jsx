@@ -198,7 +198,7 @@ export default function AdminMonthlyCard() {
                     className="flex-1 min-w-[80px]">
                     {busy[m.id] === "grant" ? "處理中…" : active ? "🔄 續約" : "🎫 購買"}
                   </Btn>
-                  <Btn v="secondary" disabled={!active}
+                  <Btn v="secondary"
                     onClick={() => { setGiftTarget(m); setGiftDays(7); setMsg(""); }}
                     className="flex-1 min-w-[80px]">
                     🎁 贈天數

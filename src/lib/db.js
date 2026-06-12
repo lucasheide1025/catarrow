@@ -1769,18 +1769,21 @@ export async function grantMonthlyCard(memberId) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// 後台贈送免費天數（從現有到期日延長）
+// 後台贈送免費天數（無論有無月卡皆可）
 export async function giftMonthlyCardDays(memberId, days) {
   try {
     const memRef = doc(db, C.members, memberId);
     const memSnap = await getDoc(memRef);
     const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
-    const base = (card?.expiresAt?.toDate ? card.expiresAt.toDate() : null) || new Date();
-    const newExpiry = new Date(Math.max(base.getTime(), Date.now()));
+    const base = (card?.expiresAt?.toDate ? card.expiresAt.toDate() : null);
+    const from = (base && base > new Date()) ? base : new Date();
+    const newExpiry = new Date(from);
     newExpiry.setDate(newExpiry.getDate() + days);
     await updateDoc(memRef, {
-      "monthlyCard.expiresAt": Timestamp.fromDate(newExpiry),
-      "monthlyCard.bonusDays": (card?.bonusDays || 0) + days,
+      "monthlyCard.active":     true,
+      "monthlyCard.sessions":   card?.sessions ?? 0,
+      "monthlyCard.expiresAt":  Timestamp.fromDate(newExpiry),
+      "monthlyCard.bonusDays":  (card?.bonusDays || 0) + days,
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
