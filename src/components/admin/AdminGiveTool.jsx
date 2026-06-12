@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { POTIONS, FRAGMENTS, CHEST_TYPES } from "../../lib/itemData";
-import { adminGiveItem } from "../../lib/db";
+import { adminGiveItem, adminSetFragments, adminSetMemberBadge } from "../../lib/db";
 
 const CATEGORIES = [
   { id:"material", label:"素材", icon:"🪨" },
@@ -38,6 +38,13 @@ export default function AdminGiveTool() {
   const [linkTarget, setLinkTarget] = useState(null);
   const [linking,    setLinking]   = useState(false);
   const [linkMsg,    setLinkMsg]   = useState("");
+
+  // 資料修正面板
+  const [fixFrags,    setFixFrags]    = useState(null);  // { frag_fatcat_bronze: N, ... }
+  const [fixBadges,   setFixBadges]   = useState(null);  // { fatCat:{bronze,silver}, score:{bronze}, achievement:{silver} }
+  const [fixLoading,  setFixLoading]  = useState(false);
+  const [fixMsg,      setFixMsg]      = useState("");
+  const [fixSaving,   setFixSaving]   = useState(false);
 
   // 帳號未連結：profile.id === profile.uid 代表沒找到 members 文件
   const isUnlinked = profile?.id && profile?.uid && profile.id === profile.uid;
@@ -77,6 +84,56 @@ export default function AdminGiveTool() {
       setLinkMsg("❌ " + (e.message || "連結失敗"));
     }
     setLinking(false);
+  }
+
+  async function loadFixData(member) {
+    if (!member?.id) return;
+    setFixLoading(true); setFixMsg(""); setFixFrags(null); setFixBadges(null);
+    try {
+      const [fragSnap, memSnap] = await Promise.all([
+        getDoc(doc(db, "fragmentInventory", member.id)),
+        getDoc(doc(db, "members", member.id)),
+      ]);
+      setFixFrags(fragSnap.exists() ? (fragSnap.data().items || {}) : {});
+      const md = memSnap.exists() ? memSnap.data() : {};
+      setFixBadges({
+        fatCat:      { bronze: md.fatCat?.bronze || 0,      silver: md.fatCat?.silver || 0 },
+        score:       { bronze: md.score?.bronze  || 0,      silver: md.score?.silver  || 0 },
+        achievement: { silver: md.achievement?.silver || 0, gold:   md.achievement?.gold  || 0 },
+      });
+    } catch (e) { setFixMsg("❌ 讀取失敗：" + e?.message); }
+    setFixLoading(false);
+  }
+
+  async function saveFrags() {
+    if (!selMember || !fixFrags) return;
+    setFixSaving(true); setFixMsg("");
+    const cleaned = {};
+    FRAGMENTS.forEach(f => { cleaned[f.id] = Math.max(0, Number(fixFrags[f.id]) || 0); });
+    const res = await adminSetFragments(selMember.id, cleaned);
+    setFixMsg(res.ok ? "✅ 碎片已更新" : "❌ " + res.reason);
+    setFixSaving(false);
+  }
+
+  async function saveBadge(badgeField, badgeLevel, value) {
+    if (!selMember) return;
+    setFixMsg("");
+    const res = await adminSetMemberBadge(selMember.id, badgeField, badgeLevel, value);
+    if (res.ok) {
+      setFixBadges(prev => ({ ...prev, [badgeField]: { ...prev[badgeField], [badgeLevel]: Number(value) } }));
+      setFixMsg("✅ 徽章已更新");
+    } else { setFixMsg("❌ " + res.reason); }
+  }
+
+  async function resetAllFrags() {
+    if (!selMember || !window.confirm(`確定要清零「${selMember.nickname || selMember.name}」的所有碎片嗎？`)) return;
+    setFixSaving(true); setFixMsg("");
+    const empty = {};
+    FRAGMENTS.forEach(f => { empty[f.id] = 0; });
+    const res = await adminSetFragments(selMember.id, empty);
+    if (res.ok) { setFixFrags(empty); setFixMsg("✅ 碎片已全部清零"); }
+    else setFixMsg("❌ " + res.reason);
+    setFixSaving(false);
   }
 
   const filteredMembers = members.filter(m =>
@@ -134,7 +191,7 @@ export default function AdminGiveTool() {
           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
         />
         {profile?.id && (
-          <button onClick={() => { setSelMember({ id:profile.id, name: profile.nickname || profile.name || "教練" }); setMsg(""); }}
+          <button onClick={() => { const m = { id:profile.id, name: profile.nickname || profile.name || "教練" }; setSelMember(m); setMsg(""); loadFixData(m); }}
             className={`w-full py-2 rounded-xl text-sm font-black border transition-all ${
               selMember?.id === profile.id
                 ? "bg-orange-500 text-white border-orange-500"
@@ -145,7 +202,7 @@ export default function AdminGiveTool() {
         )}
         <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
           {filteredMembers.map(m => (
-            <button key={m.id} onClick={() => { setSelMember(m); setMsg(""); }}
+            <button key={m.id} onClick={() => { setSelMember(m); setMsg(""); loadFixData(m); }}
               className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-all ${
                 selMember?.id === m.id
                   ? "bg-blue-600 text-white border-blue-600"
@@ -230,6 +287,80 @@ export default function AdminGiveTool() {
           msg.startsWith("✅") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
         }`}>
           {msg}
+        </div>
+      )}
+
+      {/* ── 資料修正面板 ──────────────────────────────────────── */}
+      {selMember && (
+        <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-gray-500 tracking-wider uppercase">📊 資料查看 / 直接修正</div>
+            <button onClick={() => loadFixData(selMember)}
+              className="text-xs text-blue-600 font-bold border border-blue-200 px-2 py-1 rounded-lg">
+              🔄 重新讀取
+            </button>
+          </div>
+
+          {fixLoading && <div className="text-sm text-gray-400">讀取中…</div>}
+
+          {/* 章碎片 */}
+          {fixFrags && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-black text-pink-600">✨ 章碎片（fragmentInventory）</div>
+              {FRAGMENTS.map(f => (
+                <div key={f.id} className="flex items-center gap-2">
+                  <span className="text-base">{f.icon}</span>
+                  <span className="text-xs text-gray-600 flex-1">{f.name}</span>
+                  <input type="number" min="0" max="999"
+                    value={fixFrags[f.id] ?? 0}
+                    onChange={e => setFixFrags(prev => ({ ...prev, [f.id]: e.target.value }))}
+                    className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center font-black focus:outline-none focus:border-pink-400"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-2 mt-1">
+                <button onClick={saveFrags} disabled={fixSaving}
+                  className="flex-1 py-2 bg-pink-500 text-white font-black rounded-xl text-sm disabled:opacity-40">
+                  {fixSaving ? "儲存中…" : "💾 儲存碎片"}
+                </button>
+                <button onClick={resetAllFrags} disabled={fixSaving}
+                  className="px-3 py-2 bg-gray-100 text-gray-600 font-black rounded-xl text-sm disabled:opacity-40">
+                  🗑️ 全清零
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 徽章數量 */}
+          {fixBadges && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-black text-amber-600">🏅 徽章（members 文件）</div>
+              {[
+                { field:"fatCat",      level:"bronze", label:"🐱 肥貓銅章" },
+                { field:"fatCat",      level:"silver", label:"🐱 肥貓銀章" },
+                { field:"score",       level:"bronze", label:"⭐ 積分銅章" },
+                { field:"score",       level:"silver", label:"⭐ 積分銀章" },
+                { field:"achievement", level:"silver", label:"🏆 成就銀章" },
+                { field:"achievement", level:"gold",   label:"🏆 成就金章" },
+              ].map(({ field, level, label }) => (
+                <div key={`${field}_${level}`} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-600 flex-1">{label}</span>
+                  <input type="number" min="0" max="99"
+                    defaultValue={fixBadges[field]?.[level] ?? 0}
+                    onBlur={e => saveBadge(field, level, e.target.value)}
+                    className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center font-black focus:outline-none focus:border-amber-400"
+                  />
+                  <span className="text-xs text-gray-400">失焦儲存</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {fixMsg && (
+            <div className={`text-sm font-bold ${fixMsg.startsWith("✅") ? "text-emerald-700" : "text-red-600"}`}>
+              {fixMsg}
+            </div>
+          )}
         </div>
       )}
     </div>

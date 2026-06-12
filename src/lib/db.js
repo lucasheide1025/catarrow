@@ -1576,6 +1576,22 @@ export async function adminGiveItem(memberId, category, itemId, qty) {
   }
 }
 
+export async function adminSetFragments(memberId, items) {
+  if (!memberId) return { ok: false };
+  try {
+    await setDoc(doc(db, C_FRAGS, memberId), { items, migratedV2: true, updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+export async function adminSetMemberBadge(memberId, badgeField, badgeLevel, value) {
+  if (!memberId) return { ok: false };
+  try {
+    await updateDoc(doc(db, C.members, memberId), { [`${badgeField}.${badgeLevel}`]: Number(value) });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
 // ─── 金幣系統 ──────────────────────────────────────────────
 
 export async function addCoins(memberId, amount) {
@@ -1697,4 +1713,109 @@ async function updateCraftStats(memberId, type, data) {
     stats.fragTypesCrafted[data.fragId] = (stats.fragTypesCrafted[data.fragId] || 0) + 1;
   }
   await setDoc(ref, { ...stats, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ─── 月卡系統 ─────────────────────────────────────────────────
+const C_MONTHLY = "monthlyCardRequests";
+
+// 射手申請使用月卡（1或2小時）→ 送後台審核
+export async function submitMonthlyCardRequest(memberId, memberName, hours) {
+  if (!memberId || ![1, 2].includes(hours)) return { ok: false, reason: "參數錯誤" };
+  try {
+    const q = query(collection(db, C_MONTHLY), where("memberId", "==", memberId), where("status", "==", "pending"));
+    const snap = await getDocs(q);
+    if (!snap.empty) return { ok: false, reason: "已有待審核申請，請等待教練處理" };
+    const memSnap = await getDoc(doc(db, C.members, memberId));
+    const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
+    if (!card?.active || card.sessions <= 0) return { ok: false, reason: "月卡無效或次數不足" };
+    await addDoc(collection(db, C_MONTHLY), { memberId, memberName, hours, status: "pending", createdAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 後台審核通過 → 扣1次
+export async function approveMonthlyCardRequest(requestId, memberId) {
+  try {
+    const reqRef = doc(db, C_MONTHLY, requestId);
+    const reqSnap = await getDoc(reqRef);
+    if (!reqSnap.exists() || reqSnap.data().status !== "pending") return { ok: false, reason: "申請不存在或已處理" };
+    const memRef = doc(db, C.members, memberId);
+    const memSnap = await getDoc(memRef);
+    const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
+    if (!card?.active || card.sessions <= 0) return { ok: false, reason: "月卡無效或次數不足" };
+    await updateDoc(memRef, { "monthlyCard.sessions": increment(-1) });
+    await updateDoc(reqRef, { status: "approved", reviewedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 後台拒絕申請
+export async function rejectMonthlyCardRequest(requestId) {
+  try {
+    await updateDoc(doc(db, C_MONTHLY, requestId), { status: "rejected", reviewedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 後台購買／續約月卡：次數=16，到期=今日起60天
+export async function grantMonthlyCard(memberId) {
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 60);
+    await updateDoc(doc(db, C.members, memberId), {
+      monthlyCard: { active: true, sessions: 16, expiresAt: Timestamp.fromDate(expiresAt), startedAt: serverTimestamp(), bonusDays: 0 }
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 後台贈送免費天數（從現有到期日延長）
+export async function giftMonthlyCardDays(memberId, days) {
+  try {
+    const memRef = doc(db, C.members, memberId);
+    const memSnap = await getDoc(memRef);
+    const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
+    const base = (card?.expiresAt?.toDate ? card.expiresAt.toDate() : null) || new Date();
+    const newExpiry = new Date(Math.max(base.getTime(), Date.now()));
+    newExpiry.setDate(newExpiry.getDate() + days);
+    await updateDoc(memRef, {
+      "monthlyCard.expiresAt": Timestamp.fromDate(newExpiry),
+      "monthlyCard.bonusDays": (card?.bonusDays || 0) + days,
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 訂閱待審核月卡申請（後台）
+export function subscribePendingMonthlyRequests(callback) {
+  const q = query(collection(db, C_MONTHLY), where("status", "==", "pending"), orderBy("createdAt", "asc"));
+  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
+}
+
+// 訂閱全部月卡申請（後台，含歷史最近100筆）
+export function subscribeAllMonthlyRequests(callback) {
+  const q = query(collection(db, C_MONTHLY), orderBy("createdAt", "desc"), limit(100));
+  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
+}
+
+// 訂閱自己的月卡申請（前台）
+export function subscribeMyMonthlyRequests(memberId, callback) {
+  if (!memberId) { callback([]); return () => {}; }
+  const q = query(collection(db, C_MONTHLY), where("memberId", "==", memberId), orderBy("createdAt", "desc"), limit(5));
+  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
+}
+
+// 到期自動清零（前台進入時呼叫）
+export async function checkExpireMonthlyCard(memberId) {
+  try {
+    const memRef = doc(db, C.members, memberId);
+    const memSnap = await getDoc(memRef);
+    if (!memSnap.exists()) return;
+    const card = memSnap.data().monthlyCard;
+    if (!card?.active) return;
+    const expires = card.expiresAt?.toDate ? card.expiresAt.toDate() : null;
+    if (expires && expires < new Date()) {
+      await updateDoc(memRef, { "monthlyCard.active": false, "monthlyCard.sessions": 0 });
+    }
+  } catch {}
 }

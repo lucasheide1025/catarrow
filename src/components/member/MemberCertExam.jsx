@@ -102,15 +102,21 @@ export default function MemberCertExam({ onBack }) {
 }
 
 function TierExam({ tier, config, cert, memberId, bowOptions, armorOptions, accessoryOptions, armorSets, accessorySets }) {
+  const SS_KEY = `cert_setup_${memberId}_${tier}`;
   const validVals = bowOptions.map(o => o.value);
   const initBow = (cert?.[tier]?.bowType && validVals.includes(cert[tier].bowType))
     ? cert[tier].bowType : bowOptions[0]?.value || "rental";
 
-  const [bowType,      setBowType]      = useState(initBow);
-  const [armorIdx,     setArmorIdx]     = useState("0");
-  const [accessoryIdx, setAccessoryIdx] = useState("0");
-  const [useArmor,     setUseArmor]     = useState(false);
-  const [useAccessory, setUseAccessory] = useState(false);
+  let _ss = {}; try { _ss = JSON.parse(sessionStorage.getItem(SS_KEY) || "{}"); } catch {}
+  const [bowType,      setBowType]      = useState(_ss.bowType && validVals.includes(_ss.bowType) ? _ss.bowType : initBow);
+  const [armorIdx,     setArmorIdx]     = useState(_ss.armorIdx ?? "0");
+  const [accessoryIdx, setAccessoryIdx] = useState(_ss.accessoryIdx ?? "0");
+  const [useArmor,     setUseArmor]     = useState(_ss.useArmor ?? false);
+  const [useAccessory, setUseAccessory] = useState(_ss.useAccessory ?? false);
+
+  useEffect(() => {
+    sessionStorage.setItem(SS_KEY, JSON.stringify({ bowType, armorIdx, accessoryIdx, useArmor, useAccessory }));
+  }, [bowType, armorIdx, accessoryIdx, useArmor, useAccessory]); // eslint-disable-line
 
   const distance = tier === "blue" ? config.blueDistance : config.goldDistance;
   const group    = certBowGroup(bowType);
@@ -190,10 +196,16 @@ const ARROW_VALUES = ["M", 6, 7, 8, 9, 10];
 
 function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId, equipLabels }) {
   const isTask1 = field === "hits";
-  const [val, setVal]       = useState("");
-  const [arrows, setArrows] = useState(Array(10).fill(null));
+  const SS_KEY = `cert_task_${memberId}_${tier}_${task}`;
+  let _ss = {}; try { _ss = JSON.parse(sessionStorage.getItem(SS_KEY) || "{}"); } catch {}
+  const [val, setVal]       = useState(_ss.val ?? "");
+  const [arrows, setArrows] = useState(_ss.arrows ?? Array(10).fill(null));
   const [busy, setBusy]     = useState(false);
   const [msg, setMsg]       = useState("");
+
+  useEffect(() => {
+    sessionStorage.setItem(SS_KEY, JSON.stringify({ val, arrows }));
+  }, [val, arrows]); // eslint-disable-line
 
   const status = data?.reviewStatus;
   const passed = data?.passed === true;
@@ -218,6 +230,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
     try {
       await submitCertTask(memberId, tier, task, payload, bowType, equipLabels);
       setMsg("✅ 已送出，等待教練審核");
+      sessionStorage.removeItem(SS_KEY);
       setVal(""); setArrows(Array(10).fill(null));
     } catch (e) { setMsg(e?.message || "送出失敗"); }
     setBusy(false);

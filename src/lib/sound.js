@@ -82,3 +82,10 @@ export function sfxSoftFail() {
   tone(370, 0.18, "sine", 0.15, 0.1);
   vibrate(20);
 }
+
+// 後台新通知：兩聲叮
+export function sfxNotify() {
+  tone(880, 0.12, "triangle", 0.2, 0);
+  tone(1100, 0.2, "triangle", 0.18, 0.15);
+  vibrate([0, 30, 60, 30]);
+}

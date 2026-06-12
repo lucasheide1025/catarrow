@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests } from "../lib/db";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { sfxNotify } from "../lib/sound";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
 import AdminMembers       from "../components/admin/AdminMembers";
@@ -9,7 +10,8 @@ import AdminCompetitions  from "../components/admin/AdminCompetitions";
 import AdminLearn         from "../components/admin/AdminLearn";
 import AdminAchievements  from "../components/admin/AdminAchievements";
 import AdminDexGrant      from "../components/admin/AdminDexGrant";
-import AdminGiveTool     from "../components/admin/AdminGiveTool";
+import AdminGiveTool      from "../components/admin/AdminGiveTool";
+import AdminMonthlyCard   from "../components/admin/AdminMonthlyCard";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -48,7 +50,9 @@ export default function AdminApp() {
   const [allMessages,     setAllMessages]     = useState([]);
   const [pendingExtList,  setPendingExtList]  = useState([]);
   const [certTasksList,   setCertTasksList]   = useState([]);
-  const [pendingCheckinN, setPendingCheckinN] = useState(0);
+  const [pendingCheckinN,  setPendingCheckinN]  = useState(0);
+  const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
+  const pendingMonthlyRef = useRef(0);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
   });
@@ -97,16 +101,22 @@ export default function AdminApp() {
     const u3 = onSnapshot(qExt, snap => setPendingExtList(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => setPendingExtList([]));
     const u4 = subscribePendingCertTasks(list => setCertTasksList(Array.isArray(list) ? list : []));
     const u5 = subscribePendingCheckins(list => setPendingCheckinN(Array.isArray(list) ? list.length : 0));
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); };
+    const u6 = subscribePendingMonthlyRequests(list => {
+      const n = list.length;
+      if (n > pendingMonthlyRef.current) sfxNotify();
+      pendingMonthlyRef.current = n;
+      setPendingMonthlyN(n);
+    });
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); };
   }, []);
 
 const adminNav = [
-  { id:"members",      icon:"👥", label:"會員" },
-  { id:"comps",        icon:"🏆", label:"比賽" },
-  { id:"review",       icon:"🔔", label:"審核" },
-  { id:"learn",        icon:"📓", label:"學習" },
-  { id:"achievements", icon:"⭐", label:"成就" },
-  { id:"givetool",     icon:"🧪", label:"測試" },
+  { id:"members",     icon:"👥", label:"會員" },
+  { id:"comps",       icon:"🏆", label:"比賽" },
+  { id:"review",      icon:"🔔", label:"審核" },
+  { id:"monthlycard", icon:"🎫", label:"月卡" },
+  { id:"learn",       icon:"📓", label:"學習" },
+  { id:"givetool",    icon:"🧪", label:"測試" },
 ];
 
   const memberNav = [
@@ -227,6 +237,16 @@ const adminNav = [
           <span style={{marginLeft:"auto",fontSize:"12px",color:"#d97706",fontWeight:"bold"}}>前往處理 →</span>
         </button>
       )}
+      {pendingMonthlyN > 0 && (
+        <button onClick={() => setPage("monthlycard")}
+          style={{width:"100%",background:"#eff6ff",borderBottom:"1px solid #bfdbfe",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
+          <span style={{fontSize:"16px"}}>🎫</span>
+          <span style={{fontSize:"13px",color:"#1d4ed8",fontWeight:"bold"}}>
+            {pendingMonthlyN} 筆月卡使用待審核
+          </span>
+          <span style={{marginLeft:"auto",fontSize:"12px",color:"#2563eb",fontWeight:"bold"}}>前往審核 →</span>
+        </button>
+      )}
 
       <div style={{paddingBottom:"80px"}}>
         {page==="members"      && <AdminMembers/>}
@@ -243,6 +263,7 @@ const adminNav = [
         {page==="learn"        && <AdminLearn/>}
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
         {page==="givetool"     && <AdminGiveTool/>}
+        {page==="monthlycard"  && <AdminMonthlyCard/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

@@ -1,6 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig } from "../../lib/db";
+import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -48,9 +48,16 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
   const [loading, setLoading]             = useState(true);
   const [cardTheme, setCardTheme]         = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
+  // 月卡
+  const [monthlyReqs, setMonthlyReqs]     = useState([]);
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardHours, setCardHours]         = useState(1);
+  const [cardBusy, setCardBusy]           = useState(false);
+  const [cardMsg, setCardMsg]             = useState("");
 
   useEffect(() => {
     if (!profile?.id) return;
+    checkExpireMonthlyCard(profile.id).catch(() => {});
     Promise.all([getMemberResults(profile.id), getCertRecords(profile.id)]).then(([r, c]) => {
       setResults(r); setCertRecords(c); setLoading(false);
     });
@@ -58,7 +65,8 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
     const unsub2 = subscribeCertification(profile.id, setCertification);
     getDexConfig().then(setDexConfig).catch(() => {});
     const unsub4 = subscribeDexGrants(profile.id, setDexGrants);
-    return () => { unsub?.(); unsub2?.(); unsub4?.(); };
+    const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
+    return () => { unsub?.(); unsub2?.(); unsub4?.(); unsub5?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   const unreadNotif = notifications.filter(x =>
@@ -83,9 +91,54 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
 
   if (loading) return <Spinner />;
 
+  async function submitCardRequest() {
+    setCardBusy(true); setCardMsg("");
+    const res = await submitMonthlyCardRequest(profile.id, profile.nickname || profile.name, cardHours);
+    if (res.ok) { setCardMsg("✅ 已送出，等待教練審核"); }
+    else { setCardMsg("❌ " + res.reason); }
+    setCardBusy(false);
+  }
+
   return (
     <div className="p-4 flex flex-col gap-4">
       {showShare && <ShareCard onClose={() => setShowShare(false)} />}
+
+      {/* 月卡申請 Modal */}
+      {showCardModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => !cardBusy && setShowCardModal(false)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="font-black text-gray-800 text-lg mb-1">🎫 月卡扣抵使用</div>
+            <div className="text-gray-500 text-sm mb-4">選擇本次練習時數，送出後等待教練核准，核准後扣除 1 次月卡。</div>
+            <div className="flex gap-3 mb-4">
+              {[1, 2].map(h => (
+                <button key={h} onClick={() => setCardHours(h)}
+                  className={`flex-1 py-4 rounded-2xl font-black text-lg border-2 transition-all active:scale-95 ${
+                    cardHours === h ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-700 border-gray-200"
+                  }`}>
+                  {h} 小時
+                </button>
+              ))}
+            </div>
+            {cardMsg && (
+              <div className={`text-sm font-bold mb-3 ${cardMsg.startsWith("✅") ? "text-emerald-700" : "text-red-600"}`}>
+                {cardMsg}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setShowCardModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm">
+                取消
+              </button>
+              <button onClick={submitCardRequest} disabled={cardBusy || cardMsg.startsWith("✅")}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40 active:scale-95 transition-transform">
+                {cardBusy ? "送出中…" : "送出申請"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DailyQuest onJoinParty={onJoinParty} />
 
       {/* 打怪快捷入口 */}
@@ -235,6 +288,36 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
               <div className="text-white/60 text-xs">🎪 賽事積分</div>
               <div className="text-white font-black text-xl">{profile.eventPoints || 0}</div>
             </div>
+            {/* 月卡資訊 */}
+            {(() => {
+              const card = profile?.monthlyCard;
+              const expires = card?.expiresAt?.toDate ? card.expiresAt.toDate() : null;
+              const days = expires ? Math.ceil((expires - Date.now()) / 86400000) : null;
+              const active = card?.active && days !== null && days > 0;
+              const hasPending = monthlyReqs.some(r => r.status === "pending");
+              if (!active) return null;
+              return (
+                <div className="flex items-center justify-between pt-1 border-t border-white/20">
+                  <div className="flex flex-col">
+                    <div className="text-white/60 text-xs">🎫 月卡</div>
+                    <div className="text-white/50 text-xs">到期 {expires.getMonth()+1}/{expires.getDate()}（剩{days}天）</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-white font-black text-xl">{card.sessions} <span className="text-sm font-normal text-white/60">次</span></div>
+                    {hasPending ? (
+                      <span className="text-xs bg-yellow-400/30 text-yellow-200 font-bold px-2 py-1 rounded-lg">⏳ 審核中</span>
+                    ) : card.sessions > 0 ? (
+                      <button onClick={() => { setShowCardModal(true); setCardMsg(""); setCardHours(1); }}
+                        className="text-xs bg-white/20 text-white font-black px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform border border-white/30">
+                        申請使用
+                      </button>
+                    ) : (
+                      <span className="text-xs text-white/40">次數已用完</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
