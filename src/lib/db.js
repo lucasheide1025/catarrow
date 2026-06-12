@@ -268,6 +268,9 @@ export async function getRegistrations(compId) {
 
 export async function addLearnLog(memberId, data) {
   const ref = await addDoc(collection(db, C.learnLogs), { memberId, ...data, createdAt: serverTimestamp() });
+  if (data.coachAdded) {
+    updateDoc(doc(db, C.members, memberId), { hasNewLearnLog: true }).catch(() => {});
+  }
   return ref.id;
 }
 
@@ -275,6 +278,13 @@ export async function updateLearnLog(id, data, operatorId) {
   const before = (await getDoc(doc(db, C.learnLogs, id))).data();
   await updateDoc(doc(db, C.learnLogs, id), { ...data, updatedAt: serverTimestamp() });
   await writeAuditLog("UPDATE", id, "learnLog", before, data, operatorId);
+  if (data.coachNote != null && before?.memberId) {
+    updateDoc(doc(db, C.members, before.memberId), { hasNewLearnLog: true }).catch(() => {});
+  }
+}
+
+export async function markLearnLogsRead(memberId) {
+  updateDoc(doc(db, C.members, memberId), { hasNewLearnLog: false }).catch(() => {});
 }
 
 export function subscribeLearnLogs(memberId, callback) {
@@ -324,12 +334,18 @@ export async function sendMessage(memberId, content) {
 }
 
 export async function replyMessage(id, reply, operatorId) {
+  const snap = await getDoc(doc(db, C.messages, id));
+  const memberId = snap.data()?.memberId;
   await updateDoc(doc(db, C.messages, id), { reply, repliedAt: serverTimestamp(), replyBy: operatorId, memberRead: false });
+  if (memberId) {
+    updateDoc(doc(db, C.members, memberId), { hasUnreadReply: true }).catch(() => {});
+  }
 }
 
 export async function markMessagesRead(memberId) {
   const snap = await getDocs(query(collection(db, C.messages), where("memberId", "==", memberId), where("memberRead", "==", false)));
   for (const d of snap.docs) { await updateDoc(d.ref, { memberRead: true }); }
+  updateDoc(doc(db, C.members, memberId), { hasUnreadReply: false }).catch(() => {});
 }
 
 export function subscribeMessages(memberId, callback) {
@@ -891,16 +907,22 @@ export async function markQuestDone(checkinId, questResult) {
   });
 }
 
-// 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed
+// 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed，滿里程碑發銀章
 export async function confirmCheckinReward(checkinId, memberId, operatorId) {
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
     finalConfirmed: true,
     confirmedAt: serverTimestamp(),
     confirmedBy: operatorId,
   });
-  // 累積今日任務完成次數
   try {
+    const member = await getMember(memberId);
+    const newCount = (member?.dailyQuestCount || 0) + 1;
     await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
+    const config = await getDailyQuestConfig();
+    const rewardEvery = config?.rewardEvery || 10;
+    if (newCount % rewardEvery === 0) {
+      await addBadge(memberId, "achievement", "silver", 1, operatorId, `每日任務累積 ${newCount} 次`);
+    }
   } catch (e) { console.warn("dailyQuestCount:", e?.message); }
 }
 

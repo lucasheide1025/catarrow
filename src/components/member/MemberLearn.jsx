@@ -1,6 +1,6 @@
 // src/components/member/MemberLearn.jsx
 import { useState, useEffect } from "react";
-import { subscribeLearnLogs, addLearnLog } from "../../lib/db";
+import { subscribeLearnLogs, addLearnLog, markLearnLogsRead } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { today, fmtDT } from "../../lib/constants";
 import { Card, Btn, Inp, TA, ST, Spinner, Empty } from "../shared/UI";
@@ -12,6 +12,7 @@ export default function MemberLearn() {
   const [saving,setSaving]=useState(false);
   useEffect(()=>{
     if(!profile?.id)return;
+    markLearnLogsRead(profile.id);
     const unsub=subscribeLearnLogs(profile.id,data=>{setLogs(data.filter(l=>!l.deleted));setLoading(false);});
     return unsub;
   },[profile?.id]);

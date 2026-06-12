@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   submitCheckin, subscribeMyCheckin, rerollCheckinBuff, markQuestDone,
-  getDailyQuestConfig, getDailyQuestCount, cancelCheckin,
+  getDailyQuestConfig, cancelCheckin,
 } from "../../lib/db";
 import { drawBuff } from "../../lib/buffPool";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
@@ -77,7 +77,6 @@ export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
   const [checkin, setCheckin]   = useState(undefined);
   const [config,  setConfig]    = useState(null);
-  const [count,   setCount]     = useState(0);
   const [busy,    setBusy]      = useState(false);
   const [showBuff, setShowBuff] = useState(false);
 
@@ -94,10 +93,11 @@ export default function DailyQuest({ onJoinParty }) {
   useEffect(() => {
     if (!profile?.id) return;
     getDailyQuestConfig().then(setConfig);
-    getDailyQuestCount(profile.id).then(setCount);
     const unsub = subscribeMyCheckin(profile.id, c => setCheckin(c));
     return () => unsub && unsub();
   }, [profile?.id]);
+
+  const count = profile?.dailyQuestCount || 0;
 
   // 核准後第一次看到 buff → 自動播放演出，同時產生/恢復任務
   useEffect(() => {

@@ -154,7 +154,12 @@ export default function MemberApp() {
         {nav.map(n=>(
           <button key={n.id} onClick={()=>setPage(n.id)}
             style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"8px 4px", gap:"2px", border:"none", background:"white", cursor:"pointer", color:navColor(n.id,page) }}>
-            <span style={{ fontSize:"18px" }}>{n.icon}</span>
+            <div style={{ position:"relative", display:"inline-block" }}>
+              <span style={{ fontSize:"18px" }}>{n.icon}</span>
+              {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
+                <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }}/>
+              )}
+            </div>
             <span style={{ fontSize:"11px", fontWeight:"600" }}>{n.label}</span>
           </button>
         ))}
