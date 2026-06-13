@@ -11,20 +11,9 @@ import DuelLobby      from "../duel/DuelLobby";
 import DuelRoom       from "../duel/DuelRoom";
 
 const PARTY_SESSION_KEY = "guest_party_session";
-const PARTY_ID_KEY      = "guest_party_id";
 
 export default function GuestBattle({ guestId, onExpire }) {
   const [tab, setTab] = useState("guide");
-
-  // 每個 session 獨立的 party ID（同一條連結多人使用時不互相覆蓋）
-  const [partyGuestId] = useState(() => {
-    const stored = sessionStorage.getItem(PARTY_ID_KEY);
-    if (stored) return stored;
-    const suffix = Math.random().toString(36).slice(2, 8);
-    const id = `guest_${guestId}_${suffix}`;
-    sessionStorage.setItem(PARTY_ID_KEY, id);
-    return id;
-  });
 
   // 訪客名稱
   const [guestName,      setGuestName]      = useState(() => sessionStorage.getItem("guest_name") || "");
@@ -65,8 +54,9 @@ export default function GuestBattle({ guestId, onExpire }) {
     return () => clearTimeout(timer);
   }, [onExpire]);
 
+  // 訪客用 ID（加 guest_ 前綴讓後端可識別）
   const guestOverride = {
-    id:   partyGuestId,
+    id:   `guest_${guestId}`,
     name: guestName || "訪客射手",
   };
 
