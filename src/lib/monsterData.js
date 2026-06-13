@@ -277,9 +277,17 @@ export function resolveHitPart(score, unlockedParts, isX = false) {
 
   // X 環：保證命中頭部或頸部（一定爆擊）
   if (isX) {
-    if (unlocked.has("chest") && Math.random() < 0.35)
-      return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "heart" : "lung"));
-    return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "head" : "neck"));
+    const _fb = () => BODY_PARTS.find(p => !p.locked) || BODY_PARTS[0]; // fallback 防 undefined
+    if (unlocked.has("chest") && Math.random() < 0.35) {
+      const _id = Math.random() < 0.5 ? "heart" : "lung";
+      const _p  = BODY_PARTS.find(p => p.id === _id);
+      if (!_p) console.error("[resolveHitPart] isX chest, missing id:", _id, BODY_PARTS.map(p=>p.id));
+      return _p || _fb();
+    }
+    const _id = Math.random() < 0.5 ? "head" : "neck";
+    const _p  = BODY_PARTS.find(p => p.id === _id);
+    if (!_p) console.error("[resolveHitPart] isX, missing id:", _id, BODY_PARTS.map(p=>p.id));
+    return _p || _fb();
   }
 
   // 10 分：一定命中，不脫靶，命中高等部位
