@@ -302,86 +302,122 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
   try {
     await updateDoc(doc(db, PARTY, roomId), { processing: true });
 
-    const members        = room.members || {};
-    const aliveIds       = Object.keys(members).filter(id => members[id].alive);
-    const round          = room.round || 1;
-    const isCounterRound = round % 2 === 0; // 每兩個小回合反擊一次
-    let   shouldCtr      = isCounterRound;
+    const members  = room.members || {};
+    const aliveIds = Object.keys(members).filter(id => members[id].alive);
+    const round    = room.round || 1;
 
-    // 1. 各玩家傷害（calcDmgFn 可回傳數字 或 { dmg, crits, arrowBreakdown }）
-    let totalDmg = 0;
-    const playerLog = [];
+    // Step 1: 計算每人全部 6 箭（body part 在此決定，不可拆開分批算）
+    const allPlayerData = {};
     for (const id of aliveIds) {
-      const m              = members[id];
-      const raw            = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
-      const dmg            = typeof raw === "number" ? raw : (raw.dmg   || 0);
-      const crits          = typeof raw === "number" ? 0   : (raw.crits || 0);
-      const arrowBreakdown = typeof raw === "object"  ? (raw.arrowBreakdown || []) : [];
-      totalDmg += dmg;
-      playerLog.push({ id, name: m.name || "射手", dmg, ctr: 0, crits, arrowBreakdown });
+      const m   = members[id];
+      const raw = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
+      allPlayerData[id] = {
+        name:           m.name || "射手",
+        totalDmg:       typeof raw === "number" ? raw        : (raw.dmg   || 0),
+        crits:          typeof raw === "number" ? 0          : (raw.crits || 0),
+        arrowBreakdown: typeof raw === "object"  ? (raw.arrowBreakdown || []) : [],
+      };
     }
 
-    // 2. 隨機事件（只在反擊回合觸發，避免頻率過高）
-    const eventRaw = isCounterRound && shouldTriggerEvent() ? drawRandomEvent() : null;
-    const eff      = eventRaw?.effect || {};
-    const event    = eventRaw
+    // Step 2: 隨機事件（大回合開始時決定）
+    const eventRaw   = shouldTriggerEvent() ? drawRandomEvent() : null;
+    const eff        = eventRaw?.effect || {};
+    const event      = eventRaw
       ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
       : null;
+    const skipAllCtr = !!eff.skipCounter;
 
-    // 套用事件：正向 ATK → 換算成額外總傷害；skipCounter
-    if (eff.extraDmg)                       totalDmg += eff.extraDmg;
-    if (eff.archerATK && eff.archerATK > 0) totalDmg += eff.archerATK * aliveIds.length;
-    if (eff.skipCounter)                    shouldCtr = false;
+    // Step 3: 6 個小回合，每 2 個小回合反擊一次（2, 4, 6）
+    const MINI        = 6;
+    const miniRounds  = [];
+    let   monsterHP   = room.monsterHP || 0;
+    const memberHPNow = {};
+    for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
+    const ctrAccum    = {}; // 每人累計反擊傷害
 
-    // 怪物 HP（含事件直接增減）
-    let newMonsterHP = Math.max(0, (room.monsterHP || 0) - totalDmg);
-    if (eff.monsterHP) newMonsterHP = Math.max(0, newMonsterHP + eff.monsterHP);
+    for (let i = 0; i < MINI; i++) {
+      const miniNum       = i + 1;
+      const isCounterMini = !skipAllCtr && (miniNum % 2 === 0);
+      const miniPlayerLog = [];
+      let   miniDmg       = 0;
 
-    // 3. 怪物反擊 + 事件 HP 效果（各人依自己 DEF）
-    const memberUpdates = {};
-    let liveAfter = 0;
-    for (const entry of playerLog) {
-      const m   = members[entry.id];
-      let   ctr = 0;
-      if (shouldCtr) {
-        ctr = Math.ceil(calcCtrFn(room.monster.atk, m.def || 10));
-        entry.ctr = ctr;
+      for (const id of aliveIds) {
+        if (memberHPNow[id] <= 0) continue; // 已倒下不再攻擊
+        const pd         = allPlayerData[id];
+        const arrowEntry = pd.arrowBreakdown[i] || { dmg: 0, partIcon: "💨", partName: "脫靶", label: "M" };
+        const dmg        = arrowEntry.dmg || 0;
+        miniDmg         += dmg;
+        miniPlayerLog.push({ id, name: pd.name, dmg, ctr: 0, arrowBreakdown: [arrowEntry] });
       }
-      let newHP = Math.max(0, (m.hp || 0) - ctr);
-      // 事件 HP 效果（正 = 回血，負 = 受傷；負向 archerATK 也轉為傷害）
-      if (eff.archerHP)                       newHP = Math.max(0, Math.min(m.maxHP || newHP + 200, newHP + eff.archerHP));
-      if (eff.healArcher)                     newHP = Math.min(m.maxHP || newHP + 200, newHP + eff.healArcher);
-      if (eff.archerATK && eff.archerATK < 0) newHP = Math.max(0, newHP + eff.archerATK);
-      memberUpdates[`members.${entry.id}.hp`]     = newHP;
-      memberUpdates[`members.${entry.id}.arrows`] = [];
-      memberUpdates[`members.${entry.id}.ready`]  = false;
-      if (newHP <= 0) memberUpdates[`members.${entry.id}.alive`] = false;
+
+      monsterHP = Math.max(0, monsterHP - miniDmg);
+
+      if (isCounterMini) {
+        for (const p of miniPlayerLog) {
+          if (memberHPNow[p.id] > 0) {
+            const ctr       = Math.ceil(calcCtrFn(room.monster.atk, members[p.id].def || 10));
+            p.ctr           = ctr;
+            ctrAccum[p.id]  = (ctrAccum[p.id] || 0) + ctr;
+            memberHPNow[p.id] = Math.max(0, memberHPNow[p.id] - ctr);
+          }
+        }
+      }
+
+      miniRounds.push({ miniRound: miniNum, isCounter: isCounterMini, playerLog: miniPlayerLog, totalDmg: miniDmg, monsterHPAfter: monsterHP });
+      if (monsterHP <= 0) break;
+    }
+
+    // Step 4: 套用事件額外效果（作用於大回合總結）
+    const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0);
+    if (eff.extraDmg)                       monsterHP = Math.max(0, monsterHP - eff.extraDmg);
+    if (eff.archerATK && eff.archerATK > 0) monsterHP = Math.max(0, monsterHP - eff.archerATK * aliveIds.length);
+    if (eff.monsterHP)                      monsterHP = Math.max(0, monsterHP + eff.monsterHP);
+
+    const memberUpdates = {};
+    let   liveAfter     = 0;
+    for (const id of aliveIds) {
+      let hp = memberHPNow[id];
+      if (eff.archerHP)                       hp = Math.max(0, Math.min(members[id].maxHP || hp + 200, hp + eff.archerHP));
+      if (eff.healArcher)                     hp = Math.min(members[id].maxHP || hp + 200, hp + eff.healArcher);
+      if (eff.archerATK && eff.archerATK < 0) hp = Math.max(0, hp + eff.archerATK);
+      memberUpdates[`members.${id}.hp`]     = hp;
+      memberUpdates[`members.${id}.arrows`] = [];
+      memberUpdates[`members.${id}.ready`]  = false;
+      if (hp <= 0) memberUpdates[`members.${id}.alive`] = false;
       else liveAfter++;
     }
 
-    // 4. log 條目（含事件）
+    // Step 5: 聚合 playerLog（歷史記錄用）
+    const playerLog = aliveIds.map(id => ({
+      id,
+      name:           allPlayerData[id].name,
+      dmg:            allPlayerData[id].totalDmg,
+      ctr:            ctrAccum[id] || 0,
+      crits:          allPlayerData[id].crits,
+      arrowBreakdown: allPlayerData[id].arrowBreakdown,
+    }));
+
     const logEntry = {
       round, event,
-      playerLog,
+      miniRounds,   // 動畫用：6 個小回合明細
+      playerLog,    // 歷史記錄用：聚合
       totalDmg,
       monsterHPBefore: room.monsterHP,
-      monsterHPAfter:  newMonsterHP,
-      counterRound:    shouldCtr,
+      monsterHPAfter:  monsterHP,
+      counterRound:    !skipAllCtr,
     };
 
-    // 4. 勝負判斷
     let result = null;
-    if (newMonsterHP <= 0) result = "win";
+    if (monsterHP <= 0) result = "win";
     else if (liveAfter === 0) result = "lose";
 
-    // 怪物死亡時先進入 pending_confirm（等房主確認），落敗直接 completed
     const newStatus = result === "win"  ? "pending_confirm"
                     : result === "lose" ? "completed"
                     : "active";
 
     await updateDoc(doc(db, PARTY, roomId), {
       ...memberUpdates,
-      monsterHP: newMonsterHP,
+      monsterHP,
       round: round + 1,
       log: arrayUnion(logEntry),
       result,

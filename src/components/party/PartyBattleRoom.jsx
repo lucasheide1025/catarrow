@@ -24,7 +24,7 @@ const SCORE_COLORS = {
   3:"bg-gray-300 text-gray-800", 2:"bg-gray-200 text-gray-700",
   1:"bg-gray-100 text-gray-600", M:"bg-black/30 text-gray-300"
 };
-const ARROWS_PER_ROUND = 1;
+const ARROWS_PER_ROUND = 6;
 const MODE_OPTIONS = [
   { id:"novice",  label:"新手", icon:"🌱" },
   { id:"student", label:"學生", icon:"📚" },
@@ -128,7 +128,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
-  const [liveRevealCount, setLiveRevealCount] = useState(0);     // 已揭曉幾位
+  const [liveMiniRoundIdx, setLiveMiniRoundIdx] = useState(0);   // 目前顯示的小回合索引 (0-5)
   const [cheerMsg,        setCheerMsg]        = useState("");
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
@@ -264,7 +264,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
     // 重置即時揭曉
     setLiveEntry(entry);
-    setLiveRevealCount(0);
+    setLiveMiniRoundIdx(0);
 
     // 怪物受擊動畫
     setAnimHit(true);
@@ -276,7 +276,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     else                                sfxTap();
     vibrate(20);
 
-    // 有突發事件：先顯示彈窗 3.5s，再揭曉傷害
+    // 有突發事件：先顯示彈窗 3.5s
     const eventDelay = entry.event ? 3500 : 0;
     if (entry.event) {
       setShowEvent(entry.event);
@@ -284,42 +284,39 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       revealTimersRef.current.push(et);
     }
 
-    // 事件結束後每 2 秒揭曉一位玩家傷害
-    const players = entry.playerLog || [];
-    players.forEach((_, idx) => {
-      const t = setTimeout(() => setLiveRevealCount(idx + 1), eventDelay + idx * 2000);
+    // 逐小回合播放（每 1.2 秒一個，反擊小回合多 1.5 秒動畫時間）
+    const miniRounds = entry.miniRounds || [];
+    let delay = eventDelay;
+    miniRounds.forEach((mini, idx) => {
+      const t = setTimeout(() => setLiveMiniRoundIdx(idx), delay);
       revealTimersRef.current.push(t);
+
+      if (mini.isCounter) {
+        const t1 = setTimeout(() => setAnimMonsterCharge(true),  delay + 400);
+        const t2 = setTimeout(() => {
+          setAnimMonsterCharge(false);
+          setAnimCounter(true);
+          setAnimScreenShake(true);
+          sfxCounter();
+          vibrate([0,35,55,30]);
+          const floats = (mini.playerLog || [])
+            .filter(p => p.ctr > 0)
+            .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
+          if (floats.length) {
+            setFloatCounterDmgs(floats);
+            setTimeout(() => setFloatCounterDmgs([]), 1400);
+          }
+          setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
+        }, delay + 1100);
+        revealTimersRef.current.push(t1, t2);
+        delay += 2700; // 反擊回合展示時間較長
+      } else {
+        delay += 1200;
+      }
     });
 
-    // 怪物攻擊序列：全部揭曉後才蓄力 → 攻擊
-    const allRevealMs = eventDelay + players.length * 2000;
-    if (entry.counterRound) {
-      // 蓄力（+300ms）
-      const t1 = setTimeout(() => setAnimMonsterCharge(true), allRevealMs + 300);
-      // 攻擊（+1500ms）
-      const t2 = setTimeout(() => {
-        setAnimMonsterCharge(false);
-        setAnimCounter(true);
-        setAnimScreenShake(true);
-        sfxCounter();
-        vibrate([0,35,55,30]);
-        const floats = (entry.playerLog || [])
-          .filter(p => p.ctr > 0)
-          .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
-        if (floats.length) {
-          setFloatCounterDmgs(floats);
-          setTimeout(() => setFloatCounterDmgs([]), 1400);
-        }
-        setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
-      }, allRevealMs + 1500);
-      revealTimersRef.current.push(t1, t2);
-    }
-
-    // liveEntry 清除：反擊結束後才清
-    const clearDelay = entry.counterRound
-      ? allRevealMs + 3500
-      : allRevealMs + 2500;
-    const ct = setTimeout(() => setLiveEntry(null), clearDelay);
+    // liveEntry 清除
+    const ct = setTimeout(() => { setLiveEntry(null); setLiveMiniRoundIdx(0); }, delay + 1500);
     revealTimersRef.current.push(ct);
   }, [room?.log?.length]); // eslint-disable-line
 
@@ -1160,62 +1157,72 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       {liveEntry && (
         <div className="px-4 pb-2 mt-1">
           <div className="bg-slate-800/95 rounded-2xl p-4 flex flex-col gap-2 border border-slate-600/60">
-            <div className="flex items-center justify-between text-xs font-black text-slate-400">
-              <span>⚔️ 第 {liveEntry.round} 回合結算</span>
-              <span>怪物剩 <span className="text-yellow-300 text-sm font-black">{liveEntry.monsterHPAfter}</span></span>
-            </div>
-            {liveEntry.event && (
-              <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1.5 rounded-lg ${
-                liveEntry.event.type === "buff"   ? "bg-emerald-900/50 text-emerald-300" :
-                liveEntry.event.type === "debuff" ? "bg-red-900/50 text-red-300"
-                                                 : "bg-yellow-900/50 text-yellow-300"
-              }`}>
-                <span>{liveEntry.event.icon}</span>
-                <span className="font-black">{liveEntry.event.title}</span>
-                <span className="opacity-70">：{liveEntry.event.desc}</span>
-              </div>
-            )}
-            {(liveEntry.playerLog || []).slice(0, liveRevealCount).map((p, j) => (
-              <div key={j} className="flex flex-col gap-1.5 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
-                <div className="flex items-center gap-2">
-                  <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
-                  <span className="text-slate-400 text-xs">造成</span>
-                  <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
-                  <span className="text-slate-500 text-xs">傷</span>
-                  {p.crits > 0 && <span className="text-yellow-300 text-xs">💥×{p.crits}</span>}
-                  {liveEntry.counterRound && p.ctr > 0 && (
-                    <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
+            {/* 小回合標頭 */}
+            {(() => {
+              const curMini = liveEntry.miniRounds?.[liveMiniRoundIdx];
+              const totalMini = liveEntry.miniRounds?.length || 6;
+              return (
+                <>
+                  <div className="flex items-center justify-between text-xs font-black text-slate-400">
+                    <span>⚔️ 第 {liveEntry.round} 回合 · 小回合 {liveMiniRoundIdx + 1}/{totalMini}</span>
+                    <span>怪物剩 <span className="text-yellow-300 text-sm font-black">
+                      {curMini?.monsterHPAfter ?? liveEntry.monsterHPAfter}
+                    </span></span>
+                  </div>
+                  {liveEntry.event && (
+                    <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1.5 rounded-lg ${
+                      liveEntry.event.type === "buff"   ? "bg-emerald-900/50 text-emerald-300" :
+                      liveEntry.event.type === "debuff" ? "bg-red-900/50 text-red-300"
+                                                       : "bg-yellow-900/50 text-yellow-300"
+                    }`}>
+                      <span>{liveEntry.event.icon}</span>
+                      <span className="font-black">{liveEntry.event.title}</span>
+                      <span className="opacity-70">：{liveEntry.event.desc}</span>
+                    </div>
                   )}
-                </div>
-                {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {p.arrowBreakdown.map((a, ai) => (
-                      <span key={ai} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                        a.dmg === 0     ? "bg-slate-700 text-slate-500" :
-                        a.isCrit        ? "bg-yellow-500/30 text-yellow-200 border border-yellow-400/40" :
-                                          "bg-slate-700/60 text-slate-300"
-                      }`}>
-                        {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
-                      </span>
+                  {/* 本小回合每位射手的 1 箭 */}
+                  {(curMini?.playerLog || []).map((p, j) => (
+                    <div key={j} className="flex flex-col gap-1.5 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
+                        <span className="text-slate-400 text-xs">造成</span>
+                        <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
+                        <span className="text-slate-500 text-xs">傷</span>
+                        {curMini.isCounter && p.ctr > 0 && (
+                          <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
+                        )}
+                      </div>
+                      {p.arrowBreakdown?.[0] && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.arrowBreakdown.map((a, ai) => (
+                            <span key={ai} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              a.dmg === 0 ? "bg-slate-700 text-slate-500" :
+                              a.isCrit    ? "bg-yellow-500/30 text-yellow-200 border border-yellow-400/40" :
+                                            "bg-slate-700/60 text-slate-300"
+                            }`}>
+                              {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {curMini?.isCounter && (
+                    <div className="text-orange-300 font-bold text-xs animate-pulse">💥 怪物反擊！</div>
+                  )}
+                  {/* 小回合進度點 */}
+                  <div className="flex justify-center gap-1.5 pt-0.5">
+                    {(liveEntry.miniRounds || []).map((mini, i) => (
+                      <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                        i === liveMiniRoundIdx ? "bg-yellow-400 scale-125" :
+                        i < liveMiniRoundIdx   ? (mini.isCounter ? "bg-orange-600" : "bg-slate-600") :
+                                                 "bg-slate-700"
+                      }`} />
                     ))}
                   </div>
-                )}
-              </div>
-            ))}
-            {liveRevealCount > 0 && liveRevealCount < (liveEntry.playerLog || []).length && (
-              <div className="text-slate-600 text-xs text-center animate-pulse py-1">▶ 下一位…</div>
-            )}
-            {liveRevealCount >= (liveEntry.playerLog || []).length && liveRevealCount > 0 && (
-              <>
-                <div className="flex items-center justify-between text-sm pt-1.5 border-t border-white/10 mt-1">
-                  <span className="text-slate-400 font-bold">🗡️ 本回合總傷</span>
-                  <span className="text-rose-400 font-black text-xl">{liveEntry.totalDmg}</span>
-                </div>
-                {liveEntry.counterRound && (
-                  <div className="text-orange-300 font-bold text-xs">💥 怪物反擊！</div>
-                )}
-              </>
-            )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
