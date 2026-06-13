@@ -8,7 +8,8 @@ import {
   resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
 } from "../../lib/partyDb";
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection } from "../../lib/db";
+import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
@@ -32,16 +33,18 @@ const MODE_OPTIONS = [
   { id:"veteran", label:"老手", icon:"🏹" },
 ];
 
-// 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數）
-function getArcherStats(profile, potionIds = []) {
+// 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片）
+function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }) {
   const base = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
-  if (!potionIds.length) return base;
-  const buffs = calcPotionBuffs(potionIds);
-  return {
-    hp:  Math.round(base.hp  * buffs.hpMult),
-    atk: Math.round(base.atk * buffs.atkMult),
-    def: base.def,
-  };
+  let hp  = base.hp  + (cardBonus.hp  || 0);
+  let atk = base.atk + (cardBonus.atk || 0);
+  let def = base.def + (cardBonus.def || 0);
+  if (potionIds.length) {
+    const buffs = calcPotionBuffs(potionIds);
+    hp  = Math.round(hp  * buffs.hpMult);
+    atk = Math.round(atk * buffs.atkMult);
+  }
+  return { hp, atk, def };
 }
 
 // 裝備欄位計數
@@ -136,6 +139,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRoundRef = useRef(0); // 記錄「已派出結算」的回合號，0=尚無
+  const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
@@ -148,6 +152,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const unsub = subscribePartyRoom(roomId, setRoom);
     return unsub;
   }, [roomId]);
+
+  // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
+  useEffect(() => {
+    if (!myId || myId.startsWith("guest")) return;
+    return subscribeCardCollection(myId, data => { cardCollRef.current = data; });
+  }, [myId]); // eslint-disable-line
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
@@ -179,7 +189,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
-    const stats = getArcherStats(profile);
+    const stats = getArcherStats(profile, [], getMyCardBonus());
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
@@ -201,13 +211,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return unsub;
   }, [myId]);
 
+  // 計算自己當前裝備的怪物卡片加成（從 ref 取最新值，不觸發 re-render）
+  function getMyCardBonus() {
+    const data = cardCollRef.current;
+    const equipped = (data.equipped || []).map(id => data.cards?.[id]).filter(Boolean);
+    return calcEquippedBonus(equipped);
+  }
+
   // 等待室就先寫入真實數值（讓所有人看到彼此的數值）
   useEffect(() => {
     if (!room || !myId || room.status !== "waiting" || statsWaitingRef.current) return;
     const me = room.members?.[myId];
     if (!me) return;
     statsWaitingRef.current = true;
-    const stats = getArcherStats(profile);
+    const stats = getArcherStats(profile, [], getMyCardBonus());
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
   }, [room?.status, myId]); // eslint-disable-line
 
@@ -217,7 +234,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWrittenRef.current = true;
-    const stats = getArcherStats(profile, selectedPotions);
+    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus());
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
@@ -509,7 +526,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setCopied(false), 1500);
   }
   function handleRedrawMonsters() {
-    const stats = getArcherStats(profile);
+    const stats = getArcherStats(profile, [], getMyCardBonus());
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
     setSetupMonster(null);
@@ -517,7 +534,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   const tierInfo = room.monster ? TIER_LABEL[room.monster.tier] : null;
   const famInfo  = room.monster ? FAMILIES[room.monster.family] : null;
-  const myStats  = getArcherStats(profile);
+  const myStats  = getArcherStats(profile, [], getMyCardBonus());
   const myEquip  = equipSummary(profile);
 
   // ── 等待/大廳畫面 ──────────────────────────────────────────
