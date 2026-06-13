@@ -33,6 +33,7 @@ import MemberDex          from "../components/member/MemberDex";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
 import CardCollection    from "../components/member/CardCollection";
+import MemberGuide      from "../components/member/MemberGuide";
 import MonsterBattle      from "../components/member/MonsterBattle";
 import PartyLobby         from "../components/party/PartyLobby";
 import PartyQuestRoom     from "../components/party/PartyQuestRoom";
@@ -193,6 +194,7 @@ const adminNav = [
           {page==="notifications" && <MemberNotifications notifications={notifications}/>}
           {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
+          {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
           {page==="cards"       && <CardCollection />}
           {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
@@ -210,7 +212,7 @@ const adminNav = [
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <div style={{position:"relative",display:"inline-block"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (

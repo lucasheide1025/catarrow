@@ -177,7 +177,7 @@ export default function GuestBattle({ guestId, onExpire }) {
             profile={guestOverride}
             isGuest={true}
             onEnterRoom={handleEnterDuelRoom}
-            onBack={() => setTab("monster")}
+            onBack={() => setTab("guide")}
           />
         )}
         {tab === "duel" && duelSubTab === "room" && duelRoomId && (
