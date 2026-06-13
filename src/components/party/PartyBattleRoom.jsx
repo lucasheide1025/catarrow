@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
-  submitArrows, processPartyRound, clearPartyProcessing, leavePartyRoom, partyHPRange,
+  submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
 } from "../../lib/partyDb";
@@ -73,7 +73,7 @@ function calcDmgFn(arrows, atk, monsterDEF) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
       continue;
     }
-    const base   = 8 + atk * 0.7 + score * 1.2 - monsterDEF * 0.35;
+    const base   = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDEF || 0) * 0.35;
     const mult   = 0.85 + Math.random() * 0.3;
     const isCrit = mult > 1.05 || pMult >= 1.8;
     const d      = Math.max(1, Math.round(base * pMult * mult));
@@ -139,7 +139,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const roundGuardRef  = useRef(0);    // 已派出結算的回合號（ref = 同步，避免 stale closure）
-  const [retryTick, setRetryTick] = useState(0); // 僅失敗時 +1，觸發 effect 重試
+  const retryCountRef  = useRef(0);   // 同回合連續失敗次數（≥3 停止重試，等 snapshot 重置）
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
@@ -164,7 +164,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
     if (room?.status !== "waiting") return;
-    if (isHost) clearPartyProcessing(roomId).catch(() => {}); // 非戰鬥中時清除殘留的 processing
     statsWrittenRef.current  = false;
     statsWaitingRef.current  = false;
     rewardStoredRef.current  = false;
@@ -173,6 +172,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     prevLogLenRef.current    = 0;
     logInitializedRef.current = false;
     roundGuardRef.current = 0;
+    retryCountRef.current = 0;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -263,11 +263,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (!aliveIds.every(id => members[id].ready)) return;
+    if (retryCountRef.current >= 3) return; // 同回合失敗 3 次，停止重試，等下次 snapshot
     roundGuardRef.current = currentRound; // 立即鎖住，同步生效，不等 re-render
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
-      .then(res => { if (!res?.ok) { roundGuardRef.current = 0; setRetryTick(t => t + 1); } })
-      .catch(() => { roundGuardRef.current = 0; setRetryTick(t => t + 1); });
-  }, [room, retryTick]); // eslint-disable-line
+      .then(res => {
+        if (res?.ok) { retryCountRef.current = 0; }
+        else { roundGuardRef.current = 0; retryCountRef.current++; }
+      })
+      .catch(() => { roundGuardRef.current = 0; retryCountRef.current++; });
+  }, [room]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
   useEffect(() => {

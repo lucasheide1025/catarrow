@@ -432,6 +432,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     return { ok: true, won: result === "win", lost: result === "lose" };
   } catch (e) {
+    console.error("[processPartyRound] failed:", e);
     await updateDoc(doc(db, PARTY, roomId), { processing: false }).catch(() => {});
     return { ok: false, reason: e.message };
   }
