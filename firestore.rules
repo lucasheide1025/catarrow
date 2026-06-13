@@ -196,5 +196,58 @@ service cloud.firestore {
       allow update: if isLoggedIn();
       allow delete: if isAdmin();
     }
+
+    // certifications：射手證任務進度，登入者可讀寫
+    match /certifications/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // certConfig：射手證設定，admin 寫，登入者讀
+    match /certConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // dexGrants：圖鑑授予（admin 操作），登入者可讀
+    match /dexGrants/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // dexConfig：圖鑑屆數設定，admin 寫，登入者讀
+    match /dexConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guestSessions：訪客戰鬥，免登入可讀寫（3小時過期）
+    match /guestSessions/{docId} {
+      allow read, write: if true;
+    }
+
+    // 遊戲背包（素材/寶箱/藥水/碎片）：登入者可讀寫
+    match /materialInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /chestInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /potionInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /fragmentInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /chestStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /potionDex/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // cardCollections：卡牌收集，登入者可讀寫
+    match /cardCollections/{docId} {
+      allow read, write: if isLoggedIn();
+    }
   }
 }
