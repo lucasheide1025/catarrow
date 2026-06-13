@@ -1,10 +1,11 @@
 // src/components/member/MemberLeaderboard.jsx
 import { useState, useEffect } from "react";
-import { getMembers, getCompetitions, getAllCertRecords, getResults } from "../../lib/db";
+import { getMembers, getCompetitions, getAllCertRecords, getResults, getAllMonsterDex } from "../../lib/db";
 import { getAllDuelStats } from "../../lib/duelDb";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR, calcBadgePoints, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Spinner, Empty } from "../shared/UI";
+import { MONSTERS, FAMILIES } from "../../lib/monsterData";
 
 const TABS = [
   { id: "event",             label: "🎪 賽事積分",  group: "活動" },
@@ -17,7 +18,14 @@ const TABS = [
   { id: "cert_recurve_full", label: "🎯 全配檢定",  group: "檢定" },
   { id: "cert_compound",     label: "🦅 獵弓檢定",  group: "檢定" },
   { id: "cert_traditional",  label: "🌿 傳統檢定",  group: "檢定" },
+  { id: "monster_family",    label: "🐾 六大族",    group: "魔物獵人" },
+  { id: "monster_boss",      label: "💀 頭目+",     group: "魔物獵人" },
 ];
+
+// 查 monster id → family/tier
+const MONSTER_MAP = {};
+MONSTERS.forEach(m => { MONSTER_MAP[m.id] = m; });
+const BOSS_TIERS = new Set(["boss", "mythic"]);
 
 const CERT_TAB = {
   cert_recurve_bare: "recurve_bare",
@@ -33,12 +41,13 @@ export default function MemberLeaderboard() {
   const [comps, setComps]             = useState([]);
   const [compResults, setCompResults] = useState({});
   const [certRecords, setCertRecords] = useState([]);
-  const [duelStatsMap, setDuelStatsMap] = useState({}); // { memberId: stats }
-  const [loading, setLoading]         = useState(true);
+  const [duelStatsMap,   setDuelStatsMap]   = useState({});
+  const [monsterDexList, setMonsterDexList] = useState([]);
+  const [loading, setLoading]              = useState(true);
 
   useEffect(() => {
-    Promise.all([getMembers(), getCompetitions(), getAllCertRecords(), getAllDuelStats()])
-      .then(async ([ms, cs, certs, duelList]) => {
+    Promise.all([getMembers(), getCompetitions(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex()])
+      .then(async ([ms, cs, certs, duelList, dexList]) => {
         setMembers(ms);
         setCertRecords(Array.isArray(certs) ? certs : []);
 
@@ -46,6 +55,7 @@ export default function MemberLeaderboard() {
         const dm = {};
         duelList.forEach(d => { dm[d.memberId] = d; });
         setDuelStatsMap(dm);
+        setMonsterDexList(dexList);
 
         // 只抓已結算比賽的 results
         const settled = cs.filter(c => c.status === "settled");
@@ -128,11 +138,45 @@ export default function MemberLeaderboard() {
     return null;
   }
 
+  // 魔物獵人：六大族擊殺統計
+  const familyKillsRanked = (() => {
+    const famIds = Object.keys(FAMILIES);
+    return members.map(m => {
+      const dex = monsterDexList.find(d => d.memberId === m.id)?.monsters || {};
+      const byFam = {};
+      famIds.forEach(f => { byFam[f] = 0; });
+      let total = 0;
+      Object.entries(dex).forEach(([mId, stat]) => {
+        const monster = MONSTER_MAP[mId];
+        if (!monster) return;
+        const wins = stat.wins || 0;
+        byFam[monster.family] = (byFam[monster.family] || 0) + wins;
+        total += wins;
+      });
+      return { ...m, byFam, total };
+    }).filter(m => m.total > 0).sort((a, b) => b.total - a.total);
+  })();
+
+  // 魔物獵人：頭目以上擊殺排行
+  const bossKillsRanked = (() => {
+    return members.map(m => {
+      const dex = monsterDexList.find(d => d.memberId === m.id)?.monsters || {};
+      let bossKills = 0;
+      Object.entries(dex).forEach(([mId, stat]) => {
+        const monster = MONSTER_MAP[mId];
+        if (monster && BOSS_TIERS.has(monster.tier)) bossKills += (stat.wins || 0);
+      });
+      return { ...m, bossKills };
+    }).filter(m => m.bossKills > 0).sort((a, b) => b.bossKills - a.bossKills);
+  })();
+
   if (loading) return <Spinner />;
 
-  const isCertTab = !!CERT_TAB[tab];
-  const isDuelTab    = tab === "duel";
-  const isCheckinTab = tab === "checkin";
+  const isCertTab       = !!CERT_TAB[tab];
+  const isDuelTab       = tab === "duel";
+  const isCheckinTab    = tab === "checkin";
+  const isMonsterFamily = tab === "monster_family";
+  const isMonsterBoss   = tab === "monster_boss";
 
   // 決鬥排行
   const duelRanked = isDuelTab
@@ -159,7 +203,7 @@ export default function MemberLeaderboard() {
     : [];
 
   // 一般榜排序
-  const ranked = !isCertTab && !isDuelTab && !isCheckinTab
+  const ranked = !isCertTab && !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss
     ? [...members].map(m => ({
         ...m,
         pts: tab === "event" ? calcEventPts(m.id) : badgePts(m, tab),
@@ -178,7 +222,7 @@ export default function MemberLeaderboard() {
       <h2 className="text-gray-800 font-black text-xl">📊 排行榜</h2>
 
       {/* Tab 切換（按分組排列）*/}
-      {["活動","徽章","檢定"].map(group => (
+      {["活動","徽章","檢定","魔物獵人"].map(group => (
         <div key={group}>
           <div className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">{group}</div>
           <div className="grid grid-cols-3 gap-2">
@@ -201,6 +245,8 @@ export default function MemberLeaderboard() {
         <InfoBar color="blue">{tab === "achieve" ? "計分：銀 1 分、金 2 分、黑 3 分" : "計分：銅 1 分、銀 10 分、金 50 分"}</InfoBar>
       )}
       {isCertTab && <InfoBar color="teal">{thisYear} 年度檢定 · 取每人今年最高分（已通過審核）</InfoBar>}
+      {isMonsterFamily && <InfoBar color="indigo">各族擊殺數統計，依總擊殺數排名，展開可看六大族分布。</InfoBar>}
+      {isMonsterBoss   && <InfoBar color="indigo">擊倒頭目（🔴）或神話（⭐）等級怪物的累計數量排行。</InfoBar>}
 
       {/* 決鬥排行 */}
       {isDuelTab && (
@@ -308,7 +354,7 @@ export default function MemberLeaderboard() {
               })
           }
         </Card>
-      ) : !isDuelTab && !isCheckinTab && (
+      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && (
         /* 一般榜 */
         <Card className="p-4">
           {ranked.length === 0 && <Empty message="尚無資料" />}
@@ -340,6 +386,83 @@ export default function MemberLeaderboard() {
               </div>
             );
           })}
+        </Card>
+      )}
+
+      {/* 六大族擊殺排行 */}
+      {isMonsterFamily && (
+        <Card className="p-4">
+          {familyKillsRanked.length === 0
+            ? <Empty message="尚無擊殺紀錄" />
+            : familyKillsRanked.map((m, i) => {
+                const isMe = m.id === profile?.id;
+                return (
+                  <div key={m.id}
+                    className={`flex flex-col gap-1.5 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 text-center flex-shrink-0">
+                        {["🥇","🥈","🥉"][i]
+                          ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
+                          : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                          {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.total}</div>
+                        <div className="text-gray-400 text-xs">總擊殺</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap pl-11">
+                      {Object.entries(FAMILIES).map(([fid, fam]) => {
+                        const cnt = m.byFam[fid] || 0;
+                        if (!cnt) return null;
+                        return (
+                          <span key={fid} className="text-xs px-2 py-0.5 rounded-full font-bold"
+                            style={{ background: fam.color + "22", color: fam.color }}>
+                            {fam.icon} {fam.label} ×{cnt}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </Card>
+      )}
+
+      {/* 頭目以上擊殺排行 */}
+      {isMonsterBoss && (
+        <Card className="p-4">
+          {bossKillsRanked.length === 0
+            ? <Empty message="尚無頭目以上擊殺紀錄" />
+            : bossKillsRanked.map((m, i) => {
+                const isMe = m.id === profile?.id;
+                return (
+                  <div key={m.id}
+                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    <div className="w-8 text-center flex-shrink-0">
+                      {["🥇","🥈","🥉"][i]
+                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
+                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">頭目級以上</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.bossKills}</div>
+                      <div className="text-gray-400 text-xs">擊殺</div>
+                    </div>
+                  </div>
+                );
+              })
+          }
         </Card>
       )}
 

@@ -1531,6 +1531,11 @@ async function updateMonsterDex(memberId, monsterId, result, score, dmgDealt) {
   await setDoc(ref, { monsters, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+export async function getAllMonsterDex() {
+  const snap = await getDocs(collection(db, C_MONSTER_DEX));
+  return snap.docs.map(d => ({ memberId: d.id, monsters: d.data().monsters || {} }));
+}
+
 // 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
   if (!memberId || !monsterId || memberId.startsWith("guest")) return;
