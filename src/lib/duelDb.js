@@ -349,6 +349,14 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
   }
 }
 
+// ── 決鬥統計（全員，排行榜用）────────────────────────────────
+export async function getAllDuelStats() {
+  try {
+    const snap = await getDocs(collection(db, DUEL_STATS));
+    return snap.docs.map(d => ({ memberId: d.id, ...d.data() }));
+  } catch { return []; }
+}
+
 // ── 決鬥統計 ────────────────────────────────────────────────
 export async function getDuelStats(memberId) {
   try {

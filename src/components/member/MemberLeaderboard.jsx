@@ -1,19 +1,22 @@
 // src/components/member/MemberLeaderboard.jsx
 import { useState, useEffect } from "react";
 import { getMembers, getCompetitions, getAllCertRecords, getResults } from "../../lib/db";
+import { getAllDuelStats } from "../../lib/duelDb";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR, calcBadgePoints, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Spinner, Empty } from "../shared/UI";
 
 const TABS = [
-  { id: "event",             label: "🎪 賽事積分" },
-  { id: "fatcat",            label: "🐱 肥貓章"   },
-  { id: "score",             label: "⭐ 積分章"   },
-  { id: "achieve",           label: "🏆 成就章"   },
-  { id: "cert_recurve_bare", label: "🏹 檢定·裸弓" },
-  { id: "cert_recurve_full", label: "🎯 檢定·全配" },
-  { id: "cert_compound",     label: "🦅 檢定·獵弓" },
-  { id: "cert_traditional",  label: "🌿 檢定·傳統" },
+  { id: "event",             label: "🎪 賽事積分",  group: "活動" },
+  { id: "duel",              label: "⚔️ 決鬥排行",  group: "活動" },
+  { id: "checkin",           label: "📋 報到達人",  group: "活動" },
+  { id: "fatcat",            label: "🐱 肥貓章",    group: "徽章" },
+  { id: "score",             label: "⭐ 積分章",    group: "徽章" },
+  { id: "achieve",           label: "🏆 成就章",    group: "徽章" },
+  { id: "cert_recurve_bare", label: "🏹 裸弓檢定",  group: "檢定" },
+  { id: "cert_recurve_full", label: "🎯 全配檢定",  group: "檢定" },
+  { id: "cert_compound",     label: "🦅 獵弓檢定",  group: "檢定" },
+  { id: "cert_traditional",  label: "🌿 傳統檢定",  group: "檢定" },
 ];
 
 const CERT_TAB = {
@@ -26,27 +29,31 @@ const CERT_TAB = {
 export default function MemberLeaderboard() {
   const { profile } = useAuth();
   const [tab, setTab]               = useState("event");
-  const [members, setMembers]       = useState([]);
-  const [comps, setComps]           = useState([]);
-  const [compResults, setCompResults] = useState({}); // { compId: [results] }
+  const [members, setMembers]         = useState([]);
+  const [comps, setComps]             = useState([]);
+  const [compResults, setCompResults] = useState({});
   const [certRecords, setCertRecords] = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [duelStatsMap, setDuelStatsMap] = useState({}); // { memberId: stats }
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
-    Promise.all([getMembers(), getCompetitions(), getAllCertRecords()])
-      .then(async ([ms, cs, certs]) => {
+    Promise.all([getMembers(), getCompetitions(), getAllCertRecords(), getAllDuelStats()])
+      .then(async ([ms, cs, certs, duelList]) => {
         setMembers(ms);
         setCertRecords(Array.isArray(certs) ? certs : []);
 
-        // 只抓已結算比賽的 results（避免多餘查詢）
+        // duelStats map
+        const dm = {};
+        duelList.forEach(d => { dm[d.memberId] = d; });
+        setDuelStatsMap(dm);
+
+        // 只抓已結算比賽的 results
         const settled = cs.filter(c => c.status === "settled");
         const resultsMap = {};
         await Promise.all(
           settled.map(async c => {
-            try {
-              const r = await getResults(c.id);
-              resultsMap[c.id] = r;
-            } catch { resultsMap[c.id] = []; }
+            try { resultsMap[c.id] = await getResults(c.id); }
+            catch { resultsMap[c.id] = []; }
           })
         );
         setComps(cs);
@@ -124,9 +131,35 @@ export default function MemberLeaderboard() {
   if (loading) return <Spinner />;
 
   const isCertTab = !!CERT_TAB[tab];
+  const isDuelTab    = tab === "duel";
+  const isCheckinTab = tab === "checkin";
+
+  // 決鬥排行
+  const duelRanked = isDuelTab
+    ? members
+        .map(m => {
+          const s = duelStatsMap[m.id] || {};
+          const wins   = s.wins   || 0;
+          const losses = s.losses || 0;
+          const draws  = s.draws  || 0;
+          const total  = wins + losses + draws;
+          const rate   = total > 0 ? Math.round(wins / total * 100) : 0;
+          return { ...m, wins, losses, draws, flawless: s.flawless || 0, totalDmg: s.totalDmg || 0, total, rate };
+        })
+        .filter(m => m.total > 0)
+        .sort((a, b) => b.wins - a.wins || b.rate - a.rate)
+    : [];
+
+  // 報到達人
+  const checkinRanked = isCheckinTab
+    ? [...members]
+        .map(m => ({ ...m, cnt: m.dailyQuestCount || 0 }))
+        .filter(m => m.cnt > 0)
+        .sort((a, b) => b.cnt - a.cnt)
+    : [];
 
   // 一般榜排序
-  const ranked = !isCertTab
+  const ranked = !isCertTab && !isDuelTab && !isCheckinTab
     ? [...members].map(m => ({
         ...m,
         pts: tab === "event" ? calcEventPts(m.id) : badgePts(m, tab),
@@ -144,32 +177,99 @@ export default function MemberLeaderboard() {
     <div className="p-4 flex flex-col gap-4">
       <h2 className="text-gray-800 font-black text-xl">📊 排行榜</h2>
 
-      {/* Tab 切換 */}
-      <div className="grid grid-cols-2 gap-2">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`py-2.5 rounded-xl text-xs font-bold border transition-all
-              ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Tab 切換（按分組排列）*/}
+      {["活動","徽章","檢定"].map(group => (
+        <div key={group}>
+          <div className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">{group}</div>
+          <div className="grid grid-cols-3 gap-2">
+            {TABS.filter(t => t.group === group).map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all
+                  ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {/* 規則提示 */}
-      {!isCertTab && tab === "event" && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-600">
-          累積賽事積分 = 比賽名次積分 + 日常任務完成 + 打怪勝利，越多越高！
-        </div>
+      {tab === "event" && <InfoBar color="blue">累積賽事積分 = 比賽名次積分 + 日常任務完成 + 打怪勝利，越多越高！</InfoBar>}
+      {tab === "duel"  && <InfoBar color="indigo">依總勝場數排名，勝場相同時比較勝率。至少需有 1 場紀錄才上榜。</InfoBar>}
+      {tab === "checkin" && <InfoBar color="emerald">累積報到（每日打卡）次數，持續練習的就是達人！</InfoBar>}
+      {["fatcat","score","achieve"].includes(tab) && (
+        <InfoBar color="blue">{tab === "achieve" ? "計分：銀 1 分、金 2 分、黑 3 分" : "計分：銅 1 分、銀 10 分、金 50 分"}</InfoBar>
       )}
-      {!isCertTab && tab !== "event" && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-600">
-          {tab === "achieve" ? "計分：銀 1 分、金 2 分、黑 3 分" : "計分：銅 1 分、銀 10 分、金 50 分"}
-        </div>
+      {isCertTab && <InfoBar color="teal">{thisYear} 年度檢定 · 取每人今年最高分（已通過審核）</InfoBar>}
+
+      {/* 決鬥排行 */}
+      {isDuelTab && (
+        <Card className="p-4">
+          {duelRanked.length === 0
+            ? <Empty message="尚無決鬥紀錄" />
+            : duelRanked.map((m, i) => {
+                const isMe = m.id === profile?.id;
+                return (
+                  <div key={m.id}
+                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    <div className="w-8 text-center flex-shrink-0">
+                      {["🥇","🥈","🥉"][i]
+                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
+                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      </div>
+                      <div className="flex gap-2 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-500">{m.wins}勝 {m.losses}負{m.draws > 0 ? ` ${m.draws}平` : ""}</span>
+                        <span className="text-xs text-gray-400">勝率 {m.rate}%</span>
+                        {m.flawless > 0 && (
+                          <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-1.5 py-0.5 rounded">全勝 ×{m.flawless}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.wins}</div>
+                      <div className="text-gray-400 text-xs">勝場</div>
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </Card>
       )}
-      {isCertTab && (
-        <div className="bg-teal-50 border border-teal-100 rounded-xl px-3 py-2 text-xs text-teal-600">
-          {thisYear} 年度檢定 · 取每人今年最高分（已通過審核）
-        </div>
+
+      {/* 報到達人 */}
+      {isCheckinTab && (
+        <Card className="p-4">
+          {checkinRanked.length === 0
+            ? <Empty message="尚無報到紀錄" />
+            : checkinRanked.map((m, i) => {
+                const isMe = m.id === profile?.id;
+                return (
+                  <div key={m.id}
+                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    <div className="w-8 text-center flex-shrink-0">
+                      {["🥇","🥈","🥉"][i]
+                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
+                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">累積報到 {m.cnt} 天</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.cnt}</div>
+                      <div className="text-gray-400 text-xs">次</div>
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </Card>
       )}
 
       {/* 檢定榜 */}
@@ -208,7 +308,7 @@ export default function MemberLeaderboard() {
               })
           }
         </Card>
-      ) : (
+      ) : !isDuelTab && !isCheckinTab && (
         /* 一般榜 */
         <Card className="p-4">
           {ranked.length === 0 && <Empty message="尚無資料" />}
@@ -244,6 +344,7 @@ export default function MemberLeaderboard() {
       )}
 
       {/* 各場比賽排名（賽事積分 tab）*/}
+
       {tab === "event" && settledComps.length > 0 && (
         <div>
           <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">各場比賽排名</div>
@@ -277,6 +378,20 @@ export default function MemberLeaderboard() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+const COLOR_MAP = {
+  blue:    "bg-blue-50 border-blue-100 text-blue-600",
+  indigo:  "bg-indigo-50 border-indigo-100 text-indigo-600",
+  teal:    "bg-teal-50 border-teal-100 text-teal-600",
+  emerald: "bg-emerald-50 border-emerald-100 text-emerald-600",
+};
+function InfoBar({ color = "blue", children }) {
+  return (
+    <div className={`border rounded-xl px-3 py-2 text-xs ${COLOR_MAP[color] || COLOR_MAP.blue}`}>
+      {children}
     </div>
   );
 }
