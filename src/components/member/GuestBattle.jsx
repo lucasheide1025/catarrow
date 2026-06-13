@@ -13,7 +13,7 @@ import DuelRoom       from "../duel/DuelRoom";
 const PARTY_SESSION_KEY = "guest_party_session";
 
 export default function GuestBattle({ guestId, onExpire }) {
-  const [tab, setTab] = useState("monster");
+  const [tab, setTab] = useState("guide");
 
   // 訪客名稱
   const [guestName,      setGuestName]      = useState(() => sessionStorage.getItem("guest_name") || "");
@@ -95,6 +95,7 @@ export default function GuestBattle({ guestId, onExpire }) {
   }
 
   const nav = [
+    { id: "guide",    icon: "📋",  label: "說明" },
     { id: "monster",  icon: "⚔️",  label: "打怪" },
     { id: "duel",     icon: "🤺",  label: "決鬥" },
     { id: "party",    icon: "👥",  label: "組隊" },
@@ -153,6 +154,7 @@ export default function GuestBattle({ guestId, onExpire }) {
 
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
+        {tab === "guide"   && <GuestGuide />}
         {tab === "monster" && <MonsterBattle isGuest={true} />}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
@@ -191,7 +193,7 @@ export default function GuestBattle({ guestId, onExpire }) {
       </div>
 
       {/* 底部導覽 */}
-      <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40 }}>
+      <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40, overflowX:"auto" }}>
         {nav.map(n => (
           <button key={n.id} onClick={() => setTab(n.id)}
             style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"8px 4px", gap:"2px", border:"none", background:"white", cursor:"pointer",
@@ -200,6 +202,41 @@ export default function GuestBattle({ guestId, onExpire }) {
             <span style={{ fontSize:"11px", fontWeight:"600" }}>{n.label}</span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function GuestGuide() {
+  return (
+    <div style={{ padding:"16px", display:"flex", flexDirection:"column", gap:"16px", paddingBottom:"100px" }}>
+      <div style={{ background:"linear-gradient(135deg,#4c1d95,#1d4ed8)", borderRadius:"16px", padding:"20px", color:"white" }}>
+        <div style={{ fontSize:"11px", letterSpacing:"0.1em", color:"#c4b5fd", fontWeight:900, marginBottom:"4px" }}>CATARROW 體驗模��</div>
+        <div style={{ fontSize:"20px", fontWeight:900, marginBottom:"4px" }}>⚔️ 歡迎來到射箭場！</div>
+        <div style={{ fontSize:"13px", color:"rgba(255,255,255,.7)" }}>連結有效 3 小時，以下是你可以做的事</div>
+      </div>
+
+      {[
+        { icon:"⚔️", title:"打怪", lines:["選擇難度進入戰鬥","分配攻防屬性打倒怪物","有機會掉落稀有素材"] },
+        { icon:"🤺", title:"決鬥", lines:["與其他人 1v1 對戰","建立房間，傳號碼給對手","對手加入後自動開始"] },
+        { icon:"👥", title:"組隊", lines:["建立或加入組隊房間","與隊友一起打怪闖關","進行中頂部會出現橫幅"] },
+        { icon:"🎯", title:"練習", lines:["記錄這次的練習成績","填入環數與箭數"] },
+      ].map(({ icon, title, lines }) => (
+        <div key={title} style={{ background:"white", borderRadius:"16px", border:"1px solid #e2e8f0", padding:"16px" }}>
+          <div style={{ fontWeight:900, fontSize:"14px", marginBottom:"8px", color:"#1e293b" }}>{icon} {title}</div>
+          {lines.map(l => (
+            <div key={l} style={{ display:"flex", alignItems:"flex-start", gap:"8px", padding:"3px 0", fontSize:"13px", color:"#475569" }}>
+              <span style={{ color:"#22c55e", flexShrink:0 }}>✓</span>{l}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div style={{ background:"#fefce8", border:"1px solid #fde047", borderRadius:"12px", padding:"12px" }}>
+        <div style={{ fontSize:"12px", color:"#854d0e", fontWeight:700, lineHeight:1.7 }}>
+          💡 訪客連結有效期限為 3 小時。<br />
+          想正式加入、累積積分與成就，請聯絡教練開通帳號。
+        </div>
       </div>
     </div>
   );

@@ -3,5 +3,8 @@ build/
 .env.local
 .env.*.local
 .DS_Store.tmp.driveupload/ 
-serviceAccountKey.json 
-.tmp.driveupload/ 
+serviceAccountKey.json
+.tmp.driveupload/
+backup_*.json
+restore.js
+backup.js

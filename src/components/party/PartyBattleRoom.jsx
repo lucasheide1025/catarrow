@@ -53,13 +53,18 @@ function equipSummary(profile) {
   return { bows, armor, acc };
 }
 
-// 回傳 { dmg, crits, arrowBreakdown } — partMult >= 1.8 或隨機 > 1.05 視為爆擊
+// 回傳 { dmg, crits, arrowBreakdown } — 部位在結算時才決定，送出前不預覽
 function calcDmgFn(arrows, atk, monsterDEF) {
   let dmg = 0, crits = 0;
   const arrowBreakdown = [];
+  const unlocked = new Set();
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
-    const pMult = arrow.partMult ?? 1.0;
+    const part  = resolveHitPart(score, unlocked);
+    if (part.id === "chest") unlocked.add("chest");
+    if (part.id === "belly") unlocked.add("belly");
+    if (part.id === "groin") unlocked.add("groin");
+    const pMult = part.mult;
     if (!score || pMult === 0) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
       continue;
@@ -71,8 +76,8 @@ function calcDmgFn(arrows, atk, monsterDEF) {
     dmg  += d;
     if (isCrit) crits++;
     arrowBreakdown.push({
-      label: arrow.label, partIcon: arrow.partIcon || "❤️",
-      partName: arrow.partName || "胸腔", partMult: pMult, dmg: d, isCrit,
+      label: arrow.label, partIcon: part.icon,
+      partName: part.name, partMult: pMult, dmg: d, isCrit,
     });
   }
   return { dmg, crits, arrowBreakdown };
@@ -124,7 +129,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
   const [liveRevealCount, setLiveRevealCount] = useState(0);     // 已揭曉幾位
-  const [unlockedParts,   setUnlockedParts]   = useState(new Set());
   const [cheerMsg,        setCheerMsg]        = useState("");
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
@@ -163,7 +167,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setShowFullLog(false);
     setClaimResult(null);
     setStartError("");
-    setUnlockedParts(new Set());
   }, [room?.status]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
@@ -380,15 +383,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   function addArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
     const score = SCORE_MAP[label] ?? 0;
-    const part  = resolveHitPart(score, unlockedParts);
-    if (part.id === "chest") setUnlockedParts(p => new Set([...p, "chest"]));
-    if (part.id === "belly") setUnlockedParts(p => new Set([...p, "belly"]));
-    if (part.id === "groin") setUnlockedParts(p => new Set([...p, "groin"]));
-    setArrows(prev => [...prev, {
-      score, label,
-      partMult: part.mult, partId: part.id,
-      partIcon: part.icon, partName: part.name,
-    }]);
+    setArrows(prev => [...prev, { score, label }]);
   }
   function removeLastArrow() {
     if (myReady) return;
@@ -1103,7 +1098,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div className="flex gap-1 flex-1 flex-wrap">
               {arrows.map((a, i) => (
                 <span key={i} className={`text-xs font-black px-2 py-0.5 rounded-full ${SCORE_COLORS[a.label] || "bg-slate-600 text-white"}`}>
-                  {a.label}{a.partId && a.partId !== "miss" ? a.partIcon : ""}
+                  {a.label}
                 </span>
               ))}
               {Array.from({ length: ARROWS_PER_ROUND - arrows.length }).map((_, i) => (

@@ -29,10 +29,11 @@ import PartyQuestRoom    from "../components/party/PartyQuestRoom";
 import PartyBattleRoom   from "../components/party/PartyBattleRoom";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
+import MemberGuide       from "../components/member/MemberGuide";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","guide"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -169,6 +170,7 @@ export default function MemberApp() {
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
+        {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
         {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} />}

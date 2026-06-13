@@ -129,6 +129,7 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
     { id:"history",       icon:"📊", label:"成績歷史",  desc:"所有參賽紀錄" },
     { id:"msgs",          icon:"✉️", label:"留言教練",  desc:"傳送訊息給教練" },
     { id:"external",      icon:"🏅", label:"對外比賽",  desc:"申報外部成績" },
+    { id:"guide",         icon:"📘", label:"使用說明",  desc:"系統操作指引" },
   ];
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
