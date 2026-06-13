@@ -20,15 +20,21 @@ export function generateBotArrows(difficulty = "normal", count = 6) {
     hard:   [0.02, 0.05, 0.13, 0.30, 0.50],
   };
   const w = weights[difficulty] || weights.normal;
-  const scores = [0, 7, 8, 9, 10];
+  const entries = [
+    { score: 0,  label: "M"  },
+    { score: 7,  label: "7"  },
+    { score: 8,  label: "8"  },
+    { score: 9,  label: "9"  },
+    { score: 10, label: "10" },
+  ];
   return Array.from({ length: count }, () => {
     const r = Math.random();
     let cum = 0;
     for (let i = 0; i < w.length; i++) {
       cum += w[i];
-      if (r < cum) return scores[i];
+      if (r < cum) return entries[i];
     }
-    return 10;
+    return entries[4];
   });
 }
 
