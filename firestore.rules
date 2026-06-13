@@ -99,6 +99,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // achievementApplications：登入者可讀自己的、可申請；admin 全權
+    match /achievementApplications/{docId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
     // externalComps：admin 全權，登入者可讀寫
     match /externalComps/{compId} {
       allow read:   if isLoggedIn();
