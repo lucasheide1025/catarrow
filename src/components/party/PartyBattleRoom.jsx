@@ -1060,6 +1060,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     ? Object.fromEntries((curMini?.playerLog || []).map(p => [p.id, p.dmg]))
     : {};
   const curMiniMaxDmg  = liveEntry ? Math.max(...Object.values(curMiniDmgMap), 1) : 0;
+  // 自己上一回合的戰鬥摘要（顯示在怪物 DEF 右側，新回合覆蓋舊值）
+  const myLastPLog = room.log?.length > 0
+    ? room.log[room.log.length - 1]?.playerLog?.find(p => p.id === myId)
+    : null;
+  const myBattleSummary = myLastPLog
+    ? [
+        ...(myLastPLog.arrowBreakdown || []).map(a =>
+          a.dmg === 0 ? "脫靶" : a.isCrit ? `💥${a.dmg}` : `+${a.dmg}`
+        ),
+        ...(myLastPLog.ctr > 0 ? [`受 -${myLastPLog.ctr}`] : []),
+      ].join(" · ")
+    : null;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
 
   return (
@@ -1130,7 +1142,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   <span className="text-white font-black text-sm">{room.monster.name}</span>
                   {tierInfo && <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ color: tierInfo.color, background: tierInfo.bg }}>{tierInfo.label}</span>}
                 </div>
-                <div className="text-xs text-slate-400">{famInfo?.label} · ⚔️{room.monster.atk} 🛡️{room.monster.def}</div>
+                <div className="text-xs text-slate-400">
+                  {famInfo?.label} · ⚔️{room.monster.atk} 🛡️{room.monster.def}
+                  {myBattleSummary && <span className="text-indigo-300 ml-1.5">· {myBattleSummary}</span>}
+                </div>
               </div>
               <div className="text-right text-sm font-black text-white">
                 {displayHP} / {room.monsterMaxHP}
