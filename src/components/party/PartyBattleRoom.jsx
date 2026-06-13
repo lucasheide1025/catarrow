@@ -135,7 +135,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
-  const processingRef     = useRef(false);
+  const processingRoundRef = useRef(0); // 記錄「已派出結算」的回合號，0=尚無
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
@@ -224,8 +224,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 房主：檢查所有人是否 ready → 先幫機器人補送箭分，再觸發結算
   useEffect(() => {
-    if (!room || !isHost || room.status !== "active" || room.processing || processingRef.current) return;
+    if (!room || !isHost || room.status !== "active" || room.processing) return;
     if (!room.monster) return;
+    const currentRound = room.round || 1;
+    // 同一回合只派出一次（設 ref 後同步擋住後續 render，成功後 room.round 遞增自然解鎖，失敗 .catch 重設）
+    if (processingRoundRef.current === currentRound) return;
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
@@ -239,9 +242,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (!aliveIds.every(id => members[id].ready)) return;
-    processingRef.current = true;
+    processingRoundRef.current = currentRound;
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
-      .finally(() => { processingRef.current = false; });
+      .catch(() => { processingRoundRef.current = 0; }); // 失敗時歸零允許重試
   }, [room?.members, room?.processing]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
@@ -1025,7 +1028,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
 
   // ── 戰鬥中畫面 ────────────────────────────────────────────
-  const monsterPct     = room.monsterMaxHP > 0 ? (room.monsterHP / room.monsterMaxHP) : 0;
+  // 動畫期間用當前小回合的 HP，動畫結束後回到 Firestore 最終值
+  const curMini        = liveEntry?.miniRounds?.[liveMiniRoundIdx];
+  const displayHP      = liveEntry ? (curMini?.monsterHPAfter ?? room.monsterHP) : room.monsterHP;
+  const monsterPct     = room.monsterMaxHP > 0 ? (displayHP / room.monsterMaxHP) : 0;
+  // 當前小回合每位玩家的傷害 Map（高亮用）
+  const curMiniDmgMap  = liveEntry
+    ? Object.fromEntries((curMini?.playerLog || []).map(p => [p.id, p.dmg]))
+    : {};
+  const curMiniMaxDmg  = liveEntry ? Math.max(...Object.values(curMiniDmgMap), 1) : 0;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
 
   return (
@@ -1099,21 +1110,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 <div className="text-xs text-slate-400">{famInfo?.label} · ⚔️{room.monster.atk} 🛡️{room.monster.def}</div>
               </div>
               <div className="text-right text-sm font-black text-white">
-                {room.monsterHP} / {room.monsterMaxHP}
+                {displayHP} / {room.monsterMaxHP}
               </div>
             </div>
-            <HPBar current={room.monsterHP} max={room.monsterMaxHP}
+            <HPBar current={displayHP} max={room.monsterMaxHP}
               color={monsterPct > 0.5 ? "#22c55e" : monsterPct > 0.25 ? "#f59e0b" : "#ef4444"} />
           </div>
         )}
 
         {/* 隊員 HP */}
         <div className="grid grid-cols-2 gap-2" style={animScreenShake ? { animation:"mb-screen-shake .55s ease" } : {}}>
-          {memberList.map(m => (
+          {memberList.map(m => {
+            // 攻擊高亮：動畫期間，有傷害=高亮，傷害最高=金色，否則暗化
+            const miniDmg   = curMiniDmgMap[m.id];
+            const isAttacking  = liveEntry && m.alive && miniDmg !== undefined && !animCounter;
+            const isTopHit     = isAttacking && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
+            const isMiss       = isAttacking && miniDmg === 0;
+            return (
             <div key={m.id} style={{ position:"relative" }}
               className={`rounded-xl p-2.5 flex flex-col gap-1 transition-all duration-300 ${
                 !m.alive        ? "bg-slate-800/40 opacity-50" :
                 animCounter     ? "bg-red-900/60 border border-red-500/50" :
+                isTopHit        ? "bg-yellow-900/50 border border-yellow-400/70 scale-[1.02]" :
+                isAttacking && !isMiss ? "bg-indigo-900/40 border border-indigo-400/50" :
+                isMiss          ? "bg-slate-800/40 opacity-60" :
                 m.id === myId   ? "bg-indigo-900/40 border border-indigo-500/50"
                                 : "bg-slate-700/40"
               }`}>
@@ -1150,7 +1170,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 </button>
               )}
             </div>
-          ))}
+          );})}
         </div>
       </div>
 
