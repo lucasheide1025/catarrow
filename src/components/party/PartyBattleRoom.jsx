@@ -138,7 +138,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
-  const processingRoundRef = useRef(0); // 記錄「已派出結算」的回合號，0=尚無
+  const [roundGuard, setRoundGuard] = useState(0); // 已派出結算的回合號（state 而非 ref，失敗時 setter 觸發 re-render 重試）
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
@@ -170,6 +170,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     dexRecordedRef.current   = false;
     prevLogLenRef.current    = 0;
     logInitializedRef.current = false;
+    setRoundGuard(0);
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -246,8 +247,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!room || !isHost || room.status !== "active" || room.processing) return;
     if (!room.monster) return;
     const currentRound = room.round || 1;
-    // 同一回合只派出一次（設 ref 後同步擋住後續 render，成功後 room.round 遞增自然解鎖，失敗 .catch 重設）
-    if (processingRoundRef.current === currentRound) return;
+    if (roundGuard === currentRound) return; // 同回合已派出，等結果
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
@@ -261,11 +261,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (!aliveIds.every(id => members[id].ready)) return;
-    processingRoundRef.current = currentRound;
+    setRoundGuard(currentRound); // 鎖住同回合不重複派出
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
-      .then(res => { if (!res?.ok) processingRoundRef.current = 0; }) // 內部失敗（return {ok:false}）也歸零重試
-      .catch(() => { processingRoundRef.current = 0; }); // 意外 reject 也歸零
-  }, [room?.members, room?.processing]); // eslint-disable-line
+      .then(res => { if (!res?.ok) setRoundGuard(0); }) // 失敗：setRoundGuard(0) 觸發 re-render → effect 重跑 → 自動重試
+      .catch(() => setRoundGuard(0));
+  }, [room, roundGuard]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
   useEffect(() => {
