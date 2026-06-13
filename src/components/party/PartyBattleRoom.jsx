@@ -1200,19 +1200,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                           <span className="text-orange-400 text-xs ml-auto">受到 -{p.ctr}</span>
                         )}
                       </div>
-                      {p.arrowBreakdown?.[0] && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {p.arrowBreakdown.map((a, ai) => (
-                            <span key={ai} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                              a.dmg === 0 ? "bg-slate-700 text-slate-500" :
-                              a.isCrit    ? "bg-yellow-500/30 text-yellow-200 border border-yellow-400/40" :
-                                            "bg-slate-700/60 text-slate-300"
-                            }`}>
-                              {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {p.arrowBreakdown?.[0] && (() => {
+                        const a = p.arrowBreakdown[0];
+                        return (
+                          <div className={`text-xs px-2 py-1 rounded-lg font-bold mt-0.5 ${
+                            a.dmg === 0 ? "bg-slate-700/60 text-slate-500" :
+                            a.isCrit    ? "bg-yellow-500/20 text-yellow-200" :
+                                          "bg-slate-700/40 text-slate-300"
+                          }`}>
+                            第{liveMiniRoundIdx + 1}箭　{a.label}分　{a.partIcon} {a.partName}
+                            {a.dmg > 0 && <span className="text-rose-400 font-black ml-1">+{a.dmg}</span>}
+                            {a.isCrit && <span className="text-yellow-300 ml-1">爆擊💥</span>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                   {curMini?.isCounter && (
@@ -1270,13 +1271,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       )}
                     </div>
                     {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
-                      <div className="flex flex-wrap gap-1 ml-3">
+                      <div className="flex flex-col gap-0.5 ml-3 mt-0.5">
                         {p.arrowBreakdown.map((a, ai) => (
-                          <span key={ai} className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                          <span key={ai} className={`text-[10px] font-bold ${
                             a.dmg === 0 ? "text-slate-600" :
                             a.isCrit    ? "text-yellow-400" : "text-slate-400"
                           }`}>
-                            {a.label}{a.partIcon}+{a.dmg}{a.isCrit ? "💥" : ""}
+                            {ai + 1}箭 {a.label}分　{a.partIcon} {a.partName}
+                            {a.dmg > 0 && <span className="text-rose-400 ml-1">+{a.dmg}</span>}
+                            {a.isCrit && <span className="text-yellow-300 ml-0.5">💥</span>}
                           </span>
                         ))}
                       </div>
