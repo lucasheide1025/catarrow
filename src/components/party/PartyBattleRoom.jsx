@@ -24,7 +24,7 @@ const SCORE_COLORS = {
   3:"bg-gray-300 text-gray-800", 2:"bg-gray-200 text-gray-700",
   1:"bg-gray-100 text-gray-600", M:"bg-black/30 text-gray-300"
 };
-const ARROWS_PER_ROUND = 6;
+const ARROWS_PER_ROUND = 1;
 const MODE_OPTIONS = [
   { id:"novice",  label:"新手", icon:"🌱" },
   { id:"student", label:"學生", icon:"📚" },
@@ -975,7 +975,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // ── 戰鬥中畫面 ────────────────────────────────────────────
   const monsterPct     = room.monsterMaxHP > 0 ? (room.monsterHP / room.monsterMaxHP) : 0;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
-  const isCounterRound = true;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col max-w-lg mx-auto">

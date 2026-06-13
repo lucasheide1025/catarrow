@@ -302,10 +302,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
   try {
     await updateDoc(doc(db, PARTY, roomId), { processing: true });
 
-    const members    = room.members || {};
-    const aliveIds   = Object.keys(members).filter(id => members[id].alive);
-    const round      = room.round || 1;
-    let   shouldCtr  = true; // 每回合都反擊（事件可覆蓋）
+    const members        = room.members || {};
+    const aliveIds       = Object.keys(members).filter(id => members[id].alive);
+    const round          = room.round || 1;
+    const isCounterRound = round % 2 === 0; // 每兩個小回合反擊一次
+    let   shouldCtr      = isCounterRound;
 
     // 1. 各玩家傷害（calcDmgFn 可回傳數字 或 { dmg, crits, arrowBreakdown }）
     let totalDmg = 0;
@@ -320,8 +321,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       playerLog.push({ id, name: m.name || "射手", dmg, ctr: 0, crits, arrowBreakdown });
     }
 
-    // 2. 隨機事件（由房主決定，存入 log 後所有人同步看見）
-    const eventRaw = shouldTriggerEvent() ? drawRandomEvent() : null;
+    // 2. 隨機事件（只在反擊回合觸發，避免頻率過高）
+    const eventRaw = isCounterRound && shouldTriggerEvent() ? drawRandomEvent() : null;
     const eff      = eventRaw?.effect || {};
     const event    = eventRaw
       ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
