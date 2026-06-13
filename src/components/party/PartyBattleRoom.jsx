@@ -288,11 +288,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const miniRounds = entry.miniRounds || [];
     let delay = eventDelay;
     miniRounds.forEach((mini, idx) => {
-      const t = setTimeout(() => setLiveMiniRoundIdx(idx), delay);
+      // 每支箭顯示時都播音效
+      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxTap(); vibrate(8); }, delay);
       revealTimersRef.current.push(t);
 
       if (mini.isCounter) {
-        const t1 = setTimeout(() => setAnimMonsterCharge(true),  delay + 400);
+        // 600ms 後蓄力（讓玩家先看清箭傷），1400ms 反擊
+        const t1 = setTimeout(() => setAnimMonsterCharge(true),  delay + 600);
         const t2 = setTimeout(() => {
           setAnimMonsterCharge(false);
           setAnimCounter(true);
@@ -307,9 +309,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             setTimeout(() => setFloatCounterDmgs([]), 1400);
           }
           setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
-        }, delay + 1100);
+        }, delay + 1400);
         revealTimersRef.current.push(t1, t2);
-        delay += 2700; // 反擊回合展示時間較長
+        delay += 2700;
       } else {
         delay += 1200;
       }
