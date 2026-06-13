@@ -28,94 +28,56 @@ export function AuthProvider({ children }) {
 
       setCurrentUser(fbUser);
 
-      // 1. 檢查是否為 Admin（教練）
-      const adminSnap = await getDoc(doc(db, "admins", fbUser.uid));
+      // admin 檢查與 member 查詢同時發出，不用等一個回來再發另一個
+      const memberQuery = query(collection(db, "members"), where("uid", "==", fbUser.uid));
+      const [adminSnap, memberSnap] = await Promise.all([
+        getDoc(doc(db, "admins", fbUser.uid)),
+        getDocs(memberQuery),
+      ]);
 
-      if (adminSnap.exists()) {
-        setRole("admin");
-        const adminData = adminSnap.data();
+      const isAdmin   = adminSnap.exists();
+      const adminData = isAdmin ? adminSnap.data() : null;
+      let   memberDoc = memberSnap.empty ? null : memberSnap.docs[0];
 
-        // ✅ 教練也用 query 找 members，確保 profile.id = members document ID
-        // 這樣所有用 profile.id 讀庫存、打怪記錄的地方都能對到正確文件
-        const memberQuery = query(
-          collection(db, "members"),
-          where("uid", "==", fbUser.uid)
-        );
-
-        profileUnsub = onSnapshot(memberQuery, async (snapshot) => {
-          if (!snapshot.empty) {
-            const memberDoc = snapshot.docs[0];
-            setProfile({
-              id: memberDoc.id,
-              uid: fbUser.uid,
-              ...adminData,
-              ...memberDoc.data(),
-              isAdmin: true,
-            });
-            setLoading(false);
-          } else {
-            // uid 欄位缺失或不符：用 email 備用查詢，找到後自動補寫 uid
-            try {
-              const emailSnap = await getDocs(
-                query(collection(db, "members"), where("email", "==", fbUser.email))
-              );
-              if (!emailSnap.empty) {
-                const memberDoc = emailSnap.docs[0];
-                // 自動修正 members 文件的 uid 欄位，下次登入直接命中
-                updateDoc(doc(db, "members", memberDoc.id), { uid: fbUser.uid }).catch(() => {});
-                setProfile({
-                  id: memberDoc.id,
-                  uid: fbUser.uid,
-                  ...adminData,
-                  ...memberDoc.data(),
-                  isAdmin: true,
-                });
-              } else {
-                // 真的沒有 member 文件（純管理者）
-                setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
-              }
-            } catch (e) {
-              console.warn("教練 members 備用查詢失敗：", e.message);
-              setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
-            }
-            setLoading(false);
+      // 教練 uid 欄位缺失時，用 email 備用查詢並補寫 uid
+      if (!memberDoc && isAdmin) {
+        try {
+          const emailSnap = await getDocs(query(collection(db, "members"), where("email", "==", fbUser.email)));
+          if (!emailSnap.empty) {
+            memberDoc = emailSnap.docs[0];
+            updateDoc(doc(db, "members", memberDoc.id), { uid: fbUser.uid }).catch(() => {});
           }
-        }, (err) => {
-          console.warn("讀取教練 members 文件失敗，改用 admin 資料：", err.message);
-          setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
-          setLoading(false);
-        });
-
-        await updateLastLogin(fbUser.uid);
-
-      } else {
-        // 2. 一般射手：用 uid 欄位找 member 文件
-        setRole("member");
-        const memberQuery = query(
-          collection(db, "members"),
-          where("uid", "==", fbUser.uid)
-        );
-
-        profileUnsub = onSnapshot(memberQuery, (snapshot) => {
-          if (!snapshot.empty) {
-            const memberDoc = snapshot.docs[0];
-            setProfile({
-              id: memberDoc.id,
-              uid: fbUser.uid,
-              ...memberDoc.data(),
-            });
-          } else {
-            console.warn("⚠️ Auth 有此帳號，但 members 找不到 uid 符合的文件！");
-            setProfile(null);
-          }
-          setLoading(false);
-        }, (error) => {
-          console.error("讀取 members 發生錯誤:", error);
-          setLoading(false);
-        });
-
-        await updateLastLogin(fbUser.uid);
+        } catch (e) { console.warn("教練 email 備用查詢失敗：", e.message); }
       }
+
+      // 設定 profile，立即解除 loading
+      if (memberDoc) {
+        setRole(isAdmin ? "admin" : "member");
+        setProfile({
+          id:  memberDoc.id,
+          uid: fbUser.uid,
+          ...(isAdmin ? adminData : {}),
+          ...memberDoc.data(),
+          ...(isAdmin ? { isAdmin: true } : {}),
+        });
+      } else if (isAdmin) {
+        setRole("admin");
+        setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
+      } else {
+        console.warn("⚠️ Auth 有此帳號，但 members 找不到 uid 符合的文件！");
+        setProfile(null);
+      }
+      setLoading(false);
+
+      // 背景更新最後登入時間（傳正確的 member doc id，不阻塞登入）
+      if (memberDoc) updateLastLogin(memberDoc.id).catch(() => {});
+
+      // 即時訂閱：profile 有變動時自動更新（裝備、積分等）
+      profileUnsub = onSnapshot(memberQuery, (snapshot) => {
+        if (snapshot.empty) return;
+        const doc = snapshot.docs[0];
+        setProfile(prev => prev ? { ...prev, ...doc.data(), id: doc.id } : prev);
+      }, () => {});
     });
 
     return () => {
