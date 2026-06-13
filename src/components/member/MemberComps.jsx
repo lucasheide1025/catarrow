@@ -27,20 +27,19 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState("全部");
   const [tab, setTab]             = useState("comps");
-  const [registering, setRegistering] = useState(null); // compId 正在報名中
+  const [registering,  setRegistering]  = useState(null);  // compId 正在報名中
+  const [justJoined,   setJustJoined]   = useState(new Set()); // 本次 session 已報名的 compId
 
-  function fetchComps() {
+  useEffect(() => {
     getCompetitions().then(data => { setComps(data); setLoading(false); });
-  }
-
-  useEffect(() => { fetchComps(); }, []); // eslint-disable-line
+  }, []); // eslint-disable-line
 
   async function handleRegister(c) {
     if (registering) return;
     setRegistering(c.id);
     try {
       await register(c.id, { memberId: profile.id, name: profile.name, nickname: profile.nickname, isGuest: false });
-      fetchComps(); // 重新載入讓 ✅ 已報名 顯示
+      setJustJoined(prev => new Set([...prev, c.id])); // 本地立即標記已報名
     } catch (e) {
       alert("報名失敗：" + (e?.message || "請重試"));
     } finally {
@@ -69,7 +68,7 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
 
   function CompCard({ c }) {
     const tc = COMP_TYPE_COLOR[c.type] || {};
-    const joined = c.participants?.includes(profile.id);
+    const joined = c.participants?.includes(profile.id) || justJoined.has(c.id);
     return (
       <div className="rounded-xl p-4 shadow-sm" style={typeStyle(c.type)}>
         <div className="flex justify-between mb-1">
