@@ -65,6 +65,11 @@ function calcDmgFn(arrows, atk, monsterDEF) {
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
     const part  = resolveHitPart(score, unlocked, arrow.label === "X");
+    if (!part) {
+      console.error("[calcDmgFn] resolveHitPart undefined", { score, label: arrow.label, unlocked: [...unlocked] });
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      continue;
+    }
     if (part.id === "chest") unlocked.add("chest");
     if (part.id === "belly") unlocked.add("belly");
     if (part.id === "groin") unlocked.add("groin");

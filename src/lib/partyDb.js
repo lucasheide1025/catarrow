@@ -360,7 +360,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       if (isCounterMini) {
         for (const p of miniPlayerLog) {
           if (memberHPNow[p.id] > 0) {
-            const ctr       = Math.ceil(calcCtrFn(room.monster.atk, members[p.id].def || 10));
+            const mem = members[p.id];
+            const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10));
             p.ctr           = ctr;
             ctrAccum[p.id]  = (ctrAccum[p.id] || 0) + ctr;
             memberHPNow[p.id] = Math.max(0, memberHPNow[p.id] - ctr);
