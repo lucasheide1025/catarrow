@@ -8,7 +8,7 @@ import {
   resetPartyRoom, sendPartyCheer,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
-import { sfxTap, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCritBoom, vibrate } from "../../lib/sound";
+import { sfxTap, sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCritBoom, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
@@ -387,6 +387,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   function addArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
     const score = SCORE_MAP[label] ?? 0;
+    sfxTap(); vibrate(8);
     setArrows(prev => [...prev, { score, label }]);
   }
   function removeLastArrow() {
@@ -395,6 +396,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
   async function handleSubmit() {
     if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
+    sfxCast(); vibrate([0, 20, 40]);
     setSubmitting(true);
     const res = await submitArrows(roomId, myId, arrows);
     if (res?.ok === false) {
