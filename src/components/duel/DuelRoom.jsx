@@ -1,6 +1,7 @@
 // src/components/duel/DuelRoom.jsx — 決鬥戰鬥室
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useToast } from "../shared/UI";
+import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
@@ -112,6 +113,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
   const [eventPhase,  setEventPhase]  = useState(false); // 事件暫停畫面
   const [duelStats, setDuelStats]     = useState(null);
+  const [showDuelCard, setShowDuelCard] = useState(false);
   const [cheerMsg, setCheerMsg]       = useState("");
   const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
   const lastLogLen      = useRef(0);
@@ -471,11 +473,22 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             );
           })()}
 
+          <button onClick={() => setShowDuelCard(true)}
+            className="w-full py-2.5 rounded-2xl font-black text-indigo-300 border border-indigo-500/40 bg-indigo-900/20">
+            📤 分享戰績小卡
+          </button>
           <button onClick={onLeave}
             className="w-full py-3 rounded-2xl font-black text-slate-300 border border-slate-600 bg-slate-800">
             ← 離開
           </button>
         </div>
+
+        {showDuelCard && (
+          <DuelBattleCard
+            onClose={() => setShowDuelCard(false)}
+            duelData={{ room, myId }}
+          />
+        )}
       </div>
     );
   }

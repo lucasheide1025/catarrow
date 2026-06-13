@@ -1,46 +1,46 @@
-// src/components/party/PartyBattleCard.jsx — 組隊打怪戰績分享小卡
+// src/components/duel/DuelBattleCard.jsx — 決鬥模式戰績分享小卡
 import { useState, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { updateMember } from "../../lib/db";
 
-const PARTY_THEMES = [
+const DUEL_THEMES = [
   {
-    id: "squad_dark", label: "戰隊暗黑",
+    id: "duel_dark", label: "暗夜決鬥",
     bg: "linear-gradient(160deg,#0f0c29,#302b63 50%,#24243e)",
     accent: "#a78bfa", sub: "#c4b5fd", border: "rgba(167,139,250,.55)",
   },
   {
-    id: "squad_fire", label: "烈火突擊",
+    id: "duel_fire", label: "烈火對決",
     bg: "linear-gradient(160deg,#1a0000,#7f1d1d 45%,#b45309)",
     accent: "#fbbf24", sub: "#fed7aa", border: "rgba(251,191,36,.55)",
   },
   {
-    id: "squad_ocean", label: "深海艦隊",
+    id: "duel_ocean", label: "深海對決",
     bg: "linear-gradient(160deg,#0c1445,#1e3a8a 45%,#0e7490)",
     accent: "#7dd3fc", sub: "#bae6fd", border: "rgba(125,211,252,.55)",
   },
   {
-    id: "squad_forest", label: "原野獵人",
+    id: "duel_forest", label: "叢林獵鬥",
     bg: "linear-gradient(160deg,#052e16,#166534 45%,#65a30d)",
     accent: "#86efac", sub: "#bbf7d0", border: "rgba(134,239,172,.55)",
   },
   {
-    id: "squad_neon", label: "霓虹都市",
+    id: "duel_neon", label: "霓虹都市",
     bg: "linear-gradient(160deg,#0d0221,#1a0533 45%,#0d1b2a)",
     accent: "#f0abfc", sub: "#e879f9", border: "rgba(240,171,252,.55)",
   },
   {
-    id: "squad_bronze", label: "古銅戰神",
+    id: "duel_bronze", label: "古銅戰神",
     bg: "linear-gradient(160deg,#1c0a00,#78350f 45%,#92400e)",
     accent: "#fcd34d", sub: "#fde68a", border: "rgba(252,211,77,.55)",
   },
   {
-    id: "squad_ice", label: "冰霜極地",
+    id: "duel_ice", label: "冰霜極地",
     bg: "linear-gradient(160deg,#0c1a2e,#1e3a5f 45%,#e0f2fe)",
     accent: "#e0f2fe", sub: "#bae6fd", border: "rgba(224,242,254,.5)",
   },
   {
-    id: "squad_galaxy", label: "星際征途",
+    id: "duel_galaxy", label: "星際征途",
     bg: "linear-gradient(160deg,#020617,#0f172a 40%,#1e1b4b)",
     accent: "#c7d2fe", sub: "#a5b4fc", border: "rgba(199,210,254,.45)",
   },
@@ -57,7 +57,7 @@ async function ensureH2C() {
   return window.html2canvas;
 }
 
-export default function PartyBattleCard({ onClose, partyData }) {
+export default function DuelBattleCard({ onClose, duelData }) {
   const { profile } = useAuth();
   const cardRef  = useRef(null);
   const [busy, setBusy]         = useState(false);
@@ -65,11 +65,77 @@ export default function PartyBattleCard({ onClose, partyData }) {
   const [themeIdx, setThemeIdx] = useState(0);
   const [slogan, setSlogan]     = useState(profile?.shareSlogan || "#貓小隊射箭場");
 
-  const theme  = PARTY_THEMES[themeIdx];
-  const { monster, statsList = [], mvpId, result, rounds = 0 } = partyData || {};
-  const won    = result === "win";
-  const today  = new Date().toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" });
-  const totalTeamDmg = statsList.reduce((s, m) => s + (m.dmgDealt || 0), 0);
+  const theme = DUEL_THEMES[themeIdx];
+  const { room, myId } = duelData || {};
+  const myTeam    = room ? (Object.keys(room.teamA || {}).includes(myId) ? "A" : "B") : null;
+  const win       = room?.result === `team${myTeam}`;
+  const draw      = room?.result === "draw";
+  const totalRounds = room?.log?.length || 0;
+  const today     = new Date().toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+  // 從 log 計算每人傷害與爆擊
+  const dmgMap = {}, critMap = {};
+  for (const entry of room?.log || []) {
+    for (const atk of entry.attacks || []) {
+      dmgMap[atk.attackerId] = (dmgMap[atk.attackerId] || 0) + (atk.dmg || 0);
+      critMap[atk.attackerId] = (critMap[atk.attackerId] || 0) + (atk.crits || 0);
+    }
+  }
+
+  const teamAEntries = Object.entries(room?.teamA || {});
+  const teamBEntries = Object.entries(room?.teamB || {});
+
+  function renderMember(id, m) {
+    const isSelf  = id === myId;
+    const dmg     = dmgMap[id] || 0;
+    const crits   = critMap[id] || 0;
+    return (
+      <div key={id} style={{
+        borderRadius: 12,
+        padding: isSelf ? "8px 10px" : "6px 10px",
+        background: isSelf ? "rgba(99,102,241,.18)" : "rgba(0,0,0,.2)",
+        border: `1.5px solid ${isSelf ? "rgba(99,102,241,.6)" : theme.border}`,
+        marginBottom: 5,
+      }}>
+        {isSelf ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+              <span style={{ fontSize: 10 }}>🎯</span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: "#a5b4fc" }}>{m.name}</span>
+              <span style={{
+                marginLeft: "auto", fontSize: 8, fontWeight: 900, color: "#a5b4fc",
+                background: "rgba(99,102,241,.2)", padding: "1px 6px", borderRadius: 6,
+                border: "1px solid rgba(99,102,241,.5)",
+              }}>我</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4 }}>
+              {[
+                ["❤️", m.maxHP || "—", "#fca5a5"],
+                ["⚔️", m.atk   || "—", theme.accent],
+                ["🛡️", m.def   || "—", "#94a3b8"],
+                ["💥", dmg,            "#fbbf24"],
+              ].map(([icon, val, col]) => (
+                <div key={icon} style={{
+                  textAlign: "center", background: "rgba(0,0,0,.28)", borderRadius: 7, padding: "4px 2px",
+                }}>
+                  <div style={{ fontSize: 9 }}>{icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: col }}>{val}</div>
+                </div>
+              ))}
+            </div>
+            {crits > 0 && (
+              <div style={{ fontSize: 9, color: "#fbbf24", marginTop: 4 }}>✨ 爆擊 {crits} 次</div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.7)" }}>{m.name}</span>
+            <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 900 }}>💥 {dmg}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   async function generate(action) {
     setBusy(true); setMsg("");
@@ -80,10 +146,10 @@ export default function PartyBattleCard({ onClose, partyData }) {
       const h2c    = await ensureH2C();
       const canvas = await h2c(cardRef.current, { scale: 2, backgroundColor: null, useCORS: true, logging: false });
       const blob   = await new Promise(r => canvas.toBlob(r, "image/png", 0.95));
-      const fname  = `組隊打怪_${today.replace(/\//g, "-")}.png`;
+      const fname  = `決鬥模式_${today.replace(/\//g, "-")}.png`;
       const file   = new File([blob], fname, { type: "image/png" });
       if (action === "share" && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "貓小隊射箭場 組隊打怪模式戰績" });
+        await navigator.share({ files: [file], title: "貓小隊射箭場 決鬥模式戰績" });
         setMsg("已開啟分享");
       } else {
         const url = URL.createObjectURL(blob);
@@ -119,102 +185,48 @@ export default function PartyBattleCard({ onClose, partyData }) {
 
             {/* 頂部標題 */}
             <div style={{ fontSize: 9, letterSpacing: 3, color: theme.sub, fontWeight: 900, marginBottom: 2 }}>
-              🐱 貓小隊射箭場 · 組隊打怪模式
+              🐱 貓小隊射箭場 · 決鬥模式
             </div>
             <div style={{ fontSize: 8, color: "rgba(255,255,255,.35)", letterSpacing: 2, marginBottom: 14 }}>
-              CATARROW · PARTY BATTLE RESULT
+              CATARROW · DUEL BATTLE RESULT
             </div>
 
-            {/* 結果徽章 + 怪物 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-              <div style={{ fontSize: 44, lineHeight: 1 }}>{monster?.icon || "👹"}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  display: "inline-block", fontSize: 10, fontWeight: 900, letterSpacing: 2,
-                  padding: "2px 10px", borderRadius: 8, marginBottom: 5,
-                  background: won ? "rgba(34,197,94,.28)" : "rgba(239,68,68,.28)",
-                  border: `1.5px solid ${won ? "#22c55e" : "#ef4444"}`,
-                  color: won ? "#86efac" : "#fca5a5",
-                }}>
-                  {won ? "✅ 討伐成功" : "💀 全隊陣亡"}
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 900 }}>{monster?.name || "怪物"}</div>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,.45)", marginTop: 2 }}>
-                  {rounds} 回合 · {statsList.length} 位隊員 · 全隊總傷 {totalTeamDmg}
-                </div>
+            {/* 結果徽章 */}
+            <div style={{ textAlign: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 36, lineHeight: 1, marginBottom: 6 }}>
+                {draw ? "🤝" : win ? "🏆" : "💀"}
+              </div>
+              <div style={{
+                display: "inline-block", fontSize: 14, fontWeight: 900, letterSpacing: 2,
+                padding: "4px 18px", borderRadius: 10, marginBottom: 4,
+                background: draw ? "rgba(100,116,139,.28)" : win ? "rgba(34,197,94,.28)" : "rgba(239,68,68,.28)",
+                border: `1.5px solid ${draw ? "#64748b" : win ? "#22c55e" : "#ef4444"}`,
+                color: draw ? "#cbd5e1" : win ? "#86efac" : "#fca5a5",
+              }}>
+                {draw ? "🤝 平局" : win ? "✅ 勝利！" : "💀 落敗"}
+              </div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,.4)", marginTop: 2 }}>
+                {totalRounds} 回合
               </div>
             </div>
 
             {/* 分隔線 */}
-            <div style={{ height: 1, background: theme.border, marginBottom: 12, opacity: .6 }} />
+            <div style={{ height: 1, background: theme.border, marginBottom: 10, opacity: .6 }} />
 
-            {/* 隊員列表 */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 14 }}>
-              {statsList.map(s => {
-                const isMvp  = s.id === mvpId && won;
-                const isSelf = s.id === profile?.id;
-                const showFull = isMvp || isSelf;
-                return (
-                  <div key={s.id} style={{
-                    borderRadius: 12, padding: showFull ? "8px 10px" : "6px 10px",
-                    background: isMvp ? "rgba(251,191,36,.18)" : isSelf ? "rgba(99,102,241,.18)" : "rgba(0,0,0,.2)",
-                    border: `1.5px solid ${isMvp ? "rgba(251,191,36,.7)" : isSelf ? "rgba(99,102,241,.6)" : theme.border}`,
-                  }}>
-                    {showFull ? (
-                      <>
-                        {/* 完整版：名字行 */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
-                          {isMvp && <span style={{ fontSize: 12 }}>👑</span>}
-                          {!isMvp && isSelf && <span style={{ fontSize: 10 }}>🎯</span>}
-                          <span style={{
-                            fontSize: 13, fontWeight: 900,
-                            color: isMvp ? "#fbbf24" : isSelf ? "#a5b4fc" : "white",
-                          }}>{s.name}</span>
-                          {isMvp && (
-                            <span style={{
-                              marginLeft: "auto", fontSize: 8, fontWeight: 900, color: "#fbbf24",
-                              background: "rgba(251,191,36,.2)", padding: "1px 6px", borderRadius: 6,
-                              border: "1px solid rgba(251,191,36,.5)",
-                            }}>MVP</span>
-                          )}
-                          {!isMvp && isSelf && (
-                            <span style={{
-                              marginLeft: "auto", fontSize: 8, fontWeight: 900, color: "#a5b4fc",
-                              background: "rgba(99,102,241,.2)", padding: "1px 6px", borderRadius: 6,
-                              border: "1px solid rgba(99,102,241,.5)",
-                            }}>我</span>
-                          )}
-                        </div>
-                        {/* 完整版：數值格 */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4 }}>
-                          {[
-                            ["❤️", s.maxHP || "—", "#fca5a5"],
-                            ["⚔️", s.atk   || "—", theme.accent],
-                            ["🛡️", s.def   || "—", "#94a3b8"],
-                            ["💥", s.dmgDealt || 0, "#fbbf24"],
-                          ].map(([icon, val, col]) => (
-                            <div key={icon} style={{
-                              textAlign: "center", background: "rgba(0,0,0,.28)", borderRadius: 7, padding: "4px 2px",
-                            }}>
-                              <div style={{ fontSize: 9 }}>{icon}</div>
-                              <div style={{ fontSize: 11, fontWeight: 900, color: col }}>{val}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {s.crits > 0 && (
-                          <div style={{ fontSize: 9, color: "#fbbf24", marginTop: 4 }}>✨ 爆擊 {s.crits} 次</div>
-                        )}
-                      </>
-                    ) : (
-                      /* 精簡版：僅名字 + 傷害 */
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.7)" }}>{s.name}</span>
-                        <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 900 }}>💥 {s.dmgDealt || 0}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            {/* 隊伍 A */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#93c5fd", marginBottom: 5 }}>
+                ── 隊伍 A {myTeam === "A" ? "（我方）" : "（對方）"}
+              </div>
+              {teamAEntries.map(([id, m]) => renderMember(id, m))}
+            </div>
+
+            {/* 隊伍 B */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, color: "#fca5a5", marginBottom: 5 }}>
+                ── 隊伍 B {myTeam === "B" ? "（我方）" : "（對方）"}
+              </div>
+              {teamBEntries.map(([id, m]) => renderMember(id, m))}
             </div>
 
             {/* 標語 */}
@@ -236,7 +248,7 @@ export default function PartyBattleCard({ onClose, partyData }) {
 
         {/* ── 主題選擇 ───────────────────────────────── */}
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {PARTY_THEMES.map((t, i) => (
+          {DUEL_THEMES.map((t, i) => (
             <button key={t.id} onClick={() => setThemeIdx(i)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
                 themeIdx === i ? "border-white text-white" : "border-slate-600 text-slate-400"
