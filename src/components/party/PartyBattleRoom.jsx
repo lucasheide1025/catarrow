@@ -143,6 +143,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
+  const logInitializedRef = useRef(false); // 首次載入時跳過已存在的 log（F5 防重播）
   const revealTimersRef   = useRef([]);    // 逐人揭曉計時器
   const logEndRef         = useRef(null);
 
@@ -168,6 +169,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
     prevLogLenRef.current    = 0;
+    logInitializedRef.current = false;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -261,7 +263,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!aliveIds.every(id => members[id].ready)) return;
     processingRoundRef.current = currentRound;
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
-      .catch(() => { processingRoundRef.current = 0; }); // 失敗時歸零允許重試
+      .then(res => { if (!res?.ok) processingRoundRef.current = 0; }) // 內部失敗（return {ok:false}）也歸零重試
+      .catch(() => { processingRoundRef.current = 0; }); // 意外 reject 也歸零
   }, [room?.members, room?.processing]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
@@ -283,6 +286,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 回合更新：動畫 + 音效 + 事件先觸發 → 再逐人揭曉傷害（每 2 秒一位）
   useEffect(() => {
     const len = room?.log?.length || 0;
+    // 首次載入（含 F5）：直接把 ref 同步到當前長度，跳過歷史 log 不重播
+    if (!logInitializedRef.current) { logInitializedRef.current = true; prevLogLenRef.current = len; return; }
     if (len <= prevLogLenRef.current) return;
     prevLogLenRef.current = len;
     const entry = room.log[len - 1];
