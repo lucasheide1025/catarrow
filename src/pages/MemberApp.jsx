@@ -1,7 +1,7 @@
 // src/pages/MemberApp.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, subscribeNotifications, subscribeAppVersion } from "../lib/db";
+import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
@@ -236,8 +236,9 @@ export default function MemberApp() {
 
 function CompDetail({ comp, onBack, onStartScoring, profile }) {
   const isCert = comp?.type==="年度檢定";
-  const [results, setResults]   = useState([]);
-  const [loadingR, setLoadingR] = useState(true);
+  const [results,    setResults]    = useState([]);
+  const [loadingR,   setLoadingR]   = useState(true);
+  const [regChecked, setRegChecked] = useState(false); // 已從 registrations 確認報名
 
   useEffect(()=>{
     if(!comp?.id){ setLoadingR(false); return; }
@@ -248,10 +249,16 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
     return ()=>{ try{ unsub(); }catch{} };
   },[comp?.id]);
 
+  // 確認是否已在 registrations 報名（不依賴 participants 欄位）
+  useEffect(()=>{
+    if(!comp?.id||!profile?.id) return;
+    isMemberRegistered(comp.id, profile.id).then(yes=>{ if(yes) setRegChecked(true); }).catch(()=>{});
+  },[comp?.id, profile?.id]); // eslint-disable-line
+
   const myId = profile?.id||null;
   const safeResults = Array.isArray(results)?results:[];
   const parts = Array.isArray(comp?.participants)?comp.participants:[];
-  const joined = myId?parts.includes(myId):false;
+  const joined = !!(myId && (parts.includes(myId) || regChecked));
   const myResult = safeResults.find(r=>r&&r.memberId===myId)||null;
   const myCertResults = isCert?safeResults.filter(r=>r&&r.memberId===myId):[];
   const rankList = (isCert?safeResults.filter(r=>r&&r.reviewStatus==="approved"):safeResults)

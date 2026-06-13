@@ -272,6 +272,11 @@ export async function getRegistrations(compId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function isMemberRegistered(compId, memberId) {
+  const snap = await getDocs(query(collection(db, C.registrations), where("compId", "==", compId), where("memberId", "==", memberId)));
+  return !snap.empty;
+}
+
 export async function addLearnLog(memberId, data) {
   const ref = await addDoc(collection(db, C.learnLogs), { memberId, ...data, createdAt: serverTimestamp() });
   if (data.coachAdded) {
