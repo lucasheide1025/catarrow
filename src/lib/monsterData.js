@@ -269,55 +269,52 @@ export const BODY_PARTS = [
 ];
 
 // ── 依分數判定命中部位 ───────────────────────────────────
-export function resolveHitPart(score, unlockedParts) {
-  const unlocked = unlockedParts || new Set();
+// isX = true → X 環，保證頭/頸（一定爆擊）；10 = 一定命中；9~M 按比例脫靶
+export function resolveHitPart(score, unlockedParts, isX = false) {
+  const unlocked = unlockedParts instanceof Set ? unlockedParts : new Set(unlockedParts || []);
 
   if (score === 0) return BODY_PARTS.find(p => p.id === "miss");
 
-  // 器官部位（需解鎖）
-  const organMap = {
-    heart:  "chest",
-    lung:   "chest",
-    kidney: "belly",
-    balls:  "groin",
-  };
+  // X 環：保證命中頭部或頸部（一定爆擊）
+  if (isX) {
+    if (unlocked.has("chest") && Math.random() < 0.35)
+      return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "heart" : "lung"));
+    return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "head" : "neck"));
+  }
 
-  // X/10 分：高等部位
+  // 10 分：一定命中，不脫靶，命中高等部位
   if (score === 10) {
-    const pool = ["head","neck","groin","chest"];
-    // 嘗試觸發器官
-    if (unlocked.has("chest") && Math.random() < 0.3)
-      return BODY_PARTS.find(p => p.id === (Math.random()<0.5?"heart":"lung"));
+    if (unlocked.has("chest") && Math.random() < 0.30)
+      return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "heart" : "lung"));
     if (unlocked.has("groin") && Math.random() < 0.25)
       return BODY_PARTS.find(p => p.id === "balls");
-    const id = pool[Math.floor(Math.random() * pool.length)];
-    return BODY_PARTS.find(p => p.id === id);
+    const pool = ["head","neck","groin","chest"];
+    return BODY_PARTS.find(p => p.id === pool[Math.floor(Math.random() * pool.length)]);
   }
 
-  // 8~9 分：中上部位，不脫靶
+  // 9~1 分：脫靶率按比例遞增（9分=5%, 8分=15%, 7分=25%…1分=85%）
+  const missRate = Math.max(0, 0.95 - score * 0.10);
+  if (Math.random() < missRate) return BODY_PARTS.find(p => p.id === "miss");
+
+  // 8~9 分：中上部位
   if (score >= 8) {
-    const pool = ["chest","neck","belly","arm","groin"];
     if (unlocked.has("chest") && Math.random() < 0.15)
-      return BODY_PARTS.find(p => p.id === (Math.random()<0.5?"heart":"lung"));
+      return BODY_PARTS.find(p => p.id === (Math.random() < 0.5 ? "heart" : "lung"));
     if (unlocked.has("belly") && Math.random() < 0.12)
       return BODY_PARTS.find(p => p.id === "kidney");
-    const id = pool[Math.floor(Math.random() * pool.length)];
-    return BODY_PARTS.find(p => p.id === id);
+    const pool = ["chest","neck","belly","arm","groin"];
+    return BODY_PARTS.find(p => p.id === pool[Math.floor(Math.random() * pool.length)]);
   }
 
-  // 6~7 分：中等部位，10%脫靶
-  if (score >= 6) {
-    if (Math.random() < 0.10) return BODY_PARTS.find(p => p.id === "miss");
+  // 5~7 分：中等部位
+  if (score >= 5) {
     const pool = ["belly","arm","chest"];
-    const id = pool[Math.floor(Math.random() * pool.length)];
-    return BODY_PARTS.find(p => p.id === id);
+    return BODY_PARTS.find(p => p.id === pool[Math.floor(Math.random() * pool.length)]);
   }
 
-  // 1~5 分：低等部位，60%脫靶
-  if (Math.random() < 0.60) return BODY_PARTS.find(p => p.id === "miss");
+  // 1~4 分：低等部位
   const pool = ["arm","belly"];
-  const id = pool[Math.floor(Math.random() * pool.length)];
-  return BODY_PARTS.find(p => p.id === id);
+  return BODY_PARTS.find(p => p.id === pool[Math.floor(Math.random() * pool.length)]);
 }
 
 // ── 傷害公式 ─────────────────────────────────────────────

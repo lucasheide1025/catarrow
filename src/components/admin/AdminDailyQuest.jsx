@@ -73,8 +73,10 @@ export default function AdminDailyQuest({ mode = "all" }) {
   }
 
   async function confirm(c) {
-    await confirmCheckinReward(c.id, c.memberId, profile.id);
-    toast(`已確認 ${c.memberNickname || c.memberName} 完成今日任務，賽事積分 +1 ✓`);
+    const chestType = c.tasks?.[c.chosenTask]?.chest || "iron";
+    await confirmCheckinReward(c.id, c.memberId, profile.id, chestType);
+    const chestLabel = { wood:"📦 木頭寶箱", iron:"🧰 鐵寶箱", gold:"✨ 黃金寶箱" };
+    toast(`已確認 ${c.memberNickname || c.memberName} 完成今日任務，賽事積分 +1，發出 ${chestLabel[chestType] || chestType} ✓`);
   }
 
   async function doCancel(c) {

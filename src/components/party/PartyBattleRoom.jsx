@@ -10,7 +10,7 @@ import {
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus } from "../../lib/monsterCards";
-import { sfxTap, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
+import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
@@ -64,7 +64,7 @@ function calcDmgFn(arrows, atk, monsterDEF) {
   const unlocked = new Set();
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
-    const part  = resolveHitPart(score, unlocked);
+    const part  = resolveHitPart(score, unlocked, arrow.label === "X");
     if (part.id === "chest") unlocked.add("chest");
     if (part.id === "belly") unlocked.add("belly");
     if (part.id === "groin") unlocked.add("groin");
@@ -325,7 +325,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     let delay = eventDelay;
     miniRounds.forEach((mini, idx) => {
       // 每支箭顯示時都播音效
-      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxTap(); vibrate(8); }, delay);
+      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxArrowShoot(); vibrate(8); }, delay);
       revealTimersRef.current.push(t);
 
       if (mini.isCounter) {

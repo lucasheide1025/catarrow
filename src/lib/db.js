@@ -952,7 +952,7 @@ export async function markQuestDone(checkinId, questResult) {
 }
 
 // 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed，滿里程碑發銀章，送鐵寶箱
-export async function confirmCheckinReward(checkinId, memberId, operatorId) {
+export async function confirmCheckinReward(checkinId, memberId, operatorId, chestType = "iron") {
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
     finalConfirmed: true,
     confirmedAt: serverTimestamp(),
@@ -967,10 +967,10 @@ export async function confirmCheckinReward(checkinId, memberId, operatorId) {
     if (newCount % rewardEvery === 0) {
       await addBadge(memberId, "achievement", "silver", 1, operatorId, `每日任務累積 ${newCount} 次`);
     }
-    // 每日任務完成額外獎勵：鐵寶箱
+    // 每日任務完成獎勵（依任務類型：wood/iron/gold）
     await addChests(memberId, [{
       id: `quest_${checkinId}_${Date.now()}`,
-      type: "iron", family: "quest", tier: "quest",
+      type: chestType, family: "quest", tier: "quest",
       from: "每日任務獎勵", ts: Date.now(),
     }]);
   } catch (e) { console.warn("dailyQuestCount:", e?.message); }

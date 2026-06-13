@@ -15,50 +15,36 @@ import { createPartyRoom } from "../../lib/partyDb";
 // 靶紙清單
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
 
-// 從設定產生三個隨機任務（三選一）
-// task1: 達到分數；task2: 命中數；task3: 另一個分數（不同射程/靶紙）
-function generateTasks(config) {
-  const minDist = config.distanceMin || 1;
-  const maxDist = config.distanceMax || 15;
-  const minScore = config.scoreMin || 1;
-  const maxScore = config.scoreMax || 100;
-  const minHits = config.hitsMin || 1;
-  const maxHits = config.hitsMax || 6;
-  const arrowCount = config.arrowCount || 6;
+const CHEST_LABEL = { wood: "📦 木頭寶箱", iron: "🧰 鐵寶箱", gold: "✨ 黃金寶箱" };
 
+// 三類固定任務：分數挑戰(5米簡單)、命中挑戰(十箭)、遠距挑戰(13~18米)
+function generateTasks(config) {
   function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
   function randTarget() { return TARGET_TYPES[Math.floor(Math.random() * TARGET_TYPES.length)]; }
-
   return [
     {
-      id: "score",
-      type: "score",
-      icon: "🎯",
-      label: "分數挑戰",
-      distance: randInt(minDist, maxDist),
+      id: "score", type: "score", icon: "🎯", label: "分數挑戰",
+      distance: 5,
       target: randTarget(),
-      arrowCount,
-      goal: randInt(minScore, maxScore),
+      arrowCount: 6,
+      goal: randInt(30, 60),
+      chest: "wood",
     },
     {
-      id: "hits",
-      type: "hits",
-      icon: "💥",
-      label: "命中挑戰",
-      distance: randInt(minDist, maxDist),
+      id: "hits", type: "hits", icon: "💥", label: "命中挑戰",
+      distance: randInt(config.distanceMin || 5, config.distanceMax || 18),
       target: randTarget(),
-      arrowCount,
-      goal: Math.min(randInt(minHits, maxHits), arrowCount),
+      arrowCount: 10,
+      goal: randInt(5, 9),
+      chest: "iron",
     },
     {
-      id: "score2",
-      type: "score",
-      icon: "🏹",
-      label: "遠距挑戰",
-      distance: randInt(Math.ceil((minDist + maxDist) / 2), maxDist), // 偏遠
+      id: "score2", type: "score", icon: "🏹", label: "遠距挑戰",
+      distance: randInt(13, 18),
       target: randTarget(),
-      arrowCount,
-      goal: randInt(minScore, Math.ceil(maxScore * 0.7)),
+      arrowCount: 6,
+      goal: randInt(20, 50),
+      chest: "gold",
     },
   ];
 }
@@ -319,6 +305,9 @@ export default function DailyQuest({ onJoinParty }) {
                     <div className="text-sm font-black text-white mt-1">
                       目標：{goalDisplay}
                     </div>
+                    {task.chest && (
+                      <div className="text-xs text-emerald-200 mt-0.5">{CHEST_LABEL[task.chest] || task.chest}</div>
+                    )}
                   </button>
                 );
               })}

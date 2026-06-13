@@ -59,7 +59,7 @@ function calcDmgFn(arrows, atk, targetDef) {
   const arrowBreakdown = [];
   for (const arrow of processedArrows) {
     const score = arrow.score ?? 0;
-    const part  = resolveHitPart(score, ALL_PARTS);
+    const part  = resolveHitPart(score, ALL_PARTS, arrow.label === "X");
     const pMult = part?.mult ?? 1.0;
     if (!score || pMult === 0) {
       arrowBreakdown.push({ label: "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });

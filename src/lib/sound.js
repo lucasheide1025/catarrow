@@ -83,21 +83,33 @@ export function sfxSoftFail() {
   vibrate(15);
 }
 
-// 怪物反擊「嘎！」
-export function sfxCounter() {
-  tone(200, 0.05, "sawtooth", 0.22, 0);
-  tone(150, 0.14, "sawtooth", 0.24, 0.04);
-  tone(100, 0.22, "sine",     0.20, 0.12);
-  vibrate([0, 35, 55, 30]);
+// 射箭「咻～趴！」（弓弦聲 + 衝擊）
+export function sfxArrowShoot() {
+  tone(1400, 0.06, "sawtooth", 0.10, 0);    // 咻：高頻弓弦
+  tone(700,  0.06, "sawtooth", 0.08, 0.04); // 咻：中頻尾音
+  tone(240,  0.04, "square",   0.30, 0.11); // 趴：衝擊前沿
+  tone(110,  0.20, "sine",     0.26, 0.12); // 趴：低頻共鳴
+  vibrate(14);
 }
 
-// 怪物爆擊反擊「轟擊！」
+// 怪物反擊「砰！」（重擊感）
+export function sfxCounter() {
+  tone(90,  0.06, "square",   0.38, 0);
+  tone(60,  0.06, "square",   0.30, 0.04);
+  tone(180, 0.10, "sawtooth", 0.24, 0.08);
+  tone(70,  0.42, "sine",     0.32, 0.10);
+  tone(280, 0.05, "square",   0.18, 0.03);
+  vibrate([0, 55, 75, 50]);
+}
+
+// 怪物爆擊反擊「轟！」（沉重爆擊）
 export function sfxCounterCrit() {
-  tone(120, 0.06, "square",   0.30, 0);
-  tone(80,  0.06, "square",   0.22, 0.04);
-  tone(200, 0.08, "sawtooth", 0.20, 0.08);
-  tone(60,  0.35, "sine",     0.28, 0.12);
-  vibrate([0, 60, 80, 60, 40]);
+  tone(70,  0.08, "square",   0.42, 0);
+  tone(45,  0.08, "square",   0.36, 0.05);
+  tone(200, 0.10, "sawtooth", 0.28, 0.08);
+  tone(280, 0.06, "square",   0.22, 0.06);
+  tone(55,  0.55, "sine",     0.38, 0.12);
+  vibrate([0, 90, 110, 80, 60]);
 }
 
 // 怪物死亡「噹噹噹～轟」
