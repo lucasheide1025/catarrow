@@ -1180,11 +1180,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       <span className="opacity-70">：{liveEntry.event.desc}</span>
                     </div>
                   )}
-                  {/* 本小回合每位射手的 1 箭 */}
-                  {(curMini?.playerLog || []).map((p, j) => (
-                    <div key={j} className="flex flex-col gap-1.5 bg-white/5 rounded-xl px-3 py-2.5 border border-white/5">
+                  {/* 本小回合每位射手的 1 箭（自己排最上 + 高亮）*/}
+                  {[...(curMini?.playerLog || [])].sort((a, b) => (a.id === myId ? -1 : b.id === myId ? 1 : 0)).map((p, j) => (
+                    <div key={j} className={`flex flex-col gap-1.5 rounded-xl px-3 py-2.5 border ${
+                      p.id === myId
+                        ? "bg-indigo-900/40 border-indigo-500/50"
+                        : "bg-white/5 border-white/5"
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <span className="text-indigo-300 font-black text-sm">🏹 {p.name}</span>
+                        <span className={`font-black text-sm ${p.id === myId ? "text-indigo-300" : "text-slate-400"}`}>
+                          {p.id === myId ? "🎯" : "🏹"} {p.name}{p.id === myId ? "（我）" : ""}
+                        </span>
                         <span className="text-slate-400 text-xs">造成</span>
                         <span className="text-rose-400 font-black text-xl">{p.dmg}</span>
                         <span className="text-slate-500 text-xs">傷</span>
