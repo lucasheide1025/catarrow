@@ -91,6 +91,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
   }
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
+  const [showDailyQuest, setShowDailyQuest] = useState(false);
 
   if (loading) return <Spinner />;
 
@@ -142,50 +143,76 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         </div>
       )}
 
-      <DailyQuest onJoinParty={onJoinParty} />
+      {/* ── 快速入口 5 卡片 ─────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
 
-      {/* 打怪 + 決鬥 快捷入口 */}
-      <button onClick={() => onPageChange("monster")}
-        className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
-        style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
-        <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 pointer-events-none">👹</div>
-        <div className="relative flex items-center justify-between">
-          <div>
-            <div className="text-xs font-black tracking-widest text-purple-200 mb-0.5">⚔️ RPG 打怪模式</div>
-            <div className="text-white font-black text-base">選怪物，射箭打怪，開寶箱！</div>
+        {/* 每日報到 */}
+        <button onClick={() => setShowDailyQuest(v => !v)}
+          className="rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+          style={{ background: showDailyQuest
+            ? "linear-gradient(135deg,#047857,#064e3b)"
+            : "linear-gradient(135deg,#059669,#0d9488)" }}>
+          <div className="absolute right-2 bottom-1 text-5xl opacity-15 pointer-events-none">📋</div>
+          <div className="text-3xl mb-2">📋</div>
+          <div className="text-white font-black text-sm">每日報到</div>
+          <div className="text-emerald-200 text-xs mt-0.5">打卡 · 抽 Buff · 任務</div>
+          {showDailyQuest && (
+            <div className="mt-1.5 text-xs bg-white/20 text-white font-black px-2 py-0.5 rounded-full inline-block">展開中 ▲</div>
+          )}
+        </button>
+
+        {/* RPG 打怪 */}
+        <button onClick={() => onPageChange("monster")}
+          className="rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
+          <div className="absolute right-2 bottom-1 text-5xl opacity-15 pointer-events-none">👹</div>
+          <div className="text-3xl mb-2">👹</div>
+          <div className="text-white font-black text-sm">RPG 打怪</div>
+          <div className="text-purple-200 text-xs mt-0.5">選怪 · 射箭 · 開寶箱</div>
+        </button>
+
+        {/* 玩家對戰 */}
+        <button onClick={() => onPageChange("duel")}
+          className="rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)" }}>
+          <div className="absolute right-2 bottom-1 text-5xl opacity-15 pointer-events-none">⚔️</div>
+          <div className="text-3xl mb-2">⚔️</div>
+          <div className="text-white font-black text-sm">玩家對戰</div>
+          <div className="text-indigo-300 text-xs mt-0.5">
+            1v1 決鬥
+            {duelStats ? ` · ${duelStats.wins}勝${duelStats.losses}敗` : ""}
           </div>
-          <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">立即挑戰 →</div>
-        </div>
-      </button>
+        </button>
 
-      <button onClick={() => onPageChange("duel")}
-        className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
-        style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)" }}>
-        <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 pointer-events-none">⚔️</div>
-        <div className="relative flex items-center justify-between">
-          <div>
-            <div className="text-xs font-black tracking-widest text-indigo-300 mb-0.5">🤺 玩家對戰</div>
-            <div className="text-white font-black text-base">1v1 或組隊決鬥，爭奪勝場積分！</div>
-            <div className="text-indigo-300 text-xs mt-0.5">無藥水限制・訪客可參加</div>
-            {duelStats && (
-              <div className="text-indigo-200 text-xs mt-1 font-bold">
-                {duelStats.wins}勝 {duelStats.losses}敗 · 勝率 {Math.round(duelStats.wins / Math.max(1, duelStats.wins + duelStats.losses + duelStats.draws) * 100)}%
-              </div>
-            )}
+        {/* 材料背包 */}
+        <button onClick={() => onPageChange("materials")}
+          className="rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#b45309,#92400e)" }}>
+          <div className="absolute right-2 bottom-1 text-5xl opacity-15 pointer-events-none">🎒</div>
+          <div className="text-3xl mb-2">🎒</div>
+          <div className="text-white font-black text-sm">材料背包</div>
+          <div className="text-amber-200 text-xs mt-0.5">材料 · 寶箱 · 藥水</div>
+        </button>
+
+        {/* 組隊戰鬥（橫跨兩欄）*/}
+        <button onClick={() => onPageChange("party")}
+          className="col-span-2 rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#0f766e,#134e4a)" }}>
+          <div className="absolute right-4 bottom-1 text-6xl opacity-15 pointer-events-none">🎮</div>
+          <div className="relative flex items-center gap-4">
+            <div className="text-4xl">🎮</div>
+            <div>
+              <div className="text-white font-black text-sm">組隊戰鬥</div>
+              <div className="text-teal-200 text-xs mt-0.5">組隊一起打怪，共享戰利品！</div>
+            </div>
+            <div className="ml-auto bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">進入 →</div>
           </div>
-          <div className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full flex-shrink-0">決鬥 →</div>
-        </div>
-      </button>
+        </button>
 
-      {/* 背包快捷入口 */}
-<button onClick={() => onPageChange("materials")}
-  className="w-full rounded-2xl p-4 text-left border-2 border-pink-200 bg-pink-50 active:scale-95 transition-transform flex items-center gap-3">
-  <span className="text-3xl">🎒</span>
-  <div>
-    <div className="font-black text-gray-800">材料背包</div>
-    <div className="text-gray-500 text-xs">查看材料、開寶箱、升級材料、合成銀章</div>
-  </div>
-</button>
+      </div>
+
+      {/* 每日報到展開區 */}
+      {showDailyQuest && <DailyQuest onJoinParty={onJoinParty} />}
 
       {pendingBadges.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
