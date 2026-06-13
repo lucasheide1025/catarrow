@@ -8,7 +8,7 @@ import {
   resetPartyRoom, sendPartyCheer,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
-import { sfxTap, sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCritBoom, vibrate } from "../../lib/sound";
+import { sfxTap, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
@@ -271,9 +271,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setAnimHit(false), 700);
 
     // 音效（事件優先）
-    if (entry.event?.type === "buff")   sfxBuff();
-    else if (entry.totalDmg > 150)      sfxEpic();
-    else                                sfxTap();
+    if (entry.event?.type === "buff")    sfxBuff();
+    else if (entry.event?.type === "debuff") sfxDebuff();
+    else if (entry.totalDmg > 150)       sfxEpic();
+    else                                 sfxRoundEnd();
     vibrate(20);
 
     // 有突發事件：先顯示彈窗 3.5s
@@ -299,8 +300,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           setAnimMonsterCharge(false);
           setAnimCounter(true);
           setAnimScreenShake(true);
-          sfxCounter();
-          vibrate([0,35,55,30]);
+          // 根據反擊傷害選擇音效
+          const totalCtrDmg = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
+          if (totalCtrDmg > 80) sfxCounterCrit(); else sfxCounter();
+          vibrate([0, 35, 55, 30]);
           const floats = (mini.playerLog || [])
             .filter(p => p.ctr > 0)
             .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
@@ -1007,21 +1010,27 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
         </div>
 
-        {/* 怪物 HP */}
         {/* 隨機事件彈窗 */}
         {showEvent && (
           <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-6">
             <div className={`rounded-2xl shadow-2xl p-5 text-center max-w-xs w-full border-4 ${
-              showEvent.type === "buff"    ? "bg-emerald-50 border-emerald-400"
-            : showEvent.type === "debuff" ? "bg-red-50 border-red-400"
-            : "bg-yellow-50 border-yellow-400"
-            }`}>
+              showEvent.type === "buff"    ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-400"
+            : showEvent.type === "debuff" ? "bg-gradient-to-br from-red-50 to-rose-50 border-red-400"
+            : "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-400"
+            }`} style={{ animation:"pop .4s ease" }}>
               <div className="text-5xl mb-2">{showEvent.icon}</div>
-              <div className={`font-black text-lg mb-1 ${
+              <div className={`font-black text-lg mb-2 ${
                 showEvent.type === "buff" ? "text-emerald-700" :
-                showEvent.type === "debuff" ? "text-red-700" : "text-yellow-700"
+                showEvent.type === "debuff" ? "text-red-700" : "text-blue-700"
               }`}>{showEvent.title}</div>
-              <div className="text-gray-600 text-sm leading-relaxed">{showEvent.desc}</div>
+              <div className="text-gray-600 text-sm leading-relaxed mb-3">{showEvent.desc}</div>
+              <div className={`text-xs font-black px-3 py-1 rounded-full inline-block ${
+                showEvent.type === "buff" ? "bg-emerald-100 text-emerald-600"
+                : showEvent.type === "debuff" ? "bg-red-100 text-red-600"
+                : "bg-blue-100 text-blue-600"
+              }`}>
+                {showEvent.type === "buff" ? "✨ 有利事件" : showEvent.type === "debuff" ? "⚠️ 不利事件" : "ℹ️ 中性事件"}
+              </div>
             </div>
           </div>
         )}

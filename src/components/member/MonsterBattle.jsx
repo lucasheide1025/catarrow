@@ -18,7 +18,7 @@ import {
 import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxMonsterDead } from "../../lib/sound";
+import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 
 const ARROWS_PER_ROUND   = 6;
@@ -44,30 +44,37 @@ const HALF_SCORES = [
 ];
 
 const BATTLE_CSS = `
-@keyframes mb-pop         { 0%{transform:scale(.7);opacity:0} 100%{transform:scale(1);opacity:1} }
-@keyframes mb-shake       { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
-@keyframes mb-shake-heavy { 0%,100%{transform:translateX(0) scale(1)} 20%{transform:translateX(-13px) scale(1.04)} 40%{transform:translateX(11px) scale(1.02)} 65%{transform:translateX(-8px) scale(1.01)} 85%{transform:translateX(5px)} }
-@keyframes mb-bounce      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-@keyframes mb-glow        { 0%,100%{box-shadow:0 0 10px #fbbf2488} 50%{box-shadow:0 0 28px #fbbf24cc} }
-@keyframes mb-chest       { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-14px) scale(1.12)} 60%{transform:translateY(-4px) scale(1.05)} }
+@keyframes mb-pop         { 0%{transform:scale(.7);opacity:0} 70%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+@keyframes mb-shake       { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-9px)} 50%{transform:translateX(9px)} 80%{transform:translateX(-5px)} }
+@keyframes mb-shake-heavy { 0%,100%{transform:translateX(0) scale(1)} 15%{transform:translateX(-15px) scale(1.05)} 35%{transform:translateX(13px) scale(1.03)} 55%{transform:translateX(-10px) scale(1.02)} 75%{transform:translateX(7px)} 90%{transform:translateX(-4px)} }
+@keyframes mb-bounce      { 0%,100%{transform:translateY(0)} 40%{transform:translateY(-14px)} 70%{transform:translateY(-6px)} }
+@keyframes mb-glow        { 0%,100%{box-shadow:0 0 10px #fbbf2488} 50%{box-shadow:0 0 32px #fbbf24cc,0 0 60px #fbbf2455} }
+@keyframes mb-chest       { 0%,100%{transform:translateY(0) scale(1)} 30%{transform:translateY(-16px) scale(1.14)} 60%{transform:translateY(-4px) scale(1.06)} }
 @keyframes mb-tier        { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
 @keyframes mb-drop        { 0%{transform:translateY(-30px) scale(.5);opacity:0} 60%{transform:translateY(6px) scale(1.08);opacity:1} 100%{transform:translateY(0) scale(1);opacity:1} }
 @keyframes mb-coin        { 0%{transform:translateY(-20px) scale(.6) rotate(-15deg);opacity:0} 70%{transform:translateY(4px) scale(1.1) rotate(5deg);opacity:1} 100%{transform:translateY(0) scale(1) rotate(0);opacity:1} }
-@keyframes mb-float       { 0%{transform:translateY(0) scale(1.15);opacity:1} 100%{transform:translateY(-60px) scale(0.85);opacity:0} }
+@keyframes mb-float       { 0%{transform:translateY(0) scale(1.2);opacity:1} 100%{transform:translateY(-70px) scale(0.8);opacity:0} }
+@keyframes mb-crit-flash  { 0%{opacity:0} 20%{opacity:0.55} 60%{opacity:0.3} 100%{opacity:0} }
+@keyframes mb-monster-die { 0%{transform:scale(1) rotate(0deg);opacity:1} 40%{transform:scale(1.2) rotate(-8deg);opacity:0.8} 100%{transform:scale(0) rotate(15deg);opacity:0} }
+@keyframes mb-revive-glow { 0%{box-shadow:none;background:rgba(255,255,255,0)} 30%{box-shadow:0 0 30px #22c55e,0 0 60px #86efac;background:rgba(34,197,94,0.15)} 70%{box-shadow:0 0 20px #22c55e;background:rgba(34,197,94,0.08)} 100%{box-shadow:none;background:rgba(255,255,255,0)} }
+@keyframes mb-hp-danger   { 0%,100%{background:rgba(239,68,68,0.12)} 50%{background:rgba(239,68,68,0.35)} }
+@keyframes mb-event-buff  { 0%{transform:scale(.8) translateY(12px);opacity:0} 60%{transform:scale(1.04) translateY(-3px);opacity:1} 100%{transform:scale(1) translateY(0);opacity:1} }
+@keyframes mb-event-debuff{ 0%{transform:scale(.8) translateY(-12px);opacity:0} 60%{transform:scale(1.04);opacity:1} 100%{transform:scale(1);opacity:1} }
+@keyframes mb-counter-warn{ 0%{transform:scale(1);opacity:1} 40%{transform:scale(1.06);opacity:0.9} 100%{transform:scale(1);opacity:1} }
 `;
 
 const HIT_TEXTS = {
-  head:   ["頭骨碎裂！💀","眼冒金星！😵","正中眉心！🎯","爆頭！💥"],
-  neck:   ["頸部命中！🎯","咽喉要害！⚡","頸動脈！🩸"],
-  chest:  ["胸腔震動！","心跳加速！🫀","正中胸口！💢"],
-  belly:  ["腹部重擊！","腸子都出來了！😱","肚子痛！🤢"],
-  arm:    ["手臂受傷！","武器打飛！💨","側翼命中！"],
-  groin:  ["要害！😱","下三路！⚡","痛到跳腳！🦵"],
-  heart:  ["心臟穿透！❤️‍🔥","致命一擊！💔","心跳停止！☠️"],
-  kidney: ["腎臟破碎！🫘","內臟劇痛！😭","致命內傷！"],
-  lung:   ["肺葉穿透！🫁","呼吸困難！😤","氣胸！🫧"],
-  balls:  ["GG了！💥","天下第一痛！😭","後代斷絕！"],
-  miss:   ["嗖～沒中","靶紙在哪？😅","差一點！"],
+  head:   ["爆頭！腦殼震裂💥","正中眉心，眼冒金星💀","頭骨共鳴！整個人在轉😵‍💫","顱骨命中！擊昏！💥"],
+  neck:   ["頸動脈命中！鮮血噴湧🩸","咽喉要害！⚡","頸部重擊，呼吸困難！🎯","致命頸擊！🗡️"],
+  chest:  ["胸腔震盪！肋骨嘎嘎響💢","正中胸口，心跳亂跳！🫀","胸部命中，前後貫穿！❤️‍🔥","肋骨碎裂！"],
+  belly:  ["腹部重擊！腸子在移位😱","肚子痛到無法動彈！🤢","腹腔命中，悶哼一聲…","內臟震動！"],
+  arm:    ["手臂被射穿！武器脫手💨","側翼命中，影響平衡！","肩膀中箭，行動受阻！💪","手臂貫穿！"],
+  groin:  ["正中要害！天下第一痛😭","下三路！整個人跪下了⚡","要命一擊！後代存亡危機💥","GG了！🦵"],
+  heart:  ["心臟穿透！生命流逝中…❤️‍🔥","致命一擊！心跳停止！☠️","心室命中，鮮血瀑布！💔","心跳…停了…"],
+  kidney: ["腎臟破碎！劇烈疼痛🫘","腰部命中，內臟劇痛！😭","腎臟穿透，昏倒邊緣！","致命內傷！生命流逝…"],
+  lung:   ["肺葉穿透，血沫四濺！🫁","氣胸！空氣洩漏中…😤","呼吸困難，溺水一樣的感覺！🫧","雙肺血染！"],
+  balls:  ["GG了！💥 後代斷絕！","天下第一痛——不可言說！😭","要害！對方蹲下來了…","某處…某個珍貴的地方…碎了。"],
+  miss:   ["嗖～沒中！","靶紙在哪裡？😅","差一點點！","風的問題，不是我的問題"],
 };
 
 function getHitText(partId) {
@@ -347,15 +354,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           const ev=drawRandomEvent();
           setCurrentEvent(ev); setBattlePhase("event");
           addLog({ type:ev.type==="buff"?"event_good":"event_bad", text:`✨【${ev.title}】${ev.desc}` });
-          sfxCast();
+          // 音效依事件類型分流（buff/debuff 不同）
+          if (ev.type==="buff") sfxBuff(); else if (ev.type==="debuff") sfxDebuff(); else sfxCast();
           const ef=ev.effect||{};
           if (ef.healArcher)  curArchHP=Math.min(bSt?.hp||100,curArchHP+ef.healArcher);
           if (ef.archerHP)    curArchHP=Math.max(0,curArchHP+ef.archerHP);
           if (ef.archerATK)   setArcherATKMod(m=>m+ef.archerATK);
+          if (ef.extraDmg)    curMonHP=Math.max(0,curMonHP-ef.extraDmg);  // 修：補上缺失的 extraDmg 處理
           if (ef.monsterHP)   curMonHP=Math.max(0,curMonHP+ef.monsterHP);
           if (ef.skipCounter) skipCtr=true;
           setArcherHP(curArchHP); setMonsterHP(curMonHP);
-          await delay(2500);
+          await delay(2600);
+          setCurrentEvent(null); // 確保事件卡片在繼續戰鬥前清除
           if (curMonHP<=0) {
             const roundArr=[...arrows];
             setAllArrows(prev=>[...prev,...roundArr]);
@@ -379,11 +389,13 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             : headStunned?`${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
             : `${monster.icon} ${monster.name} 反擊！受到 ${cdmg} 傷害`;
           if (isCrit) {
-            sfxCritBoom();
+            sfxCounterCrit();
+            vibrate([0, 60, 80, 60]);
             setAnimCounterCrit(true);
             setTimeout(() => setAnimCounterCrit(false), 900);
           } else {
             sfxCounter();
+            vibrate([0, 30, 50]);
             setAnimCounter(true);
             setTimeout(() => setAnimCounter(false), 800);
           }
@@ -398,8 +410,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             if (!revived) {
               const reviveHP=Math.ceil((bSt?.hp||100)*0.3);
               setArcherHP(reviveHP); curArchHP=reviveHP; setRevived(true);
-              addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！恢復30% HP，最後一條命！" });
-              sfxEpic(); await delay(2500);
+              addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！「你不能死在這裡！」恢復 30% HP，最後一條命！" });
+              sfxRevive(); await delay(2800);
             } else {
               const roundArr=[...arrows];
               setAllArrows(prev=>[...prev,...roundArr]);
@@ -440,13 +452,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const roundArr=[...arrows];
     setAllArrows(prev=>[...prev,...roundArr]);
     setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundTotal}]);
-    addLog({ type:"total", text:`本回合 ${roundTotal}分　${monster.name} 剩 HP：${curMonHP}` });
-    await delay(1500);
+    sfxRoundEnd();
+    const hpPct = Math.round(curMonHP / monster.hp * 100);
+    const hpTag = hpPct <= 10 ? "⚠️ 殘血！" : hpPct <= 30 ? "🩸 危險！" : "";
+    addLog({ type:"total", text:`回合 ${round} 結算：${roundTotal}分　${monster.icon} ${monster.name} 剩 HP：${curMonHP} ${hpTag}` });
+    await delay(1400);
     setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
     } catch(err) {
-      console.error("submitRound error:", err);
-      // endBattle 有自己的 try-catch，此處只處理回合中途的錯誤
-      if (phase === "battle") setBattlePhase("input");
+      // 回合中途發生錯誤，完整重設回輸入狀態
+      setCurrentEvent(null);
+      setSkipCounter(false);
+      setArcherATKMod(0);
+      setBattlePhase("input");
       setProcessing(false);
     }
   }
@@ -507,7 +524,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]);
     setLog([
-      { type:"system", text:`⚔️ 戰鬥開始！對手：${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】` },
+      { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
       ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
       ...(throwDmgTotal>0?[{type:"event_bad", text:`💥 投擲命中！怪物直接失去 ${throwDmgTotal} HP！`}]:[]),
@@ -594,7 +611,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         }, profile.id).catch(() => {});
       }
 
-      addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！勝利！` });
+      addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！激烈的戰鬥結束——你贏了！` });
       if (!isGuest) {
         addLog({ type:"system", text:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
         if (catChest)   addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
@@ -614,7 +631,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       await delay(1000); setPhase("loot");
     } else {
       sfxSoftFail();
-      addLog({ type:"lose", text:`💀 被 ${monster.name} 擊倒…下次再戰！` });
+      addLog({ type:"lose", text:`💀 不…被 ${monster.name} 擊倒了！世界漸漸變黑…下次一定要贏…！` });
       if (profile?.id) {
         setRoundScores(rs => {
           saveMonsterLog(profile.id, {
@@ -626,9 +643,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       }
       await delay(1000); setPhase("result");
     }
-    } catch (err) {
-      console.error("endBattle error:", err);
-      // 不讓錯誤向外傳播，直接跳到結果畫面
+    } catch {
       setPhase(result === "win" ? "loot" : "result");
     }
   }
@@ -1012,7 +1027,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                   return (
                     <button key={pid}
                       onClick={()=>{
-                        sfxTap();
+                        sfxPotionDrink();
                         setSelectedPotions(prev=>
                           prev.includes(pid)
                             ? prev.filter(x=>x!==pid)
@@ -1121,18 +1136,48 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           </div>
         </div>
 
+        {/* 爆擊閃光層 */}
+        {animHitCrit && (
+          <div style={{ position:"fixed", inset:0, background:"rgba(255,220,0,0.18)", pointerEvents:"none", zIndex:50, animation:"mb-crit-flash .6s ease-out forwards" }} />
+        )}
+        {animCounterCrit && (
+          <div style={{ position:"fixed", inset:0, background:"rgba(239,68,68,0.22)", pointerEvents:"none", zIndex:50, animation:"mb-crit-flash .7s ease-out forwards" }} />
+        )}
+
+        {/* HP 危機警告 */}
+        {archPct <= 25 && battlePhase === "input" && (
+          <div className="rounded-xl px-3 py-2 text-center text-sm font-black text-red-700"
+            style={{ background:"rgba(239,68,68,0.12)", animation:"mb-hp-danger 1s ease-in-out infinite" }}>
+            ⚠️ 生命值危急！HP {archerHP}/{maxHP}
+          </div>
+        )}
+
         {battlePhase==="event"&&currentEvent&&(
-          <div className={`rounded-2xl p-4 text-center border-2 ${currentEvent.type==="buff"?"bg-emerald-50 border-emerald-300":"bg-red-50 border-red-300"}`}
-            style={{ animation:"mb-pop .4s ease" }}>
-            <div className="text-3xl mb-1">{currentEvent.icon}</div>
-            <div className="font-black text-gray-800">{currentEvent.title}</div>
-            <div className="text-gray-500 text-xs mt-1">{currentEvent.desc}</div>
+          <div className={`rounded-2xl p-4 text-center border-2 shadow-lg ${
+            currentEvent.type==="buff"
+              ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-400"
+              : currentEvent.type==="debuff"
+              ? "bg-gradient-to-br from-red-50 to-rose-50 border-red-400"
+              : "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-300"
+          }`} style={{ animation: currentEvent.type==="buff" ? "mb-event-buff .45s ease" : "mb-event-debuff .45s ease" }}>
+            <div className="text-4xl mb-2">{currentEvent.icon}</div>
+            <div className="font-black text-gray-800 text-base mb-1">{currentEvent.title}</div>
+            <div className="text-gray-600 text-xs leading-relaxed">{currentEvent.desc}</div>
+            <div className={`text-xs font-black mt-2 px-3 py-1 rounded-full inline-block ${
+              currentEvent.type==="buff" ? "bg-emerald-100 text-emerald-700"
+              : currentEvent.type==="debuff" ? "bg-red-100 text-red-700"
+              : "bg-blue-100 text-blue-600"
+            }`}>
+              {currentEvent.type==="buff" ? "✨ 有利事件" : currentEvent.type==="debuff" ? "⚠️ 不利事件" : "ℹ️ 中性事件"}
+            </div>
           </div>
         )}
         {battlePhase==="counter"&&(
-          <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 text-center" style={{ animation:"mb-shake .5s ease" }}>
-            <div className="text-3xl mb-1">{monster?.icon}</div>
-            <div className="text-red-700 font-black text-lg">反擊中！</div>
+          <div className="rounded-2xl p-4 text-center border-2 border-red-400 shadow-lg"
+            style={{ background:"linear-gradient(135deg,#450a0a,#7f1d1d)", animation:"mb-counter-warn .5s ease" }}>
+            <div className="text-4xl mb-1" style={{ animation:"mb-bounce .6s ease infinite" }}>{monster?.icon}</div>
+            <div className="text-red-200 font-black text-base">⚡ {monster?.name} 準備反擊！</div>
+            <div className="text-red-400 text-xs mt-1">蓄力中…</div>
           </div>
         )}
 
