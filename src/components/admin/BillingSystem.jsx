@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import {
   addBillingRecord, deleteBillingRecord,
-  subscribeBillingRecords, getMembersForBilling,
+  subscribeBillingRecords, getMembersForBilling, getTodayCheckinMembers,
 } from "../../lib/db";
 
 const PLANS = [
@@ -38,25 +38,31 @@ export default function BillingSystem({ profile }) {
   const [submitting,setSubmitting] = useState(false);
   const [successMsg,setSuccessMsg] = useState("");
 
+  const [todayCheckins, setTodayCheckins] = useState([]); // 今日報到學生
+
   // ── 清單 / 報表共用篩選 ───────────────────────────────────
   const [filterYear,  setFilterYear]  = useState(currentYear);
   const [filterMonth, setFilterMonth] = useState(currentMonth);
-  const [filterAll,   setFilterAll]   = useState(false); // true = 全年
+  // filterMode: "today" | "month" | "year"
+  const [filterMode,  setFilterMode]  = useState("month");
   const [records,     setRecords]     = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // record id
 
-  // 載入會員清單（自動補全用）
-  useEffect(() => { getMembersForBilling().then(setAllMembers); }, []);
+  // 載入會員清單 + 今日報到（自動補全用）
+  useEffect(() => {
+    getMembersForBilling().then(setAllMembers);
+    getTodayCheckinMembers().then(setTodayCheckins);
+  }, []);
 
-  // 訂閱帳單記錄
+  // 訂閱帳單記錄（今日模式也訂同月，client 再過濾）
   useEffect(() => {
     const unsub = subscribeBillingRecords(
       filterYear,
-      filterAll ? null : filterMonth,
+      filterMode === "year" ? null : filterMonth,
       setRecords,
     );
     return unsub;
-  }, [filterYear, filterMonth, filterAll]);
+  }, [filterYear, filterMonth, filterMode]);
 
   // 自動補全過濾
   useEffect(() => {
@@ -73,8 +79,16 @@ export default function BillingSystem({ profile }) {
   }
   function clearMember() { setSelectedMember(null); setMemberQuery(""); setDiscount(false); }
 
+  // 從今日報到快選
+  function selectFromCheckin(c) {
+    const found = allMembers.find(m => m.id === c.memberId);
+    if (found) selectMember(found);
+    else { setMemberQuery(c.memberName); setSelectedMember(null); setDiscount(false); }
+  }
+
   const basePrice  = PLANS.find(p => p.id === plan)?.price ?? 0;
-  const finalPrice = Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
+  // 月卡付款 → 免費
+  const finalPrice = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
 
   async function handleSubmit() {
     if (!memberQuery.trim() || !plan || submitting) return;
@@ -100,20 +114,25 @@ export default function BillingSystem({ profile }) {
   }
 
   // ── 統計 ──────────────────────────────────────────────────
-  const grandTotal = records.reduce((s, r) => s + (r.finalPrice || 0), 0);
+  const todayStr = today(); // 今日日期字串
+  const displayedRecords = filterMode === "today"
+    ? records.filter(r => r.date === todayStr)
+    : records;
+
+  const grandTotal = displayedRecords.reduce((s, r) => s + (r.finalPrice || 0), 0);
   const planTotals = {};
   const payTotals  = {};
   const monthlyTotals = {};
-  records.forEach(r => {
-    planTotals[r.plan]          = (planTotals[r.plan]          || 0) + (r.finalPrice || 0);
-    payTotals[r.paymentMethod]  = (payTotals[r.paymentMethod]  || 0) + (r.finalPrice || 0);
-    if (filterAll) monthlyTotals[r.month] = (monthlyTotals[r.month] || 0) + (r.finalPrice || 0);
+  displayedRecords.forEach(r => {
+    planTotals[r.plan]         = (planTotals[r.plan]         || 0) + (r.finalPrice || 0);
+    payTotals[r.paymentMethod] = (payTotals[r.paymentMethod] || 0) + (r.finalPrice || 0);
+    if (filterMode === "year") monthlyTotals[r.month] = (monthlyTotals[r.month] || 0) + (r.finalPrice || 0);
   });
 
   // ── 匯出 CSV ──────────────────────────────────────────────
   function exportCSV() {
     const header = ["日期","姓名","方案","原價","折扣","實收","付款方式","備註","記帳教練"];
-    const rows   = records.map(r => [
+    const rows   = displayedRecords.map(r => [
       r.date, r.memberName, r.plan, r.basePrice, r.discount ?? 0,
       r.finalPrice, r.paymentMethod, r.note || "", r.createdByName || "",
     ]);
@@ -121,7 +140,8 @@ export default function BillingSystem({ profile }) {
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const a    = document.createElement("a");
     a.href     = URL.createObjectURL(blob);
-    a.download = `billing_${filterYear}${filterAll ? "" : `_${String(filterMonth).padStart(2,"0")}` }.csv`;
+    const suffix = filterMode==="today" ? `_${todayStr}` : filterMode==="month" ? `_${String(filterMonth).padStart(2,"0")}` : "";
+    a.download = `billing_${filterYear}${suffix}.csv`;
     a.click();
   }
 
@@ -157,9 +177,27 @@ export default function BillingSystem({ profile }) {
             </div>
           )}
 
+          {/* 今日報到快選 */}
+          {todayCheckins.length > 0 && (
+            <div>
+              <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>今日報到 ({todayCheckins.length} 人)</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"6px" }}>
+                {todayCheckins.map((c, i) => (
+                  <button key={i} onClick={() => selectFromCheckin(c)}
+                    style={{ padding:"5px 12px", borderRadius:"20px", border:"1px solid #bfdbfe",
+                      background: memberQuery===c.memberName ? "#2563eb" : "#eff6ff",
+                      color: memberQuery===c.memberName ? "white" : "#1d4ed8",
+                      fontSize:"13px", fontWeight:700, cursor:"pointer" }}>
+                    {c.memberName}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 姓名 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>射手姓名</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>射手姓名（或直接輸入）</div>
             <div style={{ position:"relative" }}>
               <div style={{ display:"flex", gap:"8px" }}>
                 <input value={memberQuery}
@@ -273,22 +311,7 @@ export default function BillingSystem({ profile }) {
 
           {/* 篩選 */}
           <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-            <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))}
-              style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
-              {YEARS.map(y => <option key={y} value={y}>{y} 年</option>)}
-            </select>
-            <button onClick={() => setFilterAll(f => !f)}
-              style={{ padding:"7px 12px", border:"1px solid #e2e8f0", borderRadius:"8px",
-                background:filterAll?"#eff6ff":"white", color:filterAll?"#2563eb":"#64748b",
-                cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
-              {filterAll ? "全年" : "單月"}
-            </button>
-            {!filterAll && (
-              <select value={filterMonth} onChange={e => setFilterMonth(Number(e.target.value))}
-                style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
-                {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m} 月</option>)}
-              </select>
-            )}
+            <FilterBar filterMode={filterMode} setFilterMode={setFilterMode} filterYear={filterYear} setFilterYear={setFilterYear} filterMonth={filterMonth} setFilterMonth={setFilterMonth} />
             <button onClick={exportCSV}
               style={{ marginLeft:"auto", padding:"7px 12px", border:"1px solid #d1fae5", borderRadius:"8px",
                 background:"#f0fdf4", color:"#15803d", cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
@@ -298,14 +321,14 @@ export default function BillingSystem({ profile }) {
 
           {/* 合計 */}
           <div style={{ background:"#eff6ff", borderRadius:"12px", padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontSize:"13px", color:"#2563eb", fontWeight:700 }}>共 {records.length} 筆</div>
+            <div style={{ fontSize:"13px", color:"#2563eb", fontWeight:700 }}>共 {displayedRecords.length} 筆</div>
             <div style={{ fontSize:"20px", fontWeight:900, color:"#1d4ed8" }}>NT$ {grandTotal.toLocaleString()}</div>
           </div>
 
           {/* 清單 */}
-          {records.length === 0 ? (
+          {displayedRecords.length === 0 ? (
             <div style={{ textAlign:"center", color:"#94a3b8", padding:"40px 0", fontSize:"14px" }}>尚無記錄</div>
-          ) : records.map(r => (
+          ) : displayedRecords.map(r => (
             <div key={r.id} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"12px 14px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
                 <div>
@@ -350,28 +373,13 @@ export default function BillingSystem({ profile }) {
 
           {/* 篩選 */}
           <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
-            <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))}
-              style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px" }}>
-              {YEARS.map(y => <option key={y} value={y}>{y} 年</option>)}
-            </select>
-            <button onClick={() => setFilterAll(f => !f)}
-              style={{ padding:"7px 12px", border:"1px solid #e2e8f0", borderRadius:"8px",
-                background:filterAll?"#eff6ff":"white", color:filterAll?"#2563eb":"#64748b",
-                cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
-              {filterAll ? "全年" : "單月"}
-            </button>
-            {!filterAll && (
-              <select value={filterMonth} onChange={e => setFilterMonth(Number(e.target.value))}
-                style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px" }}>
-                {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m} 月</option>)}
-              </select>
-            )}
+            <FilterBar filterMode={filterMode} setFilterMode={setFilterMode} filterYear={filterYear} setFilterYear={setFilterYear} filterMonth={filterMonth} setFilterMonth={setFilterMonth} />
           </div>
 
           {/* 總收入 */}
           <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2563eb)", borderRadius:"16px", padding:"20px", color:"white", textAlign:"center" }}>
             <div style={{ fontSize:"12px", color:"rgba(255,255,255,.65)", marginBottom:"4px" }}>
-              {filterYear} 年{filterAll ? "" : ` ${filterMonth} 月`}　總收入
+              {filterMode==="today" ? `${todayStr} 今日` : filterMode==="year" ? `${filterYear} 年` : `${filterYear} 年 ${filterMonth} 月`}　總收入
             </div>
             <div style={{ fontSize:"34px", fontWeight:900 }}>NT$ {grandTotal.toLocaleString()}</div>
             <div style={{ fontSize:"12px", color:"rgba(255,255,255,.55)", marginTop:"4px" }}>{records.length} 筆記錄</div>
@@ -411,7 +419,7 @@ export default function BillingSystem({ profile }) {
           </div>
 
           {/* 各月（全年模式才顯示）*/}
-          {filterAll && (
+          {filterMode === "year" && (
             <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"14px" }}>
               <div style={{ fontSize:"13px", fontWeight:900, color:"#1e293b", marginBottom:"10px" }}>各月收入</div>
               {Array.from({length:12},(_,i)=>i+1).map(m => (
@@ -433,5 +441,32 @@ export default function BillingSystem({ profile }) {
         </div>
       )}
     </div>
+  );
+}
+
+function FilterBar({ filterMode, setFilterMode, filterYear, setFilterYear, filterMonth, setFilterMonth }) {
+  const btnStyle = (active) => ({
+    padding:"7px 12px", border:"1px solid #e2e8f0", borderRadius:"8px",
+    background: active ? "#eff6ff" : "white", color: active ? "#2563eb" : "#64748b",
+    cursor:"pointer", fontSize:"12px", fontWeight:700,
+  });
+  return (
+    <>
+      <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))}
+        style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
+        {YEARS.map(y => <option key={y} value={y}>{y} 年</option>)}
+      </select>
+      {["today","month","year"].map(mode => (
+        <button key={mode} onClick={() => setFilterMode(mode)} style={btnStyle(filterMode===mode)}>
+          {mode==="today"?"今日":mode==="month"?"單月":"全年"}
+        </button>
+      ))}
+      {filterMode === "month" && (
+        <select value={filterMonth} onChange={e => setFilterMonth(Number(e.target.value))}
+          style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
+          {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m} 月</option>)}
+        </select>
+      )}
+    </>
   );
 }

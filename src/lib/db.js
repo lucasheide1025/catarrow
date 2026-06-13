@@ -869,6 +869,14 @@ export function subscribeMyCheckin(memberId, callback) {
     err => { console.warn("subscribeMyCheckin:", err.message); callback(null); });
 }
 
+// 取得今日所有報到會員（記帳用）
+export async function getTodayCheckinMembers() {
+  try {
+    const snap = await getDocs(query(collection(db, C_CHECKIN), where("date", "==", todayStr())));
+    return snap.docs.map(d => ({ memberId: d.data().memberId, memberName: d.data().memberName || "" }));
+  } catch { return []; }
+}
+
 // 訂閱「今日所有待核准 / 待最終確認」報到（後台用）
 export function subscribePendingCheckins(callback) {
   const date = todayStr();

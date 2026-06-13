@@ -111,12 +111,12 @@ export default function MemberApp() {
   }
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f8fafc", fontFamily:"sans-serif" }}>
+    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"#f8fafc", fontFamily:"sans-serif", overflow:"hidden" }}>
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
 
       {/* Header */}
-      <div style={{ position:"sticky", top:0, zIndex:40 }}>
+      <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
         <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
             <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🎯 貓小隊射箭場</div>
@@ -142,7 +142,7 @@ export default function MemberApp() {
       </div>
 
       {/* 頁面內容 */}
-      <div style={{ paddingBottom:"80px" }}>
+      <div style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
@@ -183,7 +183,7 @@ export default function MemberApp() {
       </div>
 
       {/* 底部導覽 */}
-      <div style={{ position:"fixed", bottom:0, left:0, right:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40 }}>
+      <div style={{ flexShrink:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
