@@ -236,7 +236,9 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
                       {Object.entries(DUEL_BOT_STATS).map(([diff, s]) => (
                         <button key={diff} onClick={async () => {
                           const id = makeBotId();
-                          await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, s);
+                          const rnd = v => Math.round(v * (0.75 + Math.random() * 0.5));
+                          const rs = { ...s, hp: rnd(s.hp), atk: rnd(s.atk), def: rnd(s.def) };
+                          await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, rs);
                         }}
                           disabled={isFull}
                           className="flex-1 py-1 text-[11px] font-black rounded-lg bg-slate-700 text-slate-200 border border-slate-600 active:scale-95 transition-transform disabled:opacity-30 disabled:cursor-not-allowed">

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
-  submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
+  submitArrows, processPartyRound, clearPartyProcessing, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
 } from "../../lib/partyDb";
@@ -152,8 +152,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   useEffect(() => {
     const unsub = subscribePartyRoom(roomId, setRoom);
+    if (isHost) clearPartyProcessing(roomId).catch(() => {}); // 清除可能卡住的 processing
     return unsub;
-  }, [roomId]);
+  }, [roomId]); // eslint-disable-line
 
   // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
   useEffect(() => {

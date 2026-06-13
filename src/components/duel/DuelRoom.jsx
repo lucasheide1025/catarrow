@@ -81,7 +81,7 @@ function calcDmgFn(arrows, atk, targetDef) {
 }
 
 // ── HP 條 ───────────────────────────────────────────────────
-function HpBar({ name, hp, maxHP, isMe, dead, flash }) {
+function HpBar({ name, hp, maxHP, isMe, dead, flash, atk, def, summary }) {
   const pct = maxHP > 0 ? Math.max(0, Math.round(hp / maxHP * 100)) : 0;
   const color = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
   return (
@@ -96,6 +96,12 @@ function HpBar({ name, hp, maxHP, isMe, dead, flash }) {
       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
+      {(atk != null || summary) && (
+        <div className="flex items-center gap-1 mt-1 flex-wrap">
+          {atk != null && <span className="text-[10px] text-slate-500">⚔️{atk} 🛡️{def}</span>}
+          {summary && <span className="text-[10px] text-indigo-300 truncate">{summary}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -567,6 +573,16 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // 本回合我攻擊的目標（從最新 log entry）
   const myLastAtk = revealEntry?.attacks?.find(a => a.attackerId === myId);
 
+  // 每位玩家上一回合的戰鬥摘要（顯示在名字旁邊）
+  const lastLogEntry = room.log?.length > 0 ? room.log[room.log.length - 1] : null;
+  function getPlayerSummary(id) {
+    const atk = lastLogEntry?.attacks?.find(a => a.attackerId === id);
+    if (!atk) return null;
+    return (atk.arrowBreakdown || []).map(a =>
+      a.dmg === 0 ? "脫靶" : a.isCrit ? `💥${a.dmg}` : `+${a.dmg}`
+    ).join(" · ");
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col">
       <style>{DUEL_CSS}</style>
@@ -613,6 +629,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
                   isMe={id === myId}
                   dead={isRevealing ? (displayHp?.[id] ?? m.hp) <= 0 : !m.alive}
                   flash={!!flashIds[id]}
+                  atk={m.atk}
+                  def={m.def}
+                  summary={getPlayerSummary(id)}
                 />
                 {/* 浮動傷害數字 */}
                 {floats.filter(f => f.memberId === id).map(f => (

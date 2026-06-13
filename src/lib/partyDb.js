@@ -294,6 +294,11 @@ export async function forceSkipPlayer(roomId, memberId) {
   }
 }
 
+// 房主進場時清除可能卡住的 processing（前次異常遺留）
+export async function clearPartyProcessing(roomId) {
+  try { await updateDoc(doc(db, PARTY, roomId), { processing: false }); } catch (_) {}
+}
+
 // ── Battle：房主處理回合（所有人 ready 後呼叫）───────────────
 // calcDmgFn(arrows, atk, monsterDEF) → { dmg, crits } | number
 // calcCtrFn(monsterATK, archerDEF)   → number
