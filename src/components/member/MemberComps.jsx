@@ -23,14 +23,30 @@ const HISTORY_STATUS = ["finished", "settled"];
 
 export default function MemberComps({ onSelectComp, onPageChange }) {
   const { profile } = useAuth();
-  const [comps, setComps]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter]   = useState("全部");
-  const [tab, setTab]         = useState("comps");
+  const [comps, setComps]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [filter, setFilter]       = useState("全部");
+  const [tab, setTab]             = useState("comps");
+  const [registering, setRegistering] = useState(null); // compId 正在報名中
 
-  useEffect(() => {
+  function fetchComps() {
     getCompetitions().then(data => { setComps(data); setLoading(false); });
-  }, []);
+  }
+
+  useEffect(() => { fetchComps(); }, []); // eslint-disable-line
+
+  async function handleRegister(c) {
+    if (registering) return;
+    setRegistering(c.id);
+    try {
+      await register(c.id, { memberId: profile.id, name: profile.name, nickname: profile.nickname, isGuest: false });
+      fetchComps(); // 重新載入讓 ✅ 已報名 顯示
+    } catch (e) {
+      alert("報名失敗：" + (e?.message || "請重試"));
+    } finally {
+      setRegistering(null);
+    }
+  }
 
   const types = ["全部", "積分賽", "挑戰賽", "實體賽", "臨時任務賽", "年度檢定"];
 
@@ -74,9 +90,11 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
         <div className="flex gap-2">
           <Btn v="primary" size="sm" className="flex-1" onClick={() => onSelectComp(c)}>查看詳情</Btn>
           {!joined && (c.status === "open" || c.status === "upcoming") && (
-            <Btn v="secondary" size="sm" className="flex-1" onClick={() => register(c.id, {
-              memberId: profile.id, name: profile.name, nickname: profile.nickname, isGuest: false
-            })}>報名參加</Btn>
+            <Btn v="secondary" size="sm" className="flex-1"
+              onClick={() => handleRegister(c)}
+              disabled={registering === c.id}>
+              {registering === c.id ? "報名中…" : "報名參加"}
+            </Btn>
           )}
         </div>
       </div>

@@ -261,7 +261,9 @@ export async function register(compId, memberData) {
     isGuest: isGuest || false, guestInfo: guestInfo || {},
     registeredAt: serverTimestamp(), status: "registered"
   });
-  await updateDoc(doc(db, C.competitions, compId), { participants: arrayUnion(memberId) });
+  try {
+    await updateDoc(doc(db, C.competitions, compId), { participants: arrayUnion(memberId) });
+  } catch {}
   return ref.id;
 }
 

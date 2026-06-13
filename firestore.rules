@@ -30,10 +30,11 @@ service cloud.firestore {
           .hasOnly(["lastLoginAt", "equipment", "uid"]);
     }
 
-    // competitions：admin 全權，會員可讀
+    // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
     match /competitions/{compId} {
-      allow read:  if isLoggedIn();
-      allow write: if isAdmin();
+      allow read:   if isLoggedIn();
+      allow write:  if isAdmin();
+      allow update: if isLoggedIn();
     }
 
     // results：admin 全權，登入者可讀寫
