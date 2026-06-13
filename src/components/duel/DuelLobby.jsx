@@ -171,6 +171,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
     const teamAEntries = Object.entries(room.teamA || {});
     const teamBEntries = Object.entries(room.teamB || {});
+    const maxPerTeam = { "1v1":1, "2v2":2, "3v3":3, "4v4":4, "uneven":8 }[room.type] || 4;
     const typeLabel = TYPE_OPTIONS.find(t => t.value === room.type)?.label || room.type;
 
     return (
@@ -222,20 +223,29 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
               {/* AI 機器人 */}
               <div className="rounded-xl bg-slate-800/60 border border-slate-600/50 p-3 flex flex-col gap-2">
                 <div className="text-xs font-black text-slate-400 tracking-widest">🤖 加入AI機器人</div>
-                {["A","B"].map(team => (
-                  <div key={team} className="flex gap-1.5 items-center">
-                    <span className={`text-xs font-black w-10 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>隊伍{team}</span>
-                    {Object.entries(BOT_STATS).map(([diff, s]) => (
-                      <button key={diff} onClick={async () => {
-                        const id = makeBotId();
-                        await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, s);
-                      }}
-                        className="flex-1 py-1 text-[11px] font-black rounded-lg bg-slate-700 text-slate-200 border border-slate-600 active:scale-95 transition-transform">
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                ))}
+                {["A","B"].map(team => {
+                  const teamEntries = team === "A" ? teamAEntries : teamBEntries;
+                  const isFull = teamEntries.length >= maxPerTeam;
+                  const isUnevenA = room.type === "uneven" && team === "A";
+                  if (isUnevenA) return null; // 不對等模式 A 隊是房主，不加機器人
+                  return (
+                    <div key={team} className="flex gap-1.5 items-center">
+                      <span className={`text-xs font-black w-10 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>
+                        {team}隊 {teamEntries.length}/{maxPerTeam}
+                      </span>
+                      {Object.entries(BOT_STATS).map(([diff, s]) => (
+                        <button key={diff} onClick={async () => {
+                          const id = makeBotId();
+                          await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, s);
+                        }}
+                          disabled={isFull}
+                          className="flex-1 py-1 text-[11px] font-black rounded-lg bg-slate-700 text-slate-200 border border-slate-600 active:scale-95 transition-transform disabled:opacity-30 disabled:cursor-not-allowed">
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
                 {([...teamAEntries, ...teamBEntries].some(([, m]) => m.isBot)) && (
                   <button onClick={async () => {
                     for (const [id] of teamAEntries.filter(([, m]) => m.isBot))

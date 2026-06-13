@@ -568,17 +568,24 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           {memberList.length < 8 && (
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
           )}
-          {isHost && memberList.length < 8 && (
-            <div className="flex gap-2 pt-1">
-              {Object.entries(BOT_STATS).map(([diff, s]) => (
-                <button key={diff} onClick={async () => {
-                  const id = makeBotId();
-                  await addBotToPartyRoom(roomId, id, randomBotName(diff), diff, s);
-                }}
-                  className="flex-1 py-1.5 text-xs font-black rounded-xl bg-slate-600/70 text-slate-200 border border-slate-500/50 active:scale-95 transition-transform">
-                  {s.label}
-                </button>
-              ))}
+          {isHost && (
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="text-[10px] text-slate-500 font-bold">
+                🤖 加入AI機器人（{memberList.length}/8）
+              </div>
+              <div className="flex gap-2">
+                {Object.entries(BOT_STATS).map(([diff, s]) => (
+                  <button key={diff} onClick={async () => {
+                    if (memberList.length >= 8) return;
+                    const id = makeBotId();
+                    await addBotToPartyRoom(roomId, id, randomBotName(diff), diff, s);
+                  }}
+                    disabled={memberList.length >= 8}
+                    className="flex-1 py-1.5 text-xs font-black rounded-xl bg-slate-600/70 text-slate-200 border border-slate-500/50 active:scale-95 transition-transform disabled:opacity-30 disabled:cursor-not-allowed">
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {isHost && memberList.some(m => m.isBot) && (
