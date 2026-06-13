@@ -1,10 +1,21 @@
 // src/lib/botUtils.js — AI 機器人共用工具
 
-export const BOT_STATS = {
+// 組隊打怪（PvE）：較高數值，機器人是隊友
+export const PARTY_BOT_STATS = {
   easy:   { hp: 250, atk: 7,  def: 7,  label: "🐣 練習" },
   normal: { hp: 380, atk: 10, def: 9,  label: "🤖 普通" },
   hard:   { hp: 480, atk: 14, def: 11, label: "🔥 強力" },
 };
+
+// 決鬥模式（PvP）：對齊 balanceDuelStats 輸出範圍（HP 200~280, ATK 5~14, DEF 2~7）
+export const DUEL_BOT_STATS = {
+  easy:   { hp: 210, atk: 6,  def: 3,  label: "🐣 練習" },
+  normal: { hp: 240, atk: 9,  def: 5,  label: "🤖 普通" },
+  hard:   { hp: 272, atk: 13, def: 7,  label: "🔥 強力" },
+};
+
+// 向下相容（組隊用）
+export const BOT_STATS = PARTY_BOT_STATS;
 
 export const BOT_NAMES = {
   easy:   ["🐣 新手弓手", "🐣 練習機器人", "🐣 木偶射手"],

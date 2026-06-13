@@ -8,7 +8,7 @@ import {
   updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
   addBotToDuelRoom, removeBotFromDuelRoom,
 } from "../../lib/duelDb";
-import { BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
+import { DUEL_BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 
 const TYPE_OPTIONS = [
   { value:"1v1",   label:"⚔️ 1v1",       desc:"單挑，決一勝負" },
@@ -233,7 +233,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
                       <span className={`text-xs font-black w-10 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>
                         {team}隊 {teamEntries.length}/{maxPerTeam}
                       </span>
-                      {Object.entries(BOT_STATS).map(([diff, s]) => (
+                      {Object.entries(DUEL_BOT_STATS).map(([diff, s]) => (
                         <button key={diff} onClick={async () => {
                           const id = makeBotId();
                           await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, s);

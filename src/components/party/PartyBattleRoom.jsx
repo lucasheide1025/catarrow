@@ -402,7 +402,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   );
 
   const members    = room.members || {};
-  const memberList = Object.entries(members).map(([id, data]) => ({ id, ...data }));
+  const memberList = Object.entries(members)
+    .map(([id, data]) => ({ id, ...data }))
+    .sort((a, b) => {
+      if (a.id === myId) return -1;
+      if (b.id === myId) return 1;
+      if (a.id === room.hostId) return -1;
+      if (b.id === room.hostId) return 1;
+      return a.id < b.id ? -1 : 1;
+    });
   const me         = members[myId] || {};
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
