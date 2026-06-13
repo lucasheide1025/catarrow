@@ -27,7 +27,7 @@ service cloud.firestore {
       allow write: if isAdmin();
       allow update: if (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["lastLoginAt", "equipment", "uid", "dailyQuestCount", "eventPoints"]);
+          .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid", "dailyQuestCount", "eventPoints"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
@@ -42,7 +42,7 @@ service cloud.firestore {
     match /results/{resultId} {
       allow read:   if isLoggedIn();
       allow create: if isLoggedIn();
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isLoggedIn();
       allow delete: if isAdmin();
     }
 

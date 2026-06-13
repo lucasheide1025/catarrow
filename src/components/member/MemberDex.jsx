@@ -143,33 +143,23 @@ export default function MemberDex({ onBack }) {
     });
   }, [profile?.id, certification, certRecords, granted]); // eslint-disable-line
 
-  // ── 依序顯示提示 ──
+  // ── 從佇列取下一個 ──
   useEffect(() => {
-    // 有 toast 在顯示中就不動
     if (currentToast !== null) return;
-    // 佇列空了就停
     if (toastQueue.length === 0) return;
-
     const [next, ...rest] = toastQueue;
     setToastQueue(rest);
     setCurrentToast(next);
     setToastOut(false);
-
-    // 清舊 timer
-    if (toastTimerRef.current) {
-      toastTimerRef.current.forEach(t => clearTimeout(t));
-    }
-    const t1 = setTimeout(() => setToastOut(true), 3000);
-    const t2 = setTimeout(() => {
-      setCurrentToast(null);
-      setToastOut(false);
-    }, 3500);
-    toastTimerRef.current = [t1, t2];
-
-    return () => {
-      if (toastTimerRef.current) toastTimerRef.current.forEach(t => clearTimeout(t));
-    };
   }, [toastQueue, currentToast]); // eslint-disable-line
+
+  // ── 自動消失計時器（只依賴 currentToast，不被 toastQueue 變動取消）──
+  useEffect(() => {
+    if (!currentToast) return;
+    const t1 = setTimeout(() => setToastOut(true), 3000);
+    const t2 = setTimeout(() => { setCurrentToast(null); setToastOut(false); }, 3500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [currentToast]); // eslint-disable-line
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }

@@ -14,8 +14,7 @@ const TABS = [
   { id: "fatcat",            label: "🐱 肥貓章",    group: "徽章" },
   { id: "score",             label: "⭐ 積分章",    group: "徽章" },
   { id: "achieve",           label: "🏆 成就章",    group: "徽章" },
-  { id: "cert_recurve_bare", label: "🏹 裸弓檢定",  group: "檢定" },
-  { id: "cert_recurve_full", label: "🎯 全配檢定",  group: "檢定" },
+  { id: "cert_recurve_bare", label: "🏹 競技反曲弓", group: "檢定" },
   { id: "cert_compound",     label: "🦅 獵弓檢定",  group: "檢定" },
   { id: "cert_traditional",  label: "🌿 傳統檢定",  group: "檢定" },
   { id: "monster_family",    label: "🐾 六大族",    group: "魔物獵人" },
@@ -28,10 +27,9 @@ MONSTERS.forEach(m => { MONSTER_MAP[m.id] = m; });
 const BOSS_TIERS = new Set(["boss", "mythic"]);
 
 const CERT_TAB = {
-  cert_recurve_bare: "recurve_bare",
-  cert_recurve_full: "recurve_full",
-  cert_compound:     "compound",
-  cert_traditional:  "traditional",
+  cert_recurve_bare: ["recurve_bare", "recurve_full"],
+  cert_compound:     ["compound"],
+  cert_traditional:  ["traditional"],
 };
 
 export default function MemberLeaderboard() {
@@ -85,10 +83,11 @@ export default function MemberLeaderboard() {
     return calcBadgePoints(member, type);
   }
 
-  function certRanking(bowType) {
+  function certRanking(bowTypes) {
+    const keys = Array.isArray(bowTypes) ? bowTypes : [bowTypes];
     const map = {};
     certRecords
-      .filter(r => r.bowType === bowType && Number(r.year) === thisYear)
+      .filter(r => keys.includes(r.bowType) && Number(r.year) === thisYear)
       .forEach(r => {
         const score = r.score || 0;
         if (map[r.memberId] === undefined || score > map[r.memberId]) {
@@ -211,8 +210,11 @@ export default function MemberLeaderboard() {
     : [];
 
   // 檢定榜
-  const certList = isCertTab ? certRanking(CERT_TAB[tab]) : [];
-  const certBow  = CERT_TAB[tab];
+  const isRecurveTab = tab === "cert_recurve_bare";
+  const certList     = isCertTab && !isRecurveTab ? certRanking(CERT_TAB[tab]) : [];
+  const certBow      = Array.isArray(CERT_TAB[tab]) ? CERT_TAB[tab][0] : CERT_TAB[tab];
+  const certBareList = isRecurveTab ? certRanking(["recurve_bare"]) : [];
+  const certFullList = isRecurveTab ? certRanking(["recurve_full"]) : [];
 
   // ✅ 修復：用 status === "settled" 判斷，不再依賴 c.results
   const settledComps = comps.filter(c => c.status === "settled");
@@ -318,8 +320,58 @@ export default function MemberLeaderboard() {
         </Card>
       )}
 
-      {/* 檢定榜 */}
-      {isCertTab ? (
+      {/* 檢定榜 — 競技反曲弓：裸弓 / 全配各自獨立排名 */}
+      {isRecurveTab && (
+        <Card className="p-4 flex flex-col gap-5">
+          {certBareList.length === 0 && certFullList.length === 0
+            ? <Empty message="今年尚無已審核的檢定成績" />
+            : <>
+                {[{ list: certBareList, label: "🏹 裸弓", tag: null },
+                  { list: certFullList, label: "🎯 全配", tag: "(全配)" }]
+                  .filter(({ list }) => list.length > 0)
+                  .map(({ list, label, tag }) => (
+                    <div key={label}>
+                      <div className="text-xs font-black text-gray-400 mb-2">{label}</div>
+                      {list.map((m, i) => {
+                        const isMe  = m.memberId === profile?.id;
+                        const level = getCertLevel("recurve_bare", m.total);
+                        return (
+                          <div key={m.memberId}
+                            className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                            <div className="w-8 text-center flex-shrink-0">
+                              {["🥇","🥈","🥉"][i]
+                                ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
+                                : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                                {m.nickname || m.name}
+                                {tag && <span className="ml-1 text-xs text-gray-400">{tag}</span>}
+                                {isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                              </div>
+                              {level && (
+                                <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(level, "soft")}`}>
+                                  {level} 級
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.total}</div>
+                              <div className="text-gray-400 text-xs">分</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                }
+              </>
+          }
+        </Card>
+      )}
+
+      {/* 檢定榜 — 其他弓種 */}
+      {isCertTab && !isRecurveTab ? (
         <Card className="p-4">
           {certList.length === 0
             ? <Empty message="今年尚無已審核的檢定成績" />
@@ -354,7 +406,7 @@ export default function MemberLeaderboard() {
               })
           }
         </Card>
-      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && (
+      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && !isRecurveTab && (
         /* 一般榜 */
         <Card className="p-4">
           {ranked.length === 0 && <Empty message="尚無資料" />}

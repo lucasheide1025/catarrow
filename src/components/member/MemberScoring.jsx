@@ -8,11 +8,13 @@ import { Card, Btn } from "../shared/UI";
 
 // 弓種 → 對照 certScores 的鍵 + 顯示名
 const BOW_META = {
-  recurve_full: { label: "競技反曲弓（全配）", cert: "recurve_full" },
-  recurve_bare: { label: "競技反曲弓（裸弓）", cert: "recurve_bare" },
+  recurve_full: { label: "競技反曲弓（全配）", cert: "recurve_bare" },
+  recurve_bare: { label: "競技反曲弓",         cert: "recurve_bare" },
   compound:     { label: "美式獵弓",           cert: "compound" },
   traditional:  { label: "傳統弓",             cert: "traditional" },
 };
+// 全配/裸弓合為同一檢定分類，兼容舊 recurve_full certRecords
+const RECURVE_NORM = k => (k === "recurve_full" || k === "recurve_bare") ? "recurve_bare" : k;
 
 // 現場租借選項
 const RENTALS = [
@@ -92,13 +94,11 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
       const half = comp.half || "first";
       try {
         const recs = await getCertRecords(profile.id);
-        const existing = (Array.isArray(recs) ? recs : []).find(r =>
-          r && r.bowType === choice.cert &&
-          String(r.year) === String(year) &&
-          (r.half || "first") === half
-        );
-        if (existing && Number(finalTotal) <= Number(existing.score || 0)) {
-          setPrevBest(Number(existing.score || 0));
+        const bestScore = (Array.isArray(recs) ? recs : [])
+          .filter(r => r && RECURVE_NORM(r.bowType) === RECURVE_NORM(choice.cert) && String(r.year) === String(year) && (r.half || "first") === half)
+          .reduce((best, r) => Math.max(best, Number(r.score || 0)), -1);
+        if (bestScore >= 0 && Number(finalTotal) <= bestScore) {
+          setPrevBest(bestScore);
           setSaving(false);
           setPhase("notHigher");
           return;

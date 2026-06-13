@@ -264,10 +264,10 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
   const rankList = (isCert?safeResults.filter(r=>r&&r.reviewStatus==="approved"):safeResults)
     .slice().sort((a,b)=>((b&&b.total)||0)-((a&&a.total)||0));
   const myRank = rankList.findIndex(r=>r&&r.memberId===myId);
-  const BOW_GROUP_LABEL = { recurve_bare:"🏹 裸弓", recurve_full:"🎯 全配", compound:"🦅 獵弓", traditional:"🌿 傳統" };
+  const BOW_GROUP_LABEL = { recurve_bare:"🏹 競技反曲弓", compound:"🦅 獵弓", traditional:"🌿 傳統" };
   const certApproved = isCert?safeResults.filter(r=>r&&r.reviewStatus==="approved"):[];
   const certByBow = {};
-  certApproved.forEach(r=>{ const b=r.certBowType||"other"; if(!certByBow[b]) certByBow[b]=[]; certByBow[b].push(r); });
+  certApproved.forEach(r=>{ const b=(r.certBowType==="recurve_full"?"recurve_bare":r.certBowType)||"other"; if(!certByBow[b]) certByBow[b]=[]; certByBow[b].push(r); });
   Object.keys(certByBow).forEach(b=>certByBow[b].sort((a,c)=>(c.total||0)-(a.total||0)));
   const canScoreStatus = CAN_SCORE.includes(comp?.status);
   let canEnter=false, lockMsg="";
@@ -351,7 +351,7 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
           Object.keys(certByBow).length===0
             ? <div className="text-gray-400 text-sm text-center py-4">尚無已審核成績</div>
             : <div className="flex flex-col gap-4">
-                {["recurve_bare","recurve_full","compound","traditional"].filter(b=>certByBow[b]?.length).map(b=>(
+                {["recurve_bare","compound","traditional"].filter(b=>certByBow[b]?.length).map(b=>(
                   <div key={b}>
                     <div className="text-gray-600 text-xs font-black mb-1.5">{BOW_GROUP_LABEL[b]||b}</div>
                     {certByBow[b].map((r,i)=>{

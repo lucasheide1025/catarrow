@@ -373,11 +373,11 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
   const myRank = rankList.findIndex(r => r && r.memberId === myId);
 
   // 檢定排行：按弓種分組（只列已審核通過）
-  const BOW_GROUP_LABEL = { recurve_bare: "🏹 裸弓", recurve_full: "🎯 全配", compound: "🦅 獵弓", traditional: "🌿 傳統" };
+  const BOW_GROUP_LABEL = { recurve_bare: "🏹 競技反曲弓", compound: "🦅 獵弓", traditional: "🌿 傳統" };
   const certApproved = isCert ? safeResults.filter(r => r && r.reviewStatus === "approved") : [];
   const certByBow = {};
   certApproved.forEach(r => {
-    const b = r.certBowType || "other";
+    const b = (r.certBowType === "recurve_full" ? "recurve_bare" : r.certBowType) || "other";
     if (!certByBow[b]) certByBow[b] = [];
     certByBow[b].push(r);
   });
@@ -480,7 +480,7 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
             <div className="text-gray-400 text-sm text-center py-4">尚無已審核成績</div>
           ) : (
             <div className="flex flex-col gap-4">
-              {["recurve_bare","recurve_full","compound","traditional"]
+              {["recurve_bare","compound","traditional"]
                 .filter(b => certByBow[b]?.length)
                 .map(b => (
                 <div key={b}>

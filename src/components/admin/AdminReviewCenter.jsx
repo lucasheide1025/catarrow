@@ -209,7 +209,6 @@ function CertReviewCard({ r, comp, operatorId, toast }) {
 
 // ── 外賽待審卡 ──
 function ExtReviewCard({ r, operatorId, toast }) {
-  const [open, setOpen] = useState(false);
   const [decision, setDecision]   = useState("approved");
   const [badgeType, setBadgeType] = useState("fatCat");
   const [badgeColor, setBadgeColor] = useState("bronze");
@@ -226,45 +225,47 @@ function ExtReviewCard({ r, operatorId, toast }) {
       operatorId
     );
     toast(decision === "approved" ? "已通過並發放徽章 ✓" : "已標記為未通過");
-    setSaving(false); setOpen(false);
+    setSaving(false);
   }
 
   return (
-    <div className="rounded-xl p-3 border bg-purple-50 border-purple-200">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="text-gray-800 font-bold text-sm">
-            {r.memberName}{r.memberNickname && <span className="text-gray-400 text-xs ml-1">（{r.memberNickname}）</span>}
-          </div>
-          <div className="text-gray-700 text-sm">{r.compName}</div>
-          <div className="text-gray-400 text-xs mt-0.5">
-            📅 {r.date}{r.location && `　📍 ${r.location}`}
-          </div>
-          <div className="flex gap-1.5 flex-wrap mt-1">
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{r.category}</span>
-            <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{r.rank}</span>
-            {r.hasAward && <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">🏆 {r.awardKept?"獎項留箭場":"有獎項"}</span>}
-          </div>
-          {r.note && <div className="text-gray-500 text-xs italic mt-1">「{r.note}」</div>}
+    <div className="rounded-xl p-3 border bg-purple-50 border-purple-200 flex flex-col gap-3">
+      {/* 比賽資訊 */}
+      <div>
+        <div className="text-gray-800 font-bold text-sm">
+          {r.memberName}{r.memberNickname && <span className="text-gray-400 text-xs ml-1">（{r.memberNickname}）</span>}
         </div>
+        <div className="text-gray-700 text-sm">{r.compName}</div>
+        <div className="text-gray-400 text-xs mt-0.5">
+          📅 {r.date}{r.location && `　📍 ${r.location}`}
+        </div>
+        <div className="flex gap-1.5 flex-wrap mt-1">
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{r.category}</span>
+          <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{r.rank}</span>
+          {r.hasAward && <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">🏆 {r.awardKept?"獎項留箭場":"有獎項"}</span>}
+        </div>
+        {r.note && <div className="text-gray-500 text-xs italic mt-1">「{r.note}」</div>}
       </div>
 
-      {!open ? (
-        <Btn v="primary" size="sm" className="mt-2" onClick={()=>setOpen(true)}>審核</Btn>
-      ) : (
-        <div className="mt-3 flex flex-col gap-3 bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex gap-2">
-            {[["approved","✅ 通過"],["rejected","❌ 不通過"]].map(([v,l])=>(
-              <button key={v} onClick={()=>setDecision(v)}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all
-                  ${decision===v?(v==="approved"?"bg-green-600 text-white border-green-600":"bg-red-500 text-white border-red-500"):"bg-white text-gray-600 border-gray-200"}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-          {decision === "approved" && (
+      {/* 審核決定 */}
+      <div className="bg-white rounded-lg p-3 border border-gray-200 flex flex-col gap-3">
+        <div className="text-xs font-black text-gray-500">審核結果</div>
+        <div className="flex gap-2">
+          {[["approved","✅ 通過"],["rejected","❌ 不通過"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setDecision(v)}
+              className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all
+                ${decision===v?(v==="approved"?"bg-green-600 text-white border-green-600":"bg-red-500 text-white border-red-500"):"bg-white text-gray-600 border-gray-200"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* 獎勵設定（通過時才顯示） */}
+        {decision === "approved" && (
+          <>
+            <div className="text-xs font-black text-gray-500">獎勵設定</div>
             <div className="grid grid-cols-3 gap-2">
-              <Sel label="章別" value={badgeType} onChange={e=>setBadgeType(e.target.value)}
+              <Sel label="章別" value={badgeType} onChange={e=>{ setBadgeType(e.target.value); setBadgeColor(e.target.value==="achievement"?"silver":"bronze"); }}
                 options={[{value:"fatCat",label:"🐱 肥貓章"},{value:"score",label:"⭐ 積分章"},{value:"achievement",label:"🏆 成就章"}]} />
               <Sel label="等級" value={badgeColor} onChange={e=>setBadgeColor(e.target.value)}
                 options={badgeType==="achievement"
@@ -272,15 +273,13 @@ function ExtReviewCard({ r, operatorId, toast }) {
                   :[{value:"bronze",label:"銅章"},{value:"silver",label:"銀章"},{value:"gold",label:"金章"}]} />
               <Inp label="數量" type="number" min="1" value={badgeCount} onChange={e=>setBadgeCount(e.target.value)} />
             </div>
-          )}
-          <div className="flex gap-2">
-            <Btn v="secondary" size="sm" className="flex-1" onClick={()=>setOpen(false)}>取消</Btn>
-            <Btn v={decision==="approved"?"success":"danger"} size="sm" className="flex-1" onClick={submit} disabled={saving}>
-              {saving?"處理中…":"確認送出"}
-            </Btn>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+
+        <Btn v={decision==="approved"?"success":"danger"} size="sm" onClick={submit} disabled={saving}>
+          {saving ? "處理中…" : decision==="approved" ? "✅ 確認通過並發放徽章" : "❌ 確認不通過"}
+        </Btn>
+      </div>
     </div>
   );
 }
