@@ -13,6 +13,7 @@ import AdminDexGrant      from "../components/admin/AdminDexGrant";
 import AdminGiveTool      from "../components/admin/AdminGiveTool";
 import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
 import AdminMonthlyCard   from "../components/admin/AdminMonthlyCard";
+import AdminBilling       from "../components/admin/BillingSystem";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -137,6 +138,7 @@ const adminNav = [
   { id:"comps",       icon:"🏆", label:"比賽" },
   { id:"review",      icon:"🔔", label:"審核" },
   { id:"monthlycard", icon:"🎫", label:"月卡" },
+  { id:"billing",     icon:"💰", label:"會計" },
   { id:"learn",       icon:"📓", label:"學習" },
   { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
   { id:"givetool",      icon:"🧪", label:"測試" },
@@ -291,6 +293,7 @@ const adminNav = [
         {page==="battlesetting" && <AdminBattleEvent/>}
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
+        {page==="billing"      && <AdminBilling profile={profile}/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

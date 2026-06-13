@@ -22,6 +22,7 @@ const C = {
   auditLogs:    "auditLogs",
   externalComps:"externalComps",
   registrations:"registrations",
+  billingRecords:"billingRecords",
 };
 
 // ─── Audit Log helper ──────────────────────────────────────
@@ -1910,4 +1911,32 @@ export async function checkExpireMonthlyCard(memberId) {
       await updateDoc(memRef, { "monthlyCard.active": false, "monthlyCard.sessions": 0 });
     }
   } catch {}
+}
+
+// ── 會計系統 ───────────────────────────────────────────────
+
+export async function addBillingRecord(data) {
+  return addDoc(collection(db, C.billingRecords), { ...data, createdAt: serverTimestamp() });
+}
+
+export async function deleteBillingRecord(id) {
+  return deleteDoc(doc(db, C.billingRecords, id));
+}
+
+// 只用 year where，month 在 client 過濾，避免複合索引需求
+export function subscribeBillingRecords(year, month, callback) {
+  const q = query(collection(db, C.billingRecords), where("year", "==", year));
+  return onSnapshot(q, snap => {
+    let records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (month !== null && month !== undefined) records = records.filter(r => r.month === month);
+    records.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    callback(records);
+  }, () => callback([]));
+}
+
+export async function getMembersForBilling() {
+  const snap = await getDocs(collection(db, C.members));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
 }

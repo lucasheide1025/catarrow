@@ -184,6 +184,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // billingRecords：僅教練可讀寫（財務資料）
+    match /billingRecords/{recId} {
+      allow read, write: if isAdmin();
+    }
+
     // notifications：全體廣播 + 個人通知，登入者可讀寫（成就公告、加油等）
     match /notifications/{notifId} {
       allow read:   if isLoggedIn();
