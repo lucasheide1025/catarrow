@@ -30,10 +30,18 @@ export function AuthProvider({ children }) {
 
       // admin 檢查與 member 查詢同時發出，不用等一個回來再發另一個
       const memberQuery = query(collection(db, "members"), where("uid", "==", fbUser.uid));
-      const [adminSnap, memberSnap] = await Promise.all([
-        getDoc(doc(db, "admins", fbUser.uid)),
-        getDocs(memberQuery),
-      ]);
+      let adminSnap, memberSnap;
+      try {
+        [adminSnap, memberSnap] = await Promise.all([
+          getDoc(doc(db, "admins", fbUser.uid)),
+          getDocs(memberQuery),
+        ]);
+      } catch (e) {
+        console.warn("登入查詢失敗，嘗試只查 members：", e.message);
+        adminSnap = { exists: () => false };
+        try { memberSnap = await getDocs(memberQuery); }
+        catch { memberSnap = { empty: true, docs: [] }; }
+      }
 
       const isAdmin   = adminSnap.exists();
       const adminData = isAdmin ? adminSnap.data() : null;
