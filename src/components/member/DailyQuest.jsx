@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  submitCheckin, subscribeMyCheckin, rerollCheckinBuff, markQuestDone,
+  submitCheckin, submitSimpleCheckin, subscribeMyCheckin, rerollCheckinBuff, markQuestDone,
   getDailyQuestConfig, cancelCheckin,
 } from "../../lib/db";
 import { drawBuff } from "../../lib/buffPool";
@@ -77,8 +77,9 @@ export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
   const [checkin, setCheckin]   = useState(undefined);
   const [config,  setConfig]    = useState(null);
-  const [busy,    setBusy]      = useState(false);
-  const [showBuff, setShowBuff] = useState(false);
+  const [busy,       setBusy]       = useState(false);
+  const [showBuff,   setShowBuff]   = useState(false);
+  const [showChoice, setShowChoice] = useState(false); // 選擇「純報到」或「完成任務」
 
   // 三個任務（從 checkin 裡存的，或重新產生）
   const [tasks, setTasks] = useState(null);
@@ -126,9 +127,16 @@ export default function DailyQuest({ onJoinParty }) {
   const buff = checkin?.buff;
 
   async function doCheckin() {
-    setBusy(true);
+    setBusy(true); setShowChoice(false);
     sfxTap();
     await submitCheckin(profile.id, profile.name, profile.nickname);
+    setBusy(false);
+  }
+
+  async function doSimpleCheckin() {
+    setBusy(true); setShowChoice(false);
+    sfxTap();
+    await submitSimpleCheckin(profile.id, profile.name, profile.nickname);
     setBusy(false);
   }
 
@@ -210,11 +218,35 @@ export default function DailyQuest({ onJoinParty }) {
         style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
         <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
         <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
-        <div className="text-purple-100 text-xs mb-4">報到後接受教練加成，挑戰今日任務！還差 {remain} 次換成就銀章 🥈</div>
-        <button onClick={doCheckin} disabled={busy}
-          className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
-          {busy ? "報到中…" : "📍 今日報到"}
-        </button>
+        <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
+
+        {!showChoice ? (
+          <button onClick={() => setShowChoice(true)} disabled={busy}
+            className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
+            {busy ? "報到中…" : "📍 今日報到"}
+          </button>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="text-center text-purple-100 text-sm font-bold">選擇今天的報到方式：</div>
+
+            {/* 純報到 */}
+            <button onClick={doSimpleCheckin} disabled={busy}
+              className="w-full py-3.5 rounded-xl bg-white/20 border border-white/40 text-white font-black text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
+              <span className="text-base">✅ 純報到</span>
+              <span className="text-purple-200 text-xs font-normal">次數 +1，直接完成</span>
+            </button>
+
+            {/* 完成今日任務 */}
+            <button onClick={doCheckin} disabled={busy}
+              className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
+              <span className="text-base">🎯 完成今日任務</span>
+              <span className="text-purple-400 text-xs font-normal">接受教練加成 + 完成後送 🧰 鐵寶箱</span>
+            </button>
+
+            <button onClick={() => setShowChoice(false)}
+              className="text-purple-300 text-xs text-center underline">取消</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -384,7 +416,18 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  // 5. 已完成並確認
+  // 5a. 純報到完成
+  if (checkin.type === "simple") {
+    return (
+      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#0891b2,#0369a1)" }}>
+        <div className="text-xs font-black tracking-wider text-sky-100 mb-1">每日報到</div>
+        <div className="text-lg font-black mb-1">✅ 今日已純報到！</div>
+        <div className="text-sky-100 text-xs">已完成 {count} 次　還差 {remain} 次換成就銀章 🥈　明天再來！</div>
+      </div>
+    );
+  }
+
+  // 5b. 已完成任務並確認
   return (
     <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
       <div className="text-xs font-black tracking-wider text-emerald-100 mb-1">今日任務</div>

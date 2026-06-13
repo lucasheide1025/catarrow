@@ -27,7 +27,7 @@ service cloud.firestore {
       allow write: if isAdmin();
       allow update: if (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["lastLoginAt", "equipment", "uid"]);
+          .hasOnly(["lastLoginAt", "equipment", "uid", "dailyQuestCount", "eventPoints"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）

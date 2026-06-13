@@ -847,6 +847,31 @@ export function checkinId(memberId, date) {
   return `${memberId}_${date || todayStr()}`;
 }
 
+// 純報到：直接計入 +1 次，不需教練核准，不做任務
+export async function submitSimpleCheckin(memberId, memberName, memberNickname) {
+  const date = todayStr();
+  const id = checkinId(memberId, date);
+  const ref = doc(db, C_CHECKIN, id);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return { id, already: true };
+  await setDoc(ref, {
+    memberId, memberName: memberName || "", memberNickname: memberNickname || "",
+    date, type: "simple", status: "done", finalConfirmed: true,
+    createdAt: serverTimestamp(),
+  });
+  try {
+    const member = await getMember(memberId);
+    const newCount = (member?.dailyQuestCount || 0) + 1;
+    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
+    const config = await getDailyQuestConfig();
+    const rewardEvery = config?.rewardEvery || 10;
+    if (newCount % rewardEvery === 0) {
+      await addBadge(memberId, "achievement", "silver", 1, memberId, `每日任務累積 ${newCount} 次`);
+    }
+  } catch (e) { console.warn("simpleCheckin:", e?.message); }
+  return { id, already: false };
+}
+
 // 學生點報到 → 建立 pending 紀錄（已存在就不重建）
 export async function submitCheckin(memberId, memberName, memberNickname) {
   const date = todayStr();
@@ -926,7 +951,7 @@ export async function markQuestDone(checkinId, questResult) {
   });
 }
 
-// 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed，滿里程碑發銀章
+// 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed，滿里程碑發銀章，送鐵寶箱
 export async function confirmCheckinReward(checkinId, memberId, operatorId) {
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
     finalConfirmed: true,
@@ -942,6 +967,12 @@ export async function confirmCheckinReward(checkinId, memberId, operatorId) {
     if (newCount % rewardEvery === 0) {
       await addBadge(memberId, "achievement", "silver", 1, operatorId, `每日任務累積 ${newCount} 次`);
     }
+    // 每日任務完成額外獎勵：鐵寶箱
+    await addChests(memberId, [{
+      id: `quest_${checkinId}_${Date.now()}`,
+      type: "iron", family: "quest", tier: "quest",
+      from: "每日任務獎勵", ts: Date.now(),
+    }]);
   } catch (e) { console.warn("dailyQuestCount:", e?.message); }
 }
 
