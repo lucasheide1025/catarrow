@@ -22,13 +22,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // members：admin 全權操作，會員只能讀自己
+    // members：admin 全權操作，會員可讀自己（uid 欄位或 email 欄位比對）
     match /members/{memberId} {
-      allow read:  if isAdmin() || isMember(memberId);
+      allow read:  if isAdmin()
+        || resource.data.uid   == request.auth.uid
+        || resource.data.email == request.auth.token.email;
       allow write: if isAdmin();
-      allow update: if isMember(memberId) && 
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["lastLoginAt", "equipment"]); // 會員只能改裝備和登入時間
+      allow update: if (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["lastLoginAt", "equipment", "uid"]);
     }
 
     // competitions：admin 全權，會員可讀

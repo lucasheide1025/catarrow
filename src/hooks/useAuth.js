@@ -47,15 +47,18 @@ export function AuthProvider({ children }) {
       const adminData = isAdmin ? adminSnap.data() : null;
       let   memberDoc = memberSnap.empty ? null : memberSnap.docs[0];
 
-      // 教練 uid 欄位缺失時，用 email 備用查詢並補寫 uid
-      if (!memberDoc && isAdmin) {
+      // uid 欄位缺失時，用 email 備用查詢（教練與一般會員都適用）
+      if (!memberDoc) {
         try {
-          const emailSnap = await getDocs(query(collection(db, "members"), where("email", "==", fbUser.email)));
+          const emailSnap = await getDocs(
+            query(collection(db, "members"), where("email", "==", fbUser.email))
+          );
           if (!emailSnap.empty) {
             memberDoc = emailSnap.docs[0];
+            // 自動補寫 uid，下次登入直接命中
             updateDoc(doc(db, "members", memberDoc.id), { uid: fbUser.uid }).catch(() => {});
           }
-        } catch (e) { console.warn("教練 email 備用查詢失敗：", e.message); }
+        } catch (e) { console.warn("email 備用查詢失敗：", e.message); }
       }
 
       // 設定 profile，立即解除 loading
@@ -72,7 +75,7 @@ export function AuthProvider({ children }) {
         setRole("admin");
         setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
       } else {
-        console.warn("⚠️ Auth 有此帳號，但 members 找不到 uid 符合的文件！");
+        console.warn("⚠️ Auth 有此帳號，但 members 找不到對應文件！");
         setProfile(null);
       }
       setLoading(false);
