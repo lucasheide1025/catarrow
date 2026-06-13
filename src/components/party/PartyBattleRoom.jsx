@@ -152,9 +152,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   useEffect(() => {
     const unsub = subscribePartyRoom(roomId, setRoom);
-    if (isHost) clearPartyProcessing(roomId).catch(() => {}); // 清除可能卡住的 processing
     return unsub;
-  }, [roomId]); // eslint-disable-line
+  }, [roomId]);
 
   // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
   useEffect(() => {
@@ -165,6 +164,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
     if (room?.status !== "waiting") return;
+    if (isHost) clearPartyProcessing(roomId).catch(() => {}); // 非戰鬥中時清除殘留的 processing
     statsWrittenRef.current  = false;
     statsWaitingRef.current  = false;
     rewardStoredRef.current  = false;
@@ -1061,17 +1061,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     ? Object.fromEntries((curMini?.playerLog || []).map(p => [p.id, p.dmg]))
     : {};
   const curMiniMaxDmg  = liveEntry ? Math.max(...Object.values(curMiniDmgMap), 1) : 0;
-  // 自己上一回合的戰鬥摘要（顯示在怪物 DEF 右側，新回合覆蓋舊值）
+  // 自己上一回合的 arrowBreakdown（顯示在送出按鈕上方）
   const myLastPLog = room.log?.length > 0
     ? room.log[room.log.length - 1]?.playerLog?.find(p => p.id === myId)
-    : null;
-  const myBattleSummary = myLastPLog
-    ? [
-        ...(myLastPLog.arrowBreakdown || []).map(a =>
-          a.dmg === 0 ? "脫靶" : a.isCrit ? `💥${a.dmg}` : `+${a.dmg}`
-        ),
-        ...(myLastPLog.ctr > 0 ? [`受 -${myLastPLog.ctr}`] : []),
-      ].join(" · ")
     : null;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
 
@@ -1145,7 +1137,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 </div>
                 <div className="text-xs text-slate-400">
                   {famInfo?.label} · ⚔️{room.monster.atk} 🛡️{room.monster.def}
-                  {myBattleSummary && <span className="text-indigo-300 ml-1.5">· {myBattleSummary}</span>}
                 </div>
               </div>
               <div className="text-right text-sm font-black text-white">
@@ -1238,6 +1229,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 className={`py-3 rounded-xl font-black text-sm ${SCORE_COLORS[label] || "bg-slate-600 text-white"} disabled:opacity-40 active:scale-90 transition-transform`}>
                 {label}
               </button>
+            ))}
+          </div>
+
+          {/* 自己數值 + 上回合逐箭明細 */}
+          <div className="bg-slate-800/60 rounded-xl px-3 py-2 flex flex-col gap-1">
+            <div className="text-[10px] text-slate-500">
+              ⚔️{myStats.atk} 🛡️{myStats.def}
+              {myLastPLog?.ctr > 0 && <span className="ml-2 text-orange-400">受擊 -{myLastPLog.ctr}</span>}
+            </div>
+            {(myLastPLog?.arrowBreakdown || []).map((a, ai) => (
+              <span key={ai} className={`text-[10px] font-bold ${
+                a.dmg === 0 ? "text-slate-600" : a.isCrit ? "text-yellow-400" : "text-slate-400"
+              }`}>
+                {ai + 1}箭 {a.label}分　{a.partIcon} {a.partName}
+                {a.dmg > 0 && <span className="text-rose-400 ml-1">+{a.dmg}</span>}
+                {a.isCrit && <span className="text-yellow-300 ml-0.5">💥</span>}
+              </span>
             ))}
           </div>
 
