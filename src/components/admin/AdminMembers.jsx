@@ -12,8 +12,9 @@ import { calcAge, formatArcherNo, fmtDT, today, thisYear, BOW_TYPES, getCertLeve
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, BadgePip, SearchBar, ConfirmModal, useToast } from "../shared/UI";
 import { EquipmentEditor, EquipmentViewer, normalizeEquipment, ArmorManager, AccessoryManager } from "../shared/Equipment";
 import AdminCertExamModal from "./AdminCertExamModal";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../lib/firebase";
+import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
+import { auth, firebaseConfig } from "../../lib/firebase";
+import { initializeApp, deleteApp } from "firebase/app";
 
 const SORT_OPTIONS = [
   { value:"lastLoginAt_desc", label:"最近登入" },
@@ -338,13 +339,17 @@ function AddMemberModal({ onClose, onDone, operatorId, toast }) {
   async function save() {
     if (!form.email || !form.password || !form.name) { setErr("請填寫信箱、密碼、姓名"); return; }
     setSaving(true);
+    // 用第二個 Firebase App 建立帳號，避免切換主要登入身份
+    const tmpApp  = initializeApp(firebaseConfig, "tmp_" + Date.now());
+    const tmpAuth = getAuth(tmpApp);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const cred = await createUserWithEmailAndPassword(tmpAuth, form.email, form.password);
       const { password, ...rest } = form;
       await createMember({ ...rest, uid: cred.user.uid }, operatorId);
       toast("會員新增成功 🐱");
       onDone(); onClose();
     } catch (e) { setErr(e.message); }
+    finally { deleteApp(tmpApp).catch(() => {}); }
     setSaving(false);
   }
 

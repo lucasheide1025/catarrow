@@ -9,9 +9,6 @@ service cloud.firestore {
     function isAdmin() {
       return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
-    function isMember(memberId) {
-      return request.auth.uid == memberId;
-    }
     function isLoggedIn() {
       return request.auth != null;
     }
@@ -39,71 +36,72 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // results：admin 全權，會員可新增自己的
+    // results：admin 全權，登入者可讀寫
+    // 注意：memberId 存的是 Firestore doc ID，不是 auth.uid，無法在規則層做精確比對
     match /results/{resultId} {
-      allow read:  if isLoggedIn();
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // registrations：admin 全權，會員可讀寫自己的
+    // registrations：admin 全權，登入者可讀寫自己的
     match /registrations/{regId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
       allow update, delete: if isAdmin();
     }
 
-    // messages：admin 全權，會員可讀寫自己的
+    // messages：admin 全權，登入者可讀寫
     match /messages/{msgId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
-      allow update: if isAdmin() || 
-        (isMember(resource.data.memberId) && 
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin() ||
+        (isLoggedIn() &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberRead"]));
       allow delete: if isAdmin();
     }
 
-    // learnLogs：admin 全權，會員可讀寫自己的
+    // learnLogs：admin 全權，登入者可讀寫
     match /learnLogs/{logId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     // practiceLogs：同上
     match /practiceLogs/{logId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
       allow create: if isLoggedIn();
       allow update, delete: if isAdmin();
     }
 
-    // badgeLogs：admin 全權，會員可讀並更新領取狀態
+    // badgeLogs：admin 全權，登入者可讀；會員可更新領取狀態
     match /badgeLogs/{logId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow write:  if isAdmin();
-      allow update: if isMember(resource.data.memberId) &&
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+      allow update: if isLoggedIn() &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(["status", "claimedAt", "claimedBy", "disputeReason", "disputedAt", "disputedBy"]);
     }
 
-    // certRecords：admin 全權，會員可讀自己的
+    // certRecords：admin 全權，登入者可讀
     match /certRecords/{recordId} {
-      allow read:  if isAdmin() || resource.data.memberId == request.auth.uid;
+      allow read:  if isLoggedIn();
       allow write: if isAdmin();
     }
 
-    // achievements：admin 全權，會員可讀
+    // achievements：admin 全權，登入者可讀
     match /achievements/{achId} {
       allow read:  if isLoggedIn();
       allow write: if isAdmin();
     }
 
-    // externalComps：admin 全權，會員可讀寫自己的
+    // externalComps：admin 全權，登入者可讀寫
     match /externalComps/{compId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -114,30 +112,30 @@ service cloud.firestore {
       allow write: if isLoggedIn();
     }
 
-    // monthlyCardRequests：admin 全權；會員可建立自己的 + 讀自己的
+    // monthlyCardRequests：admin 全權；登入者可讀寫
     match /monthlyCardRequests/{reqId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
       allow update, delete: if isAdmin();
     }
 
-    // monthlyCardLogs：admin 全權讀寫（追加式紀錄）
+    // monthlyCardLogs：admin 全權讀寫
     match /monthlyCardLogs/{logId} {
       allow read:  if isAdmin();
-      allow write: if isLoggedIn(); // admin 操作時寫入
+      allow write: if isLoggedIn();
     }
 
-    // monthlyCardConfig：admin 全權；登入者可讀（前台需要預設次數）
+    // monthlyCardConfig：admin 全權；登入者可讀
     match /monthlyCardConfig/{docId} {
       allow read:  if isLoggedIn();
       allow write: if isAdmin();
     }
 
-    // checkins：admin 全權；會員可建立/讀自己的，可更新自己的（問卷達標等）
+    // checkins：admin 全權；登入者可讀寫
     match /checkins/{checkinId} {
-      allow read:   if isAdmin() || resource.data.memberId == request.auth.uid;
-      allow create: if isLoggedIn() && request.resource.data.memberId == request.auth.uid;
-      allow update: if isAdmin() || isMember(resource.data.memberId);
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin() || isLoggedIn();
       allow delete: if isAdmin();
     }
 
@@ -153,7 +151,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // monsterSessions：admin 全權；登入者可讀寫（遊戲進行時）
+    // monsterSessions：登入者可讀寫
     match /monsterSessions/{docId} {
       allow read, write: if isLoggedIn();
     }
@@ -191,7 +189,7 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // notifications：全體廣播 + 個人通知，登入者可讀寫（成就公告、加油等）
+    // notifications：登入者可讀寫，刪除限 admin
     match /notifications/{notifId} {
       allow read:   if isLoggedIn();
       allow create: if isLoggedIn();
