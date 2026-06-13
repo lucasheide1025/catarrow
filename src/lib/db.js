@@ -1951,3 +1951,16 @@ export async function getMembersForBilling() {
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
 }
+
+// ── 版本偵測 ──────────────────────────────────────────────
+const C_SYS = "sysConfig";
+export function subscribeAppVersion(callback) {
+  return onSnapshot(
+    doc(db, C_SYS, "version"),
+    snap => callback(snap.exists() ? (snap.data().current || null) : null),
+    () => callback(null)
+  );
+}
+export async function setAppVersion(version) {
+  await setDoc(doc(db, C_SYS, "version"), { current: version });
+}

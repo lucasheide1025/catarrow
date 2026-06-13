@@ -249,5 +249,11 @@ service cloud.firestore {
     match /cardCollections/{docId} {
       allow read, write: if isLoggedIn();
     }
+
+    // sysConfig：系統設定（版本號等），登入者可讀，admin 可寫
+    match /sysConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
   }
 }

@@ -1,7 +1,8 @@
 // src/pages/MemberApp.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, subscribeNotifications } from "../lib/db";
+import { subscribeResults, subscribeNotifications, subscribeAppVersion } from "../lib/db";
+import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
 import MemberHome         from "../components/member/MemberHome";
@@ -54,6 +55,7 @@ export default function MemberApp() {
   });
   const [notifications, setNotifications] = useState([]);
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
+  const [latestVersion, setLatestVersion] = useState(null);
 
   function handleAppThemeChange(id) {
     saveAppTheme(id);
@@ -64,6 +66,10 @@ export default function MemberApp() {
     if (!profile?.id) return;
     return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
   }, [profile?.id]); // eslint-disable-line
+
+  useEffect(() => {
+    return subscribeAppVersion(setLatestVersion);
+  }, []);
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
@@ -110,8 +116,30 @@ export default function MemberApp() {
     return false;
   }
 
+  const needsUpdate = latestVersion && latestVersion !== APP_VERSION;
+
   return (
     <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"#f8fafc", fontFamily:"sans-serif", overflow:"hidden" }}>
+
+      {/* 版本更新提醒 */}
+      {needsUpdate && (
+        <div style={{ position:"fixed", inset:0, zIndex:99999, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div style={{ background:"white", borderRadius:"24px", padding:"36px 28px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
+            <div style={{ fontSize:"56px", marginBottom:"12px" }}>🔄</div>
+            <div style={{ fontWeight:"900", fontSize:"20px", color:"#1e293b", marginBottom:"8px" }}>系統已更新！</div>
+            <div style={{ color:"#64748b", fontSize:"13px", marginBottom:"4px" }}>目前版本：<b>{APP_VERSION}</b></div>
+            <div style={{ color:"#64748b", fontSize:"13px", marginBottom:"20px" }}>最新版本：<b style={{ color:"#2563eb" }}>{latestVersion}</b></div>
+            <div style={{ background:"#eff6ff", borderRadius:"12px", padding:"12px 16px", color:"#1d4ed8", fontSize:"13px", marginBottom:"24px", lineHeight:"1.6" }}>
+              請重新整理頁面，<br />才能使用最新功能與修正 🐱
+            </div>
+            <button onClick={() => window.location.reload()}
+              style={{ width:"100%", padding:"16px", background:"linear-gradient(135deg,#2563eb,#7c3aed)", color:"white", fontWeight:"900", fontSize:"16px", borderRadius:"16px", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+              🔄 立即重整頁面
+            </button>
+          </div>
+        </div>
+      )}
+
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
 
