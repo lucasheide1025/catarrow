@@ -136,7 +136,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRef     = useRef(false);
-  const processedRoundRef = useRef(0); // 防同一回合雙重結算
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
@@ -159,7 +158,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
     prevLogLenRef.current    = 0;
-    processedRoundRef.current = 0;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -228,8 +226,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || !isHost || room.status !== "active" || room.processing || processingRef.current) return;
     if (!room.monster) return;
-    const currentRound = room.round || 1;
-    if (processedRoundRef.current >= currentRound) return; // 同一回合只結算一次
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
@@ -243,7 +239,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (!aliveIds.every(id => members[id].ready)) return;
-    processedRoundRef.current = currentRound;
     processingRef.current = true;
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
       .finally(() => { processingRef.current = false; });
