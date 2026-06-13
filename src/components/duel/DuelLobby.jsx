@@ -5,8 +5,10 @@ import { calcArcherStats } from "../../lib/monsterData";
 import {
   createDuelRoom, joinDuelRoom, subscribeDuelRoom,
   startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats,
-  updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost
+  updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
+  addBotToDuelRoom, removeBotFromDuelRoom,
 } from "../../lib/duelDb";
+import { BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 
 const TYPE_OPTIONS = [
   { value:"1v1",   label:"⚔️ 1v1",       desc:"單挑，決一勝負" },
@@ -217,6 +219,36 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
           {/* 按鈕 */}
           {isHost ? (
             <>
+              {/* AI 機器人 */}
+              <div className="rounded-xl bg-slate-800/60 border border-slate-600/50 p-3 flex flex-col gap-2">
+                <div className="text-xs font-black text-slate-400 tracking-widest">🤖 加入AI機器人</div>
+                {["A","B"].map(team => (
+                  <div key={team} className="flex gap-1.5 items-center">
+                    <span className={`text-xs font-black w-10 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>隊伍{team}</span>
+                    {Object.entries(BOT_STATS).map(([diff, s]) => (
+                      <button key={diff} onClick={async () => {
+                        const id = makeBotId();
+                        await addBotToDuelRoom(roomId, team, id, randomBotName(diff), diff, s);
+                      }}
+                        className="flex-1 py-1 text-[11px] font-black rounded-lg bg-slate-700 text-slate-200 border border-slate-600 active:scale-95 transition-transform">
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {([...teamAEntries, ...teamBEntries].some(([, m]) => m.isBot)) && (
+                  <button onClick={async () => {
+                    for (const [id] of teamAEntries.filter(([, m]) => m.isBot))
+                      await removeBotFromDuelRoom(roomId, "A", id);
+                    for (const [id] of teamBEntries.filter(([, m]) => m.isBot))
+                      await removeBotFromDuelRoom(roomId, "B", id);
+                  }}
+                    className="text-xs text-red-400 text-center py-0.5 active:opacity-70">
+                    🗑️ 移除全部機器人
+                  </button>
+                )}
+              </div>
+
               <div className="flex gap-2">
                 {room.type !== "uneven" && (
                   <button onClick={handleShuffle}

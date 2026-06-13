@@ -527,3 +527,34 @@ export async function leavePartyRoom(roomId, memberId, isHost) {
     return { ok: false, reason: e.message };
   }
 }
+
+// ── AI 機器人加入房間 ─────────────────────────────────────────
+export async function addBotToPartyRoom(roomId, botId, botName, difficulty, stats) {
+  try {
+    const snap = await getDoc(doc(db, PARTY, roomId));
+    if (!snap.exists()) return { ok: false, reason: "房間不存在" };
+    const room = snap.data();
+    if (Object.keys(room.members || {}).length >= 8) return { ok: false, reason: "房間已滿" };
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${botId}`]: {
+        name: botName, isBot: true, difficulty,
+        hp: stats.hp, maxHP: stats.hp, atk: stats.atk, def: stats.def,
+        arrows: [], ready: false, alive: true,
+      },
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── 移除機器人 ────────────────────────────────────────────────
+export async function removeBotFromPartyRoom(roomId, botId) {
+  try {
+    const { deleteField: del } = await import("firebase/firestore");
+    await updateDoc(doc(db, PARTY, roomId), { [`members.${botId}`]: del() });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}

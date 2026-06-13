@@ -10,6 +10,7 @@ import {
   clearDuelProcessing, proposeRematch, voteRematch, clearRematch,
   removePlayerFromRoom, resetWithRedistribution,
 } from "../../lib/duelDb";
+import { generateBotArrows } from "../../lib/botUtils";
 
 const ARROWS = 5;
 const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
@@ -260,6 +261,30 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     lastRoundFired.current = currentRound;
     processDuelRound(roomId, room, calcDmgFn);
   }, [room]);
+
+  // ── Host：偵測未 ready 的機器人，延遲自動送出箭分 ──────────
+  const duelBotKey = [
+    ...Object.entries(room?.teamA || {}),
+    ...Object.entries(room?.teamB || {}),
+  ].filter(([, m]) => m.isBot && m.alive)
+   .map(([id, m]) => `${id}:${m.ready}`)
+   .join(",");
+  useEffect(() => {
+    if (!isHost || !room || room.status !== "active" || room.processing) return;
+    const allBots = [
+      ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, m, team: "A" })),
+      ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, m, team: "B" })),
+    ].filter(({ m }) => m.isBot && m.alive && !m.ready);
+    if (allBots.length === 0) return;
+    const delay = 700 + Math.random() * 900;
+    const t = setTimeout(async () => {
+      for (const { id, m, team } of allBots) {
+        const arrows = generateBotArrows(m.difficulty || "normal");
+        await submitDuelArrows(roomId, team, id, arrows).catch(() => {});
+      }
+    }, delay);
+    return () => clearTimeout(t);
+  }, [duelBotKey, room?.status, room?.processing]); // eslint-disable-line
 
   // ── 結算時記錄成就/統計 ─────────────────────────────────
   useEffect(() => {

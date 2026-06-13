@@ -473,3 +473,28 @@ export async function recordDuelResult(memberId, outcome, mode, extraStats = {})
     return { ok: true };
   } catch (e) { return { ok: false }; }
 }
+
+// ── AI 機器人加入決鬥房間 ─────────────────────────────────────
+export async function addBotToDuelRoom(roomId, team, botId, botName, difficulty, stats) {
+  try {
+    const teamKey = `team${team}`;
+    await updateDoc(doc(db, DUEL, roomId), {
+      [`${teamKey}.${botId}`]: {
+        name: botName, isBot: true, difficulty,
+        hp: stats.hp, maxHP: stats.hp, atk: stats.atk, def: stats.def,
+        arrows: [], ready: false, alive: true,
+      },
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// ── 移除決鬥機器人 ────────────────────────────────────────────
+export async function removeBotFromDuelRoom(roomId, team, botId) {
+  try {
+    await updateDoc(doc(db, DUEL, roomId), {
+      [`team${team}.${botId}`]: deleteField(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}

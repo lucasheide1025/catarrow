@@ -5,8 +5,9 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
-  resetPartyRoom, sendPartyCheer,
+  resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
 } from "../../lib/partyDb";
+import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex } from "../../lib/db";
 import { sfxTap, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
@@ -233,6 +234,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
       .finally(() => { processingRef.current = false; });
   }, [room?.members, room?.processing]); // eslint-disable-line
+
+  // 房主：偵測未 ready 的機器人，延遲自動送出箭分
+  const botReadyKey = Object.entries(room?.members || {})
+    .filter(([, m]) => m.isBot && m.alive)
+    .map(([id, m]) => `${id}:${m.ready}`)
+    .join(",");
+  useEffect(() => {
+    if (!isHost || !room || room.status !== "active" || room.processing) return;
+    const members = room.members || {};
+    const botsUnready = Object.entries(members).filter(([, m]) => m.isBot && m.alive && !m.ready);
+    if (botsUnready.length === 0) return;
+    const delay = 700 + Math.random() * 900;
+    const t = setTimeout(async () => {
+      for (const [botId, bot] of botsUnready) {
+        const arrows = generateBotArrows(bot.difficulty || "normal");
+        await submitArrows(roomId, botId, arrows).catch(() => {});
+      }
+    }, delay);
+    return () => clearTimeout(t);
+  }, [botReadyKey, room?.status, room?.processing]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
   useEffect(() => {
@@ -547,6 +568,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           {memberList.length < 8 && (
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
           )}
+          {isHost && memberList.length < 8 && (
+            <div className="flex gap-2 pt-1">
+              {Object.entries(BOT_STATS).map(([diff, s]) => (
+                <button key={diff} onClick={async () => {
+                  const id = makeBotId();
+                  await addBotToPartyRoom(roomId, id, randomBotName(diff), diff, s);
+                }}
+                  className="flex-1 py-1.5 text-xs font-black rounded-xl bg-slate-600/70 text-slate-200 border border-slate-500/50 active:scale-95 transition-transform">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {isHost && memberList.some(m => m.isBot) && (
+            <button onClick={async () => {
+              for (const m of memberList.filter(b => b.isBot)) {
+                await removeBotFromPartyRoom(roomId, m.id);
+              }
+            }}
+              className="text-xs text-red-400 text-center py-1 active:opacity-70">
+              🗑️ 移除全部機器人
+            </button>
+          )}
         </div>
 
         {/* 藥水選擇（自己的庫存）*/}
@@ -671,10 +715,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               </div>
             )}
             <button onClick={handleStart}
-              disabled={!setupMonster || starting || memberList.length < 2 || (partyBattleLeft !== null && partyBattleLeft <= 0)}
+              disabled={!setupMonster || starting || (memberList.length < 2 && !memberList.some(m => m.isBot)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
               className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
               {starting ? "開始中…"
-                : memberList.length < 2 ? `⚔️ 等待更多玩家（${memberList.length}/2）`
+                : memberList.length < 2 && !memberList.some(m => m.isBot) ? `⚔️ 等待更多玩家（${memberList.length}/2）`
                 : `⚔️ 開始戰鬥（${memberList.length}人）`}
             </button>
           </div>
