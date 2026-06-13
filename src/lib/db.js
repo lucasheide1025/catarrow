@@ -34,15 +34,18 @@ export async function writeAuditLog(action, targetId, targetType, before, after,
 }
 
 // ─── Members ───────────────────────────────────────────────
+const sortByLastLogin = docs =>
+  docs.sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
+
 export async function getMembers() {
-  const snap = await getDocs(query(collection(db, C.members), orderBy("lastLoginAt", "desc")));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(collection(db, C.members));
+  return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })));
 }
 
 export function subscribeMembers(callback) {
   return onSnapshot(
-    query(collection(db, C.members), orderBy("lastLoginAt", "desc")),
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    collection(db, C.members),
+    snap => callback(sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   );
 }
 
