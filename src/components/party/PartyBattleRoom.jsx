@@ -136,6 +136,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const processingRef     = useRef(false);
+  const processedRoundRef = useRef(0); // 防同一回合雙重結算
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
@@ -158,6 +159,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
     prevLogLenRef.current    = 0;
+    processedRoundRef.current = 0;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -222,38 +224,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
-  // 房主：全員 ready → 自動計算
+  // 房主：檢查所有人是否 ready → 先幫機器人補送箭分，再觸發結算
   useEffect(() => {
     if (!room || !isHost || room.status !== "active" || room.processing || processingRef.current) return;
     if (!room.monster) return;
+    const currentRound = room.round || 1;
+    if (processedRoundRef.current >= currentRound) return; // 同一回合只結算一次
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
+    // 未 ready 的機器人：立即幫牠送出箭分，等下一次 snapshot 再檢查
+    const botsUnready = aliveIds.filter(id => members[id].isBot && !members[id].ready);
+    if (botsUnready.length > 0) {
+      botsUnready.forEach(botId => {
+        const arrows = generateBotArrows(members[botId].difficulty || "normal");
+        submitArrows(roomId, botId, arrows).catch(() => {});
+      });
+      return;
+    }
     if (!aliveIds.every(id => members[id].ready)) return;
+    processedRoundRef.current = currentRound;
     processingRef.current = true;
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
       .finally(() => { processingRef.current = false; });
   }, [room?.members, room?.processing]); // eslint-disable-line
-
-  // 房主：偵測未 ready 的機器人，延遲自動送出箭分
-  const botReadyKey = Object.entries(room?.members || {})
-    .filter(([, m]) => m.isBot && m.alive)
-    .map(([id, m]) => `${id}:${m.ready}`)
-    .join(",");
-  useEffect(() => {
-    if (!isHost || !room || room.status !== "active" || room.processing) return;
-    const members = room.members || {};
-    const botsUnready = Object.entries(members).filter(([, m]) => m.isBot && m.alive && !m.ready);
-    if (botsUnready.length === 0) return;
-    const delay = 700 + Math.random() * 900;
-    const t = setTimeout(async () => {
-      for (const [botId, bot] of botsUnready) {
-        const arrows = generateBotArrows(bot.difficulty || "normal");
-        await submitArrows(roomId, botId, arrows).catch(() => {});
-      }
-    }, delay);
-    return () => clearTimeout(t);
-  }, [botReadyKey, room?.status, room?.processing]); // eslint-disable-line
 
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
   useEffect(() => {

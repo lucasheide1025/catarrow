@@ -1,17 +1,17 @@
 // src/lib/botUtils.js — AI 機器人共用工具
 
-// 組隊打怪（PvE）：較高數值，機器人是隊友
+// 組隊打怪（PvE）：機器人是隊友，需要足夠 ATK 打怪
 export const PARTY_BOT_STATS = {
-  easy:   { hp: 250, atk: 7,  def: 7,  label: "🐣 練習" },
-  normal: { hp: 380, atk: 10, def: 9,  label: "🤖 普通" },
-  hard:   { hp: 480, atk: 14, def: 11, label: "🔥 強力" },
+  easy:   { hp: 300, atk: 9,  def: 8,  label: "🐣 練習" },
+  normal: { hp: 400, atk: 12, def: 10, label: "🤖 普通" },
+  hard:   { hp: 480, atk: 15, def: 12, label: "🔥 強力" },
 };
 
-// 決鬥模式（PvP）：對齊 balanceDuelStats 輸出範圍（HP 200~280, ATK 5~14, DEF 2~7）
+// 決鬥模式（PvP）：對齊 balanceDuelStats 輸出範圍，ATK 不低於 8
 export const DUEL_BOT_STATS = {
-  easy:   { hp: 210, atk: 6,  def: 3,  label: "🐣 練習" },
-  normal: { hp: 240, atk: 9,  def: 5,  label: "🤖 普通" },
-  hard:   { hp: 272, atk: 13, def: 7,  label: "🔥 強力" },
+  easy:   { hp: 220, atk: 8,  def: 4,  label: "🐣 練習" },
+  normal: { hp: 248, atk: 11, def: 6,  label: "🤖 普通" },
+  hard:   { hp: 272, atk: 14, def: 7,  label: "🔥 強力" },
 };
 
 // 向下相容（組隊用）

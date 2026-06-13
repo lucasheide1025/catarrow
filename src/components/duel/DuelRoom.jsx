@@ -246,45 +246,33 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setTimeout(() => setCheerMsg(""), 3000);
   }, [room?.cheer?.ts]);
 
-  // ── Host 偵測所有人就緒 → 處理回合 ──────────────────────
+  // ── Host：偵測所有人就緒 → 先幫機器人補送箭分，再處理回合 ──
   useEffect(() => {
     if (!isHost || !room || room.status !== "active" || room.processing) return;
     const currentRound = room.round || 1;
-    if (lastRoundFired.current >= currentRound) return; // 本回合已觸發過
+    if (lastRoundFired.current >= currentRound) return; // 同一回合只結算一次
     const teamA = room.teamA || {};
     const teamB = room.teamB || {};
-    const aliveA = Object.values(teamA).filter(m => m.alive);
-    const aliveB = Object.values(teamB).filter(m => m.alive);
+    const aliveA = Object.entries(teamA).filter(([, m]) => m.alive);
+    const aliveB = Object.entries(teamB).filter(([, m]) => m.alive);
     if (!aliveA.length || !aliveB.length) return;
-    const allReady = [...aliveA, ...aliveB].every(m => m.ready);
+    // 未 ready 的機器人：立即幫牠送出箭分，等下一次 snapshot 再結算
+    const botsUnready = [
+      ...aliveA.map(([id, m]) => ({ id, m, team: "A" })),
+      ...aliveB.map(([id, m]) => ({ id, m, team: "B" })),
+    ].filter(({ m }) => m.isBot && !m.ready);
+    if (botsUnready.length > 0) {
+      botsUnready.forEach(({ id, m, team }) => {
+        const arrows = generateBotArrows(m.difficulty || "normal");
+        submitDuelArrows(roomId, team, id, arrows).catch(() => {});
+      });
+      return;
+    }
+    const allReady = [...aliveA, ...aliveB].every(([, m]) => m.ready);
     if (!allReady) return;
     lastRoundFired.current = currentRound;
     processDuelRound(roomId, room, calcDmgFn);
-  }, [room]);
-
-  // ── Host：偵測未 ready 的機器人，延遲自動送出箭分 ──────────
-  const duelBotKey = [
-    ...Object.entries(room?.teamA || {}),
-    ...Object.entries(room?.teamB || {}),
-  ].filter(([, m]) => m.isBot && m.alive)
-   .map(([id, m]) => `${id}:${m.ready}`)
-   .join(",");
-  useEffect(() => {
-    if (!isHost || !room || room.status !== "active" || room.processing) return;
-    const allBots = [
-      ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, m, team: "A" })),
-      ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, m, team: "B" })),
-    ].filter(({ m }) => m.isBot && m.alive && !m.ready);
-    if (allBots.length === 0) return;
-    const delay = 700 + Math.random() * 900;
-    const t = setTimeout(async () => {
-      for (const { id, m, team } of allBots) {
-        const arrows = generateBotArrows(m.difficulty || "normal");
-        await submitDuelArrows(roomId, team, id, arrows).catch(() => {});
-      }
-    }, delay);
-    return () => clearTimeout(t);
-  }, [duelBotKey, room?.status, room?.processing]); // eslint-disable-line
+  }, [room]); // eslint-disable-line
 
   // ── 結算時記錄成就/統計 ─────────────────────────────────
   useEffect(() => {
