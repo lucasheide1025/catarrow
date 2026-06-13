@@ -329,6 +329,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room?.result === "lose") { sfxSoftFail(); }
   }, [room?.result]); // eslint-disable-line
 
+  // 怪物死亡後：等動畫跑完，房主自動確認進入結算
+  useEffect(() => {
+    if (room?.status !== "pending_confirm" || liveEntry || !isHost) return;
+    const t = setTimeout(() => { handleConfirmResult(); }, 3000);
+    return () => clearTimeout(t);
+  }, [room?.status, liveEntry]); // eslint-disable-line
+
   // 隊友加油通知（不顯示自己發的）
   useEffect(() => {
     if (!room?.cheer?.fromName) return;
@@ -677,8 +684,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     );
   }
 
-  // ── 怪物死亡確認畫面（房主按下才正式結算）───────────────────
-  if (room.status === "pending_confirm") {
+  // ── 怪物死亡確認畫面（動畫結束後才顯示，3秒後自動結算）────────
+  if (room.status === "pending_confirm" && !liveEntry) {
     const lastEntry = room.log?.[room.log.length - 1];
     return (
       <div className="min-h-screen bg-gradient-to-b from-yellow-950 to-slate-900 flex flex-col items-center justify-center px-4 gap-6">
