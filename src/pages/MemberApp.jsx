@@ -166,14 +166,14 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
-        {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")} />}
+        {page==="monster"     && <MonsterBattle onBack={()=>setPage("home")} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
-        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("profile")} />}
+        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("home")} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
         {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
-        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} />}
+        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}

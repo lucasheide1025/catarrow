@@ -28,7 +28,7 @@ const TYPE_OPTIONS = [
 
 // guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile
 // battleOnly — 訪客模式只顯示打怪選項（不顯示日常任務）
-export default function PartyLobby({ onEnterRoom, guestOverride, battleOnly }) {
+export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleOnly }) {
   const { profile } = useAuth();
   const [tab, setTab] = useState("create"); // "create" | "join"
   const [selType, setSelType] = useState(battleOnly ? "battle" : "quest");
@@ -64,10 +64,13 @@ export default function PartyLobby({ onEnterRoom, guestOverride, battleOnly }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col items-center py-10 px-4">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col items-center py-10 px-4 relative">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
+          {onBack && (
+            <button onClick={onBack} className="absolute left-4 top-4 text-slate-400 text-sm font-bold hover:text-white transition-colors">← 返回</button>
+          )}
           <div className="text-5xl mb-3">👥</div>
           <div className="text-2xl font-black text-white">組隊模式</div>
           <div className="text-sm text-slate-400 mt-1">與夥伴一起練習、一起打怪</div>

@@ -214,6 +214,40 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
       {/* 每日報到展開區 */}
       {showDailyQuest && <DailyQuest onJoinParty={onJoinParty} />}
 
+      {/* 廣播訊息（前 5 則）*/}
+      {notifications.length > 0 && (
+        <Card className="p-4">
+          <ST>📢 最新廣播</ST>
+          {notifications.slice(0, 5).map(n => {
+            const TYPE_ICON = {
+              important:"🔴", promo:"🎉", new_comp:"🏆",
+              cert_pass:"🏅", high_score:"⭐", comp_result:"📊",
+            };
+            const unread = !(n.readBy||[]).includes(profile?.id);
+            return (
+              <div key={n.id} className={`py-2.5 border-b border-gray-100 last:border-0 ${unread ? "bg-blue-50/60 -mx-4 px-4 rounded-xl" : ""}`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-sm mt-0.5">{TYPE_ICON[n.type] || "📢"}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm leading-tight ${unread ? "font-black text-gray-800" : "font-bold text-gray-700"}`}>
+                      {n.title}
+                    </div>
+                    {n.content && (
+                      <div className="text-gray-500 text-xs mt-0.5 leading-snug line-clamp-2">{n.content}</div>
+                    )}
+                  </div>
+                  {unread && <span className="flex-shrink-0 w-2 h-2 bg-red-400 rounded-full mt-1.5" />}
+                </div>
+              </div>
+            );
+          })}
+          <button onClick={() => onPageChange("notifications")}
+            className="text-blue-600 text-xs font-semibold mt-2">
+            查看全部訊息 →
+          </button>
+        </Card>
+      )}
+
       {pendingBadges.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="text-amber-700 font-bold text-sm mb-2">🎖️ 你有 {pendingBadges.length} 個徽章待確認領取！</div>
