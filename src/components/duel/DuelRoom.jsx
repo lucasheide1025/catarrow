@@ -119,26 +119,44 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, revealEntry, revealIdx,
       </div>
       {/* 本回合逐箭揭露 */}
       {shown.length > 0 && (
-        <div className="flex gap-1 flex-wrap mt-0.5">
+        <div className="flex flex-col gap-0.5 mt-1">
           {shown.map((b, i) => (
-            <span key={i} className={`text-[10px] px-1 py-0.5 rounded font-bold ${
-              b.isCrit ? "bg-amber-600/80 text-white" : b.dmg === 0 ? "bg-slate-700/80 text-slate-500" : "bg-slate-600/80 text-white"
-            }`}>
-              {b.partIcon}{b.label}{b.dmg > 0 && <span className="text-red-300 text-[9px]"> -{b.dmg}</span>}
-            </span>
+            <div key={i} className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-lg ${
+              b.isCrit   ? "bg-amber-900/60 border border-amber-500/40"
+              : b.dmg === 0 ? "bg-slate-800/60"
+                           : "bg-slate-700/40"
+            }`} style={{ animation:"slide-in .15s ease" }}>
+              <span className="shrink-0">{b.dmg === 0 ? "💨" : b.partIcon}</span>
+              <span className={`font-bold ${b.isCrit ? "text-amber-300" : b.dmg === 0 ? "text-slate-500" : "text-slate-300"}`}>
+                {b.dmg === 0 ? "脫靶" : (b.partName || "胸腔")}
+              </span>
+              <span className="text-slate-600 text-[9px]">{b.label}</span>
+              {b.isCrit && <span className="text-amber-400 text-[9px] font-black">💥爆擊</span>}
+              {b.lucky  && <span className="text-amber-300 text-[9px]">✨</span>}
+              {b.dmg > 0 && (
+                <span className={`ml-auto font-black ${b.isCrit ? "text-amber-400" : "text-red-400"}`}>
+                  -{b.dmg}
+                </span>
+              )}
+            </div>
           ))}
           {revAtk && shown.length < (revAtk.arrowBreakdown||[]).length && (
-            <span className="text-[9px] text-slate-500 animate-pulse self-center">…</span>
+            <div className="text-[9px] text-slate-500 animate-pulse text-center">…</div>
           )}
         </div>
       )}
-      {/* 上回合摘要 */}
+      {/* 上回合摘要（淡化顯示） */}
       {lastArrows.length > 0 && shown.length === 0 && (
-        <div className="flex gap-1 flex-wrap mt-0.5 opacity-50">
+        <div className="flex flex-col gap-0.5 mt-1 opacity-45">
           {lastArrows.map((b, i) => (
-            <span key={i} className={`text-[9px] ${b.dmg === 0 ? "text-slate-600" : b.isCrit ? "text-amber-400" : "text-slate-400"}`}>
-              {b.label}{b.dmg > 0 ? `(${b.dmg})` : ""}
-            </span>
+            <div key={i} className="flex items-center gap-1 text-[9px]">
+              <span>{b.dmg === 0 ? "💨" : b.partIcon}</span>
+              <span className={b.dmg === 0 ? "text-slate-600" : b.isCrit ? "text-amber-400" : "text-slate-400"}>
+                {b.dmg === 0 ? "脫靶" : (b.partName || "胸腔")}
+              </span>
+              {b.isCrit && <span className="text-amber-500 text-[8px]">💥</span>}
+              {b.dmg > 0 && <span className="ml-auto text-slate-500">-{b.dmg}</span>}
+            </div>
           ))}
         </div>
       )}
