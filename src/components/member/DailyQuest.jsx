@@ -10,7 +10,7 @@ import { drawBuff } from "../../lib/buffPool";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { createPartyRoom } from "../../lib/partyDb";
+import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
 
 // 靶紙清單
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
@@ -76,6 +76,9 @@ export default function DailyQuest({ onJoinParty }) {
   // 組隊邀請流程
   const [partyAsk,      setPartyAsk]      = useState(false);
   const [partyCreating, setPartyCreating] = useState(false);
+  const [joinCode,      setJoinCode]      = useState(null); // null=隱藏, string=顯示輸入框
+  const [joining,       setJoining]       = useState(false);
+  const [joinError,     setJoinError]     = useState("");
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -324,13 +327,42 @@ export default function DailyQuest({ onJoinParty }) {
               <div className="flex gap-2">
                 <button onClick={handleCreateParty} disabled={partyCreating}
                   className="flex-1 py-2.5 bg-white text-emerald-700 font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
-                  {partyCreating ? "建立中…" : "👥 建立組隊房間"}
+                  {partyCreating ? "建立中…" : "👥 建立房間"}
+                </button>
+                <button onClick={() => { setJoinCode(joinCode === null ? "" : null); setJoinError(""); }}
+                  className="flex-1 py-2.5 bg-indigo-500 text-white font-black rounded-xl text-sm active:scale-95 transition-transform">
+                  🔑 加入房間
                 </button>
                 <button onClick={() => setPartyAsk(false)}
                   className="flex-1 py-2.5 bg-white/20 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   自己練
                 </button>
               </div>
+              {/* 加入房間：輸入邀請碼 */}
+              {joinCode !== null && (
+                <div className="flex flex-col gap-2 mt-1">
+                  <input
+                    value={joinCode}
+                    onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(""); }}
+                    placeholder="輸入邀請碼"
+                    maxLength={6}
+                    className="w-full px-3 py-2 rounded-xl bg-white/20 text-white placeholder-white/50 font-mono tracking-widest text-center text-base border border-white/30 focus:outline-none"
+                  />
+                  {joinError && <div className="text-red-300 text-xs text-center">{joinError}</div>}
+                  <button
+                    disabled={joinCode.length < 4 || joining}
+                    onClick={async () => {
+                      setJoining(true); setJoinError("");
+                      const res = await joinPartyRoom(joinCode, profile.id, profile.nickname || profile.name);
+                      setJoining(false);
+                      if (res.ok) { onJoinParty(res.roomId, "quest", false); }
+                      else setJoinError(res.reason || "加入失敗");
+                    }}
+                    className="w-full py-2.5 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform">
+                    {joining ? "加入中…" : "確認加入"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
