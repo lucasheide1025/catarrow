@@ -12,7 +12,7 @@ import {
 } from "../../lib/duelDb";
 import { generateBotArrows } from "../../lib/botUtils";
 
-const ARROWS = 5;
+const ARROWS = 6;
 const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
 const SCORE_BTNS = [
   { label:"X", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
@@ -80,26 +80,66 @@ function calcDmgFn(arrows, atk, targetDef) {
   return { dmg, crits, arrowBreakdown, luckyEvent };
 }
 
-// ── HP 條 ───────────────────────────────────────────────────
-function HpBar({ name, hp, maxHP, isMe, dead, flash, atk, def, summary }) {
-  const pct = maxHP > 0 ? Math.max(0, Math.round(hp / maxHP * 100)) : 0;
-  const color = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+// ── 決鬥玩家小卡 ────────────────────────────────────────────
+function DuelPlayerCard({ id, m, isMe, flash, displayHp, revealEntry, revealIdx, lastLogEntry }) {
+  const hp     = displayHp?.[id] ?? m.hp;
+  const maxHP  = m.maxHP || 1;
+  const pct    = Math.max(0, Math.round(hp / maxHP * 100));
+  const color  = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+  const isDead = !m.alive || hp <= 0;
+
+  // 本回合逐箭揭露
+  const revAtk  = revealEntry?.attacks?.find(a => a.attackerId === id);
+  const shown   = revAtk ? (revAtk.arrowBreakdown || []).slice(0, Math.max(0, revealIdx)) : [];
+  // 上回合摘要（不在揭露時顯示）
+  const lastAtk    = !revAtk && lastLogEntry?.attacks?.find(a => a.attackerId === id);
+  const lastArrows = lastAtk ? (lastAtk.arrowBreakdown || []) : [];
+
   return (
-    <div className={`rounded-xl p-2 border transition-all ${dead ? "opacity-40 border-slate-700" : flash ? "border-red-400" : "border-white/10"}`}
-      style={flash ? { animation:"hp-flash 0.4s ease" } : {}}>
-      <div className="flex justify-between items-center mb-1">
-        <span className={`text-xs font-bold truncate max-w-[80px] ${dead ? "line-through text-slate-500" : isMe ? "text-amber-300" : "text-slate-200"}`}>
-          {dead ? "💀" : "🏹"} {name}
+    <div className={`rounded-xl p-2.5 border transition-all ${
+      isDead     ? "opacity-40 border-slate-700 bg-slate-900/40"
+      : flash    ? "border-red-400 bg-red-900/15"
+      : isMe     ? "border-amber-500/60 bg-amber-900/15"
+               : "border-white/15 bg-white/5"
+    }`} style={flash ? { animation:"hp-flash 0.4s ease" } : {}}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-xs font-black truncate max-w-[90px] ${
+          isDead ? "line-through text-slate-500" : isMe ? "text-amber-300" : "text-slate-200"
+        }`}>
+          {isDead ? "💀" : m.ready ? "✅" : "🏹"} {m.name}
+          {isMe && <span className="ml-1 text-[9px] text-amber-400/70">(我)</span>}
         </span>
-        <span className="text-xs font-black text-slate-300">{hp}/{maxHP}</span>
+        <span className="text-[10px] text-slate-400 font-mono">{hp}/{maxHP}</span>
       </div>
-      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mb-1.5">
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
-      {(atk != null || summary) && (
-        <div className="flex items-center gap-1 mt-1 flex-wrap">
-          {atk != null && <span className="text-[10px] text-slate-500">⚔️{atk} 🛡️{def}</span>}
-          {summary && <span className="text-[10px] text-indigo-300 truncate">{summary}</span>}
+      <div className="flex gap-2 text-[10px] text-slate-500 mb-1">
+        <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
+      </div>
+      {/* 本回合逐箭揭露 */}
+      {shown.length > 0 && (
+        <div className="flex gap-1 flex-wrap mt-0.5">
+          {shown.map((b, i) => (
+            <span key={i} className={`text-[10px] px-1 py-0.5 rounded font-bold ${
+              b.isCrit ? "bg-amber-600/80 text-white" : b.dmg === 0 ? "bg-slate-700/80 text-slate-500" : "bg-slate-600/80 text-white"
+            }`}>
+              {b.partIcon}{b.label}{b.dmg > 0 && <span className="text-red-300 text-[9px]"> -{b.dmg}</span>}
+            </span>
+          ))}
+          {revAtk && shown.length < (revAtk.arrowBreakdown||[]).length && (
+            <span className="text-[9px] text-slate-500 animate-pulse self-center">…</span>
+          )}
+        </div>
+      )}
+      {/* 上回合摘要 */}
+      {lastArrows.length > 0 && shown.length === 0 && (
+        <div className="flex gap-1 flex-wrap mt-0.5 opacity-50">
+          {lastArrows.map((b, i) => (
+            <span key={i} className={`text-[9px] ${b.dmg === 0 ? "text-slate-600" : b.isCrit ? "text-amber-400" : "text-slate-400"}`}>
+              {b.label}{b.dmg > 0 ? `(${b.dmg})` : ""}
+            </span>
+          ))}
         </div>
       )}
     </div>
@@ -573,15 +613,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // 本回合我攻擊的目標（從最新 log entry）
   const myLastAtk = revealEntry?.attacks?.find(a => a.attackerId === myId);
 
-  // 每位玩家上一回合的戰鬥摘要（顯示在名字旁邊）
   const lastLogEntry = room.log?.length > 0 ? room.log[room.log.length - 1] : null;
-  function getPlayerSummary(id) {
-    const atk = lastLogEntry?.attacks?.find(a => a.attackerId === id);
-    if (!atk) return null;
-    return (atk.arrowBreakdown || []).map(a =>
-      a.dmg === 0 ? "脫靶" : a.isCrit ? `💥${a.dmg}` : `+${a.dmg}`
-    ).join(" · ");
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col">
@@ -613,27 +645,23 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 雙隊 HP */}
-      <div className="flex gap-3 px-4 py-3">
+      {/* 雙隊玩家小卡 */}
+      <div className="flex gap-2 px-4 py-3">
         {[["A", allA], ["B", allB]].map(([team, entries]) => (
-          <div key={team} className="flex-1 flex flex-col gap-1.5">
+          <div key={team} className="flex-1 flex flex-col gap-2">
             <div className={`text-xs font-black tracking-widest ${team === "A" ? "text-blue-400" : "text-red-400"}`}>
               {team === "A" ? "🔵" : "🔴"} 隊伍 {team}
             </div>
             {entries.map(([id, m]) => (
               <div key={id} className="relative">
-                <HpBar
-                  name={m.name}
-                  hp={displayHp?.[id] ?? m.hp}
-                  maxHP={m.maxHP}
-                  isMe={id === myId}
-                  dead={isRevealing ? (displayHp?.[id] ?? m.hp) <= 0 : !m.alive}
+                <DuelPlayerCard
+                  id={id} m={m} isMe={id === myId}
                   flash={!!flashIds[id]}
-                  atk={m.atk}
-                  def={m.def}
-                  summary={getPlayerSummary(id)}
+                  displayHp={displayHp}
+                  revealEntry={isRevealing ? revealEntry : null}
+                  revealIdx={revealIdx}
+                  lastLogEntry={lastLogEntry}
                 />
-                {/* 浮動傷害數字 */}
                 {floats.filter(f => f.memberId === id).map(f => (
                   <span key={f.id}
                     className={f.isCrit ? "crit-pop" : "dmg-float"}
@@ -647,48 +675,32 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         ))}
       </div>
 
-      {/* 揭露中：顯示最新攻擊記錄 */}
+      {/* 揭露中：攻擊對陣 */}
       {isRevealing && revealEntry && (
-        <div className="mx-4 rounded-2xl bg-black/40 border border-white/10 p-3 flex flex-col gap-2 overflow-y-auto max-h-40">
-          <div className="text-xs text-slate-400 font-black tracking-wider">⚔️ 回合 {revealEntry.round} 結算</div>
+        <div className="mx-4 rounded-2xl bg-black/40 border border-white/10 p-3 flex flex-col gap-1.5">
+          <div className="text-xs text-slate-400 font-black tracking-wider">⚔️ 第 {revealEntry.round} 回合攻擊</div>
           {(revealEntry.attacks || []).map((atk, i) => {
             const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
             const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
-            const shown = (atk.arrowBreakdown || []).slice(0, revealIdx);
-            const shownDmg = shown.reduce((s, b) => s + b.dmg, 0);
-            const shownCrits = shown.filter(b => b.isCrit).length;
+            const shownBk = (atk.arrowBreakdown || []).slice(0, revealIdx);
+            const shownDmg = shownBk.reduce((s, b) => s + b.dmg, 0);
+            const shownCrits = shownBk.filter(b => b.isCrit).length;
             return (
-              <div key={i} className={`rounded-xl px-2 py-1.5 border text-xs ${atk.attackerId === myId ? "border-amber-500/40 bg-amber-900/20" : "border-white/10 bg-white/5"}`}
+              <div key={i} className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-xl ${atk.attackerId === myId ? "bg-amber-900/30 border border-amber-500/30" : "bg-white/5 border border-white/10"}`}
                 style={{ animation:"slide-in .2s ease" }}>
-                <div className="flex items-center flex-wrap gap-x-1">
-                  <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
-                  <span className="text-slate-400">→</span>
-                  <span className="text-slate-200">{tName}</span>
-                  <span className="text-white font-black">{shownDmg > 0 ? `-${shownDmg}` : "…"}</span>
-                  {shownCrits > 0 && <span className="text-amber-400 font-black">💥×{shownCrits}</span>}
-                  <span className="text-slate-500">{shown.map(b => b.label).join(" ")}</span>
-                </div>
+                <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
+                <span className="text-slate-500">→</span>
+                <span className="text-slate-300">{tName}</span>
+                {shownDmg > 0 && <span className="text-red-400 font-black ml-auto">-{shownDmg}</span>}
+                {shownCrits > 0 && <span className="text-amber-400 font-black">💥×{shownCrits}</span>}
                 {atk.luckyEvent && revealIdx > 0 && (
-                  <div className="mt-1 text-amber-300 font-black" style={{ animation:"slide-in .3s ease" }}>
-                    {atk.luckyEvent.icon} {atk.luckyEvent.title} — {atk.luckyEvent.desc}
-                  </div>
+                  <span className="text-amber-300 text-[10px]">{atk.luckyEvent.icon}</span>
                 )}
               </div>
             );
           })}
         </div>
       )}
-
-      {/* 等待/就緒狀態列 */}
-      <div className="mx-4 mt-2 flex items-center gap-2 flex-wrap">
-        {[...allA, ...allB].map(([id, m]) => (
-          m.alive && (
-            <span key={id} className={`text-xs px-2 py-0.5 rounded-full font-bold border ${m.ready ? "border-green-400 bg-green-900/40 text-green-300" : "border-slate-600 bg-slate-800 text-slate-400"}`}>
-              {m.ready ? "✅" : "🏹"} {m.name}
-            </span>
-          )
-        ))}
-      </div>
 
       {/* 戰鬥結束 → reveal 跑完後顯示確認按鈕 */}
       {room.status === "finished" && !showResult && (
