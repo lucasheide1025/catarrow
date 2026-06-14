@@ -31,7 +31,7 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
   const grade   = equipped?.grade     || "common";
   const plus    = equipped?.plusLevel || 0;
   const idx     = gradeIdx(grade);
-  const bonus   = idx + 1;
+  const bonus   = (idx * 5 + 1) + plus;
   const gStyle  = gradeStyle(grade);
   const itemList = (itemsMap || {})[slotDef.id] || [];
   const item     = itemList.find(i => i.id === equipped?.itemId);

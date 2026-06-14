@@ -203,8 +203,9 @@ export const EQUIP_SLOT_DEFS = [
 ];
 
 // 計算裝備對戰鬥屬性的加成
-// 每個欄位：ATK/DEF +1 per grade，HP +5 per grade
-// grade index: 普通=0 稀有=1 精英=2 史詩=3 傳說=4 神話=5
+// 品級基底：普通=1, 稀有=6, 精英=11, 史詩=16, 傳說=21, 神話=26（每品+5）
+// plusLevel 直接疊加：slot bonus = gradeBase + plusLevel
+// HP 欄位再乘 5
 export function calcEquipBonus(equipment) {
   let atkBonus = 0, defBonus = 0, hpBonus = 0;
   if (!equipment) return { atkBonus, defBonus, hpBonus };
@@ -213,7 +214,7 @@ export function calcEquipBonus(equipment) {
     if (!e?.grade) continue;
     const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === e.grade);
     if (gradeIdx < 0) continue;
-    const bonus = gradeIdx + 1;
+    const bonus = (gradeIdx * 5 + 1) + (e.plusLevel || 0);
     if (slot.stat === "atk") atkBonus += bonus;
     else if (slot.stat === "def") defBonus += bonus;
     else if (slot.stat === "hp") hpBonus += bonus * 5;
