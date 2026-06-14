@@ -73,10 +73,10 @@ export default function DailyQuest({ onJoinParty }) {
   const [chosenIdx, setChosenIdx] = useState(null);
   // 計分器
   const [arrows, setArrows] = useState([]);
-  // 組隊邀請流程
-  const [partyAsk,      setPartyAsk]      = useState(false);
+  // 模式選擇：null=未選, "party"=建立組隊, "join"=加入房間, "solo"=自己練
+  const [mode,          setMode]          = useState(null);
   const [partyCreating, setPartyCreating] = useState(false);
-  const [joinCode,      setJoinCode]      = useState(null); // null=隱藏, string=顯示輸入框
+  const [joinCode,      setJoinCode]      = useState("");
   const [joining,       setJoining]       = useState(false);
   const [joinError,     setJoinError]     = useState("");
 
@@ -149,6 +149,7 @@ export default function DailyQuest({ onJoinParty }) {
     }
     setChosenIdx(null);
     setArrows([]);
+    setMode(null);
     setShowBuff(true);
     setBusy(false);
   }
@@ -156,7 +157,6 @@ export default function DailyQuest({ onJoinParty }) {
   async function chooseTask(idx) {
     setChosenIdx(idx);
     setArrows([]);
-    if (onJoinParty) setPartyAsk(true);
     try {
       await updateDoc(doc(db, "checkins", checkin.id), { chosenTask: idx, tasks });
     } catch {}
@@ -283,10 +283,71 @@ export default function DailyQuest({ onJoinParty }) {
             </button>
           )}
 
-          {/* 三選一任務 */}
-          {chosenIdx == null && tasks && (
+          {/* Step 1：選模式（建立組隊 / 加入房間 / 自己練）*/}
+          {mode === null && (
+            <div className="flex flex-col gap-2 mb-2">
+              <div className="text-xs text-emerald-100 font-bold mb-1">選擇今天的挑戰方式：</div>
+              {onJoinParty && (
+                <button onClick={() => { setMode("party"); setChosenIdx(null); setArrows([]); }}
+                  className="w-full py-3 bg-white text-emerald-700 font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
+                  <span>👥 建立組隊房間</span>
+                  <span className="text-xs font-normal text-emerald-500">選任務 → 建立房間 → 等隊友加入</span>
+                </button>
+              )}
+              {onJoinParty && (
+                <button onClick={() => { setMode("join"); setJoinCode(""); setJoinError(""); }}
+                  className="w-full py-3 bg-indigo-500 text-white font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
+                  <span>🔑 加入房間</span>
+                  <span className="text-xs font-normal text-indigo-200">輸入邀請碼加入隊友的房間</span>
+                </button>
+              )}
+              <button onClick={() => { setMode("solo"); setChosenIdx(null); setArrows([]); }}
+                className="w-full py-3 bg-white/20 text-white font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
+                <span>🏹 自己練</span>
+                <span className="text-xs font-normal text-emerald-200">選任務 → 自行完成計分</span>
+              </button>
+            </div>
+          )}
+
+          {/* Step 2a：加入房間 → 輸入邀請碼 */}
+          {mode === "join" && (
+            <div className="bg-white/10 rounded-xl p-4 border border-white/20 flex flex-col gap-3 mb-2">
+              <div className="flex items-center justify-between">
+                <div className="font-black text-white text-sm">🔑 輸入隊友的邀請碼</div>
+                <button onClick={() => setMode(null)} className="text-xs text-emerald-200 underline">← 返回</button>
+              </div>
+              <input
+                value={joinCode}
+                onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(""); }}
+                placeholder="邀請碼（如 AB12）"
+                maxLength={6}
+                className="w-full px-3 py-2.5 rounded-xl bg-white/20 text-white placeholder-white/40 font-mono tracking-widest text-center text-lg border border-white/30 focus:outline-none"
+              />
+              {joinError && <div className="text-red-300 text-xs text-center">{joinError}</div>}
+              <button
+                disabled={joinCode.length < 4 || joining}
+                onClick={async () => {
+                  setJoining(true); setJoinError("");
+                  const res = await joinPartyRoom(joinCode, profile.id, profile.nickname || profile.name);
+                  setJoining(false);
+                  if (res.ok) onJoinParty(res.roomId, "quest", false);
+                  else setJoinError(res.reason || "加入失敗");
+                }}
+                className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform">
+                {joining ? "加入中…" : "確認加入"}
+              </button>
+            </div>
+          )}
+
+          {/* Step 2b/c：選任務（組隊 or 自己練 共用）*/}
+          {(mode === "party" || mode === "solo") && chosenIdx == null && tasks && (
             <div className="flex flex-col gap-2 mb-3">
-              <div className="text-xs text-emerald-100 font-bold mb-1">🎲 選擇今日任務（三選一）</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-emerald-100 font-bold">
+                  {mode === "party" ? "👥 選一個任務（建立組隊用）" : "🏹 選擇今日任務（三選一）"}
+                </div>
+                <button onClick={() => setMode(null)} className="text-xs text-emerald-200 underline">← 返回</button>
+              </div>
               {tasks.map((task, idx) => {
                 const bt = applyBuff(task, buff);
                 const goalDisplay = bt.isUltimate ? "直接過關" :
@@ -305,81 +366,47 @@ export default function DailyQuest({ onJoinParty }) {
                       <span>🎯 {task.target}</span>
                       <span>🏹 {task.arrowCount}箭</span>
                     </div>
-                    <div className="text-sm font-black text-white mt-1">
-                      目標：{goalDisplay}
-                    </div>
-                    {task.chest && (
-                      <div className="text-xs text-emerald-200 mt-0.5">{CHEST_LABEL[task.chest] || task.chest}</div>
-                    )}
+                    <div className="text-sm font-black text-white mt-1">目標：{goalDisplay}</div>
+                    {task.chest && <div className="text-xs text-emerald-200 mt-0.5">{CHEST_LABEL[task.chest] || task.chest}</div>}
                   </button>
                 );
               })}
             </div>
           )}
 
-          {/* 已選任務：分享給隊友？ */}
-          {chosenIdx != null && buffedChosenTask && partyAsk && (
-            <div className="bg-white/10 rounded-xl p-4 border border-white/20">
-              <div className="font-black text-white text-base mb-1">👥 要招募隊友一起解任務嗎？</div>
-              <div className="text-emerald-100 text-xs mb-3">
-                建立組隊房間，隊友輸入邀請碼加入，完成後各得一個額外寶箱！（最多 4 人）
+          {/* Step 3a：組隊模式 → 已選任務 → 建立房間 */}
+          {mode === "party" && chosenIdx != null && buffedChosenTask && (
+            <div className="bg-white/10 rounded-xl p-4 border border-white/20 flex flex-col gap-3 mb-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-emerald-100">👥 組隊任務：{chosenTask.label}</div>
+                <button onClick={() => setChosenIdx(null)} className="text-xs text-emerald-200 underline">← 換任務</button>
               </div>
-              <div className="flex gap-2">
-                <button onClick={handleCreateParty} disabled={partyCreating}
-                  className="flex-1 py-2.5 bg-white text-emerald-700 font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
-                  {partyCreating ? "建立中…" : "👥 建立房間"}
-                </button>
-                <button onClick={() => { setJoinCode(joinCode === null ? "" : null); setJoinError(""); }}
-                  className="flex-1 py-2.5 bg-indigo-500 text-white font-black rounded-xl text-sm active:scale-95 transition-transform">
-                  🔑 加入房間
-                </button>
-                <button onClick={() => setPartyAsk(false)}
-                  className="flex-1 py-2.5 bg-white/20 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
-                  自己練
-                </button>
+              <div className="text-xs text-emerald-100 flex gap-2 flex-wrap">
+                <span>📍 {chosenTask.distance}米</span>
+                <span>🎯 {chosenTask.target}</span>
+                <span>🏹 {chosenTask.arrowCount}箭</span>
               </div>
-              {/* 加入房間：輸入邀請碼 */}
-              {joinCode !== null && (
-                <div className="flex flex-col gap-2 mt-1">
-                  <input
-                    value={joinCode}
-                    onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(""); }}
-                    placeholder="輸入邀請碼"
-                    maxLength={6}
-                    className="w-full px-3 py-2 rounded-xl bg-white/20 text-white placeholder-white/50 font-mono tracking-widest text-center text-base border border-white/30 focus:outline-none"
-                  />
-                  {joinError && <div className="text-red-300 text-xs text-center">{joinError}</div>}
-                  <button
-                    disabled={joinCode.length < 4 || joining}
-                    onClick={async () => {
-                      setJoining(true); setJoinError("");
-                      const res = await joinPartyRoom(joinCode, profile.id, profile.nickname || profile.name);
-                      setJoining(false);
-                      if (res.ok) { onJoinParty(res.roomId, "quest", false); }
-                      else setJoinError(res.reason || "加入失敗");
-                    }}
-                    className="w-full py-2.5 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform">
-                    {joining ? "加入中…" : "確認加入"}
-                  </button>
-                </div>
-              )}
+              <div className="text-base font-black text-white">
+                {buffedChosenTask.isUltimate ? "✨ 直接達標！" :
+                  chosenTask.type === "score"
+                    ? `總分達 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 分`
+                    : `命中 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 箭以上`}
+              </div>
+              <div className="text-emerald-200 text-xs">建立後隊友輸入邀請碼加入，完成後各得額外寶箱 🎁</div>
+              <button onClick={handleCreateParty} disabled={partyCreating}
+                className="w-full py-3 bg-white text-emerald-700 font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
+                {partyCreating ? "建立中…" : "👥 建立組隊房間，等待隊友"}
+              </button>
             </div>
           )}
 
-          {/* 已選任務：進行計分 */}
-          {chosenIdx != null && buffedChosenTask && !partyAsk && (
+          {/* Step 3b：自己練 → 計分 */}
+          {mode === "solo" && chosenIdx != null && buffedChosenTask && (
             <>
               <div className="bg-white/10 rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs text-emerald-100">🎯 已選任務：{chosenTask.label}</div>
-                  <div className="flex items-center gap-2">
-                    {onJoinParty && (
-                      <button onClick={() => setPartyAsk(true)}
-                        className="text-xs text-indigo-200 underline">👥 招募隊友</button>
-                    )}
-                    <button onClick={() => { setChosenIdx(null); setArrows([]); }}
-                      className="text-xs text-emerald-200 underline">換一個</button>
-                  </div>
+                  <button onClick={() => setChosenIdx(null)} className="text-xs text-emerald-200 underline">換一個</button>
                 </div>
                 <div className="text-xs text-emerald-100 flex gap-2 flex-wrap mb-1">
                   <span>📍 {chosenTask.distance}米</span>
@@ -399,7 +426,6 @@ export default function DailyQuest({ onJoinParty }) {
                   </div>
                 )}
               </div>
-
               {!buffedChosenTask.isUltimate && (
                 <ArrowScorer
                   arrowCount={chosenTask.arrowCount}
@@ -409,7 +435,6 @@ export default function DailyQuest({ onJoinParty }) {
                   goal={buffedChosenTask.newGoal ?? buffedChosenTask.goal}
                 />
               )}
-
               <button onClick={submitScore}
                 disabled={busy || (!buffedChosenTask.isUltimate && arrows.length < chosenTask.arrowCount)}
                 className="w-full py-3 rounded-xl bg-white text-emerald-700 font-black active:scale-95 transition-transform disabled:opacity-50">

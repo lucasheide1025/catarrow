@@ -6,6 +6,7 @@ import {
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
+  clearPartyProcessing,
 } from "../../lib/partyDb";
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection } from "../../lib/db";
@@ -130,6 +131,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [animScreenShake,   setAnimScreenShake]   = useState(false);
   const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
   const [showEvent,       setShowEvent]       = useState(null);
+  const [logInited,       setLogInited]       = useState(false); // 首次 log 初始化後為 true，用於 pending_confirm 時序
   const [showFullLog,     setShowFullLog]     = useState(false);
   const [showShareCard,   setShowShareCard]   = useState(false);
   const [guestLoot,       setGuestLoot]       = useState(null);
@@ -144,7 +146,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const roundGuardRef  = useRef(0);    // 已派出結算的回合號（ref = 同步，避免 stale closure）
-  const retryCountRef  = useRef(0);   // 同回合連續失敗次數（≥3 停止重試，等 snapshot 重置）
+  const retryCountRef  = useRef(0);   // 同回合連續失敗次數（≥3 停止重試）
+  const retryRoundRef  = useRef(0);   // retryCount 所屬的回合（換回合時歸零）
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
@@ -178,6 +181,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     logInitializedRef.current = false;
     roundGuardRef.current = 0;
     retryCountRef.current = 0;
+    retryRoundRef.current = 0;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
@@ -188,6 +192,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setShowFullLog(false);
     setClaimResult(null);
     setStartError("");
+    setLogInited(false);
   }, [room?.status]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
@@ -251,10 +256,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 房主：檢查所有人是否 ready → 先幫機器人補送箭分，再觸發結算
   useEffect(() => {
-    if (!room || !isHost || room.status !== "active" || room.processing) return;
+    if (!room || !isHost || room.status !== "active") return;
     if (!room.monster) return;
     const currentRound = room.round || 1;
-    if (roundGuardRef.current === currentRound) return; // 同回合已派出，等結果（ref 同步讀取，無 stale closure）
+    if (roundGuardRef.current === currentRound) return; // 同回合已派出，等結果
+
+    // 進入新回合時，重置 retryCount（前回合的失敗次數不應影響下一回合）
+    if (currentRound !== retryRoundRef.current) {
+      retryRoundRef.current = currentRound;
+      retryCountRef.current = 0;
+    }
+
+    if (room.processing) return; // Firestore 正在寫入，等下次 snapshot
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
@@ -268,7 +281,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (!aliveIds.every(id => members[id].ready)) return;
-    if (retryCountRef.current >= 3) return; // 同回合失敗 3 次，停止重試，等下次 snapshot
+    if (retryCountRef.current >= 5) return; // 同回合失敗 5 次，停止重試（網路不順給更多機會）
     roundGuardRef.current = currentRound; // 立即鎖住，同步生效，不等 re-render
     processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
       .then(res => {
@@ -298,7 +311,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     const len = room?.log?.length || 0;
     // 首次載入（含 F5）：直接把 ref 同步到當前長度，跳過歷史 log 不重播
-    if (!logInitializedRef.current) { logInitializedRef.current = true; prevLogLenRef.current = len; return; }
+    if (!logInitializedRef.current) { logInitializedRef.current = true; prevLogLenRef.current = len; setLogInited(true); return; }
     if (len <= prevLogLenRef.current) return;
     prevLogLenRef.current = len;
     const entry = room.log[len - 1];
@@ -371,11 +384,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     revealTimersRef.current.push(ct);
   }, [room?.log?.length]); // eslint-disable-line
 
-  // 勝敗音效
+  // 勝利音效：等動畫播完（liveEntry 清除）再播，讓玩家先看到擊殺動畫
   useEffect(() => {
-    if (room?.result === "win")  { sfxSuccess(); setTimeout(() => sfxEpic(), 350); }
-    if (room?.result === "lose") { sfxSoftFail(); }
-  }, [room?.result]); // eslint-disable-line
+    if (room?.status === "pending_confirm" && !liveEntry && logInited) {
+      sfxSuccess(); setTimeout(() => sfxEpic(), 350);
+    }
+    if (room?.result === "lose") sfxSoftFail();
+  }, [room?.status, room?.result, liveEntry]); // eslint-disable-line
 
   // 怪物死亡後：等動畫跑完，房主自動確認進入結算
   useEffect(() => {
@@ -383,6 +398,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const t = setTimeout(() => { handleConfirmResult(); }, 3000);
     return () => clearTimeout(t);
   }, [room?.status, liveEntry]); // eslint-disable-line
+
+  // processing 卡住防護：processing: true 超過 15 秒自動清除（網路不順時可能殘留）
+  useEffect(() => {
+    if (!isHost || !room?.processing) return;
+    const t = setTimeout(() => { clearPartyProcessing(roomId); }, 15000);
+    return () => clearTimeout(t);
+  }, [room?.processing, isHost, roomId]); // eslint-disable-line
 
   // 隊友加油通知（不顯示自己發的）
   useEffect(() => {
@@ -773,7 +795,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
 
   // ── 怪物死亡確認畫面（動畫結束後才顯示，3秒後自動結算）────────
-  if (room.status === "pending_confirm" && !liveEntry) {
+  // logInited：確保 F5 後也等初始化完才顯示，防止搶在擊殺動畫前跳出
+  const hasUnseenLog = !logInited || (room?.log?.length || 0) > prevLogLenRef.current;
+  if (room.status === "pending_confirm" && !liveEntry && !hasUnseenLog) {
     const lastEntry = room.log?.[room.log.length - 1];
     return (
       <div className="min-h-screen bg-gradient-to-b from-yellow-950 to-slate-900 flex flex-col items-center justify-center px-4 gap-6">
@@ -1095,7 +1119,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       <div className="px-4 pt-5 pb-3 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-white font-black">第 {room.round} 回合</span>
+            <span className="text-white font-black">第 {liveEntry ? liveEntry.round : room.round} 回合</span>
             <span className="text-xs text-slate-400 ml-2">
               ⚔️ 每回合結束後怪物反擊
             </span>
@@ -1108,7 +1132,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
         {/* 隨機事件彈窗 */}
         {showEvent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-6" style={{ background:"rgba(0,0,0,0.65)", pointerEvents:"none" }}>
             <div className={`rounded-2xl shadow-2xl p-5 text-center max-w-xs w-full border-4 ${
               showEvent.type === "buff"    ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-400"
             : showEvent.type === "debuff" ? "bg-gradient-to-br from-red-50 to-rose-50 border-red-400"
@@ -1198,7 +1222,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 <span className="text-[10px] text-slate-500">⚔️{m.atk} 🛡️{m.def}</span>
                 {m.alive && (
                   <span className="text-[10px] text-slate-500">
-                    {m.ready ? (m.skipped ? "⏭️ 跳過" : "✅ 送出") : m.arrows?.length > 0 ? `🏹 ${m.arrows.length}支` : "等待…"}
+                    {liveEntry ? "⚙️ 結算中" : m.ready ? (m.skipped ? "⏭️ 跳過" : "✅ 送出") : m.arrows?.length > 0 ? `🏹 ${m.arrows.length}支` : "等待…"}
                   </span>
                 )}
               </div>
@@ -1230,8 +1254,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       </div>
 
-      {/* 箭分輸入（自己存活且未 ready）*/}
-      {me.alive && !myReady && (
+      {/* 箭分輸入（自己存活且未 ready，且動畫未播放中）*/}
+      {me.alive && !myReady && !liveEntry && (
         <div className="px-4 flex flex-col gap-3 pb-4">
           <div className="flex gap-1.5 items-center">
             <div className="text-xs text-slate-400 w-8 shrink-0">{arrows.length}/{ARROWS_PER_ROUND}</div>

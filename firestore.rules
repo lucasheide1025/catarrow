@@ -19,12 +19,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // members：admin 全權操作，會員可讀自己（uid 欄位或 email 欄位比對）
+    // members：admin 全權操作，會員可讀自己；list（集合查詢）任意登入者可用（排行榜需要）
     match /members/{memberId} {
-      allow read:  if isAdmin()
+      allow get:    if isAdmin()
         || resource.data.uid   == request.auth.uid
         || resource.data.email == request.auth.token.email;
-      allow write: if isAdmin();
+      allow list:   if isLoggedIn();
+      allow write:  if isAdmin();
       allow update: if (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid", "dailyQuestCount", "eventPoints"]);
