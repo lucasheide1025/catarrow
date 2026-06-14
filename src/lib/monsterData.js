@@ -1,5 +1,6 @@
 // src/lib/monsterData.js
 // 六族36隻怪物 + 射手數值公式 + 匹配系統
+import { calcEquipBonus } from "./constants";
 
 // ── 階級定義 ─────────────────────────────────────────────
 export const TIER_LABEL = {
@@ -390,6 +391,12 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   if (dexStats?.cohortBonus) def += Math.min(15, dexStats.cohortBonus);
   if (certification?.level === "gold") def += 15;
   def = Math.min(120, def);
+
+  // ── RPG 裝備加成 ─────────────────────────────────────────
+  const equip = calcEquipBonus(member?.rpgEquip);
+  hp  = Math.min(800, hp  + equip.hpBonus);
+  atk = Math.min(160, atk + equip.atkBonus);
+  def = Math.min(120, def + equip.defBonus);
 
   return { hp, atk, def };
 }

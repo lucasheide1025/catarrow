@@ -81,7 +81,7 @@ function calcDmgFn(arrows, atk, targetDef) {
 }
 
 // ── 決鬥玩家小卡 ────────────────────────────────────────────
-function DuelPlayerCard({ id, m, isMe, flash, displayHp }) {
+function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, teamA, teamB }) {
   const hp     = displayHp?.[id] ?? m.hp;
   const maxHP  = m.maxHP || 1;
   const pct    = Math.max(0, Math.round(hp / maxHP * 100));
@@ -107,8 +107,30 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp }) {
       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mb-1.5">
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
-      <div className="flex gap-2 text-[10px] text-slate-500">
-        <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
+      {/* ATK/DEF（左）+ 最新一箭訊息（右） */}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-2 text-[10px] text-slate-500 shrink-0">
+          <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
+        </div>
+        {(() => {
+          const b = attack && revealIdx > 0 ? attack.arrowBreakdown?.[revealIdx - 1] : null;
+          if (!b) return null;
+          const tName = (attack.attackerTeam === "A" ? teamB : teamA)?.[attack.targetId]?.name || "?";
+          return (
+            <div key={revealIdx} className="text-[9px] leading-tight flex-1 min-w-0" style={{ animation:"slide-in .15s ease" }}>
+              {b.dmg === 0
+                ? <span className="text-slate-500">💨 脫靶</span>
+                : <span>
+                    <span className="text-slate-400">對 </span>
+                    <span className="text-slate-300 font-bold">{tName}</span>
+                    <span className="text-slate-500">【{b.partIcon}{b.partName}】</span>
+                    {b.isCrit && <span className="text-amber-400 font-black"> 💥</span>}
+                    <span className="text-red-400 font-black"> -{b.dmg}</span>
+                  </span>
+              }
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -626,6 +648,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
                   id={id} m={m} isMe={id === myId}
                   flash={!!flashIds[id]}
                   displayHp={displayHp}
+                  attack={revealEntry?.attacks?.find(a => a.attackerId === id)}
+                  revealIdx={revealIdx}
+                  teamA={teamA} teamB={teamB}
                 />
                 {floats.filter(f => f.memberId === id).map(f => (
                   <span key={f.id}
@@ -701,41 +726,6 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 戰鬥紀錄 — 逐箭累積，位於輸入區下方 */}
-      {revealEntry && revealIdx > 0 && (
-        <div className="mx-4 mb-4 mt-2">
-          <div className="text-[10px] text-slate-500 font-black tracking-widest mb-1 px-1">⚔️ 戰鬥紀錄</div>
-          <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
-            {Array.from({ length: revealIdx }, (_, i) => {
-              const attacks = (revealEntry.attacks || []).map(atk => {
-                const b = (atk.arrowBreakdown || [])[i];
-                if (!b) return null;
-                const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
-                const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
-                return { b, aName, tName, team: atk.attackerTeam };
-              }).filter(Boolean);
-              return attacks.map((c, j) => (
-                <div key={`${i}-${j}`} className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-white/8 leading-snug"
-                  style={{ animation:"slide-in .15s ease" }}>
-                  <span className={c.team === "A" ? "text-blue-300 font-bold" : "text-red-300 font-bold"}>{c.aName}</span>
-                  <span className="text-slate-500"> 對 </span>
-                  <span className="text-slate-300 font-bold">{c.tName}</span>
-                  {c.b.dmg === 0
-                    ? <span className="text-slate-500"> 💨 脫靶</span>
-                    : <>
-                        <span className="text-slate-400"> 命中【</span>
-                        <span className="text-slate-200">{c.b.partIcon}{c.b.partName || "胸腔"}</span>
-                        <span className="text-slate-400">】</span>
-                        {c.b.isCrit && <span className="text-amber-400 font-black"> 💥爆擊！</span>}
-                        <span className="text-red-400 font-black"> -{c.b.dmg}</span>
-                      </>
-                  }
-                </div>
-              ));
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

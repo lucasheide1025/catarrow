@@ -137,6 +137,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [guestLoot,       setGuestLoot]       = useState(null);
   const [guestAlreadyWon, setGuestAlreadyWon] = useState(false);
   const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
+  const [previewReward,   setPreviewReward]   = useState(null); // 領取前預覽
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
   const [liveMiniRoundIdx, setLiveMiniRoundIdx] = useState(0);   // 目前顯示的小回合索引 (0-5)
@@ -442,6 +443,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }
   }, [room?.status, room?.result]); // eslint-disable-line
 
+  // 提早計算（room 可能為 null，用 ?. 保安全，讓 useEffect 位於 early return 之前）
+  const myChests  = room?.rewardPending?.[myId] || [];
+  const myClaimed = (room?.rewardClaimed || []).includes(myId);
+
+  // 寶箱出現時預先 roll 金幣 + 掉落物，讓玩家看到等待中的獎勵
+  useEffect(() => {
+    if (!myChests.length || myClaimed || previewReward || !room) return;
+    const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
+    const material = rollMaterialDrop(room.monster);
+    const card     = rollCardDrop(room.monster);
+    setPreviewReward({ coins, material, card });
+  }, [myChests.length, myClaimed]); // eslint-disable-line
+
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <div className="text-white text-lg font-bold animate-pulse">載入中…</div>
@@ -462,8 +476,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
   const isGuestPlayer = myId?.startsWith("guest");
-  const myChests   = room.rewardPending?.[myId] || [];
-  const myClaimed  = (room.rewardClaimed || []).includes(myId);
 
   function addArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
@@ -526,14 +538,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         const p = (entry.playerLog || []).find(p => p.id === myId);
         return s + (p?.dmg || 0);
       }, 0);
-      const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
-      const material = rollMaterialDrop(room.monster);
-      const card     = rollCardDrop(room.monster);
-      await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
+      // 使用預覽時已 roll 好的值，保持顯示一致
+      const reward   = previewReward || {};
+      const coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
+      const material = reward.material ?? rollMaterialDrop(room.monster);
+      const card     = reward.card     ?? rollCardDrop(room.monster);
+      const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
+      if (!res?.ok) throw new Error(res?.reason || "領取失敗");
       addCoins(myId, coins).catch(() => {});
       if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
       if (card)     addMonsterCard(myId, card).catch(() => {});
-      // 勝場圖鑑記錄（敗場由 useEffect 負責）
       if (!dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
@@ -974,6 +988,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {!myClaimed && myChests.length > 0 && (
                   <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
                     <div className="text-yellow-200 font-black text-sm text-center">🎁 你的戰利品</div>
+
+                    {/* 寶箱列表 */}
                     <div className="flex justify-center gap-3 flex-wrap">
                       {myChests.map(c => {
                         const info = CHEST_TYPES[c.type];
@@ -985,6 +1001,32 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                         ) : null;
                       })}
                     </div>
+
+                    {/* 金幣 + 掉落預覽 */}
+                    {previewReward && (
+                      <div className="bg-black/30 rounded-xl px-3 py-2 flex items-center gap-3 flex-wrap justify-center">
+                        <div className="flex items-center gap-1">
+                          <span className="text-base">🪙</span>
+                          <span className="text-yellow-300 font-black text-sm">+{previewReward.coins}</span>
+                        </div>
+                        {previewReward.material && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-base">{previewReward.material.icon}</span>
+                            <span className="text-slate-300 text-xs font-bold">{previewReward.material.name}</span>
+                          </div>
+                        )}
+                        {previewReward.card && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-base">{previewReward.card.icon}</span>
+                            <span className="text-rose-300 text-xs font-black">🃏 {previewReward.card.name}</span>
+                          </div>
+                        )}
+                        {!previewReward.material && !previewReward.card && (
+                          <span className="text-slate-500 text-xs">本次無材料掉落</span>
+                        )}
+                      </div>
+                    )}
+
                     <button onClick={handleClaim} disabled={claiming}
                       className="w-full py-3 bg-gradient-to-r from-yellow-400 to-orange-400 text-slate-900 font-black rounded-xl active:scale-95 transition-transform disabled:opacity-50">
                       {claiming ? "領取中…" : "✅ 確認領取寶箱"}

@@ -7,6 +7,8 @@ import {
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
+import { EQUIP_GRADES } from "./constants";
+import { EQUIP_UPGRADE_COST } from "./equipData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -76,7 +78,7 @@ export async function updateMember(id, data, operatorId) {
   const before = await getMember(id);
   if (!before) throw new Error("找不到該會員資料");
   const updateData = { updatedAt: serverTimestamp() };
-const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo", "archerNoDate", "joinDate", "note", "equipment", "armorSets", "accessorySets", "fatCat", "score", "achievement", "eventPoints", "shareSlogan"];
+const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo", "archerNoDate", "joinDate", "note", "equipment", "armorSets", "accessorySets", "fatCat", "score", "achievement", "eventPoints", "shareSlogan", "rpgEquip"];
   safeFields.forEach(field => { if (data[field] !== undefined) updateData[field] = data[field]; });
   await updateDoc(doc(db, C.members, id), updateData);
   await writeAuditLog("UPDATE", id, "member", before, updateData, operatorId);
@@ -2006,4 +2008,222 @@ export function subscribeAppVersion(callback) {
 }
 export async function setAppVersion(version) {
   await setDoc(doc(db, C_SYS, "version"), { current: version });
+}
+
+// ─── 金幣商店 ──────────────────────────────────────────────
+
+// 扣金幣（回傳 ok/reason）
+export async function spendCoins(memberId, amount) {
+  if (!memberId || amount <= 0) return { ok: false, reason: "參數錯誤" };
+  try {
+    const snap = await getDoc(doc(db, C.members, memberId));
+    if (!snap.exists()) return { ok: false, reason: "找不到會員" };
+    const coins = snap.data().coins || 0;
+    if (coins < amount) return { ok: false, reason: `金幣不足（需 ${amount}，現有 ${coins}）` };
+    await updateDoc(doc(db, C.members, memberId), { coins: increment(-amount) });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 金幣商店：購買裝備（花費金幣 + 裝備進槽位，保留現有品級/等級）
+export async function shopBuyEquip(memberId, slotId, itemId, price) {
+  const spend = await spendCoins(memberId, price);
+  if (!spend.ok) return spend;
+  // 讀現有槽位，若已有裝備只換 itemId；否則從 common+0 開始
+  const snap = await getDoc(doc(db, C.members, memberId));
+  const cur  = snap.data()?.rpgEquip?.[slotId];
+  if (cur?.itemId) {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}.itemId`]: itemId,
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}`]: { itemId, grade: "common", plusLevel: 0 },
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return { ok: true };
+}
+
+// 金幣商店：購買消耗品
+// type: "chest" | "material" | "fragment" | "potion"
+export async function shopBuyConsumable(memberId, item) {
+  const { price, type, payload } = item;
+  const spend = await spendCoins(memberId, price);
+  if (!spend.ok) return spend;
+  try {
+    if (type === "chest") {
+      const chest = {
+        id:   `chest_shop_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+        type: payload.chestType, family: "shop", tier: "common",
+        from: "金幣商店", ts: Date.now(),
+      };
+      await addChests(memberId, [chest]);
+    } else if (type === "material") {
+      const mats = (payload.materialIds || []).map(id => ({ id }));
+      await addMaterials(memberId, mats);
+    } else if (type === "fragment") {
+      const ref  = doc(db, "fragmentInventory", memberId);
+      const snap = await getDoc(ref);
+      const items = snap.exists() ? (snap.data().items || {}) : {};
+      items[payload.fragId] = (items[payload.fragId] || 0) + (payload.count || 1);
+      await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    } else if (type === "potion") {
+      await addPotions(memberId, [{ id: payload.potionId, count: 1 }]);
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
+}
+
+// ─── 虛擬裝備品項（後台管理）───────────────────────────────────
+const C_EQUIP_ITEMS = "equipItems";
+
+export function subscribeEquipItems(callback) {
+  return onSnapshot(
+    collection(db, C_EQUIP_ITEMS),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err  => { console.warn("subscribeEquipItems:", err?.message); callback([]); }
+  );
+}
+
+export async function createEquipItem(data) {
+  try {
+    const ref = await addDoc(collection(db, C_EQUIP_ITEMS), { ...data, createdAt: serverTimestamp() });
+    return { ok: true, id: ref.id };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+export async function updateEquipItem(id, data) {
+  try {
+    await updateDoc(doc(db, C_EQUIP_ITEMS, id), { ...data, updatedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+export async function deleteEquipItem(id) {
+  try {
+    await deleteDoc(doc(db, C_EQUIP_ITEMS, id));
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// ─── 裝備系統 ──────────────────────────────────────────────
+// equipment 存在 members/{id}.equipment[slotId]
+// 格式：{ itemId, grade, plusLevel }
+
+// 裝備品項到槽位（初始 grade:common, plusLevel:0）
+// 注意：使用 rpgEquip 欄位，不影響舊的 equipment 弓組記錄陣列
+export async function equipItem(memberId, slotId, itemId) {
+  if (!memberId || !slotId || !itemId) return { ok: false, reason: "參數錯誤" };
+  try {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}`]: { itemId, grade: "common", plusLevel: 0 },
+      updatedAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 只更換已裝備槽位的品牌（保留 grade/plusLevel，使用 dot notation 避免覆蓋其他槽位）
+export async function changeEquipBrand(memberId, slotId, itemId) {
+  if (!memberId || !slotId || !itemId) return { ok: false, reason: "參數錯誤" };
+  try {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}.itemId`]: itemId,
+      updatedAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 卸下槽位
+export async function unequipSlot(memberId, slotId) {
+  if (!memberId || !slotId) return { ok: false, reason: "參數錯誤" };
+  try {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}`]: deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 升級槽位：+1 plusLevel；滿 5 → 升一品級並重置
+// 回傳 { ok, upgraded, newGrade, newPlusLevel, reason }
+export async function upgradeEquipSlot(memberId, slotId) {
+  if (!memberId || !slotId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const memRef  = doc(db, C.members, memberId);
+    const memSnap = await getDoc(memRef);
+    if (!memSnap.exists()) return { ok: false, reason: "找不到會員" };
+    const data  = memSnap.data();
+    const equip = data.rpgEquip?.[slotId];
+    if (!equip?.itemId) return { ok: false, reason: "該槽位尚未裝備" };
+
+    const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === equip.grade);
+    const isMaxGrade = gradeIdx >= EQUIP_GRADES.length - 1;
+    if (isMaxGrade && (equip.plusLevel || 0) >= 4) {
+      return { ok: false, reason: "已達最高品級神話+4，無法繼續升級" };
+    }
+
+    const cost = EQUIP_UPGRADE_COST[equip.grade];
+    if (!cost) return { ok: false, reason: "找不到升級費用設定" };
+
+    // 檢查金幣
+    if ((data.coins || 0) < cost.gold) {
+      return { ok: false, reason: `金幣不足（需 ${cost.gold}，現有 ${data.coins || 0}）` };
+    }
+
+    // 檢查材料庫存
+    const matRef  = doc(db, C_MATERIALS, memberId);
+    const matSnap = await getDoc(matRef);
+    const matItems = matSnap.exists() ? (matSnap.data().items || {}) : {};
+    for (const req of cost.materials) {
+      if ((matItems[req.id] || 0) < req.count) {
+        return { ok: false, reason: `材料不足（需 ${req.id} ×${req.count}）` };
+      }
+    }
+    if (cost.keyItem && (matItems[cost.keyItem.id] || 0) < cost.keyItem.count) {
+      return { ok: false, reason: `缺少關鍵材料：${cost.keyItem.note}` };
+    }
+
+    // 扣材料
+    const matUpdates = { updatedAt: serverTimestamp() };
+    for (const req of cost.materials) {
+      matUpdates[`items.${req.id}`] = increment(-req.count);
+    }
+    if (cost.keyItem) {
+      matUpdates[`items.${cost.keyItem.id}`] = increment(-cost.keyItem.count);
+    }
+    await updateDoc(matRef, matUpdates).catch(() =>
+      setDoc(matRef, matUpdates, { merge: true })
+    );
+
+    // 扣金幣
+    await updateDoc(memRef, { coins: increment(-cost.gold) });
+
+    // 計算新等級
+    let newPlusLevel = (equip.plusLevel || 0) + 1;
+    let newGrade = equip.grade;
+    let upgraded = false;
+    if (newPlusLevel >= 5 && !isMaxGrade) {
+      newPlusLevel = 0;
+      newGrade = EQUIP_GRADES[gradeIdx + 1].id;
+      upgraded = true;
+    }
+
+    await updateDoc(memRef, {
+      [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
+      [`rpgEquip.${slotId}.grade`]:     newGrade,
+      updatedAt: serverTimestamp(),
+    });
+
+    return { ok: true, upgraded, newGrade, newPlusLevel };
+  } catch (e) {
+    console.warn("upgradeEquipSlot:", e?.message);
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
 }

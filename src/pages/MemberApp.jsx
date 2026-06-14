@@ -31,10 +31,12 @@ import PartyBattleRoom   from "../components/party/PartyBattleRoom";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import MemberGuide       from "../components/member/MemberGuide";
+import EquipmentPage     from "../components/member/EquipmentPage";
+import CoinShop          from "../components/member/CoinShop";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","guide"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","guide","coinshop"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -103,6 +105,7 @@ export default function MemberApp() {
     { id:"home",        icon:"🏠", label:"首頁" },
     { id:"comps",       icon:"🏆", label:"比賽" },
     { id:"practice",    icon:"🎯", label:"練習" },
+    { id:"equipment",   icon:"⚔️", label:"裝備" },
     { id:"leaderboard", icon:"📊", label:"排行" },
     { id:"profile",     icon:"👤", label:"我的" },
   ];
@@ -199,6 +202,8 @@ export default function MemberApp() {
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("home")} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
+        {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
+        {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}

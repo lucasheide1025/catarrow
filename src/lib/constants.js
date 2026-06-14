@@ -177,3 +177,46 @@ export function certLevelStyle(level, variant = "solid") {
 export function isHigherScore(newScore, oldScore) {
   return Number(newScore || 0) > Number(oldScore || 0);
 }
+
+// ─── 裝備系統 ──────────────────────────────────────────────
+export const EQUIP_GRADES = [
+  { id: "common", name: "普通", color: "#94a3b8", glow: "#64748b" },
+  { id: "rare",   name: "稀有", color: "#60a5fa", glow: "#3b82f6" },
+  { id: "elite",  name: "精英", color: "#4ade80", glow: "#22c55e" },
+  { id: "epic",   name: "史詩", color: "#c084fc", glow: "#a855f7" },
+  { id: "legend", name: "傳說", color: "#fbbf24", glow: "#f59e0b" },
+  { id: "mythic", name: "神話", color: "#f472b6", glow: "#ec4899" },
+];
+
+// 10 個裝備欄位定義（id 對應 member.equipment 的 key）
+export const EQUIP_SLOT_DEFS = [
+  { id: "bow",       name: "弓",         icon: "🏹", stat: "atk" },
+  { id: "arrow",     name: "箭",         icon: "🪃", stat: "atk" },
+  { id: "absorber",  name: "箭震吸收器", icon: "🔧", stat: "atk" },
+  { id: "module",    name: "配件模組",   icon: "⚙️", stat: "atk" },
+  { id: "chest",     name: "護胸",       icon: "🦺", stat: "def" },
+  { id: "arm",       name: "護臂",       icon: "🛡️", stat: "def" },
+  { id: "hand",      name: "手部",       icon: "🧤", stat: "def" },
+  { id: "nutrition", name: "營養品",     icon: "🍎", stat: "hp"  },
+  { id: "quiver",    name: "箭袋",       icon: "🎒", stat: "hp"  },
+  { id: "toolkit",   name: "工具包",     icon: "🧰", stat: "hp"  },
+];
+
+// 計算裝備對戰鬥屬性的加成
+// 每個欄位：ATK/DEF +1 per grade，HP +5 per grade
+// grade index: 普通=0 稀有=1 精英=2 史詩=3 傳說=4 神話=5
+export function calcEquipBonus(equipment) {
+  let atkBonus = 0, defBonus = 0, hpBonus = 0;
+  if (!equipment) return { atkBonus, defBonus, hpBonus };
+  for (const slot of EQUIP_SLOT_DEFS) {
+    const e = equipment[slot.id];
+    if (!e?.grade) continue;
+    const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === e.grade);
+    if (gradeIdx < 0) continue;
+    const bonus = gradeIdx + 1;
+    if (slot.stat === "atk") atkBonus += bonus;
+    else if (slot.stat === "def") defBonus += bonus;
+    else if (slot.stat === "hp") hpBonus += bonus * 5;
+  }
+  return { atkBonus, defBonus, hpBonus };
+}

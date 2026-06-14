@@ -12,6 +12,9 @@ import AdminAchievements  from "../components/admin/AdminAchievements";
 import AdminDexGrant      from "../components/admin/AdminDexGrant";
 import AdminGiveTool      from "../components/admin/AdminGiveTool";
 import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
+import AdminEquipItems    from "../components/admin/AdminEquipItems";
+import EquipmentPage      from "../components/member/EquipmentPage";
+import CoinShop           from "../components/member/CoinShop";
 import AdminMonthlyCard   from "../components/admin/AdminMonthlyCard";
 import AdminBilling       from "../components/admin/BillingSystem";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
@@ -142,6 +145,7 @@ const adminNav = [
   { id:"learn",       icon:"📓", label:"學習" },
   { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
   { id:"givetool",      icon:"🧪", label:"測試" },
+  { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
 ];
 
   const memberNav = [
@@ -209,12 +213,14 @@ const adminNav = [
           )}
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
+          {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
+          {page==="coinshop"    && <CoinShop/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide","equipment","coinshop"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <div style={{position:"relative",display:"inline-block"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
@@ -294,6 +300,7 @@ const adminNav = [
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
         {page==="billing"      && <AdminBilling profile={profile}/>}
+        {page==="equipitems"   && <AdminEquipItems/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
