@@ -693,32 +693,39 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         ))}
       </div>
 
-      {/* 揭露中：攻擊對陣 */}
-      {isRevealing && revealEntry && (
-        <div className="mx-4 rounded-2xl bg-black/40 border border-white/10 p-3 flex flex-col gap-1.5">
-          <div className="text-xs text-slate-400 font-black tracking-wider">⚔️ 第 {revealEntry.round} 回合攻擊</div>
-          {(revealEntry.attacks || []).map((atk, i) => {
-            const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
-            const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
-            const shownBk = (atk.arrowBreakdown || []).slice(0, revealIdx);
-            const shownDmg = shownBk.reduce((s, b) => s + b.dmg, 0);
-            const shownCrits = shownBk.filter(b => b.isCrit).length;
-            return (
-              <div key={i} className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-xl ${atk.attackerId === myId ? "bg-amber-900/30 border border-amber-500/30" : "bg-white/5 border border-white/10"}`}
-                style={{ animation:"slide-in .2s ease" }}>
-                <span className={`font-black ${atk.attackerTeam === "A" ? "text-blue-300" : "text-red-300"}`}>{aName}</span>
+      {/* 揭露中：單行攻擊訊息（每支箭更新一次） */}
+      {isRevealing && revealEntry && revealIdx > 0 && (() => {
+        const idx = revealIdx - 1;
+        const msgs = (revealEntry.attacks || []).map(atk => {
+          const b = (atk.arrowBreakdown || [])[idx];
+          if (!b) return null;
+          const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
+          const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
+          return { b, aName, tName, team: atk.attackerTeam };
+        }).filter(Boolean);
+        if (!msgs.length) return null;
+        return (
+          <div className="mx-4 mt-1 px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-xs flex items-center gap-1.5 flex-wrap"
+            style={{ animation:"slide-in .15s ease" }}>
+            {msgs.map((c, i) => (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <span className="text-slate-600">·</span>}
+                <span className={c.team === "A" ? "text-blue-300 font-bold" : "text-red-300 font-bold"}>{c.aName}</span>
                 <span className="text-slate-500">→</span>
-                <span className="text-slate-300">{tName}</span>
-                {shownDmg > 0 && <span className="text-red-400 font-black ml-auto">-{shownDmg}</span>}
-                {shownCrits > 0 && <span className="text-amber-400 font-black">💥×{shownCrits}</span>}
-                {atk.luckyEvent && revealIdx > 0 && (
-                  <span className="text-amber-300 text-[10px]">{atk.luckyEvent.icon}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                <span className="text-slate-300">{c.tName}</span>
+                {c.b.dmg === 0
+                  ? <span className="text-slate-500">💨 脫靶</span>
+                  : <span className={c.b.isCrit ? "text-amber-300 font-black" : "text-slate-200"}>
+                      {c.b.partIcon}{c.b.partName || "胸腔"}
+                      {c.b.isCrit && " 💥爆擊！"}
+                      <span className={c.b.isCrit ? "text-amber-400" : "text-red-400"}> -{c.b.dmg}</span>
+                    </span>
+                }
+              </span>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 戰鬥結束 → reveal 跑完後顯示確認按鈕 */}
       {room.status === "finished" && !showResult && (
@@ -735,10 +742,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 箭分輸入區 */}
-      <div className="flex-1" />
+      {/* 箭分輸入區 — 緊接在小卡下方 */}
       {amAlive && !isRevealing && (
-        <div className="px-4 pb-4 pt-2 bg-slate-900/80 border-t border-white/10">
+        <div className="px-4 pb-4 pt-3 mt-2 border-t border-white/10">
           {/* 已輸入箭 */}
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs text-slate-400 font-bold">第 {myArrows.length}/{ARROWS} 箭：</span>
