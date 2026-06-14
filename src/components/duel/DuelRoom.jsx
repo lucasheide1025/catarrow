@@ -107,31 +107,30 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mb-1.5">
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
-      {/* ATK/DEF（左）+ 最新一箭訊息（右） */}
-      <div className="flex items-center gap-2">
-        <div className="flex gap-2 text-[10px] text-slate-500 shrink-0">
-          <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
-        </div>
-        {(() => {
-          const b = attack && revealIdx > 0 ? attack.arrowBreakdown?.[revealIdx - 1] : null;
-          if (!b) return null;
-          const tName = (attack.attackerTeam === "A" ? teamB : teamA)?.[attack.targetId]?.name || "?";
-          return (
-            <div key={revealIdx} className="text-[9px] leading-tight flex-1 min-w-0" style={{ animation:"slide-in .15s ease" }}>
-              {b.dmg === 0
-                ? <span className="text-slate-500">💨 脫靶</span>
-                : <span>
-                    <span className="text-slate-400">對 </span>
-                    <span className="text-slate-300 font-bold">{tName}</span>
-                    <span className="text-slate-500">【{b.partIcon}{b.partName}】</span>
-                    {b.isCrit && <span className="text-amber-400 font-black"> 💥</span>}
-                    <span className="text-red-400 font-black"> -{b.dmg}</span>
-                  </span>
-              }
-            </div>
-          );
-        })()}
+      {/* ATK / DEF */}
+      <div className="flex gap-3 text-xs text-slate-400 mt-0.5">
+        <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
       </div>
+      {/* 最新一箭訊息 */}
+      {(() => {
+        const b = attack && revealIdx > 0 ? attack.arrowBreakdown?.[revealIdx - 1] : null;
+        if (!b) return null;
+        const tName = (attack.attackerTeam === "A" ? teamB : teamA)?.[attack.targetId]?.name || "?";
+        return (
+          <div key={revealIdx} className="text-xs leading-snug mt-1 truncate" style={{ animation:"slide-in .15s ease" }}>
+            {b.dmg === 0
+              ? <span className="text-slate-500">💨 脫靶</span>
+              : <span>
+                  <span className="text-slate-400">對 </span>
+                  <span className="text-slate-300 font-bold">{tName}</span>
+                  <span className="text-slate-500">【{b.partIcon}{b.partName}】</span>
+                  {b.isCrit && <span className="text-amber-400 font-black"> 💥</span>}
+                  <span className="text-red-400 font-black"> -{b.dmg}</span>
+                </span>
+            }
+          </div>
+        );
+      })()}
     </div>
   );
 }
