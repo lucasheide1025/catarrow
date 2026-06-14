@@ -471,7 +471,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             <div key={team} className={`flex-1 rounded-2xl p-3 border ${team === myTeam ? "border-amber-500/50 bg-amber-900/20" : "border-white/10 bg-white/5"}`}>
               <div className={`text-xs font-black tracking-widest mb-2 ${team === "A" ? "text-blue-300" : "text-red-300"}`}>隊伍 {team}</div>
               {entries.map(([id, m]) => (
-                <HpBar key={id} name={m.name} hp={m.hp} maxHP={m.maxHP} isMe={id === myId} dead={!m.alive} flash={false} />
+                <DuelPlayerCard key={id} id={id} m={m} isMe={id === myId} flash={false} displayHp={null} revealEntry={null} revealIdx={-1} lastLogEntry={null} />
               ))}
             </div>
           ))}
