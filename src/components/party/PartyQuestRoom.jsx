@@ -87,7 +87,7 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   const members    = room.members || {};
   const memberList = Object.entries(members).map(([id, data]) => ({ id, ...data }));
   const me         = members[myId] || {};
-  const allDone      = memberList.length >= 2 && memberList.every(m => m.done || m.gaveUp);
+  const allDone      = memberList.length >= 1 && memberList.every(m => m.done || m.gaveUp);
   const completed    = room.status === "completed" || !!pendingComplete;
   const chestTypeKey = room.rewardChestType || pendingComplete;
   const chestInfo    = chestTypeKey ? CHEST_TYPES[chestTypeKey] : null;
@@ -114,8 +114,9 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
     }
 
     sfxSuccess();
-    if (isHost && room.hostCheckinId) {
-      await markCheckinDone(room.hostCheckinId, {
+    // 所有人（不限房主）都用自己的 checkin.id 標記完成
+    if (checkin?.id) {
+      await markCheckinDone(checkin.id, {
         type: task.type, value: val, target: task.goal, taskId: task.id,
       }).catch(() => {});
     }
