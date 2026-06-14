@@ -14,7 +14,7 @@ import { getLootTable, drawLoot, isRareLoot } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawMaterial, MATERIALS } from "../../lib/monsterMaterials";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
+import { sfxEpic, sfxSuccess, sfxTap, sfxArrowShoot, sfxSoftFail, sfxCast, sfxBuff } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 
 const ARROWS_PER_ROUND = 6;   // 每回合6箭
@@ -102,6 +102,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [log,           setLog]           = useState([]);
   const [battlePhase,   setBattlePhase]   = useState("input"); // input|processing|counter|event|done
   const [arrows,        setArrows]        = useState([]);   // 已輸入的分數陣列
+  const [arrowLabels,   setArrowLabels]   = useState([]);   // 對應標籤（X/10/9…M）
   const [unlockedParts, setUnlockedParts] = useState(new Set());
   const [revived,       setRevived]       = useState(false);
   const [loot,          setLoot]          = useState(null);
@@ -151,14 +152,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   function addLog(entry) { setLog(l => [...l, entry]); }
 
   // 點擊輸入分數
-  function inputArrow(val) {
+  function inputArrow(val, label = "") {
     if (arrows.length >= ARROWS_PER_ROUND || processing) return;
     sfxTap();
     setArrows(prev => [...prev, val]);
+    setArrowLabels(prev => [...prev, label]);
   }
   function undoArrow() {
     if (!arrows.length || processing) return;
     setArrows(prev => prev.slice(0, -1));
+    setArrowLabels(prev => prev.slice(0, -1));
   }
 
   // 送出本回合6箭，開始計算
@@ -180,10 +183,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     // 逐箭處理（每2箭反擊一次）
     for (let i = 0; i < ARROWS_PER_ROUND; i++) {
       const score = arrows[i];
+      const isX   = arrowLabels[i] === "X";
       let part, dmg;
 
-      // 兩種模式都判定部位
-      part = resolveHitPart(score, curUnlocked);
+      // 兩種模式都判定部位（X=一定爆擊）
+      part = resolveHitPart(score, curUnlocked, isX);
       if (part.id === "chest") curUnlocked = new Set([...curUnlocked, "chest"]);
       if (part.id === "belly") curUnlocked = new Set([...curUnlocked, "belly"]);
       if (part.id === "groin") curUnlocked = new Set([...curUnlocked, "groin"]);
@@ -197,23 +201,20 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const hitText = getHitText(part.id);
 
       if (part.mult === 0) {
-        // 脫靶
         sfxSoftFail();
-        addLog({ type: "miss", text: `${i+1}箭　${hitText}　(${score}分)` });
+        addLog({ type: "miss", text: `${i+1}箭　${hitText}　(${arrowLabels[i] || score}分)` });
       } else if (isOrganPart) {
-        // 器官命中：最強音效
-        sfxEpic();
-        addLog({ type: "hit_organ", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
-      } else if (part.mult >= 1.8 || score >= 10) {
-        // 高倍部位或X分
-        sfxEpic();
-        addLog({ type: "hit_crit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+        sfxArrowShoot(); sfxEpic();
+        addLog({ type: "hit_organ", text: `${i+1}箭 ${arrowLabels[i] || score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+      } else if (part.mult >= 1.8 || isX) {
+        sfxArrowShoot(); sfxEpic();
+        addLog({ type: "hit_crit", text: `${i+1}箭 ${arrowLabels[i] || score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
       } else if (score >= 8) {
-        sfxSuccess();
-        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
+        sfxArrowShoot(); sfxSuccess();
+        addLog({ type: "hit", text: `${i+1}箭 ${arrowLabels[i] || score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
       } else {
-        sfxTap();
-        addLog({ type: "hit", text: `${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
+        sfxArrowShoot();
+        addLog({ type: "hit", text: `${i+1}箭 ${arrowLabels[i] || score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
       }
 
       curMonHP = Math.max(0, curMonHP - dmg);
@@ -339,6 +340,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
     // 下一回合
     setArrows([]);
+    setArrowLabels([]);
     setArcherATKMod(0);
     setRound(r => r + 1);
     setBattlePhase("input");
@@ -365,6 +367,7 @@ setMonsterHP(boostedHP);
     ]);
     setBattlePhase("input");
     setArrows([]);
+    setArrowLabels([]);
     setUnlockedParts(new Set());
     setRevived(false);
     setLoot(null);
@@ -662,7 +665,7 @@ const mats = Array.from({ length: matCount }, () => drawMaterial(monster.id, mon
                     : i === arrows.length
                       ? "bg-blue-100 text-blue-400 ring-2 ring-blue-400"
                       : "bg-gray-100 text-gray-300"}`}>
-                  {i < arrows.length ? (arrows[i] === 0 ? "M" : arrows[i]) : ""}
+                  {i < arrows.length ? (arrowLabels[i] || (arrows[i] === 0 ? "M" : arrows[i])) : ""}
                 </div>
               ))}
               {arrows.length > 0 && (
@@ -682,7 +685,7 @@ const mats = Array.from({ length: matCount }, () => drawMaterial(monster.id, mon
             {arrows.length < ARROWS_PER_ROUND && (
               <div className="grid grid-cols-6 gap-1.5">
                 {HALF_SCORES.map(s => (
-                  <button key={s.label} onClick={() => inputArrow(s.val)}
+                  <button key={s.label} onClick={() => inputArrow(s.val, s.label)}
                     className="py-2 rounded-lg font-black text-white text-sm active:scale-90 transition-transform"
                     style={{ background: s.color }}>
                     {s.label}
