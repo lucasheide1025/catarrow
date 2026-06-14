@@ -701,39 +701,39 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 戰鬥訊息 — 逐箭累積，固定在輸入區下方 */}
+      {/* 戰鬥紀錄 — 逐箭累積，位於輸入區下方 */}
       {revealEntry && revealIdx > 0 && (
-        <div className="mx-4 mb-4 mt-1 flex flex-col gap-1 max-h-44 overflow-y-auto">
-          {Array.from({ length: revealIdx }, (_, i) => {
-            const attacks = (revealEntry.attacks || []).map(atk => {
-              const b = (atk.arrowBreakdown || [])[i];
-              if (!b) return null;
-              const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
-              const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
-              return { b, aName, tName, team: atk.attackerTeam };
-            }).filter(Boolean);
-            return (
-              <div key={i} className="flex items-center gap-1.5 flex-wrap text-[10px] px-2 py-1 rounded-lg bg-black/30 border border-white/8"
-                style={{ animation:"slide-in .15s ease" }}>
-                <span className="text-slate-600 shrink-0">第{i+1}箭</span>
-                {attacks.map((c, j) => (
-                  <span key={j} className="flex items-center gap-0.5">
-                    {j > 0 && <span className="text-slate-700 mx-0.5">·</span>}
-                    <span className={c.team === "A" ? "text-blue-300 font-bold" : "text-red-300 font-bold"}>{c.aName}</span>
-                    <span className="text-slate-600">→</span>
-                    <span className="text-slate-400">{c.tName}</span>
-                    {c.b.dmg === 0
-                      ? <span className="text-slate-600 ml-0.5">💨脫靶</span>
-                      : <span className={`ml-0.5 ${c.b.isCrit ? "text-amber-300 font-black" : "text-slate-200"}`}>
-                          {c.b.partIcon}{c.b.partName || "胸腔"}{c.b.isCrit && "💥"}
-                          <span className={c.b.isCrit ? "text-amber-400" : "text-red-400"}> -{c.b.dmg}</span>
-                        </span>
-                    }
-                  </span>
-                ))}
-              </div>
-            );
-          })}
+        <div className="mx-4 mb-4 mt-2">
+          <div className="text-[10px] text-slate-500 font-black tracking-widest mb-1 px-1">⚔️ 戰鬥紀錄</div>
+          <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
+            {Array.from({ length: revealIdx }, (_, i) => {
+              const attacks = (revealEntry.attacks || []).map(atk => {
+                const b = (atk.arrowBreakdown || [])[i];
+                if (!b) return null;
+                const aName = (atk.attackerTeam === "A" ? teamA : teamB)?.[atk.attackerId]?.name || "?";
+                const tName = (atk.attackerTeam === "A" ? teamB : teamA)?.[atk.targetId]?.name || "?";
+                return { b, aName, tName, team: atk.attackerTeam };
+              }).filter(Boolean);
+              return attacks.map((c, j) => (
+                <div key={`${i}-${j}`} className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-white/8 leading-snug"
+                  style={{ animation:"slide-in .15s ease" }}>
+                  <span className={c.team === "A" ? "text-blue-300 font-bold" : "text-red-300 font-bold"}>{c.aName}</span>
+                  <span className="text-slate-500"> 對 </span>
+                  <span className="text-slate-300 font-bold">{c.tName}</span>
+                  {c.b.dmg === 0
+                    ? <span className="text-slate-500"> 💨 脫靶</span>
+                    : <>
+                        <span className="text-slate-400"> 命中【</span>
+                        <span className="text-slate-200">{c.b.partIcon}{c.b.partName || "胸腔"}</span>
+                        <span className="text-slate-400">】</span>
+                        {c.b.isCrit && <span className="text-amber-400 font-black"> 💥爆擊！</span>}
+                        <span className="text-red-400 font-black"> -{c.b.dmg}</span>
+                      </>
+                  }
+                </div>
+              ));
+            })}
+          </div>
         </div>
       )}
     </div>
