@@ -37,7 +37,7 @@ export default function MemberPractice() {
   useEffect(() => {
     if (!profile?.id) return;
     const unsub = subscribePracticeLogs(profile.id, data => {
-      setLogs(data); setLoading(false);
+      setLogs(data.filter(l => l.distance && l.totalArrows > 0)); setLoading(false);
     });
     return unsub;
   }, [profile?.id]);
@@ -126,7 +126,7 @@ export default function MemberPractice() {
     const rt = cur.filter(s=>s!=="M").reduce((a,b)=>a+b,0);
     return (
       <div className="p-4 flex flex-col gap-4">
-        <button onClick={()=>{setPhase("setup");setRound(0);setAllR([]);setCur([]);}}
+        <button onClick={()=>{setAdding(false);setPhase("setup");setRound(0);setAllR([]);setCur([]);}}
           className="text-gray-500 text-sm">← 放棄此次練習</button>
         <Card className="p-4">
           <div className="text-gray-500 text-xs mb-1">{bowLabel(form.bowType)}　{form.distance}米</div>

@@ -284,8 +284,8 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
         <div className="grid grid-cols-2 gap-2">
           {[["📅 日期",(comp?.date||"")+(comp?.endDate?` ～ ${comp.endDate}`:"")],
             ["🎯 靶紙",comp?.targetName||"—"],
-            ["🏹 規格",comp?.arrowCount?`${comp.arrowCount}箭×${comp.roundCount}回`:"—"],
-            ["計分","環數"+(comp?.hasMiss?" +M":"")]].map(([k,v])=>(
+            comp?.arrowCount ? ["🏹 規格",`${comp.arrowCount}箭×${comp.roundCount}回`] : null,
+            ["計分","環數"+(comp?.hasMiss?" +M":"")]].filter(Boolean).map(([k,v])=>(
             <div key={k} className="bg-gray-50 rounded-xl p-3">
               <div className="text-gray-400 text-xs">{k}</div>
               <div className="text-gray-700 font-bold text-sm">{v}</div>

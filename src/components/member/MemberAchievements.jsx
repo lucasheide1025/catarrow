@@ -53,7 +53,10 @@ export default function MemberAchievements() {
               <div className="text-gray-800 font-bold text-sm">{task.title}</div>
               {task.expiresAt && <div className="text-red-400 text-xs mt-0.5">截止日期：{task.expiresAt}</div>}
             </div>
-            <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">進行中</span>
+            {task.expiresAt && new Date(task.expiresAt) < new Date()
+              ? <span className="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">已截止</span>
+              : <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">進行中</span>
+            }
           </div>
 
           <div className="flex flex-col gap-2">
