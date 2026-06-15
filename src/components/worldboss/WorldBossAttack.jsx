@@ -19,7 +19,7 @@ function scoreColor(s) {
   return "#94a3b8";
 }
 
-// ── 計算一箭傷害 ─────────────────────────────────────────────
+// ── 計算傷害 ─────────────────────────────────────────────────
 function calcArrowDmg(score, myATK, bossDef, participantBonus) {
   if (score === 0) return 0;
   const atkFinal = myATK * participantBonus;
@@ -28,12 +28,26 @@ function calcArrowDmg(score, myATK, bossDef, participantBonus) {
   return Math.max(1, Math.round(base * mult));
 }
 
-// ── Boss 反擊傷害 ────────────────────────────────────────────
 function calcCounterDmg(bossAtk, myDEF) {
   const base = bossAtk * 0.4 - myDEF * 0.3;
   const mult = 0.8 + Math.random() * 0.4;
   return Math.max(5, Math.round(base * mult));
 }
+
+// ── Boss 反擊台詞池 ──────────────────────────────────────────
+const BOSS_TAUNTS = [
+  ["⚡", "黑暗之力爆發！"],
+  ["🔥", "業火席捲戰場！"],
+  ["💀", "怒吼震天！大地龜裂！"],
+  ["🌑", "暗黑衝擊波席捲而來！"],
+  ["💥", "狂暴化！攻擊力倍增！"],
+  ["🌪️", "黑暗旋風吹來！"],
+];
+const BOSS_FINAL_TAUNTS = [
+  ["☠️", "絕命一擊！傾盡全力！"],
+  ["⚡", "終焉之力降臨！最後的怒吼！"],
+  ["🌑", "末日審判——！"],
+];
 
 // ── 藥水選項 ─────────────────────────────────────────────────
 const POTIONS = [
@@ -49,8 +63,24 @@ function MiniHP({ current, max }) {
   const color = pct > 50 ? "#22c55e" : pct > 20 ? "#f97316" : "#ef4444";
   return (
     <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-      <div className="h-full rounded-full transition-all duration-500"
+      <div className="h-full rounded-full transition-all duration-700"
         style={{ width: `${pct}%`, background: color }} />
+    </div>
+  );
+}
+
+function HPBar({ label, current, max, color }) {
+  const pct = max > 0 ? Math.max(0, current / max) * 100 : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-slate-400 font-bold">{label}</span>
+        <span className="font-mono" style={{ color }}>{current} / {max}</span>
+      </div>
+      <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-700"
+          style={{ width: `${pct}%`, background: color }}/>
+      </div>
     </div>
   );
 }
@@ -61,7 +91,7 @@ function CatMsg({ msg, onDone }) {
     return () => clearTimeout(t);
   }, [onDone]);
   return (
-    <div className="animate-bounce-in absolute left-0 right-0 mx-4 bg-indigo-900/90 border border-indigo-400/50 rounded-2xl px-4 py-2 text-sm text-indigo-100 text-center shadow-xl z-20"
+    <div className="absolute left-4 right-4 bg-indigo-900/90 border border-indigo-400/50 rounded-2xl px-4 py-2 text-sm text-indigo-100 text-center shadow-xl z-20"
       style={{ bottom: 80 }}>
       {msg}
     </div>
@@ -69,13 +99,12 @@ function CatMsg({ msg, onDone }) {
 }
 
 // ── 主元件 ──────────────────────────────────────────────────
-const TOTAL_ROUNDS  = 5;
-const ARROWS_PER    = 6;
+const TOTAL_ROUNDS = 5;
+const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack }) {
   const { profile } = useAuth();
 
-  // ── 玩家屬性 ─────────────────────────────────────────────
   const _base   = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip  = calcEquippedBonus([]);
   const baseATK = (_base.atk || 0) + (_equip.atk || 0);
@@ -85,38 +114,50 @@ export default function WorldBossAttack({ event, onBack }) {
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
 
-  // ── 戰鬥狀態 ────────────────────────────────────────────
-  const [phase,    setPhase]    = useState("prep");      // prep | battle | result | done
+  // ── 狀態 ───────────────────────────────────────────────────
+  const [phase,    setPhase]    = useState("prep");
+  // subPhase: shooting | roundResult | bossAttack | done
+  const [subPhase, setSubPhase] = useState("shooting");
+
   const [potion,   setPotion]   = useState("none");
-  const [bots,     setBots]     = useState([]);          // hired bots
+  const [bots,     setBots]     = useState([]);
   const [hiring,   setHiring]   = useState(false);
   const [coins,    setCoins]    = useState(profile?.coins || 0);
 
-  // round data
-  const [roundIdx,   setRoundIdx]   = useState(0);       // 0–4
-  const [arrows,     setArrows]     = useState([]);       // current round arrows []
-  const [allRounds,  setAllRounds]  = useState([]);       // completed rounds [{arrows, dmg, crits}]
+  const [roundIdx,     setRoundIdx]     = useState(0);
+  const [arrows,       setArrows]       = useState([]);
+  const [allRounds,    setAllRounds]    = useState([]);
+  const [roundSummary, setRoundSummary] = useState(null);
 
-  // HP tracking (local optimistic)
-  const [myHP,     setMyHP]     = useState(baseHP);
-  const [bossHP,   setBossHP]   = useState(event.bossCurrentHP);
+  const [myHP,       setMyHP]       = useState(baseHP);
+  const [bossHP,     setBossHP]     = useState(event.bossCurrentHP);
 
-  // animation / log
-  const [dmgLog,   setDmgLog]   = useState([]);          // entries to show
-  const [catMsg,   setCatMsg]   = useState(null);
-  const [showCounter, setShowCounter] = useState(false);
-  const [counterDmg,  setCounterDmg]  = useState(0);
-  const [submitting, setSubmitting]   = useState(false);
-  const [result,     setResult]       = useState(null);  // final result from DB
+  // boss 反擊
+  const [counterDmg,    setCounterDmg]    = useState(0);
+  const [bossAttackIcon, setBossAttackIcon] = useState("⚡");
+  const [bossAttackText, setBossAttackText] = useState("");
+
+  const [dmgLog,    setDmgLog]    = useState([]);
+  const [catMsg,    setCatMsg]    = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [result,     setResult]    = useState(null);
   const processingRef = useRef(false);
+  const timerRef      = useRef([]);
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
   const weapon = profile?.bowType || "複合弓";
-
   const potionDef  = POTIONS.find(p => p.id === potion);
   const potionMult = potionDef?.mult || 1;
-  const isLastRound = roundIdx === TOTAL_ROUNDS - 1;
+
+  // 清理所有 timer（離開時避免洩漏）
+  useEffect(() => () => timerRef.current.forEach(clearTimeout), []);
+
+  function addTimer(fn, ms) {
+    const t = setTimeout(fn, ms);
+    timerRef.current.push(t);
+    return t;
+  }
 
   // ── 雇用機器人 ───────────────────────────────────────────
   async function handleHireBot() {
@@ -132,66 +173,75 @@ export default function WorldBossAttack({ event, onBack }) {
 
   // ── 輸入分數 ─────────────────────────────────────────────
   function handleScore(s) {
-    if (arrows.length >= ARROWS_PER) return;
+    if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
     const score = scoreVal(s);
-    const dmg   = calcArrowDmg(score, baseATK, boss.def, participantBonus) * potionMult;
-    const newArrow = { label: scoreLabel(s), score, dmg: Math.round(dmg) };
-    setArrows(prev => [...prev, newArrow]);
+    const dmg   = Math.round(calcArrowDmg(score, baseATK, boss.def, participantBonus) * potionMult);
+    const newArrow = { label: scoreLabel(s), score, dmg };
 
-    // 顯示傷害訊息
-    const isCrit = score === 10 || s === "X";
-    const entry  = isCrit
-      ? `💥 ${s} 暴擊！ -${Math.round(dmg)}`
-      : score === 0
-        ? `💨 M 沒有傷害`
-        : `🏹 ${s}環 -${Math.round(dmg)}`;
-    setDmgLog(prev => [...prev.slice(-5), entry]);
+    const newArrows = [...arrows, newArrow];
+    setArrows(newArrows);
 
-    // 貓咪隨機助攻（10% 機率）
-    const hasCat = !!profile?.equippedCat;
-    if (hasCat && Math.random() < 0.10) {
-      const catName = profile.equippedCat.name || "貓咪";
-      const catActions = [
-        `🐱 ${catName} 撲了過去！暴擊加成 ×1.2 ⚡`,
-        `🐱 ${catName} 舔了你的傷口，回復 HP 💚`,
-        `🐱 ${catName} 偷偷藏了一顆金幣，掉寶 +1 💰`,
-        `🐱 ${catName} 嚇到 Boss！防禦力暫時下降 🐾`,
-      ];
-      setCatMsg(catActions[Math.floor(Math.random() * catActions.length)]);
+    const isCrit = score >= 10;
+    setDmgLog(prev => [...prev.slice(-5),
+      isCrit ? `💥 ${s} 暴擊！ -${dmg}` : score === 0 ? `💨 M 飛矢落空` : `🏹 ${s}環 -${dmg}`
+    ]);
+
+    // 貓咪助攻（10%）
+    if (profile?.equippedCat && Math.random() < 0.10) {
+      const name = profile.equippedCat.name || "貓咪";
+      const msgs = [`🐱 ${name} 撲了過去！暴擊加成 ×1.2 ⚡`, `🐱 ${name} 舔了你的傷口，回復 HP 💚`,
+                    `🐱 ${name} 偷藏了一枚金幣 💰`, `🐱 ${name} 嚇到 Boss！防禦暫時下降 🐾`];
+      setCatMsg(msgs[Math.floor(Math.random() * msgs.length)]);
     }
 
-    // 6 箭完成 → 自動結算本回合
-    if (arrows.length + 1 >= ARROWS_PER) {
-      const fullArrows = [...arrows, newArrow];
-      finishRound(fullArrows);
+    if (newArrows.length >= ARROWS_PER) {
+      // 短暫延遲讓玩家看到最後一箭再結算
+      addTimer(() => finishRound(newArrows), 400);
     }
   }
 
+  // ── 回合結算流程 ─────────────────────────────────────────
   function finishRound(fullArrows) {
-    const roundDmg  = fullArrows.reduce((s, a) => s + a.dmg, 0);
-    const crits     = fullArrows.filter(a => a.score >= 10).length;
-    const roundData = { arrows: fullArrows, dmg: roundDmg, crits };
+    const roundDmg   = fullArrows.reduce((s, a) => s + a.dmg, 0);
+    const crits      = fullArrows.filter(a => a.score >= 10).length;
+    const roundData  = { arrows: fullArrows, dmg: roundDmg, crits };
     const nextRounds = [...allRounds, roundData];
-
-    // 最後一回合 → Boss 反擊
-    if (nextRounds.length === TOTAL_ROUNDS) {
-      const cdmg = calcCounterDmg(boss.atk || 100, baseDEF);
-      setCounterDmg(cdmg);
-      setMyHP(h => Math.max(0, h - cdmg));
-      setShowCounter(true);
-      setTimeout(() => setShowCounter(false), 1800);
-    }
 
     setBossHP(h => Math.max(0, h - roundDmg));
     setAllRounds(nextRounds);
-    setArrows([]);
+    setRoundSummary(roundData);
 
-    if (nextRounds.length < TOTAL_ROUNDS) {
-      setRoundIdx(r => r + 1);
-    } else {
-      // 所有回合完成 → 送出
-      setTimeout(() => submitAttack(nextRounds), 600);
-    }
+    // ① 顯示「回合結算」畫面 2 秒
+    setSubPhase("roundResult");
+
+    addTimer(() => {
+      // ② 計算 Boss 反擊並切換到「Boss 攻擊」畫面
+      const cdmg   = calcCounterDmg(boss.atk || 100, baseDEF);
+      const isLast = nextRounds.length === TOTAL_ROUNDS;
+      const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
+      const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
+
+      setCounterDmg(cdmg);
+      setBossAttackIcon(icon);
+      setBossAttackText(text);
+      setMyHP(h => Math.max(0, h - cdmg));
+      setSubPhase("bossAttack");
+
+      // ③ Boss 攻擊展示 2 秒後繼續
+      addTimer(() => {
+        if (!isLast) {
+          // 繼續下一回合
+          setArrows([]);
+          setRoundIdx(r => r + 1);
+          setDmgLog([]);
+          setSubPhase("shooting");
+        } else {
+          // 全部結束 → 送出
+          setSubPhase("done");
+          submitAttack(nextRounds);
+        }
+      }, 2000);
+    }, 2200);
   }
 
   // ── 送出攻擊 ─────────────────────────────────────────────
@@ -202,12 +252,12 @@ export default function WorldBossAttack({ event, onBack }) {
     setPhase("result");
 
     const res = await attackWorldBoss({
-      eventId:      event.id,
-      memberId:     myId,
-      memberName:   myName,
+      eventId:       event.id,
+      memberId:      myId,
+      memberName:    myName,
       weapon,
-      roundResults: rounds,
-      isGuest:      false,
+      roundResults:  rounds,
+      isGuest:       false,
       potionDmgMult: 1,
       bots,
     });
@@ -217,7 +267,8 @@ export default function WorldBossAttack({ event, onBack }) {
     processingRef.current = false;
   }
 
-  // ── 畫面：準備階段 ────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  // ── 畫面：準備 ───────────────────────────────────────────
   if (phase === "prep") {
     const potionCost = potionDef?.cost || 0;
     const canAfford  = coins >= potionCost;
@@ -244,22 +295,24 @@ export default function WorldBossAttack({ event, onBack }) {
             </div>
           </div>
 
+          {/* 戰鬥說明 */}
+          <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl px-4 py-3 text-xs text-rose-300 space-y-1 leading-relaxed">
+            <div className="font-black text-rose-200 mb-1">⚔️ 戰鬥流程</div>
+            <div>1. 每回合射 6 箭對 Boss 造成傷害</div>
+            <div>2. 每回合結束後 Boss 會進行反擊</div>
+            <div>3. 共 5 大回合，最終回合 Boss 全力攻擊</div>
+          </div>
+
           {/* 我的屬性 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
             <div className="text-xs text-slate-400 font-bold mb-3">你的屬性</div>
             <div className="grid grid-cols-3 gap-3 text-center text-sm">
-              <div>
-                <div className="text-slate-500 text-xs mb-0.5">HP</div>
-                <div className="font-black text-emerald-400">{baseHP}</div>
-              </div>
-              <div>
-                <div className="text-slate-500 text-xs mb-0.5">ATK</div>
-                <div className="font-black text-rose-400">{baseATK}</div>
-              </div>
-              <div>
-                <div className="text-slate-500 text-xs mb-0.5">DEF</div>
-                <div className="font-black text-blue-400">{baseDEF}</div>
-              </div>
+              {[["HP", baseHP, "#22c55e"], ["ATK", baseATK, "#f87171"], ["DEF", baseDEF, "#60a5fa"]].map(([k, v, c]) => (
+                <div key={k}>
+                  <div className="text-slate-500 text-xs mb-0.5">{k}</div>
+                  <div className="font-black" style={{ color: c }}>{v}</div>
+                </div>
+              ))}
             </div>
             <div className="mt-3 text-center text-xs text-amber-300">
               ⚡ 參戰加成 ×{participantBonus.toFixed(2)} ATK（{event.totalParticipants || 0} 人參戰）
@@ -271,8 +324,7 @@ export default function WorldBossAttack({ event, onBack }) {
             <div className="text-xs text-slate-400 font-bold mb-3">💊 攻擊增幅藥水</div>
             <div className="grid grid-cols-2 gap-2">
               {POTIONS.map(p => (
-                <button key={p.id}
-                  onClick={() => setPotion(p.id)}
+                <button key={p.id} onClick={() => setPotion(p.id)}
                   disabled={p.cost > 0 && coins < p.cost}
                   className={`py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 ${potion === p.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5 text-slate-300"}`}
                   style={{ color: potion === p.id ? p.color : undefined }}>
@@ -297,8 +349,7 @@ export default function WorldBossAttack({ event, onBack }) {
                 ))}
               </div>
             )}
-            <button
-              onClick={handleHireBot}
+            <button onClick={handleHireBot}
               disabled={coins < 100 || hiring || bots.length >= 5}
               className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 disabled:opacity-30 active:scale-95 transition-all">
               {hiring ? "雇用中…" : bots.length >= 5 ? "已達上限（5隻）" : `🤖 雇用機器人 💰100`}
@@ -306,7 +357,6 @@ export default function WorldBossAttack({ event, onBack }) {
           </div>
         </div>
 
-        {/* 出戰按鈕 */}
         <div className="shrink-0 absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
           style={{ background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
           {potionCost > 0 && !canAfford && (
@@ -324,35 +374,130 @@ export default function WorldBossAttack({ event, onBack }) {
             disabled={potionCost > 0 && !canAfford}
             className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
             style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
-            ⚔️ 開始挑戰（5回合 × 6箭）
+            ⚔️ 開始挑戰（{TOTAL_ROUNDS} 回合 × {ARROWS_PER} 箭）
           </button>
         </div>
       </div>
     );
   }
 
+  // ════════════════════════════════════════════════════════════
   // ── 畫面：戰鬥中 ─────────────────────────────────────────
   if (phase === "battle") {
-    const roundDmgSoFar = arrows.reduce((s, a) => s + a.dmg, 0);
 
-    return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
+    // ── 回合結算畫面 ───────────────────────────────────────
+    if (subPhase === "roundResult") {
+      const isLast = allRounds.length === TOTAL_ROUNDS;
+      return (
+        <div className="h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 to-slate-800 text-white px-6 space-y-6">
+          {/* 回合徽章 */}
+          <div className="text-center space-y-1">
+            <div className="text-xs text-slate-500 font-bold tracking-widest uppercase">
+              第 {allRounds.length} 回合結算
+            </div>
+            <div className="text-5xl font-black text-rose-400">
+              -{roundSummary?.dmg.toLocaleString()}
+            </div>
+            <div className="text-xs text-amber-300">
+              {roundSummary?.crits > 0 ? `⚡ ${roundSummary.crits} 次暴擊！` : "造成傷害"}
+            </div>
+          </div>
 
-        {/* Boss 反擊動畫 */}
-        {showCounter && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-            <div className="text-6xl font-black text-rose-400 animate-ping" style={{ animationDuration: "0.4s" }}>
+          {/* 本回合箭矢 */}
+          <div className="flex gap-2 justify-center">
+            {roundSummary?.arrows.map((a, i) => (
+              <div key={i}
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border"
+                style={{
+                  background: `${scoreColor(a.label)}22`,
+                  borderColor: scoreColor(a.label),
+                  color: scoreColor(a.label),
+                }}>
+                {a.label}
+              </div>
+            ))}
+          </div>
+
+          {/* HP 狀態 */}
+          <div className="w-full space-y-3">
+            <HPBar label={`${boss.name} HP`} current={bossHP} max={event.bossMaxHP} color={boss.accent || "#f59e0b"}/>
+            <HPBar label="你的 HP" current={myHP} max={baseHP} color="#22c55e"/>
+          </div>
+
+          {/* Boss 蓄力提示 */}
+          <div className={`text-sm font-bold animate-pulse ${isLast ? "text-rose-300" : "text-slate-400"}`}>
+            {isLast ? "⚠️ Boss 正在集結全力…" : "⚡ Boss 正在蓄力反擊…"}
+          </div>
+
+          {/* 回合進度點 */}
+          <div className="flex gap-2">
+            {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full transition-all ${
+                i < allRounds.length ? "bg-amber-400" : "bg-white/15"
+              }`}/>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Boss 反擊畫面 ───────────────────────────────────────
+    if (subPhase === "bossAttack") {
+      return (
+        <div className="h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-b from-red-950 to-slate-900 text-white px-6 space-y-5">
+          {/* Boss 大圖 */}
+          <div className="animate-bounce" style={{ animationDuration: "0.6s" }}>
+            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={120}/>
+          </div>
+
+          {/* 攻擊台詞 */}
+          <div className="text-center space-y-1">
+            <div className="text-5xl">{bossAttackIcon}</div>
+            <div className="text-xl font-black text-rose-300">{bossAttackText}</div>
+          </div>
+
+          {/* 傷害數字 */}
+          <div className="text-center">
+            <div className="text-xs text-slate-400 mb-1">你受到傷害</div>
+            <div className="text-6xl font-black text-rose-400" style={{ textShadow: "0 0 30px #ef4444" }}>
               -{counterDmg}
             </div>
           </div>
-        )}
 
-        {/* 貓咪助攻訊息 */}
+          {/* 玩家 HP */}
+          <div className="w-full">
+            <HPBar label="你的 HP" current={myHP} max={baseHP} color={myHP / baseHP > 0.3 ? "#22c55e" : "#ef4444"}/>
+            {myHP <= 0 && (
+              <div className="text-center text-rose-400 text-xs font-bold mt-1 animate-pulse">
+                倒下了…但你的傷害已記錄！
+              </div>
+            )}
+          </div>
+
+          {/* 下一步提示 */}
+          {allRounds.length < TOTAL_ROUNDS ? (
+            <div className="text-slate-500 text-xs animate-pulse">
+              準備第 {allRounds.length + 1} 回合…
+            </div>
+          ) : (
+            <div className="text-amber-400 text-xs font-bold animate-pulse">
+              戰鬥結束，結算中…
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 射擊畫面 ────────────────────────────────────────────
+    const roundDmgSoFar = arrows.reduce((s, a) => s + a.dmg, 0);
+    const isLastRound   = roundIdx === TOTAL_ROUNDS - 1;
+
+    return (
+      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
         {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
 
-        {/* Header */}
+        {/* Header：Boss 狀態 */}
         <div className="shrink-0 px-4 pt-4 pb-2">
-          {/* Boss HP */}
           <div className="flex items-center gap-3 mb-2">
             <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={44}/>
             <div className="flex-1">
@@ -360,10 +505,16 @@ export default function WorldBossAttack({ event, onBack }) {
               <MiniHP current={bossHP} max={event.bossMaxHP}/>
               <div className="text-xs text-slate-500 font-mono mt-0.5">{bossHP.toLocaleString()} HP</div>
             </div>
+            <div className="text-right shrink-0">
+              <div className="text-xs text-slate-500">你的 HP</div>
+              <div className={`font-black text-sm ${myHP / baseHP > 0.4 ? "text-emerald-400" : "text-rose-400"}`}>
+                {myHP} / {baseHP}
+              </div>
+            </div>
           </div>
 
-          {/* 回合指示 */}
-          <div className="flex gap-1.5 justify-center">
+          {/* 回合進度 */}
+          <div className="flex gap-1.5">
             {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
               <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${
                 i < roundIdx ? "bg-amber-400" : i === roundIdx ? "bg-rose-400 animate-pulse" : "bg-white/10"
@@ -372,17 +523,18 @@ export default function WorldBossAttack({ event, onBack }) {
           </div>
           <div className="text-center text-xs text-slate-400 mt-1">
             第 {roundIdx + 1} / {TOTAL_ROUNDS} 回合
-            {isLastRound && <span className="text-rose-400 font-bold ml-2">⚠️ 最終回合 Boss 將反擊！</span>}
+            {isLastRound && <span className="text-rose-400 font-bold ml-2">⚠️ 最終回合！</span>}
           </div>
         </div>
 
-        {/* 箭矢記錄 */}
+        {/* 箭矢格 */}
         <div className="shrink-0 px-4 py-2">
           <div className="flex gap-1.5 justify-center">
             {Array.from({ length: ARROWS_PER }).map((_, i) => {
               const a = arrows[i];
               return (
-                <div key={i} className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black border"
+                <div key={i}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black border transition-all"
                   style={{
                     background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.05)",
                     borderColor: a ? scoreColor(a.label) : "rgba(255,255,255,0.1)",
@@ -394,16 +546,20 @@ export default function WorldBossAttack({ event, onBack }) {
             })}
           </div>
           <div className="text-center text-xs text-slate-500 mt-1">
-            {arrows.length} / {ARROWS_PER} 箭 ｜ 本回合傷害：<span className="text-amber-300 font-bold">{roundDmgSoFar.toLocaleString()}</span>
+            {arrows.length} / {ARROWS_PER} 箭　本回合：
+            <span className="text-amber-300 font-bold">{roundDmgSoFar.toLocaleString()}</span>
           </div>
         </div>
 
         {/* 傷害 log */}
-        <div className="shrink-0 px-4 min-h-[72px] space-y-0.5">
-          {dmgLog.slice(-4).map((l, i) => (
-            <div key={i} className={`text-xs text-center transition-all ${i === dmgLog.length - 4 ? "text-slate-600" : i === dmgLog.length - 3 ? "text-slate-500" : i === dmgLog.length - 2 ? "text-slate-400" : "text-slate-200 font-bold"}`}>
-              {l}
-            </div>
+        <div className="shrink-0 px-4 min-h-[68px] space-y-0.5">
+          {dmgLog.slice(-4).map((l, i, arr) => (
+            <div key={i} className={`text-xs text-center transition-all ${
+              i === arr.length - 1 ? "text-white font-bold"
+              : i === arr.length - 2 ? "text-slate-300"
+              : i === arr.length - 3 ? "text-slate-500"
+              : "text-slate-700"
+            }`}>{l}</div>
           ))}
         </div>
 
@@ -413,7 +569,7 @@ export default function WorldBossAttack({ event, onBack }) {
             {SCORE_BTNS.map(s => (
               <button key={s}
                 onClick={() => handleScore(s)}
-                disabled={arrows.length >= ARROWS_PER}
+                disabled={arrows.length >= ARROWS_PER || subPhase !== "shooting"}
                 className="py-3 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-20"
                 style={{
                   color: scoreColor(s),
@@ -424,9 +580,7 @@ export default function WorldBossAttack({ event, onBack }) {
               </button>
             ))}
           </div>
-
-          {/* 完成回合已輸入6箭自動推進，此為清除上一箭 */}
-          {arrows.length > 0 && arrows.length < ARROWS_PER && (
+          {arrows.length > 0 && arrows.length < ARROWS_PER && subPhase === "shooting" && (
             <button
               onClick={() => setArrows(prev => prev.slice(0, -1))}
               className="mt-2 w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
@@ -434,16 +588,11 @@ export default function WorldBossAttack({ event, onBack }) {
             </button>
           )}
         </div>
-
-        {/* 玩家 HP（右下角） */}
-        <div className="absolute bottom-4 right-4 text-xs text-slate-500 text-right">
-          <div>你的 HP</div>
-          <div className="font-black text-emerald-400 text-sm">{myHP} / {baseHP}</div>
-        </div>
       </div>
     );
   }
 
+  // ════════════════════════════════════════════════════════════
   // ── 畫面：結果 ────────────────────────────────────────────
   if (phase === "result") {
     const totalPlayerDmg = allRounds.reduce((s, r) => s + r.dmg, 0);
@@ -452,12 +601,10 @@ export default function WorldBossAttack({ event, onBack }) {
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
         <div className="flex-1 overflow-y-auto px-4 py-8 space-y-5 flex flex-col items-center justify-center">
-
           {submitting ? (
             <div className="text-slate-400 text-sm animate-pulse">結算中…</div>
           ) : result?.ok ? (
             <>
-              {/* 擊殺特效 */}
               {result.defeated ? (
                 <div className="text-center space-y-2">
                   <div className="text-6xl animate-bounce">💥</div>
@@ -474,7 +621,6 @@ export default function WorldBossAttack({ event, onBack }) {
                 </div>
               )}
 
-              {/* 傷害詳情 */}
               <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
                 <div className="text-xs text-slate-400 font-bold mb-2">戰鬥報告</div>
                 <div className="flex justify-between text-sm">
@@ -489,7 +635,7 @@ export default function WorldBossAttack({ event, onBack }) {
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm border-t border-white/10 pt-2 mt-2">
+                <div className="flex justify-between text-sm border-t border-white/10 pt-2">
                   <span className="text-slate-300">總傷害</span>
                   <span className="font-black text-amber-300">{result.dmg?.toLocaleString()}</span>
                 </div>
@@ -503,12 +649,11 @@ export default function WorldBossAttack({ event, onBack }) {
                 </div>
               </div>
 
-              {/* 各回合明細 */}
               <div className="w-full space-y-2">
                 {allRounds.map((r, i) => (
                   <div key={i} className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-3">
                     <span className="text-xs text-slate-500 w-12">第{i+1}回合</span>
-                    <div className="flex gap-1 flex-1">
+                    <div className="flex gap-1 flex-1 flex-wrap">
                       {r.arrows.map((a, j) => (
                         <span key={j} className="text-xs font-bold" style={{ color: scoreColor(a.label) }}>{a.label}</span>
                       ))}
@@ -534,9 +679,7 @@ export default function WorldBossAttack({ event, onBack }) {
         </div>
 
         <div className="shrink-0 px-4 pb-6 pt-2">
-          <button
-            onClick={onBack}
-            disabled={submitting}
+          <button onClick={onBack} disabled={submitting}
             className="w-full py-4 rounded-2xl font-black text-lg bg-white/10 border border-white/20 text-white active:scale-95 transition-all disabled:opacity-40">
             返回大廳
           </button>
