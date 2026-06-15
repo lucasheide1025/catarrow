@@ -110,7 +110,8 @@ export default function AdminWorldBoss() {
   }
 
   return (
-    <div className="max-w-lg mx-auto p-4 space-y-4 text-white">
+    <div className="max-w-lg mx-auto p-4">
+    <div className="rounded-2xl p-4 space-y-4 text-white" style={{ background: "#0f172a" }}>
       <div className="text-xl font-black">🌍 世界大 Boss 管理</div>
 
       {/* Tab */}
@@ -368,6 +369,7 @@ export default function AdminWorldBoss() {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

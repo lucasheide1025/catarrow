@@ -32,18 +32,18 @@ const PRESET_DISTANCES_NOVICE = [5, 7, 10];
 const PRESET_DISTANCES = [5, 7, 10, 13.5, 15, 18];  // 學生 + 老手
 
 const HALF_SCORES = [
-  { label:"X",  val:10, color:"#fbbf24" },
-  { label:"10", val:10, color:"#fbbf24" },
-  { label:"9",  val:9,  color:"#fbbf24" },
-  { label:"8",  val:8,  color:"#ef4444" },
-  { label:"7",  val:7,  color:"#ef4444" },
-  { label:"6",  val:6,  color:"#3b82f6" },
-  { label:"5",  val:5,  color:"#3b82f6" },
-  { label:"4",  val:4,  color:"#1e293b" },
-  { label:"3",  val:3,  color:"#1e293b" },
-  { label:"2",  val:2,  color:"#9ca3af" },
-  { label:"1",  val:1,  color:"#9ca3af" },
-  { label:"M",  val:0,  color:"#64748b" },
+  { label:"X",  val:10, color:"#fbbf24", cls:"bg-yellow-400 text-yellow-900" },
+  { label:"10", val:10, color:"#fbbf24", cls:"bg-yellow-300 text-yellow-900" },
+  { label:"9",  val:9,  color:"#ef4444", cls:"bg-red-400 text-white" },
+  { label:"8",  val:8,  color:"#ef4444", cls:"bg-red-300 text-white" },
+  { label:"7",  val:7,  color:"#3b82f6", cls:"bg-blue-400 text-white" },
+  { label:"6",  val:6,  color:"#3b82f6", cls:"bg-blue-300 text-white" },
+  { label:"5",  val:5,  color:"#6b7280", cls:"bg-gray-500 text-white" },
+  { label:"4",  val:4,  color:"#9ca3af", cls:"bg-gray-400 text-white" },
+  { label:"3",  val:3,  color:"#d1d5db", cls:"bg-gray-300 text-gray-800" },
+  { label:"2",  val:2,  color:"#e5e7eb", cls:"bg-gray-200 text-gray-700" },
+  { label:"1",  val:1,  color:"#f3f4f6", cls:"bg-gray-100 text-gray-600" },
+  { label:"M",  val:0,  color:"#64748b", cls:"bg-slate-600 text-gray-200" },
 ];
 
 const BATTLE_CSS = `
@@ -1219,8 +1219,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
               <div className="grid grid-cols-6 gap-1.5">
                 {HALF_SCORES.map(s=>(
                   <button key={s.label} onClick={()=>inputArrow(s.val)}
-                    className="py-2 rounded-lg font-black text-white text-sm active:scale-90 transition-transform"
-                    style={{ background:s.color }}>{s.label}</button>
+                    className={`py-2 rounded-lg font-black text-sm active:scale-90 transition-transform ${s.cls}`}>
+                    {s.label}
+                  </button>
                 ))}
               </div>
             )}
