@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
-import { MONSTERS } from "../../lib/monsterData";
+import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
+import { calcEquippedBonus } from "../../lib/monsterCards";
 
 const MODES = [
   { id:"novice",  label:"新手",   icon:"🌱", desc:"HP×1.5，適合初學者"  },
@@ -33,10 +34,12 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
-  const myHP   = profile?.fatCat?.hp    || 500;
-  const myMaxHP= profile?.fatCat?.maxHP || 500;
-  const myATK  = profile?.fatCat?.atk   || 10;
-  const myDEF  = profile?.fatCat?.def   || 10;
+  const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
+  const _equip   = calcEquippedBonus(profile);
+  const myHP     = (_base.hp  || 0) + (_equip.hp  || 0);
+  const myMaxHP  = myHP;
+  const myATK    = (_base.atk || 0) + (_equip.atk || 0);
+  const myDEF    = (_base.def || 0) + (_equip.def || 0);
 
   async function handleCreate() {
     setLoading(true); setErr("");
@@ -188,7 +191,12 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                 <li>• 金幣掉落 ×2</li>
               </ul>
             </div>
-            <button onClick={handleCreate} disabled={loading}
+            {profile?.dungeonUsed && (
+              <div className="bg-rose-500/10 border border-rose-400/30 rounded-2xl p-3 text-sm text-rose-300 text-center">
+                🔒 本期地下城次數已使用，等待教練重置後才能再次建立
+              </div>
+            )}
+            <button onClick={handleCreate} disabled={loading || !!profile?.dungeonUsed}
               className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
               {loading ? "建立中…" : "🏰 建立地下城"}
             </button>

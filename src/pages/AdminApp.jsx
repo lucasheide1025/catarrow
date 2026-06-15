@@ -47,6 +47,7 @@ import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
 import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
+import AdminDungeon      from "../components/admin/AdminDungeon";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -158,6 +159,7 @@ const adminNav = [
   { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
   { id:"givetool",      icon:"🧪", label:"測試" },
   { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
+  { id:"dungeon-admin", icon:"🏰", label:"地下城" },
 ];
 
   const memberNav = [
@@ -315,6 +317,7 @@ const adminNav = [
         {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
         {page==="billing"      && <AdminBilling profile={profile}/>}
         {page==="equipitems"   && <AdminEquipItems/>}
+        {page==="dungeon-admin" && <AdminDungeon/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

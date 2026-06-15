@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, Timestamp, deleteField
+  increment, arrayUnion, Timestamp, deleteField, writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -1685,6 +1685,24 @@ export async function addCoins(memberId, amount) {
   } catch {
     await setDoc(doc(db, C.members, memberId), { coins: amount }, { merge: true }).catch(() => {});
   }
+}
+
+// ─── 地下城次數管理 ────────────────────────────────────────
+export async function markDungeonUsed(memberId) {
+  if (!memberId) return;
+  await updateDoc(doc(db, C.members, memberId), { dungeonUsed: true });
+}
+
+export async function resetDungeonUsed(memberId) {
+  if (!memberId) return;
+  await updateDoc(doc(db, C.members, memberId), { dungeonUsed: false });
+}
+
+export async function resetAllDungeonUsed() {
+  const snap = await getDocs(collection(db, C.members));
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.update(d.ref, { dungeonUsed: false }));
+  await batch.commit();
 }
 
 // ─── 怪物卡片收藏 ──────────────────────────────────────────

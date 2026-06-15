@@ -67,7 +67,8 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const [loading,  setLoading]  = useState(false);
   const [liveMsg,  setLiveMsg]  = useState(null);
   const [shopDone, setShopDone] = useState(false);
-  const logEndRef = useRef(null);
+  const logEndRef     = useRef(null);
+  const processingRef = useRef(false);
 
   const isHost = room?.hostId === myId;
   const me     = room?.members?.[myId] || {};
@@ -93,7 +94,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   // 所有人都 ready → 房主結算
   useEffect(() => {
-    if (!isHost || !room || room.processing) return;
+    if (!isHost || !room || room.processing || processingRef.current) return;
     if (room.status !== "active") return;
     const members = room.members || {};
     const alive   = Object.values(members).filter(m => m.alive);
@@ -111,12 +112,14 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   }, [room?.status]);
 
   async function handleProcess() {
-    if (loading) return;
+    if (processingRef.current) return;
+    processingRef.current = true;
     setLoading(true);
     sfxCast();
     await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
     sfxRoundEnd();
     setLoading(false);
+    processingRef.current = false;
   }
 
   async function handleSubmit() {

@@ -5,7 +5,7 @@ import {
   serverTimestamp, arrayUnion, getDocs, query, where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins } from "./db";
+import { addCoins, markDungeonUsed } from "./db";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import {
   assignContracts, rerollContract, generatePathOptions,
@@ -54,6 +54,7 @@ export async function createDungeonRoom(hostId, hostName) {
       nextFloorModifiers: {},
       createdAt: serverTimestamp(),
     });
+    markDungeonUsed(hostId).catch(() => {});
     return { ok:true, roomId:ref.id, code };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
