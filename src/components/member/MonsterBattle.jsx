@@ -164,6 +164,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [eventMode, setEventMode]             = useState(false); // 是否走賽事流程
   const logEndRef = useRef(null);
   const lastPickedRef = useRef(null);
+  const phaseRef = useRef("select");
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   useEffect(() => {
     if (isGuest) { setArcherStats({ hp:100, atk:10, def:10 }); setDailyLeft(null); return; }
@@ -218,7 +220,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const power = calcArcherPower(archerStats);
     const matched = drawMatchedMonsters(power);
     setMatchedMonsters(matched);
-    setPickedMonster(null);
+    // 只在選怪階段才重置選取，避免進入 prebattle/battle 後被清空
+    if (phaseRef.current === "select" || phaseRef.current === "event_select") {
+      setPickedMonster(null);
+    }
   }, [archerStats]);
 
   // 記住最後選定的怪物（profile 更新時 pickedMonster 可能被清空，用 ref 保存以便再挑戰）
