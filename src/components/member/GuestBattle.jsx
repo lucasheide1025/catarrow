@@ -117,15 +117,21 @@ export default function GuestBattle({ guestId, onExpire }) {
     const email = emailInput.trim();
     if (!email || emailBusy) return;
     setEmailBusy(true);
-    await setDoc(doc(db, "guestNotifications", partyGuestId), {
-      guestId:   partyGuestId,
-      guestName: guestName || "訪客射手",
-      email,
-      wbResult,
-      createdAt: new Date().toISOString(),
-    }, { merge: true });
-    setEmailSaved(true);
-    setEmailBusy(false);
+    try {
+      await setDoc(doc(db, "guestNotifications", partyGuestId), {
+        guestId:   partyGuestId,
+        guestName: guestName || "訪客射手",
+        email,
+        wbResult,
+        createdAt: new Date().toISOString(),
+      }, { merge: true });
+      setEmailSaved(true);
+    } catch (e) {
+      console.error("儲存信箱失敗", e);
+      setEmailSaved(true); // 仍然顯示完成，避免使用者卡住
+    } finally {
+      setEmailBusy(false);
+    }
   }
 
   const nav = [
