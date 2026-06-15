@@ -116,8 +116,9 @@ export default function WorldBossAttack({ event, onBack }) {
 
   // ── 狀態 ───────────────────────────────────────────────────
   const [phase,    setPhase]    = useState("prep");
-  // subPhase: shooting | roundResult | bossAttack | done
+  // subPhase: shooting | processing | roundResult | bossAttack | done
   const [subPhase, setSubPhase] = useState("shooting");
+  const [processingIdx, setProcessingIdx] = useState(-1);
 
   const [potion,   setPotion]   = useState("none");
   const [bots,     setBots]     = useState([]);
@@ -171,51 +172,56 @@ export default function WorldBossAttack({ event, onBack }) {
     setHiring(false);
   }
 
-  // ── 輸入分數 ─────────────────────────────────────────────
+  // ── 輸入分數（只記錄，不計算傷害）──────────────────────
   function handleScore(s) {
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
-    const score = scoreVal(s);
-    const dmg   = Math.round(calcArrowDmg(score, baseATK, boss.def, participantBonus) * potionMult);
-    const newArrow = { label: scoreLabel(s), score, dmg };
-
-    const newArrows = [...arrows, newArrow];
-    setArrows(newArrows);
-
-    const isCrit = score >= 10;
-    setDmgLog(prev => [...prev.slice(-5),
-      isCrit ? `💥 ${s} 暴擊！ -${dmg}` : score === 0 ? `💨 M 飛矢落空` : `🏹 ${s}環 -${dmg}`
-    ]);
-
-    // 貓咪助攻（10%）
-    if (profile?.equippedCat && Math.random() < 0.10) {
-      const name = profile.equippedCat.name || "貓咪";
-      const msgs = [`🐱 ${name} 撲了過去！暴擊加成 ×1.2 ⚡`, `🐱 ${name} 舔了你的傷口，回復 HP 💚`,
-                    `🐱 ${name} 偷藏了一枚金幣 💰`, `🐱 ${name} 嚇到 Boss！防禦暫時下降 🐾`];
-      setCatMsg(msgs[Math.floor(Math.random() * msgs.length)]);
-    }
-
-    if (newArrows.length >= ARROWS_PER) {
-      // 短暫延遲讓玩家看到最後一箭再結算
-      addTimer(() => finishRound(newArrows), 400);
-    }
+    setArrows(prev => [...prev, { label: scoreLabel(s), score: scoreVal(s) }]);
   }
 
-  // ── 回合結算流程 ─────────────────────────────────────────
-  function finishRound(fullArrows) {
-    const roundDmg   = fullArrows.reduce((s, a) => s + a.dmg, 0);
-    const crits      = fullArrows.filter(a => a.score >= 10).length;
-    const roundData  = { arrows: fullArrows, dmg: roundDmg, crits };
-    const nextRounds = [...allRounds, roundData];
+  // ── 回合結算流程（逐箭計算）──────────────────────────────
+  async function finishRound(fullArrows) {
+    setSubPhase("processing");
+    setDmgLog([]);
 
-    setBossHP(h => Math.max(0, h - roundDmg));
+    let totalDmg = 0;
+    let crits = 0;
+
+    // 一箭一箭順序計算，600ms 間隔
+    for (let i = 0; i < fullArrows.length; i++) {
+      setProcessingIdx(i);
+      const a   = fullArrows[i];
+      const dmg = Math.round(calcArrowDmg(a.score, baseATK, boss.def, participantBonus) * potionMult);
+      const isCrit = a.score >= 10;
+      if (isCrit) crits++;
+      totalDmg += dmg;
+
+      setDmgLog(prev => [...prev,
+        isCrit      ? `💥 ${a.label} 暴擊！ -${dmg}`
+        : a.score===0 ? `💨 M 飛矢落空`
+                      : `🏹 ${a.label}環 -${dmg}`
+      ]);
+      setBossHP(h => Math.max(0, h - dmg));
+
+      // 貓咪助攻（25%）
+      if (profile?.equippedCat && Math.random() < 0.25) {
+        const name = profile.equippedCat.name || "貓咪";
+        const msgs = [`🐱 ${name} 撲了過去！暴擊加成 ×1.2 ⚡`, `🐱 ${name} 舔了你的傷口，回復 HP 💚`,
+                      `🐱 ${name} 偷藏了一枚金幣 💰`, `🐱 ${name} 嚇到 Boss！防禦暫時下降 🐾`];
+        setCatMsg(msgs[Math.floor(Math.random() * msgs.length)]);
+      }
+
+      await delay(600);
+    }
+
+    setProcessingIdx(-1);
+
+    const roundData  = { arrows: fullArrows, dmg: totalDmg, crits };
+    const nextRounds = [...allRounds, roundData];
     setAllRounds(nextRounds);
     setRoundSummary(roundData);
-
-    // ① 顯示「回合結算」畫面 2 秒
     setSubPhase("roundResult");
 
     addTimer(() => {
-      // ② 計算 Boss 反擊並切換到「Boss 攻擊」畫面
       const cdmg   = calcCounterDmg(boss.atk || 100, baseDEF);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
@@ -227,16 +233,13 @@ export default function WorldBossAttack({ event, onBack }) {
       setMyHP(h => Math.max(0, h - cdmg));
       setSubPhase("bossAttack");
 
-      // ③ Boss 攻擊展示 2 秒後繼續
       addTimer(() => {
         if (!isLast) {
-          // 繼續下一回合
           setArrows([]);
           setRoundIdx(r => r + 1);
           setDmgLog([]);
           setSubPhase("shooting");
         } else {
-          // 全部結束 → 送出
           setSubPhase("done");
           submitAttack(nextRounds);
         }
@@ -489,8 +492,7 @@ export default function WorldBossAttack({ event, onBack }) {
     }
 
     // ── 射擊畫面 ────────────────────────────────────────────
-    const roundDmgSoFar = arrows.reduce((s, a) => s + a.dmg, 0);
-    const isLastRound   = roundIdx === TOTAL_ROUNDS - 1;
+    const isLastRound = roundIdx === TOTAL_ROUNDS - 1;
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
@@ -512,8 +514,6 @@ export default function WorldBossAttack({ event, onBack }) {
               </div>
             </div>
           </div>
-
-          {/* 回合進度 */}
           <div className="flex gap-1.5">
             {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
               <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${
@@ -532,61 +532,83 @@ export default function WorldBossAttack({ event, onBack }) {
           <div className="flex gap-1.5 justify-center">
             {Array.from({ length: ARROWS_PER }).map((_, i) => {
               const a = arrows[i];
+              const isActive = subPhase === "processing" && i === processingIdx;
               return (
                 <div key={i}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black border transition-all"
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black border transition-all ${isActive ? "scale-110" : ""}`}
                   style={{
                     background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.05)",
-                    borderColor: a ? scoreColor(a.label) : "rgba(255,255,255,0.1)",
+                    borderColor: a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.1)",
                     color: a ? scoreColor(a.label) : "#475569",
+                    boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
                   }}>
                   {a ? a.label : i + 1}
                 </div>
               );
             })}
           </div>
-          <div className="text-center text-xs text-slate-500 mt-1">
-            {arrows.length} / {ARROWS_PER} 箭　本回合：
-            <span className="text-amber-300 font-bold">{roundDmgSoFar.toLocaleString()}</span>
+          <div className="text-center text-xs text-slate-500 mt-1 h-4">
+            {subPhase === "shooting"
+              ? `${arrows.length} / ${ARROWS_PER} 箭`
+              : <span className="text-amber-300 animate-pulse">計算中…</span>}
           </div>
         </div>
 
-        {/* 傷害 log */}
-        <div className="shrink-0 px-4 h-[68px] overflow-hidden space-y-0.5">
-          {dmgLog.slice(-4).map((l, i, arr) => (
-            <div key={i} className={`text-xs text-center transition-all ${
-              i === arr.length - 1 ? "text-white font-bold"
-              : i === arr.length - 2 ? "text-slate-300"
-              : i === arr.length - 3 ? "text-slate-500"
-              : "text-slate-700"
-            }`}>{l}</div>
-          ))}
-        </div>
+        {/* 主內容：三段切換 */}
+        <div className="flex-1 flex flex-col px-4 pb-4 overflow-hidden">
 
-        {/* 分數按鈕 */}
-        <div className="flex-1 flex flex-col justify-end px-4 pb-4">
-          <div className="grid grid-cols-6 gap-2">
-            {SCORE_BTNS.map(s => (
-              <button key={s}
-                onClick={() => handleScore(s)}
-                disabled={arrows.length >= ARROWS_PER || subPhase !== "shooting"}
-                className="py-3 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-20"
-                style={{
-                  color: scoreColor(s),
-                  borderColor: `${scoreColor(s)}66`,
-                  background: `${scoreColor(s)}11`,
-                }}>
-                {scoreLabel(s)}
-              </button>
-            ))}
-          </div>
-          {arrows.length > 0 && arrows.length < ARROWS_PER && subPhase === "shooting" && (
-            <button
-              onClick={() => setArrows(prev => prev.slice(0, -1))}
-              className="mt-2 w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
-              ← 取消上一箭
-            </button>
+          {/* ① 計算中：逐箭傷害紀錄 */}
+          {subPhase === "processing" && (
+            <div className="flex-1 flex flex-col justify-center gap-1.5">
+              {dmgLog.map((l, i) => (
+                <div key={i} className={`text-sm text-center font-bold transition-all ${
+                  i === dmgLog.length - 1 ? "text-white" : "text-slate-400"
+                }`}>{l}</div>
+              ))}
+            </div>
           )}
+
+          {/* ② 6箭填完：送出按鈕 */}
+          {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
+            <div className="flex-1 flex flex-col justify-end gap-2">
+              <button onClick={() => finishRound(arrows)}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95"
+                style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
+                ⚔️ 送出 {ARROWS_PER} 箭！
+              </button>
+              <button onClick={() => setArrows(prev => prev.slice(0, -1))}
+                className="w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
+                ← 取消上一箭
+              </button>
+            </div>
+          )}
+
+          {/* ③ 選箭中：分數按鈕 */}
+          {subPhase === "shooting" && arrows.length < ARROWS_PER && (
+            <div className="flex-1 flex flex-col justify-end gap-2">
+              <div className="grid grid-cols-6 gap-2">
+                {SCORE_BTNS.map(s => (
+                  <button key={s}
+                    onClick={() => handleScore(s)}
+                    className="py-3 rounded-xl font-black text-sm border transition-all active:scale-90"
+                    style={{
+                      color: scoreColor(s),
+                      borderColor: `${scoreColor(s)}66`,
+                      background: `${scoreColor(s)}11`,
+                    }}>
+                    {scoreLabel(s)}
+                  </button>
+                ))}
+              </div>
+              {arrows.length > 0 && (
+                <button onClick={() => setArrows(prev => prev.slice(0, -1))}
+                  className="w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
+                  ← 取消上一箭
+                </button>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     );
