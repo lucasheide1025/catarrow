@@ -236,7 +236,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     return (
       <DungeonShop
         roomId={roomId} room={room}
-        memberId={myId} memberData={{ ...me, coins: profile?.score || 0 }}
+        memberId={myId} memberData={{ ...me, coins: profile?.coins || 0 }}
         isHost={isHost}
         onDone={() => {
           setShopDone(true);
