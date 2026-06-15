@@ -6,6 +6,7 @@ import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
+import WorldBossBattleCard from "./WorldBossBattleCard";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -149,6 +150,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [catMsg,    setCatMsg]    = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
+  const [showCard,   setShowCard]  = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
@@ -683,6 +685,16 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+        {showCard && (
+          <WorldBossBattleCard
+            archerName={myName}
+            event={event}
+            allRounds={allRounds}
+            totalDmg={totalPlayerDmg}
+            totalCrits={totalCrits}
+            onClose={() => setShowCard(false)}
+          />
+        )}
         <div className="flex-1 overflow-y-auto px-4 py-8 space-y-5 flex flex-col items-center justify-center">
           {submitting ? (
             <div className="text-slate-400 text-sm animate-pulse">結算中…</div>
@@ -761,7 +773,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
         </div>
 
-        <div className="shrink-0 px-4 pb-6 pt-2">
+        <div className="shrink-0 px-4 pb-6 pt-2 space-y-2">
+          {result?.ok && !submitting && (
+            <button onClick={() => setShowCard(true)}
+              className="w-full py-3 rounded-2xl font-black text-base text-white active:scale-95 transition-all"
+              style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
+              🃏 生成戰鬥小卡
+            </button>
+          )}
           <button onClick={onBack} disabled={submitting}
             className="w-full py-4 rounded-2xl font-black text-lg bg-white/10 border border-white/20 text-white active:scale-95 transition-all disabled:opacity-40">
             返回大廳
