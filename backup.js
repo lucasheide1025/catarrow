@@ -6,9 +6,9 @@ const admin = require("firebase-admin");
 const fs    = require("fs");
 const path  = require("path");
 
-const SA_PATH = path.join(__dirname, "serviceAccount.json");
+const SA_PATH = path.join(__dirname, "serviceAccountKey.json");
 if (!fs.existsSync(SA_PATH)) {
-  console.error("❌ 找不到 serviceAccount.json，請先從 Firebase Console 下載並放在專案根目錄");
+  console.error("❌ 找不到 serviceAccountKey.json，請先從 Firebase Console 下載並放在專案根目錄");
   process.exit(1);
 }
 
