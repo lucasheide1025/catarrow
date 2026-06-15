@@ -110,8 +110,9 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
       {/* ATK / DEF */}
-      <div className="flex gap-3 text-xs text-slate-400 mt-0.5">
+      <div className="flex gap-3 text-xs text-slate-400 mt-0.5 flex-wrap">
         <span>⚔️ {m.atk}</span><span>🛡️ {m.def}</span>
+        {m.catName && <span className="text-indigo-300 bg-indigo-900/30 px-1 rounded">🐱 光環</span>}
       </div>
       {/* 最新一箭訊息 */}
       {(() => {

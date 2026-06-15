@@ -37,7 +37,7 @@ const MODE_OPTIONS = [
 ];
 
 // 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片）
-function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }) {
+function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
   const base = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   let hp  = base.hp  + (cardBonus.hp  || 0);
   let atk = base.atk + (cardBonus.atk || 0);
@@ -46,6 +46,11 @@ function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, de
     const buffs = calcPotionBuffs(potionIds);
     hp  = Math.round(hp  * buffs.hpMult);
     atk = Math.round(atk * buffs.atkMult);
+  }
+  if (catMult !== 1.0) {
+    hp  = Math.round(hp  * catMult);
+    atk = Math.round(atk * catMult);
+    def = Math.round(def * catMult);
   }
   return { hp, atk, def };
 }
@@ -111,7 +116,7 @@ function HPBar({ current, max, color = "#22c55e" }) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catStatMult } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const [arrows,          setArrows]          = useState([]);
   const [submitting,      setSubmitting]      = useState(false);
@@ -208,7 +213,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
-    const stats = getArcherStats(profile, [], getMyCardBonus());
+    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
@@ -243,7 +248,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWaitingRef.current = true;
-    const stats = getArcherStats(profile, [], getMyCardBonus());
+    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
   }, [room?.status, myId]); // eslint-disable-line
 
@@ -253,7 +258,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWrittenRef.current = true;
-    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus());
+    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), catStatMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def);
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
@@ -582,7 +587,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setCopied(false), 1500);
   }
   function handleRedrawMonsters() {
-    const stats = getArcherStats(profile, [], getMyCardBonus());
+    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
     setSetupMonster(null);
@@ -590,7 +595,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   const tierInfo = room.monster ? TIER_LABEL[room.monster.tier] : null;
   const famInfo  = room.monster ? FAMILIES[room.monster.family] : null;
-  const myStats  = getArcherStats(profile, [], getMyCardBonus());
+  const myStats  = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
   const myEquip  = equipSummary(profile);
 
   // ── 等待/大廳畫面 ──────────────────────────────────────────
@@ -633,6 +638,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     {myEquip.bows  > 0 && <span>🏹 {myEquip.bows}弓組</span>}
                     {myEquip.armor > 0 && <span>🛡️ {myEquip.armor}護具</span>}
                     {myEquip.acc   > 0 && <span>💎 {myEquip.acc}飾品</span>}
+                    {hasCat && <span className="text-indigo-300 bg-indigo-900/30 px-1.5 py-0.5 rounded">🐱 {catName} 光環 +10%</span>}
                   </div>
                 )}
               </div>

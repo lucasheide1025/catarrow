@@ -51,6 +51,7 @@ export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, is
       name: hostName, isGuest,
       hp: stats.hp, maxHP: stats.hp,
       atk: stats.atk, def: stats.def,
+      catName: stats.catName || "",
       arrows: [], ready: false, alive: true,
     };
     const room = {
@@ -81,6 +82,7 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
       name: memberName, isGuest,
       hp: stats.hp, maxHP: stats.hp,
       atk: stats.atk, def: stats.def,
+      catName: stats.catName || "",
       arrows: [], ready: false, alive: true,
     };
 

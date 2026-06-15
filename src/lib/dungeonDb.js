@@ -88,13 +88,14 @@ export function subscribeDungeonRoom(roomId, cb) {
 }
 
 // ── 各玩家寫入自己的 HP/ATK/DEF ─────────────────────────────
-export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def) {
+export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "") {
   try {
     await updateDoc(doc(db, D, roomId), {
-      [`members.${memberId}.hp`]:    hp,
-      [`members.${memberId}.maxHP`]: maxHP,
-      [`members.${memberId}.atk`]:   atk,
-      [`members.${memberId}.def`]:   def,
+      [`members.${memberId}.hp`]:      hp,
+      [`members.${memberId}.maxHP`]:   maxHP,
+      [`members.${memberId}.atk`]:     atk,
+      [`members.${memberId}.def`]:     def,
+      [`members.${memberId}.catName`]: catName,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -212,7 +213,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       : null;
     const skipAllCtr = !!eff.skipCounter;
 
-    // Step 3：6 個小回合
+    // Step 3：攻擊2箭 → 怪物反擊1次（分離的 mini 結構）
+    const ARROWS_PER_CTR = 2;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
@@ -220,39 +222,52 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const ctrAccum    = {};
 
     for (let i = 0; i < 6; i++) {
-      const miniNum       = i + 1;
-      const isCounterMini = !skipAllCtr && (miniNum % 2 === 0);
-      const miniLog       = [];
-      let   miniDmg       = 0;
+      if (monsterHP <= 0) break;
 
+      // ── 攻擊小回合 ─────────────────────────────────────
+      const miniLog = [];
+      let   miniDmg = 0;
       for (const id of aliveIds) {
         if (memberHPNow[id] <= 0) continue;
+        const m     = members[id];
         const entry = allData[id].arrowBreakdown[i] || { dmg:0, partIcon:"💨", partName:"脫靶", label:"M" };
         const dmg   = entry.dmg || 0;
-        miniDmg += dmg;
-        miniLog.push({ id, name:allData[id].name, dmg, ctr:0, arrowBreakdown:[entry] });
+        miniDmg    += dmg;
+        const msg   = dmg > 0
+          ? `${m.name} 命中 ${entry.partIcon}${entry.partName}，造成 ${dmg} 傷害！`
+          : `${m.name} 脫靶了…`;
+        miniLog.push({ id, name:m.name, dmg, ctr:0, arrowBreakdown:[entry], message:msg });
       }
       monsterHP = Math.max(0, monsterHP - miniDmg);
-
-      if (isCounterMini) {
-        const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
-        for (const p of miniLog) {
-          if (memberHPNow[p.id] > 0) {
-            const m          = members[p.id];
-            const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
-            const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef));
-            p.ctr              = ctr;
-            ctrAccum[p.id]     = (ctrAccum[p.id] || 0) + ctr;
-            memberHPNow[p.id]  = Math.max(0, memberHPNow[p.id] - ctr);
-          }
-        }
-      }
-
       miniRounds.push({
-        miniRound: miniNum, isCounter: isCounterMini,
+        miniRound: i + 1, isCounter: false,
         playerLog: miniLog, totalDmg: miniDmg, monsterHPAfter: monsterHP,
       });
-      if (monsterHP <= 0) break;
+
+      // ── 反擊小回合（每 ARROWS_PER_CTR 箭後，怪物尚存時）──
+      if (!skipAllCtr && (i + 1) % ARROWS_PER_CTR === 0 && monsterHP > 0) {
+        const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
+        const ctrLog     = [];
+        for (const id of aliveIds) {
+          if (memberHPNow[id] <= 0) continue;
+          const m            = members[id];
+          const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
+          const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef));
+          ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
+          const prevHP       = memberHPNow[id];
+          memberHPNow[id]    = Math.max(0, prevHP - ctr);
+          const died         = prevHP > 0 && memberHPNow[id] <= 0;
+          ctrLog.push({
+            id, name:m.name, dmg:0, ctr, arrowBreakdown:[],
+            message: `${room.monster.icon||"👾"} ${room.monster.name} 反擊 ${m.name}，造成 ${ctr} 傷害！${died ? ` 💀 ${m.name} 陣亡！` : ""}`,
+            died,
+          });
+        }
+        miniRounds.push({
+          miniRound: null, isCounter: true,
+          playerLog: ctrLog, totalDmg: 0, monsterHPAfter: monsterHP,
+        });
+      }
     }
 
     // Step 4：事件額外效果
@@ -514,7 +529,7 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
 // ── 結算金幣（2x 地下城加成，房主替所有人呼叫）──────────────
 export async function claimDungeonReward(memberId, baseCoins, goldMult = 1) {
   try {
-    const totalCoins = Math.round(baseCoins * 2 * goldMult); // 地下城固定 2x
+    const totalCoins = Math.round(baseCoins * 3 * goldMult); // 地下城固定 3x
     if (!memberId.startsWith("guest")) await addCoins(memberId, totalCoins);
     return { ok:true, coins:totalCoins };
   } catch (e) { return { ok:false, reason:e.message }; }

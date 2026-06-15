@@ -39,16 +39,19 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const myName = profile?.nickname || profile?.name || "射手";
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip   = calcEquippedBonus([]);
-  const myHP     = (_base.hp  || 0) + (_equip.hp  || 0);
-  const myMaxHP  = myHP;
-  const myATK    = (_base.atk || 0) + (_equip.atk || 0);
-  const myDEF    = (_base.def || 0) + (_equip.def || 0);
+  const myCatId   = profile?.equippedCat?.catId || null;
+  const myCatName = profile?.equippedCat?.name  || "";
+  const catMult   = myCatId ? 1.1 : 1.0;
+  const myHP  = Math.round(((_base.hp  || 0) + (_equip.hp  || 0)) * catMult);
+  const myMaxHP = myHP;
+  const myATK = Math.round(((_base.atk || 0) + (_equip.atk || 0)) * catMult);
+  const myDEF = Math.round(((_base.def || 0) + (_equip.def || 0)) * catMult);
 
   async function handleCreate() {
     setLoading(true); setErr("");
     const res = await createDungeonRoom(myId, myName, myATK);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF);
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName);
     const sub = subscribeDungeonRoom(res.roomId, r => setRoom(r));
     setUnsub(() => sub);
     setRoomId(res.roomId);
@@ -61,7 +64,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true); setErr("");
     const res = await joinDungeonRoom(joinCode.trim(), myId, myName);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF);
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName);
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
       if (r?.status === "active") {
@@ -106,6 +109,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
               <div>
                 <div className="font-bold">{m.name}</div>
                 <div className="text-xs text-slate-400">HP {m.maxHP} / ATK {m.atk} / DEF {m.def}</div>
+                {m.catName && <div className="text-xs text-indigo-300 mt-0.5">🐱 {m.catName} 神教光環 +10%</div>}
               </div>
               {i === 0 && <span className="ml-auto text-xs bg-amber-500/30 text-amber-300 px-2 py-0.5 rounded-full">房主</span>}
             </div>

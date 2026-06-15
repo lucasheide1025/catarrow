@@ -26,7 +26,15 @@ function quickStats(profile, isGuest) {
     certRecords: profile.certRecords || [],
     dexStats: null,
   });
-  return balanceDuelStats(raw);
+  const balanced  = balanceDuelStats(raw);
+  const catMult   = profile?.equippedCat?.catId ? 1.1 : 1.0;
+  const catName   = profile?.equippedCat?.name  || "";
+  return {
+    hp:  Math.round(balanced.hp  * catMult),
+    atk: Math.round(balanced.atk * catMult),
+    def: Math.round(balanced.def * catMult),
+    catName,
+  };
 }
 
 export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {

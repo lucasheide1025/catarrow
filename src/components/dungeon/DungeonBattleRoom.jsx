@@ -347,60 +347,74 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
         {liveEntry ? (
           /* 小回合逐箭播放面板 */
           <div className="px-4 py-4 space-y-3">
-            <div className="text-center text-xs text-slate-400 font-mono">
-              ⚔️ 第 {liveEntry.round} 回合 ·
-              第 <span className="text-white font-bold">{liveMiniIdx + 1}</span> / {liveEntry.miniRounds?.length || 6} 箭
-            </div>
 
-            {/* 每位玩家本小回合 */}
-            <div className="space-y-2">
-              {(curMini?.playerLog || []).map((p, i) => {
-                const arrow = p.arrowBreakdown?.[0];
-                return (
-                  <div key={i} className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5">
-                    <span className="text-lg">🧙</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold text-white truncate">{p.name}</div>
-                      {arrow && (
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {arrow.partIcon} {arrow.partName}
+            {/* ── 攻擊小回合 ── */}
+            {!curMini?.isCounter && (
+              <>
+                <div className="text-center text-xs text-slate-400 font-mono">
+                  ⚔️ 第 {liveEntry.round} 回合 · 第 <span className="text-white font-bold">{curMini?.miniRound}</span> / 6 箭
+                </div>
+                <div className="space-y-2">
+                  {(curMini?.playerLog || []).map((p, i) => {
+                    const arrow = p.arrowBreakdown?.[0];
+                    return (
+                      <div key={i} className="bg-white/5 border border-white/8 rounded-xl px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">🏹</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{p.name}</div>
+                            {arrow && <div className="text-[11px] text-slate-400 mt-0.5">{arrow.partIcon} {arrow.partName}</div>}
+                          </div>
+                          {arrow && (
+                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black ${SCORE_COLORS[arrow.label] || "bg-slate-600 text-white"}`}>
+                              {arrow.label}
+                            </span>
+                          )}
+                          <span className={`text-sm font-black min-w-[40px] text-right ${p.dmg > 0 ? "text-amber-300" : "text-slate-500"}`}>
+                            {p.dmg > 0 ? `-${p.dmg}` : "miss"}
+                          </span>
                         </div>
+                        {p.message && (
+                          <div className="text-[11px] text-slate-400 mt-1.5 pl-8 border-t border-white/5 pt-1.5">{p.message}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── 反擊小回合 ── */}
+            {curMini?.isCounter && (
+              <>
+                <div className="bg-rose-900/50 border border-rose-500/40 rounded-2xl px-4 py-3 text-center">
+                  <div className="text-3xl mb-1" style={{ animation:"mb-bounce .7s ease infinite" }}>{monster.icon || "👾"}</div>
+                  <div className="text-rose-200 font-black text-base">⚡ {monster.name} 反擊！</div>
+                  <div className="text-rose-400 text-xs mt-0.5">所有射手受到傷害</div>
+                </div>
+                <div className="space-y-1.5">
+                  {(curMini?.playerLog || []).map((p, i) => (
+                    <div key={i} className={`rounded-xl px-3 py-2.5 border ${p.died ? "bg-slate-900 border-rose-500/50" : "bg-rose-500/10 border-rose-500/20"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-bold ${p.died ? "text-rose-300" : "text-slate-200"}`}>
+                          {p.died ? "💀 " : ""}{p.name}
+                        </span>
+                        <span className="text-rose-400 font-black">-{p.ctr} HP</span>
+                      </div>
+                      {p.died && (
+                        <div className="text-xs text-rose-400 mt-1">⚠️ 陣亡…等待隊友繼續戰鬥</div>
+                      )}
+                      {!p.died && p.message && (
+                        <div className="text-[11px] text-rose-300/70 mt-1">{p.message}</div>
                       )}
                     </div>
-                    {/* 箭號 */}
-                    {arrow && (
-                      <span className={`px-2 py-0.5 rounded-lg text-xs font-black ${SCORE_COLORS[arrow.label] || "bg-slate-600 text-white"}`}>
-                        {arrow.label}
-                      </span>
-                    )}
-                    {/* 傷害 */}
-                    <span className={`text-sm font-black min-w-[40px] text-right ${p.dmg > 0 ? "text-amber-300" : "text-slate-500"}`}>
-                      {p.dmg > 0 ? `-${p.dmg}` : "miss"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 反擊提示 */}
-            {curMini?.isCounter && (
-              <div className="text-center text-rose-400 font-black text-sm py-2 animate-pulse">
-                ⚡ 怪物反擊！
-              </div>
-            )}
-            {curMini?.isCounter && (curMini?.playerLog || []).some(p => p.ctr > 0) && (
-              <div className="space-y-1.5">
-                {(curMini?.playerLog || []).filter(p => p.ctr > 0).map((p, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-rose-500/15 rounded-xl text-xs">
-                    <span className="text-slate-300">{p.name} 受到反擊</span>
-                    <span className="text-rose-400 font-black">-{p.ctr} HP</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </>
             )}
 
             {/* 怪物 HP 進度條（動態更新）*/}
-            <div className="bg-white/5 rounded-xl px-4 py-3 mt-2">
+            <div className="bg-slate-800/80 border border-white/8 rounded-xl px-4 py-3">
               <div className="flex justify-between text-xs text-slate-400 mb-1.5">
                 <span>{monster.name}</span>
                 <span>{displayHP?.toLocaleString()} HP</span>
@@ -427,9 +441,10 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                 <div key={id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${m.alive ? "bg-white/5" : "bg-white/3 opacity-50"}`}>
                   <span className="text-lg">{m.alive ? "🧙" : "💀"}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="text-xs font-bold truncate">{m.name}</span>
                       <ContractBadge contract={m.contract} />
+                      {m.catName && <span className="text-[10px] text-indigo-300 bg-indigo-900/40 px-1 py-0.5 rounded">🐱 光環</span>}
                       {m.ready && m.alive && <span className="text-xs text-emerald-400">✓</span>}
                     </div>
                     <HPBar current={m.hp} max={m.maxHP} color="bg-emerald-500" />

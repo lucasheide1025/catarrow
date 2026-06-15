@@ -47,5 +47,8 @@ export function useCatCompanion() {
     await addCatBond(profile.id, catId, source).catch(() => {});
   }, [profile?.id, catId]);
 
-  return { equippedCat, catId, catName, catType, hasCat, catMsg, clearCatMsg, triggerCatAction, saveBond };
+  // 貓貓神教光環：有裝備貓貓時全能力 +10%
+  const catStatMult = hasCat ? 1.1 : 1.0;
+
+  return { equippedCat, catId, catName, catType, hasCat, catStatMult, catMsg, clearCatMsg, triggerCatAction, saveBond };
 }
