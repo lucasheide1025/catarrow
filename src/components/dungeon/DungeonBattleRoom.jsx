@@ -66,6 +66,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const myId = profile?.id;
+  const bondSavedRef = useRef(false);
 
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
@@ -266,7 +267,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   // ── 完成畫面（等動畫和結算結束才顯示）─────────────────────
   if (status === "completed" && !liveEntry && !showRoundResult) {
     const won = room?.result === "win";
-    if (won) saveBond("dungeon");
+    if (won && !bondSavedRef.current) { bondSavedRef.current = true; saveBond("dungeon"); }
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
         <div className="text-7xl">{won ? "🏆" : "💀"}</div>

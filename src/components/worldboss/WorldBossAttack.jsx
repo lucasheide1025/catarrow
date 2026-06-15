@@ -208,7 +208,7 @@ export default function WorldBossAttack({ event, onBack }) {
       weapon,
       roundResults: rounds,
       isGuest:      false,
-      potionDmgMult: potionMult,
+      potionDmgMult: 1,
       bots,
     });
 
@@ -313,7 +313,14 @@ export default function WorldBossAttack({ event, onBack }) {
             <div className="text-center text-xs text-rose-400 mb-2">金幣不足，請選擇其他藥水</div>
           )}
           <button
-            onClick={() => setPhase("battle")}
+            onClick={async () => {
+              if (potionDef?.cost > 0) {
+                const { addCoins } = await import("../../lib/db");
+                await addCoins(myId, -potionDef.cost).catch(() => {});
+                setCoins(c => c - potionDef.cost);
+              }
+              setPhase("battle");
+            }}
             disabled={potionCost > 0 && !canAfford}
             className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
             style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
@@ -472,13 +479,13 @@ export default function WorldBossAttack({ event, onBack }) {
                 <div className="text-xs text-slate-400 font-bold mb-2">戰鬥報告</div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-300">你的總傷害</span>
-                  <span className="font-black text-rose-400">{Math.round(totalPlayerDmg * potionMult).toLocaleString()}</span>
+                  <span className="font-black text-rose-400">{totalPlayerDmg.toLocaleString()}</span>
                 </div>
                 {bots.length > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-300">機器人傷害</span>
                     <span className="font-black text-indigo-400">
-                      {(result.dmg - Math.round(totalPlayerDmg * potionMult)).toLocaleString()}
+                      {(result.dmg - totalPlayerDmg).toLocaleString()}
                     </span>
                   </div>
                 )}
