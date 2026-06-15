@@ -13,6 +13,7 @@ import DuelLobby      from "../duel/DuelLobby";
 import DuelRoom       from "../duel/DuelRoom";
 import WorldBossLobby from "../worldboss/WorldBossLobby";
 import GuestShop     from "./GuestShop";
+import StoryBook     from "../story/StoryBook";
 
 const PARTY_SESSION_KEY = "guest_party_session";
 const PARTY_ID_KEY      = "guest_party_id";
@@ -144,6 +145,7 @@ export default function GuestBattle({ guestId, onExpire }) {
     { id: "party",     icon: "👥", label: "組隊" },
     { id: "shop",      icon: "🛒", label: "商店" },
     { id: "practice",  icon: "🎯", label: "練習" },
+    { id: "story",     icon: "📖", label: "故事" },
   ];
 
   // 名稱設定頁（第一次進入才顯示）
@@ -249,6 +251,7 @@ export default function GuestBattle({ guestId, onExpire }) {
           />
         )}
         {tab === "shop"     && <GuestShop />}
+        {tab === "story"    && <StoryBook />}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
           <PartyLobby
