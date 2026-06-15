@@ -267,6 +267,29 @@ export async function hireWorldBossBot(eventId, memberId) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+// ── 後台重置今日出戰紀錄 ─────────────────────────────────────
+export async function resetWorldBossAttack(eventId, memberId) {
+  try {
+    await updateDoc(doc(db, WB, eventId), {
+      [`participants.${memberId}.lastAttackedDate`]: null,
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+export async function resetAllWorldBossAttacks(eventId) {
+  try {
+    const snap  = await getDoc(doc(db, WB, eventId));
+    const parts = snap.data()?.participants || {};
+    const updates = {};
+    Object.keys(parts).forEach(mid => {
+      updates[`participants.${mid}.lastAttackedDate`] = null;
+    });
+    if (Object.keys(updates).length > 0) await updateDoc(doc(db, WB, eventId), updates);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 歷史記錄（排行榜）───────────────────────────────────────
 export async function getWorldBossHistory(n = 10) {
   try {

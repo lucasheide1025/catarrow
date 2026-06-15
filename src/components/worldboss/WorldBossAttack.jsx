@@ -98,12 +98,19 @@ function CatMsg({ msg, onDone }) {
   );
 }
 
+// ── 工具 ────────────────────────────────────────────────────
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// ── 顏色池（隊員頭像）───────────────────────────────────────
+const AVATAR_COLORS = ["#f59e0b","#ef4444","#3b82f6","#10b981","#8b5cf6","#ec4899","#f97316","#06b6d4"];
+
 // ── 主元件 ──────────────────────────────────────────────────
 const TOTAL_ROUNDS = 5;
 const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack }) {
   const { profile } = useAuth();
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const _base   = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip  = calcEquippedBonus([]);
@@ -186,6 +193,11 @@ export default function WorldBossAttack({ event, onBack }) {
     let totalDmg = 0;
     let crits = 0;
 
+    // 取出其他隊員列表（今日出戰的）
+    const teammates = Object.values(event.participants || {})
+      .filter(p => p.name !== myName && p.lastAttackedDate === todayStr);
+    const supportChance = Math.min(teammates.length * 0.18, 0.72);
+
     // 一箭一箭順序計算，600ms 間隔
     for (let i = 0; i < fullArrows.length; i++) {
       setProcessingIdx(i);
@@ -208,6 +220,18 @@ export default function WorldBossAttack({ event, onBack }) {
         const msgs = [`🐱 ${name} 撲了過去！暴擊加成 ×1.2 ⚡`, `🐱 ${name} 舔了你的傷口，回復 HP 💚`,
                       `🐱 ${name} 偷藏了一枚金幣 💰`, `🐱 ${name} 嚇到 Boss！防禦暫時下降 🐾`];
         setCatMsg(msgs[Math.floor(Math.random() * msgs.length)]);
+      }
+
+      // 隊友助攻（隊員越多、觸發率越高）
+      if (teammates.length > 0 && Math.random() < supportChance) {
+        await delay(300);
+        const tm = teammates[Math.floor(Math.random() * teammates.length)];
+        const sdmg = Math.max(1, Math.round(calcArrowDmg(
+          6 + Math.floor(Math.random() * 4), baseATK * 0.55, boss.def, 1
+        )));
+        totalDmg += sdmg;
+        setDmgLog(prev => [...prev, `⚔️ ${tm.name} 助攻！ -${sdmg}`]);
+        setBossHP(h => Math.max(0, h - sdmg));
       }
 
       await delay(600);
@@ -526,6 +550,41 @@ export default function WorldBossAttack({ event, onBack }) {
             {isLastRound && <span className="text-rose-400 font-bold ml-2">⚠️ 最終回合！</span>}
           </div>
         </div>
+
+        {/* 參戰隊員列 */}
+        {(() => {
+          const parts = Object.entries(event.participants || {});
+          const todayParts = parts.filter(([, p]) => p.lastAttackedDate === todayStr && p.name !== myName);
+          const showCount = Math.min(todayParts.length, 7);
+          const extra = todayParts.length - showCount;
+          if (parts.length === 0) return null;
+          return (
+            <div className="shrink-0 px-4 pb-2">
+              <div className="bg-white/5 border border-white/8 rounded-xl px-3 py-2 flex items-center gap-2">
+                <span className="text-xs text-slate-500 shrink-0">⚔️ 今日隊友</span>
+                <div className="flex gap-1 flex-1 flex-wrap">
+                  {todayParts.slice(0, showCount).map(([id, p], idx) => (
+                    <div key={id}
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border border-white/20"
+                      style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "cc" }}
+                      title={p.name}>
+                      {(p.name || "?")[0]}
+                    </div>
+                  ))}
+                  {extra > 0 && (
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-white/10 text-slate-400 border border-white/20">
+                      +{extra}
+                    </div>
+                  )}
+                  {todayParts.length === 0 && (
+                    <span className="text-xs text-slate-600 italic">尚無其他人出戰</span>
+                  )}
+                </div>
+                <span className="text-xs font-black text-amber-300 shrink-0">×{participantBonus.toFixed(2)}</span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 箭矢格 */}
         <div className="shrink-0 px-4 py-2">
