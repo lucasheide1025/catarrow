@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus } from "../../lib/monsterCards"; // [] 傳入，卡牌 collection 未訂閱故忽略
 
 const MODES = [
   { id:"novice",  label:"新手",   icon:"🌱", desc:"HP×1.5，適合初學者"  },
@@ -35,7 +35,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
-  const _equip   = calcEquippedBonus(profile);
+  const _equip   = calcEquippedBonus([]);
   const myHP     = (_base.hp  || 0) + (_equip.hp  || 0);
   const myMaxHP  = myHP;
   const myATK    = (_base.atk || 0) + (_equip.atk || 0);
