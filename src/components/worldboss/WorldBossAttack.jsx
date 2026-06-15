@@ -274,7 +274,7 @@ export default function WorldBossAttack({ event, onBack }) {
     const canAfford  = coins >= potionCost;
 
     return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
         <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
           <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>
           <span className="font-black text-lg flex-1">⚔️ 出戰準備</span>
@@ -552,7 +552,7 @@ export default function WorldBossAttack({ event, onBack }) {
         </div>
 
         {/* 傷害 log */}
-        <div className="shrink-0 px-4 min-h-[68px] space-y-0.5">
+        <div className="shrink-0 px-4 h-[68px] overflow-hidden space-y-0.5">
           {dmgLog.slice(-4).map((l, i, arr) => (
             <div key={i} className={`text-xs text-center transition-all ${
               i === arr.length - 1 ? "text-white font-bold"

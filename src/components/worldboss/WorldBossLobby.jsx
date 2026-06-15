@@ -122,7 +122,7 @@ export default function WorldBossLobby({ onBack }) {
     .slice(0, 5);
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="h-[100dvh] overflow-hidden flex flex-col text-white relative"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {/* Header */}
