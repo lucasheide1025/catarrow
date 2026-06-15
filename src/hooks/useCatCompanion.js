@@ -33,7 +33,7 @@ export function useCatCompanion() {
 
   // 10% 機率觸發，跳出貓咪訊息
   const triggerCatAction = useCallback(() => {
-    if (!hasCat || Math.random() >= 0.10) return;
+    if (!hasCat || Math.random() >= 0.25) return;
     const pool = CAT_MESSAGES[catType] || CAT_MESSAGES.allround;
     const fn   = pool[Math.floor(Math.random() * pool.length)];
     setCatMsg(fn(catName));

@@ -163,6 +163,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [eventConfig, setEventConfig]         = useState(null); // 賽事模式設定
   const [eventMode, setEventMode]             = useState(false); // 是否走賽事流程
   const logEndRef = useRef(null);
+  const lastPickedRef = useRef(null);
 
   useEffect(() => {
     if (isGuest) { setArcherStats({ hp:100, atk:10, def:10 }); setDailyLeft(null); return; }
@@ -219,6 +220,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setMatchedMonsters(matched);
     setPickedMonster(null);
   }, [archerStats]);
+
+  // 記住最後選定的怪物（profile 更新時 pickedMonster 可能被清空，用 ref 保存以便再挑戰）
+  useEffect(() => { if (pickedMonster) lastPickedRef.current = pickedMonster; }, [pickedMonster]);
 
   useEffect(() => {
     if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth" });
@@ -977,6 +981,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   }
 
   if (phase==="prebattle") {
+    if (!pickedMonster) return null;
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
     const previewHPMult = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
@@ -1060,6 +1065,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             </div>
           )}
 
+          {hasCat && (
+            <div className="flex items-center justify-center gap-1.5 bg-indigo-500/20 border border-indigo-400/30 rounded-xl py-2 px-3 text-xs text-indigo-200 mb-1">
+              🐱 {catName} 將在戰鬥中協助你！
+            </div>
+          )}
           <button onClick={startBattle} className="w-full py-4 rounded-2xl font-black text-lg"
             style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
             ⚔️ 開始挑戰！{selectedPotions.length>0?`（帶 ${selectedPotions.length} 瓶藥）`:""}
@@ -1077,6 +1087,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     return (
       <div className="p-4 flex flex-col gap-3">
         <style>{BATTLE_CSS}</style>
+        <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         <div className="rounded-2xl p-4" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
           <div className="flex justify-between text-white text-xs font-bold mb-2">
             <span>第 {round} 回合</span>
@@ -1145,6 +1156,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
               <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width:`${archPct}%` }} />
             </div>
           </div>
+          {hasCat && (
+            <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-white/10">
+              <span className="text-indigo-300 text-xs">🐱 {catName} 陪練中</span>
+            </div>
+          )}
         </div>
 
         {/* 爆擊閃光層 */}
@@ -1397,7 +1413,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <div className="flex gap-3 w-full">
           <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
           {(dailyLeft===null||dailyLeft>0)&&(
-            <button onClick={()=>{ setMonster(pickedMonster); setPhase("prebattle"); }}
+            <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
               className="flex-1 py-3 rounded-xl font-black"
               style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
           )}
@@ -1429,7 +1445,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           <div className="flex gap-2">
             <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
             {(dailyLeft===null||dailyLeft>0)&&(
-              <button onClick={()=>{ setMonster(pickedMonster); setPhase("prebattle"); }}
+              <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
                 className="flex-1 py-3 rounded-xl font-black"
                 style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
             )}
