@@ -521,142 +521,106 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     // ── 射擊畫面 ────────────────────────────────────────────
     const isLastRound = roundIdx === TOTAL_ROUNDS - 1;
+    const todayParts  = Object.entries(event.participants || {})
+      .filter(([, p]) => p.lastAttackedDate === todayStr && p.name !== myName);
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
         {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
 
-        {/* Header：Boss 狀態 */}
-        <div className="shrink-0 px-4 pt-4 pb-2">
-          <div className="flex items-center gap-3 mb-2">
-            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={44}/>
+        {/* ── Header：緊湊版 Boss + HP + 回合 ── */}
+        <div className="shrink-0 px-4 pt-3 pb-2 border-b border-white/8">
+          {/* 第一行：Boss 名 + HP + MyHP */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="text-xs font-black" style={{ color: boss.accent }}>{boss.name}</div>
             <div className="flex-1">
-              <div className="text-xs font-bold mb-1" style={{ color: boss.accent }}>{boss.name}</div>
               <MiniHP current={bossHP} max={event.bossMaxHP}/>
-              <div className="text-xs text-slate-500 font-mono mt-0.5">{bossHP.toLocaleString()} HP</div>
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-xs text-slate-500">你的 HP</div>
-              <div className={`font-black text-sm ${myHP / baseHP > 0.4 ? "text-emerald-400" : "text-rose-400"}`}>
-                {myHP} / {baseHP}
-              </div>
+            <div className="text-xs font-mono text-slate-400 shrink-0">{bossHP.toLocaleString()}</div>
+            <div className="text-xs shrink-0 ml-1">
+              <span className="text-slate-500">HP </span>
+              <span className={`font-black ${myHP / baseHP > 0.4 ? "text-emerald-400" : "text-rose-400"}`}>
+                {myHP}
+              </span>
             </div>
           </div>
-          <div className="flex gap-1.5">
-            {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
-              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${
-                i < roundIdx ? "bg-amber-400" : i === roundIdx ? "bg-rose-400 animate-pulse" : "bg-white/10"
-              }`}/>
-            ))}
-          </div>
-          <div className="text-center text-xs text-slate-400 mt-1">
-            第 {roundIdx + 1} / {TOTAL_ROUNDS} 回合
-            {isLastRound && <span className="text-rose-400 font-bold ml-2">⚠️ 最終回合！</span>}
-          </div>
-        </div>
-
-        {/* 參戰隊員列 */}
-        {(() => {
-          const parts = Object.entries(event.participants || {});
-          const todayParts = parts.filter(([, p]) => p.lastAttackedDate === todayStr && p.name !== myName);
-          const showCount = Math.min(todayParts.length, 7);
-          const extra = todayParts.length - showCount;
-          if (parts.length === 0) return null;
-          return (
-            <div className="shrink-0 px-4 pb-2">
-              <div className="bg-white/5 border border-white/8 rounded-xl px-3 py-2 flex items-center gap-2">
-                <span className="text-xs text-slate-500 shrink-0">⚔️ 今日隊友</span>
-                <div className="flex gap-1 flex-1 flex-wrap">
-                  {todayParts.slice(0, showCount).map(([id, p], idx) => (
-                    <div key={id}
-                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black border border-white/20"
-                      style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "cc" }}
-                      title={p.name}>
-                      {(p.name || "?")[0]}
-                    </div>
-                  ))}
-                  {extra > 0 && (
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-white/10 text-slate-400 border border-white/20">
-                      +{extra}
-                    </div>
-                  )}
-                  {todayParts.length === 0 && (
-                    <span className="text-xs text-slate-600 italic">尚無其他人出戰</span>
-                  )}
-                </div>
-                <span className="text-xs font-black text-amber-300 shrink-0">×{participantBonus.toFixed(2)}</span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* 箭矢格 */}
-        <div className="shrink-0 px-4 py-2">
-          <div className="flex gap-1.5 justify-center">
-            {Array.from({ length: ARROWS_PER }).map((_, i) => {
-              const a = arrows[i];
-              const isActive = subPhase === "processing" && i === processingIdx;
-              return (
-                <div key={i}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black border transition-all ${isActive ? "scale-110" : ""}`}
-                  style={{
-                    background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.05)",
-                    borderColor: a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.1)",
-                    color: a ? scoreColor(a.label) : "#475569",
-                    boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
-                  }}>
-                  {a ? a.label : i + 1}
-                </div>
-              );
-            })}
-          </div>
-          <div className="text-center text-xs text-slate-500 mt-1 h-4">
-            {subPhase === "shooting"
-              ? `${arrows.length} / ${ARROWS_PER} 箭`
-              : <span className="text-amber-300 animate-pulse">計算中…</span>}
-          </div>
-        </div>
-
-        {/* 主內容：三段切換 */}
-        <div className="flex-1 flex flex-col px-4 pb-4 overflow-hidden">
-
-          {/* ① 計算中：逐箭傷害紀錄 */}
-          {subPhase === "processing" && (
-            <div className="flex-1 flex flex-col justify-center gap-1.5">
-              {dmgLog.map((l, i) => (
-                <div key={i} className={`text-sm text-center font-bold transition-all ${
-                  i === dmgLog.length - 1 ? "text-white" : "text-slate-400"
-                }`}>{l}</div>
+          {/* 第二行：回合進度 + 標示 */}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 flex-1">
+              {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
+                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${
+                  i < roundIdx ? "bg-amber-400" : i === roundIdx ? "bg-rose-400 animate-pulse" : "bg-white/10"
+                }`}/>
               ))}
             </div>
-          )}
+            <span className="text-xs text-slate-500 shrink-0">
+              第 {roundIdx + 1}/{TOTAL_ROUNDS} 回合
+              {isLastRound && <span className="text-rose-400 font-bold ml-1">⚠️</span>}
+            </span>
+          </div>
+        </div>
 
-          {/* ② 6箭填完：送出按鈕 */}
-          {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
-            <div className="flex-1 flex flex-col justify-end gap-2">
-              <button onClick={() => finishRound(arrows)}
-                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95"
-                style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
-                ⚔️ 送出 {ARROWS_PER} 箭！
-              </button>
-              <button onClick={() => setArrows(prev => prev.slice(0, -1))}
-                className="w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
-                ← 取消上一箭
-              </button>
+        {/* ── 隊友列（有隊友才顯示）── */}
+        {todayParts.length > 0 && (
+          <div className="shrink-0 px-4 py-1.5 flex items-center gap-2 border-b border-white/5">
+            <span className="text-xs text-slate-600 shrink-0">⚔️</span>
+            <div className="flex gap-1 flex-1">
+              {todayParts.slice(0, 8).map(([id, p], idx) => (
+                <div key={id}
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-white/15"
+                  style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "bb" }}>
+                  {(p.name || "?")[0]}
+                </div>
+              ))}
+              {todayParts.length > 8 && (
+                <span className="text-[10px] text-slate-500 self-center">+{todayParts.length - 8}</span>
+              )}
             </div>
-          )}
+            <span className="text-xs font-black text-amber-300 shrink-0">ATK ×{participantBonus.toFixed(2)}</span>
+          </div>
+        )}
 
-          {/* ③ 選箭中：分數按鈕 */}
+        {/* ── 箭矢格 + 分數按鈕：同一區塊 ── */}
+        <div className="shrink-0 px-4 pt-3 pb-2 space-y-3">
+
+          {/* 箭矢格 */}
+          <div>
+            <div className="flex gap-1.5 justify-center">
+              {Array.from({ length: ARROWS_PER }).map((_, i) => {
+                const a = arrows[i];
+                const isActive = subPhase === "processing" && i === processingIdx;
+                return (
+                  <div key={i}
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border transition-all ${isActive ? "scale-110" : ""}`}
+                    style={{
+                      background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.05)",
+                      borderColor: a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.1)",
+                      color: a ? scoreColor(a.label) : "#334155",
+                      boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
+                    }}>
+                    {a ? a.label : "·"}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-center text-xs mt-1.5">
+              {subPhase === "shooting"
+                ? <span className="text-slate-500">{arrows.length} / {ARROWS_PER} 箭</span>
+                : <span className="text-amber-300 animate-pulse">計算中…</span>}
+            </div>
+          </div>
+
+          {/* 分數按鈕（選箭中）*/}
           {subPhase === "shooting" && arrows.length < ARROWS_PER && (
-            <div className="flex-1 flex flex-col justify-end gap-2">
-              <div className="grid grid-cols-6 gap-2">
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-6 gap-1.5">
                 {SCORE_BTNS.map(s => (
                   <button key={s}
                     onClick={() => handleScore(s)}
-                    className="py-3 rounded-xl font-black text-sm border transition-all active:scale-90"
+                    className="py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90"
                     style={{
                       color: scoreColor(s),
-                      borderColor: `${scoreColor(s)}66`,
+                      borderColor: `${scoreColor(s)}55`,
                       background: `${scoreColor(s)}11`,
                     }}>
                     {scoreLabel(s)}
@@ -665,14 +629,39 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               </div>
               {arrows.length > 0 && (
                 <button onClick={() => setArrows(prev => prev.slice(0, -1))}
-                  className="w-full py-2 rounded-xl text-slate-400 text-xs border border-white/10 active:scale-95">
+                  className="w-full py-1.5 rounded-xl text-slate-500 text-xs border border-white/8 active:scale-95">
                   ← 取消上一箭
                 </button>
               )}
             </div>
           )}
 
+          {/* 6箭填完：送出按鈕 */}
+          {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
+            <div className="space-y-2">
+              <button onClick={() => finishRound(arrows)}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95"
+                style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
+                ⚔️ 送出 {ARROWS_PER} 箭！
+              </button>
+              <button onClick={() => setArrows(prev => prev.slice(0, -1))}
+                className="w-full py-1.5 rounded-xl text-slate-500 text-xs border border-white/8 active:scale-95">
+                ← 取消上一箭
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* 計算中：傷害紀錄（剩餘空間）*/}
+        {subPhase === "processing" && (
+          <div className="flex-1 overflow-hidden flex flex-col justify-center px-4 gap-1.5">
+            {dmgLog.map((l, i) => (
+              <div key={i} className={`text-sm text-center font-bold transition-all ${
+                i === dmgLog.length - 1 ? "text-white" : "text-slate-400"
+              }`}>{l}</div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
