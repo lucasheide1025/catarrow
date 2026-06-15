@@ -70,7 +70,7 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
 // ── 攻擊大 Boss（每天一次，最多 5 回合 × 6 箭）────────────────
 // roundResults = [{ arrows, dmg, crits }, ...] 最多 5 回合
 // isGuest = true 時不寫 practiceLog
-export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, potionDmgMult = 1, bots = [] }) {
+export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, potionDmgMult = 1, bots = [], memberAtk = 10 }) {
   try {
     const eventRef  = doc(db, WB, eventId);
     const snap      = await getDoc(eventRef);
@@ -120,6 +120,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
           botDmg: botTotalDmg, rounds: roundResults.length,
         }),
         isGuest: !!isGuest,
+        atk: memberAtk,
       },
     };
 

@@ -12,6 +12,7 @@ import PartyBattleRoom from "../party/PartyBattleRoom";
 import DuelLobby      from "../duel/DuelLobby";
 import DuelRoom       from "../duel/DuelRoom";
 import WorldBossLobby from "../worldboss/WorldBossLobby";
+import GuestShop     from "./GuestShop";
 
 const PARTY_SESSION_KEY = "guest_party_session";
 const PARTY_ID_KEY      = "guest_party_id";
@@ -77,6 +78,7 @@ export default function GuestBattle({ guestId, onExpire }) {
     const name = nameInput.trim() || "訪客射手";
     sessionStorage.setItem("guest_name", name);
     setGuestName(name);
+    if (!sessionStorage.getItem("guest_coins")) sessionStorage.setItem("guest_coins", "500");
     setNameConfirmed(true);
   }
 
@@ -140,6 +142,7 @@ export default function GuestBattle({ guestId, onExpire }) {
     { id: "worldboss", icon: "🌍", label: "世界王" },
     { id: "duel",      icon: "🤺", label: "決鬥" },
     { id: "party",     icon: "👥", label: "組隊" },
+    { id: "shop",      icon: "🛒", label: "商店" },
     { id: "practice",  icon: "🎯", label: "練習" },
   ];
 
@@ -169,7 +172,7 @@ export default function GuestBattle({ guestId, onExpire }) {
           style={{ width:"100%", maxWidth:"280px", background:"#7c3aed", color:"white", border:"none", borderRadius:"8px", padding:"12px", fontSize:"15px", fontWeight:900, cursor:"pointer" }}>
           開始冒險
         </button>
-        <button onClick={() => { sessionStorage.setItem("guest_name","訪客射手"); setGuestName("訪客射手"); setNameConfirmed(true); }}
+        <button onClick={() => { sessionStorage.setItem("guest_name","訪客射手"); setGuestName("訪客射手"); if (!sessionStorage.getItem("guest_coins")) sessionStorage.setItem("guest_coins","500"); setNameConfirmed(true); }}
           style={{ fontSize:"12px", color:"#94a3b8", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>
           使用預設名稱「訪客射手」
         </button>
@@ -245,6 +248,7 @@ export default function GuestBattle({ guestId, onExpire }) {
             onBattleComplete={result => setWbResult(result)}
           />
         )}
+        {tab === "shop"     && <GuestShop />}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
           <PartyLobby

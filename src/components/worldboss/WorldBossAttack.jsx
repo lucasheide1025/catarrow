@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { attackWorldBoss, hireWorldBossBot } from "../../lib/worldBossDb";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
-import { getParticipantBonus, simulateBotRound } from "../../lib/worldBossData";
+import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
@@ -49,6 +49,25 @@ const BOSS_FINAL_TAUNTS = [
   ["☠️", "絕命一擊！傾盡全力！"],
   ["⚡", "終焉之力降臨！最後的怒吼！"],
   ["🌑", "末日審判——！"],
+];
+
+// ── 隊友助攻台詞池 ───────────────────────────────────────
+const SUPPORT_MSGS = [
+  (n, d) => `⚔️ ${n} 趁隙補刀！ -${d}`,
+  (n, d) => `🏹 ${n} 援護箭命中！ -${d}`,
+  (n, d) => `💥 ${n} 助攻暴擊！ -${d}`,
+  (n, d) => `🔥 ${n} 點燃 Boss 弱點！ -${d}`,
+  (n, d) => `⚡ ${n} 雷矢貫穿！ -${d}`,
+  (n, d) => `🌀 ${n} 連環突擊！ -${d}`,
+  (n, d) => `💫 ${n} 精準命中要害！ -${d}`,
+  (n, d) => `🗡️ ${n} 背後偷襲！ -${d}`,
+  (n, d) => `🌟 ${n} 星光箭矢！ -${d}`,
+  (n, d) => `🔮 ${n} 魔力衝擊！ -${d}`,
+  (n, d) => `🐾 ${n} 全力施為！ -${d}`,
+  (n, d) => `☄️ ${n} 流星一箭！ -${d}`,
+  (n, d) => `🎯 ${n} 精確射擊！ -${d}`,
+  (n, d) => `💢 ${n} 爆怒斬擊！ -${d}`,
+  (n, d) => `🌊 ${n} 潮浪強擊！ -${d}`,
 ];
 
 // ── 藥水選項 ─────────────────────────────────────────────────
@@ -129,10 +148,16 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [subPhase, setSubPhase] = useState("shooting");
   const [processingIdx, setProcessingIdx] = useState(-1);
 
-  const [potion,   setPotion]   = useState("none");
+  const [potion,   setPotion]   = useState(() =>
+    guestOverride ? (sessionStorage.getItem("guest_wb_potion") || "none") : "none"
+  );
   const [bots,     setBots]     = useState([]);
   const [hiring,   setHiring]   = useState(false);
-  const [coins,    setCoins]    = useState(profile?.coins || 0);
+  const [coins,    setCoins]    = useState(() =>
+    guestOverride
+      ? parseInt(sessionStorage.getItem("guest_coins") || "500", 10)
+      : (profile?.coins || 0)
+  );
 
   const [roundIdx,     setRoundIdx]     = useState(0);
   const [arrows,       setArrows]       = useState([]);
@@ -191,10 +216,18 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   async function handleHireBot() {
     if (coins < 100 || hiring) return;
     setHiring(true);
-    const res = await hireWorldBossBot(event.id, myId);
-    if (res.ok) {
-      setBots(prev => [...prev, res.bot]);
-      setCoins(c => c - 100);
+    if (isGuest) {
+      const bot = drawRandomBot();
+      setBots(prev => [...prev, bot]);
+      const newC = Math.max(0, coins - 100);
+      sessionStorage.setItem("guest_coins", String(newC));
+      setCoins(newC);
+    } else {
+      const res = await hireWorldBossBot(event.id, myId);
+      if (res.ok) {
+        setBots(prev => [...prev, res.bot]);
+        setCoins(c => c - 100);
+      }
     }
     setHiring(false);
   }
@@ -250,12 +283,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       // 隊友助攻（隊員越多、觸發率越高）
       if (teammates.length > 0 && Math.random() < supportChance) {
         await delay(300);
-        const tm = teammates[Math.floor(Math.random() * teammates.length)];
-        const sdmg = Math.max(1, Math.round(calcArrowDmg(
-          6 + Math.floor(Math.random() * 4), baseATK * 0.55, boss.def, 1
+        const tm    = teammates[Math.floor(Math.random() * teammates.length)];
+        const tmATK = tm.atk || Math.round(baseATK * 0.8);
+        const sdmg  = Math.max(1, Math.round(calcArrowDmg(
+          6 + Math.floor(Math.random() * 4), tmATK * 0.7, boss.def, participantBonus
         )));
         totalDmg += sdmg;
-        setDmgLog(prev => [...prev, `⚔️ ${tm.name} 助攻！ -${sdmg}`]);
+        const tmMsg = SUPPORT_MSGS[Math.floor(Math.random() * SUPPORT_MSGS.length)](tm.name, sdmg);
+        setDmgLog(prev => [...prev, tmMsg]);
         setBossHP(h => Math.max(0, h - sdmg));
       }
 
@@ -314,6 +349,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       isGuest,
       potionDmgMult: 1,
       bots,
+      memberAtk:     baseATK,
     });
 
     setResult(res);
@@ -424,10 +460,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             onClick={async () => {
               sfxCast();
               if (potionDef?.cost > 0) {
-                const { addCoins } = await import("../../lib/db");
-                await addCoins(myId, -potionDef.cost).catch(() => {});
-                setCoins(c => c - potionDef.cost);
+                if (isGuest) {
+                  const newC = Math.max(0, coins - potionDef.cost);
+                  sessionStorage.setItem("guest_coins", String(newC));
+                  setCoins(newC);
+                } else {
+                  const { addCoins } = await import("../../lib/db");
+                  await addCoins(myId, -potionDef.cost).catch(() => {});
+                  setCoins(c => c - potionDef.cost);
+                }
               }
+              sessionStorage.removeItem("guest_wb_potion");
               setPhase("battle");
             }}
             disabled={potionCost > 0 && !canAfford}

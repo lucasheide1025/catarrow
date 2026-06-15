@@ -601,9 +601,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         }
 
         // 金幣（必掉）
-        const coins = rollCoins(monster.tier, mode);
-        setDroppedCoins(coins);
-        addCoins(profile.id, coins).catch(() => {});
+        const baseCoins = rollCoins(monster.tier, mode);
+        if (isGuest || !profile?.id) {
+          const boost   = parseFloat(sessionStorage.getItem("guest_coin_boost") || "5");
+          const total   = Math.round(baseCoins * boost);
+          sessionStorage.removeItem("guest_coin_boost");
+          const prev    = parseInt(sessionStorage.getItem("guest_coins") || "500", 10);
+          sessionStorage.setItem("guest_coins", String(prev + total));
+          setDroppedCoins(total);
+        } else {
+          setDroppedCoins(baseCoins);
+          addCoins(profile.id, baseCoins).catch(() => {});
+        }
 
         // 怪物卡片（1%）
         const card = rollCardDrop(monster);
