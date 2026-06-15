@@ -100,7 +100,7 @@ function calcStats(allArrows) {
 
 export default function MonsterBattle({ onBack, isGuest = false }) {
   const { profile } = useAuth();
-  const { hasCat, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
+  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const [phase, setPhase]           = useState("select");
   const [battleMode, setBattleMode] = useState("score");
   const [mode, setMode]             = useState("novice");
