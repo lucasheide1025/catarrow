@@ -207,8 +207,11 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   async function handleNextFloor() {
     if (!isHost || !room) return;
-    const nextFloor   = (room.currentFloor || 0) + 1;
-    const allMonsters = MONSTERS.filter(m => m.tier <= Math.ceil(nextFloor / 2));
+    const nextFloor = (room.currentFloor || 0) + 1;
+    const hostAtk   = room.hostAtk || 10;
+    const tierBoost = Math.floor(hostAtk / 20);
+    const maxTier   = Math.min(4, Math.ceil(nextFloor / 2) + tierBoost);
+    const allMonsters = MONSTERS.filter(m => m.tier <= maxTier);
     const pool        = allMonsters.length ? allMonsters : MONSTERS;
     const nextMonster = pool[Math.floor(Math.random() * pool.length)];
     setLoading(true);

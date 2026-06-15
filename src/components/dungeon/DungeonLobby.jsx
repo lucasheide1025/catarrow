@@ -12,8 +12,11 @@ const MODES = [
   { id:"veteran", label:"老手",   icon:"🔥", desc:"HP×4，ATK/DEF 翻倍" },
 ];
 
-function pickRandomMonsters(floor) {
-  const pool = MONSTERS.filter(m => m.tier <= Math.ceil(floor / 2));
+function pickRandomMonsters(floor, hostAtk = 10) {
+  // 房主 ATK 每 20 點拉高一個 tier（最高 tier 4）
+  const tierBoost = Math.floor(hostAtk / 20);
+  const maxTier   = Math.min(4, Math.ceil(floor / 2) + tierBoost);
+  const pool = MONSTERS.filter(m => m.tier <= maxTier);
   if (!pool.length) return MONSTERS[0];
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -43,7 +46,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   async function handleCreate() {
     setLoading(true); setErr("");
-    const res = await createDungeonRoom(myId, myName);
+    const res = await createDungeonRoom(myId, myName, myATK);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF);
     const sub = subscribeDungeonRoom(res.roomId, r => setRoom(r));
@@ -75,7 +78,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   async function handleStart() {
     if (!room) return;
     const lengthDef = DUNGEON_LENGTHS[selLength];
-    const firstMonster = pickRandomMonsters(1);
+    const firstMonster = pickRandomMonsters(1, myATK);
     setLoading(true);
     await startDungeonFloor(roomId, room, firstMonster, selMode, selLength, lengthDef.totalFloors);
     setLoading(false);

@@ -34,7 +34,7 @@ const DEFAULT_MEMBER = (name) => ({
 });
 
 // ── 建立房間 ──────────────────────────────────────────────────
-export async function createDungeonRoom(hostId, hostName) {
+export async function createDungeonRoom(hostId, hostName, hostAtk = 10) {
   try {
     const code = genCode();
     const ref  = await addDoc(collection(db, D), {
@@ -43,6 +43,7 @@ export async function createDungeonRoom(hostId, hostName) {
       length: "standard", totalFloors: 7,
       currentFloor: 0,
       mode: "student",
+      hostAtk,
       result: null,
       members: { [hostId]: DEFAULT_MEMBER(hostName) },
       monster: null, monsterHP: 0, monsterMaxHP: 0,
@@ -102,24 +103,32 @@ export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk,
 // ── 房主開啟第一層 ────────────────────────────────────────────
 export async function startDungeonFloor(roomId, room, monster, mode, length, totalFloors) {
   try {
-    const memberIds = Object.keys(room.members || {});
-    const ms        = MODE_SCALE[mode] || MODE_SCALE.student;
-    const hpMult    = 1.0 + (memberIds.length - 1) * 0.6;
-    const scaledHP  = Math.round(monster.hp * ms.hp * hpMult);
+    const memberIds   = Object.keys(room.members || {});
+    const ms          = MODE_SCALE[mode] || MODE_SCALE.student;
+    const memberCount = memberIds.length;
+    // 房主強度縮放：hostAtk / 12 決定怪物難度基底（0.7 ~ 2.0x）
+    const hostAtk     = room.hostAtk || 10;
+    const hostScale   = Math.max(0.7, Math.min(2.0, hostAtk / 12));
+    // 人數加成：每多一名隊友，怪物 HP +10%，玩家 ATK +20%
+    const hpMult         = 1.0 + (memberCount - 1) * 0.1;
+    const memberAtkMult  = 1.0 + (memberCount - 1) * 0.2;
+    const scaledHP  = Math.round(monster.hp * ms.hp * hpMult * hostScale);
 
     // 一次性分配任務（全程有效，買重置才換）
     const contracts = assignContracts(memberIds);
     const upd = {};
     for (const mid of memberIds) {
+      const m = room.members[mid] || {};
       upd[`members.${mid}.arrows`]   = [];
       upd[`members.${mid}.ready`]    = false;
       upd[`members.${mid}.alive`]    = true;
       upd[`members.${mid}.revived`]  = false;
       upd[`members.${mid}.contract`] = contracts[mid];
-      if (!room.members[mid]?.maxHP) {
+      // 套用人數 ATK 加成（無論是否有預設值）
+      upd[`members.${mid}.atk`] = Math.round((m.atk || 10) * memberAtkMult);
+      if (!m.maxHP) {
         upd[`members.${mid}.hp`]    = 500;
         upd[`members.${mid}.maxHP`] = 500;
-        upd[`members.${mid}.atk`]   = 10;
         upd[`members.${mid}.def`]   = 10;
       }
     }
@@ -129,8 +138,8 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
       status: "active", length, totalFloors, currentFloor: 1, mode,
       monster: {
         id: monster.id, name: monster.name, icon: monster.icon,
-        hp:  Math.round(monster.hp  * ms.hp),
-        atk: Math.round(monster.atk * ms.atk),
+        hp:  Math.round(monster.hp  * ms.hp  * hostScale),
+        atk: Math.round(monster.atk * ms.atk * hostScale),
         def: Math.round(monster.def * ms.def),
         tier: monster.tier, family: monster.family,
       },
@@ -461,10 +470,12 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
     const eliteBoost   = chosenPath?.eliteBoost || 1.0;
     const memberIds    = Object.keys(room.members || {});
 
-    const hpMult    = (1.0 + (memberIds.length - 1) * 0.6) * eliteBoost * (mods.monsterHpMult  || 1);
+    const hostAtk   = room.hostAtk || 10;
+    const hostScale = Math.max(0.7, Math.min(2.0, hostAtk / 12));
+    const hpMult    = (1.0 + (memberIds.length - 1) * 0.1) * eliteBoost * (mods.monsterHpMult || 1);
     const atkMult   = eliteBoost * (mods.monsterAtkMult || 1);
-    const scaledHP  = Math.round(nextMonster.hp  * ms.hp  * hpMult);
-    const scaledAtk = Math.round(nextMonster.atk * ms.atk * atkMult);
+    const scaledHP  = Math.round(nextMonster.hp  * ms.hp  * hpMult * hostScale);
+    const scaledAtk = Math.round(nextMonster.atk * ms.atk * atkMult * hostScale);
     const scaledDef = Math.round(nextMonster.def * ms.def);
 
     // 持有契約重置的人重抽任務，其他人保留
