@@ -3,6 +3,7 @@
 import { collection, doc, getDocs, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 import { AUTO_ACHIEVEMENTS } from "./achievementDex";
+import { getCertRecords, getCertification, getDexGrants } from "./db";
 
 const COL = "storyChapterConfig";
 
@@ -33,10 +34,22 @@ export async function saveStoryChapterConfig(chapterKey, data) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+// 預先抓取成就判斷所需的額外資料（certRecords / certification / dexGrants）
+export async function buildAchievementContext(profile) {
+  if (!profile?.id) return { certRecords: [], certification: null, granted: [] };
+  const [certRecords, certification, granted] = await Promise.all([
+    getCertRecords(profile.id).catch(() => []),
+    getCertification(profile.id).catch(() => null),
+    getDexGrants(profile.id).catch(() => []),
+  ]);
+  return { certRecords, certification, granted };
+}
+
 // 判斷章節是否解鎖（前端用）
 // config: { unlockType: "open"|"locked"|"achievement", requiredAchievements: [], hintText: "" }
 // profile: member profile document
-export function isChapterUnlocked(chapterKey, config, profile) {
+// achCtx: 由 buildAchievementContext() 回傳的額外資料
+export function isChapterUnlocked(chapterKey, config, profile, achCtx = {}) {
   if (chapterKey === "ch0") return true; // 序章永遠開放
 
   if (!config) return false; // 無設定 = 鎖定
@@ -47,24 +60,24 @@ export function isChapterUnlocked(chapterKey, config, profile) {
   if (config.unlockType === "achievement") {
     const ids = config.requiredAchievements || [];
     if (ids.length === 0) return true;
-    return ids.every(achId => checkAchievement(achId, profile));
+    return ids.every(achId => checkAchievement(achId, profile, achCtx));
   }
 
   return false;
 }
 
 // 成就檢查（對照 AUTO_ACHIEVEMENTS）
-function checkAchievement(achievementId, profile) {
+function checkAchievement(achievementId, profile, achCtx = {}) {
   const ach = AUTO_ACHIEVEMENTS.find(a => a.id === achievementId);
   if (!ach) return false;
   try {
     return ach.check({
-      member:       profile,
-      certRecords:  profile?.certRecords  || [],
-      checkinCount: profile?.dailyQuestCount || 0,
-      certification: profile?.certification  || null,
-      granted:      profile?.dexGrants || [],
-      dexStats:     null,
+      member:        profile,
+      certRecords:   achCtx.certRecords   || [],
+      checkinCount:  profile?.dailyQuestCount || 0,
+      certification: achCtx.certification || null,
+      granted:       achCtx.granted       || [],
+      dexStats:      null,
     });
   } catch { return false; }
 }

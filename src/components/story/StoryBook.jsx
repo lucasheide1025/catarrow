@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { STORY_CHAPTERS } from "../../lib/storyData";
-import { getStoryChapterConfigs, isChapterUnlocked } from "../../lib/storyDb";
+import { getStoryChapterConfigs, isChapterUnlocked, buildAchievementContext } from "../../lib/storyDb";
 import CatStoryBook from "../cat/CatStoryBook";
 
 // ── 故事圖片（有就顯示，無就用佔位）───────────────────────────
@@ -217,12 +217,16 @@ function StoryReader({ chapter, onClose }) {
 // ── 主線章節列表 ─────────────────────────────────────────────
 function MainStoryList({ profile }) {
   const [configs,  setConfigs]  = useState({});
+  const [achCtx,   setAchCtx]   = useState({});
   const [reading,  setReading]  = useState(null); // chapter object
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    getStoryChapterConfigs().then(c => { setConfigs(c); setLoading(false); });
-  }, []);
+    Promise.all([
+      getStoryChapterConfigs(),
+      buildAchievementContext(profile),
+    ]).then(([c, ctx]) => { setConfigs(c); setAchCtx(ctx); setLoading(false); });
+  }, [profile?.id]); // eslint-disable-line
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: "center", color: "#64748b", fontSize: 14 }}>載入中…</div>
@@ -233,7 +237,7 @@ function MainStoryList({ profile }) {
   return (
     <div style={{ padding: "16px 16px 100px" }}>
       {STORY_CHAPTERS.map(ch => {
-        const unlocked = isChapterUnlocked(ch.key, configs[ch.key], profile);
+        const unlocked = isChapterUnlocked(ch.key, configs[ch.key], profile, achCtx);
         const hint     = configs[ch.key]?.hintText || "";
 
         return (
