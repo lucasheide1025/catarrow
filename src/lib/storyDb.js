@@ -1,6 +1,6 @@
 // src/lib/storyDb.js — 故事本章節設定 Firestore 操作
 
-import { collection, doc, getDocs, setDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 import { AUTO_ACHIEVEMENTS } from "./achievementDex";
 import { getCertRecords, getCertification, getDexGrants } from "./db";
@@ -34,15 +34,17 @@ export async function saveStoryChapterConfig(chapterKey, data) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-// 預先抓取成就判斷所需的額外資料（certRecords / certification / dexGrants）
+// 預先抓取成就判斷所需的額外資料
 export async function buildAchievementContext(profile) {
-  if (!profile?.id) return { certRecords: [], certification: null, granted: [] };
-  const [certRecords, certification, granted] = await Promise.all([
+  if (!profile?.id) return { certRecords: [], certification: null, granted: [], monsterDex: {} };
+  const [certRecords, certification, granted, monsterSnap] = await Promise.all([
     getCertRecords(profile.id).catch(() => []),
     getCertification(profile.id).catch(() => null),
     getDexGrants(profile.id).catch(() => []),
+    getDoc(doc(db, "monsterDex", profile.id)).catch(() => null),
   ]);
-  return { certRecords, certification, granted };
+  const monsterDex = monsterSnap?.exists() ? (monsterSnap.data().monsters || {}) : {};
+  return { certRecords, certification, granted, monsterDex };
 }
 
 // 判斷章節是否解鎖（前端用）
@@ -77,6 +79,7 @@ function checkAchievement(achievementId, profile, achCtx = {}) {
       checkinCount:  profile?.dailyQuestCount || 0,
       certification: achCtx.certification || null,
       granted:       achCtx.granted       || [],
+      monsterDex:    achCtx.monsterDex    || {},
       dexStats:      null,
     });
   } catch { return false; }
