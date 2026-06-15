@@ -51,6 +51,8 @@ import AdminWorldBoss    from "../components/admin/AdminWorldBoss";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
+import StoryBook         from "../components/story/StoryBook";
+import AdminStoryManager from "../components/admin/AdminStoryManager";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -163,6 +165,7 @@ const adminNav = [
   { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
   { id:"reset-center",   icon:"🔄", label:"重置" },
   { id:"worldboss-admin", icon:"🌍", label:"世界王" },
+  { id:"story-admin",    icon:"📖", label:"故事本" },
 ];
 
   const memberNav = [
@@ -237,6 +240,7 @@ const adminNav = [
           {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("home")}/>}
           {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
+          {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
@@ -324,6 +328,7 @@ const adminNav = [
         {page==="equipitems"   && <AdminEquipItems/>}
         {page==="reset-center" && <AdminResetCenter/>}
         {page==="worldboss-admin" && <AdminWorldBoss/>}
+        {page==="story-admin"     && <AdminStoryManager/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

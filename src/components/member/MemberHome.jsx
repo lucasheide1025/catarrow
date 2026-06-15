@@ -241,6 +241,14 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
           <span className="text-white font-black text-xs leading-tight text-center">成就圖鑑</span>
         </button>
 
+        {/* 故事本 */}
+        <button onClick={() => onPageChange("story")}
+          className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#1e1b4b,#3b0764)" }}>
+          <span className="text-3xl">📖</span>
+          <span className="text-white font-black text-xs leading-tight text-center">故事本</span>
+        </button>
+
       </div>
 
 
