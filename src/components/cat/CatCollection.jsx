@@ -371,7 +371,7 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
 }
 
 // ── 主頁面 ──────────────────────────────────────────────────
-export default function CatCollection({ onBack }) {
+export default function CatCollection({ onBack, onOpenBook }) {
   const { profile } = useAuth();
   const [myCats,    setMyCats]    = useState({});
   const [loading,   setLoading]   = useState(true);
@@ -439,6 +439,12 @@ export default function CatCollection({ onBack }) {
       <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
         {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
         <span className="font-black text-lg flex-1">🐱 貓貓陪練</span>
+        {onOpenBook && (
+          <button onClick={onOpenBook}
+            className="text-xs text-indigo-300 border border-indigo-400/30 px-2 py-1 rounded-lg">
+            📖 故事本
+          </button>
+        )}
         <span className="text-xs text-slate-400">{ownedCount} / {CAT_IDS.length} 隻</span>
       </div>
 

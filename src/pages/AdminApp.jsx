@@ -50,6 +50,8 @@ import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import AdminDungeon      from "../components/admin/AdminDungeon";
 import AdminWorldBoss    from "../components/admin/AdminWorldBoss";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
+import CatCollection     from "../components/cat/CatCollection";
+import CatStoryBook      from "../components/cat/CatStoryBook";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -235,12 +237,14 @@ const adminNav = [
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("home")}/>}
+          {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
+          {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide","equipment","coinshop"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide","equipment","coinshop","worldboss","cats","catbook"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <div style={{position:"relative",display:"inline-block"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
