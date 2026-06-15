@@ -7,6 +7,7 @@ import { calcEquippedBonus } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
+import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -151,6 +152,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
   const [showCard,   setShowCard]  = useState(false);
+  const [animBossHit, setAnimBossHit] = useState(false);
+  const [animCrit,    setAnimCrit]    = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
@@ -170,6 +173,20 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     return t;
   }
 
+  function flashBossHit(isCrit) {
+    setAnimBossHit(true);
+    if (isCrit) setAnimCrit(true);
+    setTimeout(() => { setAnimBossHit(false); setAnimCrit(false); }, 420);
+  }
+
+  // 注入 CSS keyframes（只一次）
+  useEffect(() => {
+    const s = document.createElement("style");
+    s.textContent = "@keyframes wbFadeOut{from{opacity:1}to{opacity:0}} @keyframes wbShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}";
+    document.head.appendChild(s);
+    return () => s.remove();
+  }, []);
+
   // ── 雇用機器人 ───────────────────────────────────────────
   async function handleHireBot() {
     if (coins < 100 || hiring) return;
@@ -185,6 +202,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // ── 輸入分數（只記錄，不計算傷害）──────────────────────
   function handleScore(s) {
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
+    sfxTap(); vibrate(10);
     setArrows(prev => [...prev, { label: scoreLabel(s), score: scoreVal(s) }]);
   }
 
@@ -209,6 +227,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       const isCrit = a.score >= 10;
       if (isCrit) crits++;
       totalDmg += dmg;
+
+      if (a.score === 0) sfxSoftFail();
+      else if (isCrit) { sfxCritBoom(); flashBossHit(true); vibrate(30); }
+      else { sfxArrowHit(); flashBossHit(false); vibrate(10); }
 
       setDmgLog(prev => [...prev,
         isCrit      ? `💥 ${a.label} 暴擊！ -${dmg}`
@@ -246,6 +268,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const nextRounds = [...allRounds, roundData];
     setAllRounds(nextRounds);
     setRoundSummary(roundData);
+    sfxRoundEnd();
     setSubPhase("roundResult");
 
     addTimer(() => {
@@ -258,6 +281,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       setBossAttackIcon(icon);
       setBossAttackText(text);
       setMyHP(h => Math.max(0, h - cdmg));
+      if (isLast) { sfxCounterCrit(); vibrate(50); } else { sfxCounter(); vibrate(20); }
       setSubPhase("bossAttack");
 
       addTimer(() => {
@@ -295,7 +319,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setResult(res);
     setSubmitting(false);
     processingRef.current = false;
-    if (res.ok) onComplete?.(res);
+    if (res.ok) {
+      if (res.defeated) sfxVictory(); else sfxSuccess();
+      onComplete?.(res);
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -355,7 +382,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <div className="text-xs text-slate-400 font-bold mb-3">💊 攻擊增幅藥水</div>
             <div className="grid grid-cols-2 gap-2">
               {POTIONS.map(p => (
-                <button key={p.id} onClick={() => setPotion(p.id)}
+                <button key={p.id} onClick={() => { setPotion(p.id); if (p.id !== "none") sfxPotionDrink(); }}
                   disabled={p.cost > 0 && coins < p.cost}
                   className={`py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 ${potion === p.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5 text-slate-300"}`}
                   style={{ color: potion === p.id ? p.color : undefined }}>
@@ -395,6 +422,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
           <button
             onClick={async () => {
+              sfxCast();
               if (potionDef?.cost > 0) {
                 const { addCoins } = await import("../../lib/db");
                 await addCoins(myId, -potionDef.cost).catch(() => {});
@@ -426,7 +454,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <div className="text-xs text-slate-500 font-bold tracking-widest uppercase">
               第 {allRounds.length} 回合結算
             </div>
-            <div className="text-5xl font-black text-rose-400">
+            <div className="text-5xl font-black text-rose-400" style={{ animation: "wbShake 0.4s ease" }}>
               -{roundSummary?.dmg.toLocaleString()}
             </div>
             <div className="text-xs text-amber-300">
@@ -526,6 +554,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
+        {animCrit && (
+          <div className="absolute inset-0 pointer-events-none z-30"
+            style={{ background: "radial-gradient(ellipse at center, rgba(245,158,11,0.28) 0%, transparent 70%)", animation: "wbFadeOut 0.42s ease forwards" }}/>
+        )}
+        {animBossHit && !animCrit && (
+          <div className="absolute inset-0 pointer-events-none z-30"
+            style={{ background: "rgba(239,68,68,0.10)", animation: "wbFadeOut 0.3s ease forwards" }}/>
+        )}
         {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
 
         {/* ── Header：緊湊版 Boss + HP + 回合 ── */}
@@ -647,7 +683,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           {/* 6箭填完：送出按鈕 */}
           {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
             <div className="space-y-2">
-              <button onClick={() => finishRound(arrows)}
+              <button onClick={() => { sfxCast(); finishRound(arrows); }}
                 className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95"
                 style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
                 ⚔️ 送出 {ARROWS_PER} 箭！
