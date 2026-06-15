@@ -274,5 +274,21 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // worldBossEvents：世界大 Boss 活動，登入者可讀寫
+    match /worldBossEvents/{eventId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // worldBossHistory：歷史紀錄，登入者可讀，管理員可寫
+    match /worldBossHistory/{docId} {
+      allow read: if isLoggedIn();
+      allow write: if isLoggedIn();
+    }
+
+    // 貓咪陪練：subcollection 在 members/{id}/cats/{catId}
+    match /members/{memberId}/cats/{catId} {
+      allow read, write: if isLoggedIn() && request.auth.uid != null;
+    }
+
   }
 }

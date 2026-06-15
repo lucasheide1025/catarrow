@@ -1,6 +1,8 @@
 // src/components/party/PartyBattleRoom.jsx — 組隊打怪房間
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
+import CatMsg from "../cat/CatMsg";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
@@ -109,6 +111,7 @@ function HPBar({ current, max, color = "#22c55e" }) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const [arrows,          setArrows]          = useState([]);
   const [submitting,      setSubmitting]      = useState(false);
@@ -350,7 +353,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     let delay = eventDelay;
     miniRounds.forEach((mini, idx) => {
       // 每支箭顯示時都播音效
-      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxArrowShoot(); vibrate(8); }, delay);
+      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxArrowShoot(); vibrate(8); triggerCatAction(); }, delay);
       revealTimersRef.current.push(t);
 
       if (mini.isCounter) {
@@ -552,6 +555,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
+      saveBond("party");
       setClaimResult({ coins, material, card });
     } catch (e) {
       console.warn("handleClaim error:", e?.message);
@@ -1149,6 +1153,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 @keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
 @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
       `}</style>
+      <CatMsg msg={catMsg} onDone={clearCatMsg}/>
       {/* 加油通知 */}
       {cheerMsg && (
         <div className="fixed top-14 inset-x-0 z-50 flex justify-center pointer-events-none px-4">

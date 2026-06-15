@@ -1,6 +1,8 @@
 // src/components/dungeon/DungeonBattleRoom.jsx — 地下城戰鬥室
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
+import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
@@ -62,6 +64,7 @@ function ContractBadge({ contract }) {
 
 export default function DungeonBattleRoom({ roomId, onExit }) {
   const { profile } = useAuth();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const myId = profile?.id;
 
   const [room,          setRoom]          = useState(null);
@@ -192,6 +195,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   function addArrow(label) {
     if (arrows.length >= 6) return;
     sfxTap();
+    triggerCatAction();
     setArrows(prev => [...prev, { label, score: SCORE_MAP[label] ?? 0 }]);
   }
 
@@ -262,6 +266,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   // ── 完成畫面（等動畫和結算結束才顯示）─────────────────────
   if (status === "completed" && !liveEntry && !showRoundResult) {
     const won = room?.result === "win";
+    if (won) saveBond("dungeon");
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
         <div className="text-7xl">{won ? "🏆" : "💀"}</div>
@@ -306,6 +311,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   return (
     <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white">
+      <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
       {/* ── Header ── */}
       <div className="shrink-0 px-4 pt-3 pb-2 border-b border-white/10">

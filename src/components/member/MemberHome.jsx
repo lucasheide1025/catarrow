@@ -187,6 +187,22 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
           <span className="text-white font-black text-xs leading-tight text-center">地下城</span>
         </button>
 
+        {/* 世界大 Boss */}
+        <button onClick={() => onPageChange("worldboss")}
+          className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#7f1d1d,#0f172a)" }}>
+          <span className="text-3xl">🌍</span>
+          <span className="text-white font-black text-xs leading-tight text-center">世界王</span>
+        </button>
+
+        {/* 貓貓陪練 */}
+        <button onClick={() => onPageChange("cats")}
+          className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#581c87,#1e1b4b)" }}>
+          <span className="text-3xl">🐱</span>
+          <span className="text-white font-black text-xs leading-tight text-center">貓貓陪練</span>
+        </button>
+
         {/* 材料背包 */}
         <button onClick={() => onPageChange("materials")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"

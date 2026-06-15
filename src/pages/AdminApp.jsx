@@ -48,6 +48,8 @@ import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
 import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import AdminDungeon      from "../components/admin/AdminDungeon";
+import AdminWorldBoss    from "../components/admin/AdminWorldBoss";
+import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -159,7 +161,8 @@ const adminNav = [
   { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
   { id:"givetool",      icon:"🧪", label:"測試" },
   { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
-  { id:"dungeon-admin", icon:"🏰", label:"地下城" },
+  { id:"dungeon-admin",  icon:"🏰", label:"地下城" },
+  { id:"worldboss-admin", icon:"🌍", label:"世界王" },
 ];
 
   const memberNav = [
@@ -231,6 +234,7 @@ const adminNav = [
           {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
+          {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("home")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
@@ -317,7 +321,8 @@ const adminNav = [
         {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
         {page==="billing"      && <AdminBilling profile={profile}/>}
         {page==="equipitems"   && <AdminEquipItems/>}
-        {page==="dungeon-admin" && <AdminDungeon/>}
+        {page==="dungeon-admin"  && <AdminDungeon/>}
+        {page==="worldboss-admin" && <AdminWorldBoss/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

@@ -1,6 +1,8 @@
 // src/components/member/MonsterBattle.jsx
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
+import CatMsg from "../cat/CatMsg";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs,
@@ -98,6 +100,7 @@ function calcStats(allArrows) {
 
 export default function MonsterBattle({ onBack, isGuest = false }) {
   const { profile } = useAuth();
+  const { hasCat, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const [phase, setPhase]           = useState("select");
   const [battleMode, setBattleMode] = useState("score");
   const [mode, setMode]             = useState("novice");
@@ -222,7 +225,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   }, [log]);
 
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
-  function addLog(entry) { setLog(l=>[...l,entry]); }
+  function addLog(entry) {
+    setLog(l=>[...l,entry]);
+    if (entry.type === "hit" || entry.type === "hit_crit" || entry.type === "hit_organ") triggerCatAction();
+  }
   function showFloatDmg(dmg, isCrit, isOrgan) {
     const id   = Date.now() + Math.random();
     const left = 15 + Math.floor(Math.random() * 55);
@@ -629,6 +635,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         });
       }
 
+      if (!isGuest) saveBond("monster");
       await delay(1000); setPhase("loot");
     } else {
       sfxSoftFail();
@@ -656,6 +663,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
+        <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         <div className="flex items-center justify-between">
           {onBack && <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>}
           {!isGuest && (

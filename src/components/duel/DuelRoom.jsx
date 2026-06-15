@@ -1,5 +1,7 @@
 // src/components/duel/DuelRoom.jsx — 決鬥戰鬥室
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
+import CatMsg from "../cat/CatMsg";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
@@ -137,6 +139,7 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
@@ -335,12 +338,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
     recordDuelResult(profile.id, outcome, mode, { flawless, dmg: myDmg });
     getDuelStats(profile.id).then(setDuelStats);
+    saveBond("monster");
   }, [room?.status]);
 
   // ── 輸入箭分 ────────────────────────────────────────────
   function addArrow(score, label) {
     if (myArrows.length >= ARROWS || submitted) return;
     sfxArrowHit();
+    triggerCatAction();
     setMyArrows(prev => [...prev, { score, label }]);
   }
   function removeArrow() {
@@ -608,6 +613,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     <div className="h-[100dvh] bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col overflow-hidden">
       <style>{DUEL_CSS}</style>
       <ToastContainer />
+      <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/30 shrink-0">
