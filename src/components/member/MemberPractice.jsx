@@ -5,6 +5,125 @@ import { useAuth } from "../../hooks/useAuth";
 import { today, fmtDT } from "../../lib/constants";
 import { getDefaultBowType } from "../shared/Equipment";
 import { Card, Btn, Inp, Sel, ST, Spinner, Empty, useToast } from "../shared/UI";
+import { LineChart, TrendBadge } from "../shared/GrowthChart";
+
+const BOW_LABEL = { recurve_bare: "裸弓", recurve_full: "全配", compound: "獵弓", traditional: "傳統" };
+
+// ── 練習趨勢元件 ──
+function PracticeTrend({ logs }) {
+  const [innerTab, setInnerTab] = useState("trend");
+  const [selected, setSelected] = useState(null);
+
+  // 計算所有出現的弓種+距離組合，按場次多到少排
+  const combos = {};
+  logs.forEach(l => {
+    const key = `${l.bowType}_${l.distance}`;
+    if (!combos[key]) combos[key] = { bowType: l.bowType, distance: Number(l.distance), count: 0 };
+    combos[key].count++;
+  });
+  const comboList = Object.values(combos).sort((a, b) => b.count - a.count);
+  const sel = selected || (comboList.length ? `${comboList[0].bowType}_${comboList[0].distance}` : null);
+
+  // 趨勢圖資料（avgPerArrow，最近 30 場）
+  const trendPoints = sel ? logs
+    .filter(l => `${l.bowType}_${Number(l.distance)}` === sel)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-30)
+    .map(l => {
+      const d = new Date(l.date);
+      return { y: Number((l.avgPerArrow || 0).toFixed(2)), label: `${d.getMonth() + 1}/${d.getDate()}` };
+    }) : [];
+  const trendValues = trendPoints.map(p => p.y);
+
+  // 距離分析資料
+  const distData = comboList.map(c => {
+    const key = `${c.bowType}_${c.distance}`;
+    const arr = logs
+      .filter(l => `${l.bowType}_${Number(l.distance)}` === key)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const avgs = arr.map(l => l.avgPerArrow || 0);
+    const bestTotal = arr.length ? Math.max(...arr.map(l => l.total || 0)) : 0;
+    return {
+      key,
+      label: `${BOW_LABEL[c.bowType] || c.bowType} ${c.distance}m`,
+      sessions: c.count,
+      bestAvg: avgs.length ? Number(Math.max(...avgs).toFixed(1)) : 0,
+      lastAvg: arr.length ? Number((arr[arr.length - 1].avgPerArrow || 0).toFixed(1)) : 0,
+      bestTotal,
+      lastDate: arr.length ? arr[arr.length - 1].date : "",
+    };
+  });
+
+  return (
+    <Card className="p-4">
+      <div className="flex gap-0 border-b border-gray-100 mb-3">
+        {[["trend", "📈 趨勢"], ["distance", "🗺️ 距離分析"]].map(([id, label]) => (
+          <button key={id} onClick={() => setInnerTab(id)}
+            className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-all
+              ${innerTab === id ? "border-green-500 text-green-700" : "border-transparent text-gray-400"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {innerTab === "trend" && (
+        <>
+          <div className="flex gap-1.5 flex-wrap mb-3">
+            {comboList.map(c => {
+              const key = `${c.bowType}_${c.distance}`;
+              return (
+                <button key={key} onClick={() => setSelected(key)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all
+                    ${sel === key ? "bg-green-600 text-white border-green-600" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                  {BOW_LABEL[c.bowType] || c.bowType} {c.distance}m
+                  <span className="ml-1 opacity-60">×{c.count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">均分／箭 趨勢</span>
+            <TrendBadge values={trendValues} n={5} />
+          </div>
+          <LineChart points={trendPoints} color="#22c55e" height={120} />
+          {trendPoints.length >= 2 && (
+            <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
+              <span>🌟 最高 <strong className="text-amber-500">{Math.max(...trendValues).toFixed(1)}</strong></span>
+              <span>近 {trendPoints.length} 場</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {innerTab === "distance" && (
+        <div className="flex flex-col">
+          <div className="grid grid-cols-4 text-xs text-gray-400 font-bold px-1 pb-1 border-b border-gray-100">
+            <span>距離</span>
+            <span className="text-center">場次</span>
+            <span className="text-center">最高/箭</span>
+            <span className="text-center">最近/箭</span>
+          </div>
+          {distData.map(d => (
+            <div key={d.key} className="grid grid-cols-4 items-center py-2.5 border-b border-gray-50 last:border-0">
+              <div>
+                <div className="text-gray-800 font-bold text-xs">{d.label}</div>
+                <div className="text-gray-400 text-xs">{d.lastDate}</div>
+              </div>
+              <div className="text-center text-gray-600 font-bold text-sm">{d.sessions}</div>
+              <div className="text-center text-amber-500 font-black text-sm">{d.bestAvg}</div>
+              <div className="text-center">
+                <span className={`font-black text-sm ${d.lastAvg >= d.bestAvg ? "text-green-600" : "text-blue-600"}`}>
+                  {d.lastAvg}
+                </span>
+                {d.lastAvg >= d.bestAvg && <div className="text-xs text-green-500 leading-none">PB</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 const BOW_OPTIONS = [
   { value: "recurve_full", label: "競技反曲弓（全配）" },
@@ -246,6 +365,9 @@ export default function MemberPractice() {
           ))}
         </div>
       )}
+
+      {/* 練習趨勢 */}
+      {!adding && logs.length >= 2 && <PracticeTrend logs={logs} />}
 
       {/* 練習設定表單 */}
       {adding&&phase==="setup"&&(

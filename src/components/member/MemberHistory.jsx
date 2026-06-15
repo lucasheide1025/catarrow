@@ -4,6 +4,7 @@ import { getMemberResults, subscribeExternalComps } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR, fmtDT, certLevelStyle } from "../../lib/constants";
 import { Card, ST, Spinner, Empty } from "../shared/UI";
+import { LineChart, TrendBadge } from "../shared/GrowthChart";
 
 // 分類 tab：全部 + 各比賽類型 + 場外賽
 const TABS = [
@@ -102,6 +103,11 @@ export default function MemberHistory() {
         ))}
       </div>
 
+      {/* 成長曲線 */}
+      {results.filter(r => r.compType !== "monster").length >= 2 && (
+        <CompGrowthSection results={results} />
+      )}
+
       {/* 分類 tab */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map(t => (
@@ -177,6 +183,62 @@ function ResultCard({ r }) {
               回{j + 1}:{Array.isArray(round) ? round.filter(s => s !== "M").reduce((a, b) => a + b, 0) : 0}
             </span>
           ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── 成長曲線區塊 ──
+const BOW_FILTERS = [
+  { id: "all",          label: "全部" },
+  { id: "recurve_bare", label: "裸弓" },
+  { id: "recurve_full", label: "全配" },
+  { id: "compound",     label: "獵弓" },
+  { id: "traditional",  label: "傳統" },
+];
+function CompGrowthSection({ results }) {
+  const [bowFilter, setBowFilter] = useState("all");
+
+  const archeryResults = results.filter(r => r.compType !== "monster");
+  const filtered = archeryResults
+    .filter(r => (r.total || 0) > 0)
+    .filter(r => bowFilter === "all" || r.certBowType === bowFilter)
+    .sort((a, b) => (a.submittedAt?.seconds || 0) - (b.submittedAt?.seconds || 0))
+    .slice(-20);
+
+  const points = filtered.map(r => {
+    const d = r.submittedAt?.toDate ? r.submittedAt.toDate() : new Date();
+    return { y: r.total, label: `${d.getMonth() + 1}/${d.getDate()}` };
+  });
+  const values = points.map(p => p.y);
+  const pb     = values.length ? Math.max(...values) : 0;
+  const pbIdx  = values.indexOf(pb);
+  const pbEntry = filtered[pbIdx];
+  const pbDate = pbEntry?.submittedAt?.toDate
+    ? pbEntry.submittedAt.toDate().toLocaleDateString("zh-TW", { month: "numeric", day: "numeric" })
+    : "";
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-gray-800 font-black text-sm">📈 成長曲線</span>
+        <TrendBadge values={values} n={5} />
+      </div>
+      <div className="flex gap-1.5 flex-wrap mb-3">
+        {BOW_FILTERS.map(b => (
+          <button key={b.id} onClick={() => setBowFilter(b.id)}
+            className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all
+              ${bowFilter === b.id ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+            {b.label}
+          </button>
+        ))}
+      </div>
+      <LineChart points={points} color="#3b82f6" height={120} />
+      {points.length >= 2 && (
+        <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
+          <span>🌟 個人最佳 <strong className="text-amber-500">{pb}</strong>{pbDate ? ` · ${pbDate}` : ""}</span>
+          <span>顯示最近 {filtered.length} 場</span>
         </div>
       )}
     </Card>
