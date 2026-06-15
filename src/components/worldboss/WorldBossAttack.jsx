@@ -563,19 +563,27 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         {/* ── 隊友列（有隊友才顯示）── */}
         {todayParts.length > 0 && (
           <div className="shrink-0 px-4 py-1.5 flex items-center gap-2 border-b border-white/5">
-            <span className="text-xs text-slate-600 shrink-0">⚔️</span>
-            <div className="flex gap-1 flex-1">
-              {todayParts.slice(0, 8).map(([id, p], idx) => (
-                <div key={id}
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-white/15"
-                  style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "bb" }}>
-                  {(p.name || "?")[0]}
-                </div>
-              ))}
-              {todayParts.length > 8 && (
-                <span className="text-[10px] text-slate-500 self-center">+{todayParts.length - 8}</span>
-              )}
-            </div>
+            {todayParts.length >= 5 ? (
+              /* 5 人以上：純文字強調人數 */
+              <div className="flex-1 flex items-center gap-1.5">
+                <span className="text-sm">⚔️</span>
+                <span className="text-xs font-black text-white">
+                  {todayParts.length} 位射手同場作戰
+                </span>
+              </div>
+            ) : (
+              /* 5 人以下：顯示頭像 */
+              <div className="flex gap-1 flex-1 items-center">
+                <span className="text-xs text-slate-600 shrink-0">⚔️</span>
+                {todayParts.map(([id, p], idx) => (
+                  <div key={id}
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-white/15"
+                    style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "bb" }}>
+                    {(p.name || "?")[0]}
+                  </div>
+                ))}
+              </div>
+            )}
             <span className="text-xs font-black text-amber-300 shrink-0">ATK ×{participantBonus.toFixed(2)}</span>
           </div>
         )}
