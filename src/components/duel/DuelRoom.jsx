@@ -15,9 +15,9 @@ import { generateBotArrows } from "../../lib/botUtils";
 const ARROWS = 6;
 const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
 const SCORE_BTNS = [
-  { label:"X", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
-  { label:"7", score:7 }, { label:"6", score:6 }, { label:"5", score:5 },
-  { label:"M", score:0 },
+  { label:"X", score:10 }, { label:"10", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
+  { label:"7", score:7 },  { label:"6",  score:6  }, { label:"5", score:5 }, { label:"4", score:4 },
+  { label:"3", score:3 },  { label:"2",  score:2  }, { label:"1", score:1 }, { label:"M", score:0 },
 ];
 
 const DUEL_CSS = `
@@ -605,12 +605,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const lastLogEntry = room.log?.length > 0 ? room.log[room.log.length - 1] : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col">
+    <div className="h-[100dvh] bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col overflow-hidden">
       <style>{DUEL_CSS}</style>
       <ToastContainer />
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-black/30">
+      <div className="flex items-center justify-between px-4 py-3 bg-black/30 shrink-0">
         <button onClick={onLeave} className="text-slate-400 text-sm">← 離開</button>
         <div className="text-white font-black text-sm">
           ⚔️ {room.type} 決鬥 · 第 {(room.round || 1) - (isRevealing ? 1 : 0)} 回合
@@ -620,7 +620,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
       {/* 加油訊息 */}
       {cheerMsg && (
-        <div className="mx-4 mt-2 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-300 text-sm font-bold text-center py-2"
+        <div className="mx-4 mt-2 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-300 text-sm font-bold text-center py-2 shrink-0"
           style={{ animation:"slide-in .3s ease" }}>
           {cheerMsg}
         </div>
@@ -628,13 +628,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
       {/* 事件橫幅 */}
       {isRevealing && revealEntry?.event && (
-        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border ${revealEntry.event.type === "buff" ? "bg-green-900/40 border-green-500/40 text-green-300" : revealEntry.event.type === "duel_special" ? "bg-purple-900/40 border-purple-500/40 text-purple-300" : "bg-red-900/40 border-red-500/40 text-red-300"}`}
+        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border shrink-0 ${revealEntry.event.type === "buff" ? "bg-green-900/40 border-green-500/40 text-green-300" : revealEntry.event.type === "duel_special" ? "bg-purple-900/40 border-purple-500/40 text-purple-300" : "bg-red-900/40 border-red-500/40 text-red-300"}`}
           style={{ animation:"slide-in .3s ease" }}>
           {revealEntry.event.icon} {revealEntry.event.title} — {revealEntry.event.desc}
         </div>
       )}
 
-      {/* 雙隊玩家小卡 */}
+      {/* 雙隊玩家小卡 + 結算按鈕 — 可滾動中間區 */}
+      <div className="flex-1 overflow-y-auto">
       <div className="flex gap-2 px-4 py-3">
         {[["A", allA], ["B", allB]].map(([team, entries]) => (
           <div key={team} className="flex-1 flex flex-col gap-2">
@@ -679,10 +680,11 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           )}
         </div>
       )}
+      </div>{/* end scrollable */}
 
-      {/* 箭分輸入區 — 緊接在小卡下方 */}
+      {/* 箭分輸入區 — 固定在底部 */}
       {amAlive && !isRevealing && (
-        <div className="px-4 pb-4 pt-3 mt-2 border-t border-white/10">
+        <div className="px-4 pb-4 pt-3 border-t border-white/10 shrink-0">
           {/* 已輸入箭 */}
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs text-slate-400 font-bold">第 {myArrows.length}/{ARROWS} 箭：</span>
@@ -700,7 +702,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             <div className="text-center text-green-400 font-black py-2 animate-pulse">✅ 已送出，等待其他人…</div>
           ) : (
             <>
-              <div className="grid grid-cols-7 gap-1.5 mb-3">
+              <div className="grid grid-cols-6 gap-1.5 mb-3">
                 {SCORE_BTNS.map(({ label, score }) => (
                   <button key={label} onClick={() => addArrow(score, label)}
                     disabled={myArrows.length >= ARROWS}
@@ -720,7 +722,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
       )}
 
       {!amAlive && (
-        <div className="px-4 pb-2 text-center text-slate-500 text-sm">
+        <div className="px-4 pb-2 text-center text-slate-500 text-sm shrink-0">
           💀 你已倒下，等待本場結束…
         </div>
       )}

@@ -20,6 +20,7 @@ import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
+import MonsterSVG from "../MonsterSVG";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -715,7 +716,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                       style={{ background:family.color+"22", color:family.color }}>
                       {family.icon} {family.label}
                     </div>
-                    <div className="text-3xl mb-2">{m.icon}</div>
+                    <div className="mb-2"><MonsterSVG id={m.id} size={56}/></div>
                     <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
                     <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                       style={{ background:tier.bg, color:tier.color }}>
@@ -786,7 +787,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                   style={{ background: family.color+"22", color: family.color }}>
                   {family.icon} {family.label}
                 </div>
-                <div className="text-3xl mb-2">{m.icon}</div>
+                <div className="mb-2"><MonsterSVG id={m.id} size={56}/></div>
                 <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
                 <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                   style={{ background: tier.bg, color: tier.color }}>
@@ -979,7 +980,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <style>{BATTLE_CSS}</style>
         <button onClick={() => setPhase(eventMode ? "event_select" : "distance")} className="text-gray-500 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
-          <div className="text-6xl mb-2" style={{ animation:"mb-bounce 1.5s ease infinite" }}>{pickedMonster.icon}</div>
+          <div className="mb-2 flex justify-center" style={{ animation:"mb-bounce 1.5s ease infinite" }}>
+            <MonsterSVG id={pickedMonster.id} size={96}/>
+          </div>
           <div className="flex items-center justify-center gap-2 mb-1">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:family.color+"33", color:"#fff" }}>{family.icon} {family.label}</span>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:tier.color+"44", color:"#fff" }}>【{tier.label}】</span>
@@ -1175,7 +1178,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         {battlePhase==="counter"&&(
           <div className="rounded-2xl p-4 text-center border-2 border-red-400 shadow-lg"
             style={{ background:"linear-gradient(135deg,#450a0a,#7f1d1d)", animation:"mb-counter-warn .5s ease" }}>
-            <div className="text-4xl mb-1" style={{ animation:"mb-bounce .6s ease infinite" }}>{monster?.icon}</div>
+            <div className="flex justify-center mb-1" style={{ animation:"mb-bounce .6s ease infinite" }}>
+              <MonsterSVG id={monster?.id} size={60}/>
+            </div>
             <div className="text-red-200 font-black text-base">⚡ {monster?.name} 準備反擊！</div>
             <div className="text-red-400 text-xs mt-1">蓄力中…</div>
           </div>

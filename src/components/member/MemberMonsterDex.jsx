@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { subscribeMonsterDex } from "../../lib/db";
 import { MONSTERS, FAMILIES, TIER_LABEL } from "../../lib/monsterData";
+import MonsterSVG from "../MonsterSVG";
 
 const TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
 const HP_MAX = 1200, ATK_MAX = 160, DEF_MAX = 120;
@@ -133,7 +134,11 @@ export default function MemberMonsterDex({ onBack }) {
                   ${hasWon  ? "bg-white border-gray-200 shadow-sm active:scale-95"
                   : hasSeen ? "bg-gray-50 border-gray-200 opacity-75 active:scale-95"
                              : "bg-gray-100 border-gray-100 opacity-30 cursor-default"}`}>
-                <div className="text-3xl">{hasWon ? monster.icon : hasSeen ? "💀" : "❓"}</div>
+                <div>
+                  {hasWon
+                    ? <MonsterSVG id={monster.id} size={52}/>
+                    : <div className="text-3xl w-[52px] h-[52px] flex items-center justify-center bg-gray-200 rounded-xl">{hasSeen ? "💀" : "❓"}</div>}
+                </div>
                 <div className={`text-[11px] font-black leading-tight
                   ${hasWon ? "text-gray-800" : hasSeen ? "text-gray-500" : "text-gray-200"}`}>
                   {hasSeen ? monster.name : "???"}
@@ -195,7 +200,7 @@ function MonsterDetailModal({ monster, rec, onClose }) {
         <div className="rounded-t-3xl p-6 pb-4 text-white"
           style={{ background: `linear-gradient(135deg,${fam?.color || "#7c3aed"}cc,${tier.color}cc)` }}>
           <div className="flex items-start gap-4">
-            <div className="text-6xl drop-shadow-lg">{monster.icon}</div>
+            <div className="drop-shadow-lg"><MonsterSVG id={monster.id} size={80}/></div>
             <div className="flex-1">
               <div className="font-black text-2xl drop-shadow">{monster.name}</div>
               <div className="flex gap-2 flex-wrap mt-1.5">

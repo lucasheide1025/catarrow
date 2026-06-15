@@ -45,6 +45,8 @@ import PartyBattleRoom    from "../components/party/PartyBattleRoom";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
+import DungeonLobby      from "../components/dungeon/DungeonLobby";
+import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -109,6 +111,16 @@ export default function AdminApp() {
   function handleLeaveDuel() {
     setDuelRoomId(null); setDuelIsHost(false);
     setPage("duel");
+  }
+
+  const [dungeonRoomId, setDungeonRoomId] = useState(null);
+  function handleEnterDungeonRoom(roomId) {
+    setDungeonRoomId(roomId);
+    setPage("dungeon-room");
+  }
+  function handleLeaveDungeon() {
+    setDungeonRoomId(null);
+    setPage("home");
   }
 
   // 記住當前頁面 + 射手模式（重整後留在原地）
@@ -213,6 +225,8 @@ const adminNav = [
           )}
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
+          {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("home")} />}
+          {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
         </div>

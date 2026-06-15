@@ -30,13 +30,15 @@ import PartyQuestRoom    from "../components/party/PartyQuestRoom";
 import PartyBattleRoom   from "../components/party/PartyBattleRoom";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
+import DungeonLobby      from "../components/dungeon/DungeonLobby";
+import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import MemberGuide       from "../components/member/MemberGuide";
 import EquipmentPage     from "../components/member/EquipmentPage";
 import CoinShop          from "../components/member/CoinShop";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","guide","coinshop"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","dungeon","dungeon-room","guide","coinshop"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -99,6 +101,19 @@ export default function MemberApp() {
     sessionStorage.removeItem("duel_room");
     setDuelRoomId(null); setDuelIsHost(false);
     setPage("duel");
+  }
+
+  const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("dungeon_room") || "null"); } catch { return null; } })();
+  const [dungeonRoomId, setDungeonRoomId] = useState(_savedDungeon?.roomId || null);
+  function handleEnterDungeonRoom(roomId) {
+    setDungeonRoomId(roomId);
+    sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId }));
+    setPage("dungeon-room");
+  }
+  function handleLeaveDungeon() {
+    sessionStorage.removeItem("dungeon_room");
+    setDungeonRoomId(null);
+    setPage("home");
   }
 
   const nav = [
@@ -206,6 +221,8 @@ export default function MemberApp() {
         {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
+        {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("home")} />}
+        {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />

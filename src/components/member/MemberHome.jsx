@@ -179,6 +179,14 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
           <span className="text-white font-black text-xs leading-tight text-center">組隊戰鬥</span>
         </button>
 
+        {/* 地下城 */}
+        <button onClick={() => onPageChange("dungeon")}
+          className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
+          style={{ background:"linear-gradient(135deg,#4c1d95,#2e1065)" }}>
+          <span className="text-3xl">🏰</span>
+          <span className="text-white font-black text-xs leading-tight text-center">地下城</span>
+        </button>
+
         {/* 材料背包 */}
         <button onClick={() => onPageChange("materials")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"

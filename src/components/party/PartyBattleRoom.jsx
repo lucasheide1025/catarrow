@@ -1143,7 +1143,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col max-w-lg mx-auto">
+    <div className="h-[100dvh] bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col overflow-hidden max-w-lg mx-auto">
       <style>{`
 @keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
 @keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
@@ -1157,6 +1157,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
         </div>
       )}
+      {/* 可滾動中間：頂部＋進度＋記錄 */}
+      <div className="flex-1 overflow-y-auto">
       {/* 頂部 */}
       <div className="px-4 pt-5 pb-3 flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -1296,9 +1298,94 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       </div>
 
-      {/* 箭分輸入（自己存活且未 ready，且動畫未播放中）*/}
+      {/* 即時進度條（箭分已整合進玩家卡片） */}
+      {liveEntry && (
+        <div className="px-4 pb-1 flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[10px] text-slate-500">
+            <span>第 {liveEntry.round} 回合 · 第 {liveMiniRoundIdx + 1}/{liveEntry.miniRounds?.length || 6} 箭</span>
+            <span>怪物剩 <span className="text-yellow-300 font-black">{curMini?.monsterHPAfter ?? liveEntry.monsterHPAfter}</span></span>
+          </div>
+          <div className="flex justify-center gap-1.5">
+            {(liveEntry.miniRounds || []).map((mini, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                i === liveMiniRoundIdx ? "bg-yellow-400 scale-125" :
+                i < liveMiniRoundIdx  ? (mini.isCounter ? "bg-orange-500" : "bg-indigo-500") :
+                "bg-slate-700"
+              }`} />
+            ))}
+          </div>
+          {curMini?.isCounter && (
+            <div className="text-orange-300 font-bold text-[10px] text-center animate-pulse">💥 怪物反擊！</div>
+          )}
+        </div>
+      )}
+
+      {/* 戰鬥 Log（含每人明細）*/}
+      {(room.log || []).length > 0 && (
+        <div className="px-4 pb-6 flex flex-col gap-2 mt-2">
+          <div className="text-xs font-black text-slate-500 uppercase tracking-widest">戰鬥記錄</div>
+          <div className="flex flex-col gap-2">
+            {[...room.log].reverse().map((entry, i) => {
+              if (i === 0 && liveEntry) return null; // 揭曉中跳過，避免重複
+              return (
+              <div key={i} className="bg-slate-800/70 rounded-xl p-3 text-xs text-slate-300 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-slate-400 font-black">
+                  <span>第 {entry.round} 回合</span>
+                  <span>怪物剩 <span className="text-yellow-300">{entry.monsterHPAfter}</span></span>
+                </div>
+                {/* 事件 */}
+                {entry.event && (
+                  <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                    entry.event.type === "buff"    ? "bg-emerald-900/40 text-emerald-300" :
+                    entry.event.type === "debuff"  ? "bg-red-900/40 text-red-300"
+                                                   : "bg-yellow-900/40 text-yellow-300"
+                  }`}>
+                    <span>{entry.event.icon}</span>
+                    <span>{entry.event.title}</span>
+                  </div>
+                )}
+                {(entry.playerLog || []).map((p, j) => (
+                  <div key={j} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-indigo-300">🏹 {p.name}</span>
+                      <span>造成 <span className="text-rose-400 font-black">{p.dmg}</span> 傷</span>
+                      {p.crits > 0 && <span className="text-yellow-300 text-[10px]">💥×{p.crits}</span>}
+                      {entry.counterRound && p.ctr > 0 && (
+                        <span className="text-orange-400 ml-auto">受到 -{p.ctr}</span>
+                      )}
+                    </div>
+                    {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
+                      <div className="flex flex-col gap-0.5 ml-3 mt-0.5">
+                        {p.arrowBreakdown.map((a, ai) => (
+                          <span key={ai} className={`text-[10px] font-bold ${
+                            a.dmg === 0 ? "text-slate-600" :
+                            a.isCrit    ? "text-yellow-400" : "text-slate-400"
+                          }`}>
+                            {ai + 1}箭 {a.label}分　{a.partIcon} {a.partName}
+                            {a.dmg > 0 && <span className="text-rose-400 ml-1">+{a.dmg}</span>}
+                            {a.isCrit && <span className="text-yellow-300 ml-0.5">💥</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {entry.counterRound && (
+                  <div className="text-orange-300 font-bold border-t border-white/10 pt-1 mt-0.5">
+                    💥 怪物反擊！
+                  </div>
+                )}
+              </div>
+            ); })}
+            <div ref={logEndRef} />
+          </div>
+        </div>
+      )}
+      </div>{/* end scrollable */}
+
+      {/* 箭分輸入（自己存活且未 ready，且動畫未播放中）— 固定底部 */}
       {me.alive && !myReady && !liveEntry && (
-        <div className="px-4 flex flex-col gap-3 pb-4">
+        <div className="px-4 flex flex-col gap-3 pb-4 shrink-0 border-t border-white/10 pt-3">
           <div className="flex gap-1.5 items-center">
             <div className="text-xs text-slate-400 w-8 shrink-0">{arrows.length}/{ARROWS_PER_ROUND}</div>
             <div className="flex gap-1 flex-1 flex-wrap">
@@ -1355,7 +1442,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       )}
 
       {me.alive && myReady && (
-        <div className="px-4 py-3 flex flex-col items-center gap-2">
+        <div className="px-4 py-3 flex flex-col items-center gap-2 shrink-0">
           <div className="text-emerald-400 font-black text-sm">
             ✅ 已送出，等待其他隊員…
             {room.processing && <span className="ml-2 text-yellow-400 animate-pulse">⚙️ 計算中…</span>}
@@ -1368,92 +1455,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       )}
       {!me.alive && room.status === "active" && (
-        <div className="px-4 py-6 text-center text-slate-500 font-black text-sm">
+        <div className="px-4 py-4 text-center text-slate-500 font-black text-sm shrink-0">
           💀 你已陣亡，觀戰中…
-        </div>
-      )}
-
-      {/* 即時進度條（箭分已整合進玩家卡片） */}
-      {liveEntry && (
-        <div className="px-4 pb-1 flex flex-col gap-1">
-          <div className="flex items-center justify-between text-[10px] text-slate-500">
-            <span>第 {liveEntry.round} 回合 · 第 {liveMiniRoundIdx + 1}/{liveEntry.miniRounds?.length || 6} 箭</span>
-            <span>怪物剩 <span className="text-yellow-300 font-black">{curMini?.monsterHPAfter ?? liveEntry.monsterHPAfter}</span></span>
-          </div>
-          <div className="flex justify-center gap-1.5">
-            {(liveEntry.miniRounds || []).map((mini, i) => (
-              <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                i === liveMiniRoundIdx ? "bg-yellow-400 scale-125" :
-                i < liveMiniRoundIdx  ? (mini.isCounter ? "bg-orange-500" : "bg-indigo-500") :
-                "bg-slate-700"
-              }`} />
-            ))}
-          </div>
-          {curMini?.isCounter && (
-            <div className="text-orange-300 font-bold text-[10px] text-center animate-pulse">💥 怪物反擊！</div>
-          )}
-        </div>
-      )}
-
-      {/* 戰鬥 Log（含每人明細）*/}
-      {(room.log || []).length > 0 && (
-        <div className="px-4 pb-6 flex flex-col gap-2 mt-2">
-          <div className="text-xs font-black text-slate-500 uppercase tracking-widest">戰鬥記錄</div>
-          <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
-            {[...room.log].reverse().map((entry, i) => {
-              if (i === 0 && liveEntry) return null; // 揭曉中跳過，避免重複
-              return (
-              <div key={i} className="bg-slate-800/70 rounded-xl p-3 text-xs text-slate-300 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-slate-400 font-black">
-                  <span>第 {entry.round} 回合</span>
-                  <span>怪物剩 <span className="text-yellow-300">{entry.monsterHPAfter}</span></span>
-                </div>
-                {/* 事件 */}
-                {entry.event && (
-                  <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-lg ${
-                    entry.event.type === "buff"    ? "bg-emerald-900/40 text-emerald-300" :
-                    entry.event.type === "debuff"  ? "bg-red-900/40 text-red-300"
-                                                   : "bg-yellow-900/40 text-yellow-300"
-                  }`}>
-                    <span>{entry.event.icon}</span>
-                    <span>{entry.event.title}</span>
-                  </div>
-                )}
-                {(entry.playerLog || []).map((p, j) => (
-                  <div key={j} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-indigo-300">🏹 {p.name}</span>
-                      <span>造成 <span className="text-rose-400 font-black">{p.dmg}</span> 傷</span>
-                      {p.crits > 0 && <span className="text-yellow-300 text-[10px]">💥×{p.crits}</span>}
-                      {entry.counterRound && p.ctr > 0 && (
-                        <span className="text-orange-400 ml-auto">受到 -{p.ctr}</span>
-                      )}
-                    </div>
-                    {p.arrowBreakdown && p.arrowBreakdown.length > 0 && (
-                      <div className="flex flex-col gap-0.5 ml-3 mt-0.5">
-                        {p.arrowBreakdown.map((a, ai) => (
-                          <span key={ai} className={`text-[10px] font-bold ${
-                            a.dmg === 0 ? "text-slate-600" :
-                            a.isCrit    ? "text-yellow-400" : "text-slate-400"
-                          }`}>
-                            {ai + 1}箭 {a.label}分　{a.partIcon} {a.partName}
-                            {a.dmg > 0 && <span className="text-rose-400 ml-1">+{a.dmg}</span>}
-                            {a.isCrit && <span className="text-yellow-300 ml-0.5">💥</span>}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {entry.counterRound && (
-                  <div className="text-orange-300 font-bold border-t border-white/10 pt-1 mt-0.5">
-                    💥 怪物反擊！
-                  </div>
-                )}
-              </div>
-            ); })}
-            <div ref={logEndRef} />
-          </div>
         </div>
       )}
     </div>
