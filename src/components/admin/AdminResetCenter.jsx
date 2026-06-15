@@ -190,48 +190,30 @@ export default function AdminResetCenter() {
               ) : (
                 <>
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2 text-xs text-indigo-700 font-bold">
-                    🌍 {wbEvent.bossData?.name}｜已參戰 {wbEvent.totalParticipants || 0} 人
+                    🌍 {wbEvent.bossData?.name}｜累計參戰 {wbEvent.totalParticipants || 0} 人
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500">
-                      今日已出戰 <span className="font-bold text-rose-600">{wbAttToday.length}</span> 人 ／
-                      未出戰 <span className="font-bold text-emerald-600">{wbNotToday.length}</span> 人
-                    </div>
-                    <button onClick={handleResetWBAll} disabled={!!busyWB || wbAttToday.length === 0}
+                    <div className="text-xs text-gray-500">重置後可再次出戰（保留參戰紀錄）</div>
+                    <button onClick={handleResetWBAll} disabled={!!busyWB || wbParts.length === 0}
                       className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
                       {busyWB === "all" ? "重置中…" : "全員重置"}
                     </button>
                   </div>
-                  {wbAttToday.length > 0 && (
-                    <>
-                      <div className="text-xs font-bold text-rose-500">🔒 今日已出戰</div>
-                      {wbAttToday.map(([id, p]) => (
-                        <div key={id} className="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5">
-                          <div className="flex-1">
-                            <div className="text-sm font-semibold text-gray-800">{p.name}</div>
-                            <div className="text-xs text-gray-400">傷害 {(p.totalDmg || 0).toLocaleString()}</div>
-                          </div>
-                          <button onClick={() => handleResetWBOne(id, p.name)} disabled={!!busyWB}
-                            className="px-3 py-1 rounded-lg bg-rose-600 text-white text-xs font-black disabled:opacity-40">
-                            {busyWB === id ? "…" : "重置"}
-                          </button>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {wbNotToday.length > 0 && (
-                    <>
-                      <div className="text-xs font-bold text-emerald-600 mt-2">✅ 未出戰</div>
-                      {wbNotToday.map(([id, p]) => (
-                        <div key={id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 opacity-60">
-                          <span className="flex-1 text-sm text-gray-600">{p.name}</span>
-                          <span className="text-xs text-emerald-600 font-bold">可出戰</span>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {wbParts.length === 0 && (
+                  {wbParts.length === 0 ? (
                     <div className="text-center py-4 text-gray-400 text-sm">尚無人參戰</div>
+                  ) : (
+                    wbParts.map(([id, p]) => (
+                      <div key={id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-gray-800">{p.name}</div>
+                          <div className="text-xs text-gray-400">累積傷害 {(p.totalDmg || 0).toLocaleString()}</div>
+                        </div>
+                        <button onClick={() => handleResetWBOne(id, p.name)} disabled={!!busyWB}
+                          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:opacity-40">
+                          {busyWB === id ? "…" : "重置次數"}
+                        </button>
+                      </div>
+                    ))
                   )}
                 </>
               )}

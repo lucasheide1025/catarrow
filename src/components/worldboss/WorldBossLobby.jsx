@@ -60,13 +60,13 @@ function CountdownTimer({ endAt }) {
   return <span className="font-mono text-amber-300 font-bold">{left || "–"}</span>;
 }
 
-export default function WorldBossLobby({ onBack }) {
+export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete }) {
   const { profile } = useAuth();
   const [event,      setEvent]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [inBattle,   setInBattle]   = useState(false);
 
-  const myId   = profile?.id;
+  const myId   = guestOverride?.id   || profile?.id;
   const today  = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
@@ -87,7 +87,10 @@ export default function WorldBossLobby({ onBack }) {
 
   // 進入戰鬥畫面
   if (inBattle && event) {
-    return <WorldBossAttack event={event} onBack={() => setInBattle(false)} />;
+    return <WorldBossAttack event={event} onBack={() => setInBattle(false)}
+      guestOverride={guestOverride}
+      onComplete={result => { setInBattle(false); onBattleComplete?.(result); }}
+    />;
   }
 
   // 無活躍 Boss

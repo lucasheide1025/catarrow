@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react";
 import { signInAnonymously } from "firebase/auth";
 import { auth } from "../../lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 import MonsterBattle  from "./MonsterBattle";
 import MemberPractice from "./MemberPractice";
 import PartyLobby     from "../party/PartyLobby";
 import PartyBattleRoom from "../party/PartyBattleRoom";
 import DuelLobby      from "../duel/DuelLobby";
 import DuelRoom       from "../duel/DuelRoom";
+import WorldBossLobby from "../worldboss/WorldBossLobby";
 
 const PARTY_SESSION_KEY = "guest_party_session";
 const PARTY_ID_KEY      = "guest_party_id";
@@ -104,12 +107,34 @@ export default function GuestBattle({ guestId, onExpire }) {
     setTab("duel");
   }
 
+  // 世界王打完後的信箱提示
+  const [wbResult,    setWbResult]    = useState(null);
+  const [emailInput,  setEmailInput]  = useState("");
+  const [emailSaved,  setEmailSaved]  = useState(false);
+  const [emailBusy,   setEmailBusy]   = useState(false);
+
+  async function handleSaveEmail() {
+    const email = emailInput.trim();
+    if (!email || emailBusy) return;
+    setEmailBusy(true);
+    await setDoc(doc(db, "guestNotifications", partyGuestId), {
+      guestId:   partyGuestId,
+      guestName: guestName || "訪客射手",
+      email,
+      wbResult,
+      createdAt: new Date().toISOString(),
+    }, { merge: true });
+    setEmailSaved(true);
+    setEmailBusy(false);
+  }
+
   const nav = [
-    { id: "guide",    icon: "📋",  label: "說明" },
-    { id: "monster",  icon: "⚔️",  label: "打怪" },
-    { id: "duel",     icon: "🤺",  label: "決鬥" },
-    { id: "party",    icon: "👥",  label: "組隊" },
-    { id: "practice", icon: "🎯",  label: "練習" },
+    { id: "guide",     icon: "📋", label: "說明" },
+    { id: "monster",   icon: "⚔️", label: "打怪" },
+    { id: "worldboss", icon: "🌍", label: "世界王" },
+    { id: "duel",      icon: "🤺", label: "決鬥" },
+    { id: "party",     icon: "👥", label: "組隊" },
+    { id: "practice",  icon: "🎯", label: "練習" },
   ];
 
   // 名稱設定頁（第一次進入才顯示）
@@ -162,10 +187,58 @@ export default function GuestBattle({ guestId, onExpire }) {
         </button>
       )}
 
+      {/* 世界王完成後 → 信箱提示覆蓋層 */}
+      {wbResult && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.7)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div style={{ background:"#1e293b", borderRadius:"20px", padding:"24px", width:"100%", maxWidth:"340px", color:"white", textAlign:"center" }}>
+            {emailSaved ? (
+              <>
+                <div style={{ fontSize:"40px", marginBottom:"8px" }}>📬</div>
+                <div style={{ fontSize:"16px", fontWeight:900, marginBottom:"6px", color:"#fbbf24" }}>信箱已登記！</div>
+                <div style={{ fontSize:"12px", color:"#94a3b8", marginBottom:"20px" }}>活動結束後我們會寄出你的戰鬥小卡</div>
+                <button onClick={() => setWbResult(null)}
+                  style={{ width:"100%", padding:"12px", background:"#7c3aed", border:"none", borderRadius:"12px", color:"white", fontSize:"14px", fontWeight:900, cursor:"pointer" }}>
+                  繼續冒險
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize:"40px", marginBottom:"8px" }}>⚔️</div>
+                <div style={{ fontSize:"16px", fontWeight:900, marginBottom:"4px" }}>出戰完成！</div>
+                <div style={{ fontSize:"13px", color:"#94a3b8", marginBottom:"16px" }}>
+                  想在活動結束後收到你的戰鬥成績小卡嗎？
+                </div>
+                <input
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  placeholder="輸入你的 Email"
+                  type="email"
+                  style={{ width:"100%", padding:"10px 12px", background:"#0f172a", border:"1px solid #475569", borderRadius:"10px", color:"white", fontSize:"14px", marginBottom:"12px", boxSizing:"border-box" }}
+                />
+                <button onClick={handleSaveEmail} disabled={!emailInput.trim() || emailBusy}
+                  style={{ width:"100%", padding:"12px", background: emailInput.trim() ? "#7c3aed" : "#334155", border:"none", borderRadius:"12px", color:"white", fontSize:"14px", fontWeight:900, cursor: emailInput.trim() ? "pointer" : "default", marginBottom:"8px" }}>
+                  {emailBusy ? "登記中…" : "📬 登記信箱"}
+                </button>
+                <button onClick={() => setWbResult(null)}
+                  style={{ width:"100%", padding:"10px", background:"none", border:"none", color:"#64748b", fontSize:"13px", cursor:"pointer" }}>
+                  不需要，直接返回
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 頁面內容 */}
       <div style={{ paddingBottom:"80px" }}>
         {tab === "guide"   && <GuestGuide />}
         {tab === "monster" && <MonsterBattle isGuest={true} />}
+        {tab === "worldboss" && (
+          <WorldBossLobby
+            guestOverride={guestOverride}
+            onBattleComplete={result => setWbResult(result)}
+          />
+        )}
         {tab === "practice" && <MemberPractice />}
         {tab === "party" && partySubTab === "lobby" && (
           <PartyLobby
@@ -227,10 +300,11 @@ function GuestGuide() {
       </div>
 
       {[
-        { icon:"⚔️", title:"打怪", lines:["選擇難度進入戰鬥","分配攻防屬性打倒怪物","有機會掉落稀有素材"] },
-        { icon:"🤺", title:"決鬥", lines:["與其他人 1v1 對戰","建立房間，傳號碼給對手","對手加入後自動開始"] },
-        { icon:"👥", title:"組隊", lines:["建立或加入組隊房間","與隊友一起打怪闖關","進行中頂部會出現橫幅"] },
-        { icon:"🎯", title:"練習", lines:["記錄這次的練習成績","填入環數與箭數"] },
+        { icon:"⚔️", title:"打怪",  lines:["選擇難度進入戰鬥","分配攻防屬性打倒怪物","有機會掉落稀有素材"] },
+        { icon:"🌍", title:"世界王", lines:["與所有射手共同挑戰大 Boss","每人每日一次出戰機會","人越多加成越強，一起擊殺！"] },
+        { icon:"🤺", title:"決鬥",  lines:["與其他人 1v1 對戰","建立房間，傳號碼給對手","對手加入後自動開始"] },
+        { icon:"👥", title:"組隊",  lines:["建立或加入組隊房間","與隊友一起打怪闖關","進行中頂部會出現橫幅"] },
+        { icon:"🎯", title:"練習",  lines:["記錄這次的練習成績","填入環數與箭數"] },
       ].map(({ icon, title, lines }) => (
         <div key={title} style={{ background:"white", borderRadius:"16px", border:"1px solid #e2e8f0", padding:"16px" }}>
           <div style={{ fontWeight:900, fontSize:"14px", marginBottom:"8px", color:"#1e293b" }}>{icon} {title}</div>

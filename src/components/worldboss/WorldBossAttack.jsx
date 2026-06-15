@@ -108,7 +108,7 @@ const AVATAR_COLORS = ["#f59e0b","#ef4444","#3b82f6","#10b981","#8b5cf6","#ec489
 const TOTAL_ROUNDS = 5;
 const ARROWS_PER   = 6;
 
-export default function WorldBossAttack({ event, onBack }) {
+export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
   const { profile } = useAuth();
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -152,9 +152,10 @@ export default function WorldBossAttack({ event, onBack }) {
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
-  const myId   = profile?.id;
-  const myName = profile?.nickname || profile?.name || "射手";
+  const myId   = guestOverride?.id   || profile?.id;
+  const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
   const weapon = profile?.bowType || "複合弓";
+  const isGuest = !!guestOverride;
   const potionDef  = POTIONS.find(p => p.id === potion);
   const potionMult = potionDef?.mult || 1;
 
@@ -284,7 +285,7 @@ export default function WorldBossAttack({ event, onBack }) {
       memberName:    myName,
       weapon,
       roundResults:  rounds,
-      isGuest:       false,
+      isGuest,
       potionDmgMult: 1,
       bots,
     });
@@ -292,6 +293,7 @@ export default function WorldBossAttack({ event, onBack }) {
     setResult(res);
     setSubmitting(false);
     processingRef.current = false;
+    if (res.ok) onComplete?.(res);
   }
 
   // ════════════════════════════════════════════════════════════
