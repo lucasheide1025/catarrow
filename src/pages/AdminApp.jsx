@@ -15,8 +15,7 @@ import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
 import AdminEquipItems    from "../components/admin/AdminEquipItems";
 import EquipmentPage      from "../components/member/EquipmentPage";
 import CoinShop           from "../components/member/CoinShop";
-import AdminMonthlyCard   from "../components/admin/AdminMonthlyCard";
-import AdminBilling       from "../components/admin/BillingSystem";
+import AdminFinance       from "../components/admin/AdminFinance";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
@@ -47,7 +46,7 @@ import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
 import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
-import AdminDungeon      from "../components/admin/AdminDungeon";
+import AdminResetCenter  from "../components/admin/AdminResetCenter";
 import AdminWorldBoss    from "../components/admin/AdminWorldBoss";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
@@ -157,13 +156,12 @@ const adminNav = [
   { id:"members",     icon:"👥", label:"會員" },
   { id:"comps",       icon:"🏆", label:"比賽" },
   { id:"review",      icon:"🔔", label:"審核" },
-  { id:"monthlycard", icon:"🎫", label:"月卡" },
-  { id:"billing",     icon:"💰", label:"會計" },
+  { id:"monthlycard", icon:"🎫", label:"財務" },
   { id:"learn",       icon:"📓", label:"學習" },
   { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
   { id:"givetool",      icon:"🧪", label:"測試" },
   { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
-  { id:"dungeon-admin",  icon:"🏰", label:"地下城" },
+  { id:"reset-center",   icon:"🔄", label:"重置" },
   { id:"worldboss-admin", icon:"🌍", label:"世界王" },
 ];
 
@@ -322,10 +320,9 @@ const adminNav = [
         {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
         {page==="battlesetting" && <AdminBattleEvent/>}
         {page==="givetool"     && <AdminGiveTool/>}
-        {page==="monthlycard"  && <AdminMonthlyCard adminProfile={profile}/>}
-        {page==="billing"      && <AdminBilling profile={profile}/>}
+        {page==="monthlycard"  && <AdminFinance adminProfile={profile}/>}
         {page==="equipitems"   && <AdminEquipItems/>}
-        {page==="dungeon-admin"  && <AdminDungeon/>}
+        {page==="reset-center" && <AdminResetCenter/>}
         {page==="worldboss-admin" && <AdminWorldBoss/>}
       </div>
 

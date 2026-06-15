@@ -1690,18 +1690,29 @@ export async function addCoins(memberId, amount) {
 // ─── 地下城次數管理 ────────────────────────────────────────
 export async function markDungeonUsed(memberId) {
   if (!memberId) return;
-  await updateDoc(doc(db, C.members, memberId), { dungeonUsed: true });
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await updateDoc(doc(db, C.members, memberId), { lastDungeonDate: todayStr });
 }
 
 export async function resetDungeonUsed(memberId) {
   if (!memberId) return;
-  await updateDoc(doc(db, C.members, memberId), { dungeonUsed: false });
+  await updateDoc(doc(db, C.members, memberId), { lastDungeonDate: deleteField() });
 }
 
 export async function resetAllDungeonUsed() {
   const snap = await getDocs(collection(db, C.members));
   const batch = writeBatch(db);
-  snap.docs.forEach(d => batch.update(d.ref, { dungeonUsed: false }));
+  snap.docs.forEach(d => batch.update(d.ref, { lastDungeonDate: deleteField() }));
+  await batch.commit();
+}
+
+export async function resetAllMonsterSessions() {
+  const snap = await getDocs(collection(db, C.members));
+  const todayStr = monsterTodayStr();
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => {
+    batch.delete(doc(db, C_MONSTER_SESSION, `${d.id}_${todayStr}`));
+  });
   await batch.commit();
 }
 

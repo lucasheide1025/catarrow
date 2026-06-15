@@ -37,6 +37,8 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip   = calcEquippedBonus([]);
   const myCatId   = profile?.equippedCat?.catId || null;
@@ -198,12 +200,12 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                 <li>• 金幣掉落 ×2</li>
               </ul>
             </div>
-            {profile?.dungeonUsed && (
+            {dungeonUsedToday && (
               <div className="bg-rose-500/10 border border-rose-400/30 rounded-2xl p-3 text-sm text-rose-300 text-center">
-                🔒 本期地下城次數已使用，等待教練重置後才能再次建立
+                🔒 今日地下城次數已使用，明天再來挑戰吧！
               </div>
             )}
-            <button onClick={handleCreate} disabled={loading || !!profile?.dungeonUsed}
+            <button onClick={handleCreate} disabled={loading || !!dungeonUsedToday}
               className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
               {loading ? "建立中…" : "🏰 建立地下城"}
             </button>

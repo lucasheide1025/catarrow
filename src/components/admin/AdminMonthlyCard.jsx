@@ -96,7 +96,16 @@ export default function AdminMonthlyCard({ adminProfile }) {
     getDocs(collection(db, "members"))
       .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        list.sort((a, b) => (a.name || a.nickname || "").localeCompare(b.name || b.nickname || ""));
+        list.sort((a, b) => {
+          const aCard = a.monthlyCard; const bCard = b.monthlyCard;
+          const aDays = aCard?.expiresAt ? daysLeft(aCard.expiresAt) : null;
+          const bDays = bCard?.expiresAt ? daysLeft(bCard.expiresAt) : null;
+          const aActive = !!(aCard?.active && aDays !== null && aDays > 0);
+          const bActive = !!(bCard?.active && bDays !== null && bDays > 0);
+          if (aActive && !bActive) return -1;
+          if (!aActive && bActive) return 1;
+          return (a.nickname || a.name || "").localeCompare(b.nickname || b.name || "");
+        });
         setMembers(list);
       })
       .catch(() => {});
