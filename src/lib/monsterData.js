@@ -444,5 +444,5 @@ export function drawMatchedMonsters(archerPower) {
   return result;
 }
 
-// tier 排序（用於 fallback）
-const TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];
+// tier 排序（用於 fallback 及地下城篩選）
+export const TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];

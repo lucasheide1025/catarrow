@@ -8,10 +8,10 @@ import {
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS } from "../../lib/monsterData";
+import { resolveHitPart, MONSTERS, TIER_ORDER } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials } from "../../lib/db";
-import { rollCoins, rollMaterialDrop } from "../../lib/lootTable";
+import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier } from "../../lib/lootTable";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
   sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, vibrate,
@@ -205,11 +205,11 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   async function handleNextFloor() {
     if (!isHost || !room) return;
     const nextFloor = (room.currentFloor || 0) + 1;
-    const hostAtk   = room.hostAtk || 10;
-    const tierBoost = Math.floor(hostAtk / 20);
-    const maxTier   = Math.min(4, Math.ceil(nextFloor / 2) + tierBoost);
-    const allMonsters = MONSTERS.filter(m => m.tier <= maxTier);
-    const pool        = allMonsters.length ? allMonsters : MONSTERS;
+    // 層數對應最高 tier（索引）：1-2層=common(0), 3-4=rare(1), 5-6=elite(2), 7+=fierce(3)
+    // 地下城不出 boss/mythic
+    const maxTierIdx  = nextFloor <= 2 ? 0 : nextFloor <= 4 ? 1 : nextFloor <= 6 ? 2 : 3;
+    const allMonsters = MONSTERS.filter(m => TIER_ORDER.indexOf(m.tier) <= maxTierIdx);
+    const pool        = allMonsters.length ? allMonsters : MONSTERS.filter(m => m.tier === "common");
     const nextMonster = pool[Math.floor(Math.random() * pool.length)];
     setLoading(true);
     await advanceDungeonFloor(roomId, room, nextMonster);
@@ -218,13 +218,23 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   async function handleClaim() {
     if (!isHost) return;
-    const goldMult     = room?.nextFloorModifiers?.goldMult || 1;
-    const baseMaterials = rollMaterialDrop(room?.monster?.tier || 1);
+    const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
+    const baseMaterials = rollMaterialDrop(room?.monster);
+    const totalFloors   = room.totalFloors || 7;
+
+    // 每層各開一個金幣箱
+    const chestResults = [];
+    for (let f = 1; f <= totalFloors; f++) {
+      chestResults.push({ floor: f, ...openCoinChest(floorToMonsterTier(f)) });
+    }
+    const totalChestCoins = chestResults.reduce((s, c) => s + c.coins, 0);
+
     for (const mid of Object.keys(room.members || {})) {
       if (mid.startsWith("guest")) continue;
-      const baseCoins = rollCoins(room?.monster?.tier || 1, 1);
+      const baseCoins = rollCoins(room?.monster?.tier || "common", 1);
       await claimDungeonReward(mid, baseCoins, goldMult);
-      if (baseMaterials?.length) await addMaterials(mid, baseMaterials).catch(() => {});
+      if (totalChestCoins > 0) await addCoins(mid, totalChestCoins).catch(() => {});
+      if (baseMaterials) await addMaterials(mid, [baseMaterials]).catch(() => {});
       await recordBattleDex(mid, room.monster.id).catch(() => {});
     }
     sfxSuccess();
@@ -276,8 +286,10 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       const maxSingleDmg   = allPlayerLogs.length
         ? Math.max(...allPlayerLogs.map(p => p.dmg || 0))
         : 0;
-      const consolationCoins = floorsCleared * 20;
-      const partyNames = Object.values(room.members || {}).map(m => m.name).filter(Boolean);
+      // 安慰金幣箱：每通關一層給一個木幣箱
+      const consolationChests = Array.from({ length: floorsCleared },
+        (_, i) => ({ floor: i + 1, ...openCoinChest("common") }));
+      const consolationCoins = consolationChests.reduce((s, c) => s + c.coins, 0);
 
       return (
         <div className="h-[100dvh] overflow-y-auto flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -340,11 +352,25 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               </div>
             )}
 
-            {/* 安慰獎說明 */}
+            {/* 安慰金幣箱 */}
             <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4">
-              <div className="text-xs text-amber-300 font-bold mb-1">🎁 探索獎勵</div>
-              <div className="text-xs text-slate-400">即使失敗，探索過程仍可獲得金幣！（每通關 1 層 +20 金幣）</div>
-              <div className="text-sm text-amber-300 font-black mt-2">💰 +{consolationCoins} 金幣</div>
+              <div className="text-xs text-amber-300 font-bold mb-2">🎁 探索金幣箱（每通關一層各得一個）</div>
+              {consolationChests.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {consolationChests.map((c, i) => (
+                      <div key={i} className="flex items-center gap-1 bg-white/5 rounded-lg px-2 py-1">
+                        <span>{c.icon}</span>
+                        <span className="text-xs text-slate-300">{c.name}</span>
+                        <span className="text-xs text-amber-300 font-bold">+{c.coins}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-sm text-amber-300 font-black">💰 合計 +{consolationCoins} 金幣</div>
+                </>
+              ) : (
+                <div className="text-xs text-slate-500">未通關任何一層，無探索獎勵</div>
+              )}
             </div>
 
             <button onClick={onExit}

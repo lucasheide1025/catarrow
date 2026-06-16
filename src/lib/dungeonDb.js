@@ -109,7 +109,7 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
     const memberCount = memberIds.length;
     // 房主強度縮放：hostAtk / 12 決定怪物難度基底（0.7 ~ 2.0x）
     const hostAtk     = room.hostAtk || 10;
-    const hostScale   = Math.max(0.7, Math.min(2.0, hostAtk / 12));
+    const hostScale   = Math.max(0.8, Math.min(1.4, hostAtk / 18));
     // 人數加成：每多一名隊友，怪物 HP +10%，玩家 ATK +20%
     const hpMult         = 1.0 + (memberCount - 1) * 0.1;
     const memberAtkMult  = 1.0 + (memberCount - 1) * 0.2;

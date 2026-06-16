@@ -64,6 +64,32 @@ export function rollCardDrop(monster) {
   };
 }
 
+// ── 金幣寶箱（地下城每層通關掉落）──────────────────────────
+// 6 個等級對應怪物 tier，立即開箱給金幣
+export const COIN_CHEST_TIERS = {
+  common: { name:"木幣箱",   icon:"🪙", color:"#92400e", min:20,   max:50   },
+  rare:   { name:"銅幣箱",   icon:"🥉", color:"#b45309", min:60,   max:120  },
+  elite:  { name:"銀幣箱",   icon:"🥈", color:"#94a3b8", min:150,  max:250  },
+  fierce: { name:"金幣箱",   icon:"🥇", color:"#f59e0b", min:300,  max:500  },
+  boss:   { name:"寶石幣箱", icon:"💎", color:"#818cf8", min:600,  max:1000 },
+  mythic: { name:"傳說幣箱", icon:"👑", color:"#a855f7", min:1200, max:2000 },
+};
+
+// 層數 → 怪物 tier（地下城用）
+export function floorToMonsterTier(floorNum) {
+  if (floorNum <= 2) return "common";
+  if (floorNum <= 4) return "rare";
+  if (floorNum <= 6) return "elite";
+  return "fierce";
+}
+
+// 開一個金幣箱，回傳 { name, icon, color, coins }
+export function openCoinChest(monsterTier) {
+  const info = COIN_CHEST_TIERS[monsterTier] || COIN_CHEST_TIERS.common;
+  const coins = info.min + Math.floor(Math.random() * (info.max - info.min + 1));
+  return { name: info.name, icon: info.icon, color: info.color, coins };
+}
+
 // ── 以下供訪客模式使用（drawLoot 從 LOOT_TABLE_GUEST 抽）──
 export function drawLoot(table, monsterId, tier) {
   const total = table.reduce((s, item) => s + item.weight, 0);
