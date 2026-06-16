@@ -32,8 +32,9 @@ export default function AdminDungeon() {
     setBusy("");
   }
 
-  const used = members.filter(m => m.dungeonUsed);
-  const free = members.filter(m => !m.dungeonUsed);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const used = members.filter(m => m.lastDungeonDate === todayStr);
+  const free = members.filter(m => m.lastDungeonDate !== todayStr);
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">

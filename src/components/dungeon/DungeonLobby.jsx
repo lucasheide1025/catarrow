@@ -5,6 +5,7 @@ import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, updateDungeon
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards"; // [] 傳入，卡牌 collection 未訂閱故忽略
+import { getCatStatMult, getBondLevel } from "../../lib/catData";
 
 const MODES = [
   { id:"novice",  label:"新手",   icon:"🌱", desc:"HP×1.5，適合初學者"  },
@@ -41,9 +42,13 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip   = calcEquippedBonus([]);
-  const myCatId   = profile?.equippedCat?.catId || null;
-  const myCatName = profile?.equippedCat?.name  || "";
-  const catMult   = myCatId ? 1.1 : 1.0;
+  const myCatId   = profile?.equippedCat?.catId  || null;
+  const myCatName = profile?.equippedCat?.name   || "";
+  const myCatType = profile?.equippedCat?.type   || "allround";
+  const myCatBond = profile?.equippedCat?.bond   || 0;
+  const catMult   = myCatId
+    ? Math.max(1.1, getCatStatMult(myCatType, getBondLevel(myCatBond)))
+    : 1.0;
   const myHP  = Math.round(((_base.hp  || 0) + (_equip.hp  || 0)) * catMult);
   const myMaxHP = myHP;
   const myATK = Math.round(((_base.atk || 0) + (_equip.atk || 0)) * catMult);

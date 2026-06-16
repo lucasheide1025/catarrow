@@ -17,7 +17,7 @@ import {
   calcArcherStats, calcArcherPower, drawMatchedMonsters,
   calcDamage, calcCounterDamage, resolveHitPart,
 } from "../../lib/monsterData";
-import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, openCoinChest } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
@@ -139,6 +139,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [droppedMaterials, setDroppedMaterials] = useState([]);
   const [droppedCoins,    setDroppedCoins]     = useState(0);
   const [droppedCard,     setDroppedCard]      = useState(null);
+  const [droppedCoinChest, setDroppedCoinChest] = useState(null);
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
@@ -552,7 +553,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
     setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
-    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false);
+    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
   }
@@ -610,8 +611,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           sessionStorage.setItem("guest_coins", String(prev + total));
           setDroppedCoins(total);
         } else {
+          // 金幣 + 金幣寶箱
+          const coinChest = openCoinChest(monster.tier);
+          const totalCoins = baseCoins + coinChest.coins;
           setDroppedCoins(baseCoins);
-          addCoins(profile.id, baseCoins).catch(() => {});
+          setDroppedCoinChest(coinChest);
+          addCoins(profile.id, totalCoins).catch(() => {});
         }
 
         // 怪物卡片（1%）
@@ -1364,7 +1369,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           /* 射手掉落區 */
           <div className="w-full flex flex-col gap-3">
             {/* 即時掉落（材料、金幣、卡片）*/}
-            {(droppedMaterials.length > 0 || droppedCoins > 0 || droppedCard) && (
+            {(droppedMaterials.length > 0 || droppedCoins > 0 || droppedCard || droppedCoinChest) && (
               <div className="w-full rounded-2xl border-2 border-yellow-300 bg-yellow-50 p-3">
                 <div className="text-yellow-700 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
                 <div className="flex flex-wrap gap-2 justify-center">
@@ -1374,6 +1379,14 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                       <span className="text-2xl">🪙</span>
                       <span className="font-black text-yellow-800 text-sm">+{droppedCoins}</span>
                       <span className="text-yellow-600 text-xs">金幣</span>
+                    </div>
+                  )}
+                  {droppedCoinChest && (
+                    <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
+                      style={{ background: `${droppedCoinChest.color}22`, border: `1px solid ${droppedCoinChest.color}66`, animation:"mb-drop .6s ease .1s both" }}>
+                      <span className="text-2xl">{droppedCoinChest.icon}</span>
+                      <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
+                      <span className="text-yellow-600 text-xs font-bold">+{droppedCoinChest.coins}</span>
                     </div>
                   )}
                   {droppedMaterials.map((m,i) => (

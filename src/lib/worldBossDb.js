@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, addMaterials } from "./db";
+import { openCoinChest } from "./lootTable";
 import {
   WORLD_BOSSES, DEFAULT_REWARD, CONSOLATION_REWARD,
   LAST_HIT_EXTRA, buildKillAnnouncement, drawRandomBot, simulateBotRound,
@@ -175,8 +176,9 @@ export async function distributeWorldBossRewards(eventId) {
     for (const [mid, p] of Object.entries(participants)) {
       if (p.isGuest) continue;
 
-      // 金幣
-      await addCoins(mid, reward.coins || 0).catch(() => {});
+      // 金幣 + 金幣箱（世界王等級 = boss tier）
+      const coinChest = openCoinChest("boss");
+      await addCoins(mid, (reward.coins || 0) + coinChest.coins).catch(() => {});
 
       // 貓貓箱 + 黃金寶箱（寫入背包）
       const { addToChestInventory } = await import("./db").then(m => m).catch(() => ({}));

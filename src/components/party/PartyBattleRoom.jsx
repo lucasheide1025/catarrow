@@ -17,7 +17,7 @@ import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
-import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, openCoinChest } from "../../lib/lootTable";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","M"];
@@ -551,9 +551,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
       const material = reward.material ?? rollMaterialDrop(room.monster);
       const card     = reward.card     ?? rollCardDrop(room.monster);
+      const coinChest = openCoinChest(room.monster?.tier || "common");
       const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
-      addCoins(myId, coins).catch(() => {});
+      addCoins(myId, coins + coinChest.coins).catch(() => {});
       if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
       if (card)     addMonsterCard(myId, card).catch(() => {});
       if (!dexRecordedRef.current && room.monster?.id) {
@@ -561,7 +562,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
       saveBond("party");
-      setClaimResult({ coins, material, card });
+      setClaimResult({ coins, material, card, coinChest });
     } catch (e) {
       console.warn("handleClaim error:", e?.message);
     } finally {
@@ -1056,6 +1057,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                             <span className="text-xl">🪙</span>
                             <span className="text-yellow-200 font-black text-sm">+{claimResult.coins}</span>
                           </div>
+                          {claimResult.coinChest && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xl">{claimResult.coinChest.icon}</span>
+                              <span className="text-xs font-black" style={{ color: claimResult.coinChest.color }}>{claimResult.coinChest.name}</span>
+                              <span className="text-yellow-200 font-black text-xs">+{claimResult.coinChest.coins}</span>
+                            </div>
+                          )}
                           {claimResult.material && (
                             <div className="flex flex-col items-center gap-1">
                               <span className="text-xl">{claimResult.material.icon}</span>

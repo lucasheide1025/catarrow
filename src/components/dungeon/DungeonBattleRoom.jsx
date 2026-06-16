@@ -64,7 +64,7 @@ function ContractBadge({ contract }) {
 
 export default function DungeonBattleRoom({ roomId, onExit }) {
   const { profile } = useAuth();
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catStatMult, catName: myCatName } = useCatCompanion();
   const myId = profile?.id;
   const bondSavedRef = useRef(false);
 
@@ -84,6 +84,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const logEndRef        = useRef(null);
   const lastAnimKeyRef   = useRef(null);
   const revealTimersRef  = useRef([]);
+  const prevRoundKeyRef  = useRef(null); // "${floor}-${round}" 換回合才清箭
 
   const isHost = room?.hostId === myId;
   const me     = room?.members?.[myId] || {};
@@ -95,8 +96,13 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     const unsub = subscribeDungeonRoom(roomId, r => {
       setRoom(r);
       if (r && r.status === "active" && r.round !== undefined) {
-        setSubmitted(false);
-        setArrows([]);
+        // 只有「層＋回合」組合真的變了才清箭，避免其他人送出觸發時誤清
+        const key = `${r.currentFloor || 1}-${r.round}`;
+        if (key !== prevRoundKeyRef.current) {
+          prevRoundKeyRef.current = key;
+          setSubmitted(false);
+          setArrows([]);
+        }
       }
     });
     return () => unsub();
@@ -106,6 +112,12 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
+
+  // ── 進入新回合時觸發貓貓補助提示（整個回合只一次）────────────
+  useEffect(() => {
+    if (!room?.round || room?.status !== "active") return;
+    triggerCatAction();
+  }, [room?.round, room?.currentFloor]); // eslint-disable-line
 
   // ── 小回合動畫（新 log 到 → 逐箭播放）────────────────────────
   useEffect(() => {
@@ -193,7 +205,6 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   function addArrow(label) {
     if (arrows.length >= 6) return;
     sfxTap();
-    triggerCatAction();
     setArrows(prev => [...prev, { label, score: SCORE_MAP[label] ?? 0 }]);
   }
 
@@ -429,7 +440,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       {/* ── Header ── */}
       <div className="shrink-0 px-4 pt-3 pb-2 border-b border-white/10">
         <div className="flex items-center justify-between mb-1">
-          <button onClick={() => leaveDungeonRoom(roomId, myId, isHost).then(onExit)}
+          <button onClick={() => { leaveDungeonRoom(roomId, myId, isHost).catch(() => {}); onExit?.(); }}
             className="text-slate-500 text-xs">✕ 離開</button>
           <div className="text-xs text-slate-400 font-mono">
             🏰 第 {room.currentFloor}/{room.totalFloors} 層 · 回合 {(room.round||1) - 1 || "–"}
@@ -624,6 +635,13 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
         </div>
       ) : (
         <div className="shrink-0 border-t border-white/10 px-3 pt-3 pb-4">
+          {hasCat && (
+            <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg bg-indigo-900/40 border border-indigo-500/30">
+              <span className="text-sm">🐱</span>
+              <span className="text-indigo-300 text-xs font-bold flex-1">{myCatName} 陪同中</span>
+              <span className="text-indigo-200 text-xs">攻擊 ×{Math.max(1.1, catStatMult).toFixed(2)}</span>
+            </div>
+          )}
           <div className="flex gap-1 mb-2 min-h-[28px] flex-wrap">
             {arrows.map((a, i) => (
               <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label] || "bg-slate-600 text-white"}`}>{a.label}</span>
@@ -672,7 +690,12 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
           entry={lastEntry}
           room={room}
           status={status}
-          onContinue={() => setShowRoundResult(false)}
+          onContinue={() => {
+            setShowRoundResult(false);
+            // 確保進入下一回合時輸入狀態乾淨（防止 snapshot 延遲導致 submitted 殘留）
+            setSubmitted(false);
+            setArrows([]);
+          }}
         />
       )}
     </div>

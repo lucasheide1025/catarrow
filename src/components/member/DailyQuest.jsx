@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   submitCheckin, submitSimpleCheckin, subscribeMyCheckin, rerollCheckinBuff, markQuestDone,
-  getDailyQuestConfig, cancelCheckin,
+  getDailyQuestConfig, cancelCheckin, addCoins,
 } from "../../lib/db";
+import { openCoinChest } from "../../lib/lootTable";
 import { drawBuff } from "../../lib/buffPool";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
@@ -16,6 +17,7 @@ import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
 
 const CHEST_LABEL = { wood: "📦 木頭寶箱", iron: "🧰 鐵寶箱", gold: "✨ 黃金寶箱" };
+const CHEST_TO_TIER = { wood: "common", iron: "rare", gold: "elite" };
 
 // 三類固定任務：分數挑戰(5米簡單)、命中挑戰(十箭)、遠距挑戰(13~18米)
 function generateTasks(config) {
@@ -189,6 +191,9 @@ export default function DailyQuest({ onJoinParty }) {
     if (pass) {
       sfxSuccess();
       await markQuestDone(checkin.id, { type: task.type, value: val, target: goalToHit, taskId: task.id });
+      const tier = CHEST_TO_TIER[task.chest] || "common";
+      const coinChest = openCoinChest(tier);
+      addCoins(profile.id, coinChest.coins).catch(() => {});
     } else {
       sfxSoftFail();
       await reroll();

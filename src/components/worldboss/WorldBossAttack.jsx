@@ -1,6 +1,7 @@
 // src/components/worldboss/WorldBossAttack.jsx — 世界大 Boss 戰鬥室
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot } from "../../lib/worldBossDb";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
@@ -131,6 +132,7 @@ const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
   const { profile } = useAuth();
+  const { saveBond } = useCatCompanion();
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const _base   = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
@@ -358,6 +360,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     processingRef.current = false;
     if (res.ok) {
       if (res.defeated) sfxVictory(); else sfxSuccess();
+      saveBond("worldboss");
       onComplete?.(res);
     }
   }

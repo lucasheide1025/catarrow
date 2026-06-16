@@ -486,7 +486,7 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
     const memberIds    = Object.keys(room.members || {});
 
     const hostAtk   = room.hostAtk || 10;
-    const hostScale = Math.max(0.7, Math.min(2.0, hostAtk / 12));
+    const hostScale = Math.max(0.8, Math.min(1.4, hostAtk / 18)); // 與 startDungeonFloor 一致
     const hpMult    = (1.0 + (memberIds.length - 1) * 0.1) * eliteBoost * (mods.monsterHpMult || 1);
     const atkMult   = eliteBoost * (mods.monsterAtkMult || 1);
     const scaledHP  = Math.round(nextMonster.hp  * ms.hp  * hpMult * hostScale);

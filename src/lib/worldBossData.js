@@ -107,7 +107,7 @@ export const DEFAULT_REWARD = {
   catBoxes:   1,   // 貓貓箱數量
   goldChests: 2,   // 黃金寶箱數量
   coins:      500, // 金幣
-  cardChance: 0.01, // 1% 卡片掉落
+  cardChance: 0.10, // 10% 卡片掉落
 };
 
 // 未擊殺但時間到 → 安慰獎
