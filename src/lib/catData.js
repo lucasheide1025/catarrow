@@ -66,9 +66,17 @@ export const CAT_TYPES = {
     id: "attack", label: "攻擊型", icon: "⚔️",
     desc: "增加暴擊機率和傷害加成",
     skills: [
-      { bond: 0,  name: "利爪一擊",  desc: "10% 機率暴擊 +20%" },
-      { bond: 5,  name: "連環撲擊",  desc: "10% 機率連續觸發兩次傷害" },
-      { bond: 10, name: "全力一擊",  desc: "5% 機率本箭傷害 ×3" },
+      { bond: 0,  name: "利爪一擊",    isSkill: true,  desc: "10% 機率暴擊 +20%" },
+      { bond: 1,  name: "初露鋒芒",    isSkill: false, desc: "射手 ATK +2%，暴擊 +1%" },
+      { bond: 2,  name: "敏銳直覺",    isSkill: false, desc: "射手 ATK +4%，暴擊 +2%" },
+      { bond: 3,  name: "狩獵本能",    isSkill: false, desc: "射手 ATK +6%，暴擊 +3%" },
+      { bond: 4,  name: "爪尖磨礪",    isSkill: false, desc: "射手 ATK +8%，暴擊 +4%" },
+      { bond: 5,  name: "連環撲擊",    isSkill: true,  desc: "10% 機率連續觸發兩次傷害；ATK +10%" },
+      { bond: 6,  name: "野性覺醒",    isSkill: false, desc: "射手 ATK +12%，暴擊 +6%" },
+      { bond: 7,  name: "掠食者直覺",  isSkill: false, desc: "射手 ATK +14%，暴擊 +8%" },
+      { bond: 8,  name: "獵王之力",    isSkill: false, desc: "射手 ATK +16%，暴擊 +10%" },
+      { bond: 9,  name: "極限突破",    isSkill: false, desc: "射手 ATK +18%，暴擊 +12%" },
+      { bond: 10, name: "全力一擊",    isSkill: true,  desc: "5% 機率本箭傷害 ×3；ATK +20%，暴擊 +15%" },
     ],
     color: "#ef4444",
   },
@@ -76,9 +84,17 @@ export const CAT_TYPES = {
     id: "defense", label: "防禦型", icon: "🛡️",
     desc: "減少 Boss 反擊傷害並回復 HP",
     skills: [
-      { bond: 0,  name: "護主擋架",  desc: "10% 機率抵消 Boss 反擊 30%" },
-      { bond: 5,  name: "療傷舔傷",  desc: "10% 機率回復 HP +50" },
-      { bond: 10, name: "生命連結",  desc: "5% 機率完全免疫本次 Boss 反擊" },
+      { bond: 0,  name: "護主擋架",    isSkill: true,  desc: "10% 機率抵消 Boss 反擊 30%" },
+      { bond: 1,  name: "鐵壁初成",    isSkill: false, desc: "射手 DEF +3，最大 HP +20" },
+      { bond: 2,  name: "堅忍體魄",    isSkill: false, desc: "射手 DEF +6，最大 HP +40" },
+      { bond: 3,  name: "鐵甲紋身",    isSkill: false, desc: "射手 DEF +9，最大 HP +60" },
+      { bond: 4,  name: "護盾餘韻",    isSkill: false, desc: "射手 DEF +12，最大 HP +80" },
+      { bond: 5,  name: "療傷舔傷",    isSkill: true,  desc: "10% 機率回復 HP +50；DEF +15" },
+      { bond: 6,  name: "金剛意志",    isSkill: false, desc: "射手 DEF +18，最大 HP +120" },
+      { bond: 7,  name: "不屈之盾",    isSkill: false, desc: "射手 DEF +21，最大 HP +140" },
+      { bond: 8,  name: "鋼鐵臂甲",    isSkill: false, desc: "射手 DEF +24，最大 HP +160" },
+      { bond: 9,  name: "永恆護衛",    isSkill: false, desc: "射手 DEF +27，最大 HP +180" },
+      { bond: 10, name: "生命連結",    isSkill: true,  desc: "5% 機率完全免疫本次 Boss 反擊；DEF +30，最大 HP +200" },
     ],
     color: "#3b82f6",
   },
@@ -86,9 +102,17 @@ export const CAT_TYPES = {
     id: "allround", label: "全能型", icon: "✨",
     desc: "均衡加成，掉寶率和金幣加成",
     skills: [
-      { bond: 0,  name: "幸運爪印",  desc: "10% 機率掉寶 +1" },
-      { bond: 5,  name: "金幣嗅覺",  desc: "10% 機率金幣獎勵 +20%" },
-      { bond: 10, name: "全場加持",  desc: "5% 機率全屬性 +15% 持續一回合" },
+      { bond: 0,  name: "幸運爪印",    isSkill: true,  desc: "10% 機率掉寶 +1" },
+      { bond: 1,  name: "均衡成長",    isSkill: false, desc: "射手全屬性 +1%，金幣 +1%" },
+      { bond: 2,  name: "靈敏感知",    isSkill: false, desc: "射手全屬性 +2%，金幣 +2%" },
+      { bond: 3,  name: "協調發展",    isSkill: false, desc: "射手全屬性 +3%，金幣 +3%" },
+      { bond: 4,  name: "四象調和",    isSkill: false, desc: "射手全屬性 +4%，金幣 +4%" },
+      { bond: 5,  name: "金幣嗅覺",    isSkill: true,  desc: "10% 機率金幣獎勵 +20%；全屬性 +5%" },
+      { bond: 6,  name: "天賦加持",    isSkill: false, desc: "射手全屬性 +6%，金幣 +6%" },
+      { bond: 7,  name: "萬能之路",    isSkill: false, desc: "射手全屬性 +7%，金幣 +7%" },
+      { bond: 8,  name: "箭場守護",    isSkill: false, desc: "射手全屬性 +8%，金幣 +8%" },
+      { bond: 9,  name: "無盡潛力",    isSkill: false, desc: "射手全屬性 +9%，金幣 +9%" },
+      { bond: 10, name: "全場加持",    isSkill: true,  desc: "5% 機率全屬性 +15% 持續一回合；全屬性 +10%" },
     ],
     color: "#f59e0b",
   },
@@ -149,9 +173,18 @@ export function getCatChapters(catId, isDeceased = false) {
 export function getCatBattleBonus(catType, bondLevel) {
   const lv = bondLevel || 0;
   if (catType === "attack")  return { atkMult: 1 + lv * 0.02, critsBonus: lv * 0.01 };
-  if (catType === "defense") return { defBonus: lv * 3, hpRegen: lv * 2 };
+  if (catType === "defense") return { defBonus: lv * 3, hpBonus: lv * 20 };
   // allround
-  return { lootBonus: lv * 0.02, coinBonus: lv * 0.02 };
+  return { statMult: 1 + lv * 0.01, coinBonus: lv * 0.01 };
+}
+
+// 貓貓對射手基礎值的加乘（用於 useCatCompanion catStatMult）
+export function getCatStatMult(catType, bondLevel) {
+  const lv = bondLevel || 0;
+  if (!lv) return 1.0;
+  if (catType === "attack")  return 1 + lv * 0.02;   // 攻擊型每級 +2% ATK
+  if (catType === "defense") return 1 + lv * 0.015;  // 防禦型每級 +1.5% 全體
+  return 1 + lv * 0.01;                              // 全能型每級 +1%
 }
 
 // ── 抽貓機率（開貓貓箱）────────────────────────────────────

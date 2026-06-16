@@ -82,8 +82,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   const processingRef    = useRef(false);
   const logEndRef        = useRef(null);
-  const prevLogLenRef    = useRef(0);
-  const logInitedRef     = useRef(false);
+  const lastAnimKeyRef   = useRef(null);
   const revealTimersRef  = useRef([]);
 
   const isHost = room?.hostId === myId;
@@ -111,15 +110,13 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   // ── 小回合動畫（新 log 到 → 逐箭播放）────────────────────────
   useEffect(() => {
     const len = room?.log?.length || 0;
-    if (!logInitedRef.current) {
-      logInitedRef.current = true;
-      prevLogLenRef.current = len;
-      return;
-    }
-    if (len <= prevLogLenRef.current) return;
-    prevLogLenRef.current = len;
+    if (len === 0) return;
     const entry = room.log[len - 1];
     if (!entry) return;
+    // 用 floor+round 組合鍵避免換層後 log 清空造成動畫跳過
+    const key = `${room.currentFloor || 1}-${entry.round}`;
+    if (key === lastAnimKeyRef.current) return;
+    lastAnimKeyRef.current = key;
 
     revealTimersRef.current.forEach(clearTimeout);
     revealTimersRef.current = [];
@@ -154,7 +151,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       else sfxRoundEnd();
     }, delay + 500);
     revealTimersRef.current.push(ct);
-  }, [room?.log?.length]); // eslint-disable-line
+  }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
 
   // ── 所有人 ready → 房主結算 ──────────────────────────────────
   useEffect(() => {
@@ -271,14 +268,100 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   if (status === "completed" && !liveEntry && !showRoundResult) {
     const won = room?.result === "win";
     if (won && !bondSavedRef.current) { bondSavedRef.current = true; saveBond("dungeon"); }
+
+    if (!won) {
+      // 失敗結算畫面
+      const floorsCleared = (room.currentFloor || 1) - 1;
+      const allPlayerLogs  = (room.log || []).flatMap(e => e.playerLog || []);
+      const maxSingleDmg   = allPlayerLogs.length
+        ? Math.max(...allPlayerLogs.map(p => p.dmg || 0))
+        : 0;
+      const consolationCoins = floorsCleared * 20;
+      const partyNames = Object.values(room.members || {}).map(m => m.name).filter(Boolean);
+
+      return (
+        <div className="h-[100dvh] overflow-y-auto flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+          <div className="flex flex-col items-center px-6 pt-10 pb-6 text-center gap-4">
+            <div className="text-7xl">💀</div>
+            <div className="text-3xl font-black">全員陣亡</div>
+            <div className="text-slate-400 text-sm">被《{room.monster?.icon}{room.monster?.name}》擊敗</div>
+          </div>
+
+          <div className="px-5 space-y-3 pb-8">
+            {/* 探索成果 */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+              <div className="text-xs text-slate-400 font-bold mb-1">📊 探索成果</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white/5 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-indigo-300">{room.currentFloor}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">到達層數</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-amber-300">{floorsCleared}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">通關層數</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-rose-300">{maxSingleDmg}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">本層最高單人傷</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-emerald-300">+{consolationCoins}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">探索金幣</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 隊伍 */}
+            {partyNames.length > 0 && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-bold mb-2">🧙 隊伍成員</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.values(room.members || {}).map((m, i) => (
+                    <div key={i} className={`text-sm px-3 py-1.5 rounded-xl border ${m.alive ? "border-emerald-500/30 bg-emerald-900/20 text-emerald-300" : "border-rose-500/30 bg-rose-900/20 text-rose-300"}`}>
+                      {m.alive ? "🧙" : "💀"} {m.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 本層戰鬥紀錄摘要 */}
+            {(room.log || []).length > 0 && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-bold mb-2">⚔️ 本層戰鬥（{room.log.length} 回合）</div>
+                <div className="space-y-1.5">
+                  {(room.log || []).map((entry, i) => (
+                    <div key={i} className="flex justify-between text-xs text-slate-300">
+                      <span className="text-slate-500">第 {entry.round} 回合</span>
+                      <span className="text-amber-300 font-bold">傷害 {entry.totalDmg}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 安慰獎說明 */}
+            <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4">
+              <div className="text-xs text-amber-300 font-bold mb-1">🎁 探索獎勵</div>
+              <div className="text-xs text-slate-400">即使失敗，探索過程仍可獲得金幣！（每通關 1 層 +20 金幣）</div>
+              <div className="text-sm text-amber-300 font-black mt-2">💰 +{consolationCoins} 金幣</div>
+            </div>
+
+            <button onClick={onExit}
+              className="w-full py-4 rounded-2xl font-black bg-white/10 text-slate-300 text-lg active:scale-95">
+              返回大廳
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
-        <div className="text-7xl">{won ? "🏆" : "💀"}</div>
-        <div className="text-3xl font-black">{won ? "地下城攻略完成！" : "全員陣亡"}</div>
-        <div className="text-slate-400 text-sm">
-          {won ? `恭喜通關全 ${room.totalFloors} 層，金幣收益 ×2！` : "下次再挑戰"}
-        </div>
-        {isHost && won && (
+        <div className="text-7xl">🏆</div>
+        <div className="text-3xl font-black">地下城攻略完成！</div>
+        <div className="text-slate-400 text-sm">恭喜通關全 {room.totalFloors} 層，金幣收益 ×2！</div>
+        {isHost && (
           <button onClick={handleClaim}
             className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg">
             💰 領取獎勵
@@ -588,7 +671,8 @@ function RoundResultOverlay({ entry, room, status, onContinue }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/88 flex flex-col items-center justify-center px-5 gap-5 text-white">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center px-5 gap-5 text-white"
+      style={{ background: "rgba(15,23,42,0.97)" }}>
       <div className="text-6xl">{icon}</div>
       <div className="text-2xl font-black text-center whitespace-pre-line">{title}</div>
 

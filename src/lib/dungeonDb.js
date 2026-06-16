@@ -493,15 +493,13 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
     const scaledAtk = Math.round(nextMonster.atk * ms.atk * atkMult * hostScale);
     const scaledDef = Math.round(nextMonster.def * ms.def);
 
-    // 持有契約重置的人重抽任務，其他人保留
+    // 每換一層怪物就重新抽任務
     const aliveIds = memberIds.filter(id => room.members[id].alive);
     const upd = {};
     for (const id of aliveIds) {
-      const m = room.members[id];
-      const newContract = m.contractReset ? rerollContract() : m.contract;
       upd[`members.${id}.arrows`]        = [];
       upd[`members.${id}.ready`]         = false;
-      upd[`members.${id}.contract`]      = newContract;
+      upd[`members.${id}.contract`]      = rerollContract();
       upd[`members.${id}.contractReset`] = false;
     }
 

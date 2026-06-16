@@ -2,6 +2,7 @@
 import { useState, useCallback } from "react";
 import { useAuth } from "./useAuth";
 import { addCatBond } from "../lib/catDb";
+import { getBondLevel, getCatStatMult } from "../lib/catData";
 
 const CAT_MESSAGES = {
   attack: [
@@ -47,8 +48,9 @@ export function useCatCompanion() {
     await addCatBond(profile.id, catId, source).catch(() => {});
   }, [profile?.id, catId]);
 
-  // 貓貓神教光環：有裝備貓貓時全能力 +10%
-  const catStatMult = hasCat ? 1.1 : 1.0;
+  // 貓貓光環：依羈絆等級提升射手基礎值
+  const bondLv = hasCat ? getBondLevel(equippedCat?.bond || 0) : 0;
+  const catStatMult = hasCat ? Math.max(1.0, getCatStatMult(catType, bondLv)) : 1.0;
 
   return { equippedCat, catId, catName, catType, hasCat, catStatMult, catMsg, clearCatMsg, triggerCatAction, saveBond };
 }

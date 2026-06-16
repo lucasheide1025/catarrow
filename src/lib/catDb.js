@@ -100,8 +100,10 @@ export async function equipCat(memberId, catId, type) {
   try {
     const cat = CATS[catId];
     if (!cat) return { ok: false, reason: "貓咪不存在" };
+    const catSnap = await getDoc(catRef(memberId, catId));
+    const bond = catSnap.exists() ? (catSnap.data().bond || 0) : 0;
     await updateDoc(doc(db, "members", memberId), {
-      equippedCat: { catId, name: cat.name, type, color: cat.color },
+      equippedCat: { catId, name: cat.name, type, color: cat.color, bond },
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
@@ -122,6 +124,12 @@ export async function addCatBond(memberId, catId, source = "monster") {
   const amount   = bonusMap[source] || 1;
   try {
     await updateDoc(catRef(memberId, catId), { bond: increment(amount) });
+    // 若此貓正在裝備中，同步更新 equippedCat.bond
+    const memberSnap = await getDoc(doc(db, "members", memberId));
+    if (memberSnap.data()?.equippedCat?.catId === catId) {
+      const newBond = (memberSnap.data()?.equippedCat?.bond || 0) + amount;
+      await updateDoc(doc(db, "members", memberId), { "equippedCat.bond": newBond });
+    }
     return { ok: true, amount };
   } catch (e) { return { ok: false, reason: e.message }; }
 }

@@ -133,12 +133,18 @@ function StoryReader({ chapter, onClose }) {
         {/* ── 內文頁 ── */}
         {pageIdx >= 0 && page && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* 插圖 */}
+            {/* 插圖：key 強制換圖時完整重掛，避免舊圖殘留 */}
             <div style={{ flexShrink: 0 }}>
-              <StoryImage src={page.img} accent={chapter.accent}/>
+              <StoryImage key={page.img || pageIdx} src={page.img} accent={chapter.accent}/>
             </div>
 
-            {/* 文字（可捲動）*/}
+            {/* 文字：逐行淡入 */}
+            <style>{`
+              @keyframes storyLineIn {
+                from { opacity: 0; transform: translateY(8px); }
+                to   { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
             <div style={{
               flex: 1, overflowY: "auto",
               padding: "24px 20px 100px",
@@ -147,7 +153,16 @@ function StoryReader({ chapter, onClose }) {
               letterSpacing: "0.03em",
               fontFamily: `"Hiragino Mincho ProN", "Yu Mincho", "Georgia", serif`,
             }}>
-              {page.text}
+              {(page.text || "").split("\n").map((line, i) => (
+                <div key={`${pageIdx}-${i}`} style={{
+                  opacity: 0,
+                  animation: "storyLineIn 0.55s ease forwards",
+                  animationDelay: `${i * 0.18}s`,
+                  minHeight: line ? undefined : "1em",
+                }}>
+                  {line || " "}
+                </div>
+              ))}
             </div>
           </div>
         )}
