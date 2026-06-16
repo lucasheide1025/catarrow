@@ -5,6 +5,7 @@ import { subscribeActiveWorldBoss } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
+import { sfxTap } from "../../lib/sound";
 
 function HPBar({ current, max }) {
   const pct  = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
@@ -205,14 +206,22 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           「{boss.desc}」
         </div>
 
-        {/* 參戰者小圖示列 */}
+        {/* 參戰者小圖示列（最多顯示 8 個 + 餘數） */}
         {partList.length > 0 && (
           <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
             <div className="text-xs text-slate-400 font-bold mb-3">⚔️ 參戰勇者（{total}人）</div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {partList.map(([id, p]) => (
+            <div className="flex gap-2 flex-wrap">
+              {partList.slice(0, 8).map(([id, p]) => (
                 <ParticipantAvatar key={id} name={p.name} isGuest={p.isGuest}/>
               ))}
+              {partList.length > 8 && (
+                <div className="flex flex-col items-center gap-0.5" style={{ minWidth: 36 }}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black border-2 border-white/20 bg-slate-700">
+                    +{partList.length - 8}
+                  </div>
+                  <div className="text-[9px] text-slate-500">更多</div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -272,10 +281,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 固定底部按鈕 */}
-      <div className="shrink-0 absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-        style={{ background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
+      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-3 z-30"
+        style={{ background: "linear-gradient(0deg, #0f172a 85%, transparent)" }}>
         <button
-          onClick={() => setInBattle(true)}
+          onClick={() => { sfxTap(); setInBattle(true); }}
           disabled={attackedToday || event.status !== "active"}
           className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
           style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
