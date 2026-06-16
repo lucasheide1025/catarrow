@@ -189,6 +189,12 @@ export default function MemberApp() {
             ⚔️ 決鬥進行中 — 點此回到戰場
           </button>
         )}
+        {dungeonRoomId && page !== "dungeon-room" && (
+          <button onClick={() => setPage("dungeon-room")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#7c3aed,#1e1b4b)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            🏰 地下城進行中 — 點此回到地下城
+          </button>
+        )}
       </div>
 
       {/* 頁面內容 */}

@@ -234,6 +234,18 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // guestNotifications：訪客留信箱，免登入可寫，禁讀
+    match /guestNotifications/{docId} {
+      allow write: if true;
+      allow read:  if false;
+    }
+
+    // storyChapterConfig：故事本章節設定，admin 寫，登入者讀
+    match /storyChapterConfig/{key} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
     // 遊戲背包（素材/寶箱/藥水/碎片）：登入者可讀寫
     match /materialInventory/{docId} {
       allow read, write: if isLoggedIn();
