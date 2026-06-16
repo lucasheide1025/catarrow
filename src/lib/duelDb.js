@@ -426,6 +426,21 @@ export async function removePlayerFromRoom(roomId, team, memberId) {
   } catch (e) { return { ok: false }; }
 }
 
+// ── 套用貓貓光環至房間成員（射手進場時，只套一次）──────────
+export async function applyPlayerCatToRoom(roomId, team, memberId, catName, catMult) {
+  try {
+    const ref  = doc(db, DUEL, roomId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const memberData = snap.data()?.[`team${team}`]?.[memberId];
+    if (!memberData || memberData.catName) return; // 已套用過就跳過
+    await updateDoc(ref, {
+      [`team${team}.${memberId}.catName`]: catName,
+      [`team${team}.${memberId}.atk`]: Math.round(memberData.atk * catMult),
+    });
+  } catch {}
+}
+
 // ── 不對等模式：依對手人數強化房主數值（開始時呼叫一次）────
 export async function scaleUnevenHost(roomId, room) {
   try {

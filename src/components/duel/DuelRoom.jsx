@@ -11,6 +11,7 @@ import {
   updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
   clearDuelProcessing, proposeRematch, voteRematch, clearRematch,
   removePlayerFromRoom, resetWithRedistribution,
+  skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
 import { generateBotArrows } from "../../lib/botUtils";
 
@@ -140,7 +141,7 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, catStatMult, hasCat, catName: myCatName } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
@@ -155,11 +156,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [duelStats, setDuelStats]     = useState(null);
   const [showDuelCard, setShowDuelCard] = useState(false);
   const [cheerMsg, setCheerMsg]       = useState("");
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
   const lastLogLen      = useRef(0);
   const lastCheerTs     = useRef(0);
   const heartbeatRef    = useRef(null);
-  const lastRoundFired  = useRef(0); // 防止同一回合重複觸發 processDuelRound
+  const lastRoundFired  = useRef(0);
+  const catAppliedRef   = useRef(false);
+  const prevDuelRound   = useRef(0);
 
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
@@ -183,6 +187,24 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     heartbeatRef.current = setInterval(() => updateDuelHeartbeat(roomId, myId), 30000);
     return () => clearInterval(heartbeatRef.current);
   }, [roomId, myId]);
+
+  // ── 貓貓光環：進房後套用一次（只寫一次 Firestore）─────────
+  useEffect(() => {
+    if (!room || !myTeam || !hasCat || catAppliedRef.current) return;
+    const myData = (myTeam === "A" ? room.teamA : room.teamB)?.[myId];
+    if (!myData) return;
+    if (myData.catName) { catAppliedRef.current = true; return; } // 已套用
+    catAppliedRef.current = true;
+    applyPlayerCatToRoom(roomId, myTeam, myId, myCatName, Math.max(1.1, catStatMult)).catch(() => {});
+  }, [room, myTeam]); // eslint-disable-line
+
+  // ── 每回合開始時觸發貓貓補助訊息（非每箭）──────────────────
+  useEffect(() => {
+    if (!room?.round || room?.status !== "active") return;
+    if (room.round === prevDuelRound.current) return;
+    prevDuelRound.current = room.round;
+    triggerCatAction();
+  }, [room?.round, room?.status]); // eslint-disable-line
 
   // ── 30 秒未送出箭分提醒 ─────────────────────────────────
   const needsSubmit = !submitted && (room?.status === "active") && !eventPhase
@@ -346,7 +368,6 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   function addArrow(score, label) {
     if (myArrows.length >= ARROWS || submitted) return;
     sfxArrowHit();
-    triggerCatAction();
     setMyArrows(prev => [...prev, { score, label }]);
   }
   function removeArrow() {
@@ -605,6 +626,13 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const canSubmit = myArrows.length >= ARROWS && !submitted;
   const amAlive   = myPlayer?.alive !== false;
 
+  // Host 斷線偵測：90 秒未心跳視為可能斷線
+  const STALE_MS = 90_000;
+  const staleMembers = (room.status === "active" && isHost)
+    ? [...allA.map(([id, m]) => ({ id, team:"A", m })), ...allB.map(([id, m]) => ({ id, team:"B", m }))]
+      .filter(({ id, m }) => m.alive && !m.ready && id !== myId && room.lastSeen?.[id] && Date.now() - room.lastSeen[id] > STALE_MS)
+    : [];
+
   // 本回合我攻擊的目標（從最新 log entry）
   const myLastAtk = revealEntry?.attacks?.find(a => a.attackerId === myId);
 
@@ -618,7 +646,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/30 shrink-0">
-        <button onClick={onLeave} className="text-slate-400 text-sm">← 離開</button>
+        <button onClick={() => { if (room?.status === "active") { setConfirmLeave(true); } else { onLeave(); } }}
+          className="text-slate-400 text-sm">← 離開</button>
         <div className="text-white font-black text-sm">
           ⚔️ {room.type} 決鬥 · 第 {(room.round || 1) - (isRevealing ? 1 : 0)} 回合
         </div>
@@ -630,6 +659,21 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         <div className="mx-4 mt-2 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-300 text-sm font-bold text-center py-2 shrink-0"
           style={{ animation:"slide-in .3s ease" }}>
           {cheerMsg}
+        </div>
+      )}
+
+      {/* 斷線玩家提示（只有 host 看到） */}
+      {staleMembers.length > 0 && (
+        <div className="mx-4 mt-2 rounded-xl bg-orange-900/40 border border-orange-500/40 px-3 py-2 shrink-0">
+          {staleMembers.map(({ id, team, m }) => (
+            <div key={id} className="flex items-center justify-between text-xs">
+              <span className="text-orange-300">📡 {m.name} 可能斷線</span>
+              <button onClick={() => skipDisconnected(roomId, team, id).catch(() => {})}
+                className="text-red-300 border border-red-500/40 rounded-lg px-2 py-0.5 font-bold ml-2">
+                跳過
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -731,6 +775,29 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
       {!amAlive && (
         <div className="px-4 pb-2 text-center text-slate-500 text-sm shrink-0">
           💀 你已倒下，等待本場結束…
+        </div>
+      )}
+
+      {/* 離開確認 overlay */}
+      {confirmLeave && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-xs w-full border border-slate-600 text-center">
+            <div className="text-3xl mb-2">⚠️</div>
+            <div className="text-white font-black mb-1">確定離開決鬥？</div>
+            <div className="text-slate-400 text-sm mb-5">離開中途將視為放棄，其他玩家可繼續對決。</div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmLeave(false)}
+                className="flex-1 py-2.5 rounded-xl font-black text-slate-300 border border-slate-600 bg-slate-700">
+                取消
+              </button>
+              <button onClick={async () => {
+                if (myTeam) await removePlayerFromRoom(roomId, myTeam, myId).catch(() => {});
+                onLeave();
+              }} className="flex-1 py-2.5 rounded-xl font-black text-red-300 border border-red-600/40 bg-red-900/20">
+                確定離開
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

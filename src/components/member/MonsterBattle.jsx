@@ -140,6 +140,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [droppedCoins,    setDroppedCoins]     = useState(0);
   const [droppedCard,     setDroppedCard]      = useState(null);
   const [droppedCoinChest, setDroppedCoinChest] = useState(null);
+  const [chestOpened,     setChestOpened]      = useState(false);
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
@@ -553,7 +554,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
     setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
-    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
+    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null); setChestOpened(false);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
   }
@@ -613,10 +614,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         } else {
           // 金幣 + 金幣寶箱
           const coinChest = openCoinChest(monster.tier);
-          const totalCoins = baseCoins + coinChest.coins;
           setDroppedCoins(baseCoins);
           setDroppedCoinChest(coinChest);
-          addCoins(profile.id, totalCoins).catch(() => {});
+          setChestOpened(false);
+          addCoins(profile.id, baseCoins).catch(() => {}); // 寶箱金幣等玩家點開才加
         }
 
         // 怪物卡片（1%）
@@ -1382,12 +1383,26 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                     </div>
                   )}
                   {droppedCoinChest && (
-                    <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
-                      style={{ background: `${droppedCoinChest.color}22`, border: `1px solid ${droppedCoinChest.color}66`, animation:"mb-drop .6s ease .1s both" }}>
-                      <span className="text-2xl">{droppedCoinChest.icon}</span>
-                      <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
-                      <span className="text-yellow-600 text-xs font-bold">+{droppedCoinChest.coins}</span>
-                    </div>
+                    chestOpened ? (
+                      <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
+                        style={{ background:`${droppedCoinChest.color}22`, border:`1px solid ${droppedCoinChest.color}66` }}>
+                        <span className="text-2xl">{droppedCoinChest.icon}</span>
+                        <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
+                        <span className="text-yellow-600 text-xs font-bold">+{droppedCoinChest.coins} 金幣</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          addCoins(profile.id, droppedCoinChest.coins).catch(() => {});
+                          setChestOpened(true);
+                        }}
+                        className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 border-amber-400/60 bg-amber-50 active:scale-90 transition-transform animate-pulse"
+                      >
+                        <span className="text-2xl">🎁</span>
+                        <span className="font-black text-amber-700 text-xs">{droppedCoinChest.name}</span>
+                        <span className="text-amber-500 text-xs">點我開箱</span>
+                      </button>
+                    )
                   )}
                   {droppedMaterials.map((m,i) => (
                     <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-100 rounded-xl"

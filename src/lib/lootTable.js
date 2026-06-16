@@ -67,12 +67,12 @@ export function rollCardDrop(monster) {
 // ── 金幣寶箱（地下城每層通關掉落）──────────────────────────
 // 6 個等級對應怪物 tier，立即開箱給金幣
 export const COIN_CHEST_TIERS = {
-  common: { name:"木幣箱",   icon:"🪙", color:"#92400e", min:20,   max:50   },
-  rare:   { name:"銅幣箱",   icon:"🥉", color:"#b45309", min:60,   max:120  },
-  elite:  { name:"銀幣箱",   icon:"🥈", color:"#94a3b8", min:150,  max:250  },
-  fierce: { name:"金幣箱",   icon:"🥇", color:"#f59e0b", min:300,  max:500  },
-  boss:   { name:"寶石幣箱", icon:"💎", color:"#818cf8", min:600,  max:1000 },
-  mythic: { name:"傳說幣箱", icon:"👑", color:"#a855f7", min:1200, max:2000 },
+  common: { name:"金幣木寶箱",   icon:"🪵", color:"#92400e", min:20,   max:50   },
+  rare:   { name:"金幣鐵寶箱",   icon:"⚙️", color:"#b45309", min:60,   max:120  },
+  elite:  { name:"金幣銀寶箱",   icon:"🥈", color:"#94a3b8", min:150,  max:250  },
+  fierce: { name:"金幣金寶箱",   icon:"🥇", color:"#f59e0b", min:300,  max:500  },
+  boss:   { name:"金幣寶石寶箱", icon:"💎", color:"#818cf8", min:600,  max:1000 },
+  mythic: { name:"金幣傳說寶箱", icon:"👑", color:"#a855f7", min:1200, max:2000 },
 };
 
 // 層數 → 怪物 tier（地下城用）

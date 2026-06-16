@@ -16,7 +16,7 @@ import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
 // 靶紙清單
 const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
 
-const CHEST_LABEL = { wood: "📦 木頭寶箱", iron: "🧰 鐵寶箱", gold: "✨ 黃金寶箱" };
+const CHEST_LABEL = { wood: "🪵 金幣木寶箱", iron: "⚙️ 金幣鐵寶箱", gold: "🥇 金幣金寶箱" };
 const CHEST_TO_TIER = { wood: "common", iron: "rare", gold: "elite" };
 
 // 三類固定任務：分數挑戰(5米簡單)、命中挑戰(十箭)、遠距挑戰(13~18米)
@@ -81,6 +81,8 @@ export default function DailyQuest({ onJoinParty }) {
   const [joinCode,      setJoinCode]      = useState("");
   const [joining,       setJoining]       = useState(false);
   const [joinError,     setJoinError]     = useState("");
+  const [pendingChest,  setPendingChest]  = useState(null);  // 等玩家點開的寶箱
+  const [chestOpened,   setChestOpened]   = useState(false); // 已點開
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -193,7 +195,7 @@ export default function DailyQuest({ onJoinParty }) {
       await markQuestDone(checkin.id, { type: task.type, value: val, target: goalToHit, taskId: task.id });
       const tier = CHEST_TO_TIER[task.chest] || "common";
       const coinChest = openCoinChest(tier);
-      addCoins(profile.id, coinChest.coins).catch(() => {});
+      setPendingChest(coinChest); // 等玩家自己點開
     } else {
       sfxSoftFail();
       await reroll();
@@ -462,7 +464,30 @@ export default function DailyQuest({ onJoinParty }) {
       <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)" }}>
         <div className="text-xs font-black tracking-wider text-amber-100 mb-1">今日任務</div>
         <div className="text-lg font-black mb-1">🎉 任務達標！</div>
-        <div className="text-amber-100 text-xs">等教練最終確認後計入次數。還差 {remain} 次換成就銀章 🥈</div>
+        <div className="text-amber-100 text-xs mb-3">等教練最終確認後計入次數。還差 {remain} 次換成就銀章 🥈</div>
+
+        {/* 金幣寶箱 — 等玩家點擊開啟 */}
+        {pendingChest && !chestOpened && (
+          <button
+            onClick={() => {
+              addCoins(profile.id, pendingChest.coins).catch(() => {});
+              setChestOpened(true);
+              sfxSuccess();
+            }}
+            className="w-full flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 border-amber-200/60 bg-amber-900/30 active:scale-95 transition-transform animate-pulse"
+          >
+            <span className="text-3xl">🎁</span>
+            <span className="font-black text-amber-100 text-sm">{pendingChest.name}</span>
+            <span className="text-amber-200 text-xs">點我開箱！</span>
+          </button>
+        )}
+        {chestOpened && pendingChest && (
+          <div className="w-full flex flex-col items-center gap-1 py-3 rounded-2xl border border-amber-300/40 bg-amber-900/20">
+            <span className="text-3xl">{pendingChest.icon}</span>
+            <span className="font-black text-amber-100 text-sm">{pendingChest.name}</span>
+            <span className="text-yellow-200 font-black text-base">+{pendingChest.coins} 金幣！</span>
+          </div>
+        )}
       </div>
     );
   }
