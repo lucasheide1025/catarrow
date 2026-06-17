@@ -22,12 +22,26 @@ function StoryImage({ src, accent }) {
     );
   }
   return (
-    <img
-      src={`/story/${src}`}
-      alt=""
-      onError={() => setFailed(true)}
-      style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block" }}
-    />
+    <div style={{
+      width: "100%",
+      height: "320px", // 鎖定容器高度，確保不會無限撐開
+      backgroundColor: "#000", // 背景填補顏色
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center"
+    }}>
+      <img
+        src={`/story/${src}`}
+        alt=""
+        onError={() => setFailed(true)}
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain", // 關鍵：保持比例，不裁切，完整顯示
+          display: "block"
+        }}
+      />
+    </div>
   );
 }
 
