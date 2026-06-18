@@ -949,7 +949,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                       style={{ background:family.color+"33", color:family.color }}>
                       {family.icon} {family.label}
                     </div>
-                    <div className="mb-2"><MonsterSVG id={m.id} size={56}/></div>
+                    <div className="mb-2"><MonsterBattleImg id={m.id} icon={m.icon} size={56}/></div>
                     <div className="font-black text-slate-100 text-sm pr-14">{m.name}</div>
                     <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                       style={{ background:tier.bg, color:tier.color }}>
@@ -1025,7 +1025,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                   style={{ background: family.color+"22", color: family.color }}>
                   {family.icon} {family.label}
                 </div>
-                <div className="mb-2"><MonsterSVG id={m.id} size={56}/></div>
+                <div className="mb-2"><MonsterBattleImg id={m.id} icon={m.icon} size={56}/></div>
                 <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
                 <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                   style={{ background: tier.bg, color: tier.color }}>
@@ -1220,7 +1220,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <button onClick={() => setPhase(eventMode ? "event_select" : "distance")} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="mb-2 flex justify-center" style={{ animation:"mb-bounce 1.5s ease infinite" }}>
-            <MonsterSVG id={pickedMonster.id} size={96}/>
+            <MonsterBattleImg id={pickedMonster.id} icon={pickedMonster.icon} size={96}/>
           </div>
           <div className="flex items-center justify-center gap-2 mb-1">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:family.color+"33", color:"#fff" }}>{family.icon} {family.label}</span>

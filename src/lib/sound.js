@@ -1,6 +1,16 @@
 // src/lib/sound.js
-// Web Audio API 合成音效 + 震動
-// 合成技術：noise buffer、WaveShaper 失真、精密頻率序列、多層諧波
+// 真實 mp3 音效（/sounds/*.mp3）+ Web Audio API 合成（其餘）
+
+// ── mp3 播放輔助 ──────────────────────────────────────────────
+const _sfxCache = {};
+function playAudio(name, volume = 1) {
+  try {
+    if (!_sfxCache[name]) _sfxCache[name] = new Audio(`/sounds/${name}.mp3`);
+    const a = _sfxCache[name].cloneNode();
+    a.volume = Math.max(0, Math.min(1, volume));
+    a.play().catch(() => {});
+  } catch {}
+}
 
 let _ctx = null;
 function ctx() {
@@ -100,42 +110,15 @@ export function sfxNotify() {
 
 // ── 射箭音效 ─────────────────────────────────────────────────
 
-// 普通命中 — 弓弦咻 + 撞擊
+// 普通命中
 export function sfxArrowHit() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  const n1 = c.createOscillator(); const g1 = c.createGain();
-  n1.type = "sawtooth";
-  n1.frequency.setValueAtTime(800, t);
-  n1.frequency.exponentialRampToValueAtTime(200, t + 0.08);
-  g1.gain.setValueAtTime(0.35, t);
-  g1.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  n1.connect(g1); g1.connect(c.destination);
-  n1.start(t); n1.stop(t + 0.15);
-  const n2 = c.createOscillator(); const g2 = c.createGain();
-  n2.type = "square";
-  n2.frequency.setValueAtTime(120, t + 0.06);
-  n2.frequency.exponentialRampToValueAtTime(55, t + 0.22);
-  g2.gain.setValueAtTime(0.45, t + 0.06);
-  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-  n2.connect(g2); g2.connect(c.destination);
-  n2.start(t + 0.06); n2.stop(t + 0.28);
+  playAudio("normal_atk", 0.85);
   vibrate(16);
 }
 
-// 爆擊 — 噪音爆炸 + 低頻衝擊
+// 爆擊
 export function sfxCritBoom() {
-  noiseBurst(0, 0.35, 400, 1.2);
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  const n = c.createOscillator(); const g = c.createGain();
-  n.type = "sine";
-  n.frequency.setValueAtTime(200, t);
-  n.frequency.exponentialRampToValueAtTime(40, t + 0.28);
-  g.gain.setValueAtTime(0.7, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-  n.connect(g); g.connect(c.destination);
-  n.start(t); n.stop(t + 0.32);
+  playAudio("crit", 0.9);
   vibrate([0, 30, 55, 35]);
 }
 
@@ -147,48 +130,29 @@ export function sfxOrganHit() {
   vibrate([0, 50, 70, 40]);
 }
 
-// 脫靶 — 輕飄飄咻
+// 脫靶
 export function sfxSoftFail() {
-  tone(620, 0.07, "sawtooth", 0.12, 0);
-  tone(440, 0.1,  "sine",     0.14, 0.07);
-  tone(300, 0.18, "sine",     0.10, 0.17);
+  playAudio("miss", 0.8);
   vibrate(12);
 }
 
 // 射箭弓弦聲
 export function sfxArrowShoot() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  const n1 = c.createOscillator(); const g1 = c.createGain();
-  n1.type = "sawtooth";
-  n1.frequency.setValueAtTime(1400, t);
-  n1.frequency.exponentialRampToValueAtTime(300, t + 0.1);
-  g1.gain.setValueAtTime(0.18, t);
-  g1.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  n1.connect(g1); g1.connect(c.destination);
-  n1.start(t); n1.stop(t + 0.15);
-  tone(240, 0.04, "square", 0.32, 0.11);
-  tone(110, 0.22, "sine",   0.28, 0.12);
+  playAudio("normal_atk", 0.85);
   vibrate(12);
 }
 
 // ── 戰鬥音效 ─────────────────────────────────────────────────
 
-// 怪物反擊 — 失真重擊
+// 怪物反擊
 export function sfxCounter() {
-  distTone(90, 45, 0.55, 0.3, 0);
-  noiseBurst(0, 0.18, 250, 0.6);
-  tone(70,  0.45, "sine",   0.32, 0.08);
-  tone(280, 0.05, "square", 0.2,  0.02);
+  playAudio("monster_atk", 0.9);
   vibrate([0, 55, 75, 50]);
 }
 
-// 怪物爆擊反擊 — 更沉重
+// 怪物爆擊反擊
 export function sfxCounterCrit() {
-  distTone(70, 35, 0.7, 0.4, 0);
-  noiseBurst(0, 0.25, 180, 0.9);
-  tone(55,  0.6,  "sine",   0.4,  0.1);
-  tone(200, 0.08, "square", 0.25, 0.05);
+  playAudio("monster_crit", 0.95);
   vibrate([0, 90, 110, 80, 60]);
 }
 

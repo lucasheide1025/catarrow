@@ -1,5 +1,5 @@
-// src/components/worldboss/WorldBossSVG.jsx — 像素風大 Boss 圖
-// 每隻 Boss 4 個受傷階段（100-80% / 79-50% / 49-20% / 19-0%）
+// src/components/worldboss/WorldBossSVG.jsx — 世界王圖（先嘗試 webp，失敗回退像素 SVG）
+import { useState } from "react";
 import { getBossPhase } from "../../lib/worldBossData";
 
 // 像素格輔助：sz=格子大小，x/y=起始格
@@ -337,10 +337,26 @@ const PIXEL_MAP = {
 
 // ── 主元件 ────────────────────────────────────────────────────
 export default function WorldBossSVG({ bossKey, currentHP, maxHP, size = 120 }) {
+  const [imgErr, setImgErr] = useState(false);
   const phase   = getBossPhase(currentHP ?? maxHP, maxHP || 1);
-  const boss    = { bg: "#0f172a", accent: "#f59e0b" }; // fallback
   const PixelFn = PIXEL_MAP[bossKey] || HeadCoachPixel;
 
+  // 優先顯示真實圖片
+  if (bossKey && !imgErr) {
+    return (
+      <img
+        src={`/worldboss/${bossKey}.webp`}
+        alt={bossKey}
+        onError={() => setImgErr(true)}
+        style={{
+          width: size, height: size, objectFit:"contain", display:"block",
+          filter: phase === 1 ? "brightness(0.6) saturate(0.4)" : undefined,
+        }}
+      />
+    );
+  }
+
+  // fallback：像素 SVG
   return (
     <svg width={size} height={size} viewBox="0 0 96 96" style={{ display:"block", imageRendering:"pixelated" }}>
       <PixelFn phase={phase}/>

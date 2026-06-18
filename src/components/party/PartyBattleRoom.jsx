@@ -112,14 +112,15 @@ function HPBar({ current, max, color = "#22c55e" }) {
   );
 }
 
-function PartyMonsterImg({ id, icon, charge }) {
+function PartyMonsterImg({ id, icon, charge, size }) {
   const [err, setErr] = useState(false);
   const anim = charge ? "mb-charge 0.7s ease infinite" : undefined;
+  const h = size || 148;
   return err ? (
-    <span style={{ fontSize:40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
+    <span style={{ fontSize: size ? Math.round(size*0.6) : 40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
     <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
-      style={{ maxWidth:"82%", maxHeight:148, objectFit:"contain", animation:anim }}/>
+      style={{ maxWidth: size ? size : "82%", maxHeight: h, objectFit:"contain", animation:anim }}/>
   );
 }
 
@@ -786,14 +787,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       className={`text-left rounded-xl p-3 border-2 transition-all flex flex-col gap-1 ${
                         setupMonster?.id === m.id ? "border-indigo-500 bg-indigo-900/40" : "border-slate-600 bg-slate-700/30"
                       }`}>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xl">{m.icon}</span>
-                        <span className="text-white font-bold text-sm leading-tight truncate">{m.name}</span>
-                        {setupMonster?.id === m.id && <span className="ml-auto text-indigo-400 shrink-0">✅</span>}
+                      <div className="flex items-center gap-2 mb-1">
+                        <PartyMonsterImg id={m.id} icon={m.icon} charge={false} size={52}/>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white font-bold text-sm leading-tight truncate">{m.name}</div>
+                          <div className="text-xs" style={{ color: tier?.color }}>{tier?.label} · {fam?.label}</div>
+                        </div>
+                        {setupMonster?.id === m.id && <span className="text-indigo-400 shrink-0 self-start">✅</span>}
                       </div>
-                      <div className="text-xs" style={{ color: tier?.color }}>{tier?.label}</div>
-                      <div className="text-xs text-slate-500">{fam?.label}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">
+                      <div className="text-xs text-slate-400">
                         ❤️ {Math.round(m.hp * ms * min)}~{Math.round(m.hp * ms * max)}
                       </div>
                       <div className="text-xs text-slate-500">
