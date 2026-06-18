@@ -154,7 +154,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const _selfId = guestOverride?.id || profile?.id;
     const parts = Object.entries(event.participants || {})
       .filter(([id]) => id !== _selfId)
-      .map(([id, p]) => ({ id, name: p.name || "射手", atk: p.atk || 10 }));
+      .map(([id, p]) => {
+        const atk = p.atk || 10;
+        return { id, name: p.name || "射手", atk, def: Math.round(atk * 0.4), hp: atk * 4 };
+      });
     for (let i = parts.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [parts[i], parts[j]] = [parts[j], parts[i]];
@@ -202,8 +205,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [animBossCharge, setAnimBossCharge] = useState(false);
   const [animPlayerHit,  setAnimPlayerHit]  = useState(false);
   const [archerShoot,    setArcherShoot]    = useState(false);
-  const [floatDmg,       setFloatDmg]       = useState(null); // { dmg, isCrit, isMiss }
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [floatDmg,         setFloatDmg]         = useState(null); // { dmg, isCrit, isMiss }
+  const [companionShootIdx, setCompanionShootIdx] = useState(-1);
+  const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
@@ -333,6 +337,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         const tmMsg = SUPPORT_MSGS[Math.floor(Math.random() * SUPPORT_MSGS.length)](tm.name, sdmg);
         setDmgLog(prev => [...prev, tmMsg]);
         setBossHP(h => Math.max(0, h - sdmg));
+        // 找到對應同伴並播放攻擊動畫
+        const cIdx = companions.findIndex(c => c.name === tm.name);
+        if (cIdx >= 0) {
+          setCompanionShootIdx(cIdx);
+          setTimeout(() => setCompanionShootIdx(-1), 500);
+        }
       }
 
       await delay(600);
@@ -718,14 +728,21 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                   {/* 弓箭手圖 */}
                   <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     <img src={`/cats/archers/${cStyle}.webp`} alt={c.name}
-                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom" }}
+                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                        animation: companionShootIdx === idx ? "mb-archer-attack 0.4s ease" : undefined,
+                        filter: companionShootIdx === idx ? "drop-shadow(0 0 8px rgba(255,255,255,0.7))" : undefined }}
                       onError={e => { e.target.style.display="none"; }}/>
                   </div>
                   <div style={{ height:1, background:"rgba(255,255,255,0.07)" }}/>
-                  {/* 資訊 */}
+                  {/* 資訊卡（含 HP 條 + ATK + DEF + HP） */}
                   <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
-                    <div style={{ fontSize:8, color:"rgba(255,255,255,0.55)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name?.slice(0,5)}</div>
-                    <div style={{ fontSize:8, color:"#f87171" }}>⚔{c.atk}</div>
+                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.08)", overflow:"hidden", marginBottom:2 }}>
+                      <div style={{ height:"100%", borderRadius:3, width:"100%", background:"linear-gradient(90deg,#16a34a,#4ade80)" }}/>
+                    </div>
+                    <div style={{ fontSize:8, color:"rgba(255,255,255,0.55)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>{c.name?.slice(0,5)}</div>
+                    <div style={{ fontSize:8, color:"#f87171", marginBottom:1 }}>⚔️ {c.atk}</div>
+                    <div style={{ fontSize:8, color:"#60a5fa", marginBottom:1 }}>🛡 {c.def}</div>
+                    <div style={{ fontSize:8, color:"#4ade80", fontWeight:700 }}>HP {c.hp}</div>
                   </div>
                 </div>
               );
@@ -768,70 +785,77 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         </div>
 
-        {/* ── 箭矢格 ── */}
-        <div style={{ flexShrink:0, padding:"4px 6px 2px" }}>
-          <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+        {/* ── 輸入區（深色底板，仿 PartyBattleRoom） ── */}
+        <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px", paddingBottom:"max(10px, env(safe-area-inset-bottom))" }}>
+          {/* 箭矢格 */}
+          <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
             {Array.from({ length: ARROWS_PER }).map((_, i) => {
               const a = arrows[i];
               const isActive = subPhase === "processing" && i === processingIdx;
               return (
                 <div key={i} style={{
-                  width:40, height:40, borderRadius:8,
-                  background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.06)",
-                  border:`1px solid ${a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.12)"}`,
-                  color: a ? scoreColor(a.label) : "#334155",
+                  width:36, height:36, borderRadius:6, flexShrink:0,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:14, fontWeight:700,
-                  transform: isActive ? "scale(1.12)" : "scale(1)",
+                  fontSize:13, fontWeight:900,
+                  background: a ? (isActive ? "#1e3a8a" : "#2563eb") : "rgba(255,255,255,0.05)",
+                  border:`2px solid ${a ? (isActive ? "#fbbf24" : "#60a5fa") : "rgba(255,255,255,0.1)"}`,
+                  color: a ? (isActive ? "#fbbf24" : "white") : "#475569",
+                  transform: isActive ? "scale(1.15)" : "scale(1)",
                   boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
                   transition:"transform 0.15s",
                 }}>
-                  {a ? a.label : "·"}
+                  {a ? a.label : ""}
                 </div>
               );
             })}
+            {arrows.length > 0 && subPhase === "shooting" && (
+              <button onClick={() => setArrows(prev => prev.slice(0,-1))} style={{ background:"none", border:"none", color:"#64748b", fontSize:18, cursor:"pointer", paddingLeft:4 }}>↩</button>
+            )}
+            <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
+              {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
+            </span>
           </div>
-          <div style={{ textAlign:"center", fontSize:10, marginTop:4, color: subPhase !== "shooting" ? "#fbbf24" : "rgba(255,255,255,0.3)" }}>
-            {subPhase !== "shooting" ? "計算中…" : `${arrows.length} / ${ARROWS_PER} 箭・第 ${roundIdx+1} 回合`}
-          </div>
-        </div>
 
-        {/* ── 分數按鈕 / 送出 ── */}
-        <div style={{ flexShrink:0, padding:"0 5px", paddingBottom:"max(8px, env(safe-area-inset-bottom))" }}>
+          {/* 分數按鈕（使用 score-btn.webp） */}
           {subPhase === "shooting" && arrows.length < ARROWS_PER && (
-            <>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, padding:"5px" }}>
-                {SCORE_BTNS.map(s => (
-                  <button key={s} onClick={() => handleScore(s)}
-                    style={{ height:44, borderRadius:8, fontWeight:700, fontSize:15, padding:"4px 0", background:`${scoreColor(s)}18`, border:`1px solid ${scoreColor(s)}55`, color:scoreColor(s), cursor:"pointer" }}>
-                    {scoreLabel(s)}
-                  </button>
-                ))}
-              </div>
-              {arrows.length > 0 && (
-                <button onClick={() => setArrows(prev => prev.slice(0, -1))}
-                  style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer", marginTop:2 }}>
-                  ← 取消上一箭
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px", marginBottom:4 }}>
+              {SCORE_BTNS.map(s => (
+                <button key={s} onClick={() => handleScore(s)}
+                  style={{
+                    backgroundImage:"url(/ui/score-btn.webp)", backgroundSize:"cover", backgroundPosition:"center",
+                    backgroundColor:"rgb(30,16,6)",
+                    WebkitAppearance:"none", appearance:"none",
+                    border:"none", borderRadius:6, height:44, width:"100%",
+                    color: s==="X"?"#fbbf24":s==="M"?"#94a3b8":Number(s)>=9?"#fef3c7":Number(s)>=7?"#bfdbfe":Number(s)>=5?"#d1d5db":"#9ca3af",
+                    fontWeight:900, fontSize:15, cursor:"pointer",
+                    textShadow:"0 1px 6px #000", padding:"4px 0", lineHeight:1,
+                  }}
+                  onTouchStart={e => e.currentTarget.style.transform="scale(0.88)"}
+                  onTouchEnd={e => e.currentTarget.style.transform="scale(1)"}>
+                  {scoreLabel(s)}
                 </button>
-              )}
-            </>
+              ))}
+            </div>
           )}
+
+          {/* 送出按鈕 */}
           {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
-            <div style={{ display:"flex", flexDirection:"column", gap:6, padding:"5px" }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <button onClick={() => { sfxCast(); finishRound(arrows); }}
-                style={{ width:"100%", padding:"14px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:17, fontWeight:700, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
+                style={{ width:"100%", padding:"12px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
                 ⚔️ 送出 {ARROWS_PER} 箭！
               </button>
-              <button onClick={() => setArrows(prev => prev.slice(0, -1))}
+              <button onClick={() => setArrows(prev => prev.slice(0,-1))}
                 style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
                 ← 取消上一箭
               </button>
             </div>
           )}
+
           {subPhase === "processing" && (
-            <div style={{ padding:"4px 8px", minHeight:44 }}>
+            <div style={{ minHeight:44, display:"flex", flexDirection:"column", justifyContent:"center" }}>
               {dmgLog.slice(-3).map((l, i, arr) => (
-                <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i === arr.length - 1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
+                <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i===arr.length-1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
               ))}
             </div>
           )}
