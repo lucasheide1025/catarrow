@@ -154,7 +154,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const _selfId = guestOverride?.id || profile?.id;
     const parts = Object.entries(event.participants || {})
       .filter(([id]) => id !== _selfId)
-      .map(([id, p]) => ({ id, name: p.name || "射手" }));
+      .map(([id, p]) => ({ id, name: p.name || "射手", atk: p.atk || 10 }));
     for (let i = parts.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [parts[i], parts[j]] = [parts[j], parts[i]];
@@ -196,8 +196,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
   const [showCard,   setShowCard]  = useState(false);
-  const [animBossHit, setAnimBossHit] = useState(false);
-  const [animCrit,    setAnimCrit]    = useState(false);
+  const [animBossHit,   setAnimBossHit]   = useState(false);
+  const [animCrit,      setAnimCrit]      = useState(false);
+  const [animMonsterHit, setAnimMonsterHit] = useState(false);
+  const [animBossCharge, setAnimBossCharge] = useState(false);
+  const [animPlayerHit,  setAnimPlayerHit]  = useState(false);
+  const [archerShoot,    setArcherShoot]    = useState(false);
+  const [floatDmg,       setFloatDmg]       = useState(null); // { dmg, isCrit, isMiss }
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
@@ -218,16 +223,32 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     return t;
   }
 
-  function flashBossHit(isCrit) {
+  function flashBossHit(isCrit, dmg, isMiss) {
     setAnimBossHit(true);
+    setAnimMonsterHit(true);
+    setArcherShoot(true);
     if (isCrit) setAnimCrit(true);
-    setTimeout(() => { setAnimBossHit(false); setAnimCrit(false); }, 420);
+    setFloatDmg({ dmg: dmg || 0, isCrit: !!isCrit, isMiss: !!isMiss });
+    setTimeout(() => {
+      setAnimBossHit(false); setAnimCrit(false);
+      setAnimMonsterHit(false); setArcherShoot(false);
+    }, 430);
+    setTimeout(() => setFloatDmg(null), 1300);
   }
 
   // 注入 CSS keyframes（只一次）
   useEffect(() => {
     const s = document.createElement("style");
-    s.textContent = "@keyframes wbFadeOut{from{opacity:1}to{opacity:0}} @keyframes wbShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}";
+    s.textContent = `
+      @keyframes wbFadeOut{from{opacity:1}to{opacity:0}}
+      @keyframes wbShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+      @keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
+      @keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2.2) saturate(0)}100%{filter:brightness(1)}}
+      @keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(10px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+      @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
+      @keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
+      @keyframes mb-miss{0%{opacity:1;transform:translateY(0) scale(1.1)}100%{opacity:0;transform:translateY(-40px) scale(0.85)}}
+    `;
     document.head.appendChild(s);
     return () => s.remove();
   }, []);
@@ -281,9 +302,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       if (isCrit) crits++;
       totalDmg += dmg;
 
-      if (a.score === 0) sfxSoftFail();
-      else if (isCrit) { sfxCritBoom(); flashBossHit(true); vibrate(30); }
-      else { sfxArrowHit(); flashBossHit(false); vibrate(10); }
+      if (a.score === 0) { sfxSoftFail(); flashBossHit(false, 0, true); }
+      else if (isCrit) { sfxCritBoom(); flashBossHit(true, dmg, false); vibrate(30); }
+      else { sfxArrowHit(); flashBossHit(false, dmg, false); vibrate(10); }
 
       setDmgLog(prev => [...prev,
         isCrit      ? `💥 ${a.label} 暴擊！ -${dmg}`
@@ -325,8 +346,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setRoundSummary(roundData);
     sfxRoundEnd();
     setSubPhase("roundResult");
+    setAnimBossCharge(true);
 
     addTimer(() => {
+      setAnimBossCharge(false);
       const cdmg   = calcCounterDmg(boss.atk || 100, baseDEF);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
@@ -338,6 +361,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       setMyHP(h => Math.max(0, h - cdmg));
       if (isLast) { sfxCounterCrit(); vibrate(50); } else { sfxCounter(); vibrate(20); }
       setSubPhase("bossAttack");
+      setAnimPlayerHit(true);
+      setTimeout(() => setAnimPlayerHit(false), 650);
 
       addTimer(() => {
         if (!isLast) {
@@ -608,100 +633,136 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         )}
 
-        {/* ── 上半：Boss 全寬顯示（日誌改為覆蓋層） ── */}
-        <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", flexDirection:"column", alignItems:"center" }}>
+        {/* ── 上半：Boss 全寬顯示 ── */}
+        <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", flexDirection:"column" }}>
 
-          {/* 日誌覆蓋面板（absolute 左側，不佔版面） */}
+          {/* 日誌覆蓋（absolute 左側） */}
           <div style={{ position:"absolute", left:0, top:0, bottom:0, zIndex:5,
             width: showFullLog ? 160 : 36,
-            background: showFullLog ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.18)",
-            display:"flex", flexDirection:"column", transition:"width 0.2s" }}>
+            background: showFullLog ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.18)",
+            display:"flex", flexDirection:"column", transition:"width 0.2s", borderRadius:"0 8px 8px 0" }}>
             <button onClick={() => setShowFullLog(v => !v)}
-              style={{ padding:"8px 0", color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", background:"transparent", border:"none", cursor:"pointer", flexShrink:0 }}>
-              {showFullLog ? "◀" : "▶"}
+              style={{ padding:"6px 0", color:"rgba(255,255,255,0.45)", fontSize:13, textAlign:"center", background:"transparent", border:"none", cursor:"pointer", flexShrink:0 }}>
+              {showFullLog ? "◀" : "📜"}
             </button>
             {showFullLog && (
               <div style={{ flex:1, overflowY:"auto", padding:"0 8px 8px" }}>
                 {dmgLog.length === 0 && <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", textAlign:"center", paddingTop:8 }}>戰鬥開始…</div>}
                 {dmgLog.map((l, i) => (
-                  <div key={i} style={{ fontSize:10, color: i === dmgLog.length - 1 ? "white" : "rgba(255,255,255,0.42)", marginBottom:3, lineHeight:1.4 }}>{l}</div>
+                  <div key={i} style={{ fontSize:10, color: i === dmgLog.length-1 ? "white" : "rgba(255,255,255,0.42)", marginBottom:3, lineHeight:1.4 }}>{l}</div>
                 ))}
               </div>
             )}
           </div>
 
           {/* 退出按鈕（absolute 右上） */}
-          <div style={{ position:"absolute", top:6, right:6, zIndex:6 }}>
-            <button onClick={() => setShowExitConfirm(true)} style={{ background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", borderRadius:8, padding:"2px 10px", fontSize:12, cursor:"pointer" }}>✕</button>
-          </div>
+          <button onClick={() => setShowExitConfirm(true)}
+            style={{ position:"absolute", top:6, right:8, zIndex:6, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", borderRadius:8, padding:"2px 10px", fontSize:12, cursor:"pointer" }}>
+            離開
+          </button>
 
-          {/* Boss 圖（全寬居中，頂部對齊） */}
-          <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6, minHeight:0, overflow:"hidden", width:"100%" }}>
-            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={320}/>
-          </div>
-
-          {/* Boss HP bar */}
-          <div style={{ width:"100%", padding:"0 10px", marginBottom:2 }}>
-            <div style={{ position:"relative", height:22, borderRadius:20, background:"rgba(255,255,255,0.12)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.1)" }}>
-              <div style={{ height:"100%", width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, background:`linear-gradient(90deg,${boss.accent||"#f59e0b"}99,${boss.accent||"#f59e0b"})`, borderRadius:20, transition:"width 0.7s" }}/>
-              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"white" }}>
+          {/* Boss 名 + HP bar + 統計列（頂部，帶透明背景確保可讀） */}
+          <div style={{ flexShrink:0, padding:"8px 10px 4px", zIndex:2, background:"rgba(0,0,0,0.45)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+              <span style={{ fontSize:12, fontWeight:900, color:boss.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{boss.name}</span>
+              <div style={{ display:"flex", gap:3 }}>
+                {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
+                  <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
+                ))}
+                {isLastRound && <span style={{ fontSize:9, color:"#fca5a5", marginLeft:2 }}>⚠️</span>}
+              </div>
+            </div>
+            {/* HP 條（紅色，仿 PartyBattleRoom） */}
+            <div style={{ background:"#1e293b", borderRadius:20, height:21, border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5 }}>
+              <div style={{ width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
+                background: bossHP/event.bossMaxHP>0.5?"#dc2626":bossHP/event.bossMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
+              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
                 {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
               </div>
             </div>
+            {/* 統計列（仿 PartyBattleRoom） */}
+            <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+              <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>⚔️ 第{roundIdx+1}回</div>
+              <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>💢 {boss.atk}</div>
+              <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>🛡️ {boss.def}</div>
+              <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>🏹 {arrows.length}/{ARROWS_PER}</div>
+            </div>
           </div>
 
-          {/* Boss 名 + 回合進度 */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", padding:"0 10px 4px" }}>
-            <span style={{ fontSize:11, fontWeight:700, color:boss.accent||"#f59e0b" }}>{boss.name}</span>
-            <div style={{ display:"flex", alignItems:"center", gap:3 }}>
-              {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
-                <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
-              ))}
-              <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", marginLeft:2 }}>
-                {roundIdx+1}/{TOTAL_ROUNDS}{isLastRound ? " ⚠️" : ""}
-              </span>
+          {/* Boss 圖（全寬，填滿剩餘空間） */}
+          <div style={{ flex:1, position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:8, minHeight:0, overflow:"hidden" }}>
+            <div style={{ animation: animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+              <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={300}/>
             </div>
+            {/* 浮動傷害 / MISS */}
+            {floatDmg && (
+              floatDmg.isMiss
+                ? <span style={{ position:"absolute", top:"22%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
+                : <span style={{ position:"absolute", top:"18%", left:"50%", transform:"translateX(-50%)", fontSize: floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color: floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+                    -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
+                  </span>
+            )}
           </div>
         </div>
 
-        {/* ── 弓箭手 + 資訊同框列 ── */}
-        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
+        {/* ── 弓箭手 + 資訊同框列（深色底板） ── */}
+        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.88)", borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center",
+            animation: animPlayerHit ? "mb-screen-shake 0.55s ease" : undefined }}>
             {companions.map((c, idx) => {
               const cStyle = ARCHER_STYLES[idx % ARCHER_STYLES.length];
               return (
-                <div key={c.id} style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column", border:"1px solid rgba(255,255,255,0.07)", borderRadius:8, overflow:"hidden" }}>
-                  <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center", background:"rgba(255,255,255,0.02)" }}>
+                <div key={c.id} style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column",
+                  border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, overflow:"hidden",
+                  background:"rgba(255,255,255,0.04)" }}>
+                  {/* 弓箭手圖 */}
+                  <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     <img src={`/cats/archers/${cStyle}.webp`} alt={c.name}
                       style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom" }}
                       onError={e => { e.target.style.display="none"; }}/>
                   </div>
-                  <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
-                  <div style={{ padding:"2px 2px", textAlign:"center" }}>
-                    <div style={{ fontSize:8, color:"rgba(255,255,255,0.35)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name?.slice(0,5)}</div>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.07)" }}/>
+                  {/* 資訊 */}
+                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
+                    <div style={{ fontSize:8, color:"rgba(255,255,255,0.55)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name?.slice(0,5)}</div>
+                    <div style={{ fontSize:8, color:"#f87171" }}>⚔{c.atk}</div>
                   </div>
                 </div>
               );
             })}
 
-            {/* 玩家（高亮金框） */}
-            <div style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column", border:"1px solid rgba(251,191,36,0.45)", borderRadius:8, overflow:"hidden", background:"rgba(251,191,36,0.04)" }}>
-              <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+            {/* 玩家（金框高亮） */}
+            <div style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column",
+              border:"1px solid rgba(251,191,36,0.5)", borderRadius:8, overflow:"hidden",
+              background:"rgba(251,191,36,0.06)" }}>
+              {/* 弓箭手圖（帶攻擊動畫） */}
+              <div style={{ height:80, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                {/* Boss 攻擊時玩家頭上浮出傷害 */}
+                {animPlayerHit && (
+                  <span style={{ position:"absolute", top:"0%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.0s ease-out forwards", fontWeight:900, fontSize:"0.85rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>
+                    💢
+                  </span>
+                )}
                 <img src={`/cats/archers/${(profile || guestOverride)?.archerStyle || "baobao"}.webp`} alt={myName}
-                  style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom", filter:"drop-shadow(0 0 5px rgba(251,191,36,0.5))" }}
+                  style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                    filter: archerShoot ? "drop-shadow(0 0 8px rgba(251,191,36,0.8))" : "drop-shadow(0 0 4px rgba(251,191,36,0.35))",
+                    animation: archerShoot ? "mb-archer-attack 0.4s ease" : undefined,
+                    outline:"2px solid rgba(251,191,36,0.6)", outlineOffset:2, borderRadius:2 }}
                   onError={e => { e.target.style.display="none"; }}/>
               </div>
-              <div style={{ height:1, background:"rgba(251,191,36,0.2)" }}/>
+              <div style={{ height:1, background:"rgba(251,191,36,0.25)" }}/>
+              {/* 玩家資訊卡 */}
               <div style={{ padding:"3px 2px 4px", textAlign:"center" }}>
                 {/* HP 條 */}
                 <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.08)", overflow:"hidden", marginBottom:2 }}>
-                  <div style={{ height:"100%", borderRadius:3, width:`${Math.max(0,myHP/baseHP)*100}%`, transition:"width 0.5s",
+                  <div style={{ height:"100%", borderRadius:3, transition:"width 0.5s",
+                    width:`${Math.max(0,myHP/baseHP)*100}%`,
                     background: myHP/baseHP>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":myHP/baseHP>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                 </div>
-                <div style={{ fontSize:9, fontWeight:700, color:"#fbbf24", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>{myName?.slice(0,6)}</div>
+                <div style={{ fontSize:9, fontWeight:700, color:"#fbbf24", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{myName?.slice(0,6)}</div>
                 <div style={{ fontSize:8, color:"#f87171" }}>⚔{baseATK}</div>
                 <div style={{ fontSize:8, color:"#60a5fa" }}>🛡{baseDEF}</div>
-                <div style={{ fontSize:8, color: myHP/baseHP>0.5?"#4ade80":myHP/baseHP>0.25?"#fbbf24":"#f87171", fontWeight:700, marginTop:1 }}>HP {myHP}</div>
+                <div style={{ fontSize:8, fontWeight:700, color: myHP/baseHP>0.5?"#4ade80":myHP/baseHP>0.25?"#fbbf24":"#f87171", marginTop:1 }}>HP {myHP}</div>
               </div>
             </div>
           </div>
