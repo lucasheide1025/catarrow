@@ -119,7 +119,7 @@ function PartyMonsterImg({ id, icon, charge }) {
     <span style={{ fontSize:40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
     <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
-      style={{ maxWidth:"88%", maxHeight:"100%", objectFit:"contain", animation:anim }}/>
+      style={{ maxWidth:"82%", maxHeight:148, objectFit:"contain", animation:anim }}/>
   );
 }
 
@@ -1304,9 +1304,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>👤 {aliveCount}/{memberList.length}</div>
           </div>
 
-          {/* 怪物圖（佔滿剩餘空間）*/}
-          <div style={{ flex:1, position:"relative", display:"flex", alignItems:"center", justifyContent:"center", minHeight:0 }}>
-            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+          {/* 怪物圖（上對齊，縮小顯示）*/}
+          <div style={{ flex:1, position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"center", minHeight:0 }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"center", animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
               <PartyMonsterImg id={room.monster?.id} icon={room.monster?.icon} charge={false}/>
             </div>
             {/* 浮動傷害數字 */}
@@ -1379,26 +1379,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             );
           })}
 
-          {/* 貓咪夥伴 frame（我的貓，右側）*/}
-          {hasCat && profile?.equippedCat && (
-            <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", gap:3, paddingBottom:4 }}>
-              <div style={{
-                width:48, height:48, borderRadius:12,
-                background: catMsg ? "rgba(88,28,135,0.6)" : "rgba(255,255,255,0.05)",
-                border:`1.5px solid ${catMsg ? "#a78bfa" : "rgba(255,255,255,0.15)"}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                overflow:"hidden", position:"relative",
-                boxShadow: catMsg ? "0 0 16px rgba(167,139,250,0.9)" : "none",
-                transition:"all 0.3s",
-              }}>
-                <img src={`/cats/portraits/${profile.equippedCat.catId||"baobao"}.webp`}
-                  alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                {catMsg && (
-                  <div style={{ position:"absolute", bottom:"100%", left:"50%", transform:"translateX(-50%)", zIndex:20, background:"rgba(88,28,135,0.9)", border:"1px solid #a78bfa", borderRadius:5, padding:"1px 5px", fontSize:8, color:"#e9d5ff", whiteSpace:"nowrap", fontWeight:700, pointerEvents:"none", animation:"mb-float 2s ease-out forwards", marginBottom:3 }}>🐱{catMsg.slice(0,8)}</div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* 玩家資訊列 */}
@@ -1407,22 +1387,39 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             const isMe = m.id === myId;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
             const hpColor = hpPct>0.5?"#4ade80":hpPct>0.25?"#fbbf24":"#f87171";
+            const catId = m.archerStyle || "baobao";
+            const hasMyCatMsg = isMe && catMsg;
             return (
               <div key={m.id} style={{
-                flexShrink:0, textAlign:"center", padding:"3px 5px",
+                flexShrink:0, textAlign:"center", padding:"3px 4px",
                 border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.08)"}`,
                 borderRadius:6, background: isMe?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.02)",
                 minWidth: memberList.length<=4 ? 72 : memberList.length<=6 ? 58 : 46,
               }}>
-                <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:9, fontWeight:700, marginBottom:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                  {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                {/* 名稱列 + 貓咪 */}
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:2, marginBottom:1 }}>
+                  <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:9, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
+                    {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                  </div>
+                  {/* 貓咪小圖 */}
+                  <div style={{ flexShrink:0, width:14, height:14, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.18)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
+                    <img src={`/cats/portraits/${catId}.webp`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>{e.target.style.display="none"}}/>
+                  </div>
                 </div>
+                {/* HP bar */}
                 <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
                   <div style={{ height:"100%", borderRadius:2, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                 </div>
+                {/* HP 數字 */}
                 <div style={{ fontSize:8, color:hpColor, fontWeight:700 }}>
                   {m.hp}<span style={{ color:"#334155" }}>/{m.maxHP}</span>
                 </div>
+                {/* ATK / DEF */}
+                <div style={{ fontSize:8, color:"#64748b", marginTop:1, display:"flex", justifyContent:"center", gap:3 }}>
+                  <span>⚔️{m.atk}</span>
+                  <span>🛡️{m.def}</span>
+                </div>
+                {/* 狀態 */}
                 <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569", marginTop:1 }}>
                   {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
                 </div>
