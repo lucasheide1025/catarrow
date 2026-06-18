@@ -23,7 +23,8 @@ import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
-import MonsterSVG from "../MonsterSVG";
+import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
+import { CAT_IDS, CATS } from "../../lib/catData";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -65,6 +66,15 @@ const BATTLE_CSS = `
 @keyframes mb-event-buff  { 0%{transform:scale(.8) translateY(12px);opacity:0} 60%{transform:scale(1.04) translateY(-3px);opacity:1} 100%{transform:scale(1) translateY(0);opacity:1} }
 @keyframes mb-event-debuff{ 0%{transform:scale(.8) translateY(-12px);opacity:0} 60%{transform:scale(1.04);opacity:1} 100%{transform:scale(1);opacity:1} }
 @keyframes mb-counter-warn{ 0%{transform:scale(1);opacity:1} 40%{transform:scale(1.06);opacity:0.9} 100%{transform:scale(1);opacity:1} }
+@keyframes mb-archer-shoot { 0%{transform:translateY(0)} 30%{transform:translateY(-14px)} 65%{transform:translateY(-5px)} 100%{transform:translateY(0)} }
+@keyframes mb-archer-miss  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 50%{transform:translateX(7px)} 75%{transform:translateX(-4px)} }
+@keyframes mb-archer-crit  { 0%,100%{opacity:0} 15%{opacity:1} 60%{opacity:0.75} }
+@keyframes mb-archer-hurt  { 0%,100%{transform:translateX(0) rotate(0)} 20%{transform:translateX(-13px) rotate(-4deg)} 45%{transform:translateX(10px) rotate(3deg)} 70%{transform:translateX(-7px) rotate(-1deg)} 88%{transform:translateX(4px)} }
+@keyframes mb-monster-attack { 0%{transform:translateY(0) scale(1)} 35%{transform:translateY(50px) scale(1.12)} 68%{transform:translateY(22px) scale(1.04)} 100%{transform:translateY(0) scale(1)} }
+@keyframes mb-monster-attack-crit { 0%{transform:translateY(0) scale(1);filter:brightness(1)} 35%{transform:translateY(50px) scale(1.15);filter:brightness(1.8) drop-shadow(0 0 18px #ef4444) drop-shadow(0 0 36px #dc262688)} 68%{transform:translateY(22px) scale(1.05);filter:brightness(1.2)} 100%{transform:translateY(0) scale(1);filter:brightness(1)} }
+@keyframes mb-cat-glow-purple { 0%,100%{filter:drop-shadow(0 0 4px #a78bfa)} 50%{filter:drop-shadow(0 0 14px #a78bfa) brightness(1.35)} }
+@keyframes mb-cat-glow-green  { 0%,100%{filter:drop-shadow(0 0 4px #10b981)} 50%{filter:drop-shadow(0 0 14px #10b981) brightness(1.35)} }
+@keyframes mb-cat-glow-red    { 0%,100%{filter:drop-shadow(0 0 4px #ef4444)} 50%{filter:drop-shadow(0 0 14px #ef4444) brightness(1.35)} }
 `;
 
 const HIT_TEXTS = {
@@ -87,6 +97,11 @@ function getHitText(partId) {
 }
 function randDistStep() { return Math.floor(Math.random() * 5) + 1; }
 
+function arrowLabelToVal(label) {
+  if (label === "M") return 0;
+  return parseInt(label) || 10; // "X" → 10
+}
+
 function calcStats(allArrows) {
   if (!allArrows?.length) return null;
   const total  = allArrows.reduce((s,v)=>s+v,0);
@@ -102,7 +117,9 @@ function calcStats(allArrows) {
 export default function MonsterBattle({ onBack, isGuest = false }) {
   const { profile } = useAuth();
   const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
-  const [phase, setPhase]           = useState("select");
+  const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
+  const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
+  const [archerSelectReturn, setArcherSelectReturn] = useState("select");
   const [battleMode, setBattleMode] = useState("score");
   const [mode, setMode]             = useState("novice");
   const [monster, setMonster]       = useState(null);
@@ -154,6 +171,24 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [animCounterCrit, setAnimCounterCrit] = useState(false);
   const [floatCounterDmgs, setFloatCounterDmgs] = useState([]);
   const [floatDmgs, setFloatDmgs]       = useState([]);
+  const [animArcherShoot,    setAnimArcherShoot]    = useState(false);
+  const [animArcherCrit,     setAnimArcherCrit]     = useState(false);
+  const [animArcherMiss,     setAnimArcherMiss]     = useState(false);
+  const [animArcherHit,      setAnimArcherHit]      = useState(false);
+  const [animMonsterAttack,  setAnimMonsterAttack]  = useState(false);
+  const [animMonsterCritAtk, setAnimMonsterCritAtk] = useState(false);
+  const [floatArcherEffects, setFloatArcherEffects] = useState([]);
+  const [logOpen, setLogOpen] = useState(true);
+  const [savedBattle] = useState(() => {
+    try {
+      const v = sessionStorage.getItem("mb_battle_save");
+      if (!v) return null;
+      const s = JSON.parse(v);
+      if (Date.now() - s.ts > 30 * 60 * 1000) { sessionStorage.removeItem("mb_battle_save"); return null; }
+      return s;
+    } catch { return null; }
+  });
+  const [showRestorePrompt, setShowRestorePrompt] = useState(() => !!savedBattle);
   // ⚗️ 藥劑與 📦 寶箱
   const [potionInv, setPotionInv]             = useState({});
   const [selectedPotions, setSelectedPotions] = useState([]);
@@ -168,6 +203,23 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
+  useEffect(() => {
+    if (isGuest) return;
+    if (phase === "loot" || phase === "result" || phase === "select") {
+      if (phase === "loot" || phase === "result") sessionStorage.removeItem("mb_battle_save");
+      return;
+    }
+    if (phase !== "battle") return;
+    const save = {
+      ts: Date.now(),
+      monster, mode, battleMode, monsterHP, archerHP,
+      round, roundScores, selectedDistance, distanceMode, battleStats,
+      log: log.slice(-8),
+    };
+    try { sessionStorage.setItem("mb_battle_save", JSON.stringify(save)); } catch {}
+  }, [phase, monsterHP, archerHP, round]); // eslint-disable-line
 
   useEffect(() => {
     if (isGuest) { setArcherStats({ hp:100, atk:10, def:10 }); setDailyLeft(null); return; }
@@ -254,6 +306,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setFloatCounterDmgs(prev => [...prev, { id, text: `-${dmg}`, isCrit, left }]);
     setTimeout(() => setFloatCounterDmgs(prev => prev.filter(f => f.id !== id)), 1300);
   }
+  function showArcherEffect(text, color="#94a3b8") {
+    const id = Date.now() + Math.random();
+    setFloatArcherEffects(prev=>[...prev,{id,text,color}]);
+    setTimeout(()=>setFloatArcherEffects(prev=>prev.filter(e=>e.id!==id)), 1200);
+  }
 
   function rerollMonsters() {
     if (!archerStats) return;
@@ -277,10 +334,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setPhase("event_select");
   }
 
-  function inputArrow(val) {
+  function inputArrow(label) {
     if (arrows.length>=ARROWS_PER_ROUND||processing) return;
     sfxTap();
-    setArrows(prev=>[...prev,val]);
+    setArrows(prev=>[...prev,label]);
   }
   function undoArrow() {
     if (!arrows.length||processing) return;
@@ -306,7 +363,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
     for (let i=0; i<ARROWS_PER_ROUND; i++) {
       // 分數藥水：每箭 +1分，10→X 再+1 = 雙倍爆擊
-      const rawScore = arrows[i];
+      const rawLabel = arrows[i];
+      const isX = rawLabel === "X";
+      const rawScore = arrowLabelToVal(rawLabel);
       let score = rawScore;
       const sp = (battleStats?.scorePlus) || 0;
       let forceCrit = false;
@@ -314,8 +373,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         score = Math.min(rawScore + sp, 10);
         if (rawScore >= 10) { score = 10; forceCrit = true; }
       }
-      const baseCritMult = forceCrit ? 2.0 : 1.0;
-      const part = resolveHitPart(score, curUnlocked);
+      const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
+      const part = resolveHitPart(score, curUnlocked, isX);
       if (part.id==="chest") curUnlocked=new Set([...curUnlocked,"chest"]);
       if (part.id==="belly") curUnlocked=new Set([...curUnlocked,"belly"]);
       if (part.id==="groin") curUnlocked=new Set([...curUnlocked,"groin"]);
@@ -328,18 +387,29 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       const isOrganPart = ["heart","kidney","lung","balls"].includes(part.id);
       const hitText = getHitText(part.id);
 
+      // 弓箭手射箭躍起
+      setAnimArcherShoot(true);
+      setTimeout(()=>setAnimArcherShoot(false), 500);
+
       if (part.mult===0) {
         sfxSoftFail();
         showFloatDmg(0, false, false);
         addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${score}分)` });
+        setAnimArcherMiss(true);
+        showArcherEffect("MISS", "#94a3b8");
+        setTimeout(()=>setAnimArcherMiss(false), 600);
       } else if (isOrganPart) {
         sfxOrganHit();
         showFloatDmg(dmg, true, true);
         addLog({ type:"hit_organ", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+        setAnimArcherCrit(true);
+        setTimeout(()=>setAnimArcherCrit(false), 700);
       } else if (part.mult>=1.8||score>=10) {
         sfxCritBoom();
         showFloatDmg(dmg, true, false);
         addLog({ type:"hit_crit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+        setAnimArcherCrit(true);
+        setTimeout(()=>setAnimArcherCrit(false), 700);
       } else if (score>=8) {
         sfxArrowHit();
         showFloatDmg(dmg, false, false);
@@ -398,32 +468,36 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           addLog({ type:"system", text:"🕸️ 麻痺毒素！怪物本回合完全無法反擊！" });
           setSkipBigRound(false);
         } else if (!skipCtr) {
-          setBattlePhase("counter");
           const critChance=(mode==="veteran")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):(mode==="student")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.3):0;
           const isCrit=Math.random()<critChance;
           const headStunned=headHitCount>0&&battleMode==="zombie";
           const cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:bSt?.def||10, headStunned, isCrit });
           const counterTxt=isCrit
-            ? `${monster.icon} 爆擊！${monster.name} 猛烈反擊！受到 ${cdmg} 傷害（${curDist}米）`
+            ? `${monster.icon} 爆擊！${monster.name} 猛烈反擊！受到 ${cdmg} 傷害`
             : headStunned?`${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
             : `${monster.icon} ${monster.name} 反擊！受到 ${cdmg} 傷害`;
+          // 怪物往下撲擊動畫
           if (isCrit) {
+            setAnimMonsterCritAtk(true);
             sfxCounterCrit();
             vibrate([0, 60, 80, 60]);
             setAnimCounterCrit(true);
             setTimeout(() => setAnimCounterCrit(false), 900);
           } else {
+            setAnimMonsterAttack(true);
             sfxCounter();
             vibrate([0, 30, 50]);
-            setAnimCounter(true);
-            setTimeout(() => setAnimCounter(false), 800);
           }
-          showFloatCounterDmg(cdmg, isCrit);
+          await delay(480); // 等怪物俯衝到底
+          // 弓箭手受擊抖動
+          setAnimArcherHit(true);
+          showArcherEffect(isCrit?`💥 -${cdmg}`:`-${cdmg}`, isCrit?"#f43f5e":"#fca5a5");
           addLog({ type:"counter", text:counterTxt });
           curArchHP=Math.max(0,curArchHP-cdmg);
           setArcherHP(curArchHP);
           if (cdmg>0) setTotalDmgRecvd(v=>v+cdmg);
-          await delay(2000);
+          await delay(700);
+          setAnimMonsterAttack(false); setAnimMonsterCritAtk(false); setAnimArcherHit(false);
 
           if (curArchHP<=0) {
             if (!revived) {
@@ -467,8 +541,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       }
     }
 
-    const roundTotal=arrows.reduce((s,v)=>s+v,0);
-    const roundArr=[...arrows];
+    const roundTotal=arrows.reduce((s,v)=>s+arrowLabelToVal(v),0);
+    const roundArr=arrows.map(arrowLabelToVal);
     setAllArrows(prev=>[...prev,...roundArr]);
     setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundTotal}]);
     sfxRoundEnd();
@@ -485,6 +559,24 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       setBattlePhase("input");
       setProcessing(false);
     }
+  }
+
+  function restoreBattle(s) {
+    setMonster(s.monster);
+    setMode(s.mode || "novice");
+    setBattleMode(s.battleMode || "score");
+    setMonsterHP(s.monsterHP);
+    setArcherHP(s.archerHP);
+    setRound(s.round || 1);
+    setRoundScores(s.roundScores || []);
+    setSelectedDistance(s.selectedDistance || 15);
+    setDistanceMode(s.distanceMode || "fixed");
+    if (s.battleStats) setBattleStats(s.battleStats);
+    setLog(s.log || [{ type:"system", text:"⚔️ 戰鬥已從中斷點恢復！繼續作戰！" }]);
+    setArrows([]); setBattlePhase("input"); setProcessing(false);
+    setPhase("battle");
+    sessionStorage.removeItem("mb_battle_save");
+    setShowRestorePrompt(false);
   }
 
   async function startBattle() {
@@ -685,6 +777,76 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   // ── 畫面 ─────────────────────────────────────────────────
 
+  if (phase==="archer_select") {
+    return (
+      <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"#0f172a", color:"white", fontFamily:"sans-serif" }}>
+        <style>{BATTLE_CSS}</style>
+        {/* Header */}
+        <div style={{ flexShrink:0, padding:"16px 16px 8px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
+          {archerStyle && (
+            <button onClick={() => setPhase(archerSelectReturn)}
+              style={{ background:"none", border:"none", color:"#64748b", fontSize:13, fontWeight:700, cursor:"pointer", marginBottom:8, padding:0 }}>
+              ← 返回
+            </button>
+          )}
+          <div style={{ fontWeight:900, fontSize:18, letterSpacing:"0.02em" }}>🐾 選擇出戰外觀</div>
+          <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>
+            {archerStyle ? "選好後進入戰場就是這隻的樣子！" : "第一次進入打怪模式，請先選擇你的出戰外觀！"}
+          </div>
+        </div>
+
+        {/* Cat grid */}
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 12px 24px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:10 }}>
+            {CAT_IDS.map(catId => {
+              const cat = CATS[catId];
+              const isSelected = archerStyle === catId;
+              return (
+                <button key={catId}
+                  onClick={() => {
+                    localStorage.setItem("mb_archer_style", catId);
+                    setArcherStyle(catId);
+                    setPhase(archerSelectReturn);
+                  }}
+                  style={{
+                    background: isSelected ? "rgba(109,40,217,0.35)" : "rgba(255,255,255,0.05)",
+                    border: `2px solid ${isSelected ? "#7c3aed" : "rgba(255,255,255,0.1)"}`,
+                    borderRadius:12, padding:"10px 6px 8px", cursor:"pointer",
+                    display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+                    position:"relative", transition:"all .15s",
+                  }}>
+                  {/* Portrait */}
+                  <img
+                    src={`/cats/portraits/${catId}.webp`}
+                    alt={cat?.name}
+                    style={{ width:64, height:64, objectFit:"cover", borderRadius:"50%",
+                      border: isSelected ? "2px solid #a78bfa" : "2px solid rgba(255,255,255,0.15)" }}
+                  />
+                  {/* Archer preview */}
+                  <img
+                    src={`/cats/archers/${catId}.webp`}
+                    alt=""
+                    style={{ width:42, height:52, objectFit:"contain", objectPosition:"center bottom" }}
+                  />
+                  <div style={{ fontSize:11, fontWeight:900, color: isSelected ? "#c4b5fd" : "#e2e8f0" }}>
+                    {cat?.name}
+                  </div>
+                  {isSelected && (
+                    <div style={{
+                      position:"absolute", top:5, right:6,
+                      background:"#7c3aed", borderRadius:20, padding:"1px 6px",
+                      fontSize:9, fontWeight:900, color:"white"
+                    }}>✓ 使用中</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (phase==="select") {
     const power = archerStats ? calcArcherPower(archerStats) : 0;
     return (
@@ -693,10 +855,19 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         <div className="flex items-center justify-between">
           {onBack && <button onClick={onBack} className="text-slate-400 text-sm">← 返回</button>}
-          {!isGuest && (
-            <button onClick={()=>{ getMonsterLogs(profile.id, 20).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
-              className="text-xs text-blue-400 font-bold">📊 戰績記錄</button>
-          )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setArcherSelectReturn("select"); setPhase("archer_select"); }}
+              className="flex items-center gap-1.5 text-xs text-purple-300 font-bold">
+              <img src={`/cats/portraits/${archerStyle || CAT_IDS[0]}.webp`}
+                style={{ width:18, height:18, borderRadius:"50%", objectFit:"cover" }} alt="" />
+              🎨 外觀
+            </button>
+            {!isGuest && (
+              <button onClick={()=>{ getMonsterLogs(profile.id, 20).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
+                className="text-xs text-blue-400 font-bold">📊 戰績記錄</button>
+            )}
+          </div>
         </div>
 
         {/* 射手戰力卡 */}
@@ -719,6 +890,33 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             </div>
           )}
         </div>
+
+        {!isGuest && showRestorePrompt && savedBattle && (
+          <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid #fbbf24aa", borderRadius:12, padding:"12px 16px" }}>
+            <div style={{ fontWeight:900, color:"#fbbf24", fontSize:13, marginBottom:4 }}>⚔️ 上次戰鬥被中斷</div>
+            <div style={{ color:"#cbd5e1", fontSize:11, marginBottom:10 }}>
+              對手：{savedBattle.monster?.name}　第 {savedBattle.round} 回合
+              {" • "}怪物 HP {savedBattle.monsterHP}/{savedBattle.monster?.hp}
+              {" • "}你的 HP {savedBattle.archerHP}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                onClick={() => restoreBattle(savedBattle)}
+                disabled={!archerStats}
+                style={{ flex:1, padding:"8px 0", borderRadius:10, fontWeight:900, fontSize:13, cursor:"pointer", border:"none",
+                  background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12",
+                  opacity: archerStats ? 1 : 0.5 }}>
+                {archerStats ? "⚔️ 繼續戰鬥！" : "⏳ 載入中…"}
+              </button>
+              <button
+                onClick={() => { sessionStorage.removeItem("mb_battle_save"); setShowRestorePrompt(false); }}
+                style={{ flex:1, padding:"8px 0", borderRadius:10, fontWeight:700, fontSize:13, cursor:"pointer",
+                  background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.15)", color:"#94a3b8" }}>
+                放棄
+              </button>
+            </div>
+          </div>
+        )}
 
         {!isGuest && dailyLeft===0 ? (
           <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-6 text-center">
@@ -1093,6 +1291,16 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             </div>
           )}
 
+          {/* 外觀更換 */}
+          <button
+            onClick={() => { setArcherSelectReturn("prebattle"); setPhase("archer_select"); }}
+            className="w-full py-2 rounded-xl text-sm font-bold mb-1"
+            style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <img src={`/cats/portraits/${archerStyle || CAT_IDS[0]}.webp`}
+              style={{ width:22, height:22, borderRadius:"50%", objectFit:"cover" }} alt="" />
+            🎨 更換射手外觀（{CATS[archerStyle]?.name || "未選擇"}）
+          </button>
+
           {hasCat && (
             <div className="flex items-center justify-center gap-1.5 bg-indigo-500/20 border border-indigo-400/30 rounded-xl py-2 px-3 text-xs text-indigo-200 mb-1">
               🐱 {catName} 將在戰鬥中協助你！
@@ -1108,194 +1316,379 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   }
 
   if (phase==="battle") {
-    const maxHP=(battleStats||archerStats)?.hp||100;
-    const archPct=Math.max(0,Math.round(archerHP/maxHP*100));
-    const monPct=monster?Math.max(0,Math.round(monsterHP/monster.hp*100)):0;
-    const total6=arrows.reduce((s,v)=>s+v,0);
+    const maxHP = (battleStats||archerStats)?.hp||100;
+    const archPct = Math.max(0, Math.round(archerHP/maxHP*100));
+    const monPct  = monster ? Math.max(0, Math.round(monsterHP/monster.hp*100)) : 0;
+    const total6  = arrows.reduce((s,v)=>s+arrowLabelToVal(v),0);
+    const monLv   = monster?.tier==="mythic"?99:monster?.tier==="boss"?75:monster?.tier==="fierce"?50:monster?.tier==="elite"?35:monster?.tier==="rare"?20:10;
+    const catType = profile?.equippedCat?.type || "allround";
+    const catGlowColor = catType === "healer" ? "#10b981" : catType === "attacker" ? "#ef4444" : "#a78bfa";
+    const catGlowAnim = catMsg ? (catType === "healer" ? "mb-cat-glow-green 1.2s ease-in-out infinite" : catType === "attacker" ? "mb-cat-glow-red 1.2s ease-in-out infinite" : "mb-cat-glow-purple 1.2s ease-in-out infinite") : undefined;
+
     return (
-      <div className="p-4 flex flex-col gap-3 bg-slate-900 min-h-screen">
+      <div style={{
+        position:"fixed", top:0, bottom:0,
+        left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:540,
+        overflow:"hidden", zIndex:9999,
+        backgroundImage:"url(/ui/dungeon-bg.webp)",
+        backgroundSize:"cover", backgroundPosition:"center",
+        display:"flex", flexDirection:"column"
+      }}>
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
-        <div className="rounded-2xl p-4" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
-          <div className="flex justify-between text-white text-xs font-bold mb-2">
-            <span>第 {round} 回合</span>
-            {distanceMode==="dynamic"&&<span>📍 {distance}米</span>}
-            <span>{ARROWS_PER_ROUND}箭/回合</span>
+
+        {/* 閃光特效層 */}
+        {animHitCrit    && <div style={{position:"fixed",inset:0,background:"rgba(255,220,0,0.18)",pointerEvents:"none",zIndex:50,animation:"mb-crit-flash .6s ease-out forwards"}}/>}
+        {animCounterCrit && <div style={{position:"fixed",inset:0,background:"rgba(239,68,68,0.22)",pointerEvents:"none",zIndex:50,animation:"mb-crit-flash .7s ease-out forwards"}}/>}
+
+        {/* 返回按鈕（右上角懸浮） */}
+        {onBack && (
+          <button onClick={onBack} style={{
+            position:"absolute", top:8, right:8, zIndex:100,
+            background:"rgba(0,0,0,0.7)", border:"1px solid rgba(255,255,255,0.2)",
+            borderRadius:20, padding:"3px 10px", color:"#94a3b8",
+            fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>✕ 離開</button>
+        )}
+
+        {/* ── 上半：戰鬥 log（左）+ 怪物展示（右）── */}
+        <div style={{flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0"}}>
+
+          {/* 左：戰鬥紀錄（可折疊，高度自適應內容不超過怪物） */}
+          <div style={{
+            flexShrink:0, background:"rgba(0,0,0,0.82)", borderRadius:8,
+            border:"1px solid rgba(255,255,255,0.07)",
+            display:"flex", flexDirection:"column", overflow:"hidden",
+            width: logOpen ? 180 : 36, transition:"width .2s ease",
+            alignSelf:"flex-start", maxHeight:200
+          }}>
+            {/* 標題列 + 折疊按鈕 */}
+            <button onClick={()=>setLogOpen(v=>!v)} style={{
+              display:"flex", alignItems:"center", gap:4, padding:"5px 6px",
+              background:"none", border:"none", cursor:"pointer", width:"100%",
+              borderBottom: logOpen?"1px solid rgba(255,255,255,0.06)":"none"
+            }}>
+              <span style={{fontSize:12}}>📜</span>
+              {logOpen && <span style={{color:"#475569", fontSize:9, fontWeight:900, letterSpacing:1, whiteSpace:"nowrap"}}>戰鬥紀錄</span>}
+              <span style={{marginLeft:"auto", color:"#475569", fontSize:10}}>{logOpen?"◀":"▶"}</span>
+            </button>
+            {/* 內容 */}
+            {logOpen && (
+              <div style={{flex:1, overflowY:"auto", padding:"2px 6px"}}>
+                {log.map((e,i)=>(
+                  <div key={i} style={{
+                    fontSize:10, lineHeight:1.5, padding:"0.5px 0",
+                    color: e.type==="win"?"#fbbf24":e.type==="lose"?"#f87171":
+                      e.type==="revive"?"#f472b6":e.type==="event_good"?"#34d399":
+                      e.type==="event_bad"?"#f87171":e.type==="counter"?"#fb923c":
+                      e.type==="total"?"#67e8f9":e.type==="hit_organ"?"#c084fc":
+                      e.type==="hit_crit"?"#fb923c":e.type==="hit"?"#86efac":
+                      e.type==="miss"?"#64748b":"#94a3b8"
+                  }}>{e.text}</div>
+                ))}
+                <div ref={logEndRef}/>
+              </div>
+            )}
           </div>
-          <div className="mb-2" style={{ position:"relative" }}>
-            <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
-              <span style={animHitCrit ? {animation:"mb-shake-heavy .65s ease"} : animHit ? {animation:"mb-shake .5s ease"} : {}}>
-                {monster?.icon} {monster?.name}
-              </span>
-              <span>{monsterHP}/{monster?.hp}</span>
+
+          {/* 右：怪物展示 */}
+          <div style={{flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:28}}>
+            {/* 名稱列 */}
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3}}>
+              <span style={{color:"white", fontWeight:900, fontSize:17, textShadow:"0 2px 8px #000"}}>{monster?.name}</span>
+              <span style={{color:"#94a3b8", fontSize:10}}>Lv.{monLv}</span>
             </div>
-            {/* 浮動傷害數字 */}
-            <div style={{ position:"absolute", top:0, left:0, right:0, height:"60px", pointerEvents:"none", overflow:"visible", zIndex:10 }}>
-              {floatDmgs.map(f => (
-                <span key={f.id} style={{
-                  position:"absolute",
-                  left:`${f.left}%`,
-                  top:"0px",
-                  animation:"mb-float 1.3s ease-out forwards",
-                  fontWeight:900,
-                  fontSize: f.isOrgan ? "1.4rem" : f.isCrit ? "1.25rem" : "1rem",
-                  color: f.isOrgan ? "#f97316" : f.isCrit ? "#fbbf24" : f.text === "MISS" ? "#94a3b8" : "#f87171",
-                  textShadow:"0 2px 8px rgba(0,0,0,0.9)",
-                  whiteSpace:"nowrap",
-                }}>
-                  {f.text}{f.isOrgan ? "💥" : f.isCrit ? "⚡" : ""}
-                </span>
+
+            {/* HP 條 */}
+            <div style={{
+              background:"#1e293b", borderRadius:20, height:21,
+              border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5
+            }}>
+              <div style={{
+                width:`${monPct}%`, height:"100%", transition:"width .7s ease",
+                background:monPct>50?"#dc2626":monPct>25?"#f59e0b":"#7f1d1d"
+              }}/>
+              <div style={{
+                position:"absolute", inset:0,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                color:"white", fontSize:10, fontWeight:900
+              }}>
+                {monsterHP?.toLocaleString()} / {monster?.hp?.toLocaleString()}
+              </div>
+            </div>
+
+            {/* 狀態標籤列 */}
+            <div style={{display:"flex", gap:3, marginBottom:4, flexWrap:"wrap"}}>
+              {[
+                ["💀", `${round}回`, "rgba(255,255,255,0.07)", "#94a3b8"],
+                ["⚔️", monster?.atk, "rgba(239,68,68,0.15)", "#f87171"],
+                ["🛡️", monster?.def, "rgba(59,130,246,0.15)", "#60a5fa"],
+              ].map(([ic,val,bg,col])=>(
+                <div key={ic} style={{
+                  background:bg, border:`1px solid ${col}44`,
+                  borderRadius:5, padding:"1px 5px", fontSize:10, color:col
+                }}>{ic} {val}</div>
+              ))}
+              {distanceMode==="dynamic" && (
+                <div style={{background:"rgba(251,191,36,0.15)",border:"1px solid #fbbf2444",borderRadius:5,padding:"1px 5px",fontSize:10,color:"#fbbf24"}}>📍{distance}m</div>
+              )}
+            </div>
+
+            {/* 怪物大圖 + 浮動傷害 */}
+            <div style={{flex:1, position:"relative", display:"flex", alignItems:"center", justifyContent:"center"}}>
+              <div style={
+                animMonsterCritAtk ? {animation:"mb-monster-attack-crit .75s ease"} :
+                animMonsterAttack  ? {animation:"mb-monster-attack .65s ease"} :
+                animHitCrit        ? {animation:"mb-shake-heavy .65s ease"} :
+                animHit            ? {animation:"mb-shake .5s ease"} : {}
+              }>
+                <MonsterBattleImg id={monster?.id}/>
+              </div>
+              <div style={{position:"absolute", inset:0, pointerEvents:"none"}}>
+                {floatDmgs.map(f=>(
+                  <span key={f.id} style={{
+                    position:"absolute", left:`${f.left}%`, top:"10%",
+                    animation:"mb-float 1.3s ease-out forwards", fontWeight:900,
+                    fontSize:f.isOrgan?"1.3rem":f.isCrit?"1.15rem":"0.95rem",
+                    color:f.isOrgan?"#f97316":f.isCrit?"#fbbf24":f.text==="MISS"?"#94a3b8":"#f87171",
+                    textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap"
+                  }}>{f.text}{f.isOrgan?"💥":f.isCrit?"⚡":""}</span>
+                ))}
+                {floatCounterDmgs.map(f=>(
+                  <span key={f.id} style={{
+                    position:"absolute", left:`${f.left}%`, top:"55%",
+                    animation:"mb-float 1.3s ease-out forwards", fontWeight:900,
+                    fontSize:f.isCrit?"1.15rem":"0.95rem",
+                    color:f.isCrit?"#f43f5e":"#fca5a5",
+                    textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap"
+                  }}>{f.text}{f.isCrit?"💢":""}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 弓箭手排列 + 射手資訊 ── */}
+        <div style={{flex:"0 0 auto", display:"flex", flexDirection:"column", overflow:"hidden"}}>
+          {/* 弓箭手圖：固定高度 100px */}
+          <div style={{height:100, display:"flex", alignItems:"flex-end", justifyContent:"center"}}>
+            <div style={{
+              height:"100%", aspectRatio:"3/5", position:"relative",
+              animation: animArcherHit   ? "mb-archer-hurt 0.65s ease"  :
+                         animArcherMiss  ? "mb-archer-miss 0.55s ease"  :
+                         animArcherShoot ? "mb-archer-shoot 0.45s ease" : undefined
+            }}>
+              <img
+                src={`/cats/archers/${archerStyle || profile?.equippedCat?.catId || CAT_IDS[0]}.webp`}
+                alt="archer"
+                style={{width:"100%", height:"100%", objectFit:"contain", objectPosition:"center bottom", display:"block"}}
+              />
+              {/* 金色底光 */}
+              <div style={{position:"absolute", inset:0, pointerEvents:"none",
+                boxShadow:"inset 0 -2px 0 #fbbf24"}}/>
+              {animArcherCrit && (
+                <div style={{
+                  position:"absolute", inset:0, pointerEvents:"none",
+                  background:"rgba(251,191,36,0.4)",
+                  boxShadow:"0 0 24px 8px rgba(251,191,36,0.65)",
+                  animation:"mb-archer-crit 0.7s ease forwards"
+                }}/>
+              )}
+              {floatArcherEffects.map(e=>(
+                <div key={e.id} style={{
+                  position:"absolute", top:"10%", left:"50%", transform:"translateX(-50%)",
+                  animation:"mb-float 1.2s ease-out forwards",
+                  color:e.color, fontWeight:900, fontSize:"1rem",
+                  textShadow:"0 2px 8px rgba(0,0,0,0.95)",
+                  pointerEvents:"none", zIndex:20, whiteSpace:"nowrap"
+                }}>{e.text}</div>
               ))}
             </div>
-            <div className="h-3 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width:`${monPct}%`, background:monPct>50?"#ef4444":monPct>25?"#f59e0b":"#dc2626" }} />
-            </div>
           </div>
-          <div style={{ position:"relative" }}>
-            {/* 浮動受傷數字 */}
-            <div style={{ position:"absolute", top:0, left:0, right:0, height:"60px", pointerEvents:"none", overflow:"visible", zIndex:10 }}>
-              {floatCounterDmgs.map(f => (
-                <span key={f.id} style={{
-                  position:"absolute",
-                  left:`${f.left}%`,
-                  top:"0px",
-                  animation:"mb-float 1.3s ease-out forwards",
-                  fontWeight:900,
-                  fontSize: f.isCrit ? "1.25rem" : "1rem",
-                  color: f.isCrit ? "#f43f5e" : "#fca5a5",
-                  textShadow:"0 2px 8px rgba(0,0,0,0.9)",
-                  whiteSpace:"nowrap",
-                }}>
-                  {f.text}{f.isCrit ? "💢" : ""}
-                </span>
-              ))}
+
+          {/* 射手資訊列：直向欄位（多人可並排，單人置中） */}
+          <div style={{
+            background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)",
+            display:"flex", justifyContent:"center", alignItems:"center", gap:8, padding:"5px 8px"
+          }}>
+            {/* 射手欄位 */}
+            <div style={{
+              textAlign:"center", padding:"5px 18px", minWidth:80,
+              border:"1px solid rgba(255,255,255,0.18)",
+              borderRadius:8,
+              background:"rgba(255,255,255,0.04)"
+            }}>
+              <div style={{
+                width:18, height:18, borderRadius:"50%", margin:"0 auto 3px",
+                background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.28)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                color:"white", fontSize:9, fontWeight:900
+              }}>1</div>
+              <div style={{color:"white", fontSize:10, fontWeight:900, lineHeight:1.3}}>
+                {(profile?.nickname||profile?.name||"射手").slice(0,6)}
+              </div>
+              <div style={{color:archerHP/(maxHP||1)<=0.25?"#f87171":"#34d399", fontSize:9, fontWeight:700, marginTop:2}}>
+                HP {archerHP}/{maxHP}{revived?" 💖":""}
+              </div>
+              <div style={{display:"flex", gap:6, justifyContent:"center", marginTop:2}}>
+                <span style={{color:"#f87171", fontSize:9, fontWeight:700}}>ATK {archerStats?.atk||0}</span>
+                <span style={{color:"#60a5fa", fontSize:9, fontWeight:700}}>DEF {archerStats?.def||0}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-xs text-cyan-200 mb-0.5">
-              <span>🏹 {profile?.nickname||profile?.name||"射手"}{revived?" 💖":""}</span>
-              <span style={animCounterCrit?{animation:"mb-shake-heavy .65s ease"}:animCounter?{animation:"mb-shake .5s ease"}:{}}>
-                {archerHP}/{maxHP}
-                {battleStats?.hp > (archerStats?.hp || 0) && (
-                  <span className="text-emerald-300 text-[10px] ml-1">(+{battleStats.hp - archerStats.hp})</span>
+
+            {/* 貓貓夥伴框 */}
+            {hasCat && (
+              <div style={{
+                textAlign:"center", padding:"4px 8px",
+                border:`1px solid ${catMsg ? catGlowColor : "rgba(255,255,255,0.18)"}`,
+                borderRadius:8, background:"rgba(255,255,255,0.04)",
+                position:"relative", transition:"border-color .3s, box-shadow .3s",
+                boxShadow: catMsg ? `0 0 14px ${catGlowColor}88` : "none",
+                minWidth:52,
+              }}>
+                <img
+                  src={`/cats/portraits/${profile?.equippedCat?.catId || CAT_IDS[0]}.webp`}
+                  alt={catName}
+                  style={{
+                    width:36, height:36, objectFit:"contain", display:"block", margin:"0 auto",
+                    animation: catGlowAnim,
+                  }}
+                />
+                <div style={{color: catMsg ? catGlowColor : "#c4b5fd", fontSize:9, fontWeight:700, marginTop:1, transition:"color .3s"}}>
+                  {(catName||"貓貓").slice(0,4)}
+                </div>
+                {catMsg && (
+                  <div style={{
+                    position:"absolute", bottom:"105%", left:"50%", transform:"translateX(-50%)",
+                    background:"rgba(88,28,135,0.92)", border:`1px solid ${catGlowColor}`,
+                    borderRadius:8, padding:"3px 8px", fontSize:10, color:"#e9d5ff",
+                    whiteSpace:"nowrap", fontWeight:700,
+                    animation:"mb-float 2s ease-out forwards", pointerEvents:"none",
+                  }}>🐱 {catMsg}</div>
                 )}
-              </span>
-            </div>
-            <div className="h-3 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width:`${archPct}%` }} />
-            </div>
+              </div>
+            )}
           </div>
-          {hasCat && (
-            <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-white/10">
-              <span className="text-indigo-300 text-xs">🐱 {catName} 陪練中</span>
+        </div>
+
+        {/* ── 輸入區 ── */}
+        <div style={{flex:"0 0 auto", padding:"3px 6px", background:"rgba(0,0,0,0.68)"}}>
+
+          {/* HP 危機 */}
+          {archPct<=25 && battlePhase==="input" && (
+            <div style={{
+              textAlign:"center", fontSize:11, fontWeight:900, color:"#ef4444",
+              marginBottom:4, animation:"mb-hp-danger 1s ease-in-out infinite",
+              background:"rgba(239,68,68,0.12)", borderRadius:6, padding:"2px 0"
+            }}>⚠️ 生命值危急！</div>
+          )}
+
+          {/* 事件卡 */}
+          {battlePhase==="event" && currentEvent && (
+            <div style={{
+              padding:"6px 10px", borderRadius:10, marginBottom:4, textAlign:"center",
+              background:currentEvent.type==="buff"?"rgba(16,185,129,0.25)":currentEvent.type==="debuff"?"rgba(239,68,68,0.25)":"rgba(59,130,246,0.25)",
+              border:`1px solid ${currentEvent.type==="buff"?"#10b981":currentEvent.type==="debuff"?"#ef4444":"#3b82f6"}55`,
+              animation:currentEvent.type==="buff"?"mb-event-buff .45s ease":"mb-event-debuff .45s ease"
+            }}>
+              <span style={{fontSize:16}}>{currentEvent.icon}</span>
+              <span style={{color:"white", fontWeight:900, fontSize:12, marginLeft:6}}>{currentEvent.title}</span>
+              <div style={{color:"#cbd5e1", fontSize:10, marginTop:1}}>{currentEvent.desc}</div>
             </div>
+          )}
+
+
+          {/* 輸入階段 */}
+          {battlePhase==="input" && (
+            <>
+              {/* 箭槽 */}
+              <div style={{display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center"}}>
+                {Array.from({length:ARROWS_PER_ROUND}).map((_,i)=>(
+                  <div key={i} style={{
+                    width:26, height:26, borderRadius:5, flexShrink:0,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:13, fontWeight:900,
+                    background:i<arrows.length?"#2563eb":i===arrows.length?"rgba(37,99,235,0.3)":"rgba(255,255,255,0.05)",
+                    border:`2px solid ${i<arrows.length?"#60a5fa":i===arrows.length?"#3b82f6":"rgba(255,255,255,0.1)"}`,
+                    color:i<arrows.length?"white":"#475569"
+                  }}>
+                    {i<arrows.length ? arrows[i] : ""}
+                  </div>
+                ))}
+                {arrows.length>0 && (
+                  <button onClick={undoArrow} style={{background:"none",border:"none",color:"#64748b",fontSize:14,cursor:"pointer",paddingLeft:4}}>↩</button>
+                )}
+              </div>
+
+              {/* 分數按鈕（滿6箭自動隱藏，讓送出按鈕完整顯示） */}
+              {arrows.length < ARROWS_PER_ROUND && <div style={{
+                display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:2, marginBottom:4,
+                background:"rgb(20,12,5)", borderRadius:6, padding:"2px"
+              }}>
+                {HALF_SCORES.map(s=>(
+                  <button key={s.label} onClick={()=>inputArrow(s.label)}
+                    disabled={arrows.length>=ARROWS_PER_ROUND||processing}
+                    style={{
+                      backgroundImage:"url(/ui/score-btn.webp)",
+                      backgroundSize:"cover", backgroundPosition:"center",
+                      backgroundColor:"rgb(30,16,6)",
+                      WebkitAppearance:"none", appearance:"none",
+                      border:"none", borderRadius:5, height:32, width:"100%",
+                      color:s.label==="X"?"#fbbf24":s.label==="M"?"#94a3b8":
+                        s.val>=9?"#fef3c7":s.val>=7?"#bfdbfe":s.val>=5?"#d1d5db":"#9ca3af",
+                      fontWeight:900, fontSize:13, cursor:"pointer",
+                      opacity:arrows.length>=ARROWS_PER_ROUND||processing?0.4:1,
+                      textShadow:"0 1px 6px #000", padding:0, transition:"transform .08s"
+                    }}
+                    onTouchStart={e=>e.currentTarget.style.transform="scale(0.88)"}
+                    onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}
+                  >{s.label}</button>
+                ))}
+              </div>}
+
+              {/* TURN + 回合總分 + 送出 */}
+              <div style={{display:"flex", gap:4, alignItems:"center"}}>
+                {/* 回合計數格 */}
+                <div style={{
+                  flexShrink:0, width:46, height:40,
+                  display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+                  background:"rgba(0,0,0,0.6)", border:"1.5px solid #92400e", borderRadius:7
+                }}>
+                  <span style={{color:"white", fontWeight:900, fontSize:17, lineHeight:1}}>{round}</span>
+                  <span style={{color:"#92400e", fontSize:7, fontWeight:900, letterSpacing:1}}>TURN</span>
+                </div>
+                {/* 總分 */}
+                <div style={{
+                  flex:1, background:"rgba(255,255,255,0.05)", borderRadius:8,
+                  border:"1px solid rgba(255,255,255,0.1)", padding:"5px 10px",
+                  display:"flex", justifyContent:"space-between", alignItems:"center"
+                }}>
+                  <span style={{color:"#94a3b8", fontSize:11}}>回合總分</span>
+                  <span style={{color:"#60a5fa", fontWeight:900, fontSize:18}}>
+                    {total6}<span style={{color:"#475569", fontSize:10, marginLeft:2}}>/60</span>
+                  </span>
+                </div>
+                <button
+                  onClick={submitRound}
+                  disabled={arrows.length<ARROWS_PER_ROUND||processing}
+                  style={{
+                    flex:2, padding:"8px 0",
+                    background:arrows.length>=ARROWS_PER_ROUND
+                      ?"linear-gradient(90deg,#7c3aed,#2563eb)"
+                      :"rgba(255,255,255,0.07)",
+                    border:"1px solid rgba(255,255,255,0.1)",
+                    borderRadius:8, color:"white",
+                    fontWeight:900, fontSize:14, cursor:arrows.length>=ARROWS_PER_ROUND?"pointer":"default",
+                    opacity:processing?0.5:(arrows.length<ARROWS_PER_ROUND?0.3:1),
+                    transition:"background .2s, opacity .2s"
+                  }}
+                >{processing?"計算中…":"⚔️ 送出！"}</button>
+              </div>
+            </>
           )}
         </div>
 
-        {/* 爆擊閃光層 */}
-        {animHitCrit && (
-          <div style={{ position:"fixed", inset:0, background:"rgba(255,220,0,0.18)", pointerEvents:"none", zIndex:50, animation:"mb-crit-flash .6s ease-out forwards" }} />
-        )}
-        {animCounterCrit && (
-          <div style={{ position:"fixed", inset:0, background:"rgba(239,68,68,0.22)", pointerEvents:"none", zIndex:50, animation:"mb-crit-flash .7s ease-out forwards" }} />
-        )}
-
-        {/* HP 危機警告 */}
-        {archPct <= 25 && battlePhase === "input" && (
-          <div className="rounded-xl px-3 py-2 text-center text-sm font-black text-red-700"
-            style={{ background:"rgba(239,68,68,0.12)", animation:"mb-hp-danger 1s ease-in-out infinite" }}>
-            ⚠️ 生命值危急！HP {archerHP}/{maxHP}
-          </div>
-        )}
-
-        {battlePhase==="event"&&currentEvent&&(
-          <div className={`rounded-2xl p-4 text-center border-2 shadow-lg ${
-            currentEvent.type==="buff"
-              ? "bg-gradient-to-br from-emerald-900/40 to-teal-900/40 border-emerald-500/60"
-              : currentEvent.type==="debuff"
-              ? "bg-gradient-to-br from-red-900/40 to-rose-900/40 border-red-500/60"
-              : "bg-gradient-to-br from-blue-900/40 to-indigo-900/40 border-blue-500/60"
-          }`} style={{ animation: currentEvent.type==="buff" ? "mb-event-buff .45s ease" : "mb-event-debuff .45s ease" }}>
-            <div className="text-4xl mb-2">{currentEvent.icon}</div>
-            <div className="font-black text-white text-base mb-1">{currentEvent.title}</div>
-            <div className="text-slate-300 text-xs leading-relaxed">{currentEvent.desc}</div>
-            <div className={`text-xs font-black mt-2 px-3 py-1 rounded-full inline-block ${
-              currentEvent.type==="buff" ? "bg-emerald-800/60 text-emerald-300"
-              : currentEvent.type==="debuff" ? "bg-red-800/60 text-red-300"
-              : "bg-blue-800/60 text-blue-300"
-            }`}>
-              {currentEvent.type==="buff" ? "✨ 有利事件" : currentEvent.type==="debuff" ? "⚠️ 不利事件" : "ℹ️ 中性事件"}
-            </div>
-          </div>
-        )}
-        {battlePhase==="counter"&&(
-          <div className="rounded-2xl p-4 text-center border-2 border-red-400 shadow-lg"
-            style={{ background:"linear-gradient(135deg,#450a0a,#7f1d1d)", animation:"mb-counter-warn .5s ease" }}>
-            <div className="flex justify-center mb-1" style={{ animation:"mb-bounce .6s ease infinite" }}>
-              <MonsterSVG id={monster?.id} size={60}/>
-            </div>
-            <div className="text-red-200 font-black text-base">⚡ {monster?.name} 準備反擊！</div>
-            <div className="text-red-400 text-xs mt-1">蓄力中…</div>
-          </div>
-        )}
-
-        {battlePhase==="input"&&(
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
-            <div className="text-slate-300 text-sm font-black mb-2">
-              輸入本回合 {ARROWS_PER_ROUND} 箭
-              <span className="text-slate-500 font-normal ml-1">（每 {ARROWS_PER_COUNTER} 箭後怪物反擊）</span>
-            </div>
-            <div className="flex gap-1.5 flex-wrap mb-3">
-              {Array.from({length:ARROWS_PER_ROUND}).map((_,i)=>(
-                <div key={i} className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black
-                  ${i<arrows.length?"bg-blue-600 text-white":i===arrows.length?"bg-blue-900/60 text-blue-400 ring-2 ring-blue-500":"bg-slate-700 text-slate-600"}`}>
-                  {i<arrows.length?(arrows[i]===0?"M":arrows[i]):""}
-                </div>
-              ))}
-              {arrows.length>0&&<button onClick={undoArrow} className="text-xs text-slate-500 underline ml-1 self-center">↩退</button>}
-            </div>
-            {arrows.length<ARROWS_PER_ROUND&&(
-              <div className="text-xs text-center text-blue-400 font-bold mb-2">
-                第 {arrows.length+1} 箭
-                {arrows.length===1?"　→ 再1箭怪物反擊":arrows.length===3?"　→ 再1箭怪物反擊":arrows.length===5?"　→ 最後一箭！":""}
-              </div>
-            )}
-            {arrows.length<ARROWS_PER_ROUND&&(
-              <div className="grid grid-cols-6 gap-1.5">
-                {HALF_SCORES.map(s=>(
-                  <button key={s.label} onClick={()=>inputArrow(s.val)}
-                    className={`py-2 rounded-lg font-black text-sm active:scale-90 transition-transform ${s.cls}`}>
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center justify-between mt-3 bg-slate-700/50 rounded-xl px-3 py-2">
-              <span className="text-slate-300 text-sm font-bold">本回合總分</span>
-              <span className="text-blue-400 font-black text-xl">{total6}<span className="text-xs text-slate-500 ml-1">/ 60</span></span>
-            </div>
-            {arrows.length>=ARROWS_PER_ROUND&&(
-              <button onClick={submitRound} disabled={processing}
-                className="w-full mt-3 py-3 rounded-xl font-black text-white disabled:opacity-50"
-                style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)" }}>
-                {processing?"計算中…":"⚔️ 送出，開始戰鬥！"}
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="bg-gray-900 rounded-2xl p-3 max-h-52 overflow-y-auto">
-          {log.map((e,i)=>(
-            <div key={i} className={`text-xs py-0.5 leading-relaxed ${
-              e.type==="win"?"text-amber-400 font-black":e.type==="lose"?"text-red-400 font-black":
-              e.type==="revive"?"text-pink-400 font-black":e.type==="event_good"?"text-emerald-300 font-bold":
-              e.type==="event_bad"?"text-red-300 font-bold":e.type==="counter"?"text-orange-300":
-              e.type==="total"?"text-cyan-300 font-bold":e.type==="hit_organ"?"text-purple-300 font-black":
-              e.type==="hit_crit"?"text-orange-300 font-bold":e.type==="hit"?"text-emerald-300":
-              e.type==="miss"?"text-gray-500":"text-gray-400"
-            }`}>{e.text}</div>
-          ))}
-          <div ref={logEndRef} />
-        </div>
       </div>
     );
   }
