@@ -555,7 +555,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     setBattlePhase("input"); setArrows([]); setUnlockedParts(new Set());
     setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
-    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null); setChestOpened(false);
+    setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
     setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
     sfxTap();
   }
@@ -689,14 +689,14 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   if (phase==="select") {
     const power = archerStats ? calcArcherPower(archerStats) : 0;
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         <div className="flex items-center justify-between">
-          {onBack && <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>}
+          {onBack && <button onClick={onBack} className="text-slate-400 text-sm">← 返回</button>}
           {!isGuest && (
             <button onClick={()=>{ getMonsterLogs(profile.id, 20).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
-              className="text-xs text-blue-600 font-bold">📊 戰績記錄</button>
+              className="text-xs text-blue-400 font-bold">📊 戰績記錄</button>
           )}
         </div>
 
@@ -722,18 +722,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         </div>
 
         {!isGuest && dailyLeft===0 ? (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+          <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-3xl mb-2">😴</div>
-            <div className="font-black text-red-700">今日挑戰次數已用完</div>
-            <div className="text-gray-500 text-sm mt-1">明天再來挑戰！</div>
+            <div className="font-black text-red-400">今日挑戰次數已用完</div>
+            <div className="text-slate-400 text-sm mt-1">明天再來挑戰！</div>
           </div>
         ) : (
           <>
 
             {/* 六族各1隻，依家族排列 */}
             <div className="flex items-center justify-between mb-1">
-              <div className="text-gray-600 text-sm font-black">今日對手（六族匹配）</div>
-              <button onClick={rerollMonsters} className="text-xs text-purple-600 font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+              <div className="text-slate-300 text-sm font-black">今日對手（六族匹配）</div>
+              <button onClick={rerollMonsters} className="text-xs text-purple-300 font-bold bg-purple-900/30 px-2.5 py-1 rounded-full border border-purple-500/30">
                 🎲 重新抽怪
               </button>
             </div>
@@ -746,19 +746,19 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 return (
                   <button key={m.id} onClick={()=>setPickedMonster(m)}
                     className="rounded-2xl p-4 text-left transition-all active:scale-95 relative overflow-hidden"
-                    style={{ background:isPicked?"#ede9fe":"white", border:`2px solid ${isPicked?"#7c3aed":"#e2e8f0"}` }}>
+                    style={{ background:isPicked?"rgba(109,40,217,0.3)":"rgba(255,255,255,0.05)", border:`2px solid ${isPicked?"#7c3aed":"rgba(255,255,255,0.1)"}` }}>
                     {/* 族別標籤 */}
                     <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full"
-                      style={{ background:family.color+"22", color:family.color }}>
+                      style={{ background:family.color+"33", color:family.color }}>
                       {family.icon} {family.label}
                     </div>
                     <div className="mb-2"><MonsterSVG id={m.id} size={56}/></div>
-                    <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
+                    <div className="font-black text-slate-100 text-sm pr-14">{m.name}</div>
                     <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                       style={{ background:tier.bg, color:tier.color }}>
                       【{tier.label}】
                     </div>
-                    <div className="flex gap-2 mt-1.5 text-xs text-gray-400">
+                    <div className="flex gap-2 mt-1.5 text-xs text-slate-500">
                       <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
                     </div>
                   </button>
@@ -855,21 +855,21 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   if (phase==="mode") {
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("select")} className="text-gray-500 text-sm self-start">← 返回</button>
-        <div className="text-gray-800 font-black text-xl text-center">選擇靶紙模式</div>
+        <button onClick={()=>setPhase("select")} className="text-slate-400 text-sm self-start">← 返回</button>
+        <div className="text-white font-black text-xl text-center">選擇靶紙模式</div>
         <button onClick={()=>{ setBattleMode("score"); setPhase("difficulty"); }}
-          className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
+          className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🎯 分數靶紙模式</div>
-          <div className="font-black text-gray-800 mb-1">輸入每箭環數，系統算傷害</div>
-          <div className="text-gray-500 text-sm">簡單直接，分數越高傷害越大。</div>
+          <div className="font-black text-white mb-1">輸入每箭環數，系統算傷害</div>
+          <div className="text-slate-400 text-sm">簡單直接，分數越高傷害越大。</div>
         </button>
         <button onClick={()=>{ setBattleMode("zombie"); setPhase("difficulty"); }}
-          className="rounded-2xl p-5 text-left border-2 border-purple-200 bg-purple-50 active:scale-95 transition-transform">
+          className="rounded-2xl p-5 text-left border-2 border-purple-500/40 bg-purple-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🧟 殭屍靶紙模式</div>
-          <div className="font-black text-gray-800 mb-1">分數決定命中部位，觸發部位加成</div>
-          <div className="text-gray-500 text-sm">高分命中頭部/心臟，傷害爆表！解鎖器官部位增加趣味。</div>
+          <div className="font-black text-white mb-1">分數決定命中部位，觸發部位加成</div>
+          <div className="text-slate-400 text-sm">高分命中頭部/心臟，傷害爆表！解鎖器官部位增加趣味。</div>
         </button>
       </div>
     );
@@ -877,30 +877,30 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   if (phase==="difficulty") {
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("mode")} className="text-gray-500 text-sm self-start">← 返回</button>
-        <div className="text-gray-800 font-black text-xl text-center">選擇難度</div>
+        <button onClick={()=>setPhase("mode")} className="text-slate-400 text-sm self-start">← 返回</button>
+        <div className="text-white font-black text-xl text-center">選擇難度</div>
         <button onClick={()=>{ setMode("novice"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
-          className="rounded-2xl p-5 text-left border-2 border-green-200 bg-green-50 active:scale-95 transition-transform">
+          className="rounded-2xl p-5 text-left border-2 border-green-500/40 bg-green-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟢 新手模式</div>
-          <div className="font-black text-gray-800 mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
-          <div className="text-gray-500 text-sm">怪物 HP×1.5，使用本人射手數值。每2箭怪物反擊一次，傷害穩定。</div>
-          <div className="text-green-600 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
+          <div className="font-black text-white mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
+          <div className="text-slate-400 text-sm">怪物 HP×1.5，使用本人射手數值。每2箭怪物反擊一次，傷害穩定。</div>
+          <div className="text-green-400 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
-          className="rounded-2xl p-5 text-left border-2 border-blue-200 bg-blue-50 active:scale-95 transition-transform">
+          className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🎓 學生模式</div>
-          <div className="font-black text-gray-800 mb-1">自選距離，含爆擊（距離越近越高）</div>
-          <div className="text-gray-500 text-sm">怪物 HP×2，使用本人射手數值。動態模式每回合距離縮短 1~5 米。</div>
-          <div className="text-blue-600 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
+          <div className="font-black text-white mb-1">自選距離，含爆擊（距離越近越高）</div>
+          <div className="text-slate-400 text-sm">怪物 HP×2，使用本人射手數值。動態模式每回合距離縮短 1~5 米。</div>
+          <div className="text-blue-400 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
-          className="rounded-2xl p-5 text-left border-2 border-orange-200 bg-orange-50 active:scale-95 transition-transform">
+          className="rounded-2xl p-5 text-left border-2 border-orange-500/40 bg-orange-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1">🟠 老手模式</div>
-          <div className="font-black text-gray-800 mb-1">怪物大幅增強，射手最低 600 HP，加成無上限</div>
-          <div className="text-gray-500 text-sm">怪物 HP×4、ATK×2、DEF×2。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
-          <div className="text-orange-600 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
+          <div className="font-black text-white mb-1">怪物大幅增強，射手最低 600 HP，加成無上限</div>
+          <div className="text-slate-400 text-sm">怪物 HP×4、ATK×2、DEF×2。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
+          <div className="text-orange-400 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
         </button>
 
         {eventConfig?.active && (
@@ -935,26 +935,26 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const isAdvanced = mode !== "novice";
     const btnBase = "flex-1 py-2.5 rounded-xl text-sm font-black border transition-all";
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("difficulty")} className="text-gray-500 text-sm self-start">← 返回</button>
-        <div className="text-gray-800 font-black text-xl text-center">選擇距離</div>
+        <button onClick={()=>setPhase("difficulty")} className="text-slate-400 text-sm self-start">← 返回</button>
+        <div className="text-white font-black text-xl text-center">選擇距離</div>
 
         {isAdvanced && (
           <div className="flex gap-2">
             <button onClick={()=>setDistanceMode("fixed")}
-              className={`${btnBase} ${distanceMode==="fixed"?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-700 border-gray-200"}`}>
+              className={`${btnBase} ${distanceMode==="fixed"?"bg-blue-600 text-white border-blue-600":"bg-white/10 text-slate-300 border-white/20"}`}>
               📍 固定幾米
             </button>
             <button onClick={()=>{
               const d=PRESET_DISTANCES[Math.floor(Math.random()*PRESET_DISTANCES.length)];
               setSelectedDistance(d); setDistanceMode("random");
             }}
-              className={`${btnBase} ${distanceMode==="random"?"bg-purple-600 text-white border-purple-600":"bg-white text-gray-700 border-gray-200"}`}>
+              className={`${btnBase} ${distanceMode==="random"?"bg-purple-600 text-white border-purple-600":"bg-white/10 text-slate-300 border-white/20"}`}>
               🎲 隨機距離
             </button>
             <button onClick={()=>{ setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); }}
-              className={`${btnBase} ${distanceMode==="dynamic"?"bg-orange-500 text-white border-orange-500":"bg-white text-gray-700 border-gray-200"}`}>
+              className={`${btnBase} ${distanceMode==="dynamic"?"bg-orange-500 text-white border-orange-500":"bg-white/10 text-slate-300 border-white/20"}`}>
               🏃 動態15m起
             </button>
           </div>
@@ -964,20 +964,20 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           <div>
             {distanceMode==="random" ? (
               <div className="text-center">
-                <div className="text-5xl font-black text-purple-600 my-4">🎲 {selectedDistance}米</div>
+                <div className="text-5xl font-black text-purple-400 my-4">🎲 {selectedDistance}米</div>
                 <button onClick={()=>{
                   const d=PRESET_DISTANCES[Math.floor(Math.random()*PRESET_DISTANCES.length)];
                   setSelectedDistance(d);
-                }} className="text-sm text-purple-500 font-bold underline">重新抽取</button>
+                }} className="text-sm text-purple-400 font-bold underline">重新抽取</button>
               </div>
             ) : (
               <div>
-                <div className="text-sm text-gray-500 font-bold mb-2">選擇距離</div>
+                <div className="text-sm text-slate-400 font-bold mb-2">選擇距離</div>
                 <div className="flex flex-wrap gap-2">
                   {(mode==="novice" ? PRESET_DISTANCES_NOVICE : PRESET_DISTANCES).map(d=>(
                     <button key={d} onClick={()=>setSelectedDistance(d)}
                       className={`px-4 py-2 rounded-xl font-black text-sm border-2 transition-all ${
-                        selectedDistance===d?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-700 border-gray-200"
+                        selectedDistance===d?"bg-blue-600 text-white border-blue-600":"bg-white/10 text-slate-300 border-white/20"
                       }`}>
                       {d}米
                     </button>
@@ -989,11 +989,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         )}
 
         {distanceMode==="dynamic" && (
-          <div className={`rounded-2xl p-4 ${mode==="veteran"?"bg-orange-50 border-2 border-orange-200":"bg-blue-50 border-2 border-blue-200"}`}>
-            <div className={`font-black text-lg mb-1 ${mode==="veteran"?"text-orange-700":"text-blue-700"}`}>
+          <div className={`rounded-2xl p-4 ${mode==="veteran"?"bg-orange-900/20 border-2 border-orange-500/40":"bg-blue-900/20 border-2 border-blue-500/40"}`}>
+            <div className={`font-black text-lg mb-1 ${mode==="veteran"?"text-orange-300":"text-blue-300"}`}>
               {mode==="veteran"?"🏹 動態距離（老手）":"🎓 動態距離（學生）"}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-slate-400">
               {mode==="veteran"
                 ?"從15米出發，每回合怪物逼近縮短 1~5 米，距離越近爆擊率越高。"
                 :"從15米出發，每回合怪物逼近縮短 1~5 米，越來越緊張！"}
@@ -1018,9 +1018,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const previewATK = mode==="veteran" ? Math.round(pickedMonster.atk * 2) : pickedMonster.atk;
     const previewDEF = mode==="veteran" ? Math.round(pickedMonster.def * 2) : pickedMonster.def;
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={() => setPhase(eventMode ? "event_select" : "distance")} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={() => setPhase(eventMode ? "event_select" : "distance")} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="mb-2 flex justify-center" style={{ animation:"mb-bounce 1.5s ease infinite" }}>
             <MonsterSVG id={pickedMonster.id} size={96}/>
@@ -1114,7 +1114,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     const monPct=monster?Math.max(0,Math.round(monsterHP/monster.hp*100)):0;
     const total6=arrows.reduce((s,v)=>s+v,0);
     return (
-      <div className="p-4 flex flex-col gap-3">
+      <div className="p-4 flex flex-col gap-3 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         <div className="rounded-2xl p-4" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
@@ -1304,32 +1304,32 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   if (phase==="loot") {
     const stats=calcStats(allArrows);
     return (
-      <div className="p-4 flex flex-col gap-4 items-center">
+      <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <div className="text-center mt-4">
           <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster?.name}！</div>
-          <div className="text-gray-500 text-sm">第 {round} 回合完成</div>
+          <div className="text-slate-400 text-sm">第 {round} 回合完成</div>
         </div>
         <div className="w-full grid grid-cols-3 gap-2">
           {[["⚔️ 總傷害",totalDmgDealt],["🛡️ 承傷",totalDmgRecvd],["💥 爆擊",`${critCount}次`]].map(([lbl,val])=>(
-            <div key={lbl} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-200">
-              <div className="text-gray-400 text-xs">{lbl}</div>
-              <div className="font-black text-gray-800 text-xl">{val}</div>
+            <div key={lbl} className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
+              <div className="text-slate-400 text-xs">{lbl}</div>
+              <div className="font-black text-white text-xl">{val}</div>
             </div>
           ))}
         </div>
         {stats&&(
-          <div className="w-full bg-blue-50 border border-blue-200 rounded-2xl p-4">
-            <div className="text-blue-700 text-xs font-black mb-3">🎯 本場射箭統計（{stats.count} 箭）</div>
+          <div className="w-full bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4">
+            <div className="text-blue-300 text-xs font-black mb-3">🎯 本場射箭統計（{stats.count} 箭）</div>
             <div className="grid grid-cols-4 gap-2 mb-3">
               {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens],["脫靶",stats.misses]].map(([l,v])=>(
-                <div key={l} className="bg-white rounded-xl p-2 text-center border border-blue-100">
+                <div key={l} className="bg-white/5 rounded-xl p-2 text-center border border-white/10">
                   <div className="text-blue-400 text-xs">{l}</div>
-                  <div className="font-black text-gray-800 text-lg">{v}</div>
+                  <div className="font-black text-white text-lg">{v}</div>
                 </div>
               ))}
             </div>
-            <div className="text-blue-600 text-xs font-bold mb-1.5">分數分佈</div>
+            <div className="text-blue-400 text-xs font-bold mb-1.5">分數分佈</div>
             <div className="flex gap-1 flex-wrap">
               {[10,9,8,7,6,5,4,3,2,1,0].map(s=>{
                 const c=stats.dist[s]||0;
@@ -1337,7 +1337,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 const col=HALF_SCORES.find(h=>h.val===s)?.color||"#9ca3af";
                 return (
                   <div key={s} className="flex flex-col items-center gap-0.5">
-                    <span className="text-xs font-black text-gray-700">{c}</span>
+                    <span className="text-xs font-black text-slate-300">{c}</span>
                     <span className="text-xs font-bold px-2 py-0.5 rounded text-white" style={{ background:col }}>{s===0?"M":s===10?"X":s}</span>
                   </div>
                 );
@@ -1358,21 +1358,21 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                   <div className="text-amber-600 font-black text-xl">點擊開紀念寶箱！</div>
                 </button>
               ) : (
-                <div className="w-full bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex flex-col items-center gap-3">
+                <div className="w-full bg-amber-900/20 border-2 border-amber-400/40 rounded-2xl p-4 flex flex-col items-center gap-3">
                   <div className="text-5xl">{loot.icon}</div>
-                  <div className="font-black text-xl text-gray-800">{loot.name}</div>
-                  <div className="text-gray-500 text-sm text-center">{loot.desc}</div>
-                  <div className="text-amber-600 text-xs font-bold bg-amber-100 rounded-xl px-3 py-1.5">
+                  <div className="font-black text-xl text-white">{loot.name}</div>
+                  <div className="text-slate-400 text-sm text-center">{loot.desc}</div>
+                  <div className="text-amber-300 text-xs font-bold bg-amber-900/30 rounded-xl px-3 py-1.5">
                     📸 請截圖後出示給教練！
                   </div>
                 </div>
               )}
             </div>
           ) : guestWonBefore ? (
-            <div className="w-full bg-slate-100 border border-slate-300 rounded-2xl p-4 text-center">
+            <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
               <div className="text-2xl mb-2">🎮</div>
-              <div className="text-slate-600 font-black text-sm">紀念寶箱已領取</div>
-              <div className="text-slate-400 text-xs mt-1">成為正式射手才能獲得更多獎勵！</div>
+              <div className="text-slate-300 font-black text-sm">紀念寶箱已領取</div>
+              <div className="text-slate-500 text-xs mt-1">成為正式射手才能獲得更多獎勵！</div>
             </div>
           ) : null
         ) : (
@@ -1380,8 +1380,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           <div className="w-full flex flex-col gap-3">
             {/* 即時掉落（材料、金幣、卡片）*/}
             {(droppedMaterials.length > 0 || droppedCoins > 0 || droppedCard || droppedCoinChest) && (
-              <div className="w-full rounded-2xl border-2 border-yellow-300 bg-yellow-50 p-3">
-                <div className="text-yellow-700 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
+              <div className="w-full rounded-2xl border-2 border-yellow-500/40 bg-yellow-900/20 p-3">
+                <div className="text-yellow-400 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {droppedCoins > 0 && (
                     <div className="flex flex-col items-center gap-1 px-3 py-2 bg-yellow-400/30 rounded-xl"
@@ -1400,19 +1400,19 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                     </div>
                   )}
                   {droppedMaterials.map((m,i) => (
-                    <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-100 rounded-xl"
+                    <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-900/30 rounded-xl"
                       style={{ animation:`mb-drop .6s ease ${0.15+i*0.1}s both` }}>
                       <span className="text-2xl">{m.icon}</span>
-                      <span className="font-black text-purple-800 text-xs">{m.name}</span>
-                      <span className="text-purple-500 text-xs">材料</span>
+                      <span className="font-black text-purple-300 text-xs">{m.name}</span>
+                      <span className="text-purple-400 text-xs">材料</span>
                     </div>
                   ))}
                   {droppedCard && (
-                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-rose-100 rounded-xl"
+                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-rose-900/30 rounded-xl"
                       style={{ animation:"mb-drop .6s ease .3s both" }}>
                       <span className="text-2xl">{droppedCard.icon}</span>
-                      <span className="font-black text-rose-800 text-xs">{droppedCard.name}</span>
-                      <span className="text-rose-500 text-xs">🃏 卡片！</span>
+                      <span className="font-black text-rose-300 text-xs">{droppedCard.name}</span>
+                      <span className="text-rose-400 text-xs">🃏 卡片！</span>
                     </div>
                   )}
                 </div>
@@ -1432,7 +1432,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                         <div className="font-black text-sm" style={{ color:cc.color }}>
                           獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
                         </div>
-                        <div className="text-gray-500 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
+                        <div className="text-slate-400 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
                       </div>
                     </div>
                   );
@@ -1448,7 +1448,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           📤 產生戰績分享卡
         </button>
         <div className="flex gap-3 w-full">
-          <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold">換對手</button>
+          <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
           {(dailyLeft===null||dailyLeft>0)&&(
             <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
               className="flex-1 py-3 rounded-xl font-black"
@@ -1473,7 +1473,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   if (phase==="result") {
     const stats=calcStats(allArrows);
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7f1d1d,#4c1d95)" }}>
           <div className="text-5xl mb-3" style={{ animation:"mb-bounce 1s ease infinite" }}>💀</div>
@@ -1489,22 +1489,22 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           </div>
         </div>
         {stats&&(
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
-            <div className="text-blue-700 text-xs font-black mb-3">🎯 本場射箭統計（{stats.count} 箭）</div>
+          <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4">
+            <div className="text-blue-300 text-xs font-black mb-3">🎯 本場射箭統計（{stats.count} 箭）</div>
             <div className="grid grid-cols-4 gap-2">
               {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens],["脫靶",stats.misses]].map(([l,v])=>(
-                <div key={l} className="bg-white rounded-xl p-2 text-center border border-blue-100">
+                <div key={l} className="bg-white/5 rounded-xl p-2 text-center border border-white/10">
                   <div className="text-blue-400 text-xs">{l}</div>
-                  <div className="font-black text-gray-800 text-lg">{v}</div>
+                  <div className="font-black text-white text-lg">{v}</div>
                 </div>
               ))}
             </div>
           </div>
         )}
         <details className="w-full">
-          <summary className="text-gray-400 text-xs cursor-pointer text-center">▼ 查看戰鬥記錄</summary>
-          <div className="bg-gray-900 rounded-xl p-3 mt-2 max-h-40 overflow-y-auto">
-            {log.map((e,i)=><div key={i} className="text-xs text-gray-400 py-0.5">{e.text}</div>)}
+          <summary className="text-slate-500 text-xs cursor-pointer text-center">▼ 查看戰鬥記錄</summary>
+          <div className="bg-slate-800 rounded-xl p-3 mt-2 max-h-40 overflow-y-auto">
+            {log.map((e,i)=><div key={i} className="text-xs text-slate-400 py-0.5">{e.text}</div>)}
           </div>
         </details>
       </div>
@@ -1513,9 +1513,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   if (phase==="history") {
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("select")} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={()=>setPhase("select")} className="text-slate-400 text-sm self-start">← 返回</button>
         <BattleRecords logs={history} title="📊 打怪戰鬥紀錄" maxGroups={12}/>
       </div>
     );

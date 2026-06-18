@@ -383,14 +383,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const canAfford  = coins >= potionCost;
 
     return (
-      <div className="h-full overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
         <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
           <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>
           <span className="font-black text-lg flex-1">⚔️ 出戰準備</span>
           <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 pt-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-32 space-y-5 pt-4">
           {/* Boss 預覽 */}
           <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
             <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={72}/>
@@ -466,7 +466,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         </div>
 
-        <div className="shrink-0 px-4 pb-6 pt-3"
+        <div className="shrink-0 absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
           style={{ background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
           {potionCost > 0 && !canAfford && (
             <div className="text-center text-xs text-rose-400 mb-2">金幣不足，請選擇其他藥水</div>

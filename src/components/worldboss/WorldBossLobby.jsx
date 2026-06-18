@@ -88,7 +88,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
+      <div className="h-[100dvh] flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
         載入中…
       </div>
     );
@@ -105,7 +105,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   // 無活躍 Boss
   if (!event) {
     return (
-      <div className="h-full overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
         <div className="shrink-0 flex items-center gap-3 px-4 pt-5 pb-3 border-b border-white/10">
           {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
           <span className="font-black text-lg flex-1">🌍 世界大 Boss</span>
@@ -134,7 +134,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     .slice(0, 5);
 
   return (
-    <div className="h-full overflow-hidden flex flex-col text-white"
+    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {/* Header */}
@@ -147,7 +147,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-28 space-y-4">
 
         {/* Boss 展示區 */}
         <div className="rounded-3xl overflow-hidden border border-white/10"
@@ -294,7 +294,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 固定底部按鈕 */}
-      <div className="shrink-0 px-4 pb-6 pt-3"
+      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-3 z-30"
         style={{ background: "linear-gradient(0deg, #0f172a 85%, transparent)" }}>
         <button
           onClick={() => { sfxTap(); setInBattle(true); }}

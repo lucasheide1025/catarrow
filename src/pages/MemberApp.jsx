@@ -233,7 +233,7 @@ export default function MemberApp() {
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("home")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
-        {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("home")}/>}
+        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("home")}/></div>}
         {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
