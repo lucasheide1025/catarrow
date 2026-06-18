@@ -345,10 +345,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setLiveEntry(entry);
     setLiveMiniRoundIdx(0);
 
-    // 怪物受擊動畫
-    setAnimHit(true);
-    setTimeout(() => setAnimHit(false), 700);
-
     // 音效（事件優先）
     if (entry.event?.type === "buff")    sfxBuff();
     else if (entry.event?.type === "debuff") sfxDebuff();
@@ -364,11 +360,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       revealTimersRef.current.push(et);
     }
 
-    // 逐小回合播放（每 1.2 秒一個，反擊小回合多 1.5 秒動畫時間）
+    // 逐小回合播放（每位玩家 1.4s，反擊回合 2.7s）
     const miniRounds = entry.miniRounds || [];
     let delay = eventDelay;
     miniRounds.forEach((mini, idx) => {
-      // 每支箭顯示時都播音效
       const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxArrowShoot(); vibrate(8); triggerCatAction(); }, delay);
       revealTimersRef.current.push(t);
 
@@ -395,7 +390,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         revealTimersRef.current.push(t1, t2);
         delay += 2700;
       } else {
-        delay += 1200;
+        // 玩家攻擊：200ms 後怪物閃白受擊
+        if (mini.totalDmg > 0) {
+          const th = setTimeout(() => { setAnimHit(true); setTimeout(() => setAnimHit(false), 450); }, delay + 200);
+          revealTimersRef.current.push(th);
+        }
+        delay += 1400;
       }
     });
 
@@ -1188,6 +1188,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     ? room.log[room.log.length - 1]?.playerLog?.find(p => p.id === myId)
     : null;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
+  // 每位玩家欄位等寬：(540 容器 - 12px 左右 padding - gap*(n-1)) / n，上限 100px
+  const memberW = Math.min(100, Math.floor((528 - (memberList.length - 1) * 3) / memberList.length));
 
   return (
     <div style={{
@@ -1338,7 +1340,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {/* 弓箭手圖區 */}
         <div style={{
           height:90, display:"flex", alignItems:"flex-end", justifyContent:"center",
-          gap:2, padding:"0 6px",
+          gap:3, padding:"0 6px",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined,
         }}>
           {memberList.map(m => {
@@ -1347,12 +1349,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             const isTopHit = isAttacking && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
-            const archerW = memberList.length <= 4 ? 76 : memberList.length <= 6 ? 58 : 44;
             const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
             const pArrow = pLog?.arrowBreakdown?.[0];
             return (
               <div key={m.id} style={{
-                position:"relative", flexShrink:0, width:archerW,
+                position:"relative", flexShrink:0, width:memberW,
                 height:"100%", display:"flex", alignItems:"flex-end", justifyContent:"center",
               }}>
                 {/* 浮動反擊傷害 */}
@@ -1382,7 +1383,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
 
         {/* 玩家資訊列 */}
-        <div style={{ display:"flex", gap:3, padding:"4px 6px 6px", overflowX:"auto" }}>
+        <div style={{ display:"flex", gap:3, padding:"4px 6px 7px" }}>
           {memberList.map(m => {
             const isMe = m.id === myId;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
@@ -1391,41 +1392,41 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             const hasMyCatMsg = isMe && catMsg;
             return (
               <div key={m.id} style={{
-                flexShrink:0, textAlign:"center", padding:"3px 4px",
+                flexShrink:0, width:memberW, textAlign:"center", padding:"4px 3px",
                 border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.08)"}`,
-                borderRadius:6, background: isMe?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.02)",
-                minWidth: memberList.length<=4 ? 72 : memberList.length<=6 ? 58 : 46,
+                borderRadius:7, background: isMe?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.02)",
+                overflow:"hidden",
               }}>
                 {/* 名稱列 + 貓咪 */}
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:2, marginBottom:1 }}>
-                  <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:9, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
-                    {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                <div style={{ display:"flex", alignItems:"center", gap:2, marginBottom:2, padding:"0 1px" }}>
+                  <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:10, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, textAlign:"left" }}>
+                    {!m.alive&&"💀"}{m.name.slice(0,6)}{m.id===room.hostId?" 👑":""}
                   </div>
                   {/* 貓咪小圖 */}
-                  <div style={{ flexShrink:0, width:14, height:14, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.18)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
+                  <div style={{ flexShrink:0, width:16, height:16, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.2)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
                     <img src={`/cats/portraits/${catId}.webp`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>{e.target.style.display="none"}}/>
                   </div>
                 </div>
                 {/* HP bar */}
-                <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
-                  <div style={{ height:"100%", borderRadius:2, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
+                <div style={{ height:5, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
+                  <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                 </div>
                 {/* HP 數字 */}
-                <div style={{ fontSize:8, color:hpColor, fontWeight:700 }}>
-                  {m.hp}<span style={{ color:"#334155" }}>/{m.maxHP}</span>
+                <div style={{ fontSize:9, color:hpColor, fontWeight:700, marginBottom:1 }}>
+                  {m.hp}<span style={{ color:"#334155", fontSize:8 }}>/{m.maxHP}</span>
                 </div>
                 {/* ATK / DEF */}
-                <div style={{ fontSize:8, color:"#64748b", marginTop:1, display:"flex", justifyContent:"center", gap:3 }}>
+                <div style={{ fontSize:9, color:"#64748b", marginBottom:1, display:"flex", justifyContent:"center", gap:2 }}>
                   <span>⚔️{m.atk}</span>
                   <span>🛡️{m.def}</span>
                 </div>
                 {/* 狀態 */}
-                <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569", marginTop:1 }}>
+                <div style={{ fontSize:9, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
                   {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
                 </div>
                 {isHost && m.alive && !m.ready && m.id!==myId && !room.processing && (
                   <button onClick={()=>handleForceSkip(m.id)} disabled={skipping===m.id}
-                    style={{ fontSize:7, padding:"1px 3px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                    style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
                     {skipping===m.id?"…":"跳"}
                   </button>
                 )}
@@ -1466,7 +1467,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             </div>
             {/* 分數按鈕 */}
             {arrows.length < ARROWS_PER_ROUND && (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:3, marginBottom:4, background:"rgb(20,12,5)", borderRadius:6, padding:"3px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, marginBottom:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px" }}>
                 {SCORE_LABELS.map(label => {
                   const s = SCORE_MAP[label] ?? 0;
                   return (
@@ -1474,10 +1475,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       backgroundImage:"url(/ui/score-btn.webp)", backgroundSize:"cover", backgroundPosition:"center",
                       backgroundColor:"rgb(30,16,6)",
                       WebkitAppearance:"none", appearance:"none",
-                      border:"none", borderRadius:5, height:40, width:"100%",
+                      border:"none", borderRadius:6, height:44, width:"100%",
                       color: label==="X"?"#fbbf24":label==="M"?"#94a3b8":s>=9?"#fef3c7":s>=7?"#bfdbfe":s>=5?"#d1d5db":"#9ca3af",
-                      fontWeight:900, fontSize:14, cursor:"pointer",
-                      textShadow:"0 1px 6px #000", padding:0, transition:"transform .08s",
+                      fontWeight:900, fontSize:15, cursor:"pointer",
+                      textShadow:"0 1px 6px #000", padding:"4px 0", transition:"transform .08s",
+                      lineHeight:1,
                     }}
                     onTouchStart={e=>e.currentTarget.style.transform="scale(0.88)"}
                     onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}

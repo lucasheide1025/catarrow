@@ -333,45 +333,49 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       : null;
     const skipAllCtr = !!eff.skipCounter;
 
-    // Step 3: 6 個小回合，每 2 個小回合反擊一次（2, 4, 6）
-    const MINI        = 6;
+    // Step 3: 每位玩家依序攻擊（每人整輪 6 箭為一個小回合），最後怪物反擊全體一次
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
     for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
-    const ctrAccum    = {}; // 每人累計反擊傷害
+    const ctrAccum    = {};
 
-    for (let i = 0; i < MINI; i++) {
-      const miniNum       = i + 1;
-      const isCounterMini = !skipAllCtr && (miniNum % 2 === 0);
-      const miniPlayerLog = [];
-      let   miniDmg       = 0;
+    for (const id of aliveIds) {
+      if (memberHPNow[id] <= 0) continue; // 已陣亡，跳過
+      const pd  = allPlayerData[id];
+      const dmg = pd.totalDmg;
+      monsterHP = Math.max(0, monsterHP - dmg);
 
+      miniRounds.push({
+        miniRound:      miniRounds.length + 1,
+        isCounter:      false,
+        attackerId:     id,
+        playerLog:      [{ id, name: pd.name, dmg, ctr: 0, arrowBreakdown: pd.arrowBreakdown, crits: pd.crits }],
+        totalDmg:       dmg,
+        monsterHPAfter: monsterHP,
+      });
+
+      if (monsterHP <= 0) break; // 怪物已死，後續玩家不再出手
+    }
+
+    // 最後怪物反擊全體存活玩家（除非事件跳過）
+    if (!skipAllCtr && monsterHP > 0) {
+      const ctrLog = [];
       for (const id of aliveIds) {
-        if (memberHPNow[id] <= 0) continue; // 已倒下不再攻擊
-        const pd         = allPlayerData[id];
-        const arrowEntry = pd.arrowBreakdown[i] || { dmg: 0, partIcon: "💨", partName: "脫靶", label: "M" };
-        const dmg        = arrowEntry.dmg || 0;
-        miniDmg         += dmg;
-        miniPlayerLog.push({ id, name: pd.name, dmg, ctr: 0, arrowBreakdown: [arrowEntry] });
+        if (memberHPNow[id] <= 0) continue;
+        const mem = members[id];
+        const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10));
+        ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
+        memberHPNow[id] = Math.max(0, memberHPNow[id] - ctr);
+        ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr });
       }
-
-      monsterHP = Math.max(0, monsterHP - miniDmg);
-
-      if (isCounterMini) {
-        for (const p of miniPlayerLog) {
-          if (memberHPNow[p.id] > 0) {
-            const mem = members[p.id];
-            const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10));
-            p.ctr           = ctr;
-            ctrAccum[p.id]  = (ctrAccum[p.id] || 0) + ctr;
-            memberHPNow[p.id] = Math.max(0, memberHPNow[p.id] - ctr);
-          }
-        }
-      }
-
-      miniRounds.push({ miniRound: miniNum, isCounter: isCounterMini, playerLog: miniPlayerLog, totalDmg: miniDmg, monsterHPAfter: monsterHP });
-      if (monsterHP <= 0) break;
+      miniRounds.push({
+        miniRound:      miniRounds.length + 1,
+        isCounter:      true,
+        playerLog:      ctrLog,
+        totalDmg:       0,
+        monsterHPAfter: monsterHP,
+      });
     }
 
     // Step 4: 套用事件額外效果（作用於大回合總結）
