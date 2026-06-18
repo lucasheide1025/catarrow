@@ -8,6 +8,14 @@ import CatStoryBook from "../cat/CatStoryBook";
 // ── 故事圖片（有就顯示，無就用佔位）───────────────────────────
 function StoryImage({ src, accent }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // src 變更時立刻清除舊圖，等新圖 onLoad 才顯示
+  useEffect(() => {
+    setLoaded(false);
+    setFailed(false);
+  }, [src]);
+
   if (failed) {
     return (
       <div style={{
@@ -24,25 +32,49 @@ function StoryImage({ src, accent }) {
   return (
     <div style={{
       width: "100%",
-      height: "320px", // 鎖定容器高度，確保不會無限撐開
-      backgroundColor: "#000", // 背景填補顏色
+      height: "320px",
+      backgroundColor: "#000",
       display: "flex",
       justifyContent: "center",
-      alignItems: "center"
+      alignItems: "center",
     }}>
       <img
         src={`/story/${src}`}
         alt=""
         onError={() => setFailed(true)}
+        onLoad={() => setLoaded(true)}
         style={{
           maxWidth: "100%",
           maxHeight: "100%",
-          objectFit: "contain", // 關鍵：保持比例，不裁切，完整顯示
-          display: "block"
+          objectFit: "contain",
+          display: "block",
+          opacity: loaded ? 1 : 0,
+          transition: "opacity 0.35s ease",
         }}
       />
     </div>
   );
+}
+
+// 將故事文字拆成逐句陣列（支援換行符 + 中文句末標點）
+function splitStoryLines(text) {
+  return (text || "")
+    .split("\n")
+    .flatMap(para => {
+      if (!para.trim()) return [""];
+      // 依句末標點切割，保留標點在句尾
+      const parts = [];
+      let buf = "";
+      for (const ch of para) {
+        buf += ch;
+        if ("。！？…".includes(ch)) {
+          parts.push(buf.trim());
+          buf = "";
+        }
+      }
+      if (buf.trim()) parts.push(buf.trim());
+      return parts.length ? parts : [para];
+    });
 }
 
 // ── 沉浸式章節閱讀器 ─────────────────────────────────────────
@@ -152,7 +184,7 @@ function StoryReader({ chapter, onClose }) {
               <StoryImage key={page.img || pageIdx} src={page.img} accent={chapter.accent}/>
             </div>
 
-            {/* 文字：逐行淡入 */}
+            {/* 文字：逐句淡入 */}
             <style>{`
               @keyframes storyLineIn {
                 from { opacity: 0; transform: translateY(8px); }
@@ -167,12 +199,13 @@ function StoryReader({ chapter, onClose }) {
               letterSpacing: "0.03em",
               fontFamily: `"Hiragino Mincho ProN", "Yu Mincho", "Georgia", serif`,
             }}>
-              {(page.text || "").split("\n").map((line, i) => (
+              {splitStoryLines(page.text).map((line, i) => (
                 <div key={`${pageIdx}-${i}`} style={{
                   opacity: 0,
                   animation: "storyLineIn 0.55s ease forwards",
-                  animationDelay: `${i * 0.18}s`,
+                  animationDelay: `${i * 0.22}s`,
                   minHeight: line ? undefined : "1em",
+                  marginBottom: line ? "0.15em" : undefined,
                 }}>
                   {line || " "}
                 </div>

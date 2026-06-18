@@ -80,11 +80,12 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   // 回合結算覆蓋（動畫結束後顯示）
   const [showRoundResult, setShowRoundResult] = useState(false);
 
-  const processingRef    = useRef(false);
-  const logEndRef        = useRef(null);
-  const lastAnimKeyRef   = useRef(null);
-  const revealTimersRef  = useRef([]);
-  const prevRoundKeyRef  = useRef(null); // "${floor}-${round}" 換回合才清箭
+  const processingRef       = useRef(false);
+  const lastProcessedRef    = useRef(null); // "${floor}-${round}" 已處理過就跳過
+  const logEndRef           = useRef(null);
+  const lastAnimKeyRef      = useRef(null);
+  const revealTimersRef     = useRef([]);
+  const prevRoundKeyRef     = useRef(null); // "${floor}-${round}" 換回合才清箭
 
   const isHost = room?.hostId === myId;
   const me     = room?.members?.[myId] || {};
@@ -149,6 +150,11 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       delay += mini.isCounter ? 2400 : 1100;
     });
 
+    // 若 miniRounds 為空（怪物未死、玩家未死），給至少 1.5s 讓人看到結果
+    const monsterDied = entry.monsterHPAfter <= 0;
+    const allDead     = Object.values(room?.members || {}).every(m => !m.alive);
+    const minDelay    = minis.length === 0 && !monsterDied && !allDead ? 1500 : 0;
+
     // 動畫結束 → 切到結算畫面
     const ct = setTimeout(() => {
       setLiveEntry(null);
@@ -161,7 +167,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       if (won)  sfxMonsterDead();
       else if (lost) sfxSoftFail();
       else sfxRoundEnd();
-    }, delay + 500);
+    }, delay + 500 + minDelay);
     revealTimersRef.current.push(ct);
   }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
 
@@ -186,10 +192,14 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 
   async function handleProcess() {
     if (processingRef.current) return;
+    const roundKey = `${room.currentFloor || 1}-${room.round || 1}`;
+    if (roundKey === lastProcessedRef.current) return;
+    lastProcessedRef.current = roundKey;
     processingRef.current = true;
     setLoading(true);
     sfxCast();
-    await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
+    const res = await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
+    if (!res?.ok) lastProcessedRef.current = null; // 失敗時允許重試
     setLoading(false);
     processingRef.current = false;
   }
