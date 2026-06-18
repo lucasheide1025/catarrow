@@ -1,7 +1,9 @@
 // src/components/party/PartyLobby.jsx — 建立/加入組隊房間
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
+import { subscribePracticeLogs } from "../../lib/db";
+import BattleRecords from "../member/BattleRecords";
 
 const TYPE_OPTIONS = [
   {
@@ -38,6 +40,15 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
+  const [partyLogs, setPartyLogs] = useState([]);
+
+  useEffect(() => {
+    if (!myId || myId.startsWith("guest")) return;
+    const unsub = subscribePracticeLogs(myId, logs =>
+      setPartyLogs(logs.filter(l => l.source === "party"))
+    );
+    return unsub;
+  }, [myId]);
 
   async function handleCreate() {
     setLoading(true); setErr("");
@@ -140,6 +151,13 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
         {err && (
           <div className="mt-4 p-3 bg-red-900/40 border border-red-500/50 rounded-xl text-red-300 text-sm font-bold text-center">
             {err}
+          </div>
+        )}
+
+        {/* 組隊打怪歷史紀錄 */}
+        {partyLogs.length > 0 && (
+          <div className="mt-6">
+            <BattleRecords logs={partyLogs} title="📊 組隊打怪紀錄" maxGroups={6}/>
           </div>
         )}
       </div>

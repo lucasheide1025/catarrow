@@ -198,7 +198,7 @@ export default function MemberApp() {
       </div>
 
       {/* 頁面內容 */}
-      <div style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (

@@ -1242,8 +1242,20 @@ export function subscribeMaterials(memberId, callback) {
   );
 }
  
-// ── db.js 中把舊的 saveMonsterLog 整個替換成這個版本 ──────
-// 新增 roundScores 欄位（每回合分數陣列）
+// 即時訂閱打怪紀錄
+export function subscribeMonsterLogs(memberId, callback, maxCount = 100) {
+  return onSnapshot(
+    query(collection(db, C_MONSTER_LOGS), where("memberId", "==", memberId), limit(maxCount)),
+    snap => {
+      const logs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      callback(logs);
+    },
+    err => { console.warn("subscribeMonsterLogs:", err.message); callback([]); }
+  );
+}
+
 export async function saveMonsterLog(memberId, data) {
   try {
     await addDoc(collection(db, C_MONSTER_LOGS), {
@@ -1258,8 +1270,9 @@ export async function saveMonsterLog(memberId, data) {
       mode:        data.mode        || "novice",
       battleMode:  data.battleMode  || "score",
       materials:   data.materials   || [],
-      chestType:   data.chestType   || null,  // ✅ 新增：掉落的寶箱種類
-      roundScores: data.roundScores || [],  // ✅ 新增：[{round, scores:[], total}]
+      chestType:   data.chestType   || null,
+      roundScores: data.roundScores || [],
+      distance:    data.distance    || null,
       createdAt:   serverTimestamp(),
     });
     if (memberId && data.monsterId && !memberId.startsWith("guest")) {

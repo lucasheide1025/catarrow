@@ -11,7 +11,7 @@ import {
   clearPartyProcessing,
 } from "../../lib/partyDb";
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs } from "../../lib/db";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
@@ -561,6 +561,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       if (!dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
+      }
+      if (myId && !myId.startsWith("guest")) {
+        const practiceRounds = (room.log || []).map(entry => {
+          const pl = (entry.playerLog || []).find(p => p.id === myId);
+          return (pl?.arrowBreakdown || []).map(a =>
+            a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
+          );
+        }).filter(r => r.length > 0);
+        if (practiceRounds.length > 0) {
+          addPracticeLog(myId, {
+            date: new Date().toISOString().slice(0, 10), source: "party",
+            monsterName: room.monster?.name || "怪物", result: "win",
+            rounds: practiceRounds,
+            total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+            distance: room.distance || null,
+          }, myId).catch(() => {});
+        }
       }
       saveBond("party");
       setClaimResult({ coins, material, card, coinChest });

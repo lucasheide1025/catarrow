@@ -5,7 +5,7 @@ import {
   subscribePartyRoom, markQuestDone as markPartyDone,
   markQuestGaveUp, giveQuestRewards, leavePartyRoom
 } from "../../lib/partyDb";
-import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin } from "../../lib/db";
+import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin, addPracticeLog } from "../../lib/db";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 
@@ -119,6 +119,15 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
       await markCheckinDone(checkin.id, {
         type: task.type, value: val, target: task.goal, taskId: task.id,
       }).catch(() => {});
+    }
+    if (myId) {
+      addPracticeLog(myId, {
+        date: new Date().toISOString().slice(0, 10), source: "daily",
+        taskLabel: task.label || task.target || "日常任務", result: "win",
+        rounds: [arrows],
+        total: arrows.reduce((s, v) => s + v, 0),
+        distance: task.distance || null,
+      }, myId).catch(() => {});
     }
     await markPartyDone(roomId, myId, true);
     setSubmitting(false);

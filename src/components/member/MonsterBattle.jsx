@@ -5,11 +5,12 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
-  createNotification, saveMonsterLog, getMonsterLogs,
+  createNotification, saveMonsterLog, getMonsterLogs, subscribeMonsterLogs,
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed,
 } from "../../lib/db";
+import BattleRecords from "./BattleRecords";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
@@ -205,7 +206,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
     }
 
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
-    return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
+    const unsubLogs  = subscribeMonsterLogs(profile.id, v => setHistory(v), 100);
+    return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); unsubLogs(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
 
   useEffect(() => {
@@ -638,6 +640,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           monsterName: monster.name, mode, battleMode, result,
           equipment: bowLabel, rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+          distance: selectedDistance,
         }, profile.id).catch(() => {});
       }
 
@@ -653,6 +656,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
             mode, battleMode, chestType:mainChest.type, catChest:!!catChest, roundScores:rs,
+            distance: selectedDistance,
           }).catch(() => {});
           return rs;
         });
@@ -668,6 +672,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"lose", rounds:round,
             mode, battleMode, materials:[], roundScores:rs,
+            distance: selectedDistance,
           }).catch(() => {});
           return rs;
         });
@@ -767,6 +772,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", animation:"mb-glow 2s ease infinite" }}>
                 ⚔️ 挑戰 {pickedMonster.name}！
               </button>
+            )}
+
+            {/* 近期戰鬥紀錄摘要 */}
+            {!isGuest && history.length > 0 && (
+              <BattleRecords logs={history.slice(0, 30)} title="📊 近期戰鬥紀錄" maxGroups={6}/>
             )}
           </>
         )}
@@ -1502,87 +1512,11 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   }
 
   if (phase==="history") {
-    const shownHistory = historyExpanded ? history : history.slice(0, 5);
     return (
       <div className="p-4 flex flex-col gap-4">
         <style>{BATTLE_CSS}</style>
-
-        {/* 從歷史開戰績小卡 */}
-        {historyCard && (
-          <BattleCard onClose={()=>setHistoryCard(null)}
-            battleData={{
-              monster: MONSTERS.find(m=>m.id===historyCard.monsterId),
-              totalDmg: historyCard.totalDmg || 0,
-              totalReceived: historyCard.totalReceived || 0,
-              critCount: historyCard.critCount || 0,
-              loot: historyCard.lootName ? { icon: historyCard.lootIcon||"🎁", name: historyCard.lootName } : null,
-              round: historyCard.rounds || 0,
-              mode: historyCard.mode,
-              battleMode: historyCard.battleMode,
-            }} />
-        )}
-
         <button onClick={()=>setPhase("select")} className="text-gray-500 text-sm self-start">← 返回</button>
-        <div className="text-gray-800 font-black text-xl">📊 戰績記錄</div>
-        {history.length===0?(
-          <div className="text-gray-400 text-center py-8">尚無戰績，快去挑戰吧！</div>
-        ):(
-          <>
-            <div className="flex flex-col gap-2">
-              {shownHistory.map(h=>{
-                const m=MONSTERS.find(m=>m.id===h.monsterId);
-                const family=FAMILIES[m?.family]||{};
-                const tier=TIER_LABEL[m?.tier]||{};
-                const rs=h.roundScores||[];
-                const totalArrows=rs.flatMap(r=>r.scores||[]);
-                const stats=calcStats(totalArrows);
-                return (
-                  <div key={h.id} className={`rounded-xl border ${h.result==="win"?"bg-emerald-50 border-emerald-200":"bg-gray-50 border-gray-200"}`}>
-                    <div className="flex items-center justify-between p-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">{m?.icon||"👹"}</span>
-                        <div>
-                          <div className="font-bold text-gray-800 text-sm">{h.monsterName}</div>
-                          <div className="flex gap-1 mt-0.5 flex-wrap">
-                            {family.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:family.color+"22", color:family.color }}>{family.icon} {family.label}</span>}
-                            {tier.label&&<span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ background:tier.bg, color:tier.color }}>【{tier.label}】</span>}
-                          </div>
-                          <div className="text-gray-400 text-xs mt-0.5">{h.mode==="veteran"?"老手":h.mode==="student"?"學生":"新手"}·{h.battleMode==="zombie"?"殭屍":"分數"}　{h.rounds}回合</div>
-                        </div>
-                      </div>
-                      <div className="text-right flex flex-col items-end gap-1">
-                        <div className={`font-black text-sm ${h.result==="win"?"text-emerald-600":"text-gray-400"}`}>{h.result==="win"?"🏆 勝利":"💀 落敗"}</div>
-                        {h.lootName&&<div className="text-xs text-amber-600">{h.lootIcon} {h.lootName}</div>}
-                        <button onClick={()=>setHistoryCard(h)}
-                          className="text-xs px-2 py-0.5 rounded-lg border border-gray-300 text-gray-500 font-bold bg-white active:scale-95">
-                          🃏 小卡
-                        </button>
-                      </div>
-                    </div>
-                    {stats&&(
-                      <div className="px-4 pb-3 border-t border-gray-100 pt-2">
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens+"箭"],["脫靶",stats.misses+"箭"]].map(([l,v])=>(
-                            <div key={l} className="bg-white rounded-lg p-1.5 text-center border border-gray-100">
-                              <div className="text-gray-400 text-[10px]">{l}</div>
-                              <div className="font-black text-gray-700 text-sm">{v}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {history.length > 5 && (
-              <button onClick={()=>setHistoryExpanded(e=>!e)}
-                className="text-sm text-blue-600 font-bold text-center py-1">
-                {historyExpanded ? "▲ 收起" : `▼ 查看更多（共 ${history.length} 筆）`}
-              </button>
-            )}
-          </>
-        )}
+        <BattleRecords logs={history} title="📊 打怪戰鬥紀錄" maxGroups={12}/>
       </div>
     );
   }
