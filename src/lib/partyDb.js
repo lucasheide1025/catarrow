@@ -243,13 +243,14 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def) {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "") {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.hp`]:    hp,
       [`members.${memberId}.maxHP`]: maxHP,
       [`members.${memberId}.atk`]:   atk,
       [`members.${memberId}.def`]:   def,
+      ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
     });
     return { ok: true };
   } catch (e) {
