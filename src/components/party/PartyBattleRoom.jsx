@@ -1337,101 +1337,85 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       </div>
 
-      {/* 弓箭手列 + 玩家資訊 */}
+      {/* 弓箭手 + 玩家資訊：每人同框，確保對齊 */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
-        {/* 弓箭手圖區 */}
         <div style={{
-          height:90, display:"flex", alignItems:"flex-end", justifyContent:"center",
-          gap:3, padding:"0 6px",
+          display:"flex", gap:3, padding:"0 6px 7px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined,
         }}>
           {memberList.map(m => {
             const miniDmg = curMiniDmgMap[m.id];
-            const isAttacking = liveEntry && m.alive && miniDmg !== undefined && !animCounter;
-            const isTopHit = isAttacking && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
+            const isTopHit = liveEntry && m.alive && miniDmg !== undefined && !animCounter && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
             const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
             const pArrow = pLog?.arrowBreakdown?.[0];
-            return (
-              <div key={m.id} style={{
-                position:"relative", flexShrink:0, width:memberW,
-                height:"100%", display:"flex", alignItems:"flex-end", justifyContent:"center",
-              }}>
-                {/* 浮動反擊傷害 */}
-                {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
-                  <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
-                ))}
-                {/* 攻擊傷害 tag */}
-                {pArrow && (
-                  <div style={{ position:"absolute", bottom:"100%", left:"50%", transform:"translateX(-50%)", zIndex:15, background:"rgba(0,0,0,0.85)", borderRadius:5, padding:"1px 4px", fontSize:9, fontWeight:900, whiteSpace:"nowrap", marginBottom:2, color: pArrow.dmg===0?"#64748b":pArrow.isCrit?"#fbbf24":"#f87171" }}>
-                    {pArrow.dmg>0?`+${pArrow.dmg}`:"miss"}{pArrow.isCrit?"💥":""}{curMini?.isCounter&&pLog.ctr>0?`/-${pLog.ctr}`:""}
-                  </div>
-                )}
-                {/* 弓箭手圖 */}
-                <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
-                  style={{
-                    height:"100%", objectFit:"contain", objectPosition:"center bottom",
-                    filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
-                    animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined,
-                    outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
-                    outlineOffset:"2px", borderRadius:2,
-                  }}
-                  onError={e => { e.target.style.display="none"; }}/>
-              </div>
-            );
-          })}
-
-        </div>
-
-        {/* 玩家資訊列 */}
-        <div style={{ display:"flex", gap:3, padding:"4px 6px 7px" }}>
-          {memberList.map(m => {
-            const isMe = m.id === myId;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
-            const hpColor = hpPct>0.5?"#4ade80":hpPct>0.25?"#fbbf24":"#f87171";
             const catId = m.archerStyle || "baobao";
             const hasMyCatMsg = isMe && catMsg;
             return (
               <div key={m.id} style={{
-                flexShrink:0, width:memberW, textAlign:"center", padding:"4px 3px",
-                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.08)"}`,
-                borderRadius:7, background: isMe?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.02)",
-                overflow:"hidden",
+                flexShrink:0, width:memberW, display:"flex", flexDirection:"column",
+                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                borderRadius:8, overflow:"hidden",
+                background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
               }}>
-                {/* 名稱列 + 貓咪 */}
-                <div style={{ display:"flex", alignItems:"center", gap:2, marginBottom:2, padding:"0 1px" }}>
-                  <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:10, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, textAlign:"left" }}>
+
+                {/* ── 弓箭手圖 ── */}
+                <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                  {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                    <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                  ))}
+                  {pArrow && (
+                    <div style={{ position:"absolute", bottom:"100%", left:"50%", transform:"translateX(-50%)", zIndex:15, background:"rgba(0,0,0,0.85)", borderRadius:5, padding:"1px 4px", fontSize:9, fontWeight:900, whiteSpace:"nowrap", marginBottom:2, color: pArrow.dmg===0?"#64748b":pArrow.isCrit?"#fbbf24":"#f87171" }}>
+                      {pArrow.dmg>0?`+${pArrow.dmg}`:"miss"}{pArrow.isCrit?"💥":""}{curMini?.isCounter&&pLog.ctr>0?`/-${pLog.ctr}`:""}
+                    </div>
+                  )}
+                  <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
+                    style={{
+                      height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                      filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
+                      animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined,
+                      outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
+                      outlineOffset:"2px", borderRadius:2,
+                    }}
+                    onError={e => { e.target.style.display="none"; }}/>
+                </div>
+
+                {/* 分隔線 */}
+                <div style={{ height:1, background:"rgba(255,255,255,0.06)", flexShrink:0 }}/>
+
+                {/* ── 資訊卡（每項獨立一行） ── */}
+                <div style={{ padding:"3px 3px 4px", textAlign:"center" }}>
+                  {/* 血條 */}
+                  <div style={{ height:5, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
+                    <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
+                  </div>
+                  {/* 玩家名稱 */}
+                  <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
                     {!m.alive&&"💀"}{m.name.slice(0,6)}{m.id===room.hostId?" 👑":""}
                   </div>
-                  {/* 貓咪小圖 */}
-                  <div style={{ flexShrink:0, width:16, height:16, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.2)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
-                    <img src={`/cats/portraits/${catId}.webp`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>{e.target.style.display="none"}}/>
+                  {/* ATK */}
+                  <div style={{ fontSize:9, color:"#f87171", marginBottom:1 }}>⚔️ {m.atk}</div>
+                  {/* DEF */}
+                  <div style={{ fontSize:9, color:"#60a5fa", marginBottom:1 }}>🛡 {m.def}</div>
+                  {/* 貓貓寵物 */}
+                  <div style={{ display:"flex", justifyContent:"center", marginBottom:1 }}>
+                    <div style={{ width:16, height:16, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.18)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
+                      <img src={`/cats/portraits/${catId}.webp`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>{e.target.style.display="none"}}/>
+                    </div>
                   </div>
+                  {/* 狀態 */}
+                  <div style={{ fontSize:9, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
+                    {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
+                  </div>
+                  {isHost && m.alive && !m.ready && m.id!==myId && !room.processing && (
+                    <button onClick={()=>handleForceSkip(m.id)} disabled={skipping===m.id}
+                      style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                      {skipping===m.id?"…":"跳"}
+                    </button>
+                  )}
                 </div>
-                {/* HP bar */}
-                <div style={{ height:5, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
-                  <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
-                </div>
-                {/* HP 數字 */}
-                <div style={{ fontSize:9, color:hpColor, fontWeight:700, marginBottom:1 }}>
-                  {m.hp}<span style={{ color:"#334155", fontSize:8 }}>/{m.maxHP}</span>
-                </div>
-                {/* ATK / DEF */}
-                <div style={{ fontSize:9, color:"#64748b", marginBottom:1, display:"flex", justifyContent:"center", gap:2 }}>
-                  <span>⚔️{m.atk}</span>
-                  <span>🛡️{m.def}</span>
-                </div>
-                {/* 狀態 */}
-                <div style={{ fontSize:9, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
-                  {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
-                </div>
-                {isHost && m.alive && !m.ready && m.id!==myId && !room.processing && (
-                  <button onClick={()=>handleForceSkip(m.id)} disabled={skipping===m.id}
-                    style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
-                    {skipping===m.id?"…":"跳"}
-                  </button>
-                )}
               </div>
             );
           })}

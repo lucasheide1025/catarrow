@@ -150,8 +150,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   // 隨機從參戰勇者中取最多 8 位同伴（僅顯示，不影響戰鬥邏輯）
   const [companions] = useState(() => {
+    const _selfId = guestOverride?.id || profile?.id;
     const parts = Object.entries(event.participants || {})
-      .filter(([id]) => id !== myId)
+      .filter(([id]) => id !== _selfId)
       .map(([id, p]) => ({ id, name: p.name || "射手" }));
     for (let i = parts.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
