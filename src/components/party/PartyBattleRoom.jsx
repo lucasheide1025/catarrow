@@ -20,7 +20,7 @@ import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
-const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","M"];
+const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
 const SCORE_COLORS = {
   X:"bg-yellow-400 text-yellow-900", 10:"bg-yellow-300 text-yellow-900",
   9:"bg-red-400 text-white", 8:"bg-red-300 text-white",
@@ -119,7 +119,7 @@ function PartyMonsterImg({ id, icon, charge }) {
     <span style={{ fontSize:40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
     <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
-      style={{ width:72, height:72, objectFit:"contain", animation:anim }}/>
+      style={{ maxWidth:"88%", maxHeight:"100%", objectFit:"contain", animation:anim }}/>
   );
 }
 
@@ -1192,9 +1192,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   return (
     <div style={{
       position:"fixed", top:0, bottom:0, left:"50%", transform:"translateX(-50%)",
-      width:"100%", maxWidth:540, zIndex:9999,
-      background:"linear-gradient(180deg,#0f172a 0%,#1e1b4b 60%,#0f172a 100%)",
-      display:"flex", flexDirection:"column", overflow:"hidden",
+      width:"100%", maxWidth:540, zIndex:9999, overflow:"hidden",
+      backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center",
+      display:"flex", flexDirection:"column",
     }}>
       <style>{`
 @keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
@@ -1204,7 +1204,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 @keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(8px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
 @keyframes pop{0%{transform:scale(0.7);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
       `}</style>
+
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+
       {/* 加油通知 */}
       {cheerMsg && (
         <div style={{ position:"fixed", top:48, left:0, right:0, zIndex:60, display:"flex", justifyContent:"center", pointerEvents:"none", padding:"0 16px" }}>
@@ -1213,268 +1215,309 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
         </div>
       )}
-      {/* 頂部欄 */}
-      <div style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 16px 8px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        <div style={{ color:"#e2e8f0", fontWeight:900, fontSize:14 }}>
-          ⚔️ 第 {liveEntry ? liveEntry.round : room.round} 回合
+
+      {/* 隨機事件彈窗 */}
+      {showEvent && (
+        <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px", background:"rgba(0,0,0,0.72)", pointerEvents:"none" }}>
+          <div style={{
+            borderRadius:20, padding:"20px 24px", textAlign:"center", maxWidth:280, width:"100%", animation:"pop .4s ease",
+            background: showEvent.type==="buff" ? "linear-gradient(135deg,#064e3b,#065f46)" : showEvent.type==="debuff" ? "linear-gradient(135deg,#450a0a,#7f1d1d)" : "linear-gradient(135deg,#1e3a5f,#1e40af)",
+            border: showEvent.type==="buff" ? "2px solid #10b981" : showEvent.type==="debuff" ? "2px solid #ef4444" : "2px solid #3b82f6",
+          }}>
+            <div style={{ fontSize:48, marginBottom:8 }}>{showEvent.icon}</div>
+            <div style={{ fontWeight:900, fontSize:17, marginBottom:8, color: showEvent.type==="buff" ? "#6ee7b7" : showEvent.type==="debuff" ? "#fca5a5" : "#93c5fd" }}>{showEvent.title}</div>
+            <div style={{ color:"#cbd5e1", fontSize:12, lineHeight:1.6 }}>{showEvent.desc}</div>
+          </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ color:"#64748b", fontSize:12 }}>👤 {aliveCount}/{memberList.length}</span>
-          <button onClick={handleLeave} style={{ padding:"4px 10px", borderRadius:8, fontSize:12, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
+      )}
+
+      {/* 上半：左側 log + 右側怪物 */}
+      <div style={{ flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0" }}>
+
+        {/* 左側：可折疊戰鬥記錄 */}
+        <div style={{
+          flexShrink:0, background:"rgba(0,0,0,0.82)", borderRadius:8,
+          border:"1px solid rgba(255,255,255,0.07)",
+          display:"flex", flexDirection:"column", overflow:"hidden",
+          width: showFullLog ? 160 : 36, transition:"width .2s ease",
+          alignSelf:"flex-start", maxHeight:"100%",
+        }}>
+          <button onClick={() => setShowFullLog(v=>!v)} style={{
+            display:"flex", alignItems:"center", gap:4, padding:"5px 6px",
+            background:"none", border:"none", cursor:"pointer", width:"100%",
+            borderBottom: showFullLog ? "1px solid rgba(255,255,255,0.06)" : "none",
+            flexShrink:0,
+          }}>
+            <span style={{ fontSize:12 }}>📜</span>
+            {showFullLog && <span style={{ color:"#475569", fontSize:9, fontWeight:900, letterSpacing:1, whiteSpace:"nowrap" }}>戰鬥記錄</span>}
+            <span style={{ marginLeft:"auto", color:"#475569", fontSize:10 }}>{showFullLog ? "◀" : "▶"}</span>
+          </button>
+          {showFullLog && (
+            <div style={{ flex:1, overflowY:"auto", padding:"2px 6px" }}>
+              {[...(room.log||[])].reverse().map((entry,i) => {
+                if (i===0 && liveEntry) return null;
+                return (
+                  <div key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.05)", paddingBottom:4, marginBottom:4 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, fontWeight:900, color:"#fbbf24" }}>
+                      <span>R{entry.round}</span>
+                      <span>-{entry.totalDmg}</span>
+                    </div>
+                    {entry.event && <div style={{ fontSize:9, color: entry.event.type==="buff"?"#6ee7b7":"#fca5a5" }}>{entry.event.icon}{entry.event.title}</div>}
+                    {(entry.playerLog||[]).map((p,j) => (
+                      <div key={j} style={{ fontSize:9, color:"#94a3b8" }}>
+                        {p.name.slice(0,4)}: <span style={{ color:"#f87171" }}>+{p.dmg}</span>
+                        {entry.counterRound && p.ctr>0 && <span style={{ color:"#fb923c" }}>/-{p.ctr}</span>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <div ref={logEndRef}/>
+            </div>
+          )}
+        </div>
+
+        {/* 右側：怪物區 */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:8 }}>
+          {/* 怪物名稱 + 離開按鈕 */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:5 }}>
+              <span style={{ color:"white", fontWeight:900, fontSize:17, textShadow:"0 2px 8px #000" }}>{room.monster?.name}</span>
+              {tierInfo && <span style={{ fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:4, color:tierInfo.color, background:tierInfo.bg }}>{tierInfo.label}</span>}
+            </div>
+            <button onClick={handleLeave} style={{ padding:"3px 9px", borderRadius:8, fontSize:11, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
+          </div>
+
+          {/* 怪物 HP bar（高 21px，數字在裡面）*/}
+          <div style={{ background:"#1e293b", borderRadius:20, height:21, border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5 }}>
+            <div style={{ width:`${monsterPct*100}%`, height:"100%", transition:"width .7s ease", background: monsterPct>0.5?"#dc2626":monsterPct>0.25?"#f59e0b":"#7f1d1d" }}/>
+            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
+              {displayHP?.toLocaleString()} / {room.monsterMaxHP?.toLocaleString()}
+            </div>
+          </div>
+
+          {/* 狀態標籤 */}
+          <div style={{ display:"flex", gap:3, marginBottom:4, flexWrap:"wrap" }}>
+            <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>⚔️ 第{liveEntry ? liveEntry.round : room.round}回</div>
+            <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#f87171" }}>💢 {room.monster?.atk}</div>
+            <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#60a5fa" }}>🛡️ {room.monster?.def}</div>
+            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>👤 {aliveCount}/{memberList.length}</div>
+          </div>
+
+          {/* 怪物圖（佔滿剩餘空間）*/}
+          <div style={{ flex:1, position:"relative", display:"flex", alignItems:"center", justifyContent:"center", minHeight:0 }}>
+            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+              <PartyMonsterImg id={room.monster?.id} icon={room.monster?.icon} charge={false}/>
+            </div>
+            {/* 浮動傷害數字 */}
+            {liveEntry && curMini && (() => {
+              const totalNow = Object.values(curMiniDmgMap).reduce((s,d)=>s+d,0);
+              if (totalNow <= 0) return null;
+              return (
+                <span key={liveMiniRoundIdx} style={{ position:"absolute", top:"18%", left:"50%", transform:"translateX(-50%)", fontSize:"1.5rem", fontWeight:900, color:"#fbbf24", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.4s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+                  -{totalNow}
+                </span>
+              );
+            })()}
+          </div>
+
+          {/* 小回合進度點 */}
+          {liveEntry && (
+            <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:4, padding:"3px 0 5px" }}>
+              {(liveEntry.miniRounds||[]).map((mini,i) => (
+                <div key={i} style={{ width:7, height:7, borderRadius:"50%", background: i===liveMiniRoundIdx?"#fbbf24":i<liveMiniRoundIdx?(mini.isCounter?"#f97316":"#6366f1"):"rgba(255,255,255,0.1)", transform:i===liveMiniRoundIdx?"scale(1.4)":"scale(1)", transition:"all 0.3s" }}/>
+              ))}
+              {curMini?.isCounter && <span style={{ fontSize:10, color:"#fb923c", fontWeight:900, marginLeft:4 }}>⚡反擊</span>}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 可滾動區域 */}
-      <div style={{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column" }}>
-
-        {/* 隨機事件彈窗 */}
-        {showEvent && (
-          <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px", background:"rgba(0,0,0,0.72)", pointerEvents:"none" }}>
-            <div style={{
-              borderRadius:20, padding:"20px 24px", textAlign:"center", maxWidth:280, width:"100%", animation:"pop .4s ease",
-              background: showEvent.type==="buff" ? "linear-gradient(135deg,#064e3b,#065f46)" : showEvent.type==="debuff" ? "linear-gradient(135deg,#450a0a,#7f1d1d)" : "linear-gradient(135deg,#1e3a5f,#1e40af)",
-              border: showEvent.type==="buff" ? "2px solid #10b981" : showEvent.type==="debuff" ? "2px solid #ef4444" : "2px solid #3b82f6",
-            }}>
-              <div style={{ fontSize:48, marginBottom:8 }}>{showEvent.icon}</div>
-              <div style={{ fontWeight:900, fontSize:17, marginBottom:8, color: showEvent.type==="buff" ? "#6ee7b7" : showEvent.type==="debuff" ? "#fca5a5" : "#93c5fd" }}>{showEvent.title}</div>
-              <div style={{ color:"#cbd5e1", fontSize:12, lineHeight:1.6 }}>{showEvent.desc}</div>
-            </div>
-          </div>
-        )}
-
-        {/* 怪物區 */}
-        {room.monster && (
-          <div style={{ padding:"12px 16px 8px", display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{
-              width:80, height:80, flexShrink:0, borderRadius:12,
-              background:"rgba(255,255,255,0.04)", display:"flex", alignItems:"center", justifyContent:"center",
-              animation: animHit ? "mb-monster-hit 0.5s ease" : undefined,
-              border: animHit ? "1px solid rgba(239,68,68,0.5)" : "1px solid rgba(255,255,255,0.08)",
-              transition:"border-color 0.3s",
-            }}>
-              <PartyMonsterImg id={room.monster.id} icon={room.monster.icon} charge={animMonsterCharge}/>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:14 }}>{room.monster.name}</span>
-                {tierInfo && <span style={{ fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:4, color:tierInfo.color, background:tierInfo.bg }}>{tierInfo.label}</span>}
-              </div>
-              <div style={{ color:"#64748b", fontSize:11, marginBottom:6 }}>{famInfo?.label} · ⚔️{room.monster.atk} 🛡️{room.monster.def}</div>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ flex:1, height:8, borderRadius:4, background:"rgba(255,255,255,0.08)", overflow:"hidden" }}>
-                  <div style={{ height:"100%", borderRadius:4, transition:"width 0.5s ease", background: monsterPct > 0.5 ? "#22c55e" : monsterPct > 0.25 ? "#f59e0b" : "#ef4444", width:`${monsterPct*100}%` }}/>
-                </div>
-                <span style={{ color:"#f1f5f9", fontWeight:700, fontSize:11, whiteSpace:"nowrap" }}>{displayHP}<span style={{ color:"#475569" }}>/{room.monsterMaxHP}</span></span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 隊員列 */}
-        <div style={{ padding:"4px 12px 8px", display:"flex", gap:6, overflowX:"auto", animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
+      {/* 弓箭手列 + 玩家資訊 */}
+      <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+        {/* 弓箭手圖區 */}
+        <div style={{
+          height:90, display:"flex", alignItems:"flex-end", justifyContent:"center",
+          gap:2, padding:"0 6px",
+          animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined,
+        }}>
           {memberList.map(m => {
             const miniDmg = curMiniDmgMap[m.id];
             const isAttacking = liveEntry && m.alive && miniDmg !== undefined && !animCounter;
             const isTopHit = isAttacking && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
-            const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp / m.maxHP)) : 0;
-            const pLog = liveEntry && curMini ? (curMini.playerLog || []).find(p => p.id === m.id) : null;
+            const archerW = memberList.length <= 4 ? 76 : memberList.length <= 6 ? 58 : 44;
+            const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
             const pArrow = pLog?.arrowBreakdown?.[0];
             return (
               <div key={m.id} style={{
-                position:"relative", flexShrink:0, width:70,
-                display:"flex", flexDirection:"column", alignItems:"center", gap:2,
-                borderRadius:10, padding:"6px 4px 4px",
-                opacity: m.alive ? 1 : 0.3,
-                border: isTopHit ? "1px solid rgba(250,204,21,0.6)" : isMe ? "1px solid rgba(129,140,248,0.4)" : "1px solid rgba(255,255,255,0.06)",
-                background: isTopHit ? "rgba(250,204,21,0.08)" : animCounter ? "rgba(239,68,68,0.07)" : isMe ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)",
+                position:"relative", flexShrink:0, width:archerW,
+                height:"100%", display:"flex", alignItems:"flex-end", justifyContent:"center",
+              }}>
+                {/* 浮動反擊傷害 */}
+                {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                  <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                ))}
+                {/* 攻擊傷害 tag */}
+                {pArrow && (
+                  <div style={{ position:"absolute", bottom:"100%", left:"50%", transform:"translateX(-50%)", zIndex:15, background:"rgba(0,0,0,0.85)", borderRadius:5, padding:"1px 4px", fontSize:9, fontWeight:900, whiteSpace:"nowrap", marginBottom:2, color: pArrow.dmg===0?"#64748b":pArrow.isCrit?"#fbbf24":"#f87171" }}>
+                    {pArrow.dmg>0?`+${pArrow.dmg}`:"miss"}{pArrow.isCrit?"💥":""}{curMini?.isCounter&&pLog.ctr>0?`/-${pLog.ctr}`:""}
+                  </div>
+                )}
+                {/* 弓箭手圖 */}
+                <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
+                  style={{
+                    height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                    filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
+                    animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined,
+                    outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
+                    outlineOffset:"2px", borderRadius:2,
+                  }}
+                  onError={e => { e.target.style.display="none"; }}/>
+              </div>
+            );
+          })}
+
+          {/* 貓咪夥伴 frame（我的貓，右側）*/}
+          {hasCat && profile?.equippedCat && (
+            <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", gap:3, paddingBottom:4 }}>
+              <div style={{
+                width:48, height:48, borderRadius:12,
+                background: catMsg ? "rgba(88,28,135,0.6)" : "rgba(255,255,255,0.05)",
+                border:`1.5px solid ${catMsg ? "#a78bfa" : "rgba(255,255,255,0.15)"}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                overflow:"hidden", position:"relative",
+                boxShadow: catMsg ? "0 0 16px rgba(167,139,250,0.9)" : "none",
                 transition:"all 0.3s",
               }}>
-                {floatCounterDmgs.filter(f => f.memberId === m.id).map(f => (
-                  <span key={f.id} style={{ position:"absolute", left:`${f.left}%`, top:"-4px", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
-                ))}
-                {/* 貓咪夥伴 overlay（只顯示在自己的卡片右上角）*/}
-                {isMe && hasCat && profile?.equippedCat && (
-                  <>
-                    <div style={{
-                      position:"absolute", top:3, right:3, width:18, height:18, borderRadius:"50%",
-                      border:`1.5px solid ${catMsg ? "#a78bfa" : "rgba(255,255,255,0.2)"}`,
-                      overflow:"hidden", boxShadow: catMsg ? "0 0 8px rgba(167,139,250,0.9)" : "none",
-                      transition:"box-shadow 0.3s", zIndex:5,
-                    }}>
-                      <img src={`/cats/portraits/${profile.equippedCat.catId || "baobao"}.webp`}
-                        alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                    </div>
-                    {catMsg && (
-                      <div style={{
-                        position:"absolute", top:"-16px", right:0, zIndex:20,
-                        background:"rgba(88,28,135,0.9)", border:"1px solid #a78bfa",
-                        borderRadius:5, padding:"1px 4px", fontSize:8, color:"#e9d5ff",
-                        whiteSpace:"nowrap", fontWeight:700, pointerEvents:"none",
-                        animation:"mb-float 2s ease-out forwards",
-                      }}>🐱{catMsg.slice(0,6)}</div>
-                    )}
-                  </>
+                <img src={`/cats/portraits/${profile.equippedCat.catId||"baobao"}.webp`}
+                  alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                {catMsg && (
+                  <div style={{ position:"absolute", bottom:"100%", left:"50%", transform:"translateX(-50%)", zIndex:20, background:"rgba(88,28,135,0.9)", border:"1px solid #a78bfa", borderRadius:5, padding:"1px 5px", fontSize:8, color:"#e9d5ff", whiteSpace:"nowrap", fontWeight:700, pointerEvents:"none", animation:"mb-float 2s ease-out forwards", marginBottom:3 }}>🐱{catMsg.slice(0,8)}</div>
                 )}
-                <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
-                  style={{ width:38, height:48, objectFit:"contain", display:"block", filter: !m.alive ? "grayscale(100%) opacity(0.4)" : undefined, animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined }}
-                  onError={e => { e.target.style.display = "none"; }}/>
-                <div style={{ color: isMe ? "#a5b4fc" : "#94a3b8", fontSize:9, fontWeight:700, textAlign:"center", width:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", padding:"0 2px" }}>
-                  {!m.alive && "💀"}{m.name}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 玩家資訊列 */}
+        <div style={{ display:"flex", gap:3, padding:"4px 6px 6px", overflowX:"auto" }}>
+          {memberList.map(m => {
+            const isMe = m.id === myId;
+            const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
+            const hpColor = hpPct>0.5?"#4ade80":hpPct>0.25?"#fbbf24":"#f87171";
+            return (
+              <div key={m.id} style={{
+                flexShrink:0, textAlign:"center", padding:"3px 5px",
+                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.08)"}`,
+                borderRadius:6, background: isMe?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.02)",
+                minWidth: memberList.length<=4 ? 72 : memberList.length<=6 ? 58 : 46,
+              }}>
+                <div style={{ color: isMe?"#fbbf24":"#94a3b8", fontSize:9, fontWeight:700, marginBottom:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
                 </div>
-                <div style={{ width:"calc(100% - 4px)", height:6, borderRadius:3, background:"rgba(0,0,0,0.35)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{
-                    height:"100%", borderRadius:3, transition:"width 0.5s ease",
-                    background: hpPct > 0.5 ? "linear-gradient(90deg,#16a34a,#4ade80)" : hpPct > 0.25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#dc2626,#f87171)",
-                    width:`${hpPct*100}%`,
-                    boxShadow: hpPct <= 0.25 ? "0 0 6px rgba(239,68,68,0.9)" : hpPct <= 0.5 ? "0 0 4px rgba(251,191,36,0.5)" : "none",
-                  }}/>
+                <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
+                  <div style={{ height:"100%", borderRadius:2, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                 </div>
-                <div style={{ fontSize:9, fontWeight:900, lineHeight:1, color: hpPct > 0.5 ? "#4ade80" : hpPct > 0.25 ? "#fbbf24" : "#f87171" }}>
-                  {m.hp}<span style={{ color:"#334155", fontWeight:400, fontSize:8 }}>/{m.maxHP}</span>
+                <div style={{ fontSize:8, color:hpColor, fontWeight:700 }}>
+                  {m.hp}<span style={{ color:"#334155" }}>/{m.maxHP}</span>
                 </div>
-                {m.alive && (
-                  <div style={{ fontSize:9, fontWeight:700, color: liveEntry ? "#64748b" : m.ready ? "#4ade80" : m.arrows?.length > 0 ? "#fbbf24" : "#475569" }}>
-                    {liveEntry ? "⚙️" : m.ready ? (m.skipped ? "⏭️" : "✅") : m.arrows?.length > 0 ? `🏹${m.arrows.length}` : "⏳"}
-                  </div>
-                )}
-                {pArrow && (
-                  <div style={{ fontSize:8, fontWeight:700, textAlign:"center", padding:"1px 2px", borderRadius:3, width:"100%", color: pArrow.dmg===0 ? "#475569" : pArrow.isCrit ? "#fbbf24" : "#f87171", background: pArrow.isCrit ? "rgba(251,191,36,0.12)" : pArrow.dmg > 0 ? "rgba(248,113,113,0.1)" : "transparent" }}>
-                    {pArrow.dmg > 0 ? `+${pArrow.dmg}` : "miss"}{pArrow.isCrit ? "💥" : ""}{curMini?.isCounter && pLog.ctr > 0 ? ` -${pLog.ctr}` : ""}
-                  </div>
-                )}
-                {isHost && m.alive && !m.ready && m.id !== myId && !room.processing && (
-                  <button onClick={() => handleForceSkip(m.id)} disabled={skipping === m.id}
-                    style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer" }}>
-                    {skipping === m.id ? "…" : "跳"}
+                <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569", marginTop:1 }}>
+                  {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
+                </div>
+                {isHost && m.alive && !m.ready && m.id!==myId && !room.processing && (
+                  <button onClick={()=>handleForceSkip(m.id)} disabled={skipping===m.id}
+                    style={{ fontSize:7, padding:"1px 3px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                    {skipping===m.id?"…":"跳"}
                   </button>
                 )}
               </div>
             );
           })}
         </div>
-
-        {/* 小回合進度點 */}
-        {liveEntry && (
-          <div style={{ padding:"2px 16px 8px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"#475569", marginBottom:4 }}>
-              <span>第 {liveEntry.round} 回合 · 第 {liveMiniRoundIdx+1}/{liveEntry.miniRounds?.length||6} 箭</span>
-              <span>怪物剩 <span style={{ color:"#fbbf24", fontWeight:900 }}>{curMini?.monsterHPAfter ?? liveEntry.monsterHPAfter}</span></span>
-            </div>
-            <div style={{ display:"flex", justifyContent:"center", gap:5 }}>
-              {(liveEntry.miniRounds||[]).map((mini,i) => (
-                <div key={i} style={{ width:8, height:8, borderRadius:"50%", transition:"all 0.3s", background: i===liveMiniRoundIdx ? "#fbbf24" : i<liveMiniRoundIdx ? (mini.isCounter ? "#f97316" : "#6366f1") : "rgba(255,255,255,0.08)", transform: i===liveMiniRoundIdx ? "scale(1.4)" : "scale(1)" }}/>
-              ))}
-            </div>
-            {curMini?.isCounter && <div style={{ textAlign:"center", color:"#fb923c", fontWeight:900, fontSize:11, marginTop:4 }}>⚡ 怪物反擊！</div>}
-          </div>
-        )}
-
-        {/* 戰鬥記錄（可折疊）*/}
-        {(room.log||[]).length > 0 && (
-          <div style={{ padding:"0 12px 8px" }}>
-            <button onClick={() => setShowFullLog(v=>!v)} style={{ width:"100%", padding:"6px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", color:"#475569", fontSize:11, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}>
-              <span>📜 戰鬥記錄 ({room.log.length} 回合)</span>
-              <span>{showFullLog ? "▲" : "▼"}</span>
-            </button>
-            {showFullLog && (
-              <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:6 }}>
-                {[...room.log].reverse().map((entry,i) => {
-                  if (i===0 && liveEntry) return null;
-                  return (
-                    <div key={i} style={{ background:"rgba(255,255,255,0.04)", borderRadius:10, padding:"10px 12px", fontSize:11, color:"#94a3b8", display:"flex", flexDirection:"column", gap:4 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", fontWeight:900, color:"#cbd5e1" }}>
-                        <span>第 {entry.round} 回合</span>
-                        <span>剩 <span style={{ color:"#fbbf24" }}>{entry.monsterHPAfter}</span></span>
-                      </div>
-                      {entry.event && <div style={{ fontSize:10, padding:"2px 8px", borderRadius:5, fontWeight:700, background: entry.event.type==="buff" ? "rgba(16,185,129,0.12)" : entry.event.type==="debuff" ? "rgba(239,68,68,0.12)" : "rgba(251,191,36,0.1)", color: entry.event.type==="buff" ? "#6ee7b7" : entry.event.type==="debuff" ? "#fca5a5" : "#fde68a" }}>{entry.event.icon} {entry.event.title}</div>}
-                      {(entry.playerLog||[]).map((p,j) => (
-                        <div key={j} style={{ display:"flex", gap:6, alignItems:"center" }}>
-                          <span style={{ color:"#a5b4fc" }}>🏹 {p.name}</span>
-                          <span>+<span style={{ color:"#f87171", fontWeight:900 }}>{p.dmg}</span></span>
-                          {p.crits > 0 && <span style={{ color:"#fbbf24", fontSize:10 }}>💥×{p.crits}</span>}
-                          {entry.counterRound && p.ctr > 0 && <span style={{ color:"#fb923c", marginLeft:"auto" }}>-{p.ctr}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-                <div ref={logEndRef}/>
-              </div>
-            )}
-          </div>
-        )}
-      </div>{/* end scrollable */}
+      </div>
 
       {/* 輸入區 */}
-      {me.alive && !myReady && !liveEntry && (
-        <div style={{ flexShrink:0, padding:"8px 14px 14px", borderTop:"1px solid rgba(255,255,255,0.07)", background:"rgba(10,10,30,0.97)", display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-            <span style={{ color:"#475569", fontSize:11, width:28, flexShrink:0 }}>{arrows.length}/{ARROWS_PER_ROUND}</span>
-            <div style={{ display:"flex", gap:3, flex:1, flexWrap:"wrap" }}>
-              {arrows.map((a,i) => (
-                <span key={i} className={`text-xs font-black px-2 py-0.5 rounded-full ${SCORE_COLORS[a.label]||"bg-slate-600 text-white"}`}>{a.label}</span>
-              ))}
-              {Array.from({length:ARROWS_PER_ROUND-arrows.length}).map((_,i) => (
-                <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-500">○</span>
-              ))}
-            </div>
-            <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, flexShrink:0 }}>{myArrowTotal}分</span>
-          </div>
-          {arrows.length < ARROWS_PER_ROUND && (
-            <div className="grid grid-cols-5 gap-2">
-              {SCORE_LABELS.map(label => (
-                <button key={label} onClick={() => addArrow(label)}
-                  className={`py-3.5 rounded-xl font-black text-sm ${SCORE_COLORS[label]||"bg-slate-600 text-white"} active:scale-90 transition-transform`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          {myLastPLog && (
-            <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:8, padding:"5px 10px", display:"flex", flexDirection:"column", gap:1 }}>
-              <div style={{ fontSize:10, color:"#475569" }}>
-                ⚔️{myStats.atk} 🛡️{myStats.def}
-                {myLastPLog.ctr > 0 && <span style={{ color:"#fb923c", marginLeft:8 }}>受擊 -{myLastPLog.ctr}</span>}
+      <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.68)", padding:"3px 6px 10px" }}>
+        {me.alive && !myReady && !liveEntry && (
+          <>
+            {/* HP 危機警告 */}
+            {me.hp > 0 && me.maxHP > 0 && me.hp/me.maxHP < 0.25 && (
+              <div style={{ textAlign:"center", color:"#ef4444", fontWeight:900, fontSize:11, padding:"2px 0 3px" }}>
+                ⚠️ HP 危急！請謹慎作戰
               </div>
-              {(myLastPLog.arrowBreakdown||[]).map((a,ai) => (
-                <span key={ai} style={{ fontSize:10, fontWeight:700, color: a.dmg===0 ? "#475569" : a.isCrit ? "#fbbf24" : "#94a3b8" }}>
-                  {ai+1}箭 {a.label}　{a.partIcon}{a.partName}
-                  {a.dmg > 0 && <span style={{ color:"#f87171", marginLeft:4 }}>+{a.dmg}</span>}
-                  {a.isCrit && " 💥"}
-                </span>
+            )}
+            {/* 箭槽 */}
+            <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
+              {Array.from({length:ARROWS_PER_ROUND}).map((_,i) => (
+                <div key={i} style={{
+                  width:28, height:28, borderRadius:6, flexShrink:0,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:13, fontWeight:900,
+                  background: i<arrows.length ? "#2563eb" : i===arrows.length ? "rgba(37,99,235,0.3)" : "rgba(255,255,255,0.05)",
+                  border:`2px solid ${i<arrows.length?"#60a5fa":i===arrows.length?"#3b82f6":"rgba(255,255,255,0.1)"}`,
+                  color: i<arrows.length ? "white" : "#475569",
+                }}>
+                  {i<arrows.length ? arrows[i].label : ""}
+                </div>
               ))}
+              {arrows.length>0 && (
+                <button onClick={removeLastArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:16, cursor:"pointer", paddingLeft:4 }}>↩</button>
+              )}
+              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>{myArrowTotal}分</span>
             </div>
-          )}
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={removeLastArrow} disabled={arrows.length===0}
-              style={{ flex:1, padding:"10px", borderRadius:12, fontWeight:700, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.06)", color:"#94a3b8", border:"1px solid rgba(255,255,255,0.1)", opacity: arrows.length===0 ? 0.3 : 1 }}>← 撤銷</button>
-            <button onClick={handleSubmit} disabled={arrows.length < ARROWS_PER_ROUND || submitting}
-              style={{ flex:2, padding:"10px", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer", background: arrows.length===ARROWS_PER_ROUND ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(99,102,241,0.3)", color:"#fff", border:"none", opacity: (arrows.length < ARROWS_PER_ROUND || submitting) ? 0.5 : 1 }}>
-              {submitting ? "送出中…" : `✅ 送出 (${myArrowTotal}分)`}
+            {/* 分數按鈕 */}
+            {arrows.length < ARROWS_PER_ROUND && (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:3, marginBottom:4, background:"rgb(20,12,5)", borderRadius:6, padding:"3px" }}>
+                {SCORE_LABELS.map(label => {
+                  const s = SCORE_MAP[label] ?? 0;
+                  return (
+                    <button key={label} onClick={() => addArrow(label)} style={{
+                      backgroundImage:"url(/ui/score-btn.webp)", backgroundSize:"cover", backgroundPosition:"center",
+                      backgroundColor:"rgb(30,16,6)",
+                      WebkitAppearance:"none", appearance:"none",
+                      border:"none", borderRadius:5, height:40, width:"100%",
+                      color: label==="X"?"#fbbf24":label==="M"?"#94a3b8":s>=9?"#fef3c7":s>=7?"#bfdbfe":s>=5?"#d1d5db":"#9ca3af",
+                      fontWeight:900, fontSize:14, cursor:"pointer",
+                      textShadow:"0 1px 6px #000", padding:0, transition:"transform .08s",
+                    }}
+                    onTouchStart={e=>e.currentTarget.style.transform="scale(0.88)"}
+                    onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}
+                    >{label}</button>
+                  );
+                })}
+              </div>
+            )}
+            {/* 送出 */}
+            <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting}
+              style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
+                background: arrows.length===ARROWS_PER_ROUND ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
+                color:"white", border:"none", opacity:(arrows.length<ARROWS_PER_ROUND||submitting)?0.55:1 }}>
+              {submitting?"送出中…":`✅ 送出 (${myArrowTotal}分)`}
+            </button>
+          </>
+        )}
+
+        {me.alive && myReady && (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, padding:"4px 0" }}>
+            <div style={{ color:"#4ade80", fontWeight:900, fontSize:12 }}>
+              ✅ 已送出，等待其他隊員…
+              {room.processing && <span style={{ color:"#fbbf24", marginLeft:8 }}>⚙️</span>}
+            </div>
+            <button onClick={() => sendPartyCheer(roomId, me.name)}
+              style={{ padding:"6px 18px", borderRadius:12, fontWeight:900, fontSize:12, cursor:"pointer", background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc" }}>
+              💪 為隊友加油！
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {me.alive && myReady && (
-        <div style={{ flexShrink:0, padding:"12px 16px 16px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
-          <div style={{ color:"#4ade80", fontWeight:900, fontSize:13 }}>
-            ✅ 已送出，等待其他隊員…
-            {room.processing && <span style={{ color:"#fbbf24", marginLeft:8 }}>⚙️ 計算中…</span>}
+        {!me.alive && room.status==="active" && (
+          <div style={{ textAlign:"center", padding:"6px 0", color:"#475569", fontWeight:900, fontSize:12 }}>
+            💀 你已陣亡，觀戰中…
           </div>
-          <button onClick={() => sendPartyCheer(roomId, me.name)}
-            style={{ padding:"8px 20px", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer", background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc" }}>
-            💪 為隊友加油！
-          </button>
-        </div>
-      )}
-      {!me.alive && room.status === "active" && (
-        <div style={{ flexShrink:0, padding:"14px", textAlign:"center", color:"#475569", fontWeight:900, fontSize:13, borderTop:"1px solid rgba(255,255,255,0.07)" }}>
-          💀 你已陣亡，觀戰中…
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
