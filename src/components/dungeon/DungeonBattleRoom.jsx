@@ -9,7 +9,6 @@ import {
   clearDungeonProcessing, claimDungeonReward,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
-import MonsterSVG from "../MonsterSVG";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog } from "../../lib/db";
 import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
@@ -40,6 +39,17 @@ function calcCtrFn(monsterAtk, archerDef) {
   const base = 4 + monsterAtk * 0.6 - archerDef * 0.3;
   const m    = 0.8 + Math.random() * 0.4;
   return Math.max(1, Math.round(base * m));
+}
+
+function DungeonMonsterImg({ id, icon, charge, hit }) {
+  const [err, setErr] = useState(false);
+  const anim = charge ? "mb-charge 0.7s ease infinite" : hit ? "mb-monster-hit 0.5s ease" : undefined;
+  return err ? (
+    <span style={{ fontSize:80, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
+  ) : (
+    <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
+      style={{ maxWidth:"82%", maxHeight:200, objectFit:"contain", animation:anim }}/>
+  );
 }
 
 function HPBar({ current, max, color = "bg-emerald-500" }) {
@@ -261,7 +271,8 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   function addArrow(label) {
     if (arrows.length >= 6) return;
     sfxTap();
-    setArrows(prev => [...prev, { label, score: SCORE_MAP[label] ?? 0 }]);
+    const score = label === "命中" ? 1 : (SCORE_MAP[label] ?? 0);
+    setArrows(prev => [...prev, { label, score }]);
   }
 
   function undoArrow() {
@@ -567,59 +578,57 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
       {/* ── 頂部 HUD ── */}
-      <div style={{ flexShrink:0, background:"rgba(0,0,0,0.75)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {/* 怪物 HP 條 */}
-        <div style={{ background:"#1e293b", height:22, overflow:"hidden", position:"relative", borderBottom:"1.5px solid #7f1d1d" }}>
-          <div style={{ width:`${Math.max(0,(displayHP||0)/room.monsterMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
-            background: (displayHP||0)/room.monsterMaxHP>0.5?"#dc2626":(displayHP||0)/room.monsterMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
-          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
+      <div style={{ flexShrink:0, background:"rgba(0,0,0,0.78)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)", padding:"4px 10px 5px" }}>
+        {/* 第一行：怪物名稱 + 等級徽章 + 離開 */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <span style={{ fontSize:15, fontWeight:900, color:monster.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{monster.name||"怪物"}</span>
+            {monster.tier && (() => {
+              const tl = TIER_LABEL[monster.tier] || {};
+              return (
+                <span style={{ fontSize:10, fontWeight:700, color:"white", background:tl.color||"#6b7280", borderRadius:4, padding:"1px 5px" }}>
+                  {tl.label||monster.tier}
+                </span>
+              );
+            })()}
+          </div>
+          <button onClick={handleLeave}
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+            離開
+          </button>
+        </div>
+        {/* 第二行：怪物 HP 條 */}
+        <div style={{ background:"rgba(0,0,0,0.4)", height:16, borderRadius:8, overflow:"hidden", position:"relative", marginBottom:4, border:"1px solid rgba(127,29,29,0.6)" }}>
+          <div style={{ width:`${Math.max(0,(displayHP||0)/(room.monsterMaxHP||1))*100}%`, height:"100%", borderRadius:8, transition:"width .7s ease",
+            background: (displayHP||0)/(room.monsterMaxHP||1)>0.5?"#dc2626":(displayHP||0)/(room.monsterMaxHP||1)>0.25?"#f59e0b":"#7f1d1d" }}/>
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:9, fontWeight:900 }}>
             {(displayHP||0).toLocaleString()} / {(room.monsterMaxHP||0).toLocaleString()}
           </div>
         </div>
-
-        <div style={{ padding:"3px 10px 4px" }}>
-          {/* 怪物名稱 + 層數進度 + 離開 */}
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-              <span style={{ fontSize:13, fontWeight:900, color:monster.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{monster.name||"怪物"}</span>
-              <div style={{ display:"flex", gap:2 }}>
-                {Array.from({ length: room.totalFloors||7 }).map((_,i) => (
-                  <div key={i} style={{ width:10, height:3, borderRadius:2, background: i<(room.currentFloor||1)-1?"#f59e0b":i===(room.currentFloor||1)-1?"#f87171":"rgba(255,255,255,0.15)" }}/>
-                ))}
-              </div>
-            </div>
-            <button onClick={handleLeave}
-              style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
-              離開
-            </button>
+        {/* 第三行：統計標籤列 */}
+        <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+          <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
+            🏰 {room.currentFloor||1}/{room.totalFloors||7}層 R{room.round||1}
           </div>
-          {/* 統計標籤列 */}
-          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
-            <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
-              🏰 {room.currentFloor||1}/{room.totalFloors||7}層 R{room.round||1}
-            </div>
-            <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>
-              💢 {monster.atk||0}
-            </div>
-            <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>
-              🛡️ {monster.def||0}
-            </div>
-            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
-              👤 {aliveCount}/{memberCount}
-            </div>
-            <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:5, padding:"1px 6px", fontSize:10 }}
-              className={contractInfo.color}>
-              {contractInfo.icon} {contractInfo.name}
-            </div>
+          <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>
+            ⚔️ {monster.atk||0}
+          </div>
+          <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>
+            🛡️ {monster.def||0}
+          </div>
+          <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
+            👤 {aliveCount}/{memberCount}
+          </div>
+          <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:5, padding:"1px 6px", fontSize:10 }}
+            className={contractInfo.color}>
+            {contractInfo.icon} {contractInfo.name}
           </div>
         </div>
       </div>
 
       {/* ── 怪物展示區 ── */}
       <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
-        <div style={{ animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
-          <MonsterSVG id={monster.id} size={220}/>
-        </div>
+        <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={animMonsterCharge} hit={animHit}/>
         {/* 浮動傷害 */}
         {floatDmg && (
           floatDmg.isMiss
@@ -782,16 +791,31 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                 <button onClick={undoArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:18, cursor:"pointer", paddingLeft:4 }}>↩</button>
               )}
             </div>
-            {/* 分數按鈕格 */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:2, marginBottom:4 }}>
-              {SCORE_LABELS.map(label => (
-                <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
-                  className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
-                  style={{ fontSize:11, padding:"6px 2px", opacity: arrows.length>=6?0.3:1 }}>
-                  {label}
+            {/* 分數按鈕格（依合約類型調整）*/}
+            {(myContract.type === "hit_count" || myContract.type === "all_hit") ? (
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:4 }}>
+                <button onClick={() => addArrow("命中")} disabled={arrows.length>=6}
+                  className="rounded-xl font-black active:scale-95 bg-emerald-500 text-white"
+                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=6?0.3:1 }}>
+                  命中
                 </button>
-              ))}
-            </div>
+                <button onClick={() => addArrow("M")} disabled={arrows.length>=6}
+                  className={`rounded-xl font-black active:scale-95 ${SCORE_COLORS["M"]}`}
+                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=6?0.3:1 }}>
+                  M
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:2, marginBottom:4 }}>
+                {SCORE_LABELS.map(label => (
+                  <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
+                    className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
+                    style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* 送出 */}
             <button onClick={handleSubmit} disabled={arrows.length<6}
               style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",

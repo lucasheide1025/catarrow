@@ -141,7 +141,7 @@ export default function MemberApp() {
   const needsUpdate = latestVersion && latestVersion !== APP_VERSION;
 
   return (
-    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"#f8fafc", fontFamily:"sans-serif", overflow:"hidden" }}>
+    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", fontFamily:"sans-serif", overflow:"hidden", background:"#0f172a" }}>
 
       {/* 版本更新提醒 */}
       {needsUpdate && (

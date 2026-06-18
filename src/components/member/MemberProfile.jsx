@@ -114,13 +114,13 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
   function CertBlock({ g }) {
     return (
       <div className="mb-3 last:mb-0">
-        <div className="text-gray-600 text-xs font-bold mb-2">{g.year}年{HALF_LABEL[g.half]}</div>
+        <div className="text-white/70 text-xs font-bold mb-2">{g.year}年{HALF_LABEL[g.half]}</div>
         <div className="grid grid-cols-3 gap-3">
           {CERT_SHOW.map(bk => {
             const bt = BOW_TYPES[bk];
             const score = g.scores[bk] || 0;
             const level = getCertLevel(bk, score);
-            return <CertChip key={bk} icon={bt.icon} name={bt.short} score={score} level={level} />;
+            return <CertChip key={bk} name={bt.short} score={score} level={level} />;
           })}
         </div>
       </div>
@@ -148,16 +148,11 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
 
   return (
-    <div className="p-4 flex flex-col gap-4">
+    <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
 
       {/* ── 狀態卡（可換主題）─────────────────────────────── */}
       <div className="p-5 border-0 text-white relative overflow-hidden"
-        style={{
-          background: currentTheme.bg,
-          backgroundImage: `url(/ui/stat-card-bg.webp), ${currentTheme.bg}`,
-          backgroundSize: "cover, cover",
-          backgroundBlendMode: "soft-light",
-        }}>
+        style={{ background: currentTheme.bg }}>
 
         {/* 宇宙黑：星星 */}
         {cardTheme === "cosmos" && (
@@ -243,21 +238,21 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
       <ArcherCard profile={profile} certification={certification} onExam={() => onPageChange("certexam")} />
 
       {/* 年度檢定 */}
-      <Card className="p-4">
+      <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
         <ST>🎖️ 年度檢定級別</ST>
         {thisYearKeys.length === 0 ? (
           <div className="grid grid-cols-3 gap-3 mt-1">
             {CERT_SHOW.map(bk => {
               const bt = BOW_TYPES[bk];
-              return <CertChip key={bk} icon={bt.icon} name={bt.short} score={0} level={null} />;
+              return <CertChip key={bk} name={bt.short} score={0} level={null} />;
             })}
           </div>
         ) : (
           <div className="mt-1">{thisYearKeys.map(k => <CertBlock key={k} g={groups[k]} />)}</div>
         )}
         {pastKeys.length > 0 && (
-          <div className="mt-2 border-t border-gray-100 pt-2">
-            <button onClick={() => setShowHistory(!showHistory)} className="text-blue-600 text-xs font-bold">
+          <div className="mt-2 border-t border-white/20 pt-2">
+            <button onClick={() => setShowHistory(!showHistory)} className="text-white/60 text-xs font-bold">
               {showHistory ? "▲ 收起歷年檢定成績" : "▼ 查看歷年檢定成績"}
             </button>
             {showHistory && (
@@ -268,7 +263,7 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
       </Card>
 
       {/* 徽章 */}
-      <Card className="p-4">
+      <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
         <ST>徽章總覽</ST>
         <div className="flex flex-col gap-3">
           {[["🐱 肥貓章", profile?.fatCat,     ["gold","silver","bronze"], ["金","銀","銅"]],
@@ -276,15 +271,15 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
             ["🏆 成就章", profile?.achievement, ["black","gold","silver"],  ["黑","金","銀"]]
           ].map(([lbl, data, keys, names]) => (
             <div key={lbl}>
-              <div className="text-gray-400 text-xs mb-1.5">{lbl}</div>
+              <div className="text-white/60 text-xs mb-1.5">{lbl}</div>
               <div className="flex gap-2">
                 {keys.map((k,i) => <BadgePip key={k} label={names[i]} color={k} count={(data||{})[k]||0} />)}
               </div>
             </div>
           ))}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <div className="text-gray-500 text-xs">🎪 賽事積分</div>
-            <div className="text-blue-600 font-black text-xl">{profile?.eventPoints || 0}</div>
+          <div className="flex items-center justify-between pt-2 border-t border-white/20">
+            <div className="text-white/60 text-xs">🎪 賽事積分</div>
+            <div className="text-white font-black text-xl">{profile?.eventPoints || 0}</div>
           </div>
         </div>
       </Card>
@@ -293,10 +288,11 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
       <div className="grid grid-cols-3 gap-3">
         {quickLinks.map(l => (
           <button key={l.id} onClick={() => onPageChange(l.id)}
-            className="bg-white border border-gray-200 rounded-2xl p-3 text-center hover:border-blue-300 hover:bg-blue-50 transition-all active:scale-95">
+            className="rounded-2xl p-3 text-center active:scale-95 transition-all border border-white/15"
+            style={{ background:"rgba(15,23,42,0.55)" }}>
             <div className="text-2xl mb-1">{l.icon}</div>
-            <div className="text-gray-700 font-bold text-xs">{l.label}</div>
-            <div className="text-gray-400 text-xs mt-0.5">{l.desc}</div>
+            <div className="text-white font-bold text-xs">{l.label}</div>
+            <div className="text-white/50 text-xs mt-0.5">{l.desc}</div>
           </button>
         ))}
       </div>
@@ -430,7 +426,12 @@ function ArcherCard({ profile, certification, onExam }) {
   };
   return (
     <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg"
-      style={{ background: cardBg[level] || cardBg.none }}>
+      style={{
+        backgroundImage: `url(/ui/profile-banner.webp), ${cardBg[level] || cardBg.none}`,
+        backgroundSize: "100% auto, cover",
+        backgroundRepeat: "no-repeat, no-repeat",
+        backgroundPosition: "top center, center",
+      }}>
       <div className="absolute -right-6 -bottom-6 opacity-20" aria-hidden>
         <div style={{ width:120, height:120, borderRadius:"9999px",
           background:"radial-gradient(circle, #fbbf24 0 18%, #fff 18% 34%, #ef4444 34% 50%, #fff 50% 66%, #1e293b 66% 82%, #fff 82% 100%)" }} />
@@ -488,13 +489,15 @@ function ArcherCard({ profile, certification, onExam }) {
 
 function CertDetailRow({ tier, tierColor, data }) {
   const BOW_LABEL = { rental:"租借器材", traditional:"傳統弓", recurve_bare:"裸弓", recurve_full:"全配", compound:"美式獵弓" };
+  const examBg = tier === "藍證" ? "/ui/cert-exam-blue.webp" : tier === "金證" ? "/ui/cert-exam-gold.webp" : "/ui/cert-exam-none.webp";
   function fmtGrant(ts) {
     if (!ts) return "—";
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" });
   }
   return (
-    <div className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/15">
+    <div className="relative overflow-hidden rounded-xl p-3 border border-white/15"
+      style={{ backgroundImage:`url(${examBg})`, backgroundSize:"100% auto", backgroundRepeat:"no-repeat", backgroundPosition:"top center", backgroundColor:"rgba(0,0,0,0.35)" }}>
       <div className="flex items-center justify-between mb-2">
         <span className={`text-xs font-black ${tierColor}`}>🎖️ {tier}</span>
         <span className="text-cyan-100 text-xs">領證 {fmtGrant(data.grantedAt)}</span>
@@ -532,25 +535,36 @@ const CERT_BG_PROFILE = {
   精英:  "/ui/cert-elite.webp",
   菁英:  "/ui/cert-elite.webp",
 };
+const CERT_CHIP_STYLE = {
+  "":   { bg:"rgba(0,0,0,0.30)",        border:"rgba(255,255,255,0.12)", title:"#9ca3af", score:"#d1d5db" },
+  入門:  { bg:"rgba(251,191,36,0.18)",   border:"rgba(251,191,36,0.35)",  title:"#fde68a", score:"#fbbf24" },
+  初級:  { bg:"rgba(16,185,129,0.18)",   border:"rgba(16,185,129,0.35)",  title:"#a7f3d0", score:"#6ee7b7" },
+  中級:  { bg:"rgba(59,130,246,0.18)",   border:"rgba(59,130,246,0.35)",  title:"#bfdbfe", score:"#93c5fd" },
+  進階:  { bg:"rgba(139,92,246,0.18)",   border:"rgba(139,92,246,0.35)",  title:"#ddd6fe", score:"#c4b5fd" },
+  精英:  { bg:"rgba(245,158,11,0.20)",   border:"rgba(245,158,11,0.45)",  title:"#fcd34d", score:"#fbbf24" },
+  菁英:  { bg:"rgba(245,158,11,0.20)",   border:"rgba(245,158,11,0.45)",  title:"#fcd34d", score:"#fbbf24" },
+};
 
-function CertChip({ icon, name, score, level }) {
+function CertChip({ name, score, level }) {
   const has = score > 0;
   const certImg = CERT_BG_PROFILE[level || ""] || CERT_BG_PROFILE[""];
+  const ls = CERT_CHIP_STYLE[level || ""] || CERT_CHIP_STYLE[""];
   return (
-    <div className={`rounded-xl p-3 text-center border relative overflow-hidden ${level?"bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-200":has?"bg-blue-50 border-blue-100":"bg-gray-50 border-gray-200"}`}
-      style={{ backgroundImage:`url(${certImg})`, backgroundSize:"cover", backgroundPosition:"center" }}>
+    <div className="rounded-xl p-3 text-center relative overflow-hidden"
+      style={{ backgroundImage:`url(${certImg})`, backgroundSize:"cover", backgroundPosition:"center",
+        backgroundColor: ls.bg, border:`1px solid ${ls.border}` }}>
       <div className="relative z-10">
-        <div className="text-2xl mb-1">{icon}</div>
-        <div className="text-gray-500 text-xs mb-1">{name}</div>
+        <div style={{ fontSize:10, fontWeight:700, color:ls.title, marginBottom:2 }}>{name}</div>
         {has ? (
           <>
-            <div className="text-gray-800 font-black text-sm">{score} 分</div>
-            <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level?certLevelStyle(level,"solid"):"bg-gray-200 text-gray-500"}`}>
-              {level||"未達標"}
+            <div style={{ fontWeight:900, fontSize:15, color:ls.score }}>{score}</div>
+            <div style={{ fontSize:9, color:ls.title, marginTop:1 }}>分</div>
+            <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level ? certLevelStyle(level, "solid") : "bg-white/10 text-white/50"}`}>
+              {level || "未達標"}
             </div>
           </>
         ) : (
-          <div className="inline-block bg-gray-200 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full mt-1">初心者</div>
+          <div style={{ fontSize:10, color:ls.title, marginTop:4 }}>初心者</div>
         )}
       </div>
     </div>

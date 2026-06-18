@@ -111,7 +111,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   if (roomId && room) {
     const members = Object.values(room.members || {});
     return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
         {/* Header */}
         <div className="shrink-0 text-center py-5 border-b border-white/10">
           <div className="text-3xl mb-1">🏰</div>
@@ -183,7 +183,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   // ── 建立 / 加入畫面 ───────────────────────────────────────
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+    <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       {/* Header */}
       <div className="shrink-0 text-center py-8 relative">
         {onBack && (

@@ -183,7 +183,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     const typeLabel = TYPE_OPTIONS.find(t => t.value === room.type)?.label || room.type;
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
         <ToastContainer />
         <div className="w-full max-w-sm flex flex-col gap-4">
 
@@ -296,7 +296,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
   // ── 建立房間 ────────────────────────────────────────────
   if (phase === "create") return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <ToastContainer />
       <div className="w-full max-w-sm flex flex-col gap-4">
         <div className="text-center">
@@ -348,7 +348,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
   // ── 加入房間 ────────────────────────────────────────────
   if (phase === "join") return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <ToastContainer />
       <div className="w-full max-w-sm flex flex-col gap-4">
         <div className="text-center">
@@ -384,7 +384,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
   // ── 主選單 ──────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <ToastContainer />
       <div className="w-full max-w-sm flex flex-col gap-6">
 

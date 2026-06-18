@@ -75,7 +75,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col items-center py-10 px-4 relative">
+    <div className="min-h-screen flex flex-col items-center py-10 px-4 relative text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
