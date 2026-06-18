@@ -150,6 +150,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
   const [animScreenShake,   setAnimScreenShake]   = useState(false);
   const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
+  const [localHpOverride,   setLocalHpOverride]   = useState({});
   const [showEvent,       setShowEvent]       = useState(null);
   const [logInited,       setLogInited]       = useState(false); // 首次 log 初始化後為 true，用於 pending_confirm 時序
   const [showFullLog,     setShowFullLog]     = useState(false);
@@ -214,6 +215,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setClaimResult(null);
     setStartError("");
     setLogInited(false);
+    setLocalHpOverride({});
   }, [room?.status]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
@@ -369,17 +371,32 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       revealTimersRef.current.push(t);
 
       if (mini.isCounter) {
+        // 反擊開始前：先把 HP bar 鎖在「受擊前」，讓 Firestore 已更新的值不提前顯示
+        const ctrLog = mini.playerLog || [];
+        const tLock = setTimeout(() => {
+          setLocalHpOverride(prev => {
+            const next = { ...prev };
+            ctrLog.forEach(p => {
+              // 從 room.members 讀目前值（已是扣血後），加回 ctr 還原為受擊前 HP
+              const mem = room?.members?.[p.id];
+              if (mem) next[p.id] = Math.min(mem.maxHP || 9999, (mem.hp || 0) + (p.ctr || 0));
+            });
+            return next;
+          });
+        }, delay);
         // 600ms 後蓄力（讓玩家先看清箭傷），1400ms 反擊
         const t1 = setTimeout(() => setAnimMonsterCharge(true),  delay + 600);
         const t2 = setTimeout(() => {
           setAnimMonsterCharge(false);
           setAnimCounter(true);
           setAnimScreenShake(true);
+          // 反擊動畫同步：清除 override，血條帶 CSS transition 順滑滑落
+          setLocalHpOverride({});
           // 根據反擊傷害選擇音效
-          const totalCtrDmg = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
+          const totalCtrDmg = ctrLog.reduce((s, p) => s + (p.ctr || 0), 0);
           if (totalCtrDmg > 80) sfxCounterCrit(); else sfxCounter();
           vibrate([0, 35, 55, 30]);
-          const floats = (mini.playerLog || [])
+          const floats = ctrLog
             .filter(p => p.ctr > 0)
             .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
           if (floats.length) {
@@ -388,7 +405,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           }
           setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
         }, delay + 1400);
-        revealTimersRef.current.push(t1, t2);
+        revealTimersRef.current.push(tLock, t1, t2);
         delay += 2700;
       } else {
         // 玩家攻擊：200ms 後怪物閃白受擊
@@ -1191,7 +1208,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     : null;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
   // 每位玩家欄位等寬：(540 容器 - 12px 左右 padding - gap*(n-1)) / n，上限 100px
-  const memberW = Math.min(100, Math.floor((528 - (memberList.length - 1) * 3) / memberList.length));
+  const frontMembers = memberList.slice(0, 4);
+  const backMembers  = memberList.slice(4);
+  const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
+  const backW  = Math.min(80,  Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
+  const showBackRow = !!(liveEntry || room.processing);
 
   return (
     <div style={{
@@ -1238,50 +1259,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       {/* 上半：左側 log + 右側怪物 */}
       <div style={{ flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0" }}>
 
-        {/* 左側：可折疊戰鬥記錄 */}
-        <div style={{
-          flexShrink:0, background:"rgba(0,0,0,0.82)", borderRadius:8,
-          border:"1px solid rgba(255,255,255,0.07)",
-          display:"flex", flexDirection:"column", overflow:"hidden",
-          width: showFullLog ? 160 : 36, transition:"width .2s ease",
-          alignSelf:"flex-start", maxHeight:"100%",
-        }}>
-          <button onClick={() => setShowFullLog(v=>!v)} style={{
-            display:"flex", alignItems:"center", gap:4, padding:"5px 6px",
-            background:"none", border:"none", cursor:"pointer", width:"100%",
-            borderBottom: showFullLog ? "1px solid rgba(255,255,255,0.06)" : "none",
-            flexShrink:0,
-          }}>
-            <span style={{ fontSize:12 }}>📜</span>
-            {showFullLog && <span style={{ color:"#475569", fontSize:9, fontWeight:900, letterSpacing:1, whiteSpace:"nowrap" }}>戰鬥記錄</span>}
-            <span style={{ marginLeft:"auto", color:"#475569", fontSize:10 }}>{showFullLog ? "◀" : "▶"}</span>
-          </button>
-          {showFullLog && (
-            <div style={{ flex:1, overflowY:"auto", padding:"2px 6px" }}>
-              {[...(room.log||[])].reverse().map((entry,i) => {
-                if (i===0 && liveEntry) return null;
-                return (
-                  <div key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.05)", paddingBottom:4, marginBottom:4 }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, fontWeight:900, color:"#fbbf24" }}>
-                      <span>R{entry.round}</span>
-                      <span>-{entry.totalDmg}</span>
-                    </div>
-                    {entry.event && <div style={{ fontSize:9, color: entry.event.type==="buff"?"#6ee7b7":"#fca5a5" }}>{entry.event.icon}{entry.event.title}</div>}
-                    {(entry.playerLog||[]).map((p,j) => (
-                      <div key={j} style={{ fontSize:9, color:"#94a3b8" }}>
-                        {p.name.slice(0,4)}: <span style={{ color:"#f87171" }}>+{p.dmg}</span>
-                        {entry.counterRound && p.ctr>0 && <span style={{ color:"#fb923c" }}>/-{p.ctr}</span>}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              <div ref={logEndRef}/>
-            </div>
-          )}
-        </div>
-
-        {/* 右側：怪物區 */}
+        {/* 怪物區（全寬） */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:8 }}>
           {/* 怪物名稱 + 離開按鈕 */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
@@ -1337,31 +1315,32 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       </div>
 
-      {/* 弓箭手 + 玩家資訊：每人同框，確保對齊 */}
+      {/* 弓箭手 + 玩家資訊：前後排 */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+        {/* 前排（最多4人）：完整顯示 */}
         <div style={{
-          display:"flex", gap:3, padding:"0 6px 7px", justifyContent:"center",
+          display:"flex", gap:3, padding:"4px 6px 4px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined,
         }}>
-          {memberList.map(m => {
+          {frontMembers.map(m => {
             const miniDmg = curMiniDmgMap[m.id];
             const isTopHit = liveEntry && m.alive && miniDmg !== undefined && !animCounter && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
             const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
             const pArrow = pLog?.arrowBreakdown?.[0];
-            const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
+            const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
+            const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
             const catId = m.archerStyle || "baobao";
             const hasMyCatMsg = isMe && catMsg;
             return (
               <div key={m.id} style={{
-                flexShrink:0, width:memberW, display:"flex", flexDirection:"column",
+                flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
                 border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
                 borderRadius:8, overflow:"hidden",
                 background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
               }}>
-
-                {/* ── 弓箭手圖 ── */}
+                {/* 弓箭手圖 */}
                 <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                   {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
                     <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
@@ -1381,31 +1360,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     }}
                     onError={e => { e.target.style.display="none"; }}/>
                 </div>
-
-                {/* 分隔線 */}
                 <div style={{ height:1, background:"rgba(255,255,255,0.06)", flexShrink:0 }}/>
-
-                {/* ── 資訊卡（每項獨立一行） ── */}
                 <div style={{ padding:"3px 3px 4px", textAlign:"center" }}>
-                  {/* 血條 */}
                   <div style={{ height:5, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
                     <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                   </div>
-                  {/* 玩家名稱 */}
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
                     {!m.alive&&"💀"}{m.name.slice(0,6)}{m.id===room.hostId?" 👑":""}
                   </div>
-                  {/* ATK */}
-                  <div style={{ fontSize:9, color:"#f87171", marginBottom:1 }}>⚔️ {m.atk}</div>
-                  {/* DEF */}
-                  <div style={{ fontSize:9, color:"#60a5fa", marginBottom:1 }}>🛡 {m.def}</div>
-                  {/* 貓貓寵物 */}
+                  <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
+                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk}</div>
+                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{m.def}</div>
+                  </div>
                   <div style={{ display:"flex", justifyContent:"center", marginBottom:1 }}>
                     <div style={{ width:16, height:16, borderRadius:"50%", overflow:"hidden", border:`1px solid ${hasMyCatMsg?"#a78bfa":"rgba(255,255,255,0.18)"}`, boxShadow:hasMyCatMsg?"0 0 6px rgba(167,139,250,0.9)":undefined, transition:"box-shadow 0.3s" }}>
                       <img src={`/cats/portraits/${catId}.webp`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>{e.target.style.display="none"}}/>
                     </div>
                   </div>
-                  {/* 狀態 */}
                   <div style={{ fontSize:9, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
                     {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
                   </div>
@@ -1420,6 +1391,48 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             );
           })}
         </div>
+        {/* 後排（第5-8人）：僅射手圖+血條+名字，戰鬥期間才顯示 */}
+        {backMembers.length > 0 && showBackRow && (
+          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
+            {backMembers.map(m => {
+              const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
+              const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
+              const memberArcherStyle = m.archerStyle || "baobao";
+              const isMe = m.id === myId;
+              return (
+                <div key={m.id} style={{
+                  flexShrink:0, width:backW, display:"flex", flexDirection:"column",
+                  border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                  borderRadius:8, overflow:"hidden",
+                  background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
+                }}>
+                  <div style={{ height:60, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                    {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                      <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.75rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                    ))}
+                    <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
+                      style={{
+                        height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
+                        outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
+                        outlineOffset:"2px", borderRadius:2,
+                      }}
+                      onError={e => { e.target.style.display="none"; }}/>
+                  </div>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
+                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
+                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
+                      <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
+                    </div>
+                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 輸入區 */}

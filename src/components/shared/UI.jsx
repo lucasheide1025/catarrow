@@ -2,9 +2,9 @@
 // 全站共用 UI 元件
 
 // ─── 基礎元件 ──────────────────────────────────────────────
-export function Card({ children, className = "" }) {
+export function Card({ children, className = "", style }) {
   return (
-    <div className={`bg-gradient-to-b from-white to-gray-50/60 rounded-2xl border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.07)] ${className}`}>
+    <div className={`bg-gradient-to-b from-white to-gray-50/60 rounded-2xl border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.07)] ${className}`} style={style}>
       {children}
     </div>
   );
@@ -128,6 +128,13 @@ export function Empty({ icon = "🐱", message = "沒有資料" }) {
 }
 
 // ─── 徽章元件 ──────────────────────────────────────────────
+const BADGE_FRAME = {
+  gold:   "/ui/badge-frame-gold.webp",
+  silver: "/ui/badge-frame-silver.webp",
+  bronze: "/ui/badge-frame-bronze.webp",
+  black:  "/ui/badge-frame-black.webp",
+};
+
 export function BadgePip({ label, color, count, size = "md" }) {
   const colorMap = {
     gold:   "bg-gradient-to-b from-yellow-300 to-yellow-500 text-yellow-900 border-yellow-400 shadow-yellow-200",
@@ -141,9 +148,16 @@ export function BadgePip({ label, color, count, size = "md" }) {
     lg: "px-4 py-3 min-w-[64px]",
   };
   return (
-    <div className={`flex flex-col items-center rounded-xl border shadow-sm ${colorMap[color]} ${sizeMap[size]}`}>
-      <span className="text-xs font-bold leading-none">{label}</span>
-      <span className={`font-black leading-tight ${size === "lg" ? "text-3xl" : "text-2xl"}`}>{count}</span>
+    <div className={`relative flex flex-col items-center rounded-xl border shadow-sm overflow-hidden ${colorMap[color]} ${sizeMap[size]}`}>
+      {/* 徽章框紋路覆蓋層（圖片不存在時自動透明） */}
+      <div style={{
+        position:"absolute", inset:0, pointerEvents:"none",
+        backgroundImage:`url(${BADGE_FRAME[color] || ""})`,
+        backgroundSize:"cover", backgroundPosition:"center",
+        opacity:0.35, mixBlendMode:"overlay",
+      }} />
+      <span className="relative z-10 text-xs font-bold leading-none">{label}</span>
+      <span className={`relative z-10 font-black leading-tight ${size === "lg" ? "text-3xl" : "text-2xl"}`}>{count}</span>
     </div>
   );
 }

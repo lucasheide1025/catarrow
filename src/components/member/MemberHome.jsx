@@ -12,6 +12,38 @@ import DailyQuest from "./DailyQuest";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
+// ── UI 圖片對照 ──────────────────────────────────────────
+const CELL_BG = {
+  checkin:   "/ui/cell-checkin.webp",
+  monster:   "/ui/cell-monster.webp",
+  duel:      "/ui/cell-duel.webp",
+  party:     "/ui/cell-party.webp",
+  dungeon:   "/ui/cell-dungeon.webp",
+  worldboss: "/ui/cell-worldboss.webp",
+  cats:      "/ui/cell-cat.webp",
+  materials: "/ui/cell-bag.webp",
+  coinshop:  "/ui/cell-shop.webp",
+  equipment: "/ui/cell-equip.webp",
+  dex:       "/ui/cell-achieve.webp",
+  story:     "/ui/cell-story.webp",
+};
+const CERT_BG = {
+  "":   "/ui/cert-empty.webp",
+  入門:  "/ui/cert-novice.webp",
+  初級:  "/ui/cert-beginner.webp",
+  中級:  "/ui/cert-intermediate.webp",
+  進階:  "/ui/cert-advanced.webp",
+  精英:  "/ui/cert-elite.webp",
+  菁英:  "/ui/cert-elite.webp",
+};
+function cellStyle(key, gradient) {
+  return {
+    backgroundImage: `url(${CELL_BG[key] || ""}), ${gradient}`,
+    backgroundSize: "cover, cover",
+    backgroundBlendMode: "overlay",
+  };
+}
+
 // ── 主題定義 ──────────────────────────────────────────────
 const CARD_THEMES = [
   { id:"ocean",  label:"深海藍", bg:"linear-gradient(135deg,#1d4ed8,#1e3a8a)",    dot:"#93c5fd" },
@@ -159,16 +191,16 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 每日報到 */}
         <button onClick={() => setShowDailyQuest(v => !v)}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform relative overflow-hidden"
-          style={{ background: showDailyQuest ? "linear-gradient(135deg,#047857,#064e3b)" : "linear-gradient(135deg,#059669,#0d9488)" }}>
-          <span className="text-3xl">📋</span>
-          <span className="text-white font-black text-xs leading-tight text-center">每日報到</span>
-          {showDailyQuest && <span className="text-[9px] bg-white/20 text-white px-1.5 rounded-full">展開▲</span>}
+          style={cellStyle("checkin", showDailyQuest ? "linear-gradient(135deg,#047857,#064e3b)" : "linear-gradient(135deg,#059669,#0d9488)")}>
+          <span className="text-3xl relative z-10">📋</span>
+          <span className="text-white font-black text-xs leading-tight text-center relative z-10">每日報到</span>
+          {showDailyQuest && <span className="text-[9px] bg-white/20 text-white px-1.5 rounded-full relative z-10">展開▲</span>}
         </button>
 
         {/* RPG 打怪 */}
         <button onClick={() => onPageChange("monster")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
+          style={cellStyle("monster", "linear-gradient(135deg,#7c3aed,#1e3a8a)")}>
           <span className="text-3xl">👹</span>
           <span className="text-white font-black text-xs leading-tight text-center">RPG打怪</span>
         </button>
@@ -176,7 +208,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 玩家對戰 */}
         <button onClick={() => onPageChange("duel")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#1e1b4b,#4338ca)" }}>
+          style={cellStyle("duel", "linear-gradient(135deg,#1e1b4b,#4338ca)")}>
           <span className="text-3xl">🤺</span>
           <span className="text-white font-black text-xs leading-tight text-center">玩家對戰</span>
         </button>
@@ -184,7 +216,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 組隊戰鬥 */}
         <button onClick={() => onPageChange("party")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#0f766e,#134e4a)" }}>
+          style={cellStyle("party", "linear-gradient(135deg,#0f766e,#134e4a)")}>
           <span className="text-3xl">🎮</span>
           <span className="text-white font-black text-xs leading-tight text-center">組隊戰鬥</span>
         </button>
@@ -192,7 +224,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 地下城 */}
         <button onClick={() => onPageChange("dungeon")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#4c1d95,#2e1065)" }}>
+          style={cellStyle("dungeon", "linear-gradient(135deg,#4c1d95,#2e1065)")}>
           <span className="text-3xl">🏰</span>
           <span className="text-white font-black text-xs leading-tight text-center">地下城</span>
         </button>
@@ -200,7 +232,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 世界大 Boss */}
         <button onClick={() => onPageChange("worldboss")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#7f1d1d,#0f172a)" }}>
+          style={cellStyle("worldboss", "linear-gradient(135deg,#7f1d1d,#0f172a)")}>
           <span className="text-3xl">🌍</span>
           <span className="text-white font-black text-xs leading-tight text-center">世界王</span>
         </button>
@@ -208,7 +240,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 貓貓陪練 */}
         <button onClick={() => onPageChange("cats")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#581c87,#1e1b4b)" }}>
+          style={cellStyle("cats", "linear-gradient(135deg,#581c87,#1e1b4b)")}>
           <span className="text-3xl">🐱</span>
           <span className="text-white font-black text-xs leading-tight text-center">貓貓陪練</span>
         </button>
@@ -216,7 +248,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 材料背包 */}
         <button onClick={() => onPageChange("materials")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#b45309,#92400e)" }}>
+          style={cellStyle("materials", "linear-gradient(135deg,#b45309,#92400e)")}>
           <span className="text-3xl">🎒</span>
           <span className="text-white font-black text-xs leading-tight text-center">材料背包</span>
         </button>
@@ -224,7 +256,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 金幣商店 */}
         <button onClick={() => onPageChange("coinshop")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#854d0e,#713f12)" }}>
+          style={cellStyle("coinshop", "linear-gradient(135deg,#854d0e,#713f12)")}>
           <span className="text-3xl">🏪</span>
           <span className="text-white font-black text-xs leading-tight text-center">金幣商店</span>
           <span className="text-yellow-300 font-black text-[10px]">🪙{(profile?.coins||0).toLocaleString()}</span>
@@ -233,7 +265,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 我的裝備 */}
         <button onClick={() => onPageChange("equipment")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#312e81,#0f172a)" }}>
+          style={cellStyle("equipment", "linear-gradient(135deg,#312e81,#0f172a)")}>
           <span className="text-3xl">⚔️</span>
           <span className="text-white font-black text-xs leading-tight text-center">我的裝備</span>
           {(() => {
@@ -246,7 +278,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 成就圖鑑 */}
         <button onClick={() => onPageChange("dex")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#92400e,#78350f)" }}>
+          style={cellStyle("dex", "linear-gradient(135deg,#92400e,#78350f)")}>
           <span className="text-3xl">🏆</span>
           <span className="text-white font-black text-xs leading-tight text-center">成就圖鑑</span>
         </button>
@@ -254,7 +286,7 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
         {/* 故事本 */}
         <button onClick={() => onPageChange("story")}
           className="rounded-xl py-3.5 px-1 flex flex-col items-center gap-1.5 active:scale-95 transition-transform"
-          style={{ background:"linear-gradient(135deg,#1e1b4b,#3b0764)" }}>
+          style={cellStyle("story", "linear-gradient(135deg,#1e1b4b,#3b0764)")}>
           <span className="text-3xl">📖</span>
           <span className="text-white font-black text-xs leading-tight text-center">故事本</span>
         </button>
@@ -267,7 +299,11 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
 
       {/* 廣播訊息（前 5 則）*/}
       {notifications.length > 0 && (
-        <Card className="p-4">
+        <Card className="p-4" style={{
+          backgroundImage:"url(/ui/msg-scroll-bg.webp)",
+          backgroundSize:"cover", backgroundPosition:"center",
+          backgroundBlendMode:"multiply",
+        }}>
           <ST>📢 最新廣播</ST>
           {notifications.slice(0, 5).map(n => {
             const TYPE_ICON = {
@@ -319,7 +355,12 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
 
       {/* ── 射手狀態卡（可換主題）──────────────────────────── */}
       <div className="p-5 border-0 text-white relative overflow-hidden"
-        style={{ background: currentTheme.bg }}>
+        style={{
+          background: currentTheme.bg,
+          backgroundImage: `url(/ui/stat-card-bg.webp), ${currentTheme.bg}`,
+          backgroundSize: "cover, cover",
+          backgroundBlendMode: "soft-light",
+        }}>
 
         {/* 宇宙黑主題：星星背景 */}
         {cardTheme === "cosmos" && (
@@ -467,20 +508,24 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
             };
             const frame = level ? (frameByLevel[level] || "bg-gray-50 border-gray-200")
               : (has ? "bg-blue-50 border-blue-100" : "bg-gray-50 border-gray-200");
+            const certImg = CERT_BG[level || ""] || CERT_BG[""];
             return (
-              <div key={bk} className={`rounded-xl p-3 text-center border ${frame}`}>
-                <div className="text-2xl mb-1">{bt.icon}</div>
-                <div className="text-gray-500 text-xs mb-1">{bt.short}</div>
-                {has ? (
-                  <>
-                    <div className="text-gray-800 font-black text-sm">{score} 分</div>
-                    <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level ? certLevelStyle(level, "solid") : "bg-gray-200 text-gray-500"}`}>
-                      {level || "未達標"}
-                    </div>
-                  </>
-                ) : (
-                  <div className="inline-block bg-gray-200 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full mt-1">初心者</div>
-                )}
+              <div key={bk} className={`rounded-xl p-3 text-center border relative overflow-hidden ${frame}`}
+                style={{ backgroundImage:`url(${certImg})`, backgroundSize:"cover", backgroundPosition:"center" }}>
+                <div className="relative z-10">
+                  <div className="text-2xl mb-1">{bt.icon}</div>
+                  <div className="text-gray-500 text-xs mb-1">{bt.short}</div>
+                  {has ? (
+                    <>
+                      <div className="text-gray-800 font-black text-sm">{score} 分</div>
+                      <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level ? certLevelStyle(level, "solid") : "bg-gray-200 text-gray-500"}`}>
+                        {level || "未達標"}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="inline-block bg-gray-200 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full mt-1">初心者</div>
+                  )}
+                </div>
               </div>
             );
           })}

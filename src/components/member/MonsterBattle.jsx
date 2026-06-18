@@ -1528,7 +1528,13 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
               <div style={{color:"white", fontSize:10, fontWeight:900, lineHeight:1.3}}>
                 {(profile?.nickname||profile?.name||"射手").slice(0,6)}
               </div>
-              <div style={{color:archerHP/(maxHP||1)<=0.25?"#f87171":"#34d399", fontSize:9, fontWeight:700, marginTop:2}}>
+              <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.08)", overflow:"hidden", margin:"3px 0 2px" }}>
+                <div style={{ height:"100%", borderRadius:3, transition:"width 0.5s ease",
+                  width:`${Math.max(0,archerHP/(maxHP||1))*100}%`,
+                  background: archerHP/(maxHP||1)>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":archerHP/(maxHP||1)>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)"
+                }}/>
+              </div>
+              <div style={{color:archerHP/(maxHP||1)<=0.25?"#f87171":"#34d399", fontSize:9, fontWeight:700}}>
                 HP {archerHP}/{maxHP}{revived?" 💖":""}
               </div>
               <div style={{display:"flex", gap:6, justifyContent:"center", marginTop:2}}>

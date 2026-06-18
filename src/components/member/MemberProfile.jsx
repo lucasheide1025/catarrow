@@ -151,8 +151,13 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
     <div className="p-4 flex flex-col gap-4">
 
       {/* ── 狀態卡（可換主題）─────────────────────────────── */}
-      <div className="p-5 border-0 text-white relative "
-        style={{ background: currentTheme.bg }}>
+      <div className="p-5 border-0 text-white relative overflow-hidden"
+        style={{
+          background: currentTheme.bg,
+          backgroundImage: `url(/ui/stat-card-bg.webp), ${currentTheme.bg}`,
+          backgroundSize: "cover, cover",
+          backgroundBlendMode: "soft-light",
+        }}>
 
         {/* 宇宙黑：星星 */}
         {cardTheme === "cosmos" && (
@@ -518,22 +523,36 @@ function CertDetailRow({ tier, tierColor, data }) {
   );
 }
 
+const CERT_BG_PROFILE = {
+  "":   "/ui/cert-empty.webp",
+  入門:  "/ui/cert-novice.webp",
+  初級:  "/ui/cert-beginner.webp",
+  中級:  "/ui/cert-intermediate.webp",
+  進階:  "/ui/cert-advanced.webp",
+  精英:  "/ui/cert-elite.webp",
+  菁英:  "/ui/cert-elite.webp",
+};
+
 function CertChip({ icon, name, score, level }) {
   const has = score > 0;
+  const certImg = CERT_BG_PROFILE[level || ""] || CERT_BG_PROFILE[""];
   return (
-    <div className={`rounded-xl p-3 text-center border ${level?"bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-200":has?"bg-blue-50 border-blue-100":"bg-gray-50 border-gray-200"}`}>
-      <div className="text-2xl mb-1">{icon}</div>
-      <div className="text-gray-500 text-xs mb-1">{name}</div>
-      {has ? (
-        <>
-          <div className="text-gray-800 font-black text-sm">{score} 分</div>
-          <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level?certLevelStyle(level,"solid"):"bg-gray-200 text-gray-500"}`}>
-            {level||"未達標"}
-          </div>
-        </>
-      ) : (
-        <div className="inline-block bg-gray-200 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full mt-1">初心者</div>
-      )}
+    <div className={`rounded-xl p-3 text-center border relative overflow-hidden ${level?"bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-200":has?"bg-blue-50 border-blue-100":"bg-gray-50 border-gray-200"}`}
+      style={{ backgroundImage:`url(${certImg})`, backgroundSize:"cover", backgroundPosition:"center" }}>
+      <div className="relative z-10">
+        <div className="text-2xl mb-1">{icon}</div>
+        <div className="text-gray-500 text-xs mb-1">{name}</div>
+        {has ? (
+          <>
+            <div className="text-gray-800 font-black text-sm">{score} 分</div>
+            <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level?certLevelStyle(level,"solid"):"bg-gray-200 text-gray-500"}`}>
+              {level||"未達標"}
+            </div>
+          </>
+        ) : (
+          <div className="inline-block bg-gray-200 text-gray-500 text-xs font-bold px-2 py-0.5 rounded-full mt-1">初心者</div>
+        )}
+      </div>
     </div>
   );
 }
