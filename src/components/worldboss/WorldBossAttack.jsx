@@ -114,8 +114,12 @@ function CatMsg({ msg, onDone }) {
     return () => clearTimeout(t);
   }, [onDone]);
   return (
-    <div className="absolute left-4 right-4 bg-indigo-900/90 border border-indigo-400/50 rounded-2xl px-4 py-2 text-sm text-indigo-100 text-center shadow-xl z-20"
-      style={{ bottom: 80 }}>
+    <div style={{
+      position:"absolute", left:12, right:12, bottom:8, zIndex:20,
+      background:"rgba(49,46,129,0.92)", border:"1px solid rgba(129,140,248,0.5)",
+      borderRadius:14, padding:"5px 12px", fontSize:12, color:"#e0e7ff",
+      textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.6)",
+    }}>
       {msg}
     </div>
   );
@@ -147,7 +151,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const boss             = event.bossData || {};
 
   // ── 狀態 ───────────────────────────────────────────────────
-  const [showFullLog, setShowFullLog] = useState(false);
+  const [showFullLog, setShowFullLog] = useState(true);
 
   // 隨機從參戰勇者中取最多 8 位同伴（僅顯示，不影響戰鬥邏輯）
   const [companions] = useState(() => {
@@ -568,9 +572,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         {animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"radial-gradient(ellipse at center,rgba(245,158,11,0.28) 0%,transparent 70%)", animation:"wbFadeOut 0.42s ease forwards" }}/>}
         {animBossHit && !animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"rgba(239,68,68,0.10)", animation:"wbFadeOut 0.3s ease forwards" }}/>}
 
-        {/* 貓咪訊息 */}
-        {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
-
         {/* 退出確認 */}
         {showExitConfirm && (
           <div style={{ position:"absolute", inset:0, zIndex:50, background:"rgba(0,0,0,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
@@ -643,76 +644,80 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         )}
 
-        {/* ── 上半：Boss 全寬顯示 ── */}
-        <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-
-          {/* 日誌覆蓋（absolute 左側） */}
-          <div style={{ position:"absolute", left:0, top:0, bottom:0, zIndex:5,
-            width: showFullLog ? 160 : 36,
-            background: showFullLog ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.18)",
-            display:"flex", flexDirection:"column", transition:"width 0.2s", borderRadius:"0 8px 8px 0" }}>
-            <button onClick={() => setShowFullLog(v => !v)}
-              style={{ padding:"6px 0", color:"rgba(255,255,255,0.45)", fontSize:13, textAlign:"center", background:"transparent", border:"none", cursor:"pointer", flexShrink:0 }}>
-              {showFullLog ? "◀" : "📜"}
-            </button>
-            {showFullLog && (
-              <div style={{ flex:1, overflowY:"auto", padding:"0 8px 8px" }}>
-                {dmgLog.length === 0 && <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", textAlign:"center", paddingTop:8 }}>戰鬥開始…</div>}
-                {dmgLog.map((l, i) => (
-                  <div key={i} style={{ fontSize:10, color: i === dmgLog.length-1 ? "white" : "rgba(255,255,255,0.42)", marginBottom:3, lineHeight:1.4 }}>{l}</div>
-                ))}
-              </div>
-            )}
+        {/* ── 頂部資訊列（HP 條 + 名字 + 統計 + 日誌視窗） ── */}
+        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.75)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+          {/* HP 條（最頂部，全寬） */}
+          <div style={{ background:"#1e293b", height:22, border:"none", overflow:"hidden", position:"relative", borderBottom:"1.5px solid #7f1d1d" }}>
+            <div style={{ width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
+              background: bossHP/event.bossMaxHP>0.5?"#dc2626":bossHP/event.bossMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
+            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
+              {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
+            </div>
           </div>
 
-          {/* 退出按鈕（absolute 右上） */}
-          <button onClick={() => setShowExitConfirm(true)}
-            style={{ position:"absolute", top:6, right:8, zIndex:6, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", borderRadius:8, padding:"2px 10px", fontSize:12, cursor:"pointer" }}>
-            離開
-          </button>
+          <div style={{ padding:"3px 10px 4px" }}>
+            {/* Boss 名字（血條下方）+ 回合點 + 離開按鈕 */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <span style={{ fontSize:13, fontWeight:900, color:boss.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{boss.name}</span>
+                <div style={{ display:"flex", gap:2 }}>
+                  {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
+                    <div key={i} style={{ width:12, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
+                  ))}
+                  {isLastRound && <span style={{ fontSize:9, color:"#fca5a5", marginLeft:2 }}>⚠️</span>}
+                </div>
+              </div>
+              <button onClick={() => setShowExitConfirm(true)}
+                style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+                離開
+              </button>
+            </div>
 
-          {/* Boss 名 + HP bar + 統計列（頂部，帶透明背景確保可讀） */}
-          <div style={{ flexShrink:0, padding:"8px 10px 4px", zIndex:2, background:"rgba(0,0,0,0.45)" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-              <span style={{ fontSize:12, fontWeight:900, color:boss.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{boss.name}</span>
-              <div style={{ display:"flex", gap:3 }}>
-                {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
-                  <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
-                ))}
-                {isLastRound && <span style={{ fontSize:9, color:"#fca5a5", marginLeft:2 }}>⚠️</span>}
-              </div>
-            </div>
-            {/* HP 條（紅色，仿 PartyBattleRoom） */}
-            <div style={{ background:"#1e293b", borderRadius:20, height:21, border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5 }}>
-              <div style={{ width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
-                background: bossHP/event.bossMaxHP>0.5?"#dc2626":bossHP/event.bossMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
-              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
-                {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
-              </div>
-            </div>
-            {/* 統計列（仿 PartyBattleRoom） */}
-            <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+            {/* 統計列 */}
+            <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:3 }}>
               <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>⚔️ 第{roundIdx+1}回</div>
               <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>💢 {boss.atk}</div>
               <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>🛡️ {boss.def}</div>
               <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>🏹 {arrows.length}/{ARROWS_PER}</div>
             </div>
-          </div>
 
-          {/* Boss 圖（全寬，填滿剩餘空間） */}
-          <div style={{ flex:1, position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:8, minHeight:0, overflow:"hidden" }}>
-            <div style={{ animation: animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
-              <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={300}/>
+            {/* 戰鬥日誌小視窗（預設開啟，可收合） */}
+            <div style={{ background:"rgba(0,0,0,0.45)", borderRadius:6, border:"1px solid rgba(255,255,255,0.07)", overflow:"hidden" }}>
+              <button onClick={() => setShowFullLog(v => !v)}
+                style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"2px 8px", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:9 }}>
+                <span>📜 戰鬥記錄</span>
+                <span>{showFullLog ? "▲" : "▼"}</span>
+              </button>
+              {showFullLog && (
+                <div style={{ maxHeight:52, overflowY:"auto", padding:"0 8px 4px" }}>
+                  {dmgLog.length === 0
+                    ? <div style={{ fontSize:9, color:"rgba(255,255,255,0.2)", textAlign:"center", paddingBottom:4 }}>戰鬥開始…</div>
+                    : [...dmgLog].reverse().slice(0,5).map((l, i) => (
+                        <div key={i} style={{ fontSize:9, color: i===0 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2, lineHeight:1.3 }}>{l}</div>
+                      ))
+                  }
+                </div>
+              )}
             </div>
-            {/* 浮動傷害 / MISS */}
-            {floatDmg && (
-              floatDmg.isMiss
-                ? <span style={{ position:"absolute", top:"22%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
-                : <span style={{ position:"absolute", top:"18%", left:"50%", transform:"translateX(-50%)", fontSize: floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color: floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
-                    -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
-                  </span>
-            )}
           </div>
+        </div>
+
+        {/* ── Boss 圖區（填滿剩餘空間） ── */}
+        <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
+          {/* CatMsg 放在 Boss 圖區內，不蓋住底部控制列 */}
+          {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
+
+          <div style={{ animation: animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={280}/>
+          </div>
+          {/* 浮動傷害 / MISS */}
+          {floatDmg && (
+            floatDmg.isMiss
+              ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
+              : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize: floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color: floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+                  -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
+                </span>
+          )}
         </div>
 
         {/* ── 弓箭手 + 資訊同框列（深色底板） ── */}
