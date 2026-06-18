@@ -126,6 +126,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 
 // ── 顏色池（隊員頭像）───────────────────────────────────────
 const AVATAR_COLORS = ["#f59e0b","#ef4444","#3b82f6","#10b981","#8b5cf6","#ec4899","#f97316","#06b6d4"];
+const ARCHER_STYLES = ["baobao","daming","diandian","gege","haji","meimei","niuniu","xiaoan","youyou"];
 
 // ── 主元件 ──────────────────────────────────────────────────
 const TOTAL_ROUNDS = 5;
@@ -662,43 +663,45 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         </div>
 
-        {/* ── 弓箭手列：同伴 + 玩家 ── */}
-        <div style={{ height:90, display:"flex", gap:3, padding:"0 6px", flexShrink:0, alignItems:"flex-end", paddingBottom:4 }}>
-          {companions.map((c, idx) => {
-            const sz = Math.max(30, archerW - 10);
-            return (
-              <div key={c.id} style={{ width:archerW, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                <div style={{ width:sz, height:sz, borderRadius:"50%", background:AVATAR_COLORS[idx % AVATAR_COLORS.length]+"88", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.round(sz*0.44), fontWeight:700, color:"rgba(255,255,255,0.8)", border:"1px solid rgba(255,255,255,0.2)", opacity:0.7 }}>
-                  {c.name?.[0] || "?"}
-                </div>
-              </div>
-            );
-          })}
-          {/* 玩家（高亮） */}
-          <div style={{ width:archerW, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-            {(() => {
-              const sz = Math.max(36, archerW - 4);
+        {/* ── 弓箭手 + 資訊同框列 ── */}
+        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
+            {companions.map((c, idx) => {
+              const cStyle = ARCHER_STYLES[idx % ARCHER_STYLES.length];
               return (
-                <div style={{ width:sz, height:sz, borderRadius:"50%", background:"#1d4ed8", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.round(sz*0.44), fontWeight:700, color:"white", border:"2px solid #60a5fa", boxShadow:"0 0 12px rgba(96,165,250,0.55)" }}>
-                  {myName?.[0] || "?"}
+                <div key={c.id} style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column", border:"1px solid rgba(255,255,255,0.07)", borderRadius:8, overflow:"hidden" }}>
+                  <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center", background:"rgba(255,255,255,0.02)" }}>
+                    <img src={`/cats/archers/${cStyle}.webp`} alt={c.name}
+                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom" }}
+                      onError={e => { e.target.style.display="none"; }}/>
+                  </div>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
+                  <div style={{ padding:"2px 2px", textAlign:"center" }}>
+                    <div style={{ fontSize:8, color:"rgba(255,255,255,0.35)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name?.slice(0,5)}</div>
+                  </div>
                 </div>
               );
-            })()}
-          </div>
-        </div>
+            })}
 
-        {/* ── 玩家資訊小卡列 ── */}
-        <div style={{ display:"flex", gap:3, padding:"0 6px 4px", flexShrink:0 }}>
-          {companions.map(c => (
-            <div key={c.id} style={{ width:archerW, background:"rgba(255,255,255,0.06)", borderRadius:6, padding:"2px 1px", overflow:"hidden" }}>
-              <div style={{ fontSize:7, color:"rgba(255,255,255,0.3)", textAlign:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name?.slice(0,5)}</div>
-            </div>
-          ))}
-          <div style={{ width:archerW, background:"rgba(29,78,216,0.28)", border:"1px solid rgba(96,165,250,0.35)", borderRadius:6, padding:"2px 1px" }}>
-            <div style={{ fontSize:7, color:"#93c5fd", textAlign:"center", fontWeight:700 }}>你</div>
-            <div style={{ fontSize:7, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>HP {myHP}</div>
-            <div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", display:"flex", justifyContent:"center", gap:2 }}>
-              <span>A{baseATK}</span><span>D{baseDEF}</span>
+            {/* 玩家（高亮金框） */}
+            <div style={{ flexShrink:0, width:archerW, display:"flex", flexDirection:"column", border:"1px solid rgba(251,191,36,0.45)", borderRadius:8, overflow:"hidden", background:"rgba(251,191,36,0.04)" }}>
+              <div style={{ height:80, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                <img src={`/cats/archers/${(profile || guestOverride)?.archerStyle || "baobao"}.webp`} alt={myName}
+                  style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom", filter:"drop-shadow(0 0 5px rgba(251,191,36,0.5))" }}
+                  onError={e => { e.target.style.display="none"; }}/>
+              </div>
+              <div style={{ height:1, background:"rgba(251,191,36,0.2)" }}/>
+              <div style={{ padding:"3px 2px 4px", textAlign:"center" }}>
+                {/* HP 條 */}
+                <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.08)", overflow:"hidden", marginBottom:2 }}>
+                  <div style={{ height:"100%", borderRadius:3, width:`${Math.max(0,myHP/baseHP)*100}%`, transition:"width 0.5s",
+                    background: myHP/baseHP>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":myHP/baseHP>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
+                </div>
+                <div style={{ fontSize:9, fontWeight:700, color:"#fbbf24", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>{myName?.slice(0,6)}</div>
+                <div style={{ fontSize:8, color:"#f87171" }}>⚔{baseATK}</div>
+                <div style={{ fontSize:8, color:"#60a5fa" }}>🛡{baseDEF}</div>
+                <div style={{ fontSize:8, color: myHP/baseHP>0.5?"#4ade80":myHP/baseHP>0.25?"#fbbf24":"#f87171", fontWeight:700, marginTop:1 }}>HP {myHP}</div>
+              </div>
             </div>
           </div>
         </div>
