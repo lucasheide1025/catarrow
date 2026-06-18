@@ -1294,6 +1294,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {floatCounterDmgs.filter(f => f.memberId === m.id).map(f => (
                   <span key={f.id} style={{ position:"absolute", left:`${f.left}%`, top:"-4px", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
                 ))}
+                {/* 貓咪夥伴 overlay（只顯示在自己的卡片右上角）*/}
+                {isMe && hasCat && profile?.equippedCat && (
+                  <>
+                    <div style={{
+                      position:"absolute", top:3, right:3, width:18, height:18, borderRadius:"50%",
+                      border:`1.5px solid ${catMsg ? "#a78bfa" : "rgba(255,255,255,0.2)"}`,
+                      overflow:"hidden", boxShadow: catMsg ? "0 0 8px rgba(167,139,250,0.9)" : "none",
+                      transition:"box-shadow 0.3s", zIndex:5,
+                    }}>
+                      <img src={`/cats/portraits/${profile.equippedCat.catId || "baobao"}.webp`}
+                        alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                    </div>
+                    {catMsg && (
+                      <div style={{
+                        position:"absolute", top:"-16px", right:0, zIndex:20,
+                        background:"rgba(88,28,135,0.9)", border:"1px solid #a78bfa",
+                        borderRadius:5, padding:"1px 4px", fontSize:8, color:"#e9d5ff",
+                        whiteSpace:"nowrap", fontWeight:700, pointerEvents:"none",
+                        animation:"mb-float 2s ease-out forwards",
+                      }}>🐱{catMsg.slice(0,6)}</div>
+                    )}
+                  </>
+                )}
                 <img src={`/cats/archers/${memberArcherStyle}.webp`} alt={m.name}
                   style={{ width:38, height:48, objectFit:"contain", display:"block", filter: !m.alive ? "grayscale(100%) opacity(0.4)" : undefined, animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined }}
                   onError={e => { e.target.style.display = "none"; }}/>
@@ -1323,15 +1346,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               </div>
             );
           })}
-          {/* 自己的貓咪夥伴 */}
-          {hasCat && profile?.equippedCat && (
-            <div style={{ flexShrink:0, width:58, display:"flex", flexDirection:"column", alignItems:"center", gap:2, borderRadius:10, padding:"6px 4px 4px", border:`1px solid ${catMsg ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.08)"}`, background:"rgba(139,92,246,0.05)", boxShadow: catMsg ? "0 0 12px rgba(167,139,250,0.3)" : "none", transition:"all 0.3s" }}>
-              <img src={`/cats/portraits/${profile.equippedCat.catId || "baobao"}.webp`} alt={catName}
-                style={{ width:36, height:36, objectFit:"contain", borderRadius:"50%" }}/>
-              <div style={{ color:"#c4b5fd", fontSize:9, fontWeight:700 }}>{(catName||"貓貓").slice(0,4)}</div>
-              {catMsg && <div style={{ fontSize:8, color:"#e9d5ff", fontWeight:700, textAlign:"center", padding:"0 2px", animation:"mb-float 2s ease-out forwards" }}>🐱 {catMsg.slice(0,8)}</div>}
-            </div>
-          )}
         </div>
 
         {/* 小回合進度點 */}
@@ -1402,10 +1416,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, flexShrink:0 }}>{myArrowTotal}分</span>
           </div>
           {arrows.length < ARROWS_PER_ROUND && (
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-5 gap-2">
               {SCORE_LABELS.map(label => (
                 <button key={label} onClick={() => addArrow(label)}
-                  className={`py-2.5 rounded-xl font-black text-sm ${SCORE_COLORS[label]||"bg-slate-600 text-white"} active:scale-90 transition-transform`}>
+                  className={`py-3.5 rounded-xl font-black text-sm ${SCORE_COLORS[label]||"bg-slate-600 text-white"} active:scale-90 transition-transform`}>
                   {label}
                 </button>
               ))}

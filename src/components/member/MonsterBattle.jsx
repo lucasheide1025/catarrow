@@ -1621,10 +1621,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 )}
               </div>
 
-              {/* 分數按鈕（滿6箭自動隱藏，讓送出按鈕完整顯示） */}
+              {/* 分數按鈕（滿6箭自動隱藏）兩排 × 6欄 */}
               {arrows.length < ARROWS_PER_ROUND && <div style={{
-                display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:2, marginBottom:4,
-                background:"rgb(20,12,5)", borderRadius:6, padding:"2px"
+                display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:3, marginBottom:4,
+                background:"rgb(20,12,5)", borderRadius:6, padding:"3px"
               }}>
                 {HALF_SCORES.map(s=>(
                   <button key={s.label} onClick={()=>inputArrow(s.label)}
@@ -1634,10 +1634,10 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                       backgroundSize:"cover", backgroundPosition:"center",
                       backgroundColor:"rgb(30,16,6)",
                       WebkitAppearance:"none", appearance:"none",
-                      border:"none", borderRadius:5, height:32, width:"100%",
+                      border:"none", borderRadius:5, height:40, width:"100%",
                       color:s.label==="X"?"#fbbf24":s.label==="M"?"#94a3b8":
                         s.val>=9?"#fef3c7":s.val>=7?"#bfdbfe":s.val>=5?"#d1d5db":"#9ca3af",
-                      fontWeight:900, fontSize:13, cursor:"pointer",
+                      fontWeight:900, fontSize:14, cursor:"pointer",
                       opacity:arrows.length>=ARROWS_PER_ROUND||processing?0.4:1,
                       textShadow:"0 1px 6px #000", padding:0, transition:"transform .08s"
                     }}
