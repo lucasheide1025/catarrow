@@ -90,6 +90,41 @@ export function openCoinChest(monsterTier) {
   return { name: info.name, icon: info.icon, color: info.color, coins };
 }
 
+// 依怪物等級決定金幣箱等級（1=只有木箱, 2=木到鐵, 3=木到黃金）
+const COIN_CHEST_TIER_TABLE = {
+  common: ["common"],
+  rare:   ["common", "rare"],
+  elite:  ["common", "rare", "elite"],
+  fierce: ["rare", "elite", "fierce"],
+  boss:   ["elite", "fierce", "boss"],
+  mythic: ["fierce", "boss", "mythic"],
+};
+
+export function rollCoinChestTier(monsterTier) {
+  const opts = COIN_CHEST_TIER_TABLE[monsterTier] || ["common"];
+  return opts[Math.floor(Math.random() * opts.length)];
+}
+
+// 建立金幣寶箱物件（存入 chestInventory 背包，開箱時再給金幣）
+export function makeCoinChest(monsterTier, source = "戰鬥掉落") {
+  const coinTier = rollCoinChestTier(monsterTier);
+  const info = COIN_CHEST_TIERS[coinTier] || COIN_CHEST_TIERS.common;
+  return {
+    id: `chest_coin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: "coin",
+    coinTier,
+    family: "coin",
+    tier: monsterTier,
+    from: source,
+    ts: Date.now(),
+    name: info.name,
+    icon: info.icon,
+    color: info.color,
+    min: info.min,
+    max: info.max,
+  };
+}
+
 // ── 以下供訪客模式使用（drawLoot 從 LOOT_TABLE_GUEST 抽）──
 export function drawLoot(table, monsterId, tier) {
   const total = table.reduce((s, item) => s + item.weight, 0);

@@ -1340,6 +1340,15 @@ export async function openChest(memberId, chestId, contents) {
     if (!chest) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
     await setDoc(ref, { chests: list.filter(c => c.id !== chestId), updatedAt: serverTimestamp() }, { merge: true });
 
+    if (chest.type === "coin") {
+      const min   = chest.min || 20;
+      const max   = chest.max || 50;
+      const coins = min + Math.floor(Math.random() * (max - min + 1));
+      await addCoins(memberId, coins);
+      await updateChestOpenStats(memberId, "coin");
+      return { ok: true, coins };
+    }
+
     if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
     if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
     if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);
@@ -2056,23 +2065,26 @@ export async function spendCoins(memberId, amount) {
 
 // 金幣商店：購買裝備（花費金幣 + 裝備進槽位，保留現有品級/等級）
 export async function shopBuyEquip(memberId, slotId, itemId, price) {
-  const spend = await spendCoins(memberId, price);
-  if (!spend.ok) return spend;
-  // 讀現有槽位，若已有裝備只換 itemId；否則從 common+0 開始
-  const snap = await getDoc(doc(db, C.members, memberId));
-  const cur  = snap.data()?.rpgEquip?.[slotId];
-  if (cur?.itemId) {
-    await updateDoc(doc(db, C.members, memberId), {
-      [`rpgEquip.${slotId}.itemId`]: itemId,
-      updatedAt: serverTimestamp(),
-    });
-  } else {
-    await updateDoc(doc(db, C.members, memberId), {
-      [`rpgEquip.${slotId}`]: { itemId, grade: "common", plusLevel: 0 },
-      updatedAt: serverTimestamp(),
-    });
+  try {
+    const spend = await spendCoins(memberId, price);
+    if (!spend.ok) return spend;
+    const snap = await getDoc(doc(db, C.members, memberId));
+    const cur  = snap.data()?.rpgEquip?.[slotId];
+    if (cur?.itemId) {
+      await updateDoc(doc(db, C.members, memberId), {
+        [`rpgEquip.${slotId}.itemId`]: itemId,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(doc(db, C.members, memberId), {
+        [`rpgEquip.${slotId}`]: { itemId, grade: "common", plusLevel: 0 },
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "購買失敗，請稍後再試" };
   }
-  return { ok: true };
 }
 
 // 金幣商店：購買消耗品

@@ -17,7 +17,7 @@ import {
   calcArcherStats, calcArcherPower, drawMatchedMonsters,
   calcDamage, calcCounterDamage, resolveHitPart,
 } from "../../lib/monsterData";
-import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, openCoinChest } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
@@ -140,7 +140,6 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [droppedCoins,    setDroppedCoins]     = useState(0);
   const [droppedCard,     setDroppedCard]      = useState(null);
   const [droppedCoinChest, setDroppedCoinChest] = useState(null);
-  const [chestOpened,     setChestOpened]      = useState(false);
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
@@ -612,12 +611,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           sessionStorage.setItem("guest_coins", String(prev + total));
           setDroppedCoins(total);
         } else {
-          // 金幣 + 金幣寶箱
-          const coinChest = openCoinChest(monster.tier);
+          // 金幣（立即加）+ 金幣寶箱存入背包
+          const coinChest = makeCoinChest(monster.tier, "打怪掉落");
           setDroppedCoins(baseCoins);
           setDroppedCoinChest(coinChest);
-          setChestOpened(false);
-          addCoins(profile.id, baseCoins).catch(() => {}); // 寶箱金幣等玩家點開才加
+          addCoins(profile.id, baseCoins).catch(() => {});
+          addChests(profile.id, [coinChest]).catch(() => {});
         }
 
         // 怪物卡片（1%）
@@ -1383,26 +1382,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                     </div>
                   )}
                   {droppedCoinChest && (
-                    chestOpened ? (
-                      <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
-                        style={{ background:`${droppedCoinChest.color}22`, border:`1px solid ${droppedCoinChest.color}66` }}>
-                        <span className="text-2xl">{droppedCoinChest.icon}</span>
-                        <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
-                        <span className="text-yellow-600 text-xs font-bold">+{droppedCoinChest.coins} 金幣</span>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          addCoins(profile.id, droppedCoinChest.coins).catch(() => {});
-                          setChestOpened(true);
-                        }}
-                        className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 border-amber-400/60 bg-amber-50 active:scale-90 transition-transform animate-pulse"
-                      >
-                        <span className="text-2xl">🎁</span>
-                        <span className="font-black text-amber-700 text-xs">{droppedCoinChest.name}</span>
-                        <span className="text-amber-500 text-xs">點我開箱</span>
-                      </button>
-                    )
+                    <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
+                      style={{ background:`${droppedCoinChest.color}22`, border:`1px solid ${droppedCoinChest.color}66` }}>
+                      <span className="text-2xl">{droppedCoinChest.icon}</span>
+                      <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
+                      <span className="text-yellow-600 text-xs">🎒 已放入背包</span>
+                    </div>
                   )}
                   {droppedMaterials.map((m,i) => (
                     <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-100 rounded-xl"

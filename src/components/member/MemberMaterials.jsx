@@ -112,21 +112,25 @@ export default function MemberMaterials({ onBack }) {
 
   async function doOpenChest(chest) {
     if (openingChest) return;
-    const cc = CHEST_TYPES[chest.type] || CHEST_TYPES.wood;
+    const isCoin = chest.type === "coin";
+    const cc = isCoin
+      ? { icon: chest.icon || "🪙", color: chest.color || "#92400e", name: chest.name || "金幣寶箱" }
+      : (CHEST_TYPES[chest.type] || CHEST_TYPES.wood);
     setOpeningChest(chest.id);
     setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name });
     sfxCast();
-    const isBig = chest.type === "gold" || chest.type === "mythic" || chest.type === "cat";
+    const isBig = chest.coinTier === "fierce" || chest.coinTier === "boss" || chest.coinTier === "mythic"
+      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat";
     setTimeout(isBig ? sfxEpic : sfxBuff, 700);
     await new Promise(r => setTimeout(r, 1600));
-    const contents = openChestContents(chest);
+    const contents = isCoin ? null : openChestContents(chest);
     const res = await openChest(profile.id, chest.id, contents);
     setChestAnim(null);
     setOpeningChest(null);
     if (res.ok) {
       sfxSuccess();
-      setOpenResult(contents);
-      updateChestOpenStats(profile.id, chest.type).catch(() => {});
+      setOpenResult(isCoin ? { coins: res.coins } : contents);
+      if (!isCoin) updateChestOpenStats(profile.id, chest.type).catch(() => {});
     } else {
       toast(res.reason || "開箱失敗，請稍後再試");
     }
@@ -396,7 +400,10 @@ export default function MemberMaterials({ onBack }) {
             </div>
           ) : (
             chests.map((ch, idx) => {
-              const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
+              const isCoin = ch.type === "coin";
+              const cc = isCoin
+                ? { icon: ch.icon || "🪙", color: ch.color || "#92400e", name: ch.name || "金幣寶箱", desc: `開箱後獲得 ${ch.min ?? 20}–${ch.max ?? 50} 金幣` }
+                : (CHEST_TYPES[ch.type] || CHEST_TYPES.wood);
               const isOpening = openingChest === ch.id;
               return (
                 <div key={ch.id || idx} className="bg-white rounded-2xl p-4 border border-gray-200 flex items-center gap-4">
@@ -423,6 +430,12 @@ export default function MemberMaterials({ onBack }) {
               onClick={() => setOpenResult(null)}>
               <div className="bg-white rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
                 <div className="text-center font-black text-xl mb-4">🎁 開箱結果！</div>
+                {openResult.coins > 0 && (
+                  <div className="mb-3 text-center">
+                    <div className="text-amber-600 text-xs font-bold mb-2">🪙 獲得金幣</div>
+                    <div className="text-amber-500 font-black text-4xl">+{openResult.coins}</div>
+                  </div>
+                )}
                 {openResult.fragments?.length > 0 && (
                   <div className="mb-3">
                     <div className="text-pink-600 text-xs font-bold mb-2">✨ 獲得章碎片</div>
@@ -460,7 +473,7 @@ export default function MemberMaterials({ onBack }) {
                     </div>
                   </div>
                 )}
-                {!openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && (
+                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && (
                   <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
                 )}
                 <button onClick={() => setOpenResult(null)}
