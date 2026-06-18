@@ -335,7 +335,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
             </div>
 
             {/* 隊伍 */}
-            {partyNames.length > 0 && (
+            {Object.keys(room.members || {}).length > 0 && (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <div className="text-xs text-slate-400 font-bold mb-2">🧙 隊伍成員</div>
                 <div className="flex flex-wrap gap-2">
@@ -703,14 +703,16 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
 }
 
 function RoundResultOverlay({ entry, room, status, onContinue }) {
-  const monsterKilled = entry.monsterHPAfter <= 0;
-  const partyWiped    = status === "completed" && room?.result === "lose";
-  const finalWin      = status === "completed" && room?.result === "win";
-  const floorCleared  = monsterKilled && !finalWin;
+  const monsterKilled  = entry.monsterHPAfter <= 0;
+  const allMembersDead = Object.values(room?.members || {}).every(m => !m.alive);
+  const partyWiped     = (status === "completed" && room?.result === "lose") || allMembersDead;
+  const finalWin       = status === "completed" && room?.result === "win";
+  const floorCleared   = monsterKilled && !finalWin;
 
   let title, icon, btnLabel, btnColor;
   if (partyWiped) {
-    icon = "💀"; title = "全員陣亡"; btnLabel = "查看結果"; btnColor = "bg-rose-600";
+    const killer = room?.monster ? `${room.monster.icon}${room.monster.name}` : "怪物";
+    icon = "💀"; title = `被《${killer}》擊殺！`; btnLabel = "查看結果"; btnColor = "bg-rose-600";
   } else if (finalWin) {
     icon = "🏆"; title = `第 ${room.currentFloor} 層通關！\n地下城完全攻略！`; btnLabel = "🎉 領取獎勵"; btnColor = "bg-gradient-to-r from-amber-500 to-orange-500";
   } else if (floorCleared) {

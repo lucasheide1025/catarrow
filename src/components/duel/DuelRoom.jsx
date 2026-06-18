@@ -141,7 +141,7 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, catStatMult, hasCat, catName: myCatName } = useCatCompanion();
+  const { catMsg, clearCatMsg, showCatEntry, saveBond, catStatMult, hasCat, catName: myCatName } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
@@ -196,15 +196,22 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (myData.catName) { catAppliedRef.current = true; return; } // 已套用
     catAppliedRef.current = true;
     applyPlayerCatToRoom(roomId, myTeam, myId, myCatName, Math.max(1.1, catStatMult)).catch(() => {});
-  }, [room, myTeam]); // eslint-disable-line
+  }, [room, myTeam, hasCat]); // eslint-disable-line
 
-  // ── 每回合開始時觸發貓貓補助訊息（非每箭）──────────────────
+  // ── 決鬥開始時顯示一次貓貓進場訊息（非每回合）──────────────
   useEffect(() => {
-    if (!room?.round || room?.status !== "active") return;
-    if (room.round === prevDuelRound.current) return;
-    prevDuelRound.current = room.round;
-    triggerCatAction();
-  }, [room?.round, room?.status]); // eslint-disable-line
+    if (!hasCat || room?.status !== "active") return;
+    if (prevDuelRound.current !== 0) return; // 只在第一次進 active
+    prevDuelRound.current = 1;
+    showCatEntry();
+  }, [hasCat, room?.status]); // eslint-disable-line
+
+  // ── 防呆：戰鬥結束後 8 秒還沒進結算 → 強制顯示 ────────────
+  useEffect(() => {
+    if (room?.status !== "finished" || showResult) return;
+    const t = setTimeout(() => setShowResult(true), 8000);
+    return () => clearTimeout(t);
+  }, [room?.status, showResult]); // eslint-disable-line
 
   // ── 30 秒未送出箭分提醒 ─────────────────────────────────
   const needsSubmit = !submitted && (room?.status === "active") && !eventPhase

@@ -32,9 +32,17 @@ export function useCatCompanion() {
   const catType = equippedCat?.type    || "allround";
   const hasCat  = !!catId;
 
-  // 10% 機率觸發，跳出貓咪訊息
+  // 25% 機率觸發（打怪/地下城 每回合）
   const triggerCatAction = useCallback(() => {
     if (!hasCat || Math.random() >= 0.25) return;
+    const pool = CAT_MESSAGES[catType] || CAT_MESSAGES.allround;
+    const fn   = pool[Math.floor(Math.random() * pool.length)];
+    setCatMsg(fn(catName));
+  }, [hasCat, catType, catName]);
+
+  // 進場必定顯示（決鬥/組隊 進入時呼叫一次）
+  const showCatEntry = useCallback(() => {
+    if (!hasCat) return;
     const pool = CAT_MESSAGES[catType] || CAT_MESSAGES.allround;
     const fn   = pool[Math.floor(Math.random() * pool.length)];
     setCatMsg(fn(catName));
@@ -52,5 +60,5 @@ export function useCatCompanion() {
   const bondLv = hasCat ? getBondLevel(equippedCat?.bond || 0) : 0;
   const catStatMult = hasCat ? Math.max(1.0, getCatStatMult(catType, bondLv)) : 1.0;
 
-  return { equippedCat, catId, catName, catType, hasCat, catStatMult, catMsg, clearCatMsg, triggerCatAction, saveBond };
+  return { equippedCat, catId, catName, catType, hasCat, catStatMult, catMsg, clearCatMsg, triggerCatAction, showCatEntry, saveBond };
 }
