@@ -608,11 +608,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         )}
 
-        {/* ── 上半：戰鬥日誌 + Boss 圖 ── */}
-        <div style={{ flex:"1 1 0", display:"flex", minHeight:0, overflow:"hidden" }}>
+        {/* ── 上半：Boss 全寬顯示（日誌改為覆蓋層） ── */}
+        <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", flexDirection:"column", alignItems:"center" }}>
 
-          {/* 左：可收合日誌 */}
-          <div style={{ width: showFullLog ? 160 : 36, flexShrink:0, background: showFullLog ? "rgba(0,0,0,0.68)" : "rgba(0,0,0,0.32)", display:"flex", flexDirection:"column", transition:"width 0.2s", zIndex:5 }}>
+          {/* 日誌覆蓋面板（absolute 左側，不佔版面） */}
+          <div style={{ position:"absolute", left:0, top:0, bottom:0, zIndex:5,
+            width: showFullLog ? 160 : 36,
+            background: showFullLog ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.18)",
+            display:"flex", flexDirection:"column", transition:"width 0.2s" }}>
             <button onClick={() => setShowFullLog(v => !v)}
               style={{ padding:"8px 0", color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", background:"transparent", border:"none", cursor:"pointer", flexShrink:0 }}>
               {showFullLog ? "◀" : "▶"}
@@ -627,38 +630,36 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             )}
           </div>
 
-          {/* 右：Boss 顯示區 */}
-          <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"6px 8px 0", minWidth:0, overflow:"hidden" }}>
-            <div style={{ width:"100%", display:"flex", justifyContent:"flex-end", marginBottom:2 }}>
-              <button onClick={() => setShowExitConfirm(true)} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"rgba(255,255,255,0.5)", borderRadius:8, padding:"2px 8px", fontSize:12, cursor:"pointer" }}>✕</button>
-            </div>
+          {/* 退出按鈕（absolute 右上） */}
+          <div style={{ position:"absolute", top:6, right:6, zIndex:6 }}>
+            <button onClick={() => setShowExitConfirm(true)} style={{ background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", borderRadius:8, padding:"2px 10px", fontSize:12, cursor:"pointer" }}>✕</button>
+          </div>
 
-            {/* Boss 圖（頂部對齊，盡量撐滿） */}
-            <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center", minHeight:0, overflow:"hidden" }}>
-              <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={Math.min(220, 220)}/>
-            </div>
+          {/* Boss 圖（全寬居中，頂部對齊） */}
+          <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6, minHeight:0, overflow:"hidden", width:"100%" }}>
+            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={320}/>
+          </div>
 
-            {/* Boss HP bar */}
-            <div style={{ width:"100%", marginTop:4 }}>
-              <div style={{ position:"relative", height:21, borderRadius:20, background:"rgba(255,255,255,0.12)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.1)" }}>
-                <div style={{ height:"100%", width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, background:`linear-gradient(90deg,${boss.accent||"#f59e0b"}99,${boss.accent||"#f59e0b"})`, borderRadius:20, transition:"width 0.7s" }}/>
-                <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"white" }}>
-                  {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
-                </div>
+          {/* Boss HP bar */}
+          <div style={{ width:"100%", padding:"0 10px", marginBottom:2 }}>
+            <div style={{ position:"relative", height:22, borderRadius:20, background:"rgba(255,255,255,0.12)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.1)" }}>
+              <div style={{ height:"100%", width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, background:`linear-gradient(90deg,${boss.accent||"#f59e0b"}99,${boss.accent||"#f59e0b"})`, borderRadius:20, transition:"width 0.7s" }}/>
+              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"white" }}>
+                {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
               </div>
             </div>
+          </div>
 
-            {/* Boss 名 + 回合進度 */}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", marginTop:3, marginBottom:2 }}>
-              <span style={{ fontSize:11, fontWeight:700, color:boss.accent||"#f59e0b" }}>{boss.name}</span>
-              <div style={{ display:"flex", alignItems:"center", gap:3 }}>
-                {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
-                  <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
-                ))}
-                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", marginLeft:2 }}>
-                  {roundIdx+1}/{TOTAL_ROUNDS}{isLastRound ? " ⚠️" : ""}
-                </span>
-              </div>
+          {/* Boss 名 + 回合進度 */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", padding:"0 10px 4px" }}>
+            <span style={{ fontSize:11, fontWeight:700, color:boss.accent||"#f59e0b" }}>{boss.name}</span>
+            <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+              {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
+                <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
+              ))}
+              <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", marginLeft:2 }}>
+                {roundIdx+1}/{TOTAL_ROUNDS}{isLastRound ? " ⚠️" : ""}
+              </span>
             </div>
           </div>
         </div>
