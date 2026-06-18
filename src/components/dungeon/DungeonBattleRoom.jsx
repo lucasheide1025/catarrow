@@ -8,7 +8,8 @@ import {
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS, TIER_ORDER } from "../../lib/monsterData";
+import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
+import MonsterSVG from "../MonsterSVG";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog } from "../../lib/db";
 import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
@@ -75,10 +76,17 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const [shopDone,      setShopDone]      = useState(false);
 
   // 小回合動畫
-  const [liveEntry,     setLiveEntry]     = useState(null);
-  const [liveMiniIdx,   setLiveMiniIdx]   = useState(0);
+  const [liveEntry,         setLiveEntry]         = useState(null);
+  const [liveMiniIdx,       setLiveMiniIdx]       = useState(0);
   // 回合結算覆蓋（動畫結束後顯示）
-  const [showRoundResult, setShowRoundResult] = useState(false);
+  const [showRoundResult,   setShowRoundResult]   = useState(false);
+  // 戰鬥動畫 states（同組隊風格）
+  const [animHit,           setAnimHit]           = useState(false);
+  const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
+  const [animScreenShake,   setAnimScreenShake]   = useState(false);
+  const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
+  const [floatDmg,          setFloatDmg]          = useState(null);
+  const [localHpOverride,   setLocalHpOverride]   = useState({});
 
   const processingRef       = useRef(false);
   const lastProcessedRef    = useRef(null); // "${floor}-${round}" 已處理過就跳過

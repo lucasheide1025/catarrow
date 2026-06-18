@@ -69,7 +69,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true); setErr("");
     const res = await createDungeonRoom(myId, myName, myATK);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName);
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao");
     const sub = subscribeDungeonRoom(res.roomId, r => setRoom(r));
     setUnsub(() => sub);
     setRoomId(res.roomId);
@@ -82,7 +82,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true); setErr("");
     const res = await joinDungeonRoom(joinCode.trim(), myId, myName);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName);
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao");
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
       if (r?.status === "active") {

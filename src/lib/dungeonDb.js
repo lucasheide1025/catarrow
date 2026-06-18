@@ -88,14 +88,15 @@ export function subscribeDungeonRoom(roomId, cb) {
 }
 
 // ── 各玩家寫入自己的 HP/ATK/DEF ─────────────────────────────
-export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "") {
+export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "", archerStyle = "") {
   try {
     await updateDoc(doc(db, D, roomId), {
-      [`members.${memberId}.hp`]:      hp,
-      [`members.${memberId}.maxHP`]:   maxHP,
-      [`members.${memberId}.atk`]:     atk,
-      [`members.${memberId}.def`]:     def,
-      [`members.${memberId}.catName`]: catName,
+      [`members.${memberId}.hp`]:          hp,
+      [`members.${memberId}.maxHP`]:       maxHP,
+      [`members.${memberId}.atk`]:         atk,
+      [`members.${memberId}.def`]:         def,
+      [`members.${memberId}.catName`]:     catName,
+      [`members.${memberId}.archerStyle`]: archerStyle,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
