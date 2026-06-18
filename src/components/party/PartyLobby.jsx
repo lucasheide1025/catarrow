@@ -155,11 +155,9 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
         )}
 
         {/* 組隊打怪歷史紀錄 */}
-        {partyLogs.length > 0 && (
-          <div className="mt-6">
-            <BattleRecords logs={partyLogs} title="📊 組隊打怪紀錄" maxGroups={6}/>
-          </div>
-        )}
+        <div className="mt-6">
+          <BattleRecords logs={partyLogs} title="📊 組隊打怪紀錄" maxGroups={6}/>
+        </div>
       </div>
     </div>
   );

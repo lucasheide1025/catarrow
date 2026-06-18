@@ -1,7 +1,9 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
+import { subscribePracticeLogs } from "../../lib/db";
+import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards"; // [] 傳入，卡牌 collection 未訂閱故忽略
@@ -35,9 +37,18 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const [room,   setRoom]     = useState(null);
   const [isHost, setIsHost]   = useState(false);
   const [unsub,  setUnsub]    = useState(null);
+  const [dungeonLogs, setDungeonLogs] = useState([]);
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
+  useEffect(() => {
+    if (!myId) return;
+    const unsubLogs = subscribePracticeLogs(myId, logs =>
+      setDungeonLogs(logs.filter(l => l.source === "dungeon"))
+    );
+    return () => unsubLogs?.();
+  }, [myId]);
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
@@ -230,6 +241,11 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
           </div>
         )}
         {err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}
+
+        {/* 地下城歷史紀錄 */}
+        <div className="mt-6">
+          <BattleRecords logs={dungeonLogs} title="📊 地下城戰鬥紀錄" maxGroups={6}/>
+        </div>
       </div>
     </div>
   );

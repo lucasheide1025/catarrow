@@ -585,10 +585,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         setWonChests([]);
         setDroppedMaterials([]);
       } else {
-        // 一般射手：寶箱進背包
-        const chestsToAdd = [mainChest, catChest, potionChest].filter(Boolean);
-        setWonChests(chestsToAdd);
-        addChests(profile.id, chestsToAdd).catch(() => {});
+        // 一般射手：先算好所有寶箱，再一次 addChests（避免兩次 getDoc+setDoc 競態）
+        const mainChests = [mainChest, catChest, potionChest].filter(Boolean);
+        setWonChests(mainChests);
 
         // 材料掉落（機率）
         const mat = rollMaterialDrop(monster);
@@ -613,12 +612,12 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           sessionStorage.setItem("guest_coins", String(prev + total));
           setDroppedCoins(total);
         } else {
-          // 金幣（立即加）+ 金幣寶箱存入背包
+          // 金幣寶箱 + 主寶箱合成一次寫入，避免競態覆蓋
           const coinChest = makeCoinChest(monster.tier, "打怪掉落");
           setDroppedCoins(baseCoins);
           setDroppedCoinChest(coinChest);
           addCoins(profile.id, baseCoins).catch(() => {});
-          addChests(profile.id, [coinChest]).catch(() => {});
+          addChests(profile.id, [...mainChests, coinChest]).catch(() => {});
         }
 
         // 怪物卡片（1%）
@@ -1211,18 +1210,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         {battlePhase==="event"&&currentEvent&&(
           <div className={`rounded-2xl p-4 text-center border-2 shadow-lg ${
             currentEvent.type==="buff"
-              ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-400"
+              ? "bg-gradient-to-br from-emerald-900/40 to-teal-900/40 border-emerald-500/60"
               : currentEvent.type==="debuff"
-              ? "bg-gradient-to-br from-red-50 to-rose-50 border-red-400"
-              : "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-300"
+              ? "bg-gradient-to-br from-red-900/40 to-rose-900/40 border-red-500/60"
+              : "bg-gradient-to-br from-blue-900/40 to-indigo-900/40 border-blue-500/60"
           }`} style={{ animation: currentEvent.type==="buff" ? "mb-event-buff .45s ease" : "mb-event-debuff .45s ease" }}>
             <div className="text-4xl mb-2">{currentEvent.icon}</div>
-            <div className="font-black text-gray-800 text-base mb-1">{currentEvent.title}</div>
-            <div className="text-gray-600 text-xs leading-relaxed">{currentEvent.desc}</div>
+            <div className="font-black text-white text-base mb-1">{currentEvent.title}</div>
+            <div className="text-slate-300 text-xs leading-relaxed">{currentEvent.desc}</div>
             <div className={`text-xs font-black mt-2 px-3 py-1 rounded-full inline-block ${
-              currentEvent.type==="buff" ? "bg-emerald-100 text-emerald-700"
-              : currentEvent.type==="debuff" ? "bg-red-100 text-red-700"
-              : "bg-blue-100 text-blue-600"
+              currentEvent.type==="buff" ? "bg-emerald-800/60 text-emerald-300"
+              : currentEvent.type==="debuff" ? "bg-red-800/60 text-red-300"
+              : "bg-blue-800/60 text-blue-300"
             }`}>
               {currentEvent.type==="buff" ? "✨ 有利事件" : currentEvent.type==="debuff" ? "⚠️ 不利事件" : "ℹ️ 中性事件"}
             </div>
@@ -1240,22 +1239,22 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         )}
 
         {battlePhase==="input"&&(
-          <div className="bg-white rounded-2xl p-4">
-            <div className="text-gray-700 text-sm font-black mb-2">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+            <div className="text-slate-300 text-sm font-black mb-2">
               輸入本回合 {ARROWS_PER_ROUND} 箭
-              <span className="text-gray-400 font-normal ml-1">（每 {ARROWS_PER_COUNTER} 箭後怪物反擊）</span>
+              <span className="text-slate-500 font-normal ml-1">（每 {ARROWS_PER_COUNTER} 箭後怪物反擊）</span>
             </div>
             <div className="flex gap-1.5 flex-wrap mb-3">
               {Array.from({length:ARROWS_PER_ROUND}).map((_,i)=>(
                 <div key={i} className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black
-                  ${i<arrows.length?"bg-blue-600 text-white":i===arrows.length?"bg-blue-100 text-blue-400 ring-2 ring-blue-400":"bg-gray-100 text-gray-300"}`}>
+                  ${i<arrows.length?"bg-blue-600 text-white":i===arrows.length?"bg-blue-900/60 text-blue-400 ring-2 ring-blue-500":"bg-slate-700 text-slate-600"}`}>
                   {i<arrows.length?(arrows[i]===0?"M":arrows[i]):""}
                 </div>
               ))}
-              {arrows.length>0&&<button onClick={undoArrow} className="text-xs text-gray-400 underline ml-1 self-center">↩退</button>}
+              {arrows.length>0&&<button onClick={undoArrow} className="text-xs text-slate-500 underline ml-1 self-center">↩退</button>}
             </div>
             {arrows.length<ARROWS_PER_ROUND&&(
-              <div className="text-xs text-center text-blue-500 font-bold mb-2">
+              <div className="text-xs text-center text-blue-400 font-bold mb-2">
                 第 {arrows.length+1} 箭
                 {arrows.length===1?"　→ 再1箭怪物反擊":arrows.length===3?"　→ 再1箭怪物反擊":arrows.length===5?"　→ 最後一箭！":""}
               </div>
@@ -1270,9 +1269,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 ))}
               </div>
             )}
-            <div className="flex items-center justify-between mt-3 bg-gray-50 rounded-xl px-3 py-2">
-              <span className="text-gray-600 text-sm font-bold">本回合總分</span>
-              <span className="text-blue-600 font-black text-xl">{total6}<span className="text-xs text-gray-400 ml-1">/ 60</span></span>
+            <div className="flex items-center justify-between mt-3 bg-slate-700/50 rounded-xl px-3 py-2">
+              <span className="text-slate-300 text-sm font-bold">本回合總分</span>
+              <span className="text-blue-400 font-black text-xl">{total6}<span className="text-xs text-slate-500 ml-1">/ 60</span></span>
             </div>
             {arrows.length>=ARROWS_PER_ROUND&&(
               <button onClick={submitRound} disabled={processing}

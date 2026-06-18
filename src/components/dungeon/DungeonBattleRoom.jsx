@@ -10,7 +10,7 @@ import {
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
-import { recordBattleDex, addCoins, addMaterials, addChests } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog } from "../../lib/db";
 import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
@@ -247,7 +247,6 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       if (mid.startsWith("guest")) continue;
       const baseCoins = rollCoins(room?.monster?.tier || "common", 1);
       await claimDungeonReward(mid, baseCoins, goldMult);
-      // 每層各建一個金幣寶箱存入背包
       const memberChests = Array.from({ length: totalFloors }, (_, i) =>
         makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
       );
@@ -255,6 +254,26 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       if (baseMaterials) await addMaterials(mid, [baseMaterials]).catch(() => {});
       await recordBattleDex(mid, room.monster.id).catch(() => {});
     }
+
+    // 儲存自己的練習紀錄（win）
+    if (myId && !myId.startsWith("guest")) {
+      const practiceRounds = (room.log || []).map(entry => {
+        const pl = (entry.playerLog || []).find(p => p.id === myId);
+        return (pl?.arrowBreakdown || []).map(a =>
+          a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
+        );
+      }).filter(r => r.length > 0);
+      if (practiceRounds.length > 0) {
+        addPracticeLog(myId, {
+          date: new Date().toISOString().slice(0, 10), source: "dungeon",
+          monsterName: room.monster?.name || "地下城", result: "win",
+          rounds: practiceRounds,
+          total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+          totalFloors,
+        }, myId).catch(() => {});
+      }
+    }
+
     sfxSuccess();
     onExit?.();
   }
@@ -391,7 +410,27 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               )}
             </div>
 
-            <button onClick={onExit}
+            <button onClick={() => {
+              // 儲存失敗紀錄
+              if (myId && !myId.startsWith("guest")) {
+                const practiceRounds = (room.log || []).map(entry => {
+                  const pl = (entry.playerLog || []).find(p => p.id === myId);
+                  return (pl?.arrowBreakdown || []).map(a =>
+                    a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
+                  );
+                }).filter(r => r.length > 0);
+                if (practiceRounds.length > 0) {
+                  addPracticeLog(myId, {
+                    date: new Date().toISOString().slice(0, 10), source: "dungeon",
+                    monsterName: room.monster?.name || "地下城", result: "lose",
+                    rounds: practiceRounds,
+                    total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+                    floorsCleared,
+                  }, myId).catch(() => {});
+                }
+              }
+              onExit?.();
+            }}
               className="w-full py-4 rounded-2xl font-black bg-white/10 text-slate-300 text-lg active:scale-95">
               返回大廳
             </button>

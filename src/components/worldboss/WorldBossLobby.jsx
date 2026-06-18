@@ -288,7 +288,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         </div>
 
         {/* 世界王戰鬥紀錄 */}
-        {!guestOverride && wbLogs.length > 0 && (
+        {!guestOverride && (
           <BattleRecords logs={wbLogs} title="📊 世界王戰鬥紀錄" maxGroups={8}/>
         )}
       </div>
