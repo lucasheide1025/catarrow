@@ -1,7 +1,8 @@
 // src/components/member/MemberProfile.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { updateMember, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeCardCollection } from "../../lib/db";
+import { updateMember, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeCardCollection, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex } from "../../lib/db";
+import { getDuelStats } from "../../lib/duelDb";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
@@ -53,6 +54,11 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
   const [dexGrants,     setDexGrants]     = useState([]);
   const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
   const [cardData,      setCardData]      = useState({ cards: {}, equipped: [] });
+  const [monsterDex,    setMonsterDex]    = useState({});
+  const [craftStats,    setCraftStats]    = useState({});
+  const [chestStats,    setChestStats]    = useState({});
+  const [potionDex,     setPotionDex]     = useState({});
+  const [duelStats,     setDuelStats]     = useState({});
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
 
@@ -67,9 +73,14 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
     getCertRecords(profile.id).then(setCertRecords).catch(() => setCertRecords([]));
     const unsub  = subscribeCertification(profile.id, setCertification);
     getDexConfig().then(setDexConfig).catch(() => {});
-    const unsub2 = subscribeDexGrants(profile.id, setDexGrants);
-    const unsub3 = subscribeCardCollection(profile.id, setCardData);
-    return () => { unsub?.(); unsub2?.(); unsub3?.(); };
+    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
+    const unsub2     = subscribeDexGrants(profile.id, setDexGrants);
+    const unsub3     = subscribeCardCollection(profile.id, setCardData);
+    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
+    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
+    const unsubChest = subscribeChestStats(profile.id, setChestStats);
+    const unsubPot   = subscribePotionDex(profile.id, setPotionDex);
+    return () => { unsub?.(); unsub2?.(); unsub3?.(); unsubMon?.(); unsubCraft?.(); unsubChest?.(); unsubPot?.(); };
   }, [profile?.id]);
 
   async function saveEquip() {
@@ -210,9 +221,8 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
             <div>加入日期：{profile?.joinDate}</div>
             <div>射齡：{calcAge(profile?.joinDate)}{getCohort(profile?.joinDate) != null ? `　${cohortLabel(getCohort(profile?.joinDate))}` : ""}</div>
             {(() => {
-              let ds;
-              try { const v = sessionStorage.getItem(`dex_stats_${profile?.id}`); if (v) ds = JSON.parse(v); } catch {}
-              if (!ds) ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, cardData });
+              const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, cardData, monsterDex, craftStats, chestStats, potionDex, duelStats });
+              try { if (profile?.id) sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify(ds)); } catch {}
               return (
                 <div className="flex items-center gap-3 flex-wrap mt-0.5">
                   <span>🎖️ 圖鑑 {ds.totalUnlocked}/{ds.totalAll}</span>

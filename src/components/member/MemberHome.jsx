@@ -1,6 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard } from "../../lib/db";
+import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
 import { getDuelStats } from "../../lib/duelDb";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
@@ -48,6 +48,11 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
   const [dexConfig, setDexConfig]         = useState({ physicalMax: 10, pointMax: 10 });
   const [loading, setLoading]             = useState(true);
   const [duelStats, setDuelStats]         = useState(null);
+  const [monsterDex, setMonsterDex]       = useState({});
+  const [craftStats, setCraftStats]       = useState({});
+  const [chestStats, setChestStats]       = useState({});
+  const [potionDex,  setPotionDex]        = useState({});
+  const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [cardTheme, setCardTheme]         = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
   // 月卡
@@ -66,10 +71,15 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
     const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
     const unsub2 = subscribeCertification(profile.id, setCertification);
     getDexConfig().then(setDexConfig).catch(() => {});
-    const unsub4 = subscribeDexGrants(profile.id, setDexGrants);
-    const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
+    const unsub4    = subscribeDexGrants(profile.id, setDexGrants);
+    const unsub5    = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    return () => { unsub?.(); unsub2?.(); unsub4?.(); unsub5?.(); };
+    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
+    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
+    const unsubChest = subscribeChestStats(profile.id, setChestStats);
+    const unsubPot   = subscribePotionDex(profile.id, setPotionDex);
+    const unsubCard  = subscribeCardCollection(profile.id, setCardData);
+    return () => { unsub?.(); unsub2?.(); unsub4?.(); unsub5?.(); unsubMon?.(); unsubCraft?.(); unsubChest?.(); unsubPot?.(); unsubCard?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   const unreadNotif = notifications.filter(x =>
@@ -341,9 +351,8 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
                 <CertLevelPip level={certification?.level || "none"} />
               </div>
               {(() => {
-                let ds;
-                try { const v = sessionStorage.getItem(`dex_stats_${profile?.id}`); if (v) ds = JSON.parse(v); } catch {}
-                if (!ds) ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax });
+                const ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
+                try { if (profile?.id) sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify(ds)); } catch {}
                 return (
                   <div className="text-white/60 text-xs mt-1 flex items-center gap-3 flex-wrap">
                     <span>🎖️ 圖鑑 {ds.totalUnlocked}/{ds.totalAll}</span>

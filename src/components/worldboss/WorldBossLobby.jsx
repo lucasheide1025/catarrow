@@ -147,7 +147,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 overflow-y-auto px-4 pb-28 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
 
         {/* Boss 展示區 */}
         <div className="rounded-3xl overflow-hidden border border-white/10"
@@ -159,7 +159,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 bossKey={event.bossKey}
                 currentHP={event.bossCurrentHP}
                 maxHP={event.bossMaxHP}
-                size={140}
+                size={300}
               />
               {/* 階段標籤 */}
               {(() => {
@@ -293,9 +293,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         )}
       </div>
 
-      {/* 固定底部按鈕 */}
-      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-3 z-30"
-        style={{ background: "linear-gradient(0deg, #0f172a 85%, transparent)" }}>
+      {/* 底部按鈕 */}
+      <div className="shrink-0 px-4 pt-3"
+        style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 90%, transparent)" }}>
         <button
           onClick={() => { sfxTap(); setInBattle(true); }}
           disabled={attackedToday || event.status !== "active"}

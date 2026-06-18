@@ -146,6 +146,20 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const boss             = event.bossData || {};
 
   // ── 狀態 ───────────────────────────────────────────────────
+  const [showFullLog, setShowFullLog] = useState(false);
+
+  // 隨機從參戰勇者中取最多 8 位同伴（僅顯示，不影響戰鬥邏輯）
+  const [companions] = useState(() => {
+    const parts = Object.entries(event.participants || {})
+      .filter(([id]) => id !== myId)
+      .map(([id, p]) => ({ id, name: p.name || "射手" }));
+    for (let i = parts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [parts[i], parts[j]] = [parts[j], parts[i]];
+    }
+    return parts.slice(0, 8);
+  });
+
   const [phase,    setPhase]    = useState("prep");
   // subPhase: shooting | processing | roundResult | bossAttack | done
   const [subPhase, setSubPhase] = useState("shooting");
@@ -390,7 +404,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-32 space-y-5 pt-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 pt-4">
           {/* Boss 預覽 */}
           <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
             <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={72}/>
@@ -466,8 +480,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           </div>
         </div>
 
-        <div className="shrink-0 absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-          style={{ background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
+        <div className="shrink-0 px-4 pt-3"
+          style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
           {potionCost > 0 && !canAfford && (
             <div className="text-center text-xs text-rose-400 mb-2">金幣不足，請選擇其他藥水</div>
           )}
@@ -499,298 +513,263 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   }
 
   // ════════════════════════════════════════════════════════════
-  // ── 畫面：戰鬥中 ─────────────────────────────────────────
+  // ── 畫面：戰鬥中（MonsterBattle 風格）────────────────────
   if (phase === "battle") {
+    const totalArchers = companions.length + 1;
+    const archerW = Math.min(72, Math.floor((528 - (totalArchers - 1) * 3) / totalArchers));
+    const isLastRound = roundIdx === TOTAL_ROUNDS - 1;
 
-    // ── 回合結算畫面 ───────────────────────────────────────
-    if (subPhase === "roundResult") {
-      const isLast = allRounds.length === TOTAL_ROUNDS;
-      return (
-        <div className="h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 to-slate-800 text-white px-6 space-y-6">
-          {/* 回合徽章 */}
-          <div className="text-center space-y-1">
-            <div className="text-xs text-slate-500 font-bold tracking-widest uppercase">
+    return (
+      <div style={{
+        position:"fixed", top:0, bottom:0, left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:540, zIndex:9999, display:"flex", flexDirection:"column",
+        backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center",
+        overflow:"hidden", fontFamily:"sans-serif",
+      }}>
+
+        {/* 暴擊/命中閃爍 */}
+        {animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"radial-gradient(ellipse at center,rgba(245,158,11,0.28) 0%,transparent 70%)", animation:"wbFadeOut 0.42s ease forwards" }}/>}
+        {animBossHit && !animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"rgba(239,68,68,0.10)", animation:"wbFadeOut 0.3s ease forwards" }}/>}
+
+        {/* 貓咪訊息 */}
+        {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
+
+        {/* 退出確認 */}
+        {showExitConfirm && (
+          <div style={{ position:"absolute", inset:0, zIndex:50, background:"rgba(0,0,0,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+            <div style={{ background:"#1e293b", border:"1px solid rgba(255,255,255,0.2)", borderRadius:24, padding:24, width:"100%", textAlign:"center" }}>
+              <div style={{ fontSize:32, marginBottom:8 }}>⚠️</div>
+              <div style={{ fontSize:18, fontWeight:900, color:"white", marginBottom:8 }}>確定退出戰鬥？</div>
+              <div style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>目前進度不會儲存，今日可重新進入</div>
+              <div style={{ display:"flex", gap:12 }}>
+                <button onClick={() => setShowExitConfirm(false)} style={{ flex:1, padding:"12px", borderRadius:12, background:"rgba(255,255,255,0.1)", color:"#e2e8f0", fontWeight:700, border:"none", cursor:"pointer" }}>取消</button>
+                <button onClick={() => { timerRef.current.forEach(clearTimeout); onBack(); }} style={{ flex:1, padding:"12px", borderRadius:12, background:"#dc2626", color:"white", fontWeight:900, border:"none", cursor:"pointer" }}>退出</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 回合結算 overlay */}
+        {subPhase === "roundResult" && (
+          <div style={{ position:"absolute", inset:0, zIndex:40, background:"rgba(0,0,0,0.82)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14 }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontWeight:700, letterSpacing:2, textTransform:"uppercase" }}>
               第 {allRounds.length} 回合結算
             </div>
-            <div className="text-5xl font-black text-rose-400" style={{ animation: "wbShake 0.4s ease" }}>
+            <div style={{ fontSize:52, fontWeight:900, color:"#f87171", animation:"wbShake 0.4s ease" }}>
               -{roundSummary?.dmg.toLocaleString()}
             </div>
-            <div className="text-xs text-amber-300">
-              {roundSummary?.crits > 0 ? `⚡ ${roundSummary.crits} 次暴擊！` : "造成傷害"}
+            {roundSummary?.crits > 0 && <div style={{ fontSize:12, color:"#fbbf24" }}>⚡ {roundSummary.crits} 次暴擊！</div>}
+            <div style={{ display:"flex", gap:6 }}>
+              {roundSummary?.arrows.map((a, i) => (
+                <div key={i} style={{ width:38, height:38, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, background:`${scoreColor(a.label)}22`, border:`1px solid ${scoreColor(a.label)}`, color:scoreColor(a.label) }}>{a.label}</div>
+              ))}
             </div>
-          </div>
-
-          {/* 本回合箭矢 */}
-          <div className="flex gap-2 justify-center">
-            {roundSummary?.arrows.map((a, i) => (
-              <div key={i}
-                className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border"
-                style={{
-                  background: `${scoreColor(a.label)}22`,
-                  borderColor: scoreColor(a.label),
-                  color: scoreColor(a.label),
-                }}>
-                {a.label}
+            <div style={{ width:"72%", marginTop:4 }}>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginBottom:4 }}>{boss.name} HP</div>
+              <div style={{ height:8, background:"rgba(255,255,255,0.1)", borderRadius:4, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, background:boss.accent||"#f59e0b", transition:"width 0.7s" }}/>
               </div>
-            ))}
-          </div>
-
-          {/* HP 狀態 */}
-          <div className="w-full space-y-3">
-            <HPBar label={`${boss.name} HP`} current={bossHP} max={event.bossMaxHP} color={boss.accent || "#f59e0b"}/>
-            <HPBar label="你的 HP" current={myHP} max={baseHP} color="#22c55e"/>
-          </div>
-
-          {/* Boss 蓄力提示 */}
-          <div className={`text-sm font-bold animate-pulse ${isLast ? "text-rose-300" : "text-slate-400"}`}>
-            {isLast ? "⚠️ Boss 正在集結全力…" : "⚡ Boss 正在蓄力反擊…"}
-          </div>
-
-          {/* 回合進度點 */}
-          <div className="flex gap-2">
-            {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
-              <div key={i} className={`w-2 h-2 rounded-full transition-all ${
-                i < allRounds.length ? "bg-amber-400" : "bg-white/15"
-              }`}/>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    // ── Boss 反擊畫面 ───────────────────────────────────────
-    if (subPhase === "bossAttack") {
-      return (
-        <div className="h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-b from-red-950 to-slate-900 text-white px-6 space-y-5">
-          {/* Boss 大圖 */}
-          <div className="animate-bounce" style={{ animationDuration: "0.6s" }}>
-            <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={120}/>
-          </div>
-
-          {/* 攻擊台詞 */}
-          <div className="text-center space-y-1">
-            <div className="text-5xl">{bossAttackIcon}</div>
-            <div className="text-xl font-black text-rose-300">{bossAttackText}</div>
-          </div>
-
-          {/* 傷害數字 */}
-          <div className="text-center">
-            <div className="text-xs text-slate-400 mb-1">你受到傷害</div>
-            <div className="text-6xl font-black text-rose-400" style={{ textShadow: "0 0 30px #ef4444" }}>
-              -{counterDmg}
+            </div>
+            <div style={{ fontSize:11, color: isLastRound ? "#fca5a5" : "rgba(255,255,255,0.3)", animation:"wbShake 0.6s ease infinite", animationDelay:"0.8s" }}>
+              {isLastRound ? "⚠️ Boss 集結全力…" : "⚡ Boss 正在蓄力…"}
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
+                <div key={i} style={{ width:20, height:4, borderRadius:2, background: i < allRounds.length ? "#f59e0b" : "rgba(255,255,255,0.15)" }}/>
+              ))}
             </div>
           </div>
+        )}
 
-          {/* 玩家 HP */}
-          <div className="w-full">
-            <HPBar label="你的 HP" current={myHP} max={baseHP} color={myHP / baseHP > 0.3 ? "#22c55e" : "#ef4444"}/>
-            {myHP <= 0 && (
-              <div className="text-center text-rose-400 text-xs font-bold mt-1 animate-pulse">
-                倒下了…但你的傷害已記錄！
+        {/* Boss 反擊 overlay */}
+        {subPhase === "bossAttack" && (
+          <div style={{ position:"absolute", inset:0, zIndex:40, background:"rgba(0,0,0,0.9)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
+            <div style={{ animation:"wbShake 0.5s ease" }}>
+              <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={160}/>
+            </div>
+            <div style={{ fontSize:44 }}>{bossAttackIcon}</div>
+            <div style={{ fontSize:18, fontWeight:900, color:"#fca5a5" }}>{bossAttackText}</div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>你受到傷害</div>
+              <div style={{ fontSize:52, fontWeight:900, color:"#f87171", textShadow:"0 0 30px #ef4444" }}>-{counterDmg}</div>
+            </div>
+            <div style={{ width:"66%" }}>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginBottom:4 }}>你的 HP</div>
+              <div style={{ height:8, background:"rgba(255,255,255,0.1)", borderRadius:4, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${Math.max(0,myHP/baseHP)*100}%`, background: myHP/baseHP > 0.3 ? "#22c55e" : "#ef4444", transition:"width 0.5s" }}/>
+              </div>
+            </div>
+            {allRounds.length < TOTAL_ROUNDS
+              ? <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>準備第 {allRounds.length + 1} 回合…</div>
+              : <div style={{ fontSize:12, color:"#fbbf24", fontWeight:700 }}>戰鬥結束，結算中…</div>
+            }
+          </div>
+        )}
+
+        {/* ── 上半：戰鬥日誌 + Boss 圖 ── */}
+        <div style={{ flex:"1 1 0", display:"flex", minHeight:0, overflow:"hidden" }}>
+
+          {/* 左：可收合日誌 */}
+          <div style={{ width: showFullLog ? 160 : 36, flexShrink:0, background: showFullLog ? "rgba(0,0,0,0.68)" : "rgba(0,0,0,0.32)", display:"flex", flexDirection:"column", transition:"width 0.2s", zIndex:5 }}>
+            <button onClick={() => setShowFullLog(v => !v)}
+              style={{ padding:"8px 0", color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", background:"transparent", border:"none", cursor:"pointer", flexShrink:0 }}>
+              {showFullLog ? "◀" : "▶"}
+            </button>
+            {showFullLog && (
+              <div style={{ flex:1, overflowY:"auto", padding:"0 8px 8px" }}>
+                {dmgLog.length === 0 && <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", textAlign:"center", paddingTop:8 }}>戰鬥開始…</div>}
+                {dmgLog.map((l, i) => (
+                  <div key={i} style={{ fontSize:10, color: i === dmgLog.length - 1 ? "white" : "rgba(255,255,255,0.42)", marginBottom:3, lineHeight:1.4 }}>{l}</div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* 下一步提示 */}
-          {allRounds.length < TOTAL_ROUNDS ? (
-            <div className="text-slate-500 text-xs animate-pulse">
-              準備第 {allRounds.length + 1} 回合…
+          {/* 右：Boss 顯示區 */}
+          <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"6px 8px 0", minWidth:0, overflow:"hidden" }}>
+            <div style={{ width:"100%", display:"flex", justifyContent:"flex-end", marginBottom:2 }}>
+              <button onClick={() => setShowExitConfirm(true)} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"rgba(255,255,255,0.5)", borderRadius:8, padding:"2px 8px", fontSize:12, cursor:"pointer" }}>✕</button>
             </div>
-          ) : (
-            <div className="text-amber-400 text-xs font-bold animate-pulse">
-              戰鬥結束，結算中…
+
+            {/* Boss 圖（頂部對齊，盡量撐滿） */}
+            <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center", minHeight:0, overflow:"hidden" }}>
+              <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={Math.min(220, 220)}/>
             </div>
-          )}
-        </div>
-      );
-    }
 
-    // ── 射擊畫面 ────────────────────────────────────────────
-    const isLastRound = roundIdx === TOTAL_ROUNDS - 1;
-    const todayParts  = Object.entries(event.participants || {})
-      .filter(([, p]) => p.lastAttackedDate === todayStr && p.name !== myName);
+            {/* Boss HP bar */}
+            <div style={{ width:"100%", marginTop:4 }}>
+              <div style={{ position:"relative", height:21, borderRadius:20, background:"rgba(255,255,255,0.12)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ height:"100%", width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, background:`linear-gradient(90deg,${boss.accent||"#f59e0b"}99,${boss.accent||"#f59e0b"})`, borderRadius:20, transition:"width 0.7s" }}/>
+                <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"white" }}>
+                  {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
+                </div>
+              </div>
+            </div>
 
-    return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
-        {animCrit && (
-          <div className="absolute inset-0 pointer-events-none z-30"
-            style={{ background: "radial-gradient(ellipse at center, rgba(245,158,11,0.28) 0%, transparent 70%)", animation: "wbFadeOut 0.42s ease forwards" }}/>
-        )}
-        {animBossHit && !animCrit && (
-          <div className="absolute inset-0 pointer-events-none z-30"
-            style={{ background: "rgba(239,68,68,0.10)", animation: "wbFadeOut 0.3s ease forwards" }}/>
-        )}
-        {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
-
-        {/* ── 退出確認對話框 ── */}
-        {showExitConfirm && (
-          <div className="absolute inset-0 z-50 bg-black/85 flex items-center justify-center px-6">
-            <div className="bg-slate-800 border border-white/20 rounded-3xl p-6 w-full text-center space-y-4">
-              <div className="text-3xl">⚠️</div>
-              <div className="text-xl font-black">確定退出戰鬥？</div>
-              <div className="text-sm text-slate-400">目前進度不會儲存，今日可重新進入</div>
-              <div className="flex gap-3">
-                <button onClick={() => setShowExitConfirm(false)}
-                  className="flex-1 py-3 rounded-2xl bg-white/10 text-slate-200 font-bold">
-                  取消
-                </button>
-                <button onClick={() => { timerRef.current.forEach(clearTimeout); onBack(); }}
-                  className="flex-1 py-3 rounded-2xl bg-rose-600 text-white font-black">
-                  退出
-                </button>
+            {/* Boss 名 + 回合進度 */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", marginTop:3, marginBottom:2 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:boss.accent||"#f59e0b" }}>{boss.name}</span>
+              <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+                {Array.from({ length: TOTAL_ROUNDS }).map((_,i) => (
+                  <div key={i} style={{ width:14, height:3, borderRadius:2, background: i < roundIdx ? "#f59e0b" : i === roundIdx ? "#f87171" : "rgba(255,255,255,0.15)" }}/>
+                ))}
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", marginLeft:2 }}>
+                  {roundIdx+1}/{TOTAL_ROUNDS}{isLastRound ? " ⚠️" : ""}
+                </span>
               </div>
             </div>
           </div>
-        )}
-
-        {/* ── Header：緊湊版 Boss + HP + 回合 ── */}
-        <div className="shrink-0 px-4 pt-3 pb-2 border-b border-white/8">
-          {/* 第一行：退出 + Boss 名 + HP + MyHP */}
-          <div className="flex items-center gap-2 mb-1.5">
-            <button onClick={() => setShowExitConfirm(true)} className="text-slate-500 text-xs shrink-0 active:text-slate-300 pr-1">✕</button>
-            <div className="text-xs font-black shrink-0" style={{ color: boss.accent }}>{boss.name}</div>
-            <div className="flex-1">
-              <MiniHP current={bossHP} max={event.bossMaxHP}/>
-            </div>
-            <div className="text-xs font-mono text-slate-400 shrink-0">{bossHP.toLocaleString()}</div>
-            <div className="text-xs shrink-0 ml-1">
-              <span className="text-slate-500">HP </span>
-              <span className={`font-black ${myHP / baseHP > 0.4 ? "text-emerald-400" : "text-rose-400"}`}>
-                {myHP}
-              </span>
-            </div>
-          </div>
-          {/* 第二行：回合進度 + 標示 */}
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 flex-1">
-              {Array.from({ length: TOTAL_ROUNDS }).map((_, i) => (
-                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${
-                  i < roundIdx ? "bg-amber-400" : i === roundIdx ? "bg-rose-400 animate-pulse" : "bg-white/10"
-                }`}/>
-              ))}
-            </div>
-            <span className="text-xs text-slate-500 shrink-0">
-              第 {roundIdx + 1}/{TOTAL_ROUNDS} 回合
-              {isLastRound && <span className="text-rose-400 font-bold ml-1">⚠️</span>}
-            </span>
-          </div>
         </div>
 
-        {/* ── 隊友列（恆顯示）── */}
-        <div className="shrink-0 px-4 py-1.5 flex items-center gap-2 border-b border-white/5">
-          {todayParts.length >= 5 ? (
-            /* 5 人以上：純文字強調人數 */
-            <div className="flex-1 flex items-center gap-1.5">
-              <span className="text-sm">⚔️</span>
-              <span className="text-xs font-black text-white">
-                {todayParts.length} 位射手同場作戰
-              </span>
-            </div>
-          ) : todayParts.length > 0 ? (
-            /* 5 人以下：顯示頭像 */
-            <div className="flex gap-1 flex-1 items-center">
-              <span className="text-xs text-slate-600 shrink-0">⚔️</span>
-              {todayParts.map(([id, p], idx) => (
-                <div key={id}
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-white/15"
-                  style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] + "bb" }}>
-                  {(p.name || "?")[0]}
+        {/* ── 弓箭手列：同伴 + 玩家 ── */}
+        <div style={{ height:90, display:"flex", gap:3, padding:"0 6px", flexShrink:0, alignItems:"flex-end", paddingBottom:4 }}>
+          {companions.map((c, idx) => {
+            const sz = Math.max(30, archerW - 10);
+            return (
+              <div key={c.id} style={{ width:archerW, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                <div style={{ width:sz, height:sz, borderRadius:"50%", background:AVATAR_COLORS[idx % AVATAR_COLORS.length]+"88", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.round(sz*0.44), fontWeight:700, color:"rgba(255,255,255,0.8)", border:"1px solid rgba(255,255,255,0.2)", opacity:0.7 }}>
+                  {c.name?.[0] || "?"}
                 </div>
-              ))}
-            </div>
-          ) : (
-            /* 今日尚無人出戰：顯示總參戰人數 */
-            <div className="flex-1 flex items-center gap-1.5">
-              <span className="text-xs text-slate-500 font-bold">
-                👥 共 {event.totalParticipants || 0} 位勇者參戰
-              </span>
-            </div>
-          )}
-          <span className="text-xs font-black text-amber-300 shrink-0">ATK ×{participantBonus.toFixed(2)}</span>
+              </div>
+            );
+          })}
+          {/* 玩家（高亮） */}
+          <div style={{ width:archerW, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+            {(() => {
+              const sz = Math.max(36, archerW - 4);
+              return (
+                <div style={{ width:sz, height:sz, borderRadius:"50%", background:"#1d4ed8", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.round(sz*0.44), fontWeight:700, color:"white", border:"2px solid #60a5fa", boxShadow:"0 0 12px rgba(96,165,250,0.55)" }}>
+                  {myName?.[0] || "?"}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* ── 箭矢格 + 分數按鈕：同一區塊 ── */}
-        <div className="shrink-0 px-4 pt-3 pb-2 space-y-3">
-
-          {/* 箭矢格 */}
-          <div>
-            <div className="flex gap-1.5 justify-center">
-              {Array.from({ length: ARROWS_PER }).map((_, i) => {
-                const a = arrows[i];
-                const isActive = subPhase === "processing" && i === processingIdx;
-                return (
-                  <div key={i}
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border transition-all ${isActive ? "scale-110" : ""}`}
-                    style={{
-                      background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.05)",
-                      borderColor: a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.1)",
-                      color: a ? scoreColor(a.label) : "#334155",
-                      boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
-                    }}>
-                    {a ? a.label : "·"}
-                  </div>
-                );
-              })}
+        {/* ── 玩家資訊小卡列 ── */}
+        <div style={{ display:"flex", gap:3, padding:"0 6px 4px", flexShrink:0 }}>
+          {companions.map(c => (
+            <div key={c.id} style={{ width:archerW, background:"rgba(255,255,255,0.06)", borderRadius:6, padding:"2px 1px", overflow:"hidden" }}>
+              <div style={{ fontSize:7, color:"rgba(255,255,255,0.3)", textAlign:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name?.slice(0,5)}</div>
             </div>
-            <div className="text-center text-xs mt-1.5">
-              {subPhase === "shooting"
-                ? <span className="text-slate-500">{arrows.length} / {ARROWS_PER} 箭</span>
-                : <span className="text-amber-300 animate-pulse">計算中…</span>}
+          ))}
+          <div style={{ width:archerW, background:"rgba(29,78,216,0.28)", border:"1px solid rgba(96,165,250,0.35)", borderRadius:6, padding:"2px 1px" }}>
+            <div style={{ fontSize:7, color:"#93c5fd", textAlign:"center", fontWeight:700 }}>你</div>
+            <div style={{ fontSize:7, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>HP {myHP}</div>
+            <div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", display:"flex", justifyContent:"center", gap:2 }}>
+              <span>A{baseATK}</span><span>D{baseDEF}</span>
             </div>
           </div>
+        </div>
 
-          {/* 分數按鈕（選箭中）*/}
+        {/* ── 箭矢格 ── */}
+        <div style={{ flexShrink:0, padding:"4px 6px 2px" }}>
+          <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+            {Array.from({ length: ARROWS_PER }).map((_, i) => {
+              const a = arrows[i];
+              const isActive = subPhase === "processing" && i === processingIdx;
+              return (
+                <div key={i} style={{
+                  width:40, height:40, borderRadius:8,
+                  background: a ? `${scoreColor(a.label)}22` : "rgba(255,255,255,0.06)",
+                  border:`1px solid ${a ? (isActive ? "#fbbf24" : scoreColor(a.label)) : "rgba(255,255,255,0.12)"}`,
+                  color: a ? scoreColor(a.label) : "#334155",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:14, fontWeight:700,
+                  transform: isActive ? "scale(1.12)" : "scale(1)",
+                  boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
+                  transition:"transform 0.15s",
+                }}>
+                  {a ? a.label : "·"}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ textAlign:"center", fontSize:10, marginTop:4, color: subPhase !== "shooting" ? "#fbbf24" : "rgba(255,255,255,0.3)" }}>
+            {subPhase !== "shooting" ? "計算中…" : `${arrows.length} / ${ARROWS_PER} 箭・第 ${roundIdx+1} 回合`}
+          </div>
+        </div>
+
+        {/* ── 分數按鈕 / 送出 ── */}
+        <div style={{ flexShrink:0, padding:"0 5px", paddingBottom:"max(8px, env(safe-area-inset-bottom))" }}>
           {subPhase === "shooting" && arrows.length < ARROWS_PER && (
-            <div className="space-y-1.5">
-              <div className="grid grid-cols-6 gap-1.5">
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, padding:"5px" }}>
                 {SCORE_BTNS.map(s => (
-                  <button key={s}
-                    onClick={() => handleScore(s)}
-                    className="py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90"
-                    style={{
-                      color: scoreColor(s),
-                      borderColor: `${scoreColor(s)}55`,
-                      background: `${scoreColor(s)}11`,
-                    }}>
+                  <button key={s} onClick={() => handleScore(s)}
+                    style={{ height:44, borderRadius:8, fontWeight:700, fontSize:15, padding:"4px 0", background:`${scoreColor(s)}18`, border:`1px solid ${scoreColor(s)}55`, color:scoreColor(s), cursor:"pointer" }}>
                     {scoreLabel(s)}
                   </button>
                 ))}
               </div>
               {arrows.length > 0 && (
                 <button onClick={() => setArrows(prev => prev.slice(0, -1))}
-                  className="w-full py-1.5 rounded-xl text-slate-500 text-xs border border-white/8 active:scale-95">
+                  style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer", marginTop:2 }}>
                   ← 取消上一箭
                 </button>
               )}
-            </div>
+            </>
           )}
-
-          {/* 6箭填完：送出按鈕 */}
           {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
-            <div className="space-y-2">
+            <div style={{ display:"flex", flexDirection:"column", gap:6, padding:"5px" }}>
               <button onClick={() => { sfxCast(); finishRound(arrows); }}
-                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95"
-                style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
+                style={{ width:"100%", padding:"14px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:17, fontWeight:700, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
                 ⚔️ 送出 {ARROWS_PER} 箭！
               </button>
               <button onClick={() => setArrows(prev => prev.slice(0, -1))}
-                className="w-full py-1.5 rounded-xl text-slate-500 text-xs border border-white/8 active:scale-95">
+                style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
                 ← 取消上一箭
               </button>
             </div>
           )}
+          {subPhase === "processing" && (
+            <div style={{ padding:"4px 8px", minHeight:44 }}>
+              {dmgLog.slice(-3).map((l, i, arr) => (
+                <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i === arr.length - 1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
+              ))}
+            </div>
+          )}
         </div>
-
-        {/* 計算中：傷害紀錄（剩餘空間）*/}
-        {subPhase === "processing" && (
-          <div className="flex-1 overflow-hidden flex flex-col justify-center px-4 gap-1.5">
-            {dmgLog.map((l, i) => (
-              <div key={i} className={`text-sm text-center font-bold transition-all ${
-                i === dmgLog.length - 1 ? "text-white" : "text-slate-400"
-              }`}>{l}</div>
-            ))}
-          </div>
-        )}
       </div>
     );
   }
