@@ -87,7 +87,7 @@ export function AuthProvider({ children }) {
       profileUnsub = onSnapshot(memberQuery, (snapshot) => {
         if (snapshot.empty) return;
         const doc = snapshot.docs[0];
-        setProfile(prev => prev ? { ...prev, ...doc.data(), id: doc.id } : prev);
+        setProfile(prev => prev ? { uid: prev.uid, isAdmin: prev.isAdmin, ...doc.data(), id: doc.id } : prev);
       }, () => {});
     });
 

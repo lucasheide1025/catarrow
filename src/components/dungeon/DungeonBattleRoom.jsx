@@ -128,13 +128,12 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     triggerCatAction();
   }, [room?.round, room?.currentFloor]); // eslint-disable-line
 
-  // ── 小回合動畫（新 log 到 → 逐箭播放）────────────────────────
+  // ── 小回合動畫（新 log 到 → 逐箭播放，同組隊風格）────────────
   useEffect(() => {
     const len = room?.log?.length || 0;
     if (len === 0) return;
     const entry = room.log[len - 1];
     if (!entry) return;
-    // 用 floor+round 組合鍵避免換層後 log 清空造成動畫跳過
     const key = `${room.currentFloor || 1}-${entry.round}`;
     if (key === lastAnimKeyRef.current) return;
     lastAnimKeyRef.current = key;
@@ -142,6 +141,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     revealTimersRef.current.forEach(clearTimeout);
     revealTimersRef.current = [];
     setShowRoundResult(false);
+    setLocalHpOverride({});
     setLiveEntry(entry);
     setLiveMiniIdx(0);
 
@@ -150,30 +150,68 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     minis.forEach((mini, idx) => {
       const t = setTimeout(() => {
         setLiveMiniIdx(idx);
-        if (mini.isCounter && idx > 0) sfxCounter();
-        else sfxArrowShoot();
+        sfxArrowShoot();
         vibrate(8);
       }, delay);
       revealTimersRef.current.push(t);
-      delay += mini.isCounter ? 2400 : 1100;
+
+      if (mini.isCounter) {
+        // 反擊：先鎖 HP → 怪物蓄力 → 衝擊 + 浮動傷害
+        const ctrLog = mini.playerLog || [];
+        const tLock = setTimeout(() => {
+          setLocalHpOverride(prev => {
+            const next = { ...prev };
+            ctrLog.forEach(p => {
+              const mem = room?.members?.[p.id];
+              if (mem) next[p.id] = Math.min(mem.maxHP || 9999, (mem.hp || 0) + (p.ctr || 0));
+            });
+            return next;
+          });
+        }, delay);
+        const t1 = setTimeout(() => setAnimMonsterCharge(true), delay + 600);
+        const t2 = setTimeout(() => {
+          setAnimMonsterCharge(false);
+          setAnimScreenShake(true);
+          setLocalHpOverride({});
+          sfxCounter();
+          vibrate([0, 35, 55, 30]);
+          const floats = ctrLog
+            .filter(p => p.ctr > 0)
+            .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}` }));
+          if (floats.length) {
+            setFloatCounterDmgs(floats);
+            setTimeout(() => setFloatCounterDmgs([]), 1400);
+          }
+          setTimeout(() => setAnimScreenShake(false), 850);
+        }, delay + 1400);
+        revealTimersRef.current.push(tLock, t1, t2);
+        delay += 2700;
+      } else {
+        // 攻擊：怪物閃白 + 浮動傷害數字
+        const totalDmg = (mini.playerLog || []).reduce((s, p) => s + (p.dmg || 0), 0);
+        const hasCrit  = (mini.playerLog || []).some(p => (p.crits || 0) > 0);
+        if (totalDmg > 0) {
+          const th = setTimeout(() => {
+            setAnimHit(true);
+            setFloatDmg({ dmg: totalDmg, isCrit: hasCrit });
+            setTimeout(() => { setAnimHit(false); setFloatDmg(null); }, 1200);
+          }, delay + 200);
+          revealTimersRef.current.push(th);
+        }
+        delay += 1400;
+      }
     });
 
-    // 若 miniRounds 為空（怪物未死、玩家未死），給至少 1.5s 讓人看到結果
     const monsterDied = entry.monsterHPAfter <= 0;
     const allDead     = Object.values(room?.members || {}).every(m => !m.alive);
     const minDelay    = minis.length === 0 && !monsterDied && !allDead ? 1500 : 0;
 
-    // 動畫結束 → 切到結算畫面
     const ct = setTimeout(() => {
       setLiveEntry(null);
       setLiveMiniIdx(0);
       setShowRoundResult(true);
-      const won  = entry.monsterHPAfter <= 0;
-      const lost = entry.miniRounds?.at(-1)
-        ? Object.values(room?.members || {}).every(m => !m.alive)
-        : false;
-      if (won)  sfxMonsterDead();
-      else if (lost) sfxSoftFail();
+      if (monsterDied) sfxMonsterDead();
+      else if (allDead) sfxSoftFail();
       else sfxRoundEnd();
     }, delay + 500 + minDelay);
     revealTimersRef.current.push(ct);
@@ -487,269 +525,295 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const displayHP    = liveEntry ? (curMini?.monsterHPAfter ?? room.monsterHP) : room.monsterHP;
   const lastEntry    = (room.log || []).at(-1);
 
+  // 前後排成員分配
+  const memberList = Object.entries(members)
+    .map(([id, data]) => ({ id, ...data }))
+    .sort((a, b) => {
+      if (a.id === myId) return -1;
+      if (b.id === myId) return 1;
+      if (a.id === room.hostId) return -1;
+      if (b.id === room.hostId) return 1;
+      return a.id < b.id ? -1 : 1;
+    });
+  const memberCount  = memberList.length;
+  const aliveCount   = memberList.filter(m => m.alive).length;
+  const frontMembers = memberList.slice(0, 4);
+  const backMembers  = memberList.slice(4);
+  const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
+  const backW  = Math.min(80,  Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
+  const showBackRow  = !!(liveEntry || submitted);
+
+  function handleLeave() {
+    leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
+    onExit?.();
+  }
+
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white">
+    <div style={{
+      position:"fixed", top:0, bottom:0, left:"50%", transform:"translateX(-50%)",
+      width:"100%", maxWidth:540, zIndex:9999, overflow:"hidden",
+      backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center",
+      display:"flex", flexDirection:"column", fontFamily:"sans-serif",
+    }}>
+      <style>{`
+@keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
+@keyframes mb-miss{0%{transform:translateY(0) scale(1);opacity:1}100%{transform:translateY(-50px) scale(0.7);opacity:0}}
+@keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
+@keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
+@keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(0)}100%{filter:brightness(1)}}
+@keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(8px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+      `}</style>
+
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
-      {/* ── Header ── */}
-      <div className="shrink-0 px-4 pt-3 pb-2 border-b border-white/10">
-        <div className="flex items-center justify-between mb-1">
-          <button onClick={() => { leaveDungeonRoom(roomId, myId, isHost).catch(() => {}); onExit?.(); }}
-            className="text-slate-500 text-xs">✕ 離開</button>
-          <div className="text-xs text-slate-400 font-mono">
-            🏰 第 {room.currentFloor}/{room.totalFloors} 層 · 回合 {(room.round||1) - 1 || "–"}
+      {/* ── 頂部 HUD ── */}
+      <div style={{ flexShrink:0, background:"rgba(0,0,0,0.75)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+        {/* 怪物 HP 條 */}
+        <div style={{ background:"#1e293b", height:22, overflow:"hidden", position:"relative", borderBottom:"1.5px solid #7f1d1d" }}>
+          <div style={{ width:`${Math.max(0,(displayHP||0)/room.monsterMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
+            background: (displayHP||0)/room.monsterMaxHP>0.5?"#dc2626":(displayHP||0)/room.monsterMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
+            {(displayHP||0).toLocaleString()} / {(room.monsterMaxHP||0).toLocaleString()}
           </div>
-          <div className="w-8" />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">{monster.icon || "👾"}</span>
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold">{monster.name || "怪物"}</span>
-              <span className="text-xs text-slate-400">
-                {displayHP?.toLocaleString()} / {room.monsterMaxHP?.toLocaleString()}
-              </span>
+
+        <div style={{ padding:"3px 10px 4px" }}>
+          {/* 怪物名稱 + 層數進度 + 離開 */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ fontSize:13, fontWeight:900, color:monster.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{monster.name||"怪物"}</span>
+              <div style={{ display:"flex", gap:2 }}>
+                {Array.from({ length: room.totalFloors||7 }).map((_,i) => (
+                  <div key={i} style={{ width:10, height:3, borderRadius:2, background: i<(room.currentFloor||1)-1?"#f59e0b":i===(room.currentFloor||1)-1?"#f87171":"rgba(255,255,255,0.15)" }}/>
+                ))}
+              </div>
             </div>
-            <HPBar current={displayHP} max={room.monsterMaxHP} color="bg-rose-500" />
+            <button onClick={handleLeave}
+              style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+              離開
+            </button>
+          </div>
+          {/* 統計標籤列 */}
+          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+            <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
+              🏰 {room.currentFloor||1}/{room.totalFloors||7}層 R{room.round||1}
+            </div>
+            <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>
+              💢 {monster.atk||0}
+            </div>
+            <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>
+              🛡️ {monster.def||0}
+            </div>
+            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
+              👤 {aliveCount}/{memberCount}
+            </div>
+            <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:5, padding:"1px 6px", fontSize:10 }}
+              className={contractInfo.color}>
+              {contractInfo.icon} {contractInfo.name}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── 中間（小回合動畫 or 一般內容）── */}
-      <div className="flex-1 overflow-y-auto">
-
-        {liveEntry ? (
-          /* 小回合逐箭播放面板 */
-          <div className="px-4 py-4 space-y-3">
-
-            {/* ── 攻擊小回合 ── */}
-            {!curMini?.isCounter && (
-              <>
-                <div className="text-center text-xs text-slate-400 font-mono">
-                  ⚔️ 第 {liveEntry.round} 回合 · 第 <span className="text-white font-bold">{curMini?.miniRound}</span> / 6 箭
-                </div>
-                <div className="space-y-2">
-                  {(curMini?.playerLog || []).map((p, i) => {
-                    const arrow = p.arrowBreakdown?.[0];
-                    return (
-                      <div key={i} className="bg-white/5 border border-white/8 rounded-xl px-3 py-2.5">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg">🏹</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold text-white truncate">{p.name}</div>
-                            {arrow && <div className="text-[11px] text-slate-400 mt-0.5">{arrow.partIcon} {arrow.partName}</div>}
-                          </div>
-                          {arrow && (
-                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black ${SCORE_COLORS[arrow.label] || "bg-slate-600 text-white"}`}>
-                              {arrow.label}
-                            </span>
-                          )}
-                          <span className={`text-sm font-black min-w-[40px] text-right ${p.dmg > 0 ? "text-amber-300" : "text-slate-500"}`}>
-                            {p.dmg > 0 ? `-${p.dmg}` : "miss"}
-                          </span>
-                        </div>
-                        {p.message && (
-                          <div className="text-[11px] text-slate-400 mt-1.5 pl-8 border-t border-white/5 pt-1.5">{p.message}</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* ── 反擊小回合 ── */}
-            {curMini?.isCounter && (
-              <>
-                <div className="bg-rose-900/50 border border-rose-500/40 rounded-2xl px-4 py-3 text-center">
-                  <div className="text-3xl mb-1" style={{ animation:"mb-bounce .7s ease infinite" }}>{monster.icon || "👾"}</div>
-                  <div className="text-rose-200 font-black text-base">⚡ {monster.name} 反擊！</div>
-                  <div className="text-rose-400 text-xs mt-0.5">所有射手受到傷害</div>
-                </div>
-                <div className="space-y-1.5">
-                  {(curMini?.playerLog || []).map((p, i) => (
-                    <div key={i} className={`rounded-xl px-3 py-2.5 border ${p.died ? "bg-slate-900 border-rose-500/50" : "bg-rose-500/10 border-rose-500/20"}`}>
-                      <div className="flex items-center justify-between">
-                        <span className={`text-sm font-bold ${p.died ? "text-rose-300" : "text-slate-200"}`}>
-                          {p.died ? "💀 " : ""}{p.name}
-                        </span>
-                        <span className="text-rose-400 font-black">-{p.ctr} HP</span>
-                      </div>
-                      {p.died && (
-                        <div className="text-xs text-rose-400 mt-1">⚠️ 陣亡…等待隊友繼續戰鬥</div>
-                      )}
-                      {!p.died && p.message && (
-                        <div className="text-[11px] text-rose-300/70 mt-1">{p.message}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* 怪物 HP 進度條（動態更新）*/}
-            <div className="bg-slate-800/80 border border-white/8 rounded-xl px-4 py-3">
-              <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                <span>{monster.name}</span>
-                <span>{displayHP?.toLocaleString()} HP</span>
-              </div>
-              <HPBar current={displayHP} max={room.monsterMaxHP} color="bg-rose-500" />
-            </div>
+      {/* ── 怪物展示區 ── */}
+      <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
+        <div style={{ animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+          <MonsterSVG id={monster.id} size={220}/>
+        </div>
+        {/* 浮動傷害 */}
+        {floatDmg && (
+          floatDmg.isMiss
+            ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
+            : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize:floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color:floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+                -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
+              </span>
+        )}
+        {/* 小回合進度點 */}
+        {liveEntry && (
+          <div style={{ position:"absolute", bottom:8, left:0, right:0, display:"flex", justifyContent:"center", alignItems:"center", gap:4 }}>
+            {(liveEntry.miniRounds||[]).map((mini,i) => (
+              <div key={i} style={{ width:7, height:7, borderRadius:"50%", background: i===liveMiniIdx?"#fbbf24":i<liveMiniIdx?(mini.isCounter?"#f97316":"#6366f1"):"rgba(255,255,255,0.1)", transform:i===liveMiniIdx?"scale(1.4)":"scale(1)", transition:"all 0.3s" }}/>
+            ))}
+            {curMini?.isCounter && <span style={{ fontSize:10, color:"#fb923c", fontWeight:900, marginLeft:4 }}>⚡反擊</span>}
           </div>
+        )}
+      </div>
 
-        ) : (
-          /* 一般戰鬥內容 */
-          <>
-            {/* 我的任務 */}
-            <div className={`mx-4 mt-3 rounded-2xl px-4 py-3 border border-white/10 ${contractInfo.bg}`}>
-              <div className={`text-xs font-bold mb-1 ${contractInfo.color}`}>📋 你的任務</div>
-              <div className="flex items-center gap-2">
-                <ContractBadge contract={myContract} />
-                <span className="text-xs text-slate-300">{getContractDesc(myContract)}</span>
+      {/* ── 角色列（前後排）── */}
+      <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+        {/* 前排（最多4人）完整顯示 */}
+        <div style={{ display:"flex", gap:3, padding:"4px 6px 4px", justifyContent:"center",
+          animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
+          {frontMembers.map(m => {
+            const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
+            const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
+            const isMe = m.id === myId;
+            const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
+            return (
+              <div key={m.id} style={{
+                flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
+                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                borderRadius:8, overflow:"hidden",
+                background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
+              }}>
+                <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                  {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                    <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.9rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                  ))}
+                  <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+                    style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                      filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
+                      outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
+                      outlineOffset:"2px", borderRadius:2 }}
+                    onError={e => { e.target.style.display="none"; }}/>
+                </div>
+                <div style={{ height:1, background:"rgba(255,255,255,0.06)", flexShrink:0 }}/>
+                <div style={{ padding:"3px 3px 4px", textAlign:"center" }}>
+                  <div style={{ height:5, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
+                    <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease",
+                      background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)",
+                      boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
+                  </div>
+                  <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
+                    {!m.alive?"💀":""}{m.name.slice(0,6)}
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
+                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk||0}</div>
+                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{m.def||0}</div>
+                  </div>
+                  <div style={{ fontSize:8, marginBottom:1 }} className={mContract.color}>
+                    {mContract.icon} {mContract.name}
+                  </div>
+                  <div style={{ fontSize:9, color: liveEntry?"#64748b":m.ready?"#4ade80":!m.alive?"#475569":"#fbbf24" }}>
+                    {!m.alive?"⬛":liveEntry?"⚙️":m.ready?"✅":"⏳"}
+                  </div>
+                  {isHost && m.alive && !m.ready && m.id!==myId && (
+                    <button onClick={()=>forceSkipDungeonPlayer(roomId, m.id)}
+                      style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                      跳
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-
-            {/* 隊員狀態 */}
-            <div className="px-4 mt-3 space-y-2">
-              {Object.entries(members).map(([id, m]) => (
-                <div key={id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${m.alive ? "bg-white/5" : "bg-white/3 opacity-50"}`}>
-                  <span className="text-lg">{m.alive ? "🧙" : "💀"}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className="text-xs font-bold truncate">{m.name}</span>
-                      <ContractBadge contract={m.contract} />
-                      {m.catName && <span className="text-[10px] text-indigo-300 bg-indigo-900/40 px-1 py-0.5 rounded">🐱 光環</span>}
-                      {m.ready && m.alive && <span className="text-xs text-emerald-400">✓</span>}
+            );
+          })}
+        </div>
+        {/* 後排（第5-8人）戰鬥期才顯示 */}
+        {backMembers.length > 0 && showBackRow && (
+          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
+            {backMembers.map(m => {
+              const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
+              const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
+              const isMe = m.id === myId;
+              return (
+                <div key={m.id} style={{
+                  flexShrink:0, width:backW, display:"flex", flexDirection:"column",
+                  border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                  borderRadius:8, overflow:"hidden", background:"rgba(255,255,255,0.01)",
+                }}>
+                  <div style={{ height:60, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                    {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                      <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.75rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                    ))}
+                    <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined }}
+                      onError={e => { e.target.style.display="none"; }}/>
+                  </div>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
+                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
+                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
+                      <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease",
+                        background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                     </div>
-                    <HPBar current={m.hp} max={m.maxHP} color="bg-emerald-500" />
-                    <div className="text-xs text-slate-500 mt-0.5">{m.hp} / {m.maxHP}</div>
+                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {!m.alive?"💀":""}{m.name.slice(0,5)}
+                    </div>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 輸入區 ── */}
+      <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.68)", padding:"3px 6px 10px", paddingBottom:"max(10px, env(safe-area-inset-bottom))" }}>
+        {liveEntry ? (
+          <div style={{ textAlign:"center", color:"rgba(148,163,184,0.7)", fontSize:12, padding:"10px 0" }}>⚔️ 戰鬥進行中…</div>
+        ) : isDead ? (
+          <div style={{ textAlign:"center", color:"#f87171", fontWeight:900, fontSize:12, padding:"10px 0" }}>💀 你已陣亡，等待隊友繼續…</div>
+        ) : submitted ? (
+          <div style={{ textAlign:"center", padding:"6px 0" }}>
+            <div style={{ color:"#4ade80", fontWeight:900, fontSize:12, marginBottom:6 }}>✅ 已送出，等待隊友…</div>
+            <div style={{ display:"flex", justifyContent:"center", gap:2, flexWrap:"wrap" }}>
+              {arrows.map((a,i) => (
+                <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label]||"bg-slate-600 text-white"}`}>{a.label}</span>
               ))}
             </div>
-
-            {/* 戰鬥紀錄 */}
-            {(room.log || []).length > 0 && (
-              <div className="mx-4 mt-3 mb-2">
-                <div className="text-xs text-slate-500 mb-1 font-semibold">戰鬥紀錄</div>
-                <div className="space-y-1 text-xs text-slate-300">
-                  {(room.log || []).slice(-3).map((entry, i) => (
-                    <div key={i} className="bg-white/5 rounded-lg px-3 py-2 space-y-0.5">
-                      <div className="text-slate-400 font-mono">
-                        第 {entry.round} 回合・總傷 {entry.totalDmg}
-                        {entry.monsterHPAfter <= 0 && <span className="text-rose-400 ml-1">💀 擊殺</span>}
-                      </div>
-                      {(entry.playerLog || []).map((p, j) => (
-                        <div key={j}>
-                          {p.name}（{CONTRACT_TYPES[p.contract?.type]?.icon || "⚔️"}）
-                          → <span className="text-amber-300">{p.dmg} 傷</span>
-                          {p.crits > 0 && <span className="text-yellow-400"> 💥×{p.crits}</span>}
-                          {p.ctr > 0   && <span className="text-rose-400">  反傷 -{p.ctr}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                <div ref={logEndRef} />
+            {isHost && (
+              <button onClick={()=>clearDungeonProcessing(roomId)}
+                style={{ marginTop:8, width:"100%", padding:"4px", borderRadius:8, fontSize:10, color:"#64748b", background:"rgba(255,255,255,0.05)", border:"none", cursor:"pointer" }}>
+                房主：強制重置（卡住時）
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* 任務提示 */}
+            <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:4, padding:"2px 6px", borderRadius:6, background:"rgba(0,0,0,0.3)" }} className={contractInfo.color}>
+              <span style={{ fontSize:11 }}>{contractInfo.icon}</span>
+              <span style={{ fontSize:9, fontWeight:700 }}>{getContractDesc(myContract)}</span>
+            </div>
+            {/* 箭槽 */}
+            <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
+              {Array.from({ length:6 }).map((_,i) => {
+                const a = arrows[i];
+                return (
+                  <div key={i} style={{ width:36, height:36, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:900,
+                    background: a?"#2563eb":"rgba(255,255,255,0.05)",
+                    border:`2px solid ${a?"#60a5fa":"rgba(255,255,255,0.1)"}`,
+                    color: a?"white":"#475569" }}>
+                    {a ? a.label : ""}
+                  </div>
+                );
+              })}
+              {arrows.length > 0 && (
+                <button onClick={undoArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:18, cursor:"pointer", paddingLeft:4 }}>↩</button>
+              )}
+            </div>
+            {/* 分數按鈕格 */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:2, marginBottom:4 }}>
+              {SCORE_LABELS.map(label => (
+                <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
+                  className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
+                  style={{ fontSize:11, padding:"6px 2px", opacity: arrows.length>=6?0.3:1 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* 送出 */}
+            <button onClick={handleSubmit} disabled={arrows.length<6}
+              style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",
+                background: arrows.length>=6?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
+                opacity: arrows.length<6?0.5:1, transition:"all 0.2s" }}>
+              🏹 送出 6 箭 {arrows.length>0?`(${arrows.length}/6)`:""}
+            </button>
+            {hasCat && (
+              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4, padding:"2px 6px", borderRadius:6, background:"rgba(79,70,229,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>
+                <span style={{ fontSize:11 }}>🐱</span>
+                <span style={{ fontSize:9, color:"#a5b4fc", fontWeight:700 }}>{myCatName} 光環 ×{Math.max(1.1,catStatMult).toFixed(2)}</span>
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* ── 底部輸入區 ── */}
-      {liveEntry ? (
-        /* 動畫播放中 */
-        <div className="shrink-0 px-4 py-3 border-t border-white/10 text-center text-slate-400 text-sm">
-          戰鬥進行中…
-        </div>
-      ) : isDead ? (
-        <div className="shrink-0 px-4 py-4 border-t border-white/10 text-center text-rose-400 font-bold">
-          💀 你已陣亡，等待隊友繼續…
-        </div>
-      ) : submitted ? (
-        <div className="shrink-0 px-4 py-4 border-t border-white/10">
-          <div className="text-center text-emerald-400 font-bold mb-2">✓ 已送出 {arrows.length} 箭，等待其他隊友…</div>
-          <div className="flex justify-center gap-1 flex-wrap">
-            {arrows.map((a, i) => (
-              <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label] || "bg-slate-600 text-white"}`}>{a.label}</span>
-            ))}
-          </div>
-          {isHost && (
-            <button onClick={() => clearDungeonProcessing(roomId)}
-              className="mt-3 w-full py-1.5 rounded-xl text-xs text-slate-500 bg-white/5">
-              房主：強制重置（卡住時）
-            </button>
-          )}
-          {isHost && aliveIds.some(id => !members[id].ready) && (
-            <div className="mt-2 text-xs text-slate-500 text-center">
-              {aliveIds.filter(id => !members[id].ready).map(id => members[id].name).join("、")} 尚未送出
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="shrink-0 border-t border-white/10 px-3 pt-3 pb-4">
-          {hasCat && (
-            <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg bg-indigo-900/40 border border-indigo-500/30">
-              <span className="text-sm">🐱</span>
-              <span className="text-indigo-300 text-xs font-bold flex-1">{myCatName} 陪同中</span>
-              <span className="text-indigo-200 text-xs">攻擊 ×{Math.max(1.1, catStatMult).toFixed(2)}</span>
-            </div>
-          )}
-          <div className="flex gap-1 mb-2 min-h-[28px] flex-wrap">
-            {arrows.map((a, i) => (
-              <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label] || "bg-slate-600 text-white"}`}>{a.label}</span>
-            ))}
-            {arrows.length < 6 && (
-              <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-white/10 text-slate-500">
-                {6 - arrows.length} 箭待輸入
-              </span>
-            )}
-          </div>
-          <div className="grid grid-cols-6 gap-1 mb-2">
-            {SCORE_LABELS.map(label => (
-              <button key={label} onClick={() => addArrow(label)}
-                disabled={arrows.length >= 6}
-                className={`py-2 rounded-lg font-black text-sm transition-all active:scale-95 ${SCORE_COLORS[label] || "bg-slate-600 text-white"} disabled:opacity-30`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={undoArrow} disabled={arrows.length === 0}
-              className="flex-1 py-2 rounded-xl bg-white/10 text-slate-300 text-sm font-bold disabled:opacity-30">
-              ↩ 撤銷
-            </button>
-            <button onClick={handleSubmit} disabled={arrows.length < 6}
-              className="flex-[2] py-2 rounded-xl bg-emerald-600 font-black text-white text-sm disabled:opacity-30 active:scale-95">
-              🏹 送出 6 箭
-            </button>
-          </div>
-          {isHost && aliveIds.filter(id => id !== myId && !members[id].ready).length > 0 && (
-            <div className="mt-2 flex gap-1 flex-wrap">
-              {aliveIds.filter(id => id !== myId && !members[id].ready).map(id => (
-                <button key={id} onClick={() => forceSkipDungeonPlayer(roomId, id)}
-                  className="text-xs text-slate-500 bg-white/5 px-2 py-1 rounded-lg">
-                  跳過 {members[id].name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── 回合結算覆蓋層 ── */}
+      {/* ── 回合結算蓋板 ── */}
       {showRoundResult && lastEntry && (
         <RoundResultOverlay
-          entry={lastEntry}
-          room={room}
-          status={status}
-          onContinue={() => {
-            setShowRoundResult(false);
-            // 確保進入下一回合時輸入狀態乾淨（防止 snapshot 延遲導致 submitted 殘留）
-            setSubmitted(false);
-            setArrows([]);
-          }}
+          entry={lastEntry} room={room} status={status}
+          onContinue={() => { setShowRoundResult(false); setSubmitted(false); setArrows([]); }}
         />
       )}
     </div>
