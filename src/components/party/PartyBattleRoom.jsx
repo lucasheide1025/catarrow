@@ -1323,10 +1323,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 <div style={{ color: isMe ? "#a5b4fc" : "#94a3b8", fontSize:9, fontWeight:700, textAlign:"center", width:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", padding:"0 2px" }}>
                   {!m.alive && "💀"}{m.name}
                 </div>
-                <div style={{ width:"calc(100% - 4px)", height:4, borderRadius:2, background:"rgba(255,255,255,0.08)" }}>
-                  <div style={{ height:"100%", borderRadius:2, transition:"width 0.5s ease", background: isMe ? "#818cf8" : "#64748b", width:`${hpPct*100}%` }}/>
+                <div style={{ width:"calc(100% - 4px)", height:6, borderRadius:3, background:"rgba(0,0,0,0.35)", overflow:"hidden", border:"1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{
+                    height:"100%", borderRadius:3, transition:"width 0.5s ease",
+                    background: hpPct > 0.5 ? "linear-gradient(90deg,#16a34a,#4ade80)" : hpPct > 0.25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#dc2626,#f87171)",
+                    width:`${hpPct*100}%`,
+                    boxShadow: hpPct <= 0.25 ? "0 0 6px rgba(239,68,68,0.9)" : hpPct <= 0.5 ? "0 0 4px rgba(251,191,36,0.5)" : "none",
+                  }}/>
                 </div>
-                <div style={{ color:"#475569", fontSize:8 }}>{m.hp}/{m.maxHP}</div>
+                <div style={{ fontSize:9, fontWeight:900, lineHeight:1, color: hpPct > 0.5 ? "#4ade80" : hpPct > 0.25 ? "#fbbf24" : "#f87171" }}>
+                  {m.hp}<span style={{ color:"#334155", fontWeight:400, fontSize:8 }}>/{m.maxHP}</span>
+                </div>
                 {m.alive && (
                   <div style={{ fontSize:9, fontWeight:700, color: liveEntry ? "#64748b" : m.ready ? "#4ade80" : m.arrows?.length > 0 ? "#fbbf24" : "#475569" }}>
                     {liveEntry ? "⚙️" : m.ready ? (m.skipped ? "⏭️" : "✅") : m.arrows?.length > 0 ? `🏹${m.arrows.length}` : "⏳"}
