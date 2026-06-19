@@ -1100,11 +1100,13 @@ export async function publishGuildQuest(data, adminId) {
   await setDoc(ref, {
     title: data.title || "",
     desc:  data.desc  || "",
-    type:  data.type  || "normal",          // "normal" | "special"
-    badgeReward:   data.badgeReward   || null,   // null | "silver" | "gold" | "black"
-    badgeRequires: data.badgeRequires || null,   // null | "silver" | "gold"
+    type:  data.type  || "normal",
+    badgeReward:   data.badgeReward   || null,
+    badgeRequires: data.badgeRequires || null,
     reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
-    status: data.status || "active",         // "draft" | "active" | "expired"
+    questSubtype:  data.questSubtype  || "general",
+    requirement:   data.requirement   || {},
+    status: data.status || "active",
     publishedAt: serverTimestamp(),
     createdBy: adminId,
   });

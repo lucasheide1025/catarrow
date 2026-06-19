@@ -55,8 +55,13 @@ function questRequirementChip(q) {
     const m = MONSTERS.find(x => x.id === req.monsterId);
     return m ? `${m.icon} ${m.name} ×${req.killCount || 1}` : null;
   }
-  if (sub === "shoot_score" && req.minScore) return `🎯 達 ${req.minScore} 分`;
-  if (sub === "hit_target"  && req.minPercent) return `🏹 命中率 ≥${req.minPercent}%`;
+  if (sub === "shoot_score" && req.minScore) return `🎯 ${req.distance ? req.distance + "m · " : ""}6箭達 ${req.minScore} 分`;
+  if (sub === "hit_target") {
+    const dist = req.distance ? `${req.distance}m · ` : "";
+    if (req.hitMode === "hitCount" && req.hitCount) return `🏹 ${dist}6箭命中 ${req.hitCount} 支`;
+    if (req.hitMode === "minScorePerArrow" && req.minScorePerArrow) return `🏹 ${dist}每支 ≥${req.minScorePerArrow} 分`;
+    return "🏹 命中任務";
+  }
   if (sub === "coach_duel") return "🥊 教練決鬥";
   return null;
 }
@@ -112,15 +117,9 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
 
   // ── 公會任務：確認接任務 ────────────────────────────────────
   function handleOpenQuest(q) {
-    const sub = q.questSubtype || "general";
     setActiveQuest(q);
     setNote("");
     setQuestResult(null);
-    // 一般任務已接受 → 直接跳到送出頁
-    if (sub === "general" && accepted.has(q.id) && !submitted.has(q.id)) {
-      setView("completing");
-      return;
-    }
     setView("confirm");
   }
 
@@ -370,13 +369,8 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
     const currentKills = monsterInfo ? (monsterDex[req.monsterId]?.kills || 0) : 0;
     const killPassed   = sub === "kill_monster" ? currentKills >= (req.killCount || 1) : true;
 
-    async function handleCoachDuelSubmit() {
-      if (!activeQuest || !profile?.id) return;
-      setBusy(true);
-      await submitCoachChallenge(profile.id, profile.nickname || profile.name, activeQuest).catch(() => {});
-      sfxSuccess();
-      setBusy(false);
-      setView("main");
+    function handleCoachDuelNavigate() {
+      if (onNavigate) onNavigate("duel", { questId: activeQuest.id, title: activeQuest.title, reward: activeQuest.reward });
     }
 
     return (
@@ -409,15 +403,19 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
             {sub === "shoot_score" && (
               <div className="rounded-xl p-3" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.25)" }}>
                 <div className="text-emerald-400 text-xs font-black mb-1">🎯 射分數任務</div>
-                <div className="text-white/80 text-sm">目標分數：{req.minScore} 分</div>
-                {req.conditionDesc && <div className="text-white/55 text-xs mt-0.5">{req.conditionDesc}</div>}
+                {req.distance && <div className="text-white/80 text-sm">靶紙距離：{req.distance} 公尺</div>}
+                <div className="text-white/80 text-sm">箭數：6 支　目標總分：<span className="text-emerald-300 font-black">{req.minScore} 分</span>（滿分 60）</div>
               </div>
             )}
             {sub === "hit_target" && (
               <div className="rounded-xl p-3" style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)" }}>
                 <div className="text-orange-400 text-xs font-black mb-1">🏹 命中任務</div>
-                {req.minPercent && <div className="text-white/80 text-sm">最低命中率：{req.minPercent}%</div>}
-                {req.conditionDesc && <div className="text-white/55 text-xs mt-0.5">{req.conditionDesc}</div>}
+                {req.distance && <div className="text-white/80 text-sm">靶紙距離：{req.distance} 公尺</div>}
+                <div className="text-white/80 text-sm">箭數：6 支</div>
+                {req.hitMode === "hitCount" && req.hitCount &&
+                  <div className="text-orange-300 font-black text-sm">6 支中需命中 {req.hitCount} 支</div>}
+                {req.hitMode === "minScorePerArrow" && req.minScorePerArrow &&
+                  <div className="text-orange-300 font-black text-sm">每支需達 {req.minScorePerArrow} 分以上</div>}
               </div>
             )}
             {sub === "coach_duel" && (
@@ -446,10 +444,10 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
               {sub === "coach_duel" ? "⏳ 等待教練確認中" : "✓ 已提交完成"}
             </div>
           ) : lock.ok && sub === "coach_duel" ? (
-            <button onClick={handleCoachDuelSubmit} disabled={busy}
-              className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 disabled:opacity-40 text-white"
+            <button onClick={handleCoachDuelNavigate}
+              className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
               style={{ background: "linear-gradient(135deg,#be123c,#9f1239)" }}>
-              🥊 申請挑戰教練！
+              🥊 確認接取・進入決鬥大廳
             </button>
           ) : lock.ok && sub === "kill_monster" ? (
             onNavigate ? (
@@ -472,16 +470,10 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
               </button>
             ) : null
           ) : lock.ok ? (
-            <button onClick={async () => {
-              if (!profile?.id) return;
-              setBusy(true);
-              await acceptGuildQuest(profile.id, activeQuest.id).catch(() => {});
-              setBusy(false);
-              setView("main");
-            }} disabled={busy}
-              className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 disabled:opacity-40 text-gray-900"
+            <button onClick={() => setView("completing")}
+              className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-gray-900"
               style={{ background: "linear-gradient(135deg,#fbbf24,#d97706)" }}>
-              ✅ 確認接取
+              ✅ 確認接取・填寫完成說明
             </button>
           ) : null}
 
@@ -700,7 +692,6 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
             <div className="px-4" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
               {badgeQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
-                const isAccepted  = accepted.has(q.id) && !isSubmitted;
                 const lock = canAcceptBadgeQuest(q, profile);
                 const bColor = BADGE_BORDER[q.badgeReward] || "#94a3b8";
                 return (
@@ -740,8 +731,8 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] font-bold text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
                       <div className="mt-1 text-[10px] font-black text-right"
-                        style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : isAccepted ? "#a78bfa" : bColor }}>
-                        {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : isAccepted ? "⚡ 進行中" : "→ 接受"}
+                        style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : bColor }}>
+                        {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
                       </div>
                     </div>
                   </button>
@@ -758,7 +749,6 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
               {normalQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
-                const isAccepted  = accepted.has(q.id) && !isSubmitted;
                 return (
                   <button key={q.id} onClick={() => !isSubmitted && handleOpenQuest(q)}
                     disabled={isSubmitted}
@@ -782,8 +772,8 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
                         {(q.reward?.xp || 0) > 0   && <div className="text-[10px] text-blue-300">+{q.reward.xp} XP</div>}
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
-                      <div className="text-right text-[10px] font-black mt-1" style={{ color: isSubmitted ? "#10b981" : isAccepted ? "#a78bfa" : "#fbbf24" }}>
-                        {isSubmitted ? "✓ 已提交" : isAccepted ? "⚡ 進行中 →" : "→ 接受"}
+                      <div className="text-right text-[10px] font-black mt-1" style={{ color: isSubmitted ? "#10b981" : "#fbbf24" }}>
+                        {isSubmitted ? "✓ 已提交" : "→ 接受"}
                       </div>
                     </div>
                   </button>

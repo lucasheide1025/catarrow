@@ -56,6 +56,7 @@ import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
 import AdminStoryManager from "../components/admin/AdminStoryManager";
+import AdminArchery      from "../components/admin/AdminArchery";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -195,6 +196,7 @@ const adminNav = [
   { id:"worldboss-admin", icon:"🌍", label:"世界王" },
   { id:"story-admin",    icon:"📖", label:"故事本" },
   { id:"guild-admin",   icon:"⚔️", label:"公會" },
+  { id:"archery",       icon:"🎯", label:"射箭辨識" },
 ];
 
   const memberNav = [
@@ -366,6 +368,7 @@ const adminNav = [
         {page==="worldboss-admin" && <AdminWorldBoss/>}
         {page==="story-admin"     && <AdminStoryManager/>}
         {page==="guild-admin"     && <AdminGuildQuests/>}
+        {page==="archery"         && <AdminArchery/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

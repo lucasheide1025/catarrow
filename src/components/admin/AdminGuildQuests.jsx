@@ -169,27 +169,58 @@ export default function AdminGuildQuests() {
 
                 {form.questSubtype === "shoot_score" && (
                   <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>目標分數（達到即通過）</label>
-                    <input type="number" min={1} value={form.requirement.minScore || ""} placeholder="例如：250"
-                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minScore: Number(e.target.value) } }))}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "13px" }} />
-                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>條件說明（靶紙/距離/支數）</label>
-                    <input value={form.requirement.conditionDesc || ""} placeholder="例如：18支箭 60m WA122"
-                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, conditionDesc: e.target.value } }))}
+                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>靶紙距離</label>
+                    <select value={form.requirement.distance || ""} onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, distance: e.target.value } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "13px" }}>
+                      <option value="">— 請選擇 —</option>
+                      {["5", "7", "10", "13.5", "15", "18"].map(d => <option key={d} value={d}>{d} 公尺</option>)}
+                    </select>
+                    <div style={{ fontSize: "11px", color: "#16a34a" }}>箭數：<b>固定 6 支</b></div>
+                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>需達到總分（滿分 60）</label>
+                    <input type="number" min={1} max={60} value={form.requirement.minScore || ""} placeholder="例如：50"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minScore: Number(e.target.value), arrowCount: 6 } }))}
                       style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "13px" }} />
                   </div>
                 )}
 
                 {form.questSubtype === "hit_target" && (
                   <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>命中條件描述</label>
-                    <input value={form.requirement.conditionDesc || ""} placeholder="例如：36支箭中10環以上達20支"
-                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, conditionDesc: e.target.value } }))}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
-                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>最低命中率 %</label>
-                    <input type="number" min={1} max={100} value={form.requirement.minPercent || ""} placeholder="例如：55"
-                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minPercent: Number(e.target.value) } }))}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
+                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>靶紙距離</label>
+                    <select value={form.requirement.distance || ""} onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, distance: e.target.value } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }}>
+                      <option value="">— 請選擇 —</option>
+                      {["5", "7", "10", "13.5", "15", "18"].map(d => <option key={d} value={d}>{d} 公尺</option>)}
+                    </select>
+                    <div style={{ fontSize: "11px", color: "#ea580c" }}>箭數：<b>固定 6 支</b></div>
+                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>命中條件（二擇一）</label>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      {[{ key: "hitCount", label: "命中幾支" }, { key: "minScorePerArrow", label: "每支達幾分" }].map(opt => (
+                        <button key={opt.key} type="button"
+                          onClick={() => setForm(f => ({ ...f, requirement: { distance: f.requirement.distance, arrowCount: 6, hitMode: opt.key } }))}
+                          style={{ flex: 1, padding: "6px", borderRadius: "6px", fontSize: "11px", fontWeight: "700", cursor: "pointer",
+                            border: `2px solid ${form.requirement.hitMode === opt.key ? "#ea580c" : "#fed7aa"}`,
+                            background: form.requirement.hitMode === opt.key ? "#fff7ed" : "white",
+                            color: form.requirement.hitMode === opt.key ? "#ea580c" : "#9a3412" }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {form.requirement.hitMode === "hitCount" && (
+                      <>
+                        <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>6 支中需命中幾支</label>
+                        <input type="number" min={1} max={6} value={form.requirement.hitCount || ""} placeholder="例如：5"
+                          onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, hitCount: Number(e.target.value) } }))}
+                          style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
+                      </>
+                    )}
+                    {form.requirement.hitMode === "minScorePerArrow" && (
+                      <>
+                        <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>每支需命中幾分以上</label>
+                        <input type="number" min={1} max={10} value={form.requirement.minScorePerArrow || ""} placeholder="例如：8"
+                          onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minScorePerArrow: Number(e.target.value) } }))}
+                          style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
+                      </>
+                    )}
                   </div>
                 )}
 
