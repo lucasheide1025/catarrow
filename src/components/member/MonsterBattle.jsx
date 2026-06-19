@@ -984,9 +984,9 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   if (phase==="event_select") {
     const ec = eventConfig || {};
     return (
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={() => { setEventMode(false); setPhase("select"); }} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={() => { setEventMode(false); setPhase("select"); }} className="text-slate-400 text-sm self-start">← 返回</button>
 
         <div className="rounded-2xl p-4 text-white" style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
           <div className="text-xs font-black tracking-widest text-amber-200 mb-1">🏆 賽事模式</div>
@@ -1006,8 +1006,8 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         </div>
 
         <div className="flex items-center justify-between">
-          <div className="text-gray-600 text-sm font-black">選擇對手（六族匹配）</div>
-          <button onClick={rerollMonsters} className="text-xs text-purple-600 font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+          <div className="text-slate-300 text-sm font-black">選擇對手（六族匹配）</div>
+          <button onClick={rerollMonsters} className="text-xs text-purple-300 font-bold bg-purple-900/30 px-2.5 py-1 rounded-full border border-purple-500/30">
             🎲 重新抽怪
           </button>
         </div>
@@ -1020,18 +1020,18 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
             return (
               <button key={m.id} onClick={() => setPickedMonster(m)}
                 className="rounded-2xl p-4 text-left transition-all active:scale-95 relative overflow-hidden"
-                style={{ background: isPicked ? "#fef3c7" : "white", border: `2px solid ${isPicked ? "#f59e0b" : "#e2e8f0"}` }}>
+                style={{ background: isPicked ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.05)", border: `2px solid ${isPicked ? "#f59e0b" : "rgba(255,255,255,0.1)"}` }}>
                 <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: family.color+"22", color: family.color }}>
+                  style={{ background: family.color+"33", color: family.color }}>
                   {family.icon} {family.label}
                 </div>
                 <div className="mb-2"><MonsterBattleImg id={m.id} icon={m.icon} size={56}/></div>
-                <div className="font-black text-gray-800 text-sm pr-14">{m.name}</div>
+                <div className="font-black text-slate-100 text-sm pr-14">{m.name}</div>
                 <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
                   style={{ background: tier.bg, color: tier.color }}>
                   【{tier.label}】
                 </div>
-                <div className="flex gap-2 mt-1.5 text-xs text-gray-400">
+                <div className="flex gap-2 mt-1.5 text-xs text-slate-500">
                   <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
                 </div>
               </button>
@@ -1058,13 +1058,13 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <div className="text-white font-black text-xl text-center">選擇靶紙模式</div>
         <button onClick={()=>{ setBattleMode("score"); setPhase("difficulty"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1">🎯 分數靶紙模式</div>
+          <div className="text-2xl mb-1 text-white">🎯 分數靶紙模式</div>
           <div className="font-black text-white mb-1">輸入每箭環數，系統算傷害</div>
           <div className="text-slate-400 text-sm">簡單直接，分數越高傷害越大。</div>
         </button>
         <button onClick={()=>{ setBattleMode("zombie"); setPhase("difficulty"); }}
           className="rounded-2xl p-5 text-left border-2 border-purple-500/40 bg-purple-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1">🧟 殭屍靶紙模式</div>
+          <div className="text-2xl mb-1 text-white">🧟 殭屍靶紙模式</div>
           <div className="font-black text-white mb-1">分數決定命中部位，觸發部位加成</div>
           <div className="text-slate-400 text-sm">高分命中頭部/心臟，傷害爆表！解鎖器官部位增加趣味。</div>
         </button>
@@ -1080,21 +1080,21 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
         <div className="text-white font-black text-xl text-center">選擇難度</div>
         <button onClick={()=>{ setMode("novice"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-green-500/40 bg-green-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1">🟢 新手模式</div>
+          <div className="text-2xl mb-1 text-white">🟢 新手模式</div>
           <div className="font-black text-white mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
           <div className="text-slate-400 text-sm">怪物 HP×1.5，使用本人射手數值。每2箭怪物反擊一次，傷害穩定。</div>
           <div className="text-green-400 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1">🎓 學生模式</div>
+          <div className="text-2xl mb-1 text-white">🎓 學生模式</div>
           <div className="font-black text-white mb-1">自選距離，含爆擊（距離越近越高）</div>
           <div className="text-slate-400 text-sm">怪物 HP×2，使用本人射手數值。動態模式每回合距離縮短 1~5 米。</div>
           <div className="text-blue-400 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
         </button>
         <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-orange-500/40 bg-orange-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1">🟠 老手模式</div>
+          <div className="text-2xl mb-1 text-white">🟠 老手模式</div>
           <div className="font-black text-white mb-1">怪物大幅增強，射手最低 600 HP，加成無上限</div>
           <div className="text-slate-400 text-sm">怪物 HP×4、ATK×2、DEF×2。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
           <div className="text-orange-400 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
