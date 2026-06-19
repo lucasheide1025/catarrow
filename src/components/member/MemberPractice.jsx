@@ -418,7 +418,12 @@ function getLogArrows(log) {
   if (log.roundScores) {
     return (log.roundScores||[]).flatMap(r=>(r.scores||[]).map(toNum));
   }
-  return (log.rounds||[]).flat().map(toNum);
+  const rounds = log.rounds;
+  if (!Array.isArray(rounds) || rounds.length === 0) return [];
+  // 二維陣列（練習 log）
+  if (Array.isArray(rounds[0])) return rounds.flat().map(toNum);
+  // 物件陣列（打怪 log：[{arrows, dmg, crits}]）
+  return rounds.flatMap(r => Array.isArray(r?.arrows) ? r.arrows.map(toNum) : []);
 }
 function calcOverviewStats(anyLogs) {
   const allArrows = anyLogs.flatMap(getLogArrows);
