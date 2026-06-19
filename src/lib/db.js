@@ -1073,8 +1073,17 @@ export async function completePromotionQuest(memberId, promotionLevel, bonusXP) 
 
 // 訂閱目前 active 的任務（前台）
 export function subscribeActiveGuildQuests(cb) {
-  const q = query(collection(db, C_GUILD_Q), where("status", "==", "active"), orderBy("publishedAt", "desc"));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb([]));
+  // orderBy 需要複合索引，改為前端排序避免 Firestore 靜默回傳空陣列
+  const q = query(collection(db, C_GUILD_Q), where("status", "==", "active"));
+  return onSnapshot(
+    q,
+    snap => cb(
+      snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.publishedAt?.seconds || 0) - (a.publishedAt?.seconds || 0))
+    ),
+    err => { console.warn("subscribeActiveGuildQuests:", err.message); cb([]); }
+  );
 }
 
 // 後台：取得所有任務（含草稿/過期）

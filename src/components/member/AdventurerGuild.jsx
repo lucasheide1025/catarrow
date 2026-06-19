@@ -499,7 +499,10 @@ export default function AdventurerGuild({ onBack }) {
         <div className="flex gap-2 p-3 pb-2">
 
           {/* 左：狀態欄（較緊湊） */}
-          <div className="flex-1 rounded-2xl p-2.5 flex flex-col gap-1.5" style={{ background: rank.gradient, minWidth: 0 }}>
+          <div className="flex-1 rounded-2xl overflow-hidden relative" style={{ minWidth: 0 }}>
+            {/* 半透明背景層 */}
+            <div className="absolute inset-0" style={{ background: rank.gradient, opacity: 0.72 }} />
+            <div className="relative p-2.5 flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5">
               <span className="text-xl leading-none">{rank.icon}</span>
               <div>
@@ -552,7 +555,8 @@ export default function AdventurerGuild({ onBack }) {
                 <div className="text-emerald-300 font-black text-[9px]">✓ Lv{level} 晉階完成</div>
               </div>
             )}
-          </div>
+            </div>{/* end relative content */}
+          </div>{/* end 狀態欄 */}
 
           {/* 右：NPC（放大） */}
           <div className="w-36 flex-shrink-0 flex flex-col items-center gap-1.5">
