@@ -1,7 +1,7 @@
 // src/components/member/MemberProfile.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { updateMember } from "../../lib/db";
+import { updateMember, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
@@ -41,12 +41,13 @@ function useCardTheme() {
 
 export default function MemberProfile({
   onPageChange, appTheme, onAppThemeChange,
-  certification = null, certRecords = [],
+  certification = null,
   dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
   duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
   potionDex = {}, cardData = { cards:{}, equipped:[] }
 }) {
   const { profile } = useAuth();
+  const [certRecords,    setCertRecords]   = useState([]);
   const [eq,            setEq]            = useState(normalizeEquipment(profile?.equipment));
   const [armorSets,     setArmorSets]     = useState(profile?.armorSets     || []);
   const [accessorySets, setAccessorySets] = useState(profile?.accessorySets || []);
@@ -61,6 +62,7 @@ export default function MemberProfile({
     setEq(normalizeEquipment(profile?.equipment));
     setArmorSets(profile?.armorSets || []);
     setAccessorySets(profile?.accessorySets || []);
+    if (profile?.id) getCertRecords(profile.id).then(setCertRecords).catch(() => {});
   }, [profile?.id]);
 
   async function saveEquip() {

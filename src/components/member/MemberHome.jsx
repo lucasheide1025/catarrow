@@ -1,6 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard } from "../../lib/db";
+import { getMemberResults, subscribeBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -70,12 +70,13 @@ function useCardTheme() {
 
 export default function MemberHome({
   onPageChange, onJoinParty, notifications = [],
-  certification = null, certRecords = [],
+  certification = null,
   dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
   duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
   potionDex = {}, cardData = { cards:{}, equipped:[] }
 }) {
   const { profile } = useAuth();
+  const [certRecords, setCertRecords]     = useState([]);
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
   const [showShare, setShowShare]         = useState(false);
@@ -93,6 +94,7 @@ export default function MemberHome({
     if (!profile?.id) return;
     checkExpireMonthlyCard(profile.id).catch(() => {});
     getMemberResults(profile.id).then(r => { setResults(r); setLoading(false); });
+    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
     return () => { unsub?.(); unsub5?.(); };

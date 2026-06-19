@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
-  subscribeCardCollection, subscribeCertRecords } from "../lib/db";
+  subscribeCardCollection } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
@@ -70,7 +70,6 @@ export default function MemberApp() {
   const [latestVersion, setLatestVersion] = useState(null);
 
   const [certification, setCertification] = useState(null);
-  const [certRecords,   setCertRecords]   = useState([]);
   const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
   const [dexGrants,     setDexGrants]     = useState([]);
   const [duelStats,     setDuelStats]     = useState(null);
@@ -105,8 +104,7 @@ export default function MemberApp() {
     const u5 = subscribeChestStats(profile.id, setChestStats);
     const u6 = subscribePotionDex(profile.id, setPotionDex);
     const u7 = subscribeCardCollection(profile.id, setCardData);
-    const u8 = subscribeCertRecords(profile.id, setCertRecords);
-    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   function handleEnterPartyRoom(roomId, type, host) {
@@ -230,7 +228,7 @@ export default function MemberApp() {
       {/* 頁面內容 */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
-            certification={certification} certRecords={certRecords} dexConfig={dexConfig} dexGrants={dexGrants}
+            certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} cardData={cardData} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
@@ -247,7 +245,7 @@ export default function MemberApp() {
         {page==="practice"    && <MemberPractice />}
         {page==="leaderboard" && <MemberLeaderboard />}
         {page==="profile"     && <MemberProfile onPageChange={setPage} appTheme={appTheme} onAppThemeChange={handleAppThemeChange}
-            certification={certification} certRecords={certRecords} dexConfig={dexConfig} dexGrants={dexGrants}
+            certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} cardData={cardData} />}
         {page==="learn"       && <MemberLearn />}
