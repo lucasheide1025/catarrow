@@ -8,8 +8,10 @@ import {
   createNotification, saveMonsterLog, getMonsterLogs, subscribeMonsterLogs,
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
-  addCoins, addMonsterCard, recordPotionUsed,
+  addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
 } from "../../lib/db";
+
+const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
@@ -114,7 +116,7 @@ function calcStats(allArrows) {
   return { total, count, avg, tens, misses, dist };
 }
 
-export default function MonsterBattle({ onBack, isGuest = false }) {
+export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
   const { profile } = useAuth();
   const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
@@ -158,6 +160,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const [droppedCoins,    setDroppedCoins]     = useState(0);
   const [droppedCard,     setDroppedCard]      = useState(null);
   const [droppedCoinChest, setDroppedCoinChest] = useState(null);
+  const [gainedXP,        setGainedXP]        = useState(0);
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
@@ -203,6 +206,14 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // 任務模式：進入選怪階段時自動預選指定怪物
+  useEffect(() => {
+    if (!questContext?.monsterId) return;
+    if (phase !== "select" && phase !== "event_select") return;
+    const target = MONSTERS.find(m => m.id === questContext.monsterId);
+    if (target) setPickedMonster(target);
+  }, [questContext, phase]); // eslint-disable-line
 
   // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
   useEffect(() => {
@@ -754,6 +765,14 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       }
 
       if (!isGuest) saveBond("monster");
+      // 冒險者 XP（依怪物階級）
+      if (!isGuest && profile?.id) {
+        const xp = ADVENTURER_XP_PER_TIER[monster.tier] || 15;
+        setGainedXP(xp);
+        addAdventurerXP(profile.id, xp).catch(() => {});
+      }
+      // 任務擊殺回報
+      if (questContext?.monsterId === monster.id && onKillForQuest) onKillForQuest(monster.id);
       await delay(1000); setPhase("loot");
     } else {
       sfxSoftFail();
@@ -849,10 +868,19 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
 
   if (phase==="select") {
     const power = archerStats ? calcArcherPower(archerStats) : 0;
+    const qMon = questContext?.monsterId ? MONSTERS.find(m => m.id === questContext.monsterId) : null;
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+        {/* 任務模式橫幅 */}
+        {questContext && qMon && (
+          <div className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.25),rgba(37,99,235,0.18))", border:"1px solid rgba(124,58,237,0.4)" }}>
+            <span className="text-purple-300 text-xs font-black">🎯 任務模式</span>
+            <span className="text-white/80 text-xs flex-1">{qMon.icon} {qMon.name} 擊殺 {questContext.killsSoFar}/{questContext.killsNeeded}</span>
+            <span className="text-purple-400 text-[10px]">找到牠並戰鬥</span>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           {onBack && <button onClick={onBack} className="text-slate-400 text-sm">← 返回</button>}
           <div className="flex items-center gap-3">
@@ -1741,6 +1769,13 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
                 );
               })}
             </div>
+          </div>
+        )}
+        {/* 冒險者 XP 顯示 */}
+        {gainedXP > 0 && !isGuest && (
+          <div className="w-full rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.2),rgba(37,99,235,0.15))", border:"1px solid rgba(124,58,237,0.35)" }}>
+            <span className="text-purple-300 font-black text-sm">⚔️ 冒險者 XP</span>
+            <span className="text-white font-black text-lg ml-auto">+{gainedXP}</span>
           </div>
         )}
         {/* ── 掉落物顯示（怪物死亡後的戰利品）── */}

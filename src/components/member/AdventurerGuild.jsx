@@ -47,7 +47,21 @@ function canAcceptBadgeQuest(quest, profile) {
   return { ok: true };
 }
 
-export default function AdventurerGuild({ onBack }) {
+// 根據子任務類型自動生成條件摘要（顯示在卡片上，不需教練手動填說明）
+function questRequirementChip(q) {
+  const sub = q.questSubtype;
+  const req = q.requirement || {};
+  if (sub === "kill_monster" && req.monsterId) {
+    const m = MONSTERS.find(x => x.id === req.monsterId);
+    return m ? `${m.icon} ${m.name} ×${req.killCount || 1}` : null;
+  }
+  if (sub === "shoot_score" && req.minScore) return `🎯 達 ${req.minScore} 分`;
+  if (sub === "hit_target"  && req.minPercent) return `🏹 命中率 ≥${req.minPercent}%`;
+  if (sub === "coach_duel") return "🥊 教練決鬥";
+  return null;
+}
+
+export default function AdventurerGuild({ onBack, onNavigate }) {
   const { profile } = useAuth();
 
   // ── 訂閱資料 ───────────────────────────────────────────────
@@ -430,10 +444,26 @@ export default function AdventurerGuild({ onBack }) {
               style={{ background: "linear-gradient(135deg,#be123c,#9f1239)" }}>
               🥊 申請挑戰教練！
             </button>
-          ) : lock.ok && sub === "kill_monster" && !killPassed ? (
-            <div className="w-full py-3 rounded-2xl text-center text-amber-300 text-sm font-bold border border-amber-400/20" style={{ background: "rgba(251,191,36,0.06)" }}>
-              還需擊殺 {req.killCount - currentKills} 次 {monsterInfo?.icon}{monsterInfo?.name}
-            </div>
+          ) : lock.ok && sub === "kill_monster" ? (
+            onNavigate ? (
+              <button onClick={() => onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title })}
+                className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
+                style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
+                ⚔️ 進入打怪模式！
+              </button>
+            ) : (
+              <div className="w-full py-3 rounded-2xl text-center text-purple-300 text-sm font-bold border border-purple-400/20" style={{ background: "rgba(124,58,237,0.06)" }}>
+                找到 {monsterInfo?.icon}{monsterInfo?.name} 並擊殺 {req.killCount || 1} 次
+              </div>
+            )
+          ) : lock.ok && (sub === "shoot_score" || sub === "hit_target") ? (
+            onNavigate ? (
+              <button onClick={() => onNavigate("practice", { questId: activeQuest.id, questSubtype: sub, requirement: req, reward: activeQuest.reward, title: activeQuest.title })}
+                className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-gray-900"
+                style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
+                🎯 前往練習記錄成績
+              </button>
+            ) : null
           ) : lock.ok ? (
             <button onClick={handleAcceptAndComplete} disabled={busy}
               className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 disabled:opacity-40 text-gray-900"
@@ -683,6 +713,11 @@ export default function AdventurerGuild({ onBack }) {
                     <div style={{ height: 3, background: `linear-gradient(90deg,${bColor},${bColor}aa,transparent)`, boxShadow: `0 0 8px ${bColor}66` }} />
                     <div className="p-3 flex flex-col gap-1.5">
                       <div className="text-[11px] font-black" style={{ color: bColor }}>{BADGE_LABEL[q.badgeReward]}</div>
+                      {(() => { const chip = questRequirementChip(q); return chip ? (
+                        <div className="self-start text-[10px] font-black px-1.5 py-0.5 rounded-md" style={{ background:"rgba(124,58,237,0.22)", color:"#c4b5fd", border:"1px solid rgba(124,58,237,0.3)" }}>
+                          {chip}
+                        </div>
+                      ) : null; })()}
                       {!lock.ok && <div className="text-[10px]" style={{ color:"#fbbf24" }}>🔒 {lock.reason}</div>}
                       <div className="font-black text-sm leading-snug text-white/90">{q.title}</div>
                       {q.desc && <div className="text-[11px] leading-snug line-clamp-3 text-white/55">{q.desc}</div>}
@@ -721,11 +756,11 @@ export default function AdventurerGuild({ onBack }) {
                     }}>
                     <div style={{ height: 2, background: "linear-gradient(90deg,rgba(180,120,40,0.85),rgba(180,120,40,0.4),transparent)", boxShadow: "0 0 6px rgba(180,120,40,0.4)" }} />
                     <div className="p-3 flex flex-col gap-1.5">
-                      {q.questSubtype && q.questSubtype !== "general" && (
-                        <div className="text-[10px] font-black text-purple-300">
-                          {{ kill_monster:"⚔️ 打指定怪", shoot_score:"🎯 射分數", hit_target:"🏹 命中率", coach_duel:"🥊 教練挑戰賽" }[q.questSubtype]}
+                      {(() => { const chip = questRequirementChip(q); return chip ? (
+                        <div className="self-start text-[10px] font-black px-1.5 py-0.5 rounded-md" style={{ background:"rgba(124,58,237,0.25)", color:"#c4b5fd", border:"1px solid rgba(124,58,237,0.35)" }}>
+                          {chip}
                         </div>
-                      )}
+                      ) : null; })()}
                       <div className="font-black text-sm leading-snug text-white/90">{q.title}</div>
                       {q.desc && <div className="text-[11px] line-clamp-3 text-white/55">{q.desc}</div>}
                       <div className="flex flex-col gap-0.5 mt-1">

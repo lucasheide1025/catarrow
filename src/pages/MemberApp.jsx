@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
-  subscribeCardCollection } from "../lib/db";
+  subscribeCardCollection, submitGuildQuestCompletion } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
@@ -79,6 +79,30 @@ export default function MemberApp() {
   const [chestStats,    setChestStats]    = useState({});
   const [potionDex,     setPotionDex]     = useState({});
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
+  const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
+
+  // 從公會接任務後導向對應功能
+  function handleGuildNavigate(targetPage, ctx) {
+    setQuestCtx({ ...ctx, killsSoFar: 0 });
+    setPage(targetPage);
+  }
+
+  // MonsterBattle 回報擊殺
+  function handleQuestKill(monsterId) {
+    setQuestCtx(prev => {
+      if (!prev || prev.monsterId !== monsterId) return prev;
+      const newKills = (prev.killsSoFar || 0) + 1;
+      if (newKills >= prev.killsNeeded) {
+        submitGuildQuestCompletion(
+          profile.id, profile.nickname || profile.name,
+          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null },
+          "打怪任務完成"
+        ).catch(() => {});
+        return null;
+      }
+      return { ...prev, killsSoFar: newKills };
+    });
+  }
 
   function handleAppThemeChange(id) {
     saveAppTheme(id);
@@ -257,7 +281,7 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
-        {page==="monster"     && <MonsterBattle onBack={()=>setPage("home")} />}
+        {page==="monster"     && <MonsterBattle onBack={()=>{ setQuestCtx(null); setPage("home"); }} questContext={questCtx} onKillForQuest={handleQuestKill} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("home")} />}
@@ -272,7 +296,7 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
-        {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")}/>}
+        {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")} onNavigate={handleGuildNavigate}/>}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
