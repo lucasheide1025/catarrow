@@ -591,7 +591,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   }
 
   async function startBattle() {
-    if (profile?.id) { await recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
+    if (profile?.id && !questContext) { await recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
 
     // ⚗️ 戰前喝藥：消耗藥劑、計算本場加成（只影響當場）
     const buffs = calcPotionBuffs(selectedPotions);
@@ -946,7 +946,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           </div>
         )}
 
-        {!isGuest && dailyLeft===0 ? (
+        {!isGuest && !questContext && dailyLeft===0 ? (
           <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-3xl mb-2">😴</div>
             <div className="font-black text-red-400">今日挑戰次數已用完</div>
@@ -1882,7 +1882,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         </button>
         <div className="flex gap-3 w-full">
           <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
-          {(dailyLeft===null||dailyLeft>0)&&(
+          {(questContext||dailyLeft===null||dailyLeft>0)&&(
             <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
               className="flex-1 py-3 rounded-xl font-black"
               style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
@@ -1914,7 +1914,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           <div className="text-sm opacity-80 mb-4">被 {monster?.name} 擊倒了，{round} 回合</div>
           <div className="flex gap-2">
             <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
-            {(dailyLeft===null||dailyLeft>0)&&(
+            {(questContext||dailyLeft===null||dailyLeft>0)&&(
               <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
                 className="flex-1 py-3 rounded-xl font-black"
                 style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
