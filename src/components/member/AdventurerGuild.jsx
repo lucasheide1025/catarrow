@@ -663,12 +663,24 @@ export default function AdventurerGuild({ onBack }) {
                   <button key={q.id} onClick={() => !isSubmitted && lock.ok && handleOpenQuest(q)}
                     disabled={isSubmitted || !lock.ok}
                     className="rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-70"
-                    style={{
-                      background: `linear-gradient(135deg, ${bColor}28 0%, rgba(15,23,42,0.97) 100%)`,
-                      border: `1.5px solid ${bColor}77`,
+                    style={q.badgeReward === "gold" ? {
+                      background: "linear-gradient(180deg,rgba(255,228,80,0.28) 0%,rgba(255,200,60,0) 40%),linear-gradient(145deg,rgba(255,190,40,0.16) 0%,transparent 55%),linear-gradient(160deg,rgba(42,30,4,0.92),rgba(26,19,2,0.97))",
+                      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+                      boxShadow: "inset 0 1px 0 rgba(255,228,80,0.38),inset 0 -1px 0 rgba(0,0,0,0.4),0 6px 18px rgba(0,0,0,0.5)",
+                      border: "1.5px solid rgba(251,191,36,0.55)",
+                    } : q.badgeReward === "black" ? {
+                      background: "linear-gradient(180deg,rgba(180,160,255,0.18) 0%,rgba(140,120,200,0) 38%),linear-gradient(145deg,rgba(100,80,160,0.12) 0%,transparent 50%),linear-gradient(160deg,rgba(15,14,30,0.94),rgba(8,8,20,0.98))",
+                      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+                      boxShadow: "inset 0 1px 0 rgba(180,160,255,0.28),inset 0 -1px 0 rgba(0,0,0,0.55),0 6px 18px rgba(0,0,0,0.6)",
+                      border: "1.5px solid rgba(100,80,160,0.6)",
+                    } : {
+                      background: "linear-gradient(180deg,rgba(255,255,255,0.22) 0%,rgba(255,255,255,0) 35%),linear-gradient(145deg,rgba(210,225,240,0.12) 0%,transparent 50%),linear-gradient(160deg,rgba(30,37,53,0.92),rgba(20,27,40,0.95))",
+                      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.3),inset 0 -1px 0 rgba(0,0,0,0.35),0 6px 18px rgba(0,0,0,0.45)",
+                      border: "1.5px solid rgba(148,163,184,0.55)",
                     }}>
-                    {/* 頂部章別色帶 */}
-                    <div className="h-1 w-full" style={{ background: `linear-gradient(90deg,${bColor},transparent)` }} />
+                    {/* 頂部章別色帶（加 glow） */}
+                    <div style={{ height: 3, background: `linear-gradient(90deg,${bColor},${bColor}aa,transparent)`, boxShadow: `0 0 8px ${bColor}66` }} />
                     <div className="p-3 flex flex-col gap-1.5">
                       <div className="text-[11px] font-black" style={{ color: bColor }}>{BADGE_LABEL[q.badgeReward]}</div>
                       {!lock.ok && <div className="text-[10px]" style={{ color:"#fbbf24" }}>🔒 {lock.reason}</div>}
@@ -702,10 +714,12 @@ export default function AdventurerGuild({ onBack }) {
                     disabled={isSubmitted}
                     className="rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-60"
                     style={{
-                      background: "linear-gradient(135deg, rgba(180,120,40,0.22) 0%, rgba(15,23,42,0.97) 100%)",
-                      border: "1px solid rgba(180,120,40,0.38)",
+                      background: "radial-gradient(ellipse at 50% -5%,rgba(210,160,60,0.3) 0%,transparent 60%),linear-gradient(180deg,rgba(255,200,80,0.08) 0%,transparent 30%),linear-gradient(160deg,rgba(42,25,5,0.88),rgba(15,23,42,0.95))",
+                      backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+                      boxShadow: "inset 0 1px 0 rgba(255,200,80,0.2),0 4px 14px rgba(0,0,0,0.4)",
+                      border: "1px solid rgba(180,120,40,0.45)",
                     }}>
-                    <div className="h-0.5 w-full" style={{ background: "rgba(180,120,40,0.55)" }} />
+                    <div style={{ height: 2, background: "linear-gradient(90deg,rgba(180,120,40,0.85),rgba(180,120,40,0.4),transparent)", boxShadow: "0 0 6px rgba(180,120,40,0.4)" }} />
                     <div className="p-3 flex flex-col gap-1.5">
                       {q.questSubtype && q.questSubtype !== "general" && (
                         <div className="text-[10px] font-black text-purple-300">
@@ -745,15 +759,21 @@ export default function AdventurerGuild({ onBack }) {
               return (
                 <button key={task.id} onClick={() => openDailyTask(task)} disabled={isDone}
                   className="rounded-xl overflow-hidden active:scale-[0.96] transition-transform disabled:cursor-default"
-                  style={{
-                    background: isDone
-                      ? "linear-gradient(160deg,#1e2a3a,#0f1520)"
-                      : `linear-gradient(160deg, ${DIFF_COLOR[task.difficulty]}22 0%, rgba(15,23,42,0.97) 100%)`,
-                    border: isDone ? "1px solid rgba(255,255,255,0.05)" : `1.5px solid ${DIFF_COLOR[task.difficulty]}55`,
+                  style={isDone ? {
+                    background: "linear-gradient(160deg,rgba(25,33,45,0.9),rgba(12,18,28,0.95))",
+                    backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                    minHeight: 170,
+                  } : {
+                    background: `linear-gradient(180deg,rgba(255,255,255,0.12) 0%,transparent 28%),linear-gradient(145deg,${DIFF_COLOR[task.difficulty]}30 0%,transparent 55%),linear-gradient(160deg,rgba(15,23,42,0.88),rgba(10,16,30,0.95))`,
+                    backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.15),0 4px 12px rgba(0,0,0,0.4)`,
+                    border: `1.5px solid ${DIFF_COLOR[task.difficulty]}55`,
                     minHeight: 170,
                   }}>
-                  {/* 難度色條 */}
-                  <div className="h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.06)" : DIFF_COLOR[task.difficulty] }} />
+                  {/* 難度色條（加 glow） */}
+                  <div style={{ height: isDone ? 1 : 2, background: isDone ? "rgba(255,255,255,0.06)" : `linear-gradient(90deg,${DIFF_COLOR[task.difficulty]},${DIFF_COLOR[task.difficulty]}aa,transparent)`, boxShadow: isDone ? "none" : `0 0 6px ${DIFF_COLOR[task.difficulty]}55` }} />
 
                   <div className="p-2 flex flex-col items-center text-center gap-1.5 h-full">
                     {/* 難度標籤 */}
