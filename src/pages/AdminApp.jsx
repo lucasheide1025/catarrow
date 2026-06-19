@@ -49,6 +49,7 @@ import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import AdminResetCenter       from "../components/admin/AdminResetCenter";
 import AdminWorldBoss         from "../components/admin/AdminWorldBoss";
 import AdminGuildQuests        from "../components/admin/AdminGuildQuests";
+import AdventurerGuild    from "../components/member/AdventurerGuild";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
@@ -243,6 +244,7 @@ const adminNav = [
           {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
+          {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
