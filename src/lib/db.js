@@ -26,7 +26,9 @@ const C = {
   registrations:"registrations",
   billingRecords:"billingRecords",
 };
-const C_GUILD = "guildProgress";
+const C_GUILD      = "guildProgress";
+const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
+const C_GUILD_SUBS = "guildQuestSubs";    // 會員提交紀錄（待審核徽章）
 
 // ─── Audit Log helper ──────────────────────────────────────
 export async function writeAuditLog(action, targetId, targetType, before, after, operatorId) {
@@ -1040,7 +1042,7 @@ export function subscribeAdventurerProgress(memberId, cb) {
 }
 
 // 完成公會任務 → 記錄 + 給 XP + 給金幣
-export async function completeGuildTask(memberId, taskId, xp, coins) {
+export async function completeGuildTask(memberId, taskId, xp, coins, bonus = null) {
   const date = todayStr();
   const ref = doc(db, C_GUILD, memberId);
   const snap = await getDoc(ref);
@@ -1050,7 +1052,12 @@ export async function completeGuildTask(memberId, taskId, xp, coins) {
   await setDoc(ref, { date, completed: [...prevCompleted, taskId], updatedAt: serverTimestamp() });
   if (xp > 0) addAdventurerXP(memberId, xp).catch(() => {});
   if (coins > 0) addCoins(memberId, coins).catch(() => {});
-  return { ok: true };
+  if (bonus?.type === "coins")  addCoins(memberId, bonus.amount).catch(() => {});
+  if (bonus?.type === "chest")  addChests(memberId, [{
+    id: `chest_guild_${taskId}_${Date.now()}`,
+    type: bonus.chestType, from: "公會任務", ts: Date.now(),
+  }]).catch(() => {});
+  return { ok: true, bonus };
 }
 
 // 完成晉階任務 → 記錄 promotionDone + 給 bonusXP
@@ -1059,6 +1066,113 @@ export async function completePromotionQuest(memberId, promotionLevel, bonusXP) 
   await updateDoc(doc(db, C.members, memberId), {
     adventurerXP:  increment(bonusXP),
     promotionDone: arrayUnion(promotionLevel),
+  });
+}
+
+// ── 公會懸賞任務（後台發佈）─────────────────────────────────
+
+// 訂閱目前 active 的任務（前台）
+export function subscribeActiveGuildQuests(cb) {
+  const q = query(collection(db, C_GUILD_Q), where("status", "==", "active"), orderBy("publishedAt", "desc"));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb([]));
+}
+
+// 後台：取得所有任務（含草稿/過期）
+export function subscribeAllGuildQuests(cb) {
+  const q = query(collection(db, C_GUILD_Q), orderBy("publishedAt", "desc"));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb([]));
+}
+
+// 後台：發佈新任務
+export async function publishGuildQuest(data, adminId) {
+  const ref = doc(collection(db, C_GUILD_Q));
+  await setDoc(ref, {
+    title: data.title || "",
+    desc:  data.desc  || "",
+    type:  data.type  || "normal",          // "normal" | "special"
+    badgeReward:   data.badgeReward   || null,   // null | "silver" | "gold" | "black"
+    badgeRequires: data.badgeRequires || null,   // null | "silver" | "gold"
+    reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
+    status: data.status || "active",         // "draft" | "active" | "expired"
+    publishedAt: serverTimestamp(),
+    createdBy: adminId,
+  });
+  // 特殊任務 → 廣播通知給所有會員
+  if (data.type === "special") {
+    await createNotification({
+      type:    "promo",
+      title:   `⚔️ 緊急懸賞：${data.title}`,
+      content: data.desc,
+      mustRead: false,
+    }, adminId).catch(() => {});
+  }
+  return ref.id;
+}
+
+// 後台：更新任務狀態（上架/下架/草稿）
+export async function updateGuildQuestStatus(questId, status) {
+  await updateDoc(doc(db, C_GUILD_Q, questId), { status, updatedAt: serverTimestamp() });
+}
+
+// 後台：刪除任務
+export async function deleteGuildQuest(questId) {
+  await deleteDoc(doc(db, C_GUILD_Q, questId));
+}
+
+// 前台：會員提交完成（XP/金幣立即發放；徽章待審核）
+export async function submitGuildQuestCompletion(memberId, memberName, quest, note) {
+  if (!memberId || !quest?.id) return;
+  // 防重複：先記錄在 guildProgress
+  await updateDoc(doc(db, C_GUILD, memberId), {
+    submittedQuests: arrayUnion(quest.id),
+  }).catch(() =>
+    setDoc(doc(db, C_GUILD, memberId), { submittedQuests: [quest.id] }, { merge: true })
+  );
+  // 立即發放 XP + 金幣
+  if ((quest.reward?.xp || 0) > 0)    addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
+  if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, quest.reward.coins).catch(() => {});
+  // 徽章任務 → 建立待審記錄
+  if (quest.badgeReward) {
+    await addDoc(collection(db, C_GUILD_SUBS), {
+      questId:    quest.id,
+      questTitle: quest.title,
+      memberId, memberName,
+      badgeReward: quest.badgeReward,
+      note: note || "",
+      status: "pending",
+      submittedAt: serverTimestamp(),
+    });
+  }
+}
+
+// 後台：訂閱待審核的徽章任務提交
+export function subscribeGuildSubmissions(cb) {
+  const q = query(collection(db, C_GUILD_SUBS), where("status", "==", "pending"), orderBy("submittedAt", "desc"));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb([]));
+}
+
+// 後台：核准 → 直接發徽章
+export async function approveGuildSubmission(subId, sub, adminId) {
+  const color = sub.badgeReward; // "silver" | "gold" | "black"
+  if (color && sub.memberId) {
+    await updateDoc(doc(db, C.members, sub.memberId), {
+      [`achievement.${color}`]: increment(1),
+    });
+  }
+  await updateDoc(doc(db, C_GUILD_SUBS, subId), {
+    status: "approved",
+    approvedAt: serverTimestamp(),
+    approvedBy: adminId,
+  });
+}
+
+// 後台：拒絕
+export async function rejectGuildSubmission(subId, reason, adminId) {
+  await updateDoc(doc(db, C_GUILD_SUBS, subId), {
+    status: "rejected",
+    rejectedAt: serverTimestamp(),
+    rejectedBy: adminId,
+    rejectReason: reason || "",
   });
 }
 

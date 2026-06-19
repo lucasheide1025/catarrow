@@ -5,6 +5,7 @@ import { calcBadgePoints, getCertLevel } from "./constants";
 import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
 import { MONSTERS } from "./monsterData";
 import { POTIONS } from "./itemData";
+import { levelFromXP } from "./adventurerSystem";
 
 export const RARITY_STYLE = {
   common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
@@ -35,6 +36,7 @@ export const DEX_CATEGORIES = [
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製 & 藥水" },
   { id: "card",     label: "🃏 怪物卡" },
+  { id: "guild",    label: "🏰 冒險者公會" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -403,6 +405,39 @@ export const AUTO_ACHIEVEMENTS = [
     riddle: "六種血脈，盡收囊中…",
     check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
       fam => c.cardFamilies?.includes(fam)) },
+
+  // ══ 冒險者公會 ══
+  { id: "guild_first_xp",     cat: "guild", icon: "⚔️", name: "初入公會",   rarity: "common",
+    desc: "在冒險者公會首次累積 XP",
+    check: c => (c.member?.adventurerXP || 0) > 0 },
+
+  { id: "guild_lv10",         cat: "guild", icon: "🥉", name: "青銅巔峰",   rarity: "common",
+    desc: "冒險者等級達到 Lv.10",
+    check: c => levelFromXP(c.member?.adventurerXP || 0) >= 10 },
+
+  { id: "guild_promo_bronze", cat: "guild", icon: "🥈", name: "白銀晉階",   rarity: "uncommon",
+    desc: "完成 Lv.10 晉階儀式，踏入白銀階級",
+    check: c => (c.member?.promotionDone || []).includes(10) },
+
+  { id: "guild_promo_silver", cat: "guild", icon: "🥇", name: "黃金晉階",   rarity: "rare",
+    desc: "完成 Lv.20 晉階儀式，展現精英實力",
+    check: c => (c.member?.promotionDone || []).includes(20) },
+
+  { id: "guild_promo_gold",   cat: "guild", icon: "💎", name: "白金晉階",   rarity: "epic",
+    desc: "完成 Lv.30 晉階儀式，躋身頂尖射手",
+    check: c => (c.member?.promotionDone || []).includes(30) },
+
+  { id: "guild_promo_plat",   cat: "guild", icon: "🔥", name: "傳說晉階",   rarity: "legendary",
+    desc: "完成 Lv.40 晉階儀式，成為傳說冒險者",
+    check: c => (c.member?.promotionDone || []).includes(40) },
+
+  { id: "guild_promo_legend", cat: "guild", icon: "⚡", name: "神話晉階",   rarity: "mythic",
+    desc: "完成 Lv.50 晉階儀式，踏入神話領域",
+    check: c => (c.member?.promotionDone || []).includes(50) },
+
+  { id: "guild_max",          cat: "guild", icon: "👑", name: "神話滿等",   rarity: "mythic",
+    desc: "冒險者等級達到最高境界 Lv.60",
+    check: c => levelFromXP(c.member?.adventurerXP || 0) >= 60 },
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────

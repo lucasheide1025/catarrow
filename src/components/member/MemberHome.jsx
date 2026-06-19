@@ -26,6 +26,7 @@ const CELL_BG = {
   equipment: "/ui/cell-equip.webp",
   dex:       "/ui/cell-achieve.webp",
   story:     "/ui/cell-story.webp",
+  guild:     "/ui/guild.webp",
 };
 const CERT_BG = {
   "":   "/ui/cert-empty.webp",
@@ -36,11 +37,20 @@ const CERT_BG = {
   精英:  "/ui/cert-elite.webp",
   菁英:  "/ui/cert-elite.webp",
 };
+const CELL_TINT = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))";
 function cellStyle(key, gradient) {
+  const img = CELL_BG[key];
+  if (img) {
+    return {
+      backgroundImage: `url(${img}), ${CELL_TINT}, ${gradient}`,
+      backgroundSize: "cover, cover, cover",
+      backgroundBlendMode: "overlay, normal, normal",
+    };
+  }
   return {
-    backgroundImage: `url(${CELL_BG[key] || ""}), ${gradient}`,
+    backgroundImage: `${CELL_TINT}, ${gradient}`,
     backgroundSize: "cover, cover",
-    backgroundBlendMode: "overlay",
+    backgroundBlendMode: "normal, normal",
   };
 }
 
@@ -274,7 +284,7 @@ export default function MemberHome({
           return (
             <button onClick={() => onPageChange("guild")}
               className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-              style={cellStyle("guild", "linear-gradient(135deg,#065f46,#064e3b)")}>
+              style={cellStyle("guild", "linear-gradient(135deg,#78350f,#1c1410)")}>
               <span className="text-white font-black text-xs leading-tight text-center">冒險者公會</span>
               <span className="font-black text-[10px]" style={{ color: advRank.color }}>Lv.{advLv} {advRank.icon}</span>
             </button>

@@ -141,6 +141,20 @@ export function taskDesc(task) {
   }
 }
 
+// ── 遊戲風任務名稱池（依靶紙 + 類型）────────────────────────────
+const QUEST_NAME_POOL = {
+  cthulhu_score:          ["遠古者的試煉", "星海封印之戰", "古神凝視下的一矢", "深淵壓制令", "觸手林中突圍", "沉眠者覺醒前夕"],
+  cthulhu_hits:           ["觸手獵殺令", "千眼之夜清掃", "遠古軍團殲滅令", "黑翼試射令"],
+  zombie_score:           ["屍潮清除令", "荒野防線", "末日前的一輪", "亡者之海突圍", "廢墟掃蕩任務"],
+  zombie_headshot:        ["爆頭特攻令", "腦髓破碎任務", "喪屍軍團解體令", "精準擊殺令"],
+  hostage_protected_score:["守護聖盾任務", "最後防線", "人質援救作戰", "盾矛並進", "神射手護衛令"],
+  hostage_one_shot:       ["神射手的殿試", "一矢定乾坤", "榮耀之箭", "首席狙擊手考核", "公會長的賭注"],
+};
+function pickQuestName(target, type, rand) {
+  const pool = QUEST_NAME_POOL[`${target}_${type}`] || ["懸賞任務"];
+  return pool[Math.floor(rand() * pool.length)];
+}
+
 // ── 每日任務生成（依日期 seed，全員同一批）──────────────────────
 function makeSeedRand(seed) {
   let s = ((seed * 1664525) + 1013904223) >>> 0;
@@ -150,24 +164,42 @@ function makeSeedRand(seed) {
   };
 }
 
+// bonus: null | { type:"coins", amount:N } | { type:"chest", chestType:"wood"|"iron"|"gold" }
+function rollBonus(difficulty, rand) {
+  const r = rand();
+  if (difficulty === 1) {
+    if (r < 0.10) return { type: "chest", chestType: "wood",  icon: "📦", label: "木寶箱" };
+    if (r < 0.30) return { type: "coins", amount: 150 + Math.floor(rand() * 150), icon: "💰", label: "金幣寶箱" };
+  } else if (difficulty === 2) {
+    if (r < 0.12) return { type: "chest", chestType: "iron",  icon: "🧰", label: "鐵寶箱" };
+    if (r < 0.30) return { type: "coins", amount: 300 + Math.floor(rand() * 200), icon: "💰", label: "金幣寶箱" };
+  } else {
+    if (r < 0.18) return { type: "chest", chestType: "gold",  icon: "🎁", label: "黃金寶箱" };
+    if (r < 0.35) return { type: "coins", amount: 500 + Math.floor(rand() * 300), icon: "💰", label: "金幣寶箱" };
+  }
+  return null;
+}
+
 export function getDailyGuildTasks(date) {
   const seed = parseInt(date.replace(/-/g, ""), 10);
   const rand = makeSeedRand(seed);
-  const ri = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
+  const ri   = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
+  const qn   = (target, type) => pickQuestName(target, type, rand);
+  const bon  = (diff) => rollBonus(diff, rand);
 
   return [
     // 難度一（一般）
-    { id: 0, target: "cthulhu", type: "score",    arrowCount: 6, goal: ri(30, 48), dist: ri(5, 8),  difficulty: 1, label: "克蘇魯・得分",   xp: 50,  coins: 80  },
-    { id: 1, target: "cthulhu", type: "hits",     arrowCount: 6, goal: ri(4, 5),   dist: ri(5, 8),  difficulty: 1, label: "克蘇魯・命中",   xp: 50,  coins: 80  },
-    { id: 2, target: "zombie",  type: "score",    arrowCount: 6, goal: ri(20, 35), dist: ri(5, 8),  difficulty: 1, label: "殭屍・清場",    xp: 50,  coins: 80  },
+    { id:0, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(30,48), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("cthulhu","score"),           bonus:bon(1) },
+    { id:1, target:"cthulhu", type:"hits",             arrowCount:6, goal:ri(4,5),   dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("cthulhu","hits"),            bonus:bon(1) },
+    { id:2, target:"zombie",  type:"score",            arrowCount:6, goal:ri(20,35), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("zombie","score"),            bonus:bon(1) },
     // 難度二（挑戰）
-    { id: 3, target: "cthulhu", type: "score",    arrowCount: 6, goal: ri(48, 60), dist: ri(8, 13), difficulty: 2, label: "克蘇魯・中距",   xp: 100, coins: 150 },
-    { id: 4, target: "hostage", type: "protected_score", arrowCount: 6, goal: ri(30, 50), dist: ri(7, 12), difficulty: 2, label: "人質・保護作戰", xp: 100, coins: 150 },
-    { id: 5, target: "zombie",  type: "headshot", arrowCount: 6, goal: ri(2, 4),   dist: ri(7, 12), difficulty: 2, label: "殭屍・爆頭",    xp: 100, coins: 150 },
-    { id: 6, target: "zombie",  type: "score",    arrowCount: 6, goal: ri(35, 50), dist: ri(8, 13), difficulty: 2, label: "殭屍・進階清場", xp: 100, coins: 150 },
+    { id:3, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(48,60), dist:ri(8,13),  difficulty:2, xp:100, coins:150, questName:qn("cthulhu","score"),           bonus:bon(2) },
+    { id:4, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(30,50), dist:ri(7,12),  difficulty:2, xp:100, coins:150, questName:qn("hostage","protected_score"), bonus:bon(2) },
+    { id:5, target:"zombie",  type:"headshot",         arrowCount:6, goal:ri(2,4),   dist:ri(7,12),  difficulty:2, xp:100, coins:150, questName:qn("zombie","headshot"),         bonus:bon(2) },
+    { id:6, target:"zombie",  type:"score",            arrowCount:6, goal:ri(35,50), dist:ri(8,13),  difficulty:2, xp:100, coins:150, questName:qn("zombie","score"),            bonus:bon(2) },
     // 難度三（精英）
-    { id: 7, target: "hostage", type: "one_shot", arrowCount: 1, goal: 20,         dist: ri(10, 15), difficulty: 3, label: "人質・一箭討伐", xp: 150, coins: 250 },
-    { id: 8, target: "cthulhu", type: "score",    arrowCount: 6, goal: ri(60, 72), dist: ri(12, 18), difficulty: 3, label: "克蘇魯・精英",   xp: 150, coins: 250 },
-    { id: 9, target: "hostage", type: "protected_score", arrowCount: 6, goal: ri(60, 80), dist: ri(12, 18), difficulty: 3, label: "人質・狙擊手",   xp: 150, coins: 250 },
+    { id:7, target:"hostage", type:"one_shot",         arrowCount:1, goal:20,        dist:ri(10,15), difficulty:3, xp:150, coins:250, questName:qn("hostage","one_shot"),        bonus:bon(3) },
+    { id:8, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(60,72), dist:ri(12,18), difficulty:3, xp:150, coins:250, questName:qn("cthulhu","score"),           bonus:bon(3) },
+    { id:9, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(60,80), dist:ri(12,18), difficulty:3, xp:150, coins:250, questName:qn("hostage","protected_score"), bonus:bon(3) },
   ];
 }

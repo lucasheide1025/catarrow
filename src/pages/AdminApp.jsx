@@ -48,7 +48,7 @@ import DungeonLobby      from "../components/dungeon/DungeonLobby";
 import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import AdminResetCenter       from "../components/admin/AdminResetCenter";
 import AdminWorldBoss         from "../components/admin/AdminWorldBoss";
-import AdminAdventurerGuild   from "../components/admin/AdminAdventurerGuild";
+import AdminGuildQuests        from "../components/admin/AdminGuildQuests";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
@@ -331,7 +331,7 @@ const adminNav = [
         {page==="reset-center" && <AdminResetCenter/>}
         {page==="worldboss-admin" && <AdminWorldBoss/>}
         {page==="story-admin"     && <AdminStoryManager/>}
-        {page==="guild-admin"     && <AdminAdventurerGuild/>}
+        {page==="guild-admin"     && <AdminGuildQuests/>}
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>

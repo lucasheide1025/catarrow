@@ -6,6 +6,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR, calcBadgePoints, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Spinner, Empty } from "../shared/UI";
 import { MONSTERS, FAMILIES } from "../../lib/monsterData";
+import { levelFromXP, rankFromLevel, xpProgress } from "../../lib/adventurerSystem";
 
 const TABS = [
   { id: "event",             label: "🎪 賽事積分",  group: "活動" },
@@ -19,6 +20,7 @@ const TABS = [
   { id: "cert_traditional",  label: "🌿 傳統檢定",  group: "檢定" },
   { id: "monster_family",    label: "🐾 六大族",    group: "魔物獵人" },
   { id: "monster_boss",      label: "💀 頭目+",     group: "魔物獵人" },
+  { id: "adventurer",        label: "⚔️ 冒險者",   group: "公會" },
 ];
 
 // 查 monster id → family/tier
@@ -174,8 +176,9 @@ export default function MemberLeaderboard() {
   const isCertTab       = !!CERT_TAB[tab];
   const isDuelTab       = tab === "duel";
   const isCheckinTab    = tab === "checkin";
-  const isMonsterFamily = tab === "monster_family";
-  const isMonsterBoss   = tab === "monster_boss";
+  const isMonsterFamily  = tab === "monster_family";
+  const isMonsterBoss    = tab === "monster_boss";
+  const isAdventurerTab  = tab === "adventurer";
 
   // 決鬥排行
   const duelRanked = isDuelTab
@@ -224,7 +227,7 @@ export default function MemberLeaderboard() {
       <h2 className="text-gray-800 font-black text-xl">📊 排行榜</h2>
 
       {/* Tab 切換（按分組排列）*/}
-      {["活動","徽章","檢定","魔物獵人"].map(group => (
+      {["活動","徽章","檢定","魔物獵人","公會"].map(group => (
         <div key={group}>
           <div className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">{group}</div>
           <div className="grid grid-cols-3 gap-2">
@@ -406,7 +409,7 @@ export default function MemberLeaderboard() {
               })
           }
         </Card>
-      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && !isRecurveTab && (
+      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && !isRecurveTab && !isAdventurerTab && (
         /* 一般榜 */
         <Card className="p-4">
           {ranked.length === 0 && <Empty message="尚無資料" />}
@@ -517,6 +520,67 @@ export default function MemberLeaderboard() {
           }
         </Card>
       )}
+
+      {/* 冒險者等級榜 */}
+      {isAdventurerTab && (() => {
+        const adventurerRanked = [...members]
+          .map(m => {
+            const xp    = m.adventurerXP || 0;
+            const level = levelFromXP(xp);
+            const rank  = rankFromLevel(level);
+            const prog  = xpProgress(xp, level);
+            return { ...m, xp, level, rank, prog };
+          })
+          .filter(m => m.xp > 0)
+          .sort((a, b) => b.xp - a.xp);
+
+        return (
+          <Card className="p-4">
+            {adventurerRanked.length === 0
+              ? <Empty message="尚無冒險者紀錄" />
+              : adventurerRanked.map((m, i) => {
+                  const isMe = m.id === profile?.id;
+                  const medal = ["🥇","🥈","🥉"][i];
+                  return (
+                    <div key={m.id}
+                      className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                      <div className="w-8 text-center flex-shrink-0">
+                        {medal
+                          ? <span className="text-2xl">{medal}</span>
+                          : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
+                      </div>
+                      <div className="text-xl flex-shrink-0">{m.rank.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                            {m.nickname || m.name}
+                          </span>
+                          {isMe && <span className="text-xs text-blue-500">（我）</span>}
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                            style={{ background: m.rank.color + "22", color: m.rank.color }}>
+                            Lv.{m.level} {m.rank.name}
+                          </span>
+                        </div>
+                        {m.level < 60 && (
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width: `${m.prog.pct}%`, background: m.rank.color }} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className={`font-black text-lg ${isMe ? "text-blue-600" : "text-gray-800"}`}>
+                          {m.xp.toLocaleString()}
+                        </div>
+                        <div className="text-gray-400 text-xs">XP</div>
+                      </div>
+                    </div>
+                  );
+                })
+            }
+          </Card>
+        );
+      })()}
 
       {/* 各場比賽排名（賽事積分 tab）*/}
 
