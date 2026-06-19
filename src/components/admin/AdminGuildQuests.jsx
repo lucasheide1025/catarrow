@@ -4,8 +4,10 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeAllGuildQuests, publishGuildQuest, updateGuildQuestStatus, deleteGuildQuest,
   subscribeGuildSubmissions, approveGuildSubmission, rejectGuildSubmission,
+  subscribeCoachChallenges, resolveCoachChallenge,
   getMembers,
 } from "../../lib/db";
+import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
 
 const BADGE_LABEL = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
@@ -13,9 +15,19 @@ const BADGE_REQ   = { silver: null, gold: "silver", black: "gold" };
 const BADGE_COLOR = { silver: "#94a3b8", gold: "#fbbf24", black: "#1e293b" };
 const PROMO_LEVELS = [10, 20, 30, 40, 50];
 
+const SUBTYPE_LABEL = {
+  general:      "📋 一般",
+  kill_monster: "⚔️ 打指定怪",
+  shoot_score:  "🎯 射分數",
+  hit_target:   "🏹 命中率",
+  coach_duel:   "🥊 教練挑戰賽",
+};
+
 const EMPTY_FORM = {
   title: "", desc: "", type: "normal",
   badgeReward: "", reward: { xp: 100, coins: 50 },
+  questSubtype: "general",
+  requirement: {},
 };
 
 export default function AdminGuildQuests() {
@@ -30,12 +42,14 @@ export default function AdminGuildQuests() {
   const [msg, setMsg]           = useState("");
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [challenges, setChallenges] = useState([]);
 
   useEffect(() => {
     const u1 = subscribeAllGuildQuests(setQuests);
     const u2 = subscribeGuildSubmissions(setSubs);
+    const u3 = subscribeCoachChallenges(setChallenges);
     getMembers().then(list => setMembers([...list].sort((a, b) => (b.adventurerXP || 0) - (a.adventurerXP || 0))));
-    return () => { u1?.(); u2?.(); };
+    return () => { u1?.(); u2?.(); u3?.(); };
   }, []);
 
   async function handlePublish() {
@@ -65,9 +79,10 @@ export default function AdminGuildQuests() {
   }
 
   const TABS = [
-    { id: "quests", label: "📋 任務發佈", badge: 0 },
-    { id: "review", label: "🎖️ 待審徽章", badge: subs.length },
-    { id: "ranks",  label: "⚔️ 冒險者排行", badge: 0 },
+    { id: "quests",     label: "📋 任務發佈",   badge: 0 },
+    { id: "review",     label: "🎖️ 待審徽章",   badge: subs.length },
+    { id: "challenges", label: "🥊 挑戰申請",   badge: challenges.length },
+    { id: "ranks",      label: "⚔️ 排行",        badge: 0 },
   ];
 
   return (
@@ -123,6 +138,67 @@ export default function AdminGuildQuests() {
                   ))}
                 </div>
 
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>懸賞類型</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {Object.entries(SUBTYPE_LABEL).map(([k, v]) => (
+                    <button key={k} onClick={() => setForm(f => ({ ...f, questSubtype: k, requirement: {} }))}
+                      style={{ padding: "6px 10px", borderRadius: "8px", fontSize: "11px", fontWeight: "700", cursor: "pointer",
+                        border: `2px solid ${form.questSubtype === k ? "#7c3aed" : "#e2e8f0"}`,
+                        background: form.questSubtype === k ? "#f5f3ff" : "white",
+                        color: form.questSubtype === k ? "#7c3aed" : "#64748b" }}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 子類型條件欄位 */}
+                {form.questSubtype === "kill_monster" && (
+                  <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: "8px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "11px", color: "#7c3aed", fontWeight: "700" }}>指定怪物</label>
+                    <select value={form.requirement.monsterId || ""} onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, monsterId: e.target.value } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #e9d5ff", fontSize: "13px" }}>
+                      <option value="">— 請選擇 —</option>
+                      {MONSTERS.map(m => <option key={m.id} value={m.id}>{m.icon} {m.name}（{m.family}/{m.tier}）</option>)}
+                    </select>
+                    <label style={{ fontSize: "11px", color: "#7c3aed", fontWeight: "700" }}>需擊殺次數</label>
+                    <input type="number" min={1} value={form.requirement.killCount || ""} placeholder="例如：3"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, killCount: Number(e.target.value) } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #e9d5ff", fontSize: "13px" }} />
+                  </div>
+                )}
+
+                {form.questSubtype === "shoot_score" && (
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>目標分數（達到即通過）</label>
+                    <input type="number" min={1} value={form.requirement.minScore || ""} placeholder="例如：250"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minScore: Number(e.target.value) } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "13px" }} />
+                    <label style={{ fontSize: "11px", color: "#16a34a", fontWeight: "700" }}>條件說明（靶紙/距離/支數）</label>
+                    <input value={form.requirement.conditionDesc || ""} placeholder="例如：18支箭 60m WA122"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, conditionDesc: e.target.value } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "13px" }} />
+                  </div>
+                )}
+
+                {form.questSubtype === "hit_target" && (
+                  <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>命中條件描述</label>
+                    <input value={form.requirement.conditionDesc || ""} placeholder="例如：36支箭中10環以上達20支"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, conditionDesc: e.target.value } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
+                    <label style={{ fontSize: "11px", color: "#ea580c", fontWeight: "700" }}>最低命中率 %</label>
+                    <input type="number" min={1} max={100} value={form.requirement.minPercent || ""} placeholder="例如：55"
+                      onChange={e => setForm(f => ({ ...f, requirement: { ...f.requirement, minPercent: Number(e.target.value) } }))}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #fed7aa", fontSize: "13px" }} />
+                  </div>
+                )}
+
+                {form.questSubtype === "coach_duel" && (
+                  <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: "8px", padding: "10px" }}>
+                    <div style={{ fontSize: "11px", color: "#be123c", fontWeight: "700" }}>🥊 射手需線下找教練進行決鬥，勝出後教練在「挑戰申請」tab 確認完成</div>
+                  </div>
+                )}
+
                 <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>徽章獎勵（選填）</label>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   {["", "silver", "gold", "black"].map(b => (
@@ -170,6 +246,7 @@ export default function AdminGuildQuests() {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "4px", flexWrap: "wrap" }}>
                       {q.type === "special" && <span style={{ background: "#fef3c7", color: "#d97706", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>⚡ 緊急</span>}
+                      {q.questSubtype && q.questSubtype !== "general" && <span style={{ background: "#f5f3ff", color: "#7c3aed", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>{SUBTYPE_LABEL[q.questSubtype]}</span>}
                       {q.badgeReward && <span style={{ background: BADGE_COLOR[q.badgeReward] + "22", color: BADGE_COLOR[q.badgeReward] || "#1e293b", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px", border: `1px solid ${BADGE_COLOR[q.badgeReward]}44` }}>{BADGE_LABEL[q.badgeReward]}</span>}
                       <span style={{ fontSize: "10px", padding: "2px 6px", borderRadius: "6px", fontWeight: "700",
                         background: q.status === "active" ? "#dcfce7" : q.status === "expired" ? "#f1f5f9" : "#fef9c3",
@@ -246,6 +323,38 @@ export default function AdminGuildQuests() {
                   </button>
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── 教練挑戰申請 tab ── */}
+      {tab === "challenges" && (
+        <div style={{ padding: "12px" }}>
+          {challenges.length === 0 && (
+            <div style={{ color: "#94a3b8", textAlign: "center", padding: "40px", fontSize: "13px" }}>
+              目前沒有待處理的挑戰申請
+            </div>
+          )}
+          {challenges.map(c => (
+            <div key={c.id} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
+              <div style={{ fontWeight: "800", fontSize: "14px", color: "#1e293b", marginBottom: "4px" }}>
+                🥊 {c.memberName || c.memberId}
+              </div>
+              <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "2px" }}>任務：{c.questTitle}</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "10px" }}>
+                獎勵：+{c.reward?.xp || 0} XP　+{c.reward?.coins || 0} 金幣
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={() => resolveCoachChallenge(c.id, true, profile?.id, c)}
+                  style={{ flex: 1, padding: "8px", background: "#16a34a", color: "white", border: "none", borderRadius: "8px", fontWeight: "700", fontSize: "13px", cursor: "pointer" }}>
+                  ✓ 射手勝出
+                </button>
+                <button onClick={() => resolveCoachChallenge(c.id, false, profile?.id, c)}
+                  style={{ padding: "8px 14px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: "8px", fontSize: "13px", cursor: "pointer" }}>
+                  ✗ 未勝出
+                </button>
+              </div>
             </div>
           ))}
         </div>

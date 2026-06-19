@@ -1035,10 +1035,12 @@ export async function addAdventurerXP(memberId, xp) {
 export function subscribeAdventurerProgress(memberId, cb) {
   const date = todayStr();
   return onSnapshot(doc(db, C_GUILD, memberId), snap => {
-    if (!snap.exists()) { cb({ date, completed: [] }); return; }
+    if (!snap.exists()) { cb({ date, completed: [], submittedQuests: [] }); return; }
     const d = snap.data();
-    cb(d.date === date ? d : { date, completed: [] });
-  }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [] }); });
+    // completed 每日重置；submittedQuests 永久記錄不受換日影響
+    const completed = d.date === date ? (d.completed || []) : [];
+    cb({ ...d, date, completed, submittedQuests: d.submittedQuests || [] });
+  }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [], submittedQuests: [] }); });
 }
 
 // 完成公會任務 → 記錄 + 給 XP + 給金幣
@@ -1182,6 +1184,49 @@ export async function rejectGuildSubmission(subId, reason, adminId) {
     rejectedAt: serverTimestamp(),
     rejectedBy: adminId,
     rejectReason: reason || "",
+  });
+}
+
+// ─── 教練挑戰賽 ─────────────────────────────────────────────
+const C_COACH_CHALLENGES = "coachChallenges";
+
+// 前台：射手申請與教練決鬥
+export async function submitCoachChallenge(memberId, memberName, quest) {
+  if (!memberId || !quest?.id) return;
+  // 立即鎖定防重複申請
+  await updateDoc(doc(db, C_GUILD, memberId), {
+    submittedQuests: arrayUnion(quest.id),
+  }).catch(() =>
+    setDoc(doc(db, C_GUILD, memberId), { submittedQuests: [quest.id] }, { merge: true })
+  );
+  await addDoc(collection(db, C_COACH_CHALLENGES), {
+    questId: quest.id, questTitle: quest.title,
+    memberId, memberName,
+    status: "pending",
+    createdAt: serverTimestamp(),
+    reward: quest.reward || {},
+  });
+}
+
+// 後台：訂閱所有挑戰申請
+export function subscribeCoachChallenges(cb) {
+  return onSnapshot(
+    query(collection(db, C_COACH_CHALLENGES), where("status", "==", "pending"), orderBy("createdAt", "desc")),
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+
+// 後台：確認挑戰結果（won=true → 完成任務 + 獎勵；false → 失敗）
+export async function resolveCoachChallenge(challengeId, won, adminId, challenge) {
+  if (won) {
+    const q = { id: challenge.questId, title: challenge.questTitle, reward: challenge.reward || {}, badgeReward: null };
+    await submitGuildQuestCompletion(challenge.memberId, challenge.memberName, q, "教練決鬥勝出");
+  }
+  await updateDoc(doc(db, C_COACH_CHALLENGES, challengeId), {
+    status: won ? "completed" : "failed",
+    resolvedAt: serverTimestamp(),
+    resolvedBy: adminId,
   });
 }
 

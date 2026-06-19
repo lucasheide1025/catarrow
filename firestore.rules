@@ -306,6 +306,28 @@ service cloud.firestore {
       allow read, write: if isAdmin()
         || (isLoggedIn() && get(/databases/$(database)/documents/members/$(memberId)).data.uid == request.auth.uid);
     }
+    // guildQuests：任務公告，登入者可讀；admin 可寫
+    match /guildQuests/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
 
+    // guildQuestSubs：徽章任務提交審核
+    match /guildQuestSubs/{docId} {
+      allow read:          if isAdmin();
+      allow create:        if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // guildProgress：每位會員的公會任務進度（今日完成 + 已提交懸賞）
+    match /guildProgress/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // coachChallenges：教練挑戰賽申請
+    match /coachChallenges/{docId} {
+      allow create:        if isLoggedIn();
+      allow read, update:  if isAdmin();
+    }
   }
 }
