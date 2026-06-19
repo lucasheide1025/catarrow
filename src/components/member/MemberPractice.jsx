@@ -482,6 +482,20 @@ function DonutDisc({ dist, total }) {
   );
 }
 
+// 正規化各來源的箭值（WorldBoss 存 {label,score} 物件；舊打怪存字串 label）
+function toNum(v) {
+  if (typeof v === "number") return v;
+  if (v && typeof v === "object") return typeof v.score === "number" ? v.score : (parseInt(v.score)||0);
+  if (v === "M") return 0;
+  const n = parseInt(v);
+  return isNaN(n) ? 10 : n; // "X" → 10
+}
+function toLabel(v) {
+  if (v && typeof v === "object") return v.label || String(v.score ?? 0);
+  if (v === 0 || v === "M") return "M";
+  return String(v);
+}
+
 // ── HistoryTab ─────────────────────────────────────────────────
 const SOURCE_OPTS = [
   { id:"all",       label:"全部"      },
@@ -604,8 +618,8 @@ function HistoryTab({ logs, monsterLogs }) {
     const open=!!expandLog[log.id];
     const badge=TYPE_BADGE[log._type];
     if (log._type==="monster") {
-      const total=(log.roundScores||[]).reduce((s,r)=>s+(r.total||0),0);
-      const rounds=(log.roundScores||[]).map(r=>r.scores||[]);
+      const rounds=(log.roundScores||[]).map(r=>(r.scores||[]).map(toNum));
+      const total=rounds.reduce((s,r)=>s+r.reduce((a,b)=>a+b,0),0);
       const won=log.result==="win";
       return (
         <Card className="p-4" style={CS}>
@@ -628,7 +642,7 @@ function HistoryTab({ logs, monsterLogs }) {
           {log.coachNote&&<div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">💬 教練：{log.coachNote}</div>}
           {open&&rounds.length>0&&(
             <div className="mt-3 pt-3 border-t border-white/10">
-              {rounds.map((r,i)=>{const sub=r.filter(v=>typeof v==="number").reduce((a,b)=>a+b,0);return(
+              {rounds.map((r,i)=>{const sub=r.reduce((a,b)=>a+b,0);return(
                 <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
                   <span className="text-xs text-white/50 w-8">第{i+1}組</span>
                   <div className="flex gap-1 flex-1">
@@ -645,8 +659,10 @@ function HistoryTab({ logs, monsterLogs }) {
         </Card>
       );
     }
+    // party / worldboss（rounds 可能含 {label,score} 物件，用 toNum 正規化）
     const won=log.result==="win";
-    const st=calcStats(log.rounds||[]);
+    const numRounds=(log.rounds||[]).map(r=>r.map(toNum));
+    const total=numRounds.flat().reduce((a,b)=>a+b,0);
     const label=log._type==="party"?(log.monsterName||"組隊打怪"):(log.bossName||"世界王");
     return (
       <Card className="p-4" style={CS}>
@@ -661,15 +677,15 @@ function HistoryTab({ logs, monsterLogs }) {
             </div>
             <div className="flex flex-col items-end gap-1">
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${won?"bg-green-500/30 text-green-300":"bg-white/10 text-white/40"}`}>{won?"勝利":"落敗"}</span>
-              <div className="font-black text-xl text-white">{log.total??st.total}</div>
+              <div className="font-black text-xl text-white">{total}</div>
             </div>
           </div>
-          <div className="text-xs text-white/50">{(log.rounds||[]).length}組 <span className="text-white/20 ml-1">{open?"▲":"▼"}</span></div>
+          <div className="text-xs text-white/50">{numRounds.length}組 <span className="text-white/20 ml-1">{open?"▲":"▼"}</span></div>
         </button>
         {log.coachNote&&<div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">💬 教練：{log.coachNote}</div>}
-        {open&&(log.rounds||[]).length>0&&(
+        {open&&numRounds.length>0&&(
           <div className="mt-3 pt-3 border-t border-white/10">
-            {(log.rounds||[]).map((r,i)=>{const sub=r.filter(v=>typeof v==="number"&&v>0).reduce((a,b)=>a+b,0);return(
+            {numRounds.map((r,i)=>{const sub=r.filter(v=>v>0).reduce((a,b)=>a+b,0);return(
               <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
                 <span className="text-xs text-white/50 w-8">第{i+1}組</span>
                 <div className="flex gap-1 flex-1">
@@ -1018,7 +1034,7 @@ function GoalView({ logs, profile }) {
 }
 
 // ── OverviewTab ───────────────────────────────────────────────
-function OverviewTab({ logs }) {
+function OverviewTab({ logs, monsterLogs }) {
   const practiceLogs=useMemo(()=>logs.filter(l=>!l.source),[logs]);
   const stats=useMemo(()=>calcOverviewStats(practiceLogs),[practiceLogs]);
   const rank=useMemo(()=>getRank(stats),[stats]);
@@ -1132,6 +1148,43 @@ function OverviewTab({ logs }) {
           </div>
         )}
       </Card>
+
+      {/* 遊戲統計 */}
+      {(monsterLogs?.length>0||logs.some(l=>l.source==="party")||logs.some(l=>l.source==="worldboss"))&&(()=>{
+        const mLogs  = monsterLogs||[];
+        const pLogs  = logs.filter(l=>l.source==="party");
+        const wbLogs = logs.filter(l=>l.source==="worldboss");
+        const winRate = arr => arr.length ? Math.round(arr.filter(l=>l.result==="win").length/arr.length*100) : null;
+        const rows=[
+          {icon:"⚔️",label:"打怪",logs:mLogs,  color:"#fca5a5"},
+          {icon:"👥",label:"組隊",logs:pLogs,  color:"#c4b5fd"},
+          {icon:"🌍",label:"世界王",logs:wbLogs,color:"#fdba74"},
+        ].filter(r=>r.logs.length>0);
+        if (!rows.length) return null;
+        return (
+          <Card className="p-4" style={CS}>
+            <div className="text-xs font-bold text-white/60 mb-3">⚔️ 遊戲統計</div>
+            <div className="flex flex-col gap-2.5">
+              {rows.map(row=>{
+                const wr=winRate(row.logs);
+                return (
+                  <div key={row.label} className="flex items-center gap-3">
+                    <span className="text-base w-6">{row.icon}</span>
+                    <span className="text-xs font-bold text-white/80 w-12">{row.label}</span>
+                    <div className="flex-1 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                      <div className="h-1.5 rounded-full" style={{width:`${wr??0}%`,background:row.color}}/>
+                    </div>
+                    <span className="text-xs text-white/60 w-20 text-right">
+                      {row.logs.length}場
+                      {wr!==null&&<span className="ml-1 font-bold" style={{color:row.color}}>勝{wr}%</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
     </div>
   );
 }
@@ -1230,7 +1283,7 @@ export default function MemberPractice() {
         <ResultPhase form={form} rounds={finishedRounds} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setPhase("scoring"); }} saving={saving} />
       )}
       {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
-      {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} />}
+      {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}
       {tab==="analysis" &&phase==="setup"&&<AnalysisTab logs={logs} profile={profile} />}
     </div>
   );
