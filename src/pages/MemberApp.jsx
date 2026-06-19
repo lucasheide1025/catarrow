@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
-  subscribeCardCollection, getCertRecords } from "../lib/db";
+  subscribeCardCollection, subscribeCertRecords } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
@@ -98,7 +98,6 @@ export default function MemberApp() {
     if (!profile?.id) return;
     getDexConfig().then(setDexConfig).catch(() => {});
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     const u1 = subscribeCertification(profile.id, setCertification);
     const u2 = subscribeDexGrants(profile.id, setDexGrants);
     const u3 = subscribeMonsterDex(profile.id, setMonsterDex);
@@ -106,7 +105,8 @@ export default function MemberApp() {
     const u5 = subscribeChestStats(profile.id, setChestStats);
     const u6 = subscribePotionDex(profile.id, setPotionDex);
     const u7 = subscribeCardCollection(profile.id, setCardData);
-    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); };
+    const u8 = subscribeCertRecords(profile.id, setCertRecords);
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   function handleEnterPartyRoom(roomId, type, host) {

@@ -314,6 +314,14 @@ export async function getCertRecords(memberId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export function subscribeCertRecords(memberId, callback) {
+  return onSnapshot(
+    query(collection(db, C.certRecords), where("memberId", "==", memberId)),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => { console.warn("subscribeCertRecords:", err.message); callback([]); }
+  );
+}
+
 export async function getAchievements() {
   const snap = await getDocs(query(collection(db, C.achievements), orderBy("createdAt", "desc")));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
