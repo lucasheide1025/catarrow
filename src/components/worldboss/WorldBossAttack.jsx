@@ -194,7 +194,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [potion,   setPotion]   = useState(() =>
     guestOverride ? (sessionStorage.getItem("guest_wb_potion") || "none") : "none"
   );
-  const [bots,     setBots]     = useState([]);
+  const [bots,     setBots]     = useState(() => {
+    const _selfId = guestOverride?.id || profile?.id;
+    return (event.participants || {})[_selfId]?.bots || [];
+  });
   const [hiring,   setHiring]   = useState(false);
   const [coins,    setCoins]    = useState(() =>
     guestOverride
@@ -233,6 +236,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     Object.fromEntries(companions.map(c => [c.id, c.hp]))
   );
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
+  const [showPrepExit,      setShowPrepExit]      = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
@@ -475,8 +479,25 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
+        {/* Prep 退出確認 */}
+        {showPrepExit && (
+          <div style={{ position:"absolute", inset:0, zIndex:50, background:"rgba(0,0,0,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+            <div style={{ background:"#1e293b", border:"1px solid rgba(255,255,255,0.2)", borderRadius:24, padding:24, width:"100%", textAlign:"center" }}>
+              <div style={{ fontSize:32, marginBottom:8 }}>⚠️</div>
+              <div style={{ fontSize:18, fontWeight:900, color:"white", marginBottom:8 }}>確定返回大廳？</div>
+              {bots.length > 0 && (
+                <div style={{ fontSize:12, color:"#fbbf24", marginBottom:8 }}>⚠️ 已雇用 {bots.length} 隻機器人，返回後再次進入仍可帶入</div>
+              )}
+              <div style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>今日挑戰次數不受影響，可隨時重新進入</div>
+              <div style={{ display:"flex", gap:12 }}>
+                <button onClick={() => setShowPrepExit(false)} style={{ flex:1, padding:"12px", borderRadius:12, background:"rgba(255,255,255,0.1)", color:"#e2e8f0", fontWeight:700, border:"none", cursor:"pointer" }}>取消</button>
+                <button onClick={onBack} style={{ flex:1, padding:"12px", borderRadius:12, background:"#475569", color:"white", fontWeight:900, border:"none", cursor:"pointer" }}>返回大廳</button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
-          <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>
+          <button onClick={() => setShowPrepExit(true)} className="text-slate-400 text-sm font-bold">← 返回</button>
           <span className="font-black text-lg flex-1">⚔️ 出戰準備</span>
           <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
         </div>

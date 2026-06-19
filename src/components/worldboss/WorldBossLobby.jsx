@@ -267,6 +267,30 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 {attackedToday ? "✓ 今日已出戰" : "⚡ 可出戰"}
               </span>
             </div>
+            {/* 今日出戰詳情 */}
+            {attackedToday && (() => {
+              const todaySession = (myData.sessions || []).slice().reverse().find(s => s.date === today);
+              if (!todaySession) return null;
+              return (
+                <div className="mt-2 pt-2 border-t border-indigo-400/20 space-y-1">
+                  <div className="text-xs text-indigo-300 font-bold">今日出戰報告</div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">你的傷害</span>
+                    <span className="font-bold text-rose-400">{(todaySession.playerDmg || todaySession.dmg || 0).toLocaleString()}</span>
+                  </div>
+                  {(todaySession.botDmg > 0) && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-400">機器人傷害</span>
+                      <span className="font-bold text-indigo-400">{todaySession.botDmg.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">本次總傷害</span>
+                    <span className="font-bold text-amber-300">{(todaySession.dmg || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
