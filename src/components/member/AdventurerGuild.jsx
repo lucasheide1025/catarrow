@@ -601,23 +601,23 @@ export default function AdventurerGuild({ onBack }) {
                     disabled={isSubmitted || !lock.ok}
                     className="relative rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-70"
                     style={{
-                      backgroundImage: "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(120,53,15,0.9),rgba(20,12,5,0.95))",
-                      backgroundSize: "cover, cover", backgroundPosition: "center, center", backgroundBlendMode: "overlay",
-                      border: `1.5px solid ${bColor}55`,
+                      backgroundImage: "url(/ui/card-bg.webp)",
+                      backgroundSize: "cover", backgroundPosition: "center",
+                      border: `1.5px solid ${bColor}77`,
                     }}>
                     {/* 頂部章別色帶 */}
                     <div className="h-1 w-full" style={{ background: `linear-gradient(90deg,${bColor},transparent)` }} />
                     <div className="p-3 flex flex-col gap-1.5">
                       <div className="text-[10px] font-black" style={{ color: bColor }}>{BADGE_LABEL[q.badgeReward]}</div>
-                      {!lock.ok && <div className="text-[9px] text-white/30">🔒 {lock.reason}</div>}
-                      <div className="text-white font-black text-xs leading-snug">{q.title}</div>
-                      {q.desc && <div className="text-white/50 text-[9px] leading-snug line-clamp-3">{q.desc}</div>}
+                      {!lock.ok && <div className="text-[9px]" style={{ color:"#7c3a00" }}>🔒 {lock.reason}</div>}
+                      <div className="font-black text-xs leading-snug" style={{ color:"#2d1200" }}>{q.title}</div>
+                      {q.desc && <div className="text-[9px] leading-snug line-clamp-3" style={{ color:"#6b3a10" }}>{q.desc}</div>}
                       <div className="mt-1 flex flex-col gap-0.5">
-                        {(q.reward?.xp || 0) > 0   && <div className="text-cyan-300 text-[9px] font-bold">+{q.reward.xp} XP</div>}
-                        {(q.reward?.coins || 0) > 0 && <div className="text-yellow-300 text-[9px] font-bold">+{q.reward.coins} 🪙</div>}
+                        {(q.reward?.xp || 0) > 0   && <div className="text-[9px] font-bold" style={{ color:"#1d4ed8" }}>+{q.reward.xp} XP</div>}
+                        {(q.reward?.coins || 0) > 0 && <div className="text-[9px] font-bold" style={{ color:"#92400e" }}>+{q.reward.coins} 🪙</div>}
                       </div>
                       <div className="mt-1 text-[9px] font-black text-right"
-                        style={{ color: isSubmitted ? "#34d399" : !lock.ok ? "rgba(255,255,255,0.2)" : bColor }}>
+                        style={{ color: isSubmitted ? "#059669" : !lock.ok ? "#a16207" : bColor }}>
                         {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
                       </div>
                     </div>
@@ -640,19 +640,19 @@ export default function AdventurerGuild({ onBack }) {
                     disabled={isSubmitted}
                     className="relative rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-60"
                     style={{
-                      backgroundImage: "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(80,40,10,0.9),rgba(20,12,5,0.95))",
-                      backgroundSize: "cover, cover", backgroundPosition: "center, center", backgroundBlendMode: "overlay",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      backgroundImage: "url(/ui/card-bg.webp)",
+                      backgroundSize: "cover", backgroundPosition: "center",
+                      border: "1px solid rgba(120,60,10,0.4)",
                     }}>
-                    <div className="h-0.5 w-full bg-white/20" />
+                    <div className="h-0.5 w-full" style={{ background: "rgba(120,60,10,0.4)" }} />
                     <div className="p-3 flex flex-col gap-1.5">
-                      <div className="text-white font-black text-xs leading-snug">{q.title}</div>
-                      {q.desc && <div className="text-white/50 text-[9px] line-clamp-3">{q.desc}</div>}
+                      <div className="font-black text-xs leading-snug" style={{ color:"#2d1200" }}>{q.title}</div>
+                      {q.desc && <div className="text-[9px] line-clamp-3" style={{ color:"#6b3a10" }}>{q.desc}</div>}
                       <div className="flex flex-col gap-0.5 mt-1">
-                        {(q.reward?.xp || 0) > 0   && <div className="text-cyan-300 text-[9px]">+{q.reward.xp} XP</div>}
-                        {(q.reward?.coins || 0) > 0 && <div className="text-yellow-300 text-[9px]">+{q.reward.coins} 🪙</div>}
+                        {(q.reward?.xp || 0) > 0   && <div className="text-[9px]" style={{ color:"#1d4ed8" }}>+{q.reward.xp} XP</div>}
+                        {(q.reward?.coins || 0) > 0 && <div className="text-[9px]" style={{ color:"#92400e" }}>+{q.reward.coins} 🪙</div>}
                       </div>
-                      <div className="text-right text-[9px] text-amber-300/60 font-black mt-1">
+                      <div className="text-right text-[9px] font-black mt-1" style={{ color: isSubmitted ? "#059669" : "#92400e" }}>
                         {isSubmitted ? "✓ 已提交" : "→"}
                       </div>
                     </div>
@@ -681,52 +681,56 @@ export default function AdventurerGuild({ onBack }) {
                   className="relative rounded-xl overflow-hidden active:scale-[0.96] transition-transform disabled:cursor-default"
                   style={{
                     backgroundImage: isDone
-                      ? "linear-gradient(160deg,rgba(20,28,44,0.98),rgba(10,15,25,0.98))"
-                      : "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(110,50,12,0.92),rgba(20,10,3,0.96))",
-                    backgroundSize: "cover, cover", backgroundPosition: "center, center",
-                    backgroundBlendMode: isDone ? undefined : "overlay",
-                    border: isDone ? "1px solid rgba(255,255,255,0.05)" : `1.5px solid ${DIFF_COLOR[task.difficulty]}44`,
+                      ? "linear-gradient(160deg,#1e2a3a,#0f1520)"
+                      : "url(/ui/card-bg.webp)",
+                    backgroundSize: "cover", backgroundPosition: "center",
+                    border: isDone ? "1px solid rgba(255,255,255,0.05)" : `1.5px solid ${DIFF_COLOR[task.difficulty]}55`,
                     minHeight: 170,
                   }}>
                   {/* 難度色條 */}
-                  <div className="h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.08)" : DIFF_COLOR[task.difficulty] }} />
+                  <div className="h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.06)" : DIFF_COLOR[task.difficulty] }} />
 
                   <div className="p-2 flex flex-col items-center text-center gap-1.5 h-full">
                     {/* 難度標籤 */}
                     <span className="text-[8px] font-black px-1 py-0.5 rounded self-start"
-                      style={{ background: isDone ? "rgba(255,255,255,0.05)" : `${DIFF_COLOR[task.difficulty]}22`,
-                               color: isDone ? "rgba(255,255,255,0.15)" : DIFF_COLOR[task.difficulty] }}>
+                      style={isDone
+                        ? { background:"rgba(255,255,255,0.06)", color:"rgba(255,255,255,0.2)" }
+                        : { background:`${DIFF_COLOR[task.difficulty]}22`, color: DIFF_COLOR[task.difficulty] }}>
                       {DIFF_TEXT[task.difficulty]}
                     </span>
 
-                    {/* 任務名稱（置中） */}
-                    <div className={`font-black text-[11px] leading-tight w-full ${isDone ? "text-white/20" : "text-amber-100"}`}>
+                    {/* 任務名稱 */}
+                    <div className="font-black text-[11px] leading-tight w-full"
+                      style={{ color: isDone ? "rgba(255,255,255,0.2)" : "#2d1200" }}>
                       {task.questName || task.label}
                     </div>
 
                     {/* 靶紙 + 距離 */}
-                    <div className={`text-[9px] ${isDone ? "text-white/15" : "text-amber-200/55"}`}>
+                    <div className="text-[9px]" style={{ color: isDone ? "rgba(255,255,255,0.15)" : "#7c4a1a" }}>
                       {TARGET_NAME[task.target]}<br/>{task.dist}m
                     </div>
 
                     {/* 達成條件 */}
-                    <div className={`text-[8px] leading-snug w-full rounded px-1 py-1 ${isDone ? "text-white/15" : "text-white/65"}`}
-                      style={{ background: isDone ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.38)" }}>
+                    <div className="text-[8px] leading-snug w-full rounded px-1 py-1"
+                      style={{
+                        color: isDone ? "rgba(255,255,255,0.15)" : "#5c3215",
+                        background: isDone ? "rgba(255,255,255,0.03)" : "rgba(120,60,10,0.12)",
+                      }}>
                       {taskDesc(task)}
                     </div>
 
                     <div className="flex-1" />
 
                     {/* 獎勵 + 完成狀態 */}
-                    <div className="w-full rounded px-1 py-1" style={{ background: "rgba(0,0,0,0.32)" }}>
+                    <div className="w-full rounded px-1 py-1"
+                      style={{ background: isDone ? "rgba(255,255,255,0.04)" : "rgba(120,60,10,0.18)" }}>
                       {isDone ? (
-                        <div className="text-emerald-400 text-[9px] font-black">✓ 完成</div>
+                        <div className="text-[9px] font-black" style={{ color:"#059669" }}>✓ 完成</div>
                       ) : (<>
-                        <div className="text-cyan-300 text-[8px] font-bold">+{task.xp} XP</div>
-                        <div className="text-yellow-300 text-[8px] font-bold">+{actualCoins}🪙{rank.mult > 1 ? ` ×${rank.mult}` : ""}</div>
+                        <div className="text-[8px] font-bold" style={{ color:"#1d4ed8" }}>+{task.xp} XP</div>
+                        <div className="text-[8px] font-bold" style={{ color:"#92400e" }}>+{actualCoins}🪙{rank.mult > 1 ? ` ×${rank.mult}` : ""}</div>
                         {task.bonus && (
-                          <div className="text-[8px] font-black animate-pulse"
-                            style={{ color: task.bonus.type === "chest" ? "#f59e0b" : "#fde68a" }}>
+                          <div className="text-[8px] font-black animate-pulse" style={{ color:"#92400e" }}>
                             {task.bonus.icon} {task.bonus.label}
                           </div>
                         )}
