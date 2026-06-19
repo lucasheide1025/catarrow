@@ -5,6 +5,7 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
+import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { Card, ST, Spinner, BadgePip } from "../shared/UI";
 import ShareCard from "./ShareCard";
 import DailyQuest from "./DailyQuest";
@@ -264,6 +265,21 @@ export default function MemberHome({
           style={cellStyle("story", "linear-gradient(135deg,#1e1b4b,#3b0764)")}>
           <span className="text-white font-black text-xs leading-tight text-center">故事本</span>
         </button>
+
+        {/* 冒險者公會 */}
+        {(() => {
+          const advXP  = profile?.adventurerXP || 0;
+          const advLv  = levelFromXP(advXP);
+          const advRank = rankFromLevel(advLv);
+          return (
+            <button onClick={() => onPageChange("guild")}
+              className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
+              style={cellStyle("guild", "linear-gradient(135deg,#065f46,#064e3b)")}>
+              <span className="text-white font-black text-xs leading-tight text-center">冒險者公會</span>
+              <span className="font-black text-[10px]" style={{ color: advRank.color }}>Lv.{advLv} {advRank.icon}</span>
+            </button>
+          );
+        })()}
 
       </div>
 

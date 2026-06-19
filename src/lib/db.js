@@ -26,6 +26,7 @@ const C = {
   registrations:"registrations",
   billingRecords:"billingRecords",
 };
+const C_GUILD = "guildProgress";
 
 // ─── Audit Log helper ──────────────────────────────────────
 export async function writeAuditLog(action, targetId, targetType, before, after, operatorId) {
@@ -144,9 +145,29 @@ export function subscribePracticeLogs(memberId, callback) {
 export async function addPracticeLog(memberId, data, operatorId) {
   const cleanedData = JSON.parse(JSON.stringify(data));
   if (cleanedData.equipment && typeof cleanedData.equipment === "object") cleanedData.equipment = cleanedData.equipment.label || cleanedData.equipment.category || "未指定裝備";
+
+  // ── 冒險者 XP 計算（非同步，不阻塞）─────────────────────
+  const logType = cleanedData.type || "practice";
+  let xpGain = 0;
+  if (logType === "monster" || logType === "world_boss") {
+    xpGain = Math.round((cleanedData.dmg || 0) / 100);
+  } else if (logType === "dungeon") {
+    xpGain = Math.round((cleanedData.score || 0) / 8);
+  } else {
+    const total = cleanedData.score
+      || (Array.isArray(cleanedData.rounds)
+        ? cleanedData.rounds.flat().reduce((s, v) => s + (typeof v === "number" ? v : 0), 0)
+        : 0);
+    xpGain = Math.round(total / 10);
+  }
+  // ──────────────────────────────────────────────────────────
+
   if (Array.isArray(cleanedData.rounds)) { cleanedData.roundsString = JSON.stringify(cleanedData.rounds); delete cleanedData.rounds; }
   else { cleanedData.roundsString = JSON.stringify([]); }
   const ref = await addDoc(collection(db, C.practiceLogs), { memberId, ...cleanedData, createdAt: serverTimestamp(), operatorId: operatorId || memberId });
+
+  if (xpGain > 0) addAdventurerXP(memberId, xpGain).catch(() => {});
+
   return ref.id;
 }
 
@@ -994,6 +1015,42 @@ export async function getDailyQuestCount(memberId) {
     const m = await getMember(memberId);
     return m?.dailyQuestCount || 0;
   } catch { return 0; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   冒險者公會系統
+   ════════════════════════════════════════════════════════════ */
+
+// 增加冒險者 XP（fire-and-forget 安全，失敗不影響主流程）
+export async function addAdventurerXP(memberId, xp) {
+  if (!memberId || !xp || xp <= 0) return;
+  try {
+    await updateDoc(doc(db, C.members, memberId), { adventurerXP: increment(xp) });
+  } catch (e) { console.warn("addAdventurerXP:", e?.message); }
+}
+
+// 訂閱今日公會任務進度
+export function subscribeAdventurerProgress(memberId, cb) {
+  const date = todayStr();
+  return onSnapshot(doc(db, C_GUILD, memberId), snap => {
+    if (!snap.exists()) { cb({ date, completed: [] }); return; }
+    const d = snap.data();
+    cb(d.date === date ? d : { date, completed: [] });
+  }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [] }); });
+}
+
+// 完成公會任務 → 記錄 + 給 XP + 給金幣
+export async function completeGuildTask(memberId, taskId, xp, coins) {
+  const date = todayStr();
+  const ref = doc(db, C_GUILD, memberId);
+  const snap = await getDoc(ref);
+  const d = snap.exists() ? snap.data() : {};
+  const prevCompleted = d.date === date ? (d.completed || []) : [];
+  if (prevCompleted.includes(taskId)) return { ok: true, already: true };
+  await setDoc(ref, { date, completed: [...prevCompleted, taskId], updatedAt: serverTimestamp() });
+  if (xp > 0) addAdventurerXP(memberId, xp).catch(() => {});
+  if (coins > 0) addCoins(memberId, coins).catch(() => {});
+  return { ok: true };
 }
 
 const C_DEX_GRANT = "dexGrants";      // 每個會員後台授予的成就

@@ -43,10 +43,11 @@ import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
+import AdventurerGuild   from "../components/member/AdventurerGuild";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","dungeon","dungeon-room","guide","coinshop","worldboss","cats","catbook"];
+const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","dungeon","dungeon-room","guide","coinshop","worldboss","cats","catbook","guild"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -271,6 +272,7 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
+        {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")}/>}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
