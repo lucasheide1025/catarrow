@@ -481,8 +481,8 @@ export default function AdventurerGuild({ onBack }) {
   // ═══════════════════════════════════════════════════════════
   // VIEW: 主畫面
   // ═══════════════════════════════════════════════════════════
-  const specialQuests  = guildQuests.filter(q => q.type === "special");
-  const normalQuests   = guildQuests.filter(q => q.type !== "special");
+  const badgeQuests    = guildQuests.filter(q => q.badgeReward);           // 成就懸賞
+  const normalQuests   = guildQuests.filter(q => !q.badgeReward);          // 懸賞告示（賽事用）
   const equippedCount  = EQUIP_SLOT_DEFS.filter(s => profile?.rpgEquip?.[s.id]?.itemId).length;
 
   return (
@@ -570,52 +570,55 @@ export default function AdventurerGuild({ onBack }) {
           </div>
         </div>
 
-        {/* ── 緊急懸賞（特殊任務）──────────────────────── */}
-        <div className="px-4 mt-2">
-          <div className="text-amber-300 text-xs font-black mb-2 flex items-center gap-2">
-            {specialQuests.length > 0
-              ? <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
-              : <span className="w-2 h-2 rounded-full bg-white/20 inline-block" />}
-            緊急懸賞
+        {/* ── 成就懸賞（銀/金/黑章任務）──────────────────── */}
+        <div className="mt-3">
+          {/* section 標題橫幅 */}
+          <div className="mx-4 rounded-xl overflow-hidden mb-2" style={{
+            backgroundImage: "url(/ui/alert-banner.webp)",
+            backgroundSize: "cover", backgroundPosition: "center",
+          }}>
+            <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(0,0,0,0.52)" }}>
+              {badgeQuests.length > 0
+                ? <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                : <span className="w-2 h-2 rounded-full bg-white/20 flex-shrink-0" />}
+              <span className="text-amber-300 font-black text-sm">成就懸賞</span>
+              <span className="text-amber-200/50 text-xs ml-auto">實體徽章由教練發放</span>
+            </div>
           </div>
-          {specialQuests.length === 0 ? (
-            <div className="rounded-2xl p-4 text-center border border-white/5" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <div className="text-white/20 text-2xl mb-1">📋</div>
-              <div className="text-white/25 text-xs">公會長尚未發佈緊急命令</div>
+          {badgeQuests.length === 0 ? (
+            <div className="mx-4 rounded-xl p-4 text-center border border-white/5" style={{ background: "rgba(255,255,255,0.02)" }}>
+              <div className="text-white/20 text-2xl mb-1">🎖️</div>
+              <div className="text-white/25 text-xs">公會長尚未發佈成就任務</div>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {specialQuests.map(q => {
+            <div className="px-4" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
+              {badgeQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
                 const lock = canAcceptBadgeQuest(q, profile);
+                const bColor = BADGE_BORDER[q.badgeReward] || "#94a3b8";
                 return (
                   <button key={q.id} onClick={() => !isSubmitted && lock.ok && handleOpenQuest(q)}
                     disabled={isSubmitted || !lock.ok}
-                    className="w-full rounded-2xl overflow-hidden text-left active:scale-[0.98] transition-transform disabled:opacity-60"
+                    className="relative rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-70"
                     style={{
-                      backgroundImage: "url(/ui/alert-banner.webp), linear-gradient(135deg,#78350f,#1c1410)",
-                      backgroundSize: "cover, cover", backgroundBlendMode: "overlay",
-                      border: "1px solid rgba(251,191,36,0.4)",
+                      backgroundImage: "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(120,53,15,0.9),rgba(20,12,5,0.95))",
+                      backgroundSize: "cover, cover", backgroundPosition: "center, center", backgroundBlendMode: "overlay",
+                      border: `1.5px solid ${bColor}55`,
                     }}>
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="text-amber-300 text-[10px] font-black mb-1">⚡ 緊急任務{q.badgeReward ? ` · ${BADGE_LABEL[q.badgeReward]}` : ""}</div>
-                          <div className="text-white font-black text-base">{q.title}</div>
-                          {q.desc && <div className="text-white/60 text-xs mt-1 line-clamp-2">{q.desc}</div>}
-                          <div className="flex gap-3 text-xs mt-2">
-                            {(q.reward?.xp || 0) > 0    && <span className="text-cyan-300">+{q.reward.xp} XP</span>}
-                            {(q.reward?.coins || 0) > 0  && <span className="text-yellow-300">+{q.reward.coins} 金幣</span>}
-                            {q.badgeReward && <span style={{ color: BADGE_BORDER[q.badgeReward] }}>{BADGE_LABEL[q.badgeReward]}</span>}
-                          </div>
-                        </div>
-                        <div>
-                          {isSubmitted
-                            ? <span className="text-emerald-300 text-xs font-black">✓ 已提交</span>
-                            : !lock.ok
-                            ? <span className="text-white/30 text-xs">🔒 未解鎖</span>
-                            : <span className="text-amber-300 text-sm">→</span>}
-                        </div>
+                    {/* 頂部章別色帶 */}
+                    <div className="h-1 w-full" style={{ background: `linear-gradient(90deg,${bColor},transparent)` }} />
+                    <div className="p-3 flex flex-col gap-1.5">
+                      <div className="text-[10px] font-black" style={{ color: bColor }}>{BADGE_LABEL[q.badgeReward]}</div>
+                      {!lock.ok && <div className="text-[9px] text-white/30">🔒 {lock.reason}</div>}
+                      <div className="text-white font-black text-xs leading-snug">{q.title}</div>
+                      {q.desc && <div className="text-white/50 text-[9px] leading-snug line-clamp-3">{q.desc}</div>}
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        {(q.reward?.xp || 0) > 0   && <div className="text-cyan-300 text-[9px] font-bold">+{q.reward.xp} XP</div>}
+                        {(q.reward?.coins || 0) > 0 && <div className="text-yellow-300 text-[9px] font-bold">+{q.reward.coins} 🪙</div>}
+                      </div>
+                      <div className="mt-1 text-[9px] font-black text-right"
+                        style={{ color: isSubmitted ? "#34d399" : !lock.ok ? "rgba(255,255,255,0.2)" : bColor }}>
+                        {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
                       </div>
                     </div>
                   </button>
@@ -625,68 +628,49 @@ export default function AdventurerGuild({ onBack }) {
           )}
         </div>
 
-        {/* ── 一般懸賞任務（後台發佈）──────────────────── */}
-        <div className="px-4 mt-4">
-          <div className="text-white/50 text-xs font-black mb-2">📋 懸賞告示</div>
-          {normalQuests.length === 0 ? (
-            <div className="rounded-2xl p-4 text-center border border-white/5" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <div className="text-white/20 text-2xl mb-1">🗒️</div>
-              <div className="text-white/25 text-xs">目前沒有懸賞任務</div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
+        {/* ── 懸賞告示（教練發佈，賽事活動用）────────────── */}
+        {normalQuests.length > 0 && (
+          <div className="px-4 mt-4">
+            <div className="text-white/40 text-xs font-black mb-2">📋 懸賞告示</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
               {normalQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
-                const lock = canAcceptBadgeQuest(q, profile);
-                const borderColor = q.badgeReward ? BADGE_BORDER[q.badgeReward] + "66" : "rgba(255,255,255,0.08)";
                 return (
-                  <button key={q.id} onClick={() => !isSubmitted && lock.ok && handleOpenQuest(q)}
-                    disabled={isSubmitted || !lock.ok}
-                    className="w-full rounded-2xl text-left active:scale-[0.98] transition-transform disabled:opacity-60"
+                  <button key={q.id} onClick={() => !isSubmitted && handleOpenQuest(q)}
+                    disabled={isSubmitted}
+                    className="relative rounded-xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:opacity-60"
                     style={{
-                      backgroundImage: "url(/ui/card-bg.webp), linear-gradient(135deg,rgba(120,53,15,0.6),rgba(28,20,16,0.9))",
+                      backgroundImage: "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(80,40,10,0.9),rgba(20,12,5,0.95))",
                       backgroundSize: "cover, cover", backgroundPosition: "center, center", backgroundBlendMode: "overlay",
-                      border: `1px solid ${borderColor}`,
+                      border: "1px solid rgba(255,255,255,0.1)",
                     }}>
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          {q.badgeReward && (
-                            <div className="text-xs font-black mb-1" style={{ color: BADGE_BORDER[q.badgeReward] }}>{BADGE_LABEL[q.badgeReward]} 任務</div>
-                          )}
-                          {!lock.ok && <div className="text-xs text-white/30 mb-1">🔒 {lock.reason}</div>}
-                          <div className="text-white font-black text-base">{q.title}</div>
-                          {q.desc && <div className="text-white/50 text-xs mt-1 line-clamp-2">{q.desc}</div>}
-                          <div className="flex gap-3 text-xs mt-2">
-                            {(q.reward?.xp || 0) > 0    && <span className="text-cyan-300">+{q.reward.xp} XP</span>}
-                            {(q.reward?.coins || 0) > 0  && <span className="text-yellow-300">+{q.reward.coins} 金幣</span>}
-                            {q.badgeReward && <span style={{ color: BADGE_BORDER[q.badgeReward] }}>{BADGE_LABEL[q.badgeReward]}</span>}
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0">
-                          {isSubmitted
-                            ? <span className="text-emerald-300 text-xs font-black">✓ 已提交</span>
-                            : !lock.ok
-                            ? <span className="text-white/30 text-xs">🔒</span>
-                            : <span className="text-amber-300 text-lg">→</span>}
-                        </div>
+                    <div className="h-0.5 w-full bg-white/20" />
+                    <div className="p-3 flex flex-col gap-1.5">
+                      <div className="text-white font-black text-xs leading-snug">{q.title}</div>
+                      {q.desc && <div className="text-white/50 text-[9px] line-clamp-3">{q.desc}</div>}
+                      <div className="flex flex-col gap-0.5 mt-1">
+                        {(q.reward?.xp || 0) > 0   && <div className="text-cyan-300 text-[9px]">+{q.reward.xp} XP</div>}
+                        {(q.reward?.coins || 0) > 0 && <div className="text-yellow-300 text-[9px]">+{q.reward.coins} 🪙</div>}
+                      </div>
+                      <div className="text-right text-[9px] text-amber-300/60 font-black mt-1">
+                        {isSubmitted ? "✓ 已提交" : "→"}
                       </div>
                     </div>
                   </button>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ── 今日公會任務 ─────────────────────────────── */}
         <div className="px-4 mt-4">
-          <div className="text-white/50 text-xs font-black mb-3 flex justify-between items-center">
+          <div className="text-white/50 text-xs font-black mb-2 flex justify-between items-center">
             <span>⚔️ 今日公會任務（{doneToday}/{dailyTasks.length} 完成）</span>
-            <span className="text-white/30 text-[10px]">每日 00:00 重置</span>
+            <span className="text-white/25 text-[10px]">每日 00:00 重置</span>
           </div>
-          {/* 直式三欄卡片排版 */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* 響應式自動欄數：每張最窄 108px，多一點就多一欄 */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(108px,1fr))", gap:8 }}>
             {dailyTasks.map(task => {
               const isDone      = completed.has(task.id);
               const actualCoins = Math.round(task.coins * rank.mult);
@@ -694,65 +678,59 @@ export default function AdventurerGuild({ onBack }) {
               const DIFF_TEXT   = { 1: "一般", 2: "挑戰", 3: "精英" };
               return (
                 <button key={task.id} onClick={() => openDailyTask(task)} disabled={isDone}
-                  className="relative rounded-2xl overflow-hidden text-left active:scale-[0.97] transition-transform disabled:cursor-default"
+                  className="relative rounded-xl overflow-hidden active:scale-[0.96] transition-transform disabled:cursor-default"
                   style={{
                     backgroundImage: isDone
-                      ? "linear-gradient(135deg,rgba(30,41,59,0.95),rgba(15,23,42,0.95))"
-                      : "url(/ui/card-bg.webp), linear-gradient(135deg,rgba(120,53,15,0.88),rgba(28,20,16,0.95))",
-                    backgroundSize: "cover, cover",
-                    backgroundPosition: "center, center",
+                      ? "linear-gradient(160deg,rgba(20,28,44,0.98),rgba(10,15,25,0.98))"
+                      : "url(/ui/card-bg.webp), linear-gradient(160deg,rgba(110,50,12,0.92),rgba(20,10,3,0.96))",
+                    backgroundSize: "cover, cover", backgroundPosition: "center, center",
                     backgroundBlendMode: isDone ? undefined : "overlay",
-                    border: isDone ? "1px solid #1e293b" : `1px solid ${DIFF_COLOR[task.difficulty]}44`,
-                    minHeight: "190px",
+                    border: isDone ? "1px solid rgba(255,255,255,0.05)" : `1.5px solid ${DIFF_COLOR[task.difficulty]}44`,
+                    minHeight: 170,
                   }}>
+                  {/* 難度色條 */}
+                  <div className="h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.08)" : DIFF_COLOR[task.difficulty] }} />
 
-                  {/* 難度色條（頂部）*/}
-                  {!isDone && (
-                    <div className="h-0.5 w-full" style={{ background: DIFF_COLOR[task.difficulty] }} />
-                  )}
-
-                  <div className="p-2 flex flex-col h-full gap-1.5">
+                  <div className="p-2 flex flex-col items-center text-center gap-1.5 h-full">
                     {/* 難度標籤 */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black px-1 py-0.5 rounded"
-                        style={{ background: `${DIFF_COLOR[task.difficulty]}22`, color: DIFF_COLOR[task.difficulty] }}>
-                        {DIFF_TEXT[task.difficulty]}
-                      </span>
-                      {isDone && <span className="text-emerald-400 text-[9px] font-black">✓</span>}
-                    </div>
+                    <span className="text-[8px] font-black px-1 py-0.5 rounded self-start"
+                      style={{ background: isDone ? "rgba(255,255,255,0.05)" : `${DIFF_COLOR[task.difficulty]}22`,
+                               color: isDone ? "rgba(255,255,255,0.15)" : DIFF_COLOR[task.difficulty] }}>
+                      {DIFF_TEXT[task.difficulty]}
+                    </span>
 
-                    {/* 任務名稱 */}
-                    <div className={`font-black text-[11px] leading-snug ${isDone ? "text-white/30" : "text-amber-100"}`}>
+                    {/* 任務名稱（置中） */}
+                    <div className={`font-black text-[11px] leading-tight w-full ${isDone ? "text-white/20" : "text-amber-100"}`}>
                       {task.questName || task.label}
                     </div>
 
                     {/* 靶紙 + 距離 */}
-                    <div className={`text-[9px] ${isDone ? "text-white/20" : "text-amber-200/60"}`}>
-                      {TARGET_NAME[task.target]} · {task.dist}m
+                    <div className={`text-[9px] ${isDone ? "text-white/15" : "text-amber-200/55"}`}>
+                      {TARGET_NAME[task.target]}<br/>{task.dist}m
                     </div>
 
                     {/* 達成條件 */}
-                    <div className={`text-[9px] leading-snug rounded px-1.5 py-1 ${isDone ? "bg-white/5 text-white/20" : "text-white/70"}`}
-                      style={isDone ? {} : { background: "rgba(0,0,0,0.35)" }}>
+                    <div className={`text-[8px] leading-snug w-full rounded px-1 py-1 ${isDone ? "text-white/15" : "text-white/65"}`}
+                      style={{ background: isDone ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.38)" }}>
                       {taskDesc(task)}
                     </div>
 
-                    {/* 間距推底 */}
                     <div className="flex-1" />
 
-                    {/* 獎勵區 */}
-                    <div className={`rounded px-1.5 py-1 flex flex-col gap-0.5 ${isDone ? "bg-white/5" : ""}`}
-                      style={isDone ? {} : { background: "rgba(0,0,0,0.3)" }}>
-                      <div className={`text-[9px] font-bold ${isDone ? "text-white/20" : "text-cyan-300"}`}>+{task.xp} XP</div>
-                      <div className={`text-[9px] font-bold ${isDone ? "text-white/20" : "text-yellow-300"}`}>
-                        +{actualCoins}🪙{rank.mult > 1 ? ` ×${rank.mult}` : ""}
-                      </div>
-                      {task.bonus && !isDone && (
-                        <div className="text-[9px] font-black animate-pulse"
-                          style={{ color: task.bonus.type === "chest" ? "#f59e0b" : "#fde68a" }}>
-                          {task.bonus.icon} {task.bonus.label}
-                        </div>
-                      )}
+                    {/* 獎勵 + 完成狀態 */}
+                    <div className="w-full rounded px-1 py-1" style={{ background: "rgba(0,0,0,0.32)" }}>
+                      {isDone ? (
+                        <div className="text-emerald-400 text-[9px] font-black">✓ 完成</div>
+                      ) : (<>
+                        <div className="text-cyan-300 text-[8px] font-bold">+{task.xp} XP</div>
+                        <div className="text-yellow-300 text-[8px] font-bold">+{actualCoins}🪙{rank.mult > 1 ? ` ×${rank.mult}` : ""}</div>
+                        {task.bonus && (
+                          <div className="text-[8px] font-black animate-pulse"
+                            style={{ color: task.bonus.type === "chest" ? "#f59e0b" : "#fde68a" }}>
+                            {task.bonus.icon} {task.bonus.label}
+                          </div>
+                        )}
+                      </>)}
                     </div>
                   </div>
                 </button>
