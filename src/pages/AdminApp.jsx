@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
@@ -64,6 +64,7 @@ export default function AdminApp() {
   const { logout, profile } = useAuth();
   const [page, setPage]             = useState(() => sessionStorage.getItem("admin_page") || "members");
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
+  const [questCtx, setQuestCtx]     = useState(null);
   const [appTheme, setAppTheme]     = useState(() => getAppTheme());
   function handleAppThemeChange(id) {
     saveAppTheme(id);
@@ -124,6 +125,23 @@ export default function AdminApp() {
   const pendingMsgN  = allMessages.filter(m => !m.reply).length;
   const pendingExtN  = pendingExtList.length;
   const pendingExamN = certTasksList.length;
+
+  function handleGuildNavigate(targetPage, ctx) {
+    setQuestCtx({ ...ctx, killsSoFar: 0 });
+    setPage(targetPage);
+  }
+  function handleQuestKill(monsterId) {
+    setQuestCtx(prev => {
+      if (!prev || prev.monsterId !== monsterId) return prev;
+      const newKills = (prev.killsSoFar || 0) + 1;
+      if (newKills >= prev.killsNeeded) {
+        submitGuildQuestCompletion(profile.id, profile.nickname || profile.name,
+          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null }, "打怪任務完成").catch(() => {});
+        return null;
+      }
+      return { ...prev, killsSoFar: newKills };
+    });
+  }
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId); setPartyRoomType(type); setPartyIsHost(host);
@@ -260,7 +278,7 @@ const adminNav = [
           {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
           {page==="cards"       && <CardCollection />}
-          {page==="monster"     && <MonsterBattle onBack={()=>setPage("comps")}/>}
+          {page==="monster"     && <MonsterBattle onBack={()=>{ setQuestCtx(null); setPage("home"); }} questContext={questCtx} onKillForQuest={handleQuestKill}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
@@ -278,7 +296,7 @@ const adminNav = [
           {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
-          {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")}/>}
+          {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")} onNavigate={handleGuildNavigate}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
