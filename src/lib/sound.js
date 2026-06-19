@@ -285,68 +285,21 @@ export function sfxEpic() {
 
 // ── 新增音效 ─────────────────────────────────────────────────
 
-// 升等/通過檢定 — 完整8音上行旋律
+// 升等/通過檢定
 export function sfxLevelUp() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [[261,0],[329,0.12],[392,0.24],[523,0.36],[659,0.48],[784,0.6],[988,0.72],[1047,0.84]]
-    .forEach(([freq, d]) => {
-      ["square", "sawtooth"].forEach((type, j) => {
-        const n = c.createOscillator(); const g = c.createGain();
-        n.type = type; n.frequency.value = freq * (j === 1 ? 0.5 : 1);
-        const st = t + d;
-        g.gain.setValueAtTime(j === 0 ? 0.2 : 0.1, st);
-        g.gain.setValueAtTime(j === 0 ? 0.2 : 0.1, st + 0.14);
-        g.gain.exponentialRampToValueAtTime(0.001, st + 0.2);
-        n.connect(g); g.connect(c.destination);
-        n.start(st); n.stop(st + 0.22);
-      });
-    });
+  playAudio("level_up", 0.9);
   vibrate([0, 60, 80, 100]);
 }
 
-// 開寶箱 — 7音琶音 + 泛音層
+// 開寶箱
 export function sfxOpenChest() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [261, 329, 392, 523, 659, 784, 1047].forEach((freq, i) => {
-    const st = t + i * 0.1;
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "sine"; n.frequency.value = freq;
-    g.gain.setValueAtTime(0, st);
-    g.gain.linearRampToValueAtTime(0.25, st + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.4);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.45);
-    const n2 = c.createOscillator(); const g2 = c.createGain();
-    n2.type = "triangle"; n2.frequency.value = freq * 2;
-    g2.gain.setValueAtTime(0, st);
-    g2.gain.linearRampToValueAtTime(0.1, st + 0.03);
-    g2.gain.exponentialRampToValueAtTime(0.001, st + 0.25);
-    n2.connect(g2); g2.connect(c.destination);
-    n2.start(st); n2.stop(st + 0.3);
-  });
+  playAudio("open_chest", 0.9);
   vibrate([0, 40, 60, 80, 100]);
 }
 
-// 大勝利 — 號角式進場
+// 大勝利
 export function sfxVictory() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [[392,0,0.15],[523,0.16,0.15],[659,0.32,0.15],[784,0.48,0.36],[659,0.86,0.1],[784,0.97,0.6]]
-    .forEach(([freq, d, dur]) => {
-      ["square", "sawtooth"].forEach((type, j) => {
-        const n = c.createOscillator(); const g = c.createGain();
-        n.type = type; n.frequency.value = freq * (j === 1 ? 0.5 : 1);
-        const st = t + d;
-        g.gain.setValueAtTime(j === 0 ? 0.22 : 0.12, st);
-        g.gain.setValueAtTime(j === 0 ? 0.22 : 0.12, st + dur - 0.05);
-        g.gain.exponentialRampToValueAtTime(0.001, st + dur);
-        n.connect(g); g.connect(c.destination);
-        n.start(st); n.stop(st + dur + 0.05);
-      });
-    });
-  noiseBurst(0, 0.3, 800, 0.35);
+  playAudio("victory", 0.95);
   vibrate([0, 50, 60, 80, 100, 80]);
 }
 
