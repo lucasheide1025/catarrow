@@ -413,11 +413,6 @@ function ArcherCard({ profile, certification, onExam }) {
   const hasNo  = !!profile?.archerNo;
   const level  = certification?.level || "none";
   const locked = certification?.locked || false;
-  const cardBg = {
-    none: "linear-gradient(135deg,#475569 0%,#334155 100%)",
-    blue: "linear-gradient(135deg,#1e3a8a 0%,#2563eb 50%,#0e7490 100%)",
-    gold: "linear-gradient(135deg,#78350f 0%,#b45309 40%,#f59e0b 100%)",
-  };
   const levelLabel = { none:"灰證 · 未通過畢業考", blue:"藍證", gold:"金證" };
   const levelBadge = {
     none: "bg-gray-400 text-white",
@@ -425,64 +420,60 @@ function ArcherCard({ profile, certification, onExam }) {
     gold: "bg-gradient-to-r from-amber-300 to-yellow-400 text-amber-900",
   };
   return (
-    <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg"
-      style={{
-        backgroundImage: `url(/ui/profile-banner.webp), ${cardBg[level] || cardBg.none}`,
-        backgroundSize: "100% auto, cover",
-        backgroundRepeat: "no-repeat, no-repeat",
-        backgroundPosition: "top center, center",
-      }}>
-      <div className="absolute -right-6 -bottom-6 opacity-20" aria-hidden>
-        <div style={{ width:120, height:120, borderRadius:"9999px",
-          background:"radial-gradient(circle, #fbbf24 0 18%, #fff 18% 34%, #ef4444 34% 50%, #fff 50% 66%, #1e293b 66% 82%, #fff 82% 100%)" }} />
-      </div>
-      <div className="relative">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🎯</span>
-            <span className="text-xs tracking-[0.3em] text-cyan-100 font-bold">貓小隊射箭場 · 射手證</span>
-          </div>
-          <span className={`text-xs font-black px-2.5 py-1 rounded-full ${levelBadge[level]}`}>
-            🎖️ {levelLabel[level]}
-          </span>
-        </div>
-        {hasNo ? (
-          <>
-            <div className="text-cyan-100 text-xs mb-1">證號 ARCHER ID</div>
-            <div className="font-black text-3xl tracking-wider mb-3"
-              style={{ fontFamily:"monospace", textShadow:"0 2px 8px rgba(0,0,0,.4)" }}>
-              {formatArcherNo(profile.archerNo)}
+    <div className="flex flex-col gap-2">
+      {/* ── 射手證主卡（鎖定在 profile-banner 高度內）── */}
+      <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg"
+        style={{ backgroundImage:"url(/ui/profile-banner.webp)", backgroundSize:"cover", backgroundPosition:"center", backgroundColor:"#1e1b4b" }}>
+        <div className="relative">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🎯</span>
+              <span className="text-xs tracking-[0.3em] text-cyan-100 font-bold">貓小隊射箭場 · 射手證</span>
             </div>
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="text-white font-bold text-lg leading-tight">{profile?.name}</div>
-                {profile?.nickname && <div className="text-cyan-100 text-xs">「{profile.nickname}」</div>}
+            <span className={`text-xs font-black px-2.5 py-1 rounded-full ${levelBadge[level]}`}>
+              🎖️ {levelLabel[level]}
+            </span>
+          </div>
+          {hasNo ? (
+            <>
+              <div className="text-cyan-100 text-xs mb-1">證號 ARCHER ID</div>
+              <div className="font-black text-3xl tracking-wider mb-3"
+                style={{ fontFamily:"monospace", textShadow:"0 2px 8px rgba(0,0,0,.4)" }}>
+                {formatArcherNo(profile.archerNo)}
               </div>
-              {profile?.archerNoDate && (
-                <div className="text-right text-cyan-100 text-xs">
-                  <div>領證日期</div>
-                  <div className="font-bold text-white">{profile.archerNoDate}</div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="text-white font-bold text-lg leading-tight">{profile?.name}</div>
+                  {profile?.nickname && <div className="text-cyan-100 text-xs">「{profile.nickname}」</div>}
                 </div>
-              )}
+                {profile?.archerNoDate && (
+                  <div className="text-right text-cyan-100 text-xs">
+                    <div>領證日期</div>
+                    <div className="font-bold text-white">{profile.archerNoDate}</div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="py-2">
+              <div className="text-cyan-50 text-sm font-bold mb-1">尚未領取射手證</div>
+              <div className="text-cyan-100/70 text-xs">完成檢定後，向教練申請專屬射手證號 🏹</div>
             </div>
-          </>
-        ) : (
-          <div className="py-2">
-            <div className="text-cyan-50 text-sm font-bold mb-1">尚未領取射手證</div>
-            <div className="text-cyan-100/70 text-xs">完成檢定後，向教練申請專屬射手證號 🏹</div>
-          </div>
-        )}
-        <button onClick={onExam}
-          className="mt-4 w-full bg-white/15 hover:bg-white/25 backdrop-blur rounded-xl py-2.5 text-white text-sm font-bold border border-white/20 transition-all">
-          {locked ? "🏆 已達最高級（金證）查看" : level==="blue" ? "🎖️ 挑戰金證畢業考 →" : level==="gold" ? "🏆 查看射手證" : "🎖️ 前往畢業考 →"}
-        </button>
-        {(certification?.blue?.grantedAt || certification?.gold?.grantedAt) && (
-          <div className="mt-3 flex flex-col gap-2">
-            {certification?.blue?.grantedAt && <CertDetailRow tier="藍證" tierColor="text-blue-100" data={certification.blue} />}
-            {certification?.gold?.grantedAt && <CertDetailRow tier="金證" tierColor="text-amber-200" data={certification.gold} />}
-          </div>
-        )}
+          )}
+          <button onClick={onExam}
+            className="mt-4 w-full bg-white/15 hover:bg-white/25 backdrop-blur rounded-xl py-2.5 text-white text-sm font-bold border border-white/20 transition-all">
+            {locked ? "🏆 已達最高級（金證）查看" : level==="blue" ? "🎖️ 挑戰金證畢業考 →" : level==="gold" ? "🏆 查看射手證" : "🎖️ 前往畢業考 →"}
+          </button>
+        </div>
       </div>
+
+      {/* ── 藍證 / 金證 詳情（獨立在 banner 外，各自撐開圖片高度）── */}
+      {(certification?.blue?.grantedAt || certification?.gold?.grantedAt) && (
+        <>
+          {certification?.blue?.grantedAt && <CertDetailRow tier="藍證" tierColor="text-blue-100" data={certification.blue} />}
+          {certification?.gold?.grantedAt && <CertDetailRow tier="金證" tierColor="text-amber-200" data={certification.gold} />}
+        </>
+      )}
     </div>
   );
 }
@@ -496,30 +487,37 @@ function CertDetailRow({ tier, tierColor, data }) {
     return d.toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" });
   }
   return (
-    <div className="relative overflow-hidden rounded-xl p-3 border border-white/15"
-      style={{ backgroundImage:`url(${examBg})`, backgroundSize:"100% auto", backgroundRepeat:"no-repeat", backgroundPosition:"top center", backgroundColor:"rgba(0,0,0,0.35)" }}>
-      <div className="flex items-center justify-between mb-2">
-        <span className={`text-xs font-black ${tierColor}`}>🎖️ {tier}</span>
-        <span className="text-cyan-100 text-xs">領證 {fmtGrant(data.grantedAt)}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-center mb-2">
-        {[["🏹 弓組", data.bowLabel||(BOW_LABEL[data.bowType])||"—"],
-          ["🛡️ 防具", data.armorLabel||"—"],
-          ["✨ 飾品", data.accessoryLabel||"—"]].map(([lbl,val]) => (
-          <div key={lbl} className="bg-white/5 rounded-lg py-1.5 px-1">
-            <div className="text-cyan-100/60 text-[9px] mb-0.5">{lbl}</div>
-            <div className="text-white text-[10px] font-bold leading-tight">{val}</div>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="bg-white/5 rounded-lg py-1.5">
-          <div className="text-cyan-100/60 text-[9px] mb-0.5">任務1 中靶</div>
-          <div className="text-white text-xs font-bold">{data.task1?.hits!=null?`${data.task1.hits} 箭`:"—"}</div>
+    <div className="relative overflow-hidden rounded-xl border border-white/15"
+      style={{
+        backgroundImage: `url(${examBg})`,
+        backgroundSize: "100% 100%",
+        backgroundColor: "rgba(0,0,0,0.1)",
+      }}>
+      {/* 內容置中於圖片正中間 */}
+      <div className="flex flex-col justify-center gap-2 p-4" style={{ minHeight: 220 }}>
+        <div className="flex items-center justify-between">
+          <span className={`text-xs font-black ${tierColor}`}>🎖️ {tier}</span>
+          <span className="text-cyan-100 text-xs">領證 {fmtGrant(data.grantedAt)}</span>
         </div>
-        <div className="bg-white/5 rounded-lg py-1.5">
-          <div className="text-cyan-100/60 text-[9px] mb-0.5">任務2 分數</div>
-          <div className="text-white text-xs font-bold">{data.task2?.score!=null?`${data.task2.score} 分`:"—"}</div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[["🏹 弓組", data.bowLabel||(BOW_LABEL[data.bowType])||"—"],
+            ["🛡️ 防具", data.armorLabel||"—"],
+            ["✨ 飾品", data.accessoryLabel||"—"]].map(([lbl,val]) => (
+            <div key={lbl} className="bg-white/10 rounded-lg py-1.5 px-1">
+              <div className="text-cyan-100/70 text-[9px] mb-0.5">{lbl}</div>
+              <div className="text-white text-[10px] font-bold leading-tight">{val}</div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-center">
+          <div className="bg-white/10 rounded-lg py-2">
+            <div className="text-cyan-100/70 text-[9px] mb-0.5">任務1 中靶</div>
+            <div className="text-white text-sm font-black">{data.task1?.hits!=null?`${data.task1.hits} 箭`:"—"}</div>
+          </div>
+          <div className="bg-white/10 rounded-lg py-2">
+            <div className="text-cyan-100/70 text-[9px] mb-0.5">任務2 分數</div>
+            <div className="text-white text-sm font-black">{data.task2?.score!=null?`${data.task2.score} 分`:"—"}</div>
+          </div>
         </div>
       </div>
     </div>
