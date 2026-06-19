@@ -496,71 +496,70 @@ export default function AdventurerGuild({ onBack }) {
       <div className="flex-1 overflow-y-auto pb-8">
 
         {/* ── NPC + 狀態欄 ──────────────────────────────── */}
-        <div className="flex gap-3 p-4 pb-2">
+        <div className="flex gap-2 p-3 pb-2">
 
-          {/* 左：狀態欄 */}
-          <div className="flex-1 rounded-2xl p-3 flex flex-col gap-2" style={{ background: rank.gradient, minWidth: 0 }}>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl leading-none">{rank.icon}</span>
+          {/* 左：狀態欄（較緊湊） */}
+          <div className="flex-1 rounded-2xl p-2.5 flex flex-col gap-1.5" style={{ background: rank.gradient, minWidth: 0 }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xl leading-none">{rank.icon}</span>
               <div>
-                <div className="text-white font-black text-base leading-tight">Lv.{level} {rank.name}</div>
-                <div className="text-white/60 text-xs">{rank.name}段 {lvInRank}/10</div>
+                <div className="text-white font-black text-sm leading-tight">Lv.{level} {rank.name}</div>
+                <div className="text-white/60 text-[9px]">{rank.name}段 {lvInRank}/10</div>
               </div>
             </div>
             {level < 60 ? (
               <div>
-                <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
+                <div className="h-1 bg-black/30 rounded-full overflow-hidden">
                   <div className="h-full bg-white/80 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                 </div>
-                <div className="text-white/50 text-[10px] mt-0.5">{current}/{needed} XP</div>
+                <div className="text-white/50 text-[9px] mt-0.5">{current}/{needed} XP</div>
               </div>
             ) : (
-              <div className="text-amber-300 font-black text-xs">⚡ 神話滿等</div>
+              <div className="text-amber-300 font-black text-[10px]">⚡ 神話滿等</div>
             )}
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <div className="rounded-lg px-2 py-1.5 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
-                <div className="text-yellow-300 font-black">🪙 {(profile?.coins || 0).toLocaleString()}</div>
-                <div className="text-white/40 text-[9px]">金幣</div>
+            <div className="grid grid-cols-2 gap-1">
+              <div className="rounded-md px-1.5 py-1 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+                <div className="text-yellow-300 font-black text-[9px]">🪙 {(profile?.coins || 0).toLocaleString()}</div>
+                <div className="text-white/40 text-[8px]">金幣</div>
               </div>
-              <div className="rounded-lg px-2 py-1.5 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
-                <div className="text-indigo-300 font-black">🎒 {equippedCount}/10</div>
-                <div className="text-white/40 text-[9px]">裝備</div>
+              <div className="rounded-md px-1.5 py-1 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+                <div className="text-indigo-300 font-black text-[9px]">🎒 {equippedCount}/10</div>
+                <div className="text-white/40 text-[8px]">裝備</div>
               </div>
-              <div className="rounded-lg px-2 py-1.5 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
-                <div className="text-emerald-300 font-black">📜 {doneToday}/{dailyTasks.length}</div>
-                <div className="text-white/40 text-[9px]">今日任務</div>
+              <div className="rounded-md px-1.5 py-1 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+                <div className="text-emerald-300 font-black text-[9px]">📜 {doneToday}/{dailyTasks.length}</div>
+                <div className="text-white/40 text-[8px]">今日任務</div>
               </div>
-              <div className="rounded-lg px-2 py-1.5 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
-                <div className="text-white font-black">
-                  🥈{profile?.achievement?.silver || 0}&nbsp;🥇{profile?.achievement?.gold || 0}&nbsp;⬛{profile?.achievement?.black || 0}
+              <div className="rounded-md px-1.5 py-1 text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+                <div className="text-white font-black text-[9px]">
+                  🥈{profile?.achievement?.silver || 0} 🥇{profile?.achievement?.gold || 0} ⬛{profile?.achievement?.black || 0}
                 </div>
-                <div className="text-white/40 text-[9px]">成就章</div>
+                <div className="text-white/40 text-[8px]">成就章</div>
               </div>
             </div>
 
             {/* 晉階任務入口 */}
             {promoQuest && (
               <button onClick={() => { setPromoArrows([]); setPromoResult(null); setView("promotion"); }}
-                className="w-full rounded-xl px-3 py-2 border border-amber-400/50 text-left active:scale-[0.98] transition-transform"
+                className="w-full rounded-lg px-2 py-1.5 border border-amber-400/50 text-left active:scale-[0.98] transition-transform"
                 style={{ background: "rgba(251,191,36,0.12)" }}>
-                <div className="text-amber-300 font-black text-[10px]">⚔️ 晉階任務已解鎖！點此開始 →</div>
-                <div className="text-amber-200/60 text-[9px]">{promoQuest.dist}m・≥{promoQuest.goal}分 → 晉升 {promoQuest.toRank}</div>
+                <div className="text-amber-300 font-black text-[9px]">⚔️ 晉階任務解鎖！點此 →</div>
+                <div className="text-amber-200/60 text-[8px]">{promoQuest.dist}m · ≥{promoQuest.goal}分 → {promoQuest.toRank}</div>
               </button>
             )}
             {isPromotionLevel(level) && !promoQuest && (
-              <div className="rounded-xl px-3 py-1.5 border border-emerald-400/30" style={{ background: "rgba(16,185,129,0.08)" }}>
-                <div className="text-emerald-300 font-black text-[10px]">✓ Lv{level} 晉階任務已完成</div>
+              <div className="rounded-lg px-2 py-1 border border-emerald-400/30" style={{ background: "rgba(16,185,129,0.08)" }}>
+                <div className="text-emerald-300 font-black text-[9px]">✓ Lv{level} 晉階完成</div>
               </div>
             )}
           </div>
 
-          {/* 右：NPC */}
-          <div className="w-28 flex-shrink-0 flex flex-col items-center gap-2">
-            <div className="w-24 h-24 rounded-2xl overflow-hidden relative"
+          {/* 右：NPC（放大） */}
+          <div className="w-36 flex-shrink-0 flex flex-col items-center gap-1.5">
+            <div className="w-36 h-36 rounded-2xl overflow-hidden relative"
               style={{ background: "linear-gradient(135deg,#1c1a0e,#3d2e0a)", border: "1px solid rgba(251,191,36,0.3)" }}>
-              <img src="/ui/npc_clean.webp" alt="公會長" className="w-full h-full object-cover"
+              <img src="/ui/npc_clean.webp" alt="公會長" className="w-full h-full object-cover object-top"
                 onError={e => { e.target.style.display = "none"; }} />
-              <div className="absolute inset-0 flex items-center justify-center text-5xl" style={{ display: "none" }}>🧙</div>
             </div>
             {/* 對話泡泡 */}
             <div className="w-full rounded-xl p-2 relative" style={{ background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)" }}>
@@ -572,12 +571,19 @@ export default function AdventurerGuild({ onBack }) {
         </div>
 
         {/* ── 緊急懸賞（特殊任務）──────────────────────── */}
-        {specialQuests.length > 0 && (
-          <div className="px-4 mt-2">
-            <div className="text-amber-300 text-xs font-black mb-2 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
-              緊急懸賞
+        <div className="px-4 mt-2">
+          <div className="text-amber-300 text-xs font-black mb-2 flex items-center gap-2">
+            {specialQuests.length > 0
+              ? <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+              : <span className="w-2 h-2 rounded-full bg-white/20 inline-block" />}
+            緊急懸賞
+          </div>
+          {specialQuests.length === 0 ? (
+            <div className="rounded-2xl p-4 text-center border border-white/5" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="text-white/20 text-2xl mb-1">📋</div>
+              <div className="text-white/25 text-xs">公會長尚未發佈緊急命令</div>
             </div>
+          ) : (
             <div className="flex flex-col gap-2">
               {specialQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
@@ -616,13 +622,18 @@ export default function AdventurerGuild({ onBack }) {
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* ── 一般懸賞任務（後台發佈）──────────────────── */}
-        {normalQuests.length > 0 && (
-          <div className="px-4 mt-4">
-            <div className="text-white/50 text-xs font-black mb-2">📋 懸賞告示</div>
+        <div className="px-4 mt-4">
+          <div className="text-white/50 text-xs font-black mb-2">📋 懸賞告示</div>
+          {normalQuests.length === 0 ? (
+            <div className="rounded-2xl p-4 text-center border border-white/5" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="text-white/20 text-2xl mb-1">🗒️</div>
+              <div className="text-white/25 text-xs">目前沒有懸賞任務</div>
+            </div>
+          ) : (
             <div className="flex flex-col gap-2">
               {normalQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
@@ -665,8 +676,8 @@ export default function AdventurerGuild({ onBack }) {
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* ── 今日公會任務 ─────────────────────────────── */}
         <div className="px-4 mt-4">
@@ -675,7 +686,7 @@ export default function AdventurerGuild({ onBack }) {
             <span className="text-white/30 text-[10px]">每日 00:00 重置</span>
           </div>
           {/* 直式三欄卡片排版 */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-3 gap-2">
             {dailyTasks.map(task => {
               const isDone      = completed.has(task.id);
               const actualCoins = Math.round(task.coins * rank.mult);
@@ -692,36 +703,36 @@ export default function AdventurerGuild({ onBack }) {
                     backgroundPosition: "center, center",
                     backgroundBlendMode: isDone ? undefined : "overlay",
                     border: isDone ? "1px solid #1e293b" : `1px solid ${DIFF_COLOR[task.difficulty]}44`,
-                    minHeight: "220px",
+                    minHeight: "190px",
                   }}>
 
                   {/* 難度色條（頂部）*/}
                   {!isDone && (
-                    <div className="h-1 w-full" style={{ background: DIFF_COLOR[task.difficulty] }} />
+                    <div className="h-0.5 w-full" style={{ background: DIFF_COLOR[task.difficulty] }} />
                   )}
 
-                  <div className="p-3 flex flex-col h-full gap-2">
+                  <div className="p-2 flex flex-col h-full gap-1.5">
                     {/* 難度標籤 */}
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md"
+                      <span className="text-[9px] font-black px-1 py-0.5 rounded"
                         style={{ background: `${DIFF_COLOR[task.difficulty]}22`, color: DIFF_COLOR[task.difficulty] }}>
                         {DIFF_TEXT[task.difficulty]}
                       </span>
-                      {isDone && <span className="text-emerald-400 text-[10px] font-black">✓ 完成</span>}
+                      {isDone && <span className="text-emerald-400 text-[9px] font-black">✓</span>}
                     </div>
 
                     {/* 任務名稱 */}
-                    <div className={`font-black text-sm leading-snug ${isDone ? "text-white/30" : "text-amber-100"}`}>
+                    <div className={`font-black text-[11px] leading-snug ${isDone ? "text-white/30" : "text-amber-100"}`}>
                       {task.questName || task.label}
                     </div>
 
                     {/* 靶紙 + 距離 */}
-                    <div className={`text-[10px] ${isDone ? "text-white/20" : "text-amber-200/60"}`}>
-                      {TARGET_NAME[task.target]} · {task.dist} 米
+                    <div className={`text-[9px] ${isDone ? "text-white/20" : "text-amber-200/60"}`}>
+                      {TARGET_NAME[task.target]} · {task.dist}m
                     </div>
 
                     {/* 達成條件 */}
-                    <div className={`text-[10px] leading-snug rounded-lg px-2 py-1.5 ${isDone ? "bg-white/5 text-white/20" : "text-white/70"}`}
+                    <div className={`text-[9px] leading-snug rounded px-1.5 py-1 ${isDone ? "bg-white/5 text-white/20" : "text-white/70"}`}
                       style={isDone ? {} : { background: "rgba(0,0,0,0.35)" }}>
                       {taskDesc(task)}
                     </div>
@@ -730,14 +741,14 @@ export default function AdventurerGuild({ onBack }) {
                     <div className="flex-1" />
 
                     {/* 獎勵區 */}
-                    <div className={`rounded-lg px-2 py-1.5 flex flex-col gap-0.5 ${isDone ? "bg-white/5" : ""}`}
+                    <div className={`rounded px-1.5 py-1 flex flex-col gap-0.5 ${isDone ? "bg-white/5" : ""}`}
                       style={isDone ? {} : { background: "rgba(0,0,0,0.3)" }}>
-                      <div className={`text-[10px] font-bold ${isDone ? "text-white/20" : "text-cyan-300"}`}>+{task.xp} XP</div>
-                      <div className={`text-[10px] font-bold ${isDone ? "text-white/20" : "text-yellow-300"}`}>
-                        +{actualCoins} 金幣{rank.mult > 1 ? ` (${rank.mult}x)` : ""}
+                      <div className={`text-[9px] font-bold ${isDone ? "text-white/20" : "text-cyan-300"}`}>+{task.xp} XP</div>
+                      <div className={`text-[9px] font-bold ${isDone ? "text-white/20" : "text-yellow-300"}`}>
+                        +{actualCoins}🪙{rank.mult > 1 ? ` ×${rank.mult}` : ""}
                       </div>
                       {task.bonus && !isDone && (
-                        <div className="text-[10px] font-black mt-0.5 animate-pulse"
+                        <div className="text-[9px] font-black animate-pulse"
                           style={{ color: task.bonus.type === "chest" ? "#f59e0b" : "#fde68a" }}>
                           {task.bonus.icon} {task.bonus.label}
                         </div>
