@@ -6,7 +6,7 @@ import {
   where, orderBy, limit, arrayUnion,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins, addMaterials } from "./db";
+import { addCoins, addMaterials, addChests } from "./db";
 import { openCoinChest } from "./lootTable";
 import {
   WORLD_BOSSES, DEFAULT_REWARD, CONSOLATION_REWARD,
@@ -142,6 +142,31 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
 
     await updateDoc(eventRef, upd);
 
+    // ── 每日出戰獎勵（非訪客）──────────────────────────────
+    let dailyReward = null;
+    if (!isGuest && memberId) {
+      const rewardCoins = 60;
+      await addCoins(memberId, rewardCoins).catch(() => {});
+
+      const pct = combinedDmg / (ev.bossMaxHP || 1);
+      let chestType = null;
+      if (pct >= 0.025) chestType = "gold";
+      else if (pct >= 0.01) chestType = "iron";
+
+      if (chestType) {
+        await addChests(memberId, [{
+          id: `wb_daily_${memberId}_${today}`,
+          type: chestType,
+          family: "worldboss",
+          tier: chestType,
+          from: `世界王出戰獎勵（${Math.round(pct * 1000) / 10}% 傷害）`,
+          ts: Date.now(),
+        }]).catch(() => {});
+      }
+
+      dailyReward = { coins: rewardCoins, chest: chestType, pct: Math.round(pct * 1000) / 10 };
+    }
+
     // 寫入練習日誌（非訪客）
     if (!isGuest && memberId) {
       const { addPracticeLog } = await import("./db");
@@ -159,7 +184,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       }).catch(() => {});
     }
 
-    return { ok: true, dmg: combinedDmg, defeated, isLastHit, newHP };
+    return { ok: true, dmg: combinedDmg, defeated, isLastHit, newHP, dailyReward };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
@@ -183,15 +208,14 @@ export async function distributeWorldBossRewards(eventId) {
       await addCoins(mid, (reward.coins || 0) + coinChest.coins).catch(() => {});
 
       // 貓貓箱 + 黃金寶箱（寫入背包）
-      const { addToChestInventory } = await import("./db").then(m => m).catch(() => ({}));
-      if (addToChestInventory) {
-        for (let i = 0; i < (reward.catBoxes || 1); i++) {
-          await addToChestInventory(mid, "cat_box").catch(() => {});
-        }
-        for (let i = 0; i < (reward.goldChests || 1); i++) {
-          await addToChestInventory(mid, "gold").catch(() => {});
-        }
+      const killChests = [];
+      for (let i = 0; i < (reward.catBoxes || 1); i++) {
+        killChests.push({ id: `wb_kill_cat_${mid}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: "世界王擊殺獎勵", ts: Date.now() });
       }
+      for (let i = 0; i < (reward.goldChests || 1); i++) {
+        killChests.push({ id: `wb_kill_gold_${mid}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: "世界王擊殺獎勵", ts: Date.now() });
+      }
+      if (killChests.length > 0) await addChests(mid, killChests).catch(() => {});
 
       // 1% 卡片掉落
       if (Math.random() < (reward.cardChance || 0.01)) {
@@ -202,8 +226,11 @@ export async function distributeWorldBossRewards(eventId) {
 
     // 最後一擊額外獎勵
     if (lastHitId && !participants[lastHitId]?.isGuest) {
-      const { addToChestInventory, addCardPack } = await import("./db").then(m => m).catch(() => ({}));
-      if (addToChestInventory) await addToChestInventory(lastHitId, "cat_box").catch(() => {});
+      await addChests(lastHitId, [{
+        id: `wb_lasthit_${lastHitId}_${Date.now()}`,
+        type: "cat_box", family: "worldboss", tier: "boss", from: "世界王最後一擊", ts: Date.now(),
+      }]).catch(() => {});
+      const { addCardPack } = await import("./db").then(m => m).catch(() => ({}));
       if (addCardPack) await addCardPack(lastHitId).catch(() => {});
     }
 

@@ -1010,9 +1010,31 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 ))}
               </div>
 
+              {/* 每日出戰獎勵 */}
+              {result.dailyReward && (
+                <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4">
+                  <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-300">參與金幣</span>
+                    <span className="font-black text-amber-300">+{result.dailyReward.coins} 💰</span>
+                  </div>
+                  {result.dailyReward.chest ? (
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-slate-300">傷害寶箱</span>
+                      <span className="font-black text-emerald-300">
+                        {result.dailyReward.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500 mt-1">傷害達 Boss HP 1% 可獲鐵寶箱，2.5% 可獲金寶箱</div>
+                  )}
+                  <div className="text-xs text-slate-500 mt-1">本次傷害佔 Boss HP {result.dailyReward.pct}%</div>
+                </div>
+              )}
+
               {result.defeated && (
                 <div className="w-full bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-amber-200 leading-relaxed">
-                  🎁 擊殺獎勵已自動發放給所有參戰者！
+                  🎁 擊殺大獎已自動發放給所有參戰者！
                 </div>
               )}
             </>
