@@ -413,11 +413,18 @@ const RANKS = [
   { rank:"E",   color:"#9ca3af", min:{ hit:30, high:0,  stable:0,  ten:0  } },
   { rank:"F",   color:"#ef4444", min:{ hit:0,  high:0,  stable:0,  ten:0  } },
 ];
-function calcOverviewStats(practiceLogs) {
-  const allArrows = practiceLogs.flatMap(l=>(l.rounds||[]).flat());
+// 正規化任意 log 的箭矢為數字陣列
+function getLogArrows(log) {
+  if (log.roundScores) {
+    return (log.roundScores||[]).flatMap(r=>(r.scores||[]).map(toNum));
+  }
+  return (log.rounds||[]).flat().map(toNum);
+}
+function calcOverviewStats(anyLogs) {
+  const allArrows = anyLogs.flatMap(getLogArrows);
   if (!allArrows.length) return null;
-  const nums   = allArrows.filter(v=>typeof v==="number");
-  const misses = allArrows.filter(v=>v==="M").length;
+  const nums   = allArrows.filter(v=>typeof v==="number"&&v>0);
+  const misses = allArrows.filter(v=>v===0||v==="M").length;
   const total  = nums.reduce((a,b)=>a+b,0);
   const count  = allArrows.length;
   const hitRate   = (count-misses)/count*100;
@@ -428,7 +435,7 @@ function calcOverviewStats(practiceLogs) {
   const stdDev    = Math.sqrt(variance);
   const stability = Math.max(0,Math.min(100,100-stdDev*12));
   const dist = {};
-  allArrows.forEach(v=>{ dist[v]=(dist[v]||0)+1; });
+  allArrows.forEach(v=>{ const k=v===0?"M":v; dist[k]=(dist[k]||0)+1; });
   return { hitRate, highRate, tenRate, stability, count, total, avg, stdDev, dist };
 }
 function getRank(stats) {
@@ -757,12 +764,75 @@ function HistoryTab({ logs, monsterLogs }) {
         </div>
       )}
 
-      {/* 打怪 / 組隊 / 世界王 — 平面列表 */}
+      {/* 打怪 / 組隊 / 世界王 — 類別統計 + 平面列表 */}
       {showOther&&(
         <>
           {showPractice&&filteredOther.length>0&&(
             <div className="text-xs text-white/40 font-bold mt-1 px-1">⚔️ 遊戲紀錄</div>
           )}
+          {/* 選定遊戲類別時顯示該類別統計 */}
+          {!showPractice&&filteredOther.length>0&&(()=>{
+            const catStats=calcOverviewStats(filteredOther);
+            const catRank=getRank(catStats);
+            const winCount=filteredOther.filter(l=>l.result==="win"||l.result==="defeated").length;
+            const wr=Math.round(winCount/filteredOther.length*100);
+            const catInfo=TYPE_BADGE[sourceFilter]||{};
+            return (
+              <Card className="p-4 mb-1" style={CS}>
+                <div className="text-xs font-bold mb-3" style={{color:catInfo.text||"#e2e8f0"}}>
+                  {catInfo.label} 統計
+                </div>
+                {/* 勝負 */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex-1">
+                    <div className="flex justify-between text-xs text-white/50 mb-1">
+                      <span>勝場率</span>
+                      <span className="font-bold text-white/80">{winCount}/{filteredOther.length} 場（{wr}%）</span>
+                    </div>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-1.5 rounded-full transition-all" style={{width:`${wr}%`,background:catInfo.text||"#60a5fa"}}/>
+                    </div>
+                  </div>
+                </div>
+                {catStats ? (
+                  <>
+                    {/* 指標列 */}
+                    {[
+                      {label:"命中率",val:catStats.hitRate,   color:"#60a5fa"},
+                      {label:"高分率",val:catStats.highRate,  color:"#10b981"},
+                      {label:"穩定性",val:catStats.stability, color:"#f59e0b"},
+                      {label:"10分率",val:catStats.tenRate,   color:"#ec4899"},
+                    ].map(m=>(
+                      <div key={m.label} className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs text-white/50 w-12">{m.label}</span>
+                        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="h-1.5 rounded-full" style={{width:`${Math.min(100,m.val)}%`,background:m.color}}/>
+                        </div>
+                        <span className="text-xs font-bold w-12 text-right" style={{color:m.color}}>{m.val.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                    {/* 圓盤 + 評級 */}
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/10">
+                      <RadarDisc h={catStats.hitRate} hi={catStats.highRate} st={catStats.stability}/>
+                      <div className="flex-1">
+                        {catRank ? (
+                          <>
+                            <div className="font-black text-3xl" style={{color:catRank.color}}>{catRank.rank}</div>
+                            <div className="text-xs text-white/40 mt-0.5">{catStats.count} 箭統計</div>
+                          </>
+                        ) : (
+                          <div className="text-xs text-white/30">累積 {catStats.count} 箭<br/>（30箭解鎖評級）</div>
+                        )}
+                        <div className="text-xs text-white/40 mt-1">平均分 {catStats.avg.toFixed(1)}</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs text-white/30 text-center py-2">箭矢資料不足</div>
+                )}
+              </Card>
+            );
+          })()}
           {filteredOther.map(log=><OtherCard key={log.id} log={log}/>)}
           {!showPractice&&filteredOther.length===0&&(
             <div className="text-center text-white/40 text-sm py-4">沒有紀錄</div>
@@ -1036,14 +1106,15 @@ function GoalView({ logs, profile }) {
 // ── OverviewTab ───────────────────────────────────────────────
 function OverviewTab({ logs, monsterLogs }) {
   const practiceLogs=useMemo(()=>logs.filter(l=>!l.source),[logs]);
-  const stats=useMemo(()=>calcOverviewStats(practiceLogs),[practiceLogs]);
+  const allLogsForStats=useMemo(()=>[...logs,...(monsterLogs||[])],[logs,monsterLogs]);
+  const stats=useMemo(()=>calcOverviewStats(allLogsForStats),[allLogsForStats]);
   const rank=useMemo(()=>getRank(stats),[stats]);
 
   if (!stats) return (
     <div className="p-10 text-center text-white/40 text-sm">
       <div className="text-4xl mb-3">🎯</div>
-      <div>還沒有足夠的練習記錄</div>
-      <div className="text-xs mt-2 text-white/25">需要至少 30 箭才能計算評級（目前 {practiceLogs.flatMap(l=>(l.rounds||[]).flat()).length} 箭）</div>
+      <div>還沒有足夠的紀錄</div>
+      <div className="text-xs mt-2 text-white/25">需要至少 30 箭才能計算評級（目前 {allLogsForStats.flatMap(getLogArrows).length} 箭）</div>
     </div>
   );
 
@@ -1059,6 +1130,7 @@ function OverviewTab({ logs, monsterLogs }) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <div className="text-xs text-white/30 text-center">統計範圍：練習 + 打怪 + 組隊 + 世界王（共 {stats.count} 箭）</div>
       {/* 評級卡 */}
       <Card className="p-4" style={CS}>
         <div className="flex items-center gap-5">
