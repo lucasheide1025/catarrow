@@ -6,9 +6,8 @@ import {
   getDailyQuestConfig, saveDailyQuestConfig,
   getMonsterDailyConfig, saveMonsterDailyConfig,
   getMonsterEventConfig, saveMonsterEventConfig,
-  subscribePendingCheckins, approveCheckin, confirmCheckinReward, cancelCheckin,
+  subscribePendingCheckins, castBuff, cancelCheckin,
 } from "../../lib/db";
-import { drawBuff } from "../../lib/buffPool";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 
 export default function AdminDailyQuest({ mode = "all" }) {
@@ -35,8 +34,8 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   if (!config) return null;
 
-  const toApprove = pending.filter(c => c.status === "pending");
-  const toConfirm = pending.filter(c => c.questDone && !c.finalConfirmed);
+  const toCast    = pending.filter(c => !c.buff);
+  const inProgress = pending.filter(c => c.buff);
 
   async function saveConfig() {
     setSaving(true);
@@ -66,17 +65,9 @@ export default function AdminDailyQuest({ mode = "all" }) {
     setSavingEvt(false);
   }
 
-  async function approve(c) {
-    const buff = drawBuff(0);
-    await approveCheckin(c.id, buff, profile.id);
-    toast(`已核准 ${c.memberNickname || c.memberName}，加成：${buff.name}（降 ${buff.actualPower >= 999 ? "直接過關" : buff.actualPower + "%"}）`);
-  }
-
-  async function confirm(c) {
-    const chestType = c.tasks?.[c.chosenTask]?.chest || "iron";
-    await confirmCheckinReward(c.id, c.memberId, profile.id, chestType);
-    const chestLabel = { wood:"📦 木頭寶箱", iron:"🧰 鐵寶箱", gold:"✨ 黃金寶箱" };
-    toast(`已確認 ${c.memberNickname || c.memberName} 完成今日任務，賽事積分 +1，發出 ${chestLabel[chestType] || chestType} ✓`);
+  async function cast(c) {
+    const buff = await castBuff(c.id, profile.id);
+    toast(`已為 ${c.memberNickname || c.memberName} 施法：${buff.name}（降 ${buff.actualPower}%）`);
   }
 
   async function doCancel(c) {
@@ -294,23 +285,23 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
       {showListSection && (
         <>
-          {/* 報到待核准 */}
+          {/* 待施法 */}
           <section>
-            <ST>📍 報到待核准（{toApprove.length}）</ST>
-            {toApprove.length === 0 ? (
-              <div className="text-gray-400 text-sm py-2">沒有待核准的報到</div>
+            <ST>🪄 待施法（{toCast.length}）</ST>
+            {toCast.length === 0 ? (
+              <div className="text-gray-400 text-sm py-2">目前沒有等待施法的報到</div>
             ) : (
               <div className="flex flex-col gap-2">
-                {toApprove.map(c => (
+                {toCast.map(c => (
                   <div key={c.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between">
                       <div>
                         <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                        <div className="text-gray-400 text-xs">點核准 → 隨機施放加成</div>
+                        <div className="text-gray-400 text-xs">點施法 → 隨機 10-50% 加成</div>
                       </div>
                       <div className="flex gap-2">
-                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕ 取消</Btn>
-                        <Btn v="primary" size="sm" onClick={() => approve(c)}>🪄 核准施法</Btn>
+                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
+                        <Btn v="primary" size="sm" onClick={() => cast(c)}>🪄 施法</Btn>
                       </div>
                     </div>
                   </div>
@@ -319,43 +310,35 @@ export default function AdminDailyQuest({ mode = "all" }) {
             )}
           </section>
 
-          {/* 任務達標待確認 */}
-          <section>
-            <ST>🎉 任務達標待確認（{toConfirm.length}）</ST>
-            {toConfirm.length === 0 ? (
-              <div className="text-gray-400 text-sm py-2">沒有待確認的任務</div>
-            ) : (
+          {/* 任務進行中（已施法）*/}
+          {inProgress.length > 0 && (
+            <section>
+              <ST>🏹 任務進行中（{inProgress.length}）</ST>
               <div className="flex flex-col gap-2">
-                {toConfirm.map(c => (
-                  <div key={c.id} className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <div>
-                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                        <div className="text-amber-600 text-xs">
-                          {c.questResult
-                            ? `${c.questResult.type === "score" ? "總分" : "中靶"} ${c.questResult.value}（目標 ${c.questResult.target}）`
-                            : "已達標"}
-                          {c.failCount > 0 && `　挑戰 ${c.failCount + 1} 次`}
-                        </div>
-                        {/* 顯示學生選的任務 */}
-                        {c.tasks && c.chosenTask != null && c.tasks[c.chosenTask] && (
-                          <div className="text-gray-500 text-xs mt-0.5">
-                            任務：{c.tasks[c.chosenTask].label}
-                            　{c.tasks[c.chosenTask].distance}米
-                            　{c.tasks[c.chosenTask].target}
+                {inProgress.map(c => {
+                  const taskObj = c.tasks?.[c.chosenTask];
+                  return (
+                    <div key={c.id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                          <div className="text-emerald-600 text-xs">
+                            加成：{c.buff?.name}（降 {c.buff?.actualPower}%）
                           </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕ 取消</Btn>
-                        <Btn v="success" size="sm" onClick={() => confirm(c)}>✅ 確認完成</Btn>
+                          {taskObj && (
+                            <div className="text-gray-500 text-xs">
+                              {taskObj.label}・{taskObj.distance}米・{taskObj.target}
+                            </div>
+                          )}
+                        </div>
+                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
-          </section>
+            </section>
+          )}
         </>
       )}
     </div>

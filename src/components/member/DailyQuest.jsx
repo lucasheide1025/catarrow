@@ -1,52 +1,32 @@
 // src/components/member/DailyQuest.jsx
-// 今日報到 + Buff 演出 + 三個隨機任務（三選一）
+// 今日報到 + Buff 演出 + 三個固定任務（三選一）
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  submitCheckin, submitSimpleCheckin, subscribeMyCheckin, rerollCheckinBuff, markQuestDone,
-  getDailyQuestConfig, cancelCheckin, addCoins,
+  submitCheckin, subscribeMyCheckin, markQuestDone,
+  getDailyQuestConfig, cancelCheckin,
 } from "../../lib/db";
-import { openCoinChest } from "../../lib/lootTable";
-import { drawBuff } from "../../lib/buffPool";
-import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, vibrate } from "../../lib/sound";
+import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
 
-// 靶紙清單
-const TARGET_TYPES = ["菜雞靶", "克蘇魯", "原野射箭", "人質靶", "殭屍靶", "飛鏢靶"];
+const CHEST_LABEL = { wood: "🪵 木寶箱", iron: "⚙️ 鐵寶箱", gold: "🥇 金寶箱" };
 
-const CHEST_LABEL = { wood: "🪵 金幣木寶箱", iron: "⚙️ 金幣鐵寶箱", gold: "🥇 金幣金寶箱" };
-const CHEST_TO_TIER = { wood: "common", iron: "rare", gold: "elite" };
-
-// 三類固定任務：分數挑戰(5米簡單)、命中挑戰(十箭)、遠距挑戰(13~18米)
-function generateTasks(config) {
+// 三個固定任務（距離隨機在合理範圍內）
+function generateTasks() {
   function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-  function randTarget() { return TARGET_TYPES[Math.floor(Math.random() * TARGET_TYPES.length)]; }
   return [
     {
-      id: "score", type: "score", icon: "🎯", label: "分數挑戰",
-      distance: 5,
-      target: randTarget(),
-      arrowCount: 6,
-      goal: randInt(30, 60),
-      chest: "wood",
+      id: "basic", type: "score", icon: "🟢", label: "基本任務",
+      distance: 5, target: "菜雞靶", arrowCount: 6, goal: 20, chest: "wood",
     },
     {
-      id: "hits", type: "hits", icon: "💥", label: "命中挑戰",
-      distance: randInt(config.distanceMin || 5, config.distanceMax || 18),
-      target: randTarget(),
-      arrowCount: 10,
-      goal: randInt(5, 9),
-      chest: "iron",
+      id: "standard", type: "score", icon: "🟡", label: "標準任務",
+      distance: randInt(8, 13), target: "原野射箭", arrowCount: 6, goal: 32, chest: "iron",
     },
     {
-      id: "score2", type: "score", icon: "🏹", label: "遠距挑戰",
-      distance: randInt(13, 18),
-      target: randTarget(),
-      arrowCount: 6,
-      goal: randInt(20, 50),
-      chest: "gold",
+      id: "advanced", type: "score", icon: "🔴", label: "進階任務",
+      distance: randInt(10, 18), target: "飛鏢靶", arrowCount: 6, goal: 44, chest: "gold",
     },
   ];
 }
@@ -63,26 +43,14 @@ function applyBuff(task, buff) {
 
 export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
-  const [checkin, setCheckin]   = useState(undefined);
-  const [config,  setConfig]    = useState(null);
-  const [busy,       setBusy]       = useState(false);
-  const [showBuff,   setShowBuff]   = useState(false);
-  const [showChoice, setShowChoice] = useState(false); // 選擇「純報到」或「完成任務」
-
-  // 三個任務（從 checkin 裡存的，或重新產生）
-  const [tasks, setTasks] = useState(null);
-  // 學生選了哪個任務（index 0/1/2）
+  const [checkin, setCheckin] = useState(undefined);
+  const [config,  setConfig]  = useState(null);
+  const [busy,     setBusy]     = useState(false);
+  const [showBuff, setShowBuff] = useState(false);
+  const [tasks,    setTasks]    = useState(null);
   const [chosenIdx, setChosenIdx] = useState(null);
-  // 計分器
-  const [arrows, setArrows] = useState([]);
-  // 模式選擇：null=未選, "party"=建立組隊, "join"=加入房間, "solo"=自己練
-  const [mode,          setMode]          = useState(null);
-  const [partyCreating, setPartyCreating] = useState(false);
-  const [joinCode,      setJoinCode]      = useState("");
-  const [joining,       setJoining]       = useState(false);
-  const [joinError,     setJoinError]     = useState("");
-  const [pendingChest,  setPendingChest]  = useState(null);  // 等玩家點開的寶箱
-  const [chestOpened,   setChestOpened]   = useState(false); // 已點開
+  const [arrows,   setArrows]   = useState([]);
+  const [failMsg,  setFailMsg]  = useState("");
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -91,118 +59,80 @@ export default function DailyQuest({ onJoinParty }) {
     return () => unsub && unsub();
   }, [profile?.id]);
 
-  const count = profile?.dailyQuestCount || 0;
-
-  // 核准後第一次看到 buff → 自動播放演出，同時產生/恢復任務
+  // status "active" 時產生／恢復任務；buff 到了就播演出
   useEffect(() => {
-    if (checkin?.status === "approved" && checkin?.buff && !checkin?.questDone) {
-      const seen = sessionStorage.getItem("buffSeen_" + checkin.id);
-      if (!seen) {
-        setShowBuff(true);
-        sessionStorage.setItem("buffSeen_" + checkin.id, "1");
+    if (checkin?.status === "active" && !checkin?.questDone) {
+      if (checkin.buff) {
+        const seen = sessionStorage.getItem("buffSeen_" + checkin.id);
+        if (!seen) {
+          setShowBuff(true);
+          sessionStorage.setItem("buffSeen_" + checkin.id, "1");
+        }
       }
-      // 從 checkin 恢復任務（重新整理後不消失）
       if (checkin.tasks) {
         setTasks(checkin.tasks);
-      } else if (config) {
-        const generated = generateTasks(config);
+      } else if (!tasks) {
+        const generated = generateTasks();
         setTasks(generated);
+        updateDoc(doc(db, "checkins", checkin.id), { tasks: generated }).catch(() => {});
       }
-      // 恢復已選的任務
       if (checkin.chosenTask != null) setChosenIdx(checkin.chosenTask);
     }
-  }, [checkin?.status, checkin?.buff, checkin?.id, config]); // eslint-disable-line
+  }, [checkin?.status, checkin?.buff, checkin?.id]); // eslint-disable-line
 
   if (checkin === undefined || !config) return null;
 
   const rewardEvery = config.rewardEvery || 10;
+  const count  = profile?.dailyQuestCount || 0;
   const remain = rewardEvery - (count % rewardEvery);
-  const buff = checkin?.buff;
+  const buff   = checkin?.buff;
 
   async function doCheckin() {
-    setBusy(true); setShowChoice(false);
-    sfxTap();
+    setBusy(true); sfxTap();
     await submitCheckin(profile.id, profile.name, profile.nickname);
-    setBusy(false);
-  }
-
-  async function doSimpleCheckin() {
-    setBusy(true); setShowChoice(false);
-    sfxTap();
-    await submitSimpleCheckin(profile.id, profile.name, profile.nickname);
     setBusy(false);
   }
 
   async function doCancel() {
     if (!checkin?.id) return;
-    setBusy(true);
-    sfxTap();
+    setBusy(true); sfxTap();
     await cancelCheckin(checkin.id);
     setBusy(false);
   }
 
-  async function reroll() {
-    setBusy(true);
-    const newFail = (checkin.failCount || 0) + 1;
-    const b = drawBuff(newFail);
-    await rerollCheckinBuff(checkin.id, b, newFail);
-    // 重新產生任務
-    if (config) {
-      const newTasks = generateTasks(config);
-      setTasks(newTasks);
-    }
-    setChosenIdx(null);
-    setArrows([]);
-    setMode(null);
-    setShowBuff(true);
-    setBusy(false);
-  }
-
   async function chooseTask(idx) {
-    setChosenIdx(idx);
-    setArrows([]);
-    try {
-      await updateDoc(doc(db, "checkins", checkin.id), { chosenTask: idx, tasks });
-    } catch {}
-  }
-
-  async function handleCreateParty() {
-    if (!tasks || chosenIdx == null) return;
-    setPartyCreating(true);
-    const task = tasks[chosenIdx];
-    const bt = applyBuff(task, buff);
-    const effectiveGoal = bt.newGoal ?? bt.goal;
-    const taskForRoom = { ...task, goal: effectiveGoal };
-    const res = await createPartyRoom(
-      profile.id, profile.nickname || profile.name, "quest",
-      { task: taskForRoom, checkinId: checkin.id }
-    );
-    setPartyCreating(false);
-    if (res.ok) onJoinParty(res.roomId, "quest", true);
+    setChosenIdx(idx); setArrows([]); setFailMsg("");
+    try { await updateDoc(doc(db, "checkins", checkin.id), { chosenTask: idx, tasks }); } catch {}
   }
 
   async function submitScore() {
     const task = chosenTask;
     const total = arrows.reduce((s, v) => s + (v || 0), 0);
-    const hits = arrows.filter(v => v > 0).length;
+    const hits  = arrows.filter(v => v > 0).length;
     const buffedTask = applyBuff(task, buff);
     const isUltimate = buffedTask.isUltimate;
-    const goalToHit = buffedTask.newGoal ?? buffedTask.goal;
-    const val = task.type === "score" ? total : hits;
+    const goalToHit  = buffedTask.newGoal ?? buffedTask.goal;
+    const val  = task.type === "score" ? total : hits;
     const pass = isUltimate || val >= goalToHit;
+    setBusy(true);
     if (pass) {
       sfxSuccess();
-      await markQuestDone(checkin.id, { type: task.type, value: val, target: goalToHit, taskId: task.id });
-      const tier = CHEST_TO_TIER[task.chest] || "common";
-      const coinChest = openCoinChest(tier);
-      setPendingChest(coinChest); // 等玩家自己點開
+      await markQuestDone(
+        checkin.id,
+        { type: task.type, value: val, target: goalToHit, taskId: task.id },
+        profile.id,
+        task.chest
+      );
     } else {
       sfxSoftFail();
-      await reroll();
+      setFailMsg(`差一點！得 ${val} 分，目標 ${goalToHit} 分。重選任務再試一次 💪`);
+      setChosenIdx(null);
+      setArrows([]);
     }
+    setBusy(false);
   }
 
-  const chosenTask = (tasks && chosenIdx != null) ? tasks[chosenIdx] : null;
+  const chosenTask      = (tasks && chosenIdx != null) ? tasks[chosenIdx] : null;
   const buffedChosenTask = chosenTask ? applyBuff(chosenTask, buff) : null;
 
   // ── 畫面狀態 ──
@@ -215,65 +145,23 @@ export default function DailyQuest({ onJoinParty }) {
         <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
         <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
         <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
-
-        {!showChoice ? (
-          <button onClick={() => setShowChoice(true)} disabled={busy}
-            className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
-            {busy ? "報到中…" : "📍 今日報到"}
-          </button>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div className="text-center text-purple-100 text-sm font-bold">選擇今天的報到方式：</div>
-
-            {/* 純報到 */}
-            <button onClick={doSimpleCheckin} disabled={busy}
-              className="w-full py-3.5 rounded-xl bg-white/20 border border-white/40 text-white font-black text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
-              <span className="text-base">✅ 純報到</span>
-              <span className="text-purple-200 text-xs font-normal">次數 +1，直接完成</span>
-            </button>
-
-            {/* 完成今日任務 */}
-            <button onClick={doCheckin} disabled={busy}
-              className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
-              <span className="text-base">🎯 完成今日任務</span>
-              <span className="text-purple-400 text-xs font-normal">接受教練加成 + 完成後送 🧰 鐵寶箱</span>
-            </button>
-
-            <button onClick={() => setShowChoice(false)}
-              className="text-purple-300 text-xs text-center underline">取消</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // 2. 已報到，等教練核准
-  if (checkin.status === "pending") {
-    return (
-      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#475569,#334155)" }}>
-        <div className="text-xs font-black tracking-wider text-slate-300 mb-1">每日任務</div>
-        <div className="text-lg font-black mb-2">⏳ 報到成功，等待教練加成</div>
-        <div className="text-slate-300 text-xs mb-4">教練正在準備為你施法，稍候片刻… 🪄</div>
-        <button onClick={doCancel} disabled={busy}
-          className="w-full py-2.5 rounded-xl bg-white/20 text-white font-bold text-sm active:scale-95 transition-transform border border-white/30">
-          {busy ? "取消中…" : "✕ 取消報到"}
+        <button onClick={doCheckin} disabled={busy}
+          className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
+          {busy ? "報到中…" : "📍 今日報到"}
         </button>
       </div>
     );
   }
 
-  // 3. 已核准，選任務或進行任務
-  if (checkin.status === "approved" && !checkin.questDone) {
+  // 2. 已報到，任務進行中
+  if (checkin.status === "active" && !checkin.questDone) {
     return (
       <>
         <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#16a34a,#0891b2)" }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-black tracking-wider text-emerald-100">今日任務進行中</div>
-            {checkin.failCount > 0 && <div className="text-xs text-emerald-100">第 {checkin.failCount + 1} 次挑戰</div>}
-          </div>
+          <div className="text-xs font-black tracking-wider text-emerald-100 mb-2">今日任務進行中</div>
 
-          {/* 當前 Buff + 降幅說明 */}
-          {buff && (
+          {/* Buff 顯示（教練施法後才會出現）*/}
+          {buff ? (
             <button onClick={() => setShowBuff(true)}
               className="w-full bg-white/15 rounded-xl px-3 py-2 mb-3 flex items-center gap-2 border border-white/20">
               <span className="text-2xl">{buff.icon}</span>
@@ -288,146 +176,71 @@ export default function DailyQuest({ onJoinParty }) {
               </div>
               <span className="text-xs text-emerald-100 flex-shrink-0">點看演出</span>
             </button>
-          )}
-
-          {/* Step 1：選模式（建立組隊 / 加入房間 / 自己練）*/}
-          {mode === null && (
-            <div className="flex flex-col gap-2 mb-2">
-              <div className="text-xs text-emerald-100 font-bold mb-1">選擇今天的挑戰方式：</div>
-              {onJoinParty && (
-                <button onClick={() => { setMode("party"); setChosenIdx(null); setArrows([]); }}
-                  className="w-full py-3 bg-white text-emerald-700 font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
-                  <span>👥 建立組隊房間</span>
-                  <span className="text-xs font-normal text-emerald-500">選任務 → 建立房間 → 等隊友加入</span>
-                </button>
-              )}
-              {onJoinParty && (
-                <button onClick={() => { setMode("join"); setJoinCode(""); setJoinError(""); }}
-                  className="w-full py-3 bg-indigo-500 text-white font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
-                  <span>🔑 加入房間</span>
-                  <span className="text-xs font-normal text-indigo-200">輸入邀請碼加入隊友的房間</span>
-                </button>
-              )}
-              <button onClick={() => { setMode("solo"); setChosenIdx(null); setArrows([]); }}
-                className="w-full py-3 bg-white/20 text-white font-black rounded-xl text-sm active:scale-95 transition-transform flex flex-col items-center gap-0.5">
-                <span>🏹 自己練</span>
-                <span className="text-xs font-normal text-emerald-200">選任務 → 自行完成計分</span>
-              </button>
+          ) : (
+            <div className="bg-white/10 rounded-xl px-3 py-2 mb-3 text-xs text-emerald-200 border border-white/10">
+              🪄 等待教練施法加成中（可先選任務熱身）
             </div>
           )}
 
-          {/* Step 2a：加入房間 → 輸入邀請碼 */}
-          {mode === "join" && (
-            <div className="bg-white/10 rounded-xl p-4 border border-white/20 flex flex-col gap-3 mb-2">
-              <div className="flex items-center justify-between">
-                <div className="font-black text-white text-sm">🔑 輸入隊友的邀請碼</div>
-                <button onClick={() => setMode(null)} className="text-xs text-emerald-200 underline">← 返回</button>
-              </div>
-              <input
-                value={joinCode}
-                onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(""); }}
-                placeholder="邀請碼（如 AB12）"
-                maxLength={6}
-                className="w-full px-3 py-2.5 rounded-xl bg-white/20 text-white placeholder-white/40 font-mono tracking-widest text-center text-lg border border-white/30 focus:outline-none"
-              />
-              {joinError && <div className="text-red-300 text-xs text-center">{joinError}</div>}
-              <button
-                disabled={joinCode.length < 4 || joining}
-                onClick={async () => {
-                  setJoining(true); setJoinError("");
-                  const res = await joinPartyRoom(joinCode, profile.id, profile.nickname || profile.name);
-                  setJoining(false);
-                  if (res.ok) onJoinParty(res.roomId, "quest", false);
-                  else setJoinError(res.reason || "加入失敗");
-                }}
-                className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl text-sm disabled:opacity-40 active:scale-95 transition-transform">
-                {joining ? "加入中…" : "確認加入"}
-              </button>
+          {/* 失敗提示 */}
+          {failMsg && (
+            <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2 mb-3 text-sm text-red-200 font-bold">
+              {failMsg}
             </div>
           )}
 
-          {/* Step 2b/c：選任務（組隊 or 自己練 共用）*/}
-          {(mode === "party" || mode === "solo") && chosenIdx == null && tasks && (
-            <div className="flex flex-col gap-2 mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-xs text-emerald-100 font-bold">
-                  {mode === "party" ? "👥 選一個任務（建立組隊用）" : "🏹 選擇今日任務（三選一）"}
-                </div>
-                <button onClick={() => setMode(null)} className="text-xs text-emerald-200 underline">← 返回</button>
-              </div>
+          {/* 選任務 */}
+          {chosenIdx == null && tasks && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs text-emerald-100 font-bold mb-1">🏹 選擇今日任務（三選一）</div>
               {tasks.map((task, idx) => {
                 const bt = applyBuff(task, buff);
-                const goalDisplay = bt.isUltimate ? "直接過關" :
-                  bt.newGoal != null
-                    ? `${bt.newGoal} ${task.type === "score" ? "分" : "箭"}（原${bt.originalGoal}，降${bt.reductionPct}%）`
-                    : `${task.goal} ${task.type === "score" ? "分" : "箭"}`;
+                const goalDisplay = bt.isUltimate
+                  ? "直接過關"
+                  : bt.newGoal != null
+                    ? `${bt.newGoal} 分（原 ${bt.originalGoal}，降 ${bt.reductionPct}%）`
+                    : `${task.goal} 分`;
                 return (
                   <button key={task.id} onClick={() => chooseTask(idx)}
                     className="w-full bg-white/15 hover:bg-white/25 rounded-xl px-3 py-3 text-left border border-white/20 transition-all active:scale-95">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xl">{task.icon}</span>
                       <span className="font-black text-sm">{task.label}</span>
+                      <span className="ml-auto text-xs text-emerald-200">{CHEST_LABEL[task.chest]}</span>
                     </div>
-                    <div className="text-xs text-emerald-100 flex gap-2 flex-wrap">
+                    <div className="text-xs text-emerald-100 flex gap-3 flex-wrap">
                       <span>📍 {task.distance}米</span>
                       <span>🎯 {task.target}</span>
                       <span>🏹 {task.arrowCount}箭</span>
                     </div>
                     <div className="text-sm font-black text-white mt-1">目標：{goalDisplay}</div>
-                    {task.chest && <div className="text-xs text-emerald-200 mt-0.5">{CHEST_LABEL[task.chest] || task.chest}</div>}
                   </button>
                 );
               })}
             </div>
           )}
 
-          {/* Step 3a：組隊模式 → 已選任務 → 建立房間 */}
-          {mode === "party" && chosenIdx != null && buffedChosenTask && (
-            <div className="bg-white/10 rounded-xl p-4 border border-white/20 flex flex-col gap-3 mb-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-emerald-100">👥 組隊任務：{chosenTask.label}</div>
-                <button onClick={() => setChosenIdx(null)} className="text-xs text-emerald-200 underline">← 換任務</button>
-              </div>
-              <div className="text-xs text-emerald-100 flex gap-2 flex-wrap">
-                <span>📍 {chosenTask.distance}米</span>
-                <span>🎯 {chosenTask.target}</span>
-                <span>🏹 {chosenTask.arrowCount}箭</span>
-              </div>
-              <div className="text-base font-black text-white">
-                {buffedChosenTask.isUltimate ? "✨ 直接達標！" :
-                  chosenTask.type === "score"
-                    ? `總分達 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 分`
-                    : `命中 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 箭以上`}
-              </div>
-              <div className="text-emerald-200 text-xs">建立後隊友輸入邀請碼加入，完成後各得額外寶箱 🎁</div>
-              <button onClick={handleCreateParty} disabled={partyCreating}
-                className="w-full py-3 bg-white text-emerald-700 font-black rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform">
-                {partyCreating ? "建立中…" : "👥 建立組隊房間，等待隊友"}
-              </button>
-            </div>
-          )}
-
-          {/* Step 3b：自己練 → 計分 */}
-          {mode === "solo" && chosenIdx != null && buffedChosenTask && (
+          {/* 計分區 */}
+          {chosenIdx != null && buffedChosenTask && (
             <>
               <div className="bg-white/10 rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs text-emerald-100">🎯 已選任務：{chosenTask.label}</div>
-                  <button onClick={() => setChosenIdx(null)} className="text-xs text-emerald-200 underline">換一個</button>
+                  <div className="text-xs text-emerald-100">🎯 已選：{chosenTask.label}</div>
+                  <button onClick={() => { setChosenIdx(null); setArrows([]); }}
+                    className="text-xs text-emerald-200 underline">換一個</button>
                 </div>
-                <div className="text-xs text-emerald-100 flex gap-2 flex-wrap mb-1">
+                <div className="text-xs text-emerald-100 flex gap-3 flex-wrap mb-2">
                   <span>📍 {chosenTask.distance}米</span>
                   <span>🎯 {chosenTask.target}</span>
-                  <span>🏹 {chosenTask.arrowCount}箭</span>
                 </div>
                 {buffedChosenTask.isUltimate ? (
                   <div className="text-lg font-black text-amber-300">✨ 直接達標！登記即可</div>
                 ) : (
                   <div className="text-lg font-black">
-                    {chosenTask.type === "score" ? `總分達到 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 分` : `命中 ${buffedChosenTask.newGoal ?? buffedChosenTask.goal} 箭以上`}
+                    總分達到 {buffedChosenTask.newGoal ?? buffedChosenTask.goal} 分
                     {buffedChosenTask.reduction > 0 && (
                       <span className="text-xs font-normal text-emerald-200 ml-2">
-                        （原{buffedChosenTask.originalGoal}，Buff降了{buffedChosenTask.reduction}{chosenTask.type === "score" ? "分" : "箭"}）
+                        （原 {buffedChosenTask.originalGoal}，Buff 降 {buffedChosenTask.reduction} 分）
                       </span>
                     )}
                   </div>
@@ -445,54 +258,44 @@ export default function DailyQuest({ onJoinParty }) {
               <button onClick={submitScore}
                 disabled={busy || (!buffedChosenTask.isUltimate && arrows.length < chosenTask.arrowCount)}
                 className="w-full py-3 rounded-xl bg-white text-emerald-700 font-black active:scale-95 transition-transform disabled:opacity-50">
-                {buffedChosenTask.isUltimate ? "✨ 直接完成任務" :
-                  arrows.length < chosenTask.arrowCount ? `還要射 ${chosenTask.arrowCount - arrows.length} 箭` : "登記成績"}
+                {buffedChosenTask.isUltimate
+                  ? "✨ 直接完成任務"
+                  : arrows.length < chosenTask.arrowCount
+                    ? `還要射 ${chosenTask.arrowCount - arrows.length} 箭`
+                    : "登記成績"}
               </button>
-              <div className="text-emerald-100 text-xs mt-2 text-center">沒過也別擔心，教練會給你更強的加成再來一次 💪</div>
             </>
           )}
         </div>
 
-        {showBuff && buff && <BuffShow buff={buff} failCount={checkin.failCount} onClose={() => setShowBuff(false)} />}
+        {showBuff && buff && <BuffShow buff={buff} failCount={0} onClose={() => setShowBuff(false)} />}
       </>
     );
   }
 
-  // 4. 任務達標，等教練最終確認
-  if (checkin.questDone && !checkin.finalConfirmed) {
+  // 3. 任務完成
+  if (checkin.questDone) {
+    const qr = checkin.questResult;
+    const taskObj = checkin.tasks?.[checkin.chosenTask];
     return (
-      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)" }}>
-        <div className="text-xs font-black tracking-wider text-amber-100 mb-1">今日任務</div>
-        <div className="text-lg font-black mb-1">🎉 任務達標！</div>
-        <div className="text-amber-100 text-xs mb-3">等教練最終確認後計入次數。還差 {remain} 次換成就銀章 🥈</div>
-
-        {/* 金幣寶箱 — 等玩家點擊開啟 */}
-        {pendingChest && !chestOpened && (
-          <button
-            onClick={() => {
-              addCoins(profile.id, pendingChest.coins).catch(() => {});
-              setChestOpened(true);
-              sfxSuccess();
-            }}
-            className="w-full flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 border-amber-200/60 bg-amber-900/30 active:scale-95 transition-transform animate-pulse"
-          >
-            <span className="text-3xl">🎁</span>
-            <span className="font-black text-amber-100 text-sm">{pendingChest.name}</span>
-            <span className="text-amber-200 text-xs">點我開箱！</span>
-          </button>
-        )}
-        {chestOpened && pendingChest && (
-          <div className="w-full flex flex-col items-center gap-1 py-3 rounded-2xl border border-amber-300/40 bg-amber-900/20">
-            <span className="text-3xl">{pendingChest.icon}</span>
-            <span className="font-black text-amber-100 text-sm">{pendingChest.name}</span>
-            <span className="text-yellow-200 font-black text-base">+{pendingChest.coins} 金幣！</span>
+      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
+        <div className="text-xs font-black tracking-wider text-emerald-100 mb-1">今日任務</div>
+        <div className="text-lg font-black mb-1">✅ 今日任務完成！</div>
+        {taskObj && (
+          <div className="text-emerald-100 text-xs mb-1">
+            {taskObj.label}・{taskObj.distance}米・{taskObj.target}
+            {qr && ` → 得 ${qr.value} 分（目標 ${qr.target}）`}
           </div>
         )}
+        <div className="text-emerald-100 text-xs mb-2">
+          獲得 {CHEST_LABEL[taskObj?.chest] || "寶箱"} 🎁　已完成 {count} 次
+        </div>
+        <div className="text-emerald-200 text-xs">還差 {remain} 次換成就銀章 🥈　明天再來挑戰！</div>
       </div>
     );
   }
 
-  // 5a. 純報到完成
+  // 4. 純報到完成（舊 simple 類型）
   if (checkin.type === "simple") {
     return (
       <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#0891b2,#0369a1)" }}>
@@ -503,14 +306,7 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  // 5b. 已完成任務並確認
-  return (
-    <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
-      <div className="text-xs font-black tracking-wider text-emerald-100 mb-1">今日任務</div>
-      <div className="text-lg font-black mb-1">✅ 今日任務完成！</div>
-      <div className="text-emerald-100 text-xs">已完成 {count} 次　還差 {remain} 次換成就銀章 🥈　明天再來挑戰！</div>
-    </div>
-  );
+  return null;
 }
 
 // ── Buff 華麗演出 ──

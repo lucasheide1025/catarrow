@@ -882,7 +882,7 @@ export async function submitSimpleCheckin(memberId, memberName, memberNickname) 
   return { id, already: false };
 }
 
-// 學生點報到 → 建立 pending 紀錄（已存在就不重建）
+// 學生點報到 → 建立 active 紀錄（已存在就不重建）
 export async function submitCheckin(memberId, memberName, memberNickname) {
   const date = todayStr();
   const id = checkinId(memberId, date);
@@ -892,12 +892,12 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
   await setDoc(ref, {
     memberId, memberName: memberName || "", memberNickname: memberNickname || "",
     date,
-    status: "pending",        // pending → approved
-    buff: null,               // 核准後抽的 buff
-    failCount: 0,             // 重抽次數
-    questDone: false,         // 今日任務是否達標
+    status: "active",         // 即時生效，等教練施法
+    buff: null,               // 教練施法後填入
+    failCount: 0,
+    questDone: false,
     questResult: null,        // { type, value, target }
-    finalConfirmed: false,    // 教練最終確認（計入次數）
+    finalConfirmed: false,
     createdAt: serverTimestamp(),
   });
   return { id, already: false };
@@ -919,29 +919,30 @@ export async function getTodayCheckinMembers() {
   } catch { return []; }
 }
 
-// 訂閱「今日所有待核准 / 待最終確認」報到（後台用）
+// 訂閱「今日所有已報到但尚未完成」報到（後台施法用）
 export function subscribePendingCheckins(callback) {
   const date = todayStr();
   return onSnapshot(
     query(collection(db, C_CHECKIN), where("date", "==", date)),
     snap => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        // 待核准(pending) 或 已達標待最終確認(questDone && !finalConfirmed)
-        .filter(c => c.status === "pending" || (c.questDone && !c.finalConfirmed));
+        .filter(c => c.status === "active" && !c.finalConfirmed);
       callback(list);
     },
     err => { console.warn("subscribePendingCheckins:", err.message); callback([]); }
   );
 }
 
-// 教練核准報到 → 寫入抽到的 buff（buff 由前端用 drawBuff 抽好傳進來）
-export async function approveCheckin(checkinId, buff, operatorId) {
+// 教練施法 → 隨機 10-50% 降幅 buff
+export async function castBuff(checkinId, operatorId) {
+  const pct = Math.floor(Math.random() * 41) + 10; // 10-50
+  const buff = { name: `魔法加持 ${pct}%`, icon: "✨", actualPower: pct, type: "cast" };
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
-    status: "approved",
-    buff: buff || null,
-    approvedAt: serverTimestamp(),
-    approvedBy: operatorId,
+    buff,
+    buffAt: serverTimestamp(),
+    buffBy: operatorId,
   });
+  return buff;
 }
 
 // 學生重抽 buff（失敗後）→ failCount +1，寫入新 buff
@@ -952,38 +953,39 @@ export async function rerollCheckinBuff(checkinId, newBuff, newFailCount) {
   });
 }
 
-// 學生登記今日任務結果（達標）
-export async function markQuestDone(checkinId, questResult) {
+// 學生登記今日任務結果（達標）→ 自動計入次數 + 給寶箱
+export async function markQuestDone(checkinId, questResult, memberId = null, chestType = null) {
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
     questDone: true,
     questResult: questResult || null,
     questDoneAt: serverTimestamp(),
+    finalConfirmed: true,
   });
+  if (memberId) {
+    try {
+      const member = await getMember(memberId);
+      const newCount = (member?.dailyQuestCount || 0) + 1;
+      await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
+      const config = await getDailyQuestConfig();
+      const rewardEvery = config?.rewardEvery || 10;
+      if (newCount % rewardEvery === 0) {
+        await addBadge(memberId, "achievement", "silver", 1, memberId, `每日任務累積 ${newCount} 次`);
+      }
+      if (chestType) {
+        const tierMap = { wood: "common", iron: "rare", gold: "elite" };
+        await addChests(memberId, [{
+          id: `quest_${checkinId}_${Date.now()}`,
+          type: chestType, family: "quest", tier: tierMap[chestType] || "common",
+          from: "每日任務獎勵", ts: Date.now(),
+        }]);
+      }
+    } catch (e) { console.warn("markQuestDone:", e?.message); }
+  }
 }
 
-// 教練最終確認 → 計入會員 dailyQuestCount，標記 finalConfirmed，滿里程碑發銀章，送鐵寶箱
+// 教練最終確認（舊流程相容，新流程已不需要）
 export async function confirmCheckinReward(checkinId, memberId, operatorId, chestType = "iron") {
-  await updateDoc(doc(db, C_CHECKIN, checkinId), {
-    finalConfirmed: true,
-    confirmedAt: serverTimestamp(),
-    confirmedBy: operatorId,
-  });
-  try {
-    const member = await getMember(memberId);
-    const newCount = (member?.dailyQuestCount || 0) + 1;
-    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
-    const config = await getDailyQuestConfig();
-    const rewardEvery = config?.rewardEvery || 10;
-    if (newCount % rewardEvery === 0) {
-      await addBadge(memberId, "achievement", "silver", 1, operatorId, `每日任務累積 ${newCount} 次`);
-    }
-    // 每日任務完成獎勵（依任務類型：wood/iron/gold）
-    await addChests(memberId, [{
-      id: `quest_${checkinId}_${Date.now()}`,
-      type: chestType, family: "quest", tier: "quest",
-      from: "每日任務獎勵", ts: Date.now(),
-    }]);
-  } catch (e) { console.warn("dailyQuestCount:", e?.message); }
+  await markQuestDone(checkinId, null, memberId, chestType);
 }
 
 // 取得會員今日任務累積次數
