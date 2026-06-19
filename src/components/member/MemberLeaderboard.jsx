@@ -6,7 +6,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPE_COLOR, calcBadgePoints, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Spinner, Empty } from "../shared/UI";
 import { MONSTERS, FAMILIES } from "../../lib/monsterData";
-import { levelFromXP, rankFromLevel, xpProgress } from "../../lib/adventurerSystem";
+import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
 
 const TABS = [
   { id: "event",             label: "🎪 賽事積分",  group: "活動" },
@@ -44,6 +44,7 @@ export default function MemberLeaderboard() {
   const [duelStatsMap,   setDuelStatsMap]   = useState({});
   const [monsterDexList, setMonsterDexList] = useState([]);
   const [loading, setLoading]              = useState(true);
+  const [rankFilter, setRankFilter]        = useState(null); // null = 全部
 
   useEffect(() => {
     Promise.all([getMembers(), getCompetitions(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex()])
@@ -523,62 +524,84 @@ export default function MemberLeaderboard() {
 
       {/* 冒險者等級榜 */}
       {isAdventurerTab && (() => {
-        const adventurerRanked = [...members]
+        const allAdventurers = [...members]
           .map(m => {
             const xp    = m.adventurerXP || 0;
             const level = levelFromXP(xp);
             const rank  = rankFromLevel(level);
             const prog  = xpProgress(xp, level);
-            return { ...m, xp, level, rank, prog };
+            return { ...m, xp, level, rank, rankIdx: rankIdxFromLevel(level), prog };
           })
-          .filter(m => m.xp > 0)
           .sort((a, b) => b.xp - a.xp);
 
+        const displayed = rankFilter === null
+          ? allAdventurers
+          : allAdventurers.filter(m => m.rankIdx === rankFilter);
+
         return (
-          <Card className="p-4">
-            {adventurerRanked.length === 0
-              ? <Empty message="尚無冒險者紀錄" />
-              : adventurerRanked.map((m, i) => {
-                  const isMe = m.id === profile?.id;
-                  const medal = ["🥇","🥈","🥉"][i];
-                  return (
-                    <div key={m.id}
-                      className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
-                      <div className="w-8 text-center flex-shrink-0">
-                        {medal
-                          ? <span className="text-2xl">{medal}</span>
-                          : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                      </div>
-                      <div className="text-xl flex-shrink-0">{m.rank.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
-                            {m.nickname || m.name}
-                          </span>
-                          {isMe && <span className="text-xs text-blue-500">（我）</span>}
-                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                            style={{ background: m.rank.color + "22", color: m.rank.color }}>
-                            Lv.{m.level} {m.rank.name}
-                          </span>
+          <>
+            {/* 階級篩選 */}
+            <Card className="p-3">
+              <div className="text-xs text-gray-400 font-black mb-2">按階級篩選</div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setRankFilter(null)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === null ? "bg-slate-700 text-white border-slate-700" : "bg-white text-gray-500 border-gray-200"}`}>
+                  全部
+                </button>
+                {RANKS.map((r, idx) => (
+                  <button key={idx} onClick={() => setRankFilter(idx === rankFilter ? null : idx)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === idx ? "text-white border-transparent" : "bg-white text-gray-500 border-gray-200"}`}
+                    style={rankFilter === idx ? { background: r.color, borderColor: r.color } : {}}>
+                    {r.icon} {r.name}
+                  </button>
+                ))}
+              </div>
+            </Card>
+            <Card className="p-4">
+              {displayed.length === 0
+                ? <Empty message="此階級尚無冒險者" />
+                : displayed.map((m, i) => {
+                    const isMe = m.id === profile?.id;
+                    const medal = rankFilter === null ? ["🥇","🥈","🥉"][i] : null;
+                    return (
+                      <div key={m.id}
+                        className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                        <div className="w-8 text-center flex-shrink-0">
+                          {medal
+                            ? <span className="text-2xl">{medal}</span>
+                            : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                         </div>
-                        {m.level < 60 && (
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all"
-                              style={{ width: `${m.prog.pct}%`, background: m.rank.color }} />
+                        <div className="text-xl flex-shrink-0">{m.rank.icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                              {m.nickname || m.name}
+                            </span>
+                            {isMe && <span className="text-xs text-blue-500">（我）</span>}
+                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: m.rank.color + "22", color: m.rank.color }}>
+                              Lv.{m.level} {m.rank.name}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className={`font-black text-lg ${isMe ? "text-blue-600" : "text-gray-800"}`}>
-                          {m.xp.toLocaleString()}
+                          {m.level < 60 && (
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all"
+                                style={{ width: `${m.prog.pct}%`, background: m.rank.color }} />
+                            </div>
+                          )}
                         </div>
-                        <div className="text-gray-400 text-xs">XP</div>
+                        <div className="text-right flex-shrink-0">
+                          <div className={`font-black text-lg ${isMe ? "text-blue-600" : "text-gray-800"}`}>
+                            {m.xp.toLocaleString()}
+                          </div>
+                          <div className="text-gray-400 text-xs">XP</div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
-            }
-          </Card>
+                    );
+                  })
+              }
+            </Card>
+          </>
         );
       })()}
 

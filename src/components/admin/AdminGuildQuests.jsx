@@ -47,8 +47,12 @@ export default function AdminGuildQuests() {
       badgeRequires: form.badgeReward ? BADGE_REQ[form.badgeReward] : null,
       reward: { xp: Number(form.reward.xp) || 0, coins: Number(form.reward.coins) || 0 },
     };
-    await publishGuildQuest(data, profile?.id).catch(e => setMsg("發佈失敗：" + e.message));
-    setForm(EMPTY_FORM); setShowForm(false);
+    try {
+      await publishGuildQuest(data, profile?.id);
+      setForm(EMPTY_FORM); setShowForm(false);
+    } catch(e) {
+      setMsg("發佈失敗：" + e.message);
+    }
     setBusy(false);
   }
 
