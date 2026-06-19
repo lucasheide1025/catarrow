@@ -271,7 +271,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   function addArrow(label) {
     if (arrows.length >= 6) return;
     sfxTap();
-    const score = label === "命中" ? 1 : (SCORE_MAP[label] ?? 0);
+    const score = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
     setArrows(prev => [...prev, { label, score }]);
   }
 

@@ -118,7 +118,8 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
-    const part  = resolveHitPartFn(score, unlocked, arrow.label === "X");
+    const isXHit = arrow.label === "X" || (type === "hit_count" && score > 0);
+    const part  = resolveHitPartFn(score, unlocked, isXHit);
 
     if (!part) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
@@ -144,10 +145,10 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
     let d, isCrit;
     if (type === "hit_count") {
-      // 命中關：分數不計入，使用固定 base
+      // 命中關：命中必定爆擊，瞄準頭/頸部位
       const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
       const m    = 0.85 + Math.random() * 0.3;
-      isCrit = m > 1.05;
+      isCrit = true;
       d = Math.max(1, Math.round(base * pMult * m));
     } else {
       const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
