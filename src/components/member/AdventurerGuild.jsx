@@ -609,9 +609,10 @@ export default function AdventurerGuild({ onBack }) {
                       backgroundSize: "cover", backgroundPosition: "center",
                       border: `1.5px solid ${bColor}77`,
                     }}>
+                    <div className="absolute inset-0" style={{backgroundColor:"rgba(255,252,235,0.48)"}} />
                     {/* 頂部章別色帶 */}
-                    <div className="h-1 w-full" style={{ background: `linear-gradient(90deg,${bColor},transparent)` }} />
-                    <div className="p-3 flex flex-col gap-1.5">
+                    <div className="relative h-1 w-full" style={{ background: `linear-gradient(90deg,${bColor},transparent)` }} />
+                    <div className="relative p-3 flex flex-col gap-1.5">
                       <div className="text-[10px] font-black" style={{ color: bColor }}>{BADGE_LABEL[q.badgeReward]}</div>
                       {!lock.ok && <div className="text-[9px]" style={{ color:"#7c3a00" }}>🔒 {lock.reason}</div>}
                       <div className="font-black text-xs leading-snug" style={{ color:"#2d1200" }}>{q.title}</div>
@@ -648,8 +649,9 @@ export default function AdventurerGuild({ onBack }) {
                       backgroundSize: "cover", backgroundPosition: "center",
                       border: "1px solid rgba(120,60,10,0.4)",
                     }}>
-                    <div className="h-0.5 w-full" style={{ background: "rgba(120,60,10,0.4)" }} />
-                    <div className="p-3 flex flex-col gap-1.5">
+                    <div className="absolute inset-0" style={{backgroundColor:"rgba(255,252,235,0.48)"}} />
+                    <div className="relative h-0.5 w-full" style={{ background: "rgba(120,60,10,0.4)" }} />
+                    <div className="relative p-3 flex flex-col gap-1.5">
                       <div className="font-black text-xs leading-snug" style={{ color:"#2d1200" }}>{q.title}</div>
                       {q.desc && <div className="text-[9px] line-clamp-3" style={{ color:"#6b3a10" }}>{q.desc}</div>}
                       <div className="flex flex-col gap-0.5 mt-1">
@@ -691,10 +693,11 @@ export default function AdventurerGuild({ onBack }) {
                     border: isDone ? "1px solid rgba(255,255,255,0.05)" : `1.5px solid ${DIFF_COLOR[task.difficulty]}55`,
                     minHeight: 170,
                   }}>
+                  {!isDone && <div className="absolute inset-0" style={{backgroundColor:"rgba(255,252,235,0.48)"}} />}
                   {/* 難度色條 */}
-                  <div className="h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.06)" : DIFF_COLOR[task.difficulty] }} />
+                  <div className="relative h-0.5 w-full" style={{ background: isDone ? "rgba(255,255,255,0.06)" : DIFF_COLOR[task.difficulty] }} />
 
-                  <div className="p-2 flex flex-col items-center text-center gap-1.5 h-full">
+                  <div className="relative p-2 flex flex-col items-center text-center gap-1.5 h-full">
                     {/* 難度標籤 */}
                     <span className="text-[8px] font-black px-1 py-0.5 rounded self-start"
                       style={isDone
