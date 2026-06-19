@@ -5,7 +5,7 @@ import {
   subscribeAdventurerProgress, completeGuildTask,
   completePromotionQuest, subscribeActiveGuildQuests,
   submitGuildQuestCompletion, submitCoachChallenge,
-  subscribeMonsterDex,
+  subscribeMonsterDex, acceptGuildQuest,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import {
@@ -87,6 +87,7 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
   const promoQuest = isPromotionLevel(level) && PROMOTION_QUESTS[level] && !promoDone.has(level)
     ? PROMOTION_QUESTS[level] : null;
   const submitted = new Set(progress?.submittedQuests || []);
+  const accepted  = new Set(progress?.acceptedQuests  || []);
   const completed = new Set(progress?.completed || []);
   const dailyTasks = getDailyGuildTasks(new Date().toISOString().slice(0, 10));
   const doneToday  = completed.size;
@@ -111,9 +112,15 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
 
   // ── 公會任務：確認接任務 ────────────────────────────────────
   function handleOpenQuest(q) {
+    const sub = q.questSubtype || "general";
     setActiveQuest(q);
     setNote("");
     setQuestResult(null);
+    // 一般任務已接受 → 直接跳到送出頁
+    if (sub === "general" && accepted.has(q.id) && !submitted.has(q.id)) {
+      setView("completing");
+      return;
+    }
     setView("confirm");
   }
 
@@ -376,7 +383,7 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
       <div className="min-h-screen flex flex-col" style={{ background: "#0f172a" }}>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 sticky top-0 z-10" style={{ background: "#0f172a" }}>
           <button onClick={() => setView("main")} className="text-white/60 text-sm">← 返回</button>
-          <div className="text-white font-black flex-1">接受任務？</div>
+          <div className="text-white font-black flex-1">確認接取任務</div>
         </div>
         <div className="flex-1 p-4 flex flex-col gap-4">
           {/* 任務資訊卡 */}
@@ -449,7 +456,7 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
               <button onClick={() => onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title })}
                 className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
                 style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-                ⚔️ 進入打怪模式！
+                ⚔️ 確認接取・進入狩獵
               </button>
             ) : (
               <div className="w-full py-3 rounded-2xl text-center text-purple-300 text-sm font-bold border border-purple-400/20" style={{ background: "rgba(124,58,237,0.06)" }}>
@@ -461,14 +468,20 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
               <button onClick={() => onNavigate("practice", { questId: activeQuest.id, questSubtype: sub, requirement: req, reward: activeQuest.reward, title: activeQuest.title })}
                 className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-gray-900"
                 style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
-                🎯 前往練習記錄成績
+                🎯 確認接取・前往練習
               </button>
             ) : null
           ) : lock.ok ? (
-            <button onClick={handleAcceptAndComplete} disabled={busy}
+            <button onClick={async () => {
+              if (!profile?.id) return;
+              setBusy(true);
+              await acceptGuildQuest(profile.id, activeQuest.id).catch(() => {});
+              setBusy(false);
+              setView("main");
+            }} disabled={busy}
               className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 disabled:opacity-40 text-gray-900"
               style={{ background: "linear-gradient(135deg,#fbbf24,#d97706)" }}>
-              ⚔️ 接受任務！
+              ✅ 確認接取
             </button>
           ) : null}
 
@@ -687,6 +700,7 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
             <div className="px-4" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
               {badgeQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
+                const isAccepted  = accepted.has(q.id) && !isSubmitted;
                 const lock = canAcceptBadgeQuest(q, profile);
                 const bColor = BADGE_BORDER[q.badgeReward] || "#94a3b8";
                 return (
@@ -726,8 +740,8 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] font-bold text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
                       <div className="mt-1 text-[10px] font-black text-right"
-                        style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : bColor }}>
-                        {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
+                        style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : isAccepted ? "#a78bfa" : bColor }}>
+                        {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : isAccepted ? "⚡ 進行中" : "→ 接受"}
                       </div>
                     </div>
                   </button>
@@ -744,6 +758,7 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
               {normalQuests.map(q => {
                 const isSubmitted = submitted.has(q.id);
+                const isAccepted  = accepted.has(q.id) && !isSubmitted;
                 return (
                   <button key={q.id} onClick={() => !isSubmitted && handleOpenQuest(q)}
                     disabled={isSubmitted}
@@ -767,8 +782,8 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
                         {(q.reward?.xp || 0) > 0   && <div className="text-[10px] text-blue-300">+{q.reward.xp} XP</div>}
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
-                      <div className="text-right text-[10px] font-black mt-1" style={{ color: isSubmitted ? "#10b981" : "#fbbf24" }}>
-                        {isSubmitted ? "✓ 已提交" : "→"}
+                      <div className="text-right text-[10px] font-black mt-1" style={{ color: isSubmitted ? "#10b981" : isAccepted ? "#a78bfa" : "#fbbf24" }}>
+                        {isSubmitted ? "✓ 已提交" : isAccepted ? "⚡ 進行中 →" : "→ 接受"}
                       </div>
                     </div>
                   </button>

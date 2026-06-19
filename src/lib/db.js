@@ -1039,7 +1039,7 @@ export function subscribeAdventurerProgress(memberId, cb) {
     const d = snap.data();
     // completed 每日重置；submittedQuests 永久記錄不受換日影響
     const completed = d.date === date ? (d.completed || []) : [];
-    cb({ ...d, date, completed, submittedQuests: d.submittedQuests || [] });
+    cb({ ...d, date, completed, submittedQuests: d.submittedQuests || [], acceptedQuests: d.acceptedQuests || [] });
   }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [], submittedQuests: [] }); });
 }
 
@@ -1128,6 +1128,16 @@ export async function updateGuildQuestStatus(questId, status) {
 // 後台：刪除任務
 export async function deleteGuildQuest(questId) {
   await deleteDoc(doc(db, C_GUILD_Q, questId));
+}
+
+// 前台：接受任務（標記進行中，尚未完成）
+export async function acceptGuildQuest(memberId, questId) {
+  if (!memberId || !questId) return;
+  await updateDoc(doc(db, C_GUILD, memberId), {
+    acceptedQuests: arrayUnion(questId),
+  }).catch(() =>
+    setDoc(doc(db, C_GUILD, memberId), { acceptedQuests: [questId] }, { merge: true })
+  );
 }
 
 // 前台：會員提交完成（XP/金幣立即發放；徽章待審核）
