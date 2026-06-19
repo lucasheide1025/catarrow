@@ -92,6 +92,30 @@ export const TARGET_NAME = {
   zombie:  "殭屍靶",
 };
 
+// ── 原野射箭標準分數按鈕 ────────────────────────────────────────
+export const STANDARD_ZONES = [
+  { label: "X", val: 10, color: "#fbbf24" },
+  { label: "9", val: 9,  color: "#ef4444" },
+  { label: "8", val: 8,  color: "#ef4444" },
+  { label: "7", val: 7,  color: "#3b82f6" },
+  { label: "6", val: 6,  color: "#3b82f6" },
+  { label: "5", val: 5,  color: "#475569" },
+  { label: "4", val: 4,  color: "#475569" },
+  { label: "3", val: 3,  color: "#64748b" },
+  { label: "2", val: 2,  color: "#64748b" },
+  { label: "1", val: 1,  color: "#94a3b8" },
+  { label: "M", val: 0,  color: "#1e293b" },
+];
+
+// ── 晉階任務設定（Lv10/20/30/40/50 各一場原野射箭）────────────
+export const PROMOTION_QUESTS = {
+  10: { level: 10, fromRank: "青銅", toRank: "白銀", dist: 8,  arrowCount: 6, goal: 25, bonusXP: 400  },
+  20: { level: 20, fromRank: "白銀", toRank: "黃金", dist: 10, arrowCount: 6, goal: 32, bonusXP: 600  },
+  30: { level: 30, fromRank: "黃金", toRank: "白金", dist: 13, arrowCount: 6, goal: 38, bonusXP: 900  },
+  40: { level: 40, fromRank: "白金", toRank: "傳說", dist: 15, arrowCount: 6, goal: 42, bonusXP: 1200 },
+  50: { level: 50, fromRank: "傳說", toRank: "神話", dist: 18, arrowCount: 6, goal: 48, bonusXP: 1800 },
+};
+
 // ── 任務驗收 ──────────────────────────────────────────────────
 export function checkTaskPass(task, arrows) {
   const total = arrows.reduce((s, a) => s + a, 0);

@@ -1053,6 +1053,15 @@ export async function completeGuildTask(memberId, taskId, xp, coins) {
   return { ok: true };
 }
 
+// 完成晉階任務 → 記錄 promotionDone + 給 bonusXP
+export async function completePromotionQuest(memberId, promotionLevel, bonusXP) {
+  if (!memberId) return;
+  await updateDoc(doc(db, C.members, memberId), {
+    adventurerXP:  increment(bonusXP),
+    promotionDone: arrayUnion(promotionLevel),
+  });
+}
+
 const C_DEX_GRANT = "dexGrants";      // 每個會員後台授予的成就
 const C_DEX_CONFIG = "dexConfig";     // 屆數設定
  

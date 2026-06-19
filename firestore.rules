@@ -30,7 +30,8 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
                     "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
-                    "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname"]);
+                    "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
+                    "adventurerXP", "promotionDone"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
