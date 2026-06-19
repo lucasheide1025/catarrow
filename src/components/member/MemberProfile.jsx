@@ -1,8 +1,7 @@
 // src/components/member/MemberProfile.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { updateMember, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeCardCollection, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex } from "../../lib/db";
-import { getDuelStats } from "../../lib/duelDb";
+import { updateMember } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
@@ -40,7 +39,13 @@ function useCardTheme() {
   return [theme, setTheme];
 }
 
-export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange }) {
+export default function MemberProfile({
+  onPageChange, appTheme, onAppThemeChange,
+  certification = null, certRecords = [],
+  dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
+  duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
+  potionDex = {}, cardData = { cards:{}, equipped:[] }
+}) {
   const { profile } = useAuth();
   const [eq,            setEq]            = useState(normalizeEquipment(profile?.equipment));
   const [armorSets,     setArmorSets]     = useState(profile?.armorSets     || []);
@@ -48,17 +53,7 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
   const [equipTab,      setEquipTab]      = useState("bow");
-  const [certRecords,   setCertRecords]   = useState([]);
   const [showHistory,   setShowHistory]   = useState(false);
-  const [certification, setCertification] = useState(null);
-  const [dexGrants,     setDexGrants]     = useState([]);
-  const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
-  const [cardData,      setCardData]      = useState({ cards: {}, equipped: [] });
-  const [monsterDex,    setMonsterDex]    = useState({});
-  const [craftStats,    setCraftStats]    = useState({});
-  const [chestStats,    setChestStats]    = useState({});
-  const [potionDex,     setPotionDex]     = useState({});
-  const [duelStats,     setDuelStats]     = useState({});
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
 
@@ -66,21 +61,6 @@ export default function MemberProfile({ onPageChange, appTheme, onAppThemeChange
     setEq(normalizeEquipment(profile?.equipment));
     setArmorSets(profile?.armorSets || []);
     setAccessorySets(profile?.accessorySets || []);
-  }, [profile?.id]);
-
-  useEffect(() => {
-    if (!profile?.id) return;
-    getCertRecords(profile.id).then(setCertRecords).catch(() => setCertRecords([]));
-    const unsub  = subscribeCertification(profile.id, setCertification);
-    getDexConfig().then(setDexConfig).catch(() => {});
-    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    const unsub2     = subscribeDexGrants(profile.id, setDexGrants);
-    const unsub3     = subscribeCardCollection(profile.id, setCardData);
-    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
-    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
-    const unsubChest = subscribeChestStats(profile.id, setChestStats);
-    const unsubPot   = subscribePotionDex(profile.id, setPotionDex);
-    return () => { unsub?.(); unsub2?.(); unsub3?.(); unsubMon?.(); unsubCraft?.(); unsubChest?.(); unsubPot?.(); };
   }, [profile?.id]);
 
   async function saveEquip() {

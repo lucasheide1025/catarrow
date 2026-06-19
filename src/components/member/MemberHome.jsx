@@ -1,7 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, getCertRecords, subscribeCertification, subscribeDexGrants, getDexConfig, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
-import { getDuelStats } from "../../lib/duelDb";
+import { getMemberResults, subscribeBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -69,22 +68,18 @@ function useCardTheme() {
   return [theme, setTheme];
 }
 
-export default function MemberHome({ onPageChange, onJoinParty, notifications = [] }) {
+export default function MemberHome({
+  onPageChange, onJoinParty, notifications = [],
+  certification = null, certRecords = [],
+  dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
+  duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
+  potionDex = {}, cardData = { cards:{}, equipped:[] }
+}) {
   const { profile } = useAuth();
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
-  const [certRecords, setCertRecords]     = useState([]);
-  const [certification, setCertification] = useState(null);
   const [showShare, setShowShare]         = useState(false);
-  const [dexGrants, setDexGrants]         = useState([]);
-  const [dexConfig, setDexConfig]         = useState({ physicalMax: 10, pointMax: 10 });
   const [loading, setLoading]             = useState(true);
-  const [duelStats, setDuelStats]         = useState(null);
-  const [monsterDex, setMonsterDex]       = useState({});
-  const [craftStats, setCraftStats]       = useState({});
-  const [chestStats, setChestStats]       = useState({});
-  const [potionDex,  setPotionDex]        = useState({});
-  const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [cardTheme, setCardTheme]         = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
   // 月卡
@@ -97,21 +92,10 @@ export default function MemberHome({ onPageChange, onJoinParty, notifications = 
   useEffect(() => {
     if (!profile?.id) return;
     checkExpireMonthlyCard(profile.id).catch(() => {});
-    Promise.all([getMemberResults(profile.id), getCertRecords(profile.id)]).then(([r, c]) => {
-      setResults(r); setCertRecords(c); setLoading(false);
-    });
+    getMemberResults(profile.id).then(r => { setResults(r); setLoading(false); });
     const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
-    const unsub2 = subscribeCertification(profile.id, setCertification);
-    getDexConfig().then(setDexConfig).catch(() => {});
-    const unsub4    = subscribeDexGrants(profile.id, setDexGrants);
-    const unsub5    = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
-    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    const unsubMon   = subscribeMonsterDex(profile.id, setMonsterDex);
-    const unsubCraft = subscribeCraftStats(profile.id, setCraftStats);
-    const unsubChest = subscribeChestStats(profile.id, setChestStats);
-    const unsubPot   = subscribePotionDex(profile.id, setPotionDex);
-    const unsubCard  = subscribeCardCollection(profile.id, setCardData);
-    return () => { unsub?.(); unsub2?.(); unsub4?.(); unsub5?.(); unsubMon?.(); unsubCraft?.(); unsubChest?.(); unsubPot?.(); unsubCard?.(); };
+    const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
+    return () => { unsub?.(); unsub5?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   const unreadNotif = notifications.filter(x =>

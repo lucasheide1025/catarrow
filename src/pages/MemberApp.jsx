@@ -1,7 +1,11 @@
 // src/pages/MemberApp.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered } from "../lib/db";
+import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
+  subscribeCertification, getDexConfig, subscribeDexGrants,
+  subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
+  subscribeCardCollection, getCertRecords } from "../lib/db";
+import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
@@ -65,6 +69,17 @@ export default function MemberApp() {
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
   const [latestVersion, setLatestVersion] = useState(null);
 
+  const [certification, setCertification] = useState(null);
+  const [certRecords,   setCertRecords]   = useState([]);
+  const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
+  const [dexGrants,     setDexGrants]     = useState([]);
+  const [duelStats,     setDuelStats]     = useState(null);
+  const [monsterDex,    setMonsterDex]    = useState({});
+  const [craftStats,    setCraftStats]    = useState({});
+  const [chestStats,    setChestStats]    = useState({});
+  const [potionDex,     setPotionDex]     = useState({});
+  const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
+
   function handleAppThemeChange(id) {
     saveAppTheme(id);
     setAppTheme(APP_THEMES.find(t => t.id === id) || APP_THEMES[0]);
@@ -78,6 +93,21 @@ export default function MemberApp() {
   useEffect(() => {
     return subscribeAppVersion(setLatestVersion);
   }, []);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    getDexConfig().then(setDexConfig).catch(() => {});
+    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
+    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
+    const u1 = subscribeCertification(profile.id, setCertification);
+    const u2 = subscribeDexGrants(profile.id, setDexGrants);
+    const u3 = subscribeMonsterDex(profile.id, setMonsterDex);
+    const u4 = subscribeCraftStats(profile.id, setCraftStats);
+    const u5 = subscribeChestStats(profile.id, setChestStats);
+    const u6 = subscribePotionDex(profile.id, setPotionDex);
+    const u7 = subscribeCardCollection(profile.id, setCardData);
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); };
+  }, [profile?.id]); // eslint-disable-line
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
@@ -199,7 +229,10 @@ export default function MemberApp() {
 
       {/* 頁面內容 */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
-        {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications} />}
+        {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
+            certification={certification} certRecords={certRecords} dexConfig={dexConfig} dexGrants={dexGrants}
+            duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
+            potionDex={potionDex} cardData={cardData} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}
@@ -213,7 +246,10 @@ export default function MemberApp() {
         )}
         {page==="practice"    && <MemberPractice />}
         {page==="leaderboard" && <MemberLeaderboard />}
-        {page==="profile"     && <MemberProfile onPageChange={setPage} appTheme={appTheme} onAppThemeChange={handleAppThemeChange} />}
+        {page==="profile"     && <MemberProfile onPageChange={setPage} appTheme={appTheme} onAppThemeChange={handleAppThemeChange}
+            certification={certification} certRecords={certRecords} dexConfig={dexConfig} dexGrants={dexGrants}
+            duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
+            potionDex={potionDex} cardData={cardData} />}
         {page==="learn"       && <MemberLearn />}
         {page==="msgs"        && <MemberMessages />}
         {page==="history"     && <MemberHistory />}
