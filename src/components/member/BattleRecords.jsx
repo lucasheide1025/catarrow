@@ -46,18 +46,20 @@ function currentPeriodKey(unit) {
   return periodKey(new Date(), unit);
 }
 
-// 從不同格式的 log 取出所有箭分陣列
+// 從不同格式的 log 取出所有箭分陣列（過濾非數字，例如 "M"）
 function extractArrows(log) {
   if (log.roundScores?.length)
-    return log.roundScores.flatMap(r => r.scores || []);
+    return log.roundScores.flatMap(r => (r.scores || []).filter(v => typeof v === "number" && !isNaN(v)));
   if (Array.isArray(log.rounds))
-    return log.rounds.flat().filter(v => typeof v === "number");
+    return log.rounds.flat().filter(v => typeof v === "number" && !isNaN(v));
   return [];
 }
 
 function calcAvg(arr) {
   if (!arr.length) return 0;
-  return arr.reduce((s, v) => s + v, 0) / arr.length;
+  const nums = arr.filter(v => typeof v === "number" && !isNaN(v));
+  if (!nums.length) return 0;
+  return nums.reduce((s, v) => s + v, 0) / nums.length;
 }
 
 // 穩定性：σ=0→100%，σ≥5→0%（五分標準差法）
@@ -215,7 +217,7 @@ export default function BattleRecords({ logs = [], title = "📊 戰鬥紀錄", 
   const chartPoints = useMemo(() =>
     [...grouped]
       .sort((a, b) => a.key.localeCompare(b.key))
-      .filter(g => g.arrows.length > 0)
+      .filter(g => g.arrows.length > 0 && !isNaN(g.avg))
       .map(g => ({
         label:     periodLabel(g.key, unit),
         avg:       parseFloat(g.avg.toFixed(2)),
@@ -299,9 +301,9 @@ export default function BattleRecords({ logs = [], title = "📊 戰鬥紀錄", 
                   {total > 0 && (
                     <>
                       <span className="text-xs text-amber-300 font-black">
-                        均{avg.toFixed(1)}
+                        均{isNaN(avg) ? "–" : avg.toFixed(1)}
                       </span>
-                      {stability != null && (
+                      {stability != null && !isNaN(stability) && (
                         <span className="text-[10px] font-bold"
                           style={{
                             color: stability >= 70 ? "#22c55e"
