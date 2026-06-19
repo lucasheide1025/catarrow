@@ -401,6 +401,87 @@ function ResultPhase({ form, rounds, onSave, onRetry, saving }) {
   );
 }
 
+// ── 總覽：評級與圓盤 ──────────────────────────────────────────
+const RANKS = [
+  { rank:"SSS", color:"#fbbf24", min:{ hit:97, high:70, stable:90, ten:25 } },
+  { rank:"SS",  color:"#f59e0b", min:{ hit:94, high:60, stable:87, ten:18 } },
+  { rank:"S",   color:"#ec4899", min:{ hit:90, high:50, stable:83, ten:12 } },
+  { rank:"A",   color:"#10b981", min:{ hit:82, high:40, stable:78, ten:7  } },
+  { rank:"B",   color:"#3b82f6", min:{ hit:72, high:30, stable:72, ten:4  } },
+  { rank:"C",   color:"#6b7280", min:{ hit:60, high:20, stable:65, ten:0  } },
+  { rank:"D",   color:"#9ca3af", min:{ hit:45, high:12, stable:0,  ten:0  } },
+  { rank:"E",   color:"#9ca3af", min:{ hit:30, high:0,  stable:0,  ten:0  } },
+  { rank:"F",   color:"#ef4444", min:{ hit:0,  high:0,  stable:0,  ten:0  } },
+];
+function calcOverviewStats(practiceLogs) {
+  const allArrows = practiceLogs.flatMap(l=>(l.rounds||[]).flat());
+  if (!allArrows.length) return null;
+  const nums   = allArrows.filter(v=>typeof v==="number");
+  const misses = allArrows.filter(v=>v==="M").length;
+  const total  = nums.reduce((a,b)=>a+b,0);
+  const count  = allArrows.length;
+  const hitRate   = (count-misses)/count*100;
+  const highRate  = nums.filter(v=>v>=8).length/count*100;
+  const tenRate   = nums.filter(v=>v===10).length/count*100;
+  const avg       = nums.length ? total/nums.length : 0;
+  const variance  = nums.length ? nums.reduce((s,v)=>s+(v-avg)**2,0)/nums.length : 0;
+  const stdDev    = Math.sqrt(variance);
+  const stability = Math.max(0,Math.min(100,100-stdDev*12));
+  const dist = {};
+  allArrows.forEach(v=>{ dist[v]=(dist[v]||0)+1; });
+  return { hitRate, highRate, tenRate, stability, count, total, avg, stdDev, dist };
+}
+function getRank(stats) {
+  if (!stats || stats.count<30) return null;
+  for (const r of RANKS) {
+    if (stats.hitRate>=r.min.hit && stats.highRate>=r.min.high &&
+        stats.stability>=r.min.stable && stats.tenRate>=r.min.ten) return r;
+  }
+  return RANKS[RANKS.length-1];
+}
+function RadarDisc({ h, hi, st }) {
+  const cx=80,cy=80,r=56;
+  const axes=[{label:"命中",a:-90,v:h/100},{label:"高分",a:30,v:hi/100},{label:"穩定",a:150,v:st/100}];
+  const pt=(a,ratio)=>[cx+r*ratio*Math.cos(a*Math.PI/180),cy+r*ratio*Math.sin(a*Math.PI/180)];
+  const poly=axes.map(ax=>pt(ax.a,ax.v).join(",")).join(" ");
+  return (
+    <svg viewBox="0 0 160 160" className="w-36 h-36">
+      {[0.25,0.5,0.75,1].map((g,i)=>(
+        <polygon key={i} points={axes.map(ax=>pt(ax.a,g).join(",")).join(" ")}
+          fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={0.8}/>
+      ))}
+      {axes.map((ax,i)=>{const[x2,y2]=pt(ax.a,1);return(
+        <line key={i} x1={cx} y1={cy} x2={x2} y2={y2} stroke="rgba(255,255,255,0.15)" strokeWidth={0.8}/>
+      );})}
+      <polygon points={poly} fill="rgba(59,130,246,0.28)" stroke="#60a5fa" strokeWidth={2}/>
+      {axes.map((ax,i)=>{const[x,y]=pt(ax.a,ax.v);return <circle key={i} cx={x} cy={y} r={3.5} fill="#93c5fd"/>;})}
+      {axes.map((ax,i)=>{const[x,y]=pt(ax.a,1.28);return(
+        <text key={i} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+          fill="rgba(255,255,255,0.8)" fontSize={9} fontWeight="bold">{ax.label}</text>
+      );})}
+    </svg>
+  );
+}
+function DonutDisc({ dist, total }) {
+  const cx=80,cy=80,R=60,ri=34;
+  const DCOL={"M":"#ef4444",1:"#475569",2:"#64748b",3:"#818cf8",4:"#60a5fa",5:"#3b82f6",6:"#10b981",7:"#059669",8:"#84cc16",9:"#f59e0b",10:"#f97316"};
+  const keys=["M",1,2,3,4,5,6,7,8,9,10].filter(k=>(dist[k]||0)>0);
+  const toR=a=>a*Math.PI/180;
+  function arc(a1,a2,r1,r2){
+    const large=(a2-a1)>180?1:0;
+    return `M${cx+r1*Math.cos(toR(a1))} ${cy+r1*Math.sin(toR(a1))} A${r1} ${r1} 0 ${large} 1 ${cx+r1*Math.cos(toR(a2))} ${cy+r1*Math.sin(toR(a2))} L${cx+r2*Math.cos(toR(a2))} ${cy+r2*Math.sin(toR(a2))} A${r2} ${r2} 0 ${large} 0 ${cx+r2*Math.cos(toR(a1))} ${cy+r2*Math.sin(toR(a1))}Z`;
+  }
+  let a=-90;
+  const segs=keys.map(k=>{const da=(dist[k]/total)*360;const s={k,d:arc(a,a+da,R,ri),c:DCOL[k]||"#6b7280"};a+=da;return s;});
+  return (
+    <svg viewBox="0 0 160 160" className="w-36 h-36">
+      {segs.map(({k,d,c})=><path key={k} d={d} fill={c} opacity={0.85}/>)}
+      <text x={cx} y={cy-5} textAnchor="middle" fill="white" fontSize={16} fontWeight="bold">{total}</text>
+      <text x={cx} y={cy+11} textAnchor="middle" fill="rgba(255,255,255,0.5)" fontSize={8}>箭</text>
+    </svg>
+  );
+}
+
 // ── HistoryTab ─────────────────────────────────────────────────
 const SOURCE_OPTS = [
   { id:"all",       label:"全部"      },
@@ -417,48 +498,198 @@ const TYPE_BADGE = {
 };
 
 function HistoryTab({ logs, monsterLogs }) {
-  const [expand,       setExpand]       = useState({});
+  const [expandLog,    setExpandLog]    = useState({});
+  const [expandDist,   setExpandDist]   = useState({});
   const [sourceFilter, setSourceFilter] = useState("all");
   const [bowFilter,    setBowFilter]    = useState("");
-  const [distFilter,   setDistFilter]   = useState("");
 
-  const allLogs = useMemo(()=>{
-    const practice = logs.filter(l=>!l.source)
-      .map(l=>({...l,_type:"practice",_date:l.date||"",_ts:l.submittedAt?.seconds||0}));
-    const party = logs.filter(l=>l.source==="party")
+  const practiceLogs = useMemo(()=>
+    logs.filter(l=>!l.source)
+      .map(l=>({...l,_type:"practice",_date:l.date||"",_ts:l.submittedAt?.seconds||0}))
+      .sort((a,b)=>b._date.localeCompare(a._date)||b._ts-a._ts),
+  [logs]);
+
+  const otherLogs = useMemo(()=>{
+    const party  = logs.filter(l=>l.source==="party")
       .map(l=>({...l,_type:"party",_date:l.date||"",_ts:l.submittedAt?.seconds||0}));
-    const wb = logs.filter(l=>l.source==="worldboss")
+    const wb     = logs.filter(l=>l.source==="worldboss")
       .map(l=>({...l,_type:"worldboss",_date:l.date||"",_ts:l.submittedAt?.seconds||0}));
-    const monster = monsterLogs.map(l=>{
-      const dt = l.createdAt ? new Date(l.createdAt.seconds*1000) : new Date();
+    const monster= monsterLogs.map(l=>{
+      const dt=l.createdAt?new Date(l.createdAt.seconds*1000):new Date();
       return {...l,_type:"monster",_date:dt.toISOString().slice(0,10),_ts:l.createdAt?.seconds||0};
     });
-    return [...practice,...party,...wb,...monster]
-      .sort((a,b)=>a._date!==b._date?b._date.localeCompare(a._date):b._ts-a._ts);
+    return [...party,...wb,...monster]
+      .sort((a,b)=>b._date.localeCompare(a._date)||b._ts-a._ts);
   },[logs,monsterLogs]);
 
-  const bowsUsed  = useMemo(()=>[...new Set(logs.filter(l=>!l.source).map(l=>l.bowType))],[logs]);
-  const distsUsed = useMemo(()=>
-    [...new Set(logs.filter(l=>!l.source).map(l=>Number(l.distance)))]
-    .filter(Boolean).sort((a,b)=>a-b),[logs]);
+  const distGroups = useMemo(()=>{
+    const src = bowFilter ? practiceLogs.filter(l=>l.bowType===bowFilter) : practiceLogs;
+    const g = {};
+    src.forEach(l=>{
+      const d=String(l.distance||"?");
+      if (!g[d]) g[d]={dist:Number(l.distance)||0,key:d,logs:[]};
+      g[d].logs.push(l);
+    });
+    return Object.values(g).sort((a,b)=>a.dist-b.dist);
+  },[practiceLogs,bowFilter]);
 
-  const filtered = useMemo(()=>
-    allLogs
-      .filter(l=>sourceFilter==="all"||l._type===sourceFilter)
-      .filter(l=>!bowFilter||l.bowType===bowFilter)
-      .filter(l=>!distFilter||Number(l.distance)===Number(distFilter)),
-    [allLogs,sourceFilter,bowFilter,distFilter]
-  );
+  const filteredOther = useMemo(()=>
+    otherLogs.filter(l=>sourceFilter==="all"||l._type===sourceFilter),
+  [otherLogs,sourceFilter]);
 
-  const tabBtn = (active) => `px-3 py-1 rounded-full text-xs font-bold border flex-shrink-0 transition-all
+  const bowsUsed = useMemo(()=>[...new Set(practiceLogs.map(l=>l.bowType))],[practiceLogs]);
+  const tabBtn=(active)=>`px-3 py-1 rounded-full text-xs font-bold border flex-shrink-0 transition-all
     ${active?"bg-blue-500 text-white border-blue-400":"bg-white/10 text-white/60 border-white/20"}`;
+  const toggleLog =id=>setExpandLog(e=>({...e,[id]:!e[id]}));
+  const toggleDist=d =>setExpandDist(e=>({...e,[d]:!e[d]}));
+
+  const showPractice = sourceFilter==="all"||sourceFilter==="practice";
+  const showOther    = sourceFilter==="all"||["monster","party","worldboss"].includes(sourceFilter);
 
   if (!logs.length&&!monsterLogs.length) return (
     <div className="p-8 text-center text-white/50 text-sm">還沒有歷史紀錄</div>
   );
 
+  function PracticeCard({ log }) {
+    const open=!!expandLog[log.id];
+    const fmt=getFormat(log), st=calcStats(log.rounds||[]);
+    return (
+      <Card className="p-4" style={CS}>
+        <button className="w-full text-left" onClick={()=>toggleLog(log.id)}>
+          <div className="flex items-start justify-between mb-1.5">
+            <div>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="font-bold text-white text-sm">{shortDate(log.date)}</span>
+                <span className="text-xs text-white/40">{bowLabel(log.bowType)} · {fmt.label}</span>
+              </div>
+              <div className="flex gap-2 text-xs text-white/50 flex-wrap">
+                <span>命中 {st.hitRate}%</span>
+                <span>失誤 {st.misses}</span>
+                <span>{log.arrowCount}箭×{log.roundCount}組</span>
+                {log.note&&<span className="text-blue-300 truncate max-w-20">{log.note}</span>}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="font-black text-xl text-white">{log.total??st.total}</div>
+              <div className="text-xs text-white/50">{(log.avgPerArrow??st.avgPerArrow).toFixed(1)}/箭 {open?"▲":"▼"}</div>
+            </div>
+          </div>
+        </button>
+        {log.coachNote&&(
+          <div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">
+            💬 教練：{log.coachNote}
+          </div>
+        )}
+        {open&&(log.rounds||[]).length>0&&(
+          <div className="mt-3 pt-3 border-t border-white/10">
+            {(log.rounds||[]).map((r,i)=>(
+              <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
+                <span className="text-xs text-white/50 w-8">第{i+1}組</span>
+                <div className="flex gap-1 flex-1">
+                  {r.map((v,j)=>{const c=scoreColor(v,fmt);return(
+                    <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
+                      style={{background:c.bg,color:c.text}}>{v}</span>
+                  );})}
+                </div>
+                <span className="font-bold text-white/70 text-sm">{numericArr([r]).reduce((a,b)=>a+b,0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  function OtherCard({ log }) {
+    const open=!!expandLog[log.id];
+    const badge=TYPE_BADGE[log._type];
+    if (log._type==="monster") {
+      const total=(log.roundScores||[]).reduce((s,r)=>s+(r.total||0),0);
+      const rounds=(log.roundScores||[]).map(r=>r.scores||[]);
+      const won=log.result==="win";
+      return (
+        <Card className="p-4" style={CS}>
+          <button className="w-full text-left" onClick={()=>toggleLog(log.id)}>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:badge.bg,color:badge.text}}>{badge.label}</span>
+                  <span className="font-bold text-white text-sm">{shortDate(log._date)}</span>
+                </div>
+                <div className="text-xs text-white/50">{log.monsterName||"怪物"}{log.distance?` · ${log.distance}m`:""}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${won?"bg-green-500/30 text-green-300":"bg-white/10 text-white/40"}`}>{won?"勝利":"落敗"}</span>
+                <div className="font-black text-xl text-white">{total}</div>
+              </div>
+            </div>
+            <div className="text-xs text-white/50">{rounds.length}組 <span className="text-white/20 ml-1">{open?"▲":"▼"}</span></div>
+          </button>
+          {log.coachNote&&<div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">💬 教練：{log.coachNote}</div>}
+          {open&&rounds.length>0&&(
+            <div className="mt-3 pt-3 border-t border-white/10">
+              {rounds.map((r,i)=>{const sub=r.filter(v=>typeof v==="number").reduce((a,b)=>a+b,0);return(
+                <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
+                  <span className="text-xs text-white/50 w-8">第{i+1}組</span>
+                  <div className="flex gap-1 flex-1">
+                    {r.map((v,j)=>{const c=battleScoreColor(v);return(
+                      <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
+                        style={{background:c.bg,color:c.text}}>{v===0?"M":v}</span>
+                    );})}
+                  </div>
+                  <span className="font-bold text-white/70 text-sm">{sub}</span>
+                </div>
+              );})}
+            </div>
+          )}
+        </Card>
+      );
+    }
+    const won=log.result==="win";
+    const st=calcStats(log.rounds||[]);
+    const label=log._type==="party"?(log.monsterName||"組隊打怪"):(log.bossName||"世界王");
+    return (
+      <Card className="p-4" style={CS}>
+        <button className="w-full text-left" onClick={()=>toggleLog(log.id)}>
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:badge.bg,color:badge.text}}>{badge.label}</span>
+                <span className="font-bold text-white text-sm">{shortDate(log._date)}</span>
+              </div>
+              <div className="text-xs text-white/50">{label}{log.distance?` · ${log.distance}m`:""}</div>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${won?"bg-green-500/30 text-green-300":"bg-white/10 text-white/40"}`}>{won?"勝利":"落敗"}</span>
+              <div className="font-black text-xl text-white">{log.total??st.total}</div>
+            </div>
+          </div>
+          <div className="text-xs text-white/50">{(log.rounds||[]).length}組 <span className="text-white/20 ml-1">{open?"▲":"▼"}</span></div>
+        </button>
+        {log.coachNote&&<div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">💬 教練：{log.coachNote}</div>}
+        {open&&(log.rounds||[]).length>0&&(
+          <div className="mt-3 pt-3 border-t border-white/10">
+            {(log.rounds||[]).map((r,i)=>{const sub=r.filter(v=>typeof v==="number"&&v>0).reduce((a,b)=>a+b,0);return(
+              <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
+                <span className="text-xs text-white/50 w-8">第{i+1}組</span>
+                <div className="flex gap-1 flex-1">
+                  {r.map((v,j)=>{const c=battleScoreColor(v);return(
+                    <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
+                      style={{background:c.bg,color:c.text}}>{v===0?"M":v}</span>
+                  );})}
+                </div>
+                <span className="font-bold text-white/70 text-sm">{sub}</span>
+              </div>
+            );})}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3 p-4">
+      {/* 類型篩選 */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {SOURCE_OPTS.map(opt=>(
           <button key={opt.id} onClick={()=>setSourceFilter(opt.id)} className={tabBtn(sourceFilter===opt.id)}>
@@ -467,175 +698,61 @@ function HistoryTab({ logs, monsterLogs }) {
         ))}
       </div>
 
-      {(bowsUsed.length>0||distsUsed.length>0)&&(
+      {/* 弓種篩選（只在有練習紀錄時顯示） */}
+      {showPractice && bowsUsed.length>1 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
+          <button onClick={()=>setBowFilter("")} className={tabBtn(bowFilter==="")}>全弓種</button>
           {bowsUsed.map(b=>(
             <button key={b} onClick={()=>setBowFilter(f=>f===b?"":b)} className={tabBtn(bowFilter===b)}>
               {bowLabel(b)}
             </button>
           ))}
-          {distsUsed.map(d=>(
-            <button key={d} onClick={()=>setDistFilter(f=>f===d?"":d)}
-              className={`px-3 py-1 rounded-full text-xs font-bold border flex-shrink-0 transition-all
-                ${distFilter===d?"bg-green-600 text-white border-green-500":"bg-white/10 text-white/60 border-white/20"}`}>
-              {d}m
-            </button>
-          ))}
         </div>
       )}
 
-      {filtered.length===0&&<div className="text-center text-white/50 text-sm py-6">沒有符合的紀錄</div>}
-
-      {filtered.map(log=>{
-        const isOpen=!!expand[log.id];
-        const toggle=()=>setExpand(e=>({...e,[log.id]:!e[log.id]}));
-        const badge=TYPE_BADGE[log._type];
-
-        /* ── 練習卡片 */
-        if (log._type==="practice") {
-          const fmt=getFormat(log), stats=calcStats(log.rounds||[]);
-          return (
-            <Card key={log.id} className="p-4" style={CS}>
-              <button className="w-full text-left" onClick={toggle}>
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:badge.bg,color:badge.text }}>{badge.label}</span>
-                      <span className="font-bold text-white text-sm">{shortDate(log.date)}</span>
-                    </div>
-                    <div className="text-xs text-white/50">{bowLabel(log.bowType)} · {log.distance}m · {fmt.label}</div>
+      {/* 練習紀錄 — 按距離分組 */}
+      {showPractice&&(
+        <div className="flex flex-col gap-2">
+          {distGroups.length===0&&<div className="text-center text-white/40 text-sm py-3">沒有練習紀錄</div>}
+          {distGroups.map(group=>{
+            const open=!!expandDist[group.key];
+            const tot=group.logs.reduce((s,l)=>{const st=calcStats(l.rounds||[]);return s+(l.total??st.total);},0);
+            const avg=(tot/group.logs.length)||0;
+            return (
+              <div key={group.key}>
+                <button className="w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm text-white transition-all"
+                  style={{background:"rgba(59,130,246,0.18)",border:"1px solid rgba(99,179,246,0.25)"}}
+                  onClick={()=>toggleDist(group.key)}>
+                  <span>📏 {group.key}m</span>
+                  <span className="flex items-center gap-3 text-xs font-normal text-white/70">
+                    <span>{group.logs.length}筆</span>
+                    <span>均{avg.toFixed(0)}分</span>
+                    <span>{open?"▲":"▼"}</span>
+                  </span>
+                </button>
+                {open&&(
+                  <div className="flex flex-col gap-2 mt-2 pl-2 border-l-2 border-blue-500/20 ml-2">
+                    {group.logs.map(log=><PracticeCard key={log.id} log={log}/>)}
                   </div>
-                  <div className="text-right">
-                    <div className="font-black text-xl text-white">{log.total??stats.total}</div>
-                    <div className="text-xs text-white/50">{(log.avgPerArrow??stats.avgPerArrow).toFixed(1)}/箭</div>
-                  </div>
-                </div>
-                <div className="flex gap-3 text-xs text-white/50 flex-wrap">
-                  <span>命中 {stats.hitRate}%</span><span>失誤 {stats.misses}</span>
-                  <span>{log.arrowCount}箭×{log.roundCount}組</span>
-                  {log.note&&<span className="text-blue-300 truncate max-w-24">{log.note}</span>}
-                  <span className="ml-auto text-white/30">{isOpen?"▲":"▼"}</span>
-                </div>
-              </button>
-              {log.coachNote&&(
-                <div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">
-                  💬 教練：{log.coachNote}
-                </div>
-              )}
-              {isOpen&&(log.rounds||[]).length>0&&(
-                <div className="mt-3 pt-3 border-t border-white/10">
-                  {(log.rounds||[]).map((r,i)=>(
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
-                      <span className="text-xs text-white/50 w-8">第{i+1}組</span>
-                      <div className="flex gap-1 flex-1">
-                        {r.map((v,j)=>{const c=scoreColor(v,fmt);return(
-                          <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
-                            style={{ background:c.bg, color:c.text }}>{v}</span>
-                        );})}
-                      </div>
-                      <span className="font-bold text-white/70 text-sm">{numericArr([r]).reduce((a,b)=>a+b,0)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          );
-        }
-
-        /* ── 打怪（solo）卡片 */
-        if (log._type==="monster") {
-          const won=log.result==="win";
-          const total=(log.roundScores||[]).reduce((s,r)=>s+(r.total||0),0);
-          const rounds=(log.roundScores||[]).map(r=>r.scores||[]);
-          return (
-            <Card key={log.id} className="p-4" style={CS}>
-              <button className="w-full text-left" onClick={toggle}>
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:badge.bg,color:badge.text }}>{badge.label}</span>
-                      <span className="font-bold text-white text-sm">{shortDate(log._date)}</span>
-                    </div>
-                    <div className="text-xs text-white/50">{log.monsterName||"怪物"}{log.distance?` · ${log.distance}m`:""}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${won?"bg-green-500/30 text-green-300":"bg-white/10 text-white/40"}`}>{won?"勝利":"落敗"}</span>
-                    <div className="font-black text-xl text-white">{total}</div>
-                  </div>
-                </div>
-                <div className="text-xs text-white/50">{rounds.length} 組 <span className="ml-1 text-white/20">{isOpen?"▲":"▼"}</span></div>
-              </button>
-              {log.coachNote&&(
-                <div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">
-                  💬 教練：{log.coachNote}
-                </div>
-              )}
-              {isOpen&&rounds.length>0&&(
-                <div className="mt-3 pt-3 border-t border-white/10">
-                  {rounds.map((r,i)=>{const sub=r.filter(v=>typeof v==="number").reduce((a,b)=>a+b,0);return(
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
-                      <span className="text-xs text-white/50 w-8">第{i+1}組</span>
-                      <div className="flex gap-1 flex-1">
-                        {r.map((v,j)=>{const c=battleScoreColor(v);return(
-                          <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
-                            style={{ background:c.bg, color:c.text }}>{v===0?"M":v}</span>
-                        );})}
-                      </div>
-                      <span className="font-bold text-white/70 text-sm">{sub}</span>
-                    </div>
-                  );})}
-                </div>
-              )}
-            </Card>
-          );
-        }
-
-        /* ── 組隊 / 世界王卡片 */
-        const won=log.result==="win";
-        const stats=calcStats(log.rounds||[]);
-        const label=log._type==="party"?(log.monsterName||"組隊打怪"):(log.bossName||"世界王");
-        return (
-          <Card key={log.id} className="p-4" style={CS}>
-            <button className="w-full text-left" onClick={toggle}>
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:badge.bg,color:badge.text }}>{badge.label}</span>
-                    <span className="font-bold text-white text-sm">{shortDate(log._date)}</span>
-                  </div>
-                  <div className="text-xs text-white/50">{label}{log.distance?` · ${log.distance}m`:""}</div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${won?"bg-green-500/30 text-green-300":"bg-white/10 text-white/40"}`}>{won?"勝利":"落敗"}</span>
-                  <div className="font-black text-xl text-white">{log.total??stats.total}</div>
-                </div>
+                )}
               </div>
-              <div className="text-xs text-white/50">{(log.rounds||[]).length} 組 <span className="ml-1 text-white/20">{isOpen?"▲":"▼"}</span></div>
-            </button>
-            {log.coachNote&&(
-              <div className="mt-2 text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-lg p-2">
-                💬 教練：{log.coachNote}
-              </div>
-            )}
-            {isOpen&&(log.rounds||[]).length>0&&(
-              <div className="mt-3 pt-3 border-t border-white/10">
-                {(log.rounds||[]).map((r,i)=>{const sub=r.filter(v=>typeof v==="number"&&v>0).reduce((a,b)=>a+b,0);return(
-                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
-                    <span className="text-xs text-white/50 w-8">第{i+1}組</span>
-                    <div className="flex gap-1 flex-1">
-                      {r.map((v,j)=>{const c=battleScoreColor(v);return(
-                        <span key={j} className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
-                          style={{ background:c.bg, color:c.text }}>{v===0?"M":v}</span>
-                      );})}
-                    </div>
-                    <span className="font-bold text-white/70 text-sm">{sub}</span>
-                  </div>
-                );})}
-              </div>
-            )}
-          </Card>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
+
+      {/* 打怪 / 組隊 / 世界王 — 平面列表 */}
+      {showOther&&(
+        <>
+          {showPractice&&filteredOther.length>0&&(
+            <div className="text-xs text-white/40 font-bold mt-1 px-1">⚔️ 遊戲紀錄</div>
+          )}
+          {filteredOther.map(log=><OtherCard key={log.id} log={log}/>)}
+          {!showPractice&&filteredOther.length===0&&(
+            <div className="text-center text-white/40 text-sm py-4">沒有紀錄</div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -900,6 +1017,125 @@ function GoalView({ logs, profile }) {
   );
 }
 
+// ── OverviewTab ───────────────────────────────────────────────
+function OverviewTab({ logs }) {
+  const practiceLogs=useMemo(()=>logs.filter(l=>!l.source),[logs]);
+  const stats=useMemo(()=>calcOverviewStats(practiceLogs),[practiceLogs]);
+  const rank=useMemo(()=>getRank(stats),[stats]);
+
+  if (!stats) return (
+    <div className="p-10 text-center text-white/40 text-sm">
+      <div className="text-4xl mb-3">🎯</div>
+      <div>還沒有足夠的練習記錄</div>
+      <div className="text-xs mt-2 text-white/25">需要至少 30 箭才能計算評級（目前 {practiceLogs.flatMap(l=>(l.rounds||[]).flat()).length} 箭）</div>
+    </div>
+  );
+
+  const rankIdx=rank?RANKS.indexOf(rank):-1;
+  const prevRank=rankIdx>0?RANKS[rankIdx-1]:null;
+
+  const METRICS=[
+    {label:"命中率",val:stats.hitRate,   color:"#60a5fa"},
+    {label:"高分率",val:stats.highRate,  color:"#10b981"},
+    {label:"穩定性",val:stats.stability, color:"#f59e0b"},
+    {label:"10分率",val:stats.tenRate,   color:"#ec4899",max:40},
+  ];
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {/* 評級卡 */}
+      <Card className="p-4" style={CS}>
+        <div className="flex items-center gap-5">
+          <div className="text-center min-w-[64px]">
+            {rank ? (
+              <div className="font-black text-5xl" style={{color:rank.color,textShadow:`0 0 24px ${rank.color}99`}}>
+                {rank.rank}
+              </div>
+            ) : (
+              <div className="font-black text-3xl text-white/30">?</div>
+            )}
+            <div className="text-xs text-white/40 mt-0.5">評級</div>
+          </div>
+          <div className="flex-1 flex flex-col gap-1.5">
+            {METRICS.map(({label,val,color,max=100})=>(
+              <div key={label} className="flex items-center gap-2">
+                <span className="text-xs text-white/60 w-12">{label}</span>
+                <div className="flex-1 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                  <div className="h-1.5 rounded-full transition-all" style={{width:`${Math.min(100,val/max*100)}%`,background:color}}/>
+                </div>
+                <span className="text-xs font-bold w-10 text-right" style={{color}}>{val.toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-4 mt-3 pt-3 border-t border-white/10 text-center">
+          <div className="flex-1"><div className="text-xs text-white/40">總箭數</div><div className="font-bold text-white">{stats.count}</div></div>
+          <div className="flex-1"><div className="text-xs text-white/40">均分/箭</div><div className="font-bold text-white">{stats.avg.toFixed(2)}</div></div>
+          <div className="flex-1"><div className="text-xs text-white/40">分散度σ</div><div className="font-bold text-white">{stats.stdDev.toFixed(2)}</div></div>
+        </div>
+        {stats.count<30&&<div className="mt-2 text-xs text-amber-400/70">需至少 30 箭才顯示評級（目前 {stats.count} 箭）</div>}
+      </Card>
+
+      {/* 雙圓盤 */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-3 flex flex-col items-center gap-1" style={CS}>
+          <div className="text-xs font-bold text-white/60">射手指標盤</div>
+          <RadarDisc h={stats.hitRate} hi={stats.highRate} st={stats.stability}/>
+          <div className="text-xs text-white/50">10分率 <span className="font-bold text-pink-400">{stats.tenRate.toFixed(1)}%</span></div>
+        </Card>
+        <Card className="p-3 flex flex-col items-center gap-1" style={CS}>
+          <div className="text-xs font-bold text-white/60">每箭分布盤</div>
+          <DonutDisc dist={stats.dist} total={stats.count}/>
+          <div className="flex gap-2 text-xs justify-center flex-wrap mt-0.5">
+            {["M",10,9,8].map(k=>{
+              const cnt=stats.dist[k]||0;
+              const pct=cnt?Math.round(cnt/stats.count*100):0;
+              const col=k==="M"?"#ef4444":k===10?"#f97316":k===9?"#f59e0b":"#84cc16";
+              return pct>0?<span key={k} className="font-bold" style={{color:col}}>{k==="M"?"X":k}={pct}%</span>:null;
+            })}
+          </div>
+        </Card>
+      </div>
+
+      {/* 審核標準表 */}
+      <Card className="p-4" style={CS}>
+        <div className="text-xs font-bold text-white/60 mb-3">📋 SSS 評級標準</div>
+        <div className="flex flex-col gap-1">
+          {RANKS.map(r=>{
+            const isCur=r===rank;
+            const isNext=r===prevRank;
+            return (
+              <div key={r.rank}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${isCur?"ring-1":""}${isNext?" opacity-60":""}`}
+                style={isCur?{background:"rgba(255,255,255,0.1)",ringColor:r.color}:{background:"transparent"}}>
+                <span className="font-black text-sm w-9" style={{color:r.color}}>{r.rank}</span>
+                <div className="flex-1 grid grid-cols-4 gap-x-1 text-xs text-white/50">
+                  <span>命中 {r.min.hit}%</span>
+                  <span>高分 {r.min.high}%</span>
+                  <span>穩定 {r.min.stable}%</span>
+                  <span>10分 {r.min.ten}%</span>
+                </div>
+                {isCur&&<span className="text-xs" style={{color:r.color}}>◀ 你</span>}
+              </div>
+            );
+          })}
+        </div>
+        {prevRank&&rank&&(
+          <div className="mt-3 pt-3 border-t border-white/10 text-xs text-white/50">
+            距 <span className="font-bold" style={{color:prevRank.color}}>{prevRank.rank}</span> 還需：
+            {[
+              stats.hitRate<prevRank.min.hit&&`命中 ${(prevRank.min.hit-stats.hitRate).toFixed(1)}%↑`,
+              stats.highRate<prevRank.min.high&&`高分 ${(prevRank.min.high-stats.highRate).toFixed(1)}%↑`,
+              stats.stability<prevRank.min.stable&&`穩定 ${(prevRank.min.stable-stats.stability).toFixed(1)}%↑`,
+              stats.tenRate<prevRank.min.ten&&`10分 ${(prevRank.min.ten-stats.tenRate).toFixed(1)}%↑`,
+            ].filter(Boolean).map((t,i)=><span key={i} className="ml-2 text-yellow-400">{t}</span>)}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ── AnalysisTab ───────────────────────────────────────────────
 function AnalysisTab({ logs, profile }) {
   const [subTab, setSubTab]=useState("trend");
@@ -977,7 +1213,7 @@ export default function MemberPractice() {
       <ToastContainer />
       {phase==="setup" && (
         <div className="flex sticky top-0 z-10" style={tabBarStyle}>
-          {[["practice","🎯 練習"],["history","📋 歷史"],["analysis","📈 分析"]].map(([id,label])=>(
+          {[["practice","🎯 練習"],["history","📋 歷史"],["overview","🔍 總覽"],["analysis","📈 分析"]].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)}
               className={`flex-1 py-3 text-xs font-bold border-b-2 transition-all
                 ${tab===id?"border-blue-400 text-blue-300":"border-transparent text-white/50"}`}>{label}</button>
@@ -993,8 +1229,9 @@ export default function MemberPractice() {
       {tab==="practice"&&phase==="result"&&(
         <ResultPhase form={form} rounds={finishedRounds} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setPhase("scoring"); }} saving={saving} />
       )}
-      {tab==="history" &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
-      {tab==="analysis"&&phase==="setup"&&<AnalysisTab logs={logs} profile={profile} />}
+      {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
+      {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} />}
+      {tab==="analysis" &&phase==="setup"&&<AnalysisTab logs={logs} profile={profile} />}
     </div>
   );
 }

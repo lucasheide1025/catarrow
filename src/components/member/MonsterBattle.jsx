@@ -431,7 +431,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
       await delay(1500);
 
       if (curMonHP<=0) {
-        const roundArr=[...arrows];
+        const roundArr=arrows.map(arrowLabelToVal);
         setAllArrows(prev=>[...prev,...roundArr]);
         setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
         await endBattle("win",curArchHP,curMonHP);
@@ -456,7 +456,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
           await delay(2600);
           setCurrentEvent(null); // 確保事件卡片在繼續戰鬥前清除
           if (curMonHP<=0) {
-            const roundArr=[...arrows];
+            const roundArr=arrows.map(arrowLabelToVal);
             setAllArrows(prev=>[...prev,...roundArr]);
             setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
             await endBattle("win",curArchHP,curMonHP);
@@ -506,7 +506,7 @@ export default function MonsterBattle({ onBack, isGuest = false }) {
               addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！「你不能死在這裡！」恢復 30% HP，最後一條命！" });
               sfxRevive(); await delay(2800);
             } else {
-              const roundArr=[...arrows];
+              const roundArr=arrows.map(arrowLabelToVal);
               setAllArrows(prev=>[...prev,...roundArr]);
               setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
               await endBattle("lose",curArchHP,curMonHP);
