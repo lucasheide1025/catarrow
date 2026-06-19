@@ -1,9 +1,9 @@
 // src/components/worldboss/WorldBossAttack.jsx — 世界大 Boss 戰鬥室
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot } from "../../lib/worldBossDb";
-import { addPracticeLog } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification } from "../../lib/db";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
@@ -140,12 +140,26 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const { profile } = useAuth();
   const { saveBond } = useCatCompanion();
   const todayStr = new Date().toISOString().slice(0, 10);
+  const isGuest  = !!guestOverride;
 
-  const _base   = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
-  const _equip  = calcEquippedBonus([]);
-  const baseATK = (_base.atk || 0) + (_equip.atk || 0);
-  const baseDEF = (_base.def || 0) + (_equip.def || 0);
-  const baseHP  = (_base.hp  || 0) + (_equip.hp  || 0);
+  // ── 正確載入檢定資料，確保 ATK 包含檢定加成 ─────────────
+  const [certRecords,   setCertRecords]   = useState([]);
+  const [certification, setCertification] = useState(null);
+  useEffect(() => {
+    if (isGuest || !profile?.id) return;
+    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
+    const unsub = subscribeCertification(profile.id, setCertification);
+    return () => unsub?.();
+  }, [profile?.id]); // eslint-disable-line
+
+  const archerBase = useMemo(() =>
+    calcArcherStats({ member: profile, certification, certRecords, dexStats: null }),
+  [profile, certification, certRecords]);
+
+  const _equip  = useMemo(() => calcEquippedBonus([]), []);
+  const baseATK = (archerBase.atk || 0) + (_equip.atk || 0);
+  const baseDEF = (archerBase.def || 0) + (_equip.def || 0);
+  const baseHP  = (archerBase.hp  || 0) + (_equip.hp  || 0);
 
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
@@ -153,14 +167,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // ── 狀態 ───────────────────────────────────────────────────
   const [showFullLog, setShowFullLog] = useState(true);
 
-  // 隨機從參戰勇者中取最多 8 位同伴（僅顯示，不影響戰鬥邏輯）
+  // 隨機從參戰勇者中取最多 8 位同伴
   const [companions] = useState(() => {
     const _selfId = guestOverride?.id || profile?.id;
     const parts = Object.entries(event.participants || {})
       .filter(([id]) => id !== _selfId)
       .map(([id, p]) => {
-        const atk = p.atk || 10;
-        return { id, name: p.name || "射手", atk, def: Math.round(atk * 0.4), hp: atk * 4 };
+        // 優先使用 Firestore 已存的完整數值；舊資料 atk 偏低時設合理下限
+        const atk = Math.max(p.atk || 0, 30);
+        const def = p.def || Math.round(atk * 0.5);
+        const hp  = p.hp  || atk * 5;
+        return { id, name: p.name || "射手", atk, def, hp };
       });
     for (let i = parts.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -222,7 +239,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
   const weapon = profile?.bowType || "複合弓";
-  const isGuest = !!guestOverride;
   const potionDef  = POTIONS.find(p => p.id === potion);
   const potionMult = potionDef?.mult || 1;
 
@@ -304,7 +320,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     // 取出其他隊員列表（所有曾參戰者，不限今日）
     const teammates = Object.values(event.participants || {})
-      .filter(p => p.name !== myName);
+      .filter(p => p.name !== myName)
+      .map(p => ({ ...p, atk: Math.max(p.atk || 0, 30) }));
     const supportChance = Math.min(0.3 + teammates.length * 0.12, 0.85);
 
     // 一箭一箭順序計算，600ms 間隔
@@ -426,6 +443,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       potionDmgMult: 1,
       bots,
       memberAtk:     baseATK,
+      memberDef:     baseDEF,
+      memberHP:      baseHP,
     });
 
     setResult(res);
