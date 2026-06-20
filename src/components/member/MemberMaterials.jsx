@@ -120,7 +120,7 @@ export default function MemberMaterials({ onBack }) {
     setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name });
     sfxCast();
     const isBig = chest.coinTier === "fierce" || chest.coinTier === "boss" || chest.coinTier === "mythic"
-      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat";
+      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack";
     setTimeout(isBig ? sfxEpic : sfxBuff, 700);
     await new Promise(r => setTimeout(r, 1600));
     const contents = isCoin ? null : openChestContents(chest);
@@ -473,7 +473,27 @@ export default function MemberMaterials({ onBack }) {
                     </div>
                   </div>
                 )}
-                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && (
+                {openResult.cards?.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-indigo-600 text-xs font-bold mb-2">🃏 抽到的怪物卡片</div>
+                    <div className="flex flex-col gap-2">
+                      {openResult.cards.map((c, i) => {
+                        const tierColor = { common:"#6b7280", rare:"#3b82f6", elite:"#8b5cf6", fierce:"#f59e0b", boss:"#ef4444", mythic:"#ec4899" }[c.tier] || "#6b7280";
+                        const tierLabel = { common:"普通", rare:"稀有", elite:"菁英", fierce:"兇猛", boss:"首領", mythic:"神話" }[c.tier] || c.tier;
+                        return (
+                          <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2">
+                            <span className="text-2xl">{c.icon}</span>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-800 text-sm">{c.name}</div>
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ background: tierColor }}>{tierLabel}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && !openResult.cards?.length && (
                   <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
                 )}
                 <button onClick={() => setOpenResult(null)}

@@ -1,5 +1,5 @@
 // src/components/duel/DuelLobby.jsx — 決鬥大廳（建房/加入/等待室）
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
@@ -67,10 +67,15 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
 
+  // 用 ref 保持最新 myId，避免 closure stale 問題
+  const myIdRef = useRef(myId);
+  useEffect(() => { myIdRef.current = myId; }, [myId]);
+
   // 訂閱等待室
   useEffect(() => {
     if (!roomId) return;
     const unsub = subscribeDuelRoom(roomId, r => {
+      const mid = myIdRef.current;
       if (!r || r.status === "closed") {
         toast("房間已關閉", "error");
         setPhase("menu"); setRoomId(null); setRoom(null);
@@ -80,12 +85,12 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
       setRoom(r);
       if (r.status === "waiting") {
         setPhase("waiting");
-        setIsHost(r.hostId === myId);
+        setIsHost(r.hostId === mid);
       }
       if (r.status === "active") {
         try { sessionStorage.removeItem("duel_wait_id"); } catch {}
-        const team = Object.keys(r.teamA || {}).includes(myId) ? "A" : "B";
-        onEnterRoom(roomId, team, r.hostId === myId);
+        const team = Object.keys(r.teamA || {}).includes(mid) ? "A" : "B";
+        onEnterRoom(roomId, team, r.hostId === mid);
       }
     });
     return unsub;
@@ -94,8 +99,8 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   // 心跳（等待室每 30 秒更新 lastSeen）
   useEffect(() => {
     if (phase !== "waiting" || !roomId || !myId) return;
-    updateDuelHeartbeat(roomId, myId).catch(() => {});
-    const t = setInterval(() => updateDuelHeartbeat(roomId, myId).catch(() => {}), 30000);
+    updateDuelHeartbeat(roomId, myIdRef.current).catch(() => {});
+    const t = setInterval(() => updateDuelHeartbeat(roomId, myIdRef.current).catch(() => {}), 30000);
     return () => clearInterval(t);
   }, [phase, roomId, myId]); // eslint-disable-line
 
@@ -103,6 +108,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   useEffect(() => {
     if (phase !== "waiting" || !isHost || !roomId || !room) return;
     const t = setInterval(() => {
+      const mid = myIdRef.current;
       const now = Date.now();
       const lastSeen = room.lastSeen || {};
       const all = [
@@ -110,7 +116,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
         ...Object.keys(room.teamB || {}).map(id => ["B", id]),
       ];
       for (const [team, id] of all) {
-        if (id === myId) continue;
+        if (id === mid) continue;
         if (now - (lastSeen[id] || 0) > 5 * 60 * 1000) {
           removePlayerFromRoom(roomId, team, id).catch(() => {});
         }

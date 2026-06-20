@@ -95,6 +95,7 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
       if (!roomDoc.exists()) throw new Error("房間不存在");
       const room = roomDoc.data();
       if (room.status !== "waiting") throw new Error("房間已開始，無法加入");
+      if (room.teamA?.[memberId] || room.teamB?.[memberId]) throw new Error("您已在此房間中，請勿重複加入");
       actualType = room.type;
       const max = maxMap[room.type] || 8;
       // 不對等模式：所有加入者強制 B 隊

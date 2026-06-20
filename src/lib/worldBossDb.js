@@ -6,7 +6,7 @@ import {
   where, orderBy, limit, arrayUnion,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins, addMaterials, addChests } from "./db";
+import { addCoins, addMaterials, addChests, addCardPack } from "./db";
 import { openCoinChest } from "./lootTable";
 import {
   WORLD_BOSSES, DEFAULT_REWARD, CONSOLATION_REWARD,
@@ -277,8 +277,7 @@ export async function distributeWorldBossRewards(eventId) {
 
       // 5. 卡片掉落
       if ((tier.cardChance || 0) > 0 && Math.random() < tier.cardChance) {
-        const { addCardPack } = await import("./db").catch(() => ({}));
-        if (addCardPack) await addCardPack(mid).catch(() => {});
+        await addCardPack(mid).catch(() => {});
       }
     }
 
@@ -288,8 +287,7 @@ export async function distributeWorldBossRewards(eventId) {
         id: `wb_lasthit_${lastHitId}_${Date.now()}`,
         type: "cat_box", family: "worldboss", tier: "boss", from: "世界王最後一擊", ts: Date.now(),
       }]).catch(() => {});
-      const { addCardPack } = await import("./db").catch(() => ({}));
-      if (addCardPack) await addCardPack(lastHitId).catch(() => {});
+      await addCardPack(lastHitId).catch(() => {});
     }
 
     await updateDoc(doc(db, WB, eventId), { rewardDistributed: true });

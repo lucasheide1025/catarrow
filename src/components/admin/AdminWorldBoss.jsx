@@ -10,6 +10,7 @@ import {
   getWorldBossHistory,
 } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
+import { addCardPack, addCoins, addChests } from "../../lib/db";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
 
 function HPBar({ current, max }) {
@@ -78,6 +79,8 @@ export default function AdminWorldBoss() {
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
+  const [extraReward, setExtraReward] = useState({ coins: 0, woodChests: 0, goldChests: 0, cardPacks: 0 });
+  const [showExtraForm, setShowExtraForm] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeLatestWorldBoss(ev => {
@@ -134,6 +137,62 @@ export default function AdminWorldBoss() {
     setActionMsg("發放中…");
     const res = await distributeWorldBossRewards(event.id);
     setActionMsg(res.ok ? "✅ 獎勵發放完成" : `❌ ${res.reason}`);
+  }
+
+  // ── 額外發放卡包給所有參戰者 ──────────────────────────────
+  async function handleGiveCardPacks() {
+    if (!event) return;
+    const participants = Object.keys(event.participants || {});
+    if (!participants.length) { setActionMsg("❌ 沒有參戰者"); return; }
+    if (!window.confirm(`確定要發放【圖片收集卡包】給 ${participants.length} 位參戰者？`)) return;
+    setActionMsg("發放卡包中…");
+    let ok = 0;
+    for (const mid of participants) {
+      try { await addCardPack(mid, 1); ok++; } catch (e) { console.warn("cardPack:", mid, e?.message); }
+    }
+    setActionMsg(`✅ 已發放卡包給 ${ok}/${participants.length} 人`);
+  }
+
+  // ── 額外發放自訂獎勵給所有參戰者 ────────────────────────────
+  async function handleGiveExtraRewards() {
+    if (!event) return;
+    const participants = Object.keys(event.participants || {});
+    if (!participants.length) { setActionMsg("❌ 沒有參戰者"); return; }
+    const { coins, woodChests, goldChests, cardPacks } = extraReward;
+    if (!coins && !woodChests && !goldChests && !cardPacks) { setActionMsg("❌ 請至少設定一項獎勵"); return; }
+    const lines = [
+      coins     ? `金幣 ×${coins}`       : null,
+      woodChests ? `木箱 ×${woodChests}` : null,
+      goldChests ? `金箱 ×${goldChests}` : null,
+      cardPacks  ? `卡包 ×${cardPacks}`  : null,
+    ].filter(Boolean).join("、");
+    if (!window.confirm(`確定要發放【${lines}】給 ${participants.length} 位參戰者？`)) return;
+    setActionMsg("發放中…");
+    let ok = 0;
+    for (const mid of participants) {
+      try {
+        if (coins)     await addCoins(mid, coins);
+        if (woodChests) {
+          const chests = Array.from({ length: woodChests }, (_, i) => ({
+            id: `extra_wood_${mid}_${Date.now()}_${i}`,
+            type: "wood", family: "special", tier: "common", from: "教練額外獎勵", ts: Date.now(),
+          }));
+          await addChests(mid, chests);
+        }
+        if (goldChests) {
+          const chests = Array.from({ length: goldChests }, (_, i) => ({
+            id: `extra_gold_${mid}_${Date.now()}_${i}`,
+            type: "gold", family: "special", tier: "rare", from: "教練額外獎勵", ts: Date.now(),
+          }));
+          await addChests(mid, chests);
+        }
+        if (cardPacks) await addCardPack(mid, cardPacks);
+        ok++;
+      } catch (e) { console.warn("extraReward:", mid, e?.message); }
+    }
+    setActionMsg(`✅ 已發放給 ${ok}/${participants.length} 人`);
+    setShowExtraForm(false);
+    setExtraReward({ coins: 0, woodChests: 0, goldChests: 0, cardPacks: 0 });
   }
 
   if (loading) {
@@ -253,6 +312,49 @@ export default function AdminWorldBoss() {
                     🎁 手動發放擊殺獎勵
                   </button>
                 )}
+                {(event.status === "defeated" || event.status === "expired") && Object.keys(event.participants || {}).length > 0 && (
+                  <button onClick={handleGiveCardPacks}
+                    className="w-full py-3 rounded-2xl font-bold text-sm bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 active:scale-95 transition-all">
+                    🃏 額外發放圖片收集卡包（{Object.keys(event.participants || {}).length} 人）
+                  </button>
+                )}
+
+                {/* 額外自訂獎勵發放 */}
+                {Object.keys(event.participants || {}).length > 0 && (
+                  <div className="border border-white/10 rounded-2xl overflow-hidden">
+                    <button onClick={() => setShowExtraForm(v => !v)}
+                      className="w-full py-2.5 px-4 flex items-center justify-between text-sm font-bold text-slate-300 bg-white/5 active:bg-white/10">
+                      <span>🎁 額外發放獎勵給全員</span>
+                      <span className="text-slate-500">{showExtraForm ? "▲" : "▼"}</span>
+                    </button>
+                    {showExtraForm && (
+                      <div className="p-3 space-y-3 bg-white/3">
+                        {[
+                          { key: "coins",      label: "🪙 金幣",  step: 50  },
+                          { key: "woodChests", label: "📦 木箱",  step: 1   },
+                          { key: "goldChests", label: "🏆 金箱",  step: 1   },
+                          { key: "cardPacks",  label: "🃏 卡包",  step: 1   },
+                        ].map(({ key, label, step }) => (
+                          <div key={key} className="flex items-center justify-between gap-3">
+                            <span className="text-xs text-slate-300 w-20">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => setExtraReward(r => ({ ...r, [key]: Math.max(0, (r[key]||0) - step) }))}
+                                className="w-7 h-7 rounded-lg bg-slate-700 text-white font-black text-base active:scale-90">－</button>
+                              <span className="w-10 text-center font-bold text-white text-sm">{extraReward[key] || 0}</span>
+                              <button onClick={() => setExtraReward(r => ({ ...r, [key]: (r[key]||0) + step }))}
+                                className="w-7 h-7 rounded-lg bg-slate-700 text-white font-black text-base active:scale-90">＋</button>
+                            </div>
+                          </div>
+                        ))}
+                        <button onClick={handleGiveExtraRewards}
+                          className="w-full py-2.5 rounded-xl font-bold text-sm bg-green-500/20 border border-green-400/40 text-green-300 active:scale-95 transition-all">
+                          ✅ 確認發放給 {Object.keys(event.participants || {}).length} 人
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {event.status === "active" && (
                   <button onClick={handleForceEnd}
                     className="w-full py-3 rounded-2xl font-bold text-sm bg-rose-500/20 border border-rose-400/40 text-rose-300 active:scale-95 transition-all">

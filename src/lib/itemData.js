@@ -3,6 +3,7 @@
 // v3：8種藥劑（含投擲型）、貓貓箱、章碎片合成系統、MAX_POTIONS=3
 
 import { drawMaterial, MATERIALS } from "./monsterMaterials";
+import { MONSTERS } from "./monsterData";
 
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
@@ -18,8 +19,12 @@ export const CHEST_TYPES = {
             desc:"神話箱：全五階段材料各 1~5 個，35% 掉藥水。" },
   cat:    { id:"cat",    name:"貓貓箱",   icon:"🐱", color:"#ec4899", potionChance:0,
             desc:"神秘的貓貓箱！90% 機率隨機掉落一種章碎片×1，集10片可合成對應章！" },
-  potion: { id:"potion", name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
-            desc:"專屬藥水箱！必定開出一瓶藥水，機率依實用度調整。" },
+  potion:   { id:"potion",   name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
+              desc:"專屬藥水箱！必定開出一瓶藥水，機率依實用度調整。" },
+  card_pack: { id:"card_pack", name:"圖片收集卡包", icon:"🃏", color:"#6366f1", potionChance:0,
+               desc:"開啟獲得 3 張怪物卡片！36 種怪物都有機率，越稀有越難抽！" },
+  cat_box:   { id:"cat_box",   name:"貓貓箱", icon:"🎐", color:"#ec4899", potionChance:0,
+               desc:"神秘貓貓箱！90% 機率隨機掉落一種章碎片×1。" },
 };
 
 // 怪物階級 → 寶箱種類機率
@@ -249,11 +254,34 @@ const POTION_CHEST_TABLE = [
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
 
+// ── 卡包抽卡（36 隻怪，按稀有度加權）─────────────────────
+const CARD_TIER_WEIGHT = { common:50, rare:25, elite:15, fierce:7, boss:2.5, mythic:0.5 };
+const CARD_TIER_TOTAL  = Object.values(CARD_TIER_WEIGHT).reduce((a,b) => a+b, 0);
+
+function drawRandomCards(count = 3) {
+  const drawn = [];
+  for (let i = 0; i < count; i++) {
+    let r = Math.random() * CARD_TIER_TOTAL;
+    let tier = "common";
+    for (const [t, w] of Object.entries(CARD_TIER_WEIGHT)) { r -= w; if (r <= 0) { tier = t; break; } }
+    const pool = MONSTERS.filter(m => m.tier === tier);
+    if (!pool.length) continue;
+    const m = pool[Math.floor(Math.random() * pool.length)];
+    drawn.push({ monsterId: m.id, name: m.name, icon: m.icon, tier: m.tier, family: m.family });
+  }
+  return drawn;
+}
+
 // ── 開箱：抽出寶箱內容 ───────────────────────────────────
-// 回傳 { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件] }
+// 回傳 { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件], cards:[卡片物件] }
 export function openChestContents(chest) {
-  // 貓貓箱：90% 隨機一種碎片×1，10% 空
-  if (chest.type === "cat") {
+  // 圖片收集卡包：抽 3 張怪物卡
+  if (chest.type === "card_pack") {
+    return { materials: [], potions: [], fragments: [], cards: drawRandomCards(3) };
+  }
+
+  // 貓貓箱 / cat_box：90% 隨機一種碎片×1，10% 空
+  if (chest.type === "cat" || chest.type === "cat_box") {
     if (Math.random() < 0.90) {
       const frag = FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
       return { materials: [], potions: [], fragments: [frag] };

@@ -1621,6 +1621,11 @@ export async function openChest(memberId, chestId, contents) {
     if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
     if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
     if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);
+    if (contents?.cards?.length) {
+      for (const card of contents.cards) {
+        await addMonsterCard(memberId, card, null);
+      }
+    }
 
     if (chest.type) await updateChestOpenStats(memberId, chest.type);
     return { ok: true };
@@ -1992,6 +1997,23 @@ export async function resetAllMonsterSessions() {
     batch.delete(doc(db, C_MONSTER_SESSION, `${d.id}_${todayStr}`));
   });
   await batch.commit();
+}
+
+// ─── 圖片收集卡包 ──────────────────────────────────────────
+// 給玩家一個 card_pack 卡包，存入 chestInventory，之後從背包開箱
+export async function addCardPack(memberId, count = 1) {
+  if (!memberId || memberId.startsWith("guest")) return;
+  try {
+    const packs = Array.from({ length: count }, (_, i) => ({
+      id: `cardpack_${memberId}_${Date.now()}_${i}`,
+      type: "card_pack",
+      family: "special",
+      tier: "special",
+      from: "圖片收集卡包",
+      ts: Date.now(),
+    }));
+    await addChests(memberId, packs);
+  } catch (e) { console.warn("addCardPack:", e?.message); }
 }
 
 // ─── 怪物卡片收藏 ──────────────────────────────────────────
