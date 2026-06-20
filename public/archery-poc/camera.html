@@ -92,12 +92,10 @@
   </div>
   <div class="row">
     <button id="btnArm" disabled>開始偵測</button>
-    <button id="btnNext" class="ghost" disabled>下一箭（手動）</button>
+    <button id="btnNext" class="ghost" disabled>跳過此箭</button>
   </div>
-
-  <div class="auto-row">
-    <input type="checkbox" id="cbAuto" checked />
-    <label for="cbAuto">偵測到箭後自動繼續下一箭（3 秒）</label>
+  <div class="row" style="margin-top:6px">
+    <button id="btnDone" class="ghost" disabled>✅ 我射完了（結算本輪）</button>
   </div>
 
   <div class="score" id="scoreLine"></div>
@@ -124,8 +122,8 @@ const el = (id) => document.getElementById(id);
 const dot = el("dot"), msg = el("msg"), scoreLine = el("scoreLine");
 
 function resizeStage() {
-  // canvas 是 480×480 正方形，stage 必須保持 1:1 才不會壓扁靶型
-  const w = Math.min(window.innerWidth, 560);
+  // canvas 是 480×480 正方形，stage 保持 1:1；縮小顯示以避免 iPhone 畫面被截
+  const w = Math.min(window.innerWidth, 280);
   el("stage").style.width  = w + "px";
   el("stage").style.height = w + "px";
 }
@@ -143,6 +141,9 @@ let lastDetect = 0;
 let autoCountdown = null;
 let armGuard = 0;
 let settleAt = 0; // 延遲 settle 時間戳
+
+const MAX_ARROWS = 6;
+let roundResults = []; // 本輪已偵測到的箭 [{score, ring, nx, ny}]
 
 // ---- 鏡頭縮放 ----
 let videoTrack = null;
@@ -303,15 +304,38 @@ el("btnBg").onclick = () => {
 el("btnArm").onclick = () => {
   if (!H) { setMsg("請先鎖定靶位", false); return; }
   if (!detector.hasReference()) { setMsg("請先設定背景", false); return; }
+  roundResults = [];
   state = "armed";
   armGuard = performance.now() + 800;
   el("btnArm").disabled = true;
   el("btnNext").disabled = false;
-  setMsg("偵測中…放箭", true);
+  el("btnDone").disabled = false;
+  setMsg("偵測中…射完6箭後按「我射完了」", true);
 };
 
 el("btnNext").onclick = nextArrow;
 el("btnConnect").onclick = connect;
+
+function finishRound() {
+  clearTimeout(autoCountdown); autoCountdown = null;
+  // 未偵測到的箭補脫靶
+  while (roundResults.length < MAX_ARROWS)
+    roundResults.push({ nx: 0.5, ny: 1.5, score: 0, ring: "M" });
+  if (conn && conn.open)
+    conn.send({ type: "round", results: roundResults, ts: Date.now() });
+  const total = roundResults.reduce((s, r) => s + r.score, 0);
+  const hits = roundResults.filter(r => r.ring !== "M").length;
+  const detail = roundResults.map(r => r.ring === "M" ? "M" : r.score).join(" · ");
+  scoreLine.innerHTML = `🎯 ${hits}/6 射中，合計 <b>${total}</b> 分 ｜ ${detail}`;
+  roundResults = [];
+  state = "ready";
+  el("btnArm").disabled = false;
+  el("btnNext").disabled = true;
+  el("btnDone").disabled = true;
+  setMsg("本輪完成！按「開始偵測」開始下一輪", true);
+}
+
+el("btnDone").onclick = finishRound;
 
 function loop() {
   if (state === "result" || state === "idle") return; // idle = 鏡頭切換期間，停止舊 rAF
@@ -409,7 +433,6 @@ function handleHit(res) {
   const entryNorm = pickEntryPoint(na, nb);
   const entryPx = (entryNorm === na) ? a : b;
 
-  // 幾何計分（橢圓距離，不依賴顏色採樣）
   const sc = scoreFromNormalized(entryNorm.x, entryNorm.y);
 
   // 標記：藍線=箭矢，橘點=兩端，黃圓=入靶點
@@ -421,33 +444,33 @@ function handleHit(res) {
   ctx.beginPath(); ctx.arc(entryPx.x, entryPx.y, 9, 0, 7); ctx.fill();
 
   state = "result";
-  if (conn && conn.open)
-    conn.send({ nx: entryNorm.x, ny: entryNorm.y, score: sc.score, ring: sc.ring, ts: Date.now() });
 
-  // debug 行：顯示兩端正規化座標 + 偵測器資訊
+  // 累積本輪結果（不即時送出，等「我射完了」批次送出）
+  roundResults.push({ nx: entryNorm.x, ny: entryNorm.y, score: sc.score, ring: sc.ring });
+  const n = roundResults.length;
+
   const dbg = detector.getDebug();
   const chosen = entryNorm === na ? "A" : "B";
   const dbgStr = `A(${na.x.toFixed(2)},${na.y.toFixed(2)}) B(${nb.x.toFixed(2)},${nb.y.toFixed(2)}) →${chosen} r=${sc.rNorm?.toFixed(2)} span=${dbg?.span??"-"}`;
 
-  const autoMode = el("cbAuto").checked;
-  if (autoMode) {
-    let cd = 3;
-    function tick() {
-      if (cd > 0) {
-        scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">— ${cd}s後繼續 ${dbgStr}</span>`;
-        cd--;
-        autoCountdown = setTimeout(tick, 1000);
-      } else {
-        if (conn && conn.open) conn.send({ type: "auto_next" });
-        nextArrow();
-      }
-    }
-    setMsg("✅ 已辨識，3s 後自動繼續（或按「下一箭」跳過）", true);
-    tick();
-  } else {
-    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">${dbgStr}</span>`;
-    setMsg("已辨識，按「下一箭（手動）」繼續", true);
+  if (n >= MAX_ARROWS) {
+    scoreLine.innerHTML = `第 ${n} 箭：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 ｜ 6/6 自動結算中…`;
+    setTimeout(finishRound, 1000);
+    return;
   }
+
+  let cd = 2;
+  function tick() {
+    if (cd > 0) {
+      scoreLine.innerHTML = `第 ${n} 箭：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 ｜ 已射 ${n}/${MAX_ARROWS}，${cd}s 後繼續 <span style="color:#6f7b8c;font-size:11px">${dbgStr}</span>`;
+      cd--;
+      autoCountdown = setTimeout(tick, 1000);
+    } else {
+      nextArrow();
+    }
+  }
+  setMsg(`✅ 第 ${n} 箭已辨識，還剩 ${MAX_ARROWS - n} 箭`, true);
+  tick();
 }
 </script>
 </body>
