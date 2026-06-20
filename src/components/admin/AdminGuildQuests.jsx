@@ -61,6 +61,7 @@ export default function AdminGuildQuests() {
       badgeRequires: form.badgeReward ? BADGE_REQ[form.badgeReward] : null,
       reward: { xp: Number(form.reward.xp) || 0, coins: Number(form.reward.coins) || 0 },
     };
+    console.log("[admin] publish quest, badgeReward:", data.badgeReward);
     try {
       await publishGuildQuest(data, profile?.id);
       setForm(EMPTY_FORM); setShowForm(false);
@@ -230,10 +231,13 @@ export default function AdminGuildQuests() {
                   </div>
                 )}
 
-                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>徽章獎勵（選填）</label>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>
+                  徽章獎勵（選填）
+                  {form.badgeReward && <span style={{ marginLeft: 8, color: "#2563eb", fontWeight: "900" }}>✓ 已選：{BADGE_LABEL[form.badgeReward]}</span>}
+                </label>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   {["", "silver", "gold", "black"].map(b => (
-                    <button key={b} onClick={() => setForm(f => ({ ...f, badgeReward: b }))}
+                    <button key={b} type="button" onClick={() => setForm(f => ({ ...f, badgeReward: b }))}
                       style={{ padding: "6px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: "700", cursor: "pointer",
                         border: `2px solid ${form.badgeReward === b ? "#2563eb" : "#e2e8f0"}`,
                         background: form.badgeReward === b ? "#eff6ff" : "white", color: form.badgeReward === b ? "#2563eb" : "#64748b" }}>
