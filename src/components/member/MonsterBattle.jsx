@@ -1928,6 +1928,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             <div className="text-4xl" style={{ animation:"mb-bounce 0.8s ease infinite" }}>🎉</div>
             <div className="text-emerald-300 font-black text-xl">任務完成！</div>
             <div className="text-white/70 text-sm">「{questContext.title}」已達成</div>
+            {questContext.badgeReward && (
+              <div className="mt-1 px-3 py-1.5 rounded-xl text-xs font-black"
+                style={{ background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.4)", color:"#fbbf24" }}>
+                🎖️ 徽章申請已送出，等待教練審核
+              </div>
+            )}
             <div className="text-emerald-400/70 text-xs mt-1">3 秒後自動返回冒險者公會…</div>
           </div>
         )}

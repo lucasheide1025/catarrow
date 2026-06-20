@@ -125,7 +125,7 @@ export default function MemberApp() {
           profile.id, profile.nickname || profile.name,
           { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: prev.badgeReward || null },
           "打怪任務完成"
-        ).catch(() => {});
+        ).catch(e => console.error("[guild] kill quest submit failed:", e));
         // 標記完成（不立刻清空，讓 MonsterBattle 顯示完成畫面並強制返回公會）
         return { ...prev, killsSoFar: newKills, completed: true };
       }
