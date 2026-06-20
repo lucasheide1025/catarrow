@@ -12,7 +12,7 @@ export default function AdminArchery() {
   const markersUrl = `${base}/markers-sheet.html`;
 
   return (
-    <div className="p-4 max-w-lg mx-auto flex flex-col gap-5">
+    <div className="p-4 max-w-lg mx-auto flex flex-col gap-5" style={{ background: "#0e1116", minHeight: "100vh" }}>
       <div>
         <div className="text-white font-black text-lg mb-1">🎯 AI 靶紙辨識系統</div>
         <div className="text-white/50 text-xs">A 手機架在靶前拍攝 → B 手機（射手）接收落點 → 確認後自動結算</div>

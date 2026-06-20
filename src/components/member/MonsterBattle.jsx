@@ -293,8 +293,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const power = calcArcherPower(archerStats);
     const matched = drawMatchedMonsters(power);
     setMatchedMonsters(matched);
-    // 只在選怪階段才重置選取，避免進入 prebattle/battle 後被清空
-    if (phaseRef.current === "select" || phaseRef.current === "event_select") {
+    // 只在選怪階段才重置選取；任務模式已由 questInitDone 鎖定，不能清空
+    if (!questInitDone.current && (phaseRef.current === "select" || phaseRef.current === "event_select")) {
       setPickedMonster(null);
     }
   }, [archerStats]);

@@ -11,10 +11,15 @@
   :root { color-scheme: dark; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: #0e1116; color: #e7ecf3;
-         font-family: -apple-system, "Noto Sans TC", system-ui, sans-serif;
-         padding: 12px; max-width: 480px; margin-inline: auto; }
-  h1 { font-size: 16px; margin: 4px 0 10px; }
-  h1 small { color: #6f7b8c; font-weight: 400; }
+         font-family: -apple-system, "Noto Sans TC", system-ui, sans-serif; }
+  .topbar { position: sticky; top: 0; z-index: 20; background: #0e1116;
+            border-bottom: 1px solid #1d2636; display: flex; align-items: center;
+            gap: 8px; padding: 8px 12px; }
+  .topbar .back { border: 1px solid #2c3744; background: #1b2330; color: #cfd8e4;
+                  border-radius: 8px; padding: 6px 12px; font-size: 13px;
+                  font-weight: 600; cursor: pointer; flex: none; }
+  .topbar .title { flex: 1; font-size: 13px; color: #6f7b8c; }
+  .inner { padding: 10px 12px; max-width: 480px; margin-inline: auto; }
   .room { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
   input { background: #161c25; border: 1px solid #2a3340; color: #e7ecf3;
           border-radius: 8px; padding: 10px 12px; font-size: 15px; width: 96px; }
@@ -49,8 +54,11 @@
 </style>
 </head>
 <body>
-  <h1>貓小隊靶紙辨識 <small>· B 射手端</small></h1>
-
+<div class="topbar">
+  <button class="back" onclick="window.close()">← 返回</button>
+  <span class="title">B 射手端</span>
+</div>
+<div class="inner">
   <div class="room">
     <span style="font-size:13px;color:#aab4c2">房號</span>
     <input id="room" value="888" inputmode="numeric" />
@@ -81,6 +89,7 @@
     A 端辨識後落點會自動出現在這裡。AI 抓個八九成，零頭由你拖一下修掉，確認才算數。<br />
     每箭只存在記憶體；按「結算」才會把整組一次寫入資料庫——這就是省讀寫配額的關鍵。
   </p>
+</div><!-- .inner -->
 
 <script>
   // Firebase 初始化（API key 為前端公開值，受 Firestore 規則保護）
@@ -233,6 +242,55 @@ el("btnSettle").onclick = async () => {
   session = []; renderSession(); drawTarget();
 };
 
+// ---- 音效 ----
+let ac = null;
+function getAC() {
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  return ac;
+}
+function tone(freq, type, gain, decay, delay = 0) {
+  const a = getAC();
+  const osc = a.createOscillator();
+  const gn  = a.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gn.gain.setValueAtTime(0.001, a.currentTime + delay);
+  gn.gain.linearRampToValueAtTime(gain, a.currentTime + delay + 0.02);
+  gn.gain.exponentialRampToValueAtTime(0.001, a.currentTime + delay + decay);
+  osc.connect(gn); gn.connect(a.destination);
+  osc.start(a.currentTime + delay);
+  osc.stop(a.currentTime + delay + decay + 0.05);
+}
+function playScore(score, ring) {
+  try {
+    if (ring === "M" || score === 0) {
+      // 脫靶：沉悶下滑音
+      tone(220, "sawtooth", 0.3, 0.35);
+      return;
+    }
+    if (score === 10) {
+      // 10 分暴擊：三段上升清脆音
+      tone(1000, "sine", 0.5, 0.12);
+      tone(1300, "sine", 0.45, 0.14, 0.1);
+      tone(1700, "sine", 0.4, 0.18, 0.22);
+      return;
+    }
+    if (score >= 8) {
+      // 8-9 分：雙音清鈴
+      tone(700 + (score - 8) * 150, "sine", 0.45, 0.18);
+      tone(900 + (score - 8) * 150, "sine", 0.3,  0.22, 0.12);
+      return;
+    }
+    if (score >= 5) {
+      // 5-7 分：單音中頻
+      tone(350 + (score - 5) * 80, "triangle", 0.4, 0.2);
+      return;
+    }
+    // 1-4 分：低沉短音
+    tone(150 + score * 30, "triangle", 0.35, 0.22);
+  } catch (_) {}
+}
+
 // 連線到 A
 el("btnConnect").onclick = () => {
   const room = el("room").value.trim() || "888";
@@ -249,6 +307,7 @@ el("btnConnect").onclick = () => {
       }
       current = { nx: d.nx, ny: d.ny };
       refreshScore(); drawTarget();
+      playScore(d.score, d.ring);
       el("btnConfirm").disabled = false;
       el("status").textContent = "A 端辨識到落點，請確認或微調";
     });
