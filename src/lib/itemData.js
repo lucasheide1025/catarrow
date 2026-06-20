@@ -25,6 +25,8 @@ export const CHEST_TYPES = {
                desc:"開啟獲得 3 張怪物卡片！36 種怪物都有機率，越稀有越難抽！" },
   cat_box:   { id:"cat_box",   name:"貓貓箱", icon:"🎐", color:"#ec4899", potionChance:0,
                desc:"神秘貓貓箱！90% 機率隨機掉落一種章碎片×1。" },
+  mimi_box:  { id:"mimi_box",  name:"咪咪箱", icon:"😺", color:"#f43f5e", potionChance:0,
+               desc:"神秘咪咪箱！開啟後隨機獲得一隻貓咪夥伴，已擁有全部時給羈絆經驗！" },
 };
 
 // 怪物階級 → 寶箱種類機率
@@ -278,6 +280,11 @@ export function openChestContents(chest) {
   // 圖片收集卡包：抽 3 張怪物卡
   if (chest.type === "card_pack") {
     return { materials: [], potions: [], fragments: [], cards: drawRandomCards(3) };
+  }
+
+  // 咪咪箱：由 db.js openChest 直接呼叫 openCatBox，這裡只標記類型
+  if (chest.type === "mimi_box") {
+    return { materials: [], potions: [], fragments: [], isMimiBox: true };
   }
 
   // 貓貓箱 / cat_box：90% 隨機一種碎片×1，10% 空

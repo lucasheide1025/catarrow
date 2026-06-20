@@ -1618,6 +1618,14 @@ export async function openChest(memberId, chestId, contents) {
       return { ok: true, coins };
     }
 
+    // 咪咪箱：直接開貓（在 member 自己的 session 執行，Firestore 規則不擋）
+    if (contents?.isMimiBox) {
+      const { openCatBox } = await import("./catDb").catch(() => ({}));
+      const catRes = openCatBox ? await openCatBox(memberId, { bondOnDuplicate: 50 }) : { ok: false };
+      if (chest.type) await updateChestOpenStats(memberId, chest.type);
+      return { ok: true, catResult: catRes };
+    }
+
     if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
     if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
     if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);

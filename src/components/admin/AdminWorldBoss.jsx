@@ -11,7 +11,6 @@ import {
 } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
 import { addCardPack, addCoins, addChests } from "../../lib/db";
-import { openCatBox } from "../../lib/catDb";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
 
 function HPBar({ current, max }) {
@@ -197,9 +196,11 @@ export default function AdminWorldBoss() {
           await addChests(mid, chests);
         }
         if (mimiBoxes) {
-          for (let i = 0; i < mimiBoxes; i++) {
-            await openCatBox(mid, { bondOnDuplicate: 50 }).catch(() => {});
-          }
+          const chests = Array.from({ length: mimiBoxes }, (_, i) => ({
+            id: `extra_mimi_${mid}_${Date.now()}_${i}`,
+            type: "mimi_box", family: "special", tier: "mythic", from: "教練額外獎勵", ts: Date.now(),
+          }));
+          await addChests(mid, chests);
         }
         if (cardPacks) await addCardPack(mid, cardPacks);
         ok++;

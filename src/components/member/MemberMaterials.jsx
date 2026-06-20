@@ -120,7 +120,7 @@ export default function MemberMaterials({ onBack }) {
     setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name });
     sfxCast();
     const isBig = chest.coinTier === "fierce" || chest.coinTier === "boss" || chest.coinTier === "mythic"
-      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack";
+      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack" || chest.type === "mimi_box";
     setTimeout(isBig ? sfxEpic : sfxBuff, 700);
     await new Promise(r => setTimeout(r, 1600));
     const contents = isCoin ? null : openChestContents(chest);
@@ -129,7 +129,7 @@ export default function MemberMaterials({ onBack }) {
     setOpeningChest(null);
     if (res.ok) {
       sfxSuccess();
-      setOpenResult(isCoin ? { coins: res.coins } : contents);
+      setOpenResult(isCoin ? { coins: res.coins } : { ...contents, catResult: res.catResult });
       if (!isCoin) updateChestOpenStats(profile.id, chest.type).catch(() => {});
     } else {
       toast(res.reason || "開箱失敗，請稍後再試");
@@ -493,7 +493,24 @@ export default function MemberMaterials({ onBack }) {
                     </div>
                   </div>
                 )}
-                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && !openResult.cards?.length && (
+                {openResult.catResult && (
+                  <div className="mb-3 text-center">
+                    {openResult.catResult.isDuplicate ? (
+                      <>
+                        <div className="text-4xl mb-1">😺</div>
+                        <div className="font-black text-pink-600">已擁有全部貓咪！</div>
+                        <div className="text-sm text-gray-500 mt-1">轉換為羈絆經驗 +{openResult.catResult.bondAdded}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-4xl mb-1">🐱</div>
+                        <div className="font-black text-pink-600">獲得新夥伴！</div>
+                        <div className="text-lg font-black text-pink-500 mt-1">{openResult.catResult.catName}</div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && !openResult.cards?.length && !openResult.catResult && (
                   <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
                 )}
                 <button onClick={() => setOpenResult(null)}
