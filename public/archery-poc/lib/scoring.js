@@ -8,10 +8,10 @@
 // targetGeometry 的值「量一次就固定」（印刷版面不變）；或用 camera 端「校準靶環」自動量。
 
 export const targetGeometry = {
-  cx: 0.46,  // 靶心在矩形中的水平位置（0..1）
-  cy: 0.42,  // 垂直位置（靶心偏上，下方是空白區與小靶）
-  rx: 0.46,  // 靶心到最外環(6分)的水平半徑
-  ry: 0.30,  // 垂直半徑（比 rx 小，因為紙比靶高，圓被壓扁）
+  cx: 0.5,   // 靶心水平置中（套框模式：框是正方形，靶心在框中心）
+  cy: 0.5,   // 靶心垂直置中
+  rx: 0.48,  // 靶心到最外環的水平半徑
+  ry: 0.48,  // 垂直半徑 = rx（套框是正方形，圓靶對應正圓）
 };
 
 export function setTargetGeometry(g) { Object.assign(targetGeometry, g); }
