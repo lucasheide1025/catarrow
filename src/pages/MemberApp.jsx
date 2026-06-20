@@ -1,10 +1,11 @@
 // src/pages/MemberApp.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
-  subscribeCardCollection, submitGuildQuestCompletion } from "../lib/db";
+  subscribeCardCollection, submitGuildQuestCompletion,
+  subscribeActiveGuildQuests } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
@@ -80,10 +81,30 @@ export default function MemberApp() {
   const [potionDex,     setPotionDex]     = useState({});
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
+  const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
+  const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
+  const seenQuestIds = useRef(null); // null = 尚未完成首次載入
+
+  // 緊急任務訂閱：只在新任務出現時彈出通知
+  useEffect(() => {
+    if (!profile?.id) return;
+    return subscribeActiveGuildQuests(quests => {
+      if (seenQuestIds.current === null) {
+        // 首次載入：記住目前所有任務 ID，不彈出通知
+        seenQuestIds.current = new Set(quests.map(q => q.id));
+        return;
+      }
+      // 找出本次有新出現的緊急任務
+      const newSpecial = quests.find(q => q.type === "special" && !seenQuestIds.current.has(q.id));
+      quests.forEach(q => seenQuestIds.current.add(q.id));
+      if (newSpecial) setSpecialAlert(newSpecial);
+    });
+  }, [profile?.id]); // eslint-disable-line
 
   // 從公會接任務後導向對應功能
   // 若是同一個任務，保留目前的擊殺進度，不重置 killsSoFar
   function handleGuildNavigate(targetPage, ctx) {
+    setFromGuild(true);
     setQuestCtx(prev => ({
       ...ctx,
       killsSoFar: (prev?.questId === ctx.questId) ? (prev.killsSoFar || 0) : 0,
@@ -222,6 +243,37 @@ export default function MemberApp() {
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
 
+      {/* ⚡ 緊急任務浮動通知 */}
+      {specialAlert && (
+        <div style={{ position:"fixed", inset:0, zIndex:99998, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}
+          onClick={() => setSpecialAlert(null)}>
+          <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:"52px", marginBottom:"8px", animation:"pulse 1s infinite" }}>⚡</div>
+            <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
+            <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
+            {specialAlert.desc && (
+              <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>
+            )}
+            {specialAlert.reward && (
+              <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>
+                🎁 獎勵：{specialAlert.reward}
+              </div>
+            )}
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button onClick={() => setSpecialAlert(null)}
+                style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
+                稍後再看
+              </button>
+              <button onClick={() => { setSpecialAlert(null); setPage("guild"); }}
+                style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
+                ⚔️ 立即前往公會
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
         <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -287,7 +339,7 @@ export default function MemberApp() {
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
         {page==="monster"     && <MonsterBattle
           onBack={() => {
-            if (questCtx) setPage("guild"); // 任務進行中：返回公會（保留 killsSoFar）
+            if (fromGuild) { setFromGuild(false); setPage("guild"); } // 從公會來的：回公會
             else { setQuestCtx(null); setPage("home"); }
           }}
           questContext={questCtx} onKillForQuest={handleQuestKill} />}
