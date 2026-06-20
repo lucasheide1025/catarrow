@@ -347,9 +347,8 @@ function handleHit(res) {
   const entryNorm = pickEntryPoint(na, nb);
   const entryPx = (entryNorm === na) ? a : b;
 
-  // 先採顏色計分（用箭矢中點，避免端點被箭矢遮蔽）
-  const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-  const sc = scoreAtPoint(midX, midY);
+  // 先採顏色計分（用靠近中心的端點，12px 半徑繞過箭矢本體）
+  const sc = scoreAtPoint(entryPx.x, entryPx.y);
 
   ctx.strokeStyle = "#5b8cff"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();

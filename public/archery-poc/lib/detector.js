@@ -6,7 +6,8 @@ export class ArrowDetector {
     this.diffThreshold = opts.diffThreshold ?? 28; // 灰階差值門檻（降低更敏感）
     this.minSize  = opts.minSize  ?? 40;           // 最少變動像素
     this.maxFrac  = opts.maxFrac  ?? 0.55;         // 變動超過此比例 → 整體光線變化，捨棄
-    this.minRatio = opts.minRatio ?? 2.0;          // 長寬比門檻（從 3.0 降到 2.0）
+    this.minRatio = opts.minRatio ?? 2.0;          // 長寬比門檻
+    this.minSpan  = opts.minSpan  ?? 40;           // 端到端最少像素長度（濾掉光線/雜訊假陽性）
     this.ref = null;
     this.w = 0;
     this.h = 0;
@@ -113,9 +114,10 @@ export class ArrowDetector {
     const l2 = tr / 2 - disc;
     const ratio = l1 / (l2 + 1e-6);
 
-    this._lastDebug = { reason: ratio < this.minRatio ? "不細長" : "OK", count, frac: frac.toFixed(3), ratio: ratio.toFixed(1) };
-
-    if (ratio < this.minRatio) return null;
+    if (ratio < this.minRatio) {
+      this._lastDebug = { reason: "不細長", count, frac: frac.toFixed(3), ratio: ratio.toFixed(1) };
+      return null;
+    }
 
     let dx, dy;
     if (Math.abs(bb) > 1e-6) {
@@ -134,6 +136,11 @@ export class ArrowDetector {
       if (t > tMax) { tMax = t; pMax = { x: xs[i], y: ys[i] }; }
     }
 
-    return { ends: [pMin, pMax], size: count, ratio };
+    const span = tMax - tMin;
+    this._lastDebug = { reason: span < this.minSpan ? "太短" : "OK", count, frac: frac.toFixed(3), ratio: ratio.toFixed(1), span: span.toFixed(0) };
+
+    if (span < this.minSpan) return null;
+
+    return { ends: [pMin, pMax], size: count, ratio, span };
   }
 }
