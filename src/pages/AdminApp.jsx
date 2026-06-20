@@ -155,16 +155,20 @@ export default function AdminApp() {
     setPage(targetPage);
   }
   function handleQuestKill(monsterId) {
+    if (!questCtx || questCtx.monsterId !== monsterId) return;
+    const newKills = (questCtx.killsSoFar || 0) + 1;
+    const justCompleted = newKills >= questCtx.killsNeeded;
     setQuestCtx(prev => {
       if (!prev || prev.monsterId !== monsterId) return prev;
-      const newKills = (prev.killsSoFar || 0) + 1;
-      if (newKills >= prev.killsNeeded) {
-        submitGuildQuestCompletion(profile.id, profile.nickname || profile.name,
-          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null }, "打怪任務完成").catch(() => {});
-        return { ...prev, killsSoFar: newKills, completed: true };
-      }
-      return { ...prev, killsSoFar: newKills };
+      return { ...prev, killsSoFar: newKills, ...(justCompleted && { completed: true }) };
     });
+    if (justCompleted) {
+      submitGuildQuestCompletion(
+        profile.id, profile.nickname || profile.name,
+        { id: questCtx.questId, title: questCtx.title, reward: questCtx.reward, badgeReward: questCtx.badgeReward || null },
+        "打怪任務完成"
+      ).catch(e => console.error("[guild] kill quest submit failed:", e));
+    }
   }
 
   function handleEnterPartyRoom(roomId, type, host) {
