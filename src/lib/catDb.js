@@ -55,7 +55,8 @@ export async function claimStarterCat(memberId) {
 }
 
 // ── 開啟貓貓箱 ───────────────────────────────────────────────
-export async function openCatBox(memberId) {
+// bondOnDuplicate：集齊所有貓時轉換的羈絆經驗值（預設 20，咪咪箱傳 50）
+export async function openCatBox(memberId, { bondOnDuplicate = 20 } = {}) {
   try {
     const owned = await getOwnedCatIds(memberId);
     const catId = drawRandomCat(owned);
@@ -65,8 +66,8 @@ export async function openCatBox(memberId) {
       const memberSnap = await getDoc(doc(db, "members", memberId));
       const equipped   = memberSnap.data()?.equippedCat?.catId;
       if (equipped) {
-        await updateDoc(catRef(memberId, equipped), { bond: increment(20) });
-        return { ok: true, isDuplicate: true, bondAdded: 20 };
+        await updateDoc(catRef(memberId, equipped), { bond: increment(bondOnDuplicate) });
+        return { ok: true, isDuplicate: true, bondAdded: bondOnDuplicate };
       }
       return { ok: true, isDuplicate: true, bondAdded: 0 };
     }

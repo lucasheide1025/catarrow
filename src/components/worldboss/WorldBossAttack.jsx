@@ -594,7 +594,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               ))}
             </div>
             <div className="mt-3 text-center text-xs text-amber-300">
-              ⚡ 參戰加成 ×{participantBonus.toFixed(2)} ATK（{event.totalParticipants || 0} 人參戰）
+              ⚡ 每位隊友 +15% ATK，共 {event.totalParticipants || 0} 人 → ×{participantBonus.toFixed(2)} ATK
             </div>
           </div>
 

@@ -220,41 +220,75 @@ export async function distributeWorldBossRewards(eventId) {
     const ev = snap.data();
     if (ev.rewardDistributed) return { ok: true }; // 防重複
 
-    const reward     = ev.reward || DEFAULT_REWARD;
+    const reward       = ev.reward || DEFAULT_REWARD;
     const participants = ev.participants || {};
-    const lastHitId  = ev.lastHitBy?.memberId;
+    const lastHitId    = ev.lastHitBy?.memberId;
 
-    for (const [mid, p] of Object.entries(participants)) {
-      if (p.isGuest) continue;
+    // 判斷新/舊獎勵格式
+    const isNewFormat = !!(reward.base || reward.rank1 || reward.rank3 || reward.rankAll);
+    const base    = isNewFormat ? (reward.base    || {}) : {};
+    const rank1   = isNewFormat ? (reward.rank1   || {}) : reward; // 舊格式：全員同一份
+    const rank3   = isNewFormat ? (reward.rank3   || {}) : reward;
+    const rankAll = isNewFormat ? (reward.rankAll || {}) : reward;
 
-      // 金幣 + 金幣箱（世界王等級 = boss tier）
-      const coinChest = openCoinChest("boss");
-      await addCoins(mid, (reward.coins || 0) + coinChest.coins).catch(() => {});
+    // 依傷害排行排序（訪客排除）
+    const sorted = Object.entries(participants)
+      .filter(([, p]) => !p.isGuest)
+      .map(([mid, p]) => ({ mid, ...p }))
+      .sort((a, b) => (b.totalDmg || 0) - (a.totalDmg || 0));
 
-      // 貓貓箱 + 黃金寶箱（寫入背包）
-      const killChests = [];
-      for (let i = 0; i < (reward.catBoxes || 1); i++) {
-        killChests.push({ id: `wb_kill_cat_${mid}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: "世界王擊殺獎勵", ts: Date.now() });
+    for (let idx = 0; idx < sorted.length; idx++) {
+      const { mid } = sorted[idx];
+      const rankLabel = idx === 0 ? "第1名" : idx <= 2 ? `第${idx+1}名` : "參戰者";
+      const tier = idx === 0 ? rank1 : idx <= 2 ? rank3 : rankAll;
+
+      // 1. 保底獎勵（新格式才發）
+      if (isNewFormat) {
+        if (base.coins > 0) await addCoins(mid, base.coins).catch(() => {});
+        if (base.woodChests > 0) {
+          const woodList = Array.from({ length: base.woodChests }, (_, i) => ({
+            id: `wb_base_${mid}_${Date.now()}_${i}`,
+            type: "wood", family: "worldboss", tier: "common", from: "世界王保底獎勵", ts: Date.now(),
+          }));
+          await addChests(mid, woodList).catch(() => {});
+        }
       }
-      for (let i = 0; i < (reward.goldChests || 1); i++) {
-        killChests.push({ id: `wb_kill_gold_${mid}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: "世界王擊殺獎勵", ts: Date.now() });
-      }
-      if (killChests.length > 0) await addChests(mid, killChests).catch(() => {});
 
-      // 1% 卡片掉落
-      if (Math.random() < (reward.cardChance || 0.01)) {
-        const { addCardPack } = await import("./db").then(m => m).catch(() => ({}));
+      // 2. 分層獎勵：金幣
+      if (tier.coins > 0) await addCoins(mid, tier.coins).catch(() => {});
+
+      // 3. 黃金寶箱 + 貓貓箱
+      const chests = [];
+      for (let i = 0; i < (tier.goldChests || 0); i++) {
+        chests.push({ id: `wb_gold_${mid}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: `世界王擊殺獎勵（${rankLabel}）`, ts: Date.now() });
+      }
+      for (let i = 0; i < (tier.catBoxes || 0); i++) {
+        chests.push({ id: `wb_cat_${mid}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: `世界王擊殺獎勵（${rankLabel}）`, ts: Date.now() });
+      }
+      if (chests.length > 0) await addChests(mid, chests).catch(() => {});
+
+      // 4. 咪咪箱：立即解鎖貓咪（重複時 +50 羈絆）
+      if ((tier.mimiBoxes || 0) > 0) {
+        const { openCatBox } = await import("./catDb");
+        for (let i = 0; i < tier.mimiBoxes; i++) {
+          await openCatBox(mid, { bondOnDuplicate: 50 }).catch(() => {});
+        }
+      }
+
+      // 5. 卡片掉落
+      if ((tier.cardChance || 0) > 0 && Math.random() < tier.cardChance) {
+        const { addCardPack } = await import("./db").catch(() => ({}));
         if (addCardPack) await addCardPack(mid).catch(() => {});
       }
     }
 
-    // 最後一擊額外獎勵
+    // 最後一擊額外獎勵（疊加）
     if (lastHitId && !participants[lastHitId]?.isGuest) {
       await addChests(lastHitId, [{
         id: `wb_lasthit_${lastHitId}_${Date.now()}`,
         type: "cat_box", family: "worldboss", tier: "boss", from: "世界王最後一擊", ts: Date.now(),
       }]).catch(() => {});
-      const { addCardPack } = await import("./db").then(m => m).catch(() => ({}));
+      const { addCardPack } = await import("./db").catch(() => ({}));
       if (addCardPack) await addCardPack(lastHitId).catch(() => {});
     }
 

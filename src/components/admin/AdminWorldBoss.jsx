@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeActiveWorldBoss,
+  subscribeLatestWorldBoss,
   createWorldBossEvent,
   forceEndWorldBossEvent,
   distributeWorldBossRewards,
@@ -30,7 +30,37 @@ function HPBar({ current, max }) {
   );
 }
 
-const DEFAULT_REWARD = { catBoxes: 1, goldChests: 2, coins: 500, cardChance: 0.01 };
+const DEFAULT_REWARD = {
+  base:    { coins: 100, woodChests: 1 },
+  rank1:   { coins: 800, goldChests: 3, catBoxes: 1, mimiBoxes: 1, cardChance: 30 },
+  rank3:   { coins: 500, goldChests: 2, catBoxes: 0, mimiBoxes: 1, cardChance: 15 },
+  rankAll: { coins: 300, goldChests: 1, catBoxes: 0, mimiBoxes: 0, cardChance:  5 },
+};
+// cardChance 在 UI 用整數 %，寫入 Firestore 時除以 100
+
+function rewardToStore(r) {
+  return {
+    base:    { ...r.base },
+    rank1:   { ...r.rank1,   cardChance: (r.rank1.cardChance   || 0) / 100 },
+    rank3:   { ...r.rank3,   cardChance: (r.rank3.cardChance   || 0) / 100 },
+    rankAll: { ...r.rankAll, cardChance: (r.rankAll.cardChance || 0) / 100 },
+  };
+}
+
+function StepCtrl({ label, value, onChange, step = 1, min = 0, max = 9999, unit = "" }) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className="flex items-center gap-1.5">
+        <button onClick={() => onChange(Math.max(min, value - step))}
+          className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm flex items-center justify-center">−</button>
+        <span className="w-10 text-center font-bold text-sm text-white">{value}{unit}</span>
+        <button onClick={() => onChange(Math.min(max, value + step))}
+          className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm flex items-center justify-center">+</button>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminWorldBoss() {
   const { profile } = useAuth();
@@ -43,13 +73,14 @@ export default function AdminWorldBoss() {
   const [bossKey,   setBossKey]   = useState("head_coach");
   const [useRandom, setUseRandom] = useState(false);
   const [duration,  setDuration]  = useState(3);
-  const [reward,    setReward]    = useState({ ...DEFAULT_REWARD });
+  const [reward,    setReward]    = useState(() => JSON.parse(JSON.stringify(DEFAULT_REWARD)));
+  const [rankTab,   setRankTab]   = useState("rank1"); // rank1 | rank3 | rankAll
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
 
   useEffect(() => {
-    const unsub = subscribeActiveWorldBoss(ev => {
+    const unsub = subscribeLatestWorldBoss(ev => {
       setEvent(ev);
       setLoading(false);
     });
@@ -64,7 +95,7 @@ export default function AdminWorldBoss() {
 
   // ── 建立活動 ───────────────────────────────────────────────
   async function handleCreate() {
-    if (event) {
+    if (event?.status === "active") {
       setCreateMsg("目前已有活躍 Boss，請先結束再建立新的");
       return;
     }
@@ -77,7 +108,7 @@ export default function AdminWorldBoss() {
       adminId:     profile?.id,
       bossKey:     key,
       durationDays: duration,
-      reward,
+      reward: rewardToStore(reward),
     });
     if (res.ok) {
       setCreateMsg(`✅ 已建立《${WORLD_BOSSES[key]?.name}》活動！`);
@@ -237,7 +268,7 @@ export default function AdminWorldBoss() {
       {/* ── 建立活動 ── */}
       {tab === "create" && (
         <div className="space-y-4">
-          {event && (
+          {event?.status === "active" && (
             <div className="bg-rose-500/10 border border-rose-400/30 rounded-2xl p-3 text-xs text-rose-300">
               ⚠️ 目前已有活躍的《{event.bossData?.name}》，請先結束再建立新的
             </div>
@@ -286,42 +317,52 @@ export default function AdminWorldBoss() {
           </div>
 
           {/* 獎勵設定 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
-            <div className="text-xs text-slate-400 font-bold">擊殺獎勵設定</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-slate-500 mb-1">🐱 貓貓箱</div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setReward(r => ({ ...r, catBoxes: Math.max(0, r.catBoxes - 1) }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">-</button>
-                  <span className="w-6 text-center font-bold">{reward.catBoxes}</span>
-                  <button onClick={() => setReward(r => ({ ...r, catBoxes: r.catBoxes + 1 }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">+</button>
-                </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="text-xs text-slate-400 font-bold">🎁 獎勵設定</div>
+
+            {/* 保底獎勵 */}
+            <div className="bg-white/5 rounded-xl p-3">
+              <div className="text-xs text-emerald-400 font-bold mb-2">🛡️ 保底（所有參戰者）</div>
+              <div className="flex gap-4">
+                <StepCtrl label="💰 金幣" value={reward.base.coins} step={50}
+                  onChange={v => setReward(r => ({ ...r, base: { ...r.base, coins: v } }))}/>
+                <StepCtrl label="🪵 木箱" value={reward.base.woodChests}
+                  onChange={v => setReward(r => ({ ...r, base: { ...r.base, woodChests: v } }))}/>
               </div>
-              <div>
-                <div className="text-xs text-slate-500 mb-1">📦 黃金寶箱</div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setReward(r => ({ ...r, goldChests: Math.max(0, r.goldChests - 1) }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">-</button>
-                  <span className="w-6 text-center font-bold">{reward.goldChests}</span>
-                  <button onClick={() => setReward(r => ({ ...r, goldChests: r.goldChests + 1 }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">+</button>
-                </div>
+            </div>
+
+            {/* 分層獎勵 */}
+            <div className="bg-white/5 rounded-xl p-3">
+              <div className="text-xs text-amber-400 font-bold mb-2">🏆 擊殺分層獎勵</div>
+              <div className="flex gap-1 mb-3">
+                {[
+                  { key: "rank1",   label: "🥇 第1名" },
+                  { key: "rank3",   label: "🥈 前3名" },
+                  { key: "rankAll", label: "👥 其餘" },
+                ].map(t => (
+                  <button key={t.key} onClick={() => setRankTab(t.key)}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${rankTab === t.key ? "bg-amber-400/25 text-amber-300 border border-amber-400/40" : "bg-white/5 text-slate-400"}`}>
+                    {t.label}
+                  </button>
+                ))}
               </div>
-              <div>
-                <div className="text-xs text-slate-500 mb-1">💰 金幣</div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setReward(r => ({ ...r, coins: Math.max(0, r.coins - 100) }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">-</button>
-                  <span className="w-10 text-center font-bold text-xs">{reward.coins}</span>
-                  <button onClick={() => setReward(r => ({ ...r, coins: r.coins + 100 }))}
-                    className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm">+</button>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <StepCtrl label="💰 金幣" value={reward[rankTab].coins} step={100}
+                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], coins: v } }))}/>
+                <StepCtrl label="📦 金箱" value={reward[rankTab].goldChests}
+                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], goldChests: v } }))}/>
+                <StepCtrl label="🐱 貓貓箱" value={reward[rankTab].catBoxes}
+                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], catBoxes: v } }))}/>
+                <StepCtrl label="😺 咪咪箱" value={reward[rankTab].mimiBoxes}
+                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], mimiBoxes: v } }))}/>
+                <StepCtrl label="🃏 卡片%" value={reward[rankTab].cardChance} max={100}
+                  unit="%" onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], cardChance: v } }))}/>
               </div>
-              <div className="flex items-end">
-                <div className="text-xs text-slate-500">🃏 1% 卡片掉落（固定）</div>
-              </div>
+            </div>
+
+            {/* 預覽 */}
+            <div className="text-xs text-slate-500 leading-relaxed">
+              ✨ 咪咪箱：直接解鎖貓貓陪練（重複→+50羈絆）・保底讓每位參戰者都有獎勵
             </div>
           </div>
 
@@ -332,7 +373,7 @@ export default function AdminWorldBoss() {
             </div>
           )}
 
-          <button onClick={handleCreate} disabled={creating || !!event}
+          <button onClick={handleCreate} disabled={creating || event?.status === "active"}
             className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40 active:scale-95 transition-all">
             {creating ? "建立中…" : "🌍 開啟世界大 Boss 活動"}
           </button>

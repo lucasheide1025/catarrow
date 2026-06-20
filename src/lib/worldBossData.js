@@ -96,24 +96,28 @@ export const PHASE_LABELS = {
 };
 
 // ── 參戰人數加成 ──────────────────────────────────────────────
-// 每多一人參戰，進場時 ATK/DEF 加成 +5%，最高 +100%（20人）
+// 每多一位隊友參戰，ATK +15%（無上限，人越多越強）
 export function getParticipantBonus(count) {
-  const bonus = Math.min(count * 0.05, 1.0);
+  const bonus = count * 0.15;
   return { atkMult: 1 + bonus, defMult: 1 + bonus * 0.5, label: `+${Math.round(bonus * 100)}%` };
 }
 
-// ── 獎勵設定預設值 ────────────────────────────────────────────
+// ── 獎勵設定預設值（分層 + 保底）────────────────────────────────
 export const DEFAULT_REWARD = {
-  catBoxes:   1,   // 貓貓箱數量
-  goldChests: 2,   // 黃金寶箱數量
-  coins:      500, // 金幣
-  cardChance: 0.10, // 10% 卡片掉落
+  // 保底：所有非訪客參戰者都拿到
+  base:    { coins: 100, woodChests: 1 },
+  // 第 1 名（最高傷害）
+  rank1:   { coins: 800, goldChests: 3, catBoxes: 1, mimiBoxes: 1, cardChance: 0.30 },
+  // 第 2–3 名
+  rank3:   { coins: 500, goldChests: 2, catBoxes: 0, mimiBoxes: 1, cardChance: 0.15 },
+  // 第 4 名以後
+  rankAll: { coins: 300, goldChests: 1, catBoxes: 0, mimiBoxes: 0, cardChance: 0.05 },
 };
 
 // 未擊殺但時間到 → 安慰獎
 export const CONSOLATION_REWARD = { goldChests: 1, coins: 100 };
 
-// 最後一擊額外獎勵
+// 最後一擊額外獎勵（疊加在分層之上）
 export const LAST_HIT_EXTRA = { catBoxes: 1, cardPacks: 1 };
 
 // ── 10 種擊殺公告 ─────────────────────────────────────────────

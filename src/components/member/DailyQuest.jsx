@@ -89,7 +89,12 @@ export default function DailyQuest({ onJoinParty }) {
 
   async function doCheckin() {
     setBusy(true); sfxTap();
-    await submitCheckin(profile.id, profile.name, profile.nickname);
+    try {
+      await submitCheckin(profile.id, profile.name, profile.nickname);
+    } catch (e) {
+      console.error("doCheckin:", e?.code, e?.message);
+      setFailMsg("報到失敗，請重試或告知教練 🙏");
+    }
     setBusy(false);
   }
 
@@ -145,6 +150,11 @@ export default function DailyQuest({ onJoinParty }) {
         <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
         <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
         <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
+        {failMsg && (
+          <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2 mb-3 text-sm text-red-200 font-bold">
+            {failMsg}
+          </div>
+        )}
         <button onClick={doCheckin} disabled={busy}
           className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
           {busy ? "報到中…" : "📍 今日報到"}
