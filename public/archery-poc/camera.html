@@ -135,6 +135,7 @@ let state = "idle";
 let calibrating = false;
 let calibPts = [];
 let H = null;
+let H_inv = null; // normalized → pixel（用來畫計分環覆蓋層）
 const detector = new ArrowDetector();
 let conn = null;
 let lastDetect = 0;
@@ -258,15 +259,19 @@ view.addEventListener("pointerdown", (ev) => {
   const y = (ev.clientY - r.top) * (VH / r.height);
   calibPts.push({ x, y });
   if (calibPts.length === 4) {
-    H = computeHomography(calibPts, [
+    const corners = [
       { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
-    ]);
+    ];
+    H = computeHomography(calibPts, corners);
+    // 逆向 homography：normalized → pixel（用來把計分環畫回畫面）
+    H_inv = computeHomography(corners, calibPts);
     calibrating = false;
     el("btnCalib").textContent = "重新校準";
     if (H) {
       detector.setROI(calibPts); // 校準後限定偵測 ROI = 靶面矩形
       setMsg("校準完成（ROI 已設定），請設定背景", true);
     } else {
+      H_inv = null;
       setMsg("校準失敗（四點別共線），請重試", false);
       calibPts = [];
     }
@@ -343,10 +348,37 @@ function loop() {
     }
   }
 
+  // 計分環覆蓋層（校準完成後才畫）
+  if (H_inv) drawRingOverlay();
+
   requestAnimationFrame(loop);
 }
 
-
+function drawRingOverlay() {
+  const g = targetGeometry;
+  const rings = [
+    { r: 1.0, color: "rgba(255,80,80,0.55)",   w: 2 },
+    { r: 0.8, color: "rgba(255,160,40,0.45)",  w: 1.5 },
+    { r: 0.6, color: "rgba(255,220,40,0.40)",  w: 1.5 },
+    { r: 0.4, color: "rgba(100,220,100,0.40)", w: 1.5 },
+    { r: 0.2, color: "rgba(100,160,255,0.50)", w: 1.5 },
+  ];
+  for (const { r, color, w } of rings) {
+    ctx.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const angle = (i / 48) * Math.PI * 2;
+      const nx = g.cx + Math.cos(angle) * g.rx * r;
+      const ny = g.cy + Math.sin(angle) * g.ry * r;
+      const p = applyHomography(H_inv, nx, ny);
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke();
+  }
+  const c = applyHomography(H_inv, g.cx, g.cy);
+  ctx.fillStyle = "rgba(255,80,80,0.8)";
+  ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, 7); ctx.fill();
+}
 
 function handleHit(res) {
   const [a, b] = res.ends;

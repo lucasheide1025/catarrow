@@ -11,10 +11,10 @@ export class ArrowDetector {
   constructor(opts = {}) {
     this.diffThreshold = opts.diffThreshold ?? 35;   // 灰階差值門檻
     this.darkThreshold = opts.darkThreshold ?? 60;   // 現在夠黑才算箭（陰影通常 > 60）
-    this.minSize       = opts.minSize       ?? 40;   // 最少變動像素
+    this.minSize       = opts.minSize       ?? 60;   // 最少變動像素（提高抵抗假觸發）
     this.maxFrac       = opts.maxFrac       ?? 0.40; // 超過此比例 → 全局光線變化，捨棄
     this.minRatio      = opts.minRatio      ?? 1.5;  // 長寬比門檻
-    this.minSpan       = opts.minSpan       ?? 40;   // 端到端最少像素長度
+    this.minSpan       = opts.minSpan       ?? 55;   // 端到端最少像素長度（提高抵抗假觸發）
     this.ref = null;
     this.w = 0; this.h = 0;
     this.roi = null;
