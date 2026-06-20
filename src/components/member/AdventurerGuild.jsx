@@ -136,11 +136,16 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
   async function handleSubmitQuest() {
     if (!activeQuest || !profile?.id) return;
     setBusy(true);
-    await submitGuildQuestCompletion(
-      profile.id, profile.nickname || profile.name, activeQuest, note
-    ).catch(() => {});
-    sfxSuccess();
-    setQuestResult({ pass: true, hasBadge: !!activeQuest.badgeReward });
+    try {
+      await submitGuildQuestCompletion(
+        profile.id, profile.nickname || profile.name, activeQuest, note
+      );
+      sfxSuccess();
+      setQuestResult({ pass: true, hasBadge: !!activeQuest.badgeReward });
+    } catch (e) {
+      console.error("submitGuildQuestCompletion failed:", e);
+      setQuestResult({ pass: false, error: true });
+    }
     setBusy(false);
   }
 
@@ -552,7 +557,17 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
               style={{ background: "linear-gradient(135deg,#fbbf24,#d97706)" }}>
               {busy ? "提交中…" : "確認完成任務 ✓"}
             </button>
-          </>) : (
+          </>) : questResult?.error ? (
+            <div className="rounded-2xl p-8 text-center border border-red-500/30" style={{ background: "rgba(239,68,68,0.08)" }}>
+              <div className="text-5xl mb-4">⚠️</div>
+              <div className="text-white font-black text-xl mb-2">提交失敗</div>
+              <div className="text-red-300 text-sm mb-4">網路或權限問題，請重試或聯絡教練。</div>
+              <button onClick={() => setQuestResult(null)}
+                className="w-full py-3 rounded-xl bg-white text-gray-900 font-black text-sm">
+                重新提交
+              </button>
+            </div>
+          ) : (
             <div className="rounded-2xl p-8 text-center border border-emerald-500/30" style={{ background: "rgba(16,185,129,0.08)" }}>
               <div className="text-5xl mb-4">🎉</div>
               <div className="text-white font-black text-2xl mb-2">任務回報成功！</div>
