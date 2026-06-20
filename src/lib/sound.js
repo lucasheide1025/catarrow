@@ -16,7 +16,7 @@ let _ctx = null;
 function ctx() {
   if (typeof window === "undefined") return null;
   try {
-    if (!_ctx) {
+    if (!_ctx || _ctx.state === "closed") {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       _ctx = new AC();
@@ -24,6 +24,11 @@ function ctx() {
     if (_ctx.state === "suspended") _ctx.resume().catch(() => {});
     return _ctx;
   } catch { return null; }
+}
+
+// 確保 AudioContext 解鎖（在使用者互動後呼叫）
+export function unlockAudio() {
+  ctx();
 }
 
 export function vibrate(pattern = 30) {
@@ -263,6 +268,30 @@ export function sfxPotionDrink() {
     n.start(st); n.stop(st + 0.12);
   });
   vibrate([0, 20, 30, 20]);
+}
+
+// 打怪勝利開獎 — 爆炸聲 + 8音上行凱旋旋律
+export function sfxVictoryFanfare() {
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  // 開場爆炸音
+  noiseBurst(0, 0.25, 300, 0.9);
+  distTone(110, 220, 0.35, 0.5, 0);
+  // 8音上行旋律（方波+三角和聲）
+  [261, 329, 392, 523, 659, 784, 988, 1047].forEach((freq, i) => {
+    const st = t + 0.25 + i * 0.1;
+    ["square", "triangle"].forEach((type, j) => {
+      const n = c.createOscillator(); const g = c.createGain();
+      n.type = type; n.frequency.value = freq * (j === 1 ? 2 : 1);
+      g.gain.setValueAtTime(j === 0 ? 0.22 : 0.10, st);
+      g.gain.exponentialRampToValueAtTime(0.001, st + 0.25);
+      n.connect(g); g.connect(c.destination);
+      n.start(st); n.stop(st + 0.28);
+    });
+  });
+  // 最後持續長音
+  tone(1047, 0.8, "triangle", 0.18, 1.15);
+  vibrate([0, 60, 50, 80, 50, 120, 80, 200]);
 }
 
 // 保底大招 — 8音上行旋律（方波+三角諧波）

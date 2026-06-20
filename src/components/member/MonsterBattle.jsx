@@ -23,7 +23,7 @@ import {
 import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxBattleIntro, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
+import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
@@ -228,6 +228,19 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     if (phase !== "monster_die") return;
     const t = setTimeout(() => setPhase("loot"), 3000);
     return () => clearTimeout(t);
+  }, [phase]);
+
+  // 進入戰利品畫面：播放凱旋音效
+  useEffect(() => {
+    if (phase !== "loot") return;
+    const t = setTimeout(() => sfxVictoryFanfare(), 80);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // 進入戰鬥時解鎖 AudioContext（讓後續音效正常播放）
+  useEffect(() => {
+    if (phase !== "battle") return;
+    unlockAudio();
   }, [phase]);
 
   // 任務完成後 3 秒自動返回公會
