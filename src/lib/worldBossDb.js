@@ -300,6 +300,7 @@ export async function distributeWorldBossRewards(eventId) {
       bossKey: ev.bossKey,
       bossName: ev.bossData?.name,
       result: "defeated",
+      ts: serverTimestamp(),
       defeatedAt: serverTimestamp(),
       lastHitBy: ev.lastHitBy,
       announcement: ev.announcement,
@@ -329,7 +330,7 @@ export async function expireWorldBossEvent(eventId) {
 
     await addDoc(collection(db, WBH), {
       eventId, bossKey: ev.bossKey, bossName: ev.bossData?.name,
-      result: "expired", expiredAt: serverTimestamp(),
+      result: "expired", ts: serverTimestamp(), expiredAt: serverTimestamp(),
       participants: ev.participants, totalParticipants: ev.totalParticipants,
     });
 
@@ -384,7 +385,7 @@ export async function resetAllWorldBossAttacks(eventId) {
 export async function getWorldBossHistory(n = 10) {
   try {
     const snap = await getDocs(
-      query(collection(db, WBH), orderBy("defeatedAt", "desc"), limit(n))
+      query(collection(db, WBH), orderBy("ts", "desc"), limit(n))
     );
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch { return []; }
@@ -393,10 +394,9 @@ export async function getWorldBossHistory(n = 10) {
 export async function getLatestWorldBossKill() {
   try {
     const snap = await getDocs(
-      query(collection(db, WBH), where("result", "==", "defeated"), orderBy("defeatedAt", "desc"), limit(1))
+      query(collection(db, WBH), orderBy("ts", "desc"), limit(5))
     );
-    if (snap.empty) return null;
-    const d = snap.docs[0];
-    return { id: d.id, ...d.data() };
+    const defeated = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(d => d.result === "defeated");
+    return defeated || null;
   } catch { return null; }
 }
