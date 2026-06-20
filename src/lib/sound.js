@@ -293,7 +293,6 @@ export function sfxVictoryFanfare() {
   tone(1047, 0.8, "triangle", 0.18, 1.15);
   vibrate([0, 60, 50, 80, 50, 120, 80, 200]);
 }
-export const sfxVictory = sfxVictoryFanfare; // WorldBossAttack 使用的別名
 
 // 保底大招 — 8音上行旋律（方波+三角諧波）
 export function sfxEpic() {
