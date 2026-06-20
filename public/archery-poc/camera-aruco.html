@@ -329,33 +329,46 @@ function loop() {
 }
 
 // 顏色判斷評分（在畫入標記前呼叫，使用箭矢中點）
+// 一次 getImageData 取整塊，避免手機上逐像素讀取凍結
 function scoreAtPoint(px, py) {
+  const FETCH_R = 35;
+  const x0 = Math.max(0, Math.round(px) - FETCH_R);
+  const y0 = Math.max(0, Math.round(py) - FETCH_R);
+  const x1 = Math.min(W - 1, Math.round(px) + FETCH_R);
+  const y1 = Math.min(VH - 1, Math.round(py) + FETCH_R);
+  const iw = x1 - x0 + 1, ih = y1 - y0 + 1;
+  const pix = ctx.getImageData(x0, y0, iw, ih).data;
+
   function smp(x, y) {
-    const d = ctx.getImageData(Math.max(0,Math.min(W-1,Math.round(x))),Math.max(0,Math.min(VH-1,Math.round(y))),1,1).data;
-    return { r:d[0], g:d[1], b:d[2] };
+    const xi = Math.round(x) - x0, yi = Math.round(y) - y0;
+    if (xi < 0 || xi >= iw || yi < 0 || yi >= ih) return {r:0,g:0,b:0};
+    const p = (yi * iw + xi) * 4;
+    return {r: pix[p], g: pix[p+1], b: pix[p+2]};
   }
-  const isY = c => c.r>130 && c.g>100 && c.b<130 && c.r+c.g>c.b*3;  // 黃/金
-  const isR = c => c.r>110 && c.g<110 && c.b<110 && c.r>c.g*1.2;     // 紅
-  const isB = c => c.b>100 && c.b>c.r+20 && c.b>c.g*0.7;             // 藍
 
-  // 在半徑 12px 圓內採樣，排除箭矢深色，取平均
-  let sr=0,sg=0,sb=0,n=0;
-  for(let dy=-12;dy<=12;dy++) for(let dx=-12;dx<=12;dx++){
-    if(dx*dx+dy*dy>144) continue;
-    const c=smp(px+dx,py+dy);
-    if(c.r+c.g+c.b>90){sr+=c.r;sg+=c.g;sb+=c.b;n++;}
+  const isY = c => c.r>130 && c.g>100 && c.b<130 && c.r+c.g>c.b*3;
+  const isR = c => c.r>110 && c.g<110 && c.b<110 && c.r>c.g*1.2;
+  const isB = c => c.b>100 && c.b>c.r+20 && c.b>c.g*0.7;
+
+  let sr=0, sg=0, sb=0, n=0;
+  for (let dy=-12; dy<=12; dy++) for (let dx=-12; dx<=12; dx++) {
+    if (dx*dx+dy*dy > 144) continue;
+    const c = smp(px+dx, py+dy);
+    if (c.r+c.g+c.b > 90) { sr+=c.r; sg+=c.g; sb+=c.b; n++; }
   }
-  if(n<5) return {score:0,ring:"M"}; // 周圍全被箭矢遮蔽
+  if (n < 5) return {score:0, ring:"M"};
 
-  const ctr={r:sr/n|0,g:sg/n|0,b:sb/n|0};
+  const ctr = {r: sr/n|0, g: sg/n|0, b: sb/n|0};
   const neighbors = r => {
-    const a=[]; for(let i=0;i<8;i++){const t=i*Math.PI/4;a.push(smp(px+Math.cos(t)*r,py+Math.sin(t)*r));} return a;
+    const a=[];
+    for (let i=0; i<8; i++) { const t=i*Math.PI/4; a.push(smp(px+Math.cos(t)*r, py+Math.sin(t)*r)); }
+    return a;
   };
 
-  if(isY(ctr)) return neighbors(30).some(isR)?{score:9,ring:"9"}:{score:10,ring:"X"};
-  if(isR(ctr)) return neighbors(20).some(isY)?{score:8,ring:"8"}:{score:7,ring:"7"};
-  if(isB(ctr)) return {score:6,ring:"6"};
-  return {score:0,ring:"M"};
+  if (isY(ctr)) return neighbors(30).some(isR) ? {score:9,ring:"9"} : {score:10,ring:"X"};
+  if (isR(ctr)) return neighbors(20).some(isY) ? {score:8,ring:"8"} : {score:7,ring:"7"};
+  if (isB(ctr)) return {score:6, ring:"6"};
+  return {score:0, ring:"M"};
 }
 
 function handleHit(res) {
