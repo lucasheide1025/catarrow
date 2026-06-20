@@ -36,8 +36,9 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   if (!config) return null;
 
-  const toCast    = pending.filter(c => !c.buff);
-  const inProgress = pending.filter(c => c.buff);
+  const toCast     = pending.filter(c => !c.buff && !c.questDone && c.type !== "simple");
+  const inProgress = pending.filter(c => c.buff  && !c.questDone);
+  const done       = pending.filter(c => c.questDone || c.type === "simple");
 
   async function saveConfig() {
     setSaving(true);
@@ -385,6 +386,34 @@ export default function AdminDailyQuest({ mode = "all" }) {
                           <Btn v="success" size="sm" onClick={() => openPass(c)}>✅ 直接過關</Btn>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* 今日已完成 */}
+          {done.length > 0 && (
+            <section>
+              <ST>✅ 今日已完成（{done.length}）</ST>
+              <div className="flex flex-col gap-2">
+                {done.map(c => {
+                  const taskObj = c.tasks?.[c.chosenTask];
+                  return (
+                    <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between">
+                      <div>
+                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                        {c.type === "simple" ? (
+                          <div className="text-teal-600 text-xs">純報到 ✓</div>
+                        ) : (
+                          <div className="text-teal-600 text-xs">
+                            {taskObj ? `${taskObj.label}・${taskObj.distance}米` : "任務完成"}
+                            {c.questResult && ` → ${c.questResult.value} 分（目標 ${c.questResult.target}）`}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-2xl">✅</span>
                     </div>
                   );
                 })}

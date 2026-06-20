@@ -277,9 +277,9 @@ function drawRandomCards(count = 3) {
 // ── 開箱：抽出寶箱內容 ───────────────────────────────────
 // 回傳 { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件], cards:[卡片物件] }
 export function openChestContents(chest) {
-  // 圖片收集卡包：抽 3 張怪物卡
+  // 圖片收集卡包：抽 1 張怪物卡
   if (chest.type === "card_pack") {
-    return { materials: [], potions: [], fragments: [], cards: drawRandomCards(3) };
+    return { materials: [], potions: [], fragments: [], cards: drawRandomCards(1) };
   }
 
   // 咪咪箱：由 db.js openChest 直接呼叫 openCatBox，這裡只標記類型

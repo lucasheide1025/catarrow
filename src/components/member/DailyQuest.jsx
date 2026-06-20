@@ -80,7 +80,15 @@ export default function DailyQuest({ onJoinParty }) {
     }
   }, [checkin?.status, checkin?.buff, checkin?.id]); // eslint-disable-line
 
-  if (checkin === undefined || !config) return null;
+  // 載入中：顯示骨架，不讓學生看到空白
+  if (checkin === undefined || !config) {
+    return (
+      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
+        <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
+        <div className="text-purple-200 text-sm animate-pulse">載入中…</div>
+      </div>
+    );
+  }
 
   const rewardEvery = config.rewardEvery || 10;
   const count  = profile?.dailyQuestCount || 0;
@@ -144,6 +152,27 @@ export default function DailyQuest({ onJoinParty }) {
 
   // 1. 今天還沒報到
   if (!checkin) {
+    return (
+      <div className="rounded-2xl p-5 text-white relative overflow-hidden"
+        style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
+        <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
+        <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
+        <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
+        {failMsg && (
+          <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2 mb-3 text-sm text-red-200 font-bold">
+            {failMsg}
+          </div>
+        )}
+        <button onClick={doCheckin} disabled={busy}
+          className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
+          {busy ? "報到中…" : "📍 今日報到"}
+        </button>
+      </div>
+    );
+  }
+
+  // 2-a. 已取消的報到 → 直接當成未報到（但 doc 還在，讓 admin 可刪）
+  if (checkin.status === "cancelled") {
     return (
       <div className="rounded-2xl p-5 text-white relative overflow-hidden"
         style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
@@ -316,7 +345,17 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  return null;
+  // 萬用逃生出口：checkin 存在但狀態不明，讓學生可以取消並重新報到
+  return (
+    <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#475569,#1e293b)" }}>
+      <div className="text-xs font-black tracking-wider text-slate-300 mb-2">每日任務</div>
+      <div className="text-sm text-slate-300 mb-3">報到狀態異常，請取消後重新報到。</div>
+      <button onClick={doCancel} disabled={busy}
+        className="w-full py-2.5 rounded-xl bg-red-500/80 text-white font-black text-sm active:scale-95 transition-transform disabled:opacity-50">
+        {busy ? "取消中…" : "🔄 取消並重新報到"}
+      </button>
+    </div>
+  );
 }
 
 // ── Buff 華麗演出 ──

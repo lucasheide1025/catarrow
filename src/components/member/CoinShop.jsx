@@ -60,26 +60,6 @@ const CONSUMABLES = [
     payload: { chestType: "potion" },
     badge: "",
   },
-  {
-    id: "frag_fatcat",
-    name: "肥貓章碎片",
-    icon: "🐱",
-    price: 500,
-    desc: "獲得 1 個肥貓銅章碎片（集 10 個合成銅章）",
-    type: "fragment",
-    payload: { fragId: "frag_fatcat_bronze", count: 1 },
-    badge: "稀有",
-  },
-  {
-    id: "frag_score",
-    name: "積分章碎片",
-    icon: "⭐",
-    price: 500,
-    desc: "獲得 1 個積分銅章碎片（集 10 個合成銅章）",
-    type: "fragment",
-    payload: { fragId: "frag_score_bronze", count: 1 },
-    badge: "稀有",
-  },
 ];
 
 // ── 裝備選牌 Modal ───────────────────────────────────────────

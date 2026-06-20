@@ -133,6 +133,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [inBattle,      setInBattle]      = useState(false);
   const [wbLogs,        setWbLogs]        = useState([]);
   const [showKillScreen, setShowKillScreen] = useState(false);
+  const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
 
   const myId   = guestOverride?.id   || profile?.id;
   const today  = new Date().toISOString().slice(0, 10);
@@ -145,8 +146,12 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         const key = `wb_kill_seen_${ev.id}`;
         if (!sessionStorage.getItem(key)) {
           sessionStorage.setItem(key, "1");
+          setKillEvent(ev);       // 保存正確的 defeated boss
           setShowKillScreen(true);
         }
+      } else {
+        // 新的 active boss 到來，或無 boss → 關掉 kill screen
+        setShowKillScreen(false);
       }
     });
     const unsubLogs = myId
@@ -210,8 +215,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
-      {showKillScreen && event && (
-        <KillScreen event={event} onClose={() => setShowKillScreen(false)}/>
+      {showKillScreen && killEvent && (
+        <KillScreen event={killEvent} onClose={() => setShowKillScreen(false)}/>
       )}
 
       {/* Header */}

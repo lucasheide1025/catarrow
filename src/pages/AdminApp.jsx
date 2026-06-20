@@ -57,6 +57,8 @@ import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
 import AdminStoryManager from "../components/admin/AdminStoryManager";
 import AdminArchery      from "../components/admin/AdminArchery";
+import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
+import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -84,6 +86,7 @@ export default function AdminApp() {
   const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
   const pendingMonthlyRef = useRef(0);
   const [pendingGuildN,    setPendingGuildN]    = useState(0);
+  const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
   });
@@ -221,6 +224,17 @@ export default function AdminApp() {
     });
     const u7 = subscribeGuildSubmissions(list => setPendingGuildN(Array.isArray(list) ? list.length : 0));
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); u7 && u7(); };
+  }, []);
+
+  // 世界王登場：教練也要看到
+  useEffect(() => {
+    return subscribeActiveWorldBoss(ev => {
+      if (!ev) return;
+      const key = `wb_intro_${ev.id}`;
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+      setBossIntroEvent(ev);
+    });
   }, []);
 
 const adminNav = [
@@ -372,6 +386,7 @@ const adminNav = [
   // ── 後台模式 ──────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
+      {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
       <div style={{background:"white",borderBottom:"1px solid #e2e8f0",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
         <div>
           <div style={{fontWeight:"900",color:"#1e293b",fontSize:"14px"}}>⚙️ 後台管理</div>

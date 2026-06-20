@@ -368,3 +368,30 @@ export function sfxPathSelect() {
   tone(1100, 0.2, "sine",     0.18, 0.2);
   vibrate([0, 15, 25]);
 }
+
+// 世界王登場 — 震撼長音效（低頻轟炸 + 警報上升旋律 + 持續電流）
+export function sfxWorldBossAppear() {
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  // 第一波：低頻震爆
+  noiseBurst(0, 0.45, 80, 0.9);
+  distTone(55, 110, 0.55, 0.5, 0.05);
+  tone(55, 0.6, "sawtooth", 0.35, 0);
+  // 第二波：警報尖叫上升
+  [200, 280, 380, 500, 660, 880, 1100, 1400].forEach((freq, i) => {
+    const st = t + 0.4 + i * 0.12;
+    tone(freq, 0.18, "sawtooth", 0.22, 0.4 + i * 0.12);
+    tone(freq * 1.5, 0.12, "square", 0.12, 0.4 + i * 0.12 + 0.04);
+  });
+  // 第三波：持續電流低鳴
+  const osc = c.createOscillator();
+  const g2  = c.createGain();
+  osc.type = "sawtooth"; osc.frequency.value = 80;
+  g2.gain.setValueAtTime(0.25, t + 1.5);
+  g2.gain.linearRampToValueAtTime(0.15, t + 3.5);
+  g2.gain.linearRampToValueAtTime(0, t + 4.2);
+  osc.connect(g2); g2.connect(c.destination);
+  osc.start(t + 1.5); osc.stop(t + 4.2);
+  // 震動
+  vibrate([0, 100, 80, 120, 80, 200, 100, 300]);
+}

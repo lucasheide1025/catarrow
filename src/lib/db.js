@@ -911,18 +911,20 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
   const id = checkinId(memberId, date);
   const ref = doc(db, C_CHECKIN, id);
   const snap = await getDoc(ref);
-  if (snap.exists()) return { id, already: true, data: snap.data() };
+  // 已報到且不是 cancelled，不重複建立
+  if (snap.exists() && snap.data().status !== "cancelled") return { id, already: true, data: snap.data() };
+  // 全新報到或重新啟動 cancelled 的 doc
   await setDoc(ref, {
     memberId, memberName: memberName || "", memberNickname: memberNickname || "",
     date,
-    status: "active",         // 即時生效，等教練施法
-    buff: null,               // 教練施法後填入
+    status: "active",
+    buff: null,
     failCount: 0,
     questDone: false,
-    questResult: null,        // { type, value, target }
+    questResult: null,
     finalConfirmed: false,
     createdAt: serverTimestamp(),
-  });
+  }, { merge: false });
   return { id, already: false };
 }
 
@@ -942,14 +944,14 @@ export async function getTodayCheckinMembers() {
   } catch { return []; }
 }
 
-// 訂閱「今日所有已報到但尚未完成」報到（後台施法用）
+// 訂閱「今日所有報到」（含已完成），後台自行分類
 export function subscribePendingCheckins(callback) {
   const date = todayStr();
   return onSnapshot(
     query(collection(db, C_CHECKIN), where("date", "==", date)),
     snap => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(c => c.status === "active" && !c.finalConfirmed);
+        .filter(c => c.status === "active" || c.type === "simple");
       callback(list);
     },
     err => { console.warn("subscribePendingCheckins:", err.message); callback([]); }
@@ -1309,8 +1311,14 @@ export async function revokeSpecialAchievement(memberId, specialId, operatorId) 
 // ═══════════════════════════════════════════════════════════
  
 export async function cancelCheckin(checkinId) {
-  try { await deleteDoc(doc(db, C_CHECKIN, checkinId)); }
-  catch (e) { console.warn("cancelCheckin:", e?.message); }
+  // 學生只能 update（rules: delete 限 admin），改用軟刪除
+  try {
+    await updateDoc(doc(db, C_CHECKIN, checkinId), { status: "cancelled", cancelledAt: serverTimestamp() });
+  } catch {
+    // 若 update 也失敗（例如 doc 不存在），嘗試 deleteDoc（admin 呼叫）
+    try { await deleteDoc(doc(db, C_CHECKIN, checkinId)); }
+    catch (e2) { console.warn("cancelCheckin:", e2?.message); }
+  }
 }
  
 // ─── 打怪模式 ──────────────────────────────────────────────

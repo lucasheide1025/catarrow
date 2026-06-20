@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import WorldBossSVG from "./WorldBossSVG";
 import { WORLD_BOSSES } from "../../lib/worldBossData";
+import { sfxWorldBossAppear } from "../../lib/sound";
 
 const CSS = `
 @keyframes wbi-shake {
@@ -63,10 +64,11 @@ export default function WorldBossIntro({ event, onClose }) {
   const [closing, setClosing] = useState(false);
 
   useEffect(() => {
+    sfxWorldBossAppear();
     const t1 = setTimeout(() => setPhase("reveal"), 600);
     const t2 = setTimeout(() => setPhase("title"),  1800);
     const t3 = setTimeout(() => setPhase("done"),   4200);
-    const t4 = setTimeout(handleClose,              5200);
+    const t4 = setTimeout(handleClose,              6000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
   }, []); // eslint-disable-line
 
