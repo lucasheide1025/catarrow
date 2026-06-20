@@ -377,21 +377,42 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         )}
 
         {/* 獎勵說明 */}
-        <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl px-4 py-3">
-          <div className="text-xs text-amber-300 font-bold mb-2">🎁 擊殺獎勵（全員）</div>
-          <div className="space-y-1 text-xs text-slate-300">
-            <div>🐱 貓貓箱 ×{event.reward?.catBoxes || 1}</div>
-            <div>📦 黃金寶箱 ×{event.reward?.goldChests || 2}</div>
-            <div>💰 金幣 {event.reward?.coins || 500}</div>
-            <div>🃏 1% 怪物卡片掉落</div>
-          </div>
-          <div className="text-xs text-amber-400 font-bold mt-2">
-            ⚡ 最後一擊：額外貓貓箱 + 圖片收集卡包
-          </div>
-          <div className="text-xs text-slate-400 mt-1">
-            ※ 若未擊殺，所有參戰者仍可獲得黃金寶箱 ×1
-          </div>
-        </div>
+        {(() => {
+          const rw = event.reward || {};
+          function rewardLine(r) {
+            const items = [];
+            if (r?.coins)      items.push(`💰 ${r.coins} 金幣`);
+            if (r?.woodChests) items.push(`🪵 木箱 ×${r.woodChests}`);
+            if (r?.goldChests) items.push(`📦 金箱 ×${r.goldChests}`);
+            if (r?.catBoxes)   items.push(`🐱 貓貓箱 ×${r.catBoxes}`);
+            if (r?.mimiBoxes)  items.push(`😺 咪咪箱 ×${r.mimiBoxes}`);
+            if (r?.cardChance) items.push(`🃏 卡片 ${Math.round(r.cardChance * 100)}%`);
+            return items.join("・");
+          }
+          const tiers = [
+            { label: "🥇 第1名",  data: rw.rank1   },
+            { label: "🥉 前3名",  data: rw.rank3   },
+            { label: "⚡ 全員",   data: rw.rankAll },
+            { label: "🛡️ 保底",  data: rw.base    },
+          ].filter(t => rewardLine(t.data));
+          return (
+            <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl px-4 py-3">
+              <div className="text-xs text-amber-300 font-bold mb-2">🎁 獎勵一覽</div>
+              {tiers.length > 0 ? (
+                <div className="space-y-1.5">
+                  {tiers.map(t => (
+                    <div key={t.label} className="flex items-start gap-2 text-xs">
+                      <span className="text-amber-400 font-bold shrink-0 w-14">{t.label}</span>
+                      <span className="text-slate-300">{rewardLine(t.data)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">獎勵由教練設定</div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 世界王戰鬥紀錄 */}
         {!guestOverride && (
