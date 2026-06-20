@@ -1029,6 +1029,31 @@ export async function getDailyQuestCount(memberId) {
 const PROMO_LEVELS = [10, 20, 30, 40, 50];
 const PROMO_RANK_NAME = { 10:"青銅→白銀", 20:"白銀→黃金", 30:"黃金→白金", 40:"白金→傳說", 50:"傳說→神話" };
 
+const C_PROMO_CONFIG = "promotionQuestConfig";
+export const PROMO_QUEST_DEFAULTS = {
+  10: { dist: "8",  arrowCount: 6, goal: 25, bonusXP: 400  },
+  20: { dist: "10", arrowCount: 6, goal: 32, bonusXP: 600  },
+  30: { dist: "13", arrowCount: 6, goal: 38, bonusXP: 900  },
+  40: { dist: "15", arrowCount: 6, goal: 42, bonusXP: 1200 },
+  50: { dist: "18", arrowCount: 6, goal: 48, bonusXP: 1800 },
+};
+export async function getPromotionQuestConfig() {
+  try {
+    const snap = await getDoc(doc(db, C_PROMO_CONFIG, "default"));
+    if (snap.exists()) return { ...PROMO_QUEST_DEFAULTS, ...snap.data() };
+  } catch (e) { console.warn("getPromotionQuestConfig:", e?.message); }
+  return PROMO_QUEST_DEFAULTS;
+}
+export function subscribePromotionQuestConfig(cb) {
+  return onSnapshot(doc(db, C_PROMO_CONFIG, "default"),
+    snap => cb(snap.exists() ? { ...PROMO_QUEST_DEFAULTS, ...snap.data() } : { ...PROMO_QUEST_DEFAULTS }),
+    () => cb({ ...PROMO_QUEST_DEFAULTS })
+  );
+}
+export async function savePromotionQuestConfig(data, adminId) {
+  await setDoc(doc(db, C_PROMO_CONFIG, "default"), { ...data, updatedAt: serverTimestamp(), updatedBy: adminId }, { merge: true });
+}
+
 // 增加冒險者 XP（含晉階封頂：達到晉階等級上限前須完成晉階任務）
 export async function addAdventurerXP(memberId, xp) {
   if (!memberId || !xp || xp <= 0) return;

@@ -7,11 +7,13 @@ import {
   subscribeCoachChallenges, resolveCoachChallenge,
   getMembers, debugGetAllGuildSubs,
   subscribeActiveGuildQuests,
+  subscribePromotionQuestConfig, savePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
 
 const BADGE_LABEL = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
+const PROMO_LABEL = { 10:"Lv10 青銅→白銀", 20:"Lv20 白銀→黃金", 30:"Lv30 黃金→白金", 40:"Lv40 白金→傳說", 50:"Lv50 傳說→神話" };
 const BADGE_REQ   = { silver: null, gold: "silver", black: "gold" };
 const BADGE_COLOR = { silver: "#94a3b8", gold: "#fbbf24", black: "#1e293b" };
 const PROMO_LEVELS = [10, 20, 30, 40, 50];
@@ -46,14 +48,19 @@ export default function AdminGuildQuests() {
   const [rejectReason, setRejectReason] = useState("");
   const [challenges, setChallenges] = useState([]);
   const [activeQuests, setActiveQuests] = useState([]);
+  const [promoConfig, setPromoConfig] = useState(PROMO_QUEST_DEFAULTS);
+  const [promoForm, setPromoForm] = useState(null); // null = 顯示模式，object = 編輯中
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [promoMsg, setPromoMsg] = useState("");
 
   useEffect(() => {
     const u1 = subscribeAllGuildQuests(setQuests);
     const u2 = subscribeGuildSubmissions(setSubs);
     const u3 = subscribeCoachChallenges(setChallenges);
     const u4 = subscribeActiveGuildQuests(setActiveQuests);
+    const u5 = subscribePromotionQuestConfig(setPromoConfig);
     getMembers().then(list => setMembers([...list].sort((a, b) => (b.adventurerXP || 0) - (a.adventurerXP || 0))));
-    return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); };
   }, []);
 
   async function handlePublish() {
@@ -83,11 +90,24 @@ export default function AdminGuildQuests() {
     setRejectId(null); setRejectReason("");
   }
 
+  async function handleSavePromoConfig() {
+    if (!promoForm) return;
+    setPromoBusy(true); setPromoMsg("");
+    try {
+      await savePromotionQuestConfig(promoForm, profile?.id);
+      setPromoForm(null);
+      setPromoMsg("✓ 已儲存");
+      setTimeout(() => setPromoMsg(""), 2000);
+    } catch(e) { setPromoMsg("儲存失敗：" + e.message); }
+    setPromoBusy(false);
+  }
+
   const TABS = [
     { id: "quests",     label: "📋 任務發佈",   badge: 0 },
     { id: "review",     label: "🎖️ 待審徽章",   badge: subs.length },
     { id: "challenges", label: "🥊 挑戰申請",   badge: challenges.length },
-    { id: "ranks",      label: "⚔️ 排行",        badge: 0 },
+    { id: "promo",      label: "⚔️ 晉階設定",   badge: 0 },
+    { id: "ranks",      label: "🏆 排行",        badge: 0 },
   ];
 
   return (
@@ -420,6 +440,82 @@ export default function AdminGuildQuests() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── 晉階設定 tab ── */}
+      {tab === "promo" && (
+        <div style={{ padding: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div style={{ fontWeight: "900", fontSize: "14px", color: "#1e293b" }}>⚔️ 晉階任務設定</div>
+            {!promoForm ? (
+              <button onClick={() => setPromoForm(JSON.parse(JSON.stringify(promoConfig)))}
+                style={{ padding: "6px 14px", background: "#2563eb", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
+                編輯設定
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button onClick={() => { setPromoForm(null); setPromoMsg(""); }}
+                  style={{ padding: "6px 12px", background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
+                  取消
+                </button>
+                <button onClick={handleSavePromoConfig} disabled={promoBusy}
+                  style={{ padding: "6px 14px", background: "#10b981", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "700", cursor: "pointer", opacity: promoBusy ? 0.5 : 1 }}>
+                  {promoBusy ? "儲存中…" : "儲存"}
+                </button>
+              </div>
+            )}
+          </div>
+          {promoMsg && <div style={{ color: "#10b981", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>{promoMsg}</div>}
+          <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "12px" }}>
+            射手到達晉階等級後，需完成原野射箭任務才能繼續累積 XP。以下設定各晉階的條件與獎勵。
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {[10, 20, 30, 40, 50].map(lv => {
+              const cfg = promoForm ? promoForm[lv] : promoConfig[lv];
+              return (
+                <div key={lv} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "12px 14px" }}>
+                  <div style={{ fontWeight: "900", fontSize: "13px", color: "#7c3aed", marginBottom: "10px" }}>{PROMO_LABEL[lv]}</div>
+                  {promoForm ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#64748b", fontWeight: "700", display: "block", marginBottom: "3px" }}>距離（公尺）</label>
+                        <select value={promoForm[lv]?.dist || ""} onChange={e => setPromoForm(f => ({ ...f, [lv]: { ...f[lv], dist: e.target.value } }))}
+                          style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "13px" }}>
+                          {["5","7","8","10","13","13.5","15","18"].map(d => <option key={d} value={d}>{d} 公尺</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#64748b", fontWeight: "700", display: "block", marginBottom: "3px" }}>箭數</label>
+                        <input type="number" min={1} max={12} value={promoForm[lv]?.arrowCount || 6}
+                          onChange={e => setPromoForm(f => ({ ...f, [lv]: { ...f[lv], arrowCount: Number(e.target.value) } }))}
+                          style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "13px", boxSizing: "border-box" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#64748b", fontWeight: "700", display: "block", marginBottom: "3px" }}>通過門檻（總分）</label>
+                        <input type="number" min={1} value={promoForm[lv]?.goal || ""}
+                          onChange={e => setPromoForm(f => ({ ...f, [lv]: { ...f[lv], goal: Number(e.target.value) } }))}
+                          style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "13px", boxSizing: "border-box" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "11px", color: "#64748b", fontWeight: "700", display: "block", marginBottom: "3px" }}>晉階 XP 獎勵</label>
+                        <input type="number" min={0} value={promoForm[lv]?.bonusXP || ""}
+                          onChange={e => setPromoForm(f => ({ ...f, [lv]: { ...f[lv], bonusXP: Number(e.target.value) } }))}
+                          style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "13px", boxSizing: "border-box" }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "12px", color: "#475569" }}>📍 {cfg?.dist} 公尺</span>
+                      <span style={{ fontSize: "12px", color: "#475569" }}>🏹 {cfg?.arrowCount} 箭</span>
+                      <span style={{ fontSize: "12px", color: "#475569" }}>🎯 ≥ {cfg?.goal} 分</span>
+                      <span style={{ fontSize: "12px", color: "#7c3aed", fontWeight: "700" }}>+{cfg?.bonusXP} XP 晉階獎勵</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

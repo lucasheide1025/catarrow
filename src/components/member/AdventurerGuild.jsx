@@ -7,12 +7,13 @@ import {
   submitGuildQuestCompletion, submitCoachChallenge,
   subscribeMonsterDex, acceptGuildQuest,
   provisionalUnlockQuest, resubmitGuildBadge, retryGuildQuest,
+  subscribePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import {
   levelFromXP, rankFromLevel, rankIdxFromLevel, levelInRank, xpProgress,
   isPromotionLevel, getDailyGuildTasks, TARGET_ZONES, TARGET_NAME,
-  checkTaskPass, taskDesc, RANKS, STANDARD_ZONES, PROMOTION_QUESTS,
+  checkTaskPass, taskDesc, RANKS, STANDARD_ZONES,
 } from "../../lib/adventurerSystem";
 import { sfxSuccess, sfxSoftFail, sfxTap } from "../../lib/sound";
 import { EQUIP_SLOT_DEFS } from "../../lib/constants";
@@ -74,13 +75,15 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
   const [progress, setProgress]       = useState(null);
   const [guildQuests, setGuildQuests] = useState([]);
   const [monsterDex, setMonsterDex]   = useState({});
+  const [promoConfig, setPromoConfig] = useState(PROMO_QUEST_DEFAULTS);
 
   useEffect(() => {
     if (!profile?.id) return;
     const u1 = subscribeAdventurerProgress(profile.id, setProgress);
     const u2 = subscribeActiveGuildQuests(setGuildQuests);
     const u3 = subscribeMonsterDex(profile.id, setMonsterDex);
-    return () => { u1?.(); u2?.(); u3?.(); };
+    const u4 = subscribePromotionQuestConfig(setPromoConfig);
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
   }, [profile?.id]);
 
   // ── 衍生數值 ───────────────────────────────────────────────
@@ -90,8 +93,10 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
   const lvInRank  = levelInRank(level);
   const { current, needed, pct } = xpProgress(xp, level);
   const promoDone = new Set(profile?.promotionDone || []);
-  const promoQuest = isPromotionLevel(level) && PROMOTION_QUESTS[level] && !promoDone.has(level)
-    ? PROMOTION_QUESTS[level] : null;
+  const _promoBase = promoConfig?.[level] || PROMO_QUEST_DEFAULTS[level];
+  const promoQuest = isPromotionLevel(level) && _promoBase && !promoDone.has(level)
+    ? { ..._promoBase, level, fromRank: RANKS[Math.floor((level-1)/10)]?.name, toRank: RANKS[Math.floor((level-1)/10)+1]?.name }
+    : null;
   const submitted = new Set(progress?.submittedQuests || []);
   const accepted  = new Set(progress?.acceptedQuests  || []);
   const completed = new Set(progress?.completed || []);
