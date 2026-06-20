@@ -72,6 +72,13 @@ const BATTLE_CSS = `
 @keyframes mb-archer-miss  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 50%{transform:translateX(7px)} 75%{transform:translateX(-4px)} }
 @keyframes mb-archer-crit  { 0%,100%{opacity:0} 15%{opacity:1} 60%{opacity:0.75} }
 @keyframes mb-archer-hurt  { 0%,100%{transform:translateX(0) rotate(0)} 20%{transform:translateX(-13px) rotate(-4deg)} 45%{transform:translateX(10px) rotate(3deg)} 70%{transform:translateX(-7px) rotate(-1deg)} 88%{transform:translateX(4px)} }
+@keyframes mb-intro-archer  { from{opacity:0;transform:translateX(-90px) scale(0.6)} to{opacity:1;transform:translateX(0) scale(1)} }
+@keyframes mb-intro-monster { from{opacity:0;transform:translateX(90px) scale(0.6)} to{opacity:1;transform:translateX(0) scale(1)} }
+@keyframes mb-intro-vs      { 0%{opacity:0;transform:scale(0.2) rotate(-18deg)} 55%{transform:scale(1.3) rotate(4deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
+@keyframes mb-intro-start   { from{opacity:0;transform:translateY(18px) scale(0.85)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes mb-die-monster   { 0%{transform:scale(1) rotate(0);filter:brightness(1)} 25%{transform:scale(1.3) rotate(-6deg);filter:brightness(4) drop-shadow(0 0 30px #ef4444)} 70%{transform:scale(0.7) rotate(12deg);opacity:0.4} 100%{transform:scale(0) rotate(18deg);opacity:0} }
+@keyframes mb-die-victory   { 0%{opacity:0;transform:scale(0.3) rotate(-12deg)} 55%{transform:scale(1.2) rotate(3deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
+@keyframes mb-die-stats     { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
 @keyframes mb-monster-attack { 0%{transform:translateY(0) scale(1)} 35%{transform:translateY(50px) scale(1.12)} 68%{transform:translateY(22px) scale(1.04)} 100%{transform:translateY(0) scale(1)} }
 @keyframes mb-monster-attack-crit { 0%{transform:translateY(0) scale(1);filter:brightness(1)} 35%{transform:translateY(50px) scale(1.15);filter:brightness(1.8) drop-shadow(0 0 18px #ef4444) drop-shadow(0 0 36px #dc262688)} 68%{transform:translateY(22px) scale(1.05);filter:brightness(1.2)} 100%{transform:translateY(0) scale(1);filter:brightness(1)} }
 @keyframes mb-cat-glow-purple { 0%,100%{filter:drop-shadow(0 0 4px #a78bfa)} 50%{filter:drop-shadow(0 0 14px #a78bfa) brightness(1.35)} }
@@ -206,6 +213,20 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // 進場動畫：2.5 秒後自動進入戰鬥
+  useEffect(() => {
+    if (phase !== "battle_intro") return;
+    const t = setTimeout(() => setPhase("battle"), 2500);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // 擊倒動畫：3 秒後自動進入戰利品
+  useEffect(() => {
+    if (phase !== "monster_die") return;
+    const t = setTimeout(() => setPhase("loot"), 3000);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   // 任務完成後 3 秒自動返回公會
   const questCompletedRef = useRef(false);
@@ -676,8 +697,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setRevived(false); setLoot(null); setLootRevealed(false); setWonChests([]); setSkipBigRound(false);
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
     setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
-    setPhase("battle"); setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
-    sfxTap();
+    setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
+    sfxEpic();
+    setPhase("battle_intro");
   }
 
   async function endBattle(result, finalArchHP, finalMonHP) {
@@ -790,7 +812,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       }
       // 任務擊殺回報
       if (questContext?.monsterId === monster.id && onKillForQuest) onKillForQuest(monster.id);
-      await delay(1000); setPhase("loot");
+      await delay(600); setPhase("monster_die");
     } else {
       sfxSoftFail();
       addLog({ type:"lose", text:`💀 不…被 ${monster.name} 擊倒了！世界漸漸變黑…下次一定要贏…！` });
@@ -1373,6 +1395,98 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
             ⚔️ 開始挑戰！{selectedPotions.length>0?`（帶 ${selectedPotions.length} 瓶藥）`:""}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase==="battle_intro") {
+    const catId = archerStyle || (profile?.equippedCat?.catId) || CAT_IDS[0];
+    return (
+      <div style={{
+        position:"fixed", top:0, bottom:0,
+        left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:540,
+        overflow:"hidden", zIndex:9999,
+        background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      }}>
+        <style>{BATTLE_CSS}</style>
+        {/* VS 對決畫面 */}
+        <div style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-around", padding:"0 16px" }}>
+          {/* 射手 - 從左進場 */}
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, animation:"mb-intro-archer 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            <img src={`/cats/archers/${catId}.webp`}
+              alt="archer"
+              style={{ width:100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)" }} />
+            <div style={{ fontSize:13, fontWeight:700, color:"#c4b5fd", textShadow:"0 0 8px #7c3aed" }}>
+              {profile?.name || "射手"}
+            </div>
+          </div>
+
+          {/* VS */}
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4, animation:"mb-intro-vs 0.8s 0.4s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            <div style={{ fontSize:42, fontWeight:900, color:"#fbbf24", textShadow:"0 0 24px #f59e0b, 0 0 48px #f59e0b", letterSpacing:2 }}>VS</div>
+          </div>
+
+          {/* 怪物 - 從右進場 */}
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, animation:"mb-intro-monster 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            <div style={{ filter:"drop-shadow(0 0 16px #ef4444)" }}>
+              <MonsterBattleImg id={monster?.id} icon={monster?.icon} size={100} />
+            </div>
+            <div style={{ fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
+              {monster?.name || "怪物"}
+            </div>
+          </div>
+        </div>
+
+        {/* 戰鬥開始！ */}
+        <div style={{ marginTop:40, animation:"mb-intro-start 0.5s 1.2s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0 }}>
+          <div style={{ fontSize:28, fontWeight:900, color:"#fff", textShadow:"0 0 24px #fbbf24", letterSpacing:4, textAlign:"center" }}>
+            ⚔️ 戰鬥開始！
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase==="monster_die") {
+    return (
+      <div style={{
+        position:"fixed", top:0, bottom:0,
+        left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:540,
+        overflow:"hidden", zIndex:9999,
+        background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:24,
+      }}>
+        <style>{BATTLE_CSS}</style>
+        {/* 怪物死亡動畫 */}
+        <div style={{ animation:"mb-die-monster 1s ease-out both", opacity:0, filter:"drop-shadow(0 0 24px #ef4444)" }}>
+          <MonsterBattleImg id={monster?.id} icon={monster?.icon} size={120} />
+        </div>
+
+        {/* 擊倒！文字 */}
+        <div style={{ animation:"mb-die-victory 0.6s 0.6s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0 }}>
+          <div style={{ fontSize:36, fontWeight:900, color:"#fbbf24", textShadow:"0 0 32px #f59e0b", letterSpacing:4, textAlign:"center" }}>
+            💀 擊倒！
+          </div>
+          <div style={{ fontSize:16, color:"#94a3b8", textAlign:"center", marginTop:4 }}>
+            {monster?.name} 已被消滅
+          </div>
+        </div>
+
+        {/* 戰績統計 */}
+        <div style={{ animation:"mb-die-stats 0.5s 1.2s ease-out both", opacity:0, display:"flex", gap:20 }}>
+          {[["⚔️ 總傷害", totalDmgDealt], ["🔄 回合數", round - 1]].map(([lbl, val]) => (
+            <div key={lbl} style={{
+              background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+              borderRadius:12, padding:"12px 20px", textAlign:"center",
+            }}>
+              <div style={{ fontSize:22, fontWeight:900, color:"#fff" }}>{val}</div>
+              <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{lbl}</div>
+            </div>
+          ))}
         </div>
       </div>
     );
