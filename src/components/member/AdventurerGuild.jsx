@@ -66,7 +66,7 @@ function questRequirementChip(q) {
   return null;
 }
 
-export default function AdventurerGuild({ onBack, onNavigate }) {
+export default function AdventurerGuild({ onBack, onNavigate, questCtx = null }) {
   const { profile } = useAuth();
 
   // ── 訂閱資料 ───────────────────────────────────────────────
@@ -366,7 +366,9 @@ export default function AdventurerGuild({ onBack, onNavigate }) {
     // kill_monster 自動比對
     const monsterInfo = sub === "kill_monster" && req.monsterId
       ? MONSTERS.find(m => m.id === req.monsterId) : null;
-    const currentKills = monsterInfo ? (monsterDex[req.monsterId]?.kills || 0) : 0;
+    // 若有任務進行中的即時進度（questCtx），優先使用；否則查 monsterDex 終身記錄
+    const questProgress = (questCtx?.questId === activeQuest.id) ? (questCtx.killsSoFar || 0) : null;
+    const currentKills = questProgress !== null ? questProgress : (monsterInfo ? (monsterDex[req.monsterId]?.kills || 0) : 0);
     const killPassed   = sub === "kill_monster" ? currentKills >= (req.killCount || 1) : true;
 
     function handleCoachDuelNavigate() {

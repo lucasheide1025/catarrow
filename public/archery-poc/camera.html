@@ -87,7 +87,7 @@
   <div class="status"><span id="dot" class="dot"></span><span id="msg">尚未連線</span></div>
 
   <div class="row" style="margin-bottom:8px">
-    <button id="btnCalib" class="ghost" disabled>校準四角</button>
+    <button id="btnCalib" class="ghost" disabled>🔒 鎖定靶位</button>
     <button id="btnBg" class="ghost" disabled>設定背景</button>
   </div>
   <div class="row">
@@ -103,8 +103,8 @@
   <div class="score" id="scoreLine"></div>
 
   <p class="hint">
-    流程：① 連線 → ② 校準四角（依序點 <b>左上→右上→右下→左下</b>）→
-    ③ 射手就位、靶面乾淨時按「設定背景」→ ④「開始偵測」→ 放箭。<br />
+    流程：① 連線 → ② 調整手機讓靶紙對齊黃色框框 → 按「🔒 鎖定靶位」→
+    ③ 靶面乾淨時按「設定背景」→ ④「開始偵測」→ 放箭。<br />
     需以 https 或 localhost 開啟，瀏覽器才允許開鏡頭。
   </p>
 </div>
@@ -114,7 +114,7 @@
 <script type="module">
 import { computeHomography, applyHomography } from "./lib/homography.js";
 import { ArrowDetector } from "./lib/detector.js";
-import { pickEntryPoint, scoreFromNormalized, setTargetGeometry } from "./lib/scoring.js";
+import { pickEntryPoint, scoreFromNormalized, setTargetGeometry, targetGeometry } from "./lib/scoring.js";
 
 const W = 480, VH = 480;
 const cam = document.getElementById("cam");
@@ -252,37 +252,35 @@ function connect() {
   el("btnConnect").disabled = true;
 }
 
-view.addEventListener("pointerdown", (ev) => {
-  if (!calibrating) return;
-  const r = view.getBoundingClientRect();
-  const x = (ev.clientX - r.left) * (W / r.width);
-  const y = (ev.clientY - r.top) * (VH / r.height);
-  calibPts.push({ x, y });
-  if (calibPts.length === 4) {
-    const corners = [
-      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
-    ];
-    H = computeHomography(calibPts, corners);
-    // 逆向 homography：normalized → pixel（用來把計分環畫回畫面）
-    H_inv = computeHomography(corners, calibPts);
-    calibrating = false;
-    el("btnCalib").textContent = "重新校準";
-    if (H) {
-      detector.setROI(calibPts); // 校準後限定偵測 ROI = 靶面矩形
-      setMsg("校準完成（ROI 已設定），請設定背景", true);
-    } else {
-      H_inv = null;
-      setMsg("校準失敗（四點別共線），請重試", false);
-      calibPts = [];
-    }
-  }
-});
+// 不再需要手動點四角的 pointerdown 監聽
 
-el("btnCalib").onclick = () => {
-  calibrating = true; calibPts = []; H = null;
-  detector.clearROI();
-  setMsg("校準中：依序點 左上→右上→右下→左下", false);
-};
+// 套框鎖定：用固定的框框位置自動計算 homography
+function lockFrameCalib() {
+  const M = 0.12; // 邊框比例（距畫面邊緣的比例）
+  const pts = [
+    { x: W * M,     y: VH * M     }, // TL → norm (0,0)
+    { x: W * (1-M), y: VH * M     }, // TR → norm (1,0)
+    { x: W * (1-M), y: VH * (1-M) }, // BR → norm (1,1)
+    { x: W * M,     y: VH * (1-M) }, // BL → norm (0,1)
+  ];
+  const corners = [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
+  ];
+  calibPts = pts;
+  H     = computeHomography(pts, corners);
+  H_inv = computeHomography(corners, pts);
+  if (H) {
+    detector.setROI(pts);
+    el("btnCalib").textContent = "重新鎖定";
+    el("btnBg").disabled = false;
+    setMsg("靶位已鎖定！靶面乾淨時按「設定背景」", true);
+  } else {
+    H = null; H_inv = null; calibPts = [];
+    setMsg("鎖定失敗，請重試", false);
+  }
+}
+
+el("btnCalib").onclick = lockFrameCalib;
 
 el("btnBg").onclick = () => {
   detector.setReference(ctx.getImageData(0, 0, W, VH));
@@ -291,7 +289,7 @@ el("btnBg").onclick = () => {
 };
 
 el("btnArm").onclick = () => {
-  if (!H) { setMsg("請先校準四角", false); return; }
+  if (!H) { setMsg("請先鎖定靶位", false); return; }
   if (!detector.hasReference()) { setMsg("請先設定背景", false); return; }
   state = "armed";
   armGuard = performance.now() + 800;
@@ -323,17 +321,29 @@ function loop() {
     }
   }
 
-  if (calibPts.length) {
-    ctx.fillStyle = "#34d399";
-    calibPts.forEach((p, i) => {
-      ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 7); ctx.fill();
-      ctx.fillStyle = "#0e1116"; ctx.font = "11px sans-serif";
-      ctx.fillText(i + 1, p.x - 3, p.y + 4); ctx.fillStyle = "#34d399";
+  // 導引框：鎖定前顯示黃色虛線提示，鎖定後顯示綠色實線
+  {
+    const M = 0.12;
+    const fx = W * M, fy = VH * M, fw = W * (1-2*M), fh = VH * (1-2*M);
+    const locked = !!H;
+    ctx.setLineDash(locked ? [] : [10, 6]);
+    ctx.strokeStyle = locked ? "#34d399cc" : "#ffd166bb";
+    ctx.lineWidth = locked ? 2 : 2.5;
+    ctx.strokeRect(fx, fy, fw, fh);
+    ctx.setLineDash([]);
+    // 四角L形標記
+    const arms = 18;
+    [[fx,fy,1,1],[fx+fw,fy,-1,1],[fx+fw,fy+fh,-1,-1],[fx,fy+fh,1,-1]].forEach(([cx,cy,sx,sy])=>{
+      ctx.beginPath();
+      ctx.moveTo(cx+sx*arms, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy+sy*arms);
+      ctx.stroke();
     });
-    if (calibPts.length === 4) {
-      ctx.strokeStyle = "#34d399aa"; ctx.lineWidth = 2; ctx.beginPath();
-      calibPts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-      ctx.closePath(); ctx.stroke();
+    if (!locked) {
+      ctx.fillStyle = "#ffd16699";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("把靶紙對齊框內，再按「🔒 鎖定靶位」", W/2, fy - 8);
+      ctx.textAlign = "left";
     }
   }
 

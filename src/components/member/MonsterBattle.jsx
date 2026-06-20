@@ -1754,6 +1754,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   if (phase==="loot") {
     const stats=calcStats(allArrows);
+    // 任務進度：擊殺後 questContext.killsSoFar 已被 onKillForQuest 更新
+    const qProgress = questContext
+      ? { done: questContext.killsSoFar ?? 0, need: questContext.killsNeeded ?? 1 }
+      : null;
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -1761,6 +1765,21 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster?.name}！</div>
           <div className="text-slate-400 text-sm">第 {round} 回合完成</div>
         </div>
+        {qProgress && (
+          <div className="w-full rounded-xl px-4 py-3 flex flex-col gap-1"
+            style={{ background:"linear-gradient(90deg,rgba(99,102,241,0.2),rgba(59,130,246,0.15))", border:"1px solid rgba(99,102,241,0.4)" }}>
+            <div className="flex justify-between items-center text-xs font-black">
+              <span className="text-indigo-300">🎯 任務進度</span>
+              <span className="text-white">{qProgress.done} / {qProgress.need} 次擊殺</span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full bg-indigo-400 transition-all" style={{ width:`${Math.min(100, qProgress.done/qProgress.need*100)}%` }}/>
+            </div>
+            <div className="text-xs text-indigo-300/70 text-center">
+              {qProgress.done >= qProgress.need ? "✅ 任務完成！返回公會領獎" : `還需擊殺 ${qProgress.need - qProgress.done} 次`}
+            </div>
+          </div>
+        )}
         <div className="w-full grid grid-cols-3 gap-2">
           {[["⚔️ 總傷害",totalDmgDealt],["🛡️ 承傷",totalDmgRecvd],["💥 爆擊",`${critCount}次`]].map(([lbl,val])=>(
             <div key={lbl} className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
@@ -1907,7 +1926,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         </button>
         <div className="flex gap-3 w-full">
           {questContext
-            ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">放棄任務</button>
+            ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold">🏛️ 返回冒險者公會</button>
             : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
           }
           {(questContext||dailyLeft===null||dailyLeft>0)&&(
@@ -1942,7 +1961,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           <div className="text-sm opacity-80 mb-4">被 {monster?.name} 擊倒了，{round} 回合</div>
           <div className="flex gap-2">
             {questContext
-              ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">放棄任務</button>
+              ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold">🏛️ 返回冒險者公會</button>
               : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
             }
             {(questContext||dailyLeft===null||dailyLeft>0)&&(

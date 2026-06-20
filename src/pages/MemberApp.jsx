@@ -82,8 +82,12 @@ export default function MemberApp() {
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
 
   // 從公會接任務後導向對應功能
+  // 若是同一個任務，保留目前的擊殺進度，不重置 killsSoFar
   function handleGuildNavigate(targetPage, ctx) {
-    setQuestCtx({ ...ctx, killsSoFar: 0 });
+    setQuestCtx(prev => ({
+      ...ctx,
+      killsSoFar: (prev?.questId === ctx.questId) ? (prev.killsSoFar || 0) : 0,
+    }));
     setPage(targetPage);
   }
 
@@ -281,7 +285,12 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
-        {page==="monster"     && <MonsterBattle onBack={()=>{ setQuestCtx(null); setPage("home"); }} questContext={questCtx} onKillForQuest={handleQuestKill} />}
+        {page==="monster"     && <MonsterBattle
+          onBack={() => {
+            if (questCtx) setPage("guild"); // 任務進行中：返回公會（保留 killsSoFar）
+            else { setQuestCtx(null); setPage("home"); }
+          }}
+          questContext={questCtx} onKillForQuest={handleQuestKill} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("home")} />}
@@ -296,7 +305,7 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
-        {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")} onNavigate={handleGuildNavigate}/>}
+        {page==="guild"       && <AdventurerGuild onBack={()=>{ setQuestCtx(null); setPage("home"); }} onNavigate={handleGuildNavigate} questCtx={questCtx}/>}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
