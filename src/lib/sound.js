@@ -369,6 +369,26 @@ export function sfxPathSelect() {
   vibrate([0, 15, 25]);
 }
 
+// 進場戰鬥 — 緊張鼓點 + 張力上升（戰前氣氛）
+export function sfxBattleIntro() {
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  // 三連低頻鼓擊
+  [0, 0.18, 0.36].forEach(d => {
+    noiseBurst(d, 0.12, 90, 0.75);
+    tone(55, 0.14, "sawtooth", 0.28, d);
+  });
+  // 緊張上升旋律
+  [110, 138, 165, 196, 220, 262].forEach((freq, i) => {
+    tone(freq, 0.14, "sawtooth", 0.16, 0.6 + i * 0.1);
+  });
+  // 最終衝擊
+  noiseBurst(1.22, 0.28, 80, 0.9);
+  distTone(110, 165, 0.8, 0.4, 1.22);
+  tone(220, 0.5, "square", 0.12, 1.32);
+  vibrate([0, 60, 50, 60, 50, 100, 80, 200]);
+}
+
 // 世界王登場 — 震撼長音效（低頻轟炸 + 警報上升旋律 + 持續電流）
 export function sfxWorldBossAppear() {
   const c = ctx(); if (!c) return;

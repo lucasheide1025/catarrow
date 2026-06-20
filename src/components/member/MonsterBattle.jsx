@@ -23,7 +23,7 @@ import {
 import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
-import { sfxEpic, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
+import { sfxEpic, sfxBattleIntro, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
@@ -76,7 +76,8 @@ const BATTLE_CSS = `
 @keyframes mb-intro-monster { from{opacity:0;transform:translateX(90px) scale(0.6)} to{opacity:1;transform:translateX(0) scale(1)} }
 @keyframes mb-intro-vs      { 0%{opacity:0;transform:scale(0.2) rotate(-18deg)} 55%{transform:scale(1.3) rotate(4deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
 @keyframes mb-intro-start   { from{opacity:0;transform:translateY(18px) scale(0.85)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes mb-die-monster   { 0%{transform:scale(1) rotate(0);filter:brightness(1)} 25%{transform:scale(1.3) rotate(-6deg);filter:brightness(4) drop-shadow(0 0 30px #ef4444)} 70%{transform:scale(0.7) rotate(12deg);opacity:0.4} 100%{transform:scale(0) rotate(18deg);opacity:0} }
+@keyframes mb-die-monster   { 0%{filter:brightness(1)} 20%{filter:brightness(3.5) drop-shadow(0 0 40px #ef4444)} 100%{filter:brightness(0.1) grayscale(0.8) drop-shadow(0 0 6px #555)} }
+@keyframes mb-die-badge     { 0%{opacity:0;transform:scale(2.2) rotate(-20deg)} 55%{opacity:1;transform:scale(0.92) rotate(6deg)} 100%{opacity:1;transform:scale(1) rotate(-8deg)} }
 @keyframes mb-die-victory   { 0%{opacity:0;transform:scale(0.3) rotate(-12deg)} 55%{transform:scale(1.2) rotate(3deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
 @keyframes mb-die-stats     { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
 @keyframes mb-monster-attack { 0%{transform:translateY(0) scale(1)} 35%{transform:translateY(50px) scale(1.12)} 68%{transform:translateY(22px) scale(1.04)} 100%{transform:translateY(0) scale(1)} }
@@ -214,11 +215,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // 進場動畫：2.5 秒後自動進入戰鬥
+  // 進場動畫：50ms 後播音效（確保動畫已渲染），2.5 秒後自動進入戰鬥
   useEffect(() => {
     if (phase !== "battle_intro") return;
+    const sfxTimer = setTimeout(() => sfxBattleIntro(), 50);
     const t = setTimeout(() => setPhase("battle"), 2500);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(sfxTimer); clearTimeout(t); };
   }, [phase]);
 
   // 擊倒動畫：3 秒後自動進入戰利品
@@ -698,7 +700,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
     setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
     setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
-    sfxEpic();
     setPhase("battle_intro");
   }
 
@@ -1418,7 +1419,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, animation:"mb-intro-archer 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
             <img src={`/cats/archers/${catId}.webp`}
               alt="archer"
-              style={{ width:100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)" }} />
+              style={{ width:100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)", outline:"none", border:"none", display:"block" }} />
             <div style={{ fontSize:13, fontWeight:700, color:"#c4b5fd", textShadow:"0 0 8px #7c3aed" }}>
               {profile?.name || "射手"}
             </div>
@@ -1461,13 +1462,34 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:24,
       }}>
         <style>{BATTLE_CSS}</style>
-        {/* 怪物死亡動畫 */}
-        <div style={{ animation:"mb-die-monster 1s ease-out both", opacity:0, filter:"drop-shadow(0 0 24px #ef4444)" }}>
-          <MonsterBattleImg id={monster?.id} icon={monster?.icon} size={120} />
+        {/* 怪物 + 擊倒印章 */}
+        <div style={{ position:"relative", display:"inline-block" }}>
+          <div style={{ animation:"mb-die-monster 1.5s ease-out both" }}>
+            <MonsterBattleImg id={monster?.id} icon={monster?.icon} size={140} />
+          </div>
+          {/* 擊倒 印章 */}
+          <div style={{
+            position:"absolute", inset:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            animation:"mb-die-badge 0.5s 0.5s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0,
+            pointerEvents:"none",
+          }}>
+            <div style={{
+              fontSize:28, fontWeight:900, color:"#ef4444",
+              border:"4px solid #ef4444", borderRadius:8,
+              padding:"4px 14px", letterSpacing:4,
+              textShadow:"0 0 12px #ef4444",
+              boxShadow:"0 0 18px #ef444488",
+              background:"rgba(0,0,0,0.55)",
+              transform:"rotate(-8deg)",
+            }}>
+              擊倒
+            </div>
+          </div>
         </div>
 
         {/* 擊倒！文字 */}
-        <div style={{ animation:"mb-die-victory 0.6s 0.6s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0 }}>
+        <div style={{ animation:"mb-die-victory 0.6s 0.8s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0 }}>
           <div style={{ fontSize:36, fontWeight:900, color:"#fbbf24", textShadow:"0 0 32px #f59e0b", letterSpacing:4, textAlign:"center" }}>
             💀 擊倒！
           </div>
