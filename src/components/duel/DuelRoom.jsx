@@ -33,9 +33,123 @@ const DUEL_CSS = `
 @keyframes lunge-left{0%{transform:translateX(0)}40%{transform:translateX(-20px)}100%{transform:translateX(0)}}
 @keyframes recoil-left{0%{transform:translateX(0)}30%{transform:translateX(-10px)}100%{transform:translateX(0)}}
 @keyframes recoil-right{0%{transform:translateX(0)}30%{transform:translateX(10px)}100%{transform:translateX(0)}}
+@keyframes enter-from-left{from{opacity:0;transform:translateX(-70px) scale(0.75)}to{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes enter-from-right{from{opacity:0;transform:translateX(70px) scale(0.75)}to{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes vs-glow{0%,100%{transform:scale(1);text-shadow:0 0 20px #f59e0b,0 0 40px #f59e0b}50%{transform:scale(1.18);text-shadow:0 0 40px #fbbf24,0 0 80px #f59e0b,0 0 120px #d97706}}
+@keyframes battle-zoom{0%{opacity:0;transform:scale(0.4) rotate(-6deg)}35%{opacity:1;transform:scale(1.08) rotate(1deg)}65%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0;transform:scale(1.15)}}
+@keyframes screen-white{0%,100%{opacity:0}25%{opacity:0.7}}
 .dmg-float{position:absolute;pointer-events:none;font-size:1.1rem;font-weight:900;animation:dmg-float 1.4s ease forwards;white-space:nowrap;}
 .crit-pop{position:absolute;pointer-events:none;font-size:1.4rem;font-weight:900;animation:crit-pop 1.1s ease forwards;}
 `;
+
+// ── 決鬥入場動畫 ────────────────────────────────────────────
+function DuelIntro({ room, myId, onDone }) {
+  const [shownCount, setShownCount] = useState(0);
+  const [battleStart, setBattleStart] = useState(false);
+
+  const allA = Object.entries(room.teamA || {});
+  const allB = Object.entries(room.teamB || {});
+
+  // 交錯排列：A0,B0,A1,B1,A2,B2…
+  const slots = [];
+  const maxLen = Math.max(allA.length, allB.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i < allA.length) slots.push({ team:"A", id:allA[i][0], m:allA[i][1] });
+    if (i < allB.length) slots.push({ team:"B", id:allB[i][0], m:allB[i][1] });
+  }
+
+  const imgSz = Math.max(allA.length, allB.length) === 1 ? 144
+    : Math.max(allA.length, allB.length) <= 2 ? 108
+    : Math.max(allA.length, allB.length) <= 4 ? 80 : 60;
+
+  useEffect(() => {
+    if (shownCount < slots.length) {
+      const interval = shownCount === 0 ? 700 : slots.length > 6 ? 380 : slots.length > 4 ? 460 : 620;
+      const t = setTimeout(() => setShownCount(n => n + 1), interval);
+      return () => clearTimeout(t);
+    }
+    const t1 = setTimeout(() => setBattleStart(true), 450);
+    const t2 = setTimeout(onDone, 1950);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [shownCount]); // eslint-disable-line
+
+  const shownA = slots.slice(0, shownCount).filter(s => s.team === "A");
+  const shownB = slots.slice(0, shownCount).filter(s => s.team === "B");
+
+  return (
+    <div className="fixed inset-0 z-[200] flex overflow-hidden select-none"
+      style={{ background:"linear-gradient(180deg,#04000f 0%,#0c0020 60%,#04000f 100%)" }}
+      onClick={onDone}>
+      <style>{DUEL_CSS}</style>
+
+      {/* A 隊 — 左側 */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 relative">
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ background:"radial-gradient(ellipse at 30% 50%, rgba(59,130,246,0.25), transparent 70%)" }} />
+        <div className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-blue-500/30 to-transparent" />
+        {shownA.map(({ id, m }) => (
+          <div key={id} className="flex flex-col items-center gap-1.5 relative z-10"
+            style={{ animation:"enter-from-left 0.55s cubic-bezier(.34,1.56,.64,1) both" }}>
+            <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+              style={{ width:imgSz, height:imgSz, objectFit:"contain",
+                filter:"drop-shadow(0 0 18px rgba(96,165,250,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))" }} />
+            <span className="text-white font-black text-sm tracking-wider"
+              style={{ textShadow:"0 0 10px #60a5fa, 0 2px 4px rgba(0,0,0,0.9)" }}>
+              {id === myId ? "▶ " : ""}{m.name}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 中央 VS */}
+      <div className="flex flex-col items-center justify-center shrink-0 w-14 z-10">
+        <span className="font-black text-2xl text-amber-400"
+          style={{ animation:"vs-glow 1.2s ease infinite", letterSpacing:"0.05em" }}>
+          VS
+        </span>
+      </div>
+
+      {/* B 隊 — 右側 */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 relative">
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ background:"radial-gradient(ellipse at 70% 50%, rgba(239,68,68,0.25), transparent 70%)" }} />
+        <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-red-500/30 to-transparent" />
+        {shownB.map(({ id, m }) => (
+          <div key={id} className="flex flex-col items-center gap-1.5 relative z-10"
+            style={{ animation:"enter-from-right 0.55s cubic-bezier(.34,1.56,.64,1) both" }}>
+            <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+              style={{ width:imgSz, height:imgSz, objectFit:"contain", transform:"scaleX(-1)",
+                filter:"drop-shadow(0 0 18px rgba(248,113,113,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))" }} />
+            <span className="text-white font-black text-sm tracking-wider"
+              style={{ textShadow:"0 0 10px #f87171, 0 2px 4px rgba(0,0,0,0.9)" }}>
+              {id === myId ? "◀ " : ""}{m.name}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 「決鬥開始！」閃現 */}
+      {battleStart && (
+        <>
+          <div className="absolute inset-0 z-20 pointer-events-none"
+            style={{ background:"white", animation:"screen-white 0.5s ease forwards" }} />
+          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+            <div className="text-white font-black tracking-widest text-center"
+              style={{ fontSize:"clamp(1.6rem,8vw,2.8rem)", animation:"battle-zoom 1.5s ease forwards",
+                textShadow:"0 0 30px #fff, 0 0 60px #f59e0b, 0 0 100px #f59e0b" }}>
+              ⚔️ 決鬥開始！
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 跳過提示 */}
+      <div className="absolute bottom-6 left-0 right-0 text-center text-white/25 text-xs pointer-events-none">
+        點擊跳過
+      </div>
+    </div>
+  );
+}
 
 // ── 傷害計算（client-side，用於 host 處理回合）─────────────
 function calcDmgFn(arrows, atk, targetDef) {
@@ -136,6 +250,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [showDuelCard, setShowDuelCard] = useState(false);
   const [cheerMsg, setCheerMsg]       = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [showIntro,    setShowIntro]    = useState(false);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [attackingIds, setAttackingIds] = useState(new Set());
   const [hittingIds,   setHittingIds]   = useState(new Set());
@@ -146,6 +261,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const lastRoundFired  = useRef(0);
   const catAppliedRef   = useRef(false);
   const prevDuelRound   = useRef(0);
+  const introShownRef   = useRef(false);
 
   const myId   = profile?.id || profile?.uid || "guest";
   const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
@@ -162,6 +278,15 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (isHost) clearDuelProcessing(roomId).catch(() => {});
     return unsub;
   }, [roomId]);
+
+  // ── 入場動畫：第一次進入 active 且 log 為空才觸發 ─────────
+  useEffect(() => {
+    if (room?.status !== "active" || introShownRef.current) return;
+    introShownRef.current = true;
+    if ((room?.round || 1) === 1 && !(room?.log?.length)) {
+      setShowIntro(true);
+    }
+  }, [room?.status]); // eslint-disable-line
 
   // ── 心跳（30s）──────────────────────────────────────────
   useEffect(() => {
@@ -180,13 +305,13 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     applyPlayerCatToRoom(roomId, myTeam, myId, myCatName, Math.max(1.1, catStatMult)).catch(() => {});
   }, [room, myTeam, hasCat]); // eslint-disable-line
 
-  // ── 決鬥開始時顯示一次貓貓進場訊息（非每回合）──────────────
+  // ── 決鬥開始時顯示一次貓貓進場訊息（intro 結束後）──────────
   useEffect(() => {
-    if (!hasCat || room?.status !== "active") return;
-    if (prevDuelRound.current !== 0) return; // 只在第一次進 active
+    if (!hasCat || room?.status !== "active" || showIntro) return;
+    if (prevDuelRound.current !== 0) return;
     prevDuelRound.current = 1;
     showCatEntry();
-  }, [hasCat, room?.status]); // eslint-disable-line
+  }, [hasCat, room?.status, showIntro]); // eslint-disable-line
 
   // ── 防呆：戰鬥結束後 8 秒還沒進結算 → 強制顯示 ────────────
   useEffect(() => {
@@ -643,6 +768,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     <div className="h-[100dvh] flex flex-col overflow-hidden"
       style={{ backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <style>{DUEL_CSS}</style>
+      {showIntro && room && (
+        <DuelIntro room={room} myId={myId} onDone={() => setShowIntro(false)} />
+      )}
       <ToastContainer />
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
