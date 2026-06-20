@@ -5,7 +5,7 @@ import {
   subscribeAllGuildQuests, publishGuildQuest, updateGuildQuestStatus, deleteGuildQuest,
   subscribeGuildSubmissions, approveGuildSubmission, rejectGuildSubmission,
   subscribeCoachChallenges, resolveCoachChallenge,
-  getMembers,
+  getMembers, debugGetAllGuildSubs,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
@@ -321,6 +321,15 @@ export default function AdminGuildQuests() {
       {/* ── 待審核徽章 tab ── */}
       {tab === "review" && (
         <div style={{ padding: "12px" }}>
+          {/* 診斷按鈕：直接查整個 collection 確認寫入是否成功 */}
+          <button type="button" onClick={async () => {
+            try {
+              const all = await debugGetAllGuildSubs();
+              alert(`guildQuestSubs 共 ${all.length} 筆\n` + all.map(d => `${d.memberName} / ${d.questTitle} / ${d.badgeReward} / ${d.status}`).join("\n") || "（空）");
+            } catch(e) { alert("讀取失敗：" + e.message); }
+          }} style={{ width: "100%", marginBottom: 10, padding: "8px", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#475569", fontWeight: 700 }}>
+            🔍 診斷：直接查詢所有提交記錄
+          </button>
           {subs.length === 0 && <div style={{ color: "#94a3b8", textAlign: "center", padding: "40px", fontSize: "13px" }}>目前沒有待審核的徽章申請</div>}
           {subs.map(s => (
             <div key={s.id} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>

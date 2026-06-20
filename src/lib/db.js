@@ -1210,6 +1210,12 @@ export async function rejectGuildSubmission(subId, reason, adminId) {
   });
 }
 
+// 診斷：取得 guildQuestSubs 全部文件（不過濾）
+export async function debugGetAllGuildSubs() {
+  const snap = await getDocs(collection(db, C_GUILD_SUBS));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ─── 教練挑戰賽 ─────────────────────────────────────────────
 const C_COACH_CHALLENGES = "coachChallenges";
 
