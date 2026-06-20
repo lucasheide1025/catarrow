@@ -1157,8 +1157,9 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
   if ((quest.reward?.xp || 0) > 0)    addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
   if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, quest.reward.coins).catch(() => {});
   // 徽章任務 → 建立待審記錄
+  console.log("[guild] submit quest", quest.id, "badgeReward:", quest.badgeReward);
   if (quest.badgeReward) {
-    await addDoc(collection(db, C_GUILD_SUBS), {
+    const ref = await addDoc(collection(db, C_GUILD_SUBS), {
       questId:    quest.id,
       questTitle: quest.title,
       memberId, memberName,
@@ -1167,6 +1168,9 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
       status: "pending",
       submittedAt: serverTimestamp(),
     });
+    console.log("[guild] badge submission created:", ref.id);
+  } else {
+    console.log("[guild] no badgeReward on quest, skip submission");
   }
 }
 
@@ -1178,7 +1182,7 @@ export function subscribeGuildSubmissions(cb) {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
     cb(list);
-  }, () => cb([]));
+  }, (err) => { console.error("[guild] subscribeGuildSubmissions error:", err.code, err.message); cb([]); });
 }
 
 // 後台：核准 → 直接發徽章
