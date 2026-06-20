@@ -1,23 +1,27 @@
 // detector.js — 背景相減法偵測新出現的箭
-// 支援 ROI（校準四角後只掃靶面內部），大幅減少背景雜訊干擾。
+// v2 核心改動：
+//  1. darkThreshold 過濾器：只計「變暗 AND 現在夠黑」的像素
+//     ─ 箭（黑碳桿）：亮色環 → 近零灰階，兩條件都成立
+//     ─ 陰影：亮 → 略暗，灰階值仍 > 60，被過濾
+//     ─ 光線整體變化：差值 < diffThreshold，被過濾
+//  2. minRatio 1.5（斜拍時箭矢透視縮短，比例比正面小）
+//  3. minSpan 40px（端到端最少長度，過濾光線噪訊）
 
 export class ArrowDetector {
   constructor(opts = {}) {
-    this.diffThreshold = opts.diffThreshold ?? 28; // 灰階差值門檻（降低更敏感）
-    this.minSize  = opts.minSize  ?? 40;           // 最少變動像素
-    this.maxFrac  = opts.maxFrac  ?? 0.55;         // 變動超過此比例 → 整體光線變化，捨棄
-    this.minRatio = opts.minRatio ?? 2.0;          // 長寬比門檻
-    this.minSpan  = opts.minSpan  ?? 40;           // 端到端最少像素長度（濾掉光線/雜訊假陽性）
+    this.diffThreshold = opts.diffThreshold ?? 35;   // 灰階差值門檻
+    this.darkThreshold = opts.darkThreshold ?? 60;   // 現在夠黑才算箭（陰影通常 > 60）
+    this.minSize       = opts.minSize       ?? 40;   // 最少變動像素
+    this.maxFrac       = opts.maxFrac       ?? 0.40; // 超過此比例 → 全局光線變化，捨棄
+    this.minRatio      = opts.minRatio      ?? 1.5;  // 長寬比門檻
+    this.minSpan       = opts.minSpan       ?? 40;   // 端到端最少像素長度
     this.ref = null;
-    this.w = 0;
-    this.h = 0;
-    this.roi = null; // { x1, y1, x2, y2 }
-    this._lastDebug = null; // 最後一次偵測的 debug 資訊
+    this.w = 0; this.h = 0;
+    this.roi = null;
+    this._lastDebug = null;
   }
 
-  // 設定感興趣區域（校準四角後呼叫，只掃靶面內的像素）
   setROI(points) {
-    // points: [{x,y}, ...] 可以是四角、或任意多邊形的頂點
     if (!points || points.length === 0) { this.roi = null; return; }
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
     for (const p of points) {
@@ -33,7 +37,6 @@ export class ArrowDetector {
   }
 
   clearROI() { this.roi = null; }
-
   getDebug() { return this._lastDebug; }
 
   _toGray(imageData) {
@@ -53,7 +56,6 @@ export class ArrowDetector {
 
   hasReference() { return !!this.ref; }
 
-  // 回傳 null 或 { ends: [{x,y},{x,y}], size, ratio }
   detect(imageData) {
     if (!this.ref) return null;
     const cur = this._toGray(imageData);
@@ -61,16 +63,16 @@ export class ArrowDetector {
     const roi = this.roi;
 
     const xs = [], ys = [];
-    let count = 0;
-    let roiTotal = 0;
+    let count = 0, roiTotal = 0;
 
     if (roi) {
-      // 只掃 ROI 內部
       for (let y = roi.y1; y <= roi.y2; y++) {
         for (let x = roi.x1; x <= roi.x2; x++) {
           roiTotal++;
           const p = y * w + x;
-          if (Math.abs(cur[p] - this.ref[p]) > this.diffThreshold) {
+          // 只計「變暗 AND 現在夠黑」→ 箭矢（黑碳桿）才滿足，陰影/光變不滿足
+          const diff = this.ref[p] - cur[p];
+          if (diff > this.diffThreshold && cur[p] < this.darkThreshold) {
             xs.push(x); ys.push(y); count++;
           }
         }
@@ -78,7 +80,8 @@ export class ArrowDetector {
     } else {
       roiTotal = w * h;
       for (let p = 0; p < roiTotal; p++) {
-        if (Math.abs(cur[p] - this.ref[p]) > this.diffThreshold) {
+        const diff = this.ref[p] - cur[p];
+        if (diff > this.diffThreshold && cur[p] < this.darkThreshold) {
           xs.push(p % w); ys.push((p / w) | 0); count++;
         }
       }
@@ -120,16 +123,12 @@ export class ArrowDetector {
     }
 
     let dx, dy;
-    if (Math.abs(bb) > 1e-6) {
-      dx = bb; dy = l1 - a;
-    } else {
-      dx = a >= c ? 1 : 0; dy = a >= c ? 0 : 1;
-    }
+    if (Math.abs(bb) > 1e-6) { dx = bb; dy = l1 - a; }
+    else { dx = a >= c ? 1 : 0; dy = a >= c ? 0 : 1; }
     const len = Math.hypot(dx, dy) || 1;
     dx /= len; dy /= len;
 
-    let tMin = Infinity, tMax = -Infinity;
-    let pMin = null, pMax = null;
+    let tMin = Infinity, tMax = -Infinity, pMin = null, pMax = null;
     for (let i = 0; i < count; i++) {
       const t = (xs[i] - mx) * dx + (ys[i] - my) * dy;
       if (t < tMin) { tMin = t; pMin = { x: xs[i], y: ys[i] }; }
