@@ -646,19 +646,20 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const lastLogEntry = room.log?.length > 0 ? room.log[room.log.length - 1] : null;
 
   return (
-    <div className="h-[100dvh] bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col overflow-hidden">
+    <div className="h-[100dvh] flex flex-col overflow-hidden"
+      style={{ backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <style>{DUEL_CSS}</style>
       <ToastContainer />
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-black/30 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 bg-black/50 shrink-0">
         <button onClick={() => { if (room?.status === "active") { setConfirmLeave(true); } else { onLeave(); } }}
-          className="text-slate-400 text-sm">← 離開</button>
+          className="text-slate-300 text-sm">← 離開</button>
         <div className="text-white font-black text-sm">
           ⚔️ {room.type} 決鬥 · 第 {(room.round || 1) - (isRevealing ? 1 : 0)} 回合
         </div>
-        <button onClick={handleCheer} className="text-slate-400 text-xl">🎉</button>
+        <button onClick={handleCheer} className="text-slate-300 text-xl">🎉</button>
       </div>
 
       {/* 加油訊息 */}
@@ -692,12 +693,58 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 雙隊玩家小卡 + 結算按鈕 — 可滾動中間區 */}
+      {/* 雙隊弓箭手 + 血條 — 可滾動中間區 */}
       <div className="flex-1 overflow-y-auto">
-      <div className="flex gap-2 px-4 py-3">
+
+      {/* 角色展示區：A 隊左、B 隊右 */}
+      <div className="flex items-end justify-between px-2 pt-3 pb-1 gap-1">
+        {/* A 隊弓箭手群 */}
+        <div className="flex gap-1 items-end">
+          {allA.map(([id, m]) => {
+            const style = m.archerStyle || "baobao";
+            const isDead = !m.alive;
+            const flash = !!flashIds[id];
+            return (
+              <div key={id} className="flex flex-col items-center gap-0.5">
+                <img src={`/cats/archers/${style}.webp`} alt={m.name}
+                  className={`w-16 h-16 object-contain drop-shadow-lg transition-all ${isDead ? "opacity-30 grayscale" : ""}`}
+                  style={flash ? { filter:"brightness(2) saturate(0)", transition:"filter 0.05s" } : {}} />
+                <span className="text-[9px] text-blue-200 font-black truncate max-w-[64px] text-center bg-black/40 px-1 rounded">
+                  {id === myId ? "▲ " : ""}{m.name}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 對決文字 */}
+        <div className="text-amber-400 font-black text-lg px-1 drop-shadow shrink-0">VS</div>
+
+        {/* B 隊弓箭手群（鏡像朝左） */}
+        <div className="flex gap-1 items-end flex-row-reverse">
+          {allB.map(([id, m]) => {
+            const style = m.archerStyle || "baobao";
+            const isDead = !m.alive;
+            const flash = !!flashIds[id];
+            return (
+              <div key={id} className="flex flex-col items-center gap-0.5">
+                <img src={`/cats/archers/${style}.webp`} alt={m.name}
+                  className={`w-16 h-16 object-contain drop-shadow-lg transition-all ${isDead ? "opacity-30 grayscale" : ""}`}
+                  style={{ transform:"scaleX(-1)", ...(flash ? { filter:"brightness(2) saturate(0)", transition:"filter 0.05s" } : {}) }} />
+                <span className="text-[9px] text-red-200 font-black truncate max-w-[64px] text-center bg-black/40 px-1 rounded">
+                  {id === myId ? "▲ " : ""}{m.name}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 血條區 */}
+      <div className="flex gap-2 px-4 pb-2">
         {[["A", allA], ["B", allB]].map(([team, entries]) => (
-          <div key={team} className="flex-1 flex flex-col gap-2">
-            <div className={`text-xs font-black tracking-widest ${team === "A" ? "text-blue-400" : "text-red-400"}`}>
+          <div key={team} className="flex-1 flex flex-col gap-1.5">
+            <div className={`text-[10px] font-black tracking-widest ${team === "A" ? "text-blue-300" : "text-red-300"}`}>
               {team === "A" ? "🔵" : "🔴"} 隊伍 {team}
             </div>
             {entries.map(([id, m]) => (

@@ -27,13 +27,15 @@ function quickStats(profile, isGuest) {
     dexStats: null,
   });
   const balanced  = balanceDuelStats(raw);
-  const catMult   = profile?.equippedCat?.catId ? 1.1 : 1.0;
-  const catName   = profile?.equippedCat?.name  || "";
+  const catMult     = profile?.equippedCat?.catId ? 1.1 : 1.0;
+  const catName     = profile?.equippedCat?.name  || "";
+  const archerStyle = profile?.equippedCat?.catId || "baobao";
   return {
     hp:  Math.round(balanced.hp  * catMult),
     atk: Math.round(balanced.atk * catMult),
     def: Math.round(balanced.def * catMult),
     catName,
+    archerStyle,
   };
 }
 

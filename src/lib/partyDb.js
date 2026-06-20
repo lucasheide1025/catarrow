@@ -12,7 +12,7 @@ const PARTY = "partyRooms";
 
 // 生成 6 碼大寫邀請碼
 function genCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  return String(10 + Math.floor(Math.random() * 90));
 }
 
 // HP 倍率顯示範圍（用於大廳預覽）
