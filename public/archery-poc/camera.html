@@ -124,9 +124,10 @@ const el = (id) => document.getElementById(id);
 const dot = el("dot"), msg = el("msg"), scoreLine = el("scoreLine");
 
 function resizeStage() {
-  const w = window.innerWidth;
-  const h = Math.min(Math.round(w * 0.85), 480);
-  el("stage").style.height = h + "px";
+  // canvas 是 480×480 正方形，stage 必須保持 1:1 才不會壓扁靶型
+  const w = Math.min(window.innerWidth, 560);
+  el("stage").style.width  = w + "px";
+  el("stage").style.height = w + "px";
 }
 resizeStage();
 window.addEventListener("resize", resizeStage);
@@ -177,26 +178,37 @@ function nextArrow() {
   loop();
 }
 
+// 判斷是否為望遠鏡頭（Apple + OPPO/三星/小米/Google等常見命名）
+function isTeleCamera(label) {
+  return /tele|telephoto|3x|5x|2x|zoom|望遠|camera2\s+[1-9]/i.test(label);
+}
+
 async function refreshCamList(skipId) {
   const devs = await navigator.mediaDevices.enumerateDevices();
   const cams = devs.filter(d => d.kind === "videoinput");
   const sel = el("camSel");
   const prev = sel.value;
   sel.innerHTML = "";
-  // 長焦鏡頭放到最前面
-  cams.sort((a, b) => {
-    const ta = /tele|telephoto|3x|5x|望遠/i.test(a.label) ? 0 : 1;
-    const tb = /tele|telephoto|3x|5x|望遠/i.test(b.label) ? 0 : 1;
-    return ta - tb;
-  });
-  cams.forEach(d => {
+  // 望遠鏡頭排前面
+  cams.sort((a, b) => (isTeleCamera(a.label) ? 0 : 1) - (isTeleCamera(b.label) ? 0 : 1));
+  cams.forEach((d, i) => {
     const opt = document.createElement("option");
     opt.value = d.deviceId;
-    const isTele = /tele|telephoto|3x|5x|望遠/i.test(d.label);
-    opt.textContent = (isTele ? "📡 " : "") + (d.label || d.deviceId.slice(0, 8));
+    const isTele = isTeleCamera(d.label);
+    // 如果 label 是空的或只是 camera2 N，用序號標示
+    const label = d.label || `後鏡頭 ${i + 1}`;
+    opt.textContent = (isTele ? "📡 " : "") + label;
     if (d.deviceId === (skipId || prev)) opt.selected = true;
     sel.appendChild(opt);
   });
+  // OPPO / Android 提示：若只偵測到 ≤2 顆後鏡頭，加提示
+  const rearCams = cams.filter(d => !/front|user|facing front/i.test(d.label));
+  if (rearCams.length <= 2 && cams.length > 0) {
+    const opt = document.createElement("option");
+    opt.disabled = true;
+    opt.textContent = "── 如需望遠請用系統原生放大後進入 ──";
+    sel.appendChild(opt);
+  }
 }
 
 async function startCamera(deviceId, { skipLoop = false } = {}) {
