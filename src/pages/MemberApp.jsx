@@ -117,20 +117,22 @@ export default function MemberApp() {
 
   // MonsterBattle 回報擊殺
   function handleQuestKill(monsterId) {
+    if (!questCtx || questCtx.monsterId !== monsterId) return;
+    const newKills = (questCtx.killsSoFar || 0) + 1;
+    const justCompleted = newKills >= questCtx.killsNeeded;
+    // 先更新進度（純 state update，無 side effect）
     setQuestCtx(prev => {
       if (!prev || prev.monsterId !== monsterId) return prev;
-      const newKills = (prev.killsSoFar || 0) + 1;
-      if (newKills >= prev.killsNeeded) {
-        submitGuildQuestCompletion(
-          profile.id, profile.nickname || profile.name,
-          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: prev.badgeReward || null },
-          "打怪任務完成"
-        ).catch(e => console.error("[guild] kill quest submit failed:", e));
-        // 標記完成（不立刻清空，讓 MonsterBattle 顯示完成畫面並強制返回公會）
-        return { ...prev, killsSoFar: newKills, completed: true };
-      }
-      return { ...prev, killsSoFar: newKills };
+      return { ...prev, killsSoFar: newKills, ...(justCompleted && { completed: true }) };
     });
+    // 任務達成後才呼叫 Firestore（移出 updater，避免 React 反模式）
+    if (justCompleted) {
+      submitGuildQuestCompletion(
+        profile.id, profile.nickname || profile.name,
+        { id: questCtx.questId, title: questCtx.title, reward: questCtx.reward, badgeReward: questCtx.badgeReward || null },
+        "打怪任務完成"
+      ).catch(e => console.error("[guild] kill quest submit failed:", e));
+    }
   }
 
   function handleAppThemeChange(id) {
