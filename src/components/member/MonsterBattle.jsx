@@ -207,13 +207,20 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // 任務模式：進入選怪階段時自動預選指定怪物
+  // 任務模式：archerStats 就緒後直接跳到 prebattle，跳過選怪
+  const questInitDone = useRef(false);
   useEffect(() => {
-    if (!questContext?.monsterId) return;
-    if (phase !== "select" && phase !== "event_select") return;
+    if (questInitDone.current) return;
+    if (!questContext?.monsterId || !archerStats) return;
+    // 若還在選出戰外觀且未設定，讓玩家先選完再說
+    if (phase === "archer_select" && !archerStyle) return;
     const target = MONSTERS.find(m => m.id === questContext.monsterId);
-    if (target) setPickedMonster(target);
-  }, [questContext, phase]); // eslint-disable-line
+    if (!target) return;
+    questInitDone.current = true;
+    setPickedMonster(target);
+    setMonster(target);
+    setPhase("prebattle");
+  }, [questContext?.monsterId, archerStats, phase, archerStyle]); // eslint-disable-line
 
   // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
   useEffect(() => {
@@ -1881,7 +1888,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           📤 產生戰績分享卡
         </button>
         <div className="flex gap-3 w-full">
-          <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
+          {questContext
+            ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">放棄任務</button>
+            : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
+          }
           {(questContext||dailyLeft===null||dailyLeft>0)&&(
             <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
               className="flex-1 py-3 rounded-xl font-black"
@@ -1913,7 +1923,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           <div className="text-2xl font-black mb-1">敗北…</div>
           <div className="text-sm opacity-80 mb-4">被 {monster?.name} 擊倒了，{round} 回合</div>
           <div className="flex gap-2">
-            <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
+            {questContext
+              ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">放棄任務</button>
+              : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
+            }
             {(questContext||dailyLeft===null||dailyLeft>0)&&(
               <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
                 className="flex-1 py-3 rounded-xl font-black"
