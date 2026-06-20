@@ -11,6 +11,7 @@ import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
+import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
 import MemberScoring      from "../components/member/MemberScoring";
@@ -145,10 +146,11 @@ export default function MemberApp() {
     // 任務達成後才呼叫 Firestore（移出 updater，避免 React 反模式）
     if (justCompleted) {
       console.log("[guild] kill completed, questCtx.badgeReward:", questCtx.badgeReward);
+      const _rankMult = rankFromLevel(levelFromXP(profile?.adventurerXP || 0)).mult;
       submitGuildQuestCompletion(
         profile.id, profile.nickname || profile.name,
         { id: questCtx.questId, title: questCtx.title, reward: questCtx.reward, badgeReward: questCtx.badgeReward || null },
-        "打怪任務完成"
+        "打怪任務完成", _rankMult
       ).catch(e => console.error("[guild] kill quest submit failed:", e));
     }
   }

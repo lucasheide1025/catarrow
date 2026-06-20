@@ -143,10 +143,14 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     setBusy(true);
     try {
       await submitGuildQuestCompletion(
-        profile.id, profile.nickname || profile.name, activeQuest, note
+        profile.id, profile.nickname || profile.name, activeQuest, note, rank.mult
       );
       sfxSuccess();
-      setQuestResult({ pass: true, hasBadge: !!activeQuest.badgeReward });
+      setQuestResult({
+        pass: true,
+        hasBadge: !!activeQuest.badgeReward,
+        actualCoins: Math.round((activeQuest.reward?.coins || 0) * rank.mult),
+      });
     } catch (e) {
       console.error("submitGuildQuestCompletion failed:", e);
       setQuestResult({ pass: false, error: true });
@@ -579,7 +583,12 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
                 <div className="text-5xl mb-4">🎉</div>
                 <div className="text-white font-black text-2xl mb-2">任務回報成功！</div>
                 {(activeQuest.reward?.xp || 0) > 0    && <div className="text-cyan-300 font-bold text-sm">+{activeQuest.reward.xp} XP 已發放</div>}
-                {(activeQuest.reward?.coins || 0) > 0  && <div className="text-yellow-300 font-bold text-sm">+{activeQuest.reward.coins} 金幣已發放</div>}
+                {(questResult.actualCoins || 0) > 0 && (
+                  <div className="text-yellow-300 font-bold text-sm">
+                    +{questResult.actualCoins} 金幣已發放
+                    {rank.mult > 1 && <span className="text-yellow-400/60 text-xs ml-1">（{rank.name} {rank.mult}x）</span>}
+                  </div>
+                )}
                 {activeQuest.badgeReward
                   ? <div className="text-amber-300 text-sm mt-1">🎖️ {BADGE_LABEL[activeQuest.badgeReward]} 申請已送出，等待教練審核</div>
                   : <div className="text-white/30 text-xs mt-1">（此任務無徽章獎勵）</div>}

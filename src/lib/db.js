@@ -9,6 +9,7 @@ import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST } from "./equipData";
+import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -1025,11 +1026,50 @@ export async function getDailyQuestCount(memberId) {
    冒險者公會系統
    ════════════════════════════════════════════════════════════ */
 
-// 增加冒險者 XP（fire-and-forget 安全，失敗不影響主流程）
+const PROMO_LEVELS = [10, 20, 30, 40, 50];
+const PROMO_RANK_NAME = { 10:"青銅→白銀", 20:"白銀→黃金", 30:"黃金→白金", 40:"白金→傳說", 50:"傳說→神話" };
+
+// 增加冒險者 XP（含晉階封頂：達到晉階等級上限前須完成晉階任務）
 export async function addAdventurerXP(memberId, xp) {
   if (!memberId || !xp || xp <= 0) return;
   try {
-    await updateDoc(doc(db, C.members, memberId), { adventurerXP: increment(xp) });
+    const snap = await getDoc(doc(db, C.members, memberId));
+    const data = snap.exists() ? snap.data() : {};
+    const currentXP = data.adventurerXP || 0;
+    const promotionDone = new Set(data.promotionDone || []);
+    const currentLevel = levelFromXP(currentXP);
+    const newXP = currentXP + xp;
+
+    // 找出當前阻擋的晉階等級
+    let blocker = null;
+    if (PROMO_LEVELS.includes(currentLevel) && !promotionDone.has(currentLevel)) {
+      blocker = currentLevel;
+    } else {
+      const newLevel = levelFromXP(newXP);
+      blocker = PROMO_LEVELS.find(pl => pl > currentLevel && pl <= newLevel && !promotionDone.has(pl)) ?? null;
+    }
+
+    if (blocker !== null) {
+      // 最多累積到「晉階等級滿 XP 但差 1 點無法升下一級」
+      const cap = xpToReachLevel(blocker + 1) - 1;
+      const cappedXP = Math.min(newXP, cap);
+      if (cappedXP > currentXP) {
+        await updateDoc(doc(db, C.members, memberId), { adventurerXP: cappedXP });
+      }
+      // 第一次觸頂才發通知（currentXP < 觸頂門檻 && cappedXP 已到達）
+      const threshold = xpToReachLevel(blocker);
+      if (currentXP < threshold && cappedXP >= threshold) {
+        createNotification({
+          type: "promo_unlock",
+          title: "⚔️ 晉階任務解鎖！",
+          content: `你已達到 Lv${blocker}（${PROMO_RANK_NAME[blocker]}）！前往冒險者公會完成晉階任務才能繼續累積經驗值。`,
+          mustRead: false,
+          targetMemberId: memberId,
+        }, "system").catch(() => {});
+      }
+    } else {
+      await updateDoc(doc(db, C.members, memberId), { adventurerXP: increment(xp) });
+    }
   } catch (e) { console.warn("addAdventurerXP:", e?.message); }
 }
 
@@ -1146,7 +1186,7 @@ export async function acceptGuildQuest(memberId, questId) {
 }
 
 // 前台：會員提交完成（XP/金幣立即發放；徽章待審核）
-export async function submitGuildQuestCompletion(memberId, memberName, quest, note) {
+export async function submitGuildQuestCompletion(memberId, memberName, quest, note, rankMult = 1) {
   if (!memberId || !quest?.id) return;
   // 防重複：先記錄在 guildProgress
   await updateDoc(doc(db, C_GUILD, memberId), {
@@ -1154,9 +1194,9 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
   }).catch(() =>
     setDoc(doc(db, C_GUILD, memberId), { submittedQuests: [quest.id] }, { merge: true })
   );
-  // 立即發放 XP + 金幣
+  // 立即發放 XP + 金幣（金幣依階級倍率加成）
   if ((quest.reward?.xp || 0) > 0)    addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
-  if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, quest.reward.coins).catch(() => {});
+  if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, Math.round(quest.reward.coins * (rankMult || 1))).catch(() => {});
   // 徽章任務 → 建立待審記錄；非徽章任務 → 直接記錄完成
   if (quest.badgeReward) {
     await addDoc(collection(db, C_GUILD_SUBS), {

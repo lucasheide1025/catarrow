@@ -43,6 +43,7 @@ import PartyLobby         from "../components/party/PartyLobby";
 import PartyQuestRoom     from "../components/party/PartyQuestRoom";
 import PartyBattleRoom    from "../components/party/PartyBattleRoom";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
+import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
@@ -180,10 +181,11 @@ export default function AdminApp() {
       return { ...prev, killsSoFar: newKills, ...(justCompleted && { completed: true }) };
     });
     if (justCompleted) {
+      const _rankMult = rankFromLevel(levelFromXP(profile?.adventurerXP || 0)).mult;
       submitGuildQuestCompletion(
         profile.id, profile.nickname || profile.name,
         { id: questCtx.questId, title: questCtx.title, reward: questCtx.reward, badgeReward: questCtx.badgeReward || null },
-        "打怪任務完成"
+        "打怪任務完成", _rankMult
       ).catch(e => console.error("[guild] kill quest submit failed:", e));
     }
   }
