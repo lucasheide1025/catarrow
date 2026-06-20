@@ -51,6 +51,7 @@ import AdminResetCenter       from "../components/admin/AdminResetCenter";
 import AdminWorldBoss         from "../components/admin/AdminWorldBoss";
 import AdminGuildQuests        from "../components/admin/AdminGuildQuests";
 import AdventurerGuild    from "../components/member/AdventurerGuild";
+import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
@@ -70,6 +71,8 @@ export default function AdminApp() {
   const [fromGuild, setFromGuild]   = useState(false);
   const [specialAlert, setSpecialAlert] = useState(null);
   const seenQuestIds = useRef(null);
+  const [badgePopup, setBadgePopup] = useState(null);
+  const prevAchRef   = useRef(null);
   const [appTheme, setAppTheme]     = useState(() => getAppTheme());
   function handleAppThemeChange(id) {
     saveAppTheme(id);
@@ -126,6 +129,19 @@ export default function AdminApp() {
       if (newSpecial) setSpecialAlert(newSpecial);
     });
   }, [profile?.id]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!archerMode) return;
+    const ach = profile?.achievement;
+    if (!ach) return;
+    const prev = prevAchRef.current;
+    if (prev) {
+      if ((ach.black  || 0) > (prev.black  || 0))        setBadgePopup("black");
+      else if ((ach.gold   || 0) > (prev.gold   || 0))   setBadgePopup("gold");
+      else if ((ach.silver || 0) > (prev.silver || 0))   setBadgePopup("silver");
+    }
+    prevAchRef.current = { silver: ach.silver||0, gold: ach.gold||0, black: ach.black||0 };
+  }, [profile?.achievement?.silver, profile?.achievement?.gold, profile?.achievement?.black, archerMode]); // eslint-disable-line
 
   useEffect(() => {
     if (!profile?.id || !archerMode) return;
@@ -272,6 +288,7 @@ const adminNav = [
       <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
         <MustReadGate memberId={profile?.id} notifications={notifications} />
         <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
+        {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
 
         {/* ⚡ 緊急任務浮動通知（教練射手模式） */}
         {specialAlert && (

@@ -47,6 +47,7 @@ import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
 import AdventurerGuild   from "../components/member/AdventurerGuild";
+import BadgeEarnPopup    from "../components/member/BadgeEarnPopup";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
@@ -86,7 +87,22 @@ export default function MemberApp() {
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
+  const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
+  const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
+
+  // 徽章獲得偵測：profile.achievement 有增加時彈出慶祝
+  useEffect(() => {
+    const ach = profile?.achievement;
+    if (!ach) return;
+    const prev = prevAchRef.current;
+    if (prev) {
+      if ((ach.black || 0) > (prev.black || 0))       setBadgePopup("black");
+      else if ((ach.gold || 0) > (prev.gold || 0))    setBadgePopup("gold");
+      else if ((ach.silver || 0) > (prev.silver || 0)) setBadgePopup("silver");
+    }
+    prevAchRef.current = { silver: ach.silver||0, gold: ach.gold||0, black: ach.black||0 };
+  }, [profile?.achievement?.silver, profile?.achievement?.gold, profile?.achievement?.black]); // eslint-disable-line
 
   // 緊急任務訂閱：只在新任務出現時彈出通知
   useEffect(() => {
@@ -262,6 +278,7 @@ export default function MemberApp() {
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
+      {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
 
       {/* ⚡ 緊急任務浮動通知 */}
       {specialAlert && (
