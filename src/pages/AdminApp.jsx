@@ -231,8 +231,8 @@ export default function AdminApp() {
     return subscribeActiveWorldBoss(ev => {
       if (!ev) return;
       const key = `wb_intro_${ev.id}`;
-      if (localStorage.getItem(key)) return;
-      localStorage.setItem(key, "1");
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
       setBossIntroEvent(ev);
     });
   }, []);

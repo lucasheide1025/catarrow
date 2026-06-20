@@ -6,6 +6,7 @@ import { subscribePracticeLogs } from "../../lib/db";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
+import WorldBossIntro from "./WorldBossIntro";
 import BattleRecords from "../member/BattleRecords";
 import { sfxTap } from "../../lib/sound";
 
@@ -134,6 +135,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [wbLogs,        setWbLogs]        = useState([]);
   const [showKillScreen, setShowKillScreen] = useState(false);
   const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
+  const [replayIntro,   setReplayIntro]   = useState(false);
 
   const myId   = guestOverride?.id   || profile?.id;
   const today  = new Date().toISOString().slice(0, 10);
@@ -218,6 +220,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       {showKillScreen && killEvent && (
         <KillScreen event={killEvent} onClose={() => setShowKillScreen(false)}/>
       )}
+      {replayIntro && event && (
+        <WorldBossIntro event={event} onClose={() => setReplayIntro(false)}/>
+      )}
 
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-2">
@@ -262,6 +267,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 {boss.name}
               </div>
               <div className="text-xs text-slate-400 mt-0.5">「{boss.title}」</div>
+              <button onClick={() => setReplayIntro(true)}
+                className="mt-2 text-xs px-3 py-1 rounded-full border border-white/20 text-slate-400 bg-white/5 active:scale-95 transition-all">
+                ▶ 重播登場動畫
+              </button>
             </div>
 
             {/* HP 條 */}

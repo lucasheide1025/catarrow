@@ -152,8 +152,8 @@ export default function MemberApp() {
     return subscribeActiveWorldBoss(ev => {
       if (!ev) return;
       const key = `wb_intro_${ev.id}`;
-      if (localStorage.getItem(key)) return; // 已看過
-      localStorage.setItem(key, "1");
+      if (sessionStorage.getItem(key)) return; // 本次 session 已看過
+      sessionStorage.setItem(key, "1");
       setBossIntroEvent(ev);
     });
   }, []);
