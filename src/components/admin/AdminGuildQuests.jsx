@@ -6,6 +6,7 @@ import {
   subscribeGuildSubmissions, approveGuildSubmission, rejectGuildSubmission,
   subscribeCoachChallenges, resolveCoachChallenge,
   getMembers, debugGetAllGuildSubs,
+  subscribeActiveGuildQuests,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
@@ -25,7 +26,8 @@ const SUBTYPE_LABEL = {
 
 const EMPTY_FORM = {
   title: "", desc: "", type: "normal",
-  badgeReward: "", reward: { xp: 100, coins: 50 },
+  badgeReward: "", prerequisiteQuestId: "",
+  reward: { xp: 100, coins: 50 },
   questSubtype: "general",
   requirement: {},
 };
@@ -43,13 +45,15 @@ export default function AdminGuildQuests() {
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [challenges, setChallenges] = useState([]);
+  const [activeQuests, setActiveQuests] = useState([]);
 
   useEffect(() => {
     const u1 = subscribeAllGuildQuests(setQuests);
     const u2 = subscribeGuildSubmissions(setSubs);
     const u3 = subscribeCoachChallenges(setChallenges);
+    const u4 = subscribeActiveGuildQuests(setActiveQuests);
     getMembers().then(list => setMembers([...list].sort((a, b) => (b.adventurerXP || 0) - (a.adventurerXP || 0))));
-    return () => { u1?.(); u2?.(); u3?.(); };
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
   }, []);
 
   async function handlePublish() {
@@ -57,11 +61,11 @@ export default function AdminGuildQuests() {
     setBusy(true); setMsg("");
     const data = {
       ...form,
-      badgeReward:   form.badgeReward || null,
-      badgeRequires: form.badgeReward ? BADGE_REQ[form.badgeReward] : null,
+      badgeReward:         form.badgeReward         || null,
+      badgeRequires:       form.badgeReward ? BADGE_REQ[form.badgeReward] : null,
+      prerequisiteQuestId: form.prerequisiteQuestId || null,
       reward: { xp: Number(form.reward.xp) || 0, coins: Number(form.reward.coins) || 0 },
     };
-    console.log("[admin] publish quest, badgeReward:", data.badgeReward);
     try {
       await publishGuildQuest(data, profile?.id);
       setForm(EMPTY_FORM); setShowForm(false);
@@ -75,7 +79,7 @@ export default function AdminGuildQuests() {
     await approveGuildSubmission(sub.id, sub, profile?.id);
   }
   async function handleReject(sub) {
-    await rejectGuildSubmission(sub.id, rejectReason, profile?.id);
+    await rejectGuildSubmission(sub.id, sub, rejectReason, profile?.id);
     setRejectId(null); setRejectReason("");
   }
 
@@ -245,8 +249,22 @@ export default function AdminGuildQuests() {
                     </button>
                   ))}
                 </div>
-                {form.badgeReward === "gold" && <div style={{ fontSize: "11px", color: "#b45309" }}>⚠️ 需先持有銀章才能接此任務</div>}
-                {form.badgeReward === "black" && <div style={{ fontSize: "11px", color: "#b45309" }}>⚠️ 需先持有金章才能接此任務</div>}
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700", marginTop: "4px" }}>
+                  🔗 前置任務（串聯解鎖，選填）
+                </label>
+                <select value={form.prerequisiteQuestId}
+                  onChange={e => setForm(f => ({ ...f, prerequisiteQuestId: e.target.value }))}
+                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" }}>
+                  <option value="">— 無前置任務（獨立任務）—</option>
+                  {activeQuests.map(q => (
+                    <option key={q.id} value={q.id}>{q.badgeReward ? `${BADGE_LABEL[q.badgeReward]} · ` : ""}{q.title}</option>
+                  ))}
+                </select>
+                {form.prerequisiteQuestId && (
+                  <div style={{ fontSize: "11px", color: "#2563eb", background: "#eff6ff", padding: "6px 10px", borderRadius: "6px" }}>
+                    🔒 射手需先完成「{activeQuests.find(q => q.id === form.prerequisiteQuestId)?.title || form.prerequisiteQuestId}」才能解鎖此任務
+                  </div>
+                )}
 
                 <div style={{ display: "flex", gap: "12px" }}>
                   <div style={{ flex: 1 }}>
@@ -283,6 +301,7 @@ export default function AdminGuildQuests() {
                       {q.type === "special" && <span style={{ background: "#fef3c7", color: "#d97706", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>⚡ 緊急</span>}
                       {q.questSubtype && q.questSubtype !== "general" && <span style={{ background: "#f5f3ff", color: "#7c3aed", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>{SUBTYPE_LABEL[q.questSubtype]}</span>}
                       {q.badgeReward && <span style={{ background: BADGE_COLOR[q.badgeReward] + "22", color: BADGE_COLOR[q.badgeReward] || "#1e293b", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px", border: `1px solid ${BADGE_COLOR[q.badgeReward]}44` }}>{BADGE_LABEL[q.badgeReward]}</span>}
+                      {q.prerequisiteQuestId && <span style={{ background: "#eff6ff", color: "#2563eb", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>🔗 串聯</span>}
                       <span style={{ fontSize: "10px", padding: "2px 6px", borderRadius: "6px", fontWeight: "700",
                         background: q.status === "active" ? "#dcfce7" : q.status === "expired" ? "#f1f5f9" : "#fef9c3",
                         color:      q.status === "active" ? "#16a34a" : q.status === "expired" ? "#94a3b8" : "#b45309" }}>

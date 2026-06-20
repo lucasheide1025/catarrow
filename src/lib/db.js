@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, Timestamp, deleteField, writeBatch
+  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -1103,8 +1103,9 @@ export async function publishGuildQuest(data, adminId) {
     title: data.title || "",
     desc:  data.desc  || "",
     type:  data.type  || "normal",
-    badgeReward:   data.badgeReward   || null,
-    badgeRequires: data.badgeRequires || null,
+    badgeReward:      data.badgeReward      || null,
+    badgeRequires:    data.badgeRequires    || null,
+    prerequisiteQuestId: data.prerequisiteQuestId || null,
     reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
     questSubtype:  data.questSubtype  || "general",
     requirement:   data.requirement   || {},
@@ -1156,10 +1157,9 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
   // 立即發放 XP + 金幣
   if ((quest.reward?.xp || 0) > 0)    addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
   if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, quest.reward.coins).catch(() => {});
-  // 徽章任務 → 建立待審記錄
-  console.log("[guild] submit quest", quest.id, "badgeReward:", quest.badgeReward);
+  // 徽章任務 → 建立待審記錄；非徽章任務 → 直接記錄完成
   if (quest.badgeReward) {
-    const ref = await addDoc(collection(db, C_GUILD_SUBS), {
+    await addDoc(collection(db, C_GUILD_SUBS), {
       questId:    quest.id,
       questTitle: quest.title,
       memberId, memberName,
@@ -1168,9 +1168,18 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
       status: "pending",
       submittedAt: serverTimestamp(),
     });
-    console.log("[guild] badge submission created:", ref.id);
   } else {
-    console.log("[guild] no badgeReward on quest, skip submission");
+    // 非徽章任務直接 confirmed，解鎖後續串聯任務
+    await updateDoc(doc(db, C.members, memberId), {
+      [`completedGuildQuestsMap.${quest.id}`]: {
+        questTitle: quest.title, badgeReward: null,
+        status: "confirmed", completedAt: serverTimestamp(),
+      },
+    }).catch(() => setDoc(doc(db, C.members, memberId), {
+      completedGuildQuestsMap: {
+        [quest.id]: { questTitle: quest.title, badgeReward: null, status: "confirmed", completedAt: serverTimestamp() },
+      },
+    }, { merge: true }));
   }
 }
 
@@ -1185,29 +1194,89 @@ export function subscribeGuildSubmissions(cb) {
   }, (err) => { console.error("[guild] subscribeGuildSubmissions error:", err.code, err.message); cb([]); });
 }
 
-// 後台：核准 → 直接發徽章
+// 後台：核准 → 直接發徽章 + 記錄 confirmed
 export async function approveGuildSubmission(subId, sub, adminId) {
-  const color = sub.badgeReward; // "silver" | "gold" | "black"
+  const color = sub.badgeReward;
   if (color && sub.memberId) {
     await updateDoc(doc(db, C.members, sub.memberId), {
       [`achievement.${color}`]: increment(1),
+      [`completedGuildQuestsMap.${sub.questId}`]: {
+        questTitle: sub.questTitle, badgeReward: color,
+        status: "confirmed", completedAt: serverTimestamp(),
+      },
     });
   }
   await updateDoc(doc(db, C_GUILD_SUBS, subId), {
-    status: "approved",
-    approvedAt: serverTimestamp(),
-    approvedBy: adminId,
+    status: "approved", approvedAt: serverTimestamp(), approvedBy: adminId,
   });
+  // 發通知給射手
+  if (sub.memberId) {
+    await createNotification({
+      type: "guild_badge_approved",
+      title: `🎖️ 徽章審核通過！`,
+      content: `「${sub.questTitle}」已通過，${sub.badgeReward === "silver" ? "🥈 銀章" : sub.badgeReward === "gold" ? "🥇 金章" : "⬛ 黑章"}正式發放！`,
+      mustRead: false,
+      targetMemberId: sub.memberId,
+    }, adminId).catch(() => {});
+  }
 }
 
-// 後台：拒絕
-export async function rejectGuildSubmission(subId, reason, adminId) {
+// 後台：拒絕 + 記錄 rejected
+export async function rejectGuildSubmission(subId, sub, reason, adminId) {
   await updateDoc(doc(db, C_GUILD_SUBS, subId), {
-    status: "rejected",
-    rejectedAt: serverTimestamp(),
-    rejectedBy: adminId,
+    status: "rejected", rejectedAt: serverTimestamp(), rejectedBy: adminId,
     rejectReason: reason || "",
   });
+  if (sub?.memberId && sub?.questId) {
+    await updateDoc(doc(db, C.members, sub.memberId), {
+      [`completedGuildQuestsMap.${sub.questId}.status`]: "rejected",
+      [`completedGuildQuestsMap.${sub.questId}.rejectReason`]: reason || "",
+    }).catch(() => {});
+    await createNotification({
+      type: "guild_badge_rejected",
+      title: `❌ 徽章申請未通過`,
+      content: `「${sub.questTitle}」審核未通過${reason ? `：${reason}` : ""}。可重新送審或重新挑戰。`,
+      mustRead: false,
+      targetMemberId: sub.memberId,
+    }, adminId).catch(() => {});
+  }
+}
+
+// 前台：直接挑戰下一階段（provisional 解鎖）
+export async function provisionalUnlockQuest(memberId, questId, questTitle, badgeReward) {
+  await updateDoc(doc(db, C.members, memberId), {
+    [`completedGuildQuestsMap.${questId}`]: {
+      questTitle, badgeReward: badgeReward || null,
+      status: "provisional", completedAt: serverTimestamp(),
+    },
+  }).catch(() => setDoc(doc(db, C.members, memberId), {
+    completedGuildQuestsMap: {
+      [questId]: { questTitle, badgeReward: badgeReward || null, status: "provisional", completedAt: serverTimestamp() },
+    },
+  }, { merge: true }));
+}
+
+// 前台：重新送審（不重發 XP，只建新審核記錄）
+export async function resubmitGuildBadge(memberId, memberName, questId, questTitle, badgeReward) {
+  await addDoc(collection(db, C_GUILD_SUBS), {
+    questId, questTitle, memberId, memberName,
+    badgeReward, note: "重新送審",
+    status: "pending", submittedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, C.members, memberId), {
+    [`completedGuildQuestsMap.${questId}.status`]: "provisional",
+    [`completedGuildQuestsMap.${questId}.rejectReason`]: deleteField(),
+  }).catch(() => {});
+}
+
+// 前台：重新挑戰（清除記錄，允許重打）
+export async function retryGuildQuest(memberId, questId) {
+  await updateDoc(doc(db, C_GUILD, memberId), {
+    submittedQuests: arrayRemove(questId),
+  }).catch(() => {});
+  await updateDoc(doc(db, C.members, memberId), {
+    [`completedGuildQuestsMap.${questId}`]: deleteField(),
+  }).catch(() => {});
 }
 
 // 診斷：取得 guildQuestSubs 全部文件（不過濾）
