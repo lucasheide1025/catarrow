@@ -53,6 +53,11 @@
               font-size: 13px; color: #aab4c2; }
   .auto-row input[type=checkbox] { width: 18px; height: 18px; accent-color: #5b8cff; cursor: pointer; }
   .hint { font-size: 12px; color: #6f7b8c; line-height: 1.5; margin-top: 10px; }
+  #camSel {
+    background: #1b2330; border: 1px solid #2c3744; color: #cfd8e4;
+    border-radius: 6px; padding: 4px 6px; font-size: 11px; max-width: 120px;
+    cursor: pointer; flex: none;
+  }
 </style>
 </head>
 <body>
@@ -60,6 +65,7 @@
 <div class="topbar">
   <button class="back" onclick="window.close()">← 返回</button>
   <span class="title">A 攝影端（手動校準）</span>
+  <select id="camSel" title="選擇鏡頭"><option value="">預設鏡頭</option></select>
   <div class="zoom-row">
     <button id="btnZoomOut">－</button>
     <span id="zoomLabel">1×</span>
@@ -170,22 +176,61 @@ function nextArrow() {
   loop();
 }
 
-async function startCamera() {
+async function refreshCamList(skipId) {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const cams = devs.filter(d => d.kind === "videoinput");
+  const sel = el("camSel");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  // 長焦鏡頭放到最前面
+  cams.sort((a, b) => {
+    const ta = /tele|telephoto|3x|5x|望遠/i.test(a.label) ? 0 : 1;
+    const tb = /tele|telephoto|3x|5x|望遠/i.test(b.label) ? 0 : 1;
+    return ta - tb;
+  });
+  cams.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d.deviceId;
+    const isTele = /tele|telephoto|3x|5x|望遠/i.test(d.label);
+    opt.textContent = (isTele ? "📡 " : "") + (d.label || d.deviceId.slice(0, 8));
+    if (d.deviceId === (skipId || prev)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function startCamera(deviceId, { skipLoop = false } = {}) {
+  // 停掉舊串流
+  if (cam.srcObject) { cam.srcObject.getTracks().forEach(t => t.stop()); cam.srcObject = null; }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
-      audio: false,
-    });
+    const constraints = deviceId
+      ? { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false }
+      : { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     cam.srcObject = stream;
     await cam.play();
     videoTrack = stream.getVideoTracks()[0];
     const caps = videoTrack.getCapabilities?.() || {};
-    if (caps.zoom) { zoomMin = caps.zoom.min || 1; zoomMax = caps.zoom.max || 5; }
-    loop();
+    if (caps.zoom) { zoomMin = caps.zoom.min || 1; zoomMax = caps.zoom.max || 5; currentZoom = 1; digitalZoom = false; }
+    await refreshCamList(videoTrack.getSettings().deviceId);
+    if (!skipLoop) loop();
   } catch (e) {
     setMsg("無法開啟鏡頭：" + e.message, false);
   }
 }
+
+el("camSel").onchange = async () => {
+  const id = el("camSel").value;
+  if (!id) return;
+  clearTimeout(autoCountdown); autoCountdown = null;
+  const wasRunning = (state !== "idle" && state !== "result");
+  state = "idle"; // 讓 loop 自然停下（result 或 idle 都不會繼續 rAF）
+  await startCamera(id, { skipLoop: true });
+  // 切換鏡頭後強制 settle（需重抓背景）
+  state = "settle";
+  settleAt = performance.now() + 800;
+  setMsg("換鏡頭中… 0.8s 後重新偵測", wasRunning);
+  loop();
+};
 
 function connect() {
   const room = el("room").value.trim() || "888";
@@ -254,7 +299,7 @@ el("btnNext").onclick = nextArrow;
 el("btnConnect").onclick = connect;
 
 function loop() {
-  if (state === "result") return;
+  if (state === "result" || state === "idle") return; // idle = 鏡頭切換期間，停止舊 rAF
 
   if (digitalZoom && currentZoom > 1) {
     const sw = W / currentZoom, sh = VH / currentZoom;
@@ -313,34 +358,40 @@ function handleHit(res) {
   // 幾何計分（橢圓距離，不依賴顏色採樣）
   const sc = scoreFromNormalized(entryNorm.x, entryNorm.y);
 
+  // 標記：藍線=箭矢，橘點=兩端，黃圓=入靶點
   ctx.strokeStyle = "#5b8cff"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  ctx.fillStyle = "#5b8cff88";
-  [a, b].forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); });
+  ctx.fillStyle = "#ff9900";
+  [a, b].forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill(); });
   ctx.fillStyle = "#ffd166";
-  ctx.beginPath(); ctx.arc(entryPx.x, entryPx.y, 8, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(entryPx.x, entryPx.y, 9, 0, 7); ctx.fill();
 
   state = "result";
   if (conn && conn.open)
     conn.send({ nx: entryNorm.x, ny: entryNorm.y, score: sc.score, ring: sc.ring, ts: Date.now() });
+
+  // debug 行：顯示兩端正規化座標 + 偵測器資訊
+  const dbg = detector.getDebug();
+  const chosen = entryNorm === na ? "A" : "B";
+  const dbgStr = `A(${na.x.toFixed(2)},${na.y.toFixed(2)}) B(${nb.x.toFixed(2)},${nb.y.toFixed(2)}) →${chosen} r=${sc.rNorm?.toFixed(2)} span=${dbg?.span??"-"}`;
 
   const autoMode = el("cbAuto").checked;
   if (autoMode) {
     let cd = 3;
     function tick() {
       if (cd > 0) {
-        scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">— ${cd}s後繼續 r=${sc.rNorm?.toFixed(2)??"?"}</span>`;
+        scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">— ${cd}s後繼續 ${dbgStr}</span>`;
         cd--;
         autoCountdown = setTimeout(tick, 1000);
       } else {
-        if (conn && conn.open) conn.send({ type: "auto_next" }); // 通知 B 端自動確認
+        if (conn && conn.open) conn.send({ type: "auto_next" });
         nextArrow();
       }
     }
     setMsg("✅ 已辨識，3s 後自動繼續（或按「下一箭」跳過）", true);
     tick();
   } else {
-    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">r=${sc.rNorm?.toFixed(2)??"?"}</span>`;
+    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:11px">${dbgStr}</span>`;
     setMsg("已辨識，按「下一箭（手動）」繼續", true);
   }
 }
