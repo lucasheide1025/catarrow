@@ -1172,8 +1172,13 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
 
 // 後台：訂閱待審核的徽章任務提交
 export function subscribeGuildSubmissions(cb) {
-  const q = query(collection(db, C_GUILD_SUBS), where("status", "==", "pending"), orderBy("submittedAt", "desc"));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb([]));
+  // 不用 orderBy 避免需要複合索引；client 端依 submittedAt 排序
+  const q = query(collection(db, C_GUILD_SUBS), where("status", "==", "pending"));
+  return onSnapshot(q, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+    cb(list);
+  }, () => cb([]));
 }
 
 // 後台：核准 → 直接發徽章
