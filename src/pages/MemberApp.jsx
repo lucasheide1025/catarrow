@@ -6,6 +6,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
   subscribeActiveGuildQuests } from "../lib/db";
+import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
@@ -41,6 +42,7 @@ import MemberGuide       from "../components/member/MemberGuide";
 import EquipmentPage     from "../components/member/EquipmentPage";
 import CoinShop          from "../components/member/CoinShop";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
+import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
@@ -69,6 +71,7 @@ export default function MemberApp() {
   });
   const [notifications, setNotifications] = useState([]);
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
+  const [bossIntroEvent, setBossIntroEvent] = useState(null);
   const [latestVersion, setLatestVersion] = useState(null);
 
   const [certification, setCertification] = useState(null);
@@ -142,6 +145,17 @@ export default function MemberApp() {
 
   useEffect(() => {
     return subscribeAppVersion(setLatestVersion);
+  }, []);
+
+  // 世界王登場：訂閱活躍事件，首次看到新 Boss 時觸發動畫
+  useEffect(() => {
+    return subscribeActiveWorldBoss(ev => {
+      if (!ev) return;
+      const key = `wb_intro_${ev.id}`;
+      if (localStorage.getItem(key)) return; // 已看過
+      localStorage.setItem(key, "1");
+      setBossIntroEvent(ev);
+    });
   }, []);
 
   useEffect(() => {
@@ -243,6 +257,7 @@ export default function MemberApp() {
 
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
+      {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
       {/* ⚡ 緊急任務浮動通知 */}
       {specialAlert && (

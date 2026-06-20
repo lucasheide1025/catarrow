@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
@@ -83,6 +83,7 @@ export default function AdminApp() {
   const [pendingCheckinN,  setPendingCheckinN]  = useState(0);
   const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
   const pendingMonthlyRef = useRef(0);
+  const [pendingGuildN,    setPendingGuildN]    = useState(0);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
   });
@@ -218,7 +219,8 @@ export default function AdminApp() {
       pendingMonthlyRef.current = n;
       setPendingMonthlyN(n);
     });
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); };
+    const u7 = subscribeGuildSubmissions(list => setPendingGuildN(Array.isArray(list) ? list.length : 0));
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); u7 && u7(); };
   }, []);
 
 const adminNav = [
@@ -401,6 +403,16 @@ const adminNav = [
             ].filter(Boolean).join("、")}
           </span>
           <span style={{marginLeft:"auto",fontSize:"12px",color:"#d97706",fontWeight:"bold"}}>前往處理 →</span>
+        </button>
+      )}
+      {pendingGuildN > 0 && (
+        <button onClick={() => setPage("guild-admin")}
+          style={{width:"100%",background:"#f0fdf4",borderBottom:"1px solid #bbf7d0",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
+          <span style={{fontSize:"16px"}}>🏅</span>
+          <span style={{fontSize:"13px",color:"#15803d",fontWeight:"bold"}}>
+            {pendingGuildN} 筆成就懸賞待審核
+          </span>
+          <span style={{marginLeft:"auto",fontSize:"12px",color:"#16a34a",fontWeight:"bold"}}>前往審核 →</span>
         </button>
       )}
       {pendingMonthlyN > 0 && (
