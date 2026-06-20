@@ -11,6 +11,7 @@ import {
 } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
 import { addCardPack, addCoins, addChests } from "../../lib/db";
+import { openCatBox } from "../../lib/catDb";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
 
 function HPBar({ current, max }) {
@@ -79,7 +80,7 @@ export default function AdminWorldBoss() {
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
-  const [extraReward, setExtraReward] = useState({ coins: 0, woodChests: 0, goldChests: 0, cardPacks: 0 });
+  const [extraReward, setExtraReward] = useState({ coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, mimiBoxes: 0, cardPacks: 0 });
   const [showExtraForm, setShowExtraForm] = useState(false);
 
   useEffect(() => {
@@ -158,13 +159,15 @@ export default function AdminWorldBoss() {
     if (!event) return;
     const participants = Object.keys(event.participants || {});
     if (!participants.length) { setActionMsg("❌ 沒有參戰者"); return; }
-    const { coins, woodChests, goldChests, cardPacks } = extraReward;
-    if (!coins && !woodChests && !goldChests && !cardPacks) { setActionMsg("❌ 請至少設定一項獎勵"); return; }
+    const { coins, woodChests, goldChests, catBoxes, mimiBoxes, cardPacks } = extraReward;
+    if (!coins && !woodChests && !goldChests && !catBoxes && !mimiBoxes && !cardPacks) { setActionMsg("❌ 請至少設定一項獎勵"); return; }
     const lines = [
-      coins     ? `金幣 ×${coins}`       : null,
-      woodChests ? `木箱 ×${woodChests}` : null,
-      goldChests ? `金箱 ×${goldChests}` : null,
-      cardPacks  ? `卡包 ×${cardPacks}`  : null,
+      coins      ? `金幣 ×${coins}`       : null,
+      woodChests ? `木箱 ×${woodChests}`  : null,
+      goldChests ? `金箱 ×${goldChests}`  : null,
+      catBoxes   ? `貓貓箱 ×${catBoxes}` : null,
+      mimiBoxes  ? `咪咪箱 ×${mimiBoxes}`: null,
+      cardPacks  ? `卡包 ×${cardPacks}`   : null,
     ].filter(Boolean).join("、");
     if (!window.confirm(`確定要發放【${lines}】給 ${participants.length} 位參戰者？`)) return;
     setActionMsg("發放中…");
@@ -186,13 +189,25 @@ export default function AdminWorldBoss() {
           }));
           await addChests(mid, chests);
         }
+        if (catBoxes) {
+          const chests = Array.from({ length: catBoxes }, (_, i) => ({
+            id: `extra_cat_${mid}_${Date.now()}_${i}`,
+            type: "cat_box", family: "special", tier: "rare", from: "教練額外獎勵", ts: Date.now(),
+          }));
+          await addChests(mid, chests);
+        }
+        if (mimiBoxes) {
+          for (let i = 0; i < mimiBoxes; i++) {
+            await openCatBox(mid, { bondOnDuplicate: 50 }).catch(() => {});
+          }
+        }
         if (cardPacks) await addCardPack(mid, cardPacks);
         ok++;
       } catch (e) { console.warn("extraReward:", mid, e?.message); }
     }
     setActionMsg(`✅ 已發放給 ${ok}/${participants.length} 人`);
     setShowExtraForm(false);
-    setExtraReward({ coins: 0, woodChests: 0, goldChests: 0, cardPacks: 0 });
+    setExtraReward({ coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, mimiBoxes: 0, cardPacks: 0 });
   }
 
   if (loading) {
@@ -330,10 +345,12 @@ export default function AdminWorldBoss() {
                     {showExtraForm && (
                       <div className="p-3 space-y-3 bg-white/3">
                         {[
-                          { key: "coins",      label: "🪙 金幣",  step: 50  },
-                          { key: "woodChests", label: "📦 木箱",  step: 1   },
-                          { key: "goldChests", label: "🏆 金箱",  step: 1   },
-                          { key: "cardPacks",  label: "🃏 卡包",  step: 1   },
+                          { key: "coins",      label: "🪙 金幣",   step: 50 },
+                          { key: "woodChests", label: "📦 木箱",   step: 1  },
+                          { key: "goldChests", label: "🏆 金箱",   step: 1  },
+                          { key: "catBoxes",   label: "🐱 貓貓箱", step: 1  },
+                          { key: "mimiBoxes",  label: "😺 咪咪箱", step: 1  },
+                          { key: "cardPacks",  label: "🃏 卡包",   step: 1  },
                         ].map(({ key, label, step }) => (
                           <div key={key} className="flex items-center justify-between gap-3">
                             <span className="text-xs text-slate-300 w-20">{label}</span>
