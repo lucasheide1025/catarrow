@@ -117,6 +117,7 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
 
   // ── 公會任務：確認接任務 ────────────────────────────────────
   function handleOpenQuest(q) {
+    console.log("[guild] open quest", q.id, "badgeReward:", q.badgeReward, "questSubtype:", q.questSubtype);
     setActiveQuest(q);
     setNote("");
     setQuestResult(null);
