@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
-import { attackWorldBoss, hireWorldBossBot } from "../../lib/worldBossDb";
+import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
 import { addPracticeLog, getCertRecords, subscribeCertification } from "../../lib/db";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
@@ -128,6 +128,43 @@ function CatMsg({ msg, onDone }) {
 // ── 工具 ────────────────────────────────────────────────────
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
+// ── Boss 死亡動畫 ────────────────────────────────────────────
+function WorldBossDeathAnim({ boss, killerName, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 4800);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div onClick={onDone} style={{
+      position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.96)",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      padding:24, cursor:"pointer", overflow:"hidden",
+    }}>
+      <div style={{ position:"absolute", inset:0, background:"white", animation:"wb-screen-flash 0.55s ease forwards", pointerEvents:"none" }}/>
+      <div style={{ animation:"wb-death-shake 1.2s ease 0.3s both", marginBottom:16, opacity:0.55 }}>
+        <WorldBossSVG bossKey={boss.pixelKey || boss.bossKey || "dragon"} currentHP={0} maxHP={1000} size={180}/>
+      </div>
+      <div style={{
+        fontSize:"3rem", fontWeight:900, color:"#fbbf24",
+        textShadow:"0 0 40px #f59e0b, 0 0 80px #f59e0b88, 0 4px 20px rgba(0,0,0,0.9)",
+        animation:"wb-death-text 0.7s cubic-bezier(.17,.67,.35,1.5) 0.7s both",
+        letterSpacing:"0.1em", textAlign:"center",
+      }}>DEFEATED!</div>
+      <div style={{ fontSize:"1.1rem", color:"#94a3b8", marginTop:6, animation:"wb-death-killer 0.5s ease 1.3s both" }}>
+        {boss.name}「{boss.title}」 已被討伐
+      </div>
+      {killerName && (
+        <div style={{ marginTop:16, fontSize:"0.95rem", color:"#e2e8f0", animation:"wb-death-killer 0.5s ease 1.7s both", textAlign:"center" }}>
+          ⚔️ 致命一擊：<span style={{ color:"#fbbf24", fontWeight:900 }}>{killerName}</span>
+        </div>
+      )}
+      <div style={{ marginTop:28, fontSize:"0.7rem", color:"rgba(255,255,255,0.25)", animation:"wb-death-killer 0.4s ease 2.2s both" }}>
+        點擊繼續
+      </div>
+    </div>
+  );
+}
+
 // ── 顏色池（隊員頭像）───────────────────────────────────────
 const AVATAR_COLORS = ["#f59e0b","#ef4444","#3b82f6","#10b981","#8b5cf6","#ec4899","#f97316","#06b6d4"];
 const ARCHER_STYLES = ["baobao","daming","diandian","gege","haji","meimei","niuniu","xiaoan","youyou"];
@@ -235,6 +272,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [companionHPs, setCompanionHPs] = useState(() =>
     Object.fromEntries(companions.map(c => [c.id, c.hp]))
   );
+  const [showDeathAnim,     setShowDeathAnim]     = useState(false);
+  const [deathKiller,       setDeathKiller]       = useState(null);
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const processingRef = useRef(false);
@@ -282,6 +321,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       @keyframes mb-miss{0%{opacity:1;transform:translateY(0) scale(1.1)}100%{opacity:0;transform:translateY(-40px) scale(0.85)}}
       @keyframes mb-monster-attack{0%{transform:translateY(0) scale(1)}35%{transform:translateY(55px) scale(1.14)}68%{transform:translateY(24px) scale(1.05)}100%{transform:translateY(0) scale(1)}}
       @keyframes mb-monster-attack-crit{0%{transform:translateY(0) scale(1);filter:brightness(1)}35%{transform:translateY(55px) scale(1.18);filter:brightness(1.9) drop-shadow(0 0 20px #ef4444)}68%{transform:translateY(24px) scale(1.06)}100%{transform:translateY(0) scale(1);filter:brightness(1)}}
+      @keyframes wb-death-shake{0%,100%{transform:scale(1) rotate(0)}15%{transform:scale(1.22) rotate(-9deg)}35%{transform:scale(0.82) rotate(7deg)}55%{transform:scale(1.15) rotate(-5deg)}75%{transform:scale(0.9) rotate(3deg)}90%{transform:scale(1.05) rotate(-2deg)}}
+      @keyframes wb-death-text{0%{opacity:0;transform:scale(0.15) rotate(-18deg)}55%{transform:scale(1.08) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+      @keyframes wb-death-killer{0%{opacity:0;transform:translateY(24px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+      @keyframes wb-screen-flash{0%,100%{opacity:0}20%{opacity:0.9}}
     `;
     document.head.appendChild(s);
     return () => s.remove();
@@ -321,6 +364,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     let totalDmg = 0;
     let crits = 0;
+    let localBossHP = bossHP; // 本地追蹤 HP，迴圈中用此計算
 
     // 取出其他隊員列表（所有曾參戰者，不限今日）
     const teammates = Object.values(event.participants || {})
@@ -346,7 +390,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         : a.score===0 ? `💨 M 飛矢落空`
                       : `🏹 ${a.label}環 -${dmg}`
       ]);
-      setBossHP(h => Math.max(0, h - dmg));
+      localBossHP = Math.max(0, localBossHP - dmg);
+      setBossHP(localBossHP);
 
       // 貓咪助攻（25%）
       if (profile?.equippedCat && Math.random() < 0.25) {
@@ -367,7 +412,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         totalDmg += sdmg;
         const tmMsg = SUPPORT_MSGS[Math.floor(Math.random() * SUPPORT_MSGS.length)](tm.name, sdmg);
         setDmgLog(prev => [...prev, tmMsg]);
-        setBossHP(h => Math.max(0, h - sdmg));
+        localBossHP = Math.max(0, localBossHP - sdmg);
+        setBossHP(localBossHP);
         // 找到對應同伴並播放攻擊動畫
         const cIdx = companions.findIndex(c => c.name === tm.name);
         if (cIdx >= 0) {
@@ -386,6 +432,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setAllRounds(nextRounds);
     setRoundSummary(roundData);
     sfxRoundEnd();
+    // 即時同步本回合傷害到 Firestore（讓大廳看到進度）
+    if (!isGuest) updateWorldBossHP(event.id, localBossHP).catch(() => {});
+    const bossKilledThisRound = localBossHP <= 0;
     setSubPhase("roundResult");
     setAnimBossCharge(true);
 
@@ -416,14 +465,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         setTimeout(() => setAnimPlayerHit(false), 650);
 
         addTimer(() => {
-          if (!isLast) {
+          if (bossKilledThisRound || isLast) {
+            // Boss 已死 或 最後一回合 → 結束
+            setSubPhase("done");
+            submitAttack(nextRounds);
+          } else {
             setArrows([]);
             setRoundIdx(r => r + 1);
             setDmgLog([]);
             setSubPhase("shooting");
-          } else {
-            setSubPhase("done");
-            submitAttack(nextRounds);
           }
         }, 1500);
       }, 480);
@@ -455,7 +505,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setSubmitting(false);
     processingRef.current = false;
     if (res.ok) {
-      if (res.defeated) sfxVictory(); else sfxSuccess();
+      if (res.defeated) {
+        sfxVictory();
+        // 發放擊殺獎勵（防重複由 rewardDistributed flag 保護）
+        distributeWorldBossRewards(event.id).catch(() => {});
+        setDeathKiller(myName);
+        setShowDeathAnim(true);
+      } else {
+        sfxSuccess();
+      }
       saveBond("worldboss");
       if (myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r => r.arrows);
@@ -937,6 +995,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+        {showDeathAnim && (
+          <WorldBossDeathAnim
+            boss={event.bossData || {}}
+            killerName={deathKiller}
+            onDone={() => setShowDeathAnim(false)}
+          />
+        )}
         {showCard && (
           <WorldBossBattleCard
             archerName={myName}
@@ -1035,6 +1100,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               {result.defeated && (
                 <div className="w-full bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-amber-200 leading-relaxed">
                   🎁 擊殺大獎已自動發放給所有參戰者！
+                </div>
+              )}
+              {result.bossAlreadyDefeated && !result.defeated && (
+                <div className="w-full bg-indigo-500/10 border border-indigo-400/30 rounded-2xl p-4">
+                  <div className="text-xs text-indigo-300 font-bold mb-1">⚔️ 尾刀遺憾</div>
+                  <div className="text-xs text-slate-400 leading-relaxed">
+                    Boss 在你出戰期間被隊友擊倒！你的傷害仍已計入排行，每日出戰獎勵已正常發放。
+                  </div>
                 </div>
               )}
             </>

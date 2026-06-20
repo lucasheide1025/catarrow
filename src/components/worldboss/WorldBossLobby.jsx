@@ -1,7 +1,7 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeActiveWorldBoss } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss } from "../../lib/worldBossDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
@@ -63,20 +63,91 @@ function CountdownTimer({ endAt }) {
   return <span className="font-mono text-amber-300 font-bold">{left || "–"}</span>;
 }
 
+function KillScreen({ event, onClose }) {
+  const boss  = event.bossData || {};
+  const killer = event.lastHitBy;
+  const parts  = Object.entries(event.participants || {})
+    .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
+    .sort((a, b) => b.dmg - a.dmg);
+  return (
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.97)",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      padding:24, cursor:"pointer", overflow:"hidden",
+    }}>
+      <div style={{ position:"absolute", inset:0, background:"#fbbf24", opacity:0, animation:"wb-screen-flash 0.8s ease forwards", pointerEvents:"none" }}/>
+      <div style={{ fontSize:"2.5rem", fontWeight:900, color:"#fbbf24", textShadow:"0 0 40px #f59e0b, 0 0 80px #f59e0b55", letterSpacing:"0.1em", marginBottom:8, animation:"wb-death-text 0.7s ease 0.15s both" }}>
+        ☠️ BOSS 擊倒！
+      </div>
+      <div style={{ fontSize:"0.95rem", color:"#94a3b8", marginBottom:24, animation:"wb-death-killer 0.5s ease 0.7s both" }}>
+        {boss.name}「{boss.title}」 已被全員討伐
+      </div>
+      {killer && (
+        <div style={{ background:"rgba(251,191,36,0.12)", border:"1.5px solid #fbbf24", borderRadius:16, padding:"12px 28px", marginBottom:20, textAlign:"center", animation:"wb-death-killer 0.5s ease 0.95s both" }}>
+          <div style={{ fontSize:"0.65rem", color:"rgba(255,255,255,0.45)", marginBottom:4, letterSpacing:2 }}>⚔️ 致命一擊</div>
+          <div style={{ fontSize:"1.5rem", fontWeight:900, color:"#fbbf24" }}>{killer.memberName}</div>
+          <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:2 }}>使用 {killer.weapon}</div>
+        </div>
+      )}
+      {parts.length > 0 && (
+        <div style={{ width:"100%", maxWidth:360, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, overflow:"hidden", animation:"wb-death-killer 0.5s ease 1.2s both" }}>
+          <div style={{ padding:"8px 16px", fontSize:"0.65rem", color:"rgba(255,255,255,0.4)", fontWeight:700, letterSpacing:2, borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+            💥 傷害貢獻排行
+          </div>
+          {parts.slice(0, 5).map((p, i) => (
+            <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 16px", borderBottom: i < Math.min(4, parts.length - 1) ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+              <span style={{ width:18, fontSize:"0.85rem", fontWeight:900, color: i===0?"#fbbf24":i===1?"#94a3b8":i===2?"#cd7c2f":"#475569" }}>{i+1}</span>
+              <span style={{ flex:1, fontSize:"0.85rem", color: p.id === killer?.memberId ? "#fbbf24" : "#e2e8f0" }}>
+                {p.id === killer?.memberId ? "⚔️ " : ""}{p.name}
+              </span>
+              <span style={{ fontSize:"0.85rem", fontWeight:700, color:"#f87171" }}>{p.dmg.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop:28, fontSize:"0.7rem", color:"rgba(255,255,255,0.25)", animation:"wb-death-killer 0.4s ease 1.8s both" }}>
+        點擊繼續
+      </div>
+    </div>
+  );
+}
+
 export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete }) {
   const { profile } = useAuth();
-  const [event,      setEvent]      = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [inBattle,   setInBattle]   = useState(false);
-  const [wbLogs,     setWbLogs]     = useState([]);
+
+  useEffect(() => {
+    if (document.querySelector("[data-wb-lobby-css]")) return;
+    const s = document.createElement("style");
+    s.setAttribute("data-wb-lobby-css", "1");
+    s.textContent = `
+      @keyframes wb-screen-flash{0%,100%{opacity:0}20%{opacity:0.9}}
+      @keyframes wb-death-text{0%{opacity:0;transform:scale(0.15) rotate(-18deg)}55%{transform:scale(1.08) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+      @keyframes wb-death-killer{0%{opacity:0;transform:translateY(24px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+    `;
+    document.head.appendChild(s);
+    return () => s.remove();
+  }, []);
+
+  const [event,         setEvent]         = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [inBattle,      setInBattle]      = useState(false);
+  const [wbLogs,        setWbLogs]        = useState([]);
+  const [showKillScreen, setShowKillScreen] = useState(false);
 
   const myId   = guestOverride?.id   || profile?.id;
   const today  = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    const unsub = subscribeActiveWorldBoss(ev => {
+    const unsub = subscribeLatestWorldBoss(ev => {
       setEvent(ev);
       setLoading(false);
+      if (ev?.status === "defeated") {
+        const key = `wb_kill_seen_${ev.id}`;
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          setShowKillScreen(true);
+        }
+      }
     });
     const unsubLogs = myId
       ? subscribePracticeLogs(myId, logs =>
@@ -102,7 +173,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     />;
   }
 
-  // 無活躍 Boss
+  const isDefeated = event?.status === "defeated";
+
+  // 無活躍 Boss（且非剛擊倒的 Boss）
   if (!event) {
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -136,6 +209,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   return (
     <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
+
+      {showKillScreen && event && (
+        <KillScreen event={event} onClose={() => setShowKillScreen(false)}/>
+      )}
 
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-2">
@@ -320,13 +397,19 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       {/* 底部按鈕 */}
       <div className="shrink-0 px-4 pt-3"
         style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 90%, transparent)" }}>
-        <button
-          onClick={() => { sfxTap(); setInBattle(true); }}
-          disabled={attackedToday || event.status !== "active"}
-          className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
-          style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
-          {attackedToday ? "✓ 今日已出戰" : "⚔️ 進入戰鬥"}
-        </button>
+        {isDefeated ? (
+          <div className="w-full py-4 rounded-2xl font-black text-base text-center text-amber-300 border border-amber-400/30 bg-amber-500/10">
+            ☠️ Boss 已被擊倒 · 等待教練開啟新 Boss
+          </div>
+        ) : (
+          <button
+            onClick={() => { sfxTap(); setInBattle(true); }}
+            disabled={attackedToday}
+            className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
+            {attackedToday ? "✓ 今日已出戰" : "⚔️ 進入戰鬥"}
+          </button>
+        )}
       </div>
     </div>
   );

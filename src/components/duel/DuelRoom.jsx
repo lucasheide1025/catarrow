@@ -822,85 +822,72 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
       {/* 雙隊弓箭手 + 血條 — 可滾動中間區 */}
       <div className="flex-1 overflow-y-auto">
 
-      {/* 角色展示區：A 隊左、B 隊右 */}
+      {/* 角色展示區：弓箭手 + 短血條 直列 */}
       {(() => {
         const maxSide = Math.max(allA.length, allB.length);
-        const imgCls = maxSide >= 6 ? "w-9 h-9" : maxSide >= 4 ? "w-12 h-12" : "w-16 h-16";
-        const nameCls = `text-[8px] font-black truncate text-center bg-black/40 px-0.5 rounded` +
-          (maxSide >= 6 ? " max-w-[36px]" : " max-w-[56px]");
+        // 超過4隻改用2欄網格
+        const useGrid = maxSide > 4;
+        const imgSz   = maxSide >= 6 ? 44 : maxSide >= 4 ? 56 : 72;
+
+        const renderArcher = (id, m, team) => {
+          const hp      = displayHp?.[id] ?? m.hp;
+          const maxHP   = m.maxHP || 1;
+          const pct     = Math.max(0, hp / maxHP * 100);
+          const hpColor = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+          const isDead  = !m.alive || hp <= 0;
+          const isAtk   = attackingIds.has(id);
+          const isHit   = hittingIds.has(id);
+          const anim    = isAtk ? (team === "A" ? "lunge-right .55s ease" : "lunge-left .55s ease")
+                        : isHit ? (team === "A" ? "recoil-left .4s ease" : "recoil-right .4s ease")
+                        : undefined;
+          const myBg    = id === myId ? "rgba(251,191,36,0.08)" : "rgba(255,255,255,0.04)";
+          const border  = id === myId ? "1px solid rgba(251,191,36,0.4)" : "1px solid rgba(255,255,255,0.08)";
+
+          return (
+            <div key={id} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2,
+              padding:"4px 3px", background:myBg, border, borderRadius:8,
+              opacity: isDead ? 0.35 : 1, animation: anim, position:"relative" }}>
+              <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+                style={{ width:imgSz, height:imgSz, objectFit:"contain",
+                  transform: team === "B" ? "scaleX(-1)" : undefined,
+                  filter: isDead ? "grayscale(1)" : undefined }} />
+              <div style={{ fontSize:8, fontWeight:700, maxWidth:imgSz+8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                color: id === myId ? "#fbbf24" : team === "A" ? "#93c5fd" : "#fca5a5" }}>
+                {isDead ? "💀" : ""}{m.name}{id === myId ? " ▲" : ""}
+              </div>
+              <div style={{ width:imgSz+4, height:4, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden",
+                animation: flashIds[id] ? "hp-flash 0.4s ease" : undefined }}>
+                <div style={{ height:"100%", width:`${pct}%`, background:hpColor, borderRadius:3, transition:"width 0.5s" }}/>
+              </div>
+              {/* 浮動傷害 */}
+              {floats.filter(f => f.memberId === id).map(f => (
+                <span key={f.id} className={f.isCrit ? "crit-pop" : "dmg-float"}
+                  style={{ top:0, left:"50%", transform:"translateX(-50%)", color: f.isCrit ? "#f59e0b" : "#f87171", zIndex:20 }}>
+                  {f.text}
+                </span>
+              ))}
+            </div>
+          );
+        };
+
         return (
-          <div className="flex items-end justify-between px-2 pt-3 pb-1 gap-1">
+          <div style={{ display:"flex", alignItems:"center", gap:4, padding:"10px 8px 6px", justifyContent:"space-between" }}>
             {/* A 隊 */}
-            <div className="flex gap-1 items-end flex-wrap max-w-[45%]">
-              {allA.map(([id, m]) => {
-                const archerStyle = m.archerStyle || "baobao";
-                const isDead = !m.alive;
-                const isAtk = attackingIds.has(id);
-                const isHit = hittingIds.has(id);
-                return (
-                  <div key={id} className="flex flex-col items-center gap-0.5"
-                    style={isAtk ? { animation:"lunge-right .55s ease" } : isHit ? { animation:"recoil-left .4s ease" } : {}}>
-                    <img src={`/cats/archers/${archerStyle}.webp`} alt={m.name}
-                      className={`${imgCls} object-contain drop-shadow-lg transition-all ${isDead ? "opacity-25 grayscale" : ""}`} />
-                    <span className={`${nameCls} text-blue-200`}>{id === myId ? "▲" : ""}{m.name}</span>
-                  </div>
-                );
-              })}
+            <div style={{ flex:1, display: useGrid ? "grid" : "flex", gridTemplateColumns: useGrid ? "1fr 1fr" : undefined,
+              flexDirection: useGrid ? undefined : "column", gap:4 }}>
+              {allA.map(([id, m]) => renderArcher(id, m, "A"))}
             </div>
 
-            <div className="text-amber-400 font-black text-base px-1 drop-shadow shrink-0">VS</div>
+            <div style={{ color:"#fbbf24", fontWeight:900, fontSize:18, padding:"0 6px", flexShrink:0, textShadow:"0 0 12px #f59e0b" }}>VS</div>
 
-            {/* B 隊（鏡像朝左） */}
-            <div className="flex gap-1 items-end flex-row-reverse flex-wrap max-w-[45%]">
-              {allB.map(([id, m]) => {
-                const archerStyle = m.archerStyle || "baobao";
-                const isDead = !m.alive;
-                const isAtk = attackingIds.has(id);
-                const isHit = hittingIds.has(id);
-                return (
-                  <div key={id} className="flex flex-col items-center gap-0.5"
-                    style={isAtk ? { animation:"lunge-left .55s ease" } : isHit ? { animation:"recoil-right .4s ease" } : {}}>
-                    <img src={`/cats/archers/${archerStyle}.webp`} alt={m.name}
-                      className={`${imgCls} object-contain drop-shadow-lg transition-all ${isDead ? "opacity-25 grayscale" : ""}`}
-                      style={{ transform:"scaleX(-1)" }} />
-                    <span className={`${nameCls} text-red-200`}>{id === myId ? "▲" : ""}{m.name}</span>
-                  </div>
-                );
-              })}
+            {/* B 隊（鏡像） */}
+            <div style={{ flex:1, display: useGrid ? "grid" : "flex", gridTemplateColumns: useGrid ? "1fr 1fr" : undefined,
+              flexDirection: useGrid ? undefined : "column", gap:4 }}>
+              {allB.map(([id, m]) => renderArcher(id, m, "B"))}
             </div>
           </div>
         );
       })()}
-
-      {/* 血條區 */}
-      <div className="flex gap-2 px-4 pb-2">
-        {[["A", allA], ["B", allB]].map(([team, entries]) => (
-          <div key={team} className="flex-1 flex flex-col gap-1.5">
-            <div className={`text-[10px] font-black tracking-widest ${team === "A" ? "text-blue-300" : "text-red-300"}`}>
-              {team === "A" ? "🔵" : "🔴"} 隊伍 {team}
-            </div>
-            {entries.map(([id, m]) => (
-              <div key={id} className="relative">
-                <DuelPlayerCard
-                  id={id} m={m} isMe={id === myId}
-                  flash={!!flashIds[id]}
-                  displayHp={displayHp}
-                  attack={revealEntry?.attacks?.find(a => a.attackerId === id)}
-                  revealIdx={revealIdx}
-                  teamA={teamA} teamB={teamB}
-                />
-                {floats.filter(f => f.memberId === id).map(f => (
-                  <span key={f.id}
-                    className={f.isCrit ? "crit-pop" : "dmg-float"}
-                    style={{ top:"-4px", right:"8px", color: f.isCrit ? "#f59e0b" : "#f87171", zIndex:20 }}>
-                    {f.text}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
 
 
       {/* 戰鬥結束 → reveal 跑完後顯示確認按鈕 */}

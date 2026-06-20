@@ -26,6 +26,18 @@ export function subscribeActiveWorldBoss(cb) {
   });
 }
 
+// ── 訂閱最新一筆 Boss（active 或 defeated 皆包含，expired 排除）
+export function subscribeLatestWorldBoss(cb) {
+  const q = query(collection(db, WB), orderBy("createdAt", "desc"), limit(1));
+  return onSnapshot(q, snap => {
+    if (snap.empty) { cb(null); return; }
+    const d = snap.docs[0];
+    const data = { id: d.id, ...d.data() };
+    if (data.status === "expired") { cb(null); return; }
+    cb(data);
+  });
+}
+
 export function subscribeWorldBoss(eventId, cb) {
   return onSnapshot(doc(db, WB, eventId), snap => {
     if (snap.exists()) cb({ id: snap.id, ...snap.data() });
@@ -68,6 +80,13 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+// ── 每回合即時更新 Boss HP（讓大廳即時顯示）──────────────────
+export async function updateWorldBossHP(eventId, newHP) {
+  try {
+    await updateDoc(doc(db, WB, eventId), { bossCurrentHP: Math.max(0, newHP) });
+  } catch { /* silent */ }
+}
+
 // ── 攻擊大 Boss（每天一次，最多 5 回合 × 6 箭）────────────────
 // roundResults = [{ arrows, dmg, crits }, ...] 最多 5 回合
 // isGuest = true 時不寫 practiceLog
@@ -78,7 +97,9 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     if (!snap.exists()) return { ok: false, reason: "活動不存在" };
     const ev = snap.data();
 
-    if (ev.status !== "active") return { ok: false, reason: "活動已結束" };
+    // expired 直接拒絕；defeated 允許繼續（讓本次傷害仍能領每日獎勵）
+    if (ev.status === "expired") return { ok: false, reason: "活動已結束" };
+    const alreadyDefeated = ev.status === "defeated";
 
     // 每日限一次
     const today   = new Date().toISOString().slice(0, 10);
@@ -104,13 +125,12 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     }
 
     const combinedDmg = Math.round(totalDmg + botTotalDmg);
-    const newHP       = Math.max(0, ev.bossCurrentHP - combinedDmg);
-    const defeated    = newHP <= 0;
+    const newHP       = alreadyDefeated ? ev.bossCurrentHP : Math.max(0, ev.bossCurrentHP - combinedDmg);
+    const defeated    = !alreadyDefeated && newHP <= 0;
 
     // 最後一擊者
     const isLastHit = defeated;
     const upd = {
-      bossCurrentHP: newHP,
       [`participants.${memberId}`]: {
         name: memberName,
         weapon: weapon || "訪客弓組",
@@ -132,12 +152,16 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       upd.totalParticipants = increment(1);
     }
 
-    if (defeated) {
-      const announcement = buildKillAnnouncement(memberName, weapon || "訪客弓組");
-      upd.status     = "defeated";
-      upd.lastHitBy  = { memberId, memberName, weapon: weapon || "訪客弓組" };
-      upd.announcement = announcement;
-      upd.defeatedAt   = serverTimestamp();
+    // boss 尚未被擊倒時才更新 HP 與狀態
+    if (!alreadyDefeated) {
+      upd.bossCurrentHP = newHP;
+      if (defeated) {
+        const announcement = buildKillAnnouncement(memberName, weapon || "訪客弓組");
+        upd.status       = "defeated";
+        upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組" };
+        upd.announcement = announcement;
+        upd.defeatedAt   = serverTimestamp();
+      }
     }
 
     await updateDoc(eventRef, upd);
@@ -184,7 +208,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       }).catch(() => {});
     }
 
-    return { ok: true, dmg: combinedDmg, defeated, isLastHit, newHP, dailyReward };
+    return { ok: true, dmg: combinedDmg, defeated, isLastHit, newHP, dailyReward, bossAlreadyDefeated: alreadyDefeated };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
