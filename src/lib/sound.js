@@ -270,7 +270,7 @@ export function sfxPotionDrink() {
   vibrate([0, 20, 30, 20]);
 }
 
-// 打怪勝利開獎 — 爆炸聲 + 8音上行凱旋旋律
+// 打怪/世界王勝利 — 爆炸聲 + 8音上行凱旋旋律（sfxVictory 為別名）
 export function sfxVictoryFanfare() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
@@ -293,6 +293,7 @@ export function sfxVictoryFanfare() {
   tone(1047, 0.8, "triangle", 0.18, 1.15);
   vibrate([0, 60, 50, 80, 50, 120, 80, 200]);
 }
+export const sfxVictory = sfxVictoryFanfare; // WorldBossAttack 使用的別名
 
 // 保底大招 — 8音上行旋律（方波+三角諧波）
 export function sfxEpic() {

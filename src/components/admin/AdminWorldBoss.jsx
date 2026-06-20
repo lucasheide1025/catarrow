@@ -12,6 +12,7 @@ import {
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
 import { addCardPack, addCoins, addChests } from "../../lib/db";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
+import WorldBossLobby from "../worldboss/WorldBossLobby";
 
 function HPBar({ current, max }) {
   const pct   = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
@@ -65,9 +66,14 @@ function StepCtrl({ label, value, onChange, step = 1, min = 0, max = 9999, unit 
 
 export default function AdminWorldBoss() {
   const { profile } = useAuth();
-  const [tab, setTab]         = useState("active");   // active | create | history
-  const [event, setEvent]     = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab]           = useState("active");   // active | create | history
+  const [event, setEvent]       = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [showBattle, setShowBattle] = useState(false);
+
+  if (showBattle) {
+    return <WorldBossLobby onBack={() => setShowBattle(false)} />;
+  }
   const [history, setHistory] = useState([]);
 
   // 建立表單
@@ -280,6 +286,15 @@ export default function AdminWorldBoss() {
                   </div>
                 </div>
               </div>
+
+              {/* 教練參戰入口 */}
+              {event.status === "active" && (
+                <button onClick={() => setShowBattle(true)}
+                  className="w-full py-3 rounded-2xl font-black text-white text-base active:scale-95 transition-all"
+                  style={{ background: `linear-gradient(135deg, ${event.bossData?.accent || "#f59e0b"}, #ef4444)` }}>
+                  ⚔️ 教練進入戰鬥
+                </button>
+              )}
 
               {/* 傷害排行 */}
               {event.participants && Object.keys(event.participants).length > 0 && (

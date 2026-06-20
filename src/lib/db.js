@@ -951,7 +951,7 @@ export function subscribePendingCheckins(callback) {
     query(collection(db, C_CHECKIN), where("date", "==", date)),
     snap => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(c => c.status === "active" || c.type === "simple");
+        .filter(c => (c.status === "active" || c.type === "simple") && c.status !== "cancelled");
       callback(list);
     },
     err => { console.warn("subscribePendingCheckins:", err.message); callback([]); }
@@ -1310,6 +1310,10 @@ export async function revokeSpecialAchievement(memberId, specialId, operatorId) 
 
 // ═══════════════════════════════════════════════════════════
  
+export async function deleteCheckin(checkinId) {
+  await deleteDoc(doc(db, C_CHECKIN, checkinId));
+}
+
 export async function cancelCheckin(checkinId) {
   // 學生只能 update（rules: delete 限 admin），改用軟刪除
   try {

@@ -6,7 +6,7 @@ import {
   getDailyQuestConfig, saveDailyQuestConfig,
   getMonsterDailyConfig, saveMonsterDailyConfig,
   getMonsterEventConfig, saveMonsterEventConfig,
-  subscribePendingCheckins, castBuff, cancelCheckin,
+  subscribePendingCheckins, castBuff, cancelCheckin, deleteCheckin,
   confirmCheckinReward,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
@@ -76,6 +76,11 @@ export default function AdminDailyQuest({ mode = "all" }) {
   async function doCancel(c) {
     await cancelCheckin(c.id);
     toast(`已取消 ${c.memberNickname || c.memberName} 的報到`);
+  }
+
+  async function dismissDone(c) {
+    await deleteCheckin(c.id);
+    toast(`已移除 ${c.memberNickname || c.memberName} 的紀錄`);
   }
 
   async function directPass(c) {
@@ -401,8 +406,8 @@ export default function AdminDailyQuest({ mode = "all" }) {
                 {done.map(c => {
                   const taskObj = c.tasks?.[c.chosenTask];
                   return (
-                    <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between">
-                      <div>
+                    <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
                         <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
                         {c.type === "simple" ? (
                           <div className="text-teal-600 text-xs">純報到 ✓</div>
@@ -413,7 +418,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
                           </div>
                         )}
                       </div>
-                      <span className="text-2xl">✅</span>
+                      <Btn v="secondary" size="sm" onClick={() => dismissDone(c)}>完成</Btn>
                     </div>
                   );
                 })}
