@@ -246,7 +246,17 @@ el("btnSettle").onclick = async () => {
 let ac = null;
 function getAC() {
   if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.state === "suspended") ac.resume().catch(() => {});
   return ac;
+}
+function unlockAudio() {
+  const a = getAC();
+  // 播放 1-sample 靜音 buffer，強制解鎖 iOS/Android AudioContext
+  const buf = a.createBuffer(1, 1, 22050);
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  src.connect(a.destination);
+  src.start(0);
 }
 function tone(freq, type, gain, decay, delay = 0) {
   const a = getAC();
@@ -293,6 +303,9 @@ function playScore(score, ring) {
 
 // 連線到 A
 el("btnConnect").onclick = () => {
+  // 在使用者互動時初始化並解鎖 AudioContext（iOS/Android 必須在手勢中執行）
+  unlockAudio();
+
   const room = el("room").value.trim() || "888";
   const peer = new Peer();
   peer.on("open", () => {
@@ -300,16 +313,30 @@ el("btnConnect").onclick = () => {
     const c = peer.connect("catarch-cam-" + room);
     c.on("open", () => el("status").textContent = "已連線到 A ✓ 房號 " + room);
     c.on("data", (d) => {
-      if (d && d.type === "geo") {       // A 端校準靶環後同步幾何，確保兩端一致
+      if (d && d.type === "geo") {
         setTargetGeometry(d.g); drawTarget();
         el("status").textContent = "已同步靶環校準";
         return;
       }
-      current = { nx: d.nx, ny: d.ny };
+      if (d && d.type === "auto_next") {
+        // A 端自動下一箭 → B 端自動確認目前這箭
+        if (current && !el("btnConfirm").disabled) {
+          refreshScore();
+          showDmg(current.score || 0);
+          session.push({ nx: current.nx, ny: current.ny, score: current.score || 0, ts: Date.now() });
+          current = null;
+          el("btnConfirm").disabled = true;
+          el("nowScore").textContent = "—";
+          renderSession(); drawTarget();
+          el("status").textContent = "已自動確認，等待下一箭…";
+        }
+        return;
+      }
+      current = { nx: d.nx, ny: d.ny, score: d.score, ring: d.ring };
       refreshScore(); drawTarget();
       playScore(d.score, d.ring);
       el("btnConfirm").disabled = false;
-      el("status").textContent = "A 端辨識到落點，請確認或微調";
+      el("status").textContent = `A 辨識：${d.ring === "M" ? "脫靶" : d.score + " 分"}，請確認或微調`;
     });
     c.on("close", () => el("status").textContent = "與 A 的連線中斷");
   });

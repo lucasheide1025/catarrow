@@ -108,7 +108,7 @@
 <script type="module">
 import { computeHomography, applyHomography } from "./lib/homography.js";
 import { ArrowDetector } from "./lib/detector.js";
-import { scoreFromNormalized, pickEntryPoint } from "./lib/scoring.js";
+import { pickEntryPoint } from "./lib/scoring.js";
 
 const W = 480, VH = 480;
 const cam = document.getElementById("cam");
@@ -296,13 +296,48 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+// 顏色判斷評分（在畫入標記前呼叫，使用箭矢中點）
+function scoreAtPoint(px, py) {
+  function smp(x, y) {
+    const d = ctx.getImageData(Math.max(0,Math.min(W-1,Math.round(x))),Math.max(0,Math.min(VH-1,Math.round(y))),1,1).data;
+    return { r:d[0], g:d[1], b:d[2] };
+  }
+  const isY = c => c.r>130 && c.g>100 && c.b<130 && c.r+c.g>c.b*3;  // 黃/金
+  const isR = c => c.r>110 && c.g<110 && c.b<110 && c.r>c.g*1.2;     // 紅
+  const isB = c => c.b>100 && c.b>c.r+20 && c.b>c.g*0.7;             // 藍
+
+  // 在半徑 12px 圓內採樣，排除箭矢深色，取平均
+  let sr=0,sg=0,sb=0,n=0;
+  for(let dy=-12;dy<=12;dy++) for(let dx=-12;dx<=12;dx++){
+    if(dx*dx+dy*dy>144) continue;
+    const c=smp(px+dx,py+dy);
+    if(c.r+c.g+c.b>90){sr+=c.r;sg+=c.g;sb+=c.b;n++;}
+  }
+  if(n<5) return {score:0,ring:"M"}; // 周圍全被箭矢遮蔽
+
+  const ctr={r:sr/n|0,g:sg/n|0,b:sb/n|0};
+
+  // 環狀採樣（較大半徑，判斷在外圈或內圈）
+  const neighbors = r => {
+    const a=[]; for(let i=0;i<8;i++){const t=i*Math.PI/4;a.push(smp(px+Math.cos(t)*r,py+Math.sin(t)*r));} return a;
+  };
+
+  if(isY(ctr)) return neighbors(30).some(isR)?{score:9,ring:"9"}:{score:10,ring:"X"};
+  if(isR(ctr)) return neighbors(20).some(isY)?{score:8,ring:"8"}:{score:7,ring:"7"};
+  if(isB(ctr)) return {score:6,ring:"6"};
+  return {score:0,ring:"M"};
+}
+
 function handleHit(res) {
   const [a, b] = res.ends;
   const na = applyHomography(H, a.x, a.y);
   const nb = applyHomography(H, b.x, b.y);
   const entryNorm = pickEntryPoint(na, nb);
   const entryPx = (entryNorm === na) ? a : b;
-  const sc = scoreFromNormalized(entryNorm.x, entryNorm.y);
+
+  // 先採顏色計分（用箭矢中點，避免端點被箭矢遮蔽）
+  const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+  const sc = scoreAtPoint(midX, midY);
 
   ctx.strokeStyle = "#5b8cff"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
@@ -324,13 +359,14 @@ function handleHit(res) {
         cd--;
         autoCountdown = setTimeout(tick, 1000);
       } else {
+        if (conn && conn.open) conn.send({ type: "auto_next" }); // 通知 B 端自動確認
         nextArrow();
       }
     }
     setMsg("✅ 已辨識，3s 後自動繼續（或按「下一箭」跳過）", true);
     tick();
   } else {
-    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 (${entryNorm.x.toFixed(2)}, ${entryNorm.y.toFixed(2)})`;
+    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分`;
     setMsg("已辨識，按「下一箭（手動）」繼續", true);
   }
 }
