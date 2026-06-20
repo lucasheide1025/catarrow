@@ -7,6 +7,7 @@ import {
   getMonsterDailyConfig, saveMonsterDailyConfig,
   getMonsterEventConfig, saveMonsterEventConfig,
   subscribePendingCheckins, castBuff, cancelCheckin,
+  confirmCheckinReward,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 
@@ -23,6 +24,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
   const [showConfig,  setShowConfig]  = useState(false);
   const [showMonster, setShowMonster] = useState(false);
   const [showEvent,   setShowEvent]   = useState(false);
+  const [passState,   setPassState]   = useState({}); // { checkinId: { chest, busy } }
 
   useEffect(() => {
     getDailyQuestConfig().then(setConfig);
@@ -73,6 +75,28 @@ export default function AdminDailyQuest({ mode = "all" }) {
   async function doCancel(c) {
     await cancelCheckin(c.id);
     toast(`已取消 ${c.memberNickname || c.memberName} 的報到`);
+  }
+
+  async function directPass(c) {
+    const chest = passState[c.id]?.chest || "iron";
+    setPassState(s => ({ ...s, [c.id]: { ...s[c.id], busy: true } }));
+    try {
+      await confirmCheckinReward(c.id, c.memberId, profile.id, chest);
+      toast(`✅ 已核准 ${c.memberNickname || c.memberName} 的任務！`);
+    } catch (e) {
+      toast("核准失敗：" + (e?.message || ""), "error");
+    }
+    setPassState(s => { const n = { ...s }; delete n[c.id]; return n; });
+  }
+
+  function openPass(c) {
+    setPassState(s => ({ ...s, [c.id]: { chest: "iron" } }));
+  }
+  function closePass(c) {
+    setPassState(s => { const n = { ...s }; delete n[c.id]; return n; });
+  }
+  function setPassChest(c, chest) {
+    setPassState(s => ({ ...s, [c.id]: { ...s[c.id], chest } }));
   }
 
   function num(val) { return isNaN(Number(val)) ? 0 : Number(val); }
@@ -317,6 +341,8 @@ export default function AdminDailyQuest({ mode = "all" }) {
               <div className="flex flex-col gap-2">
                 {inProgress.map(c => {
                   const taskObj = c.tasks?.[c.chosenTask];
+                  const ps = passState[c.id];
+                  const chestOpts = [["wood","🪵 木箱"],["iron","🔩 鐵箱"],["gold","🥇 金箱"]];
                   return (
                     <div key={c.id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                       <div className="flex items-center justify-between">
@@ -333,6 +359,32 @@ export default function AdminDailyQuest({ mode = "all" }) {
                         </div>
                         <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
                       </div>
+
+                      {/* 直接過關 */}
+                      {ps ? (
+                        <div className="mt-2 pt-2 border-t border-emerald-100 flex flex-col gap-1.5">
+                          <div className="text-xs text-gray-500 font-bold">選擇寶箱獎勵</div>
+                          <div className="flex gap-1.5">
+                            {chestOpts.map(([v, l]) => (
+                              <button key={v} onClick={() => setPassChest(c, v)}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all
+                                  ${(ps.chest || "iron") === v ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-200"}`}>
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-1.5">
+                            <Btn v="secondary" size="sm" onClick={() => closePass(c)}>取消</Btn>
+                            <Btn v="success" size="sm" className="flex-1" onClick={() => directPass(c)} disabled={ps.busy}>
+                              {ps.busy ? "處理中…" : "✅ 確認直接過關"}
+                            </Btn>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-2 pt-2 border-t border-emerald-100">
+                          <Btn v="success" size="sm" onClick={() => openPass(c)}>✅ 直接過關</Btn>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
