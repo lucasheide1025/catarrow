@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
@@ -65,6 +65,9 @@ export default function AdminApp() {
   const [page, setPage]             = useState(() => sessionStorage.getItem("admin_page") || "members");
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
   const [questCtx, setQuestCtx]     = useState(null);
+  const [fromGuild, setFromGuild]   = useState(false);
+  const [specialAlert, setSpecialAlert] = useState(null);
+  const seenQuestIds = useRef(null);
   const [appTheme, setAppTheme]     = useState(() => getAppTheme());
   function handleAppThemeChange(id) {
     saveAppTheme(id);
@@ -108,6 +111,19 @@ export default function AdminApp() {
   }, [profile?.id]); // eslint-disable-line
 
   useEffect(() => {
+    if (!profile?.id) return;
+    return subscribeActiveGuildQuests(quests => {
+      if (seenQuestIds.current === null) {
+        seenQuestIds.current = new Set(quests.map(q => q.id));
+        return;
+      }
+      const newSpecial = quests.find(q => q.type === "special" && !seenQuestIds.current.has(q.id));
+      quests.forEach(q => seenQuestIds.current.add(q.id));
+      if (newSpecial) setSpecialAlert(newSpecial);
+    });
+  }, [profile?.id]); // eslint-disable-line
+
+  useEffect(() => {
     if (!profile?.id || !archerMode) return;
     getDexConfig().then(setDexConfig).catch(() => {});
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
@@ -127,7 +143,11 @@ export default function AdminApp() {
   const pendingExamN = certTasksList.length;
 
   function handleGuildNavigate(targetPage, ctx) {
-    setQuestCtx({ ...ctx, killsSoFar: 0 });
+    setFromGuild(true);
+    setQuestCtx(prev => ({
+      ...ctx,
+      killsSoFar: (prev?.questId === ctx.questId) ? (prev.killsSoFar || 0) : 0,
+    }));
     setPage(targetPage);
   }
   function handleQuestKill(monsterId) {
@@ -137,7 +157,7 @@ export default function AdminApp() {
       if (newKills >= prev.killsNeeded) {
         submitGuildQuestCompletion(profile.id, profile.nickname || profile.name,
           { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null }, "打怪任務完成").catch(() => {});
-        return null;
+        return { ...prev, killsSoFar: newKills, completed: true };
       }
       return { ...prev, killsSoFar: newKills };
     });
@@ -231,6 +251,26 @@ const adminNav = [
       <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
         <MustReadGate memberId={profile?.id} notifications={notifications} />
         <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
+
+        {/* ⚡ 緊急任務浮動通知（教練射手模式） */}
+        {specialAlert && (
+          <div style={{ position:"fixed", inset:0, zIndex:99998, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}
+            onClick={() => setSpecialAlert(null)}>
+            <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize:"52px", marginBottom:"8px" }}>⚡</div>
+              <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
+              <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
+              {specialAlert.desc && <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>}
+              {specialAlert.reward && <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>🎁 獎勵：{specialAlert.reward}</div>}
+              <div style={{ display:"flex", gap:"10px" }}>
+                <button onClick={() => setSpecialAlert(null)} style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>稍後再看</button>
+                <button onClick={() => { setSpecialAlert(null); setPage("guild"); }} style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>⚔️ 立即前往公會</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{background:"#1e3a5f",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
           <div style={{color:"white",fontSize:"13px",fontWeight:"900"}}>🏹 射手模式</div>
           <button onClick={()=>{setArcherMode(false);setPage("members");}}
@@ -278,7 +318,12 @@ const adminNav = [
           {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
           {page==="cards"       && <CardCollection />}
-          {page==="monster"     && <MonsterBattle onBack={()=>{ setQuestCtx(null); setPage("home"); }} questContext={questCtx} onKillForQuest={handleQuestKill}/>}
+          {page==="monster"     && <MonsterBattle
+            onBack={() => {
+              if (fromGuild) { setFromGuild(false); setPage("guild"); }
+              else { setQuestCtx(null); setPage("home"); }
+            }}
+            questContext={questCtx} onKillForQuest={handleQuestKill}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
@@ -296,7 +341,12 @@ const adminNav = [
           {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
-          {page==="guild"       && <AdventurerGuild onBack={()=>setPage("home")} onNavigate={handleGuildNavigate}/>}
+          {page==="guild"       && <AdventurerGuild
+            onBack={()=>{ setQuestCtx(null); setPage("home"); }}
+            onNavigate={handleGuildNavigate}
+            questCtx={questCtx?.completed ? null : questCtx}
+            onQuestCtxClear={()=>setQuestCtx(null)}
+          />}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
           {memberNav.map(n=>(
