@@ -155,6 +155,7 @@ export default function AdminApp() {
     setPage(targetPage);
   }
   function handleQuestKill(monsterId) {
+    console.log("[admin] handleQuestKill questCtx.badgeReward:", questCtx?.badgeReward);
     if (!questCtx || questCtx.monsterId !== monsterId) return;
     const newKills = (questCtx.killsSoFar || 0) + 1;
     const justCompleted = newKills >= questCtx.killsNeeded;
