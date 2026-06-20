@@ -207,6 +207,16 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
+  // 任務完成後 3 秒自動返回公會
+  const questCompletedRef = useRef(false);
+  useEffect(() => {
+    if (!questContext?.completed || phase !== "loot") return;
+    if (questCompletedRef.current) return;
+    questCompletedRef.current = true;
+    const t = setTimeout(() => { if (onBack) onBack(); }, 3000);
+    return () => clearTimeout(t);
+  }, [questContext?.completed, phase]); // eslint-disable-line
+
   // 任務模式：archerStats 就緒後直接跳到 prebattle，跳過選怪
   const questInitDone = useRef(false);
   useEffect(() => {
@@ -1754,18 +1764,34 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   if (phase==="loot") {
     const stats=calcStats(allArrows);
-    // 任務進度：擊殺後 questContext.killsSoFar 已被 onKillForQuest 更新
+    const questDone = questContext?.completed === true;
     const qProgress = questContext
       ? { done: questContext.killsSoFar ?? 0, need: questContext.killsNeeded ?? 1 }
       : null;
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <div className="text-center mt-4">
-          <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster?.name}！</div>
-          <div className="text-slate-400 text-sm">第 {round} 回合完成</div>
-        </div>
-        {qProgress && (
+
+        {/* ── 任務完成全幅通知 ── */}
+        {questDone && (
+          <div className="w-full rounded-2xl p-5 flex flex-col items-center gap-2 text-center"
+            style={{ background:"linear-gradient(135deg,rgba(16,185,129,0.25),rgba(6,78,59,0.4))", border:"2px solid rgba(16,185,129,0.6)" }}>
+            <div className="text-4xl" style={{ animation:"mb-bounce 0.8s ease infinite" }}>🎉</div>
+            <div className="text-emerald-300 font-black text-xl">任務完成！</div>
+            <div className="text-white/70 text-sm">「{questContext.title}」已達成</div>
+            <div className="text-emerald-400/70 text-xs mt-1">3 秒後自動返回冒險者公會…</div>
+          </div>
+        )}
+
+        {!questDone && (
+          <div className="text-center mt-4">
+            <div className="text-amber-400 font-black text-xl mb-1">🏆 擊倒 {monster?.name}！</div>
+            <div className="text-slate-400 text-sm">第 {round} 回合完成</div>
+          </div>
+        )}
+
+        {/* 任務進度條（未完成時顯示） */}
+        {qProgress && !questDone && (
           <div className="w-full rounded-xl px-4 py-3 flex flex-col gap-1"
             style={{ background:"linear-gradient(90deg,rgba(99,102,241,0.2),rgba(59,130,246,0.15))", border:"1px solid rgba(99,102,241,0.4)" }}>
             <div className="flex justify-between items-center text-xs font-black">
@@ -1776,7 +1802,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
               <div className="h-full rounded-full bg-indigo-400 transition-all" style={{ width:`${Math.min(100, qProgress.done/qProgress.need*100)}%` }}/>
             </div>
             <div className="text-xs text-indigo-300/70 text-center">
-              {qProgress.done >= qProgress.need ? "✅ 任務完成！返回公會領獎" : `還需擊殺 ${qProgress.need - qProgress.done} 次`}
+              還需擊殺 {qProgress.need - qProgress.done} 次
             </div>
           </div>
         )}
@@ -1925,14 +1951,29 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           📤 產生戰績分享卡
         </button>
         <div className="flex gap-3 w-full">
-          {questContext
-            ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold">🏛️ 返回冒險者公會</button>
-            : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
-          }
-          {(questContext||dailyLeft===null||dailyLeft>0)&&(
-            <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
-              className="flex-1 py-3 rounded-xl font-black"
-              style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+          {questDone ? (
+            // 任務完成：只顯示立即返回公會，禁止再挑戰
+            <button onClick={onBack}
+              className="flex-1 py-3 rounded-xl font-black text-white"
+              style={{ background:"linear-gradient(90deg,#10b981,#059669)" }}>
+              🏛️ 立即返回冒險者公會
+            </button>
+          ) : questContext ? (
+            <>
+              <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold">🏛️ 返回冒險者公會</button>
+              <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
+                className="flex-1 py-3 rounded-xl font-black"
+                style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+            </>
+          ) : (
+            <>
+              <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
+              {(dailyLeft===null||dailyLeft>0)&&(
+                <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
+                  className="flex-1 py-3 rounded-xl font-black"
+                  style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>再挑戰！</button>
+              )}
+            </>
           )}
         </div>
         <details className="w-full">

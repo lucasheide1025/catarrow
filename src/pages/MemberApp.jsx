@@ -123,7 +123,8 @@ export default function MemberApp() {
           { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null },
           "打怪任務完成"
         ).catch(() => {});
-        return null;
+        // 標記完成（不立刻清空，讓 MonsterBattle 顯示完成畫面並強制返回公會）
+        return { ...prev, killsSoFar: newKills, completed: true };
       }
       return { ...prev, killsSoFar: newKills };
     });
@@ -357,7 +358,12 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
-        {page==="guild"       && <AdventurerGuild onBack={()=>{ setQuestCtx(null); setPage("home"); }} onNavigate={handleGuildNavigate} questCtx={questCtx}/>}
+        {page==="guild"       && <AdventurerGuild
+          onBack={()=>{ setQuestCtx(null); setPage("home"); }}
+          onNavigate={handleGuildNavigate}
+          questCtx={questCtx?.completed ? null : questCtx}  // 完成後進公會清空 ctx
+          onQuestCtxClear={()=>setQuestCtx(null)}
+        />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
