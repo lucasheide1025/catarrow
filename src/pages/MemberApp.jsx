@@ -123,7 +123,7 @@ export default function MemberApp() {
       if (newKills >= prev.killsNeeded) {
         submitGuildQuestCompletion(
           profile.id, profile.nickname || profile.name,
-          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: null },
+          { id: prev.questId, title: prev.title, reward: prev.reward, badgeReward: prev.badgeReward || null },
           "打怪任務完成"
         ).catch(() => {});
         // 標記完成（不立刻清空，讓 MonsterBattle 顯示完成畫面並強制返回公會）

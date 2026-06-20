@@ -458,7 +458,7 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
             </button>
           ) : lock.ok && sub === "kill_monster" ? (
             onNavigate ? (
-              <button onClick={() => onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title })}
+              <button onClick={() => onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title, badgeReward: activeQuest.badgeReward || null })}
                 className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
                 style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
                 ⚔️ 確認接取・進入狩獵
