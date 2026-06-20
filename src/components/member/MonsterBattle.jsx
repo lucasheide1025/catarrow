@@ -874,8 +874,21 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   }
 
   if (phase==="select") {
+    // 任務模式：直接顯示過渡畫面，等 useEffect 設完 monster 跳 prebattle
+    if (questContext?.monsterId) {
+      const qMon = MONSTERS.find(m => m.id === questContext.monsterId);
+      return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 p-8">
+          <style>{BATTLE_CSS}</style>
+          <div style={{ animation:"mb-bounce 1.2s ease infinite", fontSize: 64 }}>{qMon?.icon || "⚔️"}</div>
+          <div className="text-white font-black text-2xl">{qMon?.name || "目標怪物"}</div>
+          <div className="text-slate-400 text-sm">任務：{questContext.title}</div>
+          <div className="text-purple-300 text-xs mt-2">準備進入戰鬥…</div>
+        </div>
+      );
+    }
     const power = archerStats ? calcArcherPower(archerStats) : 0;
-    const qMon = questContext?.monsterId ? MONSTERS.find(m => m.id === questContext.monsterId) : null;
+    const qMon = null;
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -1242,7 +1255,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   }
 
   if (phase==="prebattle") {
-    if (!pickedMonster) return null;
+    if (!pickedMonster) return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <style>{BATTLE_CSS}</style>
+        <div className="text-slate-400">載入中…</div>
+      </div>
+    );
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
     const previewHPMult = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
