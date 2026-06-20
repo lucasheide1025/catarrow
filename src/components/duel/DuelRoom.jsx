@@ -38,8 +38,10 @@ const DUEL_CSS = `
 @keyframes vs-glow{0%,100%{transform:scale(1);text-shadow:0 0 20px #f59e0b,0 0 40px #f59e0b}50%{transform:scale(1.18);text-shadow:0 0 40px #fbbf24,0 0 80px #f59e0b,0 0 120px #d97706}}
 @keyframes battle-zoom{0%{opacity:0;transform:scale(0.4) rotate(-6deg)}35%{opacity:1;transform:scale(1.08) rotate(1deg)}65%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0;transform:scale(1.15)}}
 @keyframes screen-white{0%,100%{opacity:0}25%{opacity:0.7}}
+@keyframes intro-appear{from{transform:scale(1.18);opacity:0}to{transform:scale(1);opacity:1}}
 .dmg-float{position:absolute;pointer-events:none;font-size:1.1rem;font-weight:900;animation:dmg-float 1.4s ease forwards;white-space:nowrap;}
 .crit-pop{position:absolute;pointer-events:none;font-size:1.4rem;font-weight:900;animation:crit-pop 1.1s ease forwards;}
+.battle-start-txt{-webkit-text-stroke:2px rgba(255,180,0,0.5);letter-spacing:0.18em;font-weight:900;}
 `;
 
 // ── 決鬥入場動畫 ────────────────────────────────────────────
@@ -78,7 +80,8 @@ function DuelIntro({ room, myId, onDone }) {
 
   return (
     <div className="fixed inset-0 z-[200] flex overflow-hidden select-none"
-      style={{ background:"linear-gradient(180deg,#04000f 0%,#0c0020 60%,#04000f 100%)" }}
+      style={{ background:"linear-gradient(180deg,#04000f 0%,#0c0020 60%,#04000f 100%)",
+        animation:"intro-appear 0.55s cubic-bezier(.25,.46,.45,.94) both" }}
       onClick={onDone}>
       <style>{DUEL_CSS}</style>
 
@@ -90,8 +93,8 @@ function DuelIntro({ room, myId, onDone }) {
         {shownA.map(({ id, m }) => (
           <div key={id} className="flex flex-col items-center gap-1.5 relative z-10"
             style={{ animation:"enter-from-left 0.55s cubic-bezier(.34,1.56,.64,1) both" }}>
-            <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
-              style={{ width:imgSz, height:imgSz, objectFit:"contain",
+            <img src={`/cats/portraits/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+              style={{ width:imgSz, height:imgSz, objectFit:"cover", borderRadius:"50%",
                 filter:"drop-shadow(0 0 18px rgba(96,165,250,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))" }} />
             <span className="text-white font-black text-sm tracking-wider"
               style={{ textShadow:"0 0 10px #60a5fa, 0 2px 4px rgba(0,0,0,0.9)" }}>
@@ -117,8 +120,8 @@ function DuelIntro({ room, myId, onDone }) {
         {shownB.map(({ id, m }) => (
           <div key={id} className="flex flex-col items-center gap-1.5 relative z-10"
             style={{ animation:"enter-from-right 0.55s cubic-bezier(.34,1.56,.64,1) both" }}>
-            <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
-              style={{ width:imgSz, height:imgSz, objectFit:"contain", transform:"scaleX(-1)",
+            <img src={`/cats/portraits/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+              style={{ width:imgSz, height:imgSz, objectFit:"cover", borderRadius:"50%",
                 filter:"drop-shadow(0 0 18px rgba(248,113,113,0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))" }} />
             <span className="text-white font-black text-sm tracking-wider"
               style={{ textShadow:"0 0 10px #f87171, 0 2px 4px rgba(0,0,0,0.9)" }}>
@@ -134,9 +137,10 @@ function DuelIntro({ room, myId, onDone }) {
           <div className="absolute inset-0 z-20 pointer-events-none"
             style={{ background:"white", animation:"screen-white 0.5s ease forwards" }} />
           <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-            <div className="text-white font-black tracking-widest text-center"
-              style={{ fontSize:"clamp(1.6rem,8vw,2.8rem)", animation:"battle-zoom 1.5s ease forwards",
-                textShadow:"0 0 30px #fff, 0 0 60px #f59e0b, 0 0 100px #f59e0b" }}>
+            <div className="battle-start-txt text-center"
+              style={{ fontSize:"clamp(2rem,9vw,3.2rem)", animation:"battle-zoom 1.5s ease forwards",
+                color:"#ffd700",
+                textShadow:"0 0 20px #fff, 0 0 40px #fbbf24, 0 0 80px #f59e0b, 0 0 140px #dc2626, 4px 4px 0 rgba(0,0,0,0.9)" }}>
               ⚔️ 決鬥開始！
             </div>
           </div>
