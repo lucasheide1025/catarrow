@@ -128,13 +128,15 @@ export async function startDuelBattle(roomId) {
 }
 
 // ── 送出箭分 ────────────────────────────────────────────────
-export async function submitDuelArrows(roomId, team, memberId, arrows) {
+export async function submitDuelArrows(roomId, team, memberId, arrows, preferredTargetId = null) {
   try {
-    await updateDoc(doc(db, DUEL, roomId), {
+    const update = {
       [`team${team}.${memberId}.arrows`]: arrows,
       [`team${team}.${memberId}.ready`]: true,
       [`lastSeen.${memberId}`]: Date.now(),
-    });
+    };
+    if (preferredTargetId) update[`team${team}.${memberId}.preferredTargetId`] = preferredTargetId;
+    await updateDoc(doc(db, DUEL, roomId), update);
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
@@ -249,9 +251,13 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
       eventData = null; // 1v1 或無存活，不觸發叛變
     }
 
-    // 隨機配對目標
-    function pickTarget(myTeam) {
+    // 配對目標：有偏好目標時 50% 機率命中，否則隨機
+    function pickTarget(myTeam, attackerId) {
       const pool = myTeam === "A" ? effAliveB : effAliveA;
+      if (!pool.length) return null;
+      const srcTeam = myTeam === "A" ? effTeamA : effTeamB;
+      const preferred = srcTeam[attackerId]?.preferredTargetId;
+      if (preferred && pool.includes(preferred) && Math.random() < 0.5) return preferred;
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
@@ -259,7 +265,7 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
     const attacks = [];
     for (const id of effAliveA) {
       const m = effTeamA[id];
-      const targetId = pickTarget("A");
+      const targetId = pickTarget("A", id);
       if (!targetId) continue;
       const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamB[targetId]?.def || 10);
       const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
@@ -270,7 +276,7 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
     }
     for (const id of effAliveB) {
       const m = effTeamB[id];
-      const targetId = pickTarget("B");
+      const targetId = pickTarget("B", id);
       if (!targetId) continue;
       const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamA[targetId]?.def || 10);
       const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
