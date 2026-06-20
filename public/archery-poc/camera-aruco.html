@@ -298,8 +298,9 @@ function loop() {
     const r = calibrator.calibrate(ctx.getImageData(0, 0, W, VH));
     if (r.ok) {
       H = r.H; srcPts = r.src; state = "calibrated";
+      detector.setROI(srcPts); // ArUco 鎖定後自動設 ROI = 靶面四角
       el("btnRing").disabled = false;
-      setMsg("校正鎖定 ✓ 可設定背景；或先「校準靶環」更準", true);
+      setMsg("校正鎖定 ✓ ROI 已設定，可設定背景", true);
     } else {
       setMsg(`校正中…已看到標記 [${r.found.join(", ") || "無"}]（需 0,1,2,3）`, false);
     }
@@ -316,7 +317,12 @@ function loop() {
   if (state === "armed" && performance.now() - lastDetect > 150 && performance.now() > armGuard) {
     lastDetect = performance.now();
     const res = detector.detect(ctx.getImageData(0, 0, W, VH));
-    if (res) handleHit(res);
+    if (res) {
+      handleHit(res);
+    } else {
+      const d = detector.getDebug();
+      if (d) scoreLine.textContent = `偵測中… 變動像素 ${d.count}（${d.frac}）比例 ${d.ratio ?? "-"} → ${d.reason}`;
+    }
   }
 
   requestAnimationFrame(loop);

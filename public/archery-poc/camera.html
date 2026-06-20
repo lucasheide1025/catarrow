@@ -217,13 +217,19 @@ view.addEventListener("pointerdown", (ev) => {
     ]);
     calibrating = false;
     el("btnCalib").textContent = "重新校準";
-    setMsg(H ? "校準完成，請設定背景" : "校準失敗（四點別共線），請重試", !!H);
-    if (!H) calibPts = [];
+    if (H) {
+      detector.setROI(calibPts); // 校準後限定偵測 ROI = 靶面矩形
+      setMsg("校準完成（ROI 已設定），請設定背景", true);
+    } else {
+      setMsg("校準失敗（四點別共線），請重試", false);
+      calibPts = [];
+    }
   }
 });
 
 el("btnCalib").onclick = () => {
   calibrating = true; calibPts = []; H = null;
+  detector.clearROI();
   setMsg("校準中：依序點 左上→右上→右下→左下", false);
 };
 
@@ -279,7 +285,12 @@ function loop() {
   if (state === "armed" && performance.now() - lastDetect > 150 && performance.now() > armGuard) {
     lastDetect = performance.now();
     const res = detector.detect(ctx.getImageData(0, 0, W, VH));
-    if (res) handleHit(res);
+    if (res) {
+      handleHit(res);
+    } else {
+      const d = detector.getDebug();
+      if (d) scoreLine.textContent = `偵測中… 變動像素 ${d.count}（${d.frac}）比例 ${d.ratio ?? "-"} → ${d.reason}`;
+    }
   }
 
   requestAnimationFrame(loop);
