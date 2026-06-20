@@ -172,7 +172,6 @@ export default function AdminApp() {
     setPage(targetPage);
   }
   function handleQuestKill(monsterId) {
-    console.log("[admin] handleQuestKill questCtx.badgeReward:", questCtx?.badgeReward);
     if (!questCtx || questCtx.monsterId !== monsterId) return;
     const newKills = (questCtx.killsSoFar || 0) + 1;
     const justCompleted = newKills >= questCtx.killsNeeded;
@@ -261,19 +260,20 @@ export default function AdminApp() {
   }, []);
 
 const adminNav = [
-  { id:"members",     icon:"👥", label:"會員" },
-  { id:"comps",       icon:"🏆", label:"比賽" },
-  { id:"review",      icon:"🔔", label:"審核" },
-  { id:"monthlycard", icon:"🎫", label:"財務" },
-  { id:"learn",       icon:"📓", label:"學習" },
-  { id:"battlesetting", icon:"⚔️", label:"打怪賽事" },
-  { id:"givetool",      icon:"🧪", label:"測試" },
-  { id:"equipitems",   icon:"⚔️", label:"裝備庫" },
-  { id:"reset-center",   icon:"🔄", label:"重置" },
-  { id:"worldboss-admin", icon:"🌍", label:"世界王" },
-  { id:"story-admin",    icon:"📖", label:"故事本" },
-  { id:"guild-admin",   icon:"⚔️", label:"公會" },
-  { id:"archery",       icon:"🎯", label:"射箭辨識" },
+  { id:"members",        icon:"👥", label:"會員"    },
+  { id:"comps",          icon:"🏆", label:"比賽"    },
+  { id:"review",         icon:"🔔", label:"審核"    },
+  { id:"monthlycard",    icon:"🎫", label:"財務"    },
+  { id:"learn",          icon:"📓", label:"學習"    },
+  { id:"battlesetting",  icon:"🎮", label:"打怪賽事" },
+  { id:"guild-admin",    icon:"🏛️", label:"公會"    },
+  { id:"achievements",   icon:"🎖️", label:"成就"    },
+  { id:"worldboss-admin",icon:"🌍", label:"世界王"  },
+  { id:"equipitems",     icon:"🗡️", label:"裝備庫"  },
+  { id:"story-admin",    icon:"📖", label:"故事本"  },
+  { id:"archery",        icon:"📷", label:"射箭辨識" },
+  { id:"givetool",       icon:"🧪", label:"測試工具" },
+  { id:"reset-center",   icon:"🔄", label:"重置"    },
 ];
 
   const memberNav = [
@@ -478,7 +478,6 @@ const adminNav = [
         )}
         {page==="achievements" && <AdminAchievementsTab/>}
         {page==="learn"        && <AdminLearn/>}
-        {page==="settings"     && <PlaceholderPage title="⚙️ 系統設定"/>}
         {page==="battlesetting" && <AdminBattleEvent/>}
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="monthlycard"  && <AdminFinance adminProfile={profile}/>}
@@ -505,15 +504,6 @@ const adminNav = [
   );
 }
 
-function PlaceholderPage({ title }) {
-  return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"60vh",color:"#94a3b8"}}>
-      <div style={{fontSize:"48px",marginBottom:"12px"}}>🐱</div>
-      <div style={{fontSize:"18px",fontWeight:"700",color:"#475569",marginBottom:"4px"}}>{title}</div>
-      <div style={{fontSize:"13px"}}>開發中</div>
-    </div>
-  );
-}
 
 // 後台「成就」頁：成就章任務 / 圖鑑授予 兩個 tab
 function AdminAchievementsTab() {

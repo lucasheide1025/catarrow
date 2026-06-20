@@ -124,7 +124,6 @@ export default function MemberApp() {
   // 從公會接任務後導向對應功能
   // 若是同一個任務，保留目前的擊殺進度，不重置 killsSoFar
   function handleGuildNavigate(targetPage, ctx) {
-    console.log("[guild] handleGuildNavigate ctx.badgeReward:", ctx.badgeReward, "ctx keys:", Object.keys(ctx));
     setFromGuild(true);
     setQuestCtx(prev => ({
       ...ctx,
@@ -145,7 +144,6 @@ export default function MemberApp() {
     });
     // 任務達成後才呼叫 Firestore（移出 updater，避免 React 反模式）
     if (justCompleted) {
-      console.log("[guild] kill completed, questCtx.badgeReward:", questCtx.badgeReward);
       const _rankMult = rankFromLevel(levelFromXP(profile?.adventurerXP || 0)).mult;
       submitGuildQuestCompletion(
         profile.id, profile.nickname || profile.name,

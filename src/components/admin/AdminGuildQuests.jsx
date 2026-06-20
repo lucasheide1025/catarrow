@@ -5,18 +5,15 @@ import {
   subscribeAllGuildQuests, publishGuildQuest, updateGuildQuestStatus, deleteGuildQuest,
   subscribeGuildSubmissions, approveGuildSubmission, rejectGuildSubmission,
   subscribeCoachChallenges, resolveCoachChallenge,
-  getMembers, debugGetAllGuildSubs,
-  subscribeActiveGuildQuests,
+  getMembers, subscribeActiveGuildQuests,
   subscribePromotionQuestConfig, savePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
 
 const BADGE_LABEL = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
-const PROMO_LABEL = { 10:"Lv10 青銅→白銀", 20:"Lv20 白銀→黃金", 30:"Lv30 黃金→白金", 40:"Lv40 白金→傳說", 50:"Lv50 傳說→神話" };
-const BADGE_REQ   = { silver: null, gold: "silver", black: "gold" };
 const BADGE_COLOR = { silver: "#94a3b8", gold: "#fbbf24", black: "#1e293b" };
-const PROMO_LEVELS = [10, 20, 30, 40, 50];
+const PROMO_LABEL = { 10:"Lv10 青銅→白銀", 20:"Lv20 白銀→黃金", 30:"Lv30 黃金→白金", 40:"Lv40 白金→傳說", 50:"Lv50 傳說→神話" };
 
 const SUBTYPE_LABEL = {
   general:      "📋 一般",
@@ -69,7 +66,6 @@ export default function AdminGuildQuests() {
     const data = {
       ...form,
       badgeReward:         form.badgeReward         || null,
-      badgeRequires:       form.badgeReward ? BADGE_REQ[form.badgeReward] : null,
       prerequisiteQuestId: form.prerequisiteQuestId || null,
       reward: { xp: Number(form.reward.xp) || 0, coins: Number(form.reward.coins) || 0 },
     };
@@ -360,15 +356,6 @@ export default function AdminGuildQuests() {
       {/* ── 待審核徽章 tab ── */}
       {tab === "review" && (
         <div style={{ padding: "12px" }}>
-          {/* 診斷按鈕：直接查整個 collection 確認寫入是否成功 */}
-          <button type="button" onClick={async () => {
-            try {
-              const all = await debugGetAllGuildSubs();
-              alert(`guildQuestSubs 共 ${all.length} 筆\n` + all.map(d => `${d.memberName} / ${d.questTitle} / ${d.badgeReward} / ${d.status}`).join("\n") || "（空）");
-            } catch(e) { alert("讀取失敗：" + e.message); }
-          }} style={{ width: "100%", marginBottom: 10, padding: "8px", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#475569", fontWeight: 700 }}>
-            🔍 診斷：直接查詢所有提交記錄
-          </button>
           {subs.length === 0 && <div style={{ color: "#94a3b8", textAlign: "center", padding: "40px", fontSize: "13px" }}>目前沒有待審核的徽章申請</div>}
           {subs.map(s => (
             <div key={s.id} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "14px", marginBottom: "10px" }}>
