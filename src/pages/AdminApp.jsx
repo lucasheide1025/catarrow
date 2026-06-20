@@ -389,14 +389,16 @@ const adminNav = [
         {page==="archery"         && <AdminArchery/>}
       </div>
 
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
-        {adminNav.map(n=>(
-          <button key={n.id} onClick={()=>setPage(n.id)}
-            style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",color:page===n.id?"#2563eb":"#94a3b8"}}>
-            <span style={{fontSize:"18px"}}>{n.icon}</span>
-            <span style={{fontSize:"11px",fontWeight:"600"}}>{n.label}</span>
-          </button>
-        ))}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",zIndex:40,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+        <div style={{display:"flex",minWidth:"max-content"}}>
+          {adminNav.map(n=>(
+            <button key={n.id} onClick={()=>setPage(n.id)}
+              style={{minWidth:"60px",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 6px",gap:"2px",border:"none",background:"white",cursor:"pointer",color:page===n.id?"#2563eb":"#94a3b8"}}>
+              <span style={{fontSize:"18px"}}>{n.icon}</span>
+              <span style={{fontSize:"10px",fontWeight:"600",whiteSpace:"nowrap"}}>{n.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
