@@ -142,6 +142,7 @@ let conn = null;
 let lastDetect = 0, lastCalib = 0;
 let autoCountdown = null;
 let armGuard = 0;          // 重新 armed 後 N ms 內不偵測，防止重複判斷
+let settleAt = 0;          // 延遲 settle 時間戳
 
 // ---- 鏡頭縮放 ----
 let videoTrack = null;
@@ -171,10 +172,10 @@ function setMsg(t, on) { msg.textContent = t; dot.classList.toggle("on", !!on); 
 function nextArrow() {
   clearTimeout(autoCountdown);
   autoCountdown = null;
-  state = "settle";         // loop 恢復後抓一幀真實影像當新背景（含剛落的箭）
-  armGuard = performance.now() + 1200; // 1.2s 保護期，防止立刻重複偵測
+  state = "settle";
+  settleAt = performance.now() + 800; // 等 800ms 讓場景穩定再抓背景
   scoreLine.textContent = "";
-  setMsg("偵測中…放下一箭", true);
+  setMsg("穩定中… 0.8s 後偵測", true);
   loop();
 }
 
@@ -286,10 +287,14 @@ function loop() {
     ctx.drawImage(cam, 0, 0, W, VH);
   }
 
-  // settle：抓含新箭的真實畫面當下一輪背景
+  // settle：延遲 800ms 後才抓含新箭的背景（讓場景穩定）
   if (state === "settle") {
-    detector.setReference(ctx.getImageData(0, 0, W, VH));
-    state = "armed";
+    if (performance.now() >= settleAt) {
+      detector.setReference(ctx.getImageData(0, 0, W, VH));
+      state = "armed";
+      armGuard = performance.now() + 1200;
+      setMsg("偵測中…放下一箭", true);
+    }
   }
 
   // 自動校正（節流）
