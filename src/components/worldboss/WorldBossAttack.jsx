@@ -358,7 +358,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   function handleScore(s) {
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
     sfxTap(); vibrate(10);
-    setArrows(prev => [...prev, { label: scoreLabel(s), score: scoreVal(s) }]);
+    const rawScore = scoreVal(s);
+    const score = (targetFmt === "field_16" && rawScore > 0)
+      ? Math.round((rawScore / 6) * 10)
+      : rawScore;
+    setArrows(prev => [...prev, { label: scoreLabel(s), score }]);
   }
   function handleTargetSubmit() {
     setTargetPending(true);

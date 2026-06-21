@@ -287,84 +287,116 @@ function LandingAnalysis({ arrowPositions }) {
   const rightmost = valid.reduce((a, b) => b.nx > a.nx ? b : a);
 
   const diagnose = () => {
-    const parts = [];
-    if (cy < -0.15) parts.push("群心偏上");
-    else if (cy > 0.15) parts.push("群心偏下");
-    if (cx < -0.15) parts.push("群心偏左");
-    else if (cx > 0.15) parts.push("群心偏右");
-    if (parts.length === 0) parts.push("群心居中");
-    if (stdDev < 0.15) parts.push("群集緊密");
-    else if (stdDev > 0.4) parts.push("散布較廣");
-    return parts.join("・");
+    const pos = [];
+    if (cy < -0.15) pos.push("群心偏上");
+    else if (cy > 0.15) pos.push("群心偏下");
+    if (cx < -0.15) pos.push("群心偏左");
+    else if (cx > 0.15) pos.push("群心偏右");
+    if (pos.length === 0) pos.push("群心居中");
+    const spread = stdDev < 0.15 ? "群集緊密" : stdDev > 0.4 ? "散布較廣" : "群集正常";
+    return pos.join("") + "・" + spread;
   };
 
   const SIZE = 260, CX = SIZE / 2, CY = SIZE / 2, R = 118;
   const toSVG = (nx, ny) => [CX + nx * R, CY + ny * R];
   const [gcx, gcy] = toSVG(cx, cy);
 
+  const diagText = diagnose();
+  const offsetDir = cx < -0.15 ? "偏左" : cx > 0.15 ? "偏右" : "居中";
+  const offsetV   = cy < -0.15 ? "偏上" : cy > 0.15 ? "偏下" : "居中";
+
   return (
-    <Card className="p-3 mt-1" style={CS}>
-      <div className="text-xs font-bold text-white/60 mb-2">🎯 落點分析</div>
-      <div className="flex justify-center">
-        <svg width={SIZE} height={SIZE} style={{ display:"block" }}>
-          <circle cx={CX} cy={CY} r={R} fill="#1a1a1a" />
-          {[1,0.8,0.6,0.4,0.2].map((pct,i)=>(
-            <circle key={i} cx={CX} cy={CY} r={R*pct} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
-          ))}
+    <div className="flex flex-col gap-2 mt-1">
+      {/* ── 偏移統計 ── */}
+      <Card className="p-3" style={CS}>
+        <div className="text-xs font-bold text-white/60 mb-2">📊 偏移統計</div>
+        <div className="flex flex-wrap gap-2 mb-2">
+          <div className="flex flex-col items-center bg-blue-500/10 rounded-lg px-3 py-1.5 min-w-16">
+            <span className="text-[10px] text-blue-300/70">平均半徑</span>
+            <span className="text-base font-black text-blue-300">{(avgR*100).toFixed(0)}%</span>
+          </div>
+          <div className="flex flex-col items-center bg-purple-500/10 rounded-lg px-3 py-1.5 min-w-16">
+            <span className="text-[10px] text-purple-300/70">1σ 離散</span>
+            <span className="text-base font-black text-purple-300">±{(stdDev*100).toFixed(0)}%</span>
+          </div>
+          <div className="flex flex-col items-center bg-white/5 rounded-lg px-3 py-1.5 min-w-16">
+            <span className="text-[10px] text-white/40">最大偏移</span>
+            <span className="text-base font-black text-white/60">{(maxR*100).toFixed(0)}%</span>
+          </div>
+          <div className="flex flex-col items-center bg-yellow-500/10 rounded-lg px-3 py-1.5 flex-1">
+            <span className="text-[10px] text-yellow-300/70">群心位置</span>
+            <span className="text-sm font-black text-yellow-300">{offsetDir}・{offsetV}</span>
+          </div>
+        </div>
+        <div className="text-center text-xs font-bold text-white/50 bg-white/5 rounded-lg py-1.5">
+          {diagText}
+        </div>
+      </Card>
 
-          {avgR * R <= R && (
-            <circle cx={CX} cy={CY} r={avgR * R} fill="none" stroke="#60a5fa" strokeWidth={1.5} />
-          )}
-          {(avgR + stdDev) * R <= R * 1.5 && (
-            <circle cx={CX} cy={CY} r={Math.min((avgR + stdDev) * R, R)} fill="none" stroke="#a78bfa"
-              strokeWidth={1.2} strokeDasharray="4 3" />
-          )}
-          {maxR * R <= R * 1.5 && (
-            <circle cx={CX} cy={CY} r={Math.min(maxR * R, R)} fill="none" stroke="rgba(255,255,255,0.3)"
-              strokeWidth={1} strokeDasharray="2 4" />
-          )}
+      {/* ── 落點分析 ── */}
+      <Card className="p-3" style={CS}>
+        <div className="text-xs font-bold text-white/60 mb-2">🎯 落點分析</div>
+        <div className="flex justify-center">
+          <svg width={SIZE} height={SIZE} style={{ display:"block" }}>
+            <circle cx={CX} cy={CY} r={R} fill="#1a1a1a" />
+            {[1,0.8,0.6,0.4,0.2].map((pct,i)=>(
+              <circle key={i} cx={CX} cy={CY} r={R*pct} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
+            ))}
 
-          {valid.map((a, i) => {
-            const [ax, ay] = toSVG(a.nx, a.ny);
-            return (
-              <g key={i}>
-                <circle cx={ax} cy={ay} r={5} fill="#15803d" stroke="white" strokeWidth={1} />
-                <text x={ax} y={ay + 0.5} textAnchor="middle" dominantBaseline="middle"
-                  fill="white" fontSize={6} fontWeight="900">
-                  {a.score === "M" ? "M" : a.score}
-                </text>
-              </g>
-            );
-          })}
+            {avgR * R <= R && (
+              <circle cx={CX} cy={CY} r={avgR * R} fill="none" stroke="#60a5fa" strokeWidth={1.5} />
+            )}
+            {(avgR + stdDev) * R <= R * 1.5 && (
+              <circle cx={CX} cy={CY} r={Math.min((avgR + stdDev) * R, R)} fill="none" stroke="#a78bfa"
+                strokeWidth={1.2} strokeDasharray="4 3" />
+            )}
+            {maxR * R <= R * 1.5 && (
+              <circle cx={CX} cy={CY} r={Math.min(maxR * R, R)} fill="none" stroke="rgba(255,255,255,0.3)"
+                strokeWidth={1} strokeDasharray="2 4" />
+            )}
 
-          <line x1={gcx-7} y1={gcy} x2={gcx+7} y2={gcy} stroke="#facc15" strokeWidth={2.5} />
-          <line x1={gcx} y1={gcy-7} x2={gcx} y2={gcy+7} stroke="#facc15" strokeWidth={2.5} />
+            {valid.map((a, i) => {
+              const [ax, ay] = toSVG(a.nx, a.ny);
+              return (
+                <g key={i}>
+                  <circle cx={ax} cy={ay} r={5} fill="#15803d" stroke="white" strokeWidth={1} />
+                  <text x={ax} y={ay + 0.5} textAnchor="middle" dominantBaseline="middle"
+                    fill="white" fontSize={6} fontWeight="900">
+                    {a.score === "M" ? "M" : a.score}
+                  </text>
+                </g>
+              );
+            })}
 
-          {(() => {
-            const [tx, ty] = toSVG(topmost.nx, topmost.ny);
-            return <text x={tx} y={ty - 8} textAnchor="middle" fill="#fb923c" fontSize={9}>↑{topmost.score}</text>;
-          })()}
-          {(() => {
-            const [bx, by] = toSVG(bottommost.nx, bottommost.ny);
-            return <text x={bx} y={by + 12} textAnchor="middle" fill="#fb923c" fontSize={9}>↓{bottommost.score}</text>;
-          })()}
-          {(() => {
-            const [lx, ly] = toSVG(leftmost.nx, leftmost.ny);
-            return <text x={lx - 8} y={ly + 3} textAnchor="end" fill="#fb923c" fontSize={9}>←{leftmost.score}</text>;
-          })()}
-          {(() => {
-            const [rx, ry] = toSVG(rightmost.nx, rightmost.ny);
-            return <text x={rx + 8} y={ry + 3} textAnchor="start" fill="#fb923c" fontSize={9}>{rightmost.score}→</text>;
-          })()}
-        </svg>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
-        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">平均半徑 {(avgR*100).toFixed(0)}%</span>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300">1σ ±{(stdDev*100).toFixed(0)}%</span>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50">最大 {(maxR*100).toFixed(0)}%</span>
-      </div>
-      <div className="mt-2 text-center text-sm font-bold text-yellow-300">{diagnose()}</div>
-    </Card>
+            <line x1={gcx-7} y1={gcy} x2={gcx+7} y2={gcy} stroke="#facc15" strokeWidth={2.5} />
+            <line x1={gcx} y1={gcy-7} x2={gcx} y2={gcy+7} stroke="#facc15" strokeWidth={2.5} />
+
+            {(() => {
+              const [tx, ty] = toSVG(topmost.nx, topmost.ny);
+              return <text x={tx} y={ty - 8} textAnchor="middle" fill="#fb923c" fontSize={9}>↑{topmost.score}</text>;
+            })()}
+            {(() => {
+              const [bx, by] = toSVG(bottommost.nx, bottommost.ny);
+              return <text x={bx} y={by + 12} textAnchor="middle" fill="#fb923c" fontSize={9}>↓{bottommost.score}</text>;
+            })()}
+            {(() => {
+              const [lx, ly] = toSVG(leftmost.nx, leftmost.ny);
+              return <text x={lx - 8} y={ly + 3} textAnchor="end" fill="#fb923c" fontSize={9}>←{leftmost.score}</text>;
+            })()}
+            {(() => {
+              const [rx, ry] = toSVG(rightmost.nx, rightmost.ny);
+              return <text x={rx + 8} y={ry + 3} textAnchor="start" fill="#fb923c" fontSize={9}>{rightmost.score}→</text>;
+            })()}
+          </svg>
+        </div>
+        <div className="mt-2 flex justify-center gap-2 text-[10px] text-white/40">
+          <span className="flex items-center gap-1"><span style={{display:"inline-block",width:10,height:2,background:"#60a5fa",verticalAlign:"middle"}}/>平均半徑</span>
+          <span className="flex items-center gap-1"><span style={{display:"inline-block",width:10,height:2,background:"#a78bfa",borderTop:"2px dashed #a78bfa",verticalAlign:"middle"}}/>1σ</span>
+          <span className="flex items-center gap-1"><span style={{display:"inline-block",width:10,height:2,borderTop:"2px dotted rgba(255,255,255,0.4)",verticalAlign:"middle"}}/>最大</span>
+          <span className="flex items-center gap-1"><span style={{color:"#facc15",fontWeight:900}}>×</span>群心</span>
+        </div>
+      </Card>
+    </div>
   );
 }
 

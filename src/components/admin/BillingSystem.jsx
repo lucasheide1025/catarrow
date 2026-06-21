@@ -68,7 +68,9 @@ export default function BillingSystem({ profile }) {
   useEffect(() => {
     if (!memberQuery.trim()) { setMemberSuggestions([]); return; }
     const q = memberQuery.toLowerCase();
-    setMemberSuggestions(allMembers.filter(m => m.name?.toLowerCase().includes(q)).slice(0, 6));
+    setMemberSuggestions(allMembers.filter(m =>
+      m.name?.toLowerCase().includes(q) || m.nickname?.toLowerCase().includes(q)
+    ).slice(0, 6));
   }, [memberQuery, allMembers]);
 
   function selectMember(m) {
@@ -185,10 +187,10 @@ export default function BillingSystem({ profile }) {
                 {todayCheckins.map((c, i) => (
                   <button key={i} onClick={() => selectFromCheckin(c)}
                     style={{ padding:"5px 12px", borderRadius:"20px", border:"1px solid #bfdbfe",
-                      background: memberQuery===c.memberName ? "#2563eb" : "#eff6ff",
-                      color: memberQuery===c.memberName ? "white" : "#1d4ed8",
+                      background: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "#2563eb" : "#eff6ff",
+                      color: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "white" : "#1d4ed8",
                       fontSize:"13px", fontWeight:700, cursor:"pointer" }}>
-                    {c.memberName}
+                    {allMembers.find(m=>m.id===c.memberId)?.name || c.memberName}
                   </button>
                 ))}
               </div>
@@ -209,12 +211,21 @@ export default function BillingSystem({ profile }) {
                     style={{ padding:"0 12px", border:"1px solid #e2e8f0", borderRadius:"8px", background:"#f8fafc", cursor:"pointer", fontSize:"13px", color:"#64748b" }}>✕</button>
                 )}
               </div>
+              <button onClick={() => { setMemberQuery("訪客/團康"); setSelectedMember(null); setDiscount(false); }}
+                style={{ marginTop:"6px", padding:"4px 14px", borderRadius:"20px",
+                  border:"1px solid #e2e8f0", background:"#f8fafc",
+                  color:"#64748b", fontSize:"12px", fontWeight:700, cursor:"pointer" }}>
+                訪客/團康
+              </button>
               {memberSuggestions.length > 0 && (
                 <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"white", border:"1px solid #e2e8f0", borderRadius:"8px", boxShadow:"0 4px 12px rgba(0,0,0,.1)", zIndex:50, overflow:"hidden", marginTop:"4px" }}>
                   {memberSuggestions.map(m => (
                     <button key={m.id} onClick={() => selectMember(m)}
                       style={{ display:"block", width:"100%", padding:"9px 14px", textAlign:"left", border:"none", borderBottom:"1px solid #f1f5f9", background:"none", cursor:"pointer", fontSize:"13px", color:"#1e293b" }}>
                       <span style={{ fontWeight:700 }}>{m.name}</span>
+                      {m.nickname && m.nickname !== m.name && (
+                        <span style={{ color:"#94a3b8", marginLeft:"5px", fontSize:"11px" }}>（{m.nickname}）</span>
+                      )}
                       <span style={{ color:"#94a3b8", marginLeft:"8px", fontSize:"11px" }}>#{m.archerNo}</span>
                       {m.archerNo && m.archerNo <= EARLY_BIRD_MAX && (
                         <span style={{ marginLeft:"6px", background:"#fef9c3", color:"#854d0e", fontSize:"10px", padding:"1px 6px", borderRadius:"4px", fontWeight:700 }}>早鳥</span>

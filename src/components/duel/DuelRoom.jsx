@@ -529,7 +529,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setMyArrows(prev => [...prev, { score, label }]);
   }
   function addArrowByLabel(label) {
-    const score = label === "M" ? 0 : label === "X" ? 10 : parseInt(label) || 0;
+    const rawScore = label === "M" ? 0 : label === "X" ? 10 : parseInt(label) || 0;
+    const score = (targetFmt === "field_16" && rawScore > 0)
+      ? Math.round((rawScore / 6) * 10)
+      : rawScore;
     addArrow(score, label);
   }
   function removeArrow() {

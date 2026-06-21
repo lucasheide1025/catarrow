@@ -520,7 +520,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   function addArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
-    const score = SCORE_MAP[label] ?? 0;
+    const rawScore = SCORE_MAP[label] ?? 0;
+    const score = (targetFmt === "field_16" && rawScore > 0)
+      ? Math.round((rawScore / 6) * 10)
+      : rawScore;
     sfxTap(); vibrate(8);
     setArrows(prev => [...prev, { score, label }]);
   }
@@ -1455,6 +1458,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             {me.hp > 0 && me.maxHP > 0 && me.hp/me.maxHP < 0.25 && (
               <div style={{ textAlign:"center", color:"#ef4444", fontWeight:900, fontSize:11, padding:"2px 0 3px" }}>
                 ⚠️ HP 危急！請謹慎作戰
+              </div>
+            )}
+            {/* 靶面格式選擇（第一箭前才顯示）*/}
+            {arrows.length === 0 && !targetPending && !myReady && (
+              <div style={{ background:"rgba(0,0,0,0.3)", borderRadius:8, padding:"6px 8px", marginBottom:6, display:"flex", flexDirection:"column", gap:5 }}>
+                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               </div>
             )}
             {/* 箭槽 + 模式切換 */}

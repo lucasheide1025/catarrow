@@ -439,13 +439,18 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       const rawLabel = arrows[i];
       const isX = rawLabel === "X";
       const rawScore = arrowLabelToVal(rawLabel);
-      let score = rawScore;
+      const maxFmtScore = targetFmt === "field_16" ? 6 : 10;
       const sp = (battleStats?.scorePlus) || 0;
+      let boostedRaw = rawScore;
       let forceCrit = false;
-      if (sp > 0) {
-        score = Math.min(rawScore + sp, 10);
-        if (rawScore >= 10) { score = 10; forceCrit = true; }
+      if (sp > 0 && rawScore > 0) {
+        boostedRaw = Math.min(rawScore + sp, maxFmtScore);
+        if (rawScore >= maxFmtScore) { boostedRaw = maxFmtScore; forceCrit = true; }
       }
+      // 原野靶 1-6 環正規化為 1-10 供傷害公式使用
+      const score = (targetFmt === "field_16" && rawScore > 0)
+        ? Math.round((boostedRaw / 6) * 10)
+        : boostedRaw;
       const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
       const part = resolveHitPart(score, curUnlocked, isX);
       if (part.id==="chest") curUnlocked=new Set([...curUnlocked,"chest"]);
@@ -467,30 +472,30 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       if (part.mult===0) {
         sfxSoftFail();
         showFloatDmg(0, false, false);
-        addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${score}分)` });
+        addLog({ type:"miss", text:`${i+1}箭　${hitText}　(${rawLabel})` });
         setAnimArcherMiss(true);
         showArcherEffect("MISS", "#94a3b8");
         setTimeout(()=>setAnimArcherMiss(false), 600);
       } else if (isOrganPart) {
         sfxOrganHit();
         showFloatDmg(dmg, true, true);
-        addLog({ type:"hit_organ", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
+        addLog({ type:"hit_organ", text:`${i+1}箭 ${rawLabel}分　${part.icon} ${hitText}　傷害 ${dmg}！` });
         setAnimArcherCrit(true);
         setTimeout(()=>setAnimArcherCrit(false), 700);
       } else if (part.mult>=1.8||score>=10) {
         sfxCritBoom();
         showFloatDmg(dmg, true, false);
-        addLog({ type:"hit_crit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
+        addLog({ type:"hit_crit", text:`${i+1}箭 ${rawLabel}分　${part.icon} ${hitText}　傷害 ${dmg}💥` });
         setAnimArcherCrit(true);
         setTimeout(()=>setAnimArcherCrit(false), 700);
       } else if (score>=8) {
         sfxArrowHit();
         showFloatDmg(dmg, false, false);
-        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${hitText}　傷害 ${dmg}` });
+        addLog({ type:"hit", text:`${i+1}箭 ${rawLabel}分　${part.icon} ${hitText}　傷害 ${dmg}` });
       } else {
         sfxTap();
         showFloatDmg(dmg, false, false);
-        addLog({ type:"hit", text:`${i+1}箭 ${score}分　${part.icon} ${part.name}　傷害 ${dmg}` });
+        addLog({ type:"hit", text:`${i+1}箭 ${rawLabel}分　${part.icon} ${part.name}　傷害 ${dmg}` });
       }
 
       const isBigHit = isOrganPart || part.mult >= 1.8 || score >= 10;
@@ -1547,6 +1552,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const archPct = Math.max(0, Math.round(archerHP/maxHP*100));
     const monPct  = monster ? Math.max(0, Math.round(monsterHP/monster.hp*100)) : 0;
     const total6  = arrows.reduce((s,v)=>s+arrowLabelToVal(v),0);
+    const maxRoundScore = targetFmt === "field_16" ? 36 : 60;
     const monLv   = monster?.tier==="mythic"?99:monster?.tier==="boss"?75:monster?.tier==="fierce"?50:monster?.tier==="elite"?35:monster?.tier==="rare"?20:10;
     const catType = profile?.equippedCat?.type || "allround";
     const catGlowColor = catType === "healer" ? "#10b981" : catType === "attacker" ? "#ef4444" : "#a78bfa";
@@ -1919,7 +1925,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 }}>
                   <span style={{color:"#94a3b8", fontSize:11}}>回合總分</span>
                   <span style={{color:"#60a5fa", fontWeight:900, fontSize:18}}>
-                    {total6}<span style={{color:"#475569", fontSize:10, marginLeft:2}}>/60</span>
+                    {total6}<span style={{color:"#475569", fontSize:10, marginLeft:2}}>/{maxRoundScore}</span>
                   </span>
                 </div>
                 <button

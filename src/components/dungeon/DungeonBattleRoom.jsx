@@ -19,6 +19,11 @@ import {
 import DungeonPathSelect from "./DungeonPathSelect";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
+import TargetFaceOverlay, {
+  TargetFmtPicker, InputModePicker,
+  getBattleTargetFmt, setBattleTargetFmt,
+  getBattleInputMode, setBattleInputMode,
+} from "../shared/TargetFaceOverlay";
 
 const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -82,6 +87,9 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
   const [submitted,     setSubmitted]     = useState(false);
+  const [targetFmt,     setTargetFmt]     = useState(getBattleTargetFmt);
+  const [targetMode,    setTargetMode]    = useState(() => getBattleInputMode() === "target");
+  const [targetPending, setTargetPending] = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [shopDone,      setShopDone]      = useState(false);
 
@@ -271,13 +279,24 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   function addArrow(label) {
     if (arrows.length >= 6) return;
     sfxTap();
-    const score = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
+    const rawScore = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
+    const score = (targetFmt === "field_16" && rawScore > 0)
+      ? Math.round((rawScore / 6) * 10)
+      : rawScore;
     setArrows(prev => [...prev, { label, score }]);
   }
 
   function undoArrow() {
     setArrows(prev => prev.slice(0, -1));
     if (submitted) setSubmitted(false);
+  }
+
+  async function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(async () => {
+      setTargetPending(false);
+      await handleSubmit();
+    }, 2000);
   }
 
   async function handleNextFloor() {
@@ -774,6 +793,13 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               <span style={{ fontSize:11 }}>{contractInfo.icon}</span>
               <span style={{ fontSize:9, fontWeight:700 }}>{getContractDesc(myContract)}</span>
             </div>
+            {/* 靶面格式選擇（標準合約 & 尚未輸入任何箭） */}
+            {myContract.type !== "hit_count" && myContract.type !== "all_hit" && arrows.length === 0 && !targetPending && (
+              <div style={{ background:"rgba(0,0,0,0.35)", borderRadius:10, padding:"8px 10px", marginBottom:6, display:"flex", flexDirection:"column", gap:6 }}>
+                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+                <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />
+              </div>
+            )}
             {/* 箭槽 */}
             <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
               {Array.from({ length:6 }).map((_,i) => {
@@ -792,7 +818,9 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               )}
             </div>
             {/* 分數按鈕格（依合約類型調整）*/}
-            {(myContract.type === "hit_count" || myContract.type === "all_hit") ? (
+            {targetPending ? (
+              <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>
+            ) : (myContract.type === "hit_count" || myContract.type === "all_hit") ? (
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:4 }}>
                 <button onClick={() => addArrow("命中")} disabled={arrows.length>=6}
                   className="rounded-xl font-black active:scale-95 bg-emerald-500 text-white"
@@ -805,7 +833,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                   M
                 </button>
               </div>
-            ) : (
+            ) : !targetMode ? (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:2, marginBottom:4 }}>
                 {SCORE_LABELS.map(label => (
                   <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
@@ -815,14 +843,28 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                   </button>
                 ))}
               </div>
+            ) : (
+              <div style={{ textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:11, padding:"8px 0" }}>🎯 靶面輸入中…</div>
             )}
             {/* 送出 */}
-            <button onClick={handleSubmit} disabled={arrows.length<6}
-              style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",
-                background: arrows.length>=6?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
-                opacity: arrows.length<6?0.5:1, transition:"all 0.2s" }}>
-              🏹 送出 6 箭 {arrows.length>0?`(${arrows.length}/6)`:""}
-            </button>
+            {!targetPending && (
+              <button onClick={handleSubmit} disabled={arrows.length<6}
+                style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",
+                  background: arrows.length>=6?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
+                  opacity: arrows.length<6?0.5:1, transition:"all 0.2s" }}>
+                🏹 送出 6 箭 {arrows.length>0?`(${arrows.length}/6)`:""}
+              </button>
+            )}
+            {/* 靶面 Overlay */}
+            <TargetFaceOverlay
+              open={targetMode && !targetPending && !submitted && myContract.type !== "hit_count" && myContract.type !== "all_hit"}
+              fmtId={targetFmt}
+              arrowLabels={arrows.map(a => a.label)}
+              arrowsPerRound={6}
+              onArrow={label => addArrow(label)}
+              onUndo={undoArrow}
+              onSubmit={handleTargetSubmit}
+            />
             {hasCat && (
               <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4, padding:"2px 6px", borderRadius:6, background:"rgba(79,70,229,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>
                 <span style={{ fontSize:11 }}>🐱</span>
