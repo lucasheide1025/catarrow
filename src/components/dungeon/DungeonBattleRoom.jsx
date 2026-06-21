@@ -281,7 +281,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     sfxTap();
     const rawScore = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
     const score = (targetFmt === "field_16" && rawScore > 0)
-      ? Math.round((rawScore / 6) * 10)
+      ? Math.min(rawScore + 5, 10)
       : rawScore;
     setArrows(prev => [...prev, { label, score }]);
   }

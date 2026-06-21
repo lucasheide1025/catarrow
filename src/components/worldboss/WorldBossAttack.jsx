@@ -360,7 +360,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     sfxTap(); vibrate(10);
     const rawScore = scoreVal(s);
     const score = (targetFmt === "field_16" && rawScore > 0)
-      ? Math.round((rawScore / 6) * 10)
+      ? Math.min(rawScore + 5, 10)
       : rawScore;
     setArrows(prev => [...prev, { label: scoreLabel(s), score }]);
   }

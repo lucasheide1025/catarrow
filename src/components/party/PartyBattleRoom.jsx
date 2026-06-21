@@ -522,7 +522,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
     const rawScore = SCORE_MAP[label] ?? 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
-      ? Math.round((rawScore / 6) * 10)
+      ? Math.min(rawScore + 5, 10)
       : rawScore;
     sfxTap(); vibrate(8);
     setArrows(prev => [...prev, { score, label }]);

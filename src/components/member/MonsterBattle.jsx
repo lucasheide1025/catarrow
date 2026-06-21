@@ -447,9 +447,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         boostedRaw = Math.min(rawScore + sp, maxFmtScore);
         if (rawScore >= maxFmtScore) { boostedRaw = maxFmtScore; forceCrit = true; }
       }
-      // 原野靶 1-6 環正規化為 1-10 供傷害公式使用
-      const score = (targetFmt === "field_16" && rawScore > 0)
-        ? Math.round((boostedRaw / 6) * 10)
+      // 原野靶 1-6：線性映射至半靶級距（1→6, 6→X爆擊）
+      if (targetFmt === "field_16" && boostedRaw === 6) forceCrit = true;
+      const score = (targetFmt === "field_16" && boostedRaw > 0)
+        ? Math.min(boostedRaw + 5, 10)
         : boostedRaw;
       const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
       const part = resolveHitPart(score, curUnlocked, isX);
