@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { today } from "../../lib/constants";
-import { normalizeEquipment, getDefaultBowType } from "../shared/Equipment";
+import { normalizeEquipment, getDefaultBowType, getDefaultEquipSetId } from "../shared/Equipment";
 import { Card, Spinner, useToast } from "../shared/UI";
 import { LineChart, TrendBadge } from "../shared/GrowthChart";
 
@@ -123,8 +123,9 @@ function SetupPhase({ initial, equipSets, onStart }) {
           {(equipSets.length > 0 ? equipSets : null)?.map(s => {
             const cat = s.bowCategory || "recurve_bare";
             const lbl = s.label || bowLabel(cat);
+            const isActive = form.equipSetId ? form.equipSetId === s.id : form.bowType === cat;
             return (
-              <button key={s.id} onClick={() => up("bowType", cat)} className={btn(form.bowType===cat)}>
+              <button key={s.id} onClick={() => setForm(p => ({...p, bowType: cat, equipSetId: s.id}))} className={btn(isActive)}>
                 {lbl}
                 {s.label && s.label !== bowLabel(cat) &&
                   <span className="ml-1 opacity-50">({bowLabel(cat)})</span>}
@@ -239,7 +240,7 @@ function SetupPhase({ initial, equipSets, onStart }) {
       </Card>
 
       <div className="text-center text-xs text-blue-300 bg-blue-900/40 border border-blue-500/30 rounded-xl p-3">
-        {(equipSets.find(s=>s.bowCategory===form.bowType)?.label) || bowLabel(form.bowType)}
+        {(equipSets.find(s=>s.id===form.equipSetId)?.label || equipSets.find(s=>s.bowCategory===form.bowType)?.label) || bowLabel(form.bowType)}
         &nbsp;·&nbsp;{form.distance}m&nbsp;·&nbsp;{fmt.label}
         &nbsp;·&nbsp;{fmt.isTriple ? `每靶${arrowsPerSpot}箭` : `${form.arrowCount}箭`}×{form.roundCount}組
         &nbsp;（共 {form.arrowCount * form.roundCount} 箭）
@@ -1304,6 +1305,7 @@ export default function MemberPractice() {
 
   const [form, setForm]=useState(()=>({
     date:today(), bowType:getDefaultBowType(profile?.equipment),
+    equipSetId:getDefaultEquipSetId(profile?.equipment),
     distance:18, targetFormat:"full_110", arrowCount:6, roundCount:6, note:"",
   }));
 

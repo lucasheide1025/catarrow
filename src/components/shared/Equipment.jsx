@@ -545,3 +545,9 @@ export function getDefaultBowType(equipment) {
   const def = sets.find(s => s.isDefault) || sets[0];
   return def?.bowCategory || "recurve_bare";
 }
+
+export function getDefaultEquipSetId(equipment) {
+  const sets = normalizeEquipment(equipment);
+  const def = sets.find(s => s.isDefault) || sets[0];
+  return def?.id || null;
+}
