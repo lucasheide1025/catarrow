@@ -182,6 +182,19 @@ export default function MemberHome({
         </div>
       )}
 
+      {/* ── 教練新回饋通知 ── */}
+      {profile?.hasNewLearnLog && (
+        <button onClick={() => onPageChange("learn")}
+          className="w-full bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3 active:scale-98 transition-transform text-left">
+          <span className="text-xl flex-shrink-0">📓</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-orange-700 font-black text-sm">教練有新的學習回饋！</div>
+            <div className="text-orange-500 text-xs">點此查看教練的指導內容</div>
+          </div>
+          <span className="text-orange-400 text-xs font-bold flex-shrink-0">查看 →</span>
+        </button>
+      )}
+
       {/* ── 快速入口 8 格（4 欄兩排）──────────────────────────── */}
       <div className="grid grid-cols-4 gap-2">
 

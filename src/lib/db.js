@@ -1173,6 +1173,7 @@ export async function publishGuildQuest(data, adminId) {
     reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
     questSubtype:  data.questSubtype  || "general",
     requirement:   data.requirement   || {},
+    deadline:      data.deadline      || null,
     status: data.status || "active",
     publishedAt: serverTimestamp(),
     createdBy: adminId,
@@ -1192,6 +1193,23 @@ export async function publishGuildQuest(data, adminId) {
 // 後台：更新任務狀態（上架/下架/草稿）
 export async function updateGuildQuestStatus(questId, status) {
   await updateDoc(doc(db, C_GUILD_Q, questId), { status, updatedAt: serverTimestamp() });
+}
+
+// 後台：編輯任務內容（全欄位覆寫）
+export async function updateGuildQuest(questId, data, adminId) {
+  await updateDoc(doc(db, C_GUILD_Q, questId), {
+    title: data.title || "",
+    desc:  data.desc  || "",
+    type:  data.type  || "normal",
+    badgeReward:         data.badgeReward         || null,
+    prerequisiteQuestId: data.prerequisiteQuestId || null,
+    reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
+    questSubtype:  data.questSubtype  || "general",
+    requirement:   data.requirement   || {},
+    deadline:      data.deadline      || null,
+    updatedAt: serverTimestamp(),
+    updatedBy: adminId,
+  });
 }
 
 // 後台：刪除任務

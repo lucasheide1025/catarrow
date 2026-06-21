@@ -9,8 +9,6 @@ import { certLevelStyle } from "../lib/constants";
 import AdminMembers       from "../components/admin/AdminMembers";
 import AdminCompetitions  from "../components/admin/AdminCompetitions";
 import AdminLearn         from "../components/admin/AdminLearn";
-import AdminAchievements  from "../components/admin/AdminAchievements";
-import AdminDexGrant      from "../components/admin/AdminDexGrant";
 import AdminGiveTool      from "../components/admin/AdminGiveTool";
 import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
 import AdminEquipItems    from "../components/admin/AdminEquipItems";
@@ -66,7 +64,7 @@ const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
 export default function AdminApp() {
   const { logout, profile } = useAuth();
-  const VALID_PAGES = new Set(["hub-member","hub-events","achievements","givetool","learn","hub-items","archery"]);
+  const VALID_PAGES = new Set(["hub-member","hub-events","givetool","hub-items","archery"]);
   const [page, setPage]             = useState(() => { const s = sessionStorage.getItem("admin_page"); return (s && VALID_PAGES.has(s)) ? s : "hub-member"; });
   const [memberSub, setMemberSub]   = useState(null);
   const [eventsSub, setEventsSub]   = useState(null);
@@ -266,9 +264,7 @@ export default function AdminApp() {
 const adminNav = [
   { id:"hub-member",  icon:"👥", label:"會員中心" },
   { id:"hub-events",  icon:"🏆", label:"賽事中心" },
-  { id:"achievements",icon:"🎖️", label:"冒險者"   },
   { id:"givetool",    icon:"🎁", label:"獎品發放" },
-  { id:"learn",       icon:"📓", label:"學習"     },
   { id:"hub-items",   icon:"⚔️", label:"裝備&故事" },
   { id:"archery",     icon:"📷", label:"射箭辨識" },
 ];
@@ -473,6 +469,14 @@ const adminNav = [
             pendingExtItems={pendingExtList} certTasks={certTasksList}
           /></>
         )}
+        {page==="hub-member" && memberSub==="learn"      && <><HubBack onClick={()=>setMemberSub(null)}/><AdminLearn/></>}
+        {page==="hub-member" && memberSub==="messages"   && (
+          <><HubBack onClick={()=>setMemberSub(null)}/>
+          <AdminReviewCenter
+            pendingCert={[]} messages={allMessages}
+            pendingExtItems={[]} certTasks={[]}
+          /></>
+        )}
 
         {/* ── 賽事中心 Hub ── */}
         {page==="hub-events" && eventsSub===null              && <AdminEventsHub onSelect={setEventsSub}/>}
@@ -488,9 +492,7 @@ const adminNav = [
         {page==="hub-items" && itemsSub==="story-admin"   && <><HubBack onClick={()=>setItemsSub(null)}/><AdminStoryManager/></>}
 
         {/* ── 單一頁面 ── */}
-        {page==="achievements" && <AdminAchievementsTab/>}
         {page==="givetool"     && <AdminGiveTool/>}
-        {page==="learn"        && <AdminLearn/>}
         {page==="archery"      && <AdminArchery/>}
       </div>
 
@@ -542,14 +544,16 @@ function HubCard({ icon, label, badge, desc, onClick }) {
 
 // ── 會員中心 Hub ──────────────────────────────────────────
 function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, pendingExtN, pendingExamN, pendingMonthlyN, pendingGuildN }) {
-  const reviewBadge = pendingCertN + pendingMsgN + pendingCheckinN + pendingExtN + pendingExamN + pendingGuildN;
+  const reviewBadge = pendingCertN + pendingCheckinN + pendingExtN + pendingExamN + pendingGuildN;
   return (
     <div style={{padding:"16px"}}>
       <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
         <HubCard icon="👤" label="會員管理" desc="帳號、積分、裝備" onClick={() => onSelect("members")} />
         <HubCard icon="🎫" label="財務" badge={pendingMonthlyN} desc="月費卡、收費記錄" onClick={() => onSelect("monthlycard")} />
-        <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="所有待審核事項" onClick={() => onSelect("review")} />
+        <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="檢定、報到、外賽審核" onClick={() => onSelect("review")} />
+        <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />
+        <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
       </div>
     </div>
   );
@@ -612,23 +616,6 @@ function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks 
   );
 }
 
-// 後台「成就」頁：成就章任務 / 圖鑑授予 兩個 tab
-function AdminAchievementsTab() {
-  const [t, setT] = useState("tasks");
-  return (
-    <div className="flex flex-col">
-      <div className="flex gap-2 px-4 pt-4">
-        {[["tasks", "🏆 成就章任務"], ["dex", "🎖️ 圖鑑授予"]].map(([id, label]) => (
-          <button key={id} onClick={() => setT(id)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-bold border ${t === id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {t === "tasks" ? <AdminAchievements/> : <AdminDexGrant/>}
-    </div>
-  );
-}
 
 // ── 射手模式比賽詳情（與 MemberApp 同步的新版：排行 + 報名名單 + 防彈）──
 function CompDetail({ comp, onBack, onStartScoring, profile }) {

@@ -1,6 +1,8 @@
 // src/components/admin/AdminDailyQuest.jsx
 // 後台：每日任務設定 + 打怪每日上限設定 + 報到核准 + 最終確認
 import { useState, useEffect } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import {
   getDailyQuestConfig, saveDailyQuestConfig,
@@ -8,8 +10,16 @@ import {
   getMonsterEventConfig, saveMonsterEventConfig,
   subscribePendingCheckins, castBuff, cancelCheckin,
   confirmCheckinReward, adminDismissCheckin,
+  addBillingRecord,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
+
+const PLANS = [
+  { id:"自一", price:200 }, { id:"自三", price:400 },
+  { id:"單一", price:300 }, { id:"單三", price:600 },
+  { id:"學一", price:200 }, { id:"學三", price:400 },
+];
+const PAY_METHODS = ["現金", "轉帳", "月卡"];
 
 export default function AdminDailyQuest({ mode = "all" }) {
   const { profile } = useAuth();
@@ -25,6 +35,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
   const [showMonster, setShowMonster] = useState(false);
   const [showEvent,   setShowEvent]   = useState(false);
   const [passState,   setPassState]   = useState({}); // { checkinId: { chest, busy } }
+  const [billState,   setBillState]   = useState({}); // { checkinId: { plan, payMethod, busy } }
 
   useEffect(() => {
     getDailyQuestConfig().then(setConfig);
@@ -78,9 +89,56 @@ export default function AdminDailyQuest({ mode = "all" }) {
     toast(`已取消 ${c.memberNickname || c.memberName} 的報到`);
   }
 
-  async function dismissDone(c) {
+  async function openBill(c) {
+    let defaultPlan = "自一";
+    if (c.memberId) {
+      try {
+        const snap = await getDoc(doc(db, "members", c.memberId));
+        if (snap.exists()) defaultPlan = snap.data().defaultPlan || "自一";
+      } catch {}
+    }
+    setBillState(s => ({ ...s, [c.id]: { plan: defaultPlan, payMethod: "現金", busy: false } }));
+  }
+
+  async function confirmBill(c) {
+    const bs = billState[c.id];
+    if (!bs) return;
+    setBillState(s => ({ ...s, [c.id]: { ...s[c.id], busy: true } }));
+    try {
+      const planObj = PLANS.find(p => p.id === bs.plan);
+      const finalPrice = bs.payMethod === "月卡" ? 0 : (planObj?.price || 0);
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const [y, m, d] = dateStr.split("-").map(Number);
+      await addBillingRecord({
+        memberName:    c.memberNickname || c.memberName,
+        memberId:      c.memberId || null,
+        plan:          bs.plan,
+        basePrice:     planObj?.price || 0,
+        discount:      0,
+        finalPrice,
+        paymentMethod: bs.payMethod,
+        date: dateStr, year: y, month: m, day: d,
+        note: "",
+        createdByName: profile?.nickname || profile?.name || "教練",
+        createdBy:     profile?.id || null,
+      });
+      if (c.memberId) {
+        updateDoc(doc(db, "members", c.memberId), { defaultPlan: bs.plan }).catch(() => {});
+      }
+      await adminDismissCheckin(c.id);
+      toast(`✅ ${c.memberNickname || c.memberName}：已記帳（${bs.plan} / ${bs.payMethod} NT$${finalPrice}）`);
+    } catch (e) {
+      toast("記帳失敗：" + (e?.message || ""), "error");
+      setBillState(s => ({ ...s, [c.id]: { ...s[c.id], busy: false } }));
+      return;
+    }
+    setBillState(s => { const n = { ...s }; delete n[c.id]; return n; });
+  }
+
+  async function skipBill(c) {
+    setBillState(s => { const n = { ...s }; delete n[c.id]; return n; });
     await adminDismissCheckin(c.id);
-    toast(`已移除 ${c.memberNickname || c.memberName} 的紀錄`);
+    toast(`已完成 ${c.memberNickname || c.memberName} 的紀錄（未記帳）`);
   }
 
   async function directPass(c) {
@@ -405,20 +463,86 @@ export default function AdminDailyQuest({ mode = "all" }) {
               <div className="flex flex-col gap-2">
                 {done.map(c => {
                   const taskObj = c.tasks?.[c.chosenTask];
+                  const bs = billState[c.id];
                   return (
-                    <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                        {c.type === "simple" ? (
-                          <div className="text-teal-600 text-xs">純報到 ✓</div>
-                        ) : (
-                          <div className="text-teal-600 text-xs">
-                            {taskObj ? `${taskObj.label}・${taskObj.distance}米` : "任務完成"}
-                            {c.questResult && ` → ${c.questResult.value} 分（目標 ${c.questResult.target}）`}
-                          </div>
+                    <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3">
+                      {/* 基本資訊列 */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                          {c.type === "simple" ? (
+                            <div className="text-teal-600 text-xs">純報到 ✓</div>
+                          ) : (
+                            <div className="text-teal-600 text-xs">
+                              {taskObj ? `${taskObj.label}・${taskObj.distance}米` : "任務完成"}
+                              {c.questResult && ` → ${c.questResult.value} 分（目標 ${c.questResult.target}）`}
+                            </div>
+                          )}
+                        </div>
+                        {!bs && (
+                          <Btn v="primary" size="sm" onClick={() => openBill(c)}>💰 記帳</Btn>
                         )}
                       </div>
-                      <Btn v="secondary" size="sm" onClick={() => dismissDone(c)}>完成</Btn>
+
+                      {/* 快速記帳面板 */}
+                      {bs && (
+                        <div className="mt-3 pt-3 border-t border-teal-200 flex flex-col gap-2">
+                          {/* 方案 */}
+                          <div className="text-xs font-black text-gray-500 mb-0.5">方案</div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {PLANS.map(p => (
+                              <button key={p.id}
+                                onClick={() => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], plan: p.id } }))}
+                                className={`py-1.5 rounded-lg text-xs font-black border transition-all ${
+                                  bs.plan === p.id
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-white text-gray-600 border-gray-200"
+                                }`}>
+                                {p.id}
+                                <div className={`text-[10px] font-normal ${bs.plan === p.id ? "text-blue-200" : "text-gray-400"}`}>
+                                  ${p.price}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* 付款方式 */}
+                          <div className="text-xs font-black text-gray-500 mb-0.5">付款方式</div>
+                          <div className="flex gap-1.5">
+                            {PAY_METHODS.map(pm => (
+                              <button key={pm}
+                                onClick={() => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], payMethod: pm } }))}
+                                className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
+                                  bs.payMethod === pm
+                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                    : "bg-white text-gray-600 border-gray-200"
+                                }`}>
+                                {pm}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* 金額預覽 */}
+                          <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
+                            {bs.plan}・{bs.payMethod}・
+                            <span className="font-black text-gray-800">
+                              NT${bs.payMethod === "月卡" ? 0 : (PLANS.find(p => p.id === bs.plan)?.price || 0)}
+                            </span>
+                          </div>
+
+                          {/* 按鈕 */}
+                          <div className="flex gap-2">
+                            <button onClick={() => skipBill(c)} disabled={bs.busy}
+                              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 border border-gray-200 bg-white disabled:opacity-40">
+                              跳過記帳
+                            </button>
+                            <Btn v="success" size="sm" className="flex-1"
+                              onClick={() => confirmBill(c)} disabled={bs.busy || !bs.plan}>
+                              {bs.busy ? "處理中…" : "✅ 記帳 + 完成"}
+                            </Btn>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

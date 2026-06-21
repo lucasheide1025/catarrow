@@ -11,34 +11,31 @@ export default function AdminLearn() {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
 
-  const [members, setMembers]       = useState([]);
-  const [loadingMem, setLoadingMem] = useState(true);
-  const [search, setSearch]         = useState("");
-  const [selId, setSelId]           = useState(null);
-  const [logs, setLogs]             = useState([]);
+  const [members, setMembers]         = useState([]);
+  const [loadingMem, setLoadingMem]   = useState(true);
+  const [search, setSearch]           = useState("");
+  const [selId, setSelId]             = useState(null);
+  const [logs, setLogs]               = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
-  const [replyId, setReplyId]       = useState(null);
-  const [addingFor, setAddingFor]   = useState(null);
+  const [replyId, setReplyId]         = useState(null);
+  const [addingFor, setAddingFor]     = useState(null);
   const unsubRef = useRef(null);
 
-  // 載入會員列表
   useEffect(() => {
     getMembers().then(ms => {
+      // 最近登入的排最前面
+      ms.sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
       setMembers(ms);
       setLoadingMem(false);
     });
   }, []);
 
-  // 切換選中的會員時重新訂閱紀錄
   useEffect(() => {
-    // 先取消上一個訂閱
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     if (!selId) { setLogs([]); return; }
-
     setLoadingLogs(true);
     setLogs([]);
-
-    const unsub = subscribeLearnLogs(selId, (data) => {
+    const unsub = subscribeLearnLogs(selId, data => {
       setLogs(data.filter(l => !l.deleted));
       setLoadingLogs(false);
     });
@@ -46,7 +43,6 @@ export default function AdminLearn() {
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [selId]);
 
-  // 篩選會員（搜尋）
   const filteredMembers = members.filter(m => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -59,12 +55,9 @@ export default function AdminLearn() {
 
   const selMember = members.find(m => m.id === selId);
 
-  // 計算每個會員的待回饋數（只在已載入時）
-  function pendingBadge(memberId) {
-    // 只有選中的會員才顯示準確數字
-    if (memberId !== selId) return null;
-    const p = logs.filter(l => !l.coachNote).length;
-    return p > 0 ? p : null;
+  function isRecentlyActive(m) {
+    const millis = m.lastLoginAt?.toMillis?.() ?? 0;
+    return millis > 0 && (Date.now() - millis) < 7 * 24 * 60 * 60 * 1000;
   }
 
   async function saveCoachNote(logId, note) {
@@ -99,117 +92,115 @@ export default function AdminLearn() {
 
   if (loadingMem) return <Spinner />;
 
+  const pendingCount = selId ? logs.filter(l => !l.coachNote).length : 0;
+
   return (
-    <div className="flex h-screen" style={{ fontFamily: "sans-serif" }}>
+    <div className="p-4 flex flex-col gap-4 pb-8">
       <ToastContainer />
+      <div className="font-black text-lg text-gray-800">📓 學習紀錄</div>
 
-      {/* ── 左側：會員列表 ── */}
-      <div className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col" style={{ height: "calc(100vh - 56px)" }}>
-        <div className="p-3 border-b border-gray-100">
-          <div className="text-xs font-bold text-gray-500 mb-2">👥 選擇射手</div>
-          <SearchBar value={search} onChange={setSearch} placeholder="搜尋…" />
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {filteredMembers.length === 0 && (
-            <p className="text-gray-400 text-xs text-center py-6">沒有符合的射手</p>
+      {/* ── 射手選擇 ── */}
+      <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-black text-gray-500">👥 選擇射手</div>
+          {selId && (
+            <button onClick={() => { setSelId(null); setReplyId(null); setAddingFor(null); }}
+              className="text-xs text-gray-400 hover:text-gray-600 font-bold">
+              取消選擇
+            </button>
           )}
+        </div>
+        <SearchBar value={search} onChange={setSearch} placeholder="搜尋射手姓名…" />
+        <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto">
           {filteredMembers.map(m => {
-            const pending = pendingBadge(m.id);
             const isSelected = selId === m.id;
+            const active = isRecentlyActive(m);
             return (
-              <button key={m.id} onClick={() => { setSelId(m.id); setReplyId(null); setAddingFor(null); }}
-                className={`w-full text-left px-3 py-3 border-b border-gray-50 transition-colors flex items-center justify-between gap-2
-                  ${isSelected ? "bg-blue-50 border-l-4 border-l-blue-500" : "hover:bg-gray-50"}`}>
-                <div className="min-w-0">
-                  <div className={`text-sm font-bold truncate ${isSelected ? "text-blue-700" : "text-gray-700"}`}>
-                    {m.nickname || m.name}
-                  </div>
-                  <div className="text-xs text-gray-400 truncate">{m.name}</div>
-                  <div className="text-xs text-gray-300">射齡 {calcAge(m.joinDate)}</div>
-                </div>
-                {pending && (
-                  <span className="flex-shrink-0 bg-orange-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                    {pending}
-                  </span>
-                )}
+              <button key={m.id}
+                onClick={() => { setSelId(m.id); setReplyId(null); setAddingFor(null); }}
+                className={`px-3 py-2 rounded-xl text-sm font-bold border transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-gray-50 text-gray-700 border-gray-200 hover:border-blue-300"
+                }`}>
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  active
+                    ? isSelected ? "bg-blue-200" : "bg-emerald-500"
+                    : "bg-gray-300"
+                }`} />
+                <span>{m.nickname || m.name}</span>
               </button>
             );
           })}
+          {filteredMembers.length === 0 && (
+            <p className="text-gray-400 text-xs py-2">沒有符合的射手</p>
+          )}
+        </div>
+        <div className="text-[10px] text-gray-300 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> 近 7 天有登入
         </div>
       </div>
 
-      {/* ── 右側：學習紀錄 ── */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 flex flex-col gap-4">
-        {!selId && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <div className="text-5xl mb-3">📓</div>
-            <div className="text-base font-bold text-gray-500 mb-1">請從左側選擇射手</div>
-            <div className="text-sm">查看並管理學習紀錄</div>
-          </div>
-        )}
-
-        {selId && selMember && (
-          <>
-            {/* 標題 + 新增按鈕 */}
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-gray-800 font-black text-lg">
-                  {selMember.nickname || selMember.name} 的學習紀錄
-                </div>
-                <div className="text-gray-400 text-xs">
-                  {selMember.name}　射齡 {calcAge(selMember.joinDate)}
-                  {logs.filter(l => !l.coachNote).length > 0 && (
-                    <span className="ml-2 text-orange-500 font-bold">
-                      ⚠️ {logs.filter(l => !l.coachNote).length} 則待回饋
-                    </span>
-                  )}
-                </div>
+      {/* ── 學習紀錄區 ── */}
+      {!selId ? (
+        <div className="text-center text-gray-400 text-sm py-10">
+          <div className="text-4xl mb-2">📓</div>
+          請從上方選擇射手查看學習紀錄
+        </div>
+      ) : (
+        <>
+          {/* 標題 + 操作 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-gray-800 font-black text-base">
+                {selMember?.nickname || selMember?.name} 的學習紀錄
               </div>
-              <Btn v="warn" size="sm" onClick={() => { setAddingFor(selId); setReplyId(null); }}>
-                + 教練新增
-              </Btn>
+              <div className="text-gray-400 text-xs">
+                {selMember?.name}　射齡 {calcAge(selMember?.joinDate)}
+                {pendingCount > 0 && (
+                  <span className="ml-2 text-orange-500 font-bold">
+                    ⚠️ {pendingCount} 則待回饋
+                  </span>
+                )}
+              </div>
             </div>
+            <Btn v="warn" size="sm" onClick={() => { setAddingFor(selId); setReplyId(null); }}>
+              + 新增
+            </Btn>
+          </div>
 
-            {/* 教練新增表單 */}
-            {addingFor === selId && (
-              <CoachAddEntry
-                onSave={addCoachEntry}
-                onCancel={() => setAddingFor(null)}
-              />
-            )}
+          {addingFor === selId && (
+            <CoachAddEntry
+              onSave={addCoachEntry}
+              onCancel={() => setAddingFor(null)}
+            />
+          )}
 
-            {/* 紀錄列表 */}
-            {loadingLogs && <Spinner />}
+          {loadingLogs && <Spinner />}
+          {!loadingLogs && logs.length === 0 && <Empty icon="📓" message="尚無學習紀錄" />}
 
-            {!loadingLogs && logs.length === 0 && (
-              <Empty icon="📓" message="尚無學習紀錄" />
-            )}
-
-            {!loadingLogs && logs.map(log => (
-              <LogCard
-                key={log.id}
-                log={log}
-                isReplying={replyId === log.id}
-                onStartReply={() => { setReplyId(log.id); setAddingFor(null); }}
-                onSaveReply={saveCoachNote}
-                onCancelReply={() => setReplyId(null)}
-                onDelete={() => deleteLog(log.id)}
-              />
-            ))}
-          </>
-        )}
-      </div>
+          {!loadingLogs && logs.map(log => (
+            <LogCard
+              key={log.id}
+              log={log}
+              isReplying={replyId === log.id}
+              onStartReply={() => { setReplyId(log.id); setAddingFor(null); }}
+              onSaveReply={saveCoachNote}
+              onCancelReply={() => setReplyId(null)}
+              onDelete={() => deleteLog(log.id)}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 }
 
-// ── 單筆紀錄卡片 ─────────────────────────────────────────────
 function LogCard({ log, isReplying, onStartReply, onSaveReply, onCancelReply, onDelete }) {
   return (
     <Card className="p-4">
       <div className="flex justify-between items-center mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-gray-700 text-sm">📅 {log.date}</span>
           {log.coachAdded && (
             <span className="text-xs bg-orange-100 text-orange-600 font-bold px-2 py-0.5 rounded-full">教練新增</span>
@@ -221,7 +212,6 @@ function LogCard({ log, isReplying, onStartReply, onSaveReply, onCancelReply, on
         <button onClick={onDelete} className="text-red-300 hover:text-red-500 text-xs font-medium">刪除</button>
       </div>
 
-      {/* 學生紀錄 */}
       {log.studentNote ? (
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-1.5">
@@ -235,7 +225,6 @@ function LogCard({ log, isReplying, onStartReply, onSaveReply, onCancelReply, on
         </div>
       ) : null}
 
-      {/* 教練回饋 */}
       <div>
         <div className="flex items-center gap-2 mb-1.5">
           <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">教</div>
@@ -247,7 +236,6 @@ function LogCard({ log, isReplying, onStartReply, onSaveReply, onCancelReply, on
             </button>
           )}
         </div>
-
         {isReplying ? (
           <CoachReplyForm log={log} onSave={onSaveReply} onCancel={onCancelReply} />
         ) : log.coachNote ? (
@@ -264,7 +252,6 @@ function LogCard({ log, isReplying, onStartReply, onSaveReply, onCancelReply, on
   );
 }
 
-// ── 教練回饋表單 ─────────────────────────────────────────────
 function CoachReplyForm({ log, onSave, onCancel }) {
   const [txt, setTxt] = useState(log.coachNote || "");
   return (
@@ -281,7 +268,6 @@ function CoachReplyForm({ log, onSave, onCancel }) {
   );
 }
 
-// ── 教練新增紀錄表單 ──────────────────────────────────────────
 function CoachAddEntry({ onSave, onCancel }) {
   const [form, setForm] = useState({ date: today(), coachNote: "" });
   return (

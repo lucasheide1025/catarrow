@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeAllGuildQuests, publishGuildQuest, updateGuildQuestStatus, deleteGuildQuest,
+  subscribeAllGuildQuests, publishGuildQuest, updateGuildQuest, updateGuildQuestStatus, deleteGuildQuest,
   subscribeGuildSubmissions, approveGuildSubmission, rejectGuildSubmission,
   subscribeCoachChallenges, resolveCoachChallenge,
   getMembers, subscribeActiveGuildQuests,
@@ -29,7 +29,20 @@ const EMPTY_FORM = {
   reward: { xp: 100, coins: 50 },
   questSubtype: "general",
   requirement: {},
+  deadline: "",
 };
+
+function deadlineDisplay(deadline) {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  const diff = d - Date.now();
+  if (diff < 0) return { expired: true, label: "已到期" };
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h >= 48) return { expired: false, label: `${Math.floor(h / 24)} 天後截止` };
+  if (h > 0)   return { expired: false, label: `${h}h${m}m 後截止` };
+  return { expired: false, label: `${m} 分鐘後截止` };
+}
 
 export default function AdminGuildQuests({ defaultTab = "quests" }) {
   const { profile } = useAuth();
@@ -39,6 +52,7 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
   const [members, setMembers]   = useState([]);
   const [form, setForm]         = useState(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId]     = useState(null);
   const [busy, setBusy]         = useState(false);
   const [msg, setMsg]           = useState("");
   const [rejectId, setRejectId] = useState(null);
@@ -67,15 +81,38 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
       ...form,
       badgeReward:         form.badgeReward         || null,
       prerequisiteQuestId: form.prerequisiteQuestId || null,
+      deadline:            form.deadline            || null,
       reward: { xp: Number(form.reward.xp) || 0, coins: Number(form.reward.coins) || 0 },
     };
     try {
-      await publishGuildQuest(data, profile?.id);
-      setForm(EMPTY_FORM); setShowForm(false);
+      if (editId) {
+        await updateGuildQuest(editId, data, profile?.id);
+      } else {
+        await publishGuildQuest(data, profile?.id);
+      }
+      setForm(EMPTY_FORM); setShowForm(false); setEditId(null);
     } catch(e) {
-      setMsg("發佈失敗：" + e.message);
+      setMsg((editId ? "更新" : "發佈") + "失敗：" + e.message);
     }
     setBusy(false);
+  }
+
+  function handleEdit(q) {
+    setForm({
+      title: q.title || "",
+      desc:  q.desc  || "",
+      type:  q.type  || "normal",
+      badgeReward:         q.badgeReward         || "",
+      prerequisiteQuestId: q.prerequisiteQuestId || "",
+      reward: { xp: q.reward?.xp ?? 100, coins: q.reward?.coins ?? 50 },
+      questSubtype: q.questSubtype || "general",
+      requirement:  q.requirement  || {},
+      deadline: q.deadline || "",
+    });
+    setEditId(q.id);
+    setShowForm(true);
+    setMsg("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleApprove(sub) {
@@ -131,9 +168,9 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
       {/* ── 任務發佈 tab ── */}
       {tab === "quests" && (
         <div style={{ padding: "12px" }}>
-          <button onClick={() => setShowForm(v => !v)}
-            style={{ width: "100%", padding: "10px", background: "#2563eb", color: "white", border: "none", borderRadius: "10px", fontWeight: "900", fontSize: "14px", cursor: "pointer", marginBottom: "12px" }}>
-            {showForm ? "▲ 收起" : "+ 發佈新任務"}
+          <button onClick={() => { setShowForm(v => !v); if (showForm) { setEditId(null); setForm(EMPTY_FORM); } }}
+            style={{ width: "100%", padding: "10px", background: editId ? "#7c3aed" : "#2563eb", color: "white", border: "none", borderRadius: "10px", fontWeight: "900", fontSize: "14px", cursor: "pointer", marginBottom: "12px" }}>
+            {showForm ? (editId ? "▲ 取消編輯" : "▲ 收起") : "+ 發佈新任務"}
           </button>
 
           {showForm && (
@@ -297,10 +334,26 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
                   </div>
                 </div>
 
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: "700", marginTop: "4px" }}>
+                  ⏰ 截止時間（選填，到時自動顯示已到期）
+                </label>
+                <input type="datetime-local" value={form.deadline}
+                  onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))}
+                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px", colorScheme: "light" }} />
+                {form.deadline && (
+                  <div style={{ fontSize: "11px", color: "#2563eb", background: "#eff6ff", padding: "6px 10px", borderRadius: "6px" }}>
+                    截止：{new Date(form.deadline).toLocaleString("zh-TW")}
+                    <button type="button" onClick={() => setForm(f => ({ ...f, deadline: "" }))}
+                      style={{ marginLeft: "10px", color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: "11px" }}>
+                      ✕ 清除
+                    </button>
+                  </div>
+                )}
+
                 {msg && <div style={{ color: "#ef4444", fontSize: "12px", fontWeight: "700" }}>{msg}</div>}
                 <button onClick={handlePublish} disabled={busy}
-                  style={{ padding: "12px", background: "#2563eb", color: "white", border: "none", borderRadius: "10px", fontWeight: "900", fontSize: "14px", cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
-                  {busy ? "發佈中…" : "確認發佈"}
+                  style={{ padding: "12px", background: editId ? "#7c3aed" : "#2563eb", color: "white", border: "none", borderRadius: "10px", fontWeight: "900", fontSize: "14px", cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
+                  {busy ? (editId ? "更新中…" : "發佈中…") : (editId ? "✏️ 確認更新" : "確認發佈")}
                 </button>
               </div>
             </div>
@@ -329,8 +382,23 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
                     <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>
                       +{q.reward?.xp || 0} XP　+{q.reward?.coins || 0} 金幣
                     </div>
+                    {q.deadline && (() => {
+                      const dl = deadlineDisplay(q.deadline);
+                      return dl ? (
+                        <div style={{ fontSize: "11px", marginTop: "3px", fontWeight: "700",
+                          color: dl.expired ? "#94a3b8" : "#d97706",
+                          background: dl.expired ? "#f1f5f9" : "#fffbeb",
+                          padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
+                          ⏰ {dl.label}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0 }}>
+                    <button onClick={() => { handleEdit(q); setTab("quests"); }}
+                      style={{ padding: "4px 8px", background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe", borderRadius: "6px", fontSize: "11px", fontWeight: "700", cursor: "pointer" }}>
+                      ✏️ 編輯
+                    </button>
                     {q.status === "active"
                       ? <button onClick={() => updateGuildQuestStatus(q.id, "expired")}
                           style={{ padding: "4px 8px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: "6px", fontSize: "11px", fontWeight: "700", cursor: "pointer" }}>

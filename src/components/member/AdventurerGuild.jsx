@@ -824,6 +824,13 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
                         {(q.reward?.xp || 0) > 0   && <div className="text-[10px] font-bold text-blue-300">+{q.reward.xp} XP</div>}
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] font-bold text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
+                      {q.deadline && (() => {
+                        const diff = new Date(q.deadline) - Date.now();
+                        if (diff <= 0) return <div className="text-[10px] font-black text-red-400">⏰ 已到期</div>;
+                        const h = Math.floor(diff / 3600000);
+                        const label = h >= 48 ? `${Math.floor(h/24)} 天後截止` : h > 0 ? `${h}h 後截止` : `${Math.floor((diff%3600000)/60000)}m 後截止`;
+                        return <div className="text-[10px] font-black text-orange-300">⏰ {label}</div>;
+                      })()}
                       <div className="mt-1 text-[10px] font-black text-right"
                         style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : bColor }}>
                         {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
@@ -867,6 +874,13 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
                         {(q.reward?.xp || 0) > 0   && <div className="text-[10px] text-blue-300">+{q.reward.xp} XP</div>}
                         {(q.reward?.coins || 0) > 0 && <div className="text-[10px] text-amber-300">+{q.reward.coins} 🪙</div>}
                       </div>
+                      {q.deadline && (() => {
+                        const diff = new Date(q.deadline) - Date.now();
+                        if (diff <= 0) return <div className="text-[10px] font-black text-red-400">⏰ 已到期</div>;
+                        const h = Math.floor(diff / 3600000);
+                        const label = h >= 48 ? `${Math.floor(h/24)} 天後截止` : h > 0 ? `${h}h 後截止` : `${Math.floor((diff%3600000)/60000)}m 後截止`;
+                        return <div className="text-[10px] font-black text-orange-300">⏰ {label}</div>;
+                      })()}
                       {!lock.ok && <div className="text-[10px] text-amber-400">🔒 {lock.reason}</div>}
                       <div className="text-right text-[10px] font-black mt-1" style={{ color: isSubmitted ? "#10b981" : !lock.ok ? "#fbbf24" : "#fbbf24" }}>
                         {isSubmitted ? "✓ 已提交" : !lock.ok ? "🔒" : "→ 接受"}
