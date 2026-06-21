@@ -1711,9 +1711,8 @@ export default function MemberPractice() {
     toast("練習紀錄已儲存 ✓");
     setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]);
 
-    // 箭露入帳（每射1箭+1箭露）
+    // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
     const arrowCount = stats.arrows || 0;
-    if (arrowCount > 0) addArrowdew(profile.id, arrowCount).catch(() => {});
 
     // 里程碑計算（非同步，不阻塞 UI）
     const newTodayArrows=oldTodayArrows+arrowCount;

@@ -5,7 +5,10 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   submitCheckin, subscribeMyCheckin, markQuestDone,
   getDailyQuestConfig, cancelCheckin, rerollCheckinBuff, submitSimpleCheckin,
+  submitClassEnd, addArrowdew, grantArrowMilestoneRewards, subscribePracticeLogs,
 } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
@@ -52,6 +55,9 @@ export default function DailyQuest({ onJoinParty }) {
   const [arrows,   setArrows]   = useState([]);
   const [failMsg,  setFailMsg]  = useState("");
   const [choosing, setChoosing] = useState(false);
+  const [showClassEndConfirm, setShowClassEndConfirm] = useState(false);
+  const [todayArrows, setTodayArrows] = useState(0);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -59,6 +65,19 @@ export default function DailyQuest({ onJoinParty }) {
     const unsub = subscribeMyCheckin(profile.id, c => setCheckin(c));
     return () => unsub && unsub();
   }, [profile?.id]);
+
+  // 即時追蹤今日箭數（供下課結算用）
+  useEffect(() => {
+    if (!profile?.id) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const unsub = subscribePracticeLogs(profile.id, logs => {
+      const count = logs
+        .filter(l => l.date === todayStr)
+        .reduce((s, l) => s + (l.totalArrows || 0), 0);
+      setTodayArrows(count);
+    });
+    return () => unsub && unsub();
+  }, [profile?.id]); // eslint-disable-line
 
   // status "active" 時產生／恢復任務；buff 到了就播演出
   useEffect(() => {
@@ -129,6 +148,29 @@ export default function DailyQuest({ onJoinParty }) {
     if (!checkin?.id) return;
     setBusy(true); sfxTap();
     await cancelCheckin(checkin.id);
+    setBusy(false);
+  }
+
+  function doClassEnd() {
+    if (!checkin?.id || checkin?.classEnded || busy) return;
+    setShowClassEndConfirm(true);
+  }
+
+  async function confirmClassEnd() {
+    setShowClassEndConfirm(false);
+    setBusy(true); sfxSuccess();
+    try {
+      await submitClassEnd(profile.id, checkin.id);
+      // 箭露結算
+      if (todayArrows > 0 && profile?.id) {
+        addArrowdew(profile.id, todayArrows).catch(() => {});
+        const milestones = getMilestonesReached(0, todayArrows);
+        if (milestones.length > 0) {
+          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+        }
+      }
+    } catch (e) { console.warn("confirmClassEnd:", e?.message); }
     setBusy(false);
   }
 
@@ -205,8 +247,8 @@ export default function DailyQuest({ onJoinParty }) {
     return (
       <div className="rounded-2xl p-5 text-white relative overflow-hidden"
         style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-        <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
-        <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
+        <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日上課</div>
+        <div className="text-lg font-black mb-1">📍 今日尚未上課</div>
         <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
         {failMsg && (
           <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2 mb-3 text-sm text-red-200 font-bold">
@@ -216,18 +258,18 @@ export default function DailyQuest({ onJoinParty }) {
         {!choosing ? (
           <button onClick={() => setChoosing(true)} disabled={busy}
             className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
-            {busy ? "報到中…" : "📍 今日報到"}
+            {busy ? "上課中…" : "📍 今日上課"}
           </button>
         ) : (
           <div className="flex flex-col gap-2">
-            <div className="text-center text-purple-100 text-xs font-bold mb-1">選擇今日報到方式</div>
+            <div className="text-center text-purple-100 text-xs font-bold mb-1">選擇今日上課方式</div>
             <button onClick={() => { setChoosing(false); doCheckin(); }} disabled={busy}
               className="w-full py-3 rounded-xl bg-white text-purple-700 font-black text-sm active:scale-95 transition-transform">
               🎯 接受每日任務（教練施法後開始）
             </button>
             <button onClick={doSimpleCheckin} disabled={busy}
               className="w-full py-2.5 rounded-xl bg-white/20 text-white font-bold text-sm active:scale-95 transition-transform border border-white/30">
-              ⏭️ 跳過任務（純報到 +1）
+              ⏭️ 跳過任務（自由練習）
             </button>
             <button onClick={() => setChoosing(false)} className="text-purple-200 text-xs text-center mt-0.5">取消</button>
           </div>
@@ -236,18 +278,75 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  // 1. 今天還沒報到
+  // 下課按鈕 / 已下課提示（共用）
+  function ClassEndBlock() {
+    if (checkin?.classEnded) {
+      return (
+        <div className="bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-3 text-center mt-3">
+          <div className="text-amber-300 font-black text-base">🏁 已下課</div>
+          <div className="text-amber-200 text-xs mt-0.5">今日上課已計入 · 累積第 {count} 次 · 辛苦了！</div>
+        </div>
+      );
+    }
+    return (
+      <button onClick={doClassEnd} disabled={busy}
+        className="w-full mt-3 py-3.5 rounded-xl font-black text-base active:scale-95 transition-transform disabled:opacity-50"
+        style={{ background:"linear-gradient(135deg,#f59e0b,#d97706)", color:"#1c1917" }}>
+        {busy ? "下課中…" : "🏁 下課（計入本次上課）"}
+      </button>
+    );
+  }
+
+  // 下課確認彈窗
+  if (showClassEndConfirm) {
+    return (
+      <div className="fixed inset-0 z-[300] flex items-center justify-center px-6"
+        style={{ background: "rgba(0,0,0,0.75)" }}>
+        <div className="w-full max-w-sm rounded-3xl p-6 text-center"
+          style={{ background: "linear-gradient(180deg,#1e293b,#0f172a)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="text-3xl mb-3">🏁</div>
+          <div className="text-white font-black text-lg mb-1">確認下課？</div>
+          <div className="text-white/60 text-sm mb-4">今日共射出 <span className="text-yellow-300 font-black">{todayArrows}</span> 箭<br/>將獲得 <span className="text-blue-300 font-black">{todayArrows} 箭露</span> 並計入今日上課</div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowClassEndConfirm(false)}
+              className="flex-1 py-3 rounded-xl font-bold text-sm"
+              style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}>
+              取消
+            </button>
+            <button onClick={confirmClassEnd}
+              className="flex-2 py-3 rounded-xl font-black text-sm flex-1"
+              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#1c1917" }}>
+              確認下課
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 里程碑彈窗
+  if (milestoneQueue.length > 0) {
+    return (
+      <ArrowMilestonePopup
+        milestone={milestoneQueue[0].ms}
+        rewards={milestoneQueue[0].rewards}
+        onClose={() => setMilestoneQueue(q => q.slice(1))}
+      />
+    );
+  }
+
+  // 1. 今天還沒上課
   if (!checkin) return <CheckinChoiceUI />;
 
-  // 2-a. 已取消的報到 → 直接當成未報到（但 doc 還在，讓 admin 可刪）
+  // 2-a. 已取消 → 當成未上課
   if (checkin.status === "cancelled") return <CheckinChoiceUI />;
 
-  // 2. 已報到，任務進行中
+  // 2. 已上課，任務進行中
   if (checkin.status === "active" && !checkin.questDone) {
     return (
       <>
         <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#16a34a,#0891b2)" }}>
-          <div className="text-xs font-black tracking-wider text-emerald-100 mb-2">今日任務進行中</div>
+          <div className="text-xs font-black tracking-wider text-emerald-100 mb-2">📍 已上課 · 任務進行中</div>
 
           {/* Buff 顯示（教練施法後才會出現）*/}
           {buff ? (
@@ -313,6 +412,9 @@ export default function DailyQuest({ onJoinParty }) {
           )}
 
           {/* 計分區 */}
+          {/* 下課按鈕（任務進行中也可下課） */}
+          <ClassEndBlock />
+
           {chosenIdx != null && buffedChosenTask && (
             <>
               <div className="bg-white/10 rounded-xl p-3 mb-3">
@@ -372,40 +474,43 @@ export default function DailyQuest({ onJoinParty }) {
     return (
       <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
         <div className="text-xs font-black tracking-wider text-emerald-100 mb-1">今日任務</div>
-        <div className="text-lg font-black mb-1">✅ 今日任務完成！</div>
+        <div className="text-lg font-black mb-1">✅ 任務完成！</div>
         {taskObj && (
           <div className="text-emerald-100 text-xs mb-1">
             {taskObj.label}・{taskObj.distance}米・{taskObj.target}
             {qr && ` → 得 ${qr.value} 分（目標 ${qr.target}）`}
           </div>
         )}
-        <div className="text-emerald-100 text-xs mb-2">
-          獲得 {CHEST_LABEL[taskObj?.chest] || "寶箱"} 🎁　已完成 {count} 次
+        <div className="text-emerald-100 text-xs mb-1">
+          獲得 {CHEST_LABEL[taskObj?.chest] || "寶箱"} 🎁
         </div>
-        <div className="text-emerald-200 text-xs">還差 {remain} 次換成就銀章 🥈　明天再來挑戰！</div>
+        <div className="text-emerald-200 text-xs mb-1">還差 {remain} 次換成就銀章 🥈</div>
+        <ClassEndBlock />
       </div>
     );
   }
 
-  // 4. 純報到完成（舊 simple 類型）
-  if (checkin.type === "simple") {
+  // 4. 自由上課（跳過任務 / simple 類型）
+  if (checkin.type === "simple" || checkin.status === "done") {
     return (
       <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#0891b2,#0369a1)" }}>
-        <div className="text-xs font-black tracking-wider text-sky-100 mb-1">每日報到</div>
-        <div className="text-lg font-black mb-1">✅ 今日已純報到！</div>
-        <div className="text-sky-100 text-xs">已完成 {count} 次　還差 {remain} 次換成就銀章 🥈　明天再來！</div>
+        <div className="text-xs font-black tracking-wider text-sky-100 mb-1">今日上課</div>
+        <div className="text-lg font-black mb-1">📍 自由練習中</div>
+        <div className="text-sky-100 text-xs mb-1">練習完畢後點下課即可計入次數</div>
+        <div className="text-sky-200 text-xs mb-1">還差 {remain} 次換成就銀章 🥈</div>
+        <ClassEndBlock />
       </div>
     );
   }
 
-  // 萬用逃生出口：checkin 存在但狀態不明，讓學生可以取消並重新報到
+  // 萬用逃生出口：狀態不明
   return (
     <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#475569,#1e293b)" }}>
-      <div className="text-xs font-black tracking-wider text-slate-300 mb-2">每日任務</div>
-      <div className="text-sm text-slate-300 mb-3">報到狀態異常，請取消後重新報到。</div>
+      <div className="text-xs font-black tracking-wider text-slate-300 mb-2">每日上課</div>
+      <div className="text-sm text-slate-300 mb-3">上課狀態異常，請取消後重新上課。</div>
       <button onClick={doCancel} disabled={busy}
         className="w-full py-2.5 rounded-xl bg-red-500/80 text-white font-black text-sm active:scale-95 transition-transform disabled:opacity-50">
-        {busy ? "取消中…" : "🔄 取消並重新報到"}
+        {busy ? "取消中…" : "🔄 取消並重新上課"}
       </button>
     </div>
   );
