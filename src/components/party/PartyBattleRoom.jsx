@@ -18,7 +18,7 @@ import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMa
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
-import TargetFaceOverlay from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -134,6 +134,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [arrows,          setArrows]          = useState([]);
   const [targetMode,      setTargetMode]      = useState(false);
   const [targetPending,   setTargetPending]   = useState(false);
+  const [targetFmt,       setTargetFmt]       = useState(getBattleTargetFmt);
   const [submitting,      setSubmitting]      = useState(false);
   const [setupMonster,    setSetupMonster]    = useState(null);
   const [setupMode,       setSetupMode]       = useState("student");
@@ -856,6 +857,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {startError}
               </div>
             )}
+            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3">
+              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+            </div>
             <button onClick={handleStart}
               disabled={!setupMonster || starting || (memberList.length < 2 && !memberList.some(m => m.isBot)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
               className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
@@ -1505,6 +1509,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             )}
             <TargetFaceOverlay
               open={targetMode && !targetPending && !myReady}
+              fmtId={targetFmt}
               arrowLabels={arrows.map(a => a.label)}
               arrowsPerRound={ARROWS_PER_ROUND}
               onArrow={addArrow}

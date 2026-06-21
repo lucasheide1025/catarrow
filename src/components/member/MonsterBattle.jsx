@@ -27,7 +27,7 @@ import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoft
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
-import TargetFaceOverlay from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -176,6 +176,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [processing, setProcessing]     = useState(false);
   const [targetMode, setTargetMode]     = useState(false);
   const [targetPending, setTargetPending] = useState(false);
+  const [targetFmt, setTargetFmt]       = useState(getBattleTargetFmt);
   const [totalDmgDealt, setTotalDmgDealt] = useState(0);
   const [totalDmgRecvd, setTotalDmgRecvd] = useState(0);
   const [critCount, setCritCount]       = useState(0);
@@ -991,6 +992,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
               {isGuest && <span className="bg-amber-500/80 px-2 py-0.5 rounded-full font-bold text-white">⭐ 體驗</span>}
             </div>
           )}
+        </div>
+
+        {/* 靶面格式選擇 */}
+        <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 14px" }}>
+          <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
         </div>
 
         {!isGuest && showRestorePrompt && savedBattle && (
@@ -1885,6 +1891,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
               <TargetFaceOverlay
                 open={targetMode && !targetPending && !processing}
+                fmtId={targetFmt}
                 arrowLabels={arrows}
                 arrowsPerRound={ARROWS_PER_ROUND}
                 onArrow={inputArrow}

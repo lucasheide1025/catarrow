@@ -5,7 +5,7 @@ import CatMsg from "../cat/CatMsg";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
-import TargetFaceOverlay from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
@@ -249,6 +249,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [submitted, setSubmitted] = useState(false);
   const [targetMode, setTargetMode]   = useState(false);
   const [targetPending, setTargetPending] = useState(false);
+  const [targetFmt, setTargetFmt]     = useState(getBattleTargetFmt);
   const [revealEntry, setRevealEntry] = useState(null);
   const [revealIdx, setRevealIdx]     = useState(-1);
   const [floats, setFloats]           = useState([]);   // { id, text, team, memberId, isCrit }
@@ -1074,6 +1075,11 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             );
           })()}
 
+          {myArrows.length === 0 && !targetPending && (
+            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 mb-2">
+              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+            </div>
+          )}
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[10px] text-slate-500 font-bold">輸入方式</span>
             <button onClick={() => setTargetMode(m => !m)}
@@ -1095,6 +1101,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           )}
           <TargetFaceOverlay
             open={targetMode && !targetPending && !submitted}
+            fmtId={targetFmt}
             arrowLabels={myArrows.map(a => a.label)}
             arrowsPerRound={ARROWS}
             onArrow={addArrowByLabel}
