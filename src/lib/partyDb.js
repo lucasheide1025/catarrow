@@ -10,9 +10,12 @@ import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 
 const PARTY = "partyRooms";
 
-// 生成 6 碼大寫邀請碼
+// 生成 6 碼大寫邀請碼（排除易混淆字元 0/O、1/I）
 function genCode() {
-  return String(10 + Math.floor(Math.random() * 90));
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
 }
 
 // HP 倍率顯示範圍（用於大廳預覽）
