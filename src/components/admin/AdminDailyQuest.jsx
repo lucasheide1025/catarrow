@@ -97,19 +97,21 @@ export default function AdminDailyQuest({ mode = "all" }) {
   async function openBill(c) {
     let defaultPlan = null;
     let hasEquip = false;
+    let earlyBird = false;
     if (c.memberId) {
       try {
         const snap = await getDoc(doc(db, "members", c.memberId));
         if (snap.exists()) {
           const data = snap.data();
-          hasEquip = Object.values(data.equipment || {}).some(Boolean);
+          hasEquip  = Object.values(data.equipment || {}).some(Boolean);
+          earlyBird = !!data.archerNo;
           defaultPlan = data.defaultPlan || null;
         }
       } catch {}
     }
     const plans = hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP;
     if (!plans.find(p => p.id === defaultPlan)) defaultPlan = plans[0].id;
-    setBillState(s => ({ ...s, [c.id]: { plan: defaultPlan, payMethod: "現金", busy: false, hasEquip } }));
+    setBillState(s => ({ ...s, [c.id]: { plan: defaultPlan, payMethod: "現金", busy: false, hasEquip, earlyBird } }));
   }
 
   async function confirmBill(c) {
@@ -120,15 +122,17 @@ export default function AdminDailyQuest({ mode = "all" }) {
       const plans = bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP;
       const planObj = plans.find(p => p.id === bs.plan);
       const payMethod = bs.plan === "月卡" ? "月卡" : bs.payMethod;
-      const finalPrice = bs.plan === "月卡" ? 0 : (planObj?.price || 0);
+      const basePrice = planObj?.price || 0;
+      const discount  = (bs.plan !== "月卡" && bs.earlyBird) ? 100 : 0;
+      const finalPrice = bs.plan === "月卡" ? 0 : Math.max(0, basePrice - discount);
       const dateStr = new Date().toISOString().slice(0, 10);
       const [y, m, d] = dateStr.split("-").map(Number);
       await addBillingRecord({
         memberName:    c.memberNickname || c.memberName,
         memberId:      c.memberId || null,
         plan:          bs.plan,
-        basePrice:     planObj?.price || 0,
-        discount:      0,
+        basePrice,
+        discount,
         finalPrice,
         paymentMethod: payMethod,
         date: dateStr, year: y, month: m, day: d,
@@ -140,7 +144,8 @@ export default function AdminDailyQuest({ mode = "all" }) {
         updateDoc(doc(db, "members", c.memberId), { defaultPlan: bs.plan }).catch(() => {});
       }
       await adminDismissCheckin(c.id);
-      toast(`✅ ${c.memberNickname || c.memberName}：已記帳（${bs.plan} / ${payMethod} NT$${finalPrice}）`);
+      const discNote = discount > 0 ? ` 早鳥-${discount}` : "";
+      toast(`✅ ${c.memberNickname || c.memberName}：已記帳（${bs.plan}${discNote} / ${payMethod} NT$${finalPrice}）`);
     } catch (e) {
       toast("記帳失敗：" + (e?.message || ""), "error");
       setBillState(s => ({ ...s, [c.id]: { ...s[c.id], busy: false } }));
@@ -542,13 +547,34 @@ export default function AdminDailyQuest({ mode = "all" }) {
                             </>
                           )}
 
+                          {/* 早鳥折扣（非月卡方案才顯示）*/}
+                          {bs.plan !== "月卡" && (
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input type="checkbox"
+                                checked={!!bs.earlyBird}
+                                onChange={e => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], earlyBird: e.target.checked } }))}
+                                className="w-4 h-4 accent-amber-500 cursor-pointer" />
+                              <span className="text-xs font-black text-amber-700">
+                                🌅 早鳥折扣 -100元
+                              </span>
+                              {bs.earlyBird && <span className="text-[10px] text-amber-500">（已有射手證號或手動套用）</span>}
+                            </label>
+                          )}
+
                           {/* 金額預覽 */}
-                          <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
-                            {bs.plan}・{bs.plan === "月卡" ? "月卡扣除" : bs.payMethod}・
-                            <span className="font-black text-gray-800">
-                              NT${bs.plan === "月卡" ? 0 : ((bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).find(p => p.id === bs.plan)?.price || 0)}
-                            </span>
-                          </div>
+                          {(() => {
+                            const planObj2 = (bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).find(p => p.id === bs.plan);
+                            const base2 = planObj2?.price || 0;
+                            const disc2 = (bs.plan !== "月卡" && bs.earlyBird) ? 100 : 0;
+                            const final2 = bs.plan === "月卡" ? 0 : Math.max(0, base2 - disc2);
+                            return (
+                              <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
+                                {bs.plan}・{bs.plan === "月卡" ? "月卡扣除" : bs.payMethod}
+                                {disc2 > 0 && <span className="text-amber-600 ml-1">- 早鳥 {disc2}</span>}
+                                ・<span className="font-black text-gray-800">NT${final2}</span>
+                              </div>
+                            );
+                          })()}
 
                           {/* 按鈕 */}
                           <div className="flex gap-2">

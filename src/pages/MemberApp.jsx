@@ -41,6 +41,7 @@ import DungeonLobby      from "../components/dungeon/DungeonLobby";
 import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
 import MemberGuide       from "../components/member/MemberGuide";
 import EquipmentPage     from "../components/member/EquipmentPage";
+import MemberBowSettings from "../components/member/MemberBowSettings";
 import CoinShop          from "../components/member/CoinShop";
 import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
@@ -58,7 +59,7 @@ const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards"];
-const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard"];
+const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -397,6 +398,7 @@ export default function MemberApp() {
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("inventory-hub")} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
+        {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")} />}
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
         {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}

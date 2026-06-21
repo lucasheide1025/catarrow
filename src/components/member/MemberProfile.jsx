@@ -115,6 +115,12 @@ export default function MemberProfile({
       ],
     },
     {
+      title: "器材設定",
+      links: [
+        { id:"bowsetting", icon:"🏹", label:"我的弓具", desc:"弓具・防具・配件設定" },
+      ],
+    },
+    {
       title: "說明設定",
       links: [
         { id:"guide", icon:"📘", label:"使用說明", desc:"系統操作指引" },
