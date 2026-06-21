@@ -71,7 +71,12 @@ const CAN_SCORE = ["upcoming", "open", "ongoing"];
 export default function AdminApp() {
   const { logout, profile } = useAuth();
   const VALID_PAGES = new Set(["hub-member","hub-events","givetool","hub-items","archery"]);
-  const [page, setPage]             = useState(() => { const s = sessionStorage.getItem("admin_page"); return (s && VALID_PAGES.has(s)) ? s : "hub-member"; });
+  const [page, setPage]             = useState(() => {
+    const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
+    const s = sessionStorage.getItem("admin_page");
+    if (isArcher) return (s && !VALID_PAGES.has(s)) ? s : "home";
+    return (s && VALID_PAGES.has(s)) ? s : "hub-member";
+  });
   const [memberSub, setMemberSub]   = useState(null);
   const [eventsSub, setEventsSub]   = useState(null);
   const [itemsSub,  setItemsSub]    = useState(null);
