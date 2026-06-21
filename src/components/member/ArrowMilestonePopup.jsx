@@ -1,4 +1,5 @@
 // src/components/member/ArrowMilestonePopup.jsx
+// 設計原則：不干擾戰鬥。小里程碑用頂部 toast banner；120箭才用全螢幕慶祝。
 import { useState, useEffect } from "react";
 import { getWarmMessage, getBigMessage } from "../../lib/arrowMilestone";
 
@@ -13,50 +14,46 @@ function RewardRow({ label, icon, count }) {
   );
 }
 
-// 小里程碑 popup（6/12/24/30箭）
+// 小里程碑 → 頂部 toast banner（不擋畫面，點擊或5秒後消失）
 export function SmallMilestonePopup({ milestone, rewards, onClose }) {
-  const [msg] = useState(() => getWarmMessage());
-  const tierLabels = { 1: "6箭", 2: "12箭", 3: "24箭", 4: "30箭完成！" };
-  const tierBg = {
-    1: "from-emerald-600 to-teal-700",
-    2: "from-blue-600 to-indigo-700",
-    3: "from-violet-600 to-purple-700",
-    4: "from-amber-500 to-orange-600",
-  };
-  const bg = tierBg[milestone.tier] || "from-teal-600 to-blue-700";
+  const [visible, setVisible] = useState(false);
+  const [msg]    = useState(() => getWarmMessage());
+  const tierColor = { 1:"#10b981", 2:"#3b82f6", 3:"#8b5cf6", 4:"#f59e0b" };
+  const color = tierColor[milestone.tier] || "#10b981";
+
+  useEffect(() => {
+    setTimeout(() => setVisible(true), 30);
+    const t = setTimeout(() => { setVisible(false); setTimeout(onClose, 400); }, 5000);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line
+
+  // 獎勵摘要字串
+  const parts = [];
+  if (rewards.catBoxes)  parts.push(`🐱×${rewards.catBoxes}`);
+  if (rewards.mimiBoxes) parts.push(`😺×${rewards.mimiBoxes}`);
+  if (rewards.gachaCoins) parts.push(`🪙×${rewards.gachaCoins}`);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.6)" }}
-      onClick={onClose}>
+    <div
+      onClick={() => { setVisible(false); setTimeout(onClose, 400); }}
+      className="fixed top-4 left-0 right-0 z-[300] flex justify-center px-4 pointer-events-none">
       <div
-        className={`w-full max-w-xs rounded-3xl bg-gradient-to-b ${bg} p-5 shadow-2xl`}
-        onClick={e => e.stopPropagation()}>
-
-        {/* 頭部 */}
-        <div className="text-center mb-3">
-          <div className="text-4xl mb-1">🎉</div>
-          <div className="text-white font-black text-lg">練箭里程碑！</div>
-          <div className="text-white/80 text-sm mt-0.5">今日累積 {milestone.arrows} 支箭</div>
+        className="pointer-events-auto max-w-sm w-full rounded-2xl shadow-2xl px-4 py-3 transition-all duration-400"
+        style={{
+          background: `linear-gradient(135deg, ${color}dd, ${color}99)`,
+          backdropFilter: "blur(12px)",
+          border: `1px solid ${color}66`,
+          transform: visible ? "translateY(0)" : "translateY(-80px)",
+          opacity: visible ? 1 : 0,
+        }}>
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">🎉</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-black text-sm">今日 {milestone.arrows} 支箭！里程碑達成</div>
+            <div className="text-white/80 text-xs mt-0.5">{parts.join("  ")}  ・  {msg}</div>
+          </div>
+          <div className="text-white/50 text-xs shrink-0">點擊關閉</div>
         </div>
-
-        {/* 獎勵列表 */}
-        <div className="flex flex-col gap-2 mb-4">
-          <RewardRow label="貓貓箱" icon="🐱" count={rewards.catBoxes} />
-          <RewardRow label="咪咪箱（自動開啟）" icon="😺" count={rewards.mimiBoxes} />
-          <RewardRow label="扭蛋幣" icon="🪙" count={rewards.gachaCoins} />
-        </div>
-
-        {/* 暖心話語 */}
-        <div className="bg-white/10 rounded-2xl px-4 py-3 mb-4">
-          <p className="text-white/90 text-sm text-center leading-relaxed">{msg}</p>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="w-full py-3 rounded-2xl bg-white text-gray-800 font-black text-base active:scale-95 transition-transform">
-          太好了，繼續！
-        </button>
       </div>
     </div>
   );
