@@ -9,7 +9,10 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
+  addArrowdew, grantArrowMilestoneRewards, subscribePracticeLogs,
 } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
@@ -164,6 +167,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [loot, setLoot]                 = useState(null);
   const [lootRevealed, setLootRevealed] = useState(false);
   const [showLootBox, setShowLootBox]   = useState(false);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
+  const todayArrowsRef = useRef(0);
   const [showBattleCard, setShowBattleCard] = useState(false);
   const [droppedMaterials, setDroppedMaterials] = useState([]);
   const [droppedCoins,    setDroppedCoins]     = useState(0);
@@ -218,6 +223,20 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // 讀取今日已有箭數（用於里程碑計算）
+  useEffect(() => {
+    if (!profile?.id) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const unsub = subscribePracticeLogs(profile.id, logs => {
+      const count = logs
+        .filter(l => l.date === todayStr)
+        .reduce((s, l) => s + (l.totalArrows || 0), 0);
+      todayArrowsRef.current = count;
+      unsub();
+    });
+    return () => unsub();
+  }, [profile?.id]); // eslint-disable-line
 
   // 進場動畫：50ms 後播音效（確保動畫已渲染），2.5 秒後自動進入戰鬥
   useEffect(() => {
@@ -805,13 +824,28 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const bowLabel   = Array.isArray(equipment) && equipment[0]?.label
           ? equipment[0].label : (typeof equipment === "string" ? equipment : "打怪練習");
         const practiceRounds = roundScores.map(rs => rs.scores || []);
+        const todayStr = new Date().toISOString().slice(0, 10);
         addPracticeLog(profile.id, {
-          date: new Date().toISOString().slice(0, 10), source: "monster",
+          date: todayStr, source: "monster",
           monsterName: monster.name, mode, battleMode, result,
           equipment: bowLabel, rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
           distance: selectedDistance,
         }, profile.id).catch(() => {});
+
+        // 箭露入帳 + 里程碑
+        const arrowCount = practiceRounds.flat().length;
+        if (arrowCount > 0 && profile?.id) {
+          addArrowdew(profile.id, arrowCount).catch(() => {});
+          const oldToday = todayArrowsRef.current;
+          const newToday = oldToday + arrowCount;
+          const milestones = getMilestonesReached(oldToday, newToday);
+          todayArrowsRef.current = newToday;
+          if (milestones.length > 0) {
+            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
+        }
       }
 
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！激烈的戰鬥結束——你贏了！` });
@@ -954,6 +988,13 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+        {milestoneQueue.length > 0 && (
+          <ArrowMilestonePopup
+            milestone={milestoneQueue[0].ms}
+            rewards={milestoneQueue[0].rewards}
+            onClose={() => setMilestoneQueue(q => q.slice(1))}
+          />
+        )}
         {/* 任務模式橫幅 */}
         {questContext && qMon && (
           <div className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.25),rgba(37,99,235,0.18))", border:"1px solid rgba(124,58,237,0.4)" }}>
@@ -1931,19 +1972,19 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 </div>
                 <button
                   onClick={submitRound}
-                  disabled={arrows.length<ARROWS_PER_ROUND||processing}
+                  disabled={arrows.length<ARROWS_PER_ROUND||processing||targetPending}
                   style={{
                     flex:2, padding:"8px 0",
-                    background:arrows.length>=ARROWS_PER_ROUND
+                    background:arrows.length>=ARROWS_PER_ROUND&&!targetPending
                       ?"linear-gradient(90deg,#7c3aed,#2563eb)"
                       :"rgba(255,255,255,0.07)",
                     border:"1px solid rgba(255,255,255,0.1)",
                     borderRadius:8, color:"white",
-                    fontWeight:900, fontSize:14, cursor:arrows.length>=ARROWS_PER_ROUND?"pointer":"default",
-                    opacity:processing?0.5:(arrows.length<ARROWS_PER_ROUND?0.3:1),
+                    fontWeight:900, fontSize:14, cursor:(arrows.length>=ARROWS_PER_ROUND&&!processing&&!targetPending)?"pointer":"default",
+                    opacity:(processing||targetPending)?0.5:(arrows.length<ARROWS_PER_ROUND?0.3:1),
                     transition:"background .2s, opacity .2s"
                   }}
-                >{processing?"計算中…":"⚔️ 送出！"}</button>
+                >{(processing||targetPending)?"計算中…":"⚔️ 送出！"}</button>
               </div>
             </>
           )}
