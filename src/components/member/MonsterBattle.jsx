@@ -27,7 +27,7 @@ import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoft
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
-import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -174,7 +174,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
   const [processing, setProcessing]     = useState(false);
-  const [targetMode, setTargetMode]     = useState(false);
+  const [targetMode, setTargetMode]     = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt, setTargetFmt]       = useState(getBattleTargetFmt);
   const [totalDmgDealt, setTotalDmgDealt] = useState(0);
@@ -994,9 +994,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           )}
         </div>
 
-        {/* 靶面格式選擇 */}
-        <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 14px" }}>
+        {/* 計分設定 */}
+        <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 14px", display:"flex", flexDirection:"column", gap:12 }}>
           <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+          <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
         </div>
 
         {!isGuest && showRestorePrompt && savedBattle && (

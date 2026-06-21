@@ -37,11 +37,22 @@ export const BATTLE_TARGET_FORMATS = [
   { id:"field_16", label:"原野", sub:"1-6 環" },
 ];
 
+export const BATTLE_INPUT_MODES = [
+  { id:"button", label:"點擊分數", icon:"⌨️" },
+  { id:"target", label:"點擊靶面", icon:"🎯" },
+];
+
 export function getBattleTargetFmt() {
   return localStorage.getItem("battle_target_fmt") || "full_110";
 }
 export function setBattleTargetFmt(fmtId) {
   localStorage.setItem("battle_target_fmt", fmtId);
+}
+export function getBattleInputMode() {
+  return localStorage.getItem("battle_input_mode") || "button";
+}
+export function setBattleInputMode(mode) {
+  localStorage.setItem("battle_input_mode", mode);
 }
 
 function calcTapScore(ratio, fmtId) {
@@ -124,6 +135,35 @@ export function TargetFmtPicker({ value, onChange }) {
             }}>
               <span>{fmt.label}</span>
               <span style={{ fontSize:9, fontWeight:600, opacity:0.7 }}>{fmt.sub}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function InputModePicker({ value, onChange }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+      <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.45)", letterSpacing:1 }}>
+        計分方式
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        {BATTLE_INPUT_MODES.map(mode => {
+          const active = value === mode.id;
+          return (
+            <button key={mode.id} onClick={() => onChange(mode.id)} style={{
+              flex:1, padding:"8px 4px", borderRadius:10,
+              border:`2px solid ${active ? "#60a5fa" : "rgba(255,255,255,0.12)"}`,
+              background: active ? "rgba(96,165,250,0.15)" : "rgba(255,255,255,0.05)",
+              color: active ? "#93c5fd" : "rgba(255,255,255,0.55)",
+              fontSize:12, fontWeight:900, cursor:"pointer",
+              display:"flex", flexDirection:"column", alignItems:"center", gap:2,
+              transition:"all 0.15s",
+            }}>
+              <span style={{ fontSize:16 }}>{mode.icon}</span>
+              <span>{mode.label}</span>
             </button>
           );
         })}

@@ -5,7 +5,7 @@ import CatMsg from "../cat/CatMsg";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
-import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
@@ -247,7 +247,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
   const [submitted, setSubmitted] = useState(false);
-  const [targetMode, setTargetMode]   = useState(false);
+  const [targetMode, setTargetMode]   = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt, setTargetFmt]     = useState(getBattleTargetFmt);
   const [revealEntry, setRevealEntry] = useState(null);
@@ -1076,8 +1076,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           })()}
 
           {myArrows.length === 0 && !targetPending && (
-            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 mb-2">
+            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 mb-2 flex flex-col gap-3">
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
           )}
           <div className="flex items-center gap-2 mb-1.5">

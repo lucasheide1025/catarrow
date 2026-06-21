@@ -10,7 +10,7 @@ import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
-import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -245,7 +245,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const [roundIdx,     setRoundIdx]     = useState(0);
   const [arrows,       setArrows]       = useState([]);
-  const [targetMode,   setTargetMode]   = useState(false);
+  const [targetMode,   setTargetMode]   = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt,    setTargetFmt]    = useState(getBattleTargetFmt);
   const [allRounds,    setAllRounds]    = useState([]);
@@ -955,8 +955,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             )}
           </div>
           {subPhase === "shooting" && arrows.length === 0 && !targetPending && (
-            <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"10px 12px", marginBottom:4 }}>
+            <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"10px 12px", marginBottom:4, display:"flex", flexDirection:"column", gap:10 }}>
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
           )}
           {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}

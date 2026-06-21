@@ -18,7 +18,7 @@ import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMa
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
-import TargetFaceOverlay, { TargetFmtPicker, getBattleTargetFmt, setBattleTargetFmt } from "../shared/TargetFaceOverlay";
+import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -132,7 +132,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catStatMult } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const [arrows,          setArrows]          = useState([]);
-  const [targetMode,      setTargetMode]      = useState(false);
+  const [targetMode,      setTargetMode]      = useState(() => getBattleInputMode() === "target");
   const [targetPending,   setTargetPending]   = useState(false);
   const [targetFmt,       setTargetFmt]       = useState(getBattleTargetFmt);
   const [submitting,      setSubmitting]      = useState(false);
@@ -857,8 +857,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {startError}
               </div>
             )}
-            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3">
+            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 flex flex-col gap-3">
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
             <button onClick={handleStart}
               disabled={!setupMonster || starting || (memberList.length < 2 && !memberList.some(m => m.isBot)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
