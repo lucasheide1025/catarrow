@@ -881,7 +881,7 @@ export function checkinId(memberId, date) {
   return `${memberId}_${date || todayStr()}`;
 }
 
-// 純報到：直接計入 +1 次，不需教練核准，不做任務
+// 純上課：建立上課紀錄，等待學生點「下課」才計次
 export async function submitSimpleCheckin(memberId, memberName, memberNickname) {
   const date = todayStr();
   const id = checkinId(memberId, date);
@@ -890,19 +890,9 @@ export async function submitSimpleCheckin(memberId, memberName, memberNickname) 
   if (snap.exists()) return { id, already: true };
   await setDoc(ref, {
     memberId, memberName: memberName || "", memberNickname: memberNickname || "",
-    date, type: "simple", status: "done", finalConfirmed: true,
+    date, type: "simple", status: "done", finalConfirmed: false, classEnded: false,
     createdAt: serverTimestamp(),
   });
-  try {
-    const member = await getMember(memberId);
-    const newCount = (member?.dailyQuestCount || 0) + 1;
-    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
-    const config = await getDailyQuestConfig();
-    const rewardEvery = config?.rewardEvery || 10;
-    if (newCount % rewardEvery === 0) {
-      await addBadge(memberId, "achievement", "silver", 1, memberId, `每日任務累積 ${newCount} 次`);
-    }
-  } catch (e) { console.warn("simpleCheckin:", e?.message); }
   return { id, already: false };
 }
 
@@ -989,14 +979,6 @@ export async function markQuestDone(checkinId, questResult, memberId = null, che
   });
   if (memberId) {
     try {
-      const member = await getMember(memberId);
-      const newCount = (member?.dailyQuestCount || 0) + 1;
-      await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
-      const config = await getDailyQuestConfig();
-      const rewardEvery = config?.rewardEvery || 10;
-      if (newCount % rewardEvery === 0) {
-        await addBadge(memberId, "achievement", "silver", 1, memberId, `每日任務累積 ${newCount} 次`);
-      }
       if (chestType) {
         const tierMap = { wood: "common", iron: "rare", gold: "elite" };
         await addChests(memberId, [{
@@ -1007,6 +989,25 @@ export async function markQuestDone(checkinId, questResult, memberId = null, che
       }
     } catch (e) { console.warn("markQuestDone:", e?.message); }
   }
+}
+
+// 學生點「下課」→ 計入本次上課次數 +1
+export async function submitClassEnd(memberId, checkinDocId) {
+  await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
+    classEnded: true,
+    classEndedAt: serverTimestamp(),
+    finalConfirmed: true,
+  });
+  try {
+    const member = await getMember(memberId);
+    const newCount = (member?.dailyQuestCount || 0) + 1;
+    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
+    const config = await getDailyQuestConfig();
+    const rewardEvery = config?.rewardEvery || 10;
+    if (newCount % rewardEvery === 0) {
+      await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${newCount} 次`);
+    }
+  } catch (e) { console.warn("submitClassEnd:", e?.message); }
 }
 
 // 教練最終確認（舊流程相容，新流程已不需要）
@@ -2749,4 +2750,70 @@ export async function upgradeEquipSlot(memberId, slotId) {
     console.warn("upgradeEquipSlot:", e?.message);
     return { ok: false, reason: e?.message || "系統錯誤" };
   }
+}
+
+// ─── 練箭里程碑獎勵 ────────────────────────────────────────
+// milestones: getMilestonesReached() 回傳的陣列
+export async function grantArrowMilestoneRewards(memberId, milestones) {
+  if (!memberId || !milestones?.length) return;
+  const { getRewardsForMilestone } = await import("./arrowMilestone");
+  const { rollGacha } = await import("./catCardData");
+
+  for (const ms of milestones) {
+    const r = getRewardsForMilestone(ms);
+
+    // 1. 貓貓箱（存入 chestInventory）
+    if ((r.catBoxes || 0) > 0) {
+      const chests = Array.from({ length: r.catBoxes }, (_, i) => ({
+        id: `arrow_cat_${memberId}_${ms.arrows}_${i}_${Date.now()}`,
+        type: "cat_box", family: "practice", tier: "common",
+        from: `練箭里程碑（${ms.arrows}箭）`, ts: Date.now(),
+      }));
+      await addChests(memberId, chests).catch(() => {});
+    }
+
+    // 2. 咪咪箱（直接開貓）
+    if ((r.mimiBoxes || 0) > 0) {
+      const { openCatBox } = await import("./catDb").catch(() => ({}));
+      if (openCatBox) {
+        for (let i = 0; i < r.mimiBoxes; i++) {
+          await openCatBox(memberId, { bondOnDuplicate: 50 }).catch(() => {});
+        }
+      }
+    }
+
+    // 3. 扭蛋幣 + 120箭圖鑑
+    const updates = {};
+    if ((r.gachaCoins || 0) > 0) updates.gachaCoins = increment(r.gachaCoins);
+    if (ms.type === "big") {
+      updates[`arrowMilestoneDex.${ms.multiple}`] = { date: new Date().toISOString().slice(0, 10), arrows: ms.arrows };
+    }
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(doc(db, C.members, memberId), updates).catch(() => {});
+    }
+  }
+}
+
+// ─── 扭蛋機：抽卡 ──────────────────────────────────────────
+export async function drawGachaCards(memberId, type = "single") {
+  const count = type === "single" ? 1 : 11;
+  const cost  = type === "single" ? 1 : 10;
+
+  const member = await getMember(memberId);
+  const coins  = member?.gachaCoins || 0;
+  if (coins < cost) return { ok: false, reason: `需要 ${cost} 枚扭蛋幣` };
+
+  const { rollGacha } = await import("./catCardData");
+  const drawn = Array.from({ length: count }, () => rollGacha());
+
+  const updates = { gachaCoins: increment(-cost) };
+  const prevCards = member?.catCards || {};
+  const results = drawn.map(id => {
+    const isNew = !prevCards[id];
+    updates[`catCards.${id}`] = increment(1);
+    return { id, isNew };
+  });
+
+  await updateDoc(doc(db, C.members, memberId), updates);
+  return { ok: true, results };
 }

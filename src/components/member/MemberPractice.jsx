@@ -1,6 +1,8 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useMemo } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { useAuth } from "../../hooks/useAuth";
 import { today } from "../../lib/constants";
 import { normalizeEquipment, getDefaultBowType, getDefaultEquipSetId } from "../shared/Equipment";
@@ -1664,6 +1666,7 @@ export default function MemberPractice() {
   const [saving, setSaving]=useState(false);
   const [finishedRounds, setFinishedRounds]=useState([]);
   const [arrowPositions, setArrowPositions]=useState([]);
+  const [milestoneQueue, setMilestoneQueue]=useState([]);  // [{ms, rewards}]
 
   const equipSets=useMemo(()=>normalizeEquipment(profile?.equipment),[profile?.equipment]);
 
@@ -1687,6 +1690,13 @@ export default function MemberPractice() {
     setSaving(true);
     const fmt=TARGET_FORMATS.find(f=>f.id===form.targetFormat)||TARGET_FORMATS[0];
     const stats=calcStats(finishedRounds);
+
+    // 計算今日舊箭數（儲存前）
+    const todayStr=form.date || today();
+    const oldTodayArrows=logs
+      .filter(l=>l.date===todayStr)
+      .reduce((s,l)=>s+(l.totalArrows||0),0);
+
     await addPracticeLog(profile.id,{
       date:form.date, bowType:form.bowType, distance:form.distance,
       targetFormat:form.targetFormat, arrowCount:form.arrowCount, roundCount:form.roundCount,
@@ -1697,8 +1707,18 @@ export default function MemberPractice() {
       note:form.note,
       ...(arrowPositions.length>0 ? { arrowPositions } : {}),
     },profile.id);
+
     toast("練習紀錄已儲存 ✓");
     setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]);
+
+    // 里程碑計算（非同步，不阻塞 UI）
+    const newTodayArrows=oldTodayArrows+(stats.arrows||0);
+    const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
+    if(milestones.length>0){
+      grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});
+      const queue=milestones.map(ms=>({ ms, rewards: getRewardsForMilestone(ms) }));
+      setMilestoneQueue(queue);
+    }
   }
 
   if (loading) return <div className="flex justify-center p-12"><Spinner /></div>;
@@ -1708,6 +1728,12 @@ export default function MemberPractice() {
   return (
     <div style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
       <ToastContainer />
+      {milestoneQueue.length>0 && (
+        <ArrowMilestonePopup
+          milestones={milestoneQueue.map(q=>q.ms)}
+          rewardsList={milestoneQueue.map(q=>q.rewards)}
+          onAllClose={()=>setMilestoneQueue([])} />
+      )}
       {phase==="setup" && (
         <div className="flex sticky top-0 z-10" style={tabBarStyle}>
           {[["practice","🎯 練習"],["history","📋 歷史"],["overview","🔍 總覽"],["analysis","📈 分析"]].map(([id,label])=>(

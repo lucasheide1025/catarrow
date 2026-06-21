@@ -35,6 +35,7 @@ export default function MemberInventoryHub({ onPageChange }) {
     { key:"story",     page:"story",     label:"故事本",    sub:"章節解鎖",                      gradient:"linear-gradient(135deg,#1e1b4b,#3b0764)" },
     { key:"equipment", page:"equipment", label:"我的裝備",  sub:`${equipCount}/10 格`,           gradient:"linear-gradient(135deg,#312e81,#0f172a)" },
     { key:"cards",     page:"cards",     label:"怪物卡片",  sub:"收藏・升星",                    gradient:"linear-gradient(135deg,#065f46,#14532d)" },
+    { key:"gacha",     page:"gacha",     label:"貓貓扭蛋",  sub:`🪙 ${profile?.gachaCoins ?? 0} 枚扭蛋幣`, gradient:"linear-gradient(135deg,#9d174d,#831843)" },
   ];
 
   return (
