@@ -147,7 +147,9 @@ function SingleTargetSVG({ fmtId, R, arrows, active, onTap }) {
     const px = (touch ? touch.clientX : e.clientX) - rect.left;
     const py = (touch ? touch.clientY : e.clientY) - rect.top;
     const ratio = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2) / R;
-    onTap({ score: calcTapScore(ratio, fmtId), x: px, y: py });
+    const nx = (px - CX) / R;
+    const ny = (py - CY) / R;
+    onTap({ score: calcTapScore(ratio, fmtId), nx, ny });
   }
 
   return (
@@ -162,13 +164,16 @@ function SingleTargetSVG({ fmtId, R, arrows, active, onTap }) {
       <line x1={CX-5} y1={CY} x2={CX+5} y2={CY} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
       <line x1={CX} y1={CY-5} x2={CX} y2={CY+5} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
       {active && <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />}
-      {arrows.map((a, i) => (
-        <g key={i}>
-          <circle cx={a.x} cy={a.y} r={7} fill="#15803d" stroke="white" strokeWidth={1.5} />
-          <text x={a.x} y={a.y + 0.5} textAnchor="middle" dominantBaseline="middle"
-            fill="white" fontSize={7.5} fontWeight="900">{a.score === "M" ? "M" : a.score}</text>
-        </g>
-      ))}
+      {arrows.map((a, i) => {
+        const ax = CX + a.nx * R, ay = CY + a.ny * R;
+        return (
+          <g key={i}>
+            <circle cx={ax} cy={ay} r={7} fill="#15803d" stroke="white" strokeWidth={1.5} />
+            <text x={ax} y={ay + 0.5} textAnchor="middle" dominantBaseline="middle"
+              fill="white" fontSize={7.5} fontWeight="900">{a.score === "M" ? "M" : a.score}</text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -184,13 +189,13 @@ function TargetFaceView({ fmt, arrowCount, arrows, onTap }) {
         {["上", "中", "下"].map((label, spotIdx) => {
           const spotArrows = arrows
             .filter(a => a.spotIdx === spotIdx)
-            .map(a => ({ score: a.score, x: a.x, y: a.y }));
+            .map(a => ({ score: a.score, nx: a.nx, ny: a.ny }));
           const isActive = spotIdx === activeSpot;
           return (
             <div key={spotIdx} className="flex flex-col items-center gap-1">
               <span className={`text-xs font-bold ${isActive ? "text-green-300" : "text-white/30"}`}>{label}</span>
               <SingleTargetSVG fmtId="full_110" R={R} arrows={spotArrows} active={isActive}
-                onTap={({ score, x, y }) => onTap({ score, x, y, spotIdx })} />
+                onTap={({ score, nx, ny }) => onTap({ score, nx, ny, spotIdx })} />
             </div>
           );
         })}
@@ -201,7 +206,7 @@ function TargetFaceView({ fmt, arrowCount, arrows, onTap }) {
   return (
     <div className="flex justify-center py-1">
       <SingleTargetSVG fmtId={fmt.id} R={R}
-        arrows={arrows.map(a => ({ score: a.score, x: a.x, y: a.y }))}
+        arrows={arrows.map(a => ({ score: a.score, nx: a.nx, ny: a.ny }))}
         active={!done} onTap={onTap} />
     </div>
   );
@@ -258,6 +263,107 @@ function ScoreCardTable({ rounds }) {
           </tbody>
         </table>
       </div>
+    </Card>
+  );
+}
+
+// ── LandingAnalysis ───────────────────────────────────────────
+function LandingAnalysis({ arrowPositions }) {
+  if (!arrowPositions || arrowPositions.length === 0) return null;
+
+  const valid = arrowPositions.filter(a => a.score !== "M" && a.nx != null && a.ny != null);
+  if (valid.length === 0) return null;
+
+  const cx = valid.reduce((s, a) => s + a.nx, 0) / valid.length;
+  const cy = valid.reduce((s, a) => s + a.ny, 0) / valid.length;
+  const radii = valid.map(a => Math.sqrt((a.nx - cx) ** 2 + (a.ny - cy) ** 2));
+  const avgR = radii.reduce((s, r) => s + r, 0) / radii.length;
+  const stdDev = Math.sqrt(radii.reduce((s, r) => s + (r - avgR) ** 2, 0) / radii.length);
+  const maxR = Math.max(...radii);
+
+  const topmost  = valid.reduce((a, b) => b.ny < a.ny ? b : a);
+  const bottommost = valid.reduce((a, b) => b.ny > a.ny ? b : a);
+  const leftmost = valid.reduce((a, b) => b.nx < a.nx ? b : a);
+  const rightmost = valid.reduce((a, b) => b.nx > a.nx ? b : a);
+
+  const diagnose = () => {
+    const parts = [];
+    if (cy < -0.15) parts.push("群心偏上");
+    else if (cy > 0.15) parts.push("群心偏下");
+    if (cx < -0.15) parts.push("群心偏左");
+    else if (cx > 0.15) parts.push("群心偏右");
+    if (parts.length === 0) parts.push("群心居中");
+    if (stdDev < 0.15) parts.push("群集緊密");
+    else if (stdDev > 0.4) parts.push("散布較廣");
+    return parts.join("・");
+  };
+
+  const SIZE = 260, CX = SIZE / 2, CY = SIZE / 2, R = 118;
+  const toSVG = (nx, ny) => [CX + nx * R, CY + ny * R];
+  const [gcx, gcy] = toSVG(cx, cy);
+
+  return (
+    <Card className="p-3 mt-1" style={CS}>
+      <div className="text-xs font-bold text-white/60 mb-2">🎯 落點分析</div>
+      <div className="flex justify-center">
+        <svg width={SIZE} height={SIZE} style={{ display:"block" }}>
+          <circle cx={CX} cy={CY} r={R} fill="#1a1a1a" />
+          {[1,0.8,0.6,0.4,0.2].map((pct,i)=>(
+            <circle key={i} cx={CX} cy={CY} r={R*pct} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={0.8} />
+          ))}
+
+          {avgR * R <= R && (
+            <circle cx={CX} cy={CY} r={avgR * R} fill="none" stroke="#60a5fa" strokeWidth={1.5} />
+          )}
+          {(avgR + stdDev) * R <= R * 1.5 && (
+            <circle cx={CX} cy={CY} r={Math.min((avgR + stdDev) * R, R)} fill="none" stroke="#a78bfa"
+              strokeWidth={1.2} strokeDasharray="4 3" />
+          )}
+          {maxR * R <= R * 1.5 && (
+            <circle cx={CX} cy={CY} r={Math.min(maxR * R, R)} fill="none" stroke="rgba(255,255,255,0.3)"
+              strokeWidth={1} strokeDasharray="2 4" />
+          )}
+
+          {valid.map((a, i) => {
+            const [ax, ay] = toSVG(a.nx, a.ny);
+            return (
+              <g key={i}>
+                <circle cx={ax} cy={ay} r={5} fill="#15803d" stroke="white" strokeWidth={1} />
+                <text x={ax} y={ay + 0.5} textAnchor="middle" dominantBaseline="middle"
+                  fill="white" fontSize={6} fontWeight="900">
+                  {a.score === "M" ? "M" : a.score}
+                </text>
+              </g>
+            );
+          })}
+
+          <line x1={gcx-7} y1={gcy} x2={gcx+7} y2={gcy} stroke="#facc15" strokeWidth={2.5} />
+          <line x1={gcx} y1={gcy-7} x2={gcx} y2={gcy+7} stroke="#facc15" strokeWidth={2.5} />
+
+          {(() => {
+            const [tx, ty] = toSVG(topmost.nx, topmost.ny);
+            return <text x={tx} y={ty - 8} textAnchor="middle" fill="#fb923c" fontSize={9}>↑{topmost.score}</text>;
+          })()}
+          {(() => {
+            const [bx, by] = toSVG(bottommost.nx, bottommost.ny);
+            return <text x={bx} y={by + 12} textAnchor="middle" fill="#fb923c" fontSize={9}>↓{bottommost.score}</text>;
+          })()}
+          {(() => {
+            const [lx, ly] = toSVG(leftmost.nx, leftmost.ny);
+            return <text x={lx - 8} y={ly + 3} textAnchor="end" fill="#fb923c" fontSize={9}>←{leftmost.score}</text>;
+          })()}
+          {(() => {
+            const [rx, ry] = toSVG(rightmost.nx, rightmost.ny);
+            return <text x={rx + 8} y={ry + 3} textAnchor="start" fill="#fb923c" fontSize={9}>{rightmost.score}→</text>;
+          })()}
+        </svg>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">平均半徑 {(avgR*100).toFixed(0)}%</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300">1σ ±{(stdDev*100).toFixed(0)}%</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50">最大 {(maxR*100).toFixed(0)}%</span>
+      </div>
+      <div className="mt-2 text-center text-sm font-bold text-yellow-300">{diagnose()}</div>
     </Card>
   );
 }
@@ -451,6 +557,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
   const [allR,  setAllR]  = useState([]);
   const [cur,   setCur]   = useState([]);
   const [positions, setPositions] = useState([]);
+  const [allPositions, setAllPositions] = useState([]);
   const isTargetMode = (form.inputMode || "button") === "target";
 
   function addArrow(s, pos) {
@@ -460,8 +567,10 @@ function ScoringPhase({ form, onDone, onCancel }) {
   }
   function nextRound() {
     const newAll = [...allR, cur];
-    if (newAll.length >= form.roundCount) { onDone(newAll); return; }
-    setAllR(newAll); setCur([]); setRound(r=>r+1); setPositions([]);
+    const newAllPos = [...allPositions, ...positions];
+    if (newAll.length >= form.roundCount) { onDone(newAll, newAllPos); return; }
+    setAllR(newAll); setCur([]); setRound(r=>r+1);
+    setAllPositions(newAllPos); setPositions([]);
   }
   const prevTotal  = numericArr(allR).reduce((a,b)=>a+b,0);
   const curNumeric = cur.filter(s=>s!=="M").reduce((a,b)=>a+b,0);
@@ -507,7 +616,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
       {isTargetMode ? (
         <Card className="p-3" style={CS}>
           <TargetFaceView fmt={fmt} arrowCount={form.arrowCount} arrows={positions}
-            onTap={({ score, x, y, spotIdx }) => addArrow(score, { x, y, ...(spotIdx !== undefined ? { spotIdx } : {}) })} />
+            onTap={({ score, nx, ny, spotIdx }) => addArrow(score, { nx, ny, ...(spotIdx !== undefined ? { spotIdx } : {}) })} />
           <div className="text-center text-white/40 text-xs mt-1">
             {positions.length < form.arrowCount ? `點擊靶面計分（${positions.length}/${form.arrowCount} 箭）` : "本組完成 →"}
           </div>
@@ -563,7 +672,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
 }
 
 // ── ResultPhase ───────────────────────────────────────────────
-function ResultPhase({ form, rounds, onSave, onRetry, saving }) {
+function ResultPhase({ form, rounds, arrowPositions, onSave, onRetry, saving }) {
   const fmt       = TARGET_FORMATS.find(f=>f.id===form.targetFormat) || TARGET_FORMATS[0];
   const stats     = calcStats(rounds);
   const roundSubs = rounds.map(r=>numericArr([r]).reduce((a,b)=>a+b,0));
@@ -598,6 +707,7 @@ function ResultPhase({ form, rounds, onSave, onRetry, saving }) {
         </div>
       </Card>
       <ScoreCardTable rounds={rounds} />
+      {!fmt.isTriple && <LandingAnalysis arrowPositions={arrowPositions} />}
       <div className="flex gap-3">
         <button onClick={onRetry} className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm bg-white/10">重新練習</button>
         <button onClick={onSave} disabled={saving} style={{ flex:2 }}
@@ -828,6 +938,11 @@ function HistoryTab({ logs, monsterLogs }) {
                 <span className="font-bold text-white/70 text-sm">{numericArr([r]).reduce((a,b)=>a+b,0)}</span>
               </div>
             ))}
+            {log.arrowPositions?.length>0 && !fmt.isTriple && (
+              <div className="mt-3">
+                <LandingAnalysis arrowPositions={log.arrowPositions} />
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -1507,6 +1622,7 @@ export default function MemberPractice() {
   const [phase, setPhase]=useState("setup");
   const [saving, setSaving]=useState(false);
   const [finishedRounds, setFinishedRounds]=useState([]);
+  const [arrowPositions, setArrowPositions]=useState([]);
 
   const equipSets=useMemo(()=>normalizeEquipment(profile?.equipment),[profile?.equipment]);
 
@@ -1538,9 +1654,10 @@ export default function MemberPractice() {
       avgPerArrow:stats.avgPerArrow,
       avgPerRound:finishedRounds.length?+(stats.total/finishedRounds.length).toFixed(2):0,
       note:form.note,
+      ...(arrowPositions.length>0 ? { arrowPositions } : {}),
     },profile.id);
     toast("練習紀錄已儲存 ✓");
-    setSaving(false); setPhase("setup"); setFinishedRounds([]);
+    setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]);
   }
 
   if (loading) return <div className="flex justify-center p-12"><Spinner /></div>;
@@ -1560,13 +1677,13 @@ export default function MemberPractice() {
         </div>
       )}
       {tab==="practice"&&phase==="setup"&&(
-        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{ setForm(f); setPhase("scoring"); setFinishedRounds([]); }} />
+        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{ setForm(f); setPhase("scoring"); setFinishedRounds([]); setArrowPositions([]); }} />
       )}
       {tab==="practice"&&phase==="scoring"&&(
-        <ScoringPhase form={form} onDone={rounds=>{ setFinishedRounds(rounds); setPhase("result"); }} onCancel={()=>setPhase("setup")} />
+        <ScoringPhase form={form} onDone={(rounds,pos)=>{ setFinishedRounds(rounds); setArrowPositions(pos||[]); setPhase("result"); }} onCancel={()=>setPhase("setup")} />
       )}
       {tab==="practice"&&phase==="result"&&(
-        <ResultPhase form={form} rounds={finishedRounds} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setPhase("scoring"); }} saving={saving} />
+        <ResultPhase form={form} rounds={finishedRounds} arrowPositions={arrowPositions} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setArrowPositions([]); setPhase("scoring"); }} saving={saving} />
       )}
       {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
       {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}
