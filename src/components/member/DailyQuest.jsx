@@ -73,7 +73,7 @@ export default function DailyQuest({ onJoinParty }) {
     const unsub = subscribePracticeLogs(profile.id, logs => {
       const count = logs
         .filter(l => l.date === todayStr)
-        .reduce((s, l) => s + (l.totalArrows || 0), 0);
+        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
       setTodayArrows(count);
     });
     return () => unsub && unsub();

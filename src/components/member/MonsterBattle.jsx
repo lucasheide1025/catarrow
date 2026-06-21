@@ -231,7 +231,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const unsub = subscribePracticeLogs(profile.id, logs => {
       const count = logs
         .filter(l => l.date === todayStr)
-        .reduce((s, l) => s + (l.totalArrows || 0), 0);
+        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
       todayArrowsRef.current = count;
       unsub();
     });
@@ -830,6 +830,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           monsterName: monster.name, mode, battleMode, result,
           equipment: bowLabel, rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+          totalArrows: practiceRounds.flat().length,
           distance: selectedDistance,
         }, profile.id).catch(() => {});
 
