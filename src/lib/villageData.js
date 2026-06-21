@@ -80,9 +80,34 @@ export function getBuildingStage(level) {
   return 5;
 }
 
+// 解鎖條件表（null = 預設解鎖）
+export const UNLOCK_REQS = {
+  mine:      null,
+  farm:      null,
+  harbor:    { mine: 2 },
+  hunting:   { farm: 2 },
+  market:    { harbor: 2 },        // harbor OR hunting >= 2（market 特殊邏輯在 isBuildingUnlocked）
+  warehouse: { market: 3 },
+  alchemy:   { harbor: 3, hunting: 3 },
+  gacha:     { warehouse: 3, alchemy: 3 },
+  archery:   { gacha: 3 },
+};
+
+export function isBuildingUnlocked(buildingId, buildings) {
+  const req = UNLOCK_REQS[buildingId];
+  if (!req) return true;
+  // market 特殊：海港 OR 獵場 任一 >= 2 即可
+  if (buildingId === 'market') {
+    return (buildings?.harbor || 1) >= 2 || (buildings?.hunting || 1) >= 2;
+  }
+  return Object.entries(req).every(([id, minLv]) => (buildings?.[id] || 1) >= minLv);
+}
+
 export function getVillageLevel(buildings) {
-  const total = BUILDING_LIST.reduce((s, id) => s + (buildings?.[id] || 1), 0);
-  return Math.min(20, Math.floor(total / 9));
+  const unlocked = BUILDING_LIST.filter(id => isBuildingUnlocked(id, buildings));
+  if (unlocked.length === 0) return 1;
+  const total = unlocked.reduce((s, id) => s + (buildings?.[id] || 1), 0);
+  return Math.min(20, Math.floor(total / unlocked.length));
 }
 
 const BASE_PROD = {
@@ -104,6 +129,7 @@ export function calcPendingResources(village) {
   const buildings = village?.buildings || {};
   const pending = {};
   for (const id of BUILDING_LIST) {
+    if (!isBuildingUnlocked(id, buildings)) continue; // 未解鎖不產出
     const lv = buildings[id] || 1;
     const rate = getProductionRate(id, lv);
     const res = BUILDINGS[id].resource;

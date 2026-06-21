@@ -8,6 +8,7 @@ import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, ARROWDEW_COSTS, DEFAULT_VILLAGE,
+  UNLOCK_REQS, isBuildingUnlocked,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 
@@ -137,6 +138,42 @@ function BuildingCard({ buildingId, level, resources, onClick }) {
         </div>
       </div>
     </button>
+  );
+}
+
+// ── 鎖定建築卡片 ─────────────────────────────────────────────
+function LockedBuildingCard({ buildingId, buildings }) {
+  const b = BUILDINGS[buildingId];
+
+  let hint = "";
+  if (buildingId === 'market') {
+    hint = "海港或獵場 Lv2";
+  } else {
+    const req = UNLOCK_REQS[buildingId];
+    if (req) {
+      hint = Object.entries(req)
+        .map(([id, lv]) => `${BUILDINGS[id].name} Lv${lv}`)
+        .join(" 且 ");
+    }
+  }
+
+  return (
+    <div className="flex flex-col rounded-2xl overflow-hidden text-left"
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "rgba(0,0,0,0.25)" }}>
+        <div style={{
+          position: "absolute", inset: 0, display: "flex",
+          flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+        }}>
+          <div style={{ fontSize: 26, opacity: 0.2 }}>{b.emoji}</div>
+          <div style={{ fontSize: 18 }}>🔒</div>
+        </div>
+      </div>
+      <div className="p-2.5">
+        <div className="text-white/25 font-black text-xs leading-tight">{b.name}</div>
+        <div className="text-white/20 text-[9px] mt-0.5 leading-tight">{hint}</div>
+      </div>
+    </div>
   );
 }
 
@@ -394,27 +431,40 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">
-            <div className="text-white/40 text-[10px] font-bold mb-2">9 棟建築</div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {BUILDING_LIST.map(id => (
-                <BuildingCard
-                  key={id}
-                  buildingId={id}
-                  level={buildings[id] || 1}
-                  resources={resources}
-                  onClick={() => setSelectedBuilding(id)}
-                />
-              ))}
-            </div>
+            {(() => {
+              const unlockedIds = BUILDING_LIST.filter(id => isBuildingUnlocked(id, buildings));
+              return (
+                <>
+                  <div className="text-white/40 text-[10px] font-bold mb-2">
+                    已解鎖 {unlockedIds.length} / 9 棟建築
+                  </div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {BUILDING_LIST.map(id =>
+                      isBuildingUnlocked(id, buildings) ? (
+                        <BuildingCard
+                          key={id}
+                          buildingId={id}
+                          level={buildings[id] || 1}
+                          resources={resources}
+                          onClick={() => setSelectedBuilding(id)}
+                        />
+                      ) : (
+                        <LockedBuildingCard key={id} buildingId={id} buildings={buildings} />
+                      )
+                    )}
+                  </div>
 
-            {/* 村莊等級說明 */}
-            <div className="mt-4 rounded-2xl px-4 py-3 text-center"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <div className="text-white/40 text-xs">村莊等級 = 所有建築平均等級</div>
-              <div className="text-white/60 text-xs mt-1">
-                目前：{BUILDING_LIST.reduce((s,id) => s + (buildings[id]||1), 0)} / {9 * 20} 總級 → Lv.{villageLevel}
-              </div>
-            </div>
+                  {/* 村莊等級說明 */}
+                  <div className="mt-4 rounded-2xl px-4 py-3 text-center"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div className="text-white/40 text-xs">村莊等級 = 已解鎖建築平均等級</div>
+                    <div className="text-white/60 text-xs mt-1">
+                      目前：{unlockedIds.reduce((s,id) => s + (buildings[id]||1), 0)} / {unlockedIds.length * 20} 總級 → Lv.{villageLevel}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </>
       )}
