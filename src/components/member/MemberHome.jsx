@@ -203,7 +203,7 @@ export default function MemberHome({
           <button key={hub.page} onClick={() => onPageChange(hub.page)}
             className="rounded-2xl p-3 flex flex-col justify-between active:scale-95 transition-transform relative overflow-hidden"
             style={{ minHeight:"100px", background: hub.bg }}>
-            <img src={hub.img} alt="" style={{ position:"absolute", right:-4, bottom:-4, height:"80%", width:"auto", opacity:0.75, pointerEvents:"none" }} />
+            <img src={hub.img} alt="" style={{ position:"absolute", right:6, bottom:6, height:"55%", width:"auto", opacity:0.7, pointerEvents:"none" }} />
             <div className="relative z-10">
               <div className="text-white font-black text-sm drop-shadow">{hub.label}</div>
               <div className="text-white/70 text-[10px] mt-0.5">{hub.desc}</div>
