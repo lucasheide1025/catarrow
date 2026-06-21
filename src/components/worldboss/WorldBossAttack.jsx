@@ -10,6 +10,7 @@ import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
+import TargetFaceOverlay from "../shared/TargetFaceOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -244,6 +245,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const [roundIdx,     setRoundIdx]     = useState(0);
   const [arrows,       setArrows]       = useState([]);
+  const [targetMode,   setTargetMode]   = useState(false);
+  const [targetPending, setTargetPending] = useState(false);
   const [allRounds,    setAllRounds]    = useState([]);
   const [roundSummary, setRoundSummary] = useState(null);
 
@@ -355,6 +358,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
     sfxTap(); vibrate(10);
     setArrows(prev => [...prev, { label: scoreLabel(s), score: scoreVal(s) }]);
+  }
+  function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(() => { setTargetPending(false); finishRound(arrows); }, 2000);
   }
 
   // ── 回合結算流程（逐箭計算）──────────────────────────────
@@ -937,10 +944,27 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
               {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
             </span>
+            {subPhase === "shooting" && (
+              <button onClick={() => setTargetMode(m => !m)} style={{
+                marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+              }}>🎯</button>
+            )}
           </div>
+          {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
+          <TargetFaceOverlay
+            open={targetMode && subPhase === "shooting" && !targetPending}
+            arrowLabels={arrows.map(a => a.label)}
+            arrowsPerRound={ARROWS_PER}
+            onArrow={handleScore}
+            onUndo={() => setArrows(prev => prev.slice(0,-1))}
+            onSubmit={handleTargetSubmit}
+          />
 
-          {/* 分數按鈕（使用 score-btn.webp） */}
-          {subPhase === "shooting" && arrows.length < ARROWS_PER && (
+          {/* 分數按鈕（按鈕模式才顯示）*/}
+          {subPhase === "shooting" && !targetMode && arrows.length < ARROWS_PER && (
             <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px", marginBottom:4 }}>
               {SCORE_BTNS.map(s => (
                 <button key={s} onClick={() => handleScore(s)}

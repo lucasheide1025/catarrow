@@ -27,6 +27,7 @@ import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoft
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
+import TargetFaceOverlay from "../shared/TargetFaceOverlay";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -173,6 +174,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
   const [processing, setProcessing]     = useState(false);
+  const [targetMode, setTargetMode]     = useState(false);
+  const [targetPending, setTargetPending] = useState(false);
   const [totalDmgDealt, setTotalDmgDealt] = useState(0);
   const [totalDmgRecvd, setTotalDmgRecvd] = useState(0);
   const [critCount, setCritCount]       = useState(0);
@@ -406,6 +409,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   function undoArrow() {
     if (!arrows.length||processing) return;
     setArrows(prev=>prev.slice(0,-1));
+  }
+
+  function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(() => { setTargetPending(false); submitRound(); }, 2000);
   }
 
   async function submitRound() {
@@ -1817,7 +1825,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           {/* 輸入階段 */}
           {battlePhase==="input" && (
             <>
-              {/* 箭槽 */}
+              {/* 箭槽 + 模式切換 */}
               <div style={{display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center"}}>
                 {Array.from({length:ARROWS_PER_ROUND}).map((_,i)=>(
                   <div key={i} style={{
@@ -1834,10 +1842,23 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 {arrows.length>0 && (
                   <button onClick={undoArrow} style={{background:"none",border:"none",color:"#64748b",fontSize:14,cursor:"pointer",paddingLeft:4}}>↩</button>
                 )}
+                <button onClick={()=>setTargetMode(m=>!m)} style={{
+                  marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                  background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                  border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                  color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                }}>🎯</button>
               </div>
 
-              {/* 分數按鈕（滿6箭自動隱藏）兩排 × 6欄 */}
-              {arrows.length < ARROWS_PER_ROUND && <div style={{
+              {/* targetPending 等待提示 */}
+              {targetPending && (
+                <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>
+                  計算中…⚔️
+                </div>
+              )}
+
+              {/* 分數按鈕（按鈕模式才顯示）*/}
+              {!targetMode && arrows.length < ARROWS_PER_ROUND && <div style={{
                 display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:3, marginBottom:4,
                 background:"rgb(20,12,5)", borderRadius:6, padding:"3px"
               }}>
@@ -1861,6 +1882,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                   >{s.label}</button>
                 ))}
               </div>}
+
+              <TargetFaceOverlay
+                open={targetMode && !targetPending && !processing}
+                arrowLabels={arrows}
+                arrowsPerRound={ARROWS_PER_ROUND}
+                onArrow={inputArrow}
+                onUndo={undoArrow}
+                onSubmit={handleTargetSubmit}
+              />
 
               {/* TURN + 回合總分 + 送出 */}
               <div style={{display:"flex", gap:4, alignItems:"center"}}>

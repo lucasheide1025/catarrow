@@ -18,6 +18,7 @@ import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMa
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
+import TargetFaceOverlay from "../shared/TargetFaceOverlay";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -131,6 +132,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catStatMult } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const [arrows,          setArrows]          = useState([]);
+  const [targetMode,      setTargetMode]      = useState(false);
+  const [targetPending,   setTargetPending]   = useState(false);
   const [submitting,      setSubmitting]      = useState(false);
   const [setupMonster,    setSetupMonster]    = useState(null);
   const [setupMode,       setSetupMode]       = useState("student");
@@ -523,6 +526,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   function removeLastArrow() {
     if (myReady) return;
     setArrows(prev => prev.slice(0, -1));
+  }
+  function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
   async function handleSubmit() {
     if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
@@ -1445,7 +1452,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 ⚠️ HP 危急！請謹慎作戰
               </div>
             )}
-            {/* 箭槽 */}
+            {/* 箭槽 + 模式切換 */}
             <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
               {Array.from({length:ARROWS_PER_ROUND}).map((_,i) => (
                 <div key={i} style={{
@@ -1463,9 +1470,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 <button onClick={removeLastArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:16, cursor:"pointer", paddingLeft:4 }}>↩</button>
               )}
               <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>{myArrowTotal}分</span>
+              <button onClick={() => setTargetMode(m => !m)} style={{
+                marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+              }}>🎯</button>
             </div>
-            {/* 分數按鈕 */}
-            {arrows.length < ARROWS_PER_ROUND && (
+            {targetPending && (
+              <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>
+            )}
+            {/* 分數按鈕（按鈕模式才顯示）*/}
+            {!targetMode && arrows.length < ARROWS_PER_ROUND && (
               <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, marginBottom:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px" }}>
                 {SCORE_LABELS.map(label => {
                   const s = SCORE_MAP[label] ?? 0;
@@ -1487,6 +1503,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 })}
               </div>
             )}
+            <TargetFaceOverlay
+              open={targetMode && !targetPending && !myReady}
+              arrowLabels={arrows.map(a => a.label)}
+              arrowsPerRound={ARROWS_PER_ROUND}
+              onArrow={addArrow}
+              onUndo={removeLastArrow}
+              onSubmit={handleTargetSubmit}
+            />
             {/* 送出 */}
             <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting}
               style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",

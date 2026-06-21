@@ -5,6 +5,7 @@ import CatMsg from "../cat/CatMsg";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
+import TargetFaceOverlay from "../shared/TargetFaceOverlay";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
@@ -246,6 +247,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
   const [submitted, setSubmitted] = useState(false);
+  const [targetMode, setTargetMode]   = useState(false);
+  const [targetPending, setTargetPending] = useState(false);
   const [revealEntry, setRevealEntry] = useState(null);
   const [revealIdx, setRevealIdx]     = useState(-1);
   const [floats, setFloats]           = useState([]);   // { id, text, team, memberId, isCrit }
@@ -524,8 +527,16 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     sfxArrowHit();
     setMyArrows(prev => [...prev, { score, label }]);
   }
+  function addArrowByLabel(label) {
+    const score = label === "M" ? 0 : label === "X" ? 10 : parseInt(label) || 0;
+    addArrow(score, label);
+  }
   function removeArrow() {
     setMyArrows(prev => prev.slice(0, -1));
+  }
+  function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
   async function handleSubmit() {
     if (myArrows.length < ARROWS || submitted || !myTeam) return;
@@ -1063,15 +1074,33 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             );
           })()}
 
-          <div className="grid grid-cols-6 gap-1.5 mb-2">
-            {SCORE_BTNS.map(({ label, score }) => (
-              <button key={label} onClick={() => addArrow(score, label)}
-                disabled={myArrows.length >= ARROWS}
-                className={`py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-30 ${score === 10 ? "bg-amber-600 border-amber-400 text-white" : score === 0 ? "bg-slate-700 border-slate-600 text-slate-400" : "bg-slate-700 border-slate-600 text-white"}`}>
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[10px] text-slate-500 font-bold">輸入方式</span>
+            <button onClick={() => setTargetMode(m => !m)}
+              className={`px-3 py-1 rounded-lg text-xs font-black border transition-all ${targetMode ? "bg-green-600/20 border-green-500 text-green-400" : "bg-slate-700/60 border-slate-600 text-slate-400"}`}>
+              {targetMode ? "🎯 靶面" : "⌨️ 按鈕"}
+            </button>
           </div>
+          {targetPending && <div className="text-center text-xs text-purple-400 font-bold mb-2">計算中…⚔️</div>}
+          {!targetMode && (
+            <div className="grid grid-cols-6 gap-1.5 mb-2">
+              {SCORE_BTNS.map(({ label, score }) => (
+                <button key={label} onClick={() => addArrow(score, label)}
+                  disabled={myArrows.length >= ARROWS}
+                  className={`py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-30 ${score === 10 ? "bg-amber-600 border-amber-400 text-white" : score === 0 ? "bg-slate-700 border-slate-600 text-slate-400" : "bg-slate-700 border-slate-600 text-white"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <TargetFaceOverlay
+            open={targetMode && !targetPending && !submitted}
+            arrowLabels={myArrows.map(a => a.label)}
+            arrowsPerRound={ARROWS}
+            onArrow={addArrowByLabel}
+            onUndo={removeArrow}
+            onSubmit={handleTargetSubmit}
+          />
           <button onClick={handleSubmit} disabled={!canSubmit}
             className={`w-full py-3 rounded-2xl font-black text-sm transition-all ${canSubmit ? "text-white border border-amber-400/50 active:scale-95" : "bg-slate-700 text-slate-500 border border-slate-600"}`}
             style={canSubmit ? { background:"linear-gradient(135deg,#1d4ed8,#7c3aed)" } : {}}>

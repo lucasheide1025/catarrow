@@ -112,12 +112,12 @@ const RING_DEFS = {
     { r:0.20, fill:"#e67700", stroke:"#f59f00" },
   ],
   field_16: [
-    { r:1.00, fill:"#eee",    stroke:"#bbb" },
-    { r:5/6,  fill:"#eee",    stroke:"#bbb" },
-    { r:4/6,  fill:"#eee",    stroke:"#bbb" },
-    { r:3/6,  fill:"#e67700", stroke:"#f59f00" },
-    { r:2/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:1/6,  fill:"#1c1c1c", stroke:"#555" },
+    { r:1.00, fill:"#1c1c1c", stroke:"#555" },
+    { r:5/6,  fill:"#1c1c1c", stroke:"#555" },
+    { r:4/6,  fill:"#1c1c1c", stroke:"#555" },
+    { r:3/6,  fill:"#1c1c1c", stroke:"#555" },
+    { r:2/6,  fill:"#e67700", stroke:"#f59f00" },
+    { r:1/6,  fill:"#e67700", stroke:"#f59f00" },
   ],
 };
 
@@ -617,8 +617,14 @@ function ScoringPhase({ form, onDone, onCancel }) {
         <Card className="p-3" style={CS}>
           <TargetFaceView fmt={fmt} arrowCount={form.arrowCount} arrows={positions}
             onTap={({ score, nx, ny, spotIdx }) => addArrow(score, { nx, ny, ...(spotIdx !== undefined ? { spotIdx } : {}) })} />
-          <div className="text-center text-white/40 text-xs mt-1">
-            {positions.length < form.arrowCount ? `點擊靶面計分（${positions.length}/${form.arrowCount} 箭）` : "本組完成 →"}
+          <div className="flex items-center justify-between mt-2 gap-2">
+            <div className="text-white/40 text-xs flex-1">
+              {cur.length < form.arrowCount ? `點擊靶面計分（${cur.length}/${form.arrowCount} 箭）` : "本組完成 →"}
+            </div>
+            <button onClick={() => addArrow("M", null)} disabled={cur.length >= form.arrowCount}
+              className="px-4 py-1.5 rounded-xl border border-red-500/50 text-red-400 text-sm font-black disabled:opacity-30 bg-red-900/20 active:scale-95 transition-transform">
+              脫靶 M
+            </button>
           </div>
         </Card>
       ) : (
@@ -905,6 +911,9 @@ function HistoryTab({ logs, monsterLogs }) {
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="font-bold text-white text-sm">{shortDate(log.date)}</span>
                 <span className="text-xs text-white/40">{bowLabel(log.bowType)} · {fmt.label}</span>
+                {log.arrowPositions?.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold">🎯 靶面</span>
+                )}
               </div>
               <div className="flex gap-2 text-xs text-white/50 flex-wrap">
                 <span>命中 {st.hitRate}%</span>
