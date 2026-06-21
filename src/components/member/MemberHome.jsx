@@ -195,20 +195,16 @@ export default function MemberHome({
       {/* ── 4 大功能 Hub ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { page:"training-hub",  label:"每日功能", desc:"練箭・比賽",         img:"/ui/cell-checkin.webp", bg:"linear-gradient(135deg,#0f766e,#064e3b)" },
-          { page:"adventure-hub", label:"冒險出發", desc:"打怪・地城・世界王", img:"/ui/cell-monster.webp", bg:"linear-gradient(135deg,#7c3aed,#1e3a8a)" },
-          { page:"inventory-hub", label:"我的背包", desc:"商店・材料・裝備",   img:"/ui/cell-bag.webp",    bg:"linear-gradient(135deg,#b45309,#92400e)" },
-          { page:"records-hub",   label:"我的戰績", desc:"成就圖鑑・排行榜",  img:"/ui/cell-achieve.webp", bg:"linear-gradient(135deg,#1d4ed8,#1e3a8a)" },
+          { page:"training-hub",  key:"checkin",   label:"每日功能", desc:"練箭・比賽",         gradient:"linear-gradient(135deg,#0f766e,#064e3b)" },
+          { page:"adventure-hub", key:"monster",   label:"冒險出發", desc:"打怪・地城・世界王", gradient:"linear-gradient(135deg,#7c3aed,#1e3a8a)" },
+          { page:"inventory-hub", key:"materials", label:"我的背包", desc:"商店・材料・裝備",   gradient:"linear-gradient(135deg,#b45309,#92400e)" },
+          { page:"records-hub",   key:"dex",       label:"我的戰績", desc:"成就圖鑑・排行榜",  gradient:"linear-gradient(135deg,#1d4ed8,#1e3a8a)" },
         ].map(hub => (
           <button key={hub.page} onClick={() => onPageChange(hub.page)}
-            className="rounded-2xl p-3 flex flex-col justify-between active:scale-95 transition-transform relative overflow-hidden"
-            style={{ minHeight:"100px", background: hub.bg }}>
-            <img src={hub.img} alt="" style={{ position:"absolute", right:6, bottom:6, height:"55%", width:"auto", opacity:0.7, pointerEvents:"none" }} />
-            <div className="relative z-10">
-              <div className="text-white font-black text-sm drop-shadow">{hub.label}</div>
-              <div className="text-white/70 text-[10px] mt-0.5">{hub.desc}</div>
-            </div>
-            <span className="text-white/50 text-xs relative z-10 self-end">→</span>
+            className="rounded-2xl aspect-square flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform relative overflow-hidden"
+            style={cellStyle(hub.key, hub.gradient)}>
+            <span className="text-white font-black text-sm leading-tight text-center relative z-10 px-2 drop-shadow">{hub.label}</span>
+            <span className="text-[10px] relative z-10 text-white/75 text-center px-1">{hub.desc}</span>
           </button>
         ))}
       </div>

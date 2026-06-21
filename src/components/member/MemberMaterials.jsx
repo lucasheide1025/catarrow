@@ -47,9 +47,11 @@ export default function MemberMaterials({ onBack }) {
   // ── 寶箱庫存 ─────────────────────────────────────────────
   const [chests,       setChests]       = useState([]);
   const [chestLoading, setChestLoading] = useState(!!profile?.id);
-  const [openingChest, setOpeningChest] = useState(null);
-  const [openResult,   setOpenResult]   = useState(null);
-  const [chestAnim,    setChestAnim]    = useState(null);
+  const [openingChest,   setOpeningChest]   = useState(null);
+  const [openResult,     setOpenResult]     = useState(null);
+  const [chestAnim,      setChestAnim]      = useState(null);
+  const [openAllBusy,    setOpenAllBusy]    = useState(false);
+  const [openAllProgress, setOpenAllProgress] = useState(null);
 
   // ── 藥水庫存 ─────────────────────────────────────────────
   const [potions,        setPotions]        = useState({});
@@ -134,6 +136,52 @@ export default function MemberMaterials({ onBack }) {
     } else {
       toast(res.reason || "開箱失敗，請稍後再試");
     }
+  }
+
+  async function doOpenAllChests() {
+    if (openAllBusy || openingChest || chests.length === 0) return;
+    setOpenAllBusy(true);
+    const snap = [...chests];
+    setOpenAllProgress({ done: 0, total: snap.length });
+    let totalCoins = 0;
+    const allMats = [], allFrags = [], allPotions = [], allCards = [];
+    for (let i = 0; i < snap.length; i++) {
+      const chest = snap[i];
+      const isCoin = chest.type === "coin";
+      const contents = isCoin ? null : openChestContents(chest);
+      const res = await openChest(profile.id, chest.id, contents);
+      if (res.ok) {
+        if (isCoin) totalCoins += (res.coins || 0);
+        if (!isCoin && contents) {
+          allMats.push(...(contents.materials || []));
+          allFrags.push(...(contents.fragments || []));
+          allPotions.push(...(contents.potions || []));
+          allCards.push(...(contents.cards || []));
+          updateChestOpenStats(profile.id, chest.type).catch(() => {});
+        }
+      }
+      setOpenAllProgress({ done: i + 1, total: snap.length });
+    }
+    sfxEpic();
+    setOpenAllBusy(false);
+    setOpenAllProgress(null);
+    const groupById = (arr) => {
+      const map = {};
+      arr.forEach(item => {
+        if (!map[item.id]) map[item.id] = { ...item, count: 0 };
+        map[item.id].count++;
+      });
+      return Object.values(map);
+    };
+    setOpenResult({
+      bulk: true,
+      count: snap.length,
+      coins: totalCoins,
+      materials: groupById(allMats),
+      fragments: groupById(allFrags),
+      potions: groupById(allPotions),
+      cards: allCards,
+    });
   }
 
   async function doCraftFragment(frag) {
@@ -390,6 +438,17 @@ export default function MemberMaterials({ onBack }) {
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-700 text-xs leading-relaxed">
             📦 打怪獲勝後寶箱會存入背包，點「開箱！」取得材料、藥劑或章碎片！
           </div>
+          {chests.length > 1 && !openAllBusy && !openingChest && (
+            <button onClick={doOpenAllChests}
+              className="w-full py-3 rounded-2xl font-black text-white text-sm bg-gradient-to-r from-amber-500 to-orange-500 active:scale-95 transition-all shadow-lg">
+              🎁 全部開箱（{chests.length} 個）
+            </button>
+          )}
+          {openAllBusy && openAllProgress && (
+            <div className="py-3 text-center text-amber-700 font-bold text-sm bg-amber-50 border border-amber-200 rounded-2xl">
+              ✨ 開箱中 {openAllProgress.done} / {openAllProgress.total}…
+            </div>
+          )}
           {chestLoading ? (
             <div className="text-center py-6 text-gray-400 text-sm">載入中…</div>
           ) : chests.length === 0 ? (
@@ -429,7 +488,9 @@ export default function MemberMaterials({ onBack }) {
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
               onClick={() => setOpenResult(null)}>
               <div className="bg-white rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-                <div className="text-center font-black text-xl mb-4">🎁 開箱結果！</div>
+                <div className="text-center font-black text-xl mb-4">
+                  {openResult.bulk ? `🎁 全開 ${openResult.count} 個寶箱！` : "🎁 開箱結果！"}
+                </div>
                 {openResult.coins > 0 && (
                   <div className="mb-3 text-center">
                     <div className="text-amber-600 text-xs font-bold mb-2">🪙 獲得金幣</div>
@@ -443,7 +504,7 @@ export default function MemberMaterials({ onBack }) {
                       {openResult.fragments.map(f => (
                         <div key={f.id} className="text-xs px-3 py-1.5 rounded-full font-bold text-white"
                           style={{ background: f.color }}>
-                          {f.icon} {f.name} ×1
+                          {f.icon} {f.name} ×{f.count || 1}
                         </div>
                       ))}
                     </div>
@@ -455,7 +516,7 @@ export default function MemberMaterials({ onBack }) {
                     <div className="flex gap-2 flex-wrap">
                       {openResult.materials.map((m, i) => (
                         <div key={i} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full font-bold">
-                          {m.icon} {m.name}
+                          {m.icon} {m.name}{m.count > 1 ? ` ×${m.count}` : ""}
                         </div>
                       ))}
                     </div>
@@ -467,7 +528,7 @@ export default function MemberMaterials({ onBack }) {
                     <div className="flex gap-2 flex-wrap">
                       {openResult.potions.map((p, i) => (
                         <div key={i} className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full font-bold">
-                          {p.icon} {p.name}
+                          {p.icon} {p.name}{p.count > 1 ? ` ×${p.count}` : ""}
                         </div>
                       ))}
                     </div>
@@ -510,7 +571,7 @@ export default function MemberMaterials({ onBack }) {
                     )}
                   </div>
                 )}
-                {!openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && !openResult.cards?.length && !openResult.catResult && (
+                {!openResult.bulk && !openResult.coins && !openResult.fragments?.length && !openResult.materials?.length && !openResult.potions?.length && !openResult.cards?.length && !openResult.catResult && (
                   <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
                 )}
                 <button onClick={() => setOpenResult(null)}
