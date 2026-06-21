@@ -66,7 +66,11 @@ const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
 export default function AdminApp() {
   const { logout, profile } = useAuth();
-  const [page, setPage]             = useState(() => sessionStorage.getItem("admin_page") || "members");
+  const VALID_PAGES = new Set(["hub-member","hub-events","achievements","givetool","learn","hub-items","archery"]);
+  const [page, setPage]             = useState(() => { const s = sessionStorage.getItem("admin_page"); return (s && VALID_PAGES.has(s)) ? s : "hub-member"; });
+  const [memberSub, setMemberSub]   = useState(null);
+  const [eventsSub, setEventsSub]   = useState(null);
+  const [itemsSub,  setItemsSub]    = useState(null);
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
   const [questCtx, setQuestCtx]     = useState(null);
   const [fromGuild, setFromGuild]   = useState(false);
@@ -260,20 +264,13 @@ export default function AdminApp() {
   }, []);
 
 const adminNav = [
-  { id:"members",        icon:"👥", label:"會員"    },
-  { id:"comps",          icon:"🏆", label:"比賽"    },
-  { id:"review",         icon:"🔔", label:"審核"    },
-  { id:"monthlycard",    icon:"🎫", label:"財務"    },
-  { id:"learn",          icon:"📓", label:"學習"    },
-  { id:"battlesetting",  icon:"🎮", label:"打怪賽事" },
-  { id:"guild-admin",    icon:"🏛️", label:"公會"    },
-  { id:"achievements",   icon:"🎖️", label:"成就"    },
-  { id:"worldboss-admin",icon:"🌍", label:"世界王"  },
-  { id:"equipitems",     icon:"🗡️", label:"裝備庫"  },
-  { id:"story-admin",    icon:"📖", label:"故事本"  },
-  { id:"archery",        icon:"📷", label:"射箭辨識" },
-  { id:"givetool",       icon:"🧪", label:"測試工具" },
-  { id:"reset-center",   icon:"🔄", label:"重置"    },
+  { id:"hub-member",  icon:"👥", label:"會員中心" },
+  { id:"hub-events",  icon:"🏆", label:"賽事中心" },
+  { id:"achievements",icon:"🎖️", label:"冒險者"   },
+  { id:"givetool",    icon:"🎁", label:"獎品發放" },
+  { id:"learn",       icon:"📓", label:"學習"     },
+  { id:"hub-items",   icon:"⚔️", label:"裝備&故事" },
+  { id:"archery",     icon:"📷", label:"射箭辨識" },
 ];
 
   const memberNav = [
@@ -428,8 +425,8 @@ const adminNav = [
         </div>
       </div>
 
-      {(pendingCertN + pendingMsgN + pendingExtN + pendingExamN + pendingCheckinN) > 0 && (
-        <button onClick={() => setPage("review")}
+      {(pendingCertN + pendingMsgN + pendingExtN + pendingExamN + pendingCheckinN + pendingGuildN) > 0 && (
+        <button onClick={() => { setPage("hub-member"); setMemberSub("review"); }}
           style={{width:"100%",background:"#fffbeb",borderBottom:"1px solid #fde68a",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
           <span style={{fontSize:"16px"}}>🔔</span>
           <span style={{fontSize:"13px",color:"#b45309",fontWeight:"bold"}}>
@@ -439,23 +436,14 @@ const adminNav = [
               pendingCheckinN > 0 ? `${pendingCheckinN} 筆每日任務待處理` : null,
               pendingExtN > 0 ? `${pendingExtN} 筆外賽待審` : null,
               pendingMsgN > 0 ? `${pendingMsgN} 則新留言待回覆` : null,
+              pendingGuildN > 0 ? `${pendingGuildN} 筆公會任務待審核` : null,
             ].filter(Boolean).join("、")}
           </span>
-          <span style={{marginLeft:"auto",fontSize:"12px",color:"#d97706",fontWeight:"bold"}}>前往處理 →</span>
-        </button>
-      )}
-      {pendingGuildN > 0 && (
-        <button onClick={() => setPage("guild-admin")}
-          style={{width:"100%",background:"#f0fdf4",borderBottom:"1px solid #bbf7d0",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
-          <span style={{fontSize:"16px"}}>🏅</span>
-          <span style={{fontSize:"13px",color:"#15803d",fontWeight:"bold"}}>
-            {pendingGuildN} 筆成就懸賞待審核
-          </span>
-          <span style={{marginLeft:"auto",fontSize:"12px",color:"#16a34a",fontWeight:"bold"}}>前往審核 →</span>
+          <span style={{marginLeft:"auto",fontSize:"12px",color:"#d97706",fontWeight:"bold"}}>前往審核 →</span>
         </button>
       )}
       {pendingMonthlyN > 0 && (
-        <button onClick={() => setPage("monthlycard")}
+        <button onClick={() => { setPage("hub-member"); setMemberSub("monthlycard"); }}
           style={{width:"100%",background:"#eff6ff",borderBottom:"1px solid #bfdbfe",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
           <span style={{fontSize:"16px"}}>🎫</span>
           <span style={{fontSize:"13px",color:"#1d4ed8",fontWeight:"bold"}}>
@@ -466,44 +454,163 @@ const adminNav = [
       )}
 
       <div style={{paddingBottom:"80px"}}>
-        {page==="members"      && <AdminMembers/>}
-        {page==="comps"        && <AdminCompetitions/>}
-        {page==="review"       && (
-          <AdminReviewCenter
-            pendingCert={pendingCertList}
-            messages={allMessages}
-            pendingExtItems={pendingExtList}
-            certTasks={certTasksList}
+        {/* ── 會員中心 Hub ── */}
+        {page==="hub-member" && memberSub===null && (
+          <AdminMemberHub
+            onSelect={setMemberSub}
+            pendingCertN={pendingCertN} pendingMsgN={pendingMsgN}
+            pendingCheckinN={pendingCheckinN} pendingExtN={pendingExtN}
+            pendingExamN={pendingExamN} pendingMonthlyN={pendingMonthlyN}
+            pendingGuildN={pendingGuildN}
           />
         )}
+        {page==="hub-member" && memberSub==="members"     && <><HubBack onClick={()=>setMemberSub(null)}/><AdminMembers/></>}
+        {page==="hub-member" && memberSub==="monthlycard" && <><HubBack onClick={()=>setMemberSub(null)}/><AdminFinance adminProfile={profile}/></>}
+        {page==="hub-member" && memberSub==="review"      && (
+          <><HubBack onClick={()=>setMemberSub(null)}/>
+          <AdminUnifiedReview
+            pendingCert={pendingCertList} messages={allMessages}
+            pendingExtItems={pendingExtList} certTasks={certTasksList}
+          /></>
+        )}
+
+        {/* ── 賽事中心 Hub ── */}
+        {page==="hub-events" && eventsSub===null              && <AdminEventsHub onSelect={setEventsSub}/>}
+        {page==="hub-events" && eventsSub==="comps"           && <><HubBack onClick={()=>setEventsSub(null)}/><AdminCompetitions/></>}
+        {page==="hub-events" && eventsSub==="battlesetting"   && <><HubBack onClick={()=>setEventsSub(null)}/><AdminBattleEvent/></>}
+        {page==="hub-events" && eventsSub==="guild-admin"     && <><HubBack onClick={()=>setEventsSub(null)}/><AdminGuildQuests/></>}
+        {page==="hub-events" && eventsSub==="worldboss-admin" && <><HubBack onClick={()=>setEventsSub(null)}/><AdminWorldBoss/></>}
+        {page==="hub-events" && eventsSub==="reset-center"    && <><HubBack onClick={()=>setEventsSub(null)}/><AdminResetCenter/></>}
+
+        {/* ── 裝備&故事 Hub ── */}
+        {page==="hub-items" && itemsSub===null            && <AdminItemsHub onSelect={setItemsSub}/>}
+        {page==="hub-items" && itemsSub==="equipitems"    && <><HubBack onClick={()=>setItemsSub(null)}/><AdminEquipItems/></>}
+        {page==="hub-items" && itemsSub==="story-admin"   && <><HubBack onClick={()=>setItemsSub(null)}/><AdminStoryManager/></>}
+
+        {/* ── 單一頁面 ── */}
         {page==="achievements" && <AdminAchievementsTab/>}
-        {page==="learn"        && <AdminLearn/>}
-        {page==="battlesetting" && <AdminBattleEvent/>}
         {page==="givetool"     && <AdminGiveTool/>}
-        {page==="monthlycard"  && <AdminFinance adminProfile={profile}/>}
-        {page==="equipitems"   && <AdminEquipItems/>}
-        {page==="reset-center" && <AdminResetCenter/>}
-        {page==="worldboss-admin" && <AdminWorldBoss/>}
-        {page==="story-admin"     && <AdminStoryManager/>}
-        {page==="guild-admin"     && <AdminGuildQuests/>}
-        {page==="archery"         && <AdminArchery/>}
+        {page==="learn"        && <AdminLearn/>}
+        {page==="archery"      && <AdminArchery/>}
       </div>
 
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",zIndex:40,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-        <div style={{display:"flex",minWidth:"max-content"}}>
-          {adminNav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)}
-              style={{minWidth:"60px",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 6px",gap:"2px",border:"none",background:"white",cursor:"pointer",color:page===n.id?"#2563eb":"#94a3b8"}}>
-              <span style={{fontSize:"18px"}}>{n.icon}</span>
-              <span style={{fontSize:"10px",fontWeight:"600",whiteSpace:"nowrap"}}>{n.label}</span>
-            </button>
-          ))}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",zIndex:40}}>
+        <div style={{display:"flex"}}>
+          {adminNav.map(n=>{
+            const active = page===n.id;
+            const badge = n.id==="hub-member"
+              ? (pendingCertN+pendingMsgN+pendingCheckinN+pendingExtN+pendingExamN+pendingGuildN+pendingMonthlyN)
+              : 0;
+            return (
+              <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id==="hub-member")setMemberSub(null); if(n.id==="hub-events")setEventsSub(null); if(n.id==="hub-items")setItemsSub(null); }}
+                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",color:active?"#2563eb":"#94a3b8",position:"relative"}}>
+                <span style={{fontSize:"18px"}}>{n.icon}</span>
+                {badge>0 && <span style={{position:"absolute",top:"4px",right:"calc(50% - 14px)",background:"#ef4444",color:"white",fontSize:"9px",fontWeight:"900",borderRadius:"99px",padding:"1px 4px",minWidth:"14px",textAlign:"center"}}>{badge}</span>}
+                <span style={{fontSize:"10px",fontWeight:"600",whiteSpace:"nowrap"}}>{n.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
+
+// ── Hub 共用：返回按鈕 ─────────────────────────────────────
+function HubBack({ onClick }) {
+  return (
+    <div style={{background:"white",borderBottom:"1px solid #e2e8f0",padding:"10px 16px",position:"sticky",top:0,zIndex:30}}>
+      <button onClick={onClick} style={{color:"#64748b",fontSize:"13px",fontWeight:"700",background:"none",border:"none",cursor:"pointer"}}>← 返回</button>
+    </div>
+  );
+}
+
+// ── Hub 共用：選項卡片 ─────────────────────────────────────
+function HubCard({ icon, label, badge, desc, onClick }) {
+  return (
+    <button onClick={onClick} style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",background:"white",border:"1px solid #e2e8f0",borderRadius:"16px",padding:"20px 12px",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",width:"100%"}}>
+      {badge > 0 && (
+        <span style={{position:"absolute",top:"8px",right:"8px",background:"#ef4444",color:"white",fontSize:"10px",fontWeight:"900",borderRadius:"99px",padding:"2px 6px",minWidth:"18px",textAlign:"center"}}>{badge}</span>
+      )}
+      <span style={{fontSize:"28px"}}>{icon}</span>
+      <span style={{fontSize:"13px",fontWeight:"900",color:"#1e293b"}}>{label}</span>
+      {desc && <span style={{fontSize:"11px",color:"#94a3b8",textAlign:"center",lineHeight:"1.4"}}>{desc}</span>}
+    </button>
+  );
+}
+
+// ── 會員中心 Hub ──────────────────────────────────────────
+function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, pendingExtN, pendingExamN, pendingMonthlyN, pendingGuildN }) {
+  const reviewBadge = pendingCertN + pendingMsgN + pendingCheckinN + pendingExtN + pendingExamN + pendingGuildN;
+  return (
+    <div style={{padding:"16px"}}>
+      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+        <HubCard icon="👤" label="會員管理" desc="帳號、積分、裝備" onClick={() => onSelect("members")} />
+        <HubCard icon="🎫" label="財務" badge={pendingMonthlyN} desc="月費卡、收費記錄" onClick={() => onSelect("monthlycard")} />
+        <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="所有待審核事項" onClick={() => onSelect("review")} />
+      </div>
+    </div>
+  );
+}
+
+// ── 賽事中心 Hub ──────────────────────────────────────────
+function AdminEventsHub({ onSelect }) {
+  return (
+    <div style={{padding:"16px"}}>
+      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>🏆 賽事中心</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+        <HubCard icon="🏆" label="比賽管理"   desc="新增、報名、審核" onClick={() => onSelect("comps")} />
+        <HubCard icon="🎮" label="打怪賽事"   desc="每日任務、賽事模式" onClick={() => onSelect("battlesetting")} />
+        <HubCard icon="🏛️" label="冒險者公會" desc="懸賞任務、晉階設定" onClick={() => onSelect("guild-admin")} />
+        <HubCard icon="🌍" label="世界王"     desc="BOSS 管理、獎勵" onClick={() => onSelect("worldboss-admin")} />
+        <HubCard icon="🔄" label="重置中心"   desc="資料重置與清除" onClick={() => onSelect("reset-center")} />
+      </div>
+    </div>
+  );
+}
+
+// ── 裝備&故事 Hub ─────────────────────────────────────────
+function AdminItemsHub({ onSelect }) {
+  return (
+    <div style={{padding:"16px"}}>
+      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>⚔️ 裝備 & 故事</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+        <HubCard icon="🗡️" label="裝備庫"  desc="裝備道具管理" onClick={() => onSelect("equipitems")} />
+        <HubCard icon="📖" label="故事本"  desc="故事章節管理" onClick={() => onSelect("story-admin")} />
+      </div>
+    </div>
+  );
+}
+
+// ── 統一審核中心 ──────────────────────────────────────────
+function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks }) {
+  const [tab, setTab] = useState("general");
+  const TABS = [
+    { id: "general", label: "🔔 一般審核" },
+    { id: "guild",   label: "🏅 公會任務" },
+  ];
+  return (
+    <div>
+      <div style={{display:"flex",gap:"8px",padding:"12px 16px 0",background:"white",borderBottom:"1px solid #e2e8f0",position:"sticky",top:"41px",zIndex:20}}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{flex:1,padding:"8px",borderRadius:"10px",border:`1px solid ${tab===t.id?"#2563eb":"#e2e8f0"}`,background:tab===t.id?"#2563eb":"#f8fafc",color:tab===t.id?"white":"#64748b",fontWeight:"900",fontSize:"13px",cursor:"pointer",marginBottom:"8px"}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab==="general" && (
+        <AdminReviewCenter
+          pendingCert={pendingCert} messages={messages}
+          pendingExtItems={pendingExtItems} certTasks={certTasks}
+        />
+      )}
+      {tab==="guild" && <AdminGuildQuests defaultTab="review"/>}
+    </div>
+  );
+}
 
 // 後台「成就」頁：成就章任務 / 圖鑑授予 兩個 tab
 function AdminAchievementsTab() {

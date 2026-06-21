@@ -31,9 +31,9 @@ const EMPTY_FORM = {
   requirement: {},
 };
 
-export default function AdminGuildQuests() {
+export default function AdminGuildQuests({ defaultTab = "quests" }) {
   const { profile } = useAuth();
-  const [tab, setTab]           = useState("quests");
+  const [tab, setTab]           = useState(defaultTab);
   const [quests, setQuests]     = useState([]);
   const [subs, setSubs]         = useState([]);
   const [members, setMembers]   = useState([]);
