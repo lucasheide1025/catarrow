@@ -195,120 +195,34 @@ export default function MemberHome({
         </button>
       )}
 
-      {/* ── 快速入口 8 格（4 欄兩排）──────────────────────────── */}
-      <div className="grid grid-cols-4 gap-2">
-
-        {/* 每日報到 */}
-        <button onClick={() => setShowDailyQuest(v => !v)}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("checkin", showDailyQuest ? "linear-gradient(135deg,#047857,#064e3b)" : "linear-gradient(135deg,#059669,#0d9488)")}>
-          <span className="text-white font-black text-xs leading-tight text-center relative z-10">每日報到</span>
-          {showDailyQuest && <span className="text-[9px] bg-white/20 text-white px-1.5 rounded-full relative z-10">展開▲</span>}
-        </button>
-
-        {/* RPG 打怪 */}
-        <button onClick={() => onPageChange("monster")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("monster", "linear-gradient(135deg,#7c3aed,#1e3a8a)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">RPG打怪</span>
-        </button>
-
-        {/* 玩家對戰 */}
-        <button onClick={() => onPageChange("duel")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("duel", "linear-gradient(135deg,#1e1b4b,#4338ca)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">玩家對戰</span>
-        </button>
-
-        {/* 組隊戰鬥 */}
-        <button onClick={() => onPageChange("party")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("party", "linear-gradient(135deg,#0f766e,#134e4a)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">組隊戰鬥</span>
-        </button>
-
-        {/* 地下城 */}
-        <button onClick={() => onPageChange("dungeon")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("dungeon", "linear-gradient(135deg,#4c1d95,#2e1065)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">地下城</span>
-        </button>
-
-        {/* 世界大 Boss */}
-        <button onClick={() => onPageChange("worldboss")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("worldboss", "linear-gradient(135deg,#7f1d1d,#0f172a)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">世界王</span>
-        </button>
-
-        {/* 貓貓陪練 */}
-        <button onClick={() => onPageChange("cats")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("cats", "linear-gradient(135deg,#581c87,#1e1b4b)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">貓貓陪練</span>
-        </button>
-
-        {/* 材料背包 */}
-        <button onClick={() => onPageChange("materials")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("materials", "linear-gradient(135deg,#b45309,#92400e)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">材料背包</span>
-        </button>
-
-        {/* 金幣商店 */}
-        <button onClick={() => onPageChange("coinshop")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("coinshop", "linear-gradient(135deg,#854d0e,#713f12)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">金幣商店</span>
-          <span className="text-yellow-300 font-black text-[10px]">🪙{(profile?.coins||0).toLocaleString()}</span>
-        </button>
-
-        {/* 我的裝備 */}
-        <button onClick={() => onPageChange("equipment")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("equipment", "linear-gradient(135deg,#312e81,#0f172a)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">我的裝備</span>
-          {(() => {
-            const rpgEquip = profile?.rpgEquip || {};
-            const n = EQUIP_SLOT_DEFS.filter(s => rpgEquip[s.id]?.itemId).length;
-            return <span className="text-indigo-300 font-black text-[10px]">{n}/10格</span>;
-          })()}
-        </button>
-
-        {/* 成就圖鑑 */}
-        <button onClick={() => onPageChange("dex")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("dex", "linear-gradient(135deg,#92400e,#78350f)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">成就圖鑑</span>
-        </button>
-
-        {/* 故事本 */}
-        <button onClick={() => onPageChange("story")}
-          className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-          style={cellStyle("story", "linear-gradient(135deg,#1e1b4b,#3b0764)")}>
-          <span className="text-white font-black text-xs leading-tight text-center">故事本</span>
-        </button>
-
-        {/* 冒險者公會 */}
-        {(() => {
-          const advXP  = profile?.adventurerXP || 0;
-          const advLv  = levelFromXP(advXP);
-          const advRank = rankFromLevel(advLv);
-          return (
-            <button onClick={() => onPageChange("guild")}
-              className="rounded-xl aspect-square flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform relative overflow-hidden"
-              style={cellStyle("guild", "linear-gradient(135deg,#78350f,#1c1410)")}>
-              <span className="text-white font-black text-xs leading-tight text-center">冒險者公會</span>
-              <span className="font-black text-[10px]" style={{ color: advRank.color }}>Lv.{advLv} {advRank.icon}</span>
-            </button>
-          );
-        })()}
-
-      </div>
-
-
-      {/* 每日報到展開區 */}
+      {/* ── 每日報到（置頂獨立，展開式）────────────────────────── */}
+      <button onClick={() => setShowDailyQuest(v => !v)}
+        className="w-full rounded-2xl p-4 flex items-center gap-3 active:scale-98 transition-transform relative overflow-hidden text-left"
+        style={cellStyle("checkin", showDailyQuest ? "linear-gradient(135deg,#047857,#064e3b)" : "linear-gradient(135deg,#059669,#0d9488)")}>
+        <span className="text-white font-black text-base relative z-10">📋 每日報到</span>
+        <span className="text-white/70 text-sm relative z-10 ml-auto">{showDailyQuest ? "收起 ▲" : "展開 ▼"}</span>
+      </button>
       {showDailyQuest && <DailyQuest onJoinParty={onJoinParty} />}
+
+      {/* ── 4 大功能 Hub ──────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { page:"training-hub",  label:"每日功能", desc:"練箭・比賽",          img:"/ui/cell-checkin.webp", bg:"linear-gradient(135deg,#0f766e,#064e3b)" },
+          { page:"adventure-hub", label:"冒險出發", desc:"打怪・地城・世界王",  img:"/ui/cell-monster.webp", bg:"linear-gradient(135deg,#7c3aed,#1e3a8a)" },
+          { page:"inventory-hub", label:"我的背包", desc:"商店・材料・裝備",    img:"/ui/cell-bag.webp",    bg:"linear-gradient(135deg,#b45309,#92400e)" },
+          { page:"records-hub",   label:"我的戰績", desc:"成就圖鑑・排行榜",   img:"/ui/cell-achieve.webp", bg:"linear-gradient(135deg,#1d4ed8,#1e3a8a)" },
+        ].map(hub => (
+          <button key={hub.page} onClick={() => onPageChange(hub.page)}
+            className="rounded-2xl p-4 flex flex-col justify-between active:scale-95 transition-transform relative overflow-hidden"
+            style={{ minHeight:"88px", backgroundImage:`url(${hub.img}), linear-gradient(rgba(255,255,255,0.12),rgba(255,255,255,0.12)), ${hub.bg}`, backgroundSize:"cover", backgroundBlendMode:"overlay, normal, normal" }}>
+            <div className="relative z-10">
+              <div className="text-white font-black text-sm">{hub.label}</div>
+              <div className="text-white/65 text-[10px] mt-0.5">{hub.desc}</div>
+            </div>
+            <span className="text-white/40 text-xs relative z-10 self-end">→</span>
+          </button>
+        ))}
+      </div>
 
       {/* 廣播訊息（前 5 則）*/}
       {notifications.length > 0 && (

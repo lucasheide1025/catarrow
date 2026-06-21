@@ -49,10 +49,16 @@ import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
 import AdventurerGuild   from "../components/member/AdventurerGuild";
 import BadgeEarnPopup    from "../components/member/BadgeEarnPopup";
+import MemberAdventureHub from "../components/member/MemberAdventureHub";
+import MemberTrainingHub  from "../components/member/MemberTrainingHub";
+import MemberInventoryHub from "../components/member/MemberInventoryHub";
+import MemberRecordsHub   from "../components/member/MemberRecordsHub";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
-const COMP_PAGES    = ["comp-detail","monster","duel","duel-room"];
-const PROFILE_PAGES = ["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","party","party-quest","party-battle","dungeon","dungeon-room","guide","coinshop","worldboss","cats","catbook","guild"];
+const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
+const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
+const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards"];
+const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard"];
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
@@ -230,24 +236,25 @@ export default function MemberApp() {
   function handleLeaveDungeon() {
     sessionStorage.removeItem("dungeon_room");
     setDungeonRoomId(null);
-    setPage("home");
+    setPage("adventure-hub");
   }
 
   const nav = [
-    { id:"home",        icon:"🏠", label:"首頁" },
-    { id:"comps",       icon:"🏆", label:"比賽" },
-    { id:"practice",    icon:"🎯", label:"練習" },
-    { id:"equipment",   icon:"⚔️", label:"裝備" },
-    { id:"leaderboard", icon:"📊", label:"排行" },
-    { id:"profile",     icon:"👤", label:"我的" },
+    { id:"home",          icon:"🏠", label:"首頁" },
+    { id:"adventure-hub", icon:"🗺️", label:"冒險" },
+    { id:"training-hub",  icon:"🏹", label:"練箭" },
+    { id:"inventory-hub", icon:"🎒", label:"背包" },
+    { id:"profile",       icon:"👤", label:"我的" },
   ];
 
   function handleSelectComp(comp) { setSelComp(comp); setScoring(false); setPage("comp-detail"); }
 
   function isNavActive(navId, curPage) {
     if (navId === curPage) return true;
-    if (navId === "comps"   && COMP_PAGES.includes(curPage))    return true;
-    if (navId === "profile" && PROFILE_PAGES.includes(curPage)) return true;
+    if (navId === "adventure-hub" && ADVENTURE_PAGES.includes(curPage)) return true;
+    if (navId === "training-hub"  && TRAINING_PAGES.includes(curPage))  return true;
+    if (navId === "inventory-hub" && INVENTORY_PAGES.includes(curPage)) return true;
+    if (navId === "profile"       && PROFILE_PAGES.includes(curPage))   return true;
     return false;
   }
 
@@ -374,33 +381,39 @@ export default function MemberApp() {
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
+        {/* ── 冒險 Hub ── */}
+        {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
+        {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
+        {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
+        {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
+
         {page==="monster"     && <MonsterBattle
           onBack={() => {
-            if (fromGuild) { setFromGuild(false); setPage("guild"); } // 從公會來的：回公會
-            else { setQuestCtx(null); setPage("home"); }
+            if (fromGuild) { setFromGuild(false); setPage("guild"); }
+            else { setQuestCtx(null); setPage("adventure-hub"); }
           }}
           questContext={questCtx} onKillForQuest={handleQuestKill} />}
-        {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("home")} />}
+        {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
-        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("home")} />}
+        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("inventory-hub")} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
         {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}
-        {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")} />}
-        {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("home")} />}
+        {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
+        {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
-        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("home")}/></div>}
-        {page==="cats"        && <CatCollection onBack={()=>setPage("profile")} onOpenBook={()=>setPage("catbook")}/>}
+        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
+        {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
-        {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
+        {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
         {page==="guild"       && <AdventurerGuild
-          onBack={()=>{ setQuestCtx(null); setPage("home"); }}
+          onBack={()=>{ setQuestCtx(null); setPage("adventure-hub"); }}
           onNavigate={handleGuildNavigate}
-          questCtx={questCtx?.completed ? null : questCtx}  // 完成後進公會清空 ctx
+          questCtx={questCtx?.completed ? null : questCtx}
           onQuestCtxClear={()=>setQuestCtx(null)}
         />}
-        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("home")} />}
+        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}

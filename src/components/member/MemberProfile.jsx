@@ -6,7 +6,6 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
-import { EquipmentManager, ArmorManager, AccessoryManager, normalizeEquipment } from "../shared/Equipment";
 import { auth } from "../../lib/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { APP_THEMES } from "../../lib/theme";
@@ -48,29 +47,13 @@ export default function MemberProfile({
 }) {
   const { profile } = useAuth();
   const [certRecords,    setCertRecords]   = useState([]);
-  const [eq,            setEq]            = useState(normalizeEquipment(profile?.equipment));
-  const [armorSets,     setArmorSets]     = useState(profile?.armorSets     || []);
-  const [accessorySets, setAccessorySets] = useState(profile?.accessorySets || []);
-  const [saving,        setSaving]        = useState(false);
-  const [saved,         setSaved]         = useState(false);
-  const [equipTab,      setEquipTab]      = useState("bow");
   const [showHistory,   setShowHistory]   = useState(false);
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
 
   useEffect(() => {
-    setEq(normalizeEquipment(profile?.equipment));
-    setArmorSets(profile?.armorSets || []);
-    setAccessorySets(profile?.accessorySets || []);
     if (profile?.id) getCertRecords(profile.id).then(setCertRecords).catch(() => {});
   }, [profile?.id]);
-
-  async function saveEquip() {
-    setSaving(true);
-    await updateMember(profile.id, { equipment:eq, armorSets, accessorySets }, profile.id);
-    setSaving(false); setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
 
   const thisYear = new Date().getFullYear();
 
@@ -109,22 +92,34 @@ export default function MemberProfile({
     );
   }
 
-  const quickLinks = [
-    { id:"duel",          icon:"⚔️", label:"決鬥模式",  desc:"1v1・組隊對戰・查看戰績" },
-    { id:"party",         icon:"👥", label:"組隊模式",  desc:"日常分享與組隊打怪" },
-    { id:"materials",     icon:"🎒", label:"材料背包",  desc:"開箱、升級、合成" },
-    { id:"coinshop",      icon:"🏪", label:"金幣商店",  desc:"購買裝備與道具" },
-    { id:"cards",         icon:"🃏", label:"怪物卡片",  desc:"收藏、升星、裝備加成" },
-    { id:"monsterdex",    icon:"📖", label:"怪物圖鑑",  desc:"擊敗怪物的戰績" },
-    { id:"notifications", icon:"🔔", label:"訊息中心",  desc:"公告與祝賀" },
-    { id:"dex",           icon:"🎖️", label:"成就圖鑑",  desc:"我的數位收藏" },
-    { id:"equipment",     icon:"⚔️", label:"裝備系統",  desc:"升級裝備・提升屬性" },
-    { id:"comps",         icon:"🎯", label:"年度檢定",  desc:"參加檢定考試" },
-    { id:"learn",         icon:"📓", label:"學習紀錄",  desc:"查看教練回饋" },
-    { id:"history",       icon:"📊", label:"成績歷史",  desc:"所有參賽紀錄" },
-    { id:"msgs",          icon:"✉️", label:"留言教練",  desc:"傳送訊息給教練" },
-    { id:"external",      icon:"🏅", label:"對外比賽",  desc:"申報外部成績" },
-    { id:"guide",         icon:"📘", label:"使用說明",  desc:"系統操作指引" },
+  const quickLinkGroups = [
+    {
+      title: "射箭成長",
+      links: [
+        { id:"learn",    icon:"📓", label:"學習紀錄",  desc:"查看教練回饋" },
+        { id:"certexam", icon:"🎖️", label:"射手證考試", desc:"檢定・級別晉升" },
+      ],
+    },
+    {
+      title: "記錄申報",
+      links: [
+        { id:"history",  icon:"📊", label:"成績歷史", desc:"所有參賽紀錄" },
+        { id:"external", icon:"🏅", label:"對外比賽", desc:"申報外部成績" },
+      ],
+    },
+    {
+      title: "溝通聯絡",
+      links: [
+        { id:"msgs",          icon:"✉️", label:"留言教練", desc:"傳送訊息給教練" },
+        { id:"notifications", icon:"🔔", label:"訊息中心", desc:"公告與祝賀" },
+      ],
+    },
+    {
+      title: "說明設定",
+      links: [
+        { id:"guide", icon:"📘", label:"使用說明", desc:"系統操作指引" },
+      ],
+    },
   ];
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
@@ -266,42 +261,23 @@ export default function MemberProfile({
         </div>
       </Card>
 
-      {/* 快捷連結 */}
-      <div className="grid grid-cols-3 gap-3">
-        {quickLinks.map(l => (
-          <button key={l.id} onClick={() => onPageChange(l.id)}
-            className="rounded-2xl p-3 text-center active:scale-95 transition-all border border-white/15"
-            style={{ background:"rgba(15,23,42,0.55)" }}>
-            <div className="text-2xl mb-1">{l.icon}</div>
-            <div className="text-white font-bold text-xs">{l.label}</div>
-            <div className="text-white/50 text-xs mt-0.5">{l.desc}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* 裝備管理 */}
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <ST>🎒 我的裝備</ST>
-          <span className="text-gray-400 text-xs">編輯後請按儲存</span>
+      {/* 快捷連結（按功能類別分組）*/}
+      {quickLinkGroups.map(group => (
+        <div key={group.title}>
+          <div className="text-white/50 text-xs font-bold mb-2 px-1">{group.title}</div>
+          <div className="grid grid-cols-3 gap-3">
+            {group.links.map(l => (
+              <button key={l.id} onClick={() => onPageChange(l.id)}
+                className="rounded-2xl p-3 text-center active:scale-95 transition-all border border-white/15"
+                style={{ background:"rgba(15,23,42,0.55)" }}>
+                <div className="text-2xl mb-1">{l.icon}</div>
+                <div className="text-white font-bold text-xs">{l.label}</div>
+                <div className="text-white/50 text-xs mt-0.5">{l.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2 mb-4">
-          {[{key:"bow",label:"🏹 弓組"},{key:"armor",label:"🛡️ 防具"},{key:"accessory",label:"✨ 飾品"}].map(t => (
-            <button key={t.key} onClick={() => setEquipTab(t.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold border ${equipTab===t.key?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-600 border-gray-200"}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-4">
-          {equipTab === "bow"       && <EquipmentManager value={eq} onChange={setEq} />}
-          {equipTab === "armor"     && <ArmorManager value={armorSets} onChange={setArmorSets} />}
-          {equipTab === "accessory" && <AccessoryManager value={accessorySets} onChange={setAccessorySets} />}
-          <Btn v="primary" className="w-full py-3" onClick={saveEquip} disabled={saving}>
-            {saving ? "儲存中…" : saved ? "✅ 已儲存" : "儲存裝備"}
-          </Btn>
-        </div>
-      </Card>
+      ))}
 
       <AccountSettings profile={profile} />
     </div>

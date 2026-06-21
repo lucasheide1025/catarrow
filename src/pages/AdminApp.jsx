@@ -16,6 +16,7 @@ import EquipmentPage      from "../components/member/EquipmentPage";
 import CoinShop           from "../components/member/CoinShop";
 import AdminFinance       from "../components/admin/AdminFinance";
 import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
+import AdminMessages       from "../components/admin/AdminMessages";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
 import MemberScoring      from "../components/member/MemberScoring";
@@ -471,11 +472,7 @@ const adminNav = [
         )}
         {page==="hub-member" && memberSub==="learn"      && <><HubBack onClick={()=>setMemberSub(null)}/><AdminLearn/></>}
         {page==="hub-member" && memberSub==="messages"   && (
-          <><HubBack onClick={()=>setMemberSub(null)}/>
-          <AdminReviewCenter
-            pendingCert={[]} messages={allMessages}
-            pendingExtItems={[]} certTasks={[]}
-          /></>
+          <><HubBack onClick={()=>setMemberSub(null)}/><AdminMessages /></>
         )}
 
         {/* ── 賽事中心 Hub ── */}
