@@ -10,6 +10,7 @@ import { POTIONS, FRAGMENTS } from "./itemData";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS } from "./villageData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -2816,4 +2817,77 @@ export async function drawGachaCards(memberId, type = "single") {
 
   await updateDoc(doc(db, C.members, memberId), updates);
   return { ok: true, results };
+}
+
+// ─── 貓貓村 ────────────────────────────────────────────────
+export async function collectVillageResources(memberId, village) {
+  const now = Date.now();
+  const lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
+  const hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
+  if (hours < 0.05) return { collected: {}, hours: 0 };
+
+  const buildings = village?.buildings || {};
+  const resources = { ...(village?.resources || {}) };
+  const collected = {};
+
+  for (const id of BUILDING_LIST) {
+    const lv  = buildings[id] || 1;
+    const res = VB[id]?.resource;
+    const amt = Math.floor(getProductionRate(id, lv) * hours);
+    if (res && amt > 0) {
+      resources[res]  = (resources[res]  || 0) + amt;
+      collected[res]  = (collected[res]  || 0) + amt;
+    }
+  }
+
+  await updateDoc(doc(db, C.members, memberId), {
+    "village.resources":       resources,
+    "village.lastCollectedAt": serverTimestamp(),
+  });
+  return { collected, resources, hours };
+}
+
+export async function upgradeVillageBuilding(memberId, buildingId, village) {
+  const buildings = village?.buildings || DEFAULT_VILLAGE.buildings;
+  const resources = { ...(village?.resources || DEFAULT_VILLAGE.resources) };
+  const currentLevel = buildings[buildingId] || 1;
+  if (currentLevel >= 20) throw new Error("已達最高等級");
+
+  const req = getUpgradeRequirements(buildingId, currentLevel + 1);
+  if (!req) throw new Error("無法升級");
+
+  if ((resources.arrowdew || 0) < req.arrowdew) throw new Error("箭露不足");
+  for (const mat of req.materials) {
+    if ((resources[mat.resource] || 0) < mat.count) throw new Error("材料不足");
+  }
+
+  resources.arrowdew = (resources.arrowdew || 0) - req.arrowdew;
+  for (const mat of req.materials) {
+    resources[mat.resource] = (resources[mat.resource] || 0) - mat.count;
+  }
+
+  await updateDoc(doc(db, C.members, memberId), {
+    [`village.buildings.${buildingId}`]: currentLevel + 1,
+    "village.resources": resources,
+  });
+  return { newLevel: currentLevel + 1, resources };
+}
+
+export async function addArrowdew(memberId, amount) {
+  if (!memberId || !amount) return;
+  const member = await getMember(memberId);
+  const cur = member?.village?.resources?.arrowdew || 0;
+  await updateDoc(doc(db, C.members, memberId), {
+    "village.resources.arrowdew": cur + amount,
+  });
+}
+
+export async function initVillageIfNeeded(memberId, currentVillage) {
+  if (currentVillage) return;
+  await updateDoc(doc(db, C.members, memberId), {
+    village: {
+      ...DEFAULT_VILLAGE,
+      lastCollectedAt: serverTimestamp(),
+    },
+  });
 }

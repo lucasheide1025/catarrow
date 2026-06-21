@@ -55,6 +55,7 @@ import MemberTrainingHub  from "../components/member/MemberTrainingHub";
 import MemberInventoryHub from "../components/member/MemberInventoryHub";
 import MemberRecordsHub   from "../components/member/MemberRecordsHub";
 import GachaMachine       from "../components/member/GachaMachine";
+import CatVillage         from "../components/member/CatVillage";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
@@ -403,10 +404,9 @@ export default function MemberApp() {
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
         {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}
-        {page==="gacha"       && <GachaMachine
+        {page==="gacha"       && <CatVillage
           catCards={profile?.catCards}
-          gachaCoins={profile?.gachaCoins ?? 0}
-          onCoinsUpdated={()=>{}} />}
+          gachaCoins={profile?.gachaCoins ?? 0} />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}

@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useMemo } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { useAuth } from "../../hooks/useAuth";
@@ -1711,8 +1711,12 @@ export default function MemberPractice() {
     toast("練習紀錄已儲存 ✓");
     setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]);
 
+    // 箭露入帳（每射1箭+1箭露）
+    const arrowCount = stats.arrows || 0;
+    if (arrowCount > 0) addArrowdew(profile.id, arrowCount).catch(() => {});
+
     // 里程碑計算（非同步，不阻塞 UI）
-    const newTodayArrows=oldTodayArrows+(stats.arrows||0);
+    const newTodayArrows=oldTodayArrows+arrowCount;
     const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
     if(milestones.length>0){
       grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});

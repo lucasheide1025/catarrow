@@ -31,8 +31,13 @@ export function unlockAudio() {
   ctx();
 }
 
+let _gestured = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", () => { _gestured = true; }, { once: true });
+}
+
 export function vibrate(pattern = 30) {
-  try { if (navigator?.vibrate) navigator.vibrate(pattern); } catch {}
+  try { if (_gestured && navigator?.vibrate) navigator.vibrate(pattern); } catch {}
 }
 
 // ── 內部工具 ─────────────────────────────────────────────────

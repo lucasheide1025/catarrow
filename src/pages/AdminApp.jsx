@@ -36,6 +36,7 @@ import MemberDex          from "../components/member/MemberDex";
 import MemberMaterials    from "../components/member/MemberMaterials";
 import MemberMonsterDex  from "../components/member/MemberMonsterDex";
 import CardCollection    from "../components/member/CardCollection";
+import CatVillage       from "../components/member/CatVillage";
 import MemberGuide      from "../components/member/MemberGuide";
 import MonsterBattle      from "../components/member/MonsterBattle";
 import PartyLobby         from "../components/party/PartyLobby";
@@ -390,6 +391,7 @@ const adminNav = [
           {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
+          {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} />}
           {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("adventure-hub")}/>}
           {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
