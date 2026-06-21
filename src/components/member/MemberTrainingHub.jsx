@@ -8,7 +8,7 @@ export default function MemberTrainingHub({ onPageChange, onJoinParty }) {
   const [showCheckin, setShowCheckin] = useState(false);
 
   return (
-    <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
+    <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
       <h2 className="text-white font-black text-xl drop-shadow">🏹 練箭</h2>
 
       {/* 每日報到（可展開） */}

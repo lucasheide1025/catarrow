@@ -90,6 +90,178 @@ function startOfWeek() {
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function bowLabel(b) { return BOW_OPTIONS.find(o=>o.value===b)?.label || b; }
 
+// ── 靶面計分元件 ─────────────────────────────────────────────
+const RING_DEFS = {
+  full_110: [
+    { r:1.00, fill:"#d0d0d0", stroke:"#aaa" },
+    { r:0.90, fill:"#d0d0d0", stroke:"#aaa" },
+    { r:0.80, fill:"#1c1c1c", stroke:"#555" },
+    { r:0.70, fill:"#1c1c1c", stroke:"#555" },
+    { r:0.60, fill:"#1864ab", stroke:"#4a90d9" },
+    { r:0.50, fill:"#1864ab", stroke:"#4a90d9" },
+    { r:0.40, fill:"#c92a2a", stroke:"#e03131" },
+    { r:0.30, fill:"#c92a2a", stroke:"#e03131" },
+    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
+    { r:0.10, fill:"#e67700", stroke:"#f59f00" },
+  ],
+  half_610: [
+    { r:1.00, fill:"#1864ab", stroke:"#4a90d9" },
+    { r:0.80, fill:"#c92a2a", stroke:"#e03131" },
+    { r:0.60, fill:"#c92a2a", stroke:"#e03131" },
+    { r:0.40, fill:"#e67700", stroke:"#f59f00" },
+    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
+  ],
+  field_16: [
+    { r:1.00, fill:"#eee",    stroke:"#bbb" },
+    { r:5/6,  fill:"#eee",    stroke:"#bbb" },
+    { r:4/6,  fill:"#eee",    stroke:"#bbb" },
+    { r:3/6,  fill:"#e67700", stroke:"#f59f00" },
+    { r:2/6,  fill:"#1c1c1c", stroke:"#555" },
+    { r:1/6,  fill:"#1c1c1c", stroke:"#555" },
+  ],
+};
+
+function calcTapScore(ratio, fmtId) {
+  if (ratio > 1) return "M";
+  if (fmtId === "half_610") {
+    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 5);
+    return ring === 0 ? 10 : Math.max(6, 11 - ring);
+  }
+  if (fmtId === "field_16") {
+    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
+    return ring === 0 ? 6 : Math.max(1, 7 - ring);
+  }
+  const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 10);
+  return ring === 0 ? 10 : Math.max(1, 11 - ring);
+}
+
+function SingleTargetSVG({ fmtId, R, arrows, active, onTap }) {
+  const SIZE = R * 2 + 6, CX = R + 3, CY = R + 3;
+  const rings = RING_DEFS[fmtId] || RING_DEFS.full_110;
+
+  function handleTap(e) {
+    if (!active || !onTap) return;
+    e.preventDefault(); e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const touch = e.touches?.[0];
+    const px = (touch ? touch.clientX : e.clientX) - rect.left;
+    const py = (touch ? touch.clientY : e.clientY) - rect.top;
+    const ratio = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2) / R;
+    onTap({ score: calcTapScore(ratio, fmtId), x: px, y: py });
+  }
+
+  return (
+    <svg width={SIZE} height={SIZE}
+      style={{ touchAction:"none", display:"block", cursor: active ? "crosshair" : "default" }}
+      onMouseDown={handleTap} onTouchStart={handleTap}>
+      <circle cx={CX} cy={CY} r={R + 2} fill={active ? "#2a2a2a" : "#555"} />
+      {rings.map((ring, i) => (
+        <circle key={i} cx={CX} cy={CY} r={ring.r * R}
+          fill={ring.fill} stroke={ring.stroke} strokeWidth={0.6} />
+      ))}
+      <line x1={CX-5} y1={CY} x2={CX+5} y2={CY} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
+      <line x1={CX} y1={CY-5} x2={CX} y2={CY+5} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
+      {active && <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />}
+      {arrows.map((a, i) => (
+        <g key={i}>
+          <circle cx={a.x} cy={a.y} r={7} fill="#15803d" stroke="white" strokeWidth={1.5} />
+          <text x={a.x} y={a.y + 0.5} textAnchor="middle" dominantBaseline="middle"
+            fill="white" fontSize={7.5} fontWeight="900">{a.score === "M" ? "M" : a.score}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function TargetFaceView({ fmt, arrowCount, arrows, onTap }) {
+  const done = arrows.length >= arrowCount;
+  if (fmt.isTriple) {
+    const arrowsPerSpot = arrowCount <= 3 ? 1 : 2;
+    const activeSpot = done ? -1 : Math.min(2, Math.floor(arrows.length / arrowsPerSpot));
+    const R = 52;
+    return (
+      <div className="flex justify-around items-start py-2 px-1">
+        {["上", "中", "下"].map((label, spotIdx) => {
+          const spotArrows = arrows
+            .filter(a => a.spotIdx === spotIdx)
+            .map(a => ({ score: a.score, x: a.x, y: a.y }));
+          const isActive = spotIdx === activeSpot;
+          return (
+            <div key={spotIdx} className="flex flex-col items-center gap-1">
+              <span className={`text-xs font-bold ${isActive ? "text-green-300" : "text-white/30"}`}>{label}</span>
+              <SingleTargetSVG fmtId="full_110" R={R} arrows={spotArrows} active={isActive}
+                onTap={({ score, x, y }) => onTap({ score, x, y, spotIdx })} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  const R = 126;
+  return (
+    <div className="flex justify-center py-1">
+      <SingleTargetSVG fmtId={fmt.id} R={R}
+        arrows={arrows.map(a => ({ score: a.score, x: a.x, y: a.y }))}
+        active={!done} onTap={onTap} />
+    </div>
+  );
+}
+
+function ScoreCardTable({ rounds }) {
+  const arrowN = rounds[0]?.length || 6;
+  let cumul = 0;
+  function cellC(s) {
+    if (s === "M") return { bg:"#c92a2a", text:"#fff" };
+    if (s >= 9)  return { bg:"#e67700", text:"#fff" };
+    if (s >= 7)  return { bg:"#c92a2a", text:"#fff" };
+    if (s >= 5)  return { bg:"#1864ab", text:"#fff" };
+    if (s >= 3)  return { bg:"#444",    text:"rgba(255,255,255,0.85)" };
+    return              { bg:"#2a2a2a", text:"rgba(255,255,255,0.55)" };
+  }
+  const thS = { color:"rgba(255,255,255,0.5)", padding:"4px 2px", textAlign:"center", fontWeight:700, borderBottom:"1px solid rgba(255,255,255,0.1)", fontSize:11, whiteSpace:"nowrap" };
+  const tdS = { padding:"3px 2px", textAlign:"center", borderBottom:"1px solid rgba(255,255,255,0.06)" };
+  return (
+    <Card className="p-3 mt-1" style={CS}>
+      <div className="text-xs font-bold text-white/60 mb-2">📋 計分卡</div>
+      <div className="overflow-x-auto">
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead>
+            <tr>
+              <th style={thS}>波</th>
+              {Array.from({ length: arrowN }, (_, i) => <th key={i} style={thS}>{i+1}</th>)}
+              <th style={{ ...thS, color:"rgba(255,255,255,0.8)" }}>小計</th>
+              <th style={{ ...thS, color:"#f59f00" }}>累積</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rounds.map((r, ri) => {
+              const sub = numericArr([r]).reduce((a, b) => a + b, 0);
+              cumul += sub;
+              return (
+                <tr key={ri}>
+                  <td style={{ ...tdS, color:"rgba(255,255,255,0.4)", fontSize:11 }}>{ri+1}</td>
+                  {r.map((s, j) => {
+                    const c = cellC(s);
+                    return (
+                      <td key={j} style={tdS}>
+                        <div style={{ width:21, height:21, borderRadius:"50%", display:"inline-flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:10, background:c.bg, color:c.text }}>
+                          {s}
+                        </div>
+                      </td>
+                    );
+                  })}
+                  <td style={{ ...tdS, color:"white", fontWeight:900, fontSize:12 }}>{sub}</td>
+                  <td style={{ ...tdS, color:"#f59f00", fontWeight:900, fontSize:12 }}>{cumul}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 // ── SetupPhase ────────────────────────────────────────────────
 function SetupPhase({ initial, equipSets, onStart }) {
   const [form, setForm] = useState(initial);
@@ -189,6 +361,24 @@ function SetupPhase({ initial, equipSets, onStart }) {
         )}
       </Card>
 
+      {/* 計分方式 */}
+      <Card className="p-4" style={CS}>
+        <div className="text-xs font-bold text-white/70 mb-2">計分方式</div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id:"button", label:"⌨️ 按鈕計分", desc:"點按鈕輸入分數" },
+            { id:"target", label:"🎯 靶面點擊", desc:"點擊靶面互動計分" },
+          ].map(m => (
+            <button key={m.id} onClick={() => up("inputMode", m.id)}
+              className={`py-2.5 px-3 rounded-xl text-left border transition-all
+                ${(form.inputMode||"button") === m.id ? "bg-blue-600 border-blue-500" : "bg-white/10 border-white/20"}`}>
+              <div className={`text-xs font-bold ${(form.inputMode||"button") === m.id ? "text-white" : "text-white/70"}`}>{m.label}</div>
+              <div className={`text-[10px] mt-0.5 ${(form.inputMode||"button") === m.id ? "text-blue-200" : "text-white/40"}`}>{m.desc}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
       {/* 箭數/組數 */}
       <Card className="p-4" style={CS}>
         <div className="grid grid-cols-2 gap-3">
@@ -260,12 +450,18 @@ function ScoringPhase({ form, onDone, onCancel }) {
   const [round, setRound] = useState(0);
   const [allR,  setAllR]  = useState([]);
   const [cur,   setCur]   = useState([]);
+  const [positions, setPositions] = useState([]);
+  const isTargetMode = (form.inputMode || "button") === "target";
 
-  function addArrow(s) { if (cur.length >= form.arrowCount) return; setCur(p => [...p, s]); }
+  function addArrow(s, pos) {
+    if (cur.length >= form.arrowCount) return;
+    setCur(p => [...p, s]);
+    if (pos) setPositions(p => [...p, { score: s, ...pos }]);
+  }
   function nextRound() {
     const newAll = [...allR, cur];
     if (newAll.length >= form.roundCount) { onDone(newAll); return; }
-    setAllR(newAll); setCur([]); setRound(r=>r+1);
+    setAllR(newAll); setCur([]); setRound(r=>r+1); setPositions([]);
   }
   const prevTotal  = numericArr(allR).reduce((a,b)=>a+b,0);
   const curNumeric = cur.filter(s=>s!=="M").reduce((a,b)=>a+b,0);
@@ -308,22 +504,32 @@ function ScoringPhase({ form, onDone, onCancel }) {
         </div>
       </Card>
 
-      <Card className="p-4" style={CS}>
-        <div className="grid gap-3" style={{ gridTemplateColumns:`repeat(${cols},1fr)` }}>
-          {btns.map(s => {
-            const c = scoreColor(s, fmt);
-            return (
-              <button key={s} onClick={()=>addArrow(s)} disabled={cur.length>=form.arrowCount}
-                className="py-4 rounded-xl font-black text-xl border-2 disabled:opacity-30 transition-all active:scale-95"
-                style={{ background:c.bg, color:c.text, borderColor:c.border }}>{s}
-              </button>
-            );
-          })}
-        </div>
-      </Card>
+      {isTargetMode ? (
+        <Card className="p-3" style={CS}>
+          <TargetFaceView fmt={fmt} arrowCount={form.arrowCount} arrows={positions}
+            onTap={({ score, x, y, spotIdx }) => addArrow(score, { x, y, ...(spotIdx !== undefined ? { spotIdx } : {}) })} />
+          <div className="text-center text-white/40 text-xs mt-1">
+            {positions.length < form.arrowCount ? `點擊靶面計分（${positions.length}/${form.arrowCount} 箭）` : "本組完成 →"}
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-4" style={CS}>
+          <div className="grid gap-3" style={{ gridTemplateColumns:`repeat(${cols},1fr)` }}>
+            {btns.map(s => {
+              const c = scoreColor(s, fmt);
+              return (
+                <button key={s} onClick={()=>addArrow(s)} disabled={cur.length>=form.arrowCount}
+                  className="py-4 rounded-xl font-black text-xl border-2 disabled:opacity-30 transition-all active:scale-95"
+                  style={{ background:c.bg, color:c.text, borderColor:c.border }}>{s}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       <div className="flex gap-3">
-        <button onClick={()=>setCur(p=>p.slice(0,-1))} disabled={cur.length===0}
+        <button onClick={()=>{ setCur(p=>p.slice(0,-1)); if(isTargetMode) setPositions(p=>p.slice(0,-1)); }} disabled={cur.length===0}
           className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm disabled:opacity-30 bg-white/10">
           ← 刪除
         </button>
@@ -391,6 +597,7 @@ function ResultPhase({ form, rounds, onSave, onRetry, saving }) {
           ))}
         </div>
       </Card>
+      <ScoreCardTable rounds={rounds} />
       <div className="flex gap-3">
         <button onClick={onRetry} className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm bg-white/10">重新練習</button>
         <button onClick={onSave} disabled={saving} style={{ flex:2 }}
@@ -1306,7 +1513,7 @@ export default function MemberPractice() {
   const [form, setForm]=useState(()=>({
     date:today(), bowType:getDefaultBowType(profile?.equipment),
     equipSetId:getDefaultEquipSetId(profile?.equipment),
-    distance:18, targetFormat:"full_110", arrowCount:6, roundCount:6, note:"",
+    distance:18, targetFormat:"full_110", arrowCount:6, roundCount:6, note:"", inputMode:"button",
   }));
 
   useEffect(()=>{
