@@ -19,11 +19,11 @@ function PanoramaView({ villageLevel }) {
 
   return (
     <div className="overflow-x-auto no-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
-      <div style={{ width: "750px", height: "280px", position: "relative", flexShrink: 0 }}>
+      <div style={{ width: "750px", height: "370px", position: "relative", flexShrink: 0 }}>
         <img
           src={src}
           alt={`村莊 Lv${lv}`}
-          style={{ width: "750px", height: "280px", objectFit: "cover", display: "block" }}
+          style={{ width: "750px", height: "370px", objectFit: "cover", display: "block" }}
           onError={e => { e.target.style.display = "none"; }}
         />
         {/* 等級標籤 */}
