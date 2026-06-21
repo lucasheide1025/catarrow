@@ -8,7 +8,6 @@ import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLO
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { Card, ST, Spinner, BadgePip } from "../shared/UI";
 import ShareCard from "./ShareCard";
-import DailyQuest from "./DailyQuest";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
@@ -130,8 +129,6 @@ export default function MemberHome({
   }
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
-  const [showDailyQuest, setShowDailyQuest] = useState(false);
-
   if (loading) return <Spinner />;
 
   async function submitCardRequest() {
@@ -195,15 +192,6 @@ export default function MemberHome({
         </button>
       )}
 
-      {/* ── 每日報到（置頂獨立，展開式）────────────────────────── */}
-      <button onClick={() => setShowDailyQuest(v => !v)}
-        className="w-full rounded-2xl p-4 flex items-center gap-3 active:scale-98 transition-transform relative overflow-hidden text-left"
-        style={cellStyle("checkin", showDailyQuest ? "linear-gradient(135deg,#047857,#064e3b)" : "linear-gradient(135deg,#059669,#0d9488)")}>
-        <span className="text-white font-black text-base relative z-10">📋 每日報到</span>
-        <span className="text-white/70 text-sm relative z-10 ml-auto">{showDailyQuest ? "收起 ▲" : "展開 ▼"}</span>
-      </button>
-      {showDailyQuest && <DailyQuest onJoinParty={onJoinParty} />}
-
       {/* ── 4 大功能 Hub ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         {[
@@ -214,9 +202,8 @@ export default function MemberHome({
         ].map(hub => (
           <button key={hub.page} onClick={() => onPageChange(hub.page)}
             className="rounded-2xl p-3 flex flex-col justify-between active:scale-95 transition-transform relative overflow-hidden"
-            style={{ minHeight:"90px", background: hub.bg }}>
-            {/* 卡片圖全圖展示（右下角，完整呈現）*/}
-            <img src={hub.img} alt="" style={{ position:"absolute", right:0, bottom:0, height:"88%", width:"auto", opacity:0.8, pointerEvents:"none" }} />
+            style={{ minHeight:"100px", background: hub.bg }}>
+            <img src={hub.img} alt="" style={{ position:"absolute", right:-4, bottom:-4, height:"80%", width:"auto", opacity:0.75, pointerEvents:"none" }} />
             <div className="relative z-10">
               <div className="text-white font-black text-sm drop-shadow">{hub.label}</div>
               <div className="text-white/70 text-[10px] mt-0.5">{hub.desc}</div>

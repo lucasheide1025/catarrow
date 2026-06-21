@@ -60,6 +60,11 @@ import AdminStoryManager from "../components/admin/AdminStoryManager";
 import AdminArchery      from "../components/admin/AdminArchery";
 import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
+import MemberAdventureHub from "../components/member/MemberAdventureHub";
+import MemberTrainingHub  from "../components/member/MemberTrainingHub";
+import MemberInventoryHub from "../components/member/MemberInventoryHub";
+import MemberRecordsHub   from "../components/member/MemberRecordsHub";
+import MemberBowSettings  from "../components/member/MemberBowSettings";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -271,12 +276,16 @@ const adminNav = [
 ];
 
   const memberNav = [
-    { id:"home",        icon:"🏠", label:"首頁"  },
-    { id:"comps",       icon:"🏆", label:"比賽"  },
-    { id:"practice",    icon:"🎯", label:"練習"  },
-    { id:"leaderboard", icon:"📊", label:"排行"  },
-    { id:"profile",     icon:"👤", label:"我的"  },
+    { id:"home",          icon:"🏠", label:"首頁"  },
+    { id:"adventure-hub", icon:"🗺️", label:"冒險"  },
+    { id:"training-hub",  icon:"🏹", label:"練箭"  },
+    { id:"inventory-hub", icon:"🎒", label:"背包"  },
+    { id:"profile",       icon:"👤", label:"我的"  },
   ];
+  const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
+  const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice"];
+  const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards"];
+  const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
 
   // ── 射手模式 ──────────────────────────────────────────────
   if (archerMode) {
@@ -319,11 +328,15 @@ const adminNav = [
           </button>
         )}
         <div style={{paddingBottom:"80px"}}>
-          {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
+          {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
               potionDex={potionDex} cardData={cardData} />}
-          {page==="comps"       && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
+          {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
+          {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
+          {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
+          {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
+          {page==="comps"         && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}
           {page==="comp-detail" && selComp && !scoring && (
             <CompDetail comp={selComp} profile={profile}
               onBack={()=>setPage("comps")}
@@ -348,14 +361,15 @@ const adminNav = [
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
           {page==="notifications" && <MemberNotifications notifications={notifications}/>}
           {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
-          {page==="materials"   && <MemberMaterials onBack={()=>setPage("profile")}/>}
+          {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")}/>}
           {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
-          {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("profile")}/>}
+          {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")}/>}
+          {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")}/>}
           {page==="cards"       && <CardCollection />}
           {page==="monster"     && <MonsterBattle
             onBack={() => {
               if (fromGuild) { setFromGuild(false); setPage("guild"); }
-              else { setQuestCtx(null); setPage("home"); }
+              else { setQuestCtx(null); setPage("adventure-hub"); }
             }}
             questContext={questCtx} onKillForQuest={handleQuestKill}/>}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
@@ -365,18 +379,18 @@ const adminNav = [
           {page==="party-battle" && partyRoomId && (
             <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
           )}
-          {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("monster")}/>}
+          {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
-          {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("home")} />}
+          {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
           {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
-          {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("home")}/>}
-          {page==="cats"        && <CatCollection onBack={()=>setPage("home")} onOpenBook={()=>setPage("catbook")}/>}
+          {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("adventure-hub")}/>}
+          {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
-          {page==="story"       && <StoryBook     onBack={()=>setPage("home")}/>}
+          {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
           {page==="guild"       && <AdventurerGuild
-            onBack={()=>{ setQuestCtx(null); setPage("home"); }}
+            onBack={()=>{ setQuestCtx(null); setPage("adventure-hub"); }}
             onNavigate={handleGuildNavigate}
             questCtx={questCtx?.completed ? null : questCtx}
             onQuestCtxClear={()=>setQuestCtx(null)}
@@ -386,7 +400,7 @@ const adminNav = [
           {memberNav.map(n=>(
             <button key={n.id} onClick={()=>setPage(n.id)}
               style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||["comp-detail","monster","duel","duel-room"].includes(page)&&n.id==="comps"||["learn","msgs","history","external","achievements","certexam","notifications","dex","materials","monsterdex","cards","party","party-quest","party-battle","guide","equipment","coinshop","worldboss","cats","catbook"].includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
+                color:(page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
               <div style={{position:"relative",display:"inline-block"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (

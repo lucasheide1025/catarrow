@@ -123,7 +123,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
       const planObj = plans.find(p => p.id === bs.plan);
       const payMethod = bs.plan === "月卡" ? "月卡" : bs.payMethod;
       const basePrice = planObj?.price || 0;
-      const discount  = (bs.plan !== "月卡" && bs.earlyBird) ? 100 : 0;
+      const discount  = (bs.plan !== "月卡" && bs.earlyBird) ? 50 : 0;
       const finalPrice = bs.plan === "月卡" ? 0 : Math.max(0, basePrice - discount);
       const dateStr = new Date().toISOString().slice(0, 10);
       const [y, m, d] = dateStr.split("-").map(Number);
@@ -555,7 +555,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
                                 onChange={e => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], earlyBird: e.target.checked } }))}
                                 className="w-4 h-4 accent-amber-500 cursor-pointer" />
                               <span className="text-xs font-black text-amber-700">
-                                🌅 早鳥折扣 -100元
+                                🌅 早鳥折扣 -50元
                               </span>
                               {bs.earlyBird && <span className="text-[10px] text-amber-500">（已有射手證號或手動套用）</span>}
                             </label>
@@ -570,7 +570,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
                             return (
                               <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
                                 {bs.plan}・{bs.plan === "月卡" ? "月卡扣除" : bs.payMethod}
-                                {disc2 > 0 && <span className="text-amber-600 ml-1">- 早鳥 {disc2}</span>}
+                                {disc2 > 0 && <span className="text-amber-600 ml-1">早鳥-{disc2}</span>}
                                 ・<span className="font-black text-gray-800">NT${final2}</span>
                               </div>
                             );
