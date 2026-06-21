@@ -6,8 +6,8 @@ import {
   getDailyQuestConfig, saveDailyQuestConfig,
   getMonsterDailyConfig, saveMonsterDailyConfig,
   getMonsterEventConfig, saveMonsterEventConfig,
-  subscribePendingCheckins, castBuff, cancelCheckin, deleteCheckin,
-  confirmCheckinReward,
+  subscribePendingCheckins, castBuff, cancelCheckin,
+  confirmCheckinReward, adminDismissCheckin,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 
@@ -79,7 +79,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
   }
 
   async function dismissDone(c) {
-    await deleteCheckin(c.id);
+    await adminDismissCheckin(c.id);
     toast(`已移除 ${c.memberNickname || c.memberName} 的紀錄`);
   }
 

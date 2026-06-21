@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   submitCheckin, subscribeMyCheckin, markQuestDone,
-  getDailyQuestConfig, cancelCheckin,
+  getDailyQuestConfig, cancelCheckin, rerollCheckinBuff,
 } from "../../lib/db";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
@@ -137,10 +137,41 @@ export default function DailyQuest({ onJoinParty }) {
         task.chest
       );
     } else {
-      sfxSoftFail();
-      setFailMsg(`差一點！得 ${val} 分，目標 ${goalToHit} 分。重選任務再試一次 💪`);
-      setChosenIdx(null);
-      setArrows([]);
+      const currentFailCount = checkin?.failCount || 0;
+      const newFailCount = currentFailCount + 1;
+      if (newFailCount >= 5) {
+        // 第五次強制過關
+        sfxSuccess();
+        await markQuestDone(
+          checkin.id,
+          { type: task.type, value: val, target: goalToHit, taskId: task.id, forcePassed: true },
+          profile.id,
+          task.chest
+        );
+      } else {
+        // 每次失敗降低目標分數（每次 -15%，最多 -80%）
+        const castPower = buff?.castPower ?? (buff?.actualPower || 0);
+        const nextPower = Math.min(80, castPower + newFailCount * 15);
+        const nextGoal  = Math.max(1, task.goal - Math.round(task.goal * nextPower / 100));
+        const newBuff = {
+          ...(buff || {}),
+          icon: buff?.icon || "💫",
+          name: buff?.name || "連敗加持",
+          actualPower: nextPower,
+          castPower,
+          lines: buff?.lines || [],
+        };
+        sfxSoftFail();
+        await rerollCheckinBuff(checkin.id, newBuff, newFailCount);
+        const isLastChance = newFailCount === 4;
+        setFailMsg(
+          isLastChance
+            ? `差一點！得 ${val} 分。下次目標降到 ${nextGoal} 分，再一次就強制過關！🔥`
+            : `差一點！得 ${val} 分。目標已降到 ${nextGoal} 分，加油再試一次 💪`
+        );
+        setChosenIdx(null);
+        setArrows([]);
+      }
     }
     setBusy(false);
   }
