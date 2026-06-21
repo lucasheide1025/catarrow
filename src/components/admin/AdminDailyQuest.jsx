@@ -14,12 +14,17 @@ import {
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 
-const PLANS = [
-  { id:"自一", price:200 }, { id:"自三", price:400 },
-  { id:"單一", price:300 }, { id:"單三", price:600 },
-  { id:"學一", price:200 }, { id:"學三", price:400 },
+const PLANS_EQUIP = [
+  { id:"自訂一小時", price:200 },
+  { id:"自訂三小時", price:400 },
+  { id:"月卡",       price:0   },
 ];
-const PAY_METHODS = ["現金", "轉帳", "月卡"];
+const PLANS_NO_EQUIP = [
+  { id:"早鳥折扣", price:200 },
+  { id:"單一",     price:300 },
+  { id:"單三",     price:600 },
+];
+const PAY_METHODS = ["現金", "轉帳"];
 
 export default function AdminDailyQuest({ mode = "all" }) {
   const { profile } = useAuth();
@@ -90,14 +95,21 @@ export default function AdminDailyQuest({ mode = "all" }) {
   }
 
   async function openBill(c) {
-    let defaultPlan = "自一";
+    let defaultPlan = null;
+    let hasEquip = false;
     if (c.memberId) {
       try {
         const snap = await getDoc(doc(db, "members", c.memberId));
-        if (snap.exists()) defaultPlan = snap.data().defaultPlan || "自一";
+        if (snap.exists()) {
+          const data = snap.data();
+          hasEquip = Object.values(data.equipment || {}).some(Boolean);
+          defaultPlan = data.defaultPlan || null;
+        }
       } catch {}
     }
-    setBillState(s => ({ ...s, [c.id]: { plan: defaultPlan, payMethod: "現金", busy: false } }));
+    const plans = hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP;
+    if (!plans.find(p => p.id === defaultPlan)) defaultPlan = plans[0].id;
+    setBillState(s => ({ ...s, [c.id]: { plan: defaultPlan, payMethod: "現金", busy: false, hasEquip } }));
   }
 
   async function confirmBill(c) {
@@ -105,8 +117,10 @@ export default function AdminDailyQuest({ mode = "all" }) {
     if (!bs) return;
     setBillState(s => ({ ...s, [c.id]: { ...s[c.id], busy: true } }));
     try {
-      const planObj = PLANS.find(p => p.id === bs.plan);
-      const finalPrice = bs.payMethod === "月卡" ? 0 : (planObj?.price || 0);
+      const plans = bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP;
+      const planObj = plans.find(p => p.id === bs.plan);
+      const payMethod = bs.plan === "月卡" ? "月卡" : bs.payMethod;
+      const finalPrice = bs.plan === "月卡" ? 0 : (planObj?.price || 0);
       const dateStr = new Date().toISOString().slice(0, 10);
       const [y, m, d] = dateStr.split("-").map(Number);
       await addBillingRecord({
@@ -116,7 +130,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
         basePrice:     planObj?.price || 0,
         discount:      0,
         finalPrice,
-        paymentMethod: bs.payMethod,
+        paymentMethod: payMethod,
         date: dateStr, year: y, month: m, day: d,
         note: "",
         createdByName: profile?.nickname || profile?.name || "教練",
@@ -126,7 +140,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
         updateDoc(doc(db, "members", c.memberId), { defaultPlan: bs.plan }).catch(() => {});
       }
       await adminDismissCheckin(c.id);
-      toast(`✅ ${c.memberNickname || c.memberName}：已記帳（${bs.plan} / ${bs.payMethod} NT$${finalPrice}）`);
+      toast(`✅ ${c.memberNickname || c.memberName}：已記帳（${bs.plan} / ${payMethod} NT$${finalPrice}）`);
     } catch (e) {
       toast("記帳失敗：" + (e?.message || ""), "error");
       setBillState(s => ({ ...s, [c.id]: { ...s[c.id], busy: false } }));
@@ -487,10 +501,12 @@ export default function AdminDailyQuest({ mode = "all" }) {
                       {/* 快速記帳面板 */}
                       {bs && (
                         <div className="mt-3 pt-3 border-t border-teal-200 flex flex-col gap-2">
-                          {/* 方案 */}
-                          <div className="text-xs font-black text-gray-500 mb-0.5">方案</div>
+                          {/* 方案（依是否有自訂裝備顯示不同組）*/}
+                          <div className="text-xs font-black text-gray-500 mb-0.5">
+                            方案{bs.hasEquip ? "（自訂裝備）" : ""}
+                          </div>
                           <div className="grid grid-cols-3 gap-1.5">
-                            {PLANS.map(p => (
+                            {(bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).map(p => (
                               <button key={p.id}
                                 onClick={() => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], plan: p.id } }))}
                                 className={`py-1.5 rounded-lg text-xs font-black border transition-all ${
@@ -500,33 +516,37 @@ export default function AdminDailyQuest({ mode = "all" }) {
                                 }`}>
                                 {p.id}
                                 <div className={`text-[10px] font-normal ${bs.plan === p.id ? "text-blue-200" : "text-gray-400"}`}>
-                                  ${p.price}
+                                  {p.price === 0 ? "月卡" : `$${p.price}`}
                                 </div>
                               </button>
                             ))}
                           </div>
 
-                          {/* 付款方式 */}
-                          <div className="text-xs font-black text-gray-500 mb-0.5">付款方式</div>
-                          <div className="flex gap-1.5">
-                            {PAY_METHODS.map(pm => (
-                              <button key={pm}
-                                onClick={() => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], payMethod: pm } }))}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
-                                  bs.payMethod === pm
-                                    ? "bg-emerald-600 text-white border-emerald-600"
-                                    : "bg-white text-gray-600 border-gray-200"
-                                }`}>
-                                {pm}
-                              </button>
-                            ))}
-                          </div>
+                          {/* 付款方式（月卡方案不需選）*/}
+                          {bs.plan !== "月卡" && (
+                            <>
+                              <div className="text-xs font-black text-gray-500 mb-0.5">付款方式</div>
+                              <div className="flex gap-1.5">
+                                {PAY_METHODS.map(pm => (
+                                  <button key={pm}
+                                    onClick={() => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], payMethod: pm } }))}
+                                    className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
+                                      bs.payMethod === pm
+                                        ? "bg-emerald-600 text-white border-emerald-600"
+                                        : "bg-white text-gray-600 border-gray-200"
+                                    }`}>
+                                    {pm}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
 
                           {/* 金額預覽 */}
                           <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
-                            {bs.plan}・{bs.payMethod}・
+                            {bs.plan}・{bs.plan === "月卡" ? "月卡扣除" : bs.payMethod}・
                             <span className="font-black text-gray-800">
-                              NT${bs.payMethod === "月卡" ? 0 : (PLANS.find(p => p.id === bs.plan)?.price || 0)}
+                              NT${bs.plan === "月卡" ? 0 : ((bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).find(p => p.id === bs.plan)?.price || 0)}
                             </span>
                           </div>
 

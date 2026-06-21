@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   submitCheckin, subscribeMyCheckin, markQuestDone,
-  getDailyQuestConfig, cancelCheckin, rerollCheckinBuff,
+  getDailyQuestConfig, cancelCheckin, rerollCheckinBuff, submitSimpleCheckin,
 } from "../../lib/db";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
@@ -51,6 +51,7 @@ export default function DailyQuest({ onJoinParty }) {
   const [chosenIdx, setChosenIdx] = useState(null);
   const [arrows,   setArrows]   = useState([]);
   const [failMsg,  setFailMsg]  = useState("");
+  const [choosing, setChoosing] = useState(false);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -104,6 +105,24 @@ export default function DailyQuest({ onJoinParty }) {
       setFailMsg("報到失敗，請重試或告知教練 🙏");
     }
     setBusy(false);
+  }
+
+  async function doSimpleCheckin() {
+    setBusy(true); sfxTap(); setChoosing(false);
+    try {
+      await submitSimpleCheckin(profile.id, profile.name, profile.nickname);
+    } catch {
+      setFailMsg("報到失敗，請重試 🙏");
+    }
+    setBusy(false);
+  }
+
+  async function doReroll() {
+    const newTasks = generateTasks();
+    setTasks(newTasks);
+    setChosenIdx(null);
+    setArrows([]);
+    try { await updateDoc(doc(db, "checkins", checkin.id), { tasks: newTasks, chosenTask: null }); } catch {}
   }
 
   async function doCancel() {
@@ -181,8 +200,8 @@ export default function DailyQuest({ onJoinParty }) {
 
   // ── 畫面狀態 ──
 
-  // 1. 今天還沒報到
-  if (!checkin) {
+  // 共用：未報到 / 已取消 的報到選擇 UI
+  function CheckinChoiceUI() {
     return (
       <div className="rounded-2xl p-5 text-white relative overflow-hidden"
         style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
@@ -194,34 +213,34 @@ export default function DailyQuest({ onJoinParty }) {
             {failMsg}
           </div>
         )}
-        <button onClick={doCheckin} disabled={busy}
-          className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
-          {busy ? "報到中…" : "📍 今日報到"}
-        </button>
+        {!choosing ? (
+          <button onClick={() => setChoosing(true)} disabled={busy}
+            className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
+            {busy ? "報到中…" : "📍 今日報到"}
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="text-center text-purple-100 text-xs font-bold mb-1">選擇今日報到方式</div>
+            <button onClick={() => { setChoosing(false); doCheckin(); }} disabled={busy}
+              className="w-full py-3 rounded-xl bg-white text-purple-700 font-black text-sm active:scale-95 transition-transform">
+              🎯 接受每日任務（教練施法後開始）
+            </button>
+            <button onClick={doSimpleCheckin} disabled={busy}
+              className="w-full py-2.5 rounded-xl bg-white/20 text-white font-bold text-sm active:scale-95 transition-transform border border-white/30">
+              ⏭️ 跳過任務（純報到 +1）
+            </button>
+            <button onClick={() => setChoosing(false)} className="text-purple-200 text-xs text-center mt-0.5">取消</button>
+          </div>
+        )}
       </div>
     );
   }
 
+  // 1. 今天還沒報到
+  if (!checkin) return <CheckinChoiceUI />;
+
   // 2-a. 已取消的報到 → 直接當成未報到（但 doc 還在，讓 admin 可刪）
-  if (checkin.status === "cancelled") {
-    return (
-      <div className="rounded-2xl p-5 text-white relative overflow-hidden"
-        style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-        <div className="text-xs font-black tracking-wider text-purple-100 mb-1">每日任務</div>
-        <div className="text-lg font-black mb-1">📍 今日尚未報到</div>
-        <div className="text-purple-100 text-xs mb-4">還差 {remain} 次換成就銀章 🥈</div>
-        {failMsg && (
-          <div className="bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2 mb-3 text-sm text-red-200 font-bold">
-            {failMsg}
-          </div>
-        )}
-        <button onClick={doCheckin} disabled={busy}
-          className="w-full py-3.5 rounded-xl bg-white text-purple-700 font-black text-base active:scale-95 transition-transform">
-          {busy ? "報到中…" : "📍 今日報到"}
-        </button>
-      </div>
-    );
-  }
+  if (checkin.status === "cancelled") return <CheckinChoiceUI />;
 
   // 2. 已報到，任務進行中
   if (checkin.status === "active" && !checkin.questDone) {
@@ -248,7 +267,7 @@ export default function DailyQuest({ onJoinParty }) {
             </button>
           ) : (
             <div className="bg-white/10 rounded-xl px-3 py-2 mb-3 text-xs text-emerald-200 border border-white/10">
-              🪄 等待教練施法加成中（可先選任務熱身）
+              🪄 等待教練施法加成中，施法後任務選項會出現…
             </div>
           )}
 
@@ -259,10 +278,13 @@ export default function DailyQuest({ onJoinParty }) {
             </div>
           )}
 
-          {/* 選任務 */}
-          {chosenIdx == null && tasks && (
+          {/* 選任務（buff 到位後才顯示）*/}
+          {chosenIdx == null && tasks && buff && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-emerald-100 font-bold mb-1">🏹 選擇今日任務（三選一）</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-emerald-100 font-bold">🏹 選擇今日任務（三選一）</div>
+                <button onClick={doReroll} className="text-xs text-emerald-200 underline active:opacity-60">🎲 換一組</button>
+              </div>
               {tasks.map((task, idx) => {
                 const bt = applyBuff(task, buff);
                 const goalDisplay = bt.isUltimate

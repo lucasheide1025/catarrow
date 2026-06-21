@@ -1696,9 +1696,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 alt="archer"
                 style={{width:"100%", height:"100%", objectFit:"contain", objectPosition:"center bottom", display:"block"}}
               />
-              {/* 金色底光 */}
-              <div style={{position:"absolute", inset:0, pointerEvents:"none",
-                boxShadow:"inset 0 -2px 0 #fbbf24"}}/>
               {animArcherCrit && (
                 <div style={{
                   position:"absolute", inset:0, pointerEvents:"none",
