@@ -565,7 +565,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
                           {(() => {
                             const planObj2 = (bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).find(p => p.id === bs.plan);
                             const base2 = planObj2?.price || 0;
-                            const disc2 = (bs.plan !== "月卡" && bs.earlyBird) ? 100 : 0;
+                            const disc2 = (bs.plan !== "月卡" && bs.earlyBird) ? 50 : 0;
                             const final2 = bs.plan === "月卡" ? 0 : Math.max(0, base2 - disc2);
                             return (
                               <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">

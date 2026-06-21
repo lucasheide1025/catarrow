@@ -138,7 +138,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [replayIntro,   setReplayIntro]   = useState(false);
 
   const myId   = guestOverride?.id   || profile?.id;
-  const today  = new Date().toISOString().slice(0, 10);
+  const _wd = new Date();
+  const today = `${_wd.getFullYear()}-${String(_wd.getMonth()+1).padStart(2,"0")}-${String(_wd.getDate()).padStart(2,"0")}`;
 
   useEffect(() => {
     const unsub = subscribeLatestWorldBoss(ev => {

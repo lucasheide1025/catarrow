@@ -2163,7 +2163,8 @@ export async function addCoins(memberId, amount) {
 // ─── 地下城次數管理 ────────────────────────────────────────
 export async function markDungeonUsed(memberId) {
   if (!memberId) return;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   await updateDoc(doc(db, C.members, memberId), { lastDungeonDate: todayStr });
 }
 

@@ -49,7 +49,8 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     return () => unsubLogs?.();
   }, [myId]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const _d = new Date();
+  const todayStr = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,"0")}-${String(_d.getDate()).padStart(2,"0")}`;
   const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equip   = calcEquippedBonus([]);
