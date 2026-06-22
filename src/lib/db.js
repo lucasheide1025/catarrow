@@ -2824,8 +2824,14 @@ export async function collectVillageResources(memberId, village) {
     if (!isBuildingUnlocked(id, buildings)) continue;
     const lv  = buildings[id] || 1;
     const res = VB[id]?.resource;
-    const amt = Math.floor(getProductionRate(id, lv) * hours);
-    if (res && amt > 0) {
+    if (!res) continue;
+    const fracKey = `${res}Frac`;
+    const prevFrac = village?.resources?.[fracKey] || 0;
+    const rawAmt = getProductionRate(id, lv) * hours + prevFrac;
+    const amt    = Math.floor(rawAmt);
+    const newFrac = Math.round((rawAmt - amt) * 1000) / 1000; // 保留3位精度
+    updates[`village.resources.${fracKey}`] = newFrac;
+    if (amt > 0) {
       updates[`village.resources.${res}`] = increment(amt);
       collected[res] = (collected[res] || 0) + amt;
     }
