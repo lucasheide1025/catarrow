@@ -1,7 +1,7 @@
 // src/lib/partyDb.js — partyRooms 的所有 Firestore 操作
 import {
   collection, doc, getDoc, addDoc, updateDoc, onSnapshot,
-  serverTimestamp, arrayUnion
+  serverTimestamp, arrayUnion, query, where
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addChests, recordBattleDex } from "./db";
@@ -572,4 +572,15 @@ export async function removeBotFromPartyRoom(roomId, botId) {
   } catch (e) {
     return { ok: false, reason: e.message };
   }
+}
+
+// ── 訂閱所有等待中房間（公開大廳）────────────────────────────
+export function subscribeOpenPartyRooms(callback) {
+  const q = query(collection(db, PARTY), where("status", "==", "waiting"));
+  return onSnapshot(q, snap => {
+    const rooms = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    callback(rooms);
+  }, () => callback([]));
 }

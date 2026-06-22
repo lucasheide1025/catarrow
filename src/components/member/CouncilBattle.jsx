@@ -17,7 +17,7 @@ import {
 
 const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 
-const ARROWS_PER_ROUND = 3;
+const ARROWS_PER_ROUND = 6;
 const DISTANCES = [5, 7, 10, 13.5, 15, 18];
 
 const TARGET_OPTIONS = [
@@ -370,7 +370,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     let curArchHp = archerHp;
     const act = BUILDING_ACTIONS[bId] || { verb:"攻擊", dmgWord:"傷害", unit:"次" };
 
-    addLog(`⚔️ 第 ${round} 小回合`, "system");
+    addLog(`⚔️ 第 ${round} 回合（${distance}m · ${TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label}）`, "system");
 
     for (let i = 0; i < ARROWS_PER_ROUND; i++) {
       const label    = arrows[i];
@@ -399,6 +399,28 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       setMonsterHp(curMonHp);
       await delay(1100);
       if (curMonHp <= 0) break;
+
+      // 每 2 箭（第 2、4、6 箭後）觸發一次疲勞事件，共 3 次
+      if ((i + 1) % 2 === 0) {
+        const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
+        const msg     = msgs[Math.floor(Math.random() * msgs.length)];
+        const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));
+        curArchHp     = Math.max(0, curArchHp - selfDmg);
+        setArcherHp(curArchHp);
+        setPainEvent({ msg, dmg: selfDmg });
+        addLog(`😰 ${msg}（疲勞傷害 -${selfDmg}）`, "counter");
+        await delay(1800);
+        setPainEvent(null);
+        if (curArchHp <= 0) {
+          addLog("💀 精疲力竭…帶著已完成的任務先撤退！", "system");
+          await delay(600);
+          setProcessing(false);
+          setFailedTier(currentMonster.tier);
+          logCouncilArrows(round);
+          setPhase("result");
+          return;
+        }
+      }
     }
 
     if (curMonHp <= 0) {
@@ -419,30 +441,8 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     const roundTotal = arrows.reduce((s, l) => s + scoreVal(l), 0);
     const hpPct      = Math.round(curMonHp / currentMonster.maxHp * 100);
     const statusTag  = hpPct <= 15 ? "⚠️ 快解決了！" : hpPct <= 35 ? "💪 繼續！" : "";
-    addLog(`小回合 ${round} 結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
+    addLog(`第 ${round} 回合結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
     await delay(700);
-
-    if (round % 2 === 0) {
-      const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
-      const msg     = msgs[Math.floor(Math.random() * msgs.length)];
-      const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));
-      curArchHp     = Math.max(0, curArchHp - selfDmg);
-      setArcherHp(curArchHp);
-      setPainEvent({ msg, dmg:selfDmg });
-      addLog(`😰 ${msg}（疲勞傷害 -${selfDmg}）`, "counter");
-      await delay(1800);
-      setPainEvent(null);
-
-      if (curArchHp <= 0) {
-        addLog("💀 精疲力竭…帶著已完成的任務先撤退！", "system");
-        await delay(600);
-        setProcessing(false);
-        setFailedTier(currentMonster.tier);
-        logCouncilArrows(round);
-        setPhase("result");
-        return;
-      }
-    }
 
     setRound(r => r + 1);
     setArrows([]);

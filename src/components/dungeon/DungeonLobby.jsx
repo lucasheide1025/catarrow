@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
+import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
@@ -26,17 +26,17 @@ function pickRandomMonsters(floor, hostAtk = 10) {
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
   const { profile } = useAuth();
-  const [tab, setTab]       = useState("create");
-  const [joinCode, setJoinCode] = useState("");
+  const [tab, setTab]           = useState("create");
   const [selLength, setSelLength] = useState("standard");
   const [selMode,   setSelMode]   = useState("student");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr]         = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [err, setErr]           = useState("");
+  const [openRooms, setOpenRooms] = useState([]);
   // waiting room state
-  const [roomId, setRoomId]   = useState(null);
-  const [room,   setRoom]     = useState(null);
-  const [isHost, setIsHost]   = useState(false);
-  const [unsub,  setUnsub]    = useState(null);
+  const [roomId, setRoomId]     = useState(null);
+  const [room,   setRoom]       = useState(null);
+  const [isHost, setIsHost]     = useState(false);
+  const [unsub,  setUnsub]      = useState(null);
   const [dungeonLogs, setDungeonLogs] = useState([]);
 
   const myId   = profile?.id;
@@ -48,6 +48,12 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     );
     return () => unsubLogs?.();
   }, [myId]);
+
+  useEffect(() => {
+    if (tab !== "join") return;
+    const unsub = subscribeOpenDungeonRooms(setOpenRooms);
+    return () => { unsub?.(); setOpenRooms([]); };
+  }, [tab]); // eslint-disable-line
 
   const _d = new Date();
   const todayStr = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,"0")}-${String(_d.getDate()).padStart(2,"0")}`;
@@ -78,18 +84,15 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(false);
   }
 
-  async function handleJoin() {
-    if (joinCode.trim().length < 6) { setErr("請輸入 6 碼邀請碼"); return; }
+  async function handleJoinRoom(openRoom) {
+    if (loading) return;
     setLoading(true); setErr("");
-    const res = await joinDungeonRoom(joinCode.trim(), myId, myName);
+    const res = await joinDungeonRoom(openRoom.code, myId, myName);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao");
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
-      if (r?.status === "active") {
-        sub();
-        onEnterRoom(res.roomId);
-      }
+      if (r?.status === "active") { sub(); onEnterRoom(res.roomId); }
     });
     setUnsub(() => sub);
     setRoomId(res.roomId);
@@ -117,7 +120,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         <div className="shrink-0 text-center py-5 border-b border-white/10">
           <div className="text-3xl mb-1">🏰</div>
           <div className="text-xl font-black">地下城等待室</div>
-          <div className="text-sm text-slate-400 mt-0.5">邀請碼：<span className="font-mono font-bold text-amber-400">{room.code}</span></div>
+          <div className="text-sm text-slate-400 mt-0.5">等待夥伴從大廳加入…</div>
         </div>
 
         {/* Members list */}
@@ -200,7 +203,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         {["create","join"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab===t ? "bg-white/15 text-white" : "text-slate-400"}`}>
-            {t==="create" ? "🏰 建立" : "🔗 加入"}
+            {t==="create" ? "🏰 建立" : "🏹 加入"}
           </button>
         ))}
       </div>
@@ -228,17 +231,39 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            <input
-              value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="輸入 6 碼邀請碼"
-              className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white text-center text-xl font-mono tracking-widest placeholder:text-slate-500 uppercase"
-              maxLength={6}
-            />
-            <button onClick={handleJoin} disabled={loading}
-              className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg disabled:opacity-40">
-              {loading ? "加入中…" : "🔗 加入地下城"}
-            </button>
+          <div className="space-y-3">
+            {openRooms.length === 0 ? (
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+                <div className="text-3xl mb-2 animate-pulse">🔍</div>
+                <div className="text-slate-400 text-sm">目前沒有開放中的地下城</div>
+                <div className="text-slate-600 text-xs mt-1">等待夥伴建立後自動更新</div>
+              </div>
+            ) : openRooms.map(r => {
+              const memberCount = Object.keys(r.members || {}).length;
+              const hostName = Object.values(r.members || {})[0]?.name || "未知";
+              return (
+                <div key={r.id} className="rounded-2xl border border-amber-500/30 bg-amber-900/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏰</span>
+                      <div>
+                        <div className="text-white font-black text-sm">地下城探索</div>
+                        <div className="text-slate-400 text-xs mt-0.5">
+                          🧙 {hostName} 的隊伍・{memberCount} 人等待中
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleJoinRoom(r)}
+                      disabled={loading}
+                      className="px-5 py-2 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40 active:scale-95 transition-all"
+                    >
+                      {loading ? "…" : "加入"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
         {err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}

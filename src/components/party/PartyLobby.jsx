@@ -1,7 +1,7 @@
 // src/components/party/PartyLobby.jsx — 建立/加入組隊房間
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createPartyRoom, joinPartyRoom } from "../../lib/partyDb";
+import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms } from "../../lib/partyDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 
@@ -32,11 +32,11 @@ const TYPE_OPTIONS = [
 // battleOnly — 訪客模式只顯示打怪選項（不顯示日常任務）
 export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleOnly }) {
   const { profile } = useAuth();
-  const [tab, setTab] = useState("create"); // "create" | "join"
+  const [tab, setTab]         = useState("create"); // "create" | "join"
   const [selType, setSelType] = useState(battleOnly ? "battle" : "quest");
-  const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+  const [err, setErr]         = useState("");
+  const [openRooms, setOpenRooms] = useState([]);
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
@@ -50,6 +50,12 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
     return unsub;
   }, [myId]);
 
+  useEffect(() => {
+    if (tab !== "join") return;
+    const unsub = subscribeOpenPartyRooms(setOpenRooms);
+    return () => { unsub?.(); setOpenRooms([]); };
+  }, [tab]); // eslint-disable-line
+
   async function handleCreate() {
     setLoading(true); setErr("");
     const res = await createPartyRoom(myId, myName, selType);
@@ -58,20 +64,13 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
     else setErr(res.reason);
   }
 
-  async function handleJoin() {
-    if (joinCode.trim().length < 6) { setErr("請輸入 6 碼邀請碼"); return; }
+  async function handleJoinRoom(openRoom) {
+    if (loading) return;
     setLoading(true); setErr("");
-    const res = await joinPartyRoom(joinCode.trim(), myId, myName);
+    const res = await joinPartyRoom(openRoom.code, myId, myName);
     setLoading(false);
-    if (res.ok) {
-      // 用 subscribePartyRoom 判斷 type
-      const { subscribePartyRoom } = await import("../../lib/partyDb");
-      const unsub = subscribePartyRoom(res.roomId, (room) => {
-        unsub();
-        if (room) onEnterRoom(res.roomId, room.type, false);
-        else setErr("讀取房間失敗");
-      });
-    } else setErr(res.reason);
+    if (res.ok) onEnterRoom(res.roomId, openRoom.type, false);
+    else setErr(res.reason);
   }
 
   return (
@@ -89,7 +88,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
         {/* Tab */}
         <div className="flex bg-slate-700/50 rounded-2xl p-1 mb-6">
-          {[["create","✨ 建立房間"], ["join","🔑 加入房間"]].map(([id, label]) => (
+          {[["create","✨ 建立房間"], ["join","🏹 加入房間"]].map(([id, label]) => (
             <button key={id} onClick={() => { setTab(id); setErr(""); }}
               className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${
                 tab === id ? "bg-white text-slate-800 shadow" : "text-slate-400"
@@ -132,19 +131,38 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">輸入邀請碼</div>
-            <input
-              value={joinCode}
-              onChange={e => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="例：AB2F9K"
-              maxLength={6}
-              className="w-full bg-slate-700 border-2 border-slate-600 rounded-2xl px-5 py-4 text-white font-black text-2xl tracking-[0.3em] text-center focus:outline-none focus:border-indigo-400 placeholder:text-slate-500 placeholder:text-base placeholder:tracking-normal"
-            />
-            <button onClick={handleJoin} disabled={loading || joinCode.length < 6}
-              className="w-full py-4 bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
-              {loading ? "加入中…" : "🔑 加入房間"}
-            </button>
+          <div className="flex flex-col gap-3">
+            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">開放中的房間</div>
+            {openRooms.length === 0 ? (
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+                <div className="text-3xl mb-2 animate-pulse">🔍</div>
+                <div className="text-slate-400 text-sm">目前沒有開放中的房間</div>
+                <div className="text-slate-600 text-xs mt-1">等待夥伴建立房間後自動更新</div>
+              </div>
+            ) : openRooms.map(r => {
+              const memberCount = Object.keys(r.members || {}).length;
+              const typeInfo = TYPE_OPTIONS.find(t => t.id === r.type);
+              return (
+                <div key={r.id} className={`rounded-2xl border-2 p-4 ${typeInfo?.border || "border-slate-600"} bg-slate-800/60`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{typeInfo?.icon || "👥"}</span>
+                      <div>
+                        <div className="text-white font-black text-sm">{typeInfo?.label || r.type}</div>
+                        <div className="text-slate-400 text-xs mt-0.5">👤 {memberCount} 人等待中</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleJoinRoom(r)}
+                      disabled={loading}
+                      className="px-5 py-2 rounded-xl font-black text-sm bg-gradient-to-r from-teal-500 to-emerald-600 text-white disabled:opacity-40 active:scale-95 transition-all"
+                    >
+                      {loading ? "…" : "加入"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
