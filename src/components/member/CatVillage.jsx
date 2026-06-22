@@ -72,7 +72,9 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
     <div className="px-4 py-3 flex items-center gap-3"
       style={{ background: "rgba(255,255,255,0.6)", borderBottom: `1px solid ${C.border}` }}>
       <div className="flex items-center gap-2 flex-1">
-        <span className="text-lg">💧</span>
+        <img src="/ui/village/resource-arrowdew.webp" alt="箭露"
+          style={{ width: 22, height: 22, mixBlendMode: "multiply", objectFit: "contain" }}
+          onError={e => { e.target.style.display="none"; }} />
         <div>
           <div className="font-black text-sm" style={{ color: C.brown }}>{arrowdew.toLocaleString()}</div>
           <div className="text-[10px]" style={{ color: C.muted }}>箭露</div>
@@ -304,8 +306,8 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
                   <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3 mb-2"
                     style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
                     <div className="flex items-center gap-2">
-                      <img src={`/ui/village/resource-${mat.resource}-t${mat.tier}.webp`} alt=""
-                        style={{ width: 20, height: 20 }}
+                      <img src={`/ui/village/resource-${mat.resource}.webp`} alt=""
+                        style={{ width: 20, height: 20, mixBlendMode: "multiply", objectFit: "contain" }}
                         onError={e => { e.target.style.display = "none"; }} />
                       <span className="text-sm" style={{ color: C.brown }}>{RESOURCE_NAMES[mat.resource]} T{mat.tier}</span>
                     </div>
@@ -360,7 +362,10 @@ function ResourceRow({ resources }) {
       <div className="flex gap-4 mb-2">
         {[['archer','🏹','射手'],['gachaToken','🎰','扭蛋幣']].map(([k,em,lb]) => (
           <div key={k} className="flex items-center gap-1">
-            <span className="text-sm">{em}</span>
+            <img src={`/ui/village/resource-${k}.webp`} alt={em}
+              style={{ width: 18, height: 18, mixBlendMode: "multiply", objectFit: "contain" }}
+              onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="inline"; }} />
+            <span className="text-sm" style={{ display: "none" }}>{em}</span>
             <span className="font-bold text-xs" style={{ color: C.brown }}>{Math.floor(resources?.[k] || 0)}</span>
             <span className="text-[10px]" style={{ color: C.muted }}>{lb}</span>
           </div>
@@ -380,7 +385,7 @@ function ResourceRow({ resources }) {
                 <div className="flex gap-2">
                   {tiers.map(({ t, count }) => (
                     <div key={t} className="flex items-center gap-0.5">
-                      <img src={`/ui/village/resource-${res}-t${t}.webp`} style={{ width: 16, height: 16 }}
+                      <img src={`/ui/village/resource-${res}.webp`} style={{ width: 16, height: 16, mixBlendMode: "multiply", objectFit: "contain" }}
                         onError={e => { e.target.style.display = 'none'; }} />
                       <span className="text-[10px] font-bold" style={{ color: C.brown }}>T{t}:{count}</span>
                     </div>
@@ -433,7 +438,7 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
                 <div key={t} className="flex items-center justify-between rounded-xl px-3 py-1.5"
                   style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
                   <div className="flex items-center gap-1.5">
-                    <img src={`/ui/village/resource-${res}-t${t}.webp`} style={{ width: 20, height: 20 }}
+                    <img src={`/ui/village/resource-${res}.webp`} style={{ width: 20, height: 20, mixBlendMode: "multiply", objectFit: "contain" }}
                       onError={e => { e.target.style.display = 'none'; }} />
                     <span className="text-xs font-bold" style={{ color: C.brown }}>T{t}</span>
                     <span className="text-xs" style={{ color: C.mid }}>×{count}</span>
