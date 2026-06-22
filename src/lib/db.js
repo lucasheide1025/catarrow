@@ -10,7 +10,7 @@ import { POTIONS, FRAGMENTS } from "./itemData";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
-import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS } from "./villageData";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked } from "./villageData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -2827,24 +2827,25 @@ export async function collectVillageResources(memberId, village) {
   if (hours < 0.05) return { collected: {}, hours: 0 };
 
   const buildings = village?.buildings || {};
-  const resources = { ...(village?.resources || {}) };
   const collected = {};
+  const updates = { "village.lastCollectedAt": serverTimestamp() };
 
   for (const id of BUILDING_LIST) {
+    if (!isBuildingUnlocked(id, buildings)) continue;
     const lv  = buildings[id] || 1;
     const res = VB[id]?.resource;
     const amt = Math.floor(getProductionRate(id, lv) * hours);
     if (res && amt > 0) {
-      resources[res]  = (resources[res]  || 0) + amt;
-      collected[res]  = (collected[res]  || 0) + amt;
+      updates[`village.resources.${res}`] = increment(amt);
+      collected[res] = (collected[res] || 0) + amt;
     }
   }
 
-  await updateDoc(doc(db, C.members, memberId), {
-    "village.resources":       resources,
-    "village.lastCollectedAt": serverTimestamp(),
-  });
-  return { collected, resources, hours };
+  await updateDoc(doc(db, C.members, memberId), updates);
+  // 回傳 collected 讓 UI 更新顯示；resources 由 Firestore 訂閱同步
+  const curResources = { ...(village?.resources || {}) };
+  Object.entries(collected).forEach(([k, v]) => { curResources[k] = (curResources[k] || 0) + v; });
+  return { collected, resources: curResources, hours };
 }
 
 export async function upgradeVillageBuilding(memberId, buildingId, village) {
@@ -2861,24 +2862,28 @@ export async function upgradeVillageBuilding(memberId, buildingId, village) {
     if ((resources[mat.resource] || 0) < mat.count) throw new Error("材料不足");
   }
 
+  const deductUpdates = {
+    [`village.buildings.${buildingId}`]: currentLevel + 1,
+    "village.resources.arrowdew": increment(-req.arrowdew),
+  };
+  for (const mat of req.materials) {
+    deductUpdates[`village.resources.${mat.resource}`] = increment(-mat.count);
+  }
+
+  await updateDoc(doc(db, C.members, memberId), deductUpdates);
+
+  // 回傳本地預估值供 UI 即時更新
   resources.arrowdew = (resources.arrowdew || 0) - req.arrowdew;
   for (const mat of req.materials) {
     resources[mat.resource] = (resources[mat.resource] || 0) - mat.count;
   }
-
-  await updateDoc(doc(db, C.members, memberId), {
-    [`village.buildings.${buildingId}`]: currentLevel + 1,
-    "village.resources": resources,
-  });
   return { newLevel: currentLevel + 1, resources };
 }
 
 export async function addArrowdew(memberId, amount) {
   if (!memberId || !amount) return;
-  const member = await getMember(memberId);
-  const cur = member?.village?.resources?.arrowdew || 0;
   await updateDoc(doc(db, C.members, memberId), {
-    "village.resources.arrowdew": cur + amount,
+    "village.resources.arrowdew": increment(amount),
   });
 }
 
