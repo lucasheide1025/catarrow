@@ -112,8 +112,8 @@ export function getVillageLevel(buildings) {
 }
 
 const BASE_PROD = {
-  archery:8, gacha:0.2, warehouse:4, market:3,
-  mine:2.5, farm:2.5, harbor:2.5, hunting:2.5, alchemy:1,
+  archery:8, gacha:0.02, warehouse:4, market:3,
+  mine:2.5, farm:2.5, harbor:2.5, hunting:2.5, alchemy:0.1,
 };
 
 export function getProductionRate(buildingId, level) {
