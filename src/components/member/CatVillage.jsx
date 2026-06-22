@@ -2,7 +2,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded, exchangeVillageMaterial,
+  collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
+  exchangeVillageMaterial, exchangeArrowdewForChest,
 } from "../../lib/db";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
@@ -403,9 +404,32 @@ function ResourceRow({ resources, gachaCoins }) {
   );
 }
 
+const BATTLE_EXCHANGE = [
+  { type: 'wood',  cost: 100,  icon: '📦', label: '木寶箱',   desc: '含普通打怪材料' },
+  { type: 'iron',  cost: 280,  icon: '🧰', label: '鐵寶箱',   desc: '含非凡打怪材料' },
+  { type: 'gold',  cost: 750,  icon: '🎁', label: '黃金寶箱', desc: '含前三階段材料' },
+  { type: 'epic',  cost: 2000, icon: '💜', label: '史詩寶箱', desc: '含前四階段材料' },
+];
+
 // ── 市集兌換面板 ─────────────────────────────────────────────
 function MarketExchangePanel({ resources, memberId, onDone }) {
   const [busy, setBusy] = useState(false);
+  const [justGot, setJustGot] = useState(null);
+
+  async function doBattleExchange(chestType, cost) {
+    if (busy) return;
+    const arrowdew = Math.floor(resources?.arrowdew || 0);
+    if (arrowdew < cost) { alert(`箭露不足（需要 ${cost}，目前 ${arrowdew}）`); return; }
+    setBusy(true);
+    sfxVillageExchange();
+    try {
+      await exchangeArrowdewForChest(memberId, chestType, cost);
+      setJustGot(chestType);
+      setTimeout(() => setJustGot(null), 2000);
+      onDone?.();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
 
   async function doExchange(resource, fromTier, direction) {
     if (busy) return;
@@ -422,9 +446,47 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
     finally { setBusy(false); }
   }
 
+  const arrowdew = Math.floor(resources?.arrowdew || 0);
+
   return (
     <div className="px-5 pb-4">
-      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>材料換算（市集功能）</div>
+      {/* ── 兌換打怪材料 ── */}
+      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>⚔️ 兌換打怪寶箱</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>花費箭露，取得裝有打怪材料的寶箱（從背包開箱）</div>
+      <div className="flex flex-col gap-2 mb-4">
+        {BATTLE_EXCHANGE.map(ex => {
+          const canAfford = arrowdew >= ex.cost;
+          const gotThis   = justGot === ex.type;
+          return (
+            <div key={ex.type} className="flex items-center justify-between rounded-xl px-3 py-2"
+              style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{ex.icon}</span>
+                <div>
+                  <div className="text-xs font-bold" style={{ color: C.brown }}>{ex.label}</div>
+                  <div className="text-[10px]" style={{ color: C.muted }}>{ex.desc}</div>
+                </div>
+              </div>
+              <button
+                disabled={!canAfford || busy}
+                onClick={() => doBattleExchange(ex.type, ex.cost)}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all"
+                style={{
+                  background: gotThis ? "#5A9E50" : canAfford ? "#D4933A" : C.lockBd,
+                  color: canAfford ? "white" : C.muted,
+                  minWidth: 72, textAlign: "center",
+                }}>
+                {gotThis ? "✓ 已取得！" : `💧${ex.cost.toLocaleString()}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ height: 1, background: C.border, marginBottom: 12 }} />
+
+      {/* ── 村莊材料換算 ── */}
+      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>材料換算（村莊材料）</div>
       <div className="text-[10px] mb-3" style={{ color: C.muted }}>升階：T(n)×5 → T(n+1)×1　降階：T(n)×1 → T(n-1)×3</div>
       {TIERED_LIST.map(res => {
         const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) }));

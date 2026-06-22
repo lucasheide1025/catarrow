@@ -2924,6 +2924,21 @@ export async function addArrowdew(memberId, amount) {
   });
 }
 
+export async function exchangeArrowdewForChest(memberId, chestType, arrowdewCost) {
+  const snap = await getDoc(doc(db, C.members, memberId));
+  const arrowdew = snap.data()?.village?.resources?.arrowdew || 0;
+  if (arrowdew < arrowdewCost) throw new Error('箭露不足');
+  await updateDoc(doc(db, C.members, memberId), {
+    "village.resources.arrowdew": increment(-arrowdewCost),
+  });
+  await addChests(memberId, [{
+    id: `vmarket_${Date.now()}`,
+    type: chestType,
+    from: "village_market",
+    ts: Date.now(),
+  }]);
+}
+
 export async function initVillageIfNeeded(memberId, currentVillage) {
   if (currentVillage) return;
   await updateDoc(doc(db, C.members, memberId), {
