@@ -1,7 +1,7 @@
 // src/lib/partyDb.js — partyRooms 的所有 Firestore 操作
 import {
-  collection, doc, getDoc, addDoc, updateDoc, onSnapshot,
-  serverTimestamp, arrayUnion, query, where
+  collection, doc, getDoc, addDoc, updateDoc, onSnapshot, deleteDoc,
+  serverTimestamp, arrayUnion, query, where, getDocs
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addChests, recordBattleDex } from "./db";
@@ -574,13 +574,30 @@ export async function removeBotFromPartyRoom(roomId, botId) {
   }
 }
 
-// ── 訂閱所有等待中房間（公開大廳）────────────────────────────
+const STALE_MS = 2 * 60 * 60 * 1000; // 2 小時
+
+// ── 訂閱所有等待中房間（過濾 2 小時以上的舊房）─────────────
 export function subscribeOpenPartyRooms(callback) {
   const q = query(collection(db, PARTY), where("status", "==", "waiting"));
   return onSnapshot(q, snap => {
+    const cutoff = Date.now() - STALE_MS;
     const rooms = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => !r.createdAt || r.createdAt.toMillis() > cutoff)
       .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     callback(rooms);
   }, () => callback([]));
+}
+
+// ── 清除 2 小時以上未開始的殭屍房間 ─────────────────────────
+export async function cleanupStalePartyRooms() {
+  try {
+    const cutoff = Date.now() - STALE_MS;
+    const snap = await getDocs(query(collection(db, PARTY), where("status", "==", "waiting")));
+    const stale = snap.docs.filter(d => {
+      const t = d.data().createdAt?.toMillis?.();
+      return t && t < cutoff;
+    });
+    await Promise.all(stale.map(d => deleteDoc(d.ref)));
+  } catch (_) {}
 }

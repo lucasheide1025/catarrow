@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
-  createDuelRoom, joinDuelRoom, subscribeDuelRoom, subscribeOpenDuelRooms,
+  createDuelRoom, joinDuelRoom, subscribeDuelRoom, subscribeOpenDuelRooms, cleanupStaleDuelRooms,
   startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats,
   updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
   addBotToDuelRoom, removeBotFromDuelRoom,
@@ -99,6 +99,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   // 訂閱開放房間（公開大廳）
   useEffect(() => {
     if (phase !== "join") return;
+    cleanupStaleDuelRooms();
     const unsub = subscribeOpenDuelRooms(setOpenRooms);
     return () => { unsub?.(); setOpenRooms([]); };
   }, [phase]); // eslint-disable-line
@@ -384,12 +385,14 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
               const typeLabel = TYPE_OPTIONS.find(t => t.value === r.type)?.label || r.type;
               const maxPer = { "1v1":1, "2v2":2, "3v3":3, "4v4":4, "uneven":8 }[r.type] || 8;
               const isFull = r.type !== "uneven" && aCount >= maxPer && bCount >= maxPer;
+              const hostName = (r.teamA?.[r.hostId] || r.teamB?.[r.hostId])?.name || "未知";
               return (
                 <div key={r.id} className={`rounded-2xl border p-4 transition-all ${isFull ? "opacity-40 border-white/10 bg-white/5" : "border-amber-500/30 bg-gradient-to-br from-slate-800/80 to-slate-900/80"}`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-white font-black text-base">{typeLabel} 決鬥</div>
-                      <div className="flex items-center gap-3 mt-1.5">
+                      <div className="text-slate-400 text-xs mt-0.5 mb-1">🧙 {hostName} 的房間</div>
+                      <div className="flex items-center gap-3">
                         <span className="text-blue-300 text-xs font-bold">🔵 A隊 {aCount}人</span>
                         <span className="text-slate-500 text-xs">vs</span>
                         <span className="text-red-300 text-xs font-bold">🔴 B隊 {bCount}人</span>

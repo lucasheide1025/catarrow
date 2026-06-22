@@ -1,6 +1,6 @@
 // src/lib/duelDb.js — 決鬥模式 Firestore 操作
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, onSnapshot,
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, increment, query, where, runTransaction, deleteField
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -525,13 +525,28 @@ export async function removeBotFromDuelRoom(roomId, team, botId) {
   } catch (e) { return { ok: false }; }
 }
 
-// ── 訂閱所有等待中房間（公開大廳）────────────────────────────
+const STALE_MS = 2 * 60 * 60 * 1000;
+
 export function subscribeOpenDuelRooms(callback) {
   const q = query(collection(db, DUEL), where("status", "==", "waiting"));
   return onSnapshot(q, snap => {
+    const cutoff = Date.now() - STALE_MS;
     const rooms = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => !r.createdAt || r.createdAt.toMillis() > cutoff)
       .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     callback(rooms);
   }, () => callback([]));
+}
+
+export async function cleanupStaleDuelRooms() {
+  try {
+    const cutoff = Date.now() - STALE_MS;
+    const snap = await getDocs(query(collection(db, DUEL), where("status", "==", "waiting")));
+    const stale = snap.docs.filter(d => {
+      const t = d.data().createdAt?.toMillis?.();
+      return t && t < cutoff;
+    });
+    await Promise.all(stale.map(d => deleteDoc(d.ref)));
+  } catch (_) {}
 }

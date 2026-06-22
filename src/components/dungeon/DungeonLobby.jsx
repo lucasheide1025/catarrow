@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
+import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
@@ -51,6 +51,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   useEffect(() => {
     if (tab !== "join") return;
+    cleanupStaleDungeonRooms();
     const unsub = subscribeOpenDungeonRooms(setOpenRooms);
     return () => { unsub?.(); setOpenRooms([]); };
   }, [tab]); // eslint-disable-line

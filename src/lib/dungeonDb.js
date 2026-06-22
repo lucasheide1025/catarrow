@@ -1,7 +1,7 @@
 // src/lib/dungeonDb.js — dungeonRooms Firestore 操作
 
 import {
-  collection, doc, addDoc, updateDoc, onSnapshot,
+  collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, getDocs, query, where,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -551,13 +551,28 @@ export async function clearDungeonProcessing(roomId) {
   try { await updateDoc(doc(db, D, roomId), { processing:false }); } catch (_) {}
 }
 
-// ── 訂閱所有等待中房間（公開大廳）────────────────────────────
+const STALE_MS = 2 * 60 * 60 * 1000;
+
 export function subscribeOpenDungeonRooms(callback) {
   const q = query(collection(db, D), where("status", "==", "waiting"));
   return onSnapshot(q, snap => {
+    const cutoff = Date.now() - STALE_MS;
     const rooms = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => !r.createdAt || r.createdAt.toMillis() > cutoff)
       .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     callback(rooms);
   }, () => callback([]));
+}
+
+export async function cleanupStaleDungeonRooms() {
+  try {
+    const cutoff = Date.now() - STALE_MS;
+    const snap = await getDocs(query(collection(db, D), where("status", "==", "waiting")));
+    const stale = snap.docs.filter(d => {
+      const t = d.data().createdAt?.toMillis?.();
+      return t && t < cutoff;
+    });
+    await Promise.all(stale.map(d => deleteDoc(d.ref)));
+  } catch (_) {}
 }

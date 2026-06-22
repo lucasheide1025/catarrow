@@ -1,7 +1,7 @@
 // src/components/party/PartyLobby.jsx — 建立/加入組隊房間
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms } from "../../lib/partyDb";
+import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms, cleanupStalePartyRooms } from "../../lib/partyDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 
@@ -52,6 +52,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
   useEffect(() => {
     if (tab !== "join") return;
+    cleanupStalePartyRooms();
     const unsub = subscribeOpenPartyRooms(setOpenRooms);
     return () => { unsub?.(); setOpenRooms([]); };
   }, [tab]); // eslint-disable-line
@@ -141,7 +142,8 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
               </div>
             ) : openRooms.map(r => {
               const memberCount = Object.keys(r.members || {}).length;
-              const typeInfo = TYPE_OPTIONS.find(t => t.id === r.type);
+              const hostName    = r.members?.[r.hostId]?.name || "未知";
+              const typeInfo    = TYPE_OPTIONS.find(t => t.id === r.type);
               return (
                 <div key={r.id} className={`rounded-2xl border-2 p-4 ${typeInfo?.border || "border-slate-600"} bg-slate-800/60`}>
                   <div className="flex items-center justify-between">
@@ -149,7 +151,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
                       <span className="text-2xl">{typeInfo?.icon || "👥"}</span>
                       <div>
                         <div className="text-white font-black text-sm">{typeInfo?.label || r.type}</div>
-                        <div className="text-slate-400 text-xs mt-0.5">👤 {memberCount} 人等待中</div>
+                        <div className="text-slate-400 text-xs mt-0.5">🧙 {hostName} 的房間・{memberCount} 人等待中</div>
                       </div>
                     </div>
                     <button
