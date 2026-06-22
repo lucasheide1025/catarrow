@@ -1,5 +1,5 @@
 // src/components/member/MonsterBattle.jsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
@@ -9,10 +9,8 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
-  addArrowdew, grantArrowMilestoneRewards, subscribePracticeLogs,
+  addArrowdew,
 } from "../../lib/db";
-import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
-import ArrowMilestonePopup from "./ArrowMilestonePopup";
 
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
@@ -167,8 +165,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [loot, setLoot]                 = useState(null);
   const [lootRevealed, setLootRevealed] = useState(false);
   const [showLootBox, setShowLootBox]   = useState(false);
-  const [milestoneQueue, setMilestoneQueue] = useState([]);
-  const todayArrowsRef = useRef(0);
   const [showBattleCard, setShowBattleCard] = useState(false);
   const [droppedMaterials, setDroppedMaterials] = useState([]);
   const [droppedCoins,    setDroppedCoins]     = useState(0);
@@ -225,18 +221,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // 讀取今日已有箭數（用於里程碑計算）
-  useEffect(() => {
-    if (!profile?.id) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const unsub = subscribePracticeLogs(profile.id, logs => {
-      const count = logs
-        .filter(l => l.date === todayStr)
-        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
-      todayArrowsRef.current = count;
-      unsub();
-    });
-    return () => unsub();
-  }, [profile?.id]); // eslint-disable-line
 
   // 進場動畫：50ms 後播音效（確保動畫已渲染），2.5 秒後自動進入戰鬥
   useEffect(() => {
@@ -838,14 +822,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const arrowCount = practiceRounds.flat().length;
         if (arrowCount > 0 && profile?.id) {
           addArrowdew(profile.id, arrowCount).catch(() => {});
-          const oldToday = todayArrowsRef.current;
-          const newToday = oldToday + arrowCount;
-          const milestones = getMilestonesReached(oldToday, newToday);
-          todayArrowsRef.current = newToday;
-          if (milestones.length > 0) {
-            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-          }
         }
       }
 
@@ -989,13 +965,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
-        {milestoneQueue.length > 0 && (
-          <ArrowMilestonePopup
-            milestones={milestoneQueue.map(m => m.ms)}
-            rewardsList={milestoneQueue.map(m => m.rewards)}
-            onAllClose={() => setMilestoneQueue([])}
-          />
-        )}
         {/* 任務模式橫幅 */}
         {questContext && qMon && (
           <div className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.25),rgba(37,99,235,0.18))", border:"1px solid rgba(124,58,237,0.4)" }}>

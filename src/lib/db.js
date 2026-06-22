@@ -2773,17 +2773,7 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
       await addChests(memberId, chests).catch(() => {});
     }
 
-    // 2. 咪咪箱（直接開貓）
-    if ((r.mimiBoxes || 0) > 0) {
-      const { openCatBox } = await import("./catDb").catch(() => ({}));
-      if (openCatBox) {
-        for (let i = 0; i < r.mimiBoxes; i++) {
-          await openCatBox(memberId, { bondOnDuplicate: 50 }).catch(() => {});
-        }
-      }
-    }
-
-    // 3. 扭蛋幣 + 120箭圖鑑
+    // 2. 扭蛋幣 + 120箭圖鑑
     const updates = {};
     if ((r.gachaCoins || 0) > 0) updates.gachaCoins = increment(r.gachaCoins);
     if (ms.type === "big") {

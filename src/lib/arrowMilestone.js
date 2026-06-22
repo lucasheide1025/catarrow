@@ -1,31 +1,36 @@
 // src/lib/arrowMilestone.js
-const BIG_CYCLE = 120;
-const SUB_CYCLE = 30;
+// 固定門檻：每天每個門檻只觸發一次，不循環
+const SMALL_MILESTONES = [
+  { arrows: 6,   tier: 1 },
+  { arrows: 12,  tier: 2 },
+  { arrows: 24,  tier: 3 },
+  { arrows: 30,  tier: 4 },
+];
+const BIG_MILESTONE = 120;
 
-// 傳入今日舊箭數、新箭數，回傳中間跨越的所有里程碑
+// 傳入今日舊箭數、新箭數，回傳中間跨越的里程碑（每個門檻只算一次）
 export function getMilestonesReached(oldTotal, newTotal) {
   if (newTotal <= oldTotal || newTotal <= 0) return [];
   const results = [];
-  for (let i = Math.max(oldTotal + 1, 1); i <= newTotal; i++) {
-    if (i % BIG_CYCLE === 0) {
-      results.push({ type: "big", arrows: i, multiple: i / BIG_CYCLE });
-    } else {
-      const sub = i % SUB_CYCLE;
-      const tier = sub === 6 ? 1 : sub === 12 ? 2 : sub === 24 ? 3 : sub === 0 ? 4 : 0;
-      if (tier > 0) results.push({ type: "small", tier, arrows: i });
+  for (const { arrows, tier } of SMALL_MILESTONES) {
+    if (oldTotal < arrows && newTotal >= arrows) {
+      results.push({ type: "small", tier, arrows });
     }
+  }
+  if (oldTotal < BIG_MILESTONE && newTotal >= BIG_MILESTONE) {
+    results.push({ type: "big", arrows: BIG_MILESTONE, multiple: 1 });
   }
   return results;
 }
 
 export const MILESTONE_REWARDS = {
   small: {
-    1: { catBoxes: 1, mimiBoxes: 0, gachaCoins: 1, label: "6箭！" },
-    2: { catBoxes: 1, mimiBoxes: 1, gachaCoins: 2, label: "12箭！" },
-    3: { catBoxes: 2, mimiBoxes: 1, gachaCoins: 3, label: "24箭！" },
-    4: { catBoxes: 2, mimiBoxes: 2, gachaCoins: 4, label: "30箭完成！" },
+    1: { catBoxes: 1, gachaCoins: 1,  label: "6箭！" },
+    2: { catBoxes: 1, gachaCoins: 2,  label: "12箭！" },
+    3: { catBoxes: 2, gachaCoins: 3,  label: "24箭！" },
+    4: { catBoxes: 2, gachaCoins: 4,  label: "30箭完成！" },
   },
-  big: { catBoxes: 5, mimiBoxes: 3, gachaCoins: 10, label: "百箭勇者！" },
+  big: { catBoxes: 3, gachaCoins: 10, label: "百箭勇者！" },
 };
 
 export function getRewardsForMilestone(ms) {
