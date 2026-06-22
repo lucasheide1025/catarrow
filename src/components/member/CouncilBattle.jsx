@@ -1,18 +1,30 @@
-// src/components/member/CouncilBattle.jsx — 議會廳戰鬥（射箭輸分系統）
+// src/components/member/CouncilBattle.jsx — 議會廳採集任務（RPG射箭系統）
 import { useState, useRef, useEffect } from "react";
-import { calcDamage, calcCounterDamage } from "../../lib/monsterData";
-import { COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getRaceMaterialId, CLEAR_GACHA_COINS, CLEAR_VILLAGE_MAT_COUNT } from "../../lib/councilMonsters";
-import { sfxSuccess, sfxEpic } from "../../lib/sound";
+import { calcDamage } from "../../lib/monsterData";
+import {
+  COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS,
+  getRaceMaterialId, CLEAR_GACHA_COINS, CLEAR_VILLAGE_MAT_COUNT,
+  BUILDING_PAIN_MSGS,
+} from "../../lib/councilMonsters";
+import {
+  sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail,
+  sfxSuccess, sfxEpic, sfxRoundEnd, sfxMonsterDead,
+} from "../../lib/sound";
 
 const ARROWS_PER_ROUND = 6;
 const DISTANCES = [5, 7, 10, 13.5, 15, 18];
-const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","0"];
+
+const TARGET_OPTIONS = [
+  { id: "standard", label: "全靶",   icon: "🎯", scores: ["X","10","9","8","7","6","5","4","3","2","1","0"] },
+  { id: "half",     label: "半靶",   icon: "◑",  scores: ["X","10","9","8","7","6","5","4","3","2","1","0"] },
+  { id: "field_16", label: "原野靶", icon: "🌿", scores: ["6","5","4","3","2","1","0"] },
+];
 
 const CSS = `
-@keyframes cb-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
-@keyframes cb-pop { 0%{transform:scale(0.7);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
-@keyframes cb-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
-@keyframes cb-fade-up { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cb-shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+@keyframes cb-pop   { 0%{transform:scale(0.8);opacity:0} 70%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+@keyframes cb-fade-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cb-bounce  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
 `;
 
 function scoreVal(label) {
@@ -20,7 +32,29 @@ function scoreVal(label) {
   return parseInt(label, 10) || 0;
 }
 
-// 計算村莊 tier（依建築平均等級）
+function getPartMult(label, targetFmt) {
+  if (label === "0") return 0;
+  if (targetFmt === "field_16") {
+    const v = parseInt(label);
+    if (v === 6) return 2.0;
+    if (v === 5) return 1.5;
+    if (v >= 3)  return 1.2;
+    return 1.0;
+  }
+  if (label === "X")              return 2.0;
+  const v = parseInt(label);
+  if (v === 10)                   return 1.5;
+  if (v >= 8)                     return 1.2;
+  return 1.0;
+}
+
+function getMappedScore(label, targetFmt) {
+  if (label === "X") return 10;
+  const v = parseInt(label) || 0;
+  if (targetFmt === "field_16" && v > 0) return Math.min(v + 5, 10);
+  return v;
+}
+
 function getVillageTier(village) {
   if (!village?.buildings) return 1;
   const lvs = Object.values(village.buildings);
@@ -35,7 +69,6 @@ function getVillageTier(village) {
 export default function CouncilBattle({ building, availableTiers, archerStats, village, onFinish, onBack }) {
   const { id: bId, name: bName, emoji: bEmoji, race, villageMat, raceLabel } = building;
 
-  // 將 tier 清單組裝成怪物物件（含 HP）
   const monsters = availableTiers.map(tier => ({
     tier,
     ...COUNCIL_MONSTERS[bId][tier],
@@ -43,39 +76,44 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     maxHp: LIFE_TIER_STATS[tier].hp,
   }));
 
-  const [phase,       setPhase]       = useState("distance"); // distance | input | resolving | monster_clear | result
-  const [distance,    setDistance]    = useState(18);
-  const [mIdx,        setMIdx]        = useState(0);
-  const [monsterHp,   setMonsterHp]   = useState(monsters[0]?.hp);
-  const [archerHp,    setArcherHp]    = useState(archerStats.hp);
-  const [round,       setRound]       = useState(1);
-  const [arrows,      setArrows]      = useState([]);
-  const [log,         setLog]         = useState([]);
-  const [defeated,    setDefeated]    = useState([]); // [{ tier, materialId }]
-  const [processing,  setProcessing]  = useState(false);
-  const [shaking,     setShaking]     = useState(false);
+  const [phase,      setPhase]      = useState("setup");
+  const [distance,   setDistance]   = useState(18);
+  const [targetFmt,  setTargetFmt]  = useState("standard");
+  const [mIdx,       setMIdx]       = useState(0);
+  const [monsterHp,  setMonsterHp]  = useState(monsters[0]?.hp);
+  const [archerHp,   setArcherHp]   = useState(archerStats.hp);
+  const [round,      setRound]      = useState(1);
+  const [arrows,     setArrows]     = useState([]);
+  const [log,        setLog]        = useState([]);
+  const [defeated,   setDefeated]   = useState([]);
+  const [processing, setProcessing] = useState(false);
+  const [shaking,    setShaking]    = useState(false);
+  const [painEvent,  setPainEvent]  = useState(null);
 
   const logRef = useRef(null);
 
-  const currentMonster = monsters[mIdx];
-  const tierMeta = TIER_META[currentMonster?.tier] || {};
-  const isLastMonster = mIdx === monsters.length - 1;
+  const currentMonster  = monsters[mIdx];
+  const tierMeta        = TIER_META[currentMonster?.tier] || {};
+  const isLastMonster   = mIdx === monsters.length - 1;
+  const scoreLabels     = TARGET_OPTIONS.find(t => t.id === targetFmt)?.scores || TARGET_OPTIONS[0].scores;
+  const isResolving     = phase === "resolving";
+  const villageTier     = getVillageTier(village);
+  const isFullClear     = defeated.length === monsters.length;
+  const raceMaterials   = defeated.map(d => ({ id: d.materialId }));
+  const villageMatKey   = `${villageMat}_t${villageTier}`;
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
   function addLog(text, type = "normal") {
-    setLog(prev => [...prev.slice(-40), { text, type }]);
+    setLog(prev => [...prev.slice(-50), { text, type }]);
   }
-
   function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
   function inputArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || processing) return;
     setArrows(prev => [...prev, label]);
   }
-
   function undoArrow() {
     if (!arrows.length || processing) return;
     setArrows(prev => prev.slice(0, -1));
@@ -86,345 +124,387 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     setProcessing(true);
     setPhase("resolving");
 
-    let totalDmg = 0;
-    let roundDesc = arrows.join(" ");
-    addLog(`📍 第 ${round} 輪（${distance}m）：${roundDesc}`);
+    let curMonHp  = monsterHp;
+    let curArchHp = archerHp;
 
-    for (const label of arrows) {
-      const score = scoreVal(label);
-      const dmg   = calcDamage({ score, archerATK: archerStats.atk, monsterDEF: currentMonster.def, partMult: 1.0 });
-      totalDmg += dmg;
+    addLog(`⚔️ 第 ${round} 輪（${distance}m · ${TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label}）`, "system");
+
+    for (let i = 0; i < ARROWS_PER_ROUND; i++) {
+      const label    = arrows[i];
+      const partMult = getPartMult(label, targetFmt);
+      const score    = getMappedScore(label, targetFmt);
+      const dmg      = calcDamage({ score, archerATK: archerStats.atk, monsterDEF: currentMonster.def, partMult });
+
+      if (partMult === 0) {
+        sfxSoftFail();
+        addLog(`第${i+1}箭 ${label} — 失誤！沒有效果`, "miss");
+      } else if (partMult >= 2.0) {
+        sfxCritBoom();
+        addLog(`第${i+1}箭 ${label} — 爆擊！傷害 ${dmg} 💥`, "crit");
+        setShaking(true); setTimeout(() => setShaking(false), 380);
+      } else if (partMult >= 1.5) {
+        sfxArrowHit();
+        addLog(`第${i+1}箭 ${label} — 重擊！傷害 ${dmg}`, "hit");
+        setShaking(true); setTimeout(() => setShaking(false), 300);
+      } else {
+        sfxTap();
+        addLog(`第${i+1}箭 ${label} — 命中 ${dmg}`, "normal");
+      }
+
+      curMonHp = Math.max(0, curMonHp - dmg);
+      setMonsterHp(curMonHp);
+      await delay(1100);
+
+      if (curMonHp <= 0) break;
     }
 
-    await delay(400);
-    addLog(`⬡ 總輸出 ${totalDmg} 點傷害！`, "hit");
-
-    const newMHp = Math.max(0, monsterHp - totalDmg);
-
-    if (newMHp <= 0) {
-      // 怪物倒地
-      setMonsterHp(0);
-      await delay(400);
-      sfxSuccess();
-      addLog(`✅ ${currentMonster.name} 被制服！`, "win");
-
-      const matId = getRaceMaterialId(race, currentMonster.tier);
+    // ── 障礙擊破 ──────────────────────────────────────────────
+    if (curMonHp <= 0) {
+      sfxMonsterDead();
+      setTimeout(() => sfxSuccess(), 500);
+      addLog(`✅ ${currentMonster.name} 解決了！任務完成！`, "win");
+      const matId       = getRaceMaterialId(race, currentMonster.tier);
       const newDefeated = [...defeated, { tier: currentMonster.tier, materialId: matId }];
       setDefeated(newDefeated);
-
-      await delay(600);
+      await delay(700);
       setProcessing(false);
+      if (isLastMonster) { sfxEpic(); setPhase("result"); }
+      else setPhase("obstacle_clear");
+      return;
+    }
 
-      if (isLastMonster) {
-        sfxEpic();
-        setPhase("result");
-      } else {
-        setPhase("monster_clear");
-      }
-    } else {
-      // 怪物存活 → 反擊
-      setMonsterHp(newMHp);
-      await delay(600);
+    // ── 回合結算 ──────────────────────────────────────────────
+    sfxRoundEnd();
+    const roundTotal = arrows.reduce((s, l) => s + scoreVal(l), 0);
+    const hpPct      = Math.round(curMonHp / currentMonster.maxHp * 100);
+    const statusTag  = hpPct <= 15 ? "⚠️ 快解決了！" : hpPct <= 35 ? "💪 繼續加油！" : "";
+    addLog(`回合 ${round} 結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
+    await delay(700);
 
-      const counterDmg = calcCounterDamage({ monsterATK: currentMonster.atk, archerDEF: archerStats.def });
-      const newAHp     = Math.max(0, archerHp - counterDmg);
-      setArcherHp(newAHp);
-      setShaking(true);
-      setTimeout(() => setShaking(false), 400);
-      addLog(`💢 ${currentMonster.name} 反擊！你受到 ${counterDmg} 傷害`, "counter");
-      await delay(400);
+    // ── 每 2 回合：疲勞自扣血 ──────────────────────────────────
+    if (round % 2 === 0) {
+      const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
+      const msg     = msgs[Math.floor(Math.random() * msgs.length)];
+      const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));
+      curArchHp     = Math.max(0, curArchHp - selfDmg);
+      setArcherHp(curArchHp);
+      setPainEvent({ msg, dmg: selfDmg });
+      addLog(`😰 ${msg}（疲勞傷害 -${selfDmg}）`, "counter");
+      await delay(1800);
+      setPainEvent(null);
 
-      if (newAHp <= 0) {
-        addLog("💀 你倒下了…帶著已獲得的素材撤退", "system");
+      if (curArchHp <= 0) {
+        addLog("💀 精疲力竭…帶著已完成的任務先撤退！", "system");
         await delay(600);
         setProcessing(false);
         setPhase("result");
-      } else {
-        addLog(`你的 HP：${newAHp} / ${archerStats.hp}`, "system");
-        setRound(r => r + 1);
-        setArrows([]);
-        setProcessing(false);
-        setPhase("input");
+        return;
       }
     }
+
+    setRound(r => r + 1);
+    setArrows([]);
+    setProcessing(false);
+    setPhase("input");
   }
 
-  function nextMonster() {
+  function nextObstacle() {
     const next = mIdx + 1;
     setMIdx(next);
     setMonsterHp(monsters[next].hp);
     setRound(1);
     setArrows([]);
     setPhase("input");
-    addLog(`--- 下一個：${TIER_META[monsters[next].tier].label} ${monsters[next].name} ---`, "system");
+    addLog(`--- 下一個任務：${monsters[next].name} ---`, "system");
   }
 
-  // 結算資料
-  const villageTier  = getVillageTier(village);
-  const isFullClear  = defeated.length === monsters.length;
-  const raceMaterials = defeated.map(d => ({ id: d.materialId }));
-  const villageMatKey = `${villageMat}_t${villageTier}`;
-
-  // ── 選距離 ──────────────────────────────────────────────
-  if (phase === "distance") {
+  // ═══════════════════════════════════════════════════════════
+  // ── 選擇靶面與距離 ────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  if (phase === "setup") {
     return (
-      <div className="flex flex-col bg-slate-900 min-h-screen text-white p-4 gap-4">
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#1c1008,#2d1a0a,#1a1208)", color:"white", padding:"16px 12px 80px" }}>
         <style>{CSS}</style>
-        <button onClick={onBack} className="text-slate-400 text-sm self-start">← 返回</button>
-        <div className="rounded-2xl p-5 text-center" style={{ background: "linear-gradient(135deg,#1e3a5f,#1e1b4b)" }}>
-          <div className="text-4xl mb-2" style={{ animation: "cb-bounce 2s ease infinite" }}>{bEmoji}</div>
-          <div className="font-black text-xl mb-1">{bName} 採集任務</div>
-          <div className="text-sm text-slate-300">{raceLabel} · {monsters.length} 隻障礙</div>
-          <div className="mt-3 flex justify-center gap-3 text-xs text-slate-400">
+        <button onClick={onBack} style={{ background:"none", border:"none", color:"#92400e", fontSize:14, cursor:"pointer", marginBottom:12 }}>← 返回</button>
+
+        {/* 建築標頭 */}
+        <div style={{ background:"linear-gradient(135deg,rgba(245,158,11,0.12),rgba(180,83,9,0.18))", borderRadius:18, padding:"16px 14px", border:"1px solid rgba(245,158,11,0.22)", marginBottom:16, textAlign:"center" }}>
+          <div style={{ fontSize:52, marginBottom:6, animation:"cb-bounce 2s ease infinite" }}>{bEmoji}</div>
+          <div style={{ fontWeight:900, fontSize:18, color:"#fbbf24" }}>{bName} 採集任務</div>
+          <div style={{ fontSize:12, color:"#92400e", marginTop:3 }}>{raceLabel} · {monsters.length} 個障礙</div>
+          <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:8, fontSize:12, color:"#b45309" }}>
             <span>❤️ {archerStats.hp}</span>
             <span>⚔️ {archerStats.atk}</span>
             <span>🛡️ {archerStats.def}</span>
           </div>
         </div>
 
-        <div className="text-sm font-black text-slate-300">選擇射擊距離</div>
-        <div className="grid grid-cols-3 gap-2">
-          {DISTANCES.map(d => (
-            <button key={d} onClick={() => setDistance(d)}
-              className="py-3 rounded-xl font-black text-sm transition-all active:scale-95"
-              style={{
-                background: distance === d ? "linear-gradient(135deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.06)",
-                border: `2px solid ${distance === d ? "#7c3aed" : "rgba(255,255,255,0.12)"}`,
-                color: distance === d ? "white" : "#94a3b8",
-              }}>
-              {d}m
-            </button>
-          ))}
+        {/* 靶面選擇 */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontWeight:900, fontSize:13, color:"#b45309", marginBottom:8 }}>靶面</div>
+          <div style={{ display:"flex", gap:8 }}>
+            {TARGET_OPTIONS.map(t => (
+              <button key={t.id} onClick={() => setTargetFmt(t.id)} style={{
+                flex:1, padding:"10px 4px", borderRadius:12, fontWeight:800, fontSize:13, cursor:"pointer",
+                background: targetFmt===t.id ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(245,158,11,0.08)",
+                border:`2px solid ${targetFmt===t.id ? "#f59e0b" : "rgba(245,158,11,0.2)"}`,
+                color: targetFmt===t.id ? "#1c1008" : "#92400e",
+              }}>{t.icon} {t.label}</button>
+            ))}
+          </div>
         </div>
 
-        {/* 怪物預覽 */}
-        <div className="text-sm font-black text-slate-300">本次障礙清單</div>
-        <div className="flex flex-col gap-2">
-          {monsters.map((m, i) => {
-            const tm = TIER_META[m.tier];
-            return (
-              <div key={m.tier} className="flex items-center gap-3 rounded-xl px-3 py-2"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <span style={{ fontSize: 22 }}>{m.emoji}</span>
-                <div className="flex-1">
-                  <span className="text-xs font-bold px-1.5 py-0.5 rounded-full mr-1.5"
-                    style={{ background: tm.color + "33", color: tm.color }}>{tm.label}</span>
-                  <span className="font-bold text-sm text-white">{m.name}</span>
+        {/* 距離選擇 */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontWeight:900, fontSize:13, color:"#b45309", marginBottom:8 }}>射擊距離</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+            {DISTANCES.map(d => (
+              <button key={d} onClick={() => setDistance(d)} style={{
+                padding:"10px 0", borderRadius:12, fontWeight:800, fontSize:14, cursor:"pointer",
+                background: distance===d ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(245,158,11,0.08)",
+                border:`2px solid ${distance===d ? "#f59e0b" : "rgba(245,158,11,0.2)"}`,
+                color: distance===d ? "#1c1008" : "#92400e",
+              }}>{d}m</button>
+            ))}
+          </div>
+        </div>
+
+        {/* 障礙清單預覽 */}
+        <div style={{ marginBottom:18 }}>
+          <div style={{ fontWeight:900, fontSize:13, color:"#b45309", marginBottom:8 }}>本次任務清單</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+            {monsters.map(m => {
+              const tm = TIER_META[m.tier];
+              return (
+                <div key={m.tier} style={{ display:"flex", alignItems:"center", gap:10, borderRadius:12, padding:"10px 12px", background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.12)" }}>
+                  <span style={{ fontSize:24 }}>{m.emoji}</span>
+                  <div style={{ flex:1 }}>
+                    <span style={{ fontSize:10, fontWeight:800, padding:"2px 6px", borderRadius:20, background:tm.color+"33", color:tm.color, marginRight:6 }}>{tm.label}</span>
+                    <span style={{ fontWeight:800, fontSize:13, color:"#fef3c7" }}>{m.name}</span>
+                    <div style={{ fontSize:11, color:"#92400e", marginTop:1 }}>{m.action}</div>
+                  </div>
+                  <div style={{ fontSize:10, color:"#78350f" }}>❤️{m.hp}</div>
                 </div>
-                <div className="text-xs text-slate-500">❤️{m.hp} ⚔️{m.atk} 🛡️{m.def}</div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
-        <button onClick={() => { setPhase("input"); addLog(`⚔️ 任務開始！第一個目標：${currentMonster.name}`, "system"); }}
-          className="w-full py-4 rounded-2xl font-black text-lg"
-          style={{ background: "linear-gradient(90deg,#7c3aed,#2563eb)" }}>
-          ⚔️ 開始任務！
-        </button>
+        <button onClick={() => { setPhase("input"); addLog(`🌟 任務開始！第一個目標：${currentMonster.name}`, "system"); }} style={{
+          width:"100%", padding:"15px 0", borderRadius:16, fontWeight:900, fontSize:17, cursor:"pointer",
+          background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"#1c1008", border:"none",
+        }}>🌟 開始採集任務！</button>
       </div>
     );
   }
 
-  // ── 怪物擊倒過場 ──────────────────────────────────────────
-  if (phase === "monster_clear") {
+  // ═══════════════════════════════════════════════════════════
+  // ── 障礙擊破過場 ──────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  if (phase === "obstacle_clear") {
     const justDefeated = defeated[defeated.length - 1];
-    const next = monsters[mIdx + 1];
+    const next         = monsters[mIdx + 1];
     return (
-      <div className="flex flex-col items-center justify-center bg-slate-900 min-h-screen text-white p-6 gap-5" style={{ animation: "cb-pop 0.4s ease" }}>
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#1c1008,#2d1a0a)", color:"white", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, gap:18 }}>
         <style>{CSS}</style>
-        <div style={{ fontSize: 64 }}>✅</div>
-        <div className="font-black text-2xl">{currentMonster.name} 制服！</div>
-        <div className="text-sm text-slate-300">獲得 {raceLabel}·{TIER_META[justDefeated?.tier]?.label} 素材</div>
-        <div className="text-slate-400 text-xs">你的 HP：{archerHp} / {archerStats.hp}</div>
+        <div style={{ fontSize:72, animation:"cb-pop 0.4s ease" }}>✅</div>
+        <div style={{ fontWeight:900, fontSize:22, color:"#fbbf24" }}>{currentMonster.name} 解決了！</div>
+        <div style={{ fontSize:13, color:"#92400e" }}>獲得 {raceLabel}·{TIER_META[justDefeated?.tier]?.label} 素材 ×1</div>
+        <div style={{ fontSize:12, color:"#78350f" }}>體力：{archerHp} / {archerStats.hp}</div>
         {next && (
-          <div className="w-full rounded-xl p-3 text-center"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
-            <div className="text-slate-400 text-xs mb-1">下一個目標</div>
-            <span style={{ fontSize: 24 }}>{next.emoji}</span>
-            <div className="font-bold text-sm mt-1">{next.name}</div>
+          <div style={{ width:"100%", maxWidth:320, borderRadius:16, padding:14, textAlign:"center", background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.18)" }}>
+            <div style={{ fontSize:11, color:"#92400e", marginBottom:6 }}>下一個任務</div>
+            <span style={{ fontSize:36 }}>{next.emoji}</span>
+            <div style={{ fontWeight:800, fontSize:14, color:"#fef3c7", marginTop:4 }}>{next.name}</div>
+            <div style={{ fontSize:11, color:"#92400e", marginTop:2 }}>{next.action}</div>
           </div>
         )}
-        <button onClick={nextMonster}
-          className="w-full py-4 rounded-2xl font-black text-lg"
-          style={{ background: "linear-gradient(90deg,#7c3aed,#2563eb)" }}>
-          繼續挑戰！
-        </button>
+        <button onClick={nextObstacle} style={{
+          width:"100%", maxWidth:320, padding:"14px 0", borderRadius:16, fontWeight:900, fontSize:16, cursor:"pointer",
+          background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"#1c1008", border:"none",
+        }}>繼續任務！</button>
       </div>
     );
   }
 
-  // ── 結算畫面 ──────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // ── 結算畫面 ───────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
   if (phase === "result") {
     return (
-      <div className="flex flex-col bg-slate-900 min-h-screen text-white p-4 gap-4">
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#1c1008,#2d1a0a)", color:"white", padding:"16px 12px 80px" }}>
         <style>{CSS}</style>
-        <div className="rounded-2xl p-5 text-center" style={{ animation: "cb-pop 0.4s ease", background: isFullClear ? "linear-gradient(135deg,#14532d,#166534)" : "linear-gradient(135deg,#7f1d1d,#991b1b)" }}>
-          <div style={{ fontSize: 56, marginBottom: 8 }}>{isFullClear ? "🏆" : "💀"}</div>
-          <div className="font-black text-xl mb-1">{isFullClear ? "全部制服！" : "任務中斷"}</div>
-          <div className="text-sm opacity-80">{isFullClear ? "成功清空所有障礙！" : `制服了 ${defeated.length} / ${monsters.length} 隻`}</div>
+        <div style={{ borderRadius:20, padding:"20px 16px", textAlign:"center", marginBottom:16, animation:"cb-pop 0.4s ease", background: isFullClear ? "linear-gradient(135deg,#14532d,#166534)" : "linear-gradient(135deg,#78350f,#92400e)" }}>
+          <div style={{ fontSize:56, marginBottom:8 }}>{isFullClear ? "🏆" : "💪"}</div>
+          <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>{isFullClear ? "任務全部完成！" : "本次到此為止"}</div>
+          <div style={{ fontSize:13, opacity:0.8 }}>{isFullClear ? "所有採集障礙都解決了！" : `完成了 ${defeated.length} / ${monsters.length} 個任務`}</div>
         </div>
 
-        {/* 素材獎勵 */}
-        <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-          <div className="text-xs font-black text-slate-400 mb-3">獲得素材</div>
+        <div style={{ borderRadius:16, padding:16, background:"rgba(245,158,11,0.05)", border:"1px solid rgba(245,158,11,0.14)", marginBottom:14 }}>
+          <div style={{ fontSize:12, fontWeight:900, color:"#92400e", marginBottom:10 }}>獲得素材</div>
           {defeated.length === 0
-            ? <div className="text-slate-500 text-sm">無</div>
-            : <div className="flex flex-col gap-2">
-                {defeated.map((d, i) => {
-                  const tm = TIER_META[d.tier];
-                  return (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                        style={{ background: tm.color + "33", color: tm.color }}>{tm.label}</span>
-                      <span>{raceLabel}素材 ×1</span>
-                      <span className="text-slate-500 text-xs">({d.materialId})</span>
-                    </div>
-                  );
-                })}
-              </div>
+            ? <div style={{ color:"#78350f", fontSize:13 }}>未獲得素材</div>
+            : defeated.map((d, i) => {
+                const tm = TIER_META[d.tier];
+                return (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, fontSize:13 }}>
+                    <span style={{ fontSize:10, fontWeight:800, padding:"2px 6px", borderRadius:20, background:tm.color+"33", color:tm.color }}>{tm.label}</span>
+                    <span style={{ color:"#fef3c7" }}>{raceLabel}素材 ×1</span>
+                    <span style={{ color:"#78350f", fontSize:10 }}>({d.materialId})</span>
+                  </div>
+                );
+              })
           }
           {isFullClear && (
             <>
-              <div className="my-3 h-px bg-white/10" />
-              <div className="text-xs font-black text-yellow-400 mb-2">全通關獎勵</div>
-              <div className="flex flex-col gap-1 text-sm text-yellow-200">
-                <span>🏡 {villageMat} T{villageTier} ×{CLEAR_VILLAGE_MAT_COUNT}</span>
-                <span>🪙 扭蛋幣 ×{CLEAR_GACHA_COINS}</span>
+              <div style={{ height:1, background:"rgba(245,158,11,0.14)", margin:"10px 0" }} />
+              <div style={{ fontSize:12, fontWeight:900, color:"#fbbf24", marginBottom:6 }}>全通關獎勵</div>
+              <div style={{ fontSize:13, color:"#fef3c7", lineHeight:2.2 }}>
+                <div>🏡 {villageMat} T{villageTier} ×{CLEAR_VILLAGE_MAT_COUNT}</div>
+                <div>🪙 扭蛋幣 ×{CLEAR_GACHA_COINS}</div>
               </div>
             </>
           )}
         </div>
 
-        <button onClick={() => onFinish({ raceMaterials, villageMatKey, isFullClear })}
-          className="w-full py-4 rounded-2xl font-black text-lg"
-          style={{ background: "linear-gradient(90deg,#16a34a,#15803d)" }}>
-          領取並離開
-        </button>
+        <button onClick={() => onFinish({ raceMaterials, villageMatKey, isFullClear })} style={{
+          width:"100%", padding:"15px 0", borderRadius:16, fontWeight:900, fontSize:17, cursor:"pointer",
+          background:"linear-gradient(90deg,#16a34a,#15803d)", color:"white", border:"none",
+        }}>領取並離開</button>
       </div>
     );
   }
 
-  // ── 輸分 / 戰鬥中 ──────────────────────────────────────────
-  const isResolving = phase === "resolving";
+  // ═══════════════════════════════════════════════════════════
+  // ── 戰鬥中（input / resolving）────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  const gridCols = scoreLabels.length > 7 ? 6 : scoreLabels.length;
+
   return (
-    <div className="flex flex-col bg-slate-900 min-h-screen text-white">
+    <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#1c1008,#2d1a0a,#1a1208)", color:"white", display:"flex", flexDirection:"column" }}>
       <style>{CSS}</style>
-      <div className="p-4 flex flex-col gap-3 flex-1">
-        {/* 頂部狀態 */}
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-slate-400 text-sm">← 退出</button>
-          <div className="flex-1 text-center text-xs text-slate-400">{bEmoji} {bName} · 第 {mIdx+1}/{monsters.length} 隻 · 回合 {round}</div>
-        </div>
 
-        {/* 玩家 HP */}
-        <div>
-          <div className="flex justify-between text-xs font-bold text-slate-400 mb-1">
-            <span>❤️ 你的 HP</span><span>{archerHp} / {archerStats.hp}</span>
-          </div>
-          <div className="h-2 rounded-full bg-white/10">
-            <div className="h-2 rounded-full transition-all" style={{
-              width: `${(archerHp / archerStats.hp) * 100}%`,
-              background: archerHp / archerStats.hp > 0.4 ? "#22c55e" : "#ef4444",
-            }} />
-          </div>
-        </div>
-
-        {/* 怪物卡 */}
-        <div className="rounded-2xl p-4" style={{
-          background: currentMonster.bgColor, color: "#1e293b",
-          border: `2px solid ${tierMeta.color}44`,
-          animation: shaking ? "cb-shake 0.4s ease" : "none",
-        }}>
-          <div className="flex items-center gap-4 mb-3">
-            <span style={{ fontSize: 48 }}>{currentMonster.emoji}</span>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-xs font-black px-2 py-0.5 rounded-full text-white"
-                  style={{ background: tierMeta.color }}>{tierMeta.label}</span>
-                <span className="font-black text-base">{currentMonster.name}</span>
-              </div>
-              <div className="text-xs text-slate-500">行動中：{currentMonster.action}</div>
-            </div>
-          </div>
-          <div className="text-xs text-slate-500 flex justify-between mb-1.5">
-            <span>障礙值</span>
-            <span>{monsterHp} / {currentMonster.maxHp}</span>
-          </div>
-          <div className="h-3 rounded-full bg-slate-200 overflow-hidden">
-            <div className="h-3 rounded-full transition-all" style={{
-              width: `${(monsterHp / currentMonster.maxHp) * 100}%`,
-              background: tierMeta.color,
-            }} />
-          </div>
-          <div className="mt-2 flex gap-3 text-xs text-slate-500">
-            <span>⚔️{currentMonster.atk}</span>
-            <span>🛡️{currentMonster.def}</span>
-            <span>📍{distance}m</span>
-          </div>
-        </div>
-
-        {/* 戰鬥日誌 */}
-        <div ref={logRef} className="rounded-xl p-3 text-xs leading-relaxed overflow-y-auto"
-          style={{ background: "rgba(255,255,255,0.04)", maxHeight: 120, border: "1px solid rgba(255,255,255,0.08)" }}>
-          {log.map((l, i) => (
-            <div key={i} style={{
-              color: l.type === "win" ? "#4ade80" : l.type === "counter" ? "#f87171" : l.type === "hit" ? "#fbbf24" : "#94a3b8",
-              animation: i === log.length - 1 ? "cb-fade-up 0.2s ease" : "none",
-            }}>{l.text}</div>
-          ))}
-          {log.length === 0 && <div className="text-slate-600">輸入本輪得分…</div>}
+      {/* 頂部狀態列 */}
+      <div style={{ padding:"10px 12px 0", display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:"#92400e", fontSize:13, cursor:"pointer" }}>← 退出</button>
+        <div style={{ flex:1, textAlign:"center", fontSize:11, color:"#78350f" }}>
+          {bEmoji} {bName} · 第{mIdx+1}/{monsters.length}個 · 回合{round} · {distance}m
         </div>
       </div>
 
-      {/* 底部：輸分區 */}
-      <div className="shrink-0 px-4 pb-6 pt-3" style={{ background: "linear-gradient(0deg,#0f172a 85%,transparent)" }}>
-        {/* 已輸箭 */}
-        <div className="flex gap-1.5 mb-3 justify-center">
+      {/* 玩家體力條 */}
+      <div style={{ padding:"8px 12px 0", flexShrink:0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#92400e", marginBottom:3 }}>
+          <span>🏃 體力</span><span>{archerHp} / {archerStats.hp}</span>
+        </div>
+        <div style={{ height:6, borderRadius:99, background:"rgba(255,255,255,0.1)" }}>
+          <div style={{ height:6, borderRadius:99, transition:"width 0.4s", width:`${(archerHp/archerStats.hp)*100}%`, background: archerHp/archerStats.hp > 0.4 ? "#22c55e" : "#ef4444" }} />
+        </div>
+      </div>
+
+      {/* 中間：障礙卡 + 戰鬥日誌 */}
+      <div style={{ flex:1, padding:"10px 12px 0", display:"flex", flexDirection:"column", gap:8, overflow:"hidden" }}>
+        {/* 障礙卡 */}
+        <div style={{
+          borderRadius:18, padding:"14px",
+          border:`2px solid ${tierMeta.color}55`,
+          background:`linear-gradient(135deg,${currentMonster?.bgColor || "#fef9f0"},#fffdf8)`,
+          animation: shaking ? "cb-shake 0.4s ease" : "none",
+          flexShrink:0,
+        }}>
+          <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
+            <span style={{ fontSize:52, lineHeight:1, flexShrink:0 }}>{currentMonster?.emoji}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+                <span style={{ fontSize:10, fontWeight:800, padding:"2px 6px", borderRadius:20, background:tierMeta.color, color:"white" }}>{tierMeta.label}</span>
+                <span style={{ fontWeight:900, fontSize:15, color:"#1c1008" }}>{currentMonster?.name}</span>
+              </div>
+              <div style={{ fontSize:11, color:"#78350f", marginBottom:6 }}>{currentMonster?.action}</div>
+              <div style={{ fontSize:11, color:"#92400e", display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                <span>障礙抵抗值</span>
+                <span style={{ fontWeight:800 }}>{monsterHp} / {currentMonster?.maxHp}</span>
+              </div>
+              <div style={{ height:8, borderRadius:99, background:"rgba(0,0,0,0.1)", overflow:"hidden" }}>
+                <div style={{ height:8, borderRadius:99, transition:"width 0.5s", width:`${(monsterHp/(currentMonster?.maxHp||1))*100}%`, background:tierMeta.color }} />
+              </div>
+            </div>
+          </div>
+          {/* 疲勞事件提示 */}
+          {painEvent && (
+            <div style={{ marginTop:8, borderRadius:10, padding:"8px 12px", background:"rgba(239,68,68,0.13)", border:"1px solid rgba(239,68,68,0.28)", fontSize:12, color:"#dc2626", fontWeight:700, animation:"cb-fade-up 0.3s ease" }}>
+              😰 {painEvent.msg}　<span style={{ color:"#b91c1c" }}>（-{painEvent.dmg} 體力）</span>
+            </div>
+          )}
+        </div>
+
+        {/* 戰鬥日誌 */}
+        <div ref={logRef} style={{ flex:1, overflowY:"auto", borderRadius:12, padding:"8px 10px", background:"rgba(245,158,11,0.04)", border:"1px solid rgba(245,158,11,0.1)", fontSize:11, lineHeight:1.8, minHeight:80 }}>
+          {log.map((l, i) => (
+            <div key={i} style={{
+              color: l.type==="win"     ? "#4ade80"
+                   : l.type==="crit"   ? "#fbbf24"
+                   : l.type==="hit"    ? "#f97316"
+                   : l.type==="counter"? "#f87171"
+                   : l.type==="total"  ? "#a3e635"
+                   : l.type==="miss"   ? "#64748b"
+                   : l.type==="system" ? "#78350f"
+                   : "#b45309",
+              animation: i===log.length-1 ? "cb-fade-up 0.2s ease" : "none",
+            }}>{l.text}</div>
+          ))}
+          {log.length === 0 && <div style={{ color:"#78350f" }}>選好靶面與距離後，開始輸入得分…</div>}
+        </div>
+      </div>
+
+      {/* 底部輸分區 */}
+      <div style={{ flexShrink:0, padding:"6px 12px 20px", background:"linear-gradient(0deg,#1c1008 85%,transparent)" }}>
+        {/* 已輸箭格 */}
+        <div style={{ display:"flex", gap:6, justifyContent:"center", marginBottom:8 }}>
           {Array.from({ length: ARROWS_PER_ROUND }).map((_, i) => {
             const label = arrows[i];
+            const isFilled = label != null;
+            const isGold   = label === "X" || label === "10" || label === "6";
             return (
-              <div key={i} className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black"
-                style={{
-                  background: label != null ? (label === "X" || label === "10" ? "#f59e0b" : "#3b82f6") : "rgba(255,255,255,0.06)",
-                  border: `2px solid ${label != null ? "transparent" : "rgba(255,255,255,0.12)"}`,
-                  color: label != null ? "white" : "#475569",
-                }}>
-                {label ?? "·"}
-              </div>
+              <div key={i} style={{
+                width:40, height:40, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:13,
+                background: isFilled ? (isGold ? "rgba(245,158,11,0.85)" : "rgba(180,83,9,0.65)") : "rgba(255,255,255,0.05)",
+                border:`2px solid ${isFilled ? "transparent" : "rgba(245,158,11,0.15)"}`,
+                color: isFilled ? "#1c1008" : "#78350f",
+              }}>{label ?? "·"}</div>
             );
           })}
         </div>
 
         {/* 分數按鈕 */}
-        <div className="grid grid-cols-6 gap-1.5 mb-2">
-          {SCORE_LABELS.map(label => (
-            <button key={label} onClick={() => inputArrow(label)}
-              disabled={isResolving || arrows.length >= ARROWS_PER_ROUND}
-              className="py-2.5 rounded-xl font-black text-sm transition-all active:scale-90 disabled:opacity-30"
-              style={{
-                background: label === "X" || label === "10" ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.07)",
-                border: `1px solid ${label === "X" || label === "10" ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.1)"}`,
-                color: label === "X" || label === "10" ? "#fbbf24" : "#e2e8f0",
-              }}>
-              {label}
-            </button>
-          ))}
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${gridCols},1fr)`, gap:5, marginBottom:6 }}>
+          {scoreLabels.map(label => {
+            const isGold = label === "X" || label === "10" || label === "6";
+            return (
+              <button key={label} onClick={() => inputArrow(label)}
+                disabled={isResolving || arrows.length >= ARROWS_PER_ROUND}
+                style={{
+                  padding:"10px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
+                  background: isGold ? "rgba(245,158,11,0.2)" : "rgba(245,158,11,0.07)",
+                  border:`1px solid ${isGold ? "rgba(245,158,11,0.5)" : "rgba(245,158,11,0.15)"}`,
+                  color: isGold ? "#fbbf24" : "#d97706",
+                  opacity: isResolving || arrows.length >= ARROWS_PER_ROUND ? 0.3 : 1,
+                }}>{label}</button>
+            );
+          })}
         </div>
 
         {/* 確認 / 撤銷 */}
-        <div className="flex gap-2">
+        <div style={{ display:"flex", gap:8 }}>
           <button onClick={undoArrow} disabled={isResolving || !arrows.length}
-            className="flex-1 py-3 rounded-xl font-bold text-sm disabled:opacity-30"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#94a3b8" }}>
+            style={{ flex:1, padding:"12px 0", borderRadius:14, fontWeight:700, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(245,158,11,0.2)", color:"#92400e", opacity: isResolving||!arrows.length ? 0.3 : 1 }}>
             ← 撤銷
           </button>
-          <button onClick={submitRound}
-            disabled={isResolving || arrows.length < ARROWS_PER_ROUND}
-            className="flex-[2] py-3 rounded-xl font-black text-base disabled:opacity-40 transition-all active:scale-95"
+          <button onClick={submitRound} disabled={isResolving || arrows.length < ARROWS_PER_ROUND}
             style={{
-              background: arrows.length >= ARROWS_PER_ROUND ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.06)",
-              color: "white",
+              flex:2, padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:15, cursor:"pointer", border:"none",
+              background: arrows.length >= ARROWS_PER_ROUND ? "linear-gradient(90deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.05)",
+              color: arrows.length >= ARROWS_PER_ROUND ? "#1c1008" : "#78350f",
+              opacity: isResolving ? 0.5 : 1,
             }}>
             {isResolving ? "結算中…" : `確認（${arrows.length}/${ARROWS_PER_ROUND}）`}
           </button>
