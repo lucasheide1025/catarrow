@@ -8,6 +8,8 @@ import {
   subscribeVillageMarketConfig,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
+import { subscribeMyCats } from "../../lib/catDb";
+import { CATS, getBondLevel } from "../../lib/catData";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
@@ -31,6 +33,62 @@ const C = {
   lockBd:   "#D8C4B0",
   shadow:   "0 2px 8px rgba(100,70,50,0.10)",
 };
+
+const CAT_DAILY_QUOTES = {
+  daming:   ["今天要好好守護這個村莊！","你放心，老大我看著呢。","別偷懶，繼續採集！","村莊就交給我了，你去打怪吧。"],
+  gege:     ["早安！今天也一起加油喔！","有我在，什麼都不怕。","你最近進步很多喔。","來，先深呼吸，再出發。"],
+  meimei:   ["今天也有很多箭要射！","快快快，趕快去採集！","我剛剛看到一個大寶箱！","今天的天氣超適合升級！"],
+  niuniu:   ["規則就是規則，不能破例。","升級需求都確認過了嗎？","按照計畫走，不要亂。","效率，效率，還是效率。"],
+  haji:     ["……（瞌睡中）zZ","夢裡有好多魚乾……","等等，我再睡一下下。","箭場的風，最適合午睡了。"],
+  baobao:   ["你回來啦！我好想你！","弓袋裡好暖，能抱一下嗎？","今天要一起去採集嗎？","村莊有我陪，不孤單喔！"],
+  youyou:   ["慢慢走，才能看清楚路。","我看過了，這棟建築還能再升。","一步一步，終會到達頂點。","不用急，今天的任務剛剛好。"],
+  xiaoan:   ["（有一點點緊張……）","我、我會努力的！我不怕！","嚇了一跳，但還是繼續吧！","只要一起，就不害怕了。"],
+  diandian: ["村莊的靈氣今天特別旺……","我看見了什麼，但說不出口。","箭露在流動，感覺到了嗎？","黑夜裡，最清楚前路。"],
+};
+
+// ── 秘書貓 Header ─────────────────────────────────────────────
+function SecretaryCat({ cat }) {
+  const catInfo = cat ? CATS[cat.catId] : null;
+  if (!catInfo) return null;
+  const bondLv = getBondLevel(cat.bond || 0);
+  const quotes = CAT_DAILY_QUOTES[cat.catId] || ["今天也要加油喔！"];
+  const quote  = quotes[Math.floor(Date.now() / 86400000) % quotes.length];
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5"
+      style={{ background: "rgba(255,255,255,0.72)", borderBottom: `1px solid ${C.border}` }}>
+      {/* 貓咪頭像 */}
+      <div style={{ position:"relative", width:46, height:46, flexShrink:0 }}>
+        <img
+          src={`/cats/portraits/${cat.catId}.webp`}
+          alt={catInfo.name}
+          style={{ width:46, height:46, borderRadius:"50%", objectFit:"cover",
+            border:`2px solid ${C.sage}`, background: catInfo.palette?.light || "#f5e6d0" }}
+          onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
+        />
+        <div style={{ display:"none", width:46, height:46, borderRadius:"50%",
+          background: catInfo.palette?.light || "#f5e6d0",
+          alignItems:"center", justifyContent:"center", fontSize:22,
+          border:`2px solid ${C.sage}` }}>🐱</div>
+        <div style={{
+          position:"absolute", bottom:-3, right:-3,
+          background: C.sage, borderRadius:8, padding:"1px 5px",
+          fontSize:9, fontWeight:900, color:"white",
+        }}>Lv.{bondLv}</div>
+      </div>
+      {/* 文字 */}
+      <div className="flex-1 min-w-0">
+        <div className="font-black text-[11px]" style={{ color: C.muted }}>秘書貓</div>
+        <div className="font-black text-sm leading-tight" style={{ color: C.brown }}>{catInfo.name}</div>
+      </div>
+      {/* 台詞氣泡 */}
+      <div className="flex-1 rounded-2xl px-3 py-2 text-[11px] italic leading-snug"
+        style={{ background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, color: C.mid, maxWidth:160 }}>
+        「{quote}」
+      </div>
+    </div>
+  );
+}
 
 // ── 全景圖（可橫移） ─────────────────────────────────────────
 function PanoramaView({ villageLevel }) {
@@ -748,6 +806,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
   const villageLevel = getVillageLevel(buildings);
 
   const [marketConfig, setMarketConfig] = useState(null);
+  const [myCats, setMyCats] = useState({});
 
   useEffect(() => {
     if (profile?.id && !profile?.village) {
@@ -759,6 +818,18 @@ export default function CatVillage({ catCards, gachaCoins }) {
     const unsub = subscribeVillageMarketConfig(setMarketConfig);
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const unsub = subscribeMyCats(profile.id, setMyCats);
+    return unsub;
+  }, [profile?.id]); // eslint-disable-line
+
+  const secretaryCat = useMemo(() => {
+    const cats = Object.values(myCats);
+    if (!cats.length) return null;
+    return cats.reduce((best, c) => (c.bond || 0) > (best.bond || 0) ? c : best, cats[0]);
+  }, [myCats]);
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -849,6 +920,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
       {tab === "village" && (
         <>
+          <SecretaryCat cat={secretaryCat} />
           <PanoramaView villageLevel={villageLevel} />
 
           <ResourceBar
