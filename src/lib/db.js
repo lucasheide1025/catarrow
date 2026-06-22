@@ -2963,3 +2963,22 @@ export async function adminResetVillage(memberId) {
     village: { ...DEFAULT_VILLAGE, lastCollectedAt: serverTimestamp() },
   });
 }
+
+// ─── 議會廳採集結算 ────────────────────────────────────────
+// raceMaterials: [{ id: 'ghost_m1' }, ...]
+// villageMatKey: 'ore_t2' (only when isFullClear)
+// isFullClear: boolean
+export async function completeGatheringSession(memberId, { raceMaterials, villageMatKey, isFullClear }) {
+  const promises = [];
+  if (raceMaterials?.length) {
+    promises.push(addMaterials(memberId, raceMaterials));
+  }
+  if (isFullClear && villageMatKey) {
+    const memberUpdate = {
+      [`village.resources.${villageMatKey}`]: increment(3),
+      gachaCoins: increment(5),
+    };
+    promises.push(updateDoc(doc(db, C.members, memberId), memberUpdate));
+  }
+  await Promise.all(promises);
+}

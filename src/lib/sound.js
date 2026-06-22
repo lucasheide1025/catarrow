@@ -475,3 +475,26 @@ export function sfxGachaReveal(isNew = false) {
     vibrate([0, 30, 50]);
   }
 }
+
+
+// ── 議會廳採集音效 ──────────────────────────────────────────
+export function sfxGatherClick() {
+  noiseBurst(0, 0.07, 600, 0.22);
+  tone(220, 0.10, "sine", 0.15, 0.04);
+}
+export function sfxGatherDefeat() {
+  tone(440, 0.14, "triangle", 0.22, 0);
+  tone(554, 0.18, "triangle", 0.20, 0.10);
+  tone(659, 0.22, "triangle", 0.18, 0.20);
+}
+export function sfxGatherFail() {
+  tone(330, 0.18, "sine", 0.18, 0);
+  tone(277, 0.22, "sine", 0.16, 0.15);
+  tone(220, 0.30, "sine", 0.14, 0.35);
+}
+export function sfxGatherVictory() {
+  [523, 659, 784, 880, 1047].forEach((f, i) =>
+    tone(f, 0.22, "triangle", 0.20, i * 0.09)
+  );
+  vibrate([0, 40, 60, 80]);
+}

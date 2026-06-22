@@ -470,7 +470,7 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
-export default function CatVillage({ catCards, gachaCoins }) {
+export default function CatVillage({ catCards, gachaCoins, onEnterCouncil }) {
   const { profile } = useAuth();
   const [tab, setTab]               = useState("village");
   const [selectedBuilding, setSelectedBuilding] = useState(null);
@@ -613,6 +613,24 @@ export default function CatVillage({ catCards, gachaCoins }) {
                       目前：{unlockedIds.reduce((s,id) => s + (buildings[id]||1), 0)} / {unlockedIds.length * 20} 總級 → Lv.{villageLevel}
                     </div>
                   </div>
+
+                  {/* 議會廳入口 */}
+                  {onEnterCouncil && (
+                    <button
+                      onClick={() => { sfxTap(); onEnterCouncil(); }}
+                      className="mt-3 w-full rounded-2xl py-3 flex items-center justify-between px-4"
+                      style={{
+                        background: "linear-gradient(135deg,#fef3c7,#fde68a)",
+                        border: "1.5px solid #f59e0b",
+                        cursor: "pointer",
+                      }}>
+                      <div style={{ textAlign: "left" }}>
+                        <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e" }}>🏛️ 議會廳</div>
+                        <div style={{ fontSize: 11, color: "#a16207" }}>採集副本 · 獲得種族素材</div>
+                      </div>
+                      <span style={{ fontSize: 18, color: "#d97706" }}>›</span>
+                    </button>
+                  )}
                 </>
               );
             })()}
