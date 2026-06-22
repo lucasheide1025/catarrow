@@ -1,126 +1,189 @@
 // src/components/member/CouncilHall.jsx — 議會廳入口
-import { useState } from "react";
-import { COUNCIL_BUILDINGS, GATHER_TIER, TIER_ORDER, COUNCIL_MONSTERS } from "../../lib/councilMonsters";
-import GatheringBattle from "./GatheringBattle";
-import { completeGatheringSession } from "../../lib/db";
+import { useState, useEffect } from "react";
+import {
+  COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getAvailableTiers,
+} from "../../lib/councilMonsters";
+import {
+  checkCouncilDailyLimit, recordCouncilSession, completeCouncilSession,
+} from "../../lib/db";
+import { calcArcherStats } from "../../lib/monsterData";
+import { computeDexStats } from "../../lib/achievementDex";
+import { getCertRecords, getCertification, getDexConfig } from "../../lib/db";
+import CouncilBattle from "./CouncilBattle";
 
 export default function CouncilHall({ profile, village, onBack }) {
-  const [activeBld, setActiveBld] = useState(null);
-  const [saving, setSaving]       = useState(false);
-  const [doneMsg, setDoneMsg]     = useState("");
+  const [activeBld,    setActiveBld]    = useState(null);
+  const [dailyLeft,    setDailyLeft]    = useState(null);
+  const [archerStats,  setArcherStats]  = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [doneMsg,      setDoneMsg]      = useState("");
 
-  async function handleFinish(result) {
-    if (!result || (!result.raceMaterials?.length && !result.isFullClear)) {
-      setActiveBld(null);
-      return;
+  // 載入玩家數值（與 MonsterBattle 相同邏輯）
+  useEffect(() => {
+    if (!profile?.id) return;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const [cr, cert, dcfg] = await Promise.all([
+          getCertRecords(profile.id),
+          getCertification(profile.id),
+          getDexConfig(),
+        ]);
+        if (cancelled) return;
+        const ds    = computeDexStats({ member: profile, certification: cert, certRecords: cr, checkinCount: profile?.dailyQuestCount || 0, granted: [], physicalMax: dcfg.physicalMax || 20, pointMax: dcfg.pointMax || 20 });
+        const stats = calcArcherStats({ member: profile, certification: cert, certRecords: cr, dexStats: ds });
+        setArcherStats(stats);
+      } catch (e) {
+        setArcherStats({ hp: 200, atk: 20, def: 15 });
+      } finally {
+        if (!cancelled) setLoadingStats(false);
+      }
     }
-    setSaving(true);
-    try {
-      await completeGatheringSession(profile.id, result);
-      const mats = result.raceMaterials?.length || 0;
-      let msg = `✓ 獲得 ${mats} 個種族素材`;
-      if (result.isFullClear) msg += "　🏡 村莊材料 ×3　🪙 扭蛋幣 ×5";
-      setDoneMsg(msg);
-      setTimeout(() => setDoneMsg(""), 4000);
-    } catch(e) {
-      console.warn("completeGatheringSession:", e.message);
-    }
-    setSaving(false);
-    setActiveBld(null);
+
+    load();
+    checkCouncilDailyLimit(profile.id).then(n => { if (!cancelled) setDailyLeft(n); }).catch(() => setDailyLeft(5));
+
+    return () => { cancelled = true; };
+  }, [profile?.id]); // eslint-disable-line
+
+  async function handleSelectBuilding(bld) {
+    if (dailyLeft <= 0) { setDoneMsg("❌ 今日次數已用盡（5/5）"); return; }
+    await recordCouncilSession(profile.id).catch(() => {});
+    setDailyLeft(l => Math.max(0, (l ?? 1) - 1));
+    setActiveBld(bld);
   }
 
-  if (activeBld) {
+  async function handleFinish(result) {
+    setActiveBld(null);
+    if (!result || (!result.raceMaterials?.length && !result.isFullClear)) return;
+    setSaving(true);
+    try {
+      await completeCouncilSession(profile.id, result);
+      const mats = result.raceMaterials?.length || 0;
+      let msg = `✓ 獲得 ${mats} 個種族素材`;
+      if (result.isFullClear) msg += `　🏡 村莊材料 ×3　🪙 扭蛋幣 ×5`;
+      setDoneMsg(msg);
+      setTimeout(() => setDoneMsg(""), 4000);
+    } catch (e) { console.warn("completeCouncilSession:", e.message); }
+    setSaving(false);
+  }
+
+  if (activeBld && archerStats) {
+    const bldLevel    = village?.buildings?.[activeBld.id] || 1;
+    const availTiers  = getAvailableTiers(bldLevel);
     return (
-      <GatheringBattle
+      <CouncilBattle
         building={activeBld}
+        availableTiers={availTiers}
+        archerStats={archerStats}
         village={village}
         onFinish={handleFinish}
+        onBack={() => { setActiveBld(null); setDailyLeft(l => Math.min(5, (l ?? 0) + 1)); }}
       />
     );
   }
 
+  const buildings = village?.buildings || {};
+
   return (
-    <div style={{
-      minHeight: "100%",
-      background: "linear-gradient(160deg,#fdf6ec 0%,#fef9f0 100%)",
-      padding: "12px 12px 80px",
-    }}>
+    <div style={{ minHeight: "100%", background: "linear-gradient(160deg,#0f172a,#1e1b4b)", padding: "12px 12px 80px", color: "white" }}>
       {/* 標頭 */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <button onClick={onBack}
-          style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>
-          ←
-        </button>
+        <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>←</button>
         <div>
           <div style={{ fontWeight: 900, fontSize: 17 }}>🏛️ 議會廳</div>
-          <div style={{ fontSize: 11, color: "#78716c" }}>採集副本．獲得種族素材</div>
+          <div style={{ fontSize: 11, color: "#64748b" }}>採集副本 · 射箭驅退障礙 · 獲得種族素材</div>
         </div>
       </div>
 
-      {/* 結算提示 */}
+      {/* 提示訊息 */}
       {doneMsg && (
-        <div style={{
-          background: "#dcfce7", color: "#16a34a", fontWeight: 800,
-          borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13,
-        }}>
+        <div style={{ background: doneMsg.startsWith("✓") ? "#14532d" : "#7f1d1d", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontWeight: 800, fontSize: 13 }}>
           {doneMsg}
         </div>
       )}
 
+      {/* 玩家數值 */}
+      {loadingStats
+        ? <div style={{ color: "#475569", fontSize: 13, marginBottom: 12 }}>載入射手數值…</div>
+        : archerStats && (
+          <div style={{ display: "flex", gap: 12, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>HP</div><div style={{ fontWeight: 900, color: "#4ade80" }}>{archerStats.hp}</div></div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>ATK</div><div style={{ fontWeight: 900, color: "#f87171" }}>{archerStats.atk}</div></div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>DEF</div><div style={{ fontWeight: 900, color: "#60a5fa" }}>{archerStats.def}</div></div>
+            <div style={{ flex: 1 }} />
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, color: "#64748b" }}>今日剩餘</div>
+              <div style={{ fontWeight: 900, color: dailyLeft > 0 ? "#fbbf24" : "#ef4444", fontSize: 18 }}>
+                {dailyLeft ?? "…"} / 5
+              </div>
+            </div>
+          </div>
+        )
+      }
+
       {/* 說明 */}
-      <div style={{
-        background: "rgba(255,255,255,0.7)", borderRadius: 12, padding: "10px 14px",
-        marginBottom: 16, fontSize: 12, color: "#57534e", lineHeight: 1.8,
-      }}>
-        <b>怎麼玩？</b><br/>
-        每棟建築對應一種種族，各有 6 隻障礙。<br/>
-        點「採集」按鈕排除干擾，消耗體力換取素材。<br/>
-        全部通關額外獲得村莊材料 × 3 + 扭蛋幣 × 5。
+      <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#64748b", lineHeight: 1.8, border: "1px solid rgba(255,255,255,0.06)" }}>
+        <b style={{ color: "#94a3b8" }}>怎麼玩？</b><br/>
+        每棟建築有障礙生物，等級越高出現越多隻（最多6隻）。<br/>
+        輸入射箭分數驅退它們，獲得對應種族素材。<br/>
+        全部通關 → 村莊材料 ×3 + 扭蛋幣 ×5
       </div>
 
       {/* 建築卡 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {COUNCIL_BUILDINGS.map(bld => {
-          const monsters = COUNCIL_MONSTERS[bld.id];
+          const bldLevel    = buildings[bld.id] || 1;
+          const availTiers  = getAvailableTiers(bldLevel);
+          const isLocked    = !buildings[bld.id]; // 未解鎖建築
+          const canEnter    = !isLocked && dailyLeft > 0 && archerStats && !saving;
+
           return (
             <button key={bld.id}
-              onClick={() => !saving && setActiveBld(bld)}
-              disabled={saving}
+              onClick={() => canEnter && handleSelectBuilding(bld)}
+              disabled={!canEnter}
               style={{
-                background: "white", borderRadius: 14, padding: "14px 16px",
-                border: "1px solid #e7e5e4", cursor: saving ? "default" : "pointer",
-                textAlign: "left", display: "flex", alignItems: "center", gap: 14,
-                boxShadow: "0 1px 4px #0000000a",
-                opacity: saving ? 0.6 : 1,
+                background: isLocked ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.05)",
+                borderRadius: 14, padding: "14px 16px",
+                border: `1px solid ${isLocked ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.1)"}`,
+                cursor: canEnter ? "pointer" : "default",
+                textAlign: "left", display: "flex", alignItems: "center", gap: 12,
+                opacity: isLocked || dailyLeft <= 0 ? 0.45 : 1,
               }}>
-              {/* emoji */}
-              <span style={{ fontSize: 36, lineHeight: 1 }}>{bld.emoji}</span>
+              <span style={{ fontSize: 34, lineHeight: 1 }}>{bld.emoji}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 2 }}>{bld.name}</div>
-                <div style={{ fontSize: 11, color: "#78716c", marginBottom: 6 }}>{bld.raceLabel}素材</div>
-                {/* tier dots */}
+                <div style={{ fontWeight: 900, fontSize: 14, color: "white", marginBottom: 2 }}>
+                  {bld.name}
+                  {isLocked && <span style={{ fontSize: 11, color: "#475569", marginLeft: 6 }}>（未解鎖）</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                  {bld.raceLabel} · Lv.{bldLevel} · {availTiers.length} 隻障礙
+                </div>
+                {/* tier 點 */}
                 <div style={{ display: "flex", gap: 4 }}>
-                  {TIER_ORDER.map(t => (
-                    <div key={t} style={{
-                      width: 20, height: 20, borderRadius: "50%",
-                      background: GATHER_TIER[t].color,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 10,
-                    }}>
-                      {monsters[t].emoji}
-                    </div>
-                  ))}
+                  {availTiers.map(t => {
+                    const tm = TIER_META[t];
+                    const m  = COUNCIL_MONSTERS[bld.id][t];
+                    return (
+                      <div key={t} title={m.name} style={{
+                        width: 22, height: 22, borderRadius: "50%",
+                        background: tm.color + "33",
+                        border: `1.5px solid ${tm.color}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11,
+                      }}>
+                        {m.emoji}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div style={{ fontSize: 22, color: "#d1d5db" }}>›</div>
+              <div style={{ fontSize: 20, color: "#334155" }}>›</div>
             </button>
           );
         })}
-      </div>
-
-      {/* 底部提示 */}
-      <div style={{ marginTop: 20, fontSize: 11, color: "#a8a29e", textAlign: "center" }}>
-        體力 {TIER_ORDER.map(t => `${GATHER_TIER[t].label}-${GATHER_TIER[t].staminaCost}`).join("  ")} 共 {TIER_ORDER.reduce((s,t)=>s+GATHER_TIER[t].staminaCost,0)} 點
       </div>
     </div>
   );

@@ -2964,21 +2964,41 @@ export async function adminResetVillage(memberId) {
   });
 }
 
-// ─── 議會廳採集結算 ────────────────────────────────────────
-// raceMaterials: [{ id: 'ghost_m1' }, ...]
-// villageMatKey: 'ore_t2' (only when isFullClear)
-// isFullClear: boolean
-export async function completeGatheringSession(memberId, { raceMaterials, villageMatKey, isFullClear }) {
+// ─── 議會廳 ───────────────────────────────────────────────
+
+const C_COUNCIL_SESSION = "councilSessions";
+
+function councilTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+export async function checkCouncilDailyLimit(memberId) {
+  try {
+    const id = `${memberId}_${councilTodayStr()}`;
+    const snap = await getDoc(doc(db, C_COUNCIL_SESSION, id));
+    const used = snap.exists() ? (snap.data().count || 0) : 0;
+    return Math.max(0, 5 - used);
+  } catch { return 5; }
+}
+
+export async function recordCouncilSession(memberId) {
+  const id = `${memberId}_${councilTodayStr()}`;
+  const ref = doc(db, C_COUNCIL_SESSION, id);
+  await setDoc(ref, { count: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// 議會廳戰鬥結算：種族素材 + 全通關獎勵
+export async function completeCouncilSession(memberId, { raceMaterials, villageMatKey, isFullClear }) {
   const promises = [];
   if (raceMaterials?.length) {
     promises.push(addMaterials(memberId, raceMaterials));
   }
   if (isFullClear && villageMatKey) {
-    const memberUpdate = {
+    promises.push(updateDoc(doc(db, C.members, memberId), {
       [`village.resources.${villageMatKey}`]: increment(3),
       gachaCoins: increment(5),
-    };
-    promises.push(updateDoc(doc(db, C.members, memberId), memberUpdate));
+    }));
   }
   await Promise.all(promises);
 }
