@@ -351,7 +351,7 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur'];
 const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'⚓', meat:'🏕️', driedfish:'🛒', can:'📦', potion:'⚗️', fur:'🎰' };
 
-function ResourceRow({ resources }) {
+function ResourceRow({ resources, gachaCoins }) {
   const hasTiered = TIERED_LIST.some(res =>
     [1,2,3,4,5].some(t => (resources?.[`${res}_t${t}`] || 0) > 0)
   );
@@ -366,7 +366,7 @@ function ResourceRow({ resources }) {
               style={{ width: 18, height: 18, mixBlendMode: "multiply", objectFit: "contain" }}
               onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="inline"; }} />
             <span className="text-sm" style={{ display: "none" }}>{em}</span>
-            <span className="font-bold text-xs" style={{ color: C.brown }}>{Math.floor(resources?.[k] || 0)}</span>
+            <span className="font-bold text-xs" style={{ color: C.brown }}>{k === 'gachaToken' ? (gachaCoins || 0) : Math.floor(resources?.[k] || 0)}</span>
             <span className="text-[10px]" style={{ color: C.muted }}>{lb}</span>
           </div>
         ))}
@@ -578,7 +578,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
             nextCollectSec={nextCollectSec}
           />
 
-          <ResourceRow resources={resources} />
+          <ResourceRow resources={resources} gachaCoins={gachaCoins} />
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">

@@ -449,3 +449,29 @@ export function sfxWorldBossAppear() {
   // 震動
   vibrate([0, 100, 80, 120, 80, 200, 100, 300]);
 }
+
+// ── 扭蛋音效 ─────────────────────────────────────────────────
+
+// 扭蛋機轉動（按下按鈕時）
+export function sfxGachaRoll() {
+  noiseBurst(0, 0.12, 900, 0.35);
+  tone(180, 0.35, "sawtooth", 0.12, 0);
+  tone(260, 0.25, "sawtooth", 0.10, 0.1);
+  noiseBurst(0.25, 0.18, 1200, 0.28);
+  tone(340, 0.20, "sawtooth", 0.08, 0.3);
+  vibrate([0, 30, 40, 30, 50]);
+}
+
+// 扭蛋結果揭曉（有新卡=閃耀，普通=輕快）
+export function sfxGachaReveal(isNew = false) {
+  if (isNew) {
+    noiseBurst(0, 0.15, 2000, 0.4);
+    [523, 659, 784, 1047, 1318].forEach((f, i) => tone(f, 0.22, "triangle", 0.22, i * 0.08));
+    vibrate([0, 50, 60, 80, 100]);
+  } else {
+    tone(523, 0.10, "triangle", 0.20, 0);
+    tone(659, 0.18, "triangle", 0.20, 0.10);
+    tone(784, 0.25, "sine",     0.18, 0.20);
+    vibrate([0, 30, 50]);
+  }
+}

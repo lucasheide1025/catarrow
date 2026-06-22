@@ -2825,6 +2825,21 @@ export async function collectVillageResources(memberId, village) {
     const lv     = buildings[id] || 1;
     const res    = VB[id]?.resource;
     if (!res) continue;
+
+    // 扭蛋亭：產出直接累加到頂層 gachaCoins（與練箭里程碑同一個桶）
+    if (id === 'gacha') {
+      const fracKey  = 'gachaTokenFrac';
+      const prevFrac = village?.resources?.[fracKey] || 0;
+      const rawAmt   = getProductionRate(id, lv) * hours + prevFrac;
+      const amt      = Math.floor(rawAmt);
+      updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
+      if (amt > 0) {
+        updates['gachaCoins'] = increment(amt);
+        collected['gachaCoins'] = (collected['gachaCoins'] || 0) + amt;
+      }
+      continue;
+    }
+
     const tier   = getBuildingStage(lv);
     const resKey = getResourceKey(res, tier);
     const fracKey = `${resKey}Frac`;
