@@ -516,7 +516,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const roundArr=arrows.map(arrowLabelToVal);
         setAllArrows(prev=>[...prev,...roundArr]);
         setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
-        await endBattle("win",curArchHP,curMonHP);
+        await endBattle("win",curArchHP,curMonHP,roundArr);
         setProcessing(false); return;
       }
 
@@ -541,7 +541,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             const roundArr=arrows.map(arrowLabelToVal);
             setAllArrows(prev=>[...prev,...roundArr]);
             setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
-            await endBattle("win",curArchHP,curMonHP);
+            await endBattle("win",curArchHP,curMonHP,roundArr);
             setProcessing(false); return;
           }
         }
@@ -734,7 +734,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setPhase("battle_intro");
   }
 
-  async function endBattle(result, finalArchHP, finalMonHP) {
+  async function endBattle(result, finalArchHP, finalMonHP, lastRoundArr = null) {
     try {
     if (result==="win") {
       sfxMonsterDead();
@@ -807,7 +807,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const equipment  = profile?.equipment || [];
         const bowLabel   = Array.isArray(equipment) && equipment[0]?.label
           ? equipment[0].label : (typeof equipment === "string" ? equipment : "打怪練習");
-        const practiceRounds = roundScores.map(rs => rs.scores || []);
+        const allRoundScores = lastRoundArr
+          ? [...roundScores, { scores: lastRoundArr }]
+          : roundScores;
+        const practiceRounds = allRoundScores.map(rs => rs.scores || []);
         const todayStr = new Date().toISOString().slice(0, 10);
         addPracticeLog(profile.id, {
           date: todayStr, source: "monster",
