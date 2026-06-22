@@ -2989,6 +2989,15 @@ export async function recordCouncilSession(memberId) {
   await setDoc(ref, { count: increment(1), updatedAt: serverTimestamp() }, { merge: true });
 }
 
+export async function resetCouncilDailyLimit(memberId) {
+  const id = `${memberId}_${councilTodayStr()}`;
+  await deleteDoc(doc(db, C_COUNCIL_SESSION, id));
+}
+
+export async function resetAllCouncilDailyLimits(memberIds) {
+  await Promise.all(memberIds.map(id => resetCouncilDailyLimit(id)));
+}
+
 // 議會廳戰鬥結算：依過關/失敗 tier 分層給予獎勵
 export async function completeCouncilSession(memberId, { race, clearedTier, failedTier }) {
   const TIER_ORDER = ['common','rare','elite','fierce','boss','mythic'];

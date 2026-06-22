@@ -4,6 +4,7 @@ import {
   getMembers,
   resetDungeonUsed, resetAllDungeonUsed,
   resetMonsterSession, resetAllMonsterSessions,
+  resetCouncilDailyLimit, resetAllCouncilDailyLimits,
 } from "../../lib/db";
 import {
   subscribeActiveWorldBoss,
@@ -18,6 +19,7 @@ export default function AdminResetCenter() {
   const [busyD,    setBusyD]    = useState("");
   const [busyM,    setBusyM]    = useState("");
   const [busyWB,   setBusyWB]   = useState("");
+  const [busyC,    setBusyC]    = useState("");
   const [msg,      setMsg]      = useState("");
   const [tab,      setTab]      = useState("dungeon");
   const [wbEvent,  setWbEvent]  = useState(null);
@@ -65,6 +67,21 @@ export default function AdminResetCenter() {
     setBusyM("");
   }
 
+  // ── 議會廳次數重置 ───────────────────────────────────────
+  async function handleResetCouncilOne(id, name) {
+    setBusyC(id); setMsg("");
+    await resetCouncilDailyLimit(id);
+    setMsg(`✅ ${name} 議會廳次數已重置（5次）`);
+    setBusyC("");
+  }
+  async function handleResetCouncilAll() {
+    if (!window.confirm("確定重置所有成員的今日議會廳次數？")) return;
+    setBusyC("all"); setMsg("");
+    await resetAllCouncilDailyLimits(members.map(m => m.id));
+    setMsg("✅ 全員議會廳次數已重置");
+    setBusyC("");
+  }
+
   // ── 世界王重置 ───────────────────────────────────────────
   async function handleResetWBOne(memberId, name) {
     if (!wbEvent) return;
@@ -100,6 +117,7 @@ export default function AdminResetCenter() {
           { id: "dungeon",  label: "🏰 地下城" },
           { id: "monster",  label: "⚔️ 打怪" },
           { id: "worldboss", label: "🌍 世界王" },
+          { id: "council",  label: "🏛️ 議會廳" },
         ].map(t => (
           <button key={t.id} onClick={() => { setTab(t.id); setMsg(""); }}
             className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
@@ -176,6 +194,28 @@ export default function AdminResetCenter() {
                   <button onClick={() => handleResetMonsterOne(m.id, m.name)} disabled={!!busyM}
                     className="px-3 py-1 rounded-lg bg-orange-500 text-white text-xs font-black disabled:opacity-40">
                     {busyM === m.id ? "…" : "重置"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── 議會廳 ──────────────────────────────────── */}
+          {tab === "council" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-500">重置後可立即再進行採集任務（每日上限 5 次）</div>
+                <button onClick={handleResetCouncilAll} disabled={!!busyC}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
+                  {busyC === "all" ? "重置中…" : "全員重置"}
+                </button>
+              </div>
+              {members.map(m => (
+                <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+                  <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
+                  <button onClick={() => handleResetCouncilOne(m.id, m.name)} disabled={!!busyC}
+                    className="px-3 py-1 rounded-lg bg-amber-600 text-white text-xs font-black disabled:opacity-40">
+                    {busyC === m.id ? "…" : "重置"}
                   </button>
                 </div>
               ))}

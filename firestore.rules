@@ -31,7 +31,8 @@ service cloud.firestore {
           .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
                     "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
                     "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
-                    "adventurerXP", "promotionDone", "village"]);
+                    "adventurerXP", "promotionDone", "village",
+                    "gachaCoins", "catCards"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
@@ -328,6 +329,11 @@ service cloud.firestore {
     match /coachChallenges/{docId} {
       allow create:        if isLoggedIn();
       allow read, update:  if isAdmin();
+    }
+
+    // councilSessions：議會廳每日採集次數紀錄，登入者可讀寫；admin 可刪（重置）
+    match /councilSessions/{docId} {
+      allow read, write: if isLoggedIn();
     }
   }
 }
