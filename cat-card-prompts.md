@@ -12,62 +12,62 @@ Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel,
 **002 金環神射**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, holding an ornate golden bow, sharp laser-focused eyes, golden arrow mid-flight trailing light. Soft gradient background in antique gold / deep navy blue. Golden card frame with dark navy accent, clean white inner border, card name banner at bottom in deep metallic gold. No text in image. 300×420px portrait card.
 
-**003 風之弓者**
+**框框要填入 003 風之弓者**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear with feather headdress, white flowing clothes billowing in wind, sky and clouds around. Soft gradient background in sky blue / soft white. Golden card frame with sky-blue accent, clean white inner border, card name banner at bottom in cloud white. No text in image. 300×420px portrait card.
 
-**004 夜幕箭靈**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, drawing a glowing arrow, starry night sky background, shooting star trailing silver light. Soft gradient background in deep violet / soft silver. Golden card frame with silver accent, clean white inner border, card name banner at bottom in midnight purple. No text in image. 300×420px portrait card.
+** 框框要填入  004 夜幕箭靈**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, drawing a glowing arrow, starry night sky background, shooting star trailing silver light. Soft gradient background in deep violet / soft silver. Golden card frame with silver accent, clean white inner border, card name banner at bottom in midnight purple. No text in image. 300×420px portrait card. 貓咪的樣子要按照提示詞變化
 
-**005 花弓貓娘**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear with flower-garland bow, pink ruffled apron, cherry blossoms drifting down. Soft gradient background in blossom pink / soft grass green. Golden card frame with rose pink accent, clean white inner border, card name banner at bottom in rose pink. No text in image. 300×420px portrait card.
+**框框要填入 005 花弓貓娘**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear with flower-garland bow, pink ruffled apron, cherry blossoms drifting down. Soft gradient background in blossom pink / soft grass green. Golden card frame with rose pink accent, clean white inner border, card name banner at bottom in rose pink. No text in image. 300×420px portrait card.貓貓的花紋樣式要按照提示詞變化
 
-**006 暴風雨射手**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, holding arrows with lightning bolt patterns, stormy rain pouring, dramatic action pose. Soft gradient background in deep navy blue / electric yellow. Golden card frame with lightning yellow accent, clean white inner border, card name banner at bottom in storm blue. No text in image. 300×420px portrait card.
+**框框要填入 006 暴風雨射手**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, holding arrows with lightning bolt patterns, stormy rain pouring, dramatic action pose. Soft gradient background in deep navy blue / electric yellow. Golden card frame with lightning yellow accent, clean white inner border, card name banner at bottom in storm blue. No text in image. 300×420px portrait card.貓咪的樣子要按照提示詞變化
 
-**007 彩虹箭靈**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, rainbow-colored arrow feathers, seven-color rainbow arc overhead, joyful pose. Soft gradient background in soft pastel rainbow gradient. Golden card frame with iridescent rainbow accent, clean white inner border, card name banner at bottom in gentle rainbow gradient. No text in image. 300×420px portrait card.
+** 框框要填入 007 彩虹箭靈**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, rainbow-colored arrow feathers, seven-color rainbow arc overhead, joyful pose. Soft gradient background in soft pastel rainbow gradient. Golden card frame with iridescent rainbow accent, clean white inner border, card name banner at bottom in gentle rainbow gradient. No text in image. 300×420px portrait card.貓咪的樣子要按照提示詞變化
 
-**008 武士弓士**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing traditional Japanese samurai armor, holding a tall Japanese longbow (yumi), zen garden hint in background. Soft gradient background in crimson red / deep black. Golden card frame with deep red accent, clean white inner border, card name banner at bottom in samurai red. No text in image. 300×420px portrait card.
+** 框框要填入 008 武士弓士**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing traditional Japanese samurai armor, holding a tall Japanese longbow (yumi), zen garden hint in background. Soft gradient background in crimson red / deep black. Golden card frame with deep red accent, clean white inner border, card name banner at bottom in samurai red. No text in image. 300×420px portrait card.貓咪的樣子要按照提示詞變化
 
-**009 迷你小射手**
-Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, holding an oversized bow twice as tall as the cat, serious stern determined expression. Soft gradient background in warm orange / cream white. Golden card frame with burnt orange accent, clean white inner border, card name banner at bottom in warm orange. No text in image. 300×420px portrait card.
+**框框要填入 009 迷你小射手**
+Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, holding an oversized bow twice as tall as the cat, serious stern determined expression. Soft gradient background in warm orange / cream white. Golden card frame with burnt orange accent, clean white inner border, card name banner at bottom in warm orange. No text in image. 300×420px portrait card.貓咪的樣子要按照提示詞變化
 
-**010 傳說大師**
+**框框要填入 010 傳說大師**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing archery gear, golden divine light aura surrounding body, legendary glowing bow, five-star halo ring above head, triumphant pose. Soft gradient background in brilliant gold / pure white / royal purple. Golden card frame with multi-color rainbow legendary accent, clean white inner border, card name banner at bottom in royal purple-gold gradient. No text in image. 300×420px portrait card.
-
+貓咪的樣子要按照提示詞變化
 ---
 
 ## 🌏 Category 2: World Culture Series（11–20）
 
-**011 武士貓**
+**框框要填入 011 武士貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing full traditional Japanese samurai armor with kabuto helmet, katana sword at side, cherry blossom petals swirling. Soft gradient background in deep indigo / steel silver. Golden card frame with steel-gray accent, clean white inner border, card name banner at bottom in samurai black. No text in image. 300×420px portrait card.
 
-**012 忍者貓**
+**框框要填入 012 忍者貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing all-black ninja shinobi outfit with mask showing only eyes, holding a shuriken, puff of smoke effect. Soft gradient background in dark charcoal / deep emerald green. Golden card frame with shadow-black accent, clean white inner border, card name banner at bottom in ninja dark green. No text in image. 300×420px portrait card.
 
-**013 法老貓**
+**框框要填入 013 法老貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing Egyptian pharaoh nemes headdress, elaborate gold collar necklace, hieroglyphs in background. Soft gradient background in desert sand gold / turquoise teal. Golden card frame with Egyptian gold accent, clean white inner border, card name banner at bottom in pharaoh gold. No text in image. 300×420px portrait card.
 
-**014 維京貓**
+**框框要填入 014 維京貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing horned Viking helmet, carrying a round wooden shield with Norse patterns, fjord landscape hint in background. Soft gradient background in steel blue / warm cream. Golden card frame with bronze accent, clean white inner border, card name banner at bottom in Viking midnight blue. No text in image. 300×420px portrait card.
 
-**015 墨西哥貓**
+**框框要填入 015 墨西哥貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing colorful Day of the Dead sugar skull face paint, wide sombrero, marigold flowers all around. Soft gradient background in vibrant orange / deep purple. Golden card frame with fiesta-color accent, clean white inner border, card name banner at bottom in festival orange. No text in image. 300×420px portrait card.
 
-**016 蘇格蘭貓**
+**框框要填入 016 蘇格蘭貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing traditional Scottish tartan plaid kilt, playing bagpipes, highland misty mountains in background. Soft gradient background in forest green / muted purple tartan hint. Golden card frame with clan tartan accent, clean white inner border, card name banner at bottom in highland green. No text in image. 300×420px portrait card.
 
-**017 印地安貓**
+**框框要填入 017 印地安貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing elaborate Native American feather war bonnet headdress, dreamcatcher dangling, totem design face paint. Soft gradient background in terracotta red / open sky blue. Golden card frame with turquoise accent, clean white inner border, card name banner at bottom in earth terracotta. No text in image. 300×420px portrait card.
 
-**018 義大利廚師貓**
+**框框要填入 018 義大利廚師貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing tall white chef toque, proudly holding a whole giant pizza, tomato sauce splashed on apron. Soft gradient background in warm cream / tomato red. Golden card frame with pasta golden accent, clean white inner border, card name banner at bottom in Italian red. No text in image. 300×420px portrait card.
 
-**019 中國功夫貓**
+**框框要填入 019 中國功夫貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing traditional Chinese tang-suit uniform in red and gold, powerful kung fu fighting stance, yin-yang symbol floating. Soft gradient background in vermillion red / bright gold. Golden card frame with Chinese red accent, clean white inner border, card name banner at bottom in oriental red. No text in image. 300×420px portrait card.
 
-**020 俄羅斯芭蕾貓**
+**框框要填入 020 俄羅斯芭蕾貓**
 Cute chibi cat card illustration, warm pastel watercolor style, hand-drawn feel, big sparkling eyes, fluffy round body, wearing a fluffy ballet tutu, Russian kokoshnik crown headdress, snowflakes drifting gently. Soft gradient background in pure white / soft baby pink. Golden card frame with pearl white accent, clean white inner border, card name banner at bottom in ballet blush pink. No text in image. 300×420px portrait card.
 
 ---
