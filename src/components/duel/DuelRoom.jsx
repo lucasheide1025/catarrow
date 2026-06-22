@@ -15,6 +15,9 @@ import {
   skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
 import { generateBotArrows } from "../../lib/botUtils";
+import { addPracticeLog, grantArrowMilestoneRewards } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "../member/ArrowMilestonePopup";
 
 const ARROWS = 6;
 const REVEAL_TOTAL = ARROWS * 2; // A 隊先攻 6 箭 + B 隊後攻 6 箭
@@ -259,6 +262,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [eventPhase,  setEventPhase]  = useState(false); // 事件暫停畫面
   const [duelStats, setDuelStats]     = useState(null);
   const [showDuelCard, setShowDuelCard] = useState(false);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
   const [cheerMsg, setCheerMsg]       = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [showIntro,    setShowIntro]    = useState(false);
@@ -520,6 +524,24 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     recordDuelResult(profile.id, outcome, mode, { flawless, dmg: myDmg });
     getDuelStats(profile.id).then(setDuelStats);
     saveBond("monster");
+
+    // 箭數累積 + 里程碑
+    const myArrowCount = (room.log || []).flatMap(entry =>
+      (entry.attacks || []).filter(a => a.attackerId === myId)
+        .flatMap(a => a.arrowBreakdown || [])
+    ).length;
+    if (myArrowCount > 0) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      addPracticeLog(profile.id, {
+        date: todayStr, source: "duel",
+        totalArrows: myArrowCount,
+      }, profile.id).catch(() => {});
+      const milestones = getMilestonesReached(0, myArrowCount);
+      if (milestones.length > 0) {
+        grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+        setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+      }
+    }
   }, [room?.status]);
 
   // ── 輸入箭分 ────────────────────────────────────────────
@@ -897,6 +919,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     <div className="h-[100dvh] flex flex-col overflow-hidden"
       style={{ backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <style>{DUEL_CSS}</style>
+      {milestoneQueue.length > 0 && (
+        <ArrowMilestonePopup
+          milestones={milestoneQueue.map(q => q.ms)}
+          rewardsList={milestoneQueue.map(q => q.rewards)}
+          onAllClose={() => setMilestoneQueue([])} />
+      )}
       {showIntro && room && (
         <DuelIntro room={room} myId={myId} onDone={() => setShowIntro(false)} />
       )}

@@ -9,11 +9,12 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
-  addArrowdew,
 } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
@@ -164,6 +165,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [revived, setRevived]           = useState(false);
   const [loot, setLoot]                 = useState(null);
   const [lootRevealed, setLootRevealed] = useState(false);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
   const [showLootBox, setShowLootBox]   = useState(false);
   const [showBattleCard, setShowBattleCard] = useState(false);
   const [droppedMaterials, setDroppedMaterials] = useState([]);
@@ -821,10 +823,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           distance: selectedDistance,
         }, profile.id).catch(() => {});
 
-        // 箭露入帳 + 里程碑
+        // 里程碑即時提示（箭露由 DailyQuest 下課結算，不在此重複計算）
         const arrowCount = practiceRounds.flat().length;
-        if (arrowCount > 0 && profile?.id) {
-          addArrowdew(profile.id, arrowCount).catch(() => {});
+        if (arrowCount > 0) {
+          const milestones = getMilestonesReached(0, arrowCount);
+          if (milestones.length > 0 && profile?.id) {
+            const { grantArrowMilestoneRewards } = await import("../../lib/db");
+            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
         }
       }
 
@@ -1976,6 +1983,13 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
+
+        {milestoneQueue.length > 0 && (
+          <ArrowMilestonePopup
+            milestones={milestoneQueue.map(q => q.ms)}
+            rewardsList={milestoneQueue.map(q => q.rewards)}
+            onAllClose={() => setMilestoneQueue([])} />
+        )}
 
         {/* ── 任務完成全幅通知 ── */}
         {questDone && (

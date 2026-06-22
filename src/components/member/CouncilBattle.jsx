@@ -1,6 +1,9 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
 import { useState, useRef, useEffect } from "react";
 import { calcDamage } from "../../lib/monsterData";
+import { addPracticeLog, grantArrowMilestoneRewards } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import {
   COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, TIER_ORDER,
@@ -278,7 +281,7 @@ function getMappedScore(label, targetFmt) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-export default function CouncilBattle({ building, availableTiers, archerStats, village, onFinish, onBack }) {
+export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, onFinish, onBack }) {
   const { id:bId, name:bName, emoji:bEmoji, race, raceLabel } = building;
   const theme = BUILDING_THEMES[bId] || BUILDING_THEMES.mine;
 
@@ -303,6 +306,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   const [shaking,    setShaking]    = useState(false);
   const [painEvent,  setPainEvent]  = useState(null);
   const [failedTier, setFailedTier] = useState(null);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
   const logRef = useRef(null);
 
   const currentMonster = monsters[mIdx];
@@ -321,6 +325,22 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     setLog(prev => [...prev.slice(-50), { text, type }]);
   }
   function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  function logCouncilArrows(completedRound) {
+    if (!memberId) return;
+    const totalArrows = completedRound * ARROWS_PER_ROUND;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    addPracticeLog(memberId, {
+      date: todayStr, source: "council",
+      building: bId, race,
+      totalArrows,
+    }, memberId).catch(() => {});
+    const milestones = getMilestonesReached(0, totalArrows);
+    if (milestones.length > 0) {
+      grantArrowMilestoneRewards(memberId, milestones).catch(() => {});
+      setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+    }
+  }
   function inputArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || processing) return;
     setArrows(prev => [...prev, label]);
@@ -377,7 +397,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       setDefeated(newDefeated);
       await delay(700);
       setProcessing(false);
-      if (isLastMonster) { sfxEpic(); setPhase("result"); }
+      if (isLastMonster) { logCouncilArrows(round); sfxEpic(); setPhase("result"); }
       else setPhase("obstacle_clear");
       return;
     }
@@ -405,6 +425,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
         await delay(600);
         setProcessing(false);
         setFailedTier(currentMonster.tier);
+        logCouncilArrows(round);
         setPhase("result");
         return;
       }
@@ -578,6 +599,12 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     return (
       <div style={{ minHeight:"100vh", background:theme.bg, color:"white", padding:"16px 12px 80px", position:"relative" }}>
         <style>{CSS}</style>
+        {milestoneQueue.length > 0 && (
+          <ArrowMilestonePopup
+            milestones={milestoneQueue.map(q => q.ms)}
+            rewardsList={milestoneQueue.map(q => q.rewards)}
+            onAllClose={() => setMilestoneQueue([])} />
+        )}
         <div style={{
           borderRadius:22, padding:"22px 16px", textAlign:"center", marginBottom:16,
           animation:"cb-pop 0.4s ease",
@@ -667,35 +694,6 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   const maxScore   = ARROWS_PER_ROUND * scoreVal(scoreLabels[0]);
   const gridCols   = scoreLabels.length > 7 ? 6 : scoreLabels.length;
 
-  const SCENE_BG = {
-    mine:      "radial-gradient(ellipse at 50% -20%,#6b3010 0%,#2d1508 28%,#1c1008 55%,#080503 100%)",
-    farm:      "linear-gradient(180deg,#4db6e3 0%,#87ceeb 22%,#a8d8a0 45%,#4a7c3f 65%,#2a5227 100%)",
-    harbor:    "linear-gradient(180deg,#0a1830 0%,#0d2248 25%,#0a1530 55%,#06101e 80%,#03080e 100%)",
-    hunting:   "radial-gradient(ellipse at 50% -10%,#1a4a20 0%,#0f2a12 35%,#071808 65%,#030d04 100%)",
-    market:    "radial-gradient(ellipse at 50% 0%,#8b4513 0%,#5a2808 30%,#2d1505 60%,#150a02 100%)",
-    warehouse: "linear-gradient(180deg,#1e1b4b 0%,#141230 38%,#0d0b28 65%,#07061a 100%)",
-  };
-  const sceneBg = SCENE_BG[bId] || SCENE_BG.mine;
-
-  const SCENE_DECO = {
-    mine:      [{ e:"🔦", s:{ left:14,  top:"30%",    fontSize:20, opacity:0.5, filter:"sepia(1) saturate(4)" }},
-                { e:"🔦", s:{ right:14, top:"30%",    fontSize:20, opacity:0.5, filter:"sepia(1) saturate(4)" }}],
-    farm:      [{ e:"☀️", s:{ right:18, top:10,       fontSize:28, opacity:0.55 }},
-                { e:"🌾", s:{ left:10,  bottom:60,    fontSize:22, opacity:0.35 }},
-                { e:"🌾", s:{ right:10, bottom:60,    fontSize:22, opacity:0.35 }}],
-    harbor:    [{ e:"⚓", s:{ left:16,  bottom:58,    fontSize:22, opacity:0.28 }},
-                { e:"🌊", s:{ right:12, bottom:54,    fontSize:22, opacity:0.32 }}],
-    hunting:   [{ e:"🌲", s:{ left:6,   bottom:58,    fontSize:32, opacity:0.38 }},
-                { e:"🌲", s:{ right:6,  bottom:58,    fontSize:32, opacity:0.38 }},
-                { e:"🍃", s:{ left:32,  top:14,       fontSize:16, opacity:0.22 }}],
-    market:    [{ e:"🏮", s:{ left:16,  top:"22%",    fontSize:22, opacity:0.52 }},
-                { e:"🏮", s:{ right:16, top:"22%",    fontSize:22, opacity:0.52 }},
-                { e:"🛒", s:{ left:12,  bottom:56,    fontSize:18, opacity:0.28 }}],
-    warehouse: [{ e:"📦", s:{ left:12,  bottom:56,    fontSize:24, opacity:0.28 }},
-                { e:"📦", s:{ right:12, bottom:56,    fontSize:24, opacity:0.28 }},
-                { e:"🔧", s:{ right:18, top:"28%",    fontSize:18, opacity:0.22 }}],
-  };
-  const sceneDeco = SCENE_DECO[bId] || [];
 
   const monHpPct   = Math.max(0, monsterHp / (currentMonster?.maxHp || 1) * 100);
   const archHpPct  = Math.max(0, archerHp / archerStats.hp * 100);
@@ -707,12 +705,11 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       <style>{CSS}</style>
 
       {/* ══ SCENE ══════════════════════════════════════════════════ */}
-      <div style={{ position:"relative", flexShrink:0, height:"57vh", background:sceneBg, overflow:"hidden" }}>
-
-        {/* 環境裝飾 */}
-        {sceneDeco.map((d, i) => (
-          <div key={i} style={{ position:"absolute", userSelect:"none", pointerEvents:"none", ...d.s }}>{d.e}</div>
-        ))}
+      <div style={{
+        position:"relative", flexShrink:0, height:"57vh", overflow:"hidden",
+        backgroundImage:`linear-gradient(rgba(0,0,0,0.25),rgba(0,0,0,0.45)), url(/council/bg/${bId}.webp)`,
+        backgroundSize:"cover", backgroundPosition:"center",
+      }}>
 
         {/* 怪物名 + HP 頂列 */}
         <div style={{ position:"absolute", top:0, left:0, right:0, padding:"8px 12px 0", zIndex:4 }}>
@@ -784,14 +781,16 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           zIndex:3,
         }}>
           <div style={{
-            width:118, height:118, borderRadius:28,
-            background:"rgba(0,0,0,0.32)",
-            border:`2px solid ${tierMeta.color}44`,
-            display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:70,
-            boxShadow:`0 0 44px ${tierMeta.color}44, 0 8px 32px rgba(0,0,0,0.6), inset 0 0 28px rgba(0,0,0,0.3)`,
+            width:128, height:128, borderRadius:28,
+            border:`2px solid ${tierMeta.color}66`,
+            overflow:"hidden",
+            boxShadow:`0 0 44px ${tierMeta.color}55, 0 8px 32px rgba(0,0,0,0.7)`,
           }}>
-            {currentMonster?.emoji}
+            <img
+              src={`/council/obs/${bId}_${currentMonster?.tier}.webp`}
+              alt={currentMonster?.name}
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
+            />
           </div>
           <div style={{
             position:"absolute", inset:-8, borderRadius:36,
@@ -802,8 +801,12 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
         </div>
 
         {/* 玩家貓 bottom-center */}
-        <div style={{ position:"absolute", bottom:4, left:"50%", transform:"translateX(-50%)", zIndex:4 }}>
-          <PlayerCatSVG buildingId={bId} theme={theme} small />
+        <div style={{ position:"absolute", bottom:0, left:"50%", transform:"translateX(-50%)", zIndex:4 }}>
+          <img
+            src={`/council/cat/${bId}.webp`}
+            alt="工作貓"
+            style={{ width:70, height:105, objectFit:"contain", objectPosition:"bottom", display:"block", filter:"drop-shadow(0 4px 12px rgba(0,0,0,0.7))" }}
+          />
         </div>
 
         {/* 疲勞事件 overlay */}

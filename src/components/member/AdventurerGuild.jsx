@@ -8,7 +8,10 @@ import {
   subscribeMonsterDex, acceptGuildQuest,
   provisionalUnlockQuest, resubmitGuildBadge, retryGuildQuest,
   subscribePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
+  addPracticeLog, grantArrowMilestoneRewards,
 } from "../../lib/db";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { MONSTERS } from "../../lib/monsterData";
 import {
   levelFromXP, rankFromLevel, rankIdxFromLevel, levelInRank, xpProgress,
@@ -117,6 +120,7 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
   // 晉階
   const [promoArrows, setPromoArrows] = useState([]);
   const [promoResult, setPromoResult] = useState(null);
+  const [milestoneQueue, setMilestoneQueue] = useState([]);
   const [promoBusy, setPromoBusy]   = useState(false);
   // 接任務動畫
   const [accepting, setAccepting]   = useState(false);
@@ -191,6 +195,23 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     } else {
       sfxSoftFail();
       setTaskResult({ pass: false });
+    }
+    // 記錄箭數 + 里程碑提示（無論成敗都記）
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const arrowCount = arrows.filter(a => a >= 0).length;
+    addPracticeLog(profile.id, {
+      date: todayStr, source: "guild",
+      taskId: activeDailyTask.id,
+      rounds: [arrows.filter(a => a >= 0)],
+      total: arrows.filter(a => a >= 0).reduce((s, v) => s + v, 0),
+      totalArrows: arrowCount,
+    }, profile.id).catch(() => {});
+    if (arrowCount > 0) {
+      const milestones = getMilestonesReached(0, arrowCount);
+      if (milestones.length > 0) {
+        grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+        setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+      }
     }
     setBusy(false);
   }
@@ -650,6 +671,12 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
       backgroundImage: "linear-gradient(rgba(10,15,30,0.78),rgba(10,15,30,0.78)),url(/ui/guild-interior.webp)",
       backgroundSize: "cover", backgroundPosition: "center top",
     }}>
+      {milestoneQueue.length > 0 && (
+        <ArrowMilestonePopup
+          milestones={milestoneQueue.map(q => q.ms)}
+          rewardsList={milestoneQueue.map(q => q.rewards)}
+          onAllClose={() => setMilestoneQueue([])} />
+      )}
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 sticky top-0 z-10"
         style={{ background: "rgba(10,15,30,0.88)", backdropFilter: "blur(8px)" }}>
