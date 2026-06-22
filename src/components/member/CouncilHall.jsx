@@ -1,29 +1,42 @@
-// src/components/member/CouncilHall.jsx — 議會廳入口
+// src/components/member/CouncilHall.jsx — 議會廳入口（冒險者公會卡片風格）
 import { useState, useEffect } from "react";
 import {
   COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getAvailableTiers,
 } from "../../lib/councilMonsters";
 import {
   checkCouncilDailyLimit, recordCouncilSession, completeCouncilSession,
+  getCertRecords, getCertification, getDexConfig,
 } from "../../lib/db";
 import { calcArcherStats } from "../../lib/monsterData";
 import { computeDexStats } from "../../lib/achievementDex";
-import { getCertRecords, getCertification, getDexConfig } from "../../lib/db";
 import CouncilBattle from "./CouncilBattle";
+
+const BLD_GRADIENT = {
+  mine:      "linear-gradient(135deg,#374151,#1f2937)",
+  farm:      "linear-gradient(135deg,#14532d,#166534)",
+  harbor:    "linear-gradient(135deg,#1e3a5f,#1e40af)",
+  hunting:   "linear-gradient(135deg,#3f6212,#4d7c0f)",
+  market:    "linear-gradient(135deg,#92400e,#78350f)",
+  warehouse: "linear-gradient(135deg,#4c1d95,#312e81)",
+};
+
+const CSS = `
+@keyframes ch-pop { 0%{transform:scale(0.97);opacity:0} 100%{transform:scale(1);opacity:1} }
+@keyframes ch-fade { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+`;
 
 export default function CouncilHall({ profile, village, onBack }) {
   const [activeBld,    setActiveBld]    = useState(null);
+  const [expandedId,   setExpandedId]   = useState(null);
   const [dailyLeft,    setDailyLeft]    = useState(null);
   const [archerStats,  setArcherStats]  = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [saving,       setSaving]       = useState(false);
   const [doneMsg,      setDoneMsg]      = useState("");
 
-  // 載入玩家數值（與 MonsterBattle 相同邏輯）
   useEffect(() => {
     if (!profile?.id) return;
     let cancelled = false;
-
     async function load() {
       try {
         const [cr, cert, dcfg] = await Promise.all([
@@ -35,23 +48,21 @@ export default function CouncilHall({ profile, village, onBack }) {
         const ds    = computeDexStats({ member: profile, certification: cert, certRecords: cr, checkinCount: profile?.dailyQuestCount || 0, granted: [], physicalMax: dcfg.physicalMax || 20, pointMax: dcfg.pointMax || 20 });
         const stats = calcArcherStats({ member: profile, certification: cert, certRecords: cr, dexStats: ds });
         setArcherStats(stats);
-      } catch (e) {
-        setArcherStats({ hp: 200, atk: 20, def: 15 });
-      } finally {
-        if (!cancelled) setLoadingStats(false);
-      }
+      } catch { setArcherStats({ hp: 200, atk: 20, def: 15 }); }
+      finally { if (!cancelled) setLoadingStats(false); }
     }
-
     load();
-    checkCouncilDailyLimit(profile.id).then(n => { if (!cancelled) setDailyLeft(n); }).catch(() => setDailyLeft(5));
-
+    checkCouncilDailyLimit(profile.id)
+      .then(n => { if (!cancelled) setDailyLeft(n); })
+      .catch(() => setDailyLeft(5));
     return () => { cancelled = true; };
   }, [profile?.id]); // eslint-disable-line
 
-  async function handleSelectBuilding(bld) {
-    if (dailyLeft <= 0) { setDoneMsg("❌ 今日次數已用盡（5/5）"); return; }
+  async function handleEnter(bld) {
+    if (dailyLeft <= 0 || !archerStats || saving) return;
     await recordCouncilSession(profile.id).catch(() => {});
     setDailyLeft(l => Math.max(0, (l ?? 1) - 1));
+    setExpandedId(null);
     setActiveBld(bld);
   }
 
@@ -66,13 +77,14 @@ export default function CouncilHall({ profile, village, onBack }) {
       if (result.isFullClear) msg += `　🏡 村莊材料 ×3　🪙 扭蛋幣 ×5`;
       setDoneMsg(msg);
       setTimeout(() => setDoneMsg(""), 4000);
-    } catch (e) { console.warn("completeCouncilSession:", e.message); }
+    } catch (e) { console.warn(e.message); }
     setSaving(false);
   }
 
+  // ── 進入戰鬥 ─────────────────────────────────────────────
   if (activeBld && archerStats) {
-    const bldLevel    = village?.buildings?.[activeBld.id] || 1;
-    const availTiers  = getAvailableTiers(bldLevel);
+    const bldLevel   = village?.buildings?.[activeBld.id] || 1;
+    const availTiers = getAvailableTiers(bldLevel);
     return (
       <CouncilBattle
         building={activeBld}
@@ -88,100 +100,162 @@ export default function CouncilHall({ profile, village, onBack }) {
   const buildings = village?.buildings || {};
 
   return (
-    <div style={{ minHeight: "100%", background: "linear-gradient(160deg,#0f172a,#1e1b4b)", padding: "12px 12px 80px", color: "white" }}>
+    <div style={{ minHeight:"100%", background:"linear-gradient(160deg,#1c1008,#2d1a0a,#1a1208)", padding:"12px 12px 100px", color:"white" }}>
+      <style>{CSS}</style>
+
       {/* 標頭 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>←</button>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#92400e" }}>←</button>
         <div>
-          <div style={{ fontWeight: 900, fontSize: 17 }}>🏛️ 議會廳</div>
-          <div style={{ fontSize: 11, color: "#64748b" }}>採集副本 · 射箭驅退障礙 · 獲得種族素材</div>
+          <div style={{ fontWeight:900, fontSize:17, color:"#fbbf24" }}>🏛️ 議會廳</div>
+          <div style={{ fontSize:11, color:"#78350f" }}>採集任務 · 射箭解決障礙 · 獲得種族素材</div>
         </div>
       </div>
 
       {/* 提示訊息 */}
       {doneMsg && (
-        <div style={{ background: doneMsg.startsWith("✓") ? "#14532d" : "#7f1d1d", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontWeight: 800, fontSize: 13 }}>
+        <div style={{ background: doneMsg.startsWith("✓") ? "#14532d" : "#7f1d1d", borderRadius:10, padding:"10px 14px", marginBottom:12, fontWeight:800, fontSize:13, animation:"ch-fade 0.3s ease" }}>
           {doneMsg}
         </div>
       )}
 
-      {/* 玩家數值 */}
-      {loadingStats
-        ? <div style={{ color: "#475569", fontSize: 13, marginBottom: 12 }}>載入射手數值…</div>
-        : archerStats && (
-          <div style={{ display: "flex", gap: 12, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>HP</div><div style={{ fontWeight: 900, color: "#4ade80" }}>{archerStats.hp}</div></div>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>ATK</div><div style={{ fontWeight: 900, color: "#f87171" }}>{archerStats.atk}</div></div>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#64748b" }}>DEF</div><div style={{ fontWeight: 900, color: "#60a5fa" }}>{archerStats.def}</div></div>
-            <div style={{ flex: 1 }} />
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: "#64748b" }}>今日剩餘</div>
-              <div style={{ fontWeight: 900, color: dailyLeft > 0 ? "#fbbf24" : "#ef4444", fontSize: 18 }}>
-                {dailyLeft ?? "…"} / 5
+      {/* 射手狀態列 */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, background:"rgba(245,158,11,0.07)", borderRadius:14, padding:"10px 14px", border:"1px solid rgba(245,158,11,0.15)" }}>
+        {loadingStats
+          ? <div style={{ color:"#78350f", fontSize:13 }}>載入射手數值…</div>
+          : archerStats && (
+            <>
+              <div style={{ display:"flex", gap:14, fontSize:12 }}>
+                <span style={{ color:"#4ade80" }}>❤️ <b>{archerStats.hp}</b></span>
+                <span style={{ color:"#f87171" }}>⚔️ <b>{archerStats.atk}</b></span>
+                <span style={{ color:"#60a5fa" }}>🛡️ <b>{archerStats.def}</b></span>
               </div>
-            </div>
-          </div>
-        )
-      }
-
-      {/* 說明 */}
-      <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#64748b", lineHeight: 1.8, border: "1px solid rgba(255,255,255,0.06)" }}>
-        <b style={{ color: "#94a3b8" }}>怎麼玩？</b><br/>
-        每棟建築有障礙生物，等級越高出現越多隻（最多6隻）。<br/>
-        輸入射箭分數驅退它們，獲得對應種族素材。<br/>
-        全部通關 → 村莊材料 ×3 + 扭蛋幣 ×5
+              <div style={{ flex:1 }} />
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:10, color:"#78350f" }}>今日剩餘</div>
+                <div style={{ fontWeight:900, fontSize:20, color: dailyLeft > 0 ? "#fbbf24" : "#ef4444", lineHeight:1 }}>
+                  {dailyLeft ?? "…"}<span style={{ fontSize:12, color:"#92400e" }}>/5</span>
+                </div>
+              </div>
+            </>
+          )
+        }
       </div>
 
-      {/* 建築卡 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* 怎麼玩 */}
+      <div style={{ background:"rgba(245,158,11,0.05)", borderRadius:12, padding:"9px 13px", marginBottom:16, fontSize:11, color:"#92400e", lineHeight:1.9, border:"1px solid rgba(245,158,11,0.1)" }}>
+        <b style={{ color:"#b45309" }}>怎麼玩？</b>　點擊建築查看任務清單，射箭解決障礙獲得種族素材。全通關 → 村莊材料 ×3 + 扭蛋幣 ×5　·　每日 5 次
+      </div>
+
+      {/* 建築卡片網格 */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
         {COUNCIL_BUILDINGS.map(bld => {
-          const bldLevel    = buildings[bld.id] || 1;
-          const availTiers  = getAvailableTiers(bldLevel);
-          const isLocked    = !buildings[bld.id]; // 未解鎖建築
-          const canEnter    = !isLocked && dailyLeft > 0 && archerStats && !saving;
+          const bldLevel   = buildings[bld.id] || 1;
+          const availTiers = getAvailableTiers(bldLevel);
+          const isLocked   = !buildings[bld.id];
+          const isExpanded = expandedId === bld.id;
+          const canEnter   = !isLocked && dailyLeft > 0 && archerStats && !saving;
 
           return (
-            <button key={bld.id}
-              onClick={() => canEnter && handleSelectBuilding(bld)}
-              disabled={!canEnter}
-              style={{
-                background: isLocked ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.05)",
-                borderRadius: 14, padding: "14px 16px",
-                border: `1px solid ${isLocked ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.1)"}`,
-                cursor: canEnter ? "pointer" : "default",
-                textAlign: "left", display: "flex", alignItems: "center", gap: 12,
-                opacity: isLocked || dailyLeft <= 0 ? 0.45 : 1,
-              }}>
-              <span style={{ fontSize: 34, lineHeight: 1 }}>{bld.emoji}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 900, fontSize: 14, color: "white", marginBottom: 2 }}>
+            <div key={bld.id} style={{
+              gridColumn: isExpanded ? "1 / -1" : "auto",
+              borderRadius:18,
+              background: isLocked ? "rgba(255,255,255,0.03)" : BLD_GRADIENT[bld.id],
+              border:`1.5px solid ${isExpanded ? "rgba(245,158,11,0.5)" : isLocked ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.12)"}`,
+              opacity: isLocked ? 0.5 : 1,
+              overflow:"hidden",
+              animation:"ch-pop 0.2s ease",
+            }}>
+              {/* 建築主卡 */}
+              <button
+                onClick={() => !isLocked && setExpandedId(isExpanded ? null : bld.id)}
+                style={{ width:"100%", background:"none", border:"none", cursor: isLocked ? "default" : "pointer", padding:"14px 12px", textAlign:"left" }}
+              >
+                <div style={{ fontSize:36, marginBottom:6 }}>{bld.emoji}</div>
+                <div style={{ fontWeight:900, fontSize:14, color:"white", marginBottom:2 }}>
                   {bld.name}
-                  {isLocked && <span style={{ fontSize: 11, color: "#475569", marginLeft: 6 }}>（未解鎖）</span>}
+                  {isLocked && <span style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginLeft:5 }}>未解鎖</span>}
                 </div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
-                  {bld.raceLabel} · Lv.{bldLevel} · {availTiers.length} 隻障礙
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", marginBottom:8 }}>
+                  {bld.raceLabel} · Lv.{bldLevel}
                 </div>
-                {/* tier 點 */}
-                <div style={{ display: "flex", gap: 4 }}>
+                {/* Tier emoji 點 */}
+                <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
                   {availTiers.map(t => {
-                    const tm = TIER_META[t];
                     const m  = COUNCIL_MONSTERS[bld.id][t];
+                    const tm = TIER_META[t];
                     return (
                       <div key={t} title={m.name} style={{
-                        width: 22, height: 22, borderRadius: "50%",
-                        background: tm.color + "33",
-                        border: `1.5px solid ${tm.color}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 11,
-                      }}>
-                        {m.emoji}
-                      </div>
+                        width:26, height:26, borderRadius:"50%",
+                        background: tm.color + "30",
+                        border:`1.5px solid ${tm.color}`,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:13,
+                      }}>{m.emoji}</div>
                     );
                   })}
                 </div>
-              </div>
-              <div style={{ fontSize: 20, color: "#334155" }}>›</div>
-            </button>
+                {!isLocked && (
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:6, textAlign:"right" }}>
+                    {isExpanded ? "▲ 收合" : "▼ 查看任務"}
+                  </div>
+                )}
+              </button>
+
+              {/* 展開：障礙清單 */}
+              {isExpanded && (
+                <div style={{ padding:"0 12px 14px", animation:"ch-fade 0.25s ease" }}>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.1)", marginBottom:10 }} />
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginBottom:8 }}>本次任務清單（共 {availTiers.length} 個障礙）</div>
+
+                  {/* 障礙小卡 2欄 */}
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:12 }}>
+                    {availTiers.map(t => {
+                      const m  = COUNCIL_MONSTERS[bld.id][t];
+                      const tm = TIER_META[t];
+                      const st = LIFE_TIER_STATS[t];
+                      return (
+                        <div key={t} style={{
+                          borderRadius:12, padding:"10px 10px",
+                          background: m.bgColor,
+                          border:`1.5px solid ${tm.color}44`,
+                        }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                            <span style={{ fontSize:22 }}>{m.emoji}</span>
+                            <div>
+                              <div style={{ fontSize:9, fontWeight:800, color:tm.color }}>{tm.label}</div>
+                              <div style={{ fontSize:12, fontWeight:900, color:"#1c1008" }}>{m.name}</div>
+                            </div>
+                          </div>
+                          <div style={{ fontSize:10, color:"#78350f", marginBottom:4 }}>{m.action}</div>
+                          <div style={{ fontSize:9, color:"#92400e", display:"flex", gap:6 }}>
+                            <span>❤️{st.hp}</span>
+                            <span>⚔️{st.atk}</span>
+                            <span>🛡️{st.def}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 全通關獎勵提示 */}
+                  <div style={{ background:"rgba(245,158,11,0.12)", borderRadius:10, padding:"7px 10px", marginBottom:10, fontSize:11, color:"#fbbf24" }}>
+                    🏆 全通關獎勵：村莊材料 ×3　🪙 扭蛋幣 ×5
+                  </div>
+
+                  <button
+                    onClick={() => canEnter && handleEnter(bld)}
+                    disabled={!canEnter}
+                    style={{
+                      width:"100%", padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:15, cursor: canEnter ? "pointer" : "default", border:"none",
+                      background: canEnter ? "linear-gradient(90deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.1)",
+                      color: canEnter ? "#1c1008" : "rgba(255,255,255,0.3)",
+                    }}>
+                    {dailyLeft <= 0 ? "❌ 今日次數已用盡" : saving ? "存檔中…" : "🌟 開始採集任務"}
+                  </button>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
