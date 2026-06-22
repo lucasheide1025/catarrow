@@ -1,11 +1,14 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（RPG射箭系統）
 import { useState, useRef, useEffect } from "react";
 import { calcDamage } from "../../lib/monsterData";
+import { MATERIALS } from "../../lib/monsterMaterials";
 import {
   COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS,
   getRaceMaterialId, CLEAR_GACHA_COINS, CLEAR_VILLAGE_MAT_COUNT,
   BUILDING_PAIN_MSGS,
 } from "../../lib/councilMonsters";
+
+const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 import {
   sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail,
   sfxSuccess, sfxEpic, sfxRoundEnd, sfxMonsterDead,
@@ -345,12 +348,16 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           {defeated.length === 0
             ? <div style={{ color:"#78350f", fontSize:13 }}>未獲得素材</div>
             : defeated.map((d, i) => {
-                const tm = TIER_META[d.tier];
+                const tm  = TIER_META[d.tier];
+                const mat = MAT_MAP[d.materialId];
                 return (
-                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, fontSize:13 }}>
-                    <span style={{ fontSize:10, fontWeight:800, padding:"2px 6px", borderRadius:20, background:tm.color+"33", color:tm.color }}>{tm.label}</span>
-                    <span style={{ color:"#fef3c7" }}>{raceLabel}素材 ×1</span>
-                    <span style={{ color:"#78350f", fontSize:10 }}>({d.materialId})</span>
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7, background:"rgba(245,158,11,0.07)", borderRadius:10, padding:"8px 10px" }}>
+                    <span style={{ fontSize:22 }}>{mat?.icon ?? "📦"}</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:900, fontSize:13, color:"#fef3c7" }}>{mat?.name ?? d.materialId}</div>
+                      <div style={{ fontSize:10, color:"#92400e" }}>{mat?.desc}</div>
+                    </div>
+                    <span style={{ fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:20, background:tm.color+"33", color:tm.color, whiteSpace:"nowrap" }}>{tm.label} ×1</span>
                   </div>
                 );
               })
