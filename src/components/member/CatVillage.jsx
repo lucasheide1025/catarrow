@@ -147,6 +147,8 @@ function BuildingCard({ buildingId, level, resources, onClick }) {
 // ── 鎖定建築卡片 ─────────────────────────────────────────────
 function LockedBuildingCard({ buildingId }) {
   const b = BUILDINGS[buildingId];
+  const imgSrc = `/ui/village/building-${buildingId}-stage1.webp`;
+
   let hint = "";
   if (buildingId === 'market') {
     hint = "海港或獵場 Lv2";
@@ -161,19 +163,33 @@ function LockedBuildingCard({ buildingId }) {
 
   return (
     <div className="flex flex-col rounded-2xl overflow-hidden text-left"
-      style={{ background: C.lock, border: `1px solid ${C.lockBd}` }}>
-      <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "#EDE0CE" }}>
+      style={{ border: `1px solid ${C.lockBd}`, background: "#EDE0CE" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4/3" }}>
+        {/* stage1 圖片：灰階 + 半透明暗罩 */}
+        <img src={imgSrc} alt={b.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
+            filter: "grayscale(1) brightness(0.55)" }}
+          onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
+        {/* emoji fallback */}
+        <div style={{ display: "none", position: "absolute", inset: 0,
+          alignItems: "center", justifyContent: "center",
+          fontSize: 28, filter: "grayscale(1)", opacity: 0.3 }}>{b.emoji}</div>
+        {/* 🔒 中央 */}
         <div style={{
           position: "absolute", inset: 0, display: "flex",
-          flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+          flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
         }}>
-          <div style={{ fontSize: 26, opacity: 0.25, filter: "grayscale(1)" }}>{b.emoji}</div>
-          <div style={{ fontSize: 18 }}>🔒</div>
+          <div style={{ fontSize: 22 }}>🔒</div>
+          <div style={{
+            fontSize: 9, fontWeight: 900, color: "#FFF8F0",
+            background: "rgba(60,35,15,0.65)", borderRadius: 8,
+            padding: "2px 7px", textAlign: "center", maxWidth: "90%",
+          }}>{hint}</div>
         </div>
       </div>
-      <div className="p-2.5">
+      <div className="p-2.5" style={{ background: C.lock }}>
         <div className="font-black text-xs leading-tight" style={{ color: C.muted }}>{b.name}</div>
-        <div className="text-[9px] mt-0.5 leading-tight" style={{ color: C.lockBd }}>{hint}</div>
+        <div className="text-[9px] mt-0.5" style={{ color: C.lockBd }}>🔒 尚未解鎖</div>
       </div>
     </div>
   );
