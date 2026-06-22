@@ -97,14 +97,15 @@ const CSS = `
 `;
 
 // ── 玩家職業貓 SVG ───────────────────────────────────────────
-function PlayerCatSVG({ buildingId, theme }) {
+function PlayerCatSVG({ buildingId, theme, small = false }) {
   const c  = theme?.playerColor || "#fb923c";
   const cl = c + "bb";
   const ht = theme?.hatType || "cap";
+  const sz = small ? { w:52, h:65 } : { w:74, h:92 };
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-      <svg viewBox="0 0 90 112" width={74} height={92}
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:small?0:4 }}>
+      <svg viewBox="0 0 90 112" width={sz.w} height={sz.h}
         style={{ filter:`drop-shadow(0 6px 14px ${c}55)` }}>
         {/* shadow */}
         <ellipse cx="45" cy="108" rx="26" ry="5" fill="rgba(0,0,0,0.3)" />
@@ -662,178 +663,300 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   // ══════════════════════════════════════════════════════════════
   // ── 戰鬥中（input / resolving）────────────────────────────────
   // ══════════════════════════════════════════════════════════════
-  const gridCols = scoreLabels.length > 7 ? 6 : scoreLabels.length;
+  const roundScore = arrows.reduce((s, l) => s + scoreVal(l), 0);
+  const maxScore   = ARROWS_PER_ROUND * scoreVal(scoreLabels[0]);
+  const gridCols   = scoreLabels.length > 7 ? 6 : scoreLabels.length;
+
+  const SCENE_BG = {
+    mine:      "radial-gradient(ellipse at 50% -20%,#6b3010 0%,#2d1508 28%,#1c1008 55%,#080503 100%)",
+    farm:      "linear-gradient(180deg,#4db6e3 0%,#87ceeb 22%,#a8d8a0 45%,#4a7c3f 65%,#2a5227 100%)",
+    harbor:    "linear-gradient(180deg,#0a1830 0%,#0d2248 25%,#0a1530 55%,#06101e 80%,#03080e 100%)",
+    hunting:   "radial-gradient(ellipse at 50% -10%,#1a4a20 0%,#0f2a12 35%,#071808 65%,#030d04 100%)",
+    market:    "radial-gradient(ellipse at 50% 0%,#8b4513 0%,#5a2808 30%,#2d1505 60%,#150a02 100%)",
+    warehouse: "linear-gradient(180deg,#1e1b4b 0%,#141230 38%,#0d0b28 65%,#07061a 100%)",
+  };
+  const sceneBg = SCENE_BG[bId] || SCENE_BG.mine;
+
+  const SCENE_DECO = {
+    mine:      [{ e:"🔦", s:{ left:14,  top:"30%",    fontSize:20, opacity:0.5, filter:"sepia(1) saturate(4)" }},
+                { e:"🔦", s:{ right:14, top:"30%",    fontSize:20, opacity:0.5, filter:"sepia(1) saturate(4)" }}],
+    farm:      [{ e:"☀️", s:{ right:18, top:10,       fontSize:28, opacity:0.55 }},
+                { e:"🌾", s:{ left:10,  bottom:60,    fontSize:22, opacity:0.35 }},
+                { e:"🌾", s:{ right:10, bottom:60,    fontSize:22, opacity:0.35 }}],
+    harbor:    [{ e:"⚓", s:{ left:16,  bottom:58,    fontSize:22, opacity:0.28 }},
+                { e:"🌊", s:{ right:12, bottom:54,    fontSize:22, opacity:0.32 }}],
+    hunting:   [{ e:"🌲", s:{ left:6,   bottom:58,    fontSize:32, opacity:0.38 }},
+                { e:"🌲", s:{ right:6,  bottom:58,    fontSize:32, opacity:0.38 }},
+                { e:"🍃", s:{ left:32,  top:14,       fontSize:16, opacity:0.22 }}],
+    market:    [{ e:"🏮", s:{ left:16,  top:"22%",    fontSize:22, opacity:0.52 }},
+                { e:"🏮", s:{ right:16, top:"22%",    fontSize:22, opacity:0.52 }},
+                { e:"🛒", s:{ left:12,  bottom:56,    fontSize:18, opacity:0.28 }}],
+    warehouse: [{ e:"📦", s:{ left:12,  bottom:56,    fontSize:24, opacity:0.28 }},
+                { e:"📦", s:{ right:12, bottom:56,    fontSize:24, opacity:0.28 }},
+                { e:"🔧", s:{ right:18, top:"28%",    fontSize:18, opacity:0.22 }}],
+  };
+  const sceneDeco = SCENE_DECO[bId] || [];
+
+  const monHpPct   = Math.max(0, monsterHp / (currentMonster?.maxHp || 1) * 100);
+  const archHpPct  = Math.max(0, archerHp / archerStats.hp * 100);
+  const monBarClr  = monHpPct > 50 ? "#ef4444" : monHpPct > 25 ? "#f97316" : "#dc2626";
+  const archBarClr = archHpPct > 50 ? "#22c55e" : archHpPct > 25 ? "#f59e0b" : "#ef4444";
 
   return (
-    <div style={{
-      minHeight:"100vh", background:theme.bg, color:"white",
-      display:"flex", flexDirection:"column", position:"relative", overflow:"hidden",
-    }}>
+    <div style={{ height:"100vh", background:theme.bg, color:"white", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       <style>{CSS}</style>
 
-      {/* 背景裝飾光暈 */}
-      <div style={{
-        position:"absolute", top:-60, right:-40, width:200, height:200, borderRadius:"50%",
-        background:`radial-gradient(circle,${theme.accent}15,transparent 70%)`,
-        pointerEvents:"none",
-      }} />
-      <div style={{
-        position:"absolute", bottom:120, left:-40, width:160, height:160, borderRadius:"50%",
-        background:`radial-gradient(circle,${theme.accent}10,transparent 70%)`,
-        pointerEvents:"none",
-      }} />
+      {/* ══ SCENE ══════════════════════════════════════════════════ */}
+      <div style={{ position:"relative", flexShrink:0, height:"57vh", background:sceneBg, overflow:"hidden" }}>
 
-      {/* ── 頂部狀態列 ── */}
-      <div style={{ padding:"10px 14px 0", display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-        <button onClick={onBack} style={{ background:"none", border:"none", color:theme.accentDim, fontSize:13, cursor:"pointer" }}>← 退出</button>
-        <div style={{ flex:1, textAlign:"center", fontSize:11, color:"rgba(255,255,255,0.4)" }}>
-          {bEmoji} {bName} · 第{mIdx+1}/{monsters.length}關 · 回合{round} · {distance}m
-        </div>
-        <div style={{ fontSize:10, color:theme.accentDim, fontWeight:800 }}>
-          {TARGET_OPTIONS.find(t=>t.id===targetFmt)?.icon}
-        </div>
-      </div>
-
-      {/* ── 戰鬥場景：玩家左 ↔ 障礙右 ── */}
-      <div style={{
-        flexShrink:0, padding:"12px 14px 8px",
-        display:"flex", alignItems:"flex-end", gap:10,
-      }}>
-        {/* 左：玩家貓 + HP */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8, alignItems:"flex-start" }}>
-          <HpBar current={archerHp} max={archerStats.hp} label="🏃 體力" accent={theme.accent} />
-          <PlayerCatSVG buildingId={bId} theme={theme} />
-        </div>
-
-        {/* 中間：VS + 回合狀態 */}
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, flexShrink:0, paddingBottom:24 }}>
-          <div style={{ fontSize:9, fontWeight:900, color:"rgba(255,255,255,0.2)", letterSpacing:2 }}>ROUND</div>
-          <div style={{ fontSize:22, fontWeight:900, color:theme.accent,
-            textShadow:`0 0 12px ${theme.accent}88` }}>{round}</div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.18)", fontWeight:900 }}>VS</div>
-        </div>
-
-        {/* 右：障礙 + HP */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8, alignItems:"flex-end" }}>
-          <HpBar current={monsterHp} max={currentMonster?.maxHp || 1} label="🛡️ 抵抗值" accent={theme.accent} />
-          <ObstacleDisplay
-            monster={currentMonster} tierMeta={tierMeta} theme={theme} shaking={shaking}
-          />
-        </div>
-      </div>
-
-      {/* 疲勞事件 overlay */}
-      {painEvent && (
-        <div style={{
-          position:"absolute", top:"38%", left:"50%", transform:"translate(-50%,-50%)",
-          zIndex:20, borderRadius:16, padding:"12px 20px", textAlign:"center",
-          background:"rgba(239,68,68,0.92)", backdropFilter:"blur(8px)",
-          border:"1.5px solid rgba(255,100,100,0.4)",
-          animation:"cb-fade-up 0.3s ease",
-          boxShadow:"0 8px 32px rgba(239,68,68,0.5)",
-          pointerEvents:"none",
-        }}>
-          <div style={{ fontSize:14, fontWeight:900, color:"white" }}>😰 {painEvent.msg}</div>
-          <div style={{ fontSize:12, color:"#fca5a5", marginTop:3 }}>體力 -{painEvent.dmg}</div>
-        </div>
-      )}
-
-      {/* ── 戰鬥日誌 ── */}
-      <div ref={logRef} style={{
-        flex:1, overflowY:"auto", margin:"0 14px", borderRadius:14,
-        padding:"10px 12px",
-        background:`rgba(0,0,0,0.25)`,
-        border:`1px solid ${theme.accent}18`,
-        fontSize:11, lineHeight:1.9,
-        backdropFilter:"blur(4px)",
-        minHeight:80,
-      }}>
-        {log.map((l, i) => (
-          <div key={i} style={{
-            color: l.type==="win"     ? "#4ade80"
-                 : l.type==="crit"   ? theme.accent
-                 : l.type==="hit"    ? "#fb923c"
-                 : l.type==="counter"? "#f87171"
-                 : l.type==="total"  ? "#a3e635"
-                 : l.type==="miss"   ? "rgba(255,255,255,0.25)"
-                 : l.type==="system" ? "rgba(255,255,255,0.35)"
-                 : "rgba(255,255,255,0.6)",
-            animation: i===log.length-1 ? "cb-fade-up 0.2s ease" : "none",
-          }}>{l.text}</div>
+        {/* 環境裝飾 */}
+        {sceneDeco.map((d, i) => (
+          <div key={i} style={{ position:"absolute", userSelect:"none", pointerEvents:"none", ...d.s }}>{d.e}</div>
         ))}
-        {log.length === 0 && (
-          <div style={{ color:"rgba(255,255,255,0.2)" }}>射箭解決障礙！輸入本回合得分…</div>
+
+        {/* 怪物名 + HP 頂列 */}
+        <div style={{ position:"absolute", top:0, left:0, right:0, padding:"8px 12px 0", zIndex:4 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:9, fontWeight:900, padding:"2px 8px", borderRadius:99,
+                background:tierMeta.color, color:"white" }}>{tierMeta.label}</span>
+              <span style={{ fontWeight:900, fontSize:15, color:"white",
+                textShadow:"0 1px 6px rgba(0,0,0,0.8)" }}>{currentMonster?.name}</span>
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>
+              {mIdx+1}<span style={{ opacity:0.4 }}>/{monsters.length}</span>
+            </div>
+          </div>
+          <div style={{ height:10, borderRadius:99, background:"rgba(0,0,0,0.45)", overflow:"hidden",
+            boxShadow:"inset 0 1px 3px rgba(0,0,0,0.5)" }}>
+            <div style={{ height:10, borderRadius:99, transition:"width 0.4s ease",
+              width:`${monHpPct}%`, background:monBarClr,
+              boxShadow:`0 0 10px ${monBarClr}aa` }} />
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:"rgba(255,255,255,0.38)", marginTop:2 }}>
+            <span>{currentMonster?.action}</span>
+            <span>{monsterHp} / {currentMonster?.maxHp}</span>
+          </div>
+        </div>
+
+        {/* 戰鬥日誌 top-left overlay */}
+        <div style={{
+          position:"absolute", top:60, left:0, zIndex:5,
+          maxWidth:"58%", padding:"4px 10px",
+          background:"rgba(0,0,0,0.55)", backdropFilter:"blur(4px)",
+          borderRight:"1px solid rgba(255,255,255,0.06)",
+          borderBottom:"1px solid rgba(255,255,255,0.06)",
+          borderRadius:"0 0 10px 0",
+        }}>
+          <div ref={logRef}>
+            {log.slice(-4).map((l, i) => (
+              <div key={i} style={{
+                fontSize:10, lineHeight:1.75,
+                color: l.type==="win"     ? "#4ade80"
+                     : l.type==="crit"   ? theme.accent
+                     : l.type==="hit"    ? "#fb923c"
+                     : l.type==="counter"? "#f87171"
+                     : l.type==="total"  ? "#a3e635"
+                     : l.type==="miss"   ? "rgba(255,255,255,0.28)"
+                     : "rgba(255,255,255,0.42)",
+                animation: i===log.slice(-4).length-1 ? "cb-fade-up 0.2s ease" : "none",
+              }}>{l.text}</div>
+            ))}
+            {log.length === 0 && (
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.22)" }}>準備開始…</div>
+            )}
+          </div>
+        </div>
+
+        {/* 退出按鈕 top-right */}
+        <button onClick={onBack} style={{
+          position:"absolute", top:10, right:10, zIndex:6,
+          background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.12)",
+          color:"rgba(255,255,255,0.7)", fontSize:12, fontWeight:700, cursor:"pointer",
+          padding:"5px 11px", borderRadius:20, backdropFilter:"blur(4px)",
+        }}>✕ 離開</button>
+
+        {/* 障礙大圖 中央 */}
+        <div style={{
+          position:"absolute", top:"18%", left:"50%", transform:"translateX(-50%)",
+          display:"flex", flexDirection:"column", alignItems:"center",
+          animation: shaking ? "cb-shake 0.4s ease" : "cb-float 3s ease-in-out infinite",
+          zIndex:3,
+        }}>
+          <div style={{
+            width:118, height:118, borderRadius:28,
+            background:"rgba(0,0,0,0.32)",
+            border:`2px solid ${tierMeta.color}44`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:70,
+            boxShadow:`0 0 44px ${tierMeta.color}44, 0 8px 32px rgba(0,0,0,0.6), inset 0 0 28px rgba(0,0,0,0.3)`,
+          }}>
+            {currentMonster?.emoji}
+          </div>
+          <div style={{
+            position:"absolute", inset:-8, borderRadius:36,
+            border:`1.5px solid ${tierMeta.color}33`,
+            animation:"cb-glow 2.5s ease-in-out infinite",
+            pointerEvents:"none",
+          }} />
+        </div>
+
+        {/* 玩家貓 bottom-center */}
+        <div style={{ position:"absolute", bottom:4, left:"50%", transform:"translateX(-50%)", zIndex:4 }}>
+          <PlayerCatSVG buildingId={bId} theme={theme} small />
+        </div>
+
+        {/* 疲勞事件 overlay */}
+        {painEvent && (
+          <div style={{
+            position:"absolute", top:"44%", left:"50%", transform:"translate(-50%,-50%)",
+            zIndex:20, borderRadius:14, padding:"10px 18px", textAlign:"center",
+            background:"rgba(220,38,38,0.92)", backdropFilter:"blur(8px)",
+            border:"1px solid rgba(255,150,150,0.35)",
+            animation:"cb-fade-up 0.3s ease",
+            boxShadow:"0 8px 28px rgba(220,38,38,0.6)",
+            pointerEvents:"none",
+          }}>
+            <div style={{ fontSize:13, fontWeight:900, color:"white" }}>😰 {painEvent.msg}</div>
+            <div style={{ fontSize:11, color:"#fca5a5", marginTop:2 }}>體力 -{painEvent.dmg}</div>
+          </div>
         )}
       </div>
 
-      {/* ── 底部輸分區 ── */}
+      {/* ══ PANEL ══════════════════════════════════════════════════ */}
       <div style={{
-        flexShrink:0, padding:"8px 14px 22px",
-        background:`linear-gradient(0deg,${theme.bg.split(",")[0].split("(")[1] || "#1c1008"} 70%,transparent)`,
+        flex:1, display:"flex", flexDirection:"column",
+        background:"linear-gradient(180deg,#1a1510,#100e09)",
+        borderTop:`2px solid ${theme.accent}33`,
+        overflow:"hidden",
       }}>
+
+        {/* 玩家資訊列 */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:8, padding:"7px 12px 5px",
+          borderBottom:"1px solid rgba(255,255,255,0.05)", flexShrink:0,
+        }}>
+          {/* 回合 badge */}
+          <div style={{
+            width:40, height:40, borderRadius:10, flexShrink:0,
+            background:`linear-gradient(135deg,${theme.accent},${theme.accentDim})`,
+            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+            boxShadow:`0 2px 8px ${theme.accent}55`,
+          }}>
+            <div style={{ fontSize:16, fontWeight:900, color:"#1c1008", lineHeight:1 }}>{round}</div>
+            <div style={{ fontSize:8, fontWeight:800, color:"#1c1008", opacity:0.7 }}>TURN</div>
+          </div>
+          {/* 玩家 HP */}
+          <div style={{ flex:1 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.45)", marginBottom:2 }}>
+              <span>{theme.playerLabel}</span>
+              <span style={{ fontWeight:800, color:"white" }}>{archerHp}<span style={{ opacity:0.35 }}>/{archerStats.hp}</span></span>
+            </div>
+            <div style={{ height:7, borderRadius:99, background:"rgba(255,255,255,0.1)", overflow:"hidden" }}>
+              <div style={{ height:7, borderRadius:99, width:`${archHpPct}%`,
+                background:archBarClr, transition:"width 0.4s ease",
+                boxShadow:`0 0 8px ${archBarClr}88` }} />
+            </div>
+            <div style={{ display:"flex", gap:10, fontSize:9, color:"rgba(255,255,255,0.3)", marginTop:2 }}>
+              <span>⚔️{archerStats.atk}</span>
+              <span>🛡️{archerStats.def}</span>
+              <span>📍{distance}m · {TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label}</span>
+            </div>
+          </div>
+          {/* 建築職業圖示 */}
+          <div style={{
+            width:46, height:46, borderRadius:12, flexShrink:0,
+            background:`${theme.accent}18`, border:`1.5px solid ${theme.accent}30`,
+            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
+          }}>
+            <div style={{ fontSize:22 }}>{bEmoji}</div>
+            <div style={{ fontSize:8, color:theme.accent, fontWeight:800 }}>{theme.playerLabel}</div>
+          </div>
+        </div>
+
         {/* 已輸箭格 */}
-        <div style={{ display:"flex", gap:5, justifyContent:"center", marginBottom:8 }}>
+        <div style={{ display:"flex", gap:4, justifyContent:"center", padding:"5px 12px 3px", flexShrink:0 }}>
           {Array.from({ length:ARROWS_PER_ROUND }).map((_, i) => {
-            const label    = arrows[i];
-            const isFilled = label != null;
-            const isGold   = label === "X" || label === "10" || label === "6";
+            const label  = arrows[i];
+            const filled = label != null;
+            const gold   = label === "X" || label === "10" || label === "6";
             return (
               <div key={i} style={{
-                width:40, height:40, borderRadius:12,
+                width:36, height:36, borderRadius:9,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontWeight:900, fontSize:13,
-                background: isFilled
-                  ? isGold ? `${theme.accent}dd` : `${theme.accent}66`
-                  : "rgba(255,255,255,0.05)",
-                border:`1.5px solid ${isFilled ? "transparent" : `${theme.accent}20`}`,
-                color: isFilled ? "#1c1008" : "rgba(255,255,255,0.2)",
+                background: filled ? gold ? `${theme.accent}ee` : `${theme.accent}77` : "rgba(255,255,255,0.07)",
+                border:`2px solid ${filled ? "transparent" : "rgba(255,255,255,0.07)"}`,
+                color: filled ? "#1c1008" : "rgba(255,255,255,0.15)",
+                boxShadow: filled && gold ? `0 0 10px ${theme.accent}88` : "none",
                 transition:"all 0.1s",
               }}>{label ?? "·"}</div>
             );
           })}
         </div>
 
-        {/* 分數按鈕 */}
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${gridCols},1fr)`, gap:5, marginBottom:6 }}>
+        {/* 分數按鈕格 */}
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${gridCols},1fr)`, gap:4, padding:"0 10px", flex:1 }}>
           {scoreLabels.map(label => {
-            const isGold = label==="X" || label==="10" || label==="6";
+            const gold     = label==="X" || label==="10" || label==="6";
             const disabled = isResolving || arrows.length >= ARROWS_PER_ROUND;
             return (
-              <button key={label} onClick={() => inputArrow(label)}
-                disabled={disabled}
-                style={{
-                  padding:"10px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
-                  background: isGold ? `${theme.accent}28` : `${theme.accent}0f`,
-                  border:`1px solid ${isGold ? `${theme.accent}60` : `${theme.accent}20`}`,
-                  color: isGold ? theme.accent : "rgba(255,255,255,0.6)",
-                  opacity: disabled ? 0.3 : 1,
-                  transition:"opacity 0.15s",
-                }}>{label}</button>
+              <button key={label} onClick={() => inputArrow(label)} disabled={disabled} style={{
+                borderRadius:10, fontWeight:900, fontSize:15, cursor:"pointer",
+                background: gold
+                  ? "linear-gradient(135deg,rgba(100,70,20,0.9),rgba(60,40,10,0.9))"
+                  : "linear-gradient(135deg,rgba(50,40,30,0.9),rgba(35,28,20,0.9))",
+                border:`1px solid ${gold ? "rgba(245,158,11,0.38)" : "rgba(255,255,255,0.07)"}`,
+                color: gold ? "#fbbf24" : "rgba(255,255,255,0.72)",
+                opacity: disabled ? 0.28 : 1,
+                transition:"opacity 0.1s",
+                textShadow: gold ? `0 0 8px ${theme.accent}` : "none",
+                boxShadow: gold ? "inset 0 1px 0 rgba(255,200,50,0.14)" : "inset 0 1px 0 rgba(255,255,255,0.04)",
+              }}>{label}</button>
             );
           })}
         </div>
 
-        {/* 確認 / 撤銷 */}
-        <div style={{ display:"flex", gap:8 }}>
-          <button onClick={undoArrow} disabled={isResolving || !arrows.length}
-            style={{
-              flex:1, padding:"12px 0", borderRadius:14, fontWeight:700, fontSize:13, cursor:"pointer",
-              background:"rgba(255,255,255,0.05)", border:`1px solid ${theme.accent}25`,
-              color:theme.accentDim, opacity:isResolving||!arrows.length ? 0.3 : 1,
-            }}>← 撤銷</button>
-          <button onClick={submitRound} disabled={isResolving || arrows.length < ARROWS_PER_ROUND}
-            style={{
-              flex:2, padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:15, cursor:"pointer",
-              border:"none",
-              background: arrows.length >= ARROWS_PER_ROUND
-                ? `linear-gradient(90deg,${theme.accent},${theme.accentDim})`
-                : "rgba(255,255,255,0.05)",
-              color: arrows.length >= ARROWS_PER_ROUND ? "#1c1008" : "rgba(255,255,255,0.2)",
-              opacity: isResolving ? 0.5 : 1,
-              boxShadow: arrows.length >= ARROWS_PER_ROUND ? `0 3px 12px ${theme.accent}55` : "none",
-              transition:"all 0.15s",
-            }}>
-            {isResolving ? "結算中…" : `確認（${arrows.length}/${ARROWS_PER_ROUND}）`}
+        {/* 底部送出列 */}
+        <div style={{
+          display:"flex", alignItems:"stretch", flexShrink:0,
+          borderTop:"1px solid rgba(255,255,255,0.06)",
+          background:"rgba(0,0,0,0.3)",
+        }}>
+          <div style={{
+            padding:"10px 12px", fontWeight:900, fontSize:11,
+            background:`${theme.accent}22`, borderRight:`1px solid ${theme.accent}33`,
+            color:theme.accent, flexShrink:0, minWidth:50, textAlign:"center",
+            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+          }}>
+            <div style={{ fontSize:20, lineHeight:1 }}>{round}</div>
+            <div style={{ fontSize:8 }}>TURN</div>
+          </div>
+          <div style={{ flex:1, textAlign:"center", fontSize:12, color:"rgba(255,255,255,0.5)",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+            回合總分
+            <span style={{ fontWeight:900, fontSize:17, color:"white" }}>{roundScore}</span>
+            <span style={{ opacity:0.32 }}>/{maxScore}</span>
+          </div>
+          <button onClick={undoArrow} disabled={isResolving || !arrows.length} style={{
+            padding:"10px 11px", fontWeight:700, fontSize:12, cursor:"pointer",
+            background:"rgba(255,255,255,0.05)", border:"none",
+            borderLeft:"1px solid rgba(255,255,255,0.06)",
+            color:"rgba(255,255,255,0.45)", flexShrink:0,
+            opacity: isResolving||!arrows.length ? 0.25 : 1,
+          }}>← 撤銷</button>
+          <button onClick={submitRound} disabled={isResolving || arrows.length < ARROWS_PER_ROUND} style={{
+            padding:"10px 15px", fontWeight:900, fontSize:14, cursor:"pointer",
+            border:"none", flexShrink:0,
+            background: arrows.length >= ARROWS_PER_ROUND
+              ? `linear-gradient(135deg,${theme.accent},${theme.accentDim})`
+              : "rgba(255,255,255,0.05)",
+            color: arrows.length >= ARROWS_PER_ROUND ? "#1c1008" : "rgba(255,255,255,0.18)",
+            opacity: isResolving ? 0.5 : 1,
+            boxShadow: arrows.length >= ARROWS_PER_ROUND ? `0 0 16px ${theme.accent}55` : "none",
+            transition:"all 0.15s",
+          }}>
+            {isResolving ? "結算中…" : `送出！(${arrows.length}/${ARROWS_PER_ROUND})`}
           </button>
         </div>
       </div>
