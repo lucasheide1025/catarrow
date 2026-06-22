@@ -287,7 +287,7 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
                   <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3 mb-2"
                     style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
                     <div className="flex items-center gap-2">
-                      <img src={`/ui/village/resource-${mat.resource}.webp`} alt=""
+                      <img src={`/ui/village/resource-${mat.resource}-t${mat.tier}.webp`} alt=""
                         style={{ width: 20, height: 20 }}
                         onError={e => { e.target.style.display = "none"; }} />
                       <span className="text-sm" style={{ color: C.brown }}>{RESOURCE_NAMES[mat.resource]} T{mat.tier}</span>
@@ -322,7 +322,7 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 
 // ── 資源總覽列 ───────────────────────────────────────────────
 function ResourceRow({ resources }) {
-  const keys = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer'];
+  const keys = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer','gachaToken'];
   return (
     <div className="px-4 py-2.5" style={{ borderBottom: `1px solid ${C.border}` }}>
       <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>村莊資源</div>
@@ -330,7 +330,7 @@ function ResourceRow({ resources }) {
         {keys.map(k => (
           <div key={k} className="flex flex-col items-center gap-0.5 shrink-0">
             <div style={{ width: 32, height: 32, position: "relative" }}>
-              <img src={`/ui/village/resource-${k}.webp`} alt={RESOURCE_NAMES[k]}
+              <img src={`/ui/village/resource-${k}-t1.webp`} alt={RESOURCE_NAMES[k]}
                 style={{ width: 32, height: 32, objectFit: "contain" }}
                 onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "block"; }} />
               <div style={{ display: "none", fontSize: 20, textAlign: "center" }}>

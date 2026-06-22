@@ -9,15 +9,16 @@ export const BUILDINGS = {
   hunting:   { id:'hunting',   name:'獵場',      emoji:'🏕️',  resource:'meat',      resourceName:'動物肉',     layer:1 },
   market:    { id:'market',    name:'貓貓市集',  emoji:'🛒',  resource:'driedfish', resourceName:'小魚乾',     layer:1 },
   warehouse: { id:'warehouse', name:'露天倉庫',  emoji:'📦',  resource:'can',       resourceName:'貓罐頭',     layer:2 },
-  alchemy:   { id:'alchemy',   name:'煉金室',    emoji:'⚗️',  resource:'potion',    resourceName:'貓薄荷藥水', layer:2 },
-  gacha:     { id:'gacha',     name:'扭蛋亭',    emoji:'🎰',  resource:'fur',       resourceName:'貓毛',       layer:3 },
+  alchemy:   { id:'alchemy',   name:'煉金室',    emoji:'⚗️',  resource:'arrowdew',  resourceName:'箭露（微量）', layer:2 },
+  gacha:     { id:'gacha',     name:'扭蛋亭',    emoji:'🎰',  resource:'gachaToken',resourceName:'扭蛋代幣',   layer:3 },
   archery:   { id:'archery',   name:'練箭場',    emoji:'🏹',  resource:'archer',    resourceName:'貓貓射手',   layer:3 },
 };
 
 export const RESOURCE_NAMES = {
   arrowdew: '箭露', ore:'礦物', melon:'瓜瓜', fish:'鮮魚',
   meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭',
-  potion:'貓薄荷藥水', fur:'貓毛', archer:'貓貓射手', mission:'任務材料',
+  potion:'貓薄荷藥水', fur:'貓毛', archer:'貓貓射手',
+  gachaToken:'扭蛋代幣', mission:'任務材料',
 };
 
 // 升等箭露費用（index = 目標等級）
@@ -111,8 +112,8 @@ export function getVillageLevel(buildings) {
 }
 
 const BASE_PROD = {
-  archery:8, gacha:5, warehouse:4, market:3,
-  mine:2.5, farm:2.5, harbor:2.5, hunting:2.5, alchemy:3,
+  archery:8, gacha:0.2, warehouse:4, market:3,
+  mine:2.5, farm:2.5, harbor:2.5, hunting:2.5, alchemy:1,
 };
 
 export function getProductionRate(buildingId, level) {
@@ -158,6 +159,6 @@ export function canUpgrade(buildingId, buildings, resources) {
 
 export const DEFAULT_VILLAGE = {
   buildings: { mine:1, farm:1, harbor:1, hunting:1, market:1, warehouse:1, alchemy:1, gacha:1, archery:1 },
-  resources: { arrowdew:0, ore:0, melon:0, fish:0, meat:0, driedfish:0, can:0, potion:0, fur:0, archer:0 },
+  resources: { arrowdew:0, ore:0, melon:0, fish:0, meat:0, driedfish:0, can:0, potion:0, fur:0, archer:0, gachaToken:0 },
   lastCollectedAt: null,
 };
