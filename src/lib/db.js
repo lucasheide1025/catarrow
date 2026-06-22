@@ -10,7 +10,7 @@ import { POTIONS, FRAGMENTS } from "./itemData";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
-import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked } from "./villageData";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -2822,18 +2822,20 @@ export async function collectVillageResources(memberId, village) {
 
   for (const id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
-    const lv  = buildings[id] || 1;
-    const res = VB[id]?.resource;
+    const lv     = buildings[id] || 1;
+    const res    = VB[id]?.resource;
     if (!res) continue;
-    const fracKey = `${res}Frac`;
+    const tier   = getBuildingStage(lv);
+    const resKey = getResourceKey(res, tier);
+    const fracKey = `${resKey}Frac`;
     const prevFrac = village?.resources?.[fracKey] || 0;
     const rawAmt = getProductionRate(id, lv) * hours + prevFrac;
     const amt    = Math.floor(rawAmt);
-    const newFrac = Math.round((rawAmt - amt) * 1000) / 1000; // 保留3位精度
+    const newFrac = Math.round((rawAmt - amt) * 1000) / 1000;
     updates[`village.resources.${fracKey}`] = newFrac;
     if (amt > 0) {
-      updates[`village.resources.${res}`] = increment(amt);
-      collected[res] = (collected[res] || 0) + amt;
+      updates[`village.resources.${resKey}`] = increment(amt);
+      collected[resKey] = (collected[resKey] || 0) + amt;
     }
   }
 
@@ -2855,7 +2857,8 @@ export async function upgradeVillageBuilding(memberId, buildingId, village) {
 
   if ((resources.arrowdew || 0) < req.arrowdew) throw new Error("箭露不足");
   for (const mat of req.materials) {
-    if ((resources[mat.resource] || 0) < mat.count) throw new Error("材料不足");
+    const resKey = getResourceKey(mat.resource, mat.tier);
+    if ((resources[resKey] || 0) < mat.count) throw new Error("材料不足");
   }
 
   const deductUpdates = {
@@ -2863,17 +2866,39 @@ export async function upgradeVillageBuilding(memberId, buildingId, village) {
     "village.resources.arrowdew": increment(-req.arrowdew),
   };
   for (const mat of req.materials) {
-    deductUpdates[`village.resources.${mat.resource}`] = increment(-mat.count);
+    const resKey = getResourceKey(mat.resource, mat.tier);
+    deductUpdates[`village.resources.${resKey}`] = increment(-mat.count);
   }
 
   await updateDoc(doc(db, C.members, memberId), deductUpdates);
 
-  // 回傳本地預估值供 UI 即時更新
   resources.arrowdew = (resources.arrowdew || 0) - req.arrowdew;
   for (const mat of req.materials) {
-    resources[mat.resource] = (resources[mat.resource] || 0) - mat.count;
+    const resKey = getResourceKey(mat.resource, mat.tier);
+    resources[resKey] = (resources[resKey] || 0) - mat.count;
   }
   return { newLevel: currentLevel + 1, resources };
+}
+
+// 市集材料換算：升階 5T(n)→1T(n+1)，降階 1T(n)→3T(n-1)
+export async function exchangeVillageMaterial(memberId, resource, fromTier, direction) {
+  if (!TIERED_RESOURCES.has(resource)) throw new Error('不支援此材料');
+  const fromKey = `${resource}_t${fromTier}`;
+  if (direction === 'up') {
+    if (fromTier >= 5) throw new Error('已是最高階');
+    const toKey = `${resource}_t${fromTier + 1}`;
+    await updateDoc(doc(db, C.members, memberId), {
+      [`village.resources.${fromKey}`]: increment(-5),
+      [`village.resources.${toKey}`]:   increment(1),
+    });
+  } else {
+    if (fromTier <= 1) throw new Error('已是最低階');
+    const toKey = `${resource}_t${fromTier - 1}`;
+    await updateDoc(doc(db, C.members, memberId), {
+      [`village.resources.${fromKey}`]: increment(-1),
+      [`village.resources.${toKey}`]:   increment(3),
+    });
+  }
 }
 
 export async function addArrowdew(memberId, amount) {

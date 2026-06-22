@@ -2,14 +2,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
+  collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded, exchangeVillageMaterial,
 } from "../../lib/db";
 import { sfxSuccess, sfxEpic, sfxTap } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, DEFAULT_VILLAGE,
-  UNLOCK_REQS, isBuildingUnlocked,
+  UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 
@@ -196,7 +196,7 @@ function LockedBuildingCard({ buildingId }) {
 }
 
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, onExchangeDone }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -297,7 +297,8 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 
               {/* 材料 */}
               {req.materials.map((mat, i) => {
-                const have = resources?.[mat.resource] || 0;
+                const resKey = getResourceKey(mat.resource, mat.tier);
+                const have = Math.floor(resources?.[resKey] || 0);
                 const ok   = have >= mat.count;
                 return (
                   <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3 mb-2"
@@ -330,6 +331,14 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
               </button>
             </>
           ) : null}
+
+          {/* 市集專屬：兌換面板 */}
+          {buildingId === 'market' && (
+            <>
+              <div style={{ height: 1, background: C.border, margin: "0 20px 16px" }} />
+              <MarketExchangePanel resources={resources} memberId={memberId} onDone={onExchangeDone} />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -337,26 +346,120 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 }
 
 // ── 資源總覽列 ───────────────────────────────────────────────
+const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur'];
+const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'⚓', meat:'🏕️', driedfish:'🛒', can:'📦', potion:'⚗️', fur:'🎰' };
+
 function ResourceRow({ resources }) {
-  const keys = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer','gachaToken'];
+  const hasTiered = TIERED_LIST.some(res =>
+    [1,2,3,4,5].some(t => (resources?.[`${res}_t${t}`] || 0) > 0)
+  );
   return (
     <div className="px-4 py-2.5" style={{ borderBottom: `1px solid ${C.border}` }}>
       <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>村莊資源</div>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-        {keys.map(k => (
-          <div key={k} className="flex flex-col items-center gap-0.5 shrink-0">
-            <div style={{ width: 32, height: 32, position: "relative" }}>
-              <img src={`/ui/village/resource-${k}-t1.webp`} alt={RESOURCE_NAMES[k]}
-                style={{ width: 32, height: 32, objectFit: "contain" }}
-                onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "block"; }} />
-              <div style={{ display: "none", fontSize: 20, textAlign: "center" }}>
-                {BUILDINGS[BUILDING_LIST.find(id => BUILDINGS[id].resource === k)]?.emoji || ""}
-              </div>
-            </div>
-            <div className="font-bold text-[10px]" style={{ color: C.brown }}>{resources?.[k] || 0}</div>
+      {/* 特殊資源 */}
+      <div className="flex gap-4 mb-2">
+        {[['archer','🏹','射手'],['gachaToken','🎰','扭蛋幣']].map(([k,em,lb]) => (
+          <div key={k} className="flex items-center gap-1">
+            <span className="text-sm">{em}</span>
+            <span className="font-bold text-xs" style={{ color: C.brown }}>{Math.floor(resources?.[k] || 0)}</span>
+            <span className="text-[10px]" style={{ color: C.muted }}>{lb}</span>
           </div>
         ))}
       </div>
+      {/* 分 tier 材料 */}
+      {hasTiered ? (
+        <div className="flex flex-col gap-1">
+          {TIERED_LIST.map(res => {
+            const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) })).filter(x => x.count > 0);
+            if (!tiers.length) return null;
+            return (
+              <div key={res} className="flex items-center gap-2">
+                <span className="text-[10px] shrink-0" style={{ color: C.mid, width: 52 }}>
+                  {RES_EMOJI[res]} {RESOURCE_NAMES[res]}
+                </span>
+                <div className="flex gap-2">
+                  {tiers.map(({ t, count }) => (
+                    <div key={t} className="flex items-center gap-0.5">
+                      <img src={`/ui/village/resource-${res}-t${t}.webp`} style={{ width: 16, height: 16 }}
+                        onError={e => { e.target.style.display = 'none'; }} />
+                      <span className="text-[10px] font-bold" style={{ color: C.brown }}>T{t}:{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-[10px]" style={{ color: C.muted }}>採集後材料將在此顯示</div>
+      )}
+    </div>
+  );
+}
+
+// ── 市集兌換面板 ─────────────────────────────────────────────
+function MarketExchangePanel({ resources, memberId, onDone }) {
+  const [busy, setBusy] = useState(false);
+
+  async function doExchange(resource, fromTier, direction) {
+    if (busy) return;
+    const fromKey = `${resource}_t${fromTier}`;
+    const have = Math.floor(resources?.[fromKey] || 0);
+    if (direction === 'up' && have < 5) { alert('需要 5 個才能升階'); return; }
+    if (direction === 'down' && have < 1) { alert('數量不足'); return; }
+    setBusy(true);
+    try {
+      await exchangeVillageMaterial(memberId, resource, fromTier, direction);
+      onDone?.();
+    } catch(e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="px-5 pb-4">
+      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>材料換算（市集功能）</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>升階：T(n)×5 → T(n+1)×1　降階：T(n)×1 → T(n-1)×3</div>
+      {TIERED_LIST.map(res => {
+        const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) }));
+        const hasSome = tiers.some(x => x.count > 0);
+        if (!hasSome) return null;
+        return (
+          <div key={res} className="mb-3">
+            <div className="text-[10px] font-bold mb-1" style={{ color: C.brown }}>
+              {RES_EMOJI[res]} {RESOURCE_NAMES[res]}
+            </div>
+            <div className="flex flex-col gap-1">
+              {tiers.map(({ t, count }) => (
+                <div key={t} className="flex items-center justify-between rounded-xl px-3 py-1.5"
+                  style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
+                  <div className="flex items-center gap-1.5">
+                    <img src={`/ui/village/resource-${res}-t${t}.webp`} style={{ width: 20, height: 20 }}
+                      onError={e => { e.target.style.display = 'none'; }} />
+                    <span className="text-xs font-bold" style={{ color: C.brown }}>T{t}</span>
+                    <span className="text-xs" style={{ color: C.mid }}>×{count}</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {t < 5 && (
+                      <button disabled={count < 5 || busy} onClick={() => doExchange(res, t, 'up')}
+                        className="text-[10px] font-bold px-2 py-1 rounded-lg active:scale-95"
+                        style={{ background: count >= 5 ? C.sage : C.lockBd, color: count >= 5 ? 'white' : C.muted }}>
+                        ×5→T{t+1}
+                      </button>
+                    )}
+                    {t > 1 && (
+                      <button disabled={count < 1 || busy} onClick={() => doExchange(res, t, 'down')}
+                        className="text-[10px] font-bold px-2 py-1 rounded-lg active:scale-95"
+                        style={{ background: count >= 1 ? "#D4933A" : C.lockBd, color: count >= 1 ? 'white' : C.muted }}>
+                        ×1→T{t-1}×3
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -521,6 +624,8 @@ export default function CatVillage({ catCards, gachaCoins }) {
           onUpgrade={() => handleUpgrade(selectedBuilding)}
           onClose={() => setSelectedBuilding(null)}
           upgrading={upgrading}
+          memberId={profile?.id}
+          onExchangeDone={() => setLocalVillage(null)}
         />
       )}
     </div>

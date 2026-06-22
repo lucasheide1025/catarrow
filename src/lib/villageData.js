@@ -123,6 +123,14 @@ export function getProductionRate(buildingId, level) {
 
 export const MAX_COLLECT_HOURS = 8;
 
+// 需要 tier 後綴的資源（_t1~_t5）
+export const TIERED_RESOURCES = new Set(['ore','melon','fish','meat','driedfish','can','potion','fur']);
+
+// 取得正確的 Firestore 資源 key
+export function getResourceKey(resource, tier) {
+  return TIERED_RESOURCES.has(resource) ? `${resource}_t${tier}` : resource;
+}
+
 export function calcPendingResources(village) {
   const now = Date.now();
   const lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
@@ -130,11 +138,13 @@ export function calcPendingResources(village) {
   const buildings = village?.buildings || {};
   const pending = {};
   for (const id of BUILDING_LIST) {
-    if (!isBuildingUnlocked(id, buildings)) continue; // 未解鎖不產出
-    const lv = buildings[id] || 1;
-    const rate = getProductionRate(id, lv);
-    const res = BUILDINGS[id].resource;
-    pending[res] = (pending[res] || 0) + Math.floor(rate * hours);
+    if (!isBuildingUnlocked(id, buildings)) continue;
+    const lv    = buildings[id] || 1;
+    const rate  = getProductionRate(id, lv);
+    const res   = BUILDINGS[id].resource;
+    const tier  = getBuildingStage(lv);
+    const resKey = getResourceKey(res, tier);
+    pending[resKey] = (pending[resKey] || 0) + Math.floor(rate * hours);
   }
   return { pending, hours };
 }
@@ -150,8 +160,9 @@ export function canUpgrade(buildingId, buildings, resources) {
     return { ok: false, reason: `箭露不足（需 ${req.arrowdew.toLocaleString()}）` };
   }
   for (const mat of req.materials) {
-    if ((resources?.[mat.resource] || 0) < mat.count) {
-      return { ok: false, reason: `${RESOURCE_NAMES[mat.resource] || mat.resource} 不足` };
+    const resKey = getResourceKey(mat.resource, mat.tier);
+    if ((resources?.[resKey] || 0) < mat.count) {
+      return { ok: false, reason: `${RESOURCE_NAMES[mat.resource] || mat.resource} T${mat.tier} 不足` };
     }
   }
   return { ok: true };
@@ -159,6 +170,6 @@ export function canUpgrade(buildingId, buildings, resources) {
 
 export const DEFAULT_VILLAGE = {
   buildings: { mine:1, farm:1, harbor:1, hunting:1, market:1, warehouse:1, alchemy:1, gacha:1, archery:1 },
-  resources: { arrowdew:0, ore:0, melon:0, fish:0, meat:0, driedfish:0, can:0, potion:0, fur:0, archer:0, gachaToken:0 },
+  resources: { arrowdew:0, archer:0, gachaToken:0 },
   lastCollectedAt: null,
 };
