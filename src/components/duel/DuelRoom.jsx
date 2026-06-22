@@ -878,7 +878,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
   const isRevealing = revealIdx >= 0 && revealIdx < REVEAL_TOTAL;
   const myPlayer = (myTeam === "A" ? teamA : teamB)?.[myId];
-  const canSubmit = myArrows.length >= ARROWS && !submitted;
+  const canSubmit = myArrows.length >= ARROWS && !submitted && !targetPending;
   const amAlive   = myPlayer?.alive !== false;
 
   // Host 斷線偵測：90 秒未心跳視為可能斷線

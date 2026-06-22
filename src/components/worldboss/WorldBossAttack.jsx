@@ -998,7 +998,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
 
           {/* 送出按鈕 */}
-          {subPhase === "shooting" && arrows.length >= ARROWS_PER && (
+          {subPhase === "shooting" && arrows.length >= ARROWS_PER && !targetPending && (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <button onClick={() => { sfxCast(); finishRound(arrows); }}
                 style={{ width:"100%", padding:"12px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>

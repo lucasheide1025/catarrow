@@ -7,8 +7,7 @@ import {
   getDailyQuestConfig, cancelCheckin, rerollCheckinBuff, submitSimpleCheckin,
   submitClassEnd, addArrowdew, grantArrowMilestoneRewards, subscribePracticeLogs,
 } from "../../lib/db";
-import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
-import ArrowMilestonePopup from "./ArrowMilestonePopup";
+import { getMilestonesReached, getRewardsForMilestone, getWarmMessage } from "../../lib/arrowMilestone";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
@@ -297,8 +296,11 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  // 下課確認彈窗
+  // 下課確認彈窗（預告里程碑獎勵）
   if (showClassEndConfirm) {
+    const previewMilestones = getMilestonesReached(0, todayArrows);
+    const previewCoins = previewMilestones.reduce((s, ms) => s + (getRewardsForMilestone(ms).gachaCoins || 0), 0);
+    const previewCatBoxes = previewMilestones.reduce((s, ms) => s + (getRewardsForMilestone(ms).catBoxes || 0), 0);
     return (
       <div className="fixed inset-0 z-[300] flex items-center justify-center px-6"
         style={{ background: "rgba(0,0,0,0.75)" }}>
@@ -306,7 +308,17 @@ export default function DailyQuest({ onJoinParty }) {
           style={{ background: "linear-gradient(180deg,#1e293b,#0f172a)", border: "1px solid rgba(255,255,255,0.1)" }}>
           <div className="text-3xl mb-3">🏁</div>
           <div className="text-white font-black text-lg mb-1">確認下課？</div>
-          <div className="text-white/60 text-sm mb-4">今日共射出 <span className="text-yellow-300 font-black">{todayArrows}</span> 箭<br/>將獲得 <span className="text-blue-300 font-black">{todayArrows} 箭露</span> 並計入今日上課</div>
+          <div className="text-white/60 text-sm mb-3">
+            今日共射出 <span className="text-yellow-300 font-black">{todayArrows}</span> 箭<br/>
+            將獲得 <span className="text-blue-300 font-black">{todayArrows} 箭露</span> 並計入今日上課
+          </div>
+          {previewMilestones.length > 0 && (
+            <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-xl px-4 py-3 mb-3 text-left">
+              <div className="text-yellow-300 text-xs font-black mb-1.5">🎯 里程碑獎勵（{previewMilestones.length} 個）</div>
+              {previewCoins > 0 && <div className="text-white/80 text-sm">🪙 扭蛋幣 +{previewCoins}</div>}
+              {previewCatBoxes > 0 && <div className="text-white/80 text-sm">🐱 貓貓箱 +{previewCatBoxes}</div>}
+            </div>
+          )}
           <div className="flex gap-3">
             <button onClick={() => setShowClassEndConfirm(false)}
               className="flex-1 py-3 rounded-xl font-bold text-sm"
@@ -314,7 +326,7 @@ export default function DailyQuest({ onJoinParty }) {
               取消
             </button>
             <button onClick={confirmClassEnd}
-              className="flex-2 py-3 rounded-xl font-black text-sm flex-1"
+              className="flex-1 py-3 rounded-xl font-black text-sm"
               style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#1c1917" }}>
               確認下課
             </button>
@@ -324,14 +336,52 @@ export default function DailyQuest({ onJoinParty }) {
     );
   }
 
-  // 里程碑彈窗
+  // 里程碑合計彈窗（全部里程碑一次顯示）
   if (milestoneQueue.length > 0) {
+    const totalCoins    = milestoneQueue.reduce((s, m) => s + (m.rewards.gachaCoins  || 0), 0);
+    const totalCatBoxes = milestoneQueue.reduce((s, m) => s + (m.rewards.catBoxes    || 0), 0);
+    const totalMimi     = milestoneQueue.reduce((s, m) => s + (m.rewards.mimiBoxes   || 0), 0);
+    const warmMsg = getWarmMessage();
     return (
-      <ArrowMilestonePopup
-        milestone={milestoneQueue[0].ms}
-        rewards={milestoneQueue[0].rewards}
-        onClose={() => setMilestoneQueue(q => q.slice(1))}
-      />
+      <div className="fixed inset-0 z-[300] flex items-center justify-center px-6"
+        style={{ background: "rgba(0,0,0,0.8)" }}>
+        <div className="w-full max-w-sm rounded-3xl p-6 text-center"
+          style={{ background: "linear-gradient(180deg,#1e293b,#0f172a)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="text-4xl mb-3">🏹</div>
+          <div className="text-white font-black text-xl mb-1">練箭獎勵結算！</div>
+          <div className="text-white/50 text-sm mb-4">
+            今日 <span className="text-yellow-300 font-black">{todayArrows}</span> 箭，觸發 {milestoneQueue.length} 個里程碑
+          </div>
+          <div className="flex flex-col gap-2 mb-4">
+            {totalCoins > 0 && (
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
+                <span className="text-white text-sm">🪙 扭蛋幣</span>
+                <span className="text-yellow-300 font-black text-lg">+{totalCoins}</span>
+              </div>
+            )}
+            {totalCatBoxes > 0 && (
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
+                <span className="text-white text-sm">🐱 貓貓箱</span>
+                <span className="text-yellow-300 font-black text-lg">+{totalCatBoxes}</span>
+              </div>
+            )}
+            {totalMimi > 0 && (
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
+                <span className="text-white text-sm">😺 咪咪箱</span>
+                <span className="text-yellow-300 font-black text-lg">+{totalMimi}</span>
+              </div>
+            )}
+          </div>
+          <div className="bg-white/5 rounded-xl px-4 py-3 mb-4">
+            <p className="text-white/60 text-sm leading-relaxed">{warmMsg}</p>
+          </div>
+          <button onClick={() => setMilestoneQueue([])}
+            className="w-full py-3.5 rounded-2xl font-black text-base active:scale-95 transition-transform"
+            style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#1c1917" }}>
+            太棒了！繼續加油 🎯
+          </button>
+        </div>
+      </div>
     );
   }
 

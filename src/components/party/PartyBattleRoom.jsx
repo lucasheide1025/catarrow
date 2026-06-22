@@ -1527,11 +1527,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               onSubmit={handleTargetSubmit}
             />
             {/* 送出 */}
-            <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting}
+            <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting||targetPending}
               style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
-                background: arrows.length===ARROWS_PER_ROUND ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
-                color:"white", border:"none", opacity:(arrows.length<ARROWS_PER_ROUND||submitting)?0.55:1 }}>
-              {submitting?"送出中…":`✅ 送出 (${myArrowTotal}分)`}
+                background: (arrows.length===ARROWS_PER_ROUND&&!targetPending) ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
+                color:"white", border:"none", opacity:(arrows.length<ARROWS_PER_ROUND||submitting||targetPending)?0.55:1 }}>
+              {(submitting||targetPending)?"計算中…":`✅ 送出 (${myArrowTotal}分)`}
             </button>
           </>
         )}

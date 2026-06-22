@@ -991,9 +991,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
         {milestoneQueue.length > 0 && (
           <ArrowMilestonePopup
-            milestone={milestoneQueue[0].ms}
-            rewards={milestoneQueue[0].rewards}
-            onClose={() => setMilestoneQueue(q => q.slice(1))}
+            milestones={milestoneQueue.map(m => m.ms)}
+            rewardsList={milestoneQueue.map(m => m.rewards)}
+            onAllClose={() => setMilestoneQueue([])}
           />
         )}
         {/* 任務模式橫幅 */}
