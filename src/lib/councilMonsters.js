@@ -50,6 +50,27 @@ export function getRaceMaterialId(race, tier) {
 export const CLEAR_GACHA_COINS      = 5;
 export const CLEAR_VILLAGE_MAT_COUNT = 3;
 
+// Tier → 種族寶箱類型（對應 itemData.js CHEST_TYPES）
+export const TIER_TO_CHEST_TYPE = {
+  common:'wood', rare:'iron', elite:'gold', fierce:'epic', boss:'mythic', mythic:'mythic',
+};
+
+// 勝利獎勵（依最高通關 tier）
+export function getVictoryRewards(tier) {
+  const n = TIER_ORDER.indexOf(tier) + 1;
+  return {
+    matCount:       5 + n * 5,
+    raceChestTypes: TIER_ORDER.slice(0, n).map(t => TIER_TO_CHEST_TYPE[t]),
+    coinChestTiers:  TIER_ORDER.slice(0, n),
+  };
+}
+
+// 失敗補償（撤退 tier）
+export function getFailureRewards(tier) {
+  const n = TIER_ORDER.indexOf(tier) + 1;
+  return { matCount: 5, gachaChance: 0.10 + n * 0.05, gachaMax: n };
+}
+
 // ── 36 個生活障礙（外觀 + 行動描述，無怪物形象）────────────────
 export const COUNCIL_MONSTERS = {
   mine: {

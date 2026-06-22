@@ -68,13 +68,13 @@ export default function CouncilHall({ profile, village, onBack }) {
 
   async function handleFinish(result) {
     setActiveBld(null);
-    if (!result || (!result.raceMaterials?.length && !result.isFullClear)) return;
+    if (!result || (!result.clearedTier && !result.failedTier)) return;
     setSaving(true);
     try {
       await completeCouncilSession(profile.id, result);
-      const mats = result.raceMaterials?.length || 0;
-      let msg = `✓ 獲得 ${mats} 個種族素材`;
-      if (result.isFullClear) msg += `　🏡 村莊材料 ×3　🪙 扭蛋幣 ×5`;
+      const msg = result.clearedTier
+        ? `✓ ${TIER_META[result.clearedTier].label}關通關　獎勵已存入背包`
+        : `✓ 撤退補償　獎勵已存入背包`;
       setDoneMsg(msg);
       setTimeout(() => setDoneMsg(""), 4000);
     } catch (e) { console.warn(e.message); }
@@ -144,7 +144,7 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {/* 怎麼玩 */}
       <div style={{ background:"rgba(245,158,11,0.05)", borderRadius:12, padding:"9px 13px", marginBottom:16, fontSize:11, color:"#92400e", lineHeight:1.9, border:"1px solid rgba(245,158,11,0.1)" }}>
-        <b style={{ color:"#b45309" }}>怎麼玩？</b>　點擊建築查看任務清單，射箭解決障礙獲得種族素材。全通關 → 村莊材料 ×3 + 扭蛋幣 ×5　·　每日 5 次
+        <b style={{ color:"#b45309" }}>怎麼玩？</b>　點擊建築查看任務清單，射箭解決障礙。每關勝利 → T1素材＋種族/金幣寶箱　失敗撤退 → 少量素材＋扭蛋幣機率　·　每日 5 次
       </div>
 
       {/* 建築卡片網格 */}
@@ -240,7 +240,7 @@ export default function CouncilHall({ profile, village, onBack }) {
 
                   {/* 全通關獎勵提示 */}
                   <div style={{ background:"rgba(245,158,11,0.12)", borderRadius:10, padding:"7px 10px", marginBottom:10, fontSize:11, color:"#fbbf24" }}>
-                    🏆 全通關獎勵：村莊材料 ×3　🪙 扭蛋幣 ×5
+                    🏆 每關勝利都有獎勵：T1素材＋種族寶箱＋金幣寶箱
                   </div>
 
                   <button

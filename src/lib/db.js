@@ -7,6 +7,7 @@ import {
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
+import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
@@ -2988,17 +2989,38 @@ export async function recordCouncilSession(memberId) {
   await setDoc(ref, { count: increment(1), updatedAt: serverTimestamp() }, { merge: true });
 }
 
-// 議會廳戰鬥結算：種族素材 + 全通關獎勵
-export async function completeCouncilSession(memberId, { raceMaterials, villageMatKey, isFullClear }) {
-  const promises = [];
-  if (raceMaterials?.length) {
-    promises.push(addMaterials(memberId, raceMaterials));
-  }
-  if (isFullClear && villageMatKey) {
-    promises.push(updateDoc(doc(db, C.members, memberId), {
-      [`village.resources.${villageMatKey}`]: increment(3),
-      gachaCoins: increment(5),
+// 議會廳戰鬥結算：依過關/失敗 tier 分層給予獎勵
+export async function completeCouncilSession(memberId, { race, clearedTier, failedTier }) {
+  const TIER_ORDER = ['common','rare','elite','fierce','boss','mythic'];
+  const TO_CHEST   = { common:'wood', rare:'iron', elite:'gold', fierce:'epic', boss:'mythic', mythic:'mythic' };
+  const mat1Id     = `${race}_m1`;
+  const promises   = [];
+
+  if (clearedTier) {
+    const n = TIER_ORDER.indexOf(clearedTier) + 1;
+    // T1素材 × (5 + n*5)
+    promises.push(addMaterials(memberId, Array(5 + n * 5).fill({ id: mat1Id })));
+    // 種族寶箱 × n（T1~Tn）
+    const raceChests = TIER_ORDER.slice(0, n).map((t, i) => ({
+      id: `chest_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_r${i}`,
+      type: TO_CHEST[t], family: race, tier: t, from: '議會廳採集', ts: Date.now() + i,
     }));
+    promises.push(addChests(memberId, raceChests));
+    // 金幣寶箱 × n（T1~Tn）
+    const coinChests = TIER_ORDER.slice(0, n).map(t => makeCoinChest(t, '議會廳採集'));
+    promises.push(addChests(memberId, coinChests));
   }
+
+  if (failedTier) {
+    const n = TIER_ORDER.indexOf(failedTier) + 1;
+    // T1素材 ×5
+    promises.push(addMaterials(memberId, Array(5).fill({ id: mat1Id })));
+    // 機率 +1~n 扭蛋幣
+    if (Math.random() < 0.10 + n * 0.05) {
+      const coins = 1 + Math.floor(Math.random() * n);
+      promises.push(updateDoc(doc(db, C.members, memberId), { gachaCoins: increment(coins) }));
+    }
+  }
+
   await Promise.all(promises);
 }
