@@ -3,8 +3,10 @@ import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
-  exchangeVillageMaterial, exchangeArrowdewForChest,
+  exchangeVillageMaterial, exchangeMaterialsForChest,
+  subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing,
 } from "../../lib/db";
+import { CAT_CARD_MAP } from "../../lib/catCardData";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
@@ -199,8 +201,189 @@ function LockedBuildingCard({ buildingId }) {
   );
 }
 
+// ── 卡片掛賣面板 ─────────────────────────────────────────────
+const PRICE_TYPES = [
+  { type:"arrowdew",  icon:"💧", label:"箭露",   min:10,  max:9999 },
+  { type:"gachaToken",icon:"🎰", label:"扭蛋幣", min:1,   max:100  },
+  { type:"card",      icon:"🃏", label:"重複卡", min:1,   max:5    },
+];
+
+function CardMarketPanel({ catCards, memberId, memberName }) {
+  const [tab, setTab]         = useState("browse");
+  const [listings, setListings]     = useState([]);
+  const [myListings, setMyListings] = useState([]);
+  const [busy, setBusy]       = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [selCardId, setSelCardId]   = useState(null);
+  const [priceType, setPriceType]   = useState("arrowdew");
+  const [priceAmount, setPriceAmount] = useState(50);
+
+  useEffect(() => {
+    const unsub = subscribeCardMarket(all => {
+      setListings(all.filter(l => l.sellerId !== memberId));
+      setMyListings(all.filter(l => l.sellerId === memberId));
+    });
+    return unsub;
+  }, [memberId]); // eslint-disable-line
+
+  const dupCards = Object.entries(catCards || {})
+    .filter(([,cnt]) => (cnt || 0) >= 2)
+    .map(([id, cnt]) => ({ id, cnt, ...CAT_CARD_MAP[id] }))
+    .filter(c => c.name);
+
+  async function handleList() {
+    if (!selCardId || busy) return;
+    setBusy(true);
+    sfxTap();
+    try {
+      await listCardForSale(memberId, memberName, selCardId, CAT_CARD_MAP[selCardId], priceType, priceAmount);
+      setShowForm(false); setSelCardId(null);
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function handleBuy(listing) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await buyCardListing(memberId, memberName, listing);
+      sfxSuccess();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function handleCancel(listing) {
+    if (busy) return;
+    setBusy(true);
+    try { await cancelCardListing(memberId, listing.id, listing.cardId); }
+    catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const curPT = PRICE_TYPES.find(p => p.type === priceType);
+
+  return (
+    <div className="px-5 pb-4">
+      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>🃏 卡片掛賣市集</div>
+      <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
+        {[["browse","🛍️ 瀏覽"],["mine","📋 我的"]].map(([id,lb]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className="flex-1 py-2 text-[11px] font-bold transition-colors"
+            style={{ background: tab===id ? C.brown : "rgba(255,255,255,0.5)", color: tab===id ? "#FFF8F0" : C.mid }}>
+            {lb}
+          </button>
+        ))}
+      </div>
+
+      {tab === "browse" ? (
+        <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+          {listings.length === 0 ? (
+            <div className="text-center py-6 text-[11px]" style={{ color: C.muted }}>目前沒有掛賣的卡片</div>
+          ) : listings.map(l => {
+            const pt = PRICE_TYPES.find(p => p.type === l.priceType);
+            return (
+              <div key={l.id} className="flex items-center gap-2 rounded-xl px-3 py-2"
+                style={{ background: l.cardBg || "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
+                <span className="text-2xl shrink-0">{l.cardEmoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-black truncate" style={{ color: C.brown }}>{l.cardName}</div>
+                  <div className="text-[10px]" style={{ color: C.mid }}>{l.sellerName}</div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <div className="text-[10px] font-bold" style={{ color: C.brown }}>{pt?.icon} {l.priceAmount} {pt?.label}</div>
+                  <button onClick={() => handleBuy(l)} disabled={busy}
+                    className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
+                    style={{ background: C.sage, color: "white" }}>購買</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {myListings.length === 0 ? (
+            <div className="text-[10px] text-center py-2" style={{ color: C.muted }}>尚無掛賣中的卡片</div>
+          ) : myListings.map(l => {
+            const pt = PRICE_TYPES.find(p => p.type === l.priceType);
+            return (
+              <div key={l.id} className="flex items-center gap-2 rounded-xl px-3 py-2"
+                style={{ background: l.cardBg || "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
+                <span className="text-2xl shrink-0">{l.cardEmoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-black truncate" style={{ color: C.brown }}>{l.cardName}</div>
+                  <div className="text-[10px]" style={{ color: C.mid }}>{pt?.icon} {l.priceAmount} {pt?.label}</div>
+                </div>
+                <button onClick={() => handleCancel(l)} disabled={busy}
+                  className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95 shrink-0"
+                  style={{ background: "#C0533A", color: "white" }}>下架</button>
+              </div>
+            );
+          })}
+
+          {!showForm ? (
+            <button onClick={() => setShowForm(true)} disabled={dupCards.length === 0}
+              className="mt-1 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all"
+              style={{ background: dupCards.length > 0 ? "#D4933A" : C.lockBd, color: dupCards.length > 0 ? "white" : C.muted }}>
+              {dupCards.length > 0 ? `＋ 掛賣卡片（${dupCards.length} 種重複可選）` : "暫無重複卡片可掛賣"}
+            </button>
+          ) : (
+            <div className="rounded-xl p-3 mt-1" style={{ background: "rgba(255,255,255,0.7)", border: `1px solid ${C.border}` }}>
+              <div className="text-[10px] font-bold mb-2" style={{ color: C.mid }}>選擇卡片（需有重複）</div>
+              <div className="flex flex-wrap gap-1.5 mb-3 max-h-20 overflow-y-auto">
+                {dupCards.map(c => (
+                  <button key={c.id} onClick={() => setSelCardId(c.id)}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold active:scale-95"
+                    style={{ background: selCardId===c.id ? C.brown : (c.bg||"#eee"),
+                      color: selCardId===c.id ? "#FFF8F0" : C.brown,
+                      border: `1px solid ${selCardId===c.id ? C.brown : C.border}` }}>
+                    {c.emoji} {c.name} ×{c.cnt}
+                  </button>
+                ))}
+              </div>
+              {selCardId && (
+                <>
+                  <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>定價方式</div>
+                  <div className="flex gap-1.5 mb-2">
+                    {PRICE_TYPES.map(pt => (
+                      <button key={pt.type}
+                        onClick={() => { setPriceType(pt.type); setPriceAmount(pt.min); }}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold active:scale-95"
+                        style={{ background: priceType===pt.type ? C.brown : "rgba(255,255,255,0.5)",
+                          color: priceType===pt.type ? "#FFF8F0" : C.mid,
+                          border: `1px solid ${C.border}` }}>
+                        {pt.icon} {pt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <input type="number" value={priceAmount}
+                      onChange={e => setPriceAmount(Math.max(curPT?.min||1, Math.min(curPT?.max||9999, Number(e.target.value))))}
+                      className="flex-1 rounded-lg px-3 py-1.5 text-sm font-bold border text-center outline-none"
+                      style={{ borderColor: C.border, color: C.brown, background: "rgba(255,255,255,0.85)" }} />
+                    <span className="text-[10px] shrink-0" style={{ color: C.muted }}>{curPT?.label}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => { setShowForm(false); setSelCardId(null); }}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold"
+                  style={{ background: C.lockBd, color: C.muted }}>取消</button>
+                <button onClick={handleList} disabled={!selCardId || busy}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold active:scale-95"
+                  style={{ background: selCardId ? C.sage : C.lockBd, color: selCardId ? "white" : C.muted }}>
+                  {busy ? "掛賣中…" : "確認掛賣"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, onExchangeDone }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, onExchangeDone }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -336,11 +519,13 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
             </>
           ) : null}
 
-          {/* 市集專屬：兌換面板 */}
+          {/* 市集專屬：兌換面板 + 卡片市集 */}
           {buildingId === 'market' && (
             <>
-              <div style={{ height: 1, background: C.border, margin: "0 20px 16px" }} />
+              <div style={{ height: 1, background: C.border, margin: "0 0 0" }} />
               <MarketExchangePanel resources={resources} memberId={memberId} onDone={onExchangeDone} />
+              <div style={{ height: 1, background: C.border, margin: "0 0 16px" }} />
+              <CardMarketPanel catCards={catCards} memberId={memberId} memberName={memberName} />
             </>
           )}
         </div>
@@ -405,25 +590,28 @@ function ResourceRow({ resources, gachaCoins }) {
 }
 
 const BATTLE_EXCHANGE = [
-  { type: 'wood',  cost: 100,  icon: '📦', label: '木寶箱',   desc: '含普通打怪材料' },
-  { type: 'iron',  cost: 280,  icon: '🧰', label: '鐵寶箱',   desc: '含非凡打怪材料' },
-  { type: 'gold',  cost: 750,  icon: '🎁', label: '黃金寶箱', desc: '含前三階段材料' },
-  { type: 'epic',  cost: 2000, icon: '💜', label: '史詩寶箱', desc: '含前四階段材料' },
+  { type:'wood', icon:'📦', label:'木寶箱',   desc:'含普通打怪材料',
+    costs:[{ resource:'ore',  tier:1, count:5 }] },
+  { type:'iron', icon:'🧰', label:'鐵寶箱',   desc:'含非凡打怪材料',
+    costs:[{ resource:'ore',  tier:1, count:8 }, { resource:'melon', tier:1, count:5 }] },
+  { type:'gold', icon:'🎁', label:'黃金寶箱', desc:'含前三階段材料',
+    costs:[{ resource:'ore',  tier:2, count:3 }, { resource:'fish',  tier:1, count:5 }] },
+  { type:'epic', icon:'💜', label:'史詩寶箱', desc:'含前四階段材料',
+    costs:[{ resource:'ore',  tier:3, count:3 }, { resource:'meat',  tier:2, count:3 }] },
 ];
+const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'藥水', fur:'貓毛' };
 
 // ── 市集兌換面板 ─────────────────────────────────────────────
 function MarketExchangePanel({ resources, memberId, onDone }) {
   const [busy, setBusy] = useState(false);
   const [justGot, setJustGot] = useState(null);
 
-  async function doBattleExchange(chestType, cost) {
+  async function doBattleExchange(chestType, costs) {
     if (busy) return;
-    const arrowdew = Math.floor(resources?.arrowdew || 0);
-    if (arrowdew < cost) { alert(`箭露不足（需要 ${cost}，目前 ${arrowdew}）`); return; }
     setBusy(true);
     sfxVillageExchange();
     try {
-      await exchangeArrowdewForChest(memberId, chestType, cost);
+      await exchangeMaterialsForChest(memberId, chestType, costs);
       setJustGot(chestType);
       setTimeout(() => setJustGot(null), 2000);
       onDone?.();
@@ -446,37 +634,47 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
     finally { setBusy(false); }
   }
 
-  const arrowdew = Math.floor(resources?.arrowdew || 0);
-
   return (
     <div className="px-5 pb-4">
       {/* ── 兌換打怪材料 ── */}
       <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>⚔️ 兌換打怪寶箱</div>
-      <div className="text-[10px] mb-3" style={{ color: C.muted }}>花費箭露，取得裝有打怪材料的寶箱（從背包開箱）</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>消耗村莊材料，取得裝有打怪材料的寶箱（背包開箱）</div>
       <div className="flex flex-col gap-2 mb-4">
         {BATTLE_EXCHANGE.map(ex => {
-          const canAfford = arrowdew >= ex.cost;
-          const gotThis   = justGot === ex.type;
+          const canAfford = ex.costs.every(({ resource, tier, count }) =>
+            Math.floor(resources?.[`${resource}_t${tier}`] || 0) >= count
+          );
+          const gotThis = justGot === ex.type;
           return (
             <div key={ex.type} className="flex items-center justify-between rounded-xl px-3 py-2"
               style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{ex.icon}</span>
-                <div>
-                  <div className="text-xs font-bold" style={{ color: C.brown }}>{ex.label}</div>
-                  <div className="text-[10px]" style={{ color: C.muted }}>{ex.desc}</div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-lg">{ex.icon}</span>
+                  <span className="text-xs font-bold" style={{ color: C.brown }}>{ex.label}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                  {ex.costs.map(({ resource, tier, count }) => {
+                    const have = Math.floor(resources?.[`${resource}_t${tier}`] || 0);
+                    return (
+                      <span key={`${resource}${tier}`} className="text-[10px] font-bold"
+                        style={{ color: have >= count ? C.sage : "#C0533A" }}>
+                        {RES_CN[resource]}T{tier}×{count}（{have}）
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
               <button
                 disabled={!canAfford || busy}
-                onClick={() => doBattleExchange(ex.type, ex.cost)}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all"
+                onClick={() => doBattleExchange(ex.type, ex.costs)}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all ml-2"
                 style={{
                   background: gotThis ? "#5A9E50" : canAfford ? "#D4933A" : C.lockBd,
                   color: canAfford ? "white" : C.muted,
-                  minWidth: 72, textAlign: "center",
+                  minWidth: 64, textAlign: "center", flexShrink: 0,
                 }}>
-                {gotThis ? "✓ 已取得！" : `💧${ex.cost.toLocaleString()}`}
+                {gotThis ? "✓ 取得！" : "兌換"}
               </button>
             </div>
           );
@@ -705,6 +903,8 @@ export default function CatVillage({ catCards, gachaCoins }) {
           onClose={() => setSelectedBuilding(null)}
           upgrading={upgrading}
           memberId={profile?.id}
+          memberName={profile?.nickname || profile?.name || "射手"}
+          catCards={catCards}
           onExchangeDone={() => setLocalVillage(null)}
         />
       )}

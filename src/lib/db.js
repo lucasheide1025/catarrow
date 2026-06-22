@@ -2924,19 +2924,98 @@ export async function addArrowdew(memberId, amount) {
   });
 }
 
-export async function exchangeArrowdewForChest(memberId, chestType, arrowdewCost) {
+// costs = [{ resource, tier, count }, ...]
+export async function exchangeMaterialsForChest(memberId, chestType, costs) {
   const snap = await getDoc(doc(db, C.members, memberId));
-  const arrowdew = snap.data()?.village?.resources?.arrowdew || 0;
-  if (arrowdew < arrowdewCost) throw new Error('箭露不足');
-  await updateDoc(doc(db, C.members, memberId), {
-    "village.resources.arrowdew": increment(-arrowdewCost),
+  const village = snap.data()?.village || {};
+  const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'貓薄荷藥水', fur:'貓毛' };
+  for (const { resource, tier, count } of costs) {
+    const have = Math.floor(village?.resources?.[`${resource}_t${tier}`] || 0);
+    if (have < count) throw new Error(`${RES_CN[resource] || resource} T${tier} 不足（需 ${count}，目前 ${have}）`);
+  }
+  const updates = {};
+  costs.forEach(({ resource, tier, count }) => {
+    updates[`village.resources.${resource}_t${tier}`] = increment(-count);
   });
-  await addChests(memberId, [{
-    id: `vmarket_${Date.now()}`,
-    type: chestType,
-    from: "village_market",
-    ts: Date.now(),
-  }]);
+  await updateDoc(doc(db, C.members, memberId), updates);
+  await addChests(memberId, [{ id: `vmarket_${Date.now()}`, type: chestType, from: "village_market", ts: Date.now() }]);
+}
+
+// ── 卡片掛賣市集 ─────────────────────────────────────────────
+const C_CARD_MARKET = "cardMarket";
+
+export function subscribeCardMarket(callback) {
+  return onSnapshot(
+    query(collection(db, C_CARD_MARKET), where("status", "==", "active")),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.listedAt?.seconds||0)-(a.listedAt?.seconds||0))),
+    () => callback([])
+  );
+}
+
+export async function listCardForSale(memberId, memberName, cardId, cardData, priceType, priceAmount) {
+  const memberRef = doc(db, C.members, memberId);
+  const snap = await getDoc(memberRef);
+  const cnt = snap.data()?.catCards?.[cardId] || 0;
+  if (cnt < 2) throw new Error('需要擁有 2 張以上同張卡片才能掛賣');
+  const batch = writeBatch(db);
+  batch.update(memberRef, { [`catCards.${cardId}`]: increment(-1) });
+  const listingRef = doc(collection(db, C_CARD_MARKET));
+  batch.set(listingRef, {
+    sellerId: memberId, sellerName: memberName,
+    cardId, cardName: cardData.name, cardEmoji: cardData.emoji,
+    cardBg: cardData.bg, cardCat: cardData.cat,
+    priceType, priceAmount,
+    status: "active",
+    listedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function buyCardListing(buyerId, buyerName, listing) {
+  if (!buyerId || !listing?.id) throw new Error('參數錯誤');
+  if (listing.sellerId === buyerId) throw new Error('不能購買自己的掛賣');
+  const listingRef = doc(db, C_CARD_MARKET, listing.id);
+  const [lSnap, bSnap] = await Promise.all([getDoc(listingRef), getDoc(doc(db, C.members, buyerId))]);
+  if (!lSnap.exists() || lSnap.data()?.status !== "active") throw new Error('此掛賣已下架');
+  const bData = bSnap.data() || {};
+  const batch = writeBatch(db);
+
+  if (listing.priceType === "arrowdew") {
+    const have = bData?.village?.resources?.arrowdew || 0;
+    if (have < listing.priceAmount) throw new Error(`箭露不足（需要 ${listing.priceAmount}）`);
+    batch.update(doc(db, C.members, buyerId),      { "village.resources.arrowdew": increment(-listing.priceAmount) });
+    batch.update(doc(db, C.members, listing.sellerId), { "village.resources.arrowdew": increment(listing.priceAmount) });
+  } else if (listing.priceType === "gachaToken") {
+    const have = bData?.gachaCoins || 0;
+    if (have < listing.priceAmount) throw new Error(`扭蛋幣不足（需要 ${listing.priceAmount}）`);
+    batch.update(doc(db, C.members, buyerId),      { gachaCoins: increment(-listing.priceAmount) });
+    batch.update(doc(db, C.members, listing.sellerId), { gachaCoins: increment(listing.priceAmount) });
+  } else if (listing.priceType === "card") {
+    const catCards = bData?.catCards || {};
+    const dups = Object.entries(catCards).filter(([,c]) => (c||0) >= 2);
+    if (dups.length < listing.priceAmount) throw new Error(`需要至少 ${listing.priceAmount} 種重複卡片`);
+    const cardUpdates = {};
+    dups.slice(0, listing.priceAmount).forEach(([cid]) => { cardUpdates[`catCards.${cid}`] = increment(-1); });
+    batch.update(doc(db, C.members, buyerId), cardUpdates);
+    batch.update(doc(db, C.members, listing.sellerId), { gachaCoins: increment(listing.priceAmount) });
+  }
+
+  batch.update(doc(db, C.members, buyerId), { [`catCards.${listing.cardId}`]: increment(1) });
+  batch.update(listingRef, { status: "sold", buyerId, buyerName, soldAt: serverTimestamp() });
+  await batch.commit();
+}
+
+export async function cancelCardListing(memberId, listingId, cardId) {
+  const ref = doc(db, C_CARD_MARKET, listingId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('找不到掛賣');
+  const d = snap.data();
+  if (d?.sellerId !== memberId) throw new Error('不是你的掛賣');
+  if (d?.status !== "active") throw new Error('已下架');
+  const batch = writeBatch(db);
+  batch.update(doc(db, C.members, memberId), { [`catCards.${cardId}`]: increment(1) });
+  batch.update(ref, { status: "cancelled" });
+  await batch.commit();
 }
 
 export async function initVillageIfNeeded(memberId, currentVillage) {
