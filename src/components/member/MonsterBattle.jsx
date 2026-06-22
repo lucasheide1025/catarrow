@@ -1,5 +1,5 @@
 // src/components/member/MonsterBattle.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
