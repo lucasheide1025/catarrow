@@ -5,6 +5,7 @@ import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing,
+  subscribeVillageMarketConfig,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
@@ -383,7 +384,7 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
 }
 
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, onExchangeDone }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -523,7 +524,7 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
           {buildingId === 'market' && (
             <>
               <div style={{ height: 1, background: C.border, margin: "0 0 0" }} />
-              <MarketExchangePanel resources={resources} memberId={memberId} onDone={onExchangeDone} />
+              <MarketExchangePanel resources={resources} memberId={memberId} onDone={onExchangeDone} battleExchange={battleExchange} />
               <div style={{ height: 1, background: C.border, margin: "0 0 16px" }} />
               <CardMarketPanel catCards={catCards} memberId={memberId} memberName={memberName} />
             </>
@@ -602,7 +603,8 @@ const BATTLE_EXCHANGE = [
 const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'藥水', fur:'貓毛' };
 
 // ── 市集兌換面板 ─────────────────────────────────────────────
-function MarketExchangePanel({ resources, memberId, onDone }) {
+function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }) {
+  const effectiveBX = bx || BATTLE_EXCHANGE;
   const [busy, setBusy] = useState(false);
   const [justGot, setJustGot] = useState(null);
 
@@ -640,7 +642,7 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
       <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>⚔️ 兌換打怪寶箱</div>
       <div className="text-[10px] mb-3" style={{ color: C.muted }}>消耗村莊材料，取得裝有打怪材料的寶箱（背包開箱）</div>
       <div className="flex flex-col gap-2 mb-4">
-        {BATTLE_EXCHANGE.map(ex => {
+        {effectiveBX.map(ex => {
           const canAfford = ex.costs.every(({ resource, tier, count }) =>
             Math.floor(resources?.[`${resource}_t${tier}`] || 0) >= count
           );
@@ -745,11 +747,18 @@ export default function CatVillage({ catCards, gachaCoins }) {
   const resources  = village.resources || DEFAULT_VILLAGE.resources;
   const villageLevel = getVillageLevel(buildings);
 
+  const [marketConfig, setMarketConfig] = useState(null);
+
   useEffect(() => {
     if (profile?.id && !profile?.village) {
       initVillageIfNeeded(profile.id, profile?.village).catch(() => {});
     }
   }, [profile?.id]); // eslint-disable-line
+
+  useEffect(() => {
+    const unsub = subscribeVillageMarketConfig(setMarketConfig);
+    return unsub;
+  }, []);
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -905,6 +914,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
           memberId={profile?.id}
           memberName={profile?.nickname || profile?.name || "射手"}
           catCards={catCards}
+          battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
           onExchangeDone={() => setLocalVillage(null)}
         />
       )}

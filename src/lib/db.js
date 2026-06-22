@@ -3018,6 +3018,22 @@ export async function cancelCardListing(memberId, listingId, cardId) {
   await batch.commit();
 }
 
+// ── 市集兌換設定（後台可調整）──────────────────────────────
+export function subscribeVillageMarketConfig(callback) {
+  return onSnapshot(
+    doc(db, "sysConfig", "villageMarket"),
+    snap => callback(snap.exists() ? snap.data() : null),
+    () => callback(null)
+  );
+}
+
+export async function saveVillageMarketConfig(battleExchange) {
+  await setDoc(doc(db, "sysConfig", "villageMarket"),
+    { battleExchange, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
 export async function initVillageIfNeeded(memberId, currentVillage) {
   if (currentVillage) return;
   await updateDoc(doc(db, C.members, memberId), {
