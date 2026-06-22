@@ -1,42 +1,27 @@
 // src/lib/arrowMilestone.js
 // 固定門檻：每天每個門檻只觸發一次，不循環
-const SMALL_MILESTONES = [
-  { arrows: 6,   tier: 1 },
-  { arrows: 12,  tier: 2 },
-  { arrows: 24,  tier: 3 },
-  { arrows: 30,  tier: 4 },
+const ALL_MILESTONES = [
+  { arrows:   6, catBoxes: 0, label: "6箭！" },
+  { arrows:  12, catBoxes: 0, label: "12箭！" },
+  { arrows:  24, catBoxes: 0, label: "24箭！" },
+  { arrows:  30, catBoxes: 0, label: "30箭！" },
+  { arrows:  60, catBoxes: 0, label: "60箭！" },
+  { arrows:  90, catBoxes: 0, label: "90箭！" },
+  { arrows: 120, catBoxes: 1, label: "120箭！百箭勇者！" },
+  { arrows: 150, catBoxes: 0, label: "150箭！" },
+  { arrows: 180, catBoxes: 0, label: "180箭！" },
+  { arrows: 200, catBoxes: 0, label: "200箭！" },
+  { arrows: 240, catBoxes: 1, label: "240箭！超人射手！" },
 ];
-const BIG_MILESTONE = 120;
 
 // 傳入今日舊箭數、新箭數，回傳中間跨越的里程碑（每個門檻只算一次）
 export function getMilestonesReached(oldTotal, newTotal) {
   if (newTotal <= oldTotal || newTotal <= 0) return [];
-  const results = [];
-  for (const { arrows, tier } of SMALL_MILESTONES) {
-    if (oldTotal < arrows && newTotal >= arrows) {
-      results.push({ type: "small", tier, arrows });
-    }
-  }
-  if (oldTotal < BIG_MILESTONE && newTotal >= BIG_MILESTONE) {
-    results.push({ type: "big", arrows: BIG_MILESTONE, multiple: 1 });
-  }
-  return results;
+  return ALL_MILESTONES.filter(m => oldTotal < m.arrows && newTotal >= m.arrows);
 }
 
-export const MILESTONE_REWARDS = {
-  small: {
-    1: { catBoxes: 1, gachaCoins: 1,  label: "6箭！" },
-    2: { catBoxes: 1, gachaCoins: 2,  label: "12箭！" },
-    3: { catBoxes: 2, gachaCoins: 3,  label: "24箭！" },
-    4: { catBoxes: 2, gachaCoins: 4,  label: "30箭完成！" },
-  },
-  big: { catBoxes: 3, gachaCoins: 10, label: "百箭勇者！" },
-};
-
 export function getRewardsForMilestone(ms) {
-  return ms.type === "big"
-    ? MILESTONE_REWARDS.big
-    : (MILESTONE_REWARDS.small[ms.tier] || {});
+  return { gachaCoins: 1, catBoxes: ms.catBoxes || 0 };
 }
 
 const WARM_MESSAGES = [
