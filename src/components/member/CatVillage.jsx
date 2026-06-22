@@ -921,7 +921,6 @@ export default function CatVillage({ catCards, gachaCoins }) {
       {tab === "village" && (
         <>
           <SecretaryCat cat={secretaryCat} />
-          <PanoramaView villageLevel={villageLevel} />
 
           <ResourceBar
             resources={resources}
@@ -932,6 +931,8 @@ export default function CatVillage({ catCards, gachaCoins }) {
           />
 
           <ResourceRow resources={resources} gachaCoins={gachaCoins} />
+
+          <PanoramaView villageLevel={villageLevel} />
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">
