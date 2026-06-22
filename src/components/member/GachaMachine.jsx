@@ -154,9 +154,79 @@ function ResultModal({ results, onClose }) {
   );
 }
 
+// ── 貓貓卡放大 Modal ─────────────────────────────────────────
+function CardLightbox({ card, cnt, onClose }) {
+  const catInfo = CAT_CARD_CATEGORIES[card.cat] || {};
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.75)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+      }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "min(300px, 80vw)",
+          borderRadius: 20,
+          background: card.bg || "#FFF5E8",
+          overflow: "hidden",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
+          position: "relative",
+        }}>
+        {/* 圖片 */}
+        <div style={{ width: "100%", aspectRatio: "3/4", position: "relative", background: card.bg || "#FFF5E8" }}>
+          <img
+            src={`/cat-cards/${card.id}.webp`}
+            alt={card.name}
+            onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+          {/* emoji fallback */}
+          <div style={{
+            display: "none", position: "absolute", inset: 0,
+            alignItems: "center", justifyContent: "center",
+            fontSize: 80,
+          }}>
+            {card.emoji}
+          </div>
+        </div>
+        {/* 資訊 */}
+        <div style={{ padding: "12px 14px 16px" }}>
+          <div style={{ fontWeight: 900, fontSize: 17, color: card.color || "#5C3D2E", marginBottom: 4 }}>
+            {card.name}
+          </div>
+          <div style={{ fontSize: 12, color: "#9B7B6A" }}>
+            {catInfo.emoji} {catInfo.label} · #{card.id}
+          </div>
+          {cnt > 1 && (
+            <div style={{ marginTop: 6, fontSize: 12, color: "#d97706", fontWeight: 700 }}>
+              擁有 ×{cnt}
+            </div>
+          )}
+        </div>
+        {/* 關閉按鈕 */}
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute", top: 10, right: 10,
+            width: 30, height: 30, borderRadius: "50%",
+            background: "rgba(0,0,0,0.35)", border: "none", cursor: "pointer",
+            color: "white", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── 卡片圖鑑 ─────────────────────────────────────────────────
 function CardDex({ catCards }) {
-  const [selCat, setSelCat] = useState(null);
+  const [selCat,    setSelCat]    = useState(null);
+  const [lightbox,  setLightbox]  = useState(null); // card object
   const owned = catCards || {};
   const ownedCount = Object.keys(owned).filter(id => (owned[id] || 0) > 0).length;
 
@@ -164,8 +234,17 @@ function CardDex({ catCards }) {
 
   return (
     <div>
+      {lightbox && (
+        <CardLightbox
+          card={lightbox}
+          cnt={owned[lightbox.id] || 0}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+
       <div className="text-xs mb-2 font-bold" style={{ color: C.mid }}>已收集 {ownedCount} / 100 張</div>
 
+      {/* 類別篩選 */}
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3 no-scrollbar">
         <button onClick={() => setSelCat(null)}
           className="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors"
@@ -187,27 +266,71 @@ function CardDex({ catCards }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      {/* 卡片格 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         {filtered.map(card => {
-          const cnt = owned[card.id] || 0;
+          const cnt  = owned[card.id] || 0;
           const have = cnt > 0;
           return (
-            <div key={card.id}
-              className="flex flex-col items-center rounded-xl p-2 relative"
+            <div
+              key={card.id}
+              onClick={() => have && setLightbox(card)}
               style={{
+                borderRadius: 10,
+                overflow: "hidden",
                 background: have ? (card.bg || "#FFF5E8") : "rgba(92,61,46,0.05)",
-                border: have ? `1px solid ${C.border}` : `1px solid rgba(92,61,46,0.10)`,
-                color: have ? (card.color || C.brown) : C.muted,
+                border: `1.5px solid ${have ? C.border : "rgba(92,61,46,0.10)"}`,
+                cursor: have ? "pointer" : "default",
                 filter: have ? undefined : "grayscale(1)",
-                opacity: have ? 1 : 0.45,
+                opacity: have ? 1 : 0.4,
+                position: "relative",
+                userSelect: "none",
               }}>
-              <div className="text-xl">{card.emoji}</div>
-              <div className="text-[9px] font-bold text-center leading-tight mt-0.5">
+              {/* 圖片區（3:4 比例）*/}
+              <div style={{ width: "100%", aspectRatio: "3/4", position: "relative", background: card.bg || "#FFF5E8" }}>
+                <img
+                  src={`/cat-cards/${card.id}.webp`}
+                  alt={have ? card.name : "???"}
+                  onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                {/* emoji fallback */}
+                <div style={{
+                  display: "none", position: "absolute", inset: 0,
+                  alignItems: "center", justifyContent: "center",
+                  fontSize: 28, flexDirection: "column",
+                }}>
+                  <span>{have ? card.emoji : "❓"}</span>
+                </div>
+              </div>
+              {/* 名稱 */}
+              <div style={{
+                padding: "4px 4px 5px",
+                fontSize: 9, fontWeight: 800,
+                textAlign: "center", lineHeight: 1.2,
+                color: have ? (card.color || C.brown) : C.muted,
+              }}>
                 {have ? card.name : "???"}
               </div>
+              {/* 重複數 */}
               {cnt > 1 && (
-                <div className="absolute -top-1 -right-1 bg-yellow-400 text-gray-800 text-[9px] font-black px-1 rounded-full">
+                <div style={{
+                  position: "absolute", top: 4, right: 4,
+                  background: "#f59e0b", color: "#422006",
+                  fontSize: 9, fontWeight: 900,
+                  borderRadius: 99, padding: "1px 5px",
+                }}>
                   ×{cnt}
+                </div>
+              )}
+              {/* 點擊放大提示 */}
+              {have && (
+                <div style={{
+                  position: "absolute", bottom: 22, left: 0, right: 0,
+                  textAlign: "center", fontSize: 8, color: "rgba(92,61,46,0.35)",
+                  pointerEvents: "none",
+                }}>
+                  點擊放大
                 </div>
               )}
             </div>
