@@ -10,8 +10,9 @@ import {
   getRaceMaterialId, BUILDING_PAIN_MSGS,
 } from "../../lib/councilMonsters";
 import {
-  sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail,
+  sfxCritBoom, sfxSoftFail,
   sfxSuccess, sfxEpic, sfxRoundEnd, sfxMonsterDead,
+  sfxCouncilWork,
 } from "../../lib/sound";
 
 const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
@@ -281,7 +282,7 @@ function getMappedScore(label, targetFmt) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, onFinish, onBack }) {
+export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, checkinActive, onFinish, onBack }) {
   const { id:bId, name:bName, emoji:bEmoji, race, raceLabel } = building;
   const theme = BUILDING_THEMES[bId] || BUILDING_THEMES.mine;
 
@@ -327,7 +328,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   function logCouncilArrows(completedRound) {
-    if (!memberId) return;
+    if (!memberId || !checkinActive) return;
     const totalArrows = completedRound * ARROWS_PER_ROUND;
     const todayStr = new Date().toISOString().slice(0, 10);
     addPracticeLog(memberId, {
@@ -371,14 +372,15 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
         addLog(`第${i+1}箭 ${label} — 失誤！沒有效果`, "miss");
       } else if (partMult >= 2.0) {
         sfxCritBoom();
+        sfxCouncilWork(bId);
         addLog(`第${i+1}箭 ${label} — 爆擊！傷害 ${dmg} 💥`, "crit");
         setShaking(true); setTimeout(() => setShaking(false), 380);
       } else if (partMult >= 1.5) {
-        sfxArrowHit();
+        sfxCouncilWork(bId);
         addLog(`第${i+1}箭 ${label} — 重擊！傷害 ${dmg}`, "hit");
         setShaking(true); setTimeout(() => setShaking(false), 300);
       } else {
-        sfxTap();
+        sfxCouncilWork(bId);
         addLog(`第${i+1}箭 ${label} — 命中 ${dmg}`, "normal");
       }
 

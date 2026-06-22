@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded, exchangeVillageMaterial,
 } from "../../lib/db";
-import { sfxSuccess, sfxEpic, sfxTap } from "../../lib/sound";
+import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
   getProductionRate, getUpgradeRequirements, canUpgrade,
@@ -414,6 +414,7 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
     if (direction === 'up' && have < 5) { alert('需要 5 個才能升階'); return; }
     if (direction === 'down' && have < 1) { alert('數量不足'); return; }
     setBusy(true);
+    sfxVillageExchange();
     try {
       await exchangeVillageMaterial(memberId, resource, fromTier, direction);
       onDone?.();
@@ -508,6 +509,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
   async function handleCollect() {
     if (collecting || !profile?.id) return;
+    sfxVillageCollect();
     setCollecting(true);
     try {
       const res = await collectVillageResources(profile.id, village);
@@ -527,6 +529,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
   async function handleUpgrade(buildingId) {
     if (upgrading || !profile?.id) return;
+    sfxVillageBuild();
     setUpgrading(true);
     try {
       const currentLevel = buildings[buildingId] || 1;

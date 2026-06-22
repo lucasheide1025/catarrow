@@ -7,6 +7,7 @@ import {
   checkCouncilDailyLimit, recordCouncilSession, completeCouncilSession,
   getCertRecords, getCertification, getDexConfig,
 } from "../../lib/db";
+import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { calcArcherStats } from "../../lib/monsterData";
 import { computeDexStats } from "../../lib/achievementDex";
 import CouncilBattle from "./CouncilBattle";
@@ -26,6 +27,7 @@ const CSS = `
 `;
 
 export default function CouncilHall({ profile, village, onBack }) {
+  const checkinActive = useCheckinActive(profile?.id);
   const [activeBld,    setActiveBld]    = useState(null);
   const [expandedId,   setExpandedId]   = useState(null);
   const [dailyLeft,    setDailyLeft]    = useState(null);
@@ -92,6 +94,7 @@ export default function CouncilHall({ profile, village, onBack }) {
         archerStats={archerStats}
         village={village}
         memberId={profile.id}
+        checkinActive={checkinActive}
         onFinish={handleFinish}
         onBack={() => { setActiveBld(null); setDailyLeft(l => Math.min(5, (l ?? 0) + 1)); }}
       />

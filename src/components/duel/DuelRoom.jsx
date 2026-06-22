@@ -18,6 +18,7 @@ import { generateBotArrows } from "../../lib/botUtils";
 import { addPracticeLog, grantArrowMilestoneRewards } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "../member/ArrowMilestonePopup";
+import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 const ARROWS = 6;
 const REVEAL_TOTAL = ARROWS * 2; // A 隊先攻 6 箭 + B 隊後攻 6 箭
@@ -245,6 +246,7 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
+  const checkinActive = useCheckinActive(profile?.id);
   const { catMsg, clearCatMsg, showCatEntry, saveBond, catStatMult, hasCat, catName: myCatName } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
   const [room, setRoom]           = useState(null);
@@ -525,21 +527,23 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     getDuelStats(profile.id).then(setDuelStats);
     saveBond("monster");
 
-    // 箭數累積 + 里程碑
-    const myArrowCount = (room.log || []).flatMap(entry =>
-      (entry.attacks || []).filter(a => a.attackerId === myId)
-        .flatMap(a => a.arrowBreakdown || [])
-    ).length;
-    if (myArrowCount > 0) {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      addPracticeLog(profile.id, {
-        date: todayStr, source: "duel",
-        totalArrows: myArrowCount,
-      }, profile.id).catch(() => {});
-      const milestones = getMilestonesReached(0, myArrowCount);
-      if (milestones.length > 0) {
-        grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-        setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+    // 箭數累積 + 里程碑（需報到才計）
+    if (checkinActive && profile?.id) {
+      const myArrowCount = (room.log || []).flatMap(entry =>
+        (entry.attacks || []).filter(a => a.attackerId === myId)
+          .flatMap(a => a.arrowBreakdown || [])
+      ).length;
+      if (myArrowCount > 0) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        addPracticeLog(profile.id, {
+          date: todayStr, source: "duel",
+          totalArrows: myArrowCount,
+        }, profile.id).catch(() => {});
+        const milestones = getMilestonesReached(0, myArrowCount);
+        if (milestones.length > 0) {
+          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+        }
       }
     }
   }, [room?.status]);

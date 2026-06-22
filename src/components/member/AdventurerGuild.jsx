@@ -12,6 +12,7 @@ import {
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
+import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { MONSTERS } from "../../lib/monsterData";
 import {
   levelFromXP, rankFromLevel, rankIdxFromLevel, levelInRank, xpProgress,
@@ -73,6 +74,7 @@ function questRequirementChip(q) {
 
 export default function AdventurerGuild({ onBack, onNavigate, questCtx = null }) {
   const { profile } = useAuth();
+  const checkinActive = useCheckinActive(profile?.id);
 
   // ── 訂閱資料 ───────────────────────────────────────────────
   const [progress, setProgress]       = useState(null);
@@ -196,21 +198,23 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
       sfxSoftFail();
       setTaskResult({ pass: false });
     }
-    // 記錄箭數 + 里程碑提示（無論成敗都記）
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const arrowCount = arrows.filter(a => a >= 0).length;
-    addPracticeLog(profile.id, {
-      date: todayStr, source: "guild",
-      taskId: activeDailyTask.id,
-      rounds: [arrows.filter(a => a >= 0)],
-      total: arrows.filter(a => a >= 0).reduce((s, v) => s + v, 0),
-      totalArrows: arrowCount,
-    }, profile.id).catch(() => {});
-    if (arrowCount > 0) {
-      const milestones = getMilestonesReached(0, arrowCount);
-      if (milestones.length > 0) {
-        grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-        setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+    // 記錄箭數 + 里程碑提示（需報到才計）
+    if (checkinActive && profile?.id) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const arrowCount = arrows.filter(a => a >= 0).length;
+      addPracticeLog(profile.id, {
+        date: todayStr, source: "guild",
+        taskId: activeDailyTask.id,
+        rounds: [arrows.filter(a => a >= 0)],
+        total: arrows.filter(a => a >= 0).reduce((s, v) => s + v, 0),
+        totalArrows: arrowCount,
+      }, profile.id).catch(() => {});
+      if (arrowCount > 0) {
+        const milestones = getMilestonesReached(0, arrowCount);
+        if (milestones.length > 0) {
+          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+        }
       }
     }
     setBusy(false);

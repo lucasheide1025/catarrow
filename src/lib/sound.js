@@ -498,3 +498,65 @@ export function sfxGatherVictory() {
   );
   vibrate([0, 40, 60, 80]);
 }
+
+// ── 採集任務：各建築工具音效（每種 3 隨機變體）──────────────
+const COUNCIL_SFX = {
+  mine: [
+    () => { noiseBurst(0, 0.06, 300, 0.5); tone(90, 0.18, "sawtooth", 0.28, 0.04); noiseBurst(0.06, 0.10, 200, 0.3); },
+    () => { noiseBurst(0, 0.08, 250, 0.55); tone(75, 0.22, "sawtooth", 0.32, 0.06); noiseBurst(0.08, 0.12, 180, 0.28); },
+    () => { noiseBurst(0, 0.05, 350, 0.48); tone(100, 0.15, "sawtooth", 0.25, 0.03); noiseBurst(0.05, 0.09, 240, 0.35); },
+  ],
+  farm: [
+    () => { noiseBurst(0, 0.04, 500, 0.28); tone(180, 0.14, "sine", 0.18, 0.03); noiseBurst(0.06, 0.08, 400, 0.18); },
+    () => { noiseBurst(0, 0.05, 450, 0.32); tone(160, 0.16, "sine", 0.20, 0.04); tone(220, 0.12, "sine", 0.10, 0.12); },
+    () => { noiseBurst(0, 0.04, 550, 0.25); tone(200, 0.12, "triangle", 0.16, 0.03); noiseBurst(0.05, 0.07, 380, 0.15); },
+  ],
+  harbor: [
+    () => { noiseBurst(0, 0.12, 800, 0.22); tone(140, 0.30, "sine", 0.16, 0); tone(100, 0.40, "sine", 0.12, 0.08); },
+    () => { noiseBurst(0, 0.10, 700, 0.28); tone(120, 0.25, "sine", 0.18, 0.02); noiseBurst(0.12, 0.18, 600, 0.12); },
+    () => { tone(110, 0.35, "sine", 0.20, 0); noiseBurst(0, 0.08, 900, 0.18); tone(160, 0.20, "sine", 0.10, 0.15); },
+  ],
+  hunting: [
+    () => { noiseBurst(0, 0.05, 400, 0.30); tone(260, 0.08, "triangle", 0.14, 0); noiseBurst(0.06, 0.12, 300, 0.22); },
+    () => { noiseBurst(0, 0.04, 380, 0.28); tone(240, 0.10, "triangle", 0.16, 0.02); noiseBurst(0.05, 0.10, 280, 0.20); },
+    () => { noiseBurst(0, 0.06, 420, 0.32); tone(300, 0.07, "triangle", 0.12, 0); noiseBurst(0.07, 0.14, 320, 0.24); },
+  ],
+  market: [
+    () => { tone(880, 0.06, "triangle", 0.18, 0); tone(1046, 0.08, "triangle", 0.14, 0.05); tone(784, 0.10, "triangle", 0.10, 0.10); },
+    () => { tone(1046, 0.05, "triangle", 0.16, 0); tone(880, 0.07, "triangle", 0.12, 0.04); noiseBurst(0, 0.03, 2000, 0.10); },
+    () => { tone(784, 0.07, "triangle", 0.20, 0); tone(987, 0.06, "triangle", 0.15, 0.06); tone(1174, 0.05, "triangle", 0.10, 0.12); },
+  ],
+  warehouse: [
+    () => { noiseBurst(0, 0.07, 200, 0.45); tone(80, 0.20, "sawtooth", 0.22, 0.05); noiseBurst(0.08, 0.14, 160, 0.25); },
+    () => { noiseBurst(0, 0.08, 220, 0.42); tone(70, 0.18, "sawtooth", 0.20, 0.06); noiseBurst(0.09, 0.16, 180, 0.22); },
+    () => { noiseBurst(0, 0.06, 240, 0.48); tone(90, 0.16, "sawtooth", 0.24, 0.04); noiseBurst(0.07, 0.12, 200, 0.28); },
+  ],
+};
+
+export function sfxCouncilWork(buildingId) {
+  const list = COUNCIL_SFX[buildingId] || COUNCIL_SFX.mine;
+  const fn   = list[Math.floor(Math.random() * list.length)];
+  fn();
+  vibrate([0, 18]);
+}
+
+// ── 貓貓村 UI 音效 ───────────────────────────────────────────
+export function sfxVillageCollect() {
+  tone(659, 0.08, "triangle", 0.22, 0);
+  tone(784, 0.10, "triangle", 0.20, 0.07);
+  tone(1046, 0.14, "triangle", 0.18, 0.15);
+  noiseBurst(0, 0.04, 1200, 0.14);
+  vibrate([0, 20, 30]);
+}
+export function sfxVillageBuild() {
+  noiseBurst(0, 0.06, 400, 0.28);
+  tone(440, 0.10, "sawtooth", 0.16, 0.06);
+  tone(554, 0.12, "triangle", 0.18, 0.14);
+  vibrate([0, 15, 25]);
+}
+export function sfxVillageExchange() {
+  tone(523, 0.06, "triangle", 0.18, 0);
+  tone(659, 0.08, "triangle", 0.16, 0.06);
+  tone(523, 0.06, "triangle", 0.12, 0.14);
+  vibrate([0, 12]);
+}

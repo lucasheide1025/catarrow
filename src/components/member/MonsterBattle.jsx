@@ -11,6 +11,7 @@ import {
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
@@ -129,6 +130,7 @@ function calcStats(allArrows) {
 
 export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
   const { profile } = useAuth();
+  const checkinActive = useCheckinActive(profile?.id);
   const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
   const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
@@ -813,24 +815,26 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           ? [...roundScores, { scores: lastRoundArr }]
           : roundScores;
         const practiceRounds = allRoundScores.map(rs => rs.scores || []);
-        const todayStr = new Date().toISOString().slice(0, 10);
-        addPracticeLog(profile.id, {
-          date: todayStr, source: "monster",
-          monsterName: monster.name, mode, battleMode, result,
-          equipment: bowLabel, rounds: practiceRounds,
-          total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-          totalArrows: practiceRounds.flat().length,
-          distance: selectedDistance,
-        }, profile.id).catch(() => {});
+        if (checkinActive && profile?.id) {
+          const todayStr = new Date().toISOString().slice(0, 10);
+          addPracticeLog(profile.id, {
+            date: todayStr, source: "monster",
+            monsterName: monster.name, mode, battleMode, result,
+            equipment: bowLabel, rounds: practiceRounds,
+            total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+            totalArrows: practiceRounds.flat().length,
+            distance: selectedDistance,
+          }, profile.id).catch(() => {});
 
-        // 里程碑即時提示（箭露由 DailyQuest 下課結算，不在此重複計算）
-        const arrowCount = practiceRounds.flat().length;
-        if (arrowCount > 0) {
-          const milestones = getMilestonesReached(0, arrowCount);
-          if (milestones.length > 0 && profile?.id) {
-            const { grantArrowMilestoneRewards } = await import("../../lib/db");
-            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          // 里程碑即時提示（箭露由 DailyQuest 下課結算）
+          const arrowCount = practiceRounds.flat().length;
+          if (arrowCount > 0) {
+            const milestones = getMilestonesReached(0, arrowCount);
+            if (milestones.length > 0) {
+              const { grantArrowMilestoneRewards } = await import("../../lib/db");
+              grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+              setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+            }
           }
         }
       }
