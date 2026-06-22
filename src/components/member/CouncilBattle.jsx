@@ -17,7 +17,7 @@ import {
 
 const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 
-const ARROWS_PER_ROUND = 6;
+const ARROWS_PER_ROUND = 3;
 const DISTANCES = [5, 7, 10, 13.5, 15, 18];
 
 const TARGET_OPTIONS = [
@@ -25,6 +25,16 @@ const TARGET_OPTIONS = [
   { id:"half",     label:"半靶",   icon:"◑",  scores:["X","10","9","8","7","6","5","4","3","2","1","0"] },
   { id:"field_16", label:"原野靶", icon:"🌿", scores:["6","5","4","3","2","1","0"] },
 ];
+
+// 建築動作詞（取代「射箭」）
+const BUILDING_ACTIONS = {
+  mine:      { verb:"鑿擊", dmgWord:"挖掘傷害", unit:"下" },
+  farm:      { verb:"揮鋤", dmgWord:"耕作效果", unit:"下" },
+  harbor:    { verb:"撒網", dmgWord:"捕撈效果", unit:"投" },
+  hunting:   { verb:"射擊", dmgWord:"命中傷害", unit:"箭" },
+  market:    { verb:"推銷", dmgWord:"說服效果", unit:"次" },
+  warehouse: { verb:"搬運", dmgWord:"整理效果", unit:"次" },
+};
 
 // ── 六大場景主題 ──────────────────────────────────────────────
 const BUILDING_THEMES = {
@@ -358,8 +368,9 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
 
     let curMonHp  = monsterHp;
     let curArchHp = archerHp;
+    const act = BUILDING_ACTIONS[bId] || { verb:"攻擊", dmgWord:"傷害", unit:"次" };
 
-    addLog(`⚔️ 第 ${round} 輪（${distance}m · ${TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label}）`, "system");
+    addLog(`⚔️ 第 ${round} 小回合`, "system");
 
     for (let i = 0; i < ARROWS_PER_ROUND; i++) {
       const label    = arrows[i];
@@ -369,19 +380,19 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
 
       if (partMult === 0) {
         sfxSoftFail();
-        addLog(`第${i+1}箭 ${label} — 失誤！沒有效果`, "miss");
+        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 失誤！無效果`, "miss");
       } else if (partMult >= 2.0) {
         sfxCritBoom();
         sfxCouncilWork(bId);
-        addLog(`第${i+1}箭 ${label} — 爆擊！傷害 ${dmg} 💥`, "crit");
+        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 爆擊！${act.dmgWord} ${dmg} 💥`, "crit");
         setShaking(true); setTimeout(() => setShaking(false), 380);
       } else if (partMult >= 1.5) {
         sfxCouncilWork(bId);
-        addLog(`第${i+1}箭 ${label} — 重擊！傷害 ${dmg}`, "hit");
+        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 重擊！${act.dmgWord} ${dmg}`, "hit");
         setShaking(true); setTimeout(() => setShaking(false), 300);
       } else {
         sfxCouncilWork(bId);
-        addLog(`第${i+1}箭 ${label} — 命中 ${dmg}`, "normal");
+        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — ${act.dmgWord} ${dmg}`, "normal");
       }
 
       curMonHp = Math.max(0, curMonHp - dmg);
@@ -408,10 +419,10 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     const roundTotal = arrows.reduce((s, l) => s + scoreVal(l), 0);
     const hpPct      = Math.round(curMonHp / currentMonster.maxHp * 100);
     const statusTag  = hpPct <= 15 ? "⚠️ 快解決了！" : hpPct <= 35 ? "💪 繼續！" : "";
-    addLog(`回合 ${round} 結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
+    addLog(`小回合 ${round} 結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
     await delay(700);
 
-    {
+    if (round % 2 === 0) {
       const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
       const msg     = msgs[Math.floor(Math.random() * msgs.length)];
       const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));

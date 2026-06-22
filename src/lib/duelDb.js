@@ -524,3 +524,14 @@ export async function removeBotFromDuelRoom(roomId, team, botId) {
     return { ok: true };
   } catch (e) { return { ok: false }; }
 }
+
+// ── 訂閱所有等待中房間（公開大廳）────────────────────────────
+export function subscribeOpenDuelRooms(callback) {
+  const q = query(collection(db, DUEL), where("status", "==", "waiting"));
+  return onSnapshot(q, snap => {
+    const rooms = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    callback(rooms);
+  }, () => callback([]));
+}

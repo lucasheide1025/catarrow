@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { calcArcherStats } from "../../lib/monsterData";
 import {
-  createDuelRoom, joinDuelRoom, subscribeDuelRoom,
+  createDuelRoom, joinDuelRoom, subscribeDuelRoom, subscribeOpenDuelRooms,
   startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats,
   updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
   addBotToDuelRoom, removeBotFromDuelRoom,
@@ -41,15 +41,15 @@ function quickStats(profile, isGuest) {
 
 export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   const { toast, ToastContainer } = useToast();
-  const [phase, setPhase]   = useState("menu");   // menu|create|join|waiting
-  const [type, setType]     = useState("1v1");
-  const [myTeam, setMyTeam] = useState("A");
-  const [code, setCode]     = useState("");
-  const [room, setRoom]     = useState(null);
-  const [roomId, setRoomId] = useState(null);
-  const [isHost, setIsHost] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [myStats, setMyStats] = useState(null);
+  const [phase, setPhase]       = useState("menu");   // menu|create|join|waiting
+  const [type, setType]         = useState("1v1");
+  const [myTeam, setMyTeam]     = useState("A");
+  const [room, setRoom]         = useState(null);
+  const [roomId, setRoomId]     = useState(null);
+  const [isHost, setIsHost]     = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [myStats, setMyStats]   = useState(null);
+  const [openRooms, setOpenRooms] = useState([]);
 
   useEffect(() => {
     if (!profile?.id || isGuest) return;
@@ -96,6 +96,13 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     return unsub;
   }, [roomId]); // eslint-disable-line
 
+  // 訂閱開放房間（公開大廳）
+  useEffect(() => {
+    if (phase !== "join") return;
+    const unsub = subscribeOpenDuelRooms(setOpenRooms);
+    return () => { unsub?.(); setOpenRooms([]); };
+  }, [phase]); // eslint-disable-line
+
   // 心跳（等待室每 30 秒更新 lastSeen）
   useEffect(() => {
     if (phase !== "waiting" || !roomId || !myId) return;
@@ -138,11 +145,14 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
     setPhase("waiting");
   }
 
-  async function handleJoin() {
-    if (!code.trim()) { toast("請輸入邀請碼"); return; }
+  async function handleJoinRoom(openRoom) {
+    if (loading) return;
     setLoading(true);
     const stats = quickStats(profile, isGuest);
-    const res = await joinDuelRoom(code.trim(), myId, myName, myTeam, stats, isGuest);
+    const aCount = Object.keys(openRoom.teamA || {}).length;
+    const bCount = Object.keys(openRoom.teamB || {}).length;
+    const autoTeam = openRoom.type === "uneven" ? "B" : (aCount <= bCount ? "A" : "B");
+    const res = await joinDuelRoom(openRoom.code, myId, myName, autoTeam, stats, isGuest);
     setLoading(false);
     if (!res.ok) { toast(res.reason, "error"); return; }
     if (res.roomType === "uneven") toast("⚡ 不對等模式：已自動分配至 B 隊");
@@ -198,11 +208,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
           {/* 房間資訊 */}
           <div className="text-center">
             <div className="text-3xl font-black text-white tracking-wide">{typeLabel} 決鬥</div>
-            <div className="mt-2 flex items-center justify-center gap-2">
-              <span className="text-sm text-slate-400">邀請碼：</span>
-              <span className="text-2xl font-black tracking-[6px] text-amber-400">{room.code}</span>
-            </div>
-            <div className="text-xs text-slate-500 mt-1">分享邀請碼邀請對手加入</div>
+            <div className="text-xs text-slate-500 mt-2">等待對手從大廳加入…</div>
           </div>
 
           {/* 雙隊顯示 */}
@@ -356,35 +362,53 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
 
   // ── 加入房間 ────────────────────────────────────────────
   if (phase === "join") return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+    <div className="min-h-screen flex flex-col p-4 pt-10" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <ToastContainer />
-      <div className="w-full max-w-sm flex flex-col gap-4">
+      <div className="w-full max-w-sm mx-auto flex flex-col gap-4">
         <div className="text-center">
-          <div className="text-2xl font-black text-white">🔑 加入決鬥房間</div>
-          <div className="text-slate-400 text-sm mt-1">輸入對手的邀請碼</div>
+          <div className="text-2xl font-black text-white">🏹 加入決鬥</div>
+          <div className="text-slate-400 text-sm mt-1">選擇一個開放中的房間</div>
         </div>
 
-        <Card className="p-4 flex flex-col gap-3">
-          <Inp label="邀請碼" value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-            placeholder="例：A3F7K2" maxLength={6}
-            style={{ letterSpacing: "0.3em", fontSize: "1.2rem", fontWeight: 900 }} />
-
-          <ST>🎽 選擇隊伍</ST>
-          <div className="flex gap-3">
-            {["A","B"].map(t => (
-              <button key={t} onClick={() => setMyTeam(t)}
-                className={`flex-1 py-3 rounded-xl font-black text-sm border transition-all ${myTeam === t
-                  ? (t==="A" ? "bg-blue-600 border-blue-400 text-white" : "bg-red-600 border-red-400 text-white")
-                  : "bg-slate-800/60 border-slate-700 text-slate-300"}`}>
-                {t === "A" ? "🔵 隊伍 A" : "🔴 隊伍 B"}
-              </button>
-            ))}
+        {openRooms.length === 0 ? (
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+            <div className="text-4xl mb-3 animate-pulse">🔍</div>
+            <div className="text-slate-400 text-sm">目前沒有開放中的房間</div>
+            <div className="text-slate-600 text-xs mt-1">請等待隊友建立房間後再刷新</div>
           </div>
-        </Card>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {openRooms.map(r => {
+              const aCount = Object.keys(r.teamA || {}).length;
+              const bCount = Object.keys(r.teamB || {}).length;
+              const typeLabel = TYPE_OPTIONS.find(t => t.value === r.type)?.label || r.type;
+              const maxPer = { "1v1":1, "2v2":2, "3v3":3, "4v4":4, "uneven":8 }[r.type] || 8;
+              const isFull = r.type !== "uneven" && aCount >= maxPer && bCount >= maxPer;
+              return (
+                <div key={r.id} className={`rounded-2xl border p-4 transition-all ${isFull ? "opacity-40 border-white/10 bg-white/5" : "border-amber-500/30 bg-gradient-to-br from-slate-800/80 to-slate-900/80"}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-white font-black text-base">{typeLabel} 決鬥</div>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-blue-300 text-xs font-bold">🔵 A隊 {aCount}人</span>
+                        <span className="text-slate-500 text-xs">vs</span>
+                        <span className="text-red-300 text-xs font-bold">🔴 B隊 {bCount}人</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => !isFull && handleJoinRoom(r)}
+                      disabled={isFull || loading}
+                      className="ml-3 px-5 py-2.5 rounded-xl font-black text-sm bg-amber-500 text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
+                    >
+                      {loading ? "…" : isFull ? "已滿" : "加入"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-        <Btn v="primary" className="w-full" onClick={handleJoin} disabled={loading}>
-          {loading ? "加入中…" : "⚔️ 加入決鬥"}
-        </Btn>
         <Btn v="ghost" className="w-full" onClick={() => setPhase("menu")}>← 返回</Btn>
       </div>
     </div>
@@ -429,8 +453,8 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
           <button onClick={() => setPhase("join")}
             className="rounded-2xl p-4 border-2 border-red-500/50 text-left transition-all active:scale-95"
             style={{ background: "linear-gradient(135deg,#5f1e1e,#c2410c)" }}>
-            <div className="text-white font-black text-base">🔑 加入房間</div>
-            <div className="text-red-200 text-xs mt-0.5">輸入邀請碼加入對手的房間</div>
+            <div className="text-white font-black text-base">🏹 加入房間</div>
+            <div className="text-red-200 text-xs mt-0.5">瀏覽開放中的房間，點擊即可加入</div>
           </button>
         </div>
 
