@@ -23,12 +23,12 @@ export const TIER_META = {
 
 // 生活怪物戰鬥數值（繼承 ghost 族基礎值）
 export const LIFE_TIER_STATS = {
-  common:  { hp:  80, atk:  12, def:  5 },
-  rare:    { hp: 160, atk:  24, def: 12 },
-  elite:   { hp: 280, atk:  40, def: 22 },
-  fierce:  { hp: 440, atk:  62, def: 38 },
-  boss:    { hp: 650, atk:  88, def: 58 },
-  mythic:  { hp:1000, atk: 140, def: 95 },
+  common:  { hp: 120, atk:  18, def:  8 },
+  rare:    { hp: 240, atk:  36, def: 18 },
+  elite:   { hp: 420, atk:  60, def: 33 },
+  fierce:  { hp: 660, atk:  93, def: 57 },
+  boss:    { hp: 975, atk: 132, def: 87 },
+  mythic:  { hp:1500, atk: 210, def:143 },
 };
 
 // 建築等級 → 可出現的 tier 數量

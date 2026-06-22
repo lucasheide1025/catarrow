@@ -135,14 +135,17 @@ function RevealOverlay({ results, onDone }) {
   const isNew  = result?.isNew;
   const total  = results.length;
 
-  // entering phase: drop 600ms → glow 500ms → showing
+  // entering phase: drop 600ms → glow 500ms → showing (每張播音效)
   useEffect(() => {
     if (phase !== "entering") return;
     setBall("drop");
     const t1 = setTimeout(() => setBall("glow"), 600);
-    const t2 = setTimeout(() => setPhase("showing"), 1100);
+    const t2 = setTimeout(() => {
+      sfxGachaReveal(isNew);
+      setPhase("showing");
+    }, 1100);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [phase, idx]);
+  }, [phase, idx]); // eslint-disable-line
 
   // showing phase: auto-advance after 5s
   useEffect(() => {
@@ -469,7 +472,6 @@ export default function GachaMachine({ catCards, gachaCoins, onCoinsUpdated }) {
       }
     }
 
-    sfxGachaReveal(results.some(r => r.isNew));
     setRevealQueue(results);
     onCoinsUpdated?.();
   }

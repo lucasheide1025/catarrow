@@ -409,7 +409,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     addLog(`回合 ${round} 結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
     await delay(700);
 
-    if (round % 2 === 0) {
+    {
       const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
       const msg     = msgs[Math.floor(Math.random() * msgs.length)];
       const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));
