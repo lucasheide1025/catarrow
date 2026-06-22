@@ -284,7 +284,7 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
           {isEquipped && <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-1 rounded-full font-bold">裝備中</span>}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-24 pt-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4 space-y-4">
           {/* 貓咪展示 */}
           <div className="flex items-center gap-5 bg-white/5 border border-white/10 rounded-2xl p-4">
             <CatSVG catId={catId} size={80} deceased={cat?.isDeceased}/>
@@ -297,6 +297,17 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
               )}
             </div>
           </div>
+
+          {/* 裝備按鈕（貓咪展示下方） */}
+          <button onClick={handleEquip} disabled={updating}
+            className={`w-full py-4 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-40 ${
+              isEquipped
+                ? "bg-white/10 border border-white/20 text-slate-300"
+                : "text-white shadow-xl"
+            }`}
+            style={!isEquipped ? { background: `linear-gradient(135deg, #4f46e5, #7c3aed)` } : {}}>
+            {updating ? "處理中…" : isEquipped ? "卸下陪練" : `帶 ${cat?.name} 去冒險 🐱`}
+          </button>
 
           {/* 羈絆 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -372,19 +383,6 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
           </div>
         </div>
 
-        {/* 裝備按鈕 */}
-        <div className="shrink-0 absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-          style={{ background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
-          <button onClick={handleEquip} disabled={updating}
-            className={`w-full py-4 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-40 ${
-              isEquipped
-                ? "bg-white/10 border border-white/20 text-slate-300"
-                : "text-white shadow-xl"
-            }`}
-            style={!isEquipped ? { background: `linear-gradient(135deg, #4f46e5, #7c3aed)` } : {}}>
-            {updating ? "處理中…" : isEquipped ? "卸下陪練" : `帶 ${cat?.name} 去冒險 🐱`}
-          </button>
-        </div>
       </div>
     </>
   );

@@ -12,6 +12,7 @@ import {
   UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
+import CouncilHall  from "./CouncilHall";
 
 // 手繪風配色常數
 const C = {
@@ -470,7 +471,7 @@ function MarketExchangePanel({ resources, memberId, onDone }) {
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
-export default function CatVillage({ catCards, gachaCoins, onEnterCouncil }) {
+export default function CatVillage({ catCards, gachaCoins }) {
   const { profile } = useAuth();
   const [tab, setTab]               = useState("village");
   const [selectedBuilding, setSelectedBuilding] = useState(null);
@@ -550,7 +551,7 @@ export default function CatVillage({ catCards, gachaCoins, onEnterCouncil }) {
 
       {/* 頁籤 */}
       <div className="flex shrink-0" style={{ background: "#FDF6EC", borderBottom: `1px solid ${C.border}` }}>
-        {[["village","🏡 貓貓村"],["gacha","🎰 扭蛋機"]].map(([id, label]) => (
+        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className="flex-1 py-3 text-sm font-black transition-colors"
             style={{
@@ -564,6 +565,14 @@ export default function CatVillage({ catCards, gachaCoins, onEnterCouncil }) {
 
       {tab === "gacha" && (
         <GachaMachine catCards={catCards} gachaCoins={gachaCoins} onCoinsUpdated={() => {}} />
+      )}
+
+      {tab === "council" && (
+        <CouncilHall
+          profile={profile}
+          village={localVillage || profile?.village}
+          onBack={() => setTab("village")}
+        />
       )}
 
       {tab === "village" && (
@@ -614,23 +623,6 @@ export default function CatVillage({ catCards, gachaCoins, onEnterCouncil }) {
                     </div>
                   </div>
 
-                  {/* 議會廳入口 */}
-                  {onEnterCouncil && (
-                    <button
-                      onClick={() => { sfxTap(); onEnterCouncil(); }}
-                      className="mt-3 w-full rounded-2xl py-3 flex items-center justify-between px-4"
-                      style={{
-                        background: "linear-gradient(135deg,#fef3c7,#fde68a)",
-                        border: "1.5px solid #f59e0b",
-                        cursor: "pointer",
-                      }}>
-                      <div style={{ textAlign: "left" }}>
-                        <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e" }}>🏛️ 議會廳</div>
-                        <div style={{ fontSize: 11, color: "#a16207" }}>採集副本 · 獲得種族素材</div>
-                      </div>
-                      <span style={{ fontSize: 18, color: "#d97706" }}>›</span>
-                    </button>
-                  )}
                 </>
               );
             })()}

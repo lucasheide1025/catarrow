@@ -56,12 +56,11 @@ import MemberInventoryHub from "../components/member/MemberInventoryHub";
 import MemberRecordsHub   from "../components/member/MemberRecordsHub";
 import GachaMachine       from "../components/member/GachaMachine";
 import CatVillage         from "../components/member/CatVillage";
-import CouncilHall        from "../components/member/CouncilHall";
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
-const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha","council"];
+const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
 
 export default function MemberApp() {
@@ -407,12 +406,7 @@ export default function MemberApp() {
         {page==="cards"       && <CardCollection />}
         {page==="gacha"       && <CatVillage
           catCards={profile?.catCards}
-          gachaCoins={profile?.gachaCoins ?? 0}
-          onEnterCouncil={() => setPage("council")} />}
-        {page==="council"     && <CouncilHall
-          profile={profile}
-          village={profile?.village}
-          onBack={() => setPage("gacha")} />}
+          gachaCoins={profile?.gachaCoins ?? 0} />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
