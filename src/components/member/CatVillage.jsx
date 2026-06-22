@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
 } from "../../lib/db";
+import { sfxSuccess, sfxEpic, sfxTap } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
   getProductionRate, getUpgradeRequirements, canUpgrade,
@@ -188,100 +189,131 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
   const curRate   = getProductionRate(buildingId, level);
   const nextRate  = getProductionRate(buildingId, nextLv);
   const imgSrc    = `/ui/village/building-${buildingId}-stage${stage}.webp`;
-  const nextImgSrc = nextStage !== stage
+  const stageUp   = nextStage !== stage;
+  const nextImgSrc = stageUp
     ? `/ui/village/building-${buildingId}-stage${nextStage}.webp`
     : null;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.7)" }}
+      style={{ background: "rgba(0,0,0,0.75)" }}
       onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-t-3xl pb-8 pt-5 px-5"
-        style={{ background: "linear-gradient(180deg,#1e293b,#0f172a)", maxHeight: "80vh", overflowY: "auto" }}
+        className="w-full max-w-sm rounded-t-3xl overflow-hidden"
+        style={{ background: "linear-gradient(180deg,#1e293b,#0f172a)", maxHeight: "88vh", overflowY: "auto" }}
         onClick={e => e.stopPropagation()}>
 
-        {/* 建築圖 + 名稱 */}
-        <div className="flex items-center gap-4 mb-5">
-          <div className="flex items-center gap-1.5" style={{ flexShrink: 0 }}>
-            <div style={{ width: 72, height: 54, borderRadius: 10, overflow: "hidden", background: "rgba(255,255,255,0.05)" }}>
-              <img src={imgSrc} alt={b.name}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                onError={e => { e.target.style.display = "none"; }} />
-            </div>
-            {nextImgSrc && (
-              <>
-                <span className="text-white/40 text-base">→</span>
-                <div style={{ width: 72, height: 54, borderRadius: 10, overflow: "hidden", background: "rgba(255,255,255,0.05)", border: "1.5px solid #a78bfa" }}>
-                  <img src={nextImgSrc} alt="升級後"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={e => { e.target.style.display = "none"; }} />
-                </div>
-              </>
-            )}
+        {/* ── 大圖預覽 ── */}
+        <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "rgba(0,0,0,0.3)", flexShrink: 0 }}>
+          <img src={imgSrc} alt={b.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            onError={e => {
+              e.target.style.display = "none";
+              e.target.nextSibling.style.display = "flex";
+            }} />
+          {/* emoji fallback */}
+          <div style={{ display: "none", position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", fontSize: 64 }}>
+            {b.emoji}
           </div>
-          <div>
-            <div className="text-white font-black text-base">{b.emoji} {b.name}</div>
-            <div className="text-white/50 text-xs">Lv.{level} → {nextLv <= 20 ? nextLv : "MAX"}</div>
-            <div className="text-green-400 text-xs font-bold mt-0.5">
-              產出：{curRate}/hr → {nextLv <= 20 ? nextRate : curRate}/hr
-            </div>
+          {/* 等級角標 */}
+          <div style={{
+            position: "absolute", top: 12, left: 14,
+            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+            borderRadius: 20, padding: "4px 14px",
+            color: "white", fontWeight: 900, fontSize: 14,
+          }}>
+            Lv.{level}
           </div>
+          {/* 關閉按鈕 */}
+          <button onClick={onClose} style={{
+            position: "absolute", top: 10, right: 12,
+            width: 32, height: 32, borderRadius: "50%",
+            background: "rgba(0,0,0,0.55)", color: "white",
+            fontSize: 16, fontWeight: 900,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: "none", cursor: "pointer",
+          }}>✕</button>
+          {/* 段位提升預告條 */}
+          {stageUp && nextImgSrc && (
+            <div style={{
+              position: "absolute", bottom: 0, left: 0, right: 0,
+              background: "linear-gradient(to top, rgba(167,139,250,0.9), transparent)",
+              padding: "24px 14px 10px",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ color: "#e9d5ff", fontSize: 11, fontWeight: 900 }}>✨ 升至 Lv.{nextLv} 將解鎖新外觀！</span>
+              <div style={{ width: 44, height: 33, borderRadius: 6, overflow: "hidden", border: "1.5px solid #a78bfa", flexShrink: 0 }}>
+                <img src={nextImgSrc} alt="下一段位"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  onError={e => { e.target.style.display = "none"; }} />
+              </div>
+            </div>
+          )}
         </div>
 
-        {level >= 20 ? (
-          <div className="text-center text-white/40 py-4">已達最高等級 Lv.20</div>
-        ) : req ? (
-          <>
-            <div className="text-white/60 text-xs font-bold mb-2">升級需求</div>
-            {/* 箭露 */}
-            <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 mb-2">
-              <div className="flex items-center gap-2">
-                <span>💧</span>
-                <span className="text-white text-sm">箭露</span>
-              </div>
-              <div className="text-right">
-                <span className="text-white font-black">{req.arrowdew.toLocaleString()}</span>
-                <span className="text-white/40 text-xs ml-2">
-                  / {(resources?.arrowdew || 0).toLocaleString()}
-                </span>
-              </div>
-            </div>
-            {/* 材料 */}
-            {req.materials.map((mat, i) => {
-              const have = resources?.[mat.resource] || 0;
-              const ok   = have >= mat.count;
-              return (
-                <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 mb-2">
-                  <div className="flex items-center gap-2">
-                    <img src={`/ui/village/resource-${mat.resource}.webp`} alt=""
-                      style={{ width: 20, height: 20 }}
-                      onError={e => { e.target.style.display = "none"; }} />
-                    <span className="text-white text-sm">
-                      {RESOURCE_NAMES[mat.resource]} T{mat.tier}
-                    </span>
-                  </div>
-                  <div className={`font-black text-sm ${ok ? "text-green-400" : "text-red-400"}`}>
-                    {mat.count} <span className="text-white/30 font-normal">/ {have}</span>
-                  </div>
-                </div>
-              );
-            })}
+        {/* ── 內容區 ── */}
+        <div className="px-5 pt-4 pb-8">
+          {/* 標題列 */}
+          <div className="flex items-baseline justify-between mb-1">
+            <div className="text-white font-black text-xl">{b.emoji} {b.name}</div>
+            <div className="text-white/40 text-xs">Lv.{level} → {nextLv <= 20 ? nextLv : "MAX"}</div>
+          </div>
+          <div className="text-green-400 text-xs font-bold mb-4">
+            產出：{curRate}/hr {nextLv <= 20 ? `→ ${nextRate}/hr` : "（已滿）"}
+          </div>
 
-            <button
-              onClick={onUpgrade}
-              disabled={!check.ok || upgrading}
-              className="w-full py-4 rounded-2xl font-black text-base mt-3 transition-all active:scale-95"
-              style={{
-                background: check.ok
-                  ? "linear-gradient(135deg,#10b981,#059669)"
-                  : "rgba(255,255,255,0.08)",
-                color: check.ok ? "white" : "rgba(255,255,255,0.3)",
-              }}>
-              {upgrading ? "升級中…" : check.ok ? `升級至 Lv.${nextLv}` : check.reason}
-            </button>
-          </>
-        ) : null}
+          {level >= 20 ? (
+            <div className="text-center text-white/40 py-4 text-sm">🏆 已達最高等級 Lv.20</div>
+          ) : req ? (
+            <>
+              <div className="text-white/50 text-xs font-bold mb-2 tracking-wider">升級需求</div>
+              {/* 箭露 */}
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <span>💧</span>
+                  <span className="text-white text-sm">箭露</span>
+                </div>
+                <div>
+                  <span className={`font-black text-sm ${(resources?.arrowdew || 0) >= req.arrowdew ? "text-green-400" : "text-red-400"}`}>
+                    {req.arrowdew.toLocaleString()}
+                  </span>
+                  <span className="text-white/30 text-xs ml-1.5">/ {(resources?.arrowdew || 0).toLocaleString()}</span>
+                </div>
+              </div>
+              {/* 材料 */}
+              {req.materials.map((mat, i) => {
+                const have = resources?.[mat.resource] || 0;
+                const ok   = have >= mat.count;
+                return (
+                  <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 mb-2">
+                    <div className="flex items-center gap-2">
+                      <img src={`/ui/village/resource-${mat.resource}.webp`} alt=""
+                        style={{ width: 20, height: 20 }}
+                        onError={e => { e.target.style.display = "none"; }} />
+                      <span className="text-white text-sm">{RESOURCE_NAMES[mat.resource]} T{mat.tier}</span>
+                    </div>
+                    <div className={`font-black text-sm ${ok ? "text-green-400" : "text-red-400"}`}>
+                      {mat.count} <span className="text-white/30 font-normal text-xs">/ {have}</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={onUpgrade}
+                disabled={!check.ok || upgrading}
+                className="w-full py-4 rounded-2xl font-black text-base mt-3 transition-all active:scale-95"
+                style={{
+                  background: check.ok
+                    ? "linear-gradient(135deg,#10b981,#059669)"
+                    : "rgba(255,255,255,0.08)",
+                  color: check.ok ? "white" : "rgba(255,255,255,0.3)",
+                }}>
+                {upgrading ? "升級中…" : check.ok ? `⬆ 升級至 Lv.${nextLv}` : check.reason}
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -376,7 +408,10 @@ export default function CatVillage({ catCards, gachaCoins }) {
     if (upgrading || !profile?.id) return;
     setUpgrading(true);
     try {
+      const currentLevel = buildings[buildingId] || 1;
+      const stageChanges = getBuildingStage(currentLevel) !== getBuildingStage(currentLevel + 1);
       const res = await upgradeVillageBuilding(profile.id, buildingId, village);
+      if (stageChanges) sfxEpic(); else sfxSuccess();
       setLocalVillage(prev => ({
         ...(prev || village),
         buildings: { ...(prev?.buildings || buildings), [buildingId]: res.newLevel },
@@ -446,7 +481,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
                           buildingId={id}
                           level={buildings[id] || 1}
                           resources={resources}
-                          onClick={() => setSelectedBuilding(id)}
+                          onClick={() => { sfxTap(); setSelectedBuilding(id); }}
                         />
                       ) : (
                         <LockedBuildingCard key={id} buildingId={id} buildings={buildings} />
