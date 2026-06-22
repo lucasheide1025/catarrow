@@ -57,8 +57,9 @@ import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
 import CatCollection     from "../components/cat/CatCollection";
 import CatStoryBook      from "../components/cat/CatStoryBook";
 import StoryBook         from "../components/story/StoryBook";
-import AdminStoryManager from "../components/admin/AdminStoryManager";
-import AdminArchery      from "../components/admin/AdminArchery";
+import AdminStoryManager    from "../components/admin/AdminStoryManager";
+import AdminArchery          from "../components/admin/AdminArchery";
+import AdminVillageManager   from "../components/admin/AdminVillageManager";
 import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import MemberAdventureHub from "../components/member/MemberAdventureHub";
@@ -505,9 +506,10 @@ const adminNav = [
         {page==="hub-events" && eventsSub==="reset-center"    && <><HubBack onClick={()=>setEventsSub(null)}/><AdminResetCenter/></>}
 
         {/* ── 裝備&故事 Hub ── */}
-        {page==="hub-items" && itemsSub===null            && <AdminItemsHub onSelect={setItemsSub}/>}
-        {page==="hub-items" && itemsSub==="equipitems"    && <><HubBack onClick={()=>setItemsSub(null)}/><AdminEquipItems/></>}
-        {page==="hub-items" && itemsSub==="story-admin"   && <><HubBack onClick={()=>setItemsSub(null)}/><AdminStoryManager/></>}
+        {page==="hub-items" && itemsSub===null              && <AdminItemsHub onSelect={setItemsSub}/>}
+        {page==="hub-items" && itemsSub==="equipitems"      && <><HubBack onClick={()=>setItemsSub(null)}/><AdminEquipItems/></>}
+        {page==="hub-items" && itemsSub==="story-admin"     && <><HubBack onClick={()=>setItemsSub(null)}/><AdminStoryManager/></>}
+        {page==="hub-items" && itemsSub==="village-manager" && <><HubBack onClick={()=>setItemsSub(null)}/><AdminVillageManager/></>}
 
         {/* ── 單一頁面 ── */}
         {page==="givetool"     && <AdminGiveTool/>}
@@ -599,8 +601,9 @@ function AdminItemsHub({ onSelect }) {
     <div style={{padding:"16px"}}>
       <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>⚔️ 裝備 & 故事</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-        <HubCard icon="🗡️" label="裝備庫"  desc="裝備道具管理" onClick={() => onSelect("equipitems")} />
-        <HubCard icon="📖" label="故事本"  desc="故事章節管理" onClick={() => onSelect("story-admin")} />
+        <HubCard icon="🗡️" label="裝備庫"    desc="裝備道具管理"       onClick={() => onSelect("equipitems")} />
+        <HubCard icon="📖" label="故事本"    desc="故事章節管理"       onClick={() => onSelect("story-admin")} />
+        <HubCard icon="🏡" label="村莊調試"  desc="給資源、調建築等級" onClick={() => onSelect("village-manager")} />
       </div>
     </div>
   );

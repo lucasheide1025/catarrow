@@ -13,7 +13,8 @@ import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from 
 
 const BADGE_LABEL = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
 const BADGE_COLOR = { silver: "#94a3b8", gold: "#fbbf24", black: "#1e293b" };
-const PROMO_LABEL = { 10:"Lv10 青銅→白銀", 20:"Lv20 白銀→黃金", 30:"Lv30 黃金→白金", 40:"Lv40 白金→傳說", 50:"Lv50 傳說→神話" };
+const PROMO_LABEL  = { 10:"Lv10 青銅→白銀", 20:"Lv20 白銀→黃金", 30:"Lv30 黃金→白金", 40:"Lv40 白金→傳說", 50:"Lv50 傳說→神話" };
+const PROMO_LEVELS = [10, 20, 30, 40, 50];
 
 const SUBTYPE_LABEL = {
   general:      "📋 一般",

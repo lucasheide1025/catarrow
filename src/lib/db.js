@@ -2932,3 +2932,34 @@ export async function initVillageIfNeeded(memberId, currentVillage) {
     },
   });
 }
+
+// ─── 後台：村莊調試 ────────────────────────────────────────
+
+export async function adminSetVillageBuilding(memberId, buildingId, level) {
+  const lv = Math.max(1, Math.min(20, Number(level)));
+  await updateDoc(doc(db, C.members, memberId), {
+    [`village.buildings.${buildingId}`]: lv,
+  });
+}
+
+export async function adminAdjustVillageResource(memberId, resourceKey, delta) {
+  const d = Number(delta);
+  if (d === 0) return;
+  // 頂層欄位：arrowdew, archer, gachaCoins；其餘放 village.resources
+  const topLevel = ['gachaCoins'];
+  if (topLevel.includes(resourceKey)) {
+    await updateDoc(doc(db, C.members, memberId), {
+      [resourceKey]: increment(d),
+    });
+  } else {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`village.resources.${resourceKey}`]: increment(d),
+    });
+  }
+}
+
+export async function adminResetVillage(memberId) {
+  await updateDoc(doc(db, C.members, memberId), {
+    village: { ...DEFAULT_VILLAGE, lastCollectedAt: serverTimestamp() },
+  });
+}
