@@ -128,6 +128,11 @@ function calcStats(allArrows) {
   return { total, count, avg, tens, misses, dist };
 }
 
+function pickBg(family) {
+  const idx = Math.ceil(Math.random() * 6);
+  return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+}
+
 export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
   const { profile } = useAuth();
   const checkinActive = useCheckinActive(profile?.id);
@@ -138,6 +143,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [battleMode, setBattleMode] = useState("score");
   const [mode, setMode]             = useState("novice");
   const [monster, setMonster]       = useState(null);
+  const [battleBg, setBattleBg]     = useState("/ui/dungeon-bg.webp");
   const [archerStats, setArcherStats] = useState(null);
   const [certRecords, setCertRecords] = useState([]);
   const [certification, setCertification] = useState(null);
@@ -276,6 +282,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     questInitDone.current = true;
     setPickedMonster(target);
     setMonster(target);
+    setBattleBg(pickBg(target.family));
     setPhase("prebattle");
   }, [questContext?.monsterId, archerStats, phase, archerStyle]); // eslint-disable-line
 
@@ -649,6 +656,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   function restoreBattle(s) {
     setMonster(s.monster);
+    setBattleBg(pickBg(s.monster?.family));
     setMode(s.mode || "novice");
     setBattleMode(s.battleMode || "score");
     setMonsterHP(s.monsterHP);
@@ -1104,7 +1112,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             </div>
 
             {pickedMonster && (
-              <button onClick={()=>{ setMonster(pickedMonster); setPhase("mode"); }}
+              <button onClick={()=>{ setMonster(pickedMonster); setBattleBg(pickBg(pickedMonster.family)); setPhase("mode"); }}
                 className="w-full py-4 rounded-2xl font-black text-lg text-white"
                 style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", animation:"mb-glow 2s ease infinite" }}>
                 ⚔️ 挑戰 {pickedMonster.name}！
@@ -1180,7 +1188,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         </div>
 
         {pickedMonster && (
-          <button onClick={() => { setMonster(pickedMonster); setPhase("prebattle"); }}
+          <button onClick={() => { setMonster(pickedMonster); setBattleBg(pickBg(pickedMonster.family)); setPhase("prebattle"); }}
             className="w-full py-4 rounded-2xl font-black text-lg text-white"
             style={{ background:"linear-gradient(90deg,#f59e0b,#d97706)", animation:"mb-glow 2s ease infinite" }}>
             🏆 挑戰 {pickedMonster.name}！（賽事模式）
@@ -1590,7 +1598,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         left:"50%", transform:"translateX(-50%)",
         width:"100%", maxWidth:540,
         overflow:"hidden", zIndex:9999,
-        backgroundImage:"url(/ui/dungeon-bg.webp)",
+        backgroundImage:`url(${battleBg})`,
         backgroundSize:"cover", backgroundPosition:"center",
         display:"flex", flexDirection:"column"
       }}>

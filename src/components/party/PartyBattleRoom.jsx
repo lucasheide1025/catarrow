@@ -125,12 +125,18 @@ function PartyMonsterImg({ id, icon, charge, size }) {
   );
 }
 
+function pickBg(family) {
+  const idx = Math.ceil(Math.random() * 6);
+  return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+}
+
 // guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile.id
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catStatMult } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
+  const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
   const [targetMode,      setTargetMode]      = useState(() => getBattleInputMode() === "target");
   const [targetPending,   setTargetPending]   = useState(false);
@@ -185,7 +191,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myId = guestOverride?.id || authProfile?.id;
 
   useEffect(() => {
-    const unsub = subscribePartyRoom(roomId, setRoom);
+    const unsub = subscribePartyRoom(roomId, r => {
+      setRoom(r);
+      if (r?.monster?.family && !battleBgRef.current) {
+        battleBgRef.current = pickBg(r.monster.family);
+      }
+    });
     return unsub;
   }, [roomId]);
 
@@ -1233,7 +1244,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     <div style={{
       position:"fixed", top:0, bottom:0, left:"50%", transform:"translateX(-50%)",
       width:"100%", maxWidth:540, zIndex:9999, overflow:"hidden",
-      backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center",
+      backgroundImage:`url(${battleBgRef.current || "/ui/dungeon-bg.webp"})`, backgroundSize:"cover", backgroundPosition:"center",
       display:"flex", flexDirection:"column",
     }}>
       <style>{`

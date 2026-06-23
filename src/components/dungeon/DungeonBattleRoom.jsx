@@ -78,11 +78,17 @@ function ContractBadge({ contract }) {
   );
 }
 
+function pickBg(family) {
+  const idx = Math.ceil(Math.random() * 6);
+  return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+}
+
 export default function DungeonBattleRoom({ roomId, onExit }) {
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catStatMult, catName: myCatName } = useCatCompanion();
   const myId = profile?.id;
   const bondSavedRef = useRef(false);
+  const battleBgRef  = useRef(null);
 
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
@@ -122,6 +128,9 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     if (!roomId) return;
     const unsub = subscribeDungeonRoom(roomId, r => {
       setRoom(r);
+      if (r?.monster?.family && !battleBgRef.current) {
+        battleBgRef.current = pickBg(r.monster.family);
+      }
       if (r && r.status === "active" && r.round !== undefined) {
         // 只有「層＋回合」組合真的變了才清箭，避免其他人送出觸發時誤清
         const key = `${r.currentFloor || 1}-${r.round}`;
@@ -582,7 +591,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     <div style={{
       position:"fixed", top:0, bottom:0, left:"50%", transform:"translateX(-50%)",
       width:"100%", maxWidth:540, zIndex:9999, overflow:"hidden",
-      backgroundImage:"url(/ui/dungeon-bg.webp)", backgroundSize:"cover", backgroundPosition:"center",
+      backgroundImage:`url(${battleBgRef.current || "/ui/dungeon-bg.webp"})`, backgroundSize:"cover", backgroundPosition:"center",
       display:"flex", flexDirection:"column", fontFamily:"sans-serif",
     }}>
       <style>{`

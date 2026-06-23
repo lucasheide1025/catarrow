@@ -77,9 +77,8 @@ function TargetSVG({ fmtId, R, onTap }) {
     if (!onTap) return;
     e.preventDefault();
     const svg = e.currentTarget.getBoundingClientRect();
-    const touch = e.touches?.[0] || e;
-    const px = (touch.clientX ?? touch.pageX) - svg.left;
-    const py = (touch.clientY ?? touch.pageY) - svg.top;
+    const px = e.clientX - svg.left;
+    const py = e.clientY - svg.top;
     const dist = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2);
     const ratio = dist / R;
     const score = calcTapScore(ratio, fmtId);
@@ -90,7 +89,7 @@ function TargetSVG({ fmtId, R, onTap }) {
   return (
     <svg width={SIZE} height={SIZE}
       style={{ touchAction:"none", display:"block", cursor:"crosshair" }}
-      onMouseDown={handleTap} onTouchStart={handleTap}>
+      onPointerDown={handleTap}>
       <circle cx={CX} cy={CY} r={R + 2} fill="#2a2a2a" />
       {rings.map((ring, i) => (
         <circle key={i} cx={CX} cy={CY} r={ring.r * R}
