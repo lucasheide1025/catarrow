@@ -239,7 +239,7 @@ function RevealOverlay({ results, onDone }) {
                 : "0 24px 64px rgba(0,0,0,0.55)",
             }}>
               <img
-                src={`/cat-cards/${card.id}.webp`}
+                src={`/cats/cat-cards/${card.id}.webp`}
                 alt={card.name}
                 onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}
                 style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
@@ -335,7 +335,7 @@ function CardLightbox({ card, cnt, onClose }) {
         position:"relative",
       }}>
         <div style={{ width:"100%", aspectRatio:"3/4", position:"relative", background:card.bg||"#FFF5E8" }}>
-          <img src={`/cat-cards/${card.id}.webp`} alt={card.name}
+          <img src={`/cats/cat-cards/${card.id}.webp`} alt={card.name}
             onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}
             style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
           <div style={{ display:"none", position:"absolute", inset:0,
@@ -400,7 +400,7 @@ function CardDex({ catCards }) {
               position:"relative", userSelect:"none",
             }}>
               <div style={{width:"100%",aspectRatio:"3/4",position:"relative",background:card.bg||"#FFF5E8"}}>
-                <img src={`/cat-cards/${card.id}.webp`} alt={have?card.name:"???"}
+                <img src={`/cats/cat-cards/${card.id}.webp`} alt={have?card.name:"???"}
                   onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}
                   style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
                 <div style={{display:"none",position:"absolute",inset:0,
