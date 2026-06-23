@@ -6,6 +6,7 @@ import {
   submitCheckin, subscribeMyCheckin, markQuestDone,
   getDailyQuestConfig, cancelCheckin, rerollCheckinBuff, submitSimpleCheckin,
   submitClassEnd, addArrowdew, grantArrowMilestoneRewards, subscribePracticeLogs,
+  addPracticeLog,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone, getWarmMessage } from "../../lib/arrowMilestone";
 import { sfxCast, sfxBuff, sfxEpic, sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
@@ -187,7 +188,23 @@ export default function DailyQuest({ onJoinParty }) {
     const goalToHit  = buffedTask.newGoal ?? buffedTask.goal;
     const val  = task.type === "score" ? total : hits;
     const pass = isUltimate || val >= goalToHit;
+    const todayStr = new Date().toISOString().slice(0, 10);
     setBusy(true);
+
+    // 不管過沒過，記錄這次射出的箭（累積今日箭數、里程碑用）
+    if (!isUltimate && arrows.length > 0) {
+      addPracticeLog(profile.id, {
+        date: todayStr,
+        distance: task.distance,
+        arrowCount: task.arrowCount,
+        rounds: [arrows],
+        total,
+        totalArrows: arrows.length,
+        type: "daily_quest",
+        note: pass ? `日常任務完成（${task.label}）` : `日常任務未過（${task.label}）`,
+      }).catch(() => {});
+    }
+
     if (pass) {
       sfxSuccess();
       await markQuestDone(
