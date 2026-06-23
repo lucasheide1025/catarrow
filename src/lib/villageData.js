@@ -49,6 +49,14 @@ function getMatKey(lv) {
   return '17-20';
 }
 
+// 各升級段所需材料數量（設計為可玩一年以上的節奏）
+const COUNT_TABLE = {
+  '5-8':   { main:[15, 25, 40, 60], sub:[0,  8, 15, 25] },
+  '9-12':  { main:[12, 20, 30, 45], sub:[0,  6, 12, 20] },
+  '13-16': { main:[10, 16, 24, 35], sub:[0,  5, 10, 18] },
+  '17-20': { main:[ 8, 12, 18, 25], sub:[0,  4,  8, 14] },
+};
+
 export function getUpgradeRequirements(buildingId, targetLevel) {
   if (targetLevel > 20) return null;
   const arrowdew = ARROWDEW_COSTS[targetLevel] || 0;
@@ -58,15 +66,16 @@ export function getUpgradeRequirements(buildingId, targetLevel) {
   const m = MAT[buildingId]?.[key];
   if (!m) return { arrowdew, materials: [] };
 
-  const idx = (targetLevel - 1) % 4; // 0,1,2,3 within each group
-  const mainCount = [2, 3, 4, 5][idx];
-  const subCount  = [0, 1, 2, 3][idx];
+  const idx = (targetLevel - 1) % 4;
+  const ct  = COUNT_TABLE[key];
+  const mainCount = ct.main[idx];
+  const subCount  = ct.sub[idx];
 
   const materials = [];
   if (m[0]) materials.push({ resource: m[0], tier: m[1], count: mainCount });
   if (m[2] && subCount > 0) materials.push({ resource: m[2], tier: m[3], count: subCount });
-  if (m[4]) { // mission
-    const mc = [1, 2, 2, 3][idx];
+  if (m[4]) {
+    const mc = [2, 3, 4, 5][idx];
     materials.push({ resource: 'mission', tier: 1, count: mc });
   }
 
@@ -112,8 +121,8 @@ export function getVillageLevel(buildings) {
 }
 
 const BASE_PROD = {
-  archery:8, gacha:0.02, warehouse:4, market:3,
-  mine:2.5, farm:2.5, harbor:2.5, hunting:2.5, alchemy:0.1,
+  archery:3, gacha:0.01, warehouse:2, market:1.5,
+  mine:1, farm:1, harbor:1, hunting:1, alchemy:0.05,
 };
 
 export function getProductionRate(buildingId, level) {

@@ -652,13 +652,13 @@ function ResourceRow({ resources, gachaCoins }) {
 
 const BATTLE_EXCHANGE = [
   { type:'wood', icon:'📦', label:'木寶箱',   desc:'含普通打怪材料',
-    costs:[{ resource:'ore',  tier:1, count:5 }] },
+    costs:[{ resource:'ore',  tier:1, count:20 }] },
   { type:'iron', icon:'🧰', label:'鐵寶箱',   desc:'含非凡打怪材料',
-    costs:[{ resource:'ore',  tier:1, count:8 }, { resource:'melon', tier:1, count:5 }] },
+    costs:[{ resource:'ore',  tier:1, count:35 }, { resource:'melon', tier:1, count:25 }] },
   { type:'gold', icon:'🎁', label:'黃金寶箱', desc:'含前三階段材料',
-    costs:[{ resource:'ore',  tier:2, count:3 }, { resource:'fish',  tier:1, count:5 }] },
+    costs:[{ resource:'ore',  tier:2, count:15 }, { resource:'fish',  tier:1, count:30 }] },
   { type:'epic', icon:'💜', label:'史詩寶箱', desc:'含前四階段材料',
-    costs:[{ resource:'ore',  tier:3, count:3 }, { resource:'meat',  tier:2, count:3 }] },
+    costs:[{ resource:'ore',  tier:3, count:10 }, { resource:'meat',  tier:2, count:10 }] },
 ];
 const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'藥水', fur:'貓毛' };
 
@@ -896,7 +896,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
       {/* 頁籤 */}
       <div className="flex shrink-0" style={{ background: "#FDF6EC", borderBottom: `1px solid ${C.border}` }}>
-        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"]].map(([id, label]) => (
+        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["cardmarket","🛒 市集"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className="flex-1 py-3 text-sm font-black transition-colors"
             style={{
@@ -918,6 +918,16 @@ export default function CatVillage({ catCards, gachaCoins }) {
           village={localVillage || profile?.village}
           onBack={() => setTab("village")}
         />
+      )}
+
+      {tab === "cardmarket" && (
+        <div className="flex-1 overflow-y-auto">
+          <CardMarketPanel
+            catCards={catCards}
+            memberId={profile?.id}
+            memberName={profile?.nickname || profile?.name || "射手"}
+          />
+        </div>
       )}
 
       {tab === "village" && (

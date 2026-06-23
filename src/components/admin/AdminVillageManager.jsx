@@ -10,10 +10,10 @@ const TOP_LEVEL_RES = ['gachaCoins'];
 const FLAT_RES = ['arrowdew','archer'];
 
 const DEFAULT_BATTLE_EXCHANGE = [
-  { type:'wood', icon:'📦', label:'木寶箱',   costs:[{ resource:'ore',  tier:1, count:5 }] },
-  { type:'iron', icon:'🧰', label:'鐵寶箱',   costs:[{ resource:'ore',  tier:1, count:8 }, { resource:'melon', tier:1, count:5 }] },
-  { type:'gold', icon:'🎁', label:'黃金寶箱', costs:[{ resource:'ore',  tier:2, count:3 }, { resource:'fish',  tier:1, count:5 }] },
-  { type:'epic', icon:'💜', label:'史詩寶箱', costs:[{ resource:'ore',  tier:3, count:3 }, { resource:'meat',  tier:2, count:3 }] },
+  { type:'wood', icon:'📦', label:'木寶箱',   costs:[{ resource:'ore',  tier:1, count:20 }] },
+  { type:'iron', icon:'🧰', label:'鐵寶箱',   costs:[{ resource:'ore',  tier:1, count:35 }, { resource:'melon', tier:1, count:25 }] },
+  { type:'gold', icon:'🎁', label:'黃金寶箱', costs:[{ resource:'ore',  tier:2, count:15 }, { resource:'fish',  tier:1, count:30 }] },
+  { type:'epic', icon:'💜', label:'史詩寶箱', costs:[{ resource:'ore',  tier:3, count:10 }, { resource:'meat',  tier:2, count:10 }] },
 ];
 
 export default function AdminVillageManager() {
