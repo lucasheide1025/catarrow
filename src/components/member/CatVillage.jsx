@@ -550,8 +550,8 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
                   <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3 mb-2"
                     style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
                     <div className="flex items-center gap-2">
-                      <img src={`/ui/village/resource-${mat.resource}.webp`} alt=""
-                        style={{ width: 20, height: 20, mixBlendMode: "multiply", objectFit: "contain" }}
+                      <img src={`/ui/village/resource-${mat.resource}${mat.tier}.webp`} alt=""
+                        style={{ width: 22, height: 22, objectFit: "contain", borderRadius: 4 }}
                         onError={e => { e.target.style.display = "none"; }} />
                       <span className="text-sm" style={{ color: C.brown }}>{RESOURCE_NAMES[mat.resource]} T{mat.tier}</span>
                     </div>
@@ -606,12 +606,14 @@ function ResourceRow({ resources, gachaCoins }) {
       <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>村莊資源</div>
       {/* 特殊資源 */}
       <div className="flex gap-4 mb-2">
-        {[['archer','🏹','射手'],['gachaToken','🎰','扭蛋幣']].map(([k,em,lb]) => (
+        {[['archer','🏹','射手','resource-archer1.webp'],['gachaToken','🎰','扭蛋幣',null]].map(([k,em,lb,imgFile]) => (
           <div key={k} className="flex items-center gap-1">
-            <img src={`/ui/village/resource-${k}.webp`} alt={em}
-              style={{ width: 18, height: 18, mixBlendMode: "multiply", objectFit: "contain" }}
-              onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="inline"; }} />
-            <span className="text-sm" style={{ display: "none" }}>{em}</span>
+            {imgFile ? (
+              <img src={`/ui/village/${imgFile}`} alt={em}
+                style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 4 }}
+                onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="inline"; }} />
+            ) : null}
+            <span style={{ display: imgFile ? "none" : "inline", fontSize: 16 }}>{em}</span>
             <span className="font-bold text-xs" style={{ color: C.brown }}>{k === 'gachaToken' ? (gachaCoins || 0) : Math.floor(resources?.[k] || 0)}</span>
             <span className="text-[10px]" style={{ color: C.muted }}>{lb}</span>
           </div>
@@ -631,7 +633,7 @@ function ResourceRow({ resources, gachaCoins }) {
                 <div className="flex gap-2">
                   {tiers.map(({ t, count }) => (
                     <div key={t} className="flex items-center gap-0.5">
-                      <img src={`/ui/village/resource-${res}.webp`} style={{ width: 16, height: 16, mixBlendMode: "multiply", objectFit: "contain" }}
+                      <img src={`/ui/village/resource-${res}${t}.webp`} style={{ width: 18, height: 18, objectFit: "contain", borderRadius: 3 }}
                         onError={e => { e.target.style.display = 'none'; }} />
                       <span className="text-[10px] font-bold" style={{ color: C.brown }}>T{t}:{count}</span>
                     </div>
@@ -760,7 +762,7 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
                 <div key={t} className="flex items-center justify-between rounded-xl px-3 py-1.5"
                   style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
                   <div className="flex items-center gap-1.5">
-                    <img src={`/ui/village/resource-${res}.webp`} style={{ width: 20, height: 20, mixBlendMode: "multiply", objectFit: "contain" }}
+                    <img src={`/ui/village/resource-${res}${t}.webp`} style={{ width: 22, height: 22, objectFit: "contain", borderRadius: 4 }}
                       onError={e => { e.target.style.display = 'none'; }} />
                     <span className="text-xs font-bold" style={{ color: C.brown }}>T{t}</span>
                     <span className="text-xs" style={{ color: C.mid }}>×{count}</span>
@@ -920,6 +922,8 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
       {tab === "village" && (
         <>
+          <PanoramaView villageLevel={villageLevel} />
+
           <SecretaryCat cat={secretaryCat} />
 
           <ResourceBar
@@ -931,8 +935,6 @@ export default function CatVillage({ catCards, gachaCoins }) {
           />
 
           <ResourceRow resources={resources} gachaCoins={gachaCoins} />
-
-          <PanoramaView villageLevel={villageLevel} />
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">

@@ -246,6 +246,7 @@ export default function MemberApp() {
     { id:"home",          icon:"🏠", label:"首頁" },
     { id:"adventure-hub", icon:"🗺️", label:"冒險" },
     { id:"training-hub",  icon:"🏹", label:"練箭" },
+    { id:"gacha",         icon:"🏡", label:"貓村" },
     { id:"inventory-hub", icon:"🎒", label:"背包" },
     { id:"profile",       icon:"👤", label:"我的" },
   ];
