@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>貓小隊靶紙辨識 · A 攝影端</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: #0e1116; color: #e7ecf3;
+    font-family: -apple-system, "Noto Sans TC", system-ui, sans-serif; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: #0e1116; border-bottom: 1px solid #1d2636;
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  }
+  .topbar .back {
+    border: 1px solid #2c3744; background: #1b2330; color: #cfd8e4;
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+    flex: none;
+  }
+  .topbar .title { flex: 1; font-size: 13px; color: #6f7b8c; }
+  .zoom-row { display: flex; align-items: center; gap: 4px; flex: none; }
+  .zoom-row button {
+    border: 1px solid #2c3744; background: #1b2330; color: #cfd8e4;
+    border-radius: 6px; padding: 4px 10px; font-size: 16px; font-weight: 700;
+    cursor: pointer; min-width: 0; line-height: 1;
+  }
+  .zoom-row span { font-size: 12px; color: #9aa6b6; min-width: 28px; text-align: center; }
+
+  .stage { position: relative; width: 100%; background: #000; overflow: hidden; }
+  canvas#view { width: 100%; height: 100%; display: block; touch-action: none; }
+
+  .content { padding: 10px 12px; max-width: 560px; margin-inline: auto; }
+  .status { display: flex; align-items: center; gap: 8px; margin: 8px 0;
+            font-size: 13px; color: #aab4c2; min-height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #46506180; flex: none; }
+  .dot.on { background: #34d399; box-shadow: 0 0 8px #34d39988; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .room { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  input { background: #161c25; border: 1px solid #2a3340; color: #e7ecf3;
+          border-radius: 8px; padding: 10px 12px; font-size: 15px; width: 96px; }
+  button { flex: 1 1 auto; min-width: 90px; border: 0; border-radius: 9px;
+           padding: 12px 10px; font-size: 14px; font-weight: 600; color: #0e1116;
+           background: #5b8cff; cursor: pointer; }
+  button.ghost { background: #1b2330; color: #cfd8e4; border: 1px solid #2c3744; }
+  button:disabled { opacity: .4; }
+  .score { font-size: 13px; color: #9aa6b6; margin-top: 6px; min-height: 18px; }
+  .score b { color: #ffd166; font-size: 22px; }
+  .auto-row { display: flex; align-items: center; gap: 8px; margin: 8px 0;
+              font-size: 13px; color: #aab4c2; }
+  .auto-row input[type=checkbox] { width: 18px; height: 18px; accent-color: #5b8cff; cursor: pointer; }
+  .hint { font-size: 12px; color: #6f7b8c; line-height: 1.5; margin-top: 10px; }
+  #camSel {
+    background: #1b2330; border: 1px solid #2c3744; color: #cfd8e4;
+    border-radius: 6px; padding: 4px 6px; font-size: 11px; max-width: 120px;
+    cursor: pointer; flex: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="back" onclick="window.close()">← 返回</button>
+  <span class="title">A 攝影端（手動校準）</span>
+  <select id="camSel" title="選擇鏡頭"><option value="">預設鏡頭</option></select>
+  <div class="zoom-row">
+    <button id="btnZoomOut">－</button>
+    <span id="zoomLabel">1×</span>
+    <button id="btnZoomIn">＋</button>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <canvas id="view" width="480" height="480"></canvas>
+</div>
+
+<div class="content">
+  <div class="room">
+    <span style="font-size:13px;color:#aab4c2">房號</span>
+    <input id="room" value="888" inputmode="numeric" />
+    <button id="btnConnect" style="flex:1">連線</button>
+  </div>
+
+  <div class="status"><span id="dot" class="dot"></span><span id="msg">尚未連線</span></div>
+
+  <div class="row" style="margin-bottom:8px">
+    <button id="btnCalib" class="ghost" disabled>🔒 鎖定靶位</button>
+    <button id="btnBg" class="ghost" disabled>設定背景</button>
+  </div>
+  <div class="row">
+    <button id="btnArm" disabled>開始偵測</button>
+    <button id="btnNext" class="ghost" disabled>跳過此箭</button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <button id="btnDone" class="ghost" disabled>✅ 我射完了（結算本輪）</button>
+  </div>
+
+  <div class="score" id="scoreLine"></div>
+
+  <p class="hint">
+    流程：① 連線 → ② 調整手機讓靶紙對齊黃色框框 → 按「🔒 鎖定靶位」→
+    ③ 靶面乾淨時按「設定背景」→ ④「開始偵測」→ 放箭。<br />
+    需以 https 或 localhost 開啟，瀏覽器才允許開鏡頭。
+  </p>
+</div>
+
+<video id="cam" autoplay playsinline muted style="display:none"></video>
+
+<script type="module">
+import { computeHomography, applyHomography } from "./lib/homography.js";
+import { ArrowDetector } from "./lib/detector.js";
+import { pickEntryPoint, scoreFromNormalized, setTargetGeometry, targetGeometry } from "./lib/scoring.js";
+
+const W = 480, VH = 480;
+const cam = document.getElementById("cam");
+const view = document.getElementById("view");
+const ctx = view.getContext("2d", { willReadFrequently: true });
+const el = (id) => document.getElementById(id);
+const dot = el("dot"), msg = el("msg"), scoreLine = el("scoreLine");
+
+function resizeStage() {
+  // canvas 是 480×480 正方形，stage 保持 1:1；縮小顯示以避免 iPhone 畫面被截
+  const w = Math.min(window.innerWidth, 280);
+  el("stage").style.width  = w + "px";
+  el("stage").style.height = w + "px";
+}
+resizeStage();
+window.addEventListener("resize", resizeStage);
+
+let state = "idle";
+let calibrating = false;
+let calibPts = [];
+let H = null;
+let H_inv = null; // normalized → pixel（用來畫計分環覆蓋層）
+const detector = new ArrowDetector();
+let conn = null;
+let lastDetect = 0;
+let autoCountdown = null;
+let armGuard = 0;
+let settleAt = 0; // 延遲 settle 時間戳
+
+const MAX_ARROWS = 6;
+let roundResults = []; // 本輪已偵測到的箭 [{score, ring, nx, ny}]
+
+// ---- 鏡頭縮放 ----
+let videoTrack = null;
+let currentZoom = 1;
+let zoomMin = 1, zoomMax = 5;
+let digitalZoom = false;
+
+async function applyZoom(z) {
+  currentZoom = Math.max(zoomMin, Math.min(zoomMax, Math.round(z * 2) / 2));
+  el("zoomLabel").textContent = currentZoom.toFixed(1) + "×";
+  if (videoTrack) {
+    const caps = videoTrack.getCapabilities?.() || {};
+    if (caps.zoom) {
+      try { await videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }); return; }
+      catch (_) {}
+    }
+  }
+  digitalZoom = true;
+}
+
+el("btnZoomIn").onclick = () => applyZoom(currentZoom + 0.5);
+el("btnZoomOut").onclick = () => applyZoom(currentZoom - 0.5);
+
+function setMsg(t, on) { msg.textContent = t; dot.classList.toggle("on", !!on); }
+
+function nextArrow() {
+  clearTimeout(autoCountdown);
+  autoCountdown = null;
+  state = "settle";
+  settleAt = performance.now() + 800; // 等 800ms 讓場景穩定再抓背景
+  scoreLine.textContent = "";
+  setMsg("穩定中… 0.8s 後偵測", true);
+  loop();
+}
+
+// 判斷是否為望遠鏡頭（Apple + OPPO/三星/小米/Google等常見命名）
+function isTeleCamera(label) {
+  return /tele|telephoto|3x|5x|2x|zoom|望遠|camera2\s+[1-9]/i.test(label);
+}
+
+async function refreshCamList(skipId) {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const cams = devs.filter(d => d.kind === "videoinput");
+  const sel = el("camSel");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  // 望遠鏡頭排前面
+  cams.sort((a, b) => (isTeleCamera(a.label) ? 0 : 1) - (isTeleCamera(b.label) ? 0 : 1));
+  cams.forEach((d, i) => {
+    const opt = document.createElement("option");
+    opt.value = d.deviceId;
+    const isTele = isTeleCamera(d.label);
+    // 如果 label 是空的或只是 camera2 N，用序號標示
+    const label = d.label || `後鏡頭 ${i + 1}`;
+    opt.textContent = (isTele ? "📡 " : "") + label;
+    if (d.deviceId === (skipId || prev)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  // OPPO / Android 提示：若只偵測到 ≤2 顆後鏡頭，加提示
+  const rearCams = cams.filter(d => !/front|user|facing front/i.test(d.label));
+  if (rearCams.length <= 2 && cams.length > 0) {
+    const opt = document.createElement("option");
+    opt.disabled = true;
+    opt.textContent = "── 如需望遠請用系統原生放大後進入 ──";
+    sel.appendChild(opt);
+  }
+}
+
+async function startCamera(deviceId, { skipLoop = false } = {}) {
+  // 停掉舊串流
+  if (cam.srcObject) { cam.srcObject.getTracks().forEach(t => t.stop()); cam.srcObject = null; }
+  try {
+    const constraints = deviceId
+      ? { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false }
+      : { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    cam.srcObject = stream;
+    await cam.play();
+    videoTrack = stream.getVideoTracks()[0];
+    const caps = videoTrack.getCapabilities?.() || {};
+    if (caps.zoom) { zoomMin = caps.zoom.min || 1; zoomMax = caps.zoom.max || 5; currentZoom = 1; digitalZoom = false; }
+    await refreshCamList(videoTrack.getSettings().deviceId);
+    if (!skipLoop) loop();
+  } catch (e) {
+    setMsg("無法開啟鏡頭：" + e.message, false);
+  }
+}
+
+el("camSel").onchange = async () => {
+  const id = el("camSel").value;
+  if (!id) return;
+  clearTimeout(autoCountdown); autoCountdown = null;
+  const wasRunning = (state !== "idle" && state !== "result");
+  state = "idle"; // 讓 loop 自然停下（result 或 idle 都不會繼續 rAF）
+  await startCamera(id, { skipLoop: true });
+  // 切換鏡頭後強制 settle（需重抓背景）
+  state = "settle";
+  settleAt = performance.now() + 800;
+  setMsg("換鏡頭中… 0.8s 後重新偵測", wasRunning);
+  loop();
+};
+
+function connect() {
+  const room = el("room").value.trim() || "888";
+  const peer = new Peer("catarch-cam-" + room);
+  peer.on("open", () => {
+    setMsg("已上線，等待 B 端連入…房號 " + room, true);
+    state = "ready";
+    el("btnCalib").disabled = false;
+    el("btnBg").disabled = false;
+    startCamera();
+  });
+  peer.on("connection", (c) => {
+    conn = c;
+    c.on("open", () => setMsg("B 端已連線 ✓", true));
+    c.on("close", () => setMsg("B 端已離線", false));
+  });
+  peer.on("error", (e) => setMsg("連線錯誤：" + e.type, false));
+  el("btnConnect").disabled = true;
+}
+
+// 不再需要手動點四角的 pointerdown 監聽
+
+// 套框鎖定：用固定的框框位置自動計算 homography
+function lockFrameCalib() {
+  const M = 0.12; // 邊框比例（距畫面邊緣的比例）
+  const pts = [
+    { x: W * M,     y: VH * M     }, // TL → norm (0,0)
+    { x: W * (1-M), y: VH * M     }, // TR → norm (1,0)
+    { x: W * (1-M), y: VH * (1-M) }, // BR → norm (1,1)
+    { x: W * M,     y: VH * (1-M) }, // BL → norm (0,1)
+  ];
+  const corners = [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
+  ];
+  calibPts = pts;
+  H     = computeHomography(pts, corners);
+  H_inv = computeHomography(corners, pts);
+  if (H) {
+    detector.setROI(pts);
+    el("btnCalib").textContent = "重新鎖定";
+    el("btnBg").disabled = false;
+    setMsg("靶位已鎖定！靶面乾淨時按「設定背景」", true);
+  } else {
+    H = null; H_inv = null; calibPts = [];
+    setMsg("鎖定失敗，請重試", false);
+  }
+}
+
+el("btnCalib").onclick = lockFrameCalib;
+
+el("btnBg").onclick = () => {
+  detector.setReference(ctx.getImageData(0, 0, W, VH));
+  setMsg("背景已記錄，可開始偵測", true);
+  el("btnArm").disabled = false;
+};
+
+el("btnArm").onclick = () => {
+  if (!H) { setMsg("請先鎖定靶位", false); return; }
+  if (!detector.hasReference()) { setMsg("請先設定背景", false); return; }
+  roundResults = [];
+  state = "armed";
+  armGuard = performance.now() + 800;
+  el("btnArm").disabled = true;
+  el("btnNext").disabled = false;
+  el("btnDone").disabled = false;
+  setMsg("偵測中…射完6箭後按「我射完了」", true);
+};
+
+el("btnNext").onclick = nextArrow;
+el("btnConnect").onclick = connect;
+
+function finishRound() {
+  clearTimeout(autoCountdown); autoCountdown = null;
+  // 未偵測到的箭補脫靶
+  while (roundResults.length < MAX_ARROWS)
+    roundResults.push({ nx: 0.5, ny: 1.5, score: 0, ring: "M" });
+  if (conn && conn.open)
+    conn.send({ type: "round", results: roundResults, ts: Date.now() });
+  const total = roundResults.reduce((s, r) => s + r.score, 0);
+  const hits = roundResults.filter(r => r.ring !== "M").length;
+  const detail = roundResults.map(r => r.ring === "M" ? "M" : r.score).join(" · ");
+  scoreLine.innerHTML = `🎯 ${hits}/6 射中，合計 <b>${total}</b> 分 ｜ ${detail}`;
+  roundResults = [];
+  state = "ready";
+  el("btnArm").disabled = false;
+  el("btnNext").disabled = true;
+  el("btnDone").disabled = true;
+  setMsg("本輪完成！按「開始偵測」開始下一輪", true);
+}
+
+el("btnDone").onclick = finishRound;
+
+function loop() {
+  if (state === "result" || state === "idle") return; // idle = 鏡頭切換期間，停止舊 rAF
+
+  if (digitalZoom && currentZoom > 1) {
+    const sw = W / currentZoom, sh = VH / currentZoom;
+    const sx = (W - sw) / 2, sy = (VH - sh) / 2;
+    ctx.drawImage(cam, sx, sy, sw, sh, 0, 0, W, VH);
+  } else {
+    ctx.drawImage(cam, 0, 0, W, VH);
+  }
+
+  if (state === "settle") {
+    if (performance.now() >= settleAt) {
+      detector.setReference(ctx.getImageData(0, 0, W, VH));
+      state = "armed";
+      armGuard = performance.now() + 1200; // settle 後再等 1.2s 才開始偵測
+      setMsg("偵測中…放下一箭", true);
+    }
+  }
+
+  // 導引框：鎖定前顯示黃色虛線提示，鎖定後顯示綠色實線
+  {
+    const M = 0.12;
+    const fx = W * M, fy = VH * M, fw = W * (1-2*M), fh = VH * (1-2*M);
+    const locked = !!H;
+    ctx.setLineDash(locked ? [] : [10, 6]);
+    ctx.strokeStyle = locked ? "#34d399cc" : "#ffd166bb";
+    ctx.lineWidth = locked ? 2 : 2.5;
+    ctx.strokeRect(fx, fy, fw, fh);
+    ctx.setLineDash([]);
+    // 四角L形標記
+    const arms = 18;
+    [[fx,fy,1,1],[fx+fw,fy,-1,1],[fx+fw,fy+fh,-1,-1],[fx,fy+fh,1,-1]].forEach(([cx,cy,sx,sy])=>{
+      ctx.beginPath();
+      ctx.moveTo(cx+sx*arms, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy+sy*arms);
+      ctx.stroke();
+    });
+    if (!locked) {
+      ctx.fillStyle = "#ffd16699";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("把靶紙對齊框內，再按「🔒 鎖定靶位」", W/2, fy - 8);
+      ctx.textAlign = "left";
+    }
+  }
+
+  if (state === "armed" && performance.now() - lastDetect > 150 && performance.now() > armGuard) {
+    lastDetect = performance.now();
+    const res = detector.detect(ctx.getImageData(0, 0, W, VH));
+    if (res) {
+      handleHit(res);
+    } else {
+      const d = detector.getDebug();
+      if (d) scoreLine.textContent = `偵測中… 變動像素 ${d.count}（${d.frac}）比例 ${d.ratio ?? "-"} → ${d.reason}`;
+    }
+  }
+
+  // 計分環覆蓋層（校準完成後才畫）
+  if (H_inv) drawRingOverlay();
+
+  requestAnimationFrame(loop);
+}
+
+function drawRingOverlay() {
+  const g = targetGeometry;
+  const rings = [
+    { r: 1.0, color: "rgba(255,80,80,0.55)",   w: 2 },
+    { r: 0.8, color: "rgba(255,160,40,0.45)",  w: 1.5 },
+    { r: 0.6, color: "rgba(255,220,40,0.40)",  w: 1.5 },
+    { r: 0.4, color: "rgba(100,220,100,0.40)", w: 1.5 },
+    { r: 0.2, color: "rgba(100,160,255,0.50)", w: 1.5 },
+  ];
+  for (const { r, color, w } of rings) {
+    ctx.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const angle = (i / 48) * Math.PI * 2;
+      const nx = g.cx + Math.cos(angle) * g.rx * r;
+      const ny = g.cy + Math.sin(angle) * g.ry * r;
+      const p = applyHomography(H_inv, nx, ny);
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke();
+  }
+  const c = applyHomography(H_inv, g.cx, g.cy);
+  ctx.fillStyle = "rgba(255,80,80,0.8)";
+  ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, 7); ctx.fill();
+}
+
+function handleHit(res) {
+  const [a, b] = res.ends;
+  const na = applyHomography(H, a.x, a.y);
+  const nb = applyHomography(H, b.x, b.y);
+  const entryNorm = pickEntryPoint(na, nb);
+  const entryPx = (entryNorm === na) ? a : b;
+
+  const sc = scoreFromNormalized(entryNorm.x, entryNorm.y);
+
+  // 標記：藍線=箭矢，橘點=兩端，黃圓=入靶點
+  ctx.strokeStyle = "#5b8cff"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.fillStyle = "#ff9900";
+  [a, b].forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill(); });
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath(); ctx.arc(entryPx.x, entryPx.y, 9, 0, 7); ctx.fill();
+
+  state = "result";
+
+  // 累積本輪結果（不即時送出，等「我射完了」批次送出）
+  roundResults.push({ nx: entryNorm.x, ny: entryNorm.y, score: sc.score, ring: sc.ring });
+  const n = roundResults.length;
+
+  const dbg = detector.getDebug();
+  const chosen = entryNorm === na ? "A" : "B";
+  const dbgStr = `A(${na.x.toFixed(2)},${na.y.toFixed(2)}) B(${nb.x.toFixed(2)},${nb.y.toFixed(2)}) →${chosen} r=${sc.rNorm?.toFixed(2)} span=${dbg?.span??"-"}`;
+
+  if (n >= MAX_ARROWS) {
+    scoreLine.innerHTML = `第 ${n} 箭：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 ｜ 6/6 自動結算中…`;
+    setTimeout(finishRound, 1000);
+    return;
+  }
+
+  let cd = 2;
+  function tick() {
+    if (cd > 0) {
+      scoreLine.innerHTML = `第 ${n} 箭：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 ｜ 已射 ${n}/${MAX_ARROWS}，${cd}s 後繼續 <span style="color:#6f7b8c;font-size:11px">${dbgStr}</span>`;
+      cd--;
+      autoCountdown = setTimeout(tick, 1000);
+    } else {
+      nextArrow();
+    }
+  }
+  setMsg(`✅ 第 ${n} 箭已辨識，還剩 ${MAX_ARROWS - n} 箭`, true);
+  tick();
+}
+</script>
+</body>
+</html>

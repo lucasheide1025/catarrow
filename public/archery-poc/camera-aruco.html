@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>貓小隊靶紙辨識 · A 攝影端（ArUco 自動校正）</title>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: #0e1116; color: #e7ecf3;
+    font-family: -apple-system, "Noto Sans TC", system-ui, sans-serif; }
+
+  /* 固定頂欄 */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: #0e1116; border-bottom: 1px solid #1d2636;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+  }
+  .topbar .back {
+    border: 1px solid #2c3744; background: #1b2330; color: #cfd8e4;
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+    flex: none;
+  }
+  .topbar .title { flex: 1; font-size: 13px; color: #6f7b8c; }
+  .zoom-row { display: flex; align-items: center; gap: 4px; flex: none; }
+  .zoom-row button {
+    border: 1px solid #2c3744; background: #1b2330; color: #cfd8e4;
+    border-radius: 6px; padding: 4px 10px; font-size: 16px; font-weight: 700;
+    cursor: pointer; min-width: 0; line-height: 1;
+  }
+  .zoom-row span { font-size: 12px; color: #9aa6b6; min-width: 28px; text-align: center; }
+
+  /* 全寬影像區 */
+  .stage { position: relative; width: 100%; background: #000; overflow: hidden; }
+  canvas#view { width: 100%; height: 100%; display: block; }
+
+  /* 內容區 */
+  .content { padding: 10px 12px; max-width: 560px; margin-inline: auto; }
+  .status { display: flex; align-items: center; gap: 8px; margin: 8px 0;
+            font-size: 13px; color: #aab4c2; min-height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #46506180; flex: none; }
+  .dot.on { background: #34d399; box-shadow: 0 0 8px #34d39988; }
+  .room { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  input { background: #161c25; border: 1px solid #2a3340; color: #e7ecf3;
+          border-radius: 8px; padding: 10px 12px; font-size: 15px; width: 96px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { flex: 1 1 auto; min-width: 90px; border: 0; border-radius: 9px;
+           padding: 12px 10px; font-size: 14px; font-weight: 600; color: #0e1116;
+           background: #5b8cff; cursor: pointer; }
+  button.ghost { background: #1b2330; color: #cfd8e4; border: 1px solid #2c3744; }
+  button:disabled { opacity: .4; }
+  .score { font-size: 13px; color: #9aa6b6; margin-top: 6px; min-height: 18px; }
+  .score b { color: #ffd166; font-size: 22px; }
+  .auto-row { display: flex; align-items: center; gap: 8px; margin: 8px 0;
+              font-size: 13px; color: #aab4c2; }
+  .auto-row input[type=checkbox] { width: 18px; height: 18px; accent-color: #5b8cff; cursor: pointer; }
+  .hint { font-size: 12px; color: #6f7b8c; line-height: 1.5; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="back" onclick="window.close()">← 返回</button>
+  <span class="title">A 攝影端 · ArUco 自動校正</span>
+  <div class="zoom-row">
+    <button id="btnZoomOut" title="縮小">－</button>
+    <span id="zoomLabel">1×</span>
+    <button id="btnZoomIn" title="放大">＋</button>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <canvas id="view" width="480" height="480"></canvas>
+</div>
+
+<div class="content">
+  <div class="room">
+    <span style="font-size:13px;color:#aab4c2">房號</span>
+    <input id="room" value="888" inputmode="numeric" />
+    <button id="btnConnect" style="flex:1">連線</button>
+  </div>
+
+  <div class="status"><span id="dot" class="dot"></span><span id="msg">尚未連線</span></div>
+
+  <div class="row" style="margin-bottom:8px">
+    <button id="btnCalib" class="ghost" disabled>自動校正四角</button>
+    <button id="btnRing" class="ghost" disabled>校準靶環</button>
+    <button id="btnBg" class="ghost" disabled>設定背景</button>
+  </div>
+  <div class="row">
+    <button id="btnArm" disabled>開始偵測</button>
+    <button id="btnNext" class="ghost" disabled>下一箭（手動）</button>
+  </div>
+
+  <div class="auto-row">
+    <input type="checkbox" id="cbAuto" checked />
+    <label for="cbAuto">偵測到箭後自動繼續下一箭（3 秒）</label>
+  </div>
+
+  <div class="score" id="scoreLine"></div>
+
+  <p class="hint">
+    先把四張 ArUco 標記（id 0/1/2/3 → 左上/右上/右下/左下）貼在靶角。
+    流程：① 連線 → ② 按「自動校正四角」，四角全進畫面即自動鎖定 →
+    ③ 靶面乾淨時「設定背景」→ ④「開始偵測」→ 放箭。需 https 或 localhost。
+  </p>
+</div>
+
+<video id="cam" autoplay playsinline muted style="display:none"></video>
+
+<script type="module">
+import { applyHomography } from "./lib/homography.js";
+import { ArrowDetector } from "./lib/detector.js";
+import { pickEntryPoint, scoreFromNormalized, setTargetGeometry } from "./lib/scoring.js";
+import { MarkerCalibrator } from "./lib/markers.js";
+
+const W = 480, VH = 480;
+const cam = document.getElementById("cam");
+const view = document.getElementById("view");
+const ctx = view.getContext("2d", { willReadFrequently: true });
+const el = (id) => document.getElementById(id);
+const dot = el("dot"), msg = el("msg"), scoreLine = el("scoreLine");
+
+// 依視窗寬設定影像高度
+function resizeStage() {
+  const w = window.innerWidth;
+  const h = Math.min(Math.round(w * 0.85), 480);
+  el("stage").style.height = h + "px";
+}
+resizeStage();
+window.addEventListener("resize", resizeStage);
+
+let state = "idle";
+let H = null, srcPts = null;
+const detector = new ArrowDetector();
+let calibrator = null;
+let conn = null;
+let lastDetect = 0, lastCalib = 0;
+let autoCountdown = null;
+let armGuard = 0;          // 重新 armed 後 N ms 內不偵測，防止重複判斷
+let settleAt = 0;          // 延遲 settle 時間戳
+
+// ---- 鏡頭縮放 ----
+let videoTrack = null;
+let currentZoom = 1;
+let zoomMin = 1, zoomMax = 5;
+let digitalZoom = false; // 原生縮放不支援時用數位縮放
+
+async function applyZoom(z) {
+  currentZoom = Math.max(zoomMin, Math.min(zoomMax, Math.round(z * 2) / 2));
+  el("zoomLabel").textContent = currentZoom.toFixed(1) + "×";
+  if (videoTrack) {
+    const caps = videoTrack.getCapabilities?.() || {};
+    if (caps.zoom) {
+      try { await videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }); return; }
+      catch (_) {}
+    }
+  }
+  digitalZoom = true; // fallback：loop 裡手動裁切
+}
+
+el("btnZoomIn").onclick = () => applyZoom(currentZoom + 0.5);
+el("btnZoomOut").onclick = () => applyZoom(currentZoom - 0.5);
+
+// ---- 工具 ----
+function setMsg(t, on) { msg.textContent = t; dot.classList.toggle("on", !!on); }
+
+function nextArrow() {
+  clearTimeout(autoCountdown);
+  autoCountdown = null;
+  state = "settle";
+  settleAt = performance.now() + 800; // 等 800ms 讓場景穩定再抓背景
+  scoreLine.textContent = "";
+  setMsg("穩定中… 0.8s 後偵測", true);
+  loop();
+}
+
+// ---- 鏡頭 ----
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false,
+    });
+    cam.srcObject = stream;
+    await cam.play();
+    videoTrack = stream.getVideoTracks()[0];
+    const caps = videoTrack.getCapabilities?.() || {};
+    if (caps.zoom) {
+      zoomMin = caps.zoom.min || 1;
+      zoomMax = caps.zoom.max || 5;
+    }
+    loop();
+  } catch (e) { setMsg("無法開啟鏡頭：" + e.message, false); }
+}
+
+// ---- 連線 ----
+function connect() {
+  const room = el("room").value.trim() || "888";
+  const peer = new Peer("catarch-cam-" + room);
+  peer.on("open", () => {
+    setMsg("已上線，房號 " + room, true);
+    state = "ready";
+    el("btnCalib").disabled = false; el("btnBg").disabled = false;
+    try { calibrator = new MarkerCalibrator(); }
+    catch (e) { setMsg("ArUco 載入失敗：" + e.message, false); }
+    startCamera();
+  });
+  peer.on("connection", (c) => {
+    conn = c;
+    c.on("open", () => setMsg("B 端已連線 ✓", true));
+    c.on("close", () => setMsg("B 端已離線", false));
+  });
+  peer.on("error", (e) => setMsg("連線錯誤：" + e.type, false));
+  el("btnConnect").disabled = true;
+}
+el("btnConnect").onclick = connect;
+
+// ---- 校準靶環 ----
+let ringStep = -1;
+let ringCenter = null, ringRx = 0;
+el("btnRing").onclick = () => {
+  if (!H) { setMsg("請先完成自動校正", false); return; }
+  ringStep = 0;
+  setMsg("校準靶環：請點【靶心 +】", false);
+};
+view.addEventListener("pointerdown", (ev) => {
+  if (ringStep < 0 || !H) return;
+  const r = view.getBoundingClientRect();
+  const vx = (ev.clientX - r.left) * (W / r.width);
+  const vy = (ev.clientY - r.top) * (VH / r.height);
+  const n = applyHomography(H, vx, vy);
+  if (ringStep === 0) {
+    ringCenter = n; ringStep = 1; setMsg("再點【最外環的右緣】", false);
+  } else if (ringStep === 1) {
+    ringRx = Math.abs(n.x - ringCenter.x); ringStep = 2;
+    setMsg("最後點【最外環的上緣】", false);
+  } else if (ringStep === 2) {
+    const ry = Math.abs(n.y - ringCenter.y);
+    const g = { cx: ringCenter.x, cy: ringCenter.y, rx: ringRx, ry };
+    setTargetGeometry(g);
+    if (conn && conn.open) conn.send({ type: "geo", g });
+    ringStep = -1;
+    setMsg(`靶環校準完成 ✓ cx${g.cx.toFixed(2)} cy${g.cy.toFixed(2)}`, true);
+    console.log("targetGeometry：", JSON.stringify(g));
+  }
+});
+
+el("btnCalib").onclick = () => {
+  if (!calibrator) { setMsg("ArUco 尚未就緒", false); return; }
+  state = "calibrating"; H = null; srcPts = null;
+  el("btnCalib").textContent = "重新校正";
+  setMsg("校正中：請讓四角標記都進入畫面…", false);
+};
+
+el("btnBg").onclick = () => {
+  if (!H) { setMsg("請先完成自動校正", false); return; }
+  detector.setReference(ctx.getImageData(0, 0, W, VH));
+  setMsg("背景已記錄，可開始偵測", true);
+  el("btnArm").disabled = false;
+};
+
+el("btnArm").onclick = () => {
+  if (!H || !detector.hasReference()) { setMsg("請先校正並設定背景", false); return; }
+  state = "armed";
+  armGuard = performance.now() + 800;
+  el("btnArm").disabled = true; el("btnNext").disabled = false;
+  setMsg("偵測中…放箭", true);
+};
+
+el("btnNext").onclick = nextArrow;
+
+// ---- 主迴圈 ----
+function loop() {
+  if (state === "result") return;
+
+  if (digitalZoom && currentZoom > 1) {
+    // 數位縮放：從中心裁切再放大
+    const sw = W / currentZoom, sh = VH / currentZoom;
+    const sx = (W - sw) / 2, sy = (VH - sh) / 2;
+    ctx.drawImage(cam, sx, sy, sw, sh, 0, 0, W, VH);
+  } else {
+    ctx.drawImage(cam, 0, 0, W, VH);
+  }
+
+  // settle：延遲 800ms 後才抓含新箭的背景（讓場景穩定）
+  if (state === "settle") {
+    if (performance.now() >= settleAt) {
+      detector.setReference(ctx.getImageData(0, 0, W, VH));
+      state = "armed";
+      armGuard = performance.now() + 1200;
+      setMsg("偵測中…放下一箭", true);
+    }
+  }
+
+  // 自動校正（節流）
+  if (state === "calibrating" && performance.now() - lastCalib > 300) {
+    lastCalib = performance.now();
+    const r = calibrator.calibrate(ctx.getImageData(0, 0, W, VH));
+    if (r.ok) {
+      H = r.H; srcPts = r.src; state = "calibrated";
+      detector.setROI(srcPts); // ArUco 鎖定後自動設 ROI = 靶面四角
+      el("btnRing").disabled = false;
+      setMsg("校正鎖定 ✓ ROI 已設定，可設定背景", true);
+    } else {
+      setMsg(`校正中…已看到標記 [${r.found.join(", ") || "無"}]（需 0,1,2,3）`, false);
+    }
+  }
+
+  // 畫四角框
+  if (srcPts) {
+    ctx.strokeStyle = "#34d399cc"; ctx.lineWidth = 2; ctx.beginPath();
+    srcPts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath(); ctx.stroke();
+  }
+
+  // 箭矢偵測（節流 + armGuard 防重複）
+  if (state === "armed" && performance.now() - lastDetect > 150 && performance.now() > armGuard) {
+    lastDetect = performance.now();
+    const res = detector.detect(ctx.getImageData(0, 0, W, VH));
+    if (res) {
+      handleHit(res);
+    } else {
+      const d = detector.getDebug();
+      if (d) scoreLine.textContent = `偵測中… 變動像素 ${d.count}（${d.frac}）比例 ${d.ratio ?? "-"} → ${d.reason}`;
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+function handleHit(res) {
+  const [a, b] = res.ends;
+  const na = applyHomography(H, a.x, a.y);
+  const nb = applyHomography(H, b.x, b.y);
+  const entryNorm = pickEntryPoint(na, nb);
+  const entryPx = (entryNorm === na) ? a : b;
+
+  // 幾何計分（橢圓距離，不依賴顏色採樣）
+  const sc = scoreFromNormalized(entryNorm.x, entryNorm.y);
+
+  ctx.strokeStyle = "#5b8cff"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath(); ctx.arc(entryPx.x, entryPx.y, 8, 0, 7); ctx.fill();
+
+  state = "result";
+  if (conn && conn.open)
+    conn.send({ nx: entryNorm.x, ny: entryNorm.y, score: sc.score, ring: sc.ring, ts: Date.now() });
+
+  const autoMode = el("cbAuto").checked;
+  if (autoMode) {
+    let cd = 3;
+    function tick() {
+      if (cd > 0) {
+        scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:12px">— ${cd}s後繼續 r=${sc.rNorm?.toFixed(2)??"?"}</span>`;
+        cd--;
+        autoCountdown = setTimeout(tick, 1000);
+      } else {
+        if (conn && conn.open) conn.send({ type: "auto_next" }); // 通知 B 端自動確認
+        nextArrow();
+      }
+    }
+    setMsg("✅ 已辨識，3s 後自動繼續（或按「下一箭」跳過）", true);
+    tick();
+  } else {
+    scoreLine.innerHTML = `辨識：<b>${sc.ring === "M" ? "脫靶" : sc.score}</b> 分 <span style="color:#6f7b8c;font-size:12px">r=${sc.rNorm?.toFixed(2)??"?"}</span>`;
+    setMsg("已辨識，按「下一箭（手動）」繼續", true);
+  }
+}
+</script>
+</body>
+</html>
