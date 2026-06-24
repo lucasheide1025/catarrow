@@ -10,7 +10,7 @@ import {
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew } from "../../lib/db";
 import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
@@ -349,13 +349,15 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
         );
       }).filter(r => r.length > 0);
       if (practiceRounds.length > 0) {
+        const arrowCount = practiceRounds.flat().length;
         addPracticeLog(myId, {
           date: new Date().toISOString().slice(0, 10), source: "dungeon",
           monsterName: room.monster?.name || "地下城", result: "win",
           rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-          totalFloors,
+          totalArrows: arrowCount, totalFloors,
         }, myId).catch(() => {});
+        if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
       }
     }
 
@@ -505,13 +507,15 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                   );
                 }).filter(r => r.length > 0);
                 if (practiceRounds.length > 0) {
+                  const arrowCount = practiceRounds.flat().length;
                   addPracticeLog(myId, {
                     date: new Date().toISOString().slice(0, 10), source: "dungeon",
                     monsterName: room.monster?.name || "地下城", result: "lose",
                     rounds: practiceRounds,
                     total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-                    floorsCleared,
+                    totalArrows: arrowCount, floorsCleared,
                   }, myId).catch(() => {});
+                  if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
                 }
               }
               onExit?.();

@@ -1,5 +1,6 @@
 // src/components/shared/TargetFaceOverlay.jsx
 // 戰鬥模式通用靶面輸入層（fixed overlay）
+import { useState } from "react";
 
 const RING_DEFS = {
   full_110: [
@@ -72,33 +73,111 @@ function calcTapScore(ratio, fmtId) {
 function TargetSVG({ fmtId, R, onTap }) {
   const SIZE = R * 2 + 6, CX = R + 3, CY = R + 3;
   const rings = RING_DEFS[fmtId] || RING_DEFS.full_110;
+  const [dragPos, setDragPos] = useState(null);
+  const ZOOM = 26; // 放大鏡的 SVG 半徑（放大倍率 ≈ 80/ZOOM ≈ 3x）
 
-  function handleTap(e) {
-    if (!onTap) return;
-    e.preventDefault();
-    const svg = e.currentTarget.getBoundingClientRect();
-    const px = e.clientX - svg.left;
-    const py = e.clientY - svg.top;
-    const dist = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2);
-    const ratio = dist / R;
-    const score = calcTapScore(ratio, fmtId);
-    const nx = (px - CX) / R, ny = (py - CY) / R;
-    onTap({ score, nx, ny });
+  function svgPos(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { px: e.clientX - rect.left, py: e.clientY - rect.top };
   }
 
+  function handleDown(e) {
+    if (!onTap) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragPos(svgPos(e));
+  }
+
+  function handleMove(e) {
+    if (!dragPos) return;
+    e.preventDefault();
+    setDragPos(svgPos(e));
+  }
+
+  function handleUp(e) {
+    if (!dragPos || !onTap) return;
+    e.preventDefault();
+    const { px, py } = dragPos;
+    setDragPos(null);
+    const dist = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2);
+    const score = calcTapScore(dist / R, fmtId);
+    onTap({ score, nx: (px - CX) / R, ny: (py - CY) / R });
+  }
+
+  const dragScore = dragPos
+    ? calcTapScore(Math.sqrt((dragPos.px - CX) ** 2 + (dragPos.py - CY) ** 2) / R, fmtId)
+    : null;
+
   return (
-    <svg width={SIZE} height={SIZE}
-      style={{ touchAction:"none", display:"block", cursor:"crosshair" }}
-      onPointerDown={handleTap}>
-      <circle cx={CX} cy={CY} r={R + 2} fill="#2a2a2a" />
-      {rings.map((ring, i) => (
-        <circle key={i} cx={CX} cy={CY} r={ring.r * R}
-          fill={ring.fill} stroke={ring.stroke} strokeWidth={0.7} />
-      ))}
-      <line x1={CX-6} y1={CY} x2={CX+6} y2={CY} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
-      <line x1={CX} y1={CY-6} x2={CX} y2={CY+6} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
-      <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />
-    </svg>
+    <>
+      {/* 放大鏡（拖曳中固定顯示於畫面頂部） */}
+      {dragPos && (
+        <div style={{
+          position:"fixed", top:14, left:"50%", transform:"translateX(-50%)",
+          zIndex:10001, display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+          pointerEvents:"none",
+        }}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)", fontWeight:700, letterSpacing:1 }}>
+            放大確認
+          </div>
+          <div style={{ position:"relative" }}>
+            <div style={{
+              width:160, height:160, borderRadius:"50%", overflow:"hidden",
+              border:"2px solid rgba(255,255,255,0.65)",
+              boxShadow:"0 4px 24px rgba(0,0,0,0.7)",
+            }}>
+              <svg width={160} height={160}
+                viewBox={`${dragPos.px - ZOOM} ${dragPos.py - ZOOM} ${ZOOM * 2} ${ZOOM * 2}`}>
+                <rect x={dragPos.px - ZOOM} y={dragPos.py - ZOOM} width={ZOOM*2} height={ZOOM*2} fill="#2a2a2a" />
+                {rings.map((ring, i) => (
+                  <circle key={i} cx={CX} cy={CY} r={ring.r * R}
+                    fill={ring.fill} stroke={ring.stroke} strokeWidth={0.7} />
+                ))}
+                <line x1={dragPos.px-3} y1={dragPos.py} x2={dragPos.px+3} y2={dragPos.py}
+                  stroke="white" strokeWidth={0.6} />
+                <line x1={dragPos.px} y1={dragPos.py-3} x2={dragPos.px} y2={dragPos.py+3}
+                  stroke="white" strokeWidth={0.6} />
+                <circle cx={dragPos.px} cy={dragPos.py} r={1} fill="white" />
+              </svg>
+            </div>
+            <div style={{
+              position:"absolute", bottom:-16, left:"50%", transform:"translateX(-50%)",
+              background: dragScore === "M" ? "#dc2626" : "rgba(0,0,0,0.85)",
+              color:"white", fontWeight:900, fontSize:24,
+              borderRadius:8, padding:"1px 12px", whiteSpace:"nowrap",
+            }}>
+              {dragScore === "M" ? "脫靶" : `${dragScore} 環`}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 靶面 SVG */}
+      <svg width={SIZE} height={SIZE}
+        style={{ touchAction:"none", display:"block", cursor:"crosshair" }}
+        onPointerDown={handleDown}
+        onPointerMove={handleMove}
+        onPointerUp={handleUp}
+        onPointerCancel={() => setDragPos(null)}>
+        <circle cx={CX} cy={CY} r={R + 2} fill="#2a2a2a" />
+        {rings.map((ring, i) => (
+          <circle key={i} cx={CX} cy={CY} r={ring.r * R}
+            fill={ring.fill} stroke={ring.stroke} strokeWidth={0.7} />
+        ))}
+        <line x1={CX-6} y1={CY} x2={CX+6} y2={CY} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
+        <line x1={CX} y1={CY-6} x2={CX} y2={CY+6} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
+        <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />
+        {dragPos && (
+          <>
+            <circle cx={dragPos.px} cy={dragPos.py} r={9}
+              fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth={1.5}
+              style={{ pointerEvents:"none" }} />
+            <circle cx={dragPos.px} cy={dragPos.py} r={3}
+              fill="white" style={{ pointerEvents:"none" }} />
+          </>
+        )}
+      </svg>
+    </>
   );
 }
 
@@ -197,8 +276,9 @@ export default function TargetFaceOverlay({
       background:"rgba(0,0,0,0.88)",
       backdropFilter:"blur(6px)",
       display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center",
-      gap:14, padding:"20px 16px",
+      alignItems:"center", justifyContent:"flex-start",
+      gap:14, padding:"16px 16px 20px",
+      paddingTop:"20dvh",
     }}>
       <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, fontWeight:700, letterSpacing:1 }}>
         🎯 {fmtInfo.label}（{fmtInfo.sub}）· {arrowLabels.length}/{arrowsPerRound} 箭

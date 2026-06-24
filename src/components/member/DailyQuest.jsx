@@ -71,8 +71,9 @@ export default function DailyQuest({ onJoinParty }) {
     if (!profile?.id) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     const unsub = subscribePracticeLogs(profile.id, logs => {
+      const DIRECT_SOURCES = ["party", "duel", "dungeon"];
       const count = logs
-        .filter(l => l.date === todayStr)
+        .filter(l => l.date === todayStr && !DIRECT_SOURCES.includes(l.source))
         .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
       setTodayArrows(count);
     });

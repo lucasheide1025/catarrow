@@ -5,7 +5,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
-  subscribeActiveGuildQuests } from "../lib/db";
+  subscribeActiveGuildQuests, subscribePracticeLogs } from "../lib/db";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -98,8 +98,21 @@ export default function MemberApp() {
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
   const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
+  const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0); // 今日全域練箭數（含所有來源）
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
+
+  // 今日練箭數全域訂閱（含所有來源）
+  useEffect(() => {
+    if (!profile?.id) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return subscribePracticeLogs(profile.id, logs => {
+      const count = logs
+        .filter(l => l.date === todayStr)
+        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
+      setTodayArrowsGlobal(count);
+    });
+  }, [profile?.id]); // eslint-disable-line
 
   // 徽章獲得偵測：profile.achievement 有增加時彈出慶祝
   useEffect(() => {
@@ -329,7 +342,10 @@ export default function MemberApp() {
             <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🎯 貓小隊射箭場</div>
             <div style={{ fontSize:"11px", color:appTheme.subtitleColor, marginTop:"1px" }}>Barebow Indoor Archery</div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap", justifyContent:"flex-end" }}>
+            <span style={{ fontSize:"11px", color:"#fbbf24" }}>🪙{(profile?.coins||0).toLocaleString()}</span>
+            <span style={{ fontSize:"11px", color:"#60a5fa" }}>💧{(profile?.village?.resources?.arrowdew||0).toLocaleString()}</span>
+            <span style={{ fontSize:"11px", color:"#86efac" }}>🏹{todayArrowsGlobal}</span>
             <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
             <button onClick={logout} style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", ...appTheme.logoutStyle }}>登出</button>
           </div>

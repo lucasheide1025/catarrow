@@ -11,7 +11,7 @@ import {
   clearPartyProcessing,
 } from "../../lib/partyDb";
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew } from "../../lib/db";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
@@ -621,13 +621,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           );
         }).filter(r => r.length > 0);
         if (practiceRounds.length > 0) {
+          const arrowCount = practiceRounds.flat().length;
           addPracticeLog(myId, {
             date: new Date().toISOString().slice(0, 10), source: "party",
             monsterName: room.monster?.name || "怪物", result: "win",
             rounds: practiceRounds,
             total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+            totalArrows: arrowCount,
             distance: room.distance || null,
           }, myId).catch(() => {});
+          if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
       }
       saveBond("party");

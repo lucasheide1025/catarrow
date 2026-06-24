@@ -15,7 +15,7 @@ import {
   skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
 import { generateBotArrows } from "../../lib/botUtils";
-import { addPracticeLog, grantArrowMilestoneRewards } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "../member/ArrowMilestonePopup";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
@@ -527,8 +527,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     getDuelStats(profile.id).then(setDuelStats);
     saveBond("monster");
 
-    // 箭數累積 + 里程碑（需報到才計）
-    if (checkinActive && profile?.id) {
+    // 箭數累積 + 里程碑
+    if (profile?.id) {
       const myArrowCount = (room.log || []).flatMap(entry =>
         (entry.attacks || []).filter(a => a.attackerId === myId)
           .flatMap(a => a.arrowBreakdown || [])
@@ -539,10 +539,13 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           date: todayStr, source: "duel",
           totalArrows: myArrowCount,
         }, profile.id).catch(() => {});
-        const milestones = getMilestonesReached(0, myArrowCount);
-        if (milestones.length > 0) {
-          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+        addArrowdew(profile.id, myArrowCount).catch(() => {});
+        if (checkinActive) {
+          const milestones = getMilestonesReached(0, myArrowCount);
+          if (milestones.length > 0) {
+            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
+            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
         }
       }
     }
