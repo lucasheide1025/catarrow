@@ -8,13 +8,13 @@ import {
   subscribeVillageMarketConfig,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
-import { subscribeMyCats, upgradeCatEquip } from "../../lib/catDb";
+import { subscribeMyCats, upgradeCatEquip, equipCat } from "../../lib/catDb";
 import {
   CATS, getBondLevel,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
   CAT_EQUIP_MAX_PLUS, calcForgeCost, catEquipLevel,
 } from "../../lib/catData";
-import { catLevelFromXP } from "../../lib/catLevel";
+import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
@@ -925,8 +925,15 @@ function formatResKey(key) {
 
 // ── 鍛造面板 ─────────────────────────────────────────────────
 function ForgePanel({ profile, resources }) {
-  const [forging, setForging] = useState(false);
-  const [forgeMsg, setForgeMsg] = useState(null);
+  const [forging,   setForging]   = useState(false);
+  const [forgeMsg,  setForgeMsg]  = useState(null);
+  const [myCats,    setMyCats]    = useState({});
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    return subscribeMyCats(profile.id, setMyCats);
+  }, [profile?.id]);
 
   const equippedCat = profile?.equippedCat;
   if (!equippedCat?.catId) {
@@ -942,8 +949,12 @@ function ForgePanel({ profile, resources }) {
   }
 
   const { catId, name, equip = {} } = equippedCat;
-  const catXP   = equippedCat.catXP || 0;
+  const catXP    = equippedCat.catXP || 0;
   const catLevel = catLevelFromXP(catXP);
+  const xpProg   = catXPProgress(catXP);
+  const bondLevel = getBondLevel(equippedCat.bond || 0);
+  const typeLabel = { attack:"攻擊型", defense:"防禦型", allround:"全能型" }[equippedCat.type] || "全能型";
+  const typeColor = { attack:"#ef4444", defense:"#3b82f6", allround:"#22c55e" }[equippedCat.type] || "#22c55e";
 
   async function handleForge(slotId) {
     if (forging || !profile?.id) return;
@@ -987,11 +998,62 @@ function ForgePanel({ profile, resources }) {
 
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"12px 14px" }}>
-      {/* 標頭 */}
-      <div style={{ textAlign:"center", marginBottom:14, padding:"10px 0" }}>
-        <div style={{ fontWeight:"bold", color:C.brown, fontSize:16 }}>🐱 {name} 的鍛造間</div>
-        <div style={{ color:C.mid, fontSize:11, marginTop:2 }}>貓貓 Lv.{catLevel} · 累積 {catXP} XP</div>
+      {/* 貓咪資訊卡 */}
+      <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:14, padding:"12px", marginBottom:10, display:"flex", gap:12, alignItems:"center" }}>
+        {/* 大頭照 */}
+        <div style={{ flexShrink:0, width:68, height:68, borderRadius:12, overflow:"hidden", border:"2px solid rgba(255,255,255,0.18)", background:"rgba(255,255,255,0.05)" }}>
+          <img src={`/cats/portraits/${catId}.webp`} alt={name}
+            style={{ width:"100%", height:"100%", objectFit:"cover" }}
+            onError={e => { e.target.style.display="none"; e.target.parentNode.style.fontSize="36px"; e.target.parentNode.style.display="flex"; e.target.parentNode.style.alignItems="center"; e.target.parentNode.style.justifyContent="center"; e.target.parentNode.textContent="🐱"; }}
+          />
+        </div>
+        {/* 資訊欄 */}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+            <span style={{ fontWeight:900, fontSize:16, color:"white" }}>{name}</span>
+            <span style={{ fontSize:10, fontWeight:700, padding:"1px 7px", borderRadius:99, background:`${typeColor}22`, color:typeColor, border:`1px solid ${typeColor}55` }}>{typeLabel}</span>
+          </div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginBottom:5 }}>Lv.{xpProg.level} · 羈絆 {bondLevel}</div>
+          {/* XP 進度條 */}
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <div style={{ flex:1, height:5, background:"rgba(255,255,255,0.1)", borderRadius:99, overflow:"hidden" }}>
+              <div style={{ width:`${xpProg.pct}%`, height:"100%", background:"#f59e0b", borderRadius:99, transition:"width .4s" }} />
+            </div>
+            <span style={{ fontSize:9, color:"rgba(255,255,255,0.35)", whiteSpace:"nowrap" }}>{xpProg.current}/{xpProg.needed} XP</span>
+          </div>
+          {/* 切換按鈕 */}
+          <button onClick={() => setSwitching(s => !s)} style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background: switching ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.08)", border: switching ? "1px solid #f59e0b88" : "1px solid rgba(255,255,255,0.18)", color: switching ? "#fbbf24" : "rgba(255,255,255,0.65)", cursor:"pointer", fontWeight:700 }}>
+            ⇄ 切換貓咪
+          </button>
+        </div>
       </div>
+
+      {/* 切換面板 */}
+      {switching && (
+        <div style={{ display:"flex", gap:8, marginBottom:10, overflowX:"auto", padding:"4px 2px" }}>
+          {Object.values(myCats).map(cat => {
+            const isActive = cat.catId === catId;
+            return (
+              <button key={cat.catId} onClick={async () => {
+                if (isActive || forging) return;
+                await equipCat(profile.id, cat.catId, cat.type || "allround");
+                setSwitching(false);
+              }} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"6px 8px", borderRadius:10, cursor:"pointer", background: isActive ? "rgba(251,191,36,0.18)" : "rgba(255,255,255,0.05)", border: isActive ? "2px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ width:48, height:48, borderRadius:9, overflow:"hidden", background:"rgba(255,255,255,0.06)" }}>
+                  <img src={`/cats/portraits/${cat.catId}.webp`} alt={cat.name}
+                    style={{ width:"100%", height:"100%", objectFit:"cover" }}
+                    onError={e => { e.target.style.display="none"; }}
+                  />
+                </div>
+                <span style={{ fontSize:9, color: isActive ? "#fbbf24" : "rgba(255,255,255,0.6)", fontWeight:700 }}>
+                  {cat.name || CATS[cat.catId]?.name}
+                </span>
+                {isActive && <span style={{ fontSize:8, color:"#f59e0b" }}>裝備中</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 提示訊息 */}
       {forgeMsg && (
