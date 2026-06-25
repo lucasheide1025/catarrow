@@ -999,30 +999,30 @@ function ForgePanel({ profile, resources }) {
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"12px 14px" }}>
       {/* 貓咪資訊卡 */}
-      <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:14, padding:"12px", marginBottom:10, display:"flex", gap:12, alignItems:"center" }}>
+      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"12px", marginBottom:10, display:"flex", gap:12, alignItems:"center", boxShadow:C.shadow }}>
         {/* 大頭照 */}
-        <div style={{ flexShrink:0, width:68, height:68, borderRadius:12, overflow:"hidden", border:"2px solid rgba(255,255,255,0.18)", background:"rgba(255,255,255,0.05)" }}>
+        <div style={{ flexShrink:0, width:68, height:68, borderRadius:12, overflow:"hidden", border:`2px solid ${C.border}`, background:"#f5ede0", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32 }}>
           <img src={`/cats/portraits/${catId}.webp`} alt={name}
             style={{ width:"100%", height:"100%", objectFit:"cover" }}
-            onError={e => { e.target.style.display="none"; e.target.parentNode.style.fontSize="36px"; e.target.parentNode.style.display="flex"; e.target.parentNode.style.alignItems="center"; e.target.parentNode.style.justifyContent="center"; e.target.parentNode.textContent="🐱"; }}
+            onError={e => { e.target.style.display="none"; }}
           />
         </div>
         {/* 資訊欄 */}
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-            <span style={{ fontWeight:900, fontSize:16, color:"white" }}>{name}</span>
-            <span style={{ fontSize:10, fontWeight:700, padding:"1px 7px", borderRadius:99, background:`${typeColor}22`, color:typeColor, border:`1px solid ${typeColor}55` }}>{typeLabel}</span>
+            <span style={{ fontWeight:900, fontSize:16, color:C.brown }}>{name}</span>
+            <span style={{ fontSize:10, fontWeight:700, padding:"1px 7px", borderRadius:99, background:`${typeColor}18`, color:typeColor, border:`1px solid ${typeColor}66` }}>{typeLabel}</span>
           </div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginBottom:5 }}>Lv.{xpProg.level} · 羈絆 {bondLevel}</div>
+          <div style={{ fontSize:11, color:C.mid, marginBottom:5 }}>Lv.{xpProg.level} · 羈絆 {bondLevel}</div>
           {/* XP 進度條 */}
           <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
-            <div style={{ flex:1, height:5, background:"rgba(255,255,255,0.1)", borderRadius:99, overflow:"hidden" }}>
-              <div style={{ width:`${xpProg.pct}%`, height:"100%", background:"#f59e0b", borderRadius:99, transition:"width .4s" }} />
+            <div style={{ flex:1, height:5, background:C.border, borderRadius:99, overflow:"hidden" }}>
+              <div style={{ width:`${xpProg.pct}%`, height:"100%", background:"#d97706", borderRadius:99, transition:"width .4s" }} />
             </div>
-            <span style={{ fontSize:9, color:"rgba(255,255,255,0.35)", whiteSpace:"nowrap" }}>{xpProg.current}/{xpProg.needed} XP</span>
+            <span style={{ fontSize:9, color:C.muted, whiteSpace:"nowrap" }}>{xpProg.current}/{xpProg.needed} XP</span>
           </div>
           {/* 切換按鈕 */}
-          <button onClick={() => setSwitching(s => !s)} style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background: switching ? "rgba(251,191,36,0.15)" : "rgba(255,255,255,0.08)", border: switching ? "1px solid #f59e0b88" : "1px solid rgba(255,255,255,0.18)", color: switching ? "#fbbf24" : "rgba(255,255,255,0.65)", cursor:"pointer", fontWeight:700 }}>
+          <button onClick={() => setSwitching(s => !s)} style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background: switching ? "rgba(217,119,6,0.12)" : "rgba(92,61,46,0.07)", border: switching ? "1px solid #d9770688" : `1px solid ${C.border}`, color: switching ? "#b45309" : C.mid, cursor:"pointer", fontWeight:700 }}>
             ⇄ 切換貓咪
           </button>
         </div>
@@ -1038,17 +1038,17 @@ function ForgePanel({ profile, resources }) {
                 if (isActive || forging) return;
                 await equipCat(profile.id, cat.catId, cat.type || "allround");
                 setSwitching(false);
-              }} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"6px 8px", borderRadius:10, cursor:"pointer", background: isActive ? "rgba(251,191,36,0.18)" : "rgba(255,255,255,0.05)", border: isActive ? "2px solid #f59e0b" : "1px solid rgba(255,255,255,0.1)" }}>
-                <div style={{ width:48, height:48, borderRadius:9, overflow:"hidden", background:"rgba(255,255,255,0.06)" }}>
+              }} style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"6px 8px", borderRadius:10, cursor:"pointer", background: isActive ? "rgba(217,119,6,0.12)" : C.card, border: isActive ? `2px solid #d97706` : `1px solid ${C.border}`, boxShadow: isActive ? "0 0 0 2px rgba(217,119,6,0.2)" : "none" }}>
+                <div style={{ width:48, height:48, borderRadius:9, overflow:"hidden", background:"#f5ede0", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
                   <img src={`/cats/portraits/${cat.catId}.webp`} alt={cat.name}
                     style={{ width:"100%", height:"100%", objectFit:"cover" }}
                     onError={e => { e.target.style.display="none"; }}
                   />
                 </div>
-                <span style={{ fontSize:9, color: isActive ? "#fbbf24" : "rgba(255,255,255,0.6)", fontWeight:700 }}>
+                <span style={{ fontSize:9, color: isActive ? "#b45309" : C.mid, fontWeight:700 }}>
                   {cat.name || CATS[cat.catId]?.name}
                 </span>
-                {isActive && <span style={{ fontSize:8, color:"#f59e0b" }}>裝備中</span>}
+                {isActive && <span style={{ fontSize:8, color:"#d97706", fontWeight:900 }}>裝備中</span>}
               </button>
             );
           })}

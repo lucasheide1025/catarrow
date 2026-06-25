@@ -185,6 +185,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [droppedCard,     setDroppedCard]      = useState(null);
   const [droppedCoinChest, setDroppedCoinChest] = useState(null);
   const [gainedXP,        setGainedXP]        = useState(0);
+  const [gainedArcherXP,  setGainedArcherXP]  = useState(0);
+  const [gainedCatXP,     setGainedCatXP]     = useState(0);
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
@@ -950,7 +952,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         setGainedXP(xp);
         addAdventurerXP(profile.id, xp).catch(() => {});
         // 射手等級 XP
-        addArcherXP(profile.id, MONSTER_TIER_XP[monster.tier] || 5).catch(() => {});
+        const archerXP = MONSTER_TIER_XP[monster.tier] || 5;
+        setGainedArcherXP(archerXP);
+        addArcherXP(profile.id, archerXP).catch(() => {});
+        // 貓貓 XP
+        const catXP = hasCat ? (CAT_TIER_XP[monster.tier] || 5) : 0;
+        setGainedCatXP(catXP);
       }
       // 任務擊殺回報
       if (questContext?.monsterId === monster.id && onKillForQuest) onKillForQuest(monster.id);
@@ -2087,6 +2094,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const qProgress = questContext
       ? { done: questContext.killsSoFar ?? 0, need: questContext.killsNeeded ?? 1 }
       : null;
+    // 直接從 monster.tier 計算，避免 state 時序問題
+    const lootArcherXP = !isGuest && monster?.tier ? (MONSTER_TIER_XP[monster.tier] || 5) : 0;
+    const lootCatXP    = !isGuest && hasCat && monster?.tier ? (CAT_TIER_XP[monster.tier] || 5) : 0;
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -2173,11 +2183,28 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             </div>
           </div>
         )}
-        {/* 冒險者 XP 顯示 */}
-        {gainedXP > 0 && !isGuest && (
-          <div className="w-full rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.2),rgba(37,99,235,0.15))", border:"1px solid rgba(124,58,237,0.35)" }}>
-            <span className="text-purple-300 font-black text-sm">⚔️ 冒險者 XP</span>
-            <span className="text-white font-black text-lg ml-auto">+{gainedXP}</span>
+        {/* 經驗值顯示（打怪勝利） */}
+        {!isGuest && (gainedXP > 0 || lootArcherXP > 0 || lootCatXP > 0) && (
+          <div className="w-full rounded-xl px-4 py-2.5 flex flex-col gap-1.5" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.15),rgba(37,99,235,0.1))", border:"1px solid rgba(124,58,237,0.3)" }}>
+            <div className="text-[10px] text-purple-300 font-bold mb-0.5">✨ 獲得經驗值</div>
+            {gainedXP > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-purple-300">⚔️ 冒險者 XP</span>
+                <span className="text-white font-black text-sm">+{gainedXP}</span>
+              </div>
+            )}
+            {lootArcherXP > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-amber-300">🏹 射手等級 XP</span>
+                <span className="text-white font-black text-sm">+{lootArcherXP}</span>
+              </div>
+            )}
+            {lootCatXP > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-pink-300">🐱 貓貓 XP</span>
+                <span className="text-white font-black text-sm">+{lootCatXP}</span>
+              </div>
+            )}
           </div>
         )}
         {/* ── 掉落物顯示（怪物死亡後的戰利品）── */}
