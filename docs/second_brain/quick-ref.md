@@ -169,8 +169,8 @@ CAT_TIER_XP = { common:5,rare:10,elite:20,fierce:30,boss:50,mythic:80 }
 ```js
 CAT_SKILL_GROUPS = { daming/gege/meimei:"heal", niuniu/haji/baobao:"atk", youyou/xiaoan/diandian:"def" }
 CAT_EQUIP_SLOTS  = 5格 [bow(atk/ore), arrow(atk/meat), armor(def/ore), herbBag(def/driedfish), potion(hp/potion)]
-CAT_EQUIP_GRADE_NAMES = ["普通","稀有","精英","史詩","傳說","神話"]
-CAT_EQUIP_MAX_PLUS = 5
+CAT_EQUIP_GRADE_NAMES = ["普通","稀有","精英","頭目","傳說","神話"]  // 注意非「史詩」
+CAT_EQUIP_MAX_PLUS = 9
 calcCatEquipBonus(equip)→{ atkBonus, defBonus, hpBonus }
 calcForgeCost(slotId, grade, plusLevel)→{ [resourceKey]:amount } | null（已極限）
 calcCatSkillChance(catLevel, bondLv) → 0–0.25
@@ -184,11 +184,21 @@ upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap)  // 
 // equipCat 已更新：同步 catXP + equip 到 equippedCat 快取
 ```
 
-### useCatCompanion.js 回傳（更新 2026-06-25）
+### useCatCompanion.js — 三類型特化數值（更新 2026-06-26）
 ```js
-// 新增：catLevel, catXP, skillGroup, triggerCatSkill, saveXP
-// 戰鬥數值：catHP/catATK/catDEF 現在包含等級加成 + 裝備加成
-// triggerCatSkill() → { triggered:false } | { triggered:true, skillGroup, healed/extraMult/reduction/blockFull }
+// CAT_TYPE_BASE（export from useCatCompanion.js）
+// attack:  { hp:140, atk:16, def:7  }  高傷低耐
+// defense: { hp:300, atk:7,  def:16 }  高血高防
+// allround:{ hp:200, atk:10, def:10 }  均衡
+// CAT_COMBAT_BASE = CAT_TYPE_BASE.allround（向後相容）
+//
+// 羈絆技能里程碑（bondTierMult）：
+//   bondLv ≥5  → 主屬性 ×1.2（技能 I）
+//   bondLv ≥10 → 主屬性 ×1.4（技能 II）
+//   攻擊型主屬性=ATK，防禦型=HP+DEF，全能型=全部
+//
+// 回傳：catLevel,catXP,skillGroup,triggerCatSkill,saveXP,hasCat,catATK,catHP,catDEF
+// triggerCatSkill() → {triggered:false}|{triggered:true,skillGroup,healed/extraMult/reduction/blockFull}
 ```
 
 ---
