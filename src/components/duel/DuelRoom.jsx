@@ -248,7 +248,7 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
   const checkinActive = useCheckinActive(profile?.id);
-  const { catMsg, clearCatMsg, showCatEntry, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
+  const { catMsg, clearCatMsg, showCatEntry, saveBond, hasCat, catName: myCatName, calcCatRoundDamage, catATK } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
   const [room, setRoom]           = useState(null);
   const [myArrows, setMyArrows]   = useState([]);
@@ -323,7 +323,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     if (!myData) return;
     if (myData.catName) { catAppliedRef.current = true; return; } // 已套用
     catAppliedRef.current = true;
-    applyPlayerCatToRoom(roomId, myTeam, myId, myCatName, 1.0).catch(() => {});
+    applyPlayerCatToRoom(roomId, myTeam, myId, myCatName, 1.0, catATK || 0).catch(() => {});
   }, [room, myTeam, hasCat]); // eslint-disable-line
 
   // ── 決鬥開始時顯示一次貓貓進場訊息（intro 結束後）──────────

@@ -7,7 +7,7 @@ import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog, getMonsterLogs, subscribeMonsterLogs,
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
-  addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
+  addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
   subscribeCardCollection, addArcherXP,
 } from "../../lib/db";
@@ -835,7 +835,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       setTimeout(() => sfxSuccess(), 600);
 
       // ── 寶箱（固定必掉）────────────────────────────────
-      const { mainChest, catChest, potionChest } = makeChests(monster, mode);
+      const { mainChest, potionChest } = makeChests(monster, mode);
       const chestCfg = CHEST_TYPES[mainChest.type] || CHEST_TYPES.wood;
 
       if (isGuest || !profile?.id) {
@@ -854,17 +854,14 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         setDroppedMaterials([]);
       } else {
         // 一般射手：先算好所有寶箱，再一次 addChests（避免兩次 getDoc+setDoc 競態）
-        const mainChests = [mainChest, catChest, potionChest].filter(Boolean);
+        const mainChests = [mainChest, potionChest].filter(Boolean);
         setWonChests(mainChests);
 
-        // 材料掉落（機率，依 tier 一次掉多個）
-        const mats = rollMaterialDrops(monster);
+        // 材料掉落（機率，依 tier 一次掉多個；過濾徽章碎片）
+        const mats = rollMaterialDrops(monster).filter(m => !m.id?.startsWith("frag_"));
         setDroppedMaterials(mats);
         if (mats.length > 0) {
-          const frags  = mats.filter(m => m.id?.startsWith("frag_"));
-          const others = mats.filter(m => !m.id?.startsWith("frag_"));
-          if (frags.length > 0)  addFragments(profile.id, frags.map(m => ({ id: m.id }))).catch(() => {});
-          if (others.length > 0) addMaterials(profile.id, others).catch(() => {});
+          addMaterials(profile.id, mats).catch(() => {});
         }
 
         // 金幣（必掉）
@@ -929,7 +926,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！激烈的戰鬥結束——你贏了！` });
       if (!isGuest) {
         addLog({ type:"system", text:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
-        if (catChest)   addLog({ type:"event_good", text:`🐱 幸運！額外獲得「貓貓箱」！` });
         if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
       }
 

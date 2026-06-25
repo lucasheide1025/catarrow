@@ -18,6 +18,16 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+function calcCatDmg(catAtk, monsterDef) {
+  if (!catAtk) return 0;
+  let total = 0;
+  for (let i = 0; i < 6; i++) {
+    const m = 0.5 + Math.random() * 1.5;
+    total += Math.max(1, Math.round((catAtk - monsterDef * 0.5) * m));
+  }
+  return total;
+}
+
 const MODE_SCALE = {
   novice:  { hp:1.5, atk:1.0, def:1.0 },
   student: { hp:2.0, atk:1.0, def:1.0 },
@@ -88,7 +98,7 @@ export function subscribeDungeonRoom(roomId, cb) {
 }
 
 // ── 各玩家寫入自己的 HP/ATK/DEF ─────────────────────────────
-export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "", archerStyle = "") {
+export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "", archerStyle = "", catAtk = 0) {
   try {
     await updateDoc(doc(db, D, roomId), {
       [`members.${memberId}.hp`]:          hp,
@@ -97,6 +107,7 @@ export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk,
       [`members.${memberId}.def`]:         def,
       [`members.${memberId}.catName`]:     catName,
       [`members.${memberId}.archerStyle`]: archerStyle,
+      [`members.${memberId}.catAtk`]:      catAtk,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -271,8 +282,26 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
+    // 貓貓攻擊（所有存活成員的貓各出 6 箭，合算傷害）
+    let catTotalDmg = 0;
+    const catMiniLog = [];
+    for (const id of aliveIds) {
+      const m = members[id];
+      if (!m.catAtk || memberHPNow[id] <= 0) continue;
+      const dmg = calcCatDmg(m.catAtk, room.monster?.def || 10);
+      catTotalDmg += dmg;
+      catMiniLog.push({ id, name: m.name, catName: m.catName || "貓貓", dmg });
+    }
+    if (catTotalDmg > 0 && monsterHP > 0) {
+      monsterHP = Math.max(0, monsterHP - catTotalDmg);
+      miniRounds.push({
+        miniRound: "cat", isCounter: false, isCat: true,
+        playerLog: catMiniLog, totalDmg: catTotalDmg, monsterHPAfter: monsterHP,
+      });
+    }
+
     // Step 4：事件額外效果
-    const totalDmg = Object.values(allData).reduce((s, p) => s + p.totalDmg, 0);
+    const totalDmg = Object.values(allData).reduce((s, p) => s + p.totalDmg, 0) + catTotalDmg;
     if (eff.extraDmg)  monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 

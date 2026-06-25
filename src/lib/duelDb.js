@@ -13,6 +13,16 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+function calcCatDmg(catAtk, targetDef) {
+  if (!catAtk) return 0;
+  let total = 0;
+  for (let i = 0; i < 6; i++) {
+    const m = 0.5 + Math.random() * 1.5;
+    total += Math.max(1, Math.round((catAtk - targetDef * 0.5) * m));
+  }
+  return total;
+}
+
 // ── 決鬥數值平衡（壓縮強度差距，老手僅略有優勢）──────────
 export function balanceDuelStats(raw) {
   return {
@@ -287,6 +297,24 @@ export async function processDuelRound(roomId, room, calcDmgFn) {
       attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits, arrowBreakdown, luckyEvent });
     }
 
+    // 貓貓攻擊（各自選目標，6 箭合算）
+    for (const id of effAliveA) {
+      const m = effTeamA[id];
+      if (!m.catAtk) continue;
+      const targetId = pickTarget("A", id);
+      if (!targetId) continue;
+      const dmg = calcCatDmg(m.catAtk, effTeamB[targetId]?.def || 10);
+      attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits: 0, arrowBreakdown: [], luckyEvent: null, isCat: true, catName: m.catName || "貓貓" });
+    }
+    for (const id of effAliveB) {
+      const m = effTeamB[id];
+      if (!m.catAtk) continue;
+      const targetId = pickTarget("B", id);
+      if (!targetId) continue;
+      const dmg = calcCatDmg(m.catAtk, effTeamA[targetId]?.def || 10);
+      attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits: 0, arrowBreakdown: [], luckyEvent: null, isCat: true, catName: m.catName || "貓貓" });
+    }
+
     // 加總傷害
     const hpDelta = {};
     for (const atk of attacks) {
@@ -436,7 +464,7 @@ export async function removePlayerFromRoom(roomId, team, memberId) {
 }
 
 // ── 套用貓貓光環至房間成員（射手進場時，只套一次）──────────
-export async function applyPlayerCatToRoom(roomId, team, memberId, catName, catMult) {
+export async function applyPlayerCatToRoom(roomId, team, memberId, catName, catMult, catAtk = 0) {
   try {
     const ref  = doc(db, DUEL, roomId);
     const snap = await getDoc(ref);
@@ -445,6 +473,7 @@ export async function applyPlayerCatToRoom(roomId, team, memberId, catName, catM
     if (!memberData || memberData.catName) return; // 已套用過就跳過
     await updateDoc(ref, {
       [`team${team}.${memberId}.catName`]: catName,
+      [`team${team}.${memberId}.catAtk`]: catAtk,
       [`team${team}.${memberId}.atk`]: Math.round(memberData.atk * catMult),
     });
   } catch {}

@@ -2908,17 +2908,35 @@ export async function collectVillageResources(memberId, village) {
       continue;
     }
 
-    const tier   = getBuildingStage(lv);
-    const resKey = getResourceKey(res, tier);
-    const fracKey = `${resKey}Frac`;
-    const prevFrac = village?.resources?.[fracKey] || 0;
-    const rawAmt = getProductionRate(id, lv) * hours + prevFrac;
-    const amt    = Math.floor(rawAmt);
-    const newFrac = Math.round((rawAmt - amt) * 1000) / 1000;
-    updates[`village.resources.${fracKey}`] = newFrac;
-    if (amt > 0) {
-      updates[`village.resources.${resKey}`] = increment(amt);
-      collected[resKey] = (collected[resKey] || 0) + amt;
+    const maxTier = getBuildingStage(lv);
+    const rate    = getProductionRate(id, lv);
+
+    if (!TIERED_RESOURCES.has(res)) {
+      // 非分層資源（箭露、射手等）：原邏輯不變
+      const resKey  = res;
+      const fracKey = `${resKey}Frac`;
+      const prevFrac = village?.resources?.[fracKey] || 0;
+      const rawAmt   = rate * hours + prevFrac;
+      const amt      = Math.floor(rawAmt);
+      updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
+      if (amt > 0) {
+        updates[`village.resources.${resKey}`] = increment(amt);
+        collected[resKey] = (collected[resKey] || 0) + amt;
+      }
+    } else {
+      // 分層資源：累積生產（T2 建築同時產出 T1+T2，各自以相同速率計算）
+      for (let tier = 1; tier <= maxTier; tier++) {
+        const resKey  = getResourceKey(res, tier);
+        const fracKey = `${resKey}Frac`;
+        const prevFrac = village?.resources?.[fracKey] || 0;
+        const rawAmt   = rate * hours + prevFrac;
+        const amt      = Math.floor(rawAmt);
+        updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
+        if (amt > 0) {
+          updates[`village.resources.${resKey}`] = increment(amt);
+          collected[resKey] = (collected[resKey] || 0) + amt;
+        }
+      }
     }
   }
 
@@ -2999,7 +3017,7 @@ export async function addArcherXP(memberId, amount) {
 }
 
 // costs = [{ resource, tier, count }, ...]
-export async function exchangeMaterialsForChest(memberId, chestType, costs) {
+export async function exchangeMaterialsForChest(memberId, chestType, costs, family = null) {
   const snap = await getDoc(doc(db, C.members, memberId));
   const village = snap.data()?.village || {};
   const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'貓薄荷藥水', fur:'貓毛' };
@@ -3012,7 +3030,9 @@ export async function exchangeMaterialsForChest(memberId, chestType, costs) {
     updates[`village.resources.${resource}_t${tier}`] = increment(-count);
   });
   await updateDoc(doc(db, C.members, memberId), updates);
-  await addChests(memberId, [{ id: `vmarket_${Date.now()}`, type: chestType, from: "village_market", ts: Date.now() }]);
+  const chest = { id: `vmarket_${Date.now()}`, type: chestType, from: "village_market", ts: Date.now() };
+  if (family) chest.family = family;
+  await addChests(memberId, [chest]);
 }
 
 // ── 卡片掛賣市集 ─────────────────────────────────────────────

@@ -9,6 +9,7 @@ import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { getCatStatMult, getBondLevel } from "../../lib/catData";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
 
 const MODES = [
   { id:"novice",  label:"新手",   icon:"🌱", desc:"HP×1.5，適合初學者"  },
@@ -27,6 +28,7 @@ function pickRandomMonsters(floor, hostAtk = 10) {
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
   const { profile } = useAuth();
+  const { catATK: myCatATK } = useCatCompanion();
   const [tab, setTab]           = useState("create");
   const [selLength, setSelLength] = useState("standard");
   const [selMode,   setSelMode]   = useState("student");
@@ -82,7 +84,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true); setErr("");
     const res = await createDungeonRoom(myId, myName, myATK);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao");
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
     const sub = subscribeDungeonRoom(res.roomId, r => setRoom(r));
     setUnsub(() => sub);
     setRoomId(res.roomId);
@@ -95,7 +97,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true); setErr("");
     const res = await joinDungeonRoom(openRoom.code, myId, myName);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
-    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao");
+    await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
       if (r?.status === "active") { sub(); onEnterRoom(res.roomId); }

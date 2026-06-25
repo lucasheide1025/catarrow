@@ -148,12 +148,20 @@ export function calcPendingResources(village) {
   const pending = {};
   for (const id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
-    const lv    = buildings[id] || 1;
-    const rate  = getProductionRate(id, lv);
-    const res   = BUILDINGS[id].resource;
-    const tier  = getBuildingStage(lv);
-    const resKey = getResourceKey(res, tier);
-    pending[resKey] = (pending[resKey] || 0) + Math.floor(rate * hours);
+    const lv      = buildings[id] || 1;
+    const rate    = getProductionRate(id, lv);
+    const res     = BUILDINGS[id].resource;
+    const maxTier = getBuildingStage(lv);
+    if (!TIERED_RESOURCES.has(res)) {
+      // 非分層資源
+      pending[res] = (pending[res] || 0) + Math.floor(rate * hours);
+    } else {
+      // 分層資源：累積生產（T1 ~ Tmaxd，各自加滿速率）
+      for (let tier = 1; tier <= maxTier; tier++) {
+        const resKey = getResourceKey(res, tier);
+        pending[resKey] = (pending[resKey] || 0) + Math.floor(rate * hours);
+      }
+    }
   }
   return { pending, hours };
 }

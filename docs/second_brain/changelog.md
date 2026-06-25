@@ -3,6 +3,50 @@
 
 ---
 
+## 2026-06-25（後段：打怪掉落修正 + 貓貓決鬥/地下城傷害 + 村莊累積生產 + 市集重設計）
+
+### 打怪模式不再掉落徽章碎片與貓貓箱
+**為什麼**：36 隻怪物打怪後給徽章碎片（frag_*）與貓貓箱（cat type chest）不符合設計方向。
+**改了什麼**：`MonsterBattle.jsx`：
+- `makeChests` 解構移除 `catChest`，不加入 mainChests
+- 移除 catChest log 行
+- `rollMaterialDrops` 結果 `.filter(m => !m.id?.startsWith("frag_"))` 過濾碎片
+- 移除 `addFragments` 呼叫與 import
+**踩坑提醒**：frags 已被獨立分出來（`mats.filter(frag_)`），直接在 rollMaterialDrops 後過濾更乾淨。
+
+### 貓貓在決鬥模式（DuelRoom）傷害
+**為什麼**：貓貓只存了名字，沒有真正參戰。
+**改了什麼**：
+- `duelDb.js` 新增 `calcCatDmg(catAtk, targetDef)` helper（6箭合算，0.5~2.0倍隨機）
+- `applyPlayerCatToRoom` 加 `catAtk` 參數，存到 `team${team}.${memberId}.catAtk`
+- `processDuelRound` 在 attacks 加總前插入貓貓攻擊段（effAliveA/B 各選目標，isCat:true）
+- `DuelRoom.jsx`：從 hook 取 `catATK`，傳入 `applyPlayerCatToRoom`
+
+### 貓貓在地下城模式（DungeonBattleRoom）傷害
+**為什麼**：同上。
+**改了什麼**：
+- `dungeonDb.js` 新增 `calcCatDmg` helper
+- `updateDungeonMemberStats` 加 `catAtk` 參數，存到 `members.${memberId}.catAtk`
+- `processDungeonRound` Step 3 結束後插入「貓貓攻擊」mini round（isCat:true）
+- `DungeonLobby.jsx`：import `useCatCompanion`，取 `myCatATK`，傳入兩個 updateDungeonMemberStats 呼叫
+
+### 村莊累積生產模型（T2 → T1+T2 同時產出）
+**為什麼**：高等建築應同時產出低階材料，方便玩家管理資源，升級更有感。
+**改了什麼**：
+- `villageData.js` `calcPendingResources`：tiered 資源改為 loop tier 1~maxTier，各自以同速率計算
+- `db.js` `collectVillageResources`：同樣邏輯，非分層資源（箭露/射手等）維持原邏輯
+**踩坑提醒**：non-tiered 資源（arrowdew、archer、gachaToken）不進 loop，避免 fracKey 衝突。
+
+### 市集重設計（6 種族材料包 + 藥水箱 + 怪物卡包 + 黃金寶箱）
+**為什麼**：原本 4 種通用寶箱不夠明確，玩家無法選擇要哪族材料。
+**改了什麼**：
+- `CatVillage.jsx` `BATTLE_EXCHANGE`：6 族材料包（ghost/mountain/exam/insect/workplace/temple）各消耗對應建築 T1 資源 ×30，加藥水箱/卡包/黃金寶箱
+- `doBattleExchange` 加 `family` 參數，傳入 `exchangeMaterialsForChest`
+- `db.js` `exchangeMaterialsForChest` 加 `family` 可選參數，加入寶箱 object
+**踩坑提醒**：`gotThis` key 改為 `type + family`（否則不同族包 justGot 無法區分）。
+
+---
+
 ## 2026-06-25（貓貓等級+裝備+技能系統）
 
 ### 舊 catStatMult 被動加成移除（設計簡化）

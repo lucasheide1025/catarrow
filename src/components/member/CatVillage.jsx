@@ -750,14 +750,17 @@ function ResourceRow({ resources, gachaCoins }) {
 }
 
 const BATTLE_EXCHANGE = [
-  { type:'wood', icon:'📦', label:'木寶箱',   desc:'含普通打怪材料',
-    costs:[{ resource:'ore',  tier:1, count:20 }] },
-  { type:'iron', icon:'🧰', label:'鐵寶箱',   desc:'含非凡打怪材料',
-    costs:[{ resource:'ore',  tier:1, count:35 }, { resource:'melon', tier:1, count:25 }] },
-  { type:'gold', icon:'🎁', label:'黃金寶箱', desc:'含前三階段材料',
-    costs:[{ resource:'ore',  tier:2, count:15 }, { resource:'fish',  tier:1, count:30 }] },
-  { type:'epic', icon:'💜', label:'史詩寶箱', desc:'含前四階段材料',
-    costs:[{ resource:'ore',  tier:3, count:10 }, { resource:'meat',  tier:2, count:10 }] },
+  // 六種族材料包（各自消耗對應建築的 T1 村莊資源）
+  { type:'iron', family:'ghost',     icon:'👻', label:'鬼怪族材料包',   costs:[{ resource:'ore',       tier:1, count:30 }] },
+  { type:'iron', family:'mountain',  icon:'🏔️', label:'山林族材料包',  costs:[{ resource:'melon',     tier:1, count:30 }] },
+  { type:'iron', family:'exam',      icon:'📝', label:'考試族材料包',   costs:[{ resource:'fish',      tier:1, count:30 }] },
+  { type:'iron', family:'insect',    icon:'🦂', label:'毒蟲族材料包',   costs:[{ resource:'meat',      tier:1, count:30 }] },
+  { type:'iron', family:'workplace', icon:'💼', label:'職場族材料包',   costs:[{ resource:'driedfish', tier:1, count:30 }] },
+  { type:'iron', family:'temple',    icon:'⛩️', label:'西方怪物材料包', costs:[{ resource:'can',       tier:1, count:30 }] },
+  // 藥水箱、怪物卡包、黃金寶箱
+  { type:'potion',   icon:'🧪', label:'藥水箱',   costs:[{ resource:'melon', tier:1, count:20 }, { resource:'fish',  tier:1, count:15 }] },
+  { type:'card_pack',icon:'🃏', label:'怪物卡包',  costs:[{ resource:'ore',   tier:2, count: 8 }, { resource:'driedfish', tier:1, count:20 }] },
+  { type:'gold',     icon:'🎁', label:'黃金寶箱',  costs:[{ resource:'ore',   tier:2, count:15 }, { resource:'fish',  tier:2, count:10 }] },
 ];
 const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'藥水', fur:'貓毛' };
 
@@ -767,13 +770,13 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
   const [busy, setBusy] = useState(false);
   const [justGot, setJustGot] = useState(null);
 
-  async function doBattleExchange(chestType, costs) {
+  async function doBattleExchange(chestType, costs, family) {
     if (busy) return;
     setBusy(true);
     sfxVillageExchange();
     try {
-      await exchangeMaterialsForChest(memberId, chestType, costs);
-      setJustGot(chestType);
+      await exchangeMaterialsForChest(memberId, chestType, costs, family || null);
+      setJustGot(chestType + (family || ""));
       setTimeout(() => setJustGot(null), 2000);
       onDone?.();
     } catch (e) { alert(e.message); }
@@ -797,15 +800,15 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
 
   return (
     <div className="px-5 pb-4">
-      {/* ── 兌換打怪材料 ── */}
-      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>⚔️ 兌換打怪寶箱</div>
-      <div className="text-[10px] mb-3" style={{ color: C.muted }}>消耗村莊材料，取得裝有打怪材料的寶箱（背包開箱）</div>
+      {/* ── 市集兌換 ── */}
+      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>🛒 村莊市集兌換</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>消耗村莊材料，換取各族材料包、藥水箱、怪物卡包、黃金寶箱（到背包開箱）</div>
       <div className="flex flex-col gap-2 mb-4">
         {effectiveBX.map(ex => {
           const canAfford = ex.costs.every(({ resource, tier, count }) =>
             Math.floor(resources?.[`${resource}_t${tier}`] || 0) >= count
           );
-          const gotThis = justGot === ex.type;
+          const gotThis = justGot === ex.type + (ex.family || "");
           return (
             <div key={ex.type} className="flex items-center justify-between rounded-xl px-3 py-2"
               style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
@@ -828,7 +831,7 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
               </div>
               <button
                 disabled={!canAfford || busy}
-                onClick={() => doBattleExchange(ex.type, ex.costs)}
+                onClick={() => doBattleExchange(ex.type, ex.costs, ex.family)}
                 className="text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all ml-2"
                 style={{
                   background: gotThis ? "#5A9E50" : canAfford ? "#D4933A" : C.lockBd,
