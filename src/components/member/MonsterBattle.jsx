@@ -26,7 +26,7 @@ import {
   calcArcherStats, calcArcherPower, drawMatchedMonsters,
   calcDamage, calcCounterDamage, resolveHitPart,
 } from "../../lib/monsterData";
-import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollMaterialDrops, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
@@ -796,17 +796,14 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const mainChests = [mainChest, catChest, potionChest].filter(Boolean);
         setWonChests(mainChests);
 
-        // 材料掉落（機率）
-        const mat = rollMaterialDrop(monster);
-        if (mat) {
-          setDroppedMaterials([mat]);
-          if (mat.id?.startsWith("frag_")) {
-            addFragments(profile.id, [{ id: mat.id }]).catch(() => {});
-          } else {
-            addMaterials(profile.id, [{ id: mat.id }]).catch(() => {});
-          }
-        } else {
-          setDroppedMaterials([]);
+        // 材料掉落（機率，依 tier 一次掉多個）
+        const mats = rollMaterialDrops(monster);
+        setDroppedMaterials(mats);
+        if (mats.length > 0) {
+          const frags  = mats.filter(m => m.id?.startsWith("frag_"));
+          const others = mats.filter(m => !m.id?.startsWith("frag_"));
+          if (frags.length > 0)  addFragments(profile.id, frags.map(m => ({ id: m.id }))).catch(() => {});
+          if (others.length > 0) addMaterials(profile.id, others).catch(() => {});
         }
 
         // 金幣（必掉）

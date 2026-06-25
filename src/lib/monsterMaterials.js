@@ -114,6 +114,6 @@ export function drawMaterial(monsterId, tier) {
 
 // ── 依怪物階級決定掉落材料數量 ───────────────────────────
 export function getMaterialDropCount(tier) {
-  const map = { common:1, rare:1, elite:2, fierce:2, boss:3, mythic:4 };
+  const map = { common:1, rare:2, elite:3, fierce:4, boss:5, mythic:7 };
   return map[tier] || 1;
 }

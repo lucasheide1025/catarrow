@@ -1,7 +1,7 @@
 // src/lib/lootTable.js
 // 掉寶邏輯 v2：材料（機率）+ 金幣（固定）+ 怪物卡片（1%）
 
-import { drawMaterial } from "./monsterMaterials";
+import { drawMaterial, getMaterialDropCount } from "./monsterMaterials";
 
 // ── 訪客掉寶表（第一次勝利：紀念獎勵）────────────────────
 export const LOOT_TABLE_GUEST = [
@@ -28,8 +28,8 @@ const MODE_COIN_MULT = { novice: 1.0, student: 1.5, veteran: 2.0 };
 
 // ── 材料掉落機率（依怪物階級）────────────────────────────
 const MATERIAL_CHANCE = {
-  common: 0.40, rare: 0.50, elite: 0.60,
-  fierce: 0.70, boss: 0.75, mythic: 0.80,
+  common: 0.55, rare: 0.65, elite: 0.75,
+  fierce: 0.85, boss: 0.92, mythic: 0.97,
 };
 
 // ── 怪物卡片掉落（20%）──────────────────────────────────
@@ -45,11 +45,24 @@ export function rollCoins(tier, mode) {
   return Math.round(raw * mult);
 }
 
-// 材料掉落（機率，回傳材料物件或 null）
+// 材料掉落（機率，回傳單一材料物件或 null）— 供組隊預覽使用
 export function rollMaterialDrop(monster) {
-  const chance = MATERIAL_CHANCE[monster?.tier] || 0.40;
+  const chance = MATERIAL_CHANCE[monster?.tier] || 0.55;
   if (Math.random() > chance) return null;
   return drawMaterial(monster.id, monster.tier) || null;
+}
+
+// 材料掉落（回傳陣列，含 tier 應掉落的完整數量）
+export function rollMaterialDrops(monster) {
+  const chance = MATERIAL_CHANCE[monster?.tier] || 0.55;
+  if (Math.random() > chance) return [];
+  const count = getMaterialDropCount(monster?.tier || "common");
+  const results = [];
+  for (let i = 0; i < count; i++) {
+    const mat = drawMaterial(monster?.id, monster?.tier);
+    if (mat) results.push(mat);
+  }
+  return results;
 }
 
 // 怪物卡片掉落（1%，回傳卡片基本資訊或 null）

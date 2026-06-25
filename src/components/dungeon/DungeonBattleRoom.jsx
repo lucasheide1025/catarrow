@@ -12,7 +12,7 @@ import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/mons
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP } from "../../lib/db";
 import { DUNGEON_FLOOR_XP } from "../../lib/archerLevel";
-import { rollCoins, rollMaterialDrop, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
+import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
   sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, vibrate,
@@ -326,7 +326,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   async function handleClaim() {
     if (!isHost) return;
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
-    const baseMaterials = rollMaterialDrop(room?.monster);
+    const baseMaterials = rollMaterialDrops(room?.monster);
     const totalFloors   = room.totalFloors || 7;
 
     for (const mid of Object.keys(room.members || {})) {
@@ -337,7 +337,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
         makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
       );
       if (memberChests.length > 0) await addChests(mid, memberChests).catch(() => {});
-      if (baseMaterials) await addMaterials(mid, [baseMaterials]).catch(() => {});
+      if (baseMaterials.length > 0) await addMaterials(mid, baseMaterials).catch(() => {});
       await recordBattleDex(mid, room.monster.id).catch(() => {});
     }
 
