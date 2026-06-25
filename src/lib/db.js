@@ -1053,6 +1053,47 @@ export async function getDailyQuestCount(memberId) {
   } catch { return 0; }
 }
 
+// 強制結束今日所有仍在上課中（active、尚未 classEnded）的報到
+export async function forceEndTodayCheckins() {
+  const q = query(
+    collection(db, C_CHECKIN),
+    where("date", "==", todayStr()),
+    where("status", "==", "active"),
+    where("classEnded", "==", false)
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return 0;
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => {
+    batch.update(d.ref, {
+      classEnded: true,
+      classEndedAt: serverTimestamp(),
+      forcedEndByAdmin: true,
+    });
+  });
+  await batch.commit();
+  return snap.size;
+}
+
+// 重置單一會員的報到累積次數
+export async function resetCheckinCount(memberId) {
+  await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: 0 });
+}
+
+// 重置所有會員的報到累積次數（先強制下課再歸零）
+export async function resetAllCheckinCounts(memberIds) {
+  // 先強制結束今日未下課的報到
+  await forceEndTodayCheckins();
+  // 批次歸零（Firestore 每批最多 500 筆）
+  for (let i = 0; i < memberIds.length; i += 499) {
+    const batch = writeBatch(db);
+    memberIds.slice(i, i + 499).forEach(id => {
+      batch.update(doc(db, C.members, id), { dailyQuestCount: 0 });
+    });
+    await batch.commit();
+  }
+}
+
 /* ════════════════════════════════════════════════════════════
    冒險者公會系統
    ════════════════════════════════════════════════════════════ */
@@ -3004,7 +3045,8 @@ export async function listCardForSale(memberId, memberName, cardId, cardData, pr
   await batch.commit();
 }
 
-export async function buyCardListing(buyerId, buyerName, listing) {
+// offeredCardId：priceType==="card" 時，買家選擇要提供的重複卡片 ID
+export async function buyCardListing(buyerId, buyerName, listing, offeredCardId = null) {
   if (!buyerId || !listing?.id) throw new Error('參數錯誤');
   if (listing.sellerId === buyerId) throw new Error('不能購買自己的掛賣');
   const listingRef = doc(db, C_CARD_MARKET, listing.id);
@@ -3016,21 +3058,24 @@ export async function buyCardListing(buyerId, buyerName, listing) {
   if (listing.priceType === "arrowdew") {
     const have = bData?.village?.resources?.arrowdew || 0;
     if (have < listing.priceAmount) throw new Error(`箭露不足（需要 ${listing.priceAmount}）`);
-    batch.update(doc(db, C.members, buyerId),      { "village.resources.arrowdew": increment(-listing.priceAmount) });
+    batch.update(doc(db, C.members, buyerId),          { "village.resources.arrowdew": increment(-listing.priceAmount) });
     batch.update(doc(db, C.members, listing.sellerId), { "village.resources.arrowdew": increment(listing.priceAmount) });
   } else if (listing.priceType === "gachaToken") {
     const have = bData?.gachaCoins || 0;
     if (have < listing.priceAmount) throw new Error(`扭蛋幣不足（需要 ${listing.priceAmount}）`);
-    batch.update(doc(db, C.members, buyerId),      { gachaCoins: increment(-listing.priceAmount) });
+    batch.update(doc(db, C.members, buyerId),          { gachaCoins: increment(-listing.priceAmount) });
     batch.update(doc(db, C.members, listing.sellerId), { gachaCoins: increment(listing.priceAmount) });
   } else if (listing.priceType === "card") {
-    const catCards = bData?.catCards || {};
-    const dups = Object.entries(catCards).filter(([,c]) => (c||0) >= 2);
-    if (dups.length < listing.priceAmount) throw new Error(`需要至少 ${listing.priceAmount} 種重複卡片`);
-    const cardUpdates = {};
-    dups.slice(0, listing.priceAmount).forEach(([cid]) => { cardUpdates[`catCards.${cid}`] = increment(-1); });
-    batch.update(doc(db, C.members, buyerId), cardUpdates);
-    batch.update(doc(db, C.members, listing.sellerId), { gachaCoins: increment(listing.priceAmount) });
+    if (!offeredCardId) throw new Error('請選擇要提供的交換卡片');
+    // 取得賣家的卡片資料
+    const sSnap = await getDoc(doc(db, C.members, listing.sellerId));
+    const sData = sSnap.data() || {};
+    const buyerCnt  = bData?.catCards?.[offeredCardId]  || 0;
+    const sellerCnt = sData?.catCards?.[offeredCardId]  || 0;
+    if (buyerCnt < 2)    throw new Error('你需要擁有 2 張以上此卡片才能用於交換');
+    if (sellerCnt > 0)   throw new Error('賣家已擁有這張卡片，不符合交換條件');
+    batch.update(doc(db, C.members, buyerId),          { [`catCards.${offeredCardId}`]: increment(-1) });
+    batch.update(doc(db, C.members, listing.sellerId), { [`catCards.${offeredCardId}`]: increment(1) });
   }
 
   batch.update(doc(db, C.members, buyerId), { [`catCards.${listing.cardId}`]: increment(1) });

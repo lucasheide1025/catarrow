@@ -1,10 +1,11 @@
-// src/components/admin/AdminResetCenter.jsx — 重置中心（地下城 + 打怪次數 + 世界王）
+// src/components/admin/AdminResetCenter.jsx — 重置中心（地下城 + 打怪次數 + 世界王 + 報到）
 import { useState, useEffect } from "react";
 import {
   getMembers,
   resetDungeonUsed, resetAllDungeonUsed,
   resetMonsterSession, resetAllMonsterSessions,
   resetCouncilDailyLimit, resetAllCouncilDailyLimits,
+  forceEndTodayCheckins, resetCheckinCount, resetAllCheckinCounts,
 } from "../../lib/db";
 import {
   subscribeActiveWorldBoss,
@@ -20,8 +21,9 @@ export default function AdminResetCenter() {
   const [busyM,    setBusyM]    = useState("");
   const [busyWB,   setBusyWB]   = useState("");
   const [busyC,    setBusyC]    = useState("");
+  const [busyK,    setBusyK]    = useState("");
   const [msg,      setMsg]      = useState("");
-  const [tab,      setTab]      = useState("dungeon");
+  const [tab,      setTab]      = useState("checkin");
   const [wbEvent,  setWbEvent]  = useState(null);
 
   const today = todayStr();
@@ -65,6 +67,30 @@ export default function AdminResetCenter() {
     await resetAllMonsterSessions();
     setMsg("✅ 全員打怪次數已重置");
     setBusyM("");
+  }
+
+  // ── 報到次數重置 ─────────────────────────────────────────
+  async function handleResetCheckinOne(id, name) {
+    setBusyK(id); setMsg("");
+    try {
+      // 先強制結束此人今日未下課的報到
+      await forceEndTodayCheckins();
+      await resetCheckinCount(id);
+      setMembers(prev => prev.map(m => m.id === id ? { ...m, dailyQuestCount: 0 } : m));
+      setMsg(`✅ ${name} 報到累積次數已歸零`);
+    } catch (e) { setMsg("❌ 失敗：" + (e?.message || "")); }
+    setBusyK("");
+  }
+  async function handleResetCheckinAll() {
+    if (!window.confirm("確定要強制結束今日所有進行中的報到，並重置所有成員的報到累積次數？")) return;
+    setBusyK("all"); setMsg("");
+    try {
+      const ended = await forceEndTodayCheckins();
+      await resetAllCheckinCounts(members.map(m => m.id));
+      setMembers(prev => prev.map(m => ({ ...m, dailyQuestCount: 0 })));
+      setMsg(`✅ 全員報到次數已歸零${ended > 0 ? `（強制結束 ${ended} 人的進行中報到）` : ""}`);
+    } catch (e) { setMsg("❌ 失敗：" + (e?.message || "")); }
+    setBusyK("");
   }
 
   // ── 議會廳次數重置 ───────────────────────────────────────
@@ -112,15 +138,16 @@ export default function AdminResetCenter() {
       <h2 className="font-black text-xl text-gray-800">🔄 重置中心</h2>
 
       {/* 分頁 */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {[
+          { id: "checkin",  label: "📍 報到" },
           { id: "dungeon",  label: "🏰 地下城" },
           { id: "monster",  label: "⚔️ 打怪" },
           { id: "worldboss", label: "🌍 世界王" },
           { id: "council",  label: "🏛️ 議會廳" },
         ].map(t => (
           <button key={t.id} onClick={() => { setTab(t.id); setMsg(""); }}
-            className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+            className={`py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
             {t.label}
           </button>
         ))}
@@ -137,6 +164,35 @@ export default function AdminResetCenter() {
         <div className="text-center py-12 text-gray-400 text-sm">載入中…</div>
       ) : (
         <>
+          {/* ── 報到次數 ────────────────────────────────── */}
+          {tab === "checkin" && (
+            <div className="space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-xs text-amber-700 leading-relaxed">
+                點「全員重置」會先<b>強制結束</b>今日所有仍在上課中（忘記點下課）的報到，再把所有人的累積報到次數歸零。<br/>
+                重置個人時也會先執行強制下課。
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-500">
+                  累積次數最高：<span className="font-bold text-indigo-600">{Math.max(0, ...members.map(m => m.dailyQuestCount || 0))}</span> 次
+                </div>
+                <button onClick={handleResetCheckinAll} disabled={!!busyK}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
+                  {busyK === "all" ? "重置中…" : "全員重置"}
+                </button>
+              </div>
+              {members.map(m => (
+                <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+                  <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
+                  <span className="text-xs text-indigo-600 font-bold">{m.dailyQuestCount || 0} 次</span>
+                  <button onClick={() => handleResetCheckinOne(m.id, m.name)} disabled={!!busyK}
+                    className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:opacity-40">
+                    {busyK === m.id ? "…" : "歸零"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* ── 地下城 ─────────────────────────────────── */}
           {tab === "dungeon" && (
             <div className="space-y-3">

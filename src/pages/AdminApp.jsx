@@ -324,7 +324,7 @@ const adminNav = [
 
         <div style={{background:"#1e3a5f",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
           <div style={{color:"white",fontSize:"13px",fontWeight:"900"}}>🏹 射手模式</div>
-          <button onClick={()=>{setArcherMode(false);setPage("members");}}
+          <button onClick={()=>{setArcherMode(false);setPage("hub-member");setMemberSub(null);}}
             style={{fontSize:"12px",background:"rgba(255,255,255,0.2)",color:"white",border:"none",borderRadius:"8px",padding:"5px 12px",cursor:"pointer",fontWeight:"bold"}}>
             ⚙️ 返回後台
           </button>
