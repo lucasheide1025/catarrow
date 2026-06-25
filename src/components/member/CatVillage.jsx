@@ -11,8 +11,8 @@ import { CAT_CARD_MAP } from "../../lib/catCardData";
 import { subscribeMyCats, upgradeCatEquip } from "../../lib/catDb";
 import {
   CATS, getBondLevel,
-  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS,
-  CAT_EQUIP_MAX_PLUS, calcForgeCost,
+  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
+  CAT_EQUIP_MAX_PLUS, calcForgeCost, catEquipLevel,
 } from "../../lib/catData";
 import { catLevelFromXP } from "../../lib/catLevel";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
@@ -1008,24 +1008,32 @@ function ForgePanel({ profile, resources }) {
         const cost     = calcForgeCost(slot.id, slotData.grade, slotData.plusLevel);
         const canAfford = cost ? Object.entries(cost).every(([k,v]) => (resources[k]||0) >= v) : false;
         const isMaxed  = !cost;
-        const bonus    = (gIdx * 5 + 1) + (slotData.plusLevel || 0);
+        const lv       = catEquipLevel(slotData.grade, slotData.plusLevel);
+        const bonus    = (gIdx * 10 + 1) + (slotData.plusLevel || 0);
         const statLabel = slot.stat === "hp"
           ? `HP +${bonus * 5}`
           : slot.stat === "atk" ? `ATK +${bonus}` : `DEF +${bonus}`;
-        const nextLabel = isMaxed ? "極限"
+        const nextLabel = isMaxed ? "MAX"
           : slotData.plusLevel < CAT_EQUIP_MAX_PLUS
             ? `強化 +${slotData.plusLevel + 1}`
             : `升階 → ${CAT_EQUIP_GRADE_NAMES[gIdx + 1]}`;
+        const gradeColor = CAT_EQUIP_GRADE_COLORS[gIdx] || C.mid;
+        const gradeBg    = CAT_EQUIP_GRADE_BG[gIdx]    || "rgba(156,163,175,0.1)";
 
         return (
           <div key={slot.id} style={{
-            background:C.card, borderRadius:12, padding:"12px 14px", marginBottom:9,
-            border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10,
+            background: gradeBg, borderRadius:12, padding:"12px 14px", marginBottom:9,
+            border:`1.5px solid ${gradeColor}44`, display:"flex", alignItems:"center", gap:10,
           }}>
             <div style={{ fontSize:26, width:38, textAlign:"center", flexShrink:0 }}>{slot.icon}</div>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontWeight:"bold", color:C.brown, fontSize:13 }}>{slot.label}</div>
-              <div style={{ fontSize:12, color:CAT_EQUIP_GRADE_COLORS[gIdx] || C.mid, fontWeight:"bold" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
+                <span style={{ fontWeight:"bold", color:C.brown, fontSize:13 }}>{slot.label}</span>
+                <span style={{ fontSize:10, fontWeight:800, color:"white", background:gradeColor, borderRadius:6, padding:"1px 6px" }}>
+                  Lv.{lv}
+                </span>
+              </div>
+              <div style={{ fontSize:11, color:gradeColor, fontWeight:"bold" }}>
                 {slotData.grade} +{slotData.plusLevel}
               </div>
               <div style={{ fontSize:11, color:C.mid }}>{statLabel}</div>

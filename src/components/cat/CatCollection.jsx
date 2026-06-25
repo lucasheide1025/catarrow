@@ -8,7 +8,8 @@ import {
 import {
   CATS, CAT_IDS, CAT_TYPES, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
-  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, calcCatEquipBonus,
+  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
+  calcCatEquipBonus, catEquipLevel,
 } from "../../lib/catData";
 import { catLevelFromXP, catLevelBonus } from "../../lib/catLevel";
 import CatSVG from "./CatSVG";
@@ -359,16 +360,20 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
             </div>
             <div className="space-y-1.5">
               {CAT_EQUIP_SLOTS.map(slot => {
-                const e    = catData?.equip?.[slot.id];
-                const gIdx = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : -1;
+                const e     = catData?.equip?.[slot.id];
+                const gIdx  = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : 0;
                 const color = CAT_EQUIP_GRADE_COLORS[gIdx >= 0 ? gIdx : 0];
-                const gradeLabel = e?.grade || "普通";
-                const plusLabel  = `+${e?.plusLevel || 0}`;
+                const bg    = CAT_EQUIP_GRADE_BG[gIdx >= 0 ? gIdx : 0];
+                const lv    = catEquipLevel(e?.grade || "普通", e?.plusLevel || 0);
                 return (
-                  <div key={slot.id} className="flex items-center gap-2 px-1 py-1 border-t border-white/5">
+                  <div key={slot.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-t border-white/5"
+                    style={{ background: bg }}>
                     <span className="text-sm w-5 text-center">{slot.icon}</span>
                     <span className="text-xs text-slate-300 flex-1">{slot.label}</span>
-                    <span className="text-xs font-bold" style={{ color }}>{gradeLabel} {plusLabel}</span>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md text-white" style={{ background: color }}>
+                      Lv.{lv}
+                    </span>
+                    <span className="text-[10px] font-bold" style={{ color }}>{e?.grade || "普通"} +{e?.plusLevel || 0}</span>
                   </div>
                 );
               })}

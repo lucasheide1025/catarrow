@@ -251,12 +251,28 @@ export const CAT_EQUIP_SLOTS = [
   { id: "potion",  label: "貓草藥水", icon: "🍵", stat: "hp",  matKey: "potion"    },
 ];
 
-export const CAT_EQUIP_GRADE_NAMES = ["普通", "稀有", "精英", "史詩", "傳說", "神話"];
-export const CAT_EQUIP_GRADE_COLORS = ["#9ca3af","#22c55e","#3b82f6","#a855f7","#f59e0b","#ef4444"];
-export const CAT_EQUIP_MAX_PLUS    = 5;
+// 六品質：普通→稀有→精英→頭目→傳說→神話（史詩改為頭目/Boss）
+export const CAT_EQUIP_GRADE_NAMES  = ["普通", "稀有", "精英", "頭目", "傳說", "神話"];
+export const CAT_EQUIP_GRADE_COLORS = ["#9ca3af","#22c55e","#3b82f6","#f97316","#f59e0b","#ef4444"];
+// 每品質顯示底色（帶透明度，用於UI背景）
+export const CAT_EQUIP_GRADE_BG = [
+  "rgba(156,163,175,0.15)", // 普通 gray
+  "rgba(34,197,94,0.15)",   // 稀有 green
+  "rgba(59,130,246,0.15)",  // 精英 blue
+  "rgba(249,115,22,0.15)",  // 頭目 orange
+  "rgba(245,158,11,0.15)",  // 傳說 gold
+  "rgba(239,68,68,0.15)",   // 神話 red
+];
+export const CAT_EQUIP_MAX_PLUS = 9; // +0～+9，每品質10格，6品質共60級
 
-// 裝備加成 = (gradeIdx × 5 + 1) + plusLevel
-// ATK / DEF 欄位直接加到屬性；HP 欄位 × 5
+// 裝備等級 = gradeIdx × 10 + plusLevel + 1（顯示 Lv.1～Lv.60）
+export function catEquipLevel(grade, plusLevel) {
+  const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(grade);
+  return (gIdx < 0 ? 0 : gIdx) * 10 + (plusLevel || 0) + 1;
+}
+
+// 裝備加成 = (gradeIdx × 10 + 1) + plusLevel → ATK/DEF 直接加；HP × 5
+// 全滿（神話+9）每欄 = 60，ATK欄×2=120，DEF欄×2=120，HP欄×5=300
 export function calcCatEquipBonus(equip = {}) {
   let atkBonus = 0, defBonus = 0, hpBonus = 0;
   for (const s of CAT_EQUIP_SLOTS) {
@@ -264,7 +280,7 @@ export function calcCatEquipBonus(equip = {}) {
     if (!e) continue;
     const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(e.grade);
     if (gIdx < 0) continue;
-    const bonus = (gIdx * 5 + 1) + (e.plusLevel || 0);
+    const bonus = (gIdx * 10 + 1) + (e.plusLevel || 0);
     if      (s.stat === "atk") atkBonus += bonus;
     else if (s.stat === "def") defBonus += bonus;
     else if (s.stat === "hp")  hpBonus  += bonus * 5;
@@ -272,38 +288,40 @@ export function calcCatEquipBonus(equip = {}) {
   return { atkBonus, defBonus, hpBonus };
 }
 
-// ── 鍛造費用表 ──────────────────────────────────────────────
-// plusUpgrades[i] = 升至 +{i+1} 所需 (tier, amount)
+// ── 鍛造費用表（×10 倍，適配長期掛機）────────────────────────
+// plusUpgrades[i] = 升至 +(i+1) 所需；共9條（+0→+9）
 // gradeUpgrades[g] = 從 grade g 升至 g+1 所需
 export const CAT_FORGE_COSTS = {
   plusUpgrades: [
-    { tier: 1, amount: 5  },  // +0 → +1
-    { tier: 1, amount: 8  },  // +1 → +2
-    { tier: 2, amount: 5  },  // +2 → +3
-    { tier: 2, amount: 8  },  // +3 → +4
-    { tier: 3, amount: 5  },  // +4 → +5
+    { tier: 1, amount:  30 },  // +0 → +1
+    { tier: 1, amount:  60 },  // +1 → +2
+    { tier: 1, amount: 100 },  // +2 → +3
+    { tier: 2, amount:  30 },  // +3 → +4
+    { tier: 2, amount:  60 },  // +4 → +5
+    { tier: 2, amount: 100 },  // +5 → +6
+    { tier: 3, amount:  30 },  // +6 → +7
+    { tier: 3, amount:  60 },  // +7 → +8
+    { tier: 3, amount: 100 },  // +8 → +9
   ],
   gradeUpgrades: [
-    { main: [{ tier: 1, amount: 20 }],                                    special: null           }, // common→rare
-    { main: [{ tier: 1, amount: 30 }, { tier: 2, amount: 10 }],           special: null           }, // rare→elite
-    { main: [{ tier: 2, amount: 20 }, { tier: 3, amount:  8 }],           special: null           }, // elite→epic
-    { main: [{ tier: 3, amount: 15 }, { tier: 4, amount:  5 }],           special: { fur_t1: 2 } }, // epic→legend
-    { main: [{ tier: 4, amount: 10 }, { tier: 5, amount:  3 }],           special: { fur_t1: 5 } }, // legend→mythic
+    { main: [{ tier: 1, amount: 200 }],                                        special: null            }, // 普通→稀有
+    { main: [{ tier: 1, amount: 300 }, { tier: 2, amount: 100 }],              special: null            }, // 稀有→精英
+    { main: [{ tier: 2, amount: 200 }, { tier: 3, amount:  80 }],              special: null            }, // 精英→頭目
+    { main: [{ tier: 3, amount: 150 }, { tier: 4, amount:  50 }],              special: { fur_t1: 20 } }, // 頭目→傳說
+    { main: [{ tier: 4, amount: 100 }, { tier: 5, amount:  30 }],              special: { fur_t1: 50 } }, // 傳說→神話
   ],
 };
 
 // 計算升級所需材料（回傳 { [resourceKey]: amount }）
 export function calcForgeCost(slotId, currentGrade, currentPlus) {
-  const slot    = CAT_EQUIP_SLOTS.find(s => s.id === slotId);
-  const gIdx    = CAT_EQUIP_GRADE_NAMES.indexOf(currentGrade);
+  const slot = CAT_EQUIP_SLOTS.find(s => s.id === slotId);
+  const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(currentGrade);
   if (!slot || gIdx < 0) return null;
 
   if (currentPlus < CAT_EQUIP_MAX_PLUS) {
-    // 升 plus level
     const { tier, amount } = CAT_FORGE_COSTS.plusUpgrades[currentPlus];
     return { [`${slot.matKey}_t${tier}`]: amount };
   }
-  // plus 已滿，升 grade
   if (gIdx >= CAT_EQUIP_GRADE_NAMES.length - 1) return null; // 已是神話
   const { main, special } = CAT_FORGE_COSTS.gradeUpgrades[gIdx];
   const cost = {};
