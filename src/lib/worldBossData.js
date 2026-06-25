@@ -1,77 +1,79 @@
 // src/lib/worldBossData.js — 世界大 Boss 資料定義
 
 // ── Boss 清單 ──────────────────────────────────────────────────
+// ── 世界王數值（HP ×5 大幅提升，ATK/DEF 微調）──────────────
+// HP 設計基準：10人隊伍持續挑戰 3-7 天才能擊殺
 export const WORLD_BOSSES = {
   head_coach: {
     name: "主教練",       title: "永恆弓聖",
     desc: "道館最強的存在。傳說從未被任何射手擊敗過，他的每一箭都是天崩地裂的示範。",
-    hp: 200000, atk: 200, def: 120, pixelKey: "head_coach",
+    hp: 1000000, atk: 220, def: 150, pixelKey: "head_coach",
     family: "coach", bg: "#0f172a", accent: "#f59e0b",
   },
   wife: {
     name: "師母",         title: "隱世弓后",
     desc: "外表溫柔，實則功力深不可測。見過她真正發怒的人，箭靶上找不到完整的環。",
-    hp: 130000, atk: 160, def: 90, pixelKey: "wife",
+    hp: 650000, atk: 180, def: 115, pixelKey: "wife",
     family: "coach", bg: "#4a044e", accent: "#f0abfc",
   },
   yumi: {
     name: "YUMI教練",    title: "速射之神",
     desc: "速度快到讓人以為她有三隻手。每次教學課結束，靶場都要更換新靶。",
-    hp: 100000, atk: 140, def: 70, pixelKey: "yumi",
+    hp: 500000, atk: 160, def: 90, pixelKey: "yumi",
     family: "coach", bg: "#064e3b", accent: "#6ee7b7",
   },
   cat_orange: {
     name: "肥橘貓王",    title: "日照橘霸",
     desc: "掌管箭場所有曬太陽領域的霸主。被打擾午睡時，ATK 會莫名翻倍。",
-    hp: 60000, atk: 80, def: 40, pixelKey: "cat_orange",
+    hp: 300000, atk: 100, def: 60, pixelKey: "cat_orange",
     family: "cat", bg: "#431407", accent: "#fb923c",
   },
   cat_black: {
     name: "暗夜貓皇",    title: "虛空掌印",
     desc: "深夜箭場的統治者，眼睛在黑暗中發光，靶心也會自動移位讓他覺得好玩。",
-    hp: 65000, atk: 95, def: 45, pixelKey: "cat_black",
+    hp: 325000, atk: 115, def: 65, pixelKey: "cat_black",
     family: "cat", bg: "#0c0a09", accent: "#a8a29e",
   },
   cat_white: {
     name: "白毛貓聖",    title: "純潔裁判",
     desc: "負責評判所有箭的飛行姿態是否優雅。只要他不滿意，X環都算不算數。",
-    hp: 55000, atk: 70, def: 55, pixelKey: "cat_white",
+    hp: 275000, atk: 90, def: 75, pixelKey: "cat_white",
     family: "cat", bg: "#1e3a5f", accent: "#e2e8f0",
   },
   ghost_boss: {
     name: "怨靈大君",    title: "千年怨魂",
     desc: "箭場建立前就存在於此。每當有人丟掉靶紙，他就會更憤怒一分。",
-    hp: 80000, atk: 120, def: 60, pixelKey: "ghost_boss",
+    hp: 400000, atk: 140, def: 80, pixelKey: "ghost_boss",
     family: "ghost", bg: "#1e1b4b", accent: "#818cf8",
   },
   forest_boss: {
     name: "山林守護神",  title: "翠林仙尊",
     desc: "管轄箭場周圍所有樹木。有人說他會移動樹枝讓風向改變，毀掉你的完美一箭。",
-    hp: 75000, atk: 110, def: 55, pixelKey: "forest_boss",
+    hp: 375000, atk: 130, def: 75, pixelKey: "forest_boss",
     family: "forest", bg: "#14532d", accent: "#86efac",
   },
   poison_boss: {
     name: "毒蟲之母",    title: "蟲族女王",
     desc: "夏天箭場的真正老大。蚊子、蜜蜂全聽她指揮，專門在你拉弓到一半時出現。",
-    hp: 72000, atk: 105, def: 50, pixelKey: "poison_boss",
+    hp: 360000, atk: 125, def: 70, pixelKey: "poison_boss",
     family: "poison", bg: "#451a03", accent: "#fcd34d",
   },
   office_boss: {
     name: "職場終極魔王", title: "工時永恆者",
     desc: "用無止盡的加班和報表消耗射手的意志。據說他的技能就是讓你忘記來練習。",
-    hp: 85000, atk: 130, def: 65, pixelKey: "office_boss",
+    hp: 425000, atk: 150, def: 85, pixelKey: "office_boss",
     family: "office", bg: "#450a0a", accent: "#fca5a5",
   },
   exam_boss: {
     name: "考試恐懼之神", title: "白卷支配者",
     desc: "出現時，所有人的肌肉記憶都會消失。你的第一直覺永遠是錯的，他保證。",
-    hp: 78000, atk: 115, def: 55, pixelKey: "exam_boss",
+    hp: 390000, atk: 135, def: 75, pixelKey: "exam_boss",
     family: "exam", bg: "#2e1065", accent: "#c4b5fd",
   },
   western_boss: {
     name: "古龍皇帝",     title: "西境霸主",
     desc: "從遠古傳說中走出的龍族王者。弓箭對他而言是玩具，但他尊重真正的射手。",
-    hp: 90000, atk: 140, def: 70, pixelKey: "western_boss",
+    hp: 450000, atk: 160, def: 90, pixelKey: "western_boss",
     family: "western", bg: "#0c1a0c", accent: "#4ade80",
   },
 };

@@ -47,19 +47,19 @@ export const MONSTERS = [
   {
     id:"ghost_4", family:"ghost", tier:"fierce",
     name:"城隍爺", icon:"⚖️",
-    hp:440, atk:62, def:38,
+    hp:880, atk:72, def:62,
     desc:"掌管生死簿，善惡到頭終有報。",
   },
   {
     id:"ghost_5", family:"ghost", tier:"boss",
     name:"十八王公", icon:"🐺",
-    hp:650, atk:88, def:58,
+    hp:3250, atk:115, def:145,
     desc:"義犬成神，靈力無邊，香火鼎盛。",
   },
   {
     id:"ghost_6", family:"ghost", tier:"mythic",
     name:"地獄閻羅", icon:"👹",
-    hp:1000, atk:140, def:95,
+    hp:8000, atk:200, def:285,
     desc:"陰間最高審判者，生死輪迴皆在一念之間。",
   },
 
@@ -85,19 +85,19 @@ export const MONSTERS = [
   {
     id:"mountain_4", family:"mountain", tier:"fierce",
     name:"霧社巨人", icon:"🗿",
-    hp:480, atk:70, def:50,
+    hp:960, atk:84, def:80,
     desc:"霧氣中現形的巨人，腳踩山嶺如履平地。",
   },
   {
     id:"mountain_5", family:"mountain", tier:"boss",
     name:"食人巨熊", icon:"🐻",
-    hp:700, atk:95, def:72,
+    hp:3500, atk:124, def:180,
     desc:"深山中的巨熊之王，曾吞食無數獵人，掌風能劈裂巨木。",
   },
   {
     id:"mountain_6", family:"mountain", tier:"mythic",
     name:"深山惡蛟", icon:"🐲",
-    hp:1100, atk:150, def:105,
+    hp:8800, atk:215, def:315,
     desc:"盤踞深山水潭的千年惡蛟，興風作浪，吞雲吐霧禍害山民。",
   },
 
@@ -123,19 +123,19 @@ export const MONSTERS = [
   {
     id:"insect_4", family:"insect", tier:"fierce",
     name:"蠍子王", icon:"🦂",
-    hp:420, atk:66, def:44,
+    hp:840, atk:78, def:70,
     desc:"毒刺一揮，五臟俱毀，連神明都要退三步。",
   },
   {
     id:"insect_5", family:"insect", tier:"boss",
     name:"蜘蛛女王", icon:"🕷️",
-    hp:680, atk:90, def:65,
+    hp:3400, atk:118, def:163,
     desc:"織出命運之網，凡落網者皆逃不過宿命。",
   },
   {
     id:"insect_6", family:"insect", tier:"mythic",
     name:"蟲神", icon:"🦋",
-    hp:1050, atk:145, def:100,
+    hp:8400, atk:208, def:300,
     desc:"所有蟲類的神祇，萬蟲朝聖，天地變色。",
   },
 
@@ -161,19 +161,19 @@ export const MONSTERS = [
   {
     id:"workplace_4", family:"workplace", tier:"fierce",
     name:"黑心包租婆", icon:"🏚️",
-    hp:450, atk:68, def:46,
+    hp:900, atk:82, def:74,
     desc:"每個月準時漲租，浴室有謎之內衣三年未取。",
   },
   {
     id:"workplace_5", family:"workplace", tier:"boss",
     name:"財閥總裁", icon:"🤵",
-    hp:720, atk:98, def:78,
+    hp:3600, atk:128, def:195,
     desc:"壟斷市場、操控輿論，笑容背後是無盡的算計。",
   },
   {
     id:"workplace_6", family:"workplace", tier:"mythic",
     name:"資本魔王", icon:"💰",
-    hp:1200, atk:155, def:110,
+    hp:9600, atk:225, def:330,
     desc:"剝削制度的化身，讓打工人永遠無法翻身的終極BOSS。",
   },
 
@@ -199,19 +199,19 @@ export const MONSTERS = [
   {
     id:"exam_4", family:"exam", tier:"fierce",
     name:"學測魔王", icon:"🎯",
-    hp:430, atk:65, def:42,
+    hp:860, atk:78, def:67,
     desc:"十二年寒窗的終極審判，一試定終身的殘酷。",
   },
   {
     id:"exam_5", family:"exam", tier:"boss",
     name:"國考煉獄", icon:"📜",
-    hp:690, atk:92, def:70,
+    hp:3450, atk:120, def:175,
     desc:"考了五年還在考，人生黃金歲月全押在這裡。",
   },
   {
     id:"exam_6", family:"exam", tier:"mythic",
     name:"升學制度本體", icon:"🏫",
-    hp:1150, atk:148, def:108,
+    hp:9200, atk:220, def:324,
     desc:"無法打倒的終極存在，它不是怪物，它是系統。",
   },
 
@@ -237,19 +237,19 @@ export const MONSTERS = [
   {
     id:"temple_4", family:"temple", tier:"fierce",
     name:"吸血鬼伯爵", icon:"🧛",
-    hp:460, atk:72, def:52,
+    hp:920, atk:86, def:83,
     desc:"古堡中的不死貴族，優雅外表下藏著嗜血的獠牙。",
   },
   {
     id:"temple_5", family:"temple", tier:"boss",
     name:"巫妖王", icon:"🧙",
-    hp:710, atk:96, def:75,
+    hp:3550, atk:125, def:188,
     desc:"捨棄肉身追求永生的大法師，麾下亡靈大軍聽令行事。",
   },
   {
     id:"temple_6", family:"temple", tier:"mythic",
     name:"末日惡龍", icon:"🐉",
-    hp:1080, atk:143, def:102,
+    hp:8640, atk:212, def:306,
     desc:"噴吐烈焰的西方巨龍，所到之處化為焦土，勇者的終極試煉。",
   },
 ];
