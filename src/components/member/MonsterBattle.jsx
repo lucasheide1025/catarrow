@@ -933,7 +933,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         setRoundScores(rs => {
           saveMonsterLog(profile.id, {
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
-            mode, battleMode, chestType:mainChest.type, catChest:!!catChest, roundScores:rs,
+            mode, battleMode, chestType:mainChest.type, roundScores:rs,
             distance: selectedDistance,
           }).catch(() => {});
           return rs;
