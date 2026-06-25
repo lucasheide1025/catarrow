@@ -162,7 +162,10 @@ export function sfxCounter() {
 
 // 怪物爆擊反擊
 export function sfxCounterCrit() {
-  playAudio("monster_crit", 0.95);
+  noiseBurst(0,    0.40, 120, 1.2);   // 重擊低頻衝擊
+  noiseBurst(0.05, 0.15, 700, 0.7);   // 高頻撕裂瞬間
+  distTone(200, 70, 0.45, 0.9, 0);    // 下行嘶吼
+  tone(55, 0.55, "sine", 0.45, 0.05); // 深沉 bass 震動
   vibrate([0, 90, 110, 80, 60]);
 }
 

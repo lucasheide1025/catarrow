@@ -1182,8 +1182,8 @@ export function subscribeAdventurerProgress(memberId, cb) {
   }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [], submittedQuests: [] }); });
 }
 
-// 完成公會任務 → 記錄 + 給 XP + 給金幣
-export async function completeGuildTask(memberId, taskId, xp, coins, bonus = null) {
+// 完成公會任務 → 記錄 + 給 XP + 給金幣 + 給箭露
+export async function completeGuildTask(memberId, taskId, xp, coins, bonus = null, arrowDew = 0) {
   const date = todayStr();
   const ref = doc(db, C_GUILD, memberId);
   const snap = await getDoc(ref);
@@ -1193,6 +1193,7 @@ export async function completeGuildTask(memberId, taskId, xp, coins, bonus = nul
   await setDoc(ref, { date, completed: [...prevCompleted, taskId], updatedAt: serverTimestamp() });
   if (xp > 0) addAdventurerXP(memberId, xp).catch(() => {});
   if (coins > 0) addCoins(memberId, coins).catch(() => {});
+  if (arrowDew > 0) addArrowdew(memberId, arrowDew).catch(() => {});
   if (bonus?.type === "coins")  addCoins(memberId, bonus.amount).catch(() => {});
   if (bonus?.type === "chest")  addChests(memberId, [{
     id: `chest_guild_${taskId}_${Date.now()}`,
@@ -1242,10 +1243,16 @@ export async function publishGuildQuest(data, adminId) {
     type:  data.type  || "normal",
     badgeReward:         data.badgeReward         || null,
     prerequisiteQuestId: data.prerequisiteQuestId || null,
-    reward: { xp: data.reward?.xp || 0, coins: data.reward?.coins || 0 },
+    reward: {
+      xp:         data.reward?.xp         || 0,
+      coins:      data.reward?.coins       || 0,
+      arrowDew:   data.reward?.arrowDew    || 0,
+      gachaCoins: data.reward?.gachaCoins  || 0,
+    },
     questSubtype:  data.questSubtype  || "general",
     requirement:   data.requirement   || {},
     deadline:      data.deadline      || null,
+    periodTag:     data.periodTag     || null,
     status: data.status || "active",
     publishedAt: serverTimestamp(),
     createdBy: adminId,
@@ -1289,12 +1296,32 @@ export async function deleteGuildQuest(questId) {
   await deleteDoc(doc(db, C_GUILD_Q, questId));
 }
 
-// 前台：接受任務（標記進行中，尚未完成）
-export async function acceptGuildQuest(memberId, questId) {
+// 系統：每兩週自動發佈懸賞任務（前台進入公會頁時呼叫，內部防重複）
+export async function autoPublishBountyQuests(monsters) {
+  try {
+    const { getBiWeeklyPeriodKey, generateBiWeeklyBounties } = await import("./adventurerSystem");
+    const periodKey = getBiWeeklyPeriodKey();
+    // 用 guildMeta/bountyPeriod 文件防重複，避免需要 Firestore 複合索引
+    const metaRef  = doc(db, "guildMeta", "bountyPeriod");
+    const metaSnap = await getDoc(metaRef);
+    if (metaSnap.exists() && metaSnap.data().periodKey === periodKey) {
+      return { ok: true, reason: "already_exists" };
+    }
+    const bounties = generateBiWeeklyBounties(periodKey, monsters);
+    for (const b of bounties) {
+      await publishGuildQuest(b, "system").catch(() => {});
+    }
+    await setDoc(metaRef, { periodKey, generatedAt: serverTimestamp() });
+    return { ok: true, count: bounties.length };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 前台：接受任務（標記進行中；kill_monster 任務記錄接任時的擊殺基準值）
+export async function acceptGuildQuest(memberId, questId, baselineKills = null) {
   if (!memberId || !questId) return;
-  await updateDoc(doc(db, C_GUILD, memberId), {
-    acceptedQuests: arrayUnion(questId),
-  }).catch(() =>
+  const updates = { acceptedQuests: arrayUnion(questId) };
+  if (baselineKills !== null) updates[`acceptedKillCounts.${questId}`] = baselineKills;
+  await updateDoc(doc(db, C_GUILD, memberId), updates).catch(() =>
     setDoc(doc(db, C_GUILD, memberId), { acceptedQuests: [questId] }, { merge: true })
   );
 }
@@ -1308,9 +1335,11 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
   }).catch(() =>
     setDoc(doc(db, C_GUILD, memberId), { submittedQuests: [quest.id] }, { merge: true })
   );
-  // 立即發放 XP + 金幣（金幣依階級倍率加成）
-  if ((quest.reward?.xp || 0) > 0)    addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
-  if ((quest.reward?.coins || 0) > 0)  addCoins(memberId, Math.round(quest.reward.coins * (rankMult || 1))).catch(() => {});
+  // 立即發放 XP + 金幣 + 箭露 + 扭蛋幣（金幣依階級倍率加成）
+  if ((quest.reward?.xp || 0) > 0)         addAdventurerXP(memberId, quest.reward.xp).catch(() => {});
+  if ((quest.reward?.coins || 0) > 0)       addCoins(memberId, Math.round(quest.reward.coins * (rankMult || 1))).catch(() => {});
+  if ((quest.reward?.arrowDew || 0) > 0)    addArrowdew(memberId, quest.reward.arrowDew).catch(() => {});
+  if ((quest.reward?.gachaCoins || 0) > 0)  addGachaCoins(memberId, quest.reward.gachaCoins).catch(() => {});
   // 徽章任務 → 建立待審記錄；非徽章任務 → 直接記錄完成
   if (quest.badgeReward) {
     await addDoc(collection(db, C_GUILD_SUBS), {
@@ -2825,13 +2854,20 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
 // milestones: getMilestonesReached() 回傳的陣列
 export async function grantArrowMilestoneRewards(memberId, milestones) {
   if (!memberId || !milestones?.length) return;
-  const { getRewardsForMilestone } = await import("./arrowMilestone");
-  const { rollGacha } = await import("./catCardData");
 
-  for (const ms of milestones) {
+  // 防重複：今日已發過的門檻直接跳過
+  const today = new Date().toISOString().slice(0, 10);
+  const memberSnap = await getDoc(doc(db, C.members, memberId));
+  const done = memberSnap.data()?.arrowMilestoneDone || {};
+  const toGrant = milestones.filter(ms => done[String(ms.arrows)] !== today);
+  if (!toGrant.length) return;
+
+  const { getRewardsForMilestone } = await import("./arrowMilestone");
+
+  for (const ms of toGrant) {
     const r = getRewardsForMilestone(ms);
 
-    // 1. 貓貓箱（存入 chestInventory）
+    // 貓貓箱（存入 chestInventory）
     if ((r.catBoxes || 0) > 0) {
       const chests = Array.from({ length: r.catBoxes }, (_, i) => ({
         id: `arrow_cat_${memberId}_${ms.arrows}_${i}_${Date.now()}`,
@@ -2841,15 +2877,10 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
       await addChests(memberId, chests).catch(() => {});
     }
 
-    // 2. 扭蛋幣 + 120箭圖鑑
-    const updates = {};
+    // 扭蛋幣 + 標記今日已發
+    const updates = { [`arrowMilestoneDone.${ms.arrows}`]: today };
     if ((r.gachaCoins || 0) > 0) updates.gachaCoins = increment(r.gachaCoins);
-    if (ms.type === "big") {
-      updates[`arrowMilestoneDex.${ms.multiple}`] = { date: new Date().toISOString().slice(0, 10), arrows: ms.arrows };
-    }
-    if (Object.keys(updates).length > 0) {
-      await updateDoc(doc(db, C.members, memberId), updates).catch(() => {});
-    }
+    await updateDoc(doc(db, C.members, memberId), updates).catch(() => {});
   }
 }
 
@@ -3013,6 +3044,13 @@ export async function addArcherXP(memberId, amount) {
   if (!memberId || !amount || amount <= 0) return;
   await updateDoc(doc(db, C.members, memberId), {
     archerXP: increment(Math.round(amount)),
+  });
+}
+
+export async function addGachaCoins(memberId, amount) {
+  if (!memberId || !amount || amount <= 0) return;
+  await updateDoc(doc(db, C.members, memberId), {
+    gachaCoins: increment(Math.round(amount)),
   });
 }
 

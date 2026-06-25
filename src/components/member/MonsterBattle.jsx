@@ -140,7 +140,7 @@ function pickBg(family) {
 export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
   const { profile } = useAuth();
   const checkinActive = useCheckinActive(profile?.id);
-  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill } = useCatCompanion();
+  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion();
   const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
@@ -191,6 +191,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
   const catDefShieldRef = useRef(null); // { reduction, blockFull } — 貓貓防禦技能保護下回合
+  const [catCurrentHP,  setCatCurrentHP]  = useState(0);
+  const catCurrentHPRef = useRef(0);
   const [processing, setProcessing]     = useState(false);
   const [targetMode, setTargetMode]     = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
@@ -618,6 +620,13 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           curArchHP=Math.max(0,curArchHP-cdmg);
           setArcherHP(curArchHP);
           if (cdmg>0) setTotalDmgRecvd(v=>v+cdmg);
+          // 貓貓獨立扣血
+          if (hasCat && catCurrentHPRef.current > 0) {
+            const catDmg = calcCounterDamage({ monsterATK: monster.atk, archerDEF: catBaseDEF, headStunned: false, isCrit: false });
+            catCurrentHPRef.current = Math.max(0, catCurrentHPRef.current - catDmg);
+            setCatCurrentHP(catCurrentHPRef.current);
+            addLog({ type:"counter", text:`🐱 ${catName} 也受到 ${catDmg} 傷害${catCurrentHPRef.current <= 0 ? "！已無法繼續戰鬥…" : ""}` });
+          }
           await delay(700);
           setAnimMonsterAttack(false); setAnimMonsterCritAtk(false); setAnimArcherHit(false);
 
@@ -673,8 +682,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     addLog({ type:"total", text:`回合 ${round} 結算：${roundTotal}分　${monster.icon} ${monster.name} 剩 HP：${curMonHP} ${hpTag}` });
     await delay(900);
 
-    // ── 貓貓攻擊段（玩家回合結束後）────────────────────────────
-    if (hasCat && curMonHP > 0) {
+    // ── 貓貓攻擊段（HP > 0 才能參戰）────────────────────────────
+    if (hasCat && curMonHP > 0 && catCurrentHPRef.current > 0) {
       let catDmg = calcCatRoundDamage(monster);
       // 技能觸發
       const catSkill = triggerCatSkill();
@@ -809,6 +818,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setMonster(boostedMonster);
     setArcherHP(bStats.hp);
     setMonsterHP(monStartHP);
+    // 貓貓 HP 重置
+    if (hasCat) { catCurrentHPRef.current = catMaxHP; setCatCurrentHP(catMaxHP); }
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]);
@@ -1930,6 +1941,21 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 <div style={{color: catMsg ? catGlowColor : "#c4b5fd", fontSize:9, fontWeight:700, marginTop:1, transition:"color .3s"}}>
                   {(catName||"貓貓").slice(0,4)}
                 </div>
+                {/* 貓貓 HP 條 */}
+                {(() => {
+                  const catPct = catMaxHP > 0 ? Math.max(0, catCurrentHP / catMaxHP) : 0;
+                  const catClr = catPct > 0.5 ? "#f9a8d4" : catPct > 0.25 ? "#f59e0b" : "#ef4444";
+                  return (
+                    <div style={{ marginTop:3 }}>
+                      <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.1)", overflow:"hidden" }}>
+                        <div style={{ height:"100%", borderRadius:3, width:`${catPct*100}%`, background:catClr, transition:"width 0.4s ease" }} />
+                      </div>
+                      <div style={{ fontSize:8, color: catCurrentHP <= 0 ? "#ef4444" : "#f9a8d4aa", fontWeight:700, marginTop:1 }}>
+                        {catCurrentHP <= 0 ? "💀" : `HP ${catCurrentHP}/${catMaxHP}`}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {catMsg && (
                   <div style={{
                     position:"absolute", bottom:"105%", left:"50%", transform:"translateX(-50%)",
@@ -2040,6 +2066,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 onArrow={inputArrow}
                 onUndo={undoArrow}
                 onSubmit={handleTargetSubmit}
+                onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
               />
 
               {/* TURN + 回合總分 + 送出 */}

@@ -261,6 +261,7 @@ export default function TargetFaceOverlay({
   onArrow,
   onUndo,
   onSubmit,
+  onClose,
 }) {
   if (!open) return null;
 
@@ -283,8 +284,19 @@ export default function TargetFaceOverlay({
       gap:14, padding:"16px 16px 20px",
       paddingTop:"20dvh",
     }}>
-      <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, fontWeight:700, letterSpacing:1 }}>
-        🎯 {fmtInfo.label}（{fmtInfo.sub}）· {arrowLabels.length}/{arrowsPerRound} 箭
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", maxWidth:320 }}>
+        <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, fontWeight:700, letterSpacing:1 }}>
+          🎯 {fmtInfo.label}（{fmtInfo.sub}）· {arrowLabels.length}/{arrowsPerRound} 箭
+        </div>
+        {onClose && (
+          <button onClick={onClose} style={{
+            padding:"4px 10px", borderRadius:8, border:"1px solid rgba(255,255,255,0.2)",
+            background:"rgba(255,255,255,0.07)", color:"rgba(255,255,255,0.55)",
+            fontSize:11, fontWeight:700, cursor:"pointer",
+          }}>
+            ⌨️ 換按鈕
+          </button>
+        )}
       </div>
 
       {/* 箭槽 */}

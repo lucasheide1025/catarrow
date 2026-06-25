@@ -189,17 +189,60 @@ export function getDailyGuildTasks(date) {
 
   return [
     // 難度一（一般）
-    { id:0, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(30,48), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("cthulhu","score"),           bonus:bon(1) },
-    { id:1, target:"cthulhu", type:"hits",             arrowCount:6, goal:ri(4,5),   dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("cthulhu","hits"),            bonus:bon(1) },
-    { id:2, target:"zombie",  type:"score",            arrowCount:6, goal:ri(20,35), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  questName:qn("zombie","score"),            bonus:bon(1) },
+    { id:0, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(30,48), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  arrowDew:ri(10,20), questName:qn("cthulhu","score"),           bonus:bon(1) },
+    { id:1, target:"cthulhu", type:"hits",             arrowCount:6, goal:ri(4,5),   dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  arrowDew:ri(10,20), questName:qn("cthulhu","hits"),            bonus:bon(1) },
+    { id:2, target:"zombie",  type:"score",            arrowCount:6, goal:ri(20,35), dist:ri(5,8),   difficulty:1, xp:50,  coins:80,  arrowDew:ri(10,20), questName:qn("zombie","score"),            bonus:bon(1) },
     // 難度二（挑戰）
-    { id:3, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(48,60), dist:ri(8,13),  difficulty:2, xp:100, coins:150, questName:qn("cthulhu","score"),           bonus:bon(2) },
-    { id:4, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(30,50), dist:ri(7,12),  difficulty:2, xp:100, coins:150, questName:qn("hostage","protected_score"), bonus:bon(2) },
-    { id:5, target:"zombie",  type:"headshot",         arrowCount:6, goal:ri(2,4),   dist:ri(7,12),  difficulty:2, xp:100, coins:150, questName:qn("zombie","headshot"),         bonus:bon(2) },
-    { id:6, target:"zombie",  type:"score",            arrowCount:6, goal:ri(35,50), dist:ri(8,13),  difficulty:2, xp:100, coins:150, questName:qn("zombie","score"),            bonus:bon(2) },
+    { id:3, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(48,60), dist:ri(8,13),  difficulty:2, xp:100, coins:150, arrowDew:ri(20,40), questName:qn("cthulhu","score"),           bonus:bon(2) },
+    { id:4, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(30,50), dist:ri(7,12),  difficulty:2, xp:100, coins:150, arrowDew:ri(20,40), questName:qn("hostage","protected_score"), bonus:bon(2) },
+    { id:5, target:"zombie",  type:"headshot",         arrowCount:6, goal:ri(2,4),   dist:ri(7,12),  difficulty:2, xp:100, coins:150, arrowDew:ri(20,40), questName:qn("zombie","headshot"),         bonus:bon(2) },
+    { id:6, target:"zombie",  type:"score",            arrowCount:6, goal:ri(35,50), dist:ri(8,13),  difficulty:2, xp:100, coins:150, arrowDew:ri(20,40), questName:qn("zombie","score"),            bonus:bon(2) },
     // 難度三（精英）
-    { id:7, target:"hostage", type:"one_shot",         arrowCount:1, goal:20,        dist:ri(10,15), difficulty:3, xp:150, coins:250, questName:qn("hostage","one_shot"),        bonus:bon(3) },
-    { id:8, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(60,72), dist:ri(12,18), difficulty:3, xp:150, coins:250, questName:qn("cthulhu","score"),           bonus:bon(3) },
-    { id:9, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(60,80), dist:ri(12,18), difficulty:3, xp:150, coins:250, questName:qn("hostage","protected_score"), bonus:bon(3) },
+    { id:7, target:"hostage", type:"one_shot",         arrowCount:1, goal:20,        dist:ri(10,15), difficulty:3, xp:150, coins:250, arrowDew:ri(40,80), questName:qn("hostage","one_shot"),        bonus:bon(3) },
+    { id:8, target:"cthulhu", type:"score",            arrowCount:6, goal:ri(60,72), dist:ri(12,18), difficulty:3, xp:150, coins:250, arrowDew:ri(40,80), questName:qn("cthulhu","score"),           bonus:bon(3) },
+    { id:9, target:"hostage", type:"protected_score",  arrowCount:6, goal:ri(60,80), dist:ri(12,18), difficulty:3, xp:150, coins:250, arrowDew:ri(40,80), questName:qn("hostage","protected_score"), bonus:bon(3) },
   ];
+}
+
+// ── 雙週懸賞任務自動生成 ──────────────────────────────────────
+
+export function getBiWeeklyPeriodKey() {
+  return `bw_${Math.floor(Date.now() / (86400000 * 14))}`;
+}
+
+const BOUNTY_TIER_CONFIG = [
+  { tier:"common", killMin:10, killMax:20, xp:100,  coins:150,  arrowDew:30,  gachaCoins:1,  count:2 },
+  { tier:"rare",   killMin:7,  killMax:12, xp:200,  coins:300,  arrowDew:60,  gachaCoins:2,  count:2 },
+  { tier:"elite",  killMin:4,  killMax:8,  xp:350,  coins:500,  arrowDew:100, gachaCoins:3,  count:2 },
+  { tier:"fierce", killMin:2,  killMax:5,  xp:500,  coins:700,  arrowDew:150, gachaCoins:5,  count:2 },
+  { tier:"boss",   killMin:2,  killMax:4,  xp:700,  coins:1000, arrowDew:200, gachaCoins:7,  count:1 },
+  { tier:"mythic", killMin:1,  killMax:2,  xp:1000, coins:1500, arrowDew:300, gachaCoins:10, count:1 },
+];
+
+export function generateBiWeeklyBounties(periodKey, monsters) {
+  const seed = parseInt(periodKey.replace("bw_", ""), 10);
+  const rand = makeSeedRand(seed);
+  const ri = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
+  const quests = [];
+  for (const cfg of BOUNTY_TIER_CONFIG) {
+    const pool = monsters.filter(m => m.tier === cfg.tier);
+    if (!pool.length) continue;
+    for (let i = 0; i < cfg.count; i++) {
+      const monster   = pool[Math.floor(rand() * pool.length)];
+      const killCount = ri(cfg.killMin, cfg.killMax);
+      quests.push({
+        title: `${monster.icon} ${monster.name} 討伐令`,
+        desc: `擊殺 ${monster.name} ${killCount} 隻，協助公會清剿威脅。`,
+        type: "normal",
+        questSubtype: "kill_monster",
+        requirement: { monsterId: monster.id, killCount },
+        reward: { xp: cfg.xp, coins: cfg.coins, arrowDew: cfg.arrowDew, gachaCoins: cfg.gachaCoins },
+        periodTag: periodKey,
+        badgeReward: null,
+        deadline: null,
+        status: "active",
+      });
+    }
+  }
+  return quests;
 }

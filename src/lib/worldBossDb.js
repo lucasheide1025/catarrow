@@ -9,8 +9,9 @@ import { db } from "./firebase";
 import { addCoins, addMaterials, addChests, addCardPack } from "./db";
 import { openCoinChest } from "./lootTable";
 import {
-  WORLD_BOSSES, DEFAULT_REWARD, CONSOLATION_REWARD,
-  LAST_HIT_EXTRA, buildKillAnnouncement, drawRandomBot, simulateBotRound,
+  WORLD_BOSSES, WORLD_BOSS_KEYS, DEFAULT_REWARD, CONSOLATION_REWARD,
+  LAST_HIT_EXTRA, BOSS_DURATION_MAX_DAYS,
+  buildKillAnnouncement, drawRandomBot, simulateBotRound, getRewardByBossKey,
 } from "./worldBossData";
 
 const WB  = "worldBossEvents";
@@ -48,11 +49,12 @@ export function subscribeWorldBoss(eventId, cb) {
 // ── 後台建立活動 ──────────────────────────────────────────────
 export async function createWorldBossEvent({ adminId, bossKey, durationDays, reward }) {
   try {
-    const boss    = WORLD_BOSSES[bossKey];
+    const boss = WORLD_BOSSES[bossKey];
     if (!boss) return { ok: false, reason: "無效的 Boss" };
 
+    const days    = Math.min(durationDays || 7, BOSS_DURATION_MAX_DAYS);
     const startAt = new Date();
-    const endAt   = new Date(startAt.getTime() + durationDays * 86400000);
+    const endAt   = new Date(startAt.getTime() + days * 86400000);
 
     const ref = await addDoc(collection(db, WB), {
       bossKey,
@@ -67,16 +69,54 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
       status:        "active",
       startAt:       serverTimestamp(),
       endAt:         endAt,
-      durationDays,
-      reward: reward || DEFAULT_REWARD,
+      durationDays:  days,
+      reward:        reward || getRewardByBossKey(bossKey),
       lastHitBy:     null,
       announcement:  null,
       totalParticipants: 0,
       participants:  {},
       createdBy:     adminId,
       createdAt:     serverTimestamp(),
+      autoSpawned:   !reward, // 標記是否為系統自動刷新
     });
     return { ok: true, eventId: ref.id };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// ── 自動刷新世界王（被擊殺隔天自動隨機產生新 Boss）────────────
+// 呼叫時機：前端載入世界王頁面時（任何人皆可呼叫，內部防重複）
+export async function autoSpawnWorldBoss() {
+  try {
+    // 查最新一筆
+    const q = query(collection(db, WB), orderBy("createdAt", "desc"), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return { ok: false, reason: "no_boss" };
+
+    const latest = snap.docs[0].data();
+
+    // 若仍 active → 不刷新
+    if (latest.status === "active") return { ok: false, reason: "still_active" };
+
+    // 已 defeated：判斷是否已過 24 小時
+    if (latest.status === "defeated") {
+      const defeatedAt = latest.defeatedAt?.toDate?.() || new Date(0);
+      const hoursSince = (Date.now() - defeatedAt.getTime()) / 3600000;
+      if (hoursSince < 24) return { ok: false, reason: "too_soon" };
+    }
+
+    // 防重複：最新一筆若已是今天建立的就跳過
+    const createdAt = latest.createdAt?.toDate?.() || new Date(0);
+    const today = new Date().toISOString().slice(0, 10);
+    if (createdAt.toISOString().slice(0, 10) === today && latest.status === "active") {
+      return { ok: false, reason: "already_today" };
+    }
+
+    // 隨機選一隻 Boss（排除上一隻，避免連續重複）
+    const lastKey = latest.bossKey;
+    const pool = WORLD_BOSS_KEYS.filter(k => k !== lastKey);
+    const nextKey = pool[Math.floor(Math.random() * pool.length)];
+
+    return await createWorldBossEvent({ adminId: "system", bossKey: nextKey, durationDays: 7 });
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 

@@ -1,6 +1,6 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
 import { useState, useRef, useEffect } from "react";
-import { calcDamage } from "../../lib/monsterData";
+import { calcDamage, calcCounterDamage } from "../../lib/monsterData";
 import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { MONSTER_TIER_XP } from "../../lib/archerLevel";
@@ -17,6 +17,7 @@ import {
   sfxSuccess, sfxEpic, sfxRoundEnd, sfxMonsterDead,
   sfxCouncilWork,
 } from "../../lib/sound";
+import { useCatCompanion, CAT_COMBAT_BASE } from "../../hooks/useCatCompanion";
 
 const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 
@@ -299,6 +300,14 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   const { id:bId, name:bName, emoji:bEmoji, race, raceLabel } = building;
   const theme = BUILDING_THEMES[bId] || BUILDING_THEMES.mine;
 
+  // 貓貓陪練
+  const {
+    hasCat, catName, catHP: catMaxHP, catATK, catDEF,
+    catId: hookCatId, saveXP: saveCatXP,
+    calcCatRoundDamage, triggerCatSkill,
+  } = useCatCompanion();
+  const activeCatId = hookCatId || catId;
+
   const monsters = availableTiers.map(tier => ({
     tier,
     ...COUNCIL_MONSTERS[bId][tier],
@@ -306,22 +315,24 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     maxHp: LIFE_TIER_STATS[tier].hp,
   }));
 
-  const [phase,      setPhase]      = useState("setup");
-  const [distance,   setDistance]   = useState(18);
-  const [targetFmt,  setTargetFmt]  = useState("standard");
-  const [mIdx,       setMIdx]       = useState(0);
-  const [monsterHp,  setMonsterHp]  = useState(monsters[0]?.hp);
-  const [archerHp,   setArcherHp]   = useState(archerStats.hp);
-  const [round,      setRound]      = useState(1);
-  const [arrows,     setArrows]     = useState([]);
-  const [log,        setLog]        = useState([]);
-  const [defeated,   setDefeated]   = useState([]);
-  const [processing, setProcessing] = useState(false);
-  const [shaking,    setShaking]    = useState(false);
-  const [painEvent,  setPainEvent]  = useState(null);
-  const [failedTier, setFailedTier] = useState(null);
+  const [phase,        setPhase]        = useState("setup");
+  const [distance,     setDistance]     = useState(18);
+  const [targetFmt,    setTargetFmt]    = useState("standard");
+  const [mIdx,         setMIdx]         = useState(0);
+  const [monsterHp,    setMonsterHp]    = useState(monsters[0]?.hp);
+  const [archerHp,     setArcherHp]     = useState(archerStats.hp);
+  const [catCurrentHp, setCatCurrentHp] = useState(hasCat ? catMaxHP : 0);
+  const [round,        setRound]        = useState(1);
+  const [arrows,       setArrows]       = useState([]);
+  const [log,          setLog]          = useState([]);
+  const [defeated,     setDefeated]     = useState([]);
+  const [processing,   setProcessing]   = useState(false);
+  const [shaking,      setShaking]      = useState(false);
+  const [painEvent,    setPainEvent]    = useState(null);
+  const [failedTier,   setFailedTier]   = useState(null);
   const [milestoneQueue, setMilestoneQueue] = useState([]);
   const logRef = useRef(null);
+  const catHpRef = useRef(hasCat ? catMaxHP : 0);
 
   const currentMonster = monsters[mIdx];
   const tierMeta       = TIER_META[currentMonster?.tier] || {};
@@ -402,27 +413,36 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       setMonsterHp(curMonHp);
       await delay(1100);
       if (curMonHp <= 0) break;
+    }
 
-      // 每 2 箭（第 2、4、6 箭後）觸發一次疲勞事件，共 3 次
-      if ((i + 1) % 2 === 0) {
-        const msgs    = BUILDING_PAIN_MSGS[bId] || ["工作太辛苦，受傷了！"];
-        const msg     = msgs[Math.floor(Math.random() * msgs.length)];
-        const selfDmg = Math.max(5, Math.floor(archerStats.hp * 0.08));
-        curArchHp     = Math.max(0, curArchHp - selfDmg);
-        setArcherHp(curArchHp);
-        setPainEvent({ msg, dmg: selfDmg });
-        addLog(`😰 ${msg}（疲勞傷害 -${selfDmg}）`, "counter");
-        await delay(1800);
-        setPainEvent(null);
-        if (curArchHp <= 0) {
-          addLog("💀 精疲力竭…帶著已完成的任務先撤退！", "system");
-          await delay(600);
-          setProcessing(false);
-          setFailedTier(currentMonster.tier);
-          logCouncilArrows(round);
-          setPhase("result");
-          return;
-        }
+    // 回合結束後怪物反擊一次（與 MonsterBattle 相同節奏）
+    if (curMonHp > 0) {
+      const archerDmg = calcCounterDamage({ monsterATK: currentMonster.atk, archerDEF: archerStats.def });
+      curArchHp       = Math.max(0, curArchHp - archerDmg);
+      setArcherHp(curArchHp);
+      const msgs = BUILDING_PAIN_MSGS[bId] || ["怪物反擊了！"];
+      const msg  = msgs[Math.floor(Math.random() * msgs.length)];
+      addLog(`⚡ ${currentMonster.name} 反擊！${msg} 射手 -${archerDmg} HP`, "counter");
+
+      if (hasCat && catHpRef.current > 0) {
+        const catDmg = calcCounterDamage({ monsterATK: currentMonster.atk, archerDEF: catDEF });
+        catHpRef.current = Math.max(0, catHpRef.current - catDmg);
+        setCatCurrentHp(catHpRef.current);
+        addLog(`🐱 ${catName} 也被反擊！-${catDmg} HP`, "counter");
+      }
+
+      setPainEvent({ msg, dmg: archerDmg });
+      await delay(1800);
+      setPainEvent(null);
+
+      if (curArchHp <= 0) {
+        addLog("💀 體力不支…帶著已完成的任務先撤退！", "system");
+        await delay(600);
+        setProcessing(false);
+        setFailedTier(currentMonster.tier);
+        logCouncilArrows(round);
+        setPhase("result");
+        return;
       }
     }
 
@@ -432,7 +452,10 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       addLog(`✅ ${currentMonster.name} 解決了！任務完成！`, "win");
       if (memberId) {
         addArcherXP(memberId, MONSTER_TIER_XP[currentMonster.tier] || 5).catch(() => {});
-        if (catId) addCatXP(memberId, catId, CAT_TIER_XP[currentMonster.tier] || 5).catch(() => {});
+        if (activeCatId) {
+          addCatXP(memberId, activeCatId, CAT_TIER_XP[currentMonster.tier] || 5).catch(() => {});
+          saveCatXP(CAT_TIER_XP[currentMonster.tier] || 5).catch(() => {});
+        }
       }
       const matId       = getRaceMaterialId(race, currentMonster.tier);
       const newDefeated = [...defeated, { tier:currentMonster.tier, materialId:matId }];
@@ -499,6 +522,14 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
             <span>⚔️ <b>{archerStats.atk}</b></span>
             <span>🛡️ <b>{archerStats.def}</b></span>
           </div>
+          {hasCat && (
+            <div style={{ display:"flex", justifyContent:"center", gap:14, marginTop:6, fontSize:12, color:"#f9a8d4" }}>
+              <span>🐱 {catName}</span>
+              <span>❤️ <b>{catMaxHP}</b></span>
+              <span>⚔️ <b>{catATK}</b></span>
+              <span>🛡️ <b>{catDEF}</b></span>
+            </div>
+          )}
         </div>
 
         {/* 靶面 */}
@@ -900,6 +931,22 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                 background:archBarClr, transition:"width 0.4s ease",
                 boxShadow:`0 0 8px ${archBarClr}88` }} />
             </div>
+            {hasCat && (() => {
+              const catPct = Math.max(0, catCurrentHp / (catMaxHP || 1) * 100);
+              const catClr = catPct > 50 ? "#f9a8d4" : catPct > 25 ? "#f59e0b" : "#ef4444";
+              return (
+                <div style={{ marginTop:4 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:"#f9a8d4aa", marginBottom:1 }}>
+                    <span>🐱 {catName}</span>
+                    <span style={{ color:"#f9a8d4", fontWeight:800 }}>{catCurrentHp}<span style={{ opacity:0.4 }}>/{catMaxHP}</span></span>
+                  </div>
+                  <div style={{ height:5, borderRadius:99, background:"rgba(255,255,255,0.1)", overflow:"hidden" }}>
+                    <div style={{ height:5, borderRadius:99, width:`${catPct}%`,
+                      background:catClr, transition:"width 0.4s ease" }} />
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ display:"flex", gap:10, fontSize:9, color:"rgba(255,255,255,0.3)", marginTop:2 }}>
               <span>⚔️{archerStats.atk}</span>
               <span>🛡️{archerStats.def}</span>

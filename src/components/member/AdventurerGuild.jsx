@@ -9,6 +9,7 @@ import {
   provisionalUnlockQuest, resubmitGuildBadge, retryGuildQuest,
   subscribePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
   addPracticeLog, grantArrowMilestoneRewards,
+  autoPublishBountyQuests,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
@@ -88,6 +89,8 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     const u2 = subscribeActiveGuildQuests(setGuildQuests);
     const u3 = subscribeMonsterDex(profile.id, setMonsterDex);
     const u4 = subscribePromotionQuestConfig(setPromoConfig);
+    // 雙週懸賞自動生成（內部防重複）
+    autoPublishBountyQuests(MONSTERS).catch(() => {});
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
   }, [profile?.id]);
 
@@ -192,8 +195,8 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     if (pass) {
       sfxSuccess();
       const actualCoins = Math.round(activeDailyTask.coins * rank.mult);
-      await completeGuildTask(profile.id, activeDailyTask.id, activeDailyTask.xp, actualCoins, activeDailyTask.bonus);
-      setTaskResult({ pass: true, xp: activeDailyTask.xp, coins: actualCoins, bonus: activeDailyTask.bonus });
+      await completeGuildTask(profile.id, activeDailyTask.id, activeDailyTask.xp, actualCoins, activeDailyTask.bonus, activeDailyTask.arrowDew || 0);
+      setTaskResult({ pass: true, xp: activeDailyTask.xp, coins: actualCoins, bonus: activeDailyTask.bonus, arrowDew: activeDailyTask.arrowDew || 0 });
     } else {
       sfxSoftFail();
       setTaskResult({ pass: false });
@@ -377,6 +380,7 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
               {taskResult.pass ? (<>
                 <div className="text-emerald-300 font-bold text-sm">+{taskResult.xp} 冒險者 XP</div>
                 <div className="text-yellow-300 font-bold text-sm">+{taskResult.coins} 金幣</div>
+                {(taskResult.arrowDew || 0) > 0 && <div className="text-blue-300 font-bold text-sm">💧 +{taskResult.arrowDew} 箭露</div>}
                 {taskResult.bonus && (
                   <div className="text-amber-300 font-black text-sm mt-1">
                     {taskResult.bonus.icon} 額外獲得 {taskResult.bonus.label}！
@@ -407,13 +411,14 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     const req  = activeQuest.requirement || {};
     const isAlreadySubmitted = submitted.has(activeQuest.id);
 
-    // kill_monster 自動比對
+    // kill_monster 自動比對（用接任時基準值計算增量，避免歷史擊殺直接通過）
     const monsterInfo = sub === "kill_monster" && req.monsterId
       ? MONSTERS.find(m => m.id === req.monsterId) : null;
-    // 若有任務進行中的即時進度（questCtx），優先使用；否則查 monsterDex 終身記錄
-    const questProgress = (questCtx?.questId === activeQuest.id) ? (questCtx.killsSoFar || 0) : null;
-    const currentKills = questProgress !== null ? questProgress : (monsterInfo ? (monsterDex[req.monsterId]?.kills || 0) : 0);
-    const killPassed   = sub === "kill_monster" ? currentKills >= (req.killCount || 1) : true;
+    const isAccepted   = (progress?.acceptedQuests || []).includes(activeQuest.id);
+    const baseline     = progress?.acceptedKillCounts?.[activeQuest.id] ?? null;
+    const lifetimeKills = monsterInfo ? (monsterDex[req.monsterId]?.kills || 0) : 0;
+    const killProgress  = baseline !== null ? Math.max(0, lifetimeKills - baseline) : 0;
+    const killPassed    = sub === "kill_monster" ? (isAccepted && killProgress >= (req.killCount || 1)) : true;
 
     function handleCoachDuelNavigate() {
       if (onNavigate) onNavigate("duel", { questId: activeQuest.id, title: activeQuest.title, reward: activeQuest.reward });
@@ -442,7 +447,9 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
                 <div className="text-xs font-black mb-1" style={{ color: killPassed ? "#10b981" : "#fbbf24" }}>⚔️ 擊殺任務</div>
                 <div className="text-white/80 text-sm">{monsterInfo.icon} {monsterInfo.name} × {req.killCount}</div>
                 <div className="text-xs mt-1" style={{ color: killPassed ? "#10b981" : "#fbbf24" }}>
-                  目前擊殺：{currentKills} / {req.killCount}　{killPassed ? "✓ 已達成" : "尚未達成"}
+                  {isAccepted
+                    ? `進度：${killProgress} / ${req.killCount}　${killPassed ? "✓ 已達成" : "繼續狩獵"}`
+                    : "接取任務後開始計算擊殺數"}
                 </div>
               </div>
             )}
@@ -473,8 +480,10 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
 
             <div className="rounded-xl p-3 flex flex-col gap-1.5" style={{ background: "rgba(0,0,0,0.3)" }}>
               <div className="text-white/50 text-xs font-bold">任務獎勵</div>
-              {(activeQuest.reward?.xp || 0) > 0   && <div className="text-cyan-300 text-sm">⚔️ +{activeQuest.reward.xp} 冒險者 XP</div>}
-              {(activeQuest.reward?.coins || 0) > 0 && <div className="text-yellow-300 text-sm">🪙 +{activeQuest.reward.coins} 金幣</div>}
+              {(activeQuest.reward?.xp || 0) > 0         && <div className="text-cyan-300 text-sm">⚔️ +{activeQuest.reward.xp} 冒險者 XP</div>}
+              {(activeQuest.reward?.coins || 0) > 0       && <div className="text-yellow-300 text-sm">🪙 +{activeQuest.reward.coins} 金幣</div>}
+              {(activeQuest.reward?.arrowDew || 0) > 0    && <div className="text-blue-300 text-sm">💧 +{activeQuest.reward.arrowDew} 箭露</div>}
+              {(activeQuest.reward?.gachaCoins || 0) > 0  && <div className="text-purple-300 text-sm">🎰 +{activeQuest.reward.gachaCoins} 扭蛋幣</div>}
               {activeQuest.badgeReward && <div className="text-sm font-black" style={{ color: BADGE_BORDER[activeQuest.badgeReward] }}>{BADGE_LABEL[activeQuest.badgeReward]}（教練核准後發放）</div>}
             </div>
           </div>
@@ -496,11 +505,26 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
               🥊 確認接取・進入決鬥大廳
             </button>
           ) : lock.ok && sub === "kill_monster" ? (
-            onNavigate ? (
-              <button onClick={() => onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title, badgeReward: activeQuest.badgeReward || null })}
+            killPassed ? (
+              <button onClick={async () => {
+                await submitGuildQuestCompletion(profile.id, profile.name || profile.nick || "射手", activeQuest, "擊殺任務自動達標", rank?.mult || 1);
+                sfxSuccess();
+                setView("list");
+              }}
+                className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
+                style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
+                ✓ 提交完成・領取獎勵
+              </button>
+            ) : onNavigate ? (
+              <button onClick={() => {
+                if (!isAccepted) {
+                  acceptGuildQuest(profile.id, activeQuest.id, lifetimeKills).catch(() => {});
+                }
+                onNavigate("monster", { questId: activeQuest.id, questSubtype: "kill_monster", monsterId: req.monsterId, killsNeeded: req.killCount || 1, reward: activeQuest.reward, title: activeQuest.title, badgeReward: activeQuest.badgeReward || null });
+              }}
                 className="w-full py-4 rounded-2xl font-black text-xl active:scale-95 text-white"
                 style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-                ⚔️ 確認接取・進入狩獵
+                ⚔️ {isAccepted ? "繼續狩獵" : "確認接取・進入狩獵"}
               </button>
             ) : (
               <div className="w-full py-3 rounded-2xl text-center text-purple-300 text-sm font-bold border border-purple-400/20" style={{ background: "rgba(124,58,237,0.06)" }}>

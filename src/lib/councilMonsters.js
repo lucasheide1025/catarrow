@@ -21,17 +21,18 @@ export const TIER_META = {
   mythic:  { label:'神話', color:'#ec4899', matSuffix:'m6' },
 };
 
-// 生活怪物戰鬥數值（繼承 ghost 族基礎值）
+// 生活怪物戰鬥數值（議會廳採集模式，反擊每回合一次，無模式倍率）
+// tier1-3 對應正式打怪新手模式（HP×1.5），tier4-6 跟隨 2026-06-25 平衡 patch
 export const LIFE_TIER_STATS = {
-  common:  { hp: 120, atk:  18, def:  8 },
-  rare:    { hp: 240, atk:  36, def: 18 },
-  elite:   { hp: 420, atk:  60, def: 33 },
-  fierce:  { hp: 660, atk:  93, def: 57 },
-  boss:    { hp: 975, atk: 132, def: 87 },
-  mythic:  { hp:1500, atk: 210, def:143 },
+  common:  { hp:  150, atk:  15, def:  8 },
+  rare:    { hp:  300, atk:  27, def: 14 },
+  elite:   { hp:  520, atk:  45, def: 25 },
+  fierce:  { hp: 1320, atk:  72, def: 55 },
+  boss:    { hp: 3600, atk: 110, def: 100 },
+  mythic:  { hp: 9000, atk: 195, def: 175 },
 };
 
-// 建築等級 → 可出現的 tier 數量
+// 建築等級 → 可出現的 tier 數量（保留給舊呼叫，逐步淘汰）
 export function getAvailableTiers(buildingLevel) {
   const lv = Math.max(1, buildingLevel || 1);
   if (lv >= 17) return TIER_ORDER.slice();
@@ -39,6 +40,16 @@ export function getAvailableTiers(buildingLevel) {
   if (lv >= 10) return TIER_ORDER.slice(0, 4);
   if (lv >= 7)  return TIER_ORDER.slice(0, 3);
   if (lv >= 4)  return TIER_ORDER.slice(0, 2);
+  return TIER_ORDER.slice(0, 1);
+}
+
+// 射手戰力 → 可出現的 tier（與 monsterData.getTierPoolByPower 同邏輯）
+export function getAvailableTiersByPower(power) {
+  if (power >= 400) return TIER_ORDER.slice();
+  if (power >= 280) return TIER_ORDER.slice(0, 5);
+  if (power >= 180) return TIER_ORDER.slice(0, 4);
+  if (power >= 100) return TIER_ORDER.slice(0, 3);
+  if (power >= 50)  return TIER_ORDER.slice(0, 2);
   return TIER_ORDER.slice(0, 1);
 }
 

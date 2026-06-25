@@ -1,8 +1,9 @@
 // src/components/member/CouncilHall.jsx — 議會廳入口（冒險者公會卡片風格）
 import { useState, useEffect } from "react";
 import {
-  COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getAvailableTiers,
+  COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getAvailableTiersByPower,
 } from "../../lib/councilMonsters";
+import { calcArcherPower } from "../../lib/monsterData";
 import {
   checkCouncilDailyLimit, recordCouncilSession, completeCouncilSession,
   getCertRecords, getCertification, getDexConfig,
@@ -85,8 +86,8 @@ export default function CouncilHall({ profile, village, onBack }) {
 
   // ── 進入戰鬥 ─────────────────────────────────────────────
   if (activeBld && archerStats) {
-    const bldLevel   = village?.buildings?.[activeBld.id] || 1;
-    const availTiers = getAvailableTiers(bldLevel);
+    const power      = calcArcherPower(archerStats);
+    const availTiers = getAvailableTiersByPower(power);
     return (
       <CouncilBattle
         building={activeBld}

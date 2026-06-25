@@ -246,14 +246,16 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "") {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "") {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
-      [`members.${memberId}.hp`]:    hp,
-      [`members.${memberId}.maxHP`]: maxHP,
-      [`members.${memberId}.atk`]:   atk,
-      [`members.${memberId}.def`]:   def,
+      [`members.${memberId}.hp`]:      hp,
+      [`members.${memberId}.maxHP`]:   maxHP,
+      [`members.${memberId}.atk`]:     atk,
+      [`members.${memberId}.def`]:     def,
       ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
+      [`members.${memberId}.catATK`]:  catATK || 0,
+      [`members.${memberId}.catName`]: catName || "",
     });
     return { ok: true };
   } catch (e) {
@@ -336,29 +338,71 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       : null;
     const skipAllCtr = !!eff.skipCounter;
 
-    // Step 3: 每位玩家依序攻擊（每人整輪 6 箭為一個小回合），最後怪物反擊全體一次
+    // Step 3: 三回合制 — 每回合各玩家出 2 箭（共 3 輪），貓咪全員攻擊，最後怪物反擊
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
-    for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
+    // 若 hp 尚未寫入（stats 還沒到位），預設用 maxHP；避免誤判為陣亡
+    for (const id of aliveIds) memberHPNow[id] = members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500);
     const ctrAccum    = {};
+    let   bossKilled  = false;
+    let   catRoundDmg = 0;
 
-    for (const id of aliveIds) {
-      if (memberHPNow[id] <= 0) continue; // 已陣亡，跳過
-      const pd  = allPlayerData[id];
-      const dmg = pd.totalDmg;
-      monsterHP = Math.max(0, monsterHP - dmg);
+    for (let pass = 0; pass < 3 && !bossKilled; pass++) {
+      for (const id of aliveIds) {
+        if (bossKilled) break;
+        if (memberHPNow[id] <= 0) continue;
+        const pd = allPlayerData[id];
+        const start = pass * 2;
+        const pairBreakdown = pd.arrowBreakdown.slice(start, start + 2);
+        const pairDmg   = pairBreakdown.reduce((s, a) => s + (a.dmg || 0), 0);
+        const pairCrits = pairBreakdown.filter(a => a.isCrit).length;
+        monsterHP = Math.max(0, monsterHP - pairDmg);
+        miniRounds.push({
+          miniRound:      miniRounds.length + 1,
+          isCounter:      false,
+          attackerId:     id,
+          playerLog:      [{ id, name: pd.name, dmg: pairDmg, ctr: 0, arrowBreakdown: pairBreakdown, crits: pairCrits }],
+          totalDmg:       pairDmg,
+          monsterHPAfter: monsterHP,
+        });
+        if (monsterHP <= 0) { bossKilled = true; break; }
+      }
+    }
 
-      miniRounds.push({
-        miniRound:      miniRounds.length + 1,
-        isCounter:      false,
-        attackerId:     id,
-        playerLog:      [{ id, name: pd.name, dmg, ctr: 0, arrowBreakdown: pd.arrowBreakdown, crits: pd.crits }],
-        totalDmg:       dmg,
-        monsterHPAfter: monsterHP,
-      });
-
-      if (monsterHP <= 0) break; // 怪物已死，後續玩家不再出手
+    // 貓咪攻擊（三輪結束後 Boss 仍存活時）
+    if (!bossKilled) {
+      const catAttackers = aliveIds.filter(id => (members[id].catATK || 0) > 0 && memberHPNow[id] > 0);
+      if (catAttackers.length > 0) {
+        const catLog = [];
+        for (const id of catAttackers) {
+          const cATK  = members[id].catATK || 0;
+          const cName = members[id].catName || "貓貓";
+          let cDmg = 0;
+          const cArrows = [];
+          for (let i = 0; i < 2; i++) {
+            const sc   = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
+            const base = 8 + cATK * 0.7 + sc * 1.2 - (room.monster.def || 0) * 0.35;
+            const mult = 0.85 + Math.random() * 0.3;
+            const d    = Math.max(1, Math.round(base * mult));
+            cDmg += d;
+            cArrows.push({ label: String(sc), dmg: d, isCrit: mult > 1.1, partName: "貓爪", partIcon: "🐾" });
+          }
+          catRoundDmg += cDmg;
+          catLog.push({ id, name: `🐱${cName}`, dmg: cDmg, ctr: 0, arrowBreakdown: cArrows, crits: 0, isCat: true });
+        }
+        monsterHP = Math.max(0, monsterHP - catRoundDmg);
+        if (monsterHP <= 0) bossKilled = true;
+        miniRounds.push({
+          miniRound:      miniRounds.length + 1,
+          isCounter:      false,
+          isCat:          true,
+          attackerId:     "__cats__",
+          playerLog:      catLog,
+          totalDmg:       catRoundDmg,
+          monsterHPAfter: monsterHP,
+        });
+      }
     }
 
     // 最後怪物反擊全體存活玩家（除非事件跳過）
@@ -382,7 +426,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // Step 4: 套用事件額外效果（作用於大回合總結）
-    const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0);
+    const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0) + catRoundDmg;
     if (eff.extraDmg)                       monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.archerATK && eff.archerATK > 0) monsterHP = Math.max(0, monsterHP - eff.archerATK * aliveIds.length);
     if (eff.monsterHP)                      monsterHP = Math.max(0, monsterHP + eff.monsterHP);

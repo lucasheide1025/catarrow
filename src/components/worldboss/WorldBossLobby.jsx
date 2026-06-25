@@ -1,7 +1,7 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeLatestWorldBoss } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, autoSpawnWorldBoss } from "../../lib/worldBossDb";
 import { subscribePracticeLogs } from "../../lib/db";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
@@ -142,6 +142,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const today = `${_wd.getFullYear()}-${String(_wd.getMonth()+1).padStart(2,"0")}-${String(_wd.getDate()).padStart(2,"0")}`;
 
   useEffect(() => {
+    // 載入時嘗試自動刷新（被擊殺隔天產生新 Boss）
+    autoSpawnWorldBoss().catch(() => {});
+
     const unsub = subscribeLatestWorldBoss(ev => {
       setEvent(ev);
       setLoading(false);

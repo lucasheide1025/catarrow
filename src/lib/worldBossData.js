@@ -98,28 +98,58 @@ export const PHASE_LABELS = {
 };
 
 // ── 參戰人數加成 ──────────────────────────────────────────────
-// 每多一位隊友參戰，ATK +15%（無上限，人越多越強）
+// 每多一位隊友參戰，ATK +5%
 export function getParticipantBonus(count) {
-  const bonus = count * 0.15;
-  return { atkMult: 1 + bonus, defMult: 1 + bonus * 0.5, label: `+${Math.round(bonus * 100)}%` };
+  const bonus = count * 0.05;
+  return { atkMult: 1 + bonus, defMult: 1 + bonus * 0.3, label: `+${Math.round(bonus * 100)}%` };
 }
 
-// ── 獎勵設定預設值（分層 + 保底）────────────────────────────────
-export const DEFAULT_REWARD = {
-  // 保底：所有非訪客參戰者都拿到
-  base:    { coins: 100, woodChests: 1 },
-  // 第 1 名（最高傷害）
-  rank1:   { coins: 800, goldChests: 3, catBoxes: 1, mimiBoxes: 1, cardChance: 0.30 },
-  // 第 2–3 名
-  rank3:   { coins: 500, goldChests: 2, catBoxes: 0, mimiBoxes: 1, cardChance: 0.15 },
-  // 第 4 名以後
-  rankAll: { coins: 300, goldChests: 1, catBoxes: 0, mimiBoxes: 0, cardChance: 0.05 },
-};
+// ── 天數上限 ──────────────────────────────────────────────────
+export const BOSS_DURATION_MAX_DAYS = 30;
+
+// ── 依 Boss 強度分三檔獎勵 ────────────────────────────────────
+// 貓貓箱牽涉真實徽章碎片，嚴格控制：rank1 最多 1 個，其餘 0
+// 最後一擊額外再給 1 個（見 LAST_HIT_EXTRA）
+function rewardByHP(hp) {
+  if (hp >= 700000) {
+    // 強檔（wife / head_coach）
+    return {
+      base:    { coins: 150, woodChests: 1 },
+      rank1:   { coins: 1200, goldChests: 4, catBoxes: 1, cardChance: 0.40 },
+      rank3:   { coins:  700, goldChests: 3, catBoxes: 0, cardChance: 0.20 },
+      rankAll: { coins:  400, goldChests: 1, catBoxes: 0, cardChance: 0.08 },
+    };
+  }
+  if (hp >= 400000) {
+    // 中檔（yumi / ghost_boss / western_boss / office_boss）
+    return {
+      base:    { coins: 100, woodChests: 1 },
+      rank1:   { coins: 800, goldChests: 3, catBoxes: 1, cardChance: 0.30 },
+      rank3:   { coins: 500, goldChests: 2, catBoxes: 0, cardChance: 0.15 },
+      rankAll: { coins: 300, goldChests: 1, catBoxes: 0, cardChance: 0.05 },
+    };
+  }
+  // 弱檔（cat 族 / forest_boss / poison_boss / exam_boss）
+  return {
+    base:    { coins:  80, woodChests: 1 },
+    rank1:   { coins: 600, goldChests: 2, catBoxes: 0, cardChance: 0.20 },
+    rank3:   { coins: 350, goldChests: 1, catBoxes: 0, cardChance: 0.10 },
+    rankAll: { coins: 200, goldChests: 0, catBoxes: 0, cardChance: 0.03 },
+  };
+}
+
+export function getRewardByBossKey(bossKey) {
+  const boss = WORLD_BOSSES[bossKey];
+  return boss ? rewardByHP(boss.hp) : rewardByHP(0);
+}
+
+// 預設值（後台手動建立時使用，中檔）
+export const DEFAULT_REWARD = rewardByHP(400000);
 
 // 未擊殺但時間到 → 安慰獎
 export const CONSOLATION_REWARD = { goldChests: 1, coins: 100 };
 
-// 最後一擊額外獎勵（疊加在分層之上）
+// 最後一擊額外獎勵（疊加在分層之上，貓貓箱限 1）
 export const LAST_HIT_EXTRA = { catBoxes: 1, cardPacks: 1 };
 
 // ── 10 種擊殺公告 ─────────────────────────────────────────────

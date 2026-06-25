@@ -20,6 +20,7 @@ import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BA
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -136,7 +137,7 @@ function pickBg(family) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catATK } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
@@ -175,6 +176,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
   const [liveMiniRoundIdx, setLiveMiniRoundIdx] = useState(0);   // 目前顯示的小回合索引 (0-5)
   const [cheerMsg,        setCheerMsg]        = useState("");
+  const [scoringReady,    setScoringReady]    = useState(false);
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -233,7 +235,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStartError("");
     setLogInited(false);
     setLocalHpOverride({});
+    setScoringReady(false);
   }, [room?.status]); // eslint-disable-line
+
+  // 每回合開始時重置計分門禁
+  useEffect(() => { setScoringReady(false); }, [room?.round]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
   useEffect(() => {
@@ -280,7 +286,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!me) return;
     statsWaitingRef.current = true;
     const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "");
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "");
   }, [room?.status, myId]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
@@ -289,8 +295,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWrittenRef.current = true;
+    // 若已有 HP（中途重連），不覆蓋——避免戰鬥中途重連時把 HP 重置回滿血
+    if (me.hp > 0 && me.maxHP > 0 && (room.round || 1) > 1) return;
     const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "");
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "");
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -628,10 +636,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           }, myId).catch(() => {});
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
-        const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT);
+        // 真實隊友 ≥ 2 人才給組隊 XP 加成；貓貓虛擬夥伴不算
+        const hasRealTeammates = memberList.length >= 2;
+        const xpMult = hasRealTeammates ? PARTY_XP_MULT : 1.0;
+        const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * xpMult);
         addArcherXP(myId, xp).catch(() => {});
         const _ptyCatId = authProfile?.equippedCat?.catId;
-        const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT) : 0;
+        const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * xpMult) : 0;
         if (_ptyCatId) addCatXP(myId, _ptyCatId, catXP).catch(() => {});
         archerXPForResult = xp;
         catXPForResult = catXP;
@@ -845,11 +856,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
+            {/* 貓貓虛擬夥伴提示 */}
+            {hasCat && memberList.length < 2 && (
+              <div className="bg-purple-900/40 border border-purple-500/40 rounded-xl px-3 py-2 text-purple-300 text-xs font-bold text-center">
+                🐱 {catName} 將作為虛擬夥伴陪你出戰<br/>
+                <span className="text-purple-400/70 font-normal">實際組隊加成（XP×1.5）需要真實隊友</span>
+              </div>
+            )}
             <button onClick={handleStart}
-              disabled={!setupMonster || starting || memberList.length < 2 || (partyBattleLeft !== null && partyBattleLeft <= 0)}
+              disabled={!setupMonster || starting || (memberList.length < 1 || (memberList.length < 2 && !hasCat)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
               className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
               {starting ? "開始中…"
-                : memberList.length < 2 ? `⚔️ 等待更多玩家（${memberList.length}/2）`
+                : memberList.length < 2 && !hasCat ? `⚔️ 等待更多玩家（${memberList.length}/2）`
+                : memberList.length < 2 && hasCat ? `⚔️ 與 🐱${catName} 出戰`
                 : `⚔️ 開始戰鬥（${memberList.length}人）`}
             </button>
           </div>
@@ -1208,6 +1227,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const displayHP      = liveEntry ? (curMini?.monsterHPAfter ?? room.monsterHP) : room.monsterHP;
   const monsterPct     = room.monsterMaxHP > 0 ? (displayHP / room.monsterMaxHP) : 0;
   // 當前小回合每位玩家的傷害 Map（高亮用）
+  const isCatMini      = !!(curMini?.isCat);
+  const catOverlayCats = (isCatMini && curMini?.playerLog)
+    ? curMini.playerLog.map(p => ({
+        catId:   room?.members?.[p.id]?.archerStyle || "baobao",
+        catName: (p.name || "").replace(/^🐱/, "") || "貓貓",
+        dmg:     p.dmg || 0,
+      }))
+    : [];
   const curMiniDmgMap  = liveEntry
     ? Object.fromEntries((curMini?.playerLog || []).map(p => [p.id, p.dmg]))
     : {};
@@ -1241,6 +1268,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       `}</style>
 
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+      <CatRoundOverlay
+        open={!!liveEntry && isCatMini}
+        cats={catOverlayCats}
+        totalDmg={curMini?.totalDmg}
+      />
 
       {/* 加油通知 */}
       {cheerMsg && (
@@ -1265,6 +1297,36 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
         </div>
       )}
+
+      {/* 戰鬥日誌（左上角小視窗）*/}
+      {room.status === "active" && (() => {
+        const events = [];
+        for (const entry of (room.log || []).slice(-3)) {
+          for (const mini of (entry.miniRounds || [])) {
+            if (mini.isCounter) {
+              const totalCtr = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
+              events.push({ key: `c${entry.round}_${mini.miniRound}`, text: `⚡ 反擊 -${totalCtr}`, color: "#fb923c" });
+            } else if (mini.isCat) {
+              const totalCat = (mini.playerLog || []).reduce((s, p) => s + (p.dmg || 0), 0);
+              events.push({ key: `k${entry.round}_${mini.miniRound}`, text: `🐱 貓咪 -${totalCat}`, color: "#f9a8d4" });
+            } else {
+              const pl = mini.playerLog?.[0];
+              if (pl) events.push({ key: `a${entry.round}_${mini.miniRound}`, text: `🏹 ${pl.name.slice(0, 4)} -${pl.dmg}${pl.crits > 0 ? "💥" : ""}`, color: "#93c5fd" });
+            }
+          }
+        }
+        const shown = events.slice(-8);
+        if (!shown.length) return null;
+        return (
+          <div style={{ position:"absolute", top:8, left:8, width:160, zIndex:30, display:"flex", flexDirection:"column", gap:2, pointerEvents:"none" }}>
+            {shown.map(ev => (
+              <div key={ev.key} style={{ background:"rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 6px", fontSize:10, fontWeight:700, color:ev.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {ev.text}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 上半：左側 log + 右側怪物 */}
       <div style={{ flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0" }}>
@@ -1294,6 +1356,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#f87171" }}>💢 {room.monster?.atk}</div>
             <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#60a5fa" }}>🛡️ {room.monster?.def}</div>
             <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>👤 {aliveCount}/{memberList.length}</div>
+            {isCatMini && <div style={{ background:"rgba(236,72,153,0.2)", border:"1px solid #f472b680", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#f9a8d4", fontWeight:900 }}>🐱 貓咪出擊！</div>}
           </div>
 
           {/* 怪物圖（上對齊，縮小顯示）*/}
@@ -1334,7 +1397,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         }}>
           {frontMembers.map(m => {
             const miniDmg = curMiniDmgMap[m.id];
-            const isTopHit = liveEntry && m.alive && miniDmg !== undefined && !animCounter && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
+            const isTopHit = liveEntry && m.alive && miniDmg !== undefined && !animCounter && !isCatMini && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
             const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
@@ -1447,7 +1510,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
       {/* 輸入區 */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.68)", padding:"3px 6px 10px" }}>
-        {me.alive && !myReady && !liveEntry && (
+        {me.alive && !myReady && !liveEntry && !scoringReady && (
+          <button onClick={() => setScoringReady(true)} style={{ width:"100%", padding:"11px 0", borderRadius:12, fontWeight:900, fontSize:14, cursor:"pointer", background:"linear-gradient(90deg,#7c3aed,#2563eb)", color:"white", border:"none", marginTop:2 }}>
+            🎯 開始計分
+          </button>
+        )}
+        {me.alive && !myReady && !liveEntry && scoringReady && (
           <>
             {/* HP 危機警告 */}
             {me.hp > 0 && me.maxHP > 0 && me.hp/me.maxHP < 0.25 && (
@@ -1514,6 +1582,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               onArrow={addArrow}
               onUndo={removeLastArrow}
               onSubmit={handleTargetSubmit}
+              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
             />
             {/* 送出 */}
             <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting||targetPending}

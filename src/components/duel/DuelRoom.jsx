@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
+import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
@@ -277,6 +278,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
   const [showEndAnim, setShowEndAnim]  = useState(false); // 結束動畫（kill feed + MVP）
   const [revealPhaseBanner, setRevealPhaseBanner] = useState(null); // "A" | "B" | null
+  const [showCatRound, setShowCatRound]   = useState(false);
+  const [duelCatCats,  setDuelCatCats]    = useState([]);
   const battleAreaRef = useRef(null);
   const lastLogLen      = useRef(0);
   const lastCheerTs     = useRef(0);
@@ -453,11 +456,32 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     return () => clearTimeout(t);
   }, [eventPhase]);
 
-  // 揭露完畢 → 清暫存血量、死亡音效
+  // 揭露完畢 → 若有貓咪攻擊先顯示 overlay，再清暫存血量
   useEffect(() => {
     if (revealIdx < REVEAL_TOTAL || !room) return;
-    setDisplayHp(null); // 回到 room 真實 HP
     setRevealPhaseBanner(null);
+
+    // 收集本回合的貓咪攻擊（isCat: true）
+    const allMembersMap = { ...room.teamA, ...room.teamB };
+    const catAttacks = (revealEntry?.attacks || []).filter(a => a.isCat && (a.dmg || 0) > 0);
+    if (catAttacks.length > 0) {
+      const cats = catAttacks.map(a => ({
+        catId:   allMembersMap[a.attackerId]?.archerStyle || "baobao",
+        catName: a.catName || "貓貓",
+        dmg:     a.dmg || 0,
+      }));
+      setDuelCatCats(cats);
+      setShowCatRound(true);
+      const t = setTimeout(() => {
+        setShowCatRound(false);
+        setDisplayHp(null);
+        const allMembers = Object.values(allMembersMap);
+        if (allMembers.some(m => !m.alive && m.hp <= 0)) sfxMonsterDead();
+      }, 2500);
+      return () => clearTimeout(t);
+    }
+
+    setDisplayHp(null); // 回到 room 真實 HP
     const allMembers = [
       ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, ...m })),
       ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, ...m })),
@@ -945,6 +969,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
       )}
       <ToastContainer />
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+      <CatRoundOverlay
+        open={showCatRound}
+        cats={duelCatCats}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/50 shrink-0">
@@ -1154,6 +1182,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             onArrow={addArrowByLabel}
             onUndo={removeArrow}
             onSubmit={handleTargetSubmit}
+            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
           />
           <button onClick={handleSubmit} disabled={!canSubmit}
             className={`w-full py-3 rounded-2xl font-black text-sm transition-all ${canSubmit ? "text-white border border-amber-400/50 active:scale-95" : "bg-slate-700 text-slate-500 border border-slate-600"}`}

@@ -27,6 +27,7 @@ import TargetFaceOverlay, {
   getBattleTargetFmt, setBattleTargetFmt,
   getBattleInputMode, setBattleInputMode,
 } from "../shared/TargetFaceOverlay";
+import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -588,6 +589,14 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
   const curMini      = liveEntry?.miniRounds?.[liveMiniIdx];
   const displayHP    = liveEntry ? (curMini?.monsterHPAfter ?? room.monsterHP) : room.monsterHP;
   const lastEntry    = (room.log || []).at(-1);
+  const isCatMini    = !!(curMini?.isCat);
+  const catOverlayCats = (isCatMini && curMini?.playerLog)
+    ? curMini.playerLog.map(p => ({
+        catId:   members[p.id]?.archerStyle || "baobao",
+        catName: p.catName || p.name || "貓貓",
+        dmg:     p.dmg || 0,
+      }))
+    : [];
 
   // 前後排成員分配
   const memberList = Object.entries(members)
@@ -629,6 +638,11 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       `}</style>
 
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+      <CatRoundOverlay
+        open={!!liveEntry && isCatMini}
+        cats={catOverlayCats}
+        totalDmg={curMini?.totalDmg}
+      />
 
       {/* ── 頂部 HUD ── */}
       <div style={{ flexShrink:0, background:"rgba(0,0,0,0.78)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)", padding:"4px 10px 5px" }}>
@@ -898,6 +912,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               onArrow={label => addArrow(label)}
               onUndo={undoArrow}
               onSubmit={handleTargetSubmit}
+              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
             />
             {hasCat && (
               <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4, padding:"2px 6px", borderRadius:6, background:"rgba(79,70,229,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>

@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -14,6 +14,7 @@ import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -179,7 +180,7 @@ const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
   const { profile } = useAuth();
-  const { saveBond } = useCatCompanion();
+  const { saveBond, hasCat, catName, catATK } = useCatCompanion();
   const todayStr = new Date().toISOString().slice(0, 10);
   const isGuest  = !!guestOverride;
 
@@ -273,6 +274,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const [dmgLog,    setDmgLog]    = useState([]);
   const [catMsg,    setCatMsg]    = useState(null);
+  const [showCatPhase,  setShowCatPhase]  = useState(false);
+  const [catPhaseDmg,   setCatPhaseDmg]   = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
   const [showCard,   setShowCard]  = useState(false);
@@ -493,7 +496,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           if (bossKilledThisRound || isLast) {
             // Boss 已死 或 最後一回合 → 結束
             setSubPhase("done");
-            submitAttack(nextRounds);
+            if (isLast && !bossKilledThisRound && hasCat) {
+              runCatAttack(nextRounds);
+            } else {
+              submitAttack(nextRounds);
+            }
           } else {
             setArrows([]);
             setRoundIdx(r => r + 1);
@@ -503,6 +510,25 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         }, 1500);
       }, 480);
     }, 2200);
+  }
+
+  // ── 貓貓攻擊回合（最後一回合後，Boss 未死時觸發）────────
+  async function runCatAttack(rounds) {
+    if (!hasCat || !catATK) { submitAttack(rounds); return; }
+    let catTotalDmg = 0;
+    const catArrows = [];
+    for (let i = 0; i < 6; i++) {
+      const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
+      const dmg   = calcArrowDmg(score, catATK, boss.def, participantBonus);
+      catTotalDmg += dmg;
+      catArrows.push({ label: String(score), score, dmg });
+    }
+    setCatPhaseDmg(catTotalDmg);
+    setShowCatPhase(true);
+    await delay(2500);
+    setShowCatPhase(false);
+    const catRound = { arrows: catArrows, dmg: catTotalDmg, crits: 0, isCat: true };
+    submitAttack([...rounds, catRound]);
   }
 
   // ── 送出攻擊 ─────────────────────────────────────────────
@@ -549,11 +575,18 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
         }, myId).catch(() => {});
-        // 射手等級 XP（boss 基礎 50 × 2 倍率，每回合 100，上限 300）
-        const bossXP = Math.min(WORLD_BOSS_XP_CAP, rounds.length * Math.round(50 * WORLD_BOSS_XP_MULT));
+        // 射手 / 貓貓 XP：依貢獻傷害比例，min 50 max 300
+        const _dmgPct = (res.dmg || 0) / (event.bossMaxHP || 1);
+        const bossXP  = Math.min(WORLD_BOSS_XP_CAP, Math.max(50, Math.round(_dmgPct * 10000)));
         addArcherXP(myId, bossXP).catch(() => {});
         const _wbCatId = profile?.equippedCat?.catId;
-        if (_wbCatId) addCatXP(myId, _wbCatId, CAT_BOSS_XP).catch(() => {});
+        if (_wbCatId) addCatXP(myId, _wbCatId, bossXP).catch(() => {});
+        // 箭露：30 箭，每箭 +1~5 隨機（min 30 / max 150）
+        const arrowDewGain = Array.from({ length: 30 }, () => Math.floor(Math.random() * 5) + 1).reduce((a, b) => a + b, 0);
+        addArrowdew(myId, arrowDewGain).catch(() => {});
+        // 扭蛋幣：1~5 隨機
+        const gachaCoinGain = Math.floor(Math.random() * 5) + 1;
+        addGachaCoins(myId, gachaCoinGain).catch(() => {});
       }
       onComplete?.(res);
     }
@@ -770,16 +803,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               <div style={{ display:"flex", gap:12, marginTop:4 }}>
                 <div style={{ background:"rgba(14,165,233,0.2)", border:"1px solid #0ea5e966", borderRadius:10, padding:"5px 12px", textAlign:"center" }}>
                   <span style={{ fontSize:13 }}>🏹</span>
-                  <span style={{ fontSize:13, fontWeight:900, color:"#7dd3fc", marginLeft:4 }}>
-                    +{Math.min(WORLD_BOSS_XP_CAP, TOTAL_ROUNDS * Math.round(50 * WORLD_BOSS_XP_MULT))} XP
-                  </span>
-                  <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>射手經驗</div>
+                  <span style={{ fontSize:13, fontWeight:900, color:"#7dd3fc", marginLeft:4 }}>+50~300 XP</span>
+                  <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>射手經驗（依傷害）</div>
                 </div>
                 {profile?.equippedCat?.catId && (
                   <div style={{ background:"rgba(236,72,153,0.2)", border:"1px solid #ec489966", borderRadius:10, padding:"5px 12px", textAlign:"center" }}>
                     <span style={{ fontSize:13 }}>🐱</span>
-                    <span style={{ fontSize:13, fontWeight:900, color:"#f9a8d4", marginLeft:4 }}>+{CAT_BOSS_XP} XP</span>
-                    <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>貓貓經驗</div>
+                    <span style={{ fontSize:13, fontWeight:900, color:"#f9a8d4", marginLeft:4 }}>+50~300 XP</span>
+                    <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>貓貓經驗（依傷害）</div>
                   </div>
                 )}
               </div>
@@ -832,6 +863,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
           {/* CatMsg 放在 Boss 圖區內，不蓋住底部控制列 */}
           {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
+          {/* 貓貓攻擊回合覆蓋層（使用共用元件）*/}
+          <CatRoundOverlay
+            open={showCatPhase}
+            cats={showCatPhase && hasCat ? [{ catId: profile?.equippedCat?.catId || "baobao", catName: catName || "貓貓", dmg: catPhaseDmg }] : []}
+          />
 
           <div style={{ animation: animBossAttackDown ? "mb-monster-attack 0.65s ease" : animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
             <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={280}/>
@@ -1009,6 +1045,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             onArrow={handleScore}
             onUndo={() => setArrows(prev => prev.slice(0,-1))}
             onSubmit={handleTargetSubmit}
+            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
           />
 
           {/* 分數按鈕（按鈕模式才顯示）*/}
