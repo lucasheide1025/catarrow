@@ -239,7 +239,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     return parts.slice(0, 8);
   });
 
-  const [phase,    setPhase]    = useState("prep");
+  const [phase,    setPhase]    = useState(_hasSave ? "battle" : "prep");
   // subPhase: shooting | processing | roundResult | counterAttack | done
   const [subPhase, setSubPhase] = useState("shooting");
   const [processingIdx, setProcessingIdx] = useState(-1);
@@ -258,16 +258,23 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       : (profile?.coins || 0)
   );
 
-  const [roundIdx,     setRoundIdx]     = useState(0);
+  // ── 中途記憶：從 sessionStorage 恢復進行中的戰鬥 ──────────
+  const _saveKey = `wb_battle_${event.id}`;
+  const _saved = (() => {
+    try { return JSON.parse(sessionStorage.getItem(_saveKey) || "null"); } catch { return null; }
+  })();
+  const _hasSave = _saved && _saved.eventId === event.id && (_saved.roundIdx || 0) > 0;
+
+  const [roundIdx,     setRoundIdx]     = useState(_hasSave ? _saved.roundIdx     : 0);
   const [arrows,       setArrows]       = useState([]);
   const [targetMode,   setTargetMode]   = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt,    setTargetFmt]    = useState(getBattleTargetFmt);
-  const [allRounds,    setAllRounds]    = useState([]);
+  const [allRounds,    setAllRounds]    = useState(_hasSave ? _saved.allRounds   : []);
   const [roundSummary, setRoundSummary] = useState(null);
 
-  const [myHP,       setMyHP]       = useState(baseHP);
-  const [bossHP,     setBossHP]     = useState(event.bossCurrentHP);
+  const [myHP,       setMyHP]       = useState(_hasSave ? _saved.myHP       : baseHP);
+  const [bossHP,     setBossHP]     = useState(_hasSave ? _saved.localBossHP : event.bossCurrentHP);
 
   // boss 反擊
   const [counterDmg,    setCounterDmg]    = useState(0);
@@ -291,7 +298,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [floatDmg,         setFloatDmg]         = useState(null); // { dmg, isCrit, isMiss }
   const [companionShootIdx, setCompanionShootIdx] = useState(-1);
   const [companionHPs, setCompanionHPs] = useState(() =>
-    Object.fromEntries(companions.map(c => [c.id, c.hp]))
+    _hasSave && _saved.companionHPs
+      ? _saved.companionHPs
+      : Object.fromEntries(companions.map(c => [c.id, c.hp]))
   );
   const [showDeathAnim,     setShowDeathAnim]     = useState(false);
   const [deathKiller,       setDeathKiller]       = useState(null);
@@ -484,12 +493,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
       addTimer(() => {
         setAnimBossAttackDown(false);
-        setMyHP(h => Math.max(0, h - cdmg));
-        setCompanionHPs(prev => {
-          const next = { ...prev };
-          companions.forEach(c => { next[c.id] = Math.max(0, (next[c.id] ?? c.hp) - cdmg); });
-          return next;
-        });
+        const nextMyHP  = Math.max(0, myHP - cdmg);
+        const nextCompHPs = {};
+        companions.forEach(c => { nextCompHPs[c.id] = Math.max(0, (companionHPs[c.id] ?? c.hp) - cdmg); });
+        setMyHP(nextMyHP);
+        setCompanionHPs(nextCompHPs);
         setAnimPlayerHit(true);
         setTimeout(() => setAnimPlayerHit(false), 650);
 
@@ -497,12 +505,20 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           if (bossKilledThisRound || isLast) {
             // Boss 已死 或 最後一回合 → 結束
             setSubPhase("done");
-            if (isLast && !bossKilledThisRound && hasCat) {
-              runCatAttack(nextRounds);
+            if (isLast && hasCat) {
+              runCatAttack(nextRounds, bossKilledThisRound);
             } else {
               submitAttack(nextRounds);
             }
           } else {
+            // 中途記憶：反擊結算後，下一回合開始前儲存
+            try {
+              sessionStorage.setItem(_saveKey, JSON.stringify({
+                eventId: event.id, roundIdx: nextRounds.length,
+                allRounds: nextRounds, myHP: nextMyHP,
+                localBossHP, companionHPs: nextCompHPs,
+              }));
+            } catch { /**/ }
             setArrows([]);
             setRoundIdx(r => r + 1);
             setDmgLog([]);
@@ -513,29 +529,37 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     }, 2200);
   }
 
-  // ── 貓貓攻擊回合（最後一回合後，Boss 未死時觸發）────────
-  async function runCatAttack(rounds) {
+  // ── 貓貓攻擊回合（最後一回合後觸發，不論 Boss 是否死亡）────────
+  async function runCatAttack(rounds, bossAlreadyDead = false) {
     if (!hasCat || !catATK) { submitAttack(rounds); return; }
     let catTotalDmg = 0;
     const catArrows = [];
-    for (let i = 0; i < 6; i++) {
-      const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-      const dmg   = calcArrowDmg(score, catATK, boss.def, participantBonus);
-      catTotalDmg += dmg;
-      catArrows.push({ label: String(score), score, dmg });
+    if (!bossAlreadyDead) {
+      for (let i = 0; i < 6; i++) {
+        const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
+        const dmg   = calcArrowDmg(score, catATK, boss.def, participantBonus);
+        catTotalDmg += dmg;
+        catArrows.push({ label: String(score), score, dmg });
+      }
     }
     setCatPhaseDmg(catTotalDmg);
     setShowCatPhase(true);
     await delay(2500);
     setShowCatPhase(false);
-    const catRound = { arrows: catArrows, dmg: catTotalDmg, crits: 0, isCat: true };
-    submitAttack([...rounds, catRound]);
+    if (!bossAlreadyDead && catTotalDmg > 0) {
+      const catRound = { arrows: catArrows, dmg: catTotalDmg, crits: 0, isCat: true };
+      submitAttack([...rounds, catRound]);
+    } else {
+      submitAttack(rounds);
+    }
   }
 
   // ── 送出攻擊 ─────────────────────────────────────────────
   async function submitAttack(rounds) {
     if (processingRef.current) return;
     processingRef.current = true;
+    // 清除中途記憶（戰鬥已結束）
+    try { sessionStorage.removeItem(_saveKey); } catch { /**/ }
     setSubmitting(true);
     setPhase("result");
 
@@ -697,6 +721,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 disabled:opacity-30 active:scale-95 transition-all">
               {hiring ? "雇用中…" : bots.length >= 5 ? "已達上限（5隻）" : `🤖 雇用機器人 💰100`}
             </button>
+          </div>
+
+          {/* 計分方式設定 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="text-xs text-slate-400 font-bold mb-3">🎯 計分方式</div>
+            <div className="flex flex-col gap-3">
+              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
+            </div>
           </div>
         </div>
 
@@ -1031,12 +1064,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               }}>🎯</button>
             )}
           </div>
-          {subPhase === "shooting" && arrows.length === 0 && !targetPending && (
-            <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"10px 12px", marginBottom:4, display:"flex", flexDirection:"column", gap:10 }}>
-              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
-              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
-            </div>
-          )}
           {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
           <TargetFaceOverlay
             open={targetMode && subPhase === "shooting" && !targetPending}
