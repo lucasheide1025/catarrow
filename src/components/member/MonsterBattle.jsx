@@ -137,7 +137,7 @@ function pickBg(family) {
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
+export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
   const { profile } = useAuth();
   const checkinActive = useCheckinActive(profile?.id);
   const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion();
@@ -357,10 +357,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   useEffect(() => {
     if (isGuest || !profile || !certRecords) return;
-    const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax });
+    const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, duelStats, cardData:cardColl });
     const stats = calcArcherStats({ member:profile, certification, certRecords, dexStats:ds });
     setArcherStats(stats);
-  }, [profile, certification, certRecords, dexGrants, isGuest]); // eslint-disable-line
+  }, [profile, certification, certRecords, dexGrants, monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl, isGuest]); // eslint-disable-line
 
   useEffect(() => {
     if (isGuest || !profile?.id) return;

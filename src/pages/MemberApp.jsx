@@ -465,7 +465,9 @@ export default function MemberApp() {
             if (fromGuild) { setFromGuild(false); setPage("guild"); }
             else { setQuestCtx(null); setPage("adventure-hub"); }
           }}
-          questContext={questCtx} onKillForQuest={handleQuestKill} />}
+          questContext={questCtx} onKillForQuest={handleQuestKill}
+          monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
+          potionDex={potionDex} duelStats={duelStats} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials  onBack={()=>setPage("inventory-hub")} />}
