@@ -540,6 +540,20 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
         <div className="text-7xl">🏆</div>
         <div className="text-3xl font-black">地下城攻略完成！</div>
         <div className="text-slate-400 text-sm">恭喜通關全 {room.totalFloors} 層，金幣收益 ×2！</div>
+        <div style={{ display:"flex", gap:16, justifyContent:"center" }}>
+          <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
+            <div style={{ fontSize:20 }}>🏹</div>
+            <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{(room.totalFloors || 7) * DUNGEON_FLOOR_XP} XP</div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
+          </div>
+          {profile?.equippedCat?.catId && (
+            <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
+              <div style={{ fontSize:20 }}>🐱</div>
+              <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{(room.totalFloors || 7) * CAT_DUNGEON_FLOOR_XP} XP</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+            </div>
+          )}
+        </div>
         {isHost && (
           <button onClick={handleClaim}
             className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg">

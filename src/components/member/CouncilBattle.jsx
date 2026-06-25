@@ -698,6 +698,26 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           )}
         </div>
 
+        {defeated.length > 0 && (() => {
+          const totalAXP = defeated.reduce((s, d) => s + (MONSTER_TIER_XP[d.tier] || 5), 0);
+          const totalCXP = catId ? defeated.reduce((s, d) => s + (CAT_TIER_XP[d.tier] || 5), 0) : 0;
+          return (
+            <div style={{ display:"flex", gap:12, justifyContent:"center", marginBottom:8 }}>
+              <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 14px", textAlign:"center" }}>
+                <div style={{ fontSize:18 }}>🏹</div>
+                <div style={{ fontSize:14, fontWeight:900, color:"#7dd3fc" }}>+{totalAXP} XP</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
+              </div>
+              {totalCXP > 0 && (
+                <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 14px", textAlign:"center" }}>
+                  <div style={{ fontSize:18 }}>🐱</div>
+                  <div style={{ fontSize:14, fontWeight:900, color:"#f9a8d4" }}>+{totalCXP} XP</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <button onClick={() => onFinish({ race, clearedTier, failedTier })} style={{
           width:"100%", padding:"16px 0", borderRadius:18, fontWeight:900, fontSize:17, cursor:"pointer",
           background:"linear-gradient(90deg,#16a34a,#15803d)", color:"white", border:"none",

@@ -586,6 +586,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!myChests.length || claiming) return;
     setClaiming(true);
     try {
+      let archerXPForResult = 0, catXPForResult = 0;
       const myDmg = (room.log || []).reduce((s, entry) => {
         const p = (entry.playerLog || []).find(p => p.id === myId);
         return s + (p?.dmg || 0);
@@ -630,10 +631,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT);
         addArcherXP(myId, xp).catch(() => {});
         const _ptyCatId = authProfile?.equippedCat?.catId;
-        if (_ptyCatId) addCatXP(myId, _ptyCatId, Math.round((CAT_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT)).catch(() => {});
+        const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT) : 0;
+        if (_ptyCatId) addCatXP(myId, _ptyCatId, catXP).catch(() => {});
+        archerXPForResult = xp;
+        catXPForResult = catXP;
       }
       saveBond("party");
-      setClaimResult({ coins, material, card, coinChest });
+      setClaimResult({ coins, material, card, coinChest, archerXP: archerXPForResult, catXP: catXPForResult });
     } catch (e) {
       console.warn("handleClaim error:", e?.message);
     } finally {
@@ -1114,6 +1118,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                             <div className="flex flex-col items-center gap-1">
                               <span className="text-xl">{claimResult.card.icon}</span>
                               <span className="text-rose-300 text-xs font-black">🃏 {claimResult.card.name}</span>
+                            </div>
+                          )}
+                          {claimResult.archerXP > 0 && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xl">🏹</span>
+                              <span className="text-sky-300 font-black text-sm">+{claimResult.archerXP} XP</span>
+                              <span className="text-slate-400 text-xs">射手經驗</span>
+                            </div>
+                          )}
+                          {claimResult.catXP > 0 && (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xl">🐱</span>
+                              <span className="text-pink-300 font-black text-sm">+{claimResult.catXP} XP</span>
+                              <span className="text-slate-400 text-xs">貓貓經驗</span>
                             </div>
                           )}
                         </div>

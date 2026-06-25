@@ -766,6 +766,24 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 <div key={i} style={{ width:20, height:4, borderRadius:2, background: i < allRounds.length ? "#f59e0b" : "rgba(255,255,255,0.15)" }}/>
               ))}
             </div>
+            {isLastRound && (
+              <div style={{ display:"flex", gap:12, marginTop:4 }}>
+                <div style={{ background:"rgba(14,165,233,0.2)", border:"1px solid #0ea5e966", borderRadius:10, padding:"5px 12px", textAlign:"center" }}>
+                  <span style={{ fontSize:13 }}>🏹</span>
+                  <span style={{ fontSize:13, fontWeight:900, color:"#7dd3fc", marginLeft:4 }}>
+                    +{Math.min(WORLD_BOSS_XP_CAP, TOTAL_ROUNDS * Math.round(50 * WORLD_BOSS_XP_MULT))} XP
+                  </span>
+                  <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>射手經驗</div>
+                </div>
+                {profile?.equippedCat?.catId && (
+                  <div style={{ background:"rgba(236,72,153,0.2)", border:"1px solid #ec489966", borderRadius:10, padding:"5px 12px", textAlign:"center" }}>
+                    <span style={{ fontSize:13 }}>🐱</span>
+                    <span style={{ fontSize:13, fontWeight:900, color:"#f9a8d4", marginLeft:4 }}>+{CAT_BOSS_XP} XP</span>
+                    <div style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>貓貓經驗</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
