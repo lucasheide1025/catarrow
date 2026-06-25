@@ -12,6 +12,7 @@ import {
   calcCatEquipBonus, catEquipLevel,
 } from "../../lib/catData";
 import { catLevelFromXP, catLevelBonus } from "../../lib/catLevel";
+import { CAT_TYPE_BASE } from "../../hooks/useCatCompanion";
 import CatSVG from "./CatSVG";
 
 // ── 羈絆條 ──────────────────────────────────────────────────
@@ -223,14 +224,10 @@ function ChapterReader({ catId, chapter, memberName, memberId, onClose, onUnlock
   );
 }
 
-// 貓貓基底數值（與 useCatCompanion 同步）
-const CAT_COMBAT_BASE  = { hp: 200, atk: 10, def: 10 };
-const TYPE_ATK_MULT    = { attack: 1.2, defense: 0.9, allround: 1.05 };
-
 // ── 貓咪詳情頁 ──────────────────────────────────────────────
 function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, onEquipChange, onOpenForge }) {
   const cat = CATS[catId];
-  const selType = catData?.type || "allround";
+  const [selType, setSelType] = useState(catData?.type || "allround");
   const [readCh,    setReadCh]    = useState(null);
   const [updating,  setUpdating]  = useState(false);
   const [unlockedChs, setUnlockedChs] = useState(catData?.unlockedChs || [1]);
@@ -238,16 +235,17 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
   const bondLevel  = getBondLevel(catData?.bond || 0);
   const isEquipped = equippedCat?.catId === catId;
 
-  // 即時計算能力值（基底 + 等級 + 裝備加成）
+  // 即時計算能力值（類型基底 + 羈絆加成 + 等級 + 裝備）
   const catLevel   = catLevelFromXP(catData?.catXP || 0);
   const lvBonus    = catLevelBonus(catLevel);
   const equipBonus = calcCatEquipBonus(catData?.equip || {});
-  const catHP  = CAT_COMBAT_BASE.hp  + lvBonus.hp  + equipBonus.hpBonus;
-  const catDEF = CAT_COMBAT_BASE.def + lvBonus.def + equipBonus.defBonus;
-  const catATK = Math.round(
-    (CAT_COMBAT_BASE.atk * (TYPE_ATK_MULT[selType] || 1.0) + bondLevel)
-    + lvBonus.atk + equipBonus.atkBonus
-  );
+  const base       = CAT_TYPE_BASE[selType] || CAT_TYPE_BASE.allround;
+  const bondTierMult = bondLevel >= 10 ? 1.4 : bondLevel >= 5 ? 1.2 : 1.0;
+  const atkMult = (selType === "attack"  || selType === "allround") ? bondTierMult : 1.0;
+  const tkhMult = (selType === "defense" || selType === "allround") ? bondTierMult : 1.0;
+  const catHP  = Math.round((base.hp  + lvBonus.hp  + equipBonus.hpBonus)  * tkhMult);
+  const catDEF = Math.round((base.def + lvBonus.def + equipBonus.defBonus) * tkhMult);
+  const catATK = Math.round((base.atk + bondLevel + lvBonus.atk + equipBonus.atkBonus) * atkMult);
 
   async function handleEquip() {
     setUpdating(true);
@@ -342,8 +340,27 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
                 <div className="text-[10px] text-slate-500">DEF</div>
               </div>
             </div>
-            <div className="text-[10px] text-slate-500 mt-2 text-center">
-              類型：{CAT_TYPES[selType]?.icon} {CAT_TYPES[selType]?.label}
+            {/* 類型選擇 */}
+            <div className="mt-3">
+              <div className="text-[10px] text-slate-500 mb-1.5 text-center">選擇戰鬥類型</div>
+              <div className="flex gap-1.5 justify-center">
+                {Object.entries(CAT_TYPES).map(([tid, t]) => (
+                  <button key={tid} onClick={() => setSelType(tid)}
+                    style={{ borderColor: selType === tid ? t.color : "transparent", color: selType === tid ? t.color : "#64748b", background: selType === tid ? `${t.color}22` : "rgba(255,255,255,0.04)" }}
+                    className="flex-1 rounded-xl border px-1 py-1.5 text-center transition-all active:scale-95">
+                    <div className="text-base">{t.icon}</div>
+                    <div className="text-[10px] font-black">{t.label}</div>
+                  </button>
+                ))}
+              </div>
+              {bondTierMult > 1.0 && (
+                <div className="text-[10px] text-amber-400 text-center mt-1.5 font-bold">
+                  ✨ 羈絆技能 {bondLevel >= 10 ? "II" : "I"} 啟動：主屬性 ×{bondTierMult.toFixed(1)}
+                </div>
+              )}
+              <div className="text-[10px] text-slate-600 text-center mt-1 leading-relaxed">
+                {CAT_TYPES[selType]?.desc}
+              </div>
             </div>
           </div>
 
@@ -387,6 +404,18 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
               {CAT_TYPES[selType]?.skills.map((sk, i) => {
                 const unlocked = bondLevel >= sk.bond;
                 const isCurrent = bondLevel === sk.bond;
+                // 羈絆里程碑技能效果標籤
+                const skillEffect = sk.isSkill && sk.bond > 0
+                  ? sk.bond >= 10
+                    ? selType === "attack"  ? "主屬性 ATK ×1.4"
+                    : selType === "defense" ? "主屬性 HP/DEF ×1.4"
+                    : "全屬性 ×1.4"
+                  : sk.bond >= 5
+                    ? selType === "attack"  ? "主屬性 ATK ×1.2"
+                    : selType === "defense" ? "主屬性 HP/DEF ×1.2"
+                    : "全屬性 ×1.2"
+                  : null
+                  : null;
                 return (
                   <div key={i} className={`flex items-center gap-3 rounded-xl px-3 py-2 transition-all ${
                     unlocked
@@ -404,6 +433,11 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
                       <div className={`font-bold text-xs ${sk.isSkill ? "text-indigo-200" : "text-slate-300"}`}>
                         {sk.name}
                       </div>
+                      {skillEffect && (
+                        <div className="text-[10px] font-black text-amber-300 mt-0.5">
+                          ⚔️ 技能效果：{skillEffect}
+                        </div>
+                      )}
                       <div className="text-[11px] text-slate-400">{sk.desc}</div>
                     </div>
                     <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${

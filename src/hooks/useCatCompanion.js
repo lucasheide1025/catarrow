@@ -10,11 +10,15 @@ import {
 import { calcDamage } from "../lib/monsterData";
 import { catLevelFromXP, catLevelBonus } from "../lib/catLevel";
 
-// ── 貓貓戰鬥基礎數值 ─────────────────────────────────────────
-export const CAT_COMBAT_BASE = { hp: 200, atk: 10, def: 10 };
+// ── 三類型基底數值（各有特化）────────────────────────────────
+export const CAT_TYPE_BASE = {
+  attack:   { hp: 140, atk: 16, def:  7 }, // 高傷低耐
+  defense:  { hp: 300, atk:  7, def: 16 }, // 高血高防
+  allround: { hp: 200, atk: 10, def: 10 }, // 均衡
+};
+// 向後相容（其他 import 此常數的地方不需改）
+export const CAT_COMBAT_BASE = CAT_TYPE_BASE.allround;
 
-// 類型 ATK 修正
-const TYPE_ATK_MULT  = { attack: 1.2, defense: 0.9, allround: 1.05 };
 const ARROWS_PER_CAT = 6;
 
 const CAT_MESSAGES = {
@@ -62,16 +66,23 @@ export function useCatCompanion() {
   // 技能分組（決定哪種技能會觸發）
   const skillGroup = hasCat ? (CAT_SKILL_GROUPS[catId] || null) : null;
 
-  // ── 戰鬥數值（基底 + 等級加成 + 裝備加成）───────────────────
+  // ── 戰鬥數值（類型基底 + 羈絆技能加成 + 等級 + 裝備）────────
+  // 羈絆里程碑：達到 lv5 解鎖技能 I（主屬性×1.2），lv10 解鎖技能 II（×1.4）
+  const bondTierMult = bondLv >= 10 ? 1.4 : bondLv >= 5 ? 1.2 : 1.0;
+  const base = CAT_TYPE_BASE[catType] || CAT_TYPE_BASE.allround;
+
+  // 攻擊型：bondTier 強化 ATK；防禦型：強化 HP/DEF；全能型：三者均強化
+  const atkMult = (catType === "attack"  || catType === "allround") ? bondTierMult : 1.0;
+  const tkhMult = (catType === "defense" || catType === "allround") ? bondTierMult : 1.0;
+
   const catHP  = hasCat
-    ? CAT_COMBAT_BASE.hp  + lvBonus.hp  + equipBonus.hpBonus
-    : CAT_COMBAT_BASE.hp;
+    ? Math.round((base.hp  + lvBonus.hp  + equipBonus.hpBonus)  * tkhMult)
+    : base.hp;
   const catDEF = hasCat
-    ? CAT_COMBAT_BASE.def + lvBonus.def + equipBonus.defBonus
-    : CAT_COMBAT_BASE.def;
+    ? Math.round((base.def + lvBonus.def + equipBonus.defBonus) * tkhMult)
+    : base.def;
   const catATK = hasCat
-    ? Math.round((CAT_COMBAT_BASE.atk * (TYPE_ATK_MULT[catType] || 1.0) + bondLv)
-        + lvBonus.atk + equipBonus.atkBonus)
+    ? Math.round((base.atk + bondLv + lvBonus.atk + equipBonus.atkBonus) * atkMult)
     : 0;
 
   // ── 貓貓攻擊：6箭合一，回傳總傷害 ───────────────────────────

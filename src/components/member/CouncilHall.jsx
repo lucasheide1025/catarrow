@@ -1,7 +1,8 @@
 // src/components/member/CouncilHall.jsx — 議會廳入口（冒險者公會卡片風格）
 import { useState, useEffect } from "react";
 import {
-  COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, getAvailableTiersByPower,
+  COUNCIL_BUILDINGS, COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS,
+  getAvailableTiers, getAvailableTiersByPower,
 } from "../../lib/councilMonsters";
 import { calcArcherPower } from "../../lib/monsterData";
 import {
