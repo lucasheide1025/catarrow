@@ -199,6 +199,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     return subscribeCardCollection(profile.id, setCardColl);
   }, [profile?.id, isGuest]); // eslint-disable-line
 
+  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
+
   const archerBase = useMemo(() =>
     calcArcherStats({ member: profile, certification, certRecords, dexStats: null }),
   [profile, certification, certRecords]);
@@ -297,7 +299,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
-  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
