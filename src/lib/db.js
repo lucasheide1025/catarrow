@@ -913,27 +913,40 @@ export async function submitSimpleCheckin(memberId, memberName, memberNickname) 
   return { id, already: false };
 }
 
-// 學生點報到 → 建立 active 紀錄（已存在就不重建）
+// 學生點報到 → 建立 pending 紀錄（等待教練審核）
 export async function submitCheckin(memberId, memberName, memberNickname) {
   const date = todayStr();
   const id = checkinId(memberId, date);
   const ref = doc(db, C_CHECKIN, id);
   const snap = await getDoc(ref);
-  // 已報到且不是 cancelled，不重複建立
   if (snap.exists() && snap.data().status !== "cancelled") return { id, already: true, data: snap.data() };
-  // 全新報到或重新啟動 cancelled 的 doc
   await setDoc(ref, {
     memberId, memberName: memberName || "", memberNickname: memberNickname || "",
     date,
-    status: "active",
-    buff: null,
-    failCount: 0,
-    questDone: false,
-    questResult: null,
+    status: "pending",
     finalConfirmed: false,
+    classEnded: false,
     createdAt: serverTimestamp(),
   }, { merge: false });
   return { id, already: false };
+}
+
+// 教練審核通過
+export async function approveCheckin(checkinDocId, operatorId) {
+  await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
+    status: "active",
+    approvedAt: serverTimestamp(),
+    approvedBy: operatorId,
+  });
+}
+
+// 教練審核不通過
+export async function rejectCheckin(checkinDocId, operatorId) {
+  await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
+    status: "rejected",
+    rejectedAt: serverTimestamp(),
+    rejectedBy: operatorId,
+  });
 }
 
 // 訂閱「我今天的報到」
@@ -959,7 +972,7 @@ export function subscribePendingCheckins(callback) {
     query(collection(db, C_CHECKIN), where("date", "==", date)),
     snap => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(c => (c.status === "active" || c.type === "simple") && c.status !== "cancelled" && !c.adminDismissed);
+        .filter(c => (c.status === "pending" || c.status === "active" || c.type === "simple") && c.status !== "cancelled" && !c.adminDismissed);
       callback(list);
     },
     err => { console.warn("subscribePendingCheckins:", err.message); callback([]); }

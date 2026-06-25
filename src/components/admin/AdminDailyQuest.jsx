@@ -8,9 +8,9 @@ import {
   getDailyQuestConfig, saveDailyQuestConfig,
   getMonsterDailyConfig, saveMonsterDailyConfig,
   getMonsterEventConfig, saveMonsterEventConfig,
-  subscribePendingCheckins, castBuff, cancelCheckin,
-  confirmCheckinReward, adminDismissCheckin,
-  addBillingRecord,
+  subscribePendingCheckins, cancelCheckin,
+  approveCheckin, rejectCheckin,
+  adminDismissCheckin, addBillingRecord,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 
@@ -39,7 +39,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
   const [showConfig,  setShowConfig]  = useState(false);
   const [showMonster, setShowMonster] = useState(false);
   const [showEvent,   setShowEvent]   = useState(false);
-  const [passState,   setPassState]   = useState({}); // { checkinId: { chest, busy } }
+  const [approveState, setApproveState] = useState({}); // { checkinId: { busy } }
   const [billState,   setBillState]   = useState({}); // { checkinId: { plan, payMethod, busy } }
 
   useEffect(() => {
@@ -52,9 +52,9 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   if (!config) return null;
 
-  const toCast     = pending.filter(c => !c.buff && !c.questDone && c.type !== "simple");
-  const inProgress = pending.filter(c => c.buff  && !c.questDone);
-  const done       = pending.filter(c => c.questDone || c.type === "simple");
+  const toApprove  = pending.filter(c => c.status === "pending");
+  const inProgress = pending.filter(c => c.status === "active" && !c.classEnded);
+  const done       = pending.filter(c => c.classEnded || c.type === "simple");
 
   async function saveConfig() {
     setSaving(true);
@@ -84,9 +84,22 @@ export default function AdminDailyQuest({ mode = "all" }) {
     setSavingEvt(false);
   }
 
-  async function cast(c) {
-    const buff = await castBuff(c.id, profile.id);
-    toast(`已為 ${c.memberNickname || c.memberName} 施法：${buff.name}（降 ${buff.actualPower}%）`);
+  async function doApprove(c) {
+    setApproveState(s => ({ ...s, [c.id]: { busy: true } }));
+    try {
+      await approveCheckin(c.id, profile.id);
+      toast(`✅ 已核准 ${c.memberNickname || c.memberName} 的報到！`);
+    } catch (e) { toast("核准失敗：" + (e?.message || ""), "error"); }
+    setApproveState(s => { const n = { ...s }; delete n[c.id]; return n; });
+  }
+
+  async function doReject(c) {
+    setApproveState(s => ({ ...s, [c.id]: { busy: true } }));
+    try {
+      await rejectCheckin(c.id, profile.id);
+      toast(`已駁回 ${c.memberNickname || c.memberName} 的報到`);
+    } catch (e) { toast("駁回失敗：" + (e?.message || ""), "error"); }
+    setApproveState(s => { const n = { ...s }; delete n[c.id]; return n; });
   }
 
   async function doCancel(c) {
@@ -158,28 +171,6 @@ export default function AdminDailyQuest({ mode = "all" }) {
     setBillState(s => { const n = { ...s }; delete n[c.id]; return n; });
     await adminDismissCheckin(c.id);
     toast(`已完成 ${c.memberNickname || c.memberName} 的紀錄（未記帳）`);
-  }
-
-  async function directPass(c) {
-    const chest = passState[c.id]?.chest || "iron";
-    setPassState(s => ({ ...s, [c.id]: { ...s[c.id], busy: true } }));
-    try {
-      await confirmCheckinReward(c.id, c.memberId, profile.id, chest);
-      toast(`✅ 已核准 ${c.memberNickname || c.memberName} 的任務！`);
-    } catch (e) {
-      toast("核准失敗：" + (e?.message || ""), "error");
-    }
-    setPassState(s => { const n = { ...s }; delete n[c.id]; return n; });
-  }
-
-  function openPass(c) {
-    setPassState(s => ({ ...s, [c.id]: { chest: "iron" } }));
-  }
-  function closePass(c) {
-    setPassState(s => { const n = { ...s }; delete n[c.id]; return n; });
-  }
-  function setPassChest(c, chest) {
-    setPassState(s => ({ ...s, [c.id]: { ...s[c.id], chest } }));
   }
 
   function num(val) { return isNaN(Number(val)) ? 0 : Number(val); }
@@ -392,85 +383,50 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
       {showListSection && (
         <>
-          {/* 待施法 */}
+          {/* 待審核 */}
           <section>
-            <ST>🪄 待施法（{toCast.length}）</ST>
-            {toCast.length === 0 ? (
-              <div className="text-gray-400 text-sm py-2">目前沒有等待施法的報到</div>
+            <ST>⏳ 待審核（{toApprove.length}）</ST>
+            {toApprove.length === 0 ? (
+              <div className="text-gray-400 text-sm py-2">目前沒有待審核的報到</div>
             ) : (
               <div className="flex flex-col gap-2">
-                {toCast.map(c => (
-                  <div key={c.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                        <div className="text-gray-400 text-xs">點施法 → 隨機 10-50% 加成</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
-                        <Btn v="primary" size="sm" onClick={() => cast(c)}>🪄 施法</Btn>
+                {toApprove.map(c => {
+                  const busy = approveState[c.id]?.busy;
+                  return (
+                    <div key={c.id} className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                          <div className="text-yellow-600 text-xs">等待審核中</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Btn v="danger" size="sm" onClick={() => doReject(c)} disabled={busy}>❌ 不通過</Btn>
+                          <Btn v="success" size="sm" onClick={() => doApprove(c)} disabled={busy}>✅ 通過</Btn>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
 
-          {/* 任務進行中（已施法）*/}
+          {/* 上課中 */}
           {inProgress.length > 0 && (
             <section>
-              <ST>🏹 任務進行中（{inProgress.length}）</ST>
+              <ST>🏹 上課中（{inProgress.length}）</ST>
               <div className="flex flex-col gap-2">
-                {inProgress.map(c => {
-                  const taskObj = c.tasks?.[c.chosenTask];
-                  const ps = passState[c.id];
-                  const chestOpts = [["wood","🪵 木箱"],["iron","🔩 鐵箱"],["gold","🥇 金箱"]];
-                  return (
-                    <div key={c.id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                          <div className="text-emerald-600 text-xs">
-                            加成：{c.buff?.name}（降 {c.buff?.actualPower}%）
-                          </div>
-                          {taskObj && (
-                            <div className="text-gray-500 text-xs">
-                              {taskObj.label}・{taskObj.distance}米・{taskObj.target}
-                            </div>
-                          )}
-                        </div>
-                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
+                {inProgress.map(c => (
+                  <div key={c.id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                        <div className="text-emerald-600 text-xs">練習中，等待下課…</div>
                       </div>
-
-                      {/* 直接過關 */}
-                      {ps ? (
-                        <div className="mt-2 pt-2 border-t border-emerald-100 flex flex-col gap-1.5">
-                          <div className="text-xs text-gray-500 font-bold">選擇寶箱獎勵</div>
-                          <div className="flex gap-1.5">
-                            {chestOpts.map(([v, l]) => (
-                              <button key={v} onClick={() => setPassChest(c, v)}
-                                className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all
-                                  ${(ps.chest || "iron") === v ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-200"}`}>
-                                {l}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex gap-1.5">
-                            <Btn v="secondary" size="sm" onClick={() => closePass(c)}>取消</Btn>
-                            <Btn v="success" size="sm" className="flex-1" onClick={() => directPass(c)} disabled={ps.busy}>
-                              {ps.busy ? "處理中…" : "✅ 確認直接過關"}
-                            </Btn>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-2 pt-2 border-t border-emerald-100">
-                          <Btn v="success" size="sm" onClick={() => openPass(c)}>✅ 直接過關</Btn>
-                        </div>
-                      )}
+                      <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             </section>
           )}
@@ -481,7 +437,6 @@ export default function AdminDailyQuest({ mode = "all" }) {
               <ST>✅ 今日已完成（{done.length}）</ST>
               <div className="flex flex-col gap-2">
                 {done.map(c => {
-                  const taskObj = c.tasks?.[c.chosenTask];
                   const bs = billState[c.id];
                   return (
                     <div key={c.id} className="bg-teal-50 border border-teal-200 rounded-xl p-3">
@@ -489,14 +444,9 @@ export default function AdminDailyQuest({ mode = "all" }) {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                          {c.type === "simple" ? (
-                            <div className="text-teal-600 text-xs">純報到 ✓</div>
-                          ) : (
-                            <div className="text-teal-600 text-xs">
-                              {taskObj ? `${taskObj.label}・${taskObj.distance}米` : "任務完成"}
-                              {c.questResult && ` → ${c.questResult.value} 分（目標 ${c.questResult.target}）`}
-                            </div>
-                          )}
+                          <div className="text-teal-600 text-xs">
+                            {c.type === "simple" ? "純報到 ✓" : "已下課 ✓"}
+                          </div>
                         </div>
                         {!bs && (
                           <Btn v="primary" size="sm" onClick={() => openBill(c)}>💰 記帳</Btn>

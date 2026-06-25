@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
-import { useState, useEffect, useMemo } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew } from "../../lib/db";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { useAuth } from "../../hooks/useAuth";
@@ -1667,6 +1667,15 @@ export default function MemberPractice() {
   const [finishedRounds, setFinishedRounds]=useState([]);
   const [arrowPositions, setArrowPositions]=useState([]);
   const [milestoneQueue, setMilestoneQueue]=useState([]);  // [{ms, rewards}]
+  const classEndedRef = useRef(false); // 下課後不再觸發里程碑
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const unsub = subscribeMyCheckin(profile.id, c => {
+      classEndedRef.current = !!c?.classEnded;
+    });
+    return () => unsub?.();
+  }, [profile?.id]); // eslint-disable-line
 
   const equipSets=useMemo(()=>normalizeEquipment(profile?.equipment),[profile?.equipment]);
 
@@ -1714,13 +1723,15 @@ export default function MemberPractice() {
     // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
     const arrowCount = stats.arrows || 0;
 
-    // 里程碑計算（非同步，不阻塞 UI）
+    // 里程碑計算（下課後不觸發，避免重複結算）
     const newTodayArrows=oldTodayArrows+arrowCount;
-    const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
-    if(milestones.length>0){
-      grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});
-      const queue=milestones.map(ms=>({ ms, rewards: getRewardsForMilestone(ms) }));
-      setMilestoneQueue(queue);
+    if (!classEndedRef.current) {
+      const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
+      if(milestones.length>0){
+        grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});
+        const queue=milestones.map(ms=>({ ms, rewards: getRewardsForMilestone(ms) }));
+        setMilestoneQueue(queue);
+      }
     }
   }
 

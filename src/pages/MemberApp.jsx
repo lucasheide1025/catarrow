@@ -5,7 +5,8 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
-  subscribeActiveGuildQuests, subscribeTodayPracticeLogs } from "../lib/db";
+  subscribeActiveGuildQuests, subscribeTodayPracticeLogs,
+  subscribeMyCheckin, submitCheckin } from "../lib/db";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -100,8 +101,38 @@ export default function MemberApp() {
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
   const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
   const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0); // 今日全域練箭數（含所有來源）
+  const [todayCheckin, setTodayCheckin] = useState(undefined);  // 今日報到狀態
+  const [showCheckinPopup, setShowCheckinPopup] = useState(false);
+  const [checkinBusy, setCheckinBusy] = useState(false);
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
+
+  // 今日報到訂閱（供浮動視窗判斷）
+  useEffect(() => {
+    if (!profile?.id) return;
+    const unsub = subscribeMyCheckin(profile.id, c => {
+      setTodayCheckin(c);
+      // 第一次拿到 null（未報到）且本 session 尚未彈過 → 彈出視窗
+      if (c === null) {
+        const shown = sessionStorage.getItem("checkin_popup_shown");
+        if (!shown) {
+          setShowCheckinPopup(true);
+          sessionStorage.setItem("checkin_popup_shown", "1");
+        }
+      }
+    });
+    return () => unsub?.();
+  }, [profile?.id]); // eslint-disable-line
+
+  async function handleCheckinSubmit() {
+    if (!profile?.id) return;
+    setCheckinBusy(true);
+    try {
+      await submitCheckin(profile.id, profile.name, profile.nickname);
+    } catch (e) { console.error("checkin:", e?.message); }
+    setCheckinBusy(false);
+    setShowCheckinPopup(false);
+  }
 
   // 今日練箭數全域訂閱（只讀今日，減少 Firestore 資料量）
   useEffect(() => {
@@ -303,6 +334,27 @@ export default function MemberApp() {
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
+
+      {/* 📋 今日報到浮動視窗 */}
+      {showCheckinPopup && (
+        <div style={{ position:"fixed", inset:0, zIndex:99990, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div style={{ background:"linear-gradient(135deg,#0f172a,#1e293b)", borderRadius:24, padding:"28px 24px", width:"100%", maxWidth:320, border:"1px solid rgba(255,255,255,0.15)", boxShadow:"0 0 40px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize:40, textAlign:"center", marginBottom:12 }}>📋</div>
+            <div style={{ color:"#f1f5f9", fontWeight:900, fontSize:18, textAlign:"center", marginBottom:8 }}>今日報到</div>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", lineHeight:1.6, marginBottom:24 }}>
+              點選報到後，等待教練確認<br />即可開始累積箭數與箭露！
+            </div>
+            <button onClick={handleCheckinSubmit} disabled={checkinBusy}
+              style={{ width:"100%", padding:"13px", borderRadius:12, background:"linear-gradient(135deg,#059669,#0d9488)", color:"white", fontWeight:900, fontSize:15, border:"none", cursor:"pointer", opacity: checkinBusy ? 0.6 : 1 }}>
+              {checkinBusy ? "送出中…" : "✅ 我要報到"}
+            </button>
+            <button onClick={() => setShowCheckinPopup(false)}
+              style={{ width:"100%", padding:"10px", borderRadius:12, background:"transparent", color:"rgba(255,255,255,0.35)", fontSize:13, border:"none", cursor:"pointer", marginTop:8 }}>
+              今日不報到
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ⚡ 緊急任務浮動通知 */}
       {specialAlert && (
