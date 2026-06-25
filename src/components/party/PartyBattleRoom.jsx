@@ -562,8 +562,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
   async function handleStart() {
     if (!setupMonster || starting) return;
-    if (memberList.length < 2) {
-      setStartError("組隊打怪至少需要 2 位玩家！");
+    if (memberList.length < 1 || (memberList.length < 2 && !hasCat)) {
+      setStartError("組隊打怪至少需要 2 位玩家！（或裝備貓咪陪你獨自出戰）");
       return;
     }
     if (partyBattleLeft !== null && partyBattleLeft <= 0) {
