@@ -28,3 +28,10 @@ export function catLevelBonus(level) {
 export const CAT_TIER_XP = {
   common: 5, rare: 10, elite: 20, fierce: 30, boss: 50, mythic: 80,
 };
+
+// 其他模式貓貓 XP
+export const CAT_DUEL_WIN_XP      = 30;
+export const CAT_DUEL_LOSE_XP     = 10;
+export const CAT_DUNGEON_FLOOR_XP = 15;
+export const CAT_BOSS_XP          = 80;  // 世界首領（mythic 等級）
+export const CAT_PRACTICE_XP      = 2;   // 自主練習每次儲存

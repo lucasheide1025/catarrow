@@ -46,3 +46,6 @@ export const WORLD_BOSS_XP_MULT = 2.0;  // 世界首領 XP 倍率
 
 // 組隊寶箱額外掉落機率（30%）
 export const PARTY_BONUS_CHEST_CHANCE = 0.30;
+
+// 自主練習射手 XP（最低速率）
+export const PRACTICE_ARCHER_XP_PER_ARROW = 1;

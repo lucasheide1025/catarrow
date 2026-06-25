@@ -11,6 +11,8 @@ import {
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
+import { addCatXP } from "../../lib/catDb";
+import { CAT_TIER_XP } from "../../lib/catLevel";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
@@ -627,6 +629,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         }
         const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT);
         addArcherXP(myId, xp).catch(() => {});
+        const _ptyCatId = authProfile?.equippedCat?.catId;
+        if (_ptyCatId) addCatXP(myId, _ptyCatId, Math.round((CAT_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT)).catch(() => {});
       }
       saveBond("party");
       setClaimResult({ coins, material, card, coinChest });

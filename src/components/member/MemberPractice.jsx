@@ -1,6 +1,9 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useRef, useMemo } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP } from "../../lib/db";
+import { addCatXP } from "../../lib/catDb";
+import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
+import { CAT_PRACTICE_XP } from "../../lib/catLevel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { useAuth } from "../../hooks/useAuth";
@@ -1722,6 +1725,12 @@ export default function MemberPractice() {
 
     // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
     const arrowCount = stats.arrows || 0;
+
+    // 射手 XP（最低速率：每發箭 1 XP）
+    if (arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});
+    // 貓貓 XP（每次儲存 2 XP）
+    const _prCatId = profile?.equippedCat?.catId;
+    if (_prCatId) addCatXP(profile.id, _prCatId, CAT_PRACTICE_XP).catch(() => {});
 
     // 里程碑計算（下課後不觸發，避免重複結算）
     const newTodayArrows=oldTodayArrows+arrowCount;

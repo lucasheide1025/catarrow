@@ -12,6 +12,8 @@ import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/mons
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP } from "../../lib/db";
 import { DUNGEON_FLOOR_XP } from "../../lib/archerLevel";
+import { addCatXP } from "../../lib/catDb";
+import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
@@ -362,6 +364,8 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
       }
       // 射手等級 XP（每通過一層 15 XP）
       addArcherXP(myId, totalFloors * DUNGEON_FLOOR_XP).catch(() => {});
+      const _dgCatId = profile?.equippedCat?.catId;
+      if (_dgCatId) addCatXP(myId, _dgCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
     }
 
     sfxSuccess();

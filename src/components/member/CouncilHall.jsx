@@ -94,6 +94,7 @@ export default function CouncilHall({ profile, village, onBack }) {
         archerStats={archerStats}
         village={village}
         memberId={profile.id}
+        catId={profile?.equippedCat?.catId || null}
         checkinActive={checkinActive}
         onFinish={handleFinish}
         onBack={() => { setActiveBld(null); setDailyLeft(l => Math.min(5, (l ?? 0) + 1)); }}

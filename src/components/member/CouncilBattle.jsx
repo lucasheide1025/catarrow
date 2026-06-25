@@ -1,7 +1,10 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
 import { useState, useRef, useEffect } from "react";
 import { calcDamage } from "../../lib/monsterData";
-import { addPracticeLog, grantArrowMilestoneRewards } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP } from "../../lib/db";
+import { addCatXP } from "../../lib/catDb";
+import { MONSTER_TIER_XP } from "../../lib/archerLevel";
+import { CAT_TIER_XP } from "../../lib/catLevel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
@@ -292,7 +295,7 @@ function getMappedScore(label, targetFmt) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, checkinActive, onFinish, onBack }) {
+export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, catId = null, checkinActive, onFinish, onBack }) {
   const { id:bId, name:bName, emoji:bEmoji, race, raceLabel } = building;
   const theme = BUILDING_THEMES[bId] || BUILDING_THEMES.mine;
 
@@ -427,6 +430,10 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       sfxMonsterDead();
       setTimeout(() => sfxSuccess(), 500);
       addLog(`✅ ${currentMonster.name} 解決了！任務完成！`, "win");
+      if (memberId) {
+        addArcherXP(memberId, MONSTER_TIER_XP[currentMonster.tier] || 5).catch(() => {});
+        if (catId) addCatXP(memberId, catId, CAT_TIER_XP[currentMonster.tier] || 5).catch(() => {});
+      }
       const matId       = getRaceMaterialId(race, currentMonster.tier);
       const newDefeated = [...defeated, { tier:currentMonster.tier, materialId:matId }];
       setDefeated(newDefeated);

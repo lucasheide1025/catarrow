@@ -4,6 +4,8 @@ import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
 import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP } from "../../lib/db";
+import { addCatXP } from "../../lib/catDb";
+import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
@@ -550,6 +552,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         // 射手等級 XP（boss 基礎 50 × 2 倍率，每回合 100，上限 300）
         const bossXP = Math.min(WORLD_BOSS_XP_CAP, rounds.length * Math.round(50 * WORLD_BOSS_XP_MULT));
         addArcherXP(myId, bossXP).catch(() => {});
+        const _wbCatId = profile?.equippedCat?.catId;
+        if (_wbCatId) addCatXP(myId, _wbCatId, CAT_BOSS_XP).catch(() => {});
       }
       onComplete?.(res);
     }
