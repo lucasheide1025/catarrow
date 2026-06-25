@@ -8,7 +8,9 @@ import {
 import {
   CATS, CAT_IDS, CAT_TYPES, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
+  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, calcCatEquipBonus,
 } from "../../lib/catData";
+import { catLevelFromXP, catLevelBonus } from "../../lib/catLevel";
 import CatSVG from "./CatSVG";
 
 // ── 羈絆條 ──────────────────────────────────────────────────
@@ -220,16 +222,31 @@ function ChapterReader({ catId, chapter, memberName, memberId, onClose, onUnlock
   );
 }
 
+// 貓貓基底數值（與 useCatCompanion 同步）
+const CAT_COMBAT_BASE  = { hp: 200, atk: 10, def: 10 };
+const TYPE_ATK_MULT    = { attack: 1.2, defense: 0.9, allround: 1.05 };
+
 // ── 貓咪詳情頁 ──────────────────────────────────────────────
-function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, onEquipChange }) {
+function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, onEquipChange, onOpenForge }) {
   const cat = CATS[catId];
-  const [selType,   setSelType]   = useState(catData?.type || "allround");
+  const selType = catData?.type || "allround";
   const [readCh,    setReadCh]    = useState(null);
   const [updating,  setUpdating]  = useState(false);
   const [unlockedChs, setUnlockedChs] = useState(catData?.unlockedChs || [1]);
 
-  const bondLevel = getBondLevel(catData?.bond || 0);
+  const bondLevel  = getBondLevel(catData?.bond || 0);
   const isEquipped = equippedCat?.catId === catId;
+
+  // 即時計算能力值（基底 + 等級 + 裝備加成）
+  const catLevel   = catLevelFromXP(catData?.catXP || 0);
+  const lvBonus    = catLevelBonus(catLevel);
+  const equipBonus = calcCatEquipBonus(catData?.equip || {});
+  const catHP  = CAT_COMBAT_BASE.hp  + lvBonus.hp  + equipBonus.hpBonus;
+  const catDEF = CAT_COMBAT_BASE.def + lvBonus.def + equipBonus.defBonus;
+  const catATK = Math.round(
+    (CAT_COMBAT_BASE.atk * (TYPE_ATK_MULT[selType] || 1.0) + bondLevel)
+    + lvBonus.atk + equipBonus.atkBonus
+  );
 
   async function handleEquip() {
     setUpdating(true);
@@ -241,17 +258,6 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
     }
     onEquipChange();
     setUpdating(false);
-  }
-
-  async function handleTypeChange(type) {
-    setSelType(type);
-    if (isEquipped) {
-      await setCatType(memberId, catId, type);
-      await equipCat(memberId, catId, type);
-      onEquipChange();
-    } else {
-      await setCatType(memberId, catId, type);
-    }
   }
 
   function handleChapterRead(ch) {
@@ -315,21 +321,57 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
             <div className="text-xs text-slate-500 mt-2">一起戰鬥可增加羈絆：打怪+1 地下城+2 組隊+2 世界王+3</div>
           </div>
 
-          {/* 類型選擇 */}
+          {/* 能力值 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">選擇陪練類型</div>
-            <div className="grid grid-cols-3 gap-2">
-              {Object.values(CAT_TYPES).map(t => (
-                <button key={t.id} onClick={() => handleTypeChange(t.id)}
-                  className={`py-3 rounded-xl text-xs font-bold border transition-all active:scale-95 ${selType === t.id ? "border-opacity-80 text-white" : "border-white/10 bg-white/5 text-slate-400"}`}
-                  style={selType === t.id ? { borderColor: t.color, background: `${t.color}22`, color: t.color } : {}}>
-                  <div className="text-lg mb-0.5">{t.icon}</div>
-                  <div>{t.label}</div>
-                </button>
-              ))}
+            <div className="text-xs text-slate-400 font-bold mb-3">⚔️ 目前能力值（Lv.{catLevel}）</div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-white/5 rounded-xl py-2">
+                <div className="text-base">❤️</div>
+                <div className="text-xs font-black text-green-300">{catHP}</div>
+                <div className="text-[10px] text-slate-500">HP</div>
+              </div>
+              <div className="bg-white/5 rounded-xl py-2">
+                <div className="text-base">⚔️</div>
+                <div className="text-xs font-black text-red-300">{catATK}</div>
+                <div className="text-[10px] text-slate-500">ATK</div>
+              </div>
+              <div className="bg-white/5 rounded-xl py-2">
+                <div className="text-base">🛡️</div>
+                <div className="text-xs font-black text-blue-300">{catDEF}</div>
+                <div className="text-[10px] text-slate-500">DEF</div>
+              </div>
             </div>
-            <div className="text-xs text-slate-400 mt-2 text-center">
-              {CAT_TYPES[selType]?.desc}
+            <div className="text-[10px] text-slate-500 mt-2 text-center">
+              類型：{CAT_TYPES[selType]?.icon} {CAT_TYPES[selType]?.label}
+            </div>
+          </div>
+
+          {/* 裝備強化 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs text-slate-400 font-bold">🏹 裝備強化</div>
+              {onOpenForge && (
+                <button onClick={onOpenForge}
+                  className="text-[10px] font-bold text-amber-300 border border-amber-400/30 px-2 py-1 rounded-lg active:scale-95">
+                  🔨 前往鍛造鋪
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {CAT_EQUIP_SLOTS.map(slot => {
+                const e    = catData?.equip?.[slot.id];
+                const gIdx = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : -1;
+                const color = CAT_EQUIP_GRADE_COLORS[gIdx >= 0 ? gIdx : 0];
+                const gradeLabel = e?.grade || "普通";
+                const plusLabel  = `+${e?.plusLevel || 0}`;
+                return (
+                  <div key={slot.id} className="flex items-center gap-2 px-1 py-1 border-t border-white/5">
+                    <span className="text-sm w-5 text-center">{slot.icon}</span>
+                    <span className="text-xs text-slate-300 flex-1">{slot.label}</span>
+                    <span className="text-xs font-bold" style={{ color }}>{gradeLabel} {plusLabel}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -389,7 +431,7 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
 }
 
 // ── 主頁面 ──────────────────────────────────────────────────
-export default function CatCollection({ onBack, onOpenBook }) {
+export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
   const { profile } = useAuth();
   const [myCats,    setMyCats]    = useState({});
   const [loading,   setLoading]   = useState(true);
@@ -447,6 +489,7 @@ export default function CatCollection({ onBack, onOpenBook }) {
         memberName={memberName}
         onBack={() => setSelCat(null)}
         onEquipChange={() => setEquipped(profile?.equippedCat || null)}
+        onOpenForge={onOpenForge}
       />
     );
   }

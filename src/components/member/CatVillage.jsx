@@ -383,79 +383,100 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
       </div>
 
       {tab === "browse" ? (
-        <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+        <div>
           {listings.length === 0 ? (
             <div className="text-center py-6 text-[11px]" style={{ color: C.muted }}>目前沒有掛賣的卡片</div>
-          ) : listings.map(l => {
-            const pt = PRICE_TYPES.find(p => p.type === l.priceType);
-            const isCardExchange = l.priceType === "card";
-            const isExpanded = buyTarget?.id === l.id;
-            return (
-              <div key={l.id} className="rounded-xl px-3 py-2 flex flex-col gap-2"
-                style={{ background: l.cardBg || "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl shrink-0">{l.cardEmoji}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-black truncate" style={{ color: C.brown }}>{l.cardName}</div>
-                    <div className="text-[10px]" style={{ color: C.mid }}>{l.sellerName}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <div className="text-[10px] font-bold" style={{ color: C.brown }}>
-                      {isCardExchange ? "🃏 交換重複卡" : `${pt?.icon} ${l.priceAmount} ${pt?.label}`}
-                    </div>
-                    {isCardExchange ? (
-                      <button onClick={() => { setBuyTarget(isExpanded ? null : l); setOfferedCardId(null); }}
-                        disabled={busy}
-                        className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
-                        style={{ background: isExpanded ? C.brown : C.sage, color: "white" }}>
-                        {isExpanded ? "收起" : "交換"}
-                      </button>
-                    ) : (
-                      <button onClick={() => handleBuy(l)} disabled={busy}
-                        className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
-                        style={{ background: C.sage, color: "white" }}>購買</button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 卡片交換：選擇要提供的重複卡片 */}
-                {isCardExchange && isExpanded && (
-                  <div className="rounded-lg p-2" style={{ background: "rgba(255,255,255,0.7)", border: `1px solid ${C.border}` }}>
-                    <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>
-                      選擇你要提供的重複卡片（需持有 ≥2 張，且賣家未持有）
-                    </div>
-                    {dupCards.length === 0 ? (
-                      <div className="text-[10px] text-center py-1" style={{ color: C.muted }}>你目前沒有重複卡片</div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5 mb-2 max-h-16 overflow-y-auto">
-                        {dupCards.map(c => (
-                          <button key={c.id} onClick={() => setOfferedCardId(c.id)}
-                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold active:scale-95"
-                            style={{
-                              background: offeredCardId === c.id ? C.brown : (c.bg || "#eee"),
-                              color: offeredCardId === c.id ? "#FFF8F0" : C.brown,
-                              border: `1px solid ${offeredCardId === c.id ? C.brown : C.border}`,
-                            }}>
-                            {c.emoji} {c.name} ×{c.cnt}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <button
-                      onClick={() => handleBuy(l, offeredCardId)}
-                      disabled={!offeredCardId || busy}
-                      className="w-full py-1.5 rounded-lg text-[10px] font-bold active:scale-95"
+          ) : (
+            <>
+              {/* 卡片圖片網格 */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, maxHeight:320, overflowY:"auto" }}>
+                {listings.map(l => {
+                  const pt = PRICE_TYPES.find(p => p.type === l.priceType);
+                  const isCardExchange = l.priceType === "card";
+                  const isSelected = buyTarget?.id === l.id;
+                  return (
+                    <div key={l.id}
                       style={{
-                        background: offeredCardId ? C.sage : C.lockBd,
-                        color: offeredCardId ? "white" : C.muted,
+                        borderRadius:10,
+                        overflow:"hidden",
+                        border: `2px solid ${isSelected ? C.brown : C.border}`,
+                        background: l.cardBg || "rgba(255,255,255,0.8)",
+                        cursor:"pointer",
+                      }}
+                      onClick={() => {
+                        if (isCardExchange) { setBuyTarget(isSelected ? null : l); setOfferedCardId(null); }
+                        else { handleBuy(l); }
                       }}>
-                      {busy ? "交換中…" : offeredCardId ? `確認交換（提供 ${CAT_CARD_MAP[offeredCardId]?.emoji || ""} ${CAT_CARD_MAP[offeredCardId]?.name || offeredCardId}）` : "請先選擇要提供的卡片"}
-                    </button>
-                  </div>
-                )}
+                      {/* 卡片圖片 */}
+                      <div style={{ position:"relative", paddingTop:"140%" }}>
+                        <img
+                          src={`/cats/cat-cards/${l.cardId}.webp`}
+                          alt={l.cardName}
+                          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }}
+                          onError={e => { e.currentTarget.style.display="none"; if (e.currentTarget.nextSibling) e.currentTarget.nextSibling.style.display="flex"; }}
+                        />
+                        <div style={{ position:"absolute", inset:0, display:"none", alignItems:"center", justifyContent:"center", fontSize:28 }}>
+                          {l.cardEmoji}
+                        </div>
+                      </div>
+                      {/* 資訊列 */}
+                      <div style={{ padding:"4px 5px 5px" }}>
+                        <div style={{ fontSize:8, fontWeight:800, color:C.brown, lineHeight:1.2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{l.cardName}</div>
+                        <div style={{ fontSize:7, color:C.mid }}>{l.sellerName}</div>
+                        <div style={{ fontSize:7, fontWeight:700, color:C.brown, marginBottom:3 }}>
+                          {isCardExchange ? "🃏 換卡" : `${pt?.icon} ${l.priceAmount}`}
+                        </div>
+                        <div style={{
+                          textAlign:"center", fontSize:8, fontWeight:800,
+                          padding:"2px 0", borderRadius:5,
+                          background: isSelected ? C.brown : C.sage,
+                          color:"white",
+                        }}>
+                          {busy && isSelected ? "…" : isSelected ? "收起" : isCardExchange ? "交換" : "購買"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+
+              {/* 卡片交換展開區 */}
+              {buyTarget && (
+                <div className="mt-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.75)", border: `1px solid ${C.border}` }}>
+                  <div className="text-[10px] font-bold mb-2" style={{ color: C.mid }}>
+                    交換「{buyTarget.cardName}」— 選擇你要提供的重複卡片
+                  </div>
+                  {dupCards.length === 0 ? (
+                    <div className="text-[10px] text-center py-1" style={{ color: C.muted }}>你目前沒有重複卡片</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {dupCards.map(c => (
+                        <button key={c.id} onClick={() => setOfferedCardId(c.id)}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold active:scale-95"
+                          style={{
+                            background: offeredCardId === c.id ? C.brown : (c.bg || "#eee"),
+                            color: offeredCardId === c.id ? "#FFF8F0" : C.brown,
+                            border: `1px solid ${offeredCardId === c.id ? C.brown : C.border}`,
+                          }}>
+                          {c.emoji} {c.name} ×{c.cnt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleBuy(buyTarget, offeredCardId)}
+                    disabled={!offeredCardId || busy}
+                    className="w-full py-1.5 rounded-lg text-[10px] font-bold active:scale-95"
+                    style={{
+                      background: offeredCardId ? C.sage : C.lockBd,
+                      color: offeredCardId ? "white" : C.muted,
+                    }}>
+                    {busy ? "交換中…" : offeredCardId ? `確認交換（提供 ${CAT_CARD_MAP[offeredCardId]?.emoji || ""} ${CAT_CARD_MAP[offeredCardId]?.name || offeredCardId}）` : "請先選擇要提供的卡片"}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -1043,9 +1064,9 @@ function ForgePanel({ profile, resources }) {
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
-export default function CatVillage({ catCards, gachaCoins }) {
+export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
   const { profile } = useAuth();
-  const [tab, setTab]               = useState("village");
+  const [tab, setTab]               = useState(initialTab);
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [collecting, setCollecting] = useState(false);
   const [upgrading, setUpgrading]   = useState(false);

@@ -68,6 +68,7 @@ const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievem
 export default function MemberApp() {
   const { logout, profile } = useAuth();
   const [page, setPage]       = useState(()=>sessionStorage.getItem("member_page")||"home");
+  const [gachaInitTab, setGachaInitTab] = useState("village");
   const [selComp, setSelComp] = useState(null);
   const [scoring, setScoring] = useState(false);
   useEffect(()=>{ sessionStorage.setItem("member_page",page); },[page]);
@@ -475,12 +476,14 @@ export default function MemberApp() {
         {page==="cards"       && <CardCollection />}
         {page==="gacha"       && <CatVillage
           catCards={profile?.catCards}
-          gachaCoins={profile?.gachaCoins ?? 0} />}
+          gachaCoins={profile?.gachaCoins ?? 0}
+          initialTab={gachaInitTab}
+          key={gachaInitTab} />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
         {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
-        {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")}/>}
+        {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
         {page==="guild"       && <AdventurerGuild
