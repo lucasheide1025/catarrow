@@ -198,13 +198,7 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <div className="text-white font-black text-lg">👥 組隊今日任務</div>
-          <button onClick={copyCode} className="flex items-center gap-1.5 text-sm text-slate-400 mt-0.5 active:opacity-70">
-            <span className="font-mono tracking-widest text-indigo-300">{room.code}</span>
-            <span>{copied ? "✅" : "📋 複製邀請碼"}</span>
-          </button>
-        </div>
+        <div className="text-white font-black text-lg">👥 組隊今日任務</div>
         <button onClick={handleLeave}
           className="px-3 py-1.5 bg-slate-700 text-slate-300 text-xs font-bold rounded-lg active:scale-95">
           離開

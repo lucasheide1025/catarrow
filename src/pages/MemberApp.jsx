@@ -106,19 +106,18 @@ export default function MemberApp() {
   const [checkinBusy, setCheckinBusy] = useState(false);
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
+  const checkinPopupShownRef = useRef(false); // 每次登入重置，不用 sessionStorage
 
   // 今日報到訂閱（供浮動視窗判斷）
   useEffect(() => {
     if (!profile?.id) return;
+    checkinPopupShownRef.current = false; // 換帳號/重新登入時重置
     const unsub = subscribeMyCheckin(profile.id, c => {
       setTodayCheckin(c);
-      // 第一次拿到 null（未報到）且本 session 尚未彈過 → 彈出視窗
-      if (c === null) {
-        const shown = sessionStorage.getItem("checkin_popup_shown");
-        if (!shown) {
-          setShowCheckinPopup(true);
-          sessionStorage.setItem("checkin_popup_shown", "1");
-        }
+      // 第一次拿到 null（未報到）且本次登入尚未彈過 → 彈出視窗
+      if (c === null && !checkinPopupShownRef.current) {
+        checkinPopupShownRef.current = true;
+        setShowCheckinPopup(true);
       }
     });
     return () => unsub?.();

@@ -86,7 +86,7 @@ function pickBg(family) {
 
 export default function DungeonBattleRoom({ roomId, onExit }) {
   const { profile } = useAuth();
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catStatMult, catName: myCatName } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
   const myId = profile?.id;
   const bondSavedRef = useRef(false);
   const battleBgRef  = useRef(null);
@@ -884,7 +884,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
             {hasCat && (
               <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4, padding:"2px 6px", borderRadius:6, background:"rgba(79,70,229,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>
                 <span style={{ fontSize:11 }}>🐱</span>
-                <span style={{ fontSize:9, color:"#a5b4fc", fontWeight:700 }}>{myCatName} 光環 ×{Math.max(1.1,catStatMult).toFixed(2)}</span>
+                <span style={{ fontSize:9, color:"#a5b4fc", fontWeight:700 }}>{myCatName} 陪戰中</span>
               </div>
             )}
           </>

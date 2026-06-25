@@ -101,7 +101,8 @@ export default function AdminApp() {
   const [allMessages,     setAllMessages]     = useState([]);
   const [pendingExtList,  setPendingExtList]  = useState([]);
   const [certTasksList,   setCertTasksList]   = useState([]);
-  const [pendingCheckinN,  setPendingCheckinN]  = useState(0);
+  const [pendingCheckinN,      setPendingCheckinN]      = useState(0);
+  const [pendingCheckinAwaitN, setPendingCheckinAwaitN] = useState(0);
   const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
   const pendingMonthlyRef = useRef(0);
   const [pendingGuildN,    setPendingGuildN]    = useState(0);
@@ -252,7 +253,11 @@ export default function AdminApp() {
     const qExt = query(collection(db, "externalComps"), where("status", "==", "pending_review"));
     const u3 = onSnapshot(qExt, snap => setPendingExtList(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => setPendingExtList([]));
     const u4 = subscribePendingCertTasks(list => setCertTasksList(Array.isArray(list) ? list : []));
-    const u5 = subscribePendingCheckins(list => setPendingCheckinN(Array.isArray(list) ? list.length : 0));
+    const u5 = subscribePendingCheckins(list => {
+      const arr = Array.isArray(list) ? list : [];
+      setPendingCheckinN(arr.length);
+      setPendingCheckinAwaitN(arr.filter(c => c.status === "pending").length);
+    });
     const u6 = subscribePendingMonthlyRequests(list => {
       const n = list.length;
       if (n > pendingMonthlyRef.current) sfxNotify();
@@ -262,6 +267,14 @@ export default function AdminApp() {
     const u7 = subscribeGuildSubmissions(list => setPendingGuildN(Array.isArray(list) ? list.length : 0));
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); u7 && u7(); };
   }, []);
+
+  // 待審核報到時，每 12 秒播音效提醒（工作電腦保持開啟用）
+  useEffect(() => {
+    if (pendingCheckinAwaitN <= 0) return;
+    sfxNotify();
+    const t = setInterval(() => sfxNotify(), 12000);
+    return () => clearInterval(t);
+  }, [pendingCheckinAwaitN]);
 
   // 世界王登場：教練也要看到
   useEffect(() => {

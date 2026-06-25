@@ -8,8 +8,13 @@ import {
   subscribeVillageMarketConfig,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
-import { subscribeMyCats } from "../../lib/catDb";
-import { CATS, getBondLevel } from "../../lib/catData";
+import { subscribeMyCats, upgradeCatEquip } from "../../lib/catDb";
+import {
+  CATS, getBondLevel,
+  CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS,
+  CAT_EQUIP_MAX_PLUS, calcForgeCost,
+} from "../../lib/catData";
+import { catLevelFromXP } from "../../lib/catLevel";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
@@ -119,7 +124,7 @@ function PanoramaView({ villageLevel }) {
 }
 
 // ── 資源採集列 ───────────────────────────────────────────────
-function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec }) {
+function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec, collectedResult }) {
   const arrowdew = (resources?.arrowdew || 0);
   const hasPending = Object.values(pending || {}).some(v => v > 0);
   const pendingArrow = pending?.arrowdew || 0;
@@ -131,36 +136,74 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
     return h > 0 ? `${h}h${m}m` : `${m}m`;
   }, [nextCollectSec]);
 
+  const collectedItems = useMemo(() => {
+    if (!collectedResult) return [];
+    return Object.entries(collectedResult).map(([key, amt]) => {
+      if (key === 'gachaCoins') return { key, name: '扭蛋代幣', tier: null, amt };
+      if (key.includes('_t')) {
+        const [res, t] = key.split('_t');
+        return { key, name: RESOURCE_NAMES[res] || res, tier: `T${t}`, amt };
+      }
+      return { key, name: RESOURCE_NAMES[key] || key, tier: null, amt };
+    });
+  }, [collectedResult]);
+
   return (
-    <div className="px-4 py-3 flex items-center gap-3"
-      style={{ background: "rgba(255,255,255,0.6)", borderBottom: `1px solid ${C.border}` }}>
-      <div className="flex items-center gap-2 flex-1">
-        <img src="/ui/village/resource-arrowdew.webp" alt="箭露"
-          style={{ width: 22, height: 22, mixBlendMode: "multiply", objectFit: "contain" }}
-          onError={e => { e.target.style.display="none"; }} />
-        <div>
-          <div className="font-black text-sm" style={{ color: C.brown }}>{arrowdew.toLocaleString()}</div>
-          <div className="text-[10px]" style={{ color: C.muted }}>箭露</div>
+    <>
+      <div className="px-4 py-3 flex items-center gap-3"
+        style={{ background: "rgba(255,255,255,0.6)", borderBottom: `1px solid ${C.border}` }}>
+        <div className="flex items-center gap-2 flex-1">
+          <img src="/ui/village/resource-arrowdew.webp" alt="箭露"
+            style={{ width: 22, height: 22, mixBlendMode: "multiply", objectFit: "contain" }}
+            onError={e => { e.target.style.display="none"; }} />
+          <div>
+            <div className="font-black text-sm" style={{ color: C.brown }}>{arrowdew.toLocaleString()}</div>
+            <div className="text-[10px]" style={{ color: C.muted }}>箭露</div>
+          </div>
+          {hasPending && pendingArrow > 0 && (
+            <div className="text-xs font-bold" style={{ color: C.sage }}>+{pendingArrow.toLocaleString()}</div>
+          )}
         </div>
-        {hasPending && pendingArrow > 0 && (
-          <div className="text-xs font-bold" style={{ color: C.sage }}>+{pendingArrow.toLocaleString()}</div>
-        )}
+        <button
+          onClick={onCollect}
+          disabled={collecting || !hasPending}
+          className="px-4 py-2 rounded-xl font-black text-sm transition-all active:scale-95"
+          style={{
+            background: hasPending
+              ? "linear-gradient(135deg,#7CBF70,#5A9E50)"
+              : C.lockBd,
+            color: hasPending ? "white" : C.muted,
+            cursor: hasPending ? "pointer" : "default",
+            boxShadow: hasPending ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
+          }}>
+          {collecting ? "採集中…" : hasPending ? "✦ 採集" : (timeStr ? `${timeStr}後` : "已採集")}
+        </button>
       </div>
-      <button
-        onClick={onCollect}
-        disabled={collecting || !hasPending}
-        className="px-4 py-2 rounded-xl font-black text-sm transition-all active:scale-95"
-        style={{
-          background: hasPending
-            ? "linear-gradient(135deg,#7CBF70,#5A9E50)"
-            : C.lockBd,
-          color: hasPending ? "white" : C.muted,
-          cursor: hasPending ? "pointer" : "default",
-          boxShadow: hasPending ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
+      {collectedItems.length > 0 && (
+        <div style={{
+          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(50,28,10,0.93)", borderRadius: 18, padding: "12px 18px",
+          color: "white", zIndex: 9999, maxWidth: "92vw", minWidth: 200,
+          boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
         }}>
-        {collecting ? "採集中…" : hasPending ? "✦ 採集" : (timeStr ? `${timeStr}後` : "已採集")}
-      </button>
-    </div>
+          <div className="text-[11px] font-black mb-2 text-center" style={{ color: "#FFD580", letterSpacing: 1 }}>
+            ✦ 採集成功！
+          </div>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {collectedItems.map(({ key, name, tier, amt }) => (
+              <div key={key} style={{
+                background: "rgba(255,255,255,0.10)", borderRadius: 10,
+                padding: "4px 10px", display: "flex", alignItems: "center", gap: 5,
+              }}>
+                <span className="text-[12px] font-bold">{name}</span>
+                {tier && <span className="text-[9px] font-bold" style={{ color: "#FFD580" }}>{tier}</span>}
+                <span className="text-[13px] font-black" style={{ color: "#7CBF70" }}>+{amt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -276,6 +319,9 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
   const [selCardId, setSelCardId]   = useState(null);
   const [priceType, setPriceType]   = useState("arrowdew");
   const [priceAmount, setPriceAmount] = useState(50);
+  // 卡片交換流程：選擇要提供的卡片
+  const [buyTarget, setBuyTarget]     = useState(null);
+  const [offeredCardId, setOfferedCardId] = useState(null);
 
   useEffect(() => {
     const unsub = subscribeCardMarket(all => {
@@ -301,12 +347,14 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
     finally { setBusy(false); }
   }
 
-  async function handleBuy(listing) {
+  async function handleBuy(listing, offered = null) {
     if (busy) return;
     setBusy(true);
     try {
-      await buyCardListing(memberId, memberName, listing);
+      await buyCardListing(memberId, memberName, listing, offered);
       sfxSuccess();
+      setBuyTarget(null);
+      setOfferedCardId(null);
     } catch (e) { alert(e.message); }
     finally { setBusy(false); }
   }
@@ -340,20 +388,71 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
             <div className="text-center py-6 text-[11px]" style={{ color: C.muted }}>目前沒有掛賣的卡片</div>
           ) : listings.map(l => {
             const pt = PRICE_TYPES.find(p => p.type === l.priceType);
+            const isCardExchange = l.priceType === "card";
+            const isExpanded = buyTarget?.id === l.id;
             return (
-              <div key={l.id} className="flex items-center gap-2 rounded-xl px-3 py-2"
+              <div key={l.id} className="rounded-xl px-3 py-2 flex flex-col gap-2"
                 style={{ background: l.cardBg || "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
-                <span className="text-2xl shrink-0">{l.cardEmoji}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-black truncate" style={{ color: C.brown }}>{l.cardName}</div>
-                  <div className="text-[10px]" style={{ color: C.mid }}>{l.sellerName}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl shrink-0">{l.cardEmoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-black truncate" style={{ color: C.brown }}>{l.cardName}</div>
+                    <div className="text-[10px]" style={{ color: C.mid }}>{l.sellerName}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="text-[10px] font-bold" style={{ color: C.brown }}>
+                      {isCardExchange ? "🃏 交換重複卡" : `${pt?.icon} ${l.priceAmount} ${pt?.label}`}
+                    </div>
+                    {isCardExchange ? (
+                      <button onClick={() => { setBuyTarget(isExpanded ? null : l); setOfferedCardId(null); }}
+                        disabled={busy}
+                        className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
+                        style={{ background: isExpanded ? C.brown : C.sage, color: "white" }}>
+                        {isExpanded ? "收起" : "交換"}
+                      </button>
+                    ) : (
+                      <button onClick={() => handleBuy(l)} disabled={busy}
+                        className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
+                        style={{ background: C.sage, color: "white" }}>購買</button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <div className="text-[10px] font-bold" style={{ color: C.brown }}>{pt?.icon} {l.priceAmount} {pt?.label}</div>
-                  <button onClick={() => handleBuy(l)} disabled={busy}
-                    className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
-                    style={{ background: C.sage, color: "white" }}>購買</button>
-                </div>
+
+                {/* 卡片交換：選擇要提供的重複卡片 */}
+                {isCardExchange && isExpanded && (
+                  <div className="rounded-lg p-2" style={{ background: "rgba(255,255,255,0.7)", border: `1px solid ${C.border}` }}>
+                    <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>
+                      選擇你要提供的重複卡片（需持有 ≥2 張，且賣家未持有）
+                    </div>
+                    {dupCards.length === 0 ? (
+                      <div className="text-[10px] text-center py-1" style={{ color: C.muted }}>你目前沒有重複卡片</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 mb-2 max-h-16 overflow-y-auto">
+                        {dupCards.map(c => (
+                          <button key={c.id} onClick={() => setOfferedCardId(c.id)}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold active:scale-95"
+                            style={{
+                              background: offeredCardId === c.id ? C.brown : (c.bg || "#eee"),
+                              color: offeredCardId === c.id ? "#FFF8F0" : C.brown,
+                              border: `1px solid ${offeredCardId === c.id ? C.brown : C.border}`,
+                            }}>
+                            {c.emoji} {c.name} ×{c.cnt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleBuy(l, offeredCardId)}
+                      disabled={!offeredCardId || busy}
+                      className="w-full py-1.5 rounded-lg text-[10px] font-bold active:scale-95"
+                      style={{
+                        background: offeredCardId ? C.sage : C.lockBd,
+                        color: offeredCardId ? "white" : C.muted,
+                      }}>
+                      {busy ? "交換中…" : offeredCardId ? `確認交換（提供 ${CAT_CARD_MAP[offeredCardId]?.emoji || ""} ${CAT_CARD_MAP[offeredCardId]?.name || offeredCardId}）` : "請先選擇要提供的卡片"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -793,6 +892,153 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
   );
 }
 
+// ── 資源鍵顯示名稱 ───────────────────────────────────────────
+function formatResKey(key) {
+  const BASE = { ore:"礦物",meat:"動物肉",driedfish:"小魚乾",melon:"瓜瓜",fish:"鮮魚",potion:"貓薄荷藥水",fur:"貓毛",arrowdew:"箭露" };
+  const parts = key.split("_t");
+  return parts[1] ? `${BASE[parts[0]] || parts[0]} T${parts[1]}` : (BASE[key] || key);
+}
+
+// ── 鍛造面板 ─────────────────────────────────────────────────
+function ForgePanel({ profile, resources }) {
+  const [forging, setForging] = useState(false);
+  const [forgeMsg, setForgeMsg] = useState(null);
+
+  const equippedCat = profile?.equippedCat;
+  if (!equippedCat?.catId) {
+    return (
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:C.mid, textAlign:"center", padding:32 }}>
+        <div>
+          <div style={{ fontSize:40, marginBottom:12 }}>🐱</div>
+          <div style={{ fontSize:14, fontWeight:"bold" }}>請先在「我的貓」裝備一隻貓咪</div>
+          <div style={{ fontSize:12, marginTop:4 }}>才能使用鍛造功能</div>
+        </div>
+      </div>
+    );
+  }
+
+  const { catId, name, equip = {} } = equippedCat;
+  const catXP   = equippedCat.catXP || 0;
+  const catLevel = catLevelFromXP(catXP);
+
+  async function handleForge(slotId) {
+    if (forging || !profile?.id) return;
+    const slotData = equip[slotId] || { grade: "普通", plusLevel: 0 };
+    const cost = calcForgeCost(slotId, slotData.grade, slotData.plusLevel);
+    if (!cost) return;
+
+    for (const [key, amount] of Object.entries(cost)) {
+      if ((resources[key] || 0) < amount) {
+        setForgeMsg(`材料不足：${formatResKey(key)} (需 ${amount})`);
+        setTimeout(() => setForgeMsg(null), 2500);
+        return;
+      }
+    }
+
+    const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(slotData.grade);
+    let newGrade    = slotData.grade;
+    let newPlusLevel = slotData.plusLevel;
+    if (slotData.plusLevel < CAT_EQUIP_MAX_PLUS) {
+      newPlusLevel = slotData.plusLevel + 1;
+    } else {
+      newGrade    = CAT_EQUIP_GRADE_NAMES[gIdx + 1];
+      newPlusLevel = 0;
+    }
+
+    setForging(true);
+    const res = await upgradeCatEquip(profile.id, catId, slotId, newGrade, newPlusLevel, cost);
+    setForging(false);
+
+    if (res.ok) {
+      sfxSuccess();
+      setForgeMsg(newPlusLevel === 0
+        ? `✨ 裝備升階！→ ${newGrade}`
+        : `🔨 強化成功！+${newPlusLevel}`
+      );
+    } else {
+      setForgeMsg("鍛造失敗，請再試");
+    }
+    setTimeout(() => setForgeMsg(null), 2500);
+  }
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"12px 14px" }}>
+      {/* 標頭 */}
+      <div style={{ textAlign:"center", marginBottom:14, padding:"10px 0" }}>
+        <div style={{ fontWeight:"bold", color:C.brown, fontSize:16 }}>🐱 {name} 的鍛造間</div>
+        <div style={{ color:C.mid, fontSize:11, marginTop:2 }}>貓貓 Lv.{catLevel} · 累積 {catXP} XP</div>
+      </div>
+
+      {/* 提示訊息 */}
+      {forgeMsg && (
+        <div style={{ background:"rgba(255,255,255,0.92)", border:`1px solid ${C.border}`, borderRadius:10,
+          padding:"8px 14px", marginBottom:12, textAlign:"center", color:C.brown, fontWeight:"bold", fontSize:13 }}>
+          {forgeMsg}
+        </div>
+      )}
+
+      {/* 裝備格 */}
+      {CAT_EQUIP_SLOTS.map(slot => {
+        const slotData = equip[slot.id] || { grade: "普通", plusLevel: 0 };
+        const gIdx     = Math.max(0, CAT_EQUIP_GRADE_NAMES.indexOf(slotData.grade));
+        const cost     = calcForgeCost(slot.id, slotData.grade, slotData.plusLevel);
+        const canAfford = cost ? Object.entries(cost).every(([k,v]) => (resources[k]||0) >= v) : false;
+        const isMaxed  = !cost;
+        const bonus    = (gIdx * 5 + 1) + (slotData.plusLevel || 0);
+        const statLabel = slot.stat === "hp"
+          ? `HP +${bonus * 5}`
+          : slot.stat === "atk" ? `ATK +${bonus}` : `DEF +${bonus}`;
+        const nextLabel = isMaxed ? "極限"
+          : slotData.plusLevel < CAT_EQUIP_MAX_PLUS
+            ? `強化 +${slotData.plusLevel + 1}`
+            : `升階 → ${CAT_EQUIP_GRADE_NAMES[gIdx + 1]}`;
+
+        return (
+          <div key={slot.id} style={{
+            background:C.card, borderRadius:12, padding:"12px 14px", marginBottom:9,
+            border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10,
+          }}>
+            <div style={{ fontSize:26, width:38, textAlign:"center", flexShrink:0 }}>{slot.icon}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontWeight:"bold", color:C.brown, fontSize:13 }}>{slot.label}</div>
+              <div style={{ fontSize:12, color:CAT_EQUIP_GRADE_COLORS[gIdx] || C.mid, fontWeight:"bold" }}>
+                {slotData.grade} +{slotData.plusLevel}
+              </div>
+              <div style={{ fontSize:11, color:C.mid }}>{statLabel}</div>
+              {cost && (
+                <div style={{ fontSize:10, color:C.muted, marginTop:3 }}>
+                  {Object.entries(cost).map(([k,v]) => {
+                    const have = Math.floor(resources[k] || 0);
+                    const ok   = have >= v;
+                    return (
+                      <span key={k} style={{ color: ok ? C.sage : "#ef4444", marginRight:6 }}>
+                        {formatResKey(k)} ×{v}({have})
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <button
+              disabled={isMaxed || forging || !canAfford}
+              onClick={() => handleForge(slot.id)}
+              style={{
+                padding:"7px 11px", borderRadius:8, fontSize:11, fontWeight:"bold", flexShrink:0,
+                background: isMaxed ? "#e5e7eb" : canAfford ? C.sage : "#e5e7eb",
+                color: isMaxed || !canAfford ? C.muted : "#fff",
+                border:"none", cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
+                opacity: forging ? 0.7 : 1,
+              }}
+            >
+              {forging ? "…" : nextLabel}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── 主元件 ───────────────────────────────────────────────────
 export default function CatVillage({ catCards, gachaCoins }) {
   const { profile } = useAuth();
@@ -801,6 +1047,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
   const [collecting, setCollecting] = useState(false);
   const [upgrading, setUpgrading]   = useState(false);
   const [localVillage, setLocalVillage] = useState(null);
+  const [collectedResult, setCollectedResult] = useState(null);
 
   const village    = localVillage || profile?.village || DEFAULT_VILLAGE;
   const buildings  = village.buildings || DEFAULT_VILLAGE.buildings;
@@ -862,6 +1109,10 @@ export default function CatVillage({ catCards, gachaCoins }) {
           lastCollectedAt: { toMillis: () => Date.now() },
         }));
       }
+      if (res.collected && Object.keys(res.collected).length > 0) {
+        setCollectedResult(res.collected);
+        setTimeout(() => setCollectedResult(null), 3500);
+      }
     } catch (e) {
       alert("採集失敗：" + e.message);
     } finally {
@@ -896,7 +1147,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
 
       {/* 頁籤 */}
       <div className="flex shrink-0" style={{ background: "#FDF6EC", borderBottom: `1px solid ${C.border}` }}>
-        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["cardmarket","🛒 市集"]].map(([id, label]) => (
+        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["forge","🔨 鍛造"],["cardmarket","🛒 市集"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className="flex-1 py-3 text-sm font-black transition-colors"
             style={{
@@ -917,6 +1168,13 @@ export default function CatVillage({ catCards, gachaCoins }) {
           profile={profile}
           village={localVillage || profile?.village}
           onBack={() => setTab("village")}
+        />
+      )}
+
+      {tab === "forge" && (
+        <ForgePanel
+          profile={profile}
+          resources={resources}
         />
       )}
 
@@ -942,6 +1200,7 @@ export default function CatVillage({ catCards, gachaCoins }) {
             onCollect={handleCollect}
             collecting={collecting}
             nextCollectSec={nextCollectSec}
+            collectedResult={collectedResult}
           />
 
           <ResourceRow resources={resources} gachaCoins={gachaCoins} />

@@ -102,9 +102,12 @@ export async function equipCat(memberId, catId, type) {
     const cat = CATS[catId];
     if (!cat) return { ok: false, reason: "貓咪不存在" };
     const catSnap = await getDoc(catRef(memberId, catId));
-    const bond = catSnap.exists() ? (catSnap.data().bond || 0) : 0;
+    const data  = catSnap.exists() ? catSnap.data() : {};
+    const bond  = data.bond  || 0;
+    const catXP = data.catXP || 0;
+    const equip = data.equip || {};
     await updateDoc(doc(db, "members", memberId), {
-      equippedCat: { catId, name: cat.name, type, color: cat.color, bond },
+      equippedCat: { catId, name: cat.name, type, color: cat.color, bond, catXP, equip },
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
@@ -156,6 +159,50 @@ export async function addBlessing(memberId, memberName, catId, text) {
         createdAt: new Date().toISOString(),
       }),
     });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// ── 增加貓咪 XP（戰鬥結束後呼叫）────────────────────────────
+export async function addCatXP(memberId, catId, amount) {
+  if (!amount || amount <= 0) return { ok: true };
+  try {
+    await updateDoc(catRef(memberId, catId), { catXP: increment(amount) });
+    const memberSnap = await getDoc(doc(db, "members", memberId));
+    if (memberSnap.data()?.equippedCat?.catId === catId) {
+      const newXP = (memberSnap.data()?.equippedCat?.catXP || 0) + amount;
+      await updateDoc(doc(db, "members", memberId), { "equippedCat.catXP": newXP });
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// ── 鍛造貓咪裝備 ─────────────────────────────────────────────
+// deductMap: { [resourceKey]: amount }（正數，函式內轉成 increment(-n)）
+export async function upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap = {}) {
+  try {
+    const memberRef  = doc(db, "members", memberId);
+    const equipField = `equip.${slotId}`;
+    const equipValue = { grade: newGrade, plusLevel: newPlusLevel };
+
+    // 扣除村莊資源
+    const resUpdates = {};
+    for (const [key, amount] of Object.entries(deductMap)) {
+      if (amount > 0) resUpdates[`village.resources.${key}`] = increment(-amount);
+    }
+    if (Object.keys(resUpdates).length > 0) {
+      await updateDoc(memberRef, resUpdates);
+    }
+
+    // 更新貓咪裝備
+    await updateDoc(catRef(memberId, catId), { [equipField]: equipValue });
+
+    // 若此貓正在裝備中，同步 equippedCat.equip
+    const memberSnap = await getDoc(memberRef);
+    if (memberSnap.data()?.equippedCat?.catId === catId) {
+      await updateDoc(memberRef, { [`equippedCat.equip.${slotId}`]: equipValue });
+    }
+
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }

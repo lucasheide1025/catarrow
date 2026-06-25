@@ -157,6 +157,40 @@ calcBadgePoints(member,type) / certLevelStyle(level,variant)
 fmtDate/fmtDT/today/thisYear/formatArcherNo/calcEquipBonus
 ```
 
+### catLevel.js（新 2026-06-25）
+```js
+CAT_MAX_LEVEL=200 / CAT_XP_PER_LEVEL=20
+catLevelFromXP(xp) / catXPProgress(xp) / catLevelBonus(lv)→{hp,atk,def}
+CAT_TIER_XP = { common:5,rare:10,elite:20,fierce:30,boss:50,mythic:80 }
+// XP 在 MonsterBattle endBattle("win") 時呼叫 saveXP(CAT_TIER_XP[tier])
+```
+
+### catData.js 新增（2026-06-25）
+```js
+CAT_SKILL_GROUPS = { daming/gege/meimei:"heal", niuniu/haji/baobao:"atk", youyou/xiaoan/diandian:"def" }
+CAT_EQUIP_SLOTS  = 5格 [bow(atk/ore), arrow(atk/meat), armor(def/ore), herbBag(def/driedfish), potion(hp/potion)]
+CAT_EQUIP_GRADE_NAMES = ["普通","稀有","精英","史詩","傳說","神話"]
+CAT_EQUIP_MAX_PLUS = 5
+calcCatEquipBonus(equip)→{ atkBonus, defBonus, hpBonus }
+calcForgeCost(slotId, grade, plusLevel)→{ [resourceKey]:amount } | null（已極限）
+calcCatSkillChance(catLevel, bondLv) → 0–0.25
+calcCatSkillEffect(skillGroup, catLevel, bondLv) → { healed } | { extraMult } | { reduction, blockFull }
+```
+
+### catDb.js 新增（2026-06-25）
+```js
+addCatXP(memberId, catId, amount)        // 戰鬥後加貓咪 XP，同步 equippedCat.catXP
+upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap)  // 鍛造，扣村莊資源
+// equipCat 已更新：同步 catXP + equip 到 equippedCat 快取
+```
+
+### useCatCompanion.js 回傳（更新 2026-06-25）
+```js
+// 新增：catLevel, catXP, skillGroup, triggerCatSkill, saveXP
+// 戰鬥數值：catHP/catATK/catDEF 現在包含等級加成 + 裝備加成
+// triggerCatSkill() → { triggered:false } | { triggered:true, skillGroup, healed/extraMult/reduction/blockFull }
+```
+
 ---
 
 ## 🖼️ 圖片路徑

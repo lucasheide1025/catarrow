@@ -7,10 +7,8 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
-  resetPartyRoom, sendPartyCheer, addBotToPartyRoom, removeBotFromPartyRoom,
-  clearPartyProcessing,
+  resetPartyRoom, sendPartyCheer, clearPartyProcessing,
 } from "../../lib/partyDb";
-import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcEquippedBonus } from "../../lib/monsterCards";
@@ -136,7 +134,7 @@ function pickBg(family) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catStatMult } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
@@ -244,7 +242,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
-    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
+    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
@@ -279,7 +277,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWaitingRef.current = true;
-    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
+    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "");
   }, [room?.status, myId]); // eslint-disable-line
 
@@ -289,7 +287,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWrittenRef.current = true;
-    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), catStatMult);
+    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), 1.0);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "");
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
@@ -311,15 +309,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     if (aliveIds.length === 0) return;
-    // 未 ready 的機器人：立即幫牠送出箭分，等下一次 snapshot 再檢查
-    const botsUnready = aliveIds.filter(id => members[id].isBot && !members[id].ready);
-    if (botsUnready.length > 0) {
-      botsUnready.forEach(botId => {
-        const arrows = generateBotArrows(members[botId].difficulty || "normal");
-        submitArrows(roomId, botId, arrows).catch(() => {});
-      });
-      return;
-    }
     if (!aliveIds.every(id => members[id].ready)) return;
     if (retryCountRef.current >= 5) return; // 同回合失敗 5 次，停止重試（網路不順給更多機會）
     roundGuardRef.current = currentRound; // 立即鎖住，同步生效，不等 re-render
@@ -666,7 +655,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setCopied(false), 1500);
   }
   function handleRedrawMonsters() {
-    const stats = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
+    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
     setSetupMonster(null);
@@ -674,7 +663,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   const tierInfo = room.monster ? TIER_LABEL[room.monster.tier] : null;
   const famInfo  = room.monster ? FAMILIES[room.monster.family] : null;
-  const myStats  = getArcherStats(profile, [], getMyCardBonus(), catStatMult);
+  const myStats  = getArcherStats(profile, [], getMyCardBonus(), 1.0);
   const myEquip  = equipSummary(profile);
 
   // ── 等待/大廳畫面 ──────────────────────────────────────────
@@ -682,13 +671,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto">
         <div className="flex items-center justify-between">
-          <div>
-            <div className="text-white font-black text-lg">⚔️ 組隊打怪</div>
-            <button onClick={copyCode} className="text-sm flex items-center gap-1 mt-0.5 active:opacity-70">
-              <span className="font-mono tracking-widest text-indigo-300">{room.code}</span>
-              <span>{copied ? "✅" : "📋"}</span>
-            </button>
-          </div>
+          <div className="text-white font-black text-lg">⚔️ 組隊打怪</div>
           <button onClick={handleLeave} className="px-3 py-1.5 bg-slate-700 text-slate-300 text-xs font-bold rounded-lg">離開</button>
         </div>
 
@@ -725,36 +708,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           })}
           {memberList.length < 8 && (
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
-          )}
-          {isHost && (
-            <div className="flex flex-col gap-1 pt-1">
-              <div className="text-[10px] text-slate-500 font-bold">
-                🤖 加入AI機器人（{memberList.length}/8）
-              </div>
-              <div className="flex gap-2">
-                {Object.entries(BOT_STATS).map(([diff, s]) => (
-                  <button key={diff} onClick={async () => {
-                    if (memberList.length >= 8) return;
-                    const id = makeBotId();
-                    await addBotToPartyRoom(roomId, id, randomBotName(diff), diff, s);
-                  }}
-                    disabled={memberList.length >= 8}
-                    className="flex-1 py-1.5 text-xs font-black rounded-xl bg-slate-600/70 text-slate-200 border border-slate-500/50 active:scale-95 transition-transform disabled:opacity-30 disabled:cursor-not-allowed">
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {isHost && memberList.some(m => m.isBot) && (
-            <button onClick={async () => {
-              for (const m of memberList.filter(b => b.isBot)) {
-                await removeBotFromPartyRoom(roomId, m.id);
-              }
-            }}
-              className="text-xs text-red-400 text-center py-1 active:opacity-70">
-              🗑️ 移除全部機器人
-            </button>
           )}
         </div>
 
@@ -885,10 +838,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
             <button onClick={handleStart}
-              disabled={!setupMonster || starting || (memberList.length < 2 && !memberList.some(m => m.isBot)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
+              disabled={!setupMonster || starting || memberList.length < 2 || (partyBattleLeft !== null && partyBattleLeft <= 0)}
               className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
               {starting ? "開始中…"
-                : memberList.length < 2 && !memberList.some(m => m.isBot) ? `⚔️ 等待更多玩家（${memberList.length}/2）`
+                : memberList.length < 2 ? `⚔️ 等待更多玩家（${memberList.length}/2）`
                 : `⚔️ 開始戰鬥（${memberList.length}人）`}
             </button>
           </div>

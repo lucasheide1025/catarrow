@@ -3,6 +3,40 @@
 
 ---
 
+## 2026-06-25（貓貓等級+裝備+技能系統）
+
+### 舊 catStatMult 被動加成移除（設計簡化）
+**為什麼**：TYPE × 羈絆等級的被動加成（射手 ATK/DEF 百分比）與新的 ID 群組主動技能重疊，且 catStatMult 雖有計算但從未真正套用到戰鬥傷害。簡化為「TYPE 只決定基礎 ATK 倍率，羈絆等級只影響技能觸發機率與效果幅度」。
+**改了什麼**：
+- `catData.js` CAT_TYPES skills 全部改為搞笑貓咪行為敘事（無任何數字加成）
+- `useCatCompanion.js` 移除 `getCatStatMult` import 和 `catStatMult` return
+- `DungeonBattleRoom.jsx`：移除 catStatMult，光環顯示改為「陪戰中」
+- `DuelRoom.jsx`：`applyPlayerCatToRoom` 固定傳 1.0
+- `PartyBattleRoom.jsx`：`getArcherStats` catStatMult 參數全換成 1.0
+**踩坑提醒**：catData.js 的 `getCatStatMult` / `getCatBattleBonus` 函式保留（以防 UI 有用），但已不被 hook 呼叫。
+
+### 貓貓等級 / 裝備 / 技能 三系統實作
+**為什麼**：從輔助型升為「真正陪伴玩家的戰鬥夥伴」，與射手等級系統平行。
+
+**改了什麼**：
+- `src/lib/catLevel.js`（新）：200級、XP公式與射手相同，`CAT_TIER_XP` 戰鬥後給 XP
+- `catData.js` 新增：`CAT_SKILL_GROUPS`（前三補血/中三攻擊/後三防禦）、`CAT_EQUIP_SLOTS`（5格）、`calcCatEquipBonus`、`calcForgeCost`、`calcCatSkillChance/Effect`
+- `catDb.js` 新增：`addCatXP`、`upgradeCatEquip`（同步 equippedCat 快取）；`equipCat` 更新同步 `catXP+equip`
+- `useCatCompanion.js` 重寫：戰鬥數值整合等級+裝備加成；新增 `triggerCatSkill()`、`saveXP()`
+- `MonsterBattle.jsx`：
+  - ATK技能：貓咪攻擊後追加 XX%~翻倍傷害
+  - HEAL技能：回復射手 HP
+  - DEF技能：`catDefShieldRef` 保護下回合計數器攻擊（減傷/完全格擋）
+  - 勝利後呼叫 `saveXP(CAT_TIER_XP[monster.tier])`
+- `CatVillage.jsx` 新增「🔨 鍛造」TAB：`ForgePanel` 顯示 5 格裝備、費用（村莊材料）、升強化/升階按鈕
+
+**踩坑提醒**：
+- 計數器攻擊用 `let cdmg` 才能被貓盾修改（原本是 const）
+- `equippedCat.equip` 可能是 `undefined`（舊資料），預設 `{}` → 所有格位視為「普通 +0」
+- `calcForgeCost` 回傳 null 代表已達神話+5（極限）
+
+---
+
 ## 2026-06-25
 
 ### 報到系統改為教練審核制（刪除日常任務）

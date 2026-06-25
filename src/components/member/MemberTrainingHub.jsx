@@ -5,7 +5,7 @@ import DailyQuest from "./DailyQuest";
 const TINT = "linear-gradient(rgba(255,255,255,0.12),rgba(255,255,255,0.12))";
 
 export default function MemberTrainingHub({ onPageChange, onJoinParty }) {
-  const [showCheckin, setShowCheckin] = useState(false);
+  const [showCheckin, setShowCheckin] = useState(true);
 
   return (
     <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>

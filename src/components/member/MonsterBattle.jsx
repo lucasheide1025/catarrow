@@ -13,6 +13,7 @@ import {
 } from "../../lib/db";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
+import { CAT_TIER_XP } from "../../lib/catLevel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
@@ -139,7 +140,7 @@ function pickBg(family) {
 export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null }) {
   const { profile } = useAuth();
   const checkinActive = useCheckinActive(profile?.id);
-  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond } = useCatCompanion();
+  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill } = useCatCompanion();
   const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
@@ -187,6 +188,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
+  const catDefShieldRef = useRef(null); // { reduction, blockFull } — 貓貓防禦技能保護下回合
   const [processing, setProcessing]     = useState(false);
   const [targetMode, setTargetMode]     = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
@@ -577,7 +579,19 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           const critChance=(mode==="veteran")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.5):(mode==="student")?Math.max(0,(DISTANCE_START-curDist)/DISTANCE_START*0.3):0;
           const isCrit=Math.random()<critChance;
           const headStunned=headHitCount>0&&battleMode==="zombie";
-          const cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:bSt?.def||10, headStunned, isCrit });
+          let cdmg=calcCounterDamage({ monsterATK:monster.atk, archerDEF:bSt?.def||10, headStunned, isCrit });
+          // 貓貓防禦技能盾
+          const catShield = catDefShieldRef.current;
+          if (catShield) {
+            catDefShieldRef.current = null;
+            if (catShield.blockFull) {
+              cdmg = 0;
+              addLog({ type:"event_good", text:`🐱 ${catName} 飛撲而上，完全擋下了反擊！✨` });
+            } else {
+              cdmg = Math.round(cdmg * (1 - catShield.reduction));
+              addLog({ type:"event_good", text:`🐱 ${catName} 護住了你！減傷 ${Math.round(catShield.reduction*100)}%` });
+            }
+          }
           const counterTxt=isCrit
             ? `${monster.icon} 爆擊！${monster.name} 猛烈反擊！受到 ${cdmg} 傷害`
             : headStunned?`${monster.icon} 被打暈，反擊減半，受到 ${cdmg} 傷害`
@@ -655,7 +669,54 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const hpPct = Math.round(curMonHP / monster.hp * 100);
     const hpTag = hpPct <= 10 ? "⚠️ 殘血！" : hpPct <= 30 ? "🩸 危險！" : "";
     addLog({ type:"total", text:`回合 ${round} 結算：${roundTotal}分　${monster.icon} ${monster.name} 剩 HP：${curMonHP} ${hpTag}` });
-    await delay(1400);
+    await delay(900);
+
+    // ── 貓貓攻擊段（玩家回合結束後）────────────────────────────
+    if (hasCat && curMonHP > 0) {
+      let catDmg = calcCatRoundDamage(monster);
+      // 技能觸發
+      const catSkill = triggerCatSkill();
+      if (catSkill.triggered && catSkill.skillGroup === "atk") {
+        const bonus = Math.round(catDmg * catSkill.extraMult);
+        catDmg += bonus;
+      }
+      if (catDmg > 0) {
+        curMonHP = Math.max(0, curMonHP - catDmg);
+        setMonsterHP(curMonHP);
+        const skillNote = (catSkill.triggered && catSkill.skillGroup === "atk")
+          ? ` ✨特技爆發！傷害 ×${(1 + catSkill.extraMult).toFixed(1)}` : "";
+        addLog({ type:"hit_organ", text:`🐱 ${catName} 出擊！6箭齊射，合計傷害 ${catDmg} 💥${skillNote}` });
+        sfxArrowHit();
+        setAnimHit(true); setTimeout(() => setAnimHit(false), 600);
+        await delay(900);
+        if (curMonHP <= 0) {
+          setAllArrows(prev => [...prev, ...arrows.map(arrowLabelToVal)]);
+          setRoundScores(prev => [...prev, { round, scores: arrows.map(arrowLabelToVal), total: roundTotal }]);
+          await endBattle("win", curArchHP, curMonHP, arrows.map(arrowLabelToVal));
+          setProcessing(false); return;
+        }
+      }
+      // heal / def 技能
+      if (catSkill.triggered && catSkill.skillGroup === "heal") {
+        const maxHP = bSt?.hp || 200;
+        const heal  = Math.min(catSkill.healed, maxHP - curArchHP);
+        if (heal > 0) {
+          curArchHP = Math.min(maxHP, curArchHP + heal);
+          setArcherHP(curArchHP);
+          addLog({ type:"event_good", text:`🐱 ${catName} 舔了你的傷口！回復 ${heal} HP 💚` });
+          await delay(600);
+        }
+      }
+      if (catSkill.triggered && catSkill.skillGroup === "def") {
+        catDefShieldRef.current = { reduction: catSkill.reduction, blockFull: catSkill.blockFull };
+        const desc = catSkill.blockFull
+          ? `🐱 ${catName} 擺好了防禦姿勢！下次反擊將被完全格擋 🛡️`
+          : `🐱 ${catName} 豎起護毛！下次反擊減傷 ${Math.round(catSkill.reduction * 100)}% 🛡️`;
+        addLog({ type:"event_good", text: desc });
+        await delay(600);
+      }
+    }
+    await delay(500);
     setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
     } catch(err) {
       // 回合中途發生錯誤，完整重設回輸入狀態
@@ -883,7 +944,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         });
       }
 
-      if (!isGuest) saveBond("monster");
+      if (!isGuest) {
+        saveBond("monster");
+        saveXP(CAT_TIER_XP[monster.tier] || 5).catch(() => {});
+      }
       // 冒險者 XP（依怪物階級）
       if (!isGuest && profile?.id) {
         const xp = ADVENTURER_XP_PER_TIER[monster.tier] || 15;

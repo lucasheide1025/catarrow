@@ -1,8 +1,21 @@
 // src/hooks/useCatCompanion.js — 貓貓陪練共用 hook
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAuth } from "./useAuth";
-import { addCatBond } from "../lib/catDb";
-import { getBondLevel, getCatStatMult } from "../lib/catData";
+import { addCatBond, addCatXP } from "../lib/catDb";
+import {
+  getBondLevel,
+  CAT_SKILL_GROUPS, calcCatSkillChance, calcCatSkillEffect,
+  calcCatEquipBonus,
+} from "../lib/catData";
+import { calcDamage } from "../lib/monsterData";
+import { catLevelFromXP, catLevelBonus } from "../lib/catLevel";
+
+// ── 貓貓戰鬥基礎數值 ─────────────────────────────────────────
+export const CAT_COMBAT_BASE = { hp: 200, atk: 10, def: 10 };
+
+// 類型 ATK 修正
+const TYPE_ATK_MULT  = { attack: 1.2, defense: 0.9, allround: 1.05 };
+const ARROWS_PER_CAT = 6;
 
 const CAT_MESSAGES = {
   attack: [
@@ -27,12 +40,64 @@ export function useCatCompanion() {
   const [catMsg, setCatMsg] = useState(null);
 
   const equippedCat = profile?.equippedCat;
-  const catId   = equippedCat?.catId   || null;
-  const catName = equippedCat?.name    || "";
-  const catType = equippedCat?.type    || "allround";
-  const hasCat  = !!catId;
+  const catId    = equippedCat?.catId  || null;
+  const catName  = equippedCat?.name   || "";
+  const catType  = equippedCat?.type   || "allround";
+  const hasCat   = !!catId;
 
-  // 25% 機率觸發（打怪/地下城 每回合）
+  // 羈絆等級
+  const bondLv = hasCat ? getBondLevel(equippedCat?.bond || 0) : 0;
+
+  // 貓貓等級（從 equippedCat.catXP 計算）
+  const catXP    = hasCat ? (equippedCat?.catXP || 0) : 0;
+  const catLevel = hasCat ? catLevelFromXP(catXP) : 1;
+  const lvBonus  = catLevelBonus(catLevel);
+
+  // 裝備加成
+  const equipBonus = useMemo(() =>
+    hasCat ? calcCatEquipBonus(equippedCat?.equip || {}) : { atkBonus: 0, defBonus: 0, hpBonus: 0 },
+    [hasCat, equippedCat?.equip]
+  );
+
+  // 技能分組（決定哪種技能會觸發）
+  const skillGroup = hasCat ? (CAT_SKILL_GROUPS[catId] || null) : null;
+
+  // ── 戰鬥數值（基底 + 等級加成 + 裝備加成）───────────────────
+  const catHP  = hasCat
+    ? CAT_COMBAT_BASE.hp  + lvBonus.hp  + equipBonus.hpBonus
+    : CAT_COMBAT_BASE.hp;
+  const catDEF = hasCat
+    ? CAT_COMBAT_BASE.def + lvBonus.def + equipBonus.defBonus
+    : CAT_COMBAT_BASE.def;
+  const catATK = hasCat
+    ? Math.round((CAT_COMBAT_BASE.atk * (TYPE_ATK_MULT[catType] || 1.0) + bondLv)
+        + lvBonus.atk + equipBonus.atkBonus)
+    : 0;
+
+  // ── 貓貓攻擊：6箭合一，回傳總傷害 ───────────────────────────
+  const calcCatRoundDamage = useCallback((monster) => {
+    if (!hasCat || !monster) return 0;
+    let total = 0;
+    for (let i = 0; i < ARROWS_PER_CAT; i++) {
+      const score    = Math.floor(Math.random() * 7) + 4;
+      const partMult = score >= 10 ? 2.0 : score >= 8 ? 1.4 : 1.0;
+      const dmg = calcDamage({ score, archerATK: catATK, monsterDEF: monster.def || 5, partMult });
+      total += Math.max(1, dmg);
+    }
+    return total;
+  }, [hasCat, catATK]);
+
+  // ── 貓貓特技觸發（每回合 AFTER 攻擊後呼叫）──────────────────
+  // 回傳 { triggered: false } 或 { triggered: true, skillGroup, ...effectData }
+  const triggerCatSkill = useCallback(() => {
+    if (!hasCat || !skillGroup) return { triggered: false };
+    const chance = calcCatSkillChance(catLevel, bondLv);
+    if (Math.random() >= chance)   return { triggered: false };
+    const effect = calcCatSkillEffect(skillGroup, catLevel, bondLv);
+    return { triggered: true, skillGroup, ...effect };
+  }, [hasCat, skillGroup, catLevel, bondLv]);
+
+  // ── 輔助功能 ─────────────────────────────────────────────────
   const triggerCatAction = useCallback(() => {
     if (!hasCat || Math.random() >= 0.25) return;
     const pool = CAT_MESSAGES[catType] || CAT_MESSAGES.allround;
@@ -40,7 +105,6 @@ export function useCatCompanion() {
     setCatMsg(fn(catName));
   }, [hasCat, catType, catName]);
 
-  // 進場必定顯示（決鬥/組隊 進入時呼叫一次）
   const showCatEntry = useCallback(() => {
     if (!hasCat) return;
     const pool = CAT_MESSAGES[catType] || CAT_MESSAGES.allround;
@@ -50,15 +114,22 @@ export function useCatCompanion() {
 
   const clearCatMsg = useCallback(() => setCatMsg(null), []);
 
-  // 戰鬥結束後增加羈絆
   const saveBond = useCallback(async (source = "monster") => {
     if (!profile?.id || !catId) return;
     await addCatBond(profile.id, catId, source).catch(() => {});
   }, [profile?.id, catId]);
 
-  // 貓貓光環：依羈絆等級提升射手基礎值
-  const bondLv = hasCat ? getBondLevel(equippedCat?.bond || 0) : 0;
-  const catStatMult = hasCat ? Math.max(1.0, getCatStatMult(catType, bondLv)) : 1.0;
+  const saveXP = useCallback(async (amount) => {
+    if (!profile?.id || !catId || !amount) return;
+    await addCatXP(profile.id, catId, amount).catch(() => {});
+  }, [profile?.id, catId]);
 
-  return { equippedCat, catId, catName, catType, hasCat, catStatMult, catMsg, clearCatMsg, triggerCatAction, showCatEntry, saveBond };
+  return {
+    equippedCat, catId, catName, catType, hasCat,
+    catLevel, catXP, bondLv, skillGroup,
+    catHP, catATK, catDEF,
+    calcCatRoundDamage, triggerCatSkill,
+    catMsg, clearCatMsg, triggerCatAction, showCatEntry,
+    saveBond, saveXP,
+  };
 }
