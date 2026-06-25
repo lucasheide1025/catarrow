@@ -376,7 +376,7 @@ export default function MemberApp() {
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-            potionDex={potionDex} cardData={cardData} />}
+            potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}

@@ -231,7 +231,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const logEndRef = useRef(null);
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
-  const cardCollRef = useRef({ cards: {}, equipped: [] });
+  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
+  const cardCollRef = useRef({ cards: {}, equipped: [] }); // 供 startBattle 同步讀取
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // 讀取今日已有箭數（用於里程碑計算）
@@ -357,7 +358,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   useEffect(() => {
     if (isGuest || !profile?.id) return;
-    return subscribeCardCollection(profile.id, data => { cardCollRef.current = data; });
+    return subscribeCardCollection(profile.id, data => {
+      setCardColl(data);
+      cardCollRef.current = data;
+    });
   }, [profile?.id, isGuest]); // eslint-disable-line
 
   // ✅ 射手數值就緒後，依戰力匹配6隻怪物
@@ -698,9 +702,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     }
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
-    // 怪物卡片裝備加成
+    // 怪物卡片裝備加成（優先用 ref 避免 closure stale 問題）
     const cardData = cardCollRef.current;
-    const equipped = (cardData.equipped || []).map(id => cardData.cards?.[id]).filter(Boolean);
+    const equippedIds = cardData.equipped || cardColl.equipped || [];
+    const cardMap = cardData.cards || cardColl.cards || {};
+    const equipped = equippedIds.map(id => cardMap[id]).filter(Boolean);
     const cardBonus = calcEquippedBonus(equipped);
     // 射手等級加成
     const lvBon = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
@@ -1042,11 +1048,16 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             <div className="flex gap-2 text-xs flex-wrap">
               {(() => {
                 const lvBonus = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+                const equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
+                const cardBonus = isGuest ? { hp:0, atk:0, def:0 } : calcEquippedBonus(equipped);
                 return (
                   <>
-                    <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp + lvBonus.hp}</span>
-                    <span className="bg-white/15 px-2 py-0.5 rounded-full">⚔️ {archerStats.atk + lvBonus.atk}</span>
-                    <span className="bg-white/15 px-2 py-0.5 rounded-full">🛡️ {archerStats.def + lvBonus.def}</span>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp + lvBonus.hp + cardBonus.hp}</span>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">⚔️ {archerStats.atk + lvBonus.atk + cardBonus.atk}</span>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">🛡️ {archerStats.def + lvBonus.def + cardBonus.def}</span>
+                    {!isGuest && (cardBonus.hp + cardBonus.atk + cardBonus.def) > 0 && (
+                      <span className="bg-purple-500/30 px-2 py-0.5 rounded-full text-purple-200">🃏 卡牌+{cardBonus.hp+cardBonus.atk+cardBonus.def}</span>
+                    )}
                   </>
                 );
               })()}

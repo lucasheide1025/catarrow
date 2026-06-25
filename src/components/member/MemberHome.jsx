@@ -6,7 +6,9 @@ import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
-import { archerLevelFromXP, archerXPProgress, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
+import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
+import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcArcherStats } from "../../lib/monsterData";
 import { Card, ST, Spinner, BadgePip } from "../shared/UI";
 import ShareCard from "./ShareCard";
 
@@ -84,7 +86,7 @@ export default function MemberHome({
   certification = null,
   dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
   duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
-  potionDex = {}, cardData = { cards:{}, equipped:[] }
+  potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0
 }) {
   const { profile } = useAuth();
   const [certRecords, setCertRecords]     = useState([]);
@@ -407,25 +409,60 @@ export default function MemberHome({
       {(() => {
         const xp = profile?.archerXP || 0;
         const { level, current, needed, pct } = archerXPProgress(xp);
-        const bonus = (level - 1);
+        const lvBonus = archerLevelBonus(level);
+        const equipped = (cardData.equipped || []).map(id => cardData.cards?.[id]).filter(Boolean);
+        const cardBonus = calcEquippedBonus(equipped);
+        const archerStats = calcArcherStats({ member: profile, certification, certRecords, dexStats: computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats }) });
+        const totalHP  = archerStats.hp  + lvBonus.hp  + cardBonus.hp;
+        const totalATK = archerStats.atk + lvBonus.atk + cardBonus.atk;
+        const totalDEF = archerStats.def + lvBonus.def + cardBonus.def;
+        const arrowdew  = profile?.village?.resources?.arrowdew || 0;
+        const coins     = profile?.coins || 0;
+        const gachaCoins = profile?.gachaCoins || 0;
         return (
           <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+            {/* 等級標題列 */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
               <div>
                 <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", fontWeight:700 }}>⚔️ 射手等級</div>
                 <div style={{ fontSize:22, fontWeight:900, color:"#f472b6" }}>Lv. {level} <span style={{ fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/ {MAX_ARCHER_LEVEL}</span></div>
               </div>
-              <div style={{ display:"flex", gap:10, fontSize:12, color:"rgba(255,255,255,0.7)" }}>
-                <span>❤️ +{bonus * 5}</span>
-                <span>⚔️ +{bonus}</span>
-                <span>🛡️ +{bonus}</span>
+              {/* 實際數值 */}
+              <div style={{ display:"flex", gap:8, fontSize:12 }}>
+                <span style={{ color:"#f87171", fontWeight:700 }}>❤️{totalHP}</span>
+                <span style={{ color:"#fb923c", fontWeight:700 }}>⚔️{totalATK}</span>
+                <span style={{ color:"#60a5fa", fontWeight:700 }}>🛡️{totalDEF}</span>
               </div>
             </div>
+            {/* XP 進度條 */}
             <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:6, overflow:"hidden" }}>
               <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#ec4899,#a855f7)", borderRadius:6, transition:"width 0.4s" }} />
             </div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:4, textAlign:"right" }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:3, textAlign:"right" }}>
               {level >= MAX_ARCHER_LEVEL ? "已滿等" : `${current} / ${needed} XP`}
+            </div>
+            {/* 資源列 */}
+            <div style={{ display:"flex", gap:10, marginTop:10, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(251,191,36,0.12)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>🪙</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#fbbf24" }}>{coins.toLocaleString()}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>金幣</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(96,165,250,0.12)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>💧</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#60a5fa" }}>{arrowdew.toLocaleString()}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>箭露</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(167,139,250,0.12)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>🎰</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#a78bfa" }}>{gachaCoins.toLocaleString()}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>轉蛋幣</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(134,239,172,0.12)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>🏹</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#86efac" }}>{todayArrows}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>今日箭數</span>
+              </div>
             </div>
           </Card>
         );
