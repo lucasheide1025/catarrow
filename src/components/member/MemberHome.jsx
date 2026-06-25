@@ -91,7 +91,7 @@ export default function MemberHome({
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
   const [showShare, setShowShare]         = useState(false);
-  const [loading, setLoading]             = useState(true);
+  const [loading, setLoading]             = useState(false);
   const [cardTheme, setCardTheme]         = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
   // 月卡
@@ -104,7 +104,7 @@ export default function MemberHome({
   useEffect(() => {
     if (!profile?.id) return;
     checkExpireMonthlyCard(profile.id).catch(() => {});
-    getMemberResults(profile.id).then(r => { setResults(r); setLoading(false); });
+    getMemberResults(profile.id).then(r => setResults(r)).catch(() => {});
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
@@ -130,11 +130,14 @@ export default function MemberHome({
   }
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
-  if (loading) return <Spinner />;
 
   async function submitCardRequest() {
     setCardBusy(true); setCardMsg("");
-    const res = await submitMonthlyCardRequest(profile.id, profile.nickname || profile.name, cardHours);
+    const hasPending = monthlyReqs.some(r => r.status === "pending");
+    const res = await submitMonthlyCardRequest(
+      profile.id, profile.nickname || profile.name, cardHours,
+      profile?.monthlyCard || null, hasPending
+    );
     if (res.ok) { setCardMsg("✅ 已送出，等待教練審核"); }
     else { setCardMsg("❌ " + res.reason); }
     setCardBusy(false);

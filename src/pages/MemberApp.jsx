@@ -5,7 +5,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
-  subscribeActiveGuildQuests, subscribePracticeLogs } from "../lib/db";
+  subscribeActiveGuildQuests, subscribeTodayPracticeLogs } from "../lib/db";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -103,14 +103,13 @@ export default function MemberApp() {
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
 
-  // 今日練箭數全域訂閱（含所有來源）
+  // 今日練箭數全域訂閱（只讀今日，減少 Firestore 資料量）
   useEffect(() => {
     if (!profile?.id) return;
     const todayStr = new Date().toISOString().slice(0, 10);
-    return subscribePracticeLogs(profile.id, logs => {
-      const count = logs
-        .filter(l => l.date === todayStr)
-        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
+    return subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
+      const count = logs.reduce((s, l) =>
+        s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
       setTodayArrowsGlobal(count);
     });
   }, [profile?.id]); // eslint-disable-line

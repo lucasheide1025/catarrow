@@ -147,6 +147,21 @@ export function subscribePracticeLogs(memberId, callback) {
   });
 }
 
+// 只訂閱今日練習紀錄（用於 header 練箭數計數，避免讀取全部歷史）
+export function subscribeTodayPracticeLogs(memberId, todayStr, callback) {
+  return onSnapshot(
+    query(collection(db, C.practiceLogs),
+      where("memberId", "==", memberId),
+      where("date", "==", todayStr)
+    ),
+    snap => {
+      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(logs);
+    },
+    () => callback([])
+  );
+}
+
 export async function addPracticeLog(memberId, data, operatorId) {
   const cleanedData = JSON.parse(JSON.stringify(data));
   if (cleanedData.equipment && typeof cleanedData.equipment === "object") cleanedData.equipment = cleanedData.equipment.label || cleanedData.equipment.category || "未指定裝備";
@@ -2364,14 +2379,13 @@ export function subscribeMonthlyCardLogs(memberId, callback) {
 }
 
 // 射手申請使用月卡（1或2小時）→ 送後台審核
-export async function submitMonthlyCardRequest(memberId, memberName, hours) {
+// clientCard: profile.monthlyCard — 從 client 傳入，避免 getDoc
+// hasPending: 從 subscribeMyMonthlyRequests 的現有資料判斷
+export async function submitMonthlyCardRequest(memberId, memberName, hours, clientCard = null, hasPending = false) {
   if (!memberId || ![1, 2].includes(hours)) return { ok: false, reason: "參數錯誤" };
   try {
-    const q = query(collection(db, C_MONTHLY), where("memberId", "==", memberId), where("status", "==", "pending"));
-    const snap = await getDocs(q);
-    if (!snap.empty) return { ok: false, reason: "已有待審核申請，請等待教練處理" };
-    const memSnap = await getDoc(doc(db, C.members, memberId));
-    const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
+    if (hasPending) return { ok: false, reason: "已有待審核申請，請等待教練處理" };
+    const card = clientCard;
     if (!card?.active || card.sessions <= 0) return { ok: false, reason: "月卡無效或次數不足" };
     await addDoc(collection(db, C_MONTHLY), { memberId, memberName, hours, status: "pending", createdAt: serverTimestamp() });
     return { ok: true };
@@ -2679,14 +2693,11 @@ export async function unequipSlot(memberId, slotId) {
 
 // 升級槽位：+1 plusLevel；滿 5 → 升一品級並重置
 // 回傳 { ok, upgraded, newGrade, newPlusLevel, reason }
-export async function upgradeEquipSlot(memberId, slotId) {
+// clientData: { equip, coins, matItems } — 從 client 訂閱資料傳入，避免 getDoc 讀取
+export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
   if (!memberId || !slotId) return { ok: false, reason: "參數錯誤" };
   try {
-    const memRef  = doc(db, C.members, memberId);
-    const memSnap = await getDoc(memRef);
-    if (!memSnap.exists()) return { ok: false, reason: "找不到會員" };
-    const data  = memSnap.data();
-    const equip = data.rpgEquip?.[slotId];
+    const equip = clientData.equip;
     if (!equip?.itemId) return { ok: false, reason: "該槽位尚未裝備" };
 
     const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === equip.grade);
@@ -2698,15 +2709,15 @@ export async function upgradeEquipSlot(memberId, slotId) {
     const cost = EQUIP_UPGRADE_COST[equip.grade];
     if (!cost) return { ok: false, reason: "找不到升級費用設定" };
 
+    const coins    = clientData.coins ?? 0;
+    const matItems = clientData.matItems ?? {};
+
     // 檢查金幣
-    if ((data.coins || 0) < cost.gold) {
-      return { ok: false, reason: `金幣不足（需 ${cost.gold}，現有 ${data.coins || 0}）` };
+    if (coins < cost.gold) {
+      return { ok: false, reason: `金幣不足（需 ${cost.gold}，現有 ${coins}）` };
     }
 
     // 檢查材料庫存
-    const matRef  = doc(db, C_MATERIALS, memberId);
-    const matSnap = await getDoc(matRef);
-    const matItems = matSnap.exists() ? (matSnap.data().items || {}) : {};
     for (const req of cost.materials) {
       if ((matItems[req.id] || 0) < req.count) {
         return { ok: false, reason: `材料不足（需 ${req.id} ×${req.count}）` };
@@ -2715,21 +2726,6 @@ export async function upgradeEquipSlot(memberId, slotId) {
     if (cost.keyItem && (matItems[cost.keyItem.id] || 0) < cost.keyItem.count) {
       return { ok: false, reason: `缺少關鍵材料：${cost.keyItem.note}` };
     }
-
-    // 扣材料
-    const matUpdates = { updatedAt: serverTimestamp() };
-    for (const req of cost.materials) {
-      matUpdates[`items.${req.id}`] = increment(-req.count);
-    }
-    if (cost.keyItem) {
-      matUpdates[`items.${cost.keyItem.id}`] = increment(-cost.keyItem.count);
-    }
-    await updateDoc(matRef, matUpdates).catch(() =>
-      setDoc(matRef, matUpdates, { merge: true })
-    );
-
-    // 扣金幣
-    await updateDoc(memRef, { coins: increment(-cost.gold) });
 
     // 計算新等級
     let newPlusLevel = (equip.plusLevel || 0) + 1;
@@ -2741,11 +2737,28 @@ export async function upgradeEquipSlot(memberId, slotId) {
       upgraded = true;
     }
 
-    await updateDoc(memRef, {
-      [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
-      [`rpgEquip.${slotId}.grade`]:     newGrade,
-      updatedAt: serverTimestamp(),
-    });
+    const memRef = doc(db, C.members, memberId);
+    const matRef = doc(db, C_MATERIALS, memberId);
+
+    // 扣材料
+    const matUpdates = { updatedAt: serverTimestamp() };
+    for (const req of cost.materials) {
+      matUpdates[`items.${req.id}`] = increment(-req.count);
+    }
+    if (cost.keyItem) {
+      matUpdates[`items.${cost.keyItem.id}`] = increment(-cost.keyItem.count);
+    }
+
+    // 材料 + 會員（金幣＋裝備）兩個文件同時寫入，減少序列等待
+    await Promise.all([
+      updateDoc(matRef, matUpdates).catch(() => setDoc(matRef, matUpdates, { merge: true })),
+      updateDoc(memRef, {
+        coins: increment(-cost.gold),
+        [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
+        [`rpgEquip.${slotId}.grade`]:     newGrade,
+        updatedAt: serverTimestamp(),
+      }),
+    ]);
 
     return { ok: true, upgraded, newGrade, newPlusLevel };
   } catch (e) {

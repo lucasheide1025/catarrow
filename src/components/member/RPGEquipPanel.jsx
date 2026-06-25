@@ -367,7 +367,11 @@ export default function RPGEquipPanel({ onGoShop }) {
     if (!activeSlot || !profile?.id || upgrading) return;
     setUpgrading(true);
     setUpgradeErr("");
-    const result = await upgradeEquipSlot(profile.id, activeSlot.id);
+    const result = await upgradeEquipSlot(profile.id, activeSlot.id, {
+      equip:    equipment[activeSlot.id],
+      coins:    profile.coins || 0,
+      matItems: matInv,
+    });
     setUpgrading(false);
     if (result.ok) {
       const upgraded = result.upgraded;
