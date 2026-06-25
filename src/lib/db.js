@@ -2924,6 +2924,13 @@ export async function addArrowdew(memberId, amount) {
   });
 }
 
+export async function addArcherXP(memberId, amount) {
+  if (!memberId || !amount || amount <= 0) return;
+  await updateDoc(doc(db, C.members, memberId), {
+    archerXP: increment(Math.round(amount)),
+  });
+}
+
 // costs = [{ resource, tier, count }, ...]
 export async function exchangeMaterialsForChest(memberId, chestType, costs) {
   const snap = await getDoc(doc(db, C.members, memberId));

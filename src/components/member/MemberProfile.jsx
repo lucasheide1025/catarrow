@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { updateMember, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
+import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, XP_PER_LEVEL } from "../../lib/archerLevel";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
@@ -244,6 +245,40 @@ export default function MemberProfile({
           </div>
         )}
       </Card>
+
+      {/* 射手等級 */}
+      {(() => {
+        const xp = profile?.archerXP || 0;
+        const { level, current, needed, pct } = archerXPProgress(xp);
+        const bonus = archerLevelBonus(level);
+        const totalXPToMax = (MAX_ARCHER_LEVEL - 1) * XP_PER_LEVEL;
+        return (
+          <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
+            <ST>⚔️ 射手等級</ST>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+              <div>
+                <div style={{ fontSize:26, fontWeight:900, color:"#f472b6" }}>Lv. {level}</div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>/ {MAX_ARCHER_LEVEL} 級 · 已累積 {xp.toLocaleString()} XP</div>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:4, textAlign:"right", fontSize:12 }}>
+                <span style={{ color:"#86efac" }}>❤️ HP +{bonus.hp}</span>
+                <span style={{ color:"#fca5a5" }}>⚔️ ATK +{bonus.atk}</span>
+                <span style={{ color:"#93c5fd" }}>🛡️ DEF +{bonus.def}</span>
+              </div>
+            </div>
+            <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:8, overflow:"hidden", marginBottom:4 }}>
+              <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#ec4899,#a855f7)", borderRadius:6, transition:"width 0.4s" }} />
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", display:"flex", justifyContent:"space-between" }}>
+              {level >= MAX_ARCHER_LEVEL
+                ? <span>已達滿等 🎉</span>
+                : <span>本級進度：{current} / {needed} XP</span>
+              }
+              <span>整體 {Math.round(xp / totalXPToMax * 100)}%</span>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* 徽章 */}
       <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>

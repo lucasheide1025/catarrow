@@ -2,11 +2,12 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor } from "../../lib/dungeonDb";
-import { subscribePracticeLogs } from "../../lib/db";
+import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_LENGTHS } from "../../lib/dungeonData";
 import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
-import { calcEquippedBonus } from "../../lib/monsterCards"; // [] 傳入，卡牌 collection 未訂閱故忽略
+import { calcEquippedBonus } from "../../lib/monsterCards";
+import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { getCatStatMult, getBondLevel } from "../../lib/catData";
 
 const MODES = [
@@ -41,12 +42,14 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
+  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
   useEffect(() => {
     if (!myId) return;
     const unsubLogs = subscribePracticeLogs(myId, logs =>
       setDungeonLogs(logs.filter(l => l.source === "dungeon"))
     );
-    return () => unsubLogs?.();
+    const unsubCards = subscribeCardCollection(myId, setCardColl);
+    return () => { unsubLogs?.(); unsubCards?.(); };
   }, [myId]);
 
   useEffect(() => {
@@ -60,7 +63,9 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const todayStr = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,"0")}-${String(_d.getDate()).padStart(2,"0")}`;
   const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
-  const _equip   = calcEquippedBonus([]);
+  const _equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
+  const _equip   = calcEquippedBonus(_equipped);
+  const _lvBon   = archerLevelBonus(archerLevelFromXP(profile?.archerXP || 0));
   const myCatId   = profile?.equippedCat?.catId  || null;
   const myCatName = profile?.equippedCat?.name   || "";
   const myCatType = profile?.equippedCat?.type   || "allround";
@@ -68,10 +73,10 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const catMult   = myCatId
     ? Math.max(1.1, getCatStatMult(myCatType, getBondLevel(myCatBond)))
     : 1.0;
-  const myHP  = Math.round(((_base.hp  || 0) + (_equip.hp  || 0)) * catMult);
+  const myHP  = Math.round(((_base.hp  || 0) + (_equip.hp  || 0) + _lvBon.hp)  * catMult);
   const myMaxHP = myHP;
-  const myATK = Math.round(((_base.atk || 0) + (_equip.atk || 0)) * catMult);
-  const myDEF = Math.round(((_base.def || 0) + (_equip.def || 0)) * catMult);
+  const myATK = Math.round(((_base.atk || 0) + (_equip.atk || 0) + _lvBon.atk) * catMult);
+  const myDEF = Math.round(((_base.def || 0) + (_equip.def || 0) + _lvBon.def) * catMult);
 
   async function handleCreate() {
     setLoading(true); setErr("");

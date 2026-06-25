@@ -9,7 +9,10 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addFragments, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
+  subscribeCardCollection, addArcherXP,
 } from "../../lib/db";
+import { calcEquippedBonus } from "../../lib/monsterCards";
+import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
@@ -228,6 +231,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const logEndRef = useRef(null);
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
+  const cardCollRef = useRef({ cards: {}, equipped: [] });
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // 讀取今日已有箭數（用於里程碑計算）
@@ -350,6 +354,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const stats = calcArcherStats({ member:profile, certification, certRecords, dexStats:ds });
     setArcherStats(stats);
   }, [profile, certification, certRecords, dexGrants, isGuest]); // eslint-disable-line
+
+  useEffect(() => {
+    if (isGuest || !profile?.id) return;
+    return subscribeCardCollection(profile.id, data => { cardCollRef.current = data; });
+  }, [profile?.id, isGuest]); // eslint-disable-line
 
   // ✅ 射手數值就緒後，依戰力匹配6隻怪物
   useEffect(() => {
@@ -689,10 +698,16 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     }
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
+    // 怪物卡片裝備加成
+    const cardData = cardCollRef.current;
+    const equipped = (cardData.equipped || []).map(id => cardData.cards?.[id]).filter(Boolean);
+    const cardBonus = calcEquippedBonus(equipped);
+    // 射手等級加成
+    const lvBon = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
     const bStats = {
-      hp:  Math.round(baseStats.hp  * buffs.hpMult),
-      atk: Math.round(baseStats.atk * buffs.atkMult),
-      def: baseStats.def,
+      hp:  Math.round((baseStats.hp  + cardBonus.hp  + lvBon.hp)  * buffs.hpMult),
+      atk: Math.round((baseStats.atk + cardBonus.atk + lvBon.atk) * buffs.atkMult),
+      def: baseStats.def + cardBonus.def + lvBon.def,
     };
     setBattleStats(bStats);
     // 投擲型藥劑：立即對怪物扣血＋麻痺效果（開戰前）
@@ -871,6 +886,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const xp = ADVENTURER_XP_PER_TIER[monster.tier] || 15;
         setGainedXP(xp);
         addAdventurerXP(profile.id, xp).catch(() => {});
+        // 射手等級 XP
+        addArcherXP(profile.id, MONSTER_TIER_XP[monster.tier] || 5).catch(() => {});
       }
       // 任務擊殺回報
       if (questContext?.monsterId === monster.id && onKillForQuest) onKillForQuest(monster.id);
@@ -1016,13 +1033,23 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         <div className="rounded-2xl p-4 text-white" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs tracking-widest text-purple-200 font-black">⚔️ 打怪模式</div>
-            <div className="text-xs text-purple-200">戰力 <span className="font-black text-white text-sm">{power}</span></div>
+            <div className="flex items-center gap-2 text-xs text-purple-200">
+              {!isGuest && <span style={{ color:"#f9a8d4", fontWeight:900 }}>⚔️ Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>}
+              <span>戰力 <span className="font-black text-white text-sm">{power}</span></span>
+            </div>
           </div>
           {archerStats && (
             <div className="flex gap-2 text-xs flex-wrap">
-              <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp}</span>
-              <span className="bg-white/15 px-2 py-0.5 rounded-full">⚔️ {archerStats.atk}</span>
-              <span className="bg-white/15 px-2 py-0.5 rounded-full">🛡️ {archerStats.def}</span>
+              {(() => {
+                const lvBonus = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+                return (
+                  <>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp + lvBonus.hp}</span>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">⚔️ {archerStats.atk + lvBonus.atk}</span>
+                    <span className="bg-white/15 px-2 py-0.5 rounded-full">🛡️ {archerStats.def + lvBonus.def}</span>
+                  </>
+                );
+              })()}
               {!isGuest && dailyLeft!==null && (
                 <span className={`px-2 py-0.5 rounded-full font-bold ${dailyLeft>0?"bg-emerald-500/80":"bg-red-500/80"} text-white`}>
                   今日剩 {dailyLeft}/{dailyMax} 次

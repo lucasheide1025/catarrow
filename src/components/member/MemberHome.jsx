@@ -6,6 +6,7 @@ import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
+import { archerLevelFromXP, archerXPProgress, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
 import { Card, ST, Spinner, BadgePip } from "../shared/UI";
 import ShareCard from "./ShareCard";
 
@@ -398,6 +399,34 @@ export default function MemberHome({
           </div>
         </div>
       </div>
+
+      {/* 射手等級 */}
+      {(() => {
+        const xp = profile?.archerXP || 0;
+        const { level, current, needed, pct } = archerXPProgress(xp);
+        const bonus = (level - 1);
+        return (
+          <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", fontWeight:700 }}>⚔️ 射手等級</div>
+                <div style={{ fontSize:22, fontWeight:900, color:"#f472b6" }}>Lv. {level} <span style={{ fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/ {MAX_ARCHER_LEVEL}</span></div>
+              </div>
+              <div style={{ display:"flex", gap:10, fontSize:12, color:"rgba(255,255,255,0.7)" }}>
+                <span>❤️ +{bonus * 5}</span>
+                <span>⚔️ +{bonus}</span>
+                <span>🛡️ +{bonus}</span>
+              </div>
+            </div>
+            <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:6, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#ec4899,#a855f7)", borderRadius:6, transition:"width 0.4s" }} />
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:4, textAlign:"right" }}>
+              {level >= MAX_ARCHER_LEVEL ? "已滿等" : `${current} / ${needed} XP`}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* 年度檢定 */}
       <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>

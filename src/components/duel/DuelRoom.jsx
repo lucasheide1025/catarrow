@@ -15,7 +15,8 @@ import {
   skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
 import { generateBotArrows } from "../../lib/botUtils";
-import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP } from "../../lib/db";
+import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "../member/ArrowMilestonePopup";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
@@ -540,6 +541,9 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           totalArrows: myArrowCount,
         }, profile.id).catch(() => {});
         addArrowdew(profile.id, myArrowCount).catch(() => {});
+        // 射手等級 XP（勝利 50、失敗/平局 20）
+        const duelXP = outcome === "win" ? DUEL_WIN_XP : DUEL_LOSE_XP;
+        addArcherXP(profile.id, duelXP).catch(() => {});
         if (checkinActive) {
           const milestones = getMilestonesReached(0, myArrowCount);
           if (milestones.length > 0) {

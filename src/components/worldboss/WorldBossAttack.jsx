@@ -3,7 +3,8 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP } from "../../lib/db";
+import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
@@ -190,14 +191,23 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     return () => unsub?.();
   }, [profile?.id]); // eslint-disable-line
 
+  useEffect(() => {
+    if (isGuest || !profile?.id) return;
+    return subscribeCardCollection(profile.id, setCardColl);
+  }, [profile?.id, isGuest]); // eslint-disable-line
+
   const archerBase = useMemo(() =>
     calcArcherStats({ member: profile, certification, certRecords, dexStats: null }),
   [profile, certification, certRecords]);
 
-  const _equip  = useMemo(() => calcEquippedBonus([]), []);
-  const baseATK = (archerBase.atk || 0) + (_equip.atk || 0);
-  const baseDEF = (archerBase.def || 0) + (_equip.def || 0);
-  const baseHP  = (archerBase.hp  || 0) + (_equip.hp  || 0);
+  const cardEquip = useMemo(() => {
+    const equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
+    return calcEquippedBonus(equipped);
+  }, [cardColl]);
+  const lvBon   = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+  const baseATK = (archerBase.atk || 0) + (cardEquip.atk || 0) + lvBon.atk;
+  const baseDEF = (archerBase.def || 0) + (cardEquip.def || 0) + lvBon.def;
+  const baseHP  = (archerBase.hp  || 0) + (cardEquip.hp  || 0) + lvBon.hp;
 
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
@@ -282,6 +292,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
+  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
@@ -536,6 +547,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
         }, myId).catch(() => {});
+        // 射手等級 XP（boss 基礎 50 × 2 倍率，每回合 100，上限 300）
+        const bossXP = Math.min(WORLD_BOSS_XP_CAP, rounds.length * Math.round(50 * WORLD_BOSS_XP_MULT));
+        addArcherXP(myId, bossXP).catch(() => {});
       }
       onComplete?.(res);
     }

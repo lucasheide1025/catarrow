@@ -11,7 +11,8 @@ import {
   clearPartyProcessing,
 } from "../../lib/partyDb";
 import { generateBotArrows, BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP } from "../../lib/db";
+import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
@@ -37,12 +38,13 @@ const MODE_OPTIONS = [
   { id:"veteran", label:"老手", icon:"🏹" },
 ];
 
-// 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片）
+// 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片 / 射手等級）
 function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
-  const base = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
-  let hp  = base.hp  + (cardBonus.hp  || 0);
-  let atk = base.atk + (cardBonus.atk || 0);
-  let def = base.def + (cardBonus.def || 0);
+  const base  = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
+  const lvBon = archerLevelBonus(archerLevelFromXP(profile?.archerXP || 0));
+  let hp  = base.hp  + (cardBonus.hp  || 0) + lvBon.hp;
+  let atk = base.atk + (cardBonus.atk || 0) + lvBon.atk;
+  let def = base.def + (cardBonus.def || 0) + lvBon.def;
   if (potionIds.length) {
     const buffs = calcPotionBuffs(potionIds);
     hp  = Math.round(hp  * buffs.hpMult);
@@ -602,11 +604,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
       const material = reward.material ?? rollMaterialDrop(room.monster);
       const card     = reward.card     ?? rollCardDrop(room.monster);
-      const coinChest = makeCoinChest(room.monster?.tier || "common", "組隊戰鬥掉落");
+      const monsterTier = room.monster?.tier || "common";
+      const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
+      const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
       const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
       addCoins(myId, coins).catch(() => {});
-      addChests(myId, [coinChest]).catch(() => {});
+      addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
       if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
       if (card)     addMonsterCard(myId, card).catch(() => {});
       if (!dexRecordedRef.current && room.monster?.id) {
@@ -632,6 +636,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           }, myId).catch(() => {});
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
+        const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * PARTY_XP_MULT);
+        addArcherXP(myId, xp).catch(() => {});
       }
       saveBond("party");
       setClaimResult({ coins, material, card, coinChest });
@@ -1472,12 +1478,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             {me.hp > 0 && me.maxHP > 0 && me.hp/me.maxHP < 0.25 && (
               <div style={{ textAlign:"center", color:"#ef4444", fontWeight:900, fontSize:11, padding:"2px 0 3px" }}>
                 ⚠️ HP 危急！請謹慎作戰
-              </div>
-            )}
-            {/* 靶面格式選擇（第一箭前才顯示）*/}
-            {arrows.length === 0 && !targetPending && !myReady && (
-              <div style={{ background:"rgba(0,0,0,0.3)", borderRadius:8, padding:"6px 8px", marginBottom:6, display:"flex", flexDirection:"column", gap:5 }}>
-                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               </div>
             )}
             {/* 箭槽 + 模式切換 */}

@@ -58,16 +58,19 @@ export function setBattleInputMode(mode) {
 
 function calcTapScore(ratio, fmtId) {
   if (ratio > 1) return "M";
-  if (fmtId === "half_610") {
-    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 5);
-    return ring === 0 ? 10 : Math.max(6, 11 - ring);
-  }
   if (fmtId === "field_16") {
     const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
     return ring === 0 ? 6 : Math.max(1, 7 - ring);
   }
-  const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 10);
-  return ring === 0 ? 10 : Math.max(1, 11 - ring);
+  if (fmtId === "half_610") {
+    if (ratio < 0.20) return "X";  // 最內環 = X（10分）
+    const ring = Math.ceil(ratio * 5);
+    return Math.max(6, 11 - ring);
+  }
+  // full_110
+  if (ratio < 0.10) return "X";   // 最內環 = X（10分）
+  const ring = Math.ceil(ratio * 10);
+  return Math.max(1, 11 - ring);
 }
 
 function TargetSVG({ fmtId, R, onTap }) {
@@ -146,7 +149,7 @@ function TargetSVG({ fmtId, R, onTap }) {
               color:"white", fontWeight:900, fontSize:24,
               borderRadius:8, padding:"1px 12px", whiteSpace:"nowrap",
             }}>
-              {dragScore === "M" ? "脫靶" : `${dragScore} 環`}
+              {dragScore === "M" ? "脫靶" : dragScore === "X" ? "X 滿分" : `${dragScore} 環`}
             </div>
           </div>
         </div>

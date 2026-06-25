@@ -12,6 +12,7 @@ import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { certLevelStyle } from "../lib/constants";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
+import { archerLevelFromXP } from "../lib/archerLevel";
 import MemberHome         from "../components/member/MemberHome";
 import MemberComps        from "../components/member/MemberComps";
 import MemberScoring      from "../components/member/MemberScoring";
@@ -346,6 +347,7 @@ export default function MemberApp() {
             <span style={{ fontSize:"11px", color:"#fbbf24" }}>🪙{(profile?.coins||0).toLocaleString()}</span>
             <span style={{ fontSize:"11px", color:"#60a5fa" }}>💧{(profile?.village?.resources?.arrowdew||0).toLocaleString()}</span>
             <span style={{ fontSize:"11px", color:"#86efac" }}>🏹{todayArrowsGlobal}</span>
+            <span style={{ fontSize:"11px", color:"#f472b6" }}>⚔️Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>
             <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
             <button onClick={logout} style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", ...appTheme.logoutStyle }}>登出</button>
           </div>
