@@ -237,6 +237,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setLiveEntry(null);
     setShowFullLog(false);
     setClaimResult(null);
+    setPreviewReward(null);
     setStartError("");
     setLogInited(false);
     setLocalHpOverride({});

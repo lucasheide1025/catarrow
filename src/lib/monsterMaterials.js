@@ -99,7 +99,8 @@ export function getMaterialPool(monsterId, tier) {
 
 // ── 隨機抽材料（依稀有度加權）────────────────────────────
 export function drawMaterial(monsterId, tier) {
-  const pool = getMaterialPool(monsterId, tier);
+  // frag_ 碎片只能從貓貓箱獲得，不出現在一般掉寶池
+  const pool = getMaterialPool(monsterId, tier).filter(m => !m.id?.startsWith("frag_"));
   const tierMult = { common:0.8, rare:1.0, elite:1.2, fierce:1.5, boss:2.0, mythic:3.0 }[tier] || 1.0;
 
   const weighted = pool.map(m => ({

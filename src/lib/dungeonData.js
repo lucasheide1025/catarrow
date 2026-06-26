@@ -206,9 +206,12 @@ export function getRoomMeta(type) {
 }
 
 // 從 connections 找出 currentRoomId 的所有鄰接房間
+// 支援舊格式 [a,b] 陣列（靜態地圖）與新格式 {a,b} 物件（生成地圖）
 export function getReachableRooms(floorData, currentRoomId) {
   const reachable = new Set();
-  for (const [a, b] of (floorData.connections || [])) {
+  for (const conn of (floorData.connections || [])) {
+    const a = Array.isArray(conn) ? conn[0] : conn.a;
+    const b = Array.isArray(conn) ? conn[1] : conn.b;
     if (a === currentRoomId) reachable.add(b);
     if (b === currentRoomId) reachable.add(a);
   }
@@ -463,8 +466,8 @@ function _gridConns(fi, cols, rows) {
   const c = [];
   for (let row = 0; row < rows; row++)
     for (let col = 0; col < cols; col++) {
-      if (col + 1 < cols) c.push([`f${fi}c${col}r${row}`, `f${fi}c${col+1}r${row}`]);
-      if (row + 1 < rows) c.push([`f${fi}c${col}r${row}`, `f${fi}c${col}r${row+1}`]);
+      if (col + 1 < cols) c.push({ a:`f${fi}c${col}r${row}`, b:`f${fi}c${col+1}r${row}` });
+      if (row + 1 < rows) c.push({ a:`f${fi}c${col}r${row}`, b:`f${fi}c${col}r${row+1}` });
     }
   return c;
 }

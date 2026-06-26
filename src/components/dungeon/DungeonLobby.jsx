@@ -110,7 +110,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(true);
     const dungeon = DUNGEON_MAPS.find(d => d.id === selDungeon);
     if (!dungeon) { setErr("請先選擇地下城"); setLoading(false); return; }
-    const result = await initDungeonMapRun(roomId, dungeon.id);
+    const result = await initDungeonMapRun(roomId, dungeon.id, myId);
     setLoading(false);
     if (!result.ok) { setErr(`初始化失敗：${result.reason || "請再試一次"}`); return; }
     if (unsub) unsub();

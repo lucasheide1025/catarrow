@@ -68,7 +68,6 @@ export async function createDungeonRoom(hostId, hostName, hostAtk = 10) {
       nextFloorModifiers: {},
       createdAt: serverTimestamp(),
     });
-    markDungeonUsed(hostId).catch(() => {});
     return { ok:true, roomId:ref.id, code };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
@@ -624,7 +623,7 @@ export async function clearDungeonProcessing(roomId) {
 // ══════════════════════════════════════════════════════════════
 
 // 初始化地圖探索（開始時房主呼叫）— 隨機生成全部樓層並存入 Firestore
-export async function initDungeonMapRun(roomId, dungeonId) {
+export async function initDungeonMapRun(roomId, dungeonId, hostId) {
   try {
     const generatedFloors = generateDungeonFloors(dungeonId);
     const startRoomId     = generatedFloors[0]?.startRoomId || "f0c0r0";
@@ -640,6 +639,7 @@ export async function initDungeonMapRun(roomId, dungeonId) {
       mapVotes:         {},
       generatedFloors,
     });
+    if (hostId) markDungeonUsed(hostId).catch(() => {});
     return { ok:true };
   } catch (e) { console.error("[initDungeonMapRun]", e); return { ok:false, reason:e.message }; }
 }
