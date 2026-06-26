@@ -47,7 +47,7 @@ import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
-import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
+import DungeonController from "../components/dungeon/DungeonController";
 import AdminResetCenter       from "../components/admin/AdminResetCenter";
 import AdminWorldBoss         from "../components/admin/AdminWorldBoss";
 import AdminGuildQuests        from "../components/admin/AdminGuildQuests";
@@ -415,7 +415,7 @@ const adminNav = [
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
           {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
-          {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
+          {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} />}
