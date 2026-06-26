@@ -35,7 +35,7 @@ import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard } from "../shared/SharedBattleComponents";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -1684,15 +1684,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
         {/* 戰績統計 */}
         <div style={{ animation:"mb-die-stats 0.5s 1.2s ease-out both", opacity:0, display:"flex", gap:20 }}>
-          {[["⚔️ 總傷害", totalDmgDealt], ["🔄 回合數", round - 1]].map(([lbl, val]) => (
-            <div key={lbl} style={{
-              background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
-              borderRadius:12, padding:"12px 20px", textAlign:"center",
-            }}>
-              <div style={{ fontSize:22, fontWeight:900, color:"#fff" }}>{val}</div>
-              <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{lbl}</div>
-            </div>
-          ))}
+          <BattleStatCard icon="⚔️" label="總傷害" value={totalDmgDealt} />
+          <BattleStatCard icon="🔄" label="回合數" value={round - 1} />
         </div>
       </div>
     );

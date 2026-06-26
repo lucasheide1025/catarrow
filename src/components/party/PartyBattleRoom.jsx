@@ -21,7 +21,7 @@ import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleResultHeader } from "../shared/SharedBattleComponents";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -1024,15 +1024,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         won ? "bg-gradient-to-b from-yellow-900 to-slate-900" : "bg-gradient-to-b from-red-900 to-slate-900"
       }`}>
         {/* 標題 */}
-        <div className="flex flex-col items-center gap-2 pt-2">
-          <div className="text-6xl">{won ? "🏆" : "💀"}</div>
-          <div className="text-2xl font-black text-white">{won ? "討伐成功！" : "全滅了…"}</div>
-          {room.monster && (
-            <div className="text-slate-400 text-sm">
-              {room.monster.icon} {room.monster.name} · {room.log?.length || 0} 回合
-            </div>
-          )}
-        </div>
+        <BattleResultHeader
+          emoji={won ? "🏆" : "💀"}
+          title={won ? "討伐成功！" : "全滅了…"}
+          subtitle={room.monster ? `${room.monster.icon} ${room.monster.name} · ${room.log?.length || 0} 回合` : ""}
+          color={won ? "amber" : "red"}
+        />
 
         {/* 詳細戰績表 */}
         <div className="bg-white/10 rounded-2xl overflow-hidden">

@@ -7,9 +7,11 @@ import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
+import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
+import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
-import { Card, ST, Spinner, BadgePip } from "../shared/UI";
+import { Card, ST, Spinner } from "../shared/UI";
 import ShareCard from "./ShareCard";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
@@ -29,15 +31,6 @@ const CELL_BG = {
   dex:       "/ui/cell-achieve.webp",
   story:     "/ui/cell-story.webp",
   guild:     "/ui/guild.webp",
-};
-const CERT_BG = {
-  "":   "/ui/cert-empty.webp",
-  入門:  "/ui/cert-novice.webp",
-  初級:  "/ui/cert-beginner.webp",
-  中級:  "/ui/cert-intermediate.webp",
-  進階:  "/ui/cert-advanced.webp",
-  精英:  "/ui/cert-elite.webp",
-  菁英:  "/ui/cert-elite.webp",
 };
 const CELL_TINT = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))";
 function cellStyle(key, gradient) {
@@ -354,19 +347,15 @@ export default function MemberHome({
             </div>
           </div>
 
-          <div className="bg-white/15 rounded-xl p-3 flex flex-col gap-3">
-            {[
-              ["🐱 肥貓章", profile.fatCat,     ["gold","silver","bronze"], ["金","銀","銅"]],
-              ["⭐ 積分章", profile.score,       ["gold","silver","bronze"], ["金","銀","銅"]],
-              ["🏆 成就章", profile.achievement, ["black","gold","silver"],  ["黑","金","銀"]],
-            ].map(([lbl, data, keys, names]) => (
-              <div key={lbl}>
-                <div className="text-white/60 text-xs mb-1.5">{lbl}</div>
-                <div className="flex gap-2">
-                  {keys.map((k,i) => <BadgePip key={k} label={names[i]} color={k} count={(data||{})[k]||0} />)}
-                </div>
+          <div className="bg-white/15 rounded-xl p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div className="text-white/60 text-xs">🎖️ 徽章總覽</div>
+              <div className="text-xs text-white/50">
+                🐱 {((profile?.fatCat?.gold||0)+(profile?.fatCat?.silver||0)+(profile?.fatCat?.bronze||0))}
+                　⭐ {((profile?.score?.gold||0)+(profile?.score?.silver||0)+(profile?.score?.bronze||0))}
+                　🏆 {((profile?.achievement?.black||0)+(profile?.achievement?.gold||0)+(profile?.achievement?.silver||0))}
               </div>
-            ))}
+            </div>
             <div className="flex items-center justify-between pt-1 border-t border-white/20">
               <div className="text-white/60 text-xs">🎪 賽事積分</div>
               <div className="text-white font-black text-xl">{profile.eventPoints || 0}</div>
@@ -440,9 +429,112 @@ export default function MemberHome({
             </div>
             <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:3, textAlign:"right" }}>
               {level >= MAX_ARCHER_LEVEL ? "已滿等" : `${current} / ${needed} XP`}
-            </div>
+            </div>            {/* ── 貓貓陪練資訊 ── */}
+            {(() => {
+              const ec = profile?.equippedCat;
+              if (!ec?.catId) {
+                return (
+                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textAlign: "center" }}>
+                      🐱 尚未裝備貓夥伴 — 前往貓村領養
+                    </div>
+                  </div>
+                );
+              }
+              const catXP = ec.catXP || 0;
+              const cLv = catLevelFromXP(catXP);
+              const xpProg = catXPProgress(catXP);
+              const bondLv = getBondLevel(ec.bond || 0);
+              const equipBonus = calcCatEquipBonus(ec.equip || {});
+              const skillGroup = CAT_SKILL_GROUPS[ec.catId] || null;
+              const typeInfo = CAT_TYPES[ec.type] || CAT_TYPES.allround;
+              const typeColors = { attack: "#ef4444", defense: "#3b82f6", allround: "#22c55e" };
+              const tColor = typeColors[ec.type] || "#22c55e";
+              const skillLabels = { heal: "💚 治療", atk: "⚡ 攻擊", def: "🛡️ 防禦" };
+              const totalEquip = equipBonus.atkBonus + equipBonus.defBonus + equipBonus.hpBonus;
+              return (
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <img src={`/cats/portraits/${ec.catId}.webp`}
+                        alt={ec.name} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: `2px solid ${tColor}` }} />
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: "#f1f5f9" }}>{ec.name}</span>
+                        <span style={{ fontSize: 9, color: tColor, fontWeight: 700, marginLeft: 4 }}>
+                          {typeInfo.label}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: "#f472b6" }}>Lv.{cLv}</span>
+                      <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>羈絆{bondLv}</span>
+                      {skillGroup && (
+                        <span style={{ fontSize: 9, color: "#fbbf24", fontWeight: 700, background: "rgba(251,191,36,0.15)", padding: "1px 5px", borderRadius: 4 }}>
+                          {skillLabels[skillGroup] || skillGroup}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {/* XP 進度條 */}
+                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 4, height: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${xpProg.pct}%`, background: `linear-gradient(90deg,${tColor},${tColor}88)`, borderRadius: 4 }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 2, marginBottom: 4 }}>
+                    <span>{xpProg.current} / {xpProg.needed} XP</span>
+                    <span>
+                      {equipBonus.atkBonus > 0 && <>⚔️+{equipBonus.atkBonus} </>}
+                      {equipBonus.defBonus > 0 && <>🛡️+{equipBonus.defBonus} </>}
+                      {equipBonus.hpBonus > 0 && <>❤️+{equipBonus.hpBonus} </>}
+                      {totalEquip === 0 && "無裝備"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* ── 總射箭里程 ── */}
+            {(() => {
+              const total = profile?.totalArrowsAllTime || 0;
+              const MILESTONES = [
+                { arrows: 100,   label: "🎯 破百射手" },
+                { arrows: 500,   label: "⭐ 五百箭射手" },
+                { arrows: 1000,  label: "🔥 千箭射手" },
+                { arrows: 5000,  label: "💫 五千箭射手" },
+                { arrows: 10000, label: "⚡ 萬箭射手" },
+                { arrows: 50000, label: "🏆 五萬箭傳說" },
+              ];
+              const nextMs = MILESTONES.find(m => m.arrows > total);
+              const prevMs = [...MILESTONES].reverse().find(m => m.arrows <= total);
+              const nextCount = nextMs?.arrows || 0;
+              const prevCount = prevMs?.arrows ?? 0;
+              const milePct = nextCount > 0 ? Math.min(100, Math.round((total - prevCount) / (nextCount - prevCount) * 100)) : 100;
+              return (
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+                    <span style={{ color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>🏹 總射箭里程</span>
+                    <span style={{ color: "#86efac", fontWeight: 900 }}>{total.toLocaleString()} 箭</span>
+                  </div>
+                  {nextCount > 0 ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", whiteSpace: "nowrap" }}>
+                        {prevMs ? prevMs.label : "起步"}
+                      </span>
+                      <div style={{ flex: 1, background: "rgba(255,255,255,0.08)", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${milePct}%`, background: "linear-gradient(90deg,#86efac,#22c55e)", borderRadius: 4, transition: "width 0.4s" }} />
+                      </div>
+                      <span style={{ fontSize: 9, color: "#86efac", fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {nextMs ? `目指 ${nextMs.label}` : "🏆 已達成"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 9, color: "#fbbf24", fontWeight: 700, textAlign: "center" }}>
+                      🏆 已達成所有里程！
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {/* 資源列 */}
-            <div style={{ display:"flex", gap:10, marginTop:10, flexWrap:"wrap" }}>
+            <div style={{ display:"flex", gap:10, marginTop:8, flexWrap:"wrap" }}>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(251,191,36,0.12)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
                 <span style={{ fontSize:16 }}>🪙</span>
                 <span style={{ fontSize:11, fontWeight:700, color:"#fbbf24" }}>{coins.toLocaleString()}</span>
@@ -468,48 +560,39 @@ export default function MemberHome({
         );
       })()}
 
-      {/* 年度檢定 */}
-      <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
-        <ST>{thisYear} 年度檢定</ST>
-        <div className="grid grid-cols-3 gap-3 mt-1">
-          {CERT_SHOW.map(bk => {
-            const bt = BOW_TYPES[bk];
-            const { score, level } = certOf(bk);
-            const has = score > 0;
-            const certImg = CERT_BG[level || ""] || CERT_BG[""];
-            const levelStyle = {
-              "":   { bg:"rgba(0,0,0,0.30)",        border:"rgba(255,255,255,0.12)", title:"#9ca3af", score:"#d1d5db" },
-              入門:  { bg:"rgba(251,191,36,0.18)",   border:"rgba(251,191,36,0.35)",  title:"#fde68a", score:"#fbbf24" },
-              初級:  { bg:"rgba(16,185,129,0.18)",   border:"rgba(16,185,129,0.35)",  title:"#a7f3d0", score:"#6ee7b7" },
-              中級:  { bg:"rgba(59,130,246,0.18)",   border:"rgba(59,130,246,0.35)",  title:"#bfdbfe", score:"#93c5fd" },
-              進階:  { bg:"rgba(139,92,246,0.18)",   border:"rgba(139,92,246,0.35)",  title:"#ddd6fe", score:"#c4b5fd" },
-              精英:  { bg:"rgba(245,158,11,0.20)",   border:"rgba(245,158,11,0.45)",  title:"#fcd34d", score:"#fbbf24" },
-              菁英:  { bg:"rgba(245,158,11,0.20)",   border:"rgba(245,158,11,0.45)",  title:"#fcd34d", score:"#fbbf24" },
-            };
-            const ls = levelStyle[level || ""] || levelStyle[""];
-            return (
-              <div key={bk} className="rounded-xl p-3 text-center relative overflow-hidden"
-                style={{ backgroundImage:`url(${certImg})`, backgroundSize:"cover", backgroundPosition:"center",
-                  backgroundColor: ls.bg, border:`1px solid ${ls.border}` }}>
-                <div className="relative z-10">
-                  <div style={{ fontSize:10, fontWeight:700, color:ls.title, marginBottom:2 }}>{bt.short}</div>
-                  {has ? (
+      {/* 年度檢定（精簡摘要） */}
+      <div className="p-3 rounded-xl flex items-center justify-between"
+        style={{ background:"rgba(15,23,42,0.55)", border:"1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex flex-col gap-1.5">
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontWeight:700 }}>🎖️ {thisYear} 年度檢定</div>
+          <div className="flex gap-2">
+            {CERT_SHOW.map(bk => {
+              const bt = BOW_TYPES[bk];
+              const { score, level } = certOf(bk);
+              return (
+                <div key={bk} className="flex items-center gap-1.5 text-xs"
+                  style={{ background:"rgba(255,255,255,0.06)", borderRadius:6, padding:"3px 8px" }}>
+                  <span style={{ color:"rgba(255,255,255,0.5)" }}>{bt.short}</span>
+                  {score > 0 ? (
                     <>
-                      <div style={{ fontWeight:900, fontSize:15, color:ls.score }}>{score}</div>
-                      <div style={{ fontSize:9, color:ls.title, marginTop:1 }}>分</div>
-                      <div className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1 ${level ? certLevelStyle(level, "solid") : "bg-gray-200 text-gray-500"}`}>
-                        {level || "未達標"}
-                      </div>
+                      <span style={{ color:"#fbbf24", fontWeight:900 }}>{score}</span>
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${level ? certLevelStyle(level, "solid") : "bg-white/10 text-white/50"}`}>
+                        {level || "—"}
+                      </span>
                     </>
                   ) : (
-                    <div style={{ fontSize:10, color:ls.title, marginTop:4 }}>初心者</div>
+                    <span style={{ color:"rgba(255,255,255,0.3)" }}>—</span>
                   )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </Card>
+        <button onClick={() => onPageChange("profile")}
+          style={{ fontSize:10, color:"#60a5fa", fontWeight:700, whiteSpace:"nowrap", background:"rgba(96,165,250,0.12)", borderRadius:8, padding:"6px 12px", border:"none", cursor:"pointer" }}>
+          查看詳細 →
+        </button>
+      </div>
 
       {recentResults.length > 0 && (
         <Card className="p-4">

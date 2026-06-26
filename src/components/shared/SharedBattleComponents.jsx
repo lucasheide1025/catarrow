@@ -175,3 +175,100 @@ export function BattleStatusTags({ tags = [] }) {
     </div>
   );
 }
+
+// ── 結算畫面共用元件 ──────────────────────────────────────
+// 使用方式範例：
+// <BattleResultHeader emoji="🏆" title="討伐成功！" subtitle="火焰巨龍 · 3回合" color="amber" />
+
+const RESULT_CSS = `@keyframes result-pop{0%{opacity:0;transform:scale(0.7) rotate(-4deg)}60%{transform:scale(1.06) rotate(1deg)}100%{opacity:1;transform:scale(1)}}`;
+
+export function BattleResultHeader({ emoji, title, subtitle, color = "amber", animDelay = "0s" }) {
+  const colorMap = {
+    amber: { text: "text-amber-400", border: "border-amber-400/50", bg: "from-yellow-900/80" },
+    red:   { text: "text-red-400",   border: "border-red-400/50",   bg: "from-red-900/80" },
+    slate: { text: "text-slate-300",  border: "border-slate-400/30", bg: "from-slate-800/80" },
+    emerald: { text: "text-emerald-400", border: "border-emerald-400/50", bg: "from-emerald-900/80" },
+    indigo: { text: "text-indigo-300", border: "border-indigo-400/30", bg: "from-indigo-900/80" },
+  };
+  const c = colorMap[color] || colorMap.amber;
+  return (
+    <>
+      <style>{RESULT_CSS}</style>
+      <div
+        className="flex flex-col items-center gap-1 pt-2"
+        style={{ animation: `result-pop .6s ${animDelay} cubic-bezier(.34,1.56,.64,1) both` }}
+      >
+      <div className="text-6xl">{emoji}</div>
+      <div className={`text-2xl font-black ${c.text}`}>{title}</div>
+      {subtitle && (
+        <div className="text-slate-400 text-sm text-center">{subtitle}</div>
+      )}
+    </div>
+    </>
+  );
+}
+
+export function BattleStatCard({ label, value, icon, accent = false }) {
+  return (
+    <div style={{
+      background: accent ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.06)",
+      border: accent ? "1px solid rgba(251,191,36,0.3)" : "1px solid rgba(255,255,255,0.12)",
+      borderRadius: 12,
+      padding: "12px 16px",
+      textAlign: "center",
+    }}>
+      {icon && <div style={{ fontSize: 16, marginBottom: 2 }}>{icon}</div>}
+      <div style={{ fontSize: 22, fontWeight: 900, color: accent ? "#fbbf24" : "#fff" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+export function BattleStatRow({ label, value, icon, valueColor, borderTop }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "6px 0",
+      ...(borderTop ? { borderTop: "1px solid rgba(255,255,255,0.08)" } : {}),
+    }}>
+      <span style={{ color: "#94a3b8", fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
+        {icon && <span>{icon}</span>}{label}
+      </span>
+      <span style={{
+        fontWeight: 900, fontSize: 14,
+        color: valueColor || "#f1f5f9",
+      }}>{value}</span>
+    </div>
+  );
+}
+
+export function BattleRewardItem({ icon, name, desc, tier, highlight = false }) {
+  const tierColor = tier === "gold" ? "#fbbf24" : tier === "rare" ? "#a78bfa" : tier === "mythic" ? "#f43f5e" : "#94a3b8";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      background: highlight ? "rgba(251,191,36,0.1)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${highlight ? "rgba(251,191,36,0.25)" : "rgba(255,255,255,0.06)"}`,
+      borderRadius: 10,
+      padding: "10px 12px",
+    }}>
+      <span style={{ fontSize: 24, flexShrink: 0 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontWeight: 900, fontSize: 13, color: highlight ? "#fbbf24" : "#f1f5f9",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>{name}</div>
+        {desc && (
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{desc}</div>
+        )}
+      </div>
+      {tier && (
+        <span style={{
+          fontSize: 9, fontWeight: 900, color: tierColor,
+          background: `${tierColor}18`,
+          padding: "2px 6px", borderRadius: 4, flexShrink: 0,
+        }}>{tier.toUpperCase()}</span>
+      )}
+    </div>
+  );
+}
