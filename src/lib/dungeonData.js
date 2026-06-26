@@ -182,3 +182,117 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
   return { dmg: totalDmg, crits, arrowBreakdown };
 }
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  新版地下城地圖系統（Phase 1）  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// ── 房間類型 metadata ─────────────────────────────────────────
+export const ROOM_TYPE_META = {
+  monster:  { label:"怪物房", icon:"⚔️",  color:"#ef4444", nodeColor:"#7f1d1d" },
+  elite:    { label:"精英怪", icon:"💀",  color:"#f97316", nodeColor:"#7c2d12" },
+  boss:     { label:"Boss",   icon:"👑",  color:"#fbbf24", nodeColor:"#78350f" },
+  chest:    { label:"寶箱",   icon:"📦",  color:"#4ade80", nodeColor:"#14532d" },
+  trap:     { label:"陷阱",   icon:"🪤",  color:"#f87171", nodeColor:"#450a0a" },
+  merchant: { label:"商人",   icon:"🛒",  color:"#60a5fa", nodeColor:"#1e3a5f" },
+  rest:     { label:"休息",   icon:"💤",  color:"#a78bfa", nodeColor:"#2e1065" },
+  teleport: { label:"傳送",   icon:"🌀",  color:"#e879f9", nodeColor:"#581c87" },
+  event:    { label:"特殊",   icon:"✨",  color:"#fde68a", nodeColor:"#713f12" },
+  stairs:   { label:"樓梯",   icon:"🪜",  color:"#94a3b8", nodeColor:"#1e293b" },
+};
+
+export function getRoomMeta(type) {
+  return ROOM_TYPE_META[type] || ROOM_TYPE_META.monster;
+}
+
+// 從 connections 找出 currentRoomId 的所有鄰接房間
+export function getReachableRooms(floorData, currentRoomId) {
+  const reachable = new Set();
+  for (const [a, b] of (floorData.connections || [])) {
+    if (a === currentRoomId) reachable.add(b);
+    if (b === currentRoomId) reachable.add(a);
+  }
+  return reachable;
+}
+
+export function getDungeonFloor(dungeon, floorIndex) {
+  return dungeon?.floors?.[floorIndex] || null;
+}
+
+// ── 地下城地圖資料表 ──────────────────────────────────────────
+export const DUNGEON_MAPS = [
+  {
+    id: "shadow-crypt",
+    name: "幽冥地窖",
+    emoji: "💀",
+    description: "陰暗潮濕的古老地窖，傳說有亡靈在此徘徊。越深入越黑暗，但也藏有更多寶物。",
+    enabled: true,
+    floorCount: 3,
+    floors: [
+      {
+        floor: 1,
+        startRoomId: "f1r1",
+        rooms: [
+          { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道",   meta:{ tier:1 } },
+          { id:"f1r2", type:"chest",    x:0, y:1, label:"隱藏儲藏室" },
+          { id:"f1r3", type:"trap",     x:2, y:1, label:"陷阱走廊" },
+          { id:"f1r4", type:"monster",  x:4, y:1, label:"守衛室",     meta:{ tier:1 } },
+          { id:"f1r5", type:"rest",     x:1, y:2, label:"廢棄休息室" },
+          { id:"f1r6", type:"merchant", x:3, y:2, label:"流浪商人" },
+          { id:"f1r7", type:"stairs",   x:2, y:3, label:"通往二層" },
+        ],
+        connections: [
+          ["f1r1","f1r2"],["f1r1","f1r3"],["f1r1","f1r4"],
+          ["f1r2","f1r5"],["f1r3","f1r5"],["f1r3","f1r6"],
+          ["f1r4","f1r6"],["f1r5","f1r7"],["f1r6","f1r7"],
+        ],
+      },
+      {
+        floor: 2,
+        startRoomId: "f2r1",
+        rooms: [
+          { id:"f2r1", type:"monster",  x:2, y:0, label:"地下通道",   meta:{ tier:2 } },
+          { id:"f2r2", type:"event",    x:0, y:1, label:"詭異祭壇" },
+          { id:"f2r3", type:"elite",    x:2, y:1, label:"護衛將領",   meta:{ tier:2 } },
+          { id:"f2r4", type:"chest",    x:4, y:1, label:"秘密金庫" },
+          { id:"f2r5", type:"teleport", x:0, y:2, label:"傳送陣" },
+          { id:"f2r6", type:"monster",  x:2, y:2, label:"亡靈巡邏",   meta:{ tier:2 } },
+          { id:"f2r7", type:"rest",     x:4, y:2, label:"隱秘小室" },
+          { id:"f2r8", type:"merchant", x:1, y:3, label:"神秘商人" },
+          { id:"f2r9", type:"stairs",   x:3, y:3, label:"通往三層" },
+        ],
+        connections: [
+          ["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],
+          ["f2r2","f2r5"],["f2r3","f2r6"],["f2r4","f2r7"],
+          ["f2r5","f2r8"],["f2r6","f2r8"],["f2r6","f2r9"],
+          ["f2r7","f2r9"],["f2r8","f2r9"],
+        ],
+      },
+      {
+        floor: 3,
+        startRoomId: "f3r1",
+        rooms: [
+          { id:"f3r1", type:"monster",  x:2, y:0, label:"最深處通道", meta:{ tier:3 } },
+          { id:"f3r2", type:"elite",    x:0, y:1, label:"精英守衛",   meta:{ tier:3 } },
+          { id:"f3r3", type:"trap",     x:2, y:1, label:"致命陷阱" },
+          { id:"f3r4", type:"elite",    x:4, y:1, label:"死亡騎士",   meta:{ tier:3 } },
+          { id:"f3r5", type:"event",    x:0, y:2, label:"古老壁畫" },
+          { id:"f3r6", type:"chest",    x:2, y:2, label:"Boss 前寶箱" },
+          { id:"f3r7", type:"rest",     x:4, y:2, label:"最後的休息" },
+          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ bossId:"lich-king" } },
+        ],
+        connections: [
+          ["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],
+          ["f3r2","f3r5"],["f3r3","f3r6"],["f3r4","f3r7"],
+          ["f3r5","f3r6"],["f3r6","f3r7"],
+          ["f3r5","f3r8"],["f3r6","f3r8"],["f3r7","f3r8"],
+        ],
+      },
+    ],
+    loot: {
+      common: ["shadow_stone","bone_fragment"],
+      rare:   ["void_crystal","lich_essence"],
+      boss:   ["shadow_crown","lich_scepter","void_eye"],
+    },
+  },
+];
