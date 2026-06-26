@@ -217,6 +217,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
 
+  // ── 中途記憶：從 sessionStorage 恢復進行中的戰鬥 ──────────
+  // 必須在 baseHP 之後宣告，否則 TDZ ReferenceError
+  const _saveKey = `wb_battle_${event.id}`;
+  const _saved = (() => {
+    try { return JSON.parse(sessionStorage.getItem(_saveKey) || "null"); } catch { return null; }
+  })();
+  const _hasSave = _saved && _saved.eventId === event.id && (_saved.roundIdx || 0) > 0;
+
   // ── 狀態 ───────────────────────────────────────────────────
   const [showFullLog, setShowFullLog] = useState(true);
 
@@ -257,13 +265,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       ? parseInt(sessionStorage.getItem("guest_coins") || "500", 10)
       : (profile?.coins || 0)
   );
-
-  // ── 中途記憶：從 sessionStorage 恢復進行中的戰鬥 ──────────
-  const _saveKey = `wb_battle_${event.id}`;
-  const _saved = (() => {
-    try { return JSON.parse(sessionStorage.getItem(_saveKey) || "null"); } catch { return null; }
-  })();
-  const _hasSave = _saved && _saved.eventId === event.id && (_saved.roundIdx || 0) > 0;
 
   const [roundIdx,     setRoundIdx]     = useState(_hasSave ? _saved.roundIdx     : 0);
   const [arrows,       setArrows]       = useState([]);
