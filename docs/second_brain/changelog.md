@@ -1,6 +1,8 @@
 # 📝 changelog — 變更日誌
 > 每次功能完工後由 Claude 自動寫入。格式：日期 / 改了什麼 / 為什麼 / 踩坑提醒
 
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fchangelog`
+
 ---
 
 ## 2026-06-25（後段：打怪掉落修正 + 貓貓決鬥/地下城傷害 + 村莊累積生產 + 市集重設計）

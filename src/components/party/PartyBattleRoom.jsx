@@ -882,32 +882,109 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     );
   }
 
-  // ── 怪物死亡確認畫面（動畫結束後才顯示，3秒後自動結算）────────
+  // ── 怪物死亡確認畫面（華麗擊殺動畫 + 3秒後自動結算）────────
   // logInited：確保 F5 後也等初始化完才顯示，防止搶在擊殺動畫前跳出
   const hasUnseenLog = !logInited || (room?.log?.length || 0) > prevLogLenRef.current;
   if (room.status === "pending_confirm" && !liveEntry && !hasUnseenLog) {
     const lastEntry = room.log?.[room.log.length - 1];
+    const totalTeamDmg = (room.log || []).reduce((s, e) => s + (e.totalDmg || 0), 0);
+    const totalRounds  = room.log?.length || 0;
     return (
-      <div className="min-h-screen bg-gradient-to-b from-yellow-950 to-slate-900 flex flex-col items-center justify-center px-4 gap-6">
-        <div className="text-7xl animate-bounce">💥</div>
-        <div className="text-2xl font-black text-yellow-300 text-center">
-          {room.monster?.name} 已倒下！
-        </div>
-        {lastEntry && (
-          <div className="bg-white/10 rounded-2xl px-5 py-3 text-center">
-            <div className="text-slate-400 text-xs mb-1">最終回合共造成</div>
-            <div className="text-3xl font-black text-rose-400">{lastEntry.totalDmg}</div>
-            <div className="text-slate-300 text-xs">點傷害</div>
+      <div style={{
+        position:"fixed", top:0, bottom:0,
+        left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:540,
+        overflow:"hidden", zIndex:9999,
+        background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20,
+      }}>
+        <style>{`
+@keyframes pbr-die-monster { 0%{filter:brightness(1)} 20%{filter:brightness(3.5) drop-shadow(0 0 40px #ef4444)} 100%{filter:brightness(0.1) grayscale(0.8) drop-shadow(0 0 6px #555)} }
+@keyframes pbr-die-badge   { 0%{opacity:0;transform:scale(2.2) rotate(-20deg)} 55%{opacity:1;transform:scale(0.92) rotate(6deg)} 100%{opacity:1;transform:scale(1) rotate(-8deg)} }
+@keyframes pbr-die-victory { 0%{opacity:0;transform:scale(0.3) rotate(-12deg)} 55%{transform:scale(1.2) rotate(3deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
+@keyframes pbr-die-stats   { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+@keyframes pbr-die-vs      { 0%{opacity:0;transform:scale(0.2) rotate(-18deg)} 55%{transform:scale(1.3) rotate(4deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
+        `}</style>
+
+        {/* 怪物 + 打倒印章 */}
+        <div style={{ position:"relative", display:"inline-block" }}>
+          <div style={{ animation:"pbr-die-monster 1.5s ease-out both" }}>
+            <PartyMonsterImg id={room.monster?.id} icon={room.monster?.icon} charge={false} size={140}/>
           </div>
-        )}
+          {/* 打倒 印章 */}
+          <div style={{
+            position:"absolute", inset:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            animation:"pbr-die-badge 0.5s 0.5s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0,
+            pointerEvents:"none",
+          }}>
+            <div style={{
+              fontSize:28, fontWeight:900, color:"#ef4444",
+              border:"4px solid #ef4444", borderRadius:8,
+              padding:"4px 14px", letterSpacing:4,
+              textShadow:"0 0 12px #ef4444",
+              boxShadow:"0 0 18px #ef444488",
+              background:"rgba(0,0,0,0.55)",
+              transform:"rotate(-8deg)",
+            }}>
+              討伐
+            </div>
+          </div>
+        </div>
+
+        {/* 討伐成功文字 */}
+        <div style={{ animation:"pbr-die-victory 0.6s 0.8s cubic-bezier(0.34,1.56,0.64,1) both", opacity:0 }}>
+          <div style={{ fontSize:36, fontWeight:900, color:"#fbbf24", textShadow:"0 0 32px #f59e0b", letterSpacing:4, textAlign:"center" }}>
+            💀 討伐成功！
+          </div>
+          <div style={{ fontSize:14, color:"#94a3b8", textAlign:"center", marginTop:4 }}>
+            {room.monster?.icon} {room.monster?.name} 已被消滅
+          </div>
+        </div>
+
+        {/* 戰績統計 */}
+        <div style={{ animation:"pbr-die-stats 0.5s 1.2s ease-out both", opacity:0, display:"flex", gap:20 }}>
+          <div style={{
+            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+            borderRadius:12, padding:"12px 20px", textAlign:"center",
+          }}>
+            <div style={{ fontSize:22, fontWeight:900, color:"#f87171" }}>{lastEntry?.totalDmg?.toLocaleString() || totalTeamDmg.toLocaleString()}</div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>⚔️ 最終傷害</div>
+          </div>
+          <div style={{
+            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+            borderRadius:12, padding:"12px 20px", textAlign:"center",
+          }}>
+            <div style={{ fontSize:22, fontWeight:900, color:"#fff" }}>{totalRounds}</div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>🔄 回合數</div>
+          </div>
+          <div style={{
+            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+            borderRadius:12, padding:"12px 20px", textAlign:"center",
+          }}>
+            <div style={{ fontSize:22, fontWeight:900, color:"#fbbf24" }}>{Object.keys(room.members||{}).length}</div>
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>👤 參戰人數</div>
+          </div>
+        </div>
+
+        {/* 確認按鈕 */}
         <button
           onClick={isHost ? handleConfirmResult : () => setLocalCompleted(true)}
           disabled={isHost && confirming}
-          className="w-full max-w-xs py-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform disabled:opacity-50 animate-pulse">
+          style={{
+            width:"100%", maxWidth:280, padding:"14px 0",
+            borderRadius:16, fontWeight:900, fontSize:18,
+            background:"linear-gradient(90deg,#fbbf24,#f59e0b)",
+            color:"#7c2d12", border:"none", cursor:"pointer",
+            boxShadow:"0 0 24px #f59e0b66",
+            animation:"pbr-die-vs 0.6s 1.6s cubic-bezier(0.34,1.56,0.64,1) both",
+            opacity: isHost && confirming ? 0.5 : undefined,
+            pointerEvents: isHost && confirming ? "none" : undefined,
+          }}>
           {isHost && confirming ? "確認中…" : "🏆 確認討伐！進入結算"}
         </button>
         {!isHost && (
-          <div className="text-slate-400 text-xs text-center">
+          <div style={{ fontSize:11, color:"#475569", textAlign:"center" }}>
             （房主確認後自動跳轉，或點上方按鈕直接查看結果）
           </div>
         )}

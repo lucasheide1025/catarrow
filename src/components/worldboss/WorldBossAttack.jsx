@@ -12,8 +12,10 @@ import { calcEquippedBonus } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
+import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -108,23 +110,6 @@ function HPBar({ label, current, max, color }) {
         <div className="h-full rounded-full transition-all duration-700"
           style={{ width: `${pct}%`, background: color }}/>
       </div>
-    </div>
-  );
-}
-
-function CatMsg({ msg, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
-  }, [onDone]);
-  return (
-    <div style={{
-      position:"absolute", left:12, right:12, bottom:8, zIndex:20,
-      background:"rgba(49,46,129,0.92)", border:"1px solid rgba(129,140,248,0.5)",
-      borderRadius:14, padding:"5px 12px", fontSize:12, color:"#e0e7ff",
-      textAlign:"center", boxShadow:"0 4px 16px rgba(0,0,0,0.6)",
-    }}>
-      {msg}
     </div>
   );
 }
@@ -304,6 +289,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [deathKiller,       setDeathKiller]       = useState(null);
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
+  const [showCatRound,      setShowCatRound]      = useState(false);
+  const [catRoundCats,      setCatRoundCats]      = useState([]);
+  const [catRoundTotalDmg,  setCatRoundTotalDmg]  = useState(0);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
 
@@ -488,8 +476,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       localBossHP = Math.max(0, localBossHP - catDmg);
       setBossHP(localBossHP);
       setDmgLog(prev => [...prev, `🐱 ${catName} 出擊！6箭齊射 -${catDmg}${skillNote}`]);
+      // 顯示貓貓回合覆蓋層
+      setCatRoundCats([{ catId: profile?.equippedCat?.catId || "baobao", catName, dmg: catDmg }]);
+      setCatRoundTotalDmg(catDmg);
+      setShowCatRound(true);
       sfxArrowHit();
-      await delay(300);
+      await delay(1800);
+      setShowCatRound(false);
     }
 
     const roundData  = { arrows: fullArrows, dmg: totalDmg, crits };
@@ -786,6 +779,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         {/* 暴擊/命中閃爍 */}
         {animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"radial-gradient(ellipse at center,rgba(245,158,11,0.28) 0%,transparent 70%)", animation:"wbFadeOut 0.42s ease forwards" }}/>}
         {animBossHit && !animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"rgba(239,68,68,0.10)", animation:"wbFadeOut 0.3s ease forwards" }}/>}
+
+        {/* 貓咪回合覆蓋層 */}
+        <CatRoundOverlay
+          open={showCatRound}
+          cats={catRoundCats}
+          totalDmg={catRoundTotalDmg}
+        />
 
         {/* 退出確認 */}
         {showExitConfirm && (

@@ -665,7 +665,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
           </button>
         </div>
         {/* 第二行：怪物 HP 條 */}
-        <div style={{ background:"rgba(0,0,0,0.4)", height:16, borderRadius:8, overflow:"hidden", position:"relative", marginBottom:4, border:"1px solid rgba(127,29,29,0.6)" }}>
+        <div style={{ background:"#1e293b", height:21, borderRadius:20, overflow:"hidden", position:"relative", marginBottom:5, border:"1.5px solid #7f1d1d" }}>
           <div style={{ width:`${Math.max(0,(displayHP||0)/(room.monsterMaxHP||1))*100}%`, height:"100%", borderRadius:8, transition:"width .7s ease",
             background: (displayHP||0)/(room.monsterMaxHP||1)>0.5?"#dc2626":(displayHP||0)/(room.monsterMaxHP||1)>0.25?"#f59e0b":"#7f1d1d" }}/>
           <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:9, fontWeight:900 }}>

@@ -1,6 +1,8 @@
 # 🎮 game-systems — 遊戲化規格
 > 最後更新：2026-06-25
 
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
+
 ## 完整角色數值公式
 
 ```

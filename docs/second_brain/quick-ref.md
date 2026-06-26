@@ -2,6 +2,8 @@
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
 > 最後更新：2026-06-25
 
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
+
 ---
 
 ## 🔑 最重要規則（踩過的坑）

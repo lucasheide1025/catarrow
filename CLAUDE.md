@@ -40,6 +40,19 @@ docs/second_brain/
 
 ---
 
+## 🔗 Obsidian 第二大腦快速開啟
+
+| 筆記 | 連結 |
+|------|------|
+| ⚡ 快速參考 | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref` |
+| 📋 功能清單 | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures` |
+| 🎮 遊戲化系統 | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems` |
+| 📝 變更日誌 | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fchangelog` |
+| 📖 專案概覽（中文） | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2F01-%E5%B0%88%E6%A1%88%E6%A6%82%E8%A6%BD` |
+| 📝 變更日誌（中文） | `obsidian://open?vault=Obsidian%20Vault&file=catarrow%2F04-%E8%AE%8A%E6%9B%B4%E6%97%A5%E8%AA%8C` |
+
+---
+
 ## 開發指令
 
 ```bash

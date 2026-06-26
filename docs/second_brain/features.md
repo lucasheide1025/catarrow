@@ -1,6 +1,8 @@
 # 📋 features — 功能清單
 > 最後更新：2026-06-25
 
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
+
 ## ✅ 已實作
 
 **核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
