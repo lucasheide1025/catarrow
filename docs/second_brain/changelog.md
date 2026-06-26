@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-06-26（地下城地圖探索模式 Phase 1-3 完整實作）
+
+### 核心設計
+地下城模式全面重設計：從「單調樓層」改為「SVG 地圖探索 → 戰鬥 → 返回地圖」循環。
+
+### 新增檔案
+- `src/lib/dungeonData.js`：`DUNGEON_MAPS`（幽冥地窖 3 層 24 房）、`ROOM_TYPE_META`（10 種房型）、`getReachableRooms`、合約標籤 helpers
+- `src/lib/runeData.js`：7 種符文（復活/強攻/守護/貓靈/暴烈/生命 + 多重復活），3 個稀有度
+- `src/components/dungeon/DungeonController.jsx`：根據 Firestore `status` 路由（map_explore→DungeonExplore，active/completed→DungeonBattleRoom）
+- `src/components/dungeon/DungeonMap.jsx`：SVG 地圖，5 種節點狀態（未探索黑底問號、已探索彩色、當前金框、可移動脈衝動畫、已清除打勾）
+- `src/components/dungeon/DungeonExplore.jsx`：探索 UI + 投票系統 + 前後衛/符文多步驟選擇 modal
+
+### 修改檔案
+- `dungeonDb.js`：新增 `initDungeonMapRun`、`saveMapExploration`、`proposeMapMove`、`castMapVote`、`resolveMapVote`、`advanceMapFloor`、`enterMapCombatRoom`（含怪物+陣型+符文注入）、`returnToMapAfterBattle`
+- `DungeonBattleRoom.jsx`：加 `isMapMode/onReturnToMap` props；地圖模式 win 畫面顯示「房間通關！」，host 領獎後呼叫 `returnToMapAfterBattle`，Firestore 訂閱自動路由回地圖
+- `DungeonLobby.jsx`：新增「地圖探索 / 經典樓層」切換 + 地下城選擇 UI
+- `MemberApp.jsx`：DungeonBattleRoom → DungeonController
+
+### 踩坑記錄
+- `enterMapCombatRoom` 未設 `totalFloors`，`processDungeonRound` defaults 到 7 → 殺怪進 `path_select` 而非 `completed`；修正：明確設 `totalFloors:1, currentFloor:1`
+- DungeonExplore 早期版本含巢狀 DungeonBattleRoom，與 DungeonController 路由衝突；已移除，改由 Firestore status 驅動路由
+- `returnToMapAfterBattle` 後不需要呼叫 `onReturnToMap?.()`，Firestore 訂閱自動觸發 DungeonController 重渲染
+
+### 待做（Phase 4+）
+- 前後衛傷害規則（前衛全傷/後衛 -30%）接入 `processDungeonRound`
+- 後衛每回合「攻擊 vs 治療」選擇 UI（DungeonBattleRoom）
+- 非 host 成員的陣型/符文選擇（DungeonBattleRoom 進場前 modal）
+- 掉寶清單（dungeonLoot.js）
+- 通關結算通知（通知中心）
+
+---
+
 ## 2026-06-26（UI 一致性修復 — 組隊死亡動畫 + 地下城HP條 + 世界王CatMsg/CatRoundOverlay）
 
 ### 組隊打怪怪物死亡畫面增強
@@ -29,11 +61,54 @@
 - 加入 `import CatMsg from "../cat/CatMsg"` 使用共享元件
 
 ### 世界王加入貓咪回合視覺覆蓋（CatRoundOverlay）
+
+---
+
+## 2026-06-26（SharedBattleComponents 共用元件庫 — HP條/箭槽/分數按鈕/狀態標籤）
+
+### 建立共用元件庫
+**為什麼**：MonsterBattle、PartyBattleRoom、DungeonBattleRoom、WorldBossAttack 四個戰鬥模式各自實作了怪物 HP 條、箭槽、分數按鈕、狀態標籤，程式碼高度重複（每組約 20~40 行），且樣式細節有微小差異。
+**改了什麼**：
+- 新增 `src/components/shared/SharedBattleComponents.jsx`，包含 4 個元件：
+  - **`BattleHPBar`** — 怪物 HP 條（支援 height/21px、showBorder、label、compact 模式）
+  - **`BattleArrowSlots`** — 箭槽顯示（支援 slotSize/26~36px、highlightNext、processing 箭號高亮、extraContent 自訂按鈕）
+  - **`BattleScoreButtons`** — 分數按鈕（支援三種 variant：`image`/`minimal`/`tailwind`，btnSize）
+  - **`BattleStatusTags`** — 狀態標籤列（支援自訂 tags 陣列）
+- 修改 4 個檔案導入共用元件：
+  - `MonsterBattle.jsx` — HP條→BattleHPBar，狀態標籤→BattleStatusTags，箭槽→BattleArrowSlots，分數按鈕→BattleScoreButtons
+  - `PartyBattleRoom.jsx` — 同上
+  - `DungeonBattleRoom.jsx` — 同上（分數按鈕使用 tailwind variant）
+  - `WorldBossAttack.jsx` — HP條→BattleHPBar(compact模式)，箭槽→BattleArrowSlots，分數按鈕→BattleScoreButtons
+**踩坑提醒**：
+- WorldBossAttack 箭槽需要傳 `processingIdx` 才能正確顯示逐箭處理動畫
+- tailwind variant 的分數按鈕直接用 `SCORE_COLORS` class 陣列，以保持 DungeonBattleRoom 現有風格
+- import 路徑 `../shared/SharedBattleComponents` — 注意是從各戰鬥模式的目錄相對路徑
+
+### 世界王加入貓咪回合視覺覆蓋（CatRoundOverlay）
 **為什麼**：世界王有貓貓每回合攻擊輸出，但完全沒有視覺回饋。
 **改了什麼**：`WorldBossAttack.jsx`：
 - 加入 `import CatRoundOverlay` 和狀態變數（`showCatRound`、`catRoundCats`、`catRoundTotalDmg`）
 - 戰鬥階段 JSX 中渲染 `<CatRoundOverlay>`
 - 貓貓攻擊後設定 overlay 資料並顯示 1800ms
+
+---
+
+## 2026-06-26（結算畫面共用元件 — BattleResultHeader/StatCard/StatRow/RewardItem）
+
+### 新增結算畫面共用元件
+**為什麼**：4 個戰鬥模式的結算畫面各自實作，標題區塊、統計卡片、獎勵列表的視覺風格不一致。
+**改了什麼**：
+- `SharedBattleComponents.jsx` 新增：
+  - **`BattleResultHeader`** — 結果標題（emoji + title + subtitle，5 種主題色，內嵌 result-pop 動畫）
+  - **`BattleStatCard`** — 卡片式統計（icon + label + value，支援 highlight）
+  - **`BattleStatRow`** — 列式統計（icon + label + value，支援 borderTop）
+  - **`BattleRewardItem`** — 獎勵品項（icon + name + desc + tier badge）
+- 修改 4 個戰鬥模式：
+  - `MonsterBattle.jsx` — 戰績統計區 → `BattleStatCard`
+  - `PartyBattleRoom.jsx` — 結算標題 → `BattleResultHeader`
+  - `WorldBossAttack.jsx` — 標題/戰鬥報告/獎勵 → `BattleResultHeader` + `BattleStatRow`
+  - `DuelRoom.jsx` — 結果大字/個人統計 → `BattleResultHeader` + `BattleStatCard`
+**踩坑提醒**：`result-pop` keyframe 內嵌在共用元件；DungeonBattleRoom 因即將大更新暫跳過。
 
 ---
 
