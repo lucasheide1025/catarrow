@@ -9,6 +9,7 @@ import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
 import { Card, ST, Spinner } from "../shared/UI";
@@ -82,6 +83,7 @@ export default function MemberHome({
   potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0
 }) {
   const { profile } = useAuth();
+  const { catHP, catATK, catDEF, hasCat } = useCatCompanion();
   const [certRecords, setCertRecords]     = useState([]);
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
@@ -479,7 +481,7 @@ export default function MemberHome({
                   <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 4, height: 3, overflow: "hidden" }}>
                     <div style={{ height: "100%", width: `${xpProg.pct}%`, background: `linear-gradient(90deg,${tColor},${tColor}88)`, borderRadius: 4 }} />
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 2, marginBottom: 4 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 2, marginBottom: 6 }}>
                     <span>{xpProg.current} / {xpProg.needed} XP</span>
                     <span>
                       {equipBonus.atkBonus > 0 && <>⚔️+{equipBonus.atkBonus} </>}
@@ -487,6 +489,15 @@ export default function MemberHome({
                       {equipBonus.hpBonus > 0 && <>❤️+{equipBonus.hpBonus} </>}
                       {totalEquip === 0 && "無裝備"}
                     </span>
+                  </div>
+                  {/* HP / ATK / DEF */}
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[["❤️", "HP", catHP, "#4ade80"], ["⚔️", "ATK", catATK, "#f87171"], ["🛡️", "DEF", catDEF, "#60a5fa"]].map(([icon, lbl, val, clr]) => (
+                      <div key={lbl} style={{ flex: 1, background: "rgba(255,255,255,0.06)", borderRadius: 6, padding: "3px 0", textAlign: "center" }}>
+                        <div style={{ fontSize: 8, color: "rgba(255,255,255,0.4)" }}>{icon} {lbl}</div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: clr }}>{val}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
