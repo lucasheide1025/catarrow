@@ -21,6 +21,7 @@ import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -1419,22 +1420,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <button onClick={handleLeave} style={{ padding:"3px 9px", borderRadius:8, fontSize:11, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
           </div>
 
-          {/* 怪物 HP bar（高 21px，數字在裡面）*/}
-          <div style={{ background:"#1e293b", borderRadius:20, height:21, border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5 }}>
-            <div style={{ width:`${monsterPct*100}%`, height:"100%", transition:"width .7s ease", background: monsterPct>0.5?"#dc2626":monsterPct>0.25?"#f59e0b":"#7f1d1d" }}/>
-            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
-              {displayHP?.toLocaleString()} / {room.monsterMaxHP?.toLocaleString()}
-            </div>
-          </div>
+          <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
 
-          {/* 狀態標籤 */}
-          <div style={{ display:"flex", gap:3, marginBottom:4, flexWrap:"wrap" }}>
-            <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>⚔️ 第{liveEntry ? liveEntry.round : room.round}回</div>
-            <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#f87171" }}>💢 {room.monster?.atk}</div>
-            <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#60a5fa" }}>🛡️ {room.monster?.def}</div>
-            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#94a3b8" }}>👤 {aliveCount}/{memberList.length}</div>
-            {isCatMini && <div style={{ background:"rgba(236,72,153,0.2)", border:"1px solid #f472b680", borderRadius:5, padding:"1px 5px", fontSize:10, color:"#f9a8d4", fontWeight:900 }}>🐱 貓咪出擊！</div>}
-          </div>
+          <BattleStatusTags tags={[
+              { icon:"⚔️", label:`第${liveEntry ? liveEntry.round : room.round}回`, color:"#94a3b8" },
+              { icon:"💢", label:room.monster?.atk, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
+              { icon:"🛡️", label:room.monster?.def, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
+              { icon:"👤", label:`${aliveCount}/${memberList.length}`, color:"#94a3b8" },
+              ...(isCatMini ? [{ icon:"🐱", label:"貓咪出擊！", color:"#f9a8d4", bg:"rgba(236,72,153,0.2)", style:{fontWeight:900} }] : []),
+            ]} />
 
           {/* 怪物圖（上對齊，縮小顯示）*/}
           <div style={{ flex:1, position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"center", minHeight:0 }}>
@@ -1600,57 +1594,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 ⚠️ HP 危急！請謹慎作戰
               </div>
             )}
-            {/* 箭槽 + 模式切換 */}
-            <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
-              {Array.from({length:ARROWS_PER_ROUND}).map((_,i) => (
-                <div key={i} style={{
-                  width:28, height:28, borderRadius:6, flexShrink:0,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:13, fontWeight:900,
-                  background: i<arrows.length ? "#2563eb" : i===arrows.length ? "rgba(37,99,235,0.3)" : "rgba(255,255,255,0.05)",
-                  border:`2px solid ${i<arrows.length?"#60a5fa":i===arrows.length?"#3b82f6":"rgba(255,255,255,0.1)"}`,
-                  color: i<arrows.length ? "white" : "#475569",
-                }}>
-                  {i<arrows.length ? arrows[i].label : ""}
-                </div>
-              ))}
-              {arrows.length>0 && (
-                <button onClick={removeLastArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:16, cursor:"pointer", paddingLeft:4 }}>↩</button>
-              )}
-              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>{myArrowTotal}分</span>
-              <button onClick={() => setTargetMode(m => !m)} style={{
-                marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-              }}>🎯</button>
-            </div>
+            <BattleArrowSlots
+                arrows={arrows}
+                totalArrows={ARROWS_PER_ROUND}
+                onUndo={removeLastArrow}
+                showUndo={arrows.length>0}
+                extraContent={
+                  <button onClick={() => setTargetMode(m => !m)} style={{
+                    marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                    background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                    border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                    color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                  }}>🎯</button>
+                }
+              />
             {targetPending && (
               <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>
             )}
-            {/* 分數按鈕（按鈕模式才顯示）*/}
-            {!targetMode && arrows.length < ARROWS_PER_ROUND && (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, marginBottom:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px" }}>
-                {SCORE_LABELS.map(label => {
-                  const s = SCORE_MAP[label] ?? 0;
-                  return (
-                    <button key={label} onClick={() => addArrow(label)} style={{
-                      backgroundImage:"url(/ui/score-btn.webp)", backgroundSize:"cover", backgroundPosition:"center",
-                      backgroundColor:"rgb(30,16,6)",
-                      WebkitAppearance:"none", appearance:"none",
-                      border:"none", borderRadius:6, height:44, width:"100%",
-                      color: label==="X"?"#fbbf24":label==="M"?"#94a3b8":s>=9?"#fef3c7":s>=7?"#bfdbfe":s>=5?"#d1d5db":"#9ca3af",
-                      fontWeight:900, fontSize:15, cursor:"pointer",
-                      textShadow:"0 1px 6px #000", padding:"4px 0", transition:"transform .08s",
-                      lineHeight:1,
-                    }}
-                    onTouchStart={e=>e.currentTarget.style.transform="scale(0.88)"}
-                    onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}
-                    >{label}</button>
-                  );
-                })}
-              </div>
-            )}
+            <BattleScoreButtons
+                labels={SCORE_LABELS}
+                onScore={addArrow}
+                variant="image"
+              />
             <TargetFaceOverlay
               open={targetMode && !targetPending && !myReady}
               fmtId={targetFmt}

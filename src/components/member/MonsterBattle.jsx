@@ -35,6 +35,7 @@ import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -1784,39 +1785,14 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             </div>
 
             {/* HP 條 */}
-            <div style={{
-              background:"#1e293b", borderRadius:20, height:21,
-              border:"1.5px solid #7f1d1d", overflow:"hidden", position:"relative", marginBottom:5
-            }}>
-              <div style={{
-                width:`${monPct}%`, height:"100%", transition:"width .7s ease",
-                background:monPct>50?"#dc2626":monPct>25?"#f59e0b":"#7f1d1d"
-              }}/>
-              <div style={{
-                position:"absolute", inset:0,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                color:"white", fontSize:10, fontWeight:900
-              }}>
-                {monsterHP?.toLocaleString()} / {monster?.hp?.toLocaleString()}
-              </div>
-            </div>
+            <BattleHPBar current={monsterHP} max={monster?.hp || 0} />
 
-            {/* 狀態標籤列 */}
-            <div style={{display:"flex", gap:3, marginBottom:4, flexWrap:"wrap"}}>
-              {[
-                ["💀", `${round}回`, "rgba(255,255,255,0.07)", "#94a3b8"],
-                ["⚔️", monster?.atk, "rgba(239,68,68,0.15)", "#f87171"],
-                ["🛡️", monster?.def, "rgba(59,130,246,0.15)", "#60a5fa"],
-              ].map(([ic,val,bg,col])=>(
-                <div key={ic} style={{
-                  background:bg, border:`1px solid ${col}44`,
-                  borderRadius:5, padding:"1px 5px", fontSize:10, color:col
-                }}>{ic} {val}</div>
-              ))}
-              {distanceMode==="dynamic" && (
-                <div style={{background:"rgba(251,191,36,0.15)",border:"1px solid #fbbf2444",borderRadius:5,padding:"1px 5px",fontSize:10,color:"#fbbf24"}}>📍{distance}m</div>
-              )}
-            </div>
+            <BattleStatusTags tags={[
+              { icon:"💀", label:`${round}回`, color:"#94a3b8" },
+              { icon:"⚔️", label:monster?.atk, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
+              { icon:"🛡️", label:monster?.def, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
+              ...(distanceMode==="dynamic" ? [{ icon:"📍", label:`${distance}m`, color:"#fbbf24", bg:"rgba(251,191,36,0.15)" }] : []),
+            ]} />
 
             {/* 怪物大圖 + 浮動傷害 */}
             <div style={{flex:1, position:"relative", display:"flex", alignItems:"center", justifyContent:"center"}}>
@@ -2004,30 +1980,21 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           {battlePhase==="input" && (
             <>
               {/* 箭槽 + 模式切換 */}
-              <div style={{display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center"}}>
-                {Array.from({length:ARROWS_PER_ROUND}).map((_,i)=>(
-                  <div key={i} style={{
-                    width:26, height:26, borderRadius:5, flexShrink:0,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:13, fontWeight:900,
-                    background:i<arrows.length?"#2563eb":i===arrows.length?"rgba(37,99,235,0.3)":"rgba(255,255,255,0.05)",
-                    border:`2px solid ${i<arrows.length?"#60a5fa":i===arrows.length?"#3b82f6":"rgba(255,255,255,0.1)"}`,
-                    color:i<arrows.length?"white":"#475569"
-                  }}>
-                    {i<arrows.length ? arrows[i] : ""}
-                  </div>
-                ))}
-                {arrows.length>0 && (
-                  <button onClick={undoArrow} style={{background:"none",border:"none",color:"#64748b",fontSize:14,cursor:"pointer",paddingLeft:4}}>↩</button>
-                )}
-                <button onClick={()=>setTargetMode(m=>!m)} style={{
-                  marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                  background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                  border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                  color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-                }}>🎯</button>
-              </div>
-
+              <BattleArrowSlots
+                arrows={arrows}
+                totalArrows={ARROWS_PER_ROUND}
+                onUndo={undoArrow}
+                showUndo={arrows.length>0}
+                slotSize={26}
+                extraContent={
+                  <button onClick={()=>setTargetMode(m=>!m)} style={{
+                    marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                    background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                    border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                    color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                  }}>🎯</button>
+                }
+              />
               {/* targetPending 等待提示 */}
               {targetPending && (
                 <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>
@@ -2036,30 +2003,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
               )}
 
               {/* 分數按鈕（按鈕模式才顯示）*/}
-              {!targetMode && arrows.length < ARROWS_PER_ROUND && <div style={{
-                display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:3, marginBottom:4,
-                background:"rgb(20,12,5)", borderRadius:6, padding:"3px"
-              }}>
-                {HALF_SCORES.map(s=>(
-                  <button key={s.label} onClick={()=>inputArrow(s.label)}
-                    disabled={arrows.length>=ARROWS_PER_ROUND||processing}
-                    style={{
-                      backgroundImage:"url(/ui/score-btn.webp)",
-                      backgroundSize:"cover", backgroundPosition:"center",
-                      backgroundColor:"rgb(30,16,6)",
-                      WebkitAppearance:"none", appearance:"none",
-                      border:"none", borderRadius:5, height:40, width:"100%",
-                      color:s.label==="X"?"#fbbf24":s.label==="M"?"#94a3b8":
-                        s.val>=9?"#fef3c7":s.val>=7?"#bfdbfe":s.val>=5?"#d1d5db":"#9ca3af",
-                      fontWeight:900, fontSize:14, cursor:"pointer",
-                      opacity:arrows.length>=ARROWS_PER_ROUND||processing?0.4:1,
-                      textShadow:"0 1px 6px #000", padding:0, transition:"transform .08s"
-                    }}
-                    onTouchStart={e=>e.currentTarget.style.transform="scale(0.88)"}
-                    onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}
-                  >{s.label}</button>
-                ))}
-              </div>}
+              {!targetMode && arrows.length < ARROWS_PER_ROUND &&
+                <BattleScoreButtons
+                  labels={HALF_SCORES.map(s => s.label)}
+                  onScore={inputArrow}
+                  disabled={false}
+                  variant="image"
+                  btnSize="md"
+                />
+              }
 
               <TargetFaceOverlay
                 open={targetMode && !targetPending && !processing}

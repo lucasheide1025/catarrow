@@ -15,6 +15,7 @@ import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons } from "../shared/SharedBattleComponents";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
@@ -853,14 +854,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
         {/* ── 頂部資訊列（HP 條 + 名字 + 統計 + 日誌視窗） ── */}
         <div style={{ flexShrink:0, background:"rgba(0,0,0,0.75)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-          {/* HP 條（最頂部，全寬） */}
-          <div style={{ background:"#1e293b", height:22, border:"none", overflow:"hidden", position:"relative", borderBottom:"1.5px solid #7f1d1d" }}>
-            <div style={{ width:`${Math.max(0,bossHP/event.bossMaxHP)*100}%`, height:"100%", transition:"width .7s ease",
-              background: bossHP/event.bossMaxHP>0.5?"#dc2626":bossHP/event.bossMaxHP>0.25?"#f59e0b":"#7f1d1d" }}/>
-            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:10, fontWeight:900 }}>
-              {bossHP.toLocaleString()} / {event.bossMaxHP.toLocaleString()}
-            </div>
-          </div>
+          <BattleHPBar current={bossHP} max={event.bossMaxHP} height={22} showBorder={false} compact />
 
           <div style={{ padding:"3px 10px 4px" }}>
             {/* Boss 名字（血條下方）+ 回合點 + 離開按鈕 */}
@@ -1041,20 +1035,28 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 </div>
               );
             })}
-            {arrows.length > 0 && subPhase === "shooting" && (
-              <button onClick={() => setArrows(prev => prev.slice(0,-1))} style={{ background:"none", border:"none", color:"#64748b", fontSize:18, cursor:"pointer", paddingLeft:4 }}>↩</button>
-            )}
-            <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
-              {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
-            </span>
-            {subPhase === "shooting" && (
-              <button onClick={() => setTargetMode(m => !m)} style={{
-                marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-              }}>🎯</button>
-            )}
+            <BattleArrowSlots
+                arrows={arrows}
+                totalArrows={ARROWS_PER}
+                onUndo={() => setArrows(prev => prev.slice(0,-1))}
+                showUndo={arrows.length > 0 && subPhase === "shooting"}
+                slotSize={36}
+                showScore={false}
+                processing={subPhase !== "shooting"}
+                extraContent={
+                  subPhase === "shooting" && (
+                    <button onClick={() => setTargetMode(m => !m)} style={{
+                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                    }}>🎯</button>
+                  )
+                }
+              />
+              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
+                {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
+              </span>
           </div>
           {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
           <TargetFaceOverlay
@@ -1068,26 +1070,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
           />
 
-          {/* 分數按鈕（按鈕模式才顯示）*/}
-          {subPhase === "shooting" && !targetMode && arrows.length < ARROWS_PER && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:4, background:"rgb(20,12,5)", borderRadius:8, padding:"5px", marginBottom:4 }}>
-              {SCORE_BTNS.map(s => (
-                <button key={s} onClick={() => handleScore(s)}
-                  style={{
-                    backgroundImage:"url(/ui/score-btn.webp)", backgroundSize:"cover", backgroundPosition:"center",
-                    backgroundColor:"rgb(30,16,6)",
-                    WebkitAppearance:"none", appearance:"none",
-                    border:"none", borderRadius:6, height:44, width:"100%",
-                    color: s==="X"?"#fbbf24":s==="M"?"#94a3b8":Number(s)>=9?"#fef3c7":Number(s)>=7?"#bfdbfe":Number(s)>=5?"#d1d5db":"#9ca3af",
-                    fontWeight:900, fontSize:15, cursor:"pointer",
-                    textShadow:"0 1px 6px #000", padding:"4px 0", lineHeight:1,
-                  }}
-                  onTouchStart={e => e.currentTarget.style.transform="scale(0.88)"}
-                  onTouchEnd={e => e.currentTarget.style.transform="scale(1)"}>
-                  {scoreLabel(s)}
-                </button>
-              ))}
-            </div>
+          <BattleScoreButtons
+              labels={SCORE_BTNS.map(s => String(s))}
+              onScore={handleScore}
+              disabled={false}
+              variant="image"
+            />
           )}
 
           {/* 送出按鈕 */}

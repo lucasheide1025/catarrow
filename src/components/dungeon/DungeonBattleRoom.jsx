@@ -28,6 +28,7 @@ import TargetFaceOverlay, {
   getBattleInputMode, setBattleInputMode,
 } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
 
 const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -664,33 +665,14 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
             離開
           </button>
         </div>
-        {/* 第二行：怪物 HP 條 */}
-        <div style={{ background:"#1e293b", height:21, borderRadius:20, overflow:"hidden", position:"relative", marginBottom:5, border:"1.5px solid #7f1d1d" }}>
-          <div style={{ width:`${Math.max(0,(displayHP||0)/(room.monsterMaxHP||1))*100}%`, height:"100%", borderRadius:8, transition:"width .7s ease",
-            background: (displayHP||0)/(room.monsterMaxHP||1)>0.5?"#dc2626":(displayHP||0)/(room.monsterMaxHP||1)>0.25?"#f59e0b":"#7f1d1d" }}/>
-          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:9, fontWeight:900 }}>
-            {(displayHP||0).toLocaleString()} / {(room.monsterMaxHP||0).toLocaleString()}
-          </div>
-        </div>
-        {/* 第三行：統計標籤列 */}
-        <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
-          <div style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
-            🏰 {room.currentFloor||1}/{room.totalFloors||7}層 R{room.round||1}
-          </div>
-          <div style={{ background:"rgba(239,68,68,0.15)", border:"1px solid #f8717144", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#f87171" }}>
-            ⚔️ {monster.atk||0}
-          </div>
-          <div style={{ background:"rgba(59,130,246,0.15)", border:"1px solid #60a5fa44", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#60a5fa" }}>
-            🛡️ {monster.def||0}
-          </div>
-          <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:5, padding:"1px 6px", fontSize:10, color:"#94a3b8" }}>
-            👤 {aliveCount}/{memberCount}
-          </div>
-          <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:5, padding:"1px 6px", fontSize:10 }}
-            className={contractInfo.color}>
-            {contractInfo.icon} {contractInfo.name}
-          </div>
-        </div>
+        <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
+        <BattleStatusTags tags={[
+              { icon:"🏰", label:`${room.currentFloor||1}/${room.totalFloors||7}層 R${room.round||1}`, color:"#94a3b8" },
+              { icon:"⚔️", label:monster.atk||0, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
+              { icon:"🛡️", label:monster.def||0, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
+              { icon:"👤", label:`${aliveCount}/${memberCount}`, color:"#94a3b8" },
+              { icon:contractInfo.icon, label:contractInfo.name, color:contractInfo.color, bg:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)" },
+            ]} />
       </div>
 
       {/* ── 怪物展示區 ── */}
@@ -848,23 +830,13 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
                 <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />
               </div>
             )}
-            {/* 箭槽 */}
-            <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
-              {Array.from({ length:6 }).map((_,i) => {
-                const a = arrows[i];
-                return (
-                  <div key={i} style={{ width:36, height:36, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:900,
-                    background: a?"#2563eb":"rgba(255,255,255,0.05)",
-                    border:`2px solid ${a?"#60a5fa":"rgba(255,255,255,0.1)"}`,
-                    color: a?"white":"#475569" }}>
-                    {a ? a.label : ""}
-                  </div>
-                );
-              })}
-              {arrows.length > 0 && (
-                <button onClick={undoArrow} style={{ background:"none", border:"none", color:"#64748b", fontSize:18, cursor:"pointer", paddingLeft:4 }}>↩</button>
-              )}
-            </div>
+            <BattleArrowSlots
+                arrows={arrows}
+                totalArrows={6}
+                onUndo={undoArrow}
+                showUndo={arrows.length>0}
+                slotSize={36}
+              />
             {/* 分數按鈕格（依合約類型調整）*/}
             {targetPending ? (
               <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>

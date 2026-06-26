@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-06-26（UI 一致性修復 — 組隊死亡動畫 + 地下城HP條 + 世界王CatMsg/CatRoundOverlay）
+
+### 組隊打怪怪物死亡畫面增強
+**為什麼**：組隊打死怪物後只有一個單調的黃底文字畫面，遠不如打怪模式的華麗擊殺動畫，玩家感受落差大。
+**改了什麼**：`PartyBattleRoom.jsx` `pending_confirm` 區段：
+- 加入 `pbr-die-*` CSS keyframes（怪物變黑白+發光 → 討伐印章彈出 → 討伐成功文字 → 戰績統計）
+- 使用 `PartyMonsterImg` 顯示怪物大圖 + 擊殺濾鏡動畫
+- 新增「討伐」印章 overlay（旋轉彈入，半透明黑底紅字）
+- 新增戰績統計三欄：最終傷害 / 回合數 / 參戰人數
+- 確認按鈕加入金色發光陰影 `boxShadow` 和進場動畫
+- `disabled` 狀態補上 `pointerEvents: none` 防止雙擊
+**踩坑提醒**：`pbr-die-*` 前綴避免與打怪模式的 `mb-*` 動畫命名衝突。
+
+### 地下城怪物 HP 條統一
+**為什麼**：地下城的 HP 條高度（16px）與打怪/組隊（21px）不一致，邊框顏色也不同。
+**改了什麼**：`DungeonBattleRoom.jsx`：`height: 16` → `height: 21`、邊框統一 `1.5px solid #7f1d1d`、背景 `#1e293b`、圓角 20。
+
+### 世界王 CatMsg 改用共享元件
+**為什麼**：`WorldBossAttack.jsx` 自定義了一個 `CatMsg` 本地元件，與 `cat/CatMsg` 共享元件功能相同但樣式不同。
+**改了什麼**：
+- 移除本地 `CatMsg` 函式定義
+- 加入 `import CatMsg from "../cat/CatMsg"` 使用共享元件
+
+### 世界王加入貓咪回合視覺覆蓋（CatRoundOverlay）
+**為什麼**：世界王有貓貓每回合攻擊輸出，但完全沒有視覺回饋。
+**改了什麼**：`WorldBossAttack.jsx`：
+- 加入 `import CatRoundOverlay` 和狀態變數（`showCatRound`、`catRoundCats`、`catRoundTotalDmg`）
+- 戰鬥階段 JSX 中渲染 `<CatRoundOverlay>`
+- 貓貓攻擊後設定 overlay 資料並顯示 1800ms
+
+---
+
 ## 2026-06-25（後段：打怪掉落修正 + 貓貓決鬥/地下城傷害 + 村莊累積生產 + 市集重設計）
 
 ### 打怪模式不再掉落徽章碎片與貓貓箱
