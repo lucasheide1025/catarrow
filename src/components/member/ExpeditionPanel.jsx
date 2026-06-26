@@ -167,9 +167,11 @@ export default function ExpeditionPanel({ profile }) {
 
           {/* 貓咪資訊 */}
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, background:"rgba(255,255,255,0.05)", borderRadius:12, padding:"10px 12px" }}>
-            <div style={{ width:44, height:44, borderRadius:"50%", background: expCatInfo?.color || "#374151", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, border:"2px solid rgba(167,139,250,0.5)" }}>
-              {expCatInfo?.emoji || "🐱"}
-            </div>
+            <img
+              src={`/cats/portraits/${expedition.catId}.webp`}
+              alt={expedition.catName}
+              style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", border:"2px solid rgba(167,139,250,0.5)", flexShrink:0 }}
+            />
             <div>
               <div style={{ fontWeight:900, fontSize:14, color:"white" }}>{expedition.catName}</div>
               <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>
@@ -255,7 +257,11 @@ export default function ExpeditionPanel({ profile }) {
                     borderRadius:14, padding:"10px 8px", cursor:"pointer",
                     transition:"all 0.15s",
                   }}>
-                  <div style={{ fontSize:28, marginBottom:4 }}>{info?.emoji || "🐱"}</div>
+                  <img
+                    src={`/cats/portraits/${cat.catId}.webp`}
+                    alt={info?.name || cat.catId}
+                    style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", marginBottom:4 }}
+                  />
                   <div style={{ fontWeight:900, fontSize:11, color:"white", marginBottom:2 }}>
                     {info?.name || cat.catId}
                   </div>
