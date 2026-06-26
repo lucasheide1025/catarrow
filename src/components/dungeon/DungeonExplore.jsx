@@ -10,7 +10,6 @@ import {
   castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
 } from "../../lib/dungeonDb";
 import { MONSTERS } from "../../lib/monsterData";
-import { RUNES, RUNE_GRADES } from "../../lib/runeData";
 
 // 地圖房間難度 tier (1-6) → 怪物 tier 字串
 function mapRoomTier(tier) {
@@ -167,10 +166,6 @@ export default function DungeonExplore({
 }) {
   const [room,          setRoom]          = useState(null);
   const [eventModal,    setEventModal]    = useState(null);
-  // 戰鬥預告步驟：null | "formation" | "rune"
-  const [previewStep,       setPreviewStep]       = useState(null);
-  const [selectedFormation, setSelectedFormation] = useState("vanguard");
-  const [selectedRune,      setSelectedRune]      = useState(null);
   const [enteringBattle,    setEnteringBattle]    = useState(false);
 
   const [floorIndex,    setFloorIndex]    = useState(0);
@@ -297,16 +292,11 @@ export default function DungeonExplore({
     const monsterTier = mapRoomTier(tier);
     const pool        = MONSTERS.filter(m => m.tier === monsterTier);
     const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
-    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, {
-      monster,
-      formationMap: { [memberId]: selectedFormation },
-      runeMap:      selectedRune ? { [memberId]: selectedRune } : {},
-    });
+    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, { monster });
     // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
     setEnteringBattle(false);
     setEventModal(null);
-    setPreviewStep(null);
-  }, [roomId, isHost, eventModal, room, memberId, selectedFormation, selectedRune]);
+  }, [roomId, isHost, eventModal, room]);
 
   if (!inited || !dungeon) {
     return <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>載入地圖…</div>;
@@ -421,7 +411,7 @@ export default function DungeonExplore({
             border:"1.5px solid rgba(239,68,68,0.3)", borderBottom:"none",
           }}>
             {/* ─ 步驟 0：房間資訊 ─ */}
-            {previewStep === null && (() => {
+            {(() => {
               const meta  = getRoomMeta(eventModal.type);
               const badge = getContractBadge(eventModal);
               const desc  = getContractDesc({ type: eventModal.meta?.contract, param: eventModal.meta?.contractParam });
@@ -445,19 +435,20 @@ export default function DungeonExplore({
                   </div>
                   <div style={{ display:"flex", gap:10 }}>
                     {isHost ? (
-                      <button onClick={() => setPreviewStep("formation")} style={{
+                      <button onClick={handleEnterBattle} disabled={enteringBattle} style={{
                         flex:2, padding:"13px 0", borderRadius:14, fontWeight:900,
-                        fontSize:15, border:"none", cursor:"pointer",
-                        background:"linear-gradient(90deg,#dc2626,#ef4444)", color:"white",
+                        fontSize:15, border:"none", cursor: enteringBattle ? "default" : "pointer",
+                        background: enteringBattle ? "rgba(255,255,255,0.1)" : "linear-gradient(90deg,#dc2626,#ef4444)",
+                        color:"white",
                       }}>
-                        ⚔️ 準備出戰
+                        {enteringBattle ? "進入中…" : "⚔️ 出戰！"}
                       </button>
                     ) : (
                       <div style={{ flex:2, padding:"13px 0", textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:13 }}>
                         等待隊長下令…
                       </div>
                     )}
-                    <button onClick={() => { setEventModal(null); setPreviewStep(null); }} style={{
+                    <button onClick={() => { setEventModal(null); }} style={{
                       flex:1, padding:"13px 0", borderRadius:14, fontWeight:800,
                       fontSize:13, border:"1px solid rgba(255,255,255,0.1)",
                       background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.5)", cursor:"pointer",
@@ -468,92 +459,6 @@ export default function DungeonExplore({
                 </>
               );
             })()}
-
-            {/* ─ 步驟 1：前後衛選擇 ─ */}
-            {previewStep === "formation" && (
-              <>
-                <div style={{ fontWeight:900, fontSize:16, marginBottom:6 }}>🛡️ 選擇陣型</div>
-                <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginBottom:16 }}>
-                  前衛：承受怪物攻擊、全傷害輸出<br/>
-                  後衛：怪物優先攻前衛、傷害 -30%、可選擇治療隊友
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:18 }}>
-                  {[
-                    { id:"vanguard", label:"前衛", icon:"⚔️", desc:"站在最前線，傷害全力輸出", color:"#ef4444" },
-                    { id:"rearguard", label:"後衛", icon:"🏹", desc:"保持距離，傷害 -30% 但可治療", color:"#60a5fa" },
-                  ].map(f => (
-                    <button key={f.id} onClick={() => setSelectedFormation(f.id)} style={{
-                      padding:"14px 10px", borderRadius:14, fontWeight:800, fontSize:13,
-                      border:`2px solid ${selectedFormation === f.id ? f.color : "rgba(255,255,255,0.1)"}`,
-                      background: selectedFormation === f.id ? f.color + "22" : "rgba(255,255,255,0.04)",
-                      color: selectedFormation === f.id ? f.color : "rgba(255,255,255,0.6)",
-                      cursor:"pointer", textAlign:"center",
-                    }}>
-                      <div style={{ fontSize:22, marginBottom:4 }}>{f.icon}</div>
-                      <div style={{ fontWeight:900 }}>{f.label}</div>
-                      <div style={{ fontSize:10, opacity:0.6, marginTop:2 }}>{f.desc}</div>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display:"flex", gap:10 }}>
-                  <button onClick={() => setPreviewStep(null)} style={{
-                    flex:1, padding:"12px 0", borderRadius:14, fontWeight:800, fontSize:13,
-                    border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.05)",
-                    color:"rgba(255,255,255,0.5)", cursor:"pointer",
-                  }}>← 返回</button>
-                  <button onClick={() => setPreviewStep("rune")} style={{
-                    flex:2, padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:14,
-                    border:"none", background:"linear-gradient(90deg,#7c3aed,#8b5cf6)",
-                    color:"white", cursor:"pointer",
-                  }}>選擇符文 →</button>
-                </div>
-              </>
-            )}
-
-            {/* ─ 步驟 2：符文選擇 ─ */}
-            {previewStep === "rune" && (
-              <>
-                <div style={{ fontWeight:900, fontSize:16, marginBottom:4 }}>💫 裝備符文</div>
-                <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginBottom:12 }}>選擇一個符文強化本場戰鬥（可跳過）</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16, maxHeight:220, overflowY:"auto" }}>
-                  {RUNES.map(rune => {
-                    const gradeInfo = RUNE_GRADES[rune.grade] || {};
-                    const isSelected = selectedRune === rune.id;
-                    return (
-                      <button key={rune.id} onClick={() => setSelectedRune(isSelected ? null : rune.id)} style={{
-                        display:"flex", alignItems:"center", gap:12, padding:"10px 12px",
-                        borderRadius:12, border:`2px solid ${isSelected ? rune.color : "rgba(255,255,255,0.08)"}`,
-                        background: isSelected ? rune.color + "18" : "rgba(255,255,255,0.03)",
-                        cursor:"pointer", textAlign:"left",
-                      }}>
-                        <div style={{ fontSize:24, flexShrink:0 }}>{rune.icon}</div>
-                        <div style={{ flex:1 }}>
-                          <div style={{ fontWeight:800, fontSize:13, color: isSelected ? rune.color : "white" }}>
-                            {rune.name}
-                            <span style={{ marginLeft:6, fontSize:10, color: gradeInfo.color, fontWeight:900 }}>[{gradeInfo.label}]</span>
-                          </div>
-                          <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginTop:1 }}>{rune.desc}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ display:"flex", gap:10 }}>
-                  <button onClick={() => setPreviewStep("formation")} style={{
-                    flex:1, padding:"12px 0", borderRadius:14, fontWeight:800, fontSize:13,
-                    border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.05)",
-                    color:"rgba(255,255,255,0.5)", cursor:"pointer",
-                  }}>← 返回</button>
-                  <button onClick={handleEnterBattle} disabled={enteringBattle} style={{
-                    flex:2, padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:14,
-                    border:"none", background: enteringBattle ? "rgba(255,255,255,0.1)" : "linear-gradient(90deg,#dc2626,#ef4444)",
-                    color:"white", cursor: enteringBattle ? "default" : "pointer",
-                  }}>
-                    {enteringBattle ? "進入中…" : "⚔️ 開始戰鬥！"}
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}
