@@ -16,8 +16,10 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const { profile } = useAuth();
   const { catATK: myCatATK } = useCatCompanion();
   const [tab, setTab]           = useState("create");
-  const [selDungeon,  setSelDungeon]  = useState(DUNGEON_MAPS.find(d => d.enabled)?.id || null);
   const [selDifficulty, setSelDifficulty] = useState("normal");
+  const [selDungeon,  setSelDungeon]  = useState(
+    DUNGEON_MAPS.find(d => d.enabled && d.difficulty === "normal")?.id || null
+  );
   const [loading, setLoading]   = useState(false);
   const [err, setErr]           = useState("");
   const [openRooms, setOpenRooms] = useState([]);
@@ -46,6 +48,15 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     const unsub = subscribeOpenDungeonRooms(setOpenRooms);
     return () => { unsub?.(); setOpenRooms([]); };
   }, [tab]); // eslint-disable-line
+
+  // 難度切換時，保持同族地下城但更新到新難度
+  useEffect(() => {
+    setSelDungeon(prev => {
+      const currentFamily = prev?.split("_")[0] || "forest";
+      const next = DUNGEON_MAPS.find(d => d.family === currentFamily && d.difficulty === selDifficulty);
+      return next?.id || DUNGEON_MAPS.find(d => d.difficulty === selDifficulty)?.id || prev;
+    });
+  }, [selDifficulty]);
 
   const _d = new Date();
   const todayStr = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,"0")}-${String(_d.getDate()).padStart(2,"0")}`;
@@ -98,9 +109,10 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     if (!room) return;
     setLoading(true);
     const dungeon = DUNGEON_MAPS.find(d => d.id === selDungeon);
-    if (!dungeon) { setLoading(false); return; }
-    await initDungeonMapRun(roomId, dungeon.id);
+    if (!dungeon) { setErr("請先選擇地下城"); setLoading(false); return; }
+    const result = await initDungeonMapRun(roomId, dungeon.id);
     setLoading(false);
+    if (!result.ok) { setErr(`初始化失敗：${result.reason || "請再試一次"}`); return; }
     if (unsub) unsub();
     onEnterRoom(roomId);
   }
@@ -202,7 +214,8 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
           {!isHost && (
             <div className="text-center text-slate-400 text-sm py-2">等待房主開始…</div>
           )}
-          <button onClick={() => { if (unsub) unsub(); setRoomId(null); setRoom(null); }}
+          {err && <div className="text-center text-rose-400 text-sm font-bold py-1">{err}</div>}
+          <button onClick={() => { if (unsub) unsub(); setRoomId(null); setRoom(null); setErr(""); }}
             className="w-full py-2 rounded-xl text-slate-400 text-sm">離開等待室</button>
         </div>
       </div>

@@ -641,7 +641,7 @@ export async function initDungeonMapRun(roomId, dungeonId) {
       generatedFloors,
     });
     return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
+  } catch (e) { console.error("[initDungeonMapRun]", e); return { ok:false, reason:e.message }; }
 }
 
 // 保存地圖探索進度（房主移動後呼叫）

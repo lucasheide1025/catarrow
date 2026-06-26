@@ -24,11 +24,11 @@ export default function DungeonController({ roomId, onExit }) {
     );
   }
 
-  // 等待 Firestore 同步 mapDungeonId（防止初始 snapshot 拿到舊資料而直接跳戰鬥）
-  if (!room.mapDungeonId && !room.hostId) {
+  // 房間剛建立尚未開始（status=waiting 且無 mapDungeonId）→ 等待房主開始
+  if (!room.mapDungeonId && room.status === "waiting") {
     return (
       <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
-        載入地下城地圖…
+        等待房主開始地下城…
       </div>
     );
   }
