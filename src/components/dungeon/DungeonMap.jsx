@@ -21,7 +21,8 @@ function roomCenter(room) {
 
 export default function DungeonMap({
   floorData,
-  exploredIds = new Set(),
+  exploredIds  = new Set(),
+  clearedIds   = new Set(),
   currentRoomId,
   reachableIds = new Set(),
   onRoomClick,
@@ -79,12 +80,13 @@ export default function DungeonMap({
           const { cx, cy } = roomCenter(room);
           const isCurrent  = room.id === currentRoomId;
           const isExplored = exploredIds.has(room.id);
+          const isCleared  = clearedIds.has(room.id);
           const isReach    = reachableIds.has(room.id) && !isCurrent;
           const isVoting   = room.id === pendingVoteRoomId;
           const r = isCurrent ? R_CUR : R;
 
-          const fillColor  = isExplored ? meta.nodeColor : "#111827";
-          const iconOpacity = isExplored ? 1 : 0.3;
+          const fillColor   = isCleared ? "#0f172a" : isExplored ? meta.nodeColor : "#111827";
+          const iconOpacity = isExplored ? (isCleared ? 0.3 : 1) : 0.3;
 
           return (
             <g
@@ -128,6 +130,18 @@ export default function DungeonMap({
               >
                 {isExplored ? meta.icon : "?"}
               </text>
+
+              {/* 已清除：打勾覆蓋 */}
+              {isCleared && !isCurrent && (
+                <text
+                  x={cx + 10} y={cy - 10}
+                  fontSize={12} fontWeight="bold"
+                  fill="#4ade80"
+                  style={{ userSelect:"none", pointerEvents:"none" }}
+                >
+                  ✓
+                </text>
+              )}
 
               {/* 房間標籤（已探索才顯示） */}
               {isExplored && (

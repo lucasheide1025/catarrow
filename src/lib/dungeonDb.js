@@ -580,6 +580,157 @@ export async function clearDungeonProcessing(roomId) {
   try { await updateDoc(doc(db, D, roomId), { processing:false }); } catch (_) {}
 }
 
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  新版地圖模式函式（Phase 2）  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 初始化地圖探索（開始時房主呼叫）
+export async function initDungeonMapRun(roomId, dungeonId, startRoomId) {
+  try {
+    await updateDoc(doc(db, D, roomId), {
+      status:           "map_explore",
+      mapDungeonId:     dungeonId,
+      mapFloorIndex:    0,
+      mapCurrentRoomId: startRoomId,
+      mapExploredIds:   [startRoomId],
+      mapClearedIds:    [],
+      mapLoot:          {},
+      mapVoteProposal:  null,
+      mapVotes:         {},
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 保存地圖探索進度（房主移動後呼叫）
+export async function saveMapExploration(roomId, { floorIndex, currentRoomId, exploredIds, clearedIds }) {
+  try {
+    await updateDoc(doc(db, D, roomId), {
+      mapFloorIndex:    floorIndex,
+      mapCurrentRoomId: currentRoomId,
+      mapExploredIds:   [...exploredIds],
+      mapClearedIds:    [...clearedIds],
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 提案移動（房主）：開始投票，所有成員看到目標房間
+export async function proposeMapMove(roomId, targetRoomId) {
+  try {
+    await updateDoc(doc(db, D, roomId), {
+      mapVoteProposal: { targetRoomId, proposedAt: serverTimestamp() },
+      mapVotes: {},
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 投票（成員）
+export async function castMapVote(roomId, memberId, targetRoomId) {
+  try {
+    await updateDoc(doc(db, D, roomId), {
+      [`mapVotes.${memberId}`]: targetRoomId,
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 解析投票（房主 30 秒後呼叫）：票數最多的房間勝，平手由 hostId 決定
+export async function resolveMapVote(roomId, room, hostVoteRoomId) {
+  try {
+    const votes   = room.mapVotes || {};
+    const tally   = {};
+    for (const v of Object.values(votes)) tally[v] = (tally[v] || 0) + 1;
+    // 找票數最多的，平手選 hostVote
+    let winner = hostVoteRoomId;
+    let best   = 0;
+    for (const [roomId_, count] of Object.entries(tally)) {
+      if (count > best) { best = count; winner = roomId_; }
+    }
+    const prevExplored = room.mapExploredIds || [];
+    const newExplored  = prevExplored.includes(winner) ? prevExplored : [...prevExplored, winner];
+    await updateDoc(doc(db, D, roomId), {
+      mapCurrentRoomId: winner,
+      mapExploredIds:   newExplored,
+      mapVoteProposal:  null,
+      mapVotes:         {},
+    });
+    return { ok:true, winner };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 進入下一層（房主）
+export async function advanceMapFloor(roomId, dungeon, nextFloorIndex) {
+  try {
+    const nextFloor    = dungeon?.floors?.[nextFloorIndex];
+    if (!nextFloor) return { ok:false, reason:"no next floor" };
+    const startRoomId  = nextFloor.startRoomId;
+    await updateDoc(doc(db, D, roomId), {
+      mapFloorIndex:    nextFloorIndex,
+      mapCurrentRoomId: startRoomId,
+      mapExploredIds:   [startRoomId],
+      mapVoteProposal:  null,
+      mapVotes:         {},
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
+export async function enterMapCombatRoom(roomId, room, roomMeta) {
+  try {
+    const contract = roomMeta?.contract
+      ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
+      : { type:"standard", param:null };
+    const memberIds = Object.keys(room.members || {});
+    const upd = {};
+    for (const id of memberIds) {
+      upd[`members.${id}.contract`] = contract;
+      upd[`members.${id}.arrows`]   = [];
+      upd[`members.${id}.ready`]    = false;
+    }
+    await updateDoc(doc(db, D, roomId), {
+      ...upd,
+      status:              "active",
+      activeRoomContract:  contract,
+      round:               1,
+      log:                 [],
+      result:              null,
+      processing:          false,
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 戰鬥結束後返回地圖（房主）
+export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedIds) {
+  try {
+    const newCleared = prevClearedIds.includes(clearedRoomId)
+      ? prevClearedIds
+      : [...prevClearedIds, clearedRoomId];
+    await updateDoc(doc(db, D, roomId), {
+      status:             "map_explore",
+      mapClearedIds:      newCleared,
+      activeRoomContract: null,
+      result:             null,
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 累積地圖戰利品
+export async function addMapLoot(roomId, prevLoot, newItems) {
+  try {
+    const merged = { ...prevLoot };
+    for (const [k, v] of Object.entries(newItems)) {
+      merged[k] = (merged[k] || 0) + v;
+    }
+    await updateDoc(doc(db, D, roomId), { mapLoot: merged });
+    return { ok:true, loot: merged };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
 const STALE_MS = 2 * 60 * 60 * 1000;
 
 export function subscribeOpenDungeonRooms(callback) {
