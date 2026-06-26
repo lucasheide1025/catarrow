@@ -273,7 +273,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       if (!skipAllCtr && (i + 1) % ARROWS_PER_CTR === 0 && monsterHP > 0) {
         const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
         const ctrLog     = [];
-        for (const id of frontIds) {  // 只有前衛受到反擊
+        const ctrTargets = frontIds.length > 0 ? frontIds : rearIds; // 前衛全滅時後衛暴露
+        for (const id of ctrTargets) {  // 有前衛→只打前衛；前衛全陣亡→打後衛
           if (memberHPNow[id] <= 0) continue;
           const m            = members[id];
           const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
