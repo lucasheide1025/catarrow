@@ -9,7 +9,7 @@ import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES } from "./constants";
-import { EQUIP_UPGRADE_COST } from "./equipData";
+import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
@@ -2776,7 +2776,7 @@ export async function unequipSlot(memberId, slotId) {
 
 // 升級槽位：+1 plusLevel；滿 5 → 升一品級並重置
 // 回傳 { ok, upgraded, newGrade, newPlusLevel, reason }
-// clientData: { equip, coins, matItems } — 從 client 訂閱資料傳入，避免 getDoc 讀取
+// clientData: { equip, coins, matItems, nextMats } — 從 client 訂閱資料傳入，避免 getDoc 讀取
 export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
   if (!memberId || !slotId) return { ok: false, reason: "參數錯誤" };
   try {
@@ -2794,20 +2794,21 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
 
     const coins    = clientData.coins ?? 0;
     const matItems = clientData.matItems ?? {};
+    const mats     = clientData.nextMats || {};
 
     // 檢查金幣
     if (coins < cost.gold) {
       return { ok: false, reason: `金幣不足（需 ${cost.gold}，現有 ${coins}）` };
     }
 
-    // 檢查材料庫存
-    for (const req of cost.materials) {
+    // 檢查材料庫存（用隨機 nextMats）
+    for (const req of (mats.materials || [])) {
       if ((matItems[req.id] || 0) < req.count) {
         return { ok: false, reason: `材料不足（需 ${req.id} ×${req.count}）` };
       }
     }
-    if (cost.keyItem && (matItems[cost.keyItem.id] || 0) < cost.keyItem.count) {
-      return { ok: false, reason: `缺少關鍵材料：${cost.keyItem.note}` };
+    if (mats.keyItem && (matItems[mats.keyItem.id] || 0) < mats.keyItem.count) {
+      return { ok: false, reason: `缺少關鍵材料：${mats.keyItem.note || mats.keyItem.id}` };
     }
 
     // 計算新等級
@@ -2823,22 +2824,26 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
     const memRef = doc(db, C.members, memberId);
     const matRef = doc(db, C_MATERIALS, memberId);
 
-    // 扣材料
+    // 扣材料（用隨機 nextMats）
     const matUpdates = { updatedAt: serverTimestamp() };
-    for (const req of cost.materials) {
+    for (const req of (mats.materials || [])) {
       matUpdates[`items.${req.id}`] = increment(-req.count);
     }
-    if (cost.keyItem) {
-      matUpdates[`items.${cost.keyItem.id}`] = increment(-cost.keyItem.count);
+    if (mats.keyItem) {
+      matUpdates[`items.${mats.keyItem.id}`] = increment(-mats.keyItem.count);
     }
 
-    // 材料 + 會員（金幣＋裝備）兩個文件同時寫入，減少序列等待
+    // 升級完成後產生下一輪隨機材料
+    const newNextMats = generateRandomMats(newGrade);
+
+    // 材料 + 會員（金幣＋裝備＋nextMats）兩個文件同時寫入
     await Promise.all([
       updateDoc(matRef, matUpdates).catch(() => setDoc(matRef, matUpdates, { merge: true })),
       updateDoc(memRef, {
         coins: increment(-cost.gold),
         [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
         [`rpgEquip.${slotId}.grade`]:     newGrade,
+        [`rpgEquip.${slotId}.nextMats`]:  newNextMats,
         updatedAt: serverTimestamp(),
       }),
     ]);
@@ -2848,6 +2853,17 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
     console.warn("upgradeEquipSlot:", e?.message);
     return { ok: false, reason: e?.message || "系統錯誤" };
   }
+}
+
+// 初始化或刷新裝備槽位的隨機材料需求
+export async function saveEquipNextMats(memberId, slotId, mats) {
+  if (!memberId || !slotId || !mats) return;
+  try {
+    await updateDoc(doc(db, C.members, memberId), {
+      [`rpgEquip.${slotId}.nextMats`]: mats,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (e) { console.warn("saveEquipNextMats:", e?.message); }
 }
 
 // ─── 練箭里程碑獎勵 ────────────────────────────────────────

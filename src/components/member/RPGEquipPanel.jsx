@@ -1,10 +1,10 @@
 // src/components/member/RPGEquipPanel.jsx — RPG 裝備面板
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
+import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
-import { EQUIP_UPGRADE_COST, GRADE_PREFIX } from "../../lib/equipData";
+import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats } from "../../lib/equipData";
 
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
@@ -85,7 +85,7 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
-function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, upgradeErr }) {
+function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, upgradeErr, nextMats }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
   const isEmpty   = !equipped?.itemId;
   const grade     = equipped?.grade     || "common";
@@ -93,6 +93,7 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   const idx       = gradeIdx(grade);
   const isMax     = idx >= EQUIP_GRADES.length - 1 && plus >= 4;
   const cost      = EQUIP_UPGRADE_COST[grade];
+  const mats      = nextMats || {};
   const itemList  = (itemsMap || {})[slotDef.id] || [];
   const curItem   = itemList.find(i => i.id === equipped?.itemId);
 
@@ -100,8 +101,8 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   const inv = matInv || {};
   const myCoins = coins || 0;
   const coinsOk = !cost || myCoins >= cost.gold;
-  const matsOk  = !cost || cost.materials.every(m => (inv[m.id] || 0) >= m.count);
-  const keyOk   = !cost?.keyItem || (inv[cost.keyItem?.id] || 0) >= (cost.keyItem?.count || 1);
+  const matsOk  = !mats.materials || mats.materials.every(m => (inv[m.id] || 0) >= m.count);
+  const keyOk   = !mats.keyItem || (inv[mats.keyItem.id] || 0) >= (mats.keyItem.count || 1);
   const canUpgrade = coinsOk && matsOk && keyOk;
 
   return (
@@ -202,7 +203,9 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                 {/* 升級費用（含庫存顯示）*/}
                 {!isMax && cost && (
                   <div className="bg-slate-800/60 rounded-xl p-3 mb-3 text-xs">
-                    <div className="font-bold text-slate-300 mb-2">升級材料需求</div>
+                    <div className="font-bold text-slate-300 mb-2">升級材料需求
+                      <span className="ml-1.5 text-[10px] text-indigo-400 font-normal">🎲 隨機配方</span>
+                    </div>
 
                     {/* 金幣 */}
                     <div className="flex items-center gap-1.5 mb-1.5">
@@ -216,8 +219,8 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       </span>
                     </div>
 
-                    {/* 一般材料 */}
-                    {cost.materials.map(m => {
+                    {/* 一般材料（來自 nextMats）*/}
+                    {(mats.materials || []).map(m => {
                       const mat  = MATERIALS.find(x => x.id === m.id);
                       const has  = inv[m.id] || 0;
                       const ok   = has >= m.count;
@@ -238,27 +241,32 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       );
                     })}
 
-                    {/* 關鍵材料 */}
-                    {cost.keyItem && (() => {
-                      const mat  = MATERIALS.find(x => x.id === cost.keyItem.id);
-                      const has  = inv[cost.keyItem.id] || 0;
-                      const ok   = has >= cost.keyItem.count;
+                    {/* 關鍵材料（來自 nextMats）*/}
+                    {mats.keyItem && (() => {
+                      const mat  = MATERIALS.find(x => x.id === mats.keyItem.id);
+                      const has  = inv[mats.keyItem.id] || 0;
+                      const ok   = has >= mats.keyItem.count;
                       const nameColor = RARITY_CONFIG[mat?.rarity]?.color || "#fbbf24";
                       return (
                         <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-slate-700">
                           <span>{mat?.icon || "⭐"}</span>
                           <span style={{ color: nameColor }} className="font-black text-[11px]">
-                            {mat?.name || cost.keyItem.id}
+                            {mat?.name || mats.keyItem.id}
                           </span>
                           <span className="ml-auto font-black"
                             style={{ color: ok ? "#86efac" : "#f87171" }}>
                             {has}
                             <span className="text-slate-500 font-normal"> / </span>
-                            {cost.keyItem.count}
+                            {mats.keyItem.count}
                           </span>
                         </div>
                       );
                     })()}
+
+                    {/* 尚未載入隨機配方時的提示 */}
+                    {!mats.materials && (
+                      <div className="text-slate-500 text-center py-1">載入配方中…</div>
+                    )}
                   </div>
                 )}
 
@@ -315,12 +323,13 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
 // ── 主元件 ─────────────────────────────────────────────────
 export default function RPGEquipPanel({ onGoShop }) {
   const { profile } = useAuth();
-  const [activeSlot,  setActiveSlot]  = useState(null);
-  const [upgrading,   setUpgrading]   = useState(false);
-  const [msg,         setMsg]         = useState("");
-  const [upgradeErr,  setUpgradeErr]  = useState("");
-  const [rawItems,    setRawItems]    = useState([]);
-  const [matInv,      setMatInv]      = useState({});
+  const [activeSlot,      setActiveSlot]      = useState(null);
+  const [displayNextMats, setDisplayNextMats] = useState(null);
+  const [upgrading,       setUpgrading]       = useState(false);
+  const [msg,             setMsg]             = useState("");
+  const [upgradeErr,      setUpgradeErr]      = useState("");
+  const [rawItems,        setRawItems]        = useState([]);
+  const [matInv,          setMatInv]          = useState({});
 
   useEffect(() => subscribeEquipItems(setRawItems), []);
   useEffect(() => {
@@ -343,14 +352,32 @@ export default function RPGEquipPanel({ onGoShop }) {
     setTimeout(() => setMsg(""), 3000);
   }
 
+  function openSlot(slotDef) {
+    const equip = equipment[slotDef.id];
+    setActiveSlot(slotDef);
+    setUpgradeErr("");
+    if (equip?.nextMats) {
+      setDisplayNextMats(equip.nextMats);
+    } else if (equip?.itemId) {
+      // 舊資料或首次裝備：產生並存入 Firestore
+      const mats = generateRandomMats(equip.grade || "common");
+      setDisplayNextMats(mats);
+      saveEquipNextMats(profile.id, slotDef.id, mats);
+    } else {
+      setDisplayNextMats(null);
+    }
+  }
+
   async function handleEquip(itemId) {
     if (!activeSlot || !profile?.id) return;
     const cur = equipment[activeSlot.id];
-    // 每次都用 dot notation，確保不覆蓋其他槽位
     if (cur?.itemId) {
       await changeEquipBrand(profile.id, activeSlot.id, itemId);
     } else {
       await equipItem(profile.id, activeSlot.id, itemId);
+      // 首次裝備：產生初始隨機材料需求
+      const mats = generateRandomMats("common");
+      await saveEquipNextMats(profile.id, activeSlot.id, mats);
     }
     setActiveSlot(null);
     showMsg("✅ 裝備完成");
@@ -371,6 +398,7 @@ export default function RPGEquipPanel({ onGoShop }) {
       equip:    equipment[activeSlot.id],
       coins:    profile.coins || 0,
       matItems: matInv,
+      nextMats: displayNextMats,
     });
     setUpgrading(false);
     if (result.ok) {
@@ -413,7 +441,7 @@ export default function RPGEquipPanel({ onGoShop }) {
                 key={slotDef.id}
                 slotDef={slotDef}
                 equipped={equipment[slotDef.id] || null}
-                onClick={() => setActiveSlot(slotDef)}
+                onClick={() => openSlot(slotDef)}
                 onGoShop={onGoShop}
                 itemsMap={itemsMap}
               />
@@ -445,6 +473,7 @@ export default function RPGEquipPanel({ onGoShop }) {
           matInv={matInv}
           coins={profile?.coins || 0}
           upgradeErr={upgradeErr}
+          nextMats={displayNextMats}
         />
       )}
     </div>

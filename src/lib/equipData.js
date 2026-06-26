@@ -5,34 +5,39 @@
 //   plusLevel: 0~4（+5 時升一個品級，重置為 0）
 
 // ── 升級材料需求表 ───────────────────────────────────────────
-// 每個品級升到下一級所需材料（材料 id 對應 monsterMaterials.js）
+// 只保留金幣費用；材料需求改由 generateRandomMats() 動態產生並存入 Firestore
 export const EQUIP_UPGRADE_COST = {
-  common: {
-    gold: 100,
-    materials: [{ id: "ghost_m1", count: 3 }, { id: "mountain_m1", count: 2 }],
-    keyItem: null,
-  },
-  rare: {
-    gold: 300,
-    materials: [{ id: "ghost_m2", count: 3 }, { id: "insect_m2", count: 2 }],
-    keyItem: { id: "ghost_m3", count: 1, note: "精英怪限定掉落" },
-  },
-  elite: {
-    gold: 800,
-    materials: [{ id: "mountain_m3", count: 3 }, { id: "temple_m2", count: 2 }],
-    keyItem: { id: "insect_m3", count: 1, note: "史詩怪限定掉落" },
-  },
-  epic: {
-    gold: 2000,
-    materials: [{ id: "exam_m3", count: 3 }, { id: "workplace_m3", count: 2 }],
-    keyItem: { id: "mountain_m4", count: 1, note: "BOSS怪限定掉落" },
-  },
-  legend: {
-    gold: 5000,
-    materials: [{ id: "temple_m4", count: 3 }, { id: "ghost_m4", count: 2 }],
-    keyItem: { id: "exam_m5", count: 1, note: "神話怪限定掉落" },
-  },
+  common: { gold: 100  },
+  rare:   { gold: 300  },
+  elite:  { gold: 800  },
+  epic:   { gold: 2000 },
+  legend: { gold: 5000 },
 };
+
+// ── 隨機材料生成 ─────────────────────────────────────────────
+// 升級完成後呼叫，產生下一次的材料需求（六族隨機交叉）
+// 結果存入 member.rpgEquip[slotId].nextMats，確保同一次升級材料不變
+const _FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+const _GRADE_MAT_TIER = {
+  common: { main: "m1", key: "m2" },
+  rare:   { main: "m2", key: "m3" },
+  elite:  { main: "m3", key: "m4" },
+  epic:   { main: "m4", key: "m5" },
+  legend: { main: "m5", key: "m6" },
+};
+
+export function generateRandomMats(grade) {
+  const tiers = _GRADE_MAT_TIER[grade];
+  if (!tiers) return null;
+  const shuffled = [..._FAMILIES].sort(() => Math.random() - 0.5);
+  return {
+    materials: [
+      { id: `${shuffled[0]}_${tiers.main}`, count: 3 },
+      { id: `${shuffled[1]}_${tiers.main}`, count: 2 },
+    ],
+    keyItem: { id: `${shuffled[2]}_${tiers.key}`, count: 1, note: "升級關鍵素材" },
+  };
+}
 
 // ── 裝備品項資料表 ───────────────────────────────────────────
 // 同一個 slotId 的品項效果相同，玩家選自己喜歡的品牌
