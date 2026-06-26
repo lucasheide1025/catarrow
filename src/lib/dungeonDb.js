@@ -694,9 +694,12 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
       if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
+    const monsterHP = monster?.hp || 100;
     await updateDoc(doc(db, D, roomId), {
       ...upd,
       monster:             monster,
+      monsterHP:           monsterHP,
+      monsterMaxHP:        monsterHP,
       status:              "active",
       activeRoomContract:  contract,
       round:               1,

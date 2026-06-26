@@ -941,8 +941,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               <span style={{ fontSize:11 }}>{contractInfo.icon}</span>
               <span style={{ fontSize:9, fontWeight:700 }}>{getContractDesc(myContract)}</span>
             </div>
-            {/* 靶面格式選擇（標準合約 & 尚未輸入任何箭） */}
-            {myContract.type !== "hit_count" && myContract.type !== "all_hit" && arrows.length === 0 && !targetPending && (
+            {/* 靶面格式選擇（僅非地圖模式 & 標準合約 & 尚未輸入任何箭時顯示）
+                地圖模式房間自帶合約，不顯示此選擇器 */}
+            {!isMapMode && myContract.type !== "hit_count" && myContract.type !== "all_hit" && arrows.length === 0 && !targetPending && (
               <div style={{ background:"rgba(0,0,0,0.35)", borderRadius:10, padding:"8px 10px", marginBottom:6, display:"flex", flexDirection:"column", gap:6 }}>
                 <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
                 <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />

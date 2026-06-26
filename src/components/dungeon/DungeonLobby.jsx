@@ -180,7 +180,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                   <div className="flex gap-1.5 mb-3">
                     {DIFFICULTY_CONFIGS.map(dc => (
                       <button key={dc.id} onClick={() => setSelDifficulty(dc.id)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/20 border-white/30 text-white" : "border-white/10 bg-white/5 text-slate-400"}`}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/30 border-white/50 text-white shadow" : "border-white/10 bg-white/10 text-slate-300"}`}
                         style={{ borderColor: selDifficulty===dc.id ? dc.color : undefined, color: selDifficulty===dc.id ? dc.color : undefined }}>
                         {dc.icon} {dc.label}
                       </button>
@@ -194,12 +194,12 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                       const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
                       return (
                         <button key={fc.id} onClick={() => setSelDungeon(d.id)}
-                          className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5"}`}
+                          className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow" : "border-white/10 bg-white/8"}`}
                           style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
                           <span className="text-2xl">{fc.emoji}</span>
                           <div className={`text-xs font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
-                          <div className="text-[10px] text-slate-500">{d.name}</div>
-                          <div className="text-[10px] text-slate-500">{d.floorCount}層</div>
+                          <div className="text-[10px] text-slate-400">{d.name}</div>
+                          <div className="text-[10px] text-slate-400">{d.floorCount}層</div>
                         </button>
                       );
                     })}
@@ -282,12 +282,14 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         {tab === "create" ? (
           <div className="space-y-4">
             <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4">
-              <div className="font-bold text-amber-300 mb-1">🎯 地下城特色</div>
+              <div className="font-bold text-amber-300 mb-1">🗺️ 地下城地圖模式</div>
               <ul className="text-sm text-slate-300 space-y-1">
-                <li>• 每位射手獲得不同任務合約</li>
-                <li>• 通關後選擇 A / B 路線繼續</li>
-                <li>• 商店補給、隨機事件</li>
-                <li>• 金幣掉落 ×2</li>
+                <li>• 6 大種族（幽冥/山嶺/昆蟲/職場/考試/神廟）</li>
+                <li>• 4 種難度（普通/進階/困難/地獄）</li>
+                <li>• 共 24 張獨特地圖，每張地圖自由探索</li>
+                <li>• 房間自帶合約（標準/命中/得分/全中/X爆/指定分數）</li>
+                <li>• 前後衛陣型 + 符文強化</li>
+                <li>• 隊伍投票移動路線</li>
               </ul>
             </div>
             {dungeonUsedToday && (
