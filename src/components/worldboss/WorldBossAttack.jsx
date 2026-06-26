@@ -14,7 +14,6 @@ import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
@@ -180,7 +179,7 @@ const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
   const { profile } = useAuth();
-  const { saveBond, hasCat, catName, catATK } = useCatCompanion();
+  const { saveBond, hasCat, catName, catATK, triggerCatSkill } = useCatCompanion();
   const todayStr = new Date().toISOString().slice(0, 10);
   const isGuest  = !!guestOverride;
 
@@ -284,8 +283,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const [dmgLog,    setDmgLog]    = useState([]);
   const [catMsg,    setCatMsg]    = useState(null);
-  const [showCatPhase,  setShowCatPhase]  = useState(false);
-  const [catPhaseDmg,   setCatPhaseDmg]   = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
   const [showCard,   setShowCard]  = useState(false);
@@ -466,6 +463,35 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     setProcessingIdx(-1);
 
+    // ── 貓貓每回合攻擊（與打怪模式相同，HP > 0 才出擊）────────
+    if (hasCat && catATK && localBossHP > 0) {
+      let catDmg = 0;
+      for (let i = 0; i < 6; i++) {
+        const s = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
+        catDmg += calcArrowDmg(s, catATK, boss.def, participantBonus);
+      }
+      catDmg = Math.round(catDmg);
+      const catSkill = triggerCatSkill?.();
+      let skillNote = "";
+      if (catSkill?.triggered) {
+        if (catSkill.skillGroup === "atk") {
+          const bonus = Math.round(catDmg * (catSkill.extraMult || 0.5));
+          catDmg += bonus;
+          skillNote = ` ✨ 特技爆發！傷害 ×${(1 + (catSkill.extraMult || 0.5)).toFixed(1)}`;
+        } else if (catSkill.skillGroup === "heal") {
+          skillNote = ` 💚 ${catName} 治療技能觸發！`;
+        } else if (catSkill.skillGroup === "def") {
+          skillNote = ` 🛡️ ${catName} 防護姿態觸發！`;
+        }
+      }
+      totalDmg += catDmg;
+      localBossHP = Math.max(0, localBossHP - catDmg);
+      setBossHP(localBossHP);
+      setDmgLog(prev => [...prev, `🐱 ${catName} 出擊！6箭齊射 -${catDmg}${skillNote}`]);
+      sfxArrowHit();
+      await delay(300);
+    }
+
     const roundData  = { arrows: fullArrows, dmg: totalDmg, crits };
     const nextRounds = [...allRounds, roundData];
     setAllRounds(nextRounds);
@@ -506,11 +532,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           if (bossKilledThisRound || isLast) {
             // Boss 已死 或 最後一回合 → 結束
             setSubPhase("done");
-            if (isLast && hasCat) {
-              runCatAttack(nextRounds, bossKilledThisRound);
-            } else {
-              submitAttack(nextRounds);
-            }
+            submitAttack(nextRounds);
           } else {
             // 中途記憶：反擊結算後，下一回合開始前儲存
             try {
@@ -528,31 +550,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         }, 1500);
       }, 480);
     }, 2200);
-  }
-
-  // ── 貓貓攻擊回合（最後一回合後觸發，不論 Boss 是否死亡）────────
-  async function runCatAttack(rounds, bossAlreadyDead = false) {
-    if (!hasCat || !catATK) { submitAttack(rounds); return; }
-    let catTotalDmg = 0;
-    const catArrows = [];
-    if (!bossAlreadyDead) {
-      for (let i = 0; i < 6; i++) {
-        const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-        const dmg   = calcArrowDmg(score, catATK, boss.def, participantBonus);
-        catTotalDmg += dmg;
-        catArrows.push({ label: String(score), score, dmg });
-      }
-    }
-    setCatPhaseDmg(catTotalDmg);
-    setShowCatPhase(true);
-    await delay(2500);
-    setShowCatPhase(false);
-    if (!bossAlreadyDead && catTotalDmg > 0) {
-      const catRound = { arrows: catArrows, dmg: catTotalDmg, crits: 0, isCat: true };
-      submitAttack([...rounds, catRound]);
-    } else {
-      submitAttack(rounds);
-    }
   }
 
   // ── 送出攻擊 ─────────────────────────────────────────────
@@ -898,13 +895,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
           {/* CatMsg 放在 Boss 圖區內，不蓋住底部控制列 */}
           {catMsg && <CatMsg msg={catMsg} onDone={() => setCatMsg(null)}/>}
-          {/* 貓貓攻擊回合覆蓋層（使用共用元件）*/}
-          <CatRoundOverlay
-            open={showCatPhase}
-            cats={showCatPhase && hasCat ? [{ catId: profile?.equippedCat?.catId || "baobao", catName: catName || "貓貓", dmg: catPhaseDmg }] : []}
-          />
-
-          <div style={{ animation: animBossAttackDown ? "mb-monster-attack 0.65s ease" : animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
+<div style={{ animation: animBossAttackDown ? "mb-monster-attack 0.65s ease" : animBossCharge ? "mb-charge 0.7s ease infinite" : animMonsterHit ? "mb-monster-hit 0.5s ease" : undefined }}>
             <WorldBossSVG bossKey={event.bossKey} currentHP={bossHP} maxHP={event.bossMaxHP} size={280}/>
           </div>
           {/* 浮動傷害 / MISS */}
