@@ -55,7 +55,9 @@ export default function DungeonMap({
         style={{ display:"block", minWidth: svgW }}
       >
         {/* ── 連線 ── */}
-        {connections.map(([aId, bId], i) => {
+        {connections.map((conn, i) => {
+          const aId = Array.isArray(conn) ? conn[0] : conn.a;
+          const bId = Array.isArray(conn) ? conn[1] : conn.b;
           const a = roomMap[aId];
           const b = roomMap[bId];
           if (!a || !b) return null;
