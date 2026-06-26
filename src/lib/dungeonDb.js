@@ -10,7 +10,7 @@ import { addCoins, markDungeonUsed } from "./db";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import {
   assignContracts, rerollContract, generatePathOptions,
-  drawDungeonEvent, DUNGEON_SHOP_ITEMS,
+  drawDungeonEvent, DUNGEON_SHOP_ITEMS, generateDungeonFloors,
 } from "./dungeonData";
 
 const D = "dungeonRooms";
@@ -585,9 +585,11 @@ export async function clearDungeonProcessing(roomId) {
 // ▼▼▼  新版地圖模式函式（Phase 2）  ▼▼▼
 // ══════════════════════════════════════════════════════════════
 
-// 初始化地圖探索（開始時房主呼叫）
-export async function initDungeonMapRun(roomId, dungeonId, startRoomId) {
+// 初始化地圖探索（開始時房主呼叫）— 隨機生成全部樓層並存入 Firestore
+export async function initDungeonMapRun(roomId, dungeonId) {
   try {
+    const generatedFloors = generateDungeonFloors(dungeonId);
+    const startRoomId     = generatedFloors[0]?.startRoomId || "f0c0r0";
     await updateDoc(doc(db, D, roomId), {
       status:           "map_explore",
       mapDungeonId:     dungeonId,
@@ -598,6 +600,7 @@ export async function initDungeonMapRun(roomId, dungeonId, startRoomId) {
       mapLoot:          {},
       mapVoteProposal:  null,
       mapVotes:         {},
+      generatedFloors,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -661,16 +664,16 @@ export async function resolveMapVote(roomId, room, hostVoteRoomId) {
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-// 進入下一層（房主）
-export async function advanceMapFloor(roomId, dungeon, nextFloorIndex) {
+// 進入下一層（房主）— 接受 generatedFloors 陣列或舊格式 dungeon 物件
+export async function advanceMapFloor(roomId, dungeonOrFloors, nextFloorIndex) {
   try {
-    const nextFloor    = dungeon?.floors?.[nextFloorIndex];
+    const floors    = Array.isArray(dungeonOrFloors) ? dungeonOrFloors : dungeonOrFloors?.floors;
+    const nextFloor = floors?.[nextFloorIndex];
     if (!nextFloor) return { ok:false, reason:"no next floor" };
-    const startRoomId  = nextFloor.startRoomId;
     await updateDoc(doc(db, D, roomId), {
       mapFloorIndex:    nextFloorIndex,
-      mapCurrentRoomId: startRoomId,
-      mapExploredIds:   [startRoomId],
+      mapCurrentRoomId: nextFloor.startRoomId,
+      mapExploredIds:   [nextFloor.startRoomId],
       mapVoteProposal:  null,
       mapVotes:         {},
     });

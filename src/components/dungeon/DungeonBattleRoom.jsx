@@ -130,9 +130,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const me     = room?.members?.[myId] || {};
   const status = room?.status;
 
-  // Boss 房間偵測（地圖模式用）
-  const _dungeonForRoom = isMapMode ? DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId) : null;
-  const _curFloorData   = _dungeonForRoom?.floors?.[room?.mapFloorIndex || 0];
+  // Boss 房間偵測（地圖模式用）— 優先讀 generatedFloors
+  const _dungeonForRoom  = isMapMode ? DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId) : null;
+  const _generatedFloors = room?.generatedFloors || null;
+  const _curFloorData    = _generatedFloors
+    ? (_generatedFloors[room?.mapFloorIndex || 0] || null)
+    : _dungeonForRoom?.floors?.[room?.mapFloorIndex || 0];
   const _curRoomMeta    = _curFloorData?.rooms?.find(r => r.id === (room?.mapCurrentRoomId || ""));
   const isBossRoom      = _curRoomMeta?.type === "boss";
 
@@ -635,7 +638,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     if (isMapMode) {
       if (isBossRoom) {
         // ── 地下城首領通關 → 總結算畫面 ──────────────────────
-        const totalFloors = _dungeonForRoom?.floorCount || 1;
+        const totalFloors = _generatedFloors?.length || _dungeonForRoom?.floorCount || 1;
         return (
           <div className="h-[100dvh] overflow-y-auto flex flex-col bg-gradient-to-b from-amber-950 via-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-5 pb-10">
             <div className="text-7xl">🏆</div>

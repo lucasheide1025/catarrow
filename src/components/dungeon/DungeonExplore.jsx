@@ -201,8 +201,12 @@ export default function DungeonExplore({
     setInited(true);
   }, [dungeonProp, roomId]);
 
-  const dungeon  = dungeonProp || DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId);
-  const floorData = dungeon ? getDungeonFloor(dungeon, floorIndex) : null;
+  const dungeon         = dungeonProp || DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId);
+  const generatedFloors = room?.generatedFloors || null;
+  // 優先讀 Firestore 隨機生成的樓層，preview 模式 fallback 到靜態地圖
+  const floorData       = generatedFloors
+    ? (generatedFloors[floorIndex] || null)
+    : (dungeon ? getDungeonFloor(dungeon, floorIndex) : null);
 
   const reachableIds = useMemo(
     () => floorData && currentRoomId ? getReachableRooms(floorData, currentRoomId) : new Set(),
@@ -270,19 +274,22 @@ export default function DungeonExplore({
 
   // 切換樓層
   const handleNextFloor = useCallback(async () => {
-    const nextIdx = floorIndex + 1;
-    if (!dungeon || nextIdx >= dungeon.floorCount) return;
+    const nextIdx  = floorIndex + 1;
+    const totalF   = generatedFloors?.length || dungeon?.floorCount || 1;
+    if (nextIdx >= totalF) return;
     if (roomId && isHost) {
-      await advanceMapFloor(roomId, dungeon, nextIdx);
+      await advanceMapFloor(roomId, generatedFloors || dungeon, nextIdx);
     } else {
-      const nextFloor = getDungeonFloor(dungeon, nextIdx);
+      const nextFloor = generatedFloors
+        ? generatedFloors[nextIdx]
+        : getDungeonFloor(dungeon, nextIdx);
       if (!nextFloor) return;
       setFloorIndex(nextIdx);
       setCurrentRoomId(nextFloor.startRoomId);
       setExploredIds(new Set([nextFloor.startRoomId]));
     }
     setEventModal(null);
-  }, [floorIndex, dungeon, roomId, isHost]);
+  }, [floorIndex, dungeon, generatedFloors, roomId, isHost]);
 
   // 確認進入戰鬥（host 呼叫 enterMapCombatRoom，Firestore status→active，DungeonController 自動路由）
   const handleEnterBattle = useCallback(async () => {
@@ -298,12 +305,12 @@ export default function DungeonExplore({
     setEventModal(null);
   }, [roomId, isHost, eventModal, room]);
 
-  if (!inited || !dungeon) {
+  if (!inited || (!dungeon && !generatedFloors)) {
     return <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>載入地圖…</div>;
   }
 
   const currentRoom = floorData?.rooms?.find(r => r.id === currentRoomId);
-  const totalFloors = dungeon.floorCount || 1;
+  const totalFloors = generatedFloors?.length || dungeon?.floorCount || 1;
 
   return (
     <div style={{
@@ -317,8 +324,11 @@ export default function DungeonExplore({
       }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:18, cursor:"pointer", padding:"2px 6px" }}>←</button>
         <div style={{ flex:1 }}>
-          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24" }}>
-            {dungeon.emoji} {dungeon.name}
+          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+            {dungeon?.emoji} {dungeon?.name}
+            {floorData?.isBossFloor && (
+              <span style={{ fontSize:10, background:"#ef4444", color:"white", borderRadius:5, padding:"2px 6px", fontWeight:700 }}>BOSS層</span>
+            )}
           </div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>
             第 {floorIndex + 1} 層 / 共 {totalFloors} 層

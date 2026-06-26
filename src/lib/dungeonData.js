@@ -411,3 +411,106 @@ export const DUNGEON_MAPS = Object.entries(FAMILY_META).flatMap(([family, fm]) =
     loot: fm.loot,
   }))
 );
+
+// ── 隨機 2D 格子地圖生成 ──────────────────────────────────────
+// 每層格子大小（漸進封頂）
+export const FLOOR_GRID_CONFIGS = [
+  { cols:2, rows:2 },  // floor 0: 4 rooms
+  { cols:2, rows:3 },  // floor 1: 6 rooms
+  { cols:3, rows:3 },  // floor 2: 9 rooms
+  { cols:3, rows:4 },  // floor 3: 12 rooms
+  { cols:4, rows:4 },  // floor 4: 16 rooms
+  { cols:4, rows:4 },  // floor 5: 16 rooms (cap)
+];
+
+export const DIFFICULTY_FLOOR_COUNTS = {
+  normal:   4,
+  advanced: 5,
+  hard:     6,
+  hell:     7,
+};
+
+const GRID_ROOM_WEIGHTS = [
+  { type:"monster",  w:35 },
+  { type:"elite",    w:10 },
+  { type:"chest",    w:15 },
+  { type:"rest",     w:15 },
+  { type:"trap",     w:10 },
+  { type:"merchant", w:10 },
+  { type:"event",    w:5  },
+];
+
+function _pickWeighted(weights) {
+  const total = weights.reduce((s, e) => s + e.w, 0);
+  let r = Math.random() * total;
+  for (const e of weights) { r -= e.w; if (r <= 0) return e.type; }
+  return weights[0].type;
+}
+
+function _dungeonDifficulty(dungeonId) { return dungeonId?.split("_")[1] || "normal"; }
+function _dungeonTier(dungeonId) {
+  return { normal:1, advanced:3, hard:4, hell:5 }[_dungeonDifficulty(dungeonId)] || 1;
+}
+
+function _roomMeta(type, tier) {
+  if (!["monster","elite","boss"].includes(type)) return undefined;
+  if (type === "monster") return { tier, contract:"standard" };
+  if (type === "elite")   return { tier, contract:"all_hit" };
+  return { tier, contract:"score_gate", contractParam: Math.min(6 + tier, 10) };
+}
+
+function _gridConns(fi, cols, rows) {
+  const c = [];
+  for (let row = 0; row < rows; row++)
+    for (let col = 0; col < cols; col++) {
+      if (col + 1 < cols) c.push([`f${fi}c${col}r${row}`, `f${fi}c${col+1}r${row}`]);
+      if (row + 1 < rows) c.push([`f${fi}c${col}r${row}`, `f${fi}c${col}r${row+1}`]);
+    }
+  return c;
+}
+
+function _regularFloor(fi, cols, rows, tier) {
+  const stairCol = Math.floor(Math.random() * cols);
+  const rooms = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const isEntry = row === 0 && col === 0;
+      const isStair = row === rows - 1 && col === stairCol;
+      const type    = isEntry ? "monster" : isStair ? "stairs" : _pickWeighted(GRID_ROOM_WEIGHTS);
+      const meta    = _roomMeta(type, tier);
+      const room    = { id:`f${fi}c${col}r${row}`, type, x:col, y:row, label:ROOM_TYPE_META[type]?.label || type };
+      if (meta) room.meta = meta;
+      rooms.push(room);
+    }
+  }
+  return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:_gridConns(fi, cols, rows) };
+}
+
+function _bossFloor(fi, tier) {
+  const layout = [
+    { col:0, row:0, type:"monster",  label:"入口通道" },
+    { col:1, row:0, type:"rest",     label:"休息室"   },
+    { col:0, row:1, type:"elite",    label:"精英守衛" },
+    { col:1, row:1, type:"merchant", label:"神秘商人" },
+    { col:0, row:2, type:"monster",  label:"深處通道" },
+    { col:1, row:2, type:"boss",     label:"BOSS"     },
+  ];
+  const rooms = layout.map(({ col, row, type, label }) => {
+    const meta = _roomMeta(type, tier);
+    const room = { id:`f${fi}c${col}r${row}`, type, x:col, y:row, label };
+    if (meta) room.meta = meta;
+    return room;
+  });
+  return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:_gridConns(fi, 2, 3), isBossFloor:true };
+}
+
+export function generateDungeonFloors(dungeonId) {
+  const difficulty = _dungeonDifficulty(dungeonId);
+  const floorCount = DIFFICULTY_FLOOR_COUNTS[difficulty] || 4;
+  const tier       = _dungeonTier(dungeonId);
+  return Array.from({ length: floorCount }, (_, fi) => {
+    if (fi === floorCount - 1) return _bossFloor(fi, tier);
+    const cfg = FLOOR_GRID_CONFIGS[Math.min(fi, FLOOR_GRID_CONFIGS.length - 1)];
+    return _regularFloor(fi, cfg.cols, cfg.rows, tier);
+  });
+}
