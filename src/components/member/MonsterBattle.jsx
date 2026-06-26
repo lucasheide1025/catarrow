@@ -239,6 +239,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const phaseRef = useRef("select");
   const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
   const cardCollRef = useRef({ cards: {}, equipped: [] }); // 供 startBattle 同步讀取
+  const extraDexRef = useRef({}); // monsterDex/craftStats/... 不放 dep array，用 ref 同步最新值
+  extraDexRef.current = { monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl };
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // 讀取今日已有箭數（用於里程碑計算）
@@ -357,10 +359,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   useEffect(() => {
     if (isGuest || !profile || !certRecords) return;
-    const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, duelStats, cardData:cardColl });
+    const { monsterDex: mDex, craftStats: cSt, chestStats: chSt, potionDex: pDex, duelStats: dSt, cardColl: cColl } = extraDexRef.current;
+    const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, monsterDex:mDex, craftStats:cSt, chestStats:chSt, potionDex:pDex, duelStats:dSt, cardData:cColl });
     const stats = calcArcherStats({ member:profile, certification, certRecords, dexStats:ds });
     setArcherStats(stats);
-  }, [profile, certification, certRecords, dexGrants, monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl, isGuest]); // eslint-disable-line
+  }, [profile, certification, certRecords, dexGrants, isGuest]); // eslint-disable-line
 
   useEffect(() => {
     if (isGuest || !profile?.id) return;
