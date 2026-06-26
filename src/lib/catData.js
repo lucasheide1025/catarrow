@@ -229,6 +229,13 @@ export function drawRandomCat(ownedCatIds = []) {
   return unowned[Math.floor(Math.random() * unowned.length)];
 }
 
+// ── 貓貓類型固定對應（位置決定，不可自選）────────────────
+export const CAT_TYPE_MAP = {
+  daming:   "allround", gege:   "allround", meimei:   "allround",
+  niuniu:   "attack",   haji:   "attack",   baobao:   "attack",
+  youyou:   "defense",  xiaoan: "defense",  diandian: "defense",
+};
+
 // ── 貓貓技能分組（前三補血、中三攻擊、後三防禦）──────────
 export const CAT_SKILL_GROUPS = {
   daming:   "heal",

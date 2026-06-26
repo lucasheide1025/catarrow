@@ -246,10 +246,10 @@ const FAMILY_META = {
 };
 
 const DIFFICULTY_META = {
-  normal:   { label:"普通", icon:"🌱", color:"#4ade80", floorCount:2, bossModifier:{ hp:1.5, atk:1.5, def:1.5 }, bossTier:2 },
-  advanced: { label:"進階", icon:"⚔️", color:"#60a5fa", floorCount:3, bossModifier:{ hp:1.5, atk:1.2, def:1.2 }, bossTier:4 },
-  hard:     { label:"困難", icon:"🔥", color:"#f97316", floorCount:3, bossModifier:{ hp:1.4 },                    bossTier:5 },
-  hell:     { label:"地獄", icon:"💀", color:"#ef4444", floorCount:4, bossModifier:null,                          bossTier:6 },
+  normal:   { label:"普通", icon:"🌱", color:"#4ade80", floorCount:4, bossModifier:{ hp:1.5, atk:1.5, def:1.5 }, bossTier:2 },
+  advanced: { label:"進階", icon:"⚔️", color:"#60a5fa", floorCount:5, bossModifier:{ hp:1.5, atk:1.2, def:1.2 }, bossTier:4 },
+  hard:     { label:"困難", icon:"🔥", color:"#f97316", floorCount:6, bossModifier:{ hp:1.4 },                    bossTier:5 },
+  hell:     { label:"地獄", icon:"💀", color:"#ef4444", floorCount:7, bossModifier:null,                          bossTier:6 },
 };
 
 function mkNormal(bm) {

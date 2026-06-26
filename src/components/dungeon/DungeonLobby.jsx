@@ -1,40 +1,23 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor, initDungeonMapRun, setDungeonMemberRole } from "../../lib/dungeonDb";
+import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, initDungeonMapRun, setDungeonMemberRole } from "../../lib/dungeonDb";
 import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
-import { DUNGEON_LENGTHS, DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
-import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
+import { DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
+import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { getCatStatMult, getBondLevel } from "../../lib/catData";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 
-const MODES = [
-  { id:"novice",  label:"新手",   icon:"🌱", desc:"HP×1.5，適合初學者"  },
-  { id:"student", label:"學員",   icon:"⚔️", desc:"HP×2，標準難度"      },
-  { id:"veteran", label:"老手",   icon:"🔥", desc:"HP×4，ATK/DEF 翻倍" },
-];
-
-function pickRandomMonsters(floor, hostAtk = 10) {
-  // 房主 ATK 每 20 點拉高一個 tier（最高 tier 4）
-  const tierBoost = Math.floor(hostAtk / 20);
-  const maxTier   = Math.min(4, Math.ceil(floor / 2) + tierBoost);
-  const pool = MONSTERS.filter(m => m.tier <= maxTier);
-  if (!pool.length) return MONSTERS[0];
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
   const { profile } = useAuth();
   const { catATK: myCatATK } = useCatCompanion();
   const [tab, setTab]           = useState("create");
-  const [dungeonMode, setDungeonMode] = useState("map"); // "map" | "classic"
   const [selDungeon,  setSelDungeon]  = useState(DUNGEON_MAPS.find(d => d.enabled)?.id || null);
   const [selDifficulty, setSelDifficulty] = useState("normal");
-  const [selLength, setSelLength] = useState("standard");
-  const [selMode,   setSelMode]   = useState("student");
   const [loading, setLoading]   = useState(false);
   const [err, setErr]           = useState("");
   const [openRooms, setOpenRooms] = useState([]);
@@ -103,7 +86,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
-      if (r?.status === "active") { sub(); onEnterRoom(res.roomId); }
+      if (r?.status === "active" || r?.status === "map_explore") { sub(); onEnterRoom(res.roomId); }
     });
     setUnsub(() => sub);
     setRoomId(res.roomId);
@@ -114,20 +97,9 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   async function handleStart() {
     if (!room) return;
     setLoading(true);
-
-    if (dungeonMode === "map") {
-      // 新版地圖模式
-      const dungeon   = DUNGEON_MAPS.find(d => d.id === selDungeon);
-      const startRoom = dungeon?.floors?.[0]?.startRoomId;
-      if (!dungeon || !startRoom) { setLoading(false); return; }
-      await initDungeonMapRun(roomId, dungeon.id, startRoom);
-    } else {
-      // 舊版樓層模式
-      const lengthDef    = DUNGEON_LENGTHS[selLength];
-      const firstMonster = pickRandomMonsters(1, myATK);
-      await startDungeonFloor(roomId, room, firstMonster, selMode, selLength, lengthDef.totalFloors);
-    }
-
+    const dungeon = DUNGEON_MAPS.find(d => d.id === selDungeon);
+    if (!dungeon) { setLoading(false); return; }
+    await initDungeonMapRun(roomId, dungeon.id);
     setLoading(false);
     if (unsub) unsub();
     onEnterRoom(roomId);
@@ -137,7 +109,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   if (roomId && room) {
     const memberEntries = Object.entries(room.members || {});
     return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+      <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
         {/* Header */}
         <div className="shrink-0 text-center py-5 border-b border-white/10">
           <div className="text-3xl mb-1">🏰</div>
@@ -151,7 +123,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
             const isMe = id === myId;
             const isRear = m.role === "rear";
             return (
-              <div key={id} className="bg-white/5 rounded-xl px-4 py-3 space-y-2">
+              <div key={id} className="bg-slate-900/70 rounded-xl px-4 py-3 space-y-2">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{isRear ? "🛡️" : "⚔️"}</span>
                   <div className="flex-1">
@@ -183,20 +155,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
           {isHost && (
             <div className="mt-4 space-y-4">
-              {/* 模式切換 */}
-              <div>
-                <div className="text-sm text-slate-400 mb-2 font-semibold">遊戲模式</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[["map","🗺️ 地圖探索"],["classic","⚔️ 經典樓層"]].map(([k,l]) => (
-                    <button key={k} onClick={() => setDungeonMode(k)}
-                      className={`py-2 rounded-xl text-sm font-bold border transition-all ${dungeonMode===k ? "border-amber-400 bg-amber-400/20 text-amber-300" : "border-white/10 bg-white/5 text-slate-300"}`}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {dungeonMode === "map" && (
+              <div className="bg-slate-900/60 rounded-xl p-3">
                 <div>
                   <div className="text-sm text-slate-400 mb-2 font-semibold">🏷️ 難度</div>
                   <div className="flex gap-1.5 mb-3">
@@ -216,7 +175,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                       const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
                       return (
                         <button key={fc.id} onClick={() => setSelDungeon(d.id)}
-                          className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-white/8"}`}
+                          className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-slate-900/70"}`}
                           style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
                           <span className="text-3xl">{fc.emoji}</span>
                           <div className={`text-sm font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
@@ -227,34 +186,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                     })}
                   </div>
                 </div>
-              )}
-
-              {dungeonMode === "classic" && (<>
-                {/* 長度選擇 */}
-                <div>
-                  <div className="text-sm text-slate-400 mb-2 font-semibold">地下城長度</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {Object.entries(DUNGEON_LENGTHS).map(([k, v]) => (
-                      <button key={k} onClick={() => setSelLength(k)}
-                        className={`py-2 rounded-xl text-sm font-bold border transition-all ${selLength===k ? "border-amber-400 bg-amber-400/20 text-amber-300" : "border-white/10 bg-white/5 text-slate-300"}`}>
-                        {v.icon} {v.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* 難度選擇 */}
-                <div>
-                  <div className="text-sm text-slate-400 mb-2 font-semibold">難度</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {MODES.map(md => (
-                      <button key={md.id} onClick={() => setSelMode(md.id)}
-                        className={`py-2 rounded-xl text-sm font-bold border transition-all ${selMode===md.id ? "border-rose-400 bg-rose-400/20 text-rose-300" : "border-white/10 bg-white/5 text-slate-300"}`}>
-                        {md.icon} {md.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>)}
+              </div>
             </div>
           )}
         </div>
@@ -262,9 +194,9 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         {/* Footer */}
         <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10 space-y-2">
           {isHost && (
-            <button onClick={handleStart} disabled={loading || members.length < 1}
+            <button onClick={handleStart} disabled={loading || memberEntries.length < 1}
               className="w-full py-3 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
-              {loading ? "準備中…" : `🏰 開始地下城（${members.length}人）`}
+              {loading ? "準備中…" : `🏰 開始地下城（${memberEntries.length}人）`}
             </button>
           )}
           {!isHost && (
