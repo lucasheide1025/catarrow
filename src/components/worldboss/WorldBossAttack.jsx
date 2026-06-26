@@ -902,8 +902,75 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
         </div>
 
+        {/* ── 輸入區（Boss 圖正下方） ── */}
+        <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px 2px" }}>
+          <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
+            <BattleArrowSlots
+                arrows={arrows}
+                totalArrows={ARROWS_PER}
+                onUndo={() => setArrows(prev => prev.slice(0,-1))}
+                showUndo={arrows.length > 0 && subPhase === "shooting"}
+                slotSize={36}
+                showScore={false}
+                processing={subPhase !== "shooting"}
+                processingIdx={processingIdx}
+                extraContent={
+                  subPhase === "shooting" && (
+                    <button onClick={() => setTargetMode(m => !m)} style={{
+                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                    }}>🎯</button>
+                  )
+                }
+              />
+              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
+                {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
+              </span>
+          </div>
+          {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
+          <TargetFaceOverlay
+            open={targetMode && subPhase === "shooting" && !targetPending}
+            fmtId={targetFmt}
+            arrowLabels={arrows.map(a => a.label)}
+            arrowsPerRound={ARROWS_PER}
+            onArrow={handleScore}
+            onUndo={() => setArrows(prev => prev.slice(0,-1))}
+            onSubmit={handleTargetSubmit}
+            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
+          />
+          {subPhase === "shooting" && (
+            <BattleScoreButtons
+                labels={SCORE_BTNS.map(s => String(s))}
+                onScore={handleScore}
+                disabled={false}
+                variant="image"
+              />
+          )}
+          {subPhase === "shooting" && arrows.length >= ARROWS_PER && !targetPending && (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4 }}>
+              <button onClick={() => { sfxCast(); finishRound(arrows); }}
+                style={{ width:"100%", padding:"12px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
+                ⚔️ 送出 {ARROWS_PER} 箭！
+              </button>
+              <button onClick={() => setArrows(prev => prev.slice(0,-1))}
+                style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
+                ← 取消上一箭
+              </button>
+            </div>
+          )}
+          {subPhase === "processing" && (
+            <div style={{ minHeight:44, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+              {dmgLog.slice(-3).map((l, i, arr) => (
+                <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i===arr.length-1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* ── 弓箭手 + 資訊同框列：前後排 ── */}
-        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.88)", borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ flexShrink:0, background:"rgba(0,0,0,0.88)", borderTop:"1px solid rgba(255,255,255,0.1)", paddingBottom:"max(6px, env(safe-area-inset-bottom))" }}>
           {/* 前排：前3位同伴 + 玩家（固定顯示） */}
           <div style={{ display:"flex", gap:3, padding:"4px 6px 4px", justifyContent:"center",
             animation: animPlayerHit ? "mb-screen-shake 0.55s ease" : undefined }}>
@@ -1012,76 +1079,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
         </div>
 
-        {/* ── 輸入區（深色底板，仿 PartyBattleRoom） ── */}
-        <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px", paddingBottom:"max(10px, env(safe-area-inset-bottom))" }}>
-          {/* 箭矢格 */}
-          <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
-            <BattleArrowSlots
-                arrows={arrows}
-                totalArrows={ARROWS_PER}
-                onUndo={() => setArrows(prev => prev.slice(0,-1))}
-                showUndo={arrows.length > 0 && subPhase === "shooting"}
-                slotSize={36}
-                showScore={false}
-                processing={subPhase !== "shooting"}
-                processingIdx={processingIdx}
-                extraContent={
-                  subPhase === "shooting" && (
-                    <button onClick={() => setTargetMode(m => !m)} style={{
-                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-                    }}>🎯</button>
-                  )
-                }
-              />
-              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
-                {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
-              </span>
-          </div>
-          {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
-          <TargetFaceOverlay
-            open={targetMode && subPhase === "shooting" && !targetPending}
-            fmtId={targetFmt}
-            arrowLabels={arrows.map(a => a.label)}
-            arrowsPerRound={ARROWS_PER}
-            onArrow={handleScore}
-            onUndo={() => setArrows(prev => prev.slice(0,-1))}
-            onSubmit={handleTargetSubmit}
-            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
-          />
-
-          <BattleScoreButtons
-              labels={SCORE_BTNS.map(s => String(s))}
-              onScore={handleScore}
-              disabled={false}
-              variant="image"
-            />
-          )}
-
-          {/* 送出按鈕 */}
-          {subPhase === "shooting" && arrows.length >= ARROWS_PER && !targetPending && (
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              <button onClick={() => { sfxCast(); finishRound(arrows); }}
-                style={{ width:"100%", padding:"12px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
-                ⚔️ 送出 {ARROWS_PER} 箭！
-              </button>
-              <button onClick={() => setArrows(prev => prev.slice(0,-1))}
-                style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
-                ← 取消上一箭
-              </button>
-            </div>
-          )}
-
-          {subPhase === "processing" && (
-            <div style={{ minHeight:44, display:"flex", flexDirection:"column", justifyContent:"center" }}>
-              {dmgLog.slice(-3).map((l, i, arr) => (
-                <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i===arr.length-1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     );
   }

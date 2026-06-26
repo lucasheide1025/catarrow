@@ -91,8 +91,6 @@ export default function MemberApp() {
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
-  const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
-  const dismissedBroadcastRef = useRef(null);
 
   const [certification, setCertification] = useState(null);
   const [dexConfig,     setDexConfig]     = useState({ physicalMax:10, pointMax:10 });
@@ -236,15 +234,6 @@ export default function MemberApp() {
     return subscribeAppVersion(setLatestVersion);
   }, []);
 
-  // 地下城首殺全系統播報
-  useEffect(() => {
-    return subscribeLatestBroadcast(data => {
-      if (!data) return;
-      if (dismissedBroadcastRef.current === data.id) return;
-      setDungeonKillAlert(data);
-    });
-  }, []);
-
   // 世界王登場：訂閱活躍事件，首次看到新 Boss 時觸發動畫
   useEffect(() => {
     return subscribeActiveWorldBoss(ev => {
@@ -376,23 +365,6 @@ export default function MemberApp() {
         </div>
       )}
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
-
-      {/* 👑 地下城首殺全系統公告 */}
-      {dungeonKillAlert && (
-        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
-          onClick={() => { dismissedBroadcastRef.current = dungeonKillAlert.id; setDungeonKillAlert(null); }}>
-          <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              ⚡ 地下城首殺！{dungeonKillAlert.emoji} {dungeonKillAlert.dungeonName}（{dungeonKillAlert.difficultyLabel}）
-            </div>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              {dungeonKillAlert.teamNames?.join("、") || dungeonKillAlert.memberName} 成為首殺英雄！
-            </div>
-          </div>
-          <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
-        </div>
-      )}
 
       {/* 📋 今日報到浮動視窗 */}
       <OverlayModal open={showCheckinPopup}>
