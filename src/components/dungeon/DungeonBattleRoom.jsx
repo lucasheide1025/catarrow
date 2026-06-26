@@ -7,7 +7,7 @@ import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
-  trySetDungeonFirstClear, addDungeonBroadcast,
+  trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";

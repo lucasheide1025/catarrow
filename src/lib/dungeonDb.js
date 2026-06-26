@@ -180,6 +180,16 @@ export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice =
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
+// ── 選擇前後衛角色（等待室使用）──────────────────────────────
+export async function setDungeonMemberRole(roomId, memberId, role) {
+  try {
+    await updateDoc(doc(db, D, roomId), {
+      [`members.${memberId}.role`]: role,
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 房主強制跳過（斷線成員）──────────────────────────────────
 export async function forceSkipDungeonPlayer(roomId, memberId) {
   try {
@@ -338,8 +348,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
       if (hp <= 0) {
         if (!isRear) {
-          // 前衛第一次死亡 → 變後衛，HP 重置 30%
-          hp = Math.round((m.maxHP || 100) * 0.3);
+          // 前衛第一次死亡 → 變後衛，HP 復活 50%
+          hp = Math.round((m.maxHP || 100) * 0.5);
           memberUpd[`members.${id}.role`] = "rear";
           liveAfter++;
         } else {

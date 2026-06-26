@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor, initDungeonMapRun } from "../../lib/dungeonDb";
+import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor, initDungeonMapRun, setDungeonMemberRole } from "../../lib/dungeonDb";
 import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_LENGTHS, DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
@@ -135,7 +135,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   // ── 等待室畫面 ────────────────────────────────────────────
   if (roomId && room) {
-    const members = Object.values(room.members || {});
+    const memberEntries = Object.entries(room.members || {});
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
         {/* Header */}
@@ -147,17 +147,39 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
         {/* Members list */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {members.map((m, i) => (
-            <div key={i} className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3">
-              <span className="text-2xl">🧙</span>
-              <div>
-                <div className="font-bold">{m.name}</div>
-                <div className="text-xs text-slate-400">HP {m.maxHP} / ATK {m.atk} / DEF {m.def}</div>
-                {m.catName && <div className="text-xs text-indigo-300 mt-0.5">🐱 {m.catName} 神教光環 +10%</div>}
+          {memberEntries.map(([id, m], i) => {
+            const isMe = id === myId;
+            const isRear = m.role === "rear";
+            return (
+              <div key={id} className="bg-white/5 rounded-xl px-4 py-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{isRear ? "🛡️" : "⚔️"}</span>
+                  <div className="flex-1">
+                    <div className="font-bold">{m.name}{isMe ? " (你)" : ""}</div>
+                    <div className="text-xs text-slate-400">HP {m.maxHP} / ATK {m.atk} / DEF {m.def}</div>
+                    {m.catName && <div className="text-xs text-indigo-300 mt-0.5">🐱 {m.catName} 神教光環 +10%</div>}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${isRear ? "bg-purple-500/30 text-purple-300" : "bg-emerald-500/30 text-emerald-300"}`}>
+                    {isRear ? "🛡後衛" : "⚔️前衛"}
+                  </span>
+                  {i === 0 && <span className="text-xs bg-amber-500/30 text-amber-300 px-2 py-0.5 rounded-full">房主</span>}
+                </div>
+                {/* 只有自己可以切換角色 */}
+                {isMe && (
+                  <div className="flex gap-2">
+                    <button onClick={() => setDungeonMemberRole(roomId, myId, "front")}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${!isRear ? "border-emerald-400 bg-emerald-400/20 text-emerald-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                      ⚔️ 前衛（承受反擊）
+                    </button>
+                    <button onClick={() => setDungeonMemberRole(roomId, myId, "rear")}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${isRear ? "border-purple-400 bg-purple-400/20 text-purple-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                      🛡 後衛（免疫反擊）
+                    </button>
+                  </div>
+                )}
               </div>
-              {i === 0 && <span className="ml-auto text-xs bg-amber-500/30 text-amber-300 px-2 py-0.5 rounded-full">房主</span>}
-            </div>
-          ))}
+            );
+          })}
 
           {isHost && (
             <div className="mt-4 space-y-4">
