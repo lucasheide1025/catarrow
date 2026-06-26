@@ -187,19 +187,19 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                     ))}
                   </div>
                   <div className="text-sm text-slate-400 mb-2 font-semibold">🏛️ 選擇地下城</div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     {FAMILY_CONFIGS.map(fc => {
                       const d = DUNGEON_MAPS.find(m => m.family === fc.id && m.difficulty === selDifficulty);
                       if (!d || !d.enabled) return null;
                       const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
                       return (
                         <button key={fc.id} onClick={() => setSelDungeon(d.id)}
-                          className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow" : "border-white/10 bg-white/8"}`}
+                          className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-white/8"}`}
                           style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
-                          <span className="text-2xl">{fc.emoji}</span>
-                          <div className={`text-xs font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
-                          <div className="text-[10px] text-slate-400">{d.name}</div>
-                          <div className="text-[10px] text-slate-400">{d.floorCount}層</div>
+                          <span className="text-3xl">{fc.emoji}</span>
+                          <div className={`text-sm font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
+                          <div className="text-xs text-slate-400">{d.name}</div>
+                          <div className="text-xs text-slate-400">{d.floorCount}層</div>
                         </button>
                       );
                     })}

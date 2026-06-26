@@ -37,10 +37,14 @@ export default function DungeonController({ roomId, onExit }) {
   const isHost    = room.hostId === profile?.id;
   const dungeon   = isMapMode ? DUNGEON_MAPS.find(d => d.id === room.mapDungeonId) : null;
 
-  // 地圖模式：只在 active（戰鬥中）時顯示戰鬥室，其餘狀態都回到地圖探索
-  // 確保了：初始進入先看地圖、戰鬥結束後回到地圖、不會誤跳進戰鬥
+  // 地圖模式路由：
+  // - active / completed（戰鬥中／戰鬥結束等領獎）→ 顯示戰鬥室
+  // - 其餘狀態（map_explore / waiting）→ 顯示地圖探索
+  // 這樣確保戰鬥結束後玩家能看到結算畫面 + 領獎按鈕，
+  // 等 host 點「領取並回地圖」後 returnToMapAfterBattle 才回到地圖
   if (isMapMode && dungeon) {
-    if (room.status === "active") {
+    const battleStatuses = ["active", "completed", "path_select", "shop", "event", "floor_transition"];
+    if (battleStatuses.includes(room.status)) {
       return (
         <DungeonBattleRoom
           roomId={roomId}
