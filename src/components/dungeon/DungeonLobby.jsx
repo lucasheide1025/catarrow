@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, startDungeonFloor, initDungeonMapRun } from "../../lib/dungeonDb";
 import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
-import { DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
+import { DUNGEON_LENGTHS, DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
 import { calcArcherStats, MONSTERS } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -32,6 +32,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const [tab, setTab]           = useState("create");
   const [dungeonMode, setDungeonMode] = useState("map"); // "map" | "classic"
   const [selDungeon,  setSelDungeon]  = useState(DUNGEON_MAPS.find(d => d.enabled)?.id || null);
+  const [selDifficulty, setSelDifficulty] = useState("normal");
   const [selLength, setSelLength] = useState("standard");
   const [selMode,   setSelMode]   = useState("student");
   const [loading, setLoading]   = useState(false);
@@ -175,17 +176,34 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
               {dungeonMode === "map" && (
                 <div>
-                  <div className="text-sm text-slate-400 mb-2 font-semibold">選擇地下城</div>
-                  {DUNGEON_MAPS.filter(d => d.enabled).map(d => (
-                    <button key={d.id} onClick={() => setSelDungeon(d.id)}
-                      className={`w-full flex items-center gap-3 py-3 px-4 rounded-xl text-left border transition-all mb-2 ${selDungeon===d.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5"}`}>
-                      <span className="text-2xl">{d.emoji}</span>
-                      <div>
-                        <div className={`text-sm font-black ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{d.name}</div>
-                        <div className="text-xs text-slate-400">{d.floorCount} 層 · {d.description.slice(0,20)}…</div>
-                      </div>
-                    </button>
-                  ))}
+                  <div className="text-sm text-slate-400 mb-2 font-semibold">🏷️ 難度</div>
+                  <div className="flex gap-1.5 mb-3">
+                    {DIFFICULTY_CONFIGS.map(dc => (
+                      <button key={dc.id} onClick={() => setSelDifficulty(dc.id)}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/20 border-white/30 text-white" : "border-white/10 bg-white/5 text-slate-400"}`}
+                        style={{ borderColor: selDifficulty===dc.id ? dc.color : undefined, color: selDifficulty===dc.id ? dc.color : undefined }}>
+                        {dc.icon} {dc.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-sm text-slate-400 mb-2 font-semibold">🏛️ 選擇地下城</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FAMILY_CONFIGS.map(fc => {
+                      const d = DUNGEON_MAPS.find(m => m.family === fc.id && m.difficulty === selDifficulty);
+                      if (!d || !d.enabled) return null;
+                      const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
+                      return (
+                        <button key={fc.id} onClick={() => setSelDungeon(d.id)}
+                          className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5"}`}
+                          style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
+                          <span className="text-2xl">{fc.emoji}</span>
+                          <div className={`text-xs font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
+                          <div className="text-[10px] text-slate-500">{d.name}</div>
+                          <div className="text-[10px] text-slate-500">{d.floorCount}層</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

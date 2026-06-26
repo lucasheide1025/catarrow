@@ -7,9 +7,10 @@ import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
+  trySetDungeonFirstClear, addDungeonBroadcast,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
-import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
+import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP } from "../../lib/db";
 import { DUNGEON_FLOOR_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
@@ -402,6 +403,27 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }
 
     sfxSuccess();
+
+    // ── 首殺檢測（地圖模式通關時）──────────────────────────
+    if (isMapMode && room.mapDungeonId && room.result === "win") {
+      const dungeonInfo = DUNGEON_MAPS.find(d => d.id === room.mapDungeonId);
+      if (dungeonInfo) {
+        const teamNames = Object.values(room.members || {}).map(m => m.name).filter(Boolean);
+        const fcRes = await trySetDungeonFirstClear(room.mapDungeonId, myId, me.name || "", teamNames);
+        if (fcRes.ok && fcRes.isFirst) {
+          // 首殺！發送全域廣播
+          await addDungeonBroadcast(
+            room.mapDungeonId,
+            dungeonInfo.name,
+            dungeonInfo.difficultyLabel,
+            dungeonInfo.emoji,
+            teamNames
+          );
+        }
+      }
+    }
+    // ──────────────────────────────────────────────────────────
+
     if (isMapMode) {
       await returnToMapAfterBattle(
         roomId,

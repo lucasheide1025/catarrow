@@ -301,6 +301,19 @@ service cloud.firestore {
       allow write: if isLoggedIn();
     }
 
+    // dungeonFirstClear：首殺記錄（登入者可讀寫，由 trySetDungeonFirstClear 原子寫入）
+    match /dungeonFirstClear/{dungeonId} {
+      allow read:  if isLoggedIn();
+      allow write: if isLoggedIn();
+    }
+
+    // dungeonBroadcasts：地下城首殺廣播（登入者可讀寫，用於全域通知）
+    match /dungeonBroadcasts/{broadcastId} {
+      allow read:  if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
     // 貓咪陪練：subcollection 在 members/{id}/cats/{catId}
     // 只有本人或教練可讀寫（透過 members doc 確認 uid）
     match /members/{memberId}/cats/{catId} {

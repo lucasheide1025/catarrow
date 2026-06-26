@@ -12,9 +12,9 @@ import {
 import { MONSTERS } from "../../lib/monsterData";
 import { RUNES, RUNE_GRADES } from "../../lib/runeData";
 
-// 地圖房間難度 tier (1-4) → 怪物 tier 字串
+// 地圖房間難度 tier (1-6) → 怪物 tier 字串
 function mapRoomTier(tier) {
-  return (["common", "rare", "elite", "fierce"])[Math.min((tier || 1) - 1, 3)];
+  return (["common", "rare", "elite", "fierce", "boss", "mythic"])[Math.min((tier || 1) - 1, 5)];
 }
 
 const VOTE_SEC = 30;

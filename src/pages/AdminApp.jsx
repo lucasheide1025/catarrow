@@ -62,6 +62,7 @@ import AdminArchery          from "../components/admin/AdminArchery";
 import AdminVillageManager   from "../components/admin/AdminVillageManager";
 import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
+import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import MemberAdventureHub from "../components/member/MemberAdventureHub";
 import MemberTrainingHub  from "../components/member/MemberTrainingHub";
 import MemberInventoryHub from "../components/member/MemberInventoryHub";
@@ -107,6 +108,8 @@ export default function AdminApp() {
   const pendingMonthlyRef = useRef(0);
   const [pendingGuildN,    setPendingGuildN]    = useState(0);
   const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
+  const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
+  const dismissedBroadcastRef = useRef(null);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
   });
@@ -276,6 +279,15 @@ export default function AdminApp() {
     return () => clearInterval(t);
   }, [pendingCheckinAwaitN]);
 
+  // 地下城首殺全系統播報
+  useEffect(() => {
+    return subscribeLatestBroadcast(data => {
+      if (!data) return;
+      if (dismissedBroadcastRef.current === data.id) return;
+      setDungeonKillAlert(data);
+    });
+  }, []);
+
   // 世界王登場：教練也要看到
   useEffect(() => {
     return subscribeActiveWorldBoss(ev => {
@@ -441,6 +453,24 @@ const adminNav = [
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
+
+      {/* 👑 地下城首殺全系統公告 */}
+      {dungeonKillAlert && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
+          onClick={() => { dismissedBroadcastRef.current = dungeonKillAlert.id; setDungeonKillAlert(null); }}>
+          <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              ⚡ 地下城首殺！{dungeonKillAlert.emoji} {dungeonKillAlert.dungeonName}（{dungeonKillAlert.difficultyLabel}）
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {dungeonKillAlert.teamNames?.join("、") || dungeonKillAlert.memberName} 成為首殺英雄！
+            </div>
+          </div>
+          <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
+        </div>
+      )}
+
       <div style={{background:"white",borderBottom:"1px solid #e2e8f0",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
         <div>
           <div style={{fontWeight:"900",color:"#1e293b",fontSize:"14px"}}>⚙️ 後台管理</div>

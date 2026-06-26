@@ -3,6 +3,7 @@
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, getDocs, query, where,
+  orderBy, limit, setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed } from "./db";
@@ -736,6 +737,85 @@ export async function addMapLoot(roomId, prevLoot, newItems) {
     return { ok:true, loot: merged };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  首殺 & 廣播系統  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 嘗試設定首殺（只有當該 dungeon 尚未有首殺記錄時才寫入）
+// 回傳 { ok:true, isFirst:true } 首次首殺成功
+// 回傳 { ok:true, isFirst:false } 已有首殺
+// dungeonId 格式："ghost_normal", "temple_hell" 等
+export async function trySetDungeonFirstClear(dungeonId, memberId, memberName, teamNames = []) {
+  try {
+    // 先確認尚未有首殺廣播
+    const snap = await getDocs(query(collection(db, "dungeonBroadcasts"), where("dungeonId", "==", dungeonId)));
+    if (!snap.empty) return { ok: true, isFirst: false };
+    // 直接 setDoc（不存在才建立）
+    await setDoc(doc(db, "dungeonFirstClear", dungeonId), {
+      dungeonId, memberId, memberName, teamNames,
+      clearedAt: serverTimestamp(),
+    });
+    return { ok: true, isFirst: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// 新增地下城首殺廣播（全域通知用）
+export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabel, emoji, teamNames = []) {
+  try {
+    const ref = await addDoc(collection(db, "dungeonBroadcasts"), {
+      dungeonId, dungeonName, difficultyLabel, emoji,
+      teamNames,
+      createdAt: serverTimestamp(),
+    });
+    return { ok: true, id: ref.id };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// 取得某個 dungeon 是否已被首殺
+export async function checkDungeonFirstClear(dungeonId) {
+  try {
+    const snap = await getDocs(query(collection(db, "dungeonBroadcasts"), where("dungeonId", "==", dungeonId)));
+    return { ok: true, isFirstClear: !snap.empty, data: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// 訂閱最新一筆廣播（MemberApp/AdminApp 用）
+export function subscribeLatestBroadcast(callback) {
+  const q = query(collection(db, "dungeonBroadcasts"), orderBy("createdAt", "desc"), limit(1));
+  return onSnapshot(q, snap => {
+    if (snap.empty) { callback(null); return; }
+    const d = snap.docs[0];
+    callback({ id: d.id, ...d.data() });
+  }, () => callback(null));
+}
+
+// 訂閱全部廣播（用於首殺歷史紀錄頁面）
+export function subscribeAllDungeonBroadcasts(callback) {
+  const q = query(collection(db, "dungeonBroadcasts"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(list);
+  }, () => callback([]));
+}
+
+// 取得全部首殺統計（用於成就判定 / 統計頁面）
+export async function getDungeonFirstClearStats() {
+  try {
+    const snap = await getDocs(collection(db, "dungeonFirstClear"));
+    return { ok: true, clears: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
 
 const STALE_MS = 2 * 60 * 60 * 1000;
 

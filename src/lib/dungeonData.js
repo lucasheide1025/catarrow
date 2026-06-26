@@ -235,80 +235,179 @@ export function getContractBadge(room) {
   }
 }
 
-// ── 地下城地圖資料表 ──────────────────────────────────────────
-export const DUNGEON_MAPS = [
-  {
-    id: "shadow-crypt",
-    name: "幽冥地窖",
-    emoji: "💀",
-    description: "陰暗潮濕的古老地窖，傳說有亡靈在此徘徊。越深入越黑暗，但也藏有更多寶物。",
-    enabled: true,
-    floorCount: 3,
-    floors: [
-      {
-        floor: 1,
-        startRoomId: "f1r1",
-        rooms: [
-          { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道",   meta:{ tier:1, contract:"standard" } },
-          { id:"f1r2", type:"chest",    x:0, y:1, label:"隱藏儲藏室" },
-          { id:"f1r3", type:"trap",     x:2, y:1, label:"陷阱走廊" },
-          { id:"f1r4", type:"monster",  x:4, y:1, label:"守衛室",     meta:{ tier:1, contract:"hit_count" } },
-          { id:"f1r5", type:"rest",     x:1, y:2, label:"廢棄休息室" },
-          { id:"f1r6", type:"merchant", x:3, y:2, label:"流浪商人" },
-          { id:"f1r7", type:"stairs",   x:2, y:3, label:"通往二層" },
-        ],
-        connections: [
-          ["f1r1","f1r2"],["f1r1","f1r3"],["f1r1","f1r4"],
-          ["f1r2","f1r5"],["f1r3","f1r5"],["f1r3","f1r6"],
-          ["f1r4","f1r6"],["f1r5","f1r7"],["f1r6","f1r7"],
-        ],
-      },
-      {
-        floor: 2,
-        startRoomId: "f2r1",
-        rooms: [
-          { id:"f2r1", type:"monster",  x:2, y:0, label:"地下通道",   meta:{ tier:2, contract:"score_gate",   contractParam:6 } },
-          { id:"f2r2", type:"event",    x:0, y:1, label:"詭異祭壇" },
-          { id:"f2r3", type:"elite",    x:2, y:1, label:"護衛將領",   meta:{ tier:2, contract:"target_score", contractParam:8 } },
-          { id:"f2r4", type:"chest",    x:4, y:1, label:"秘密金庫" },
-          { id:"f2r5", type:"teleport", x:0, y:2, label:"傳送陣" },
-          { id:"f2r6", type:"monster",  x:2, y:2, label:"亡靈巡邏",   meta:{ tier:2, contract:"score_gate",   contractParam:7 } },
-          { id:"f2r7", type:"rest",     x:4, y:2, label:"隱秘小室" },
-          { id:"f2r8", type:"merchant", x:1, y:3, label:"神秘商人" },
-          { id:"f2r9", type:"stairs",   x:3, y:3, label:"通往三層" },
-        ],
-        connections: [
-          ["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],
-          ["f2r2","f2r5"],["f2r3","f2r6"],["f2r4","f2r7"],
-          ["f2r5","f2r8"],["f2r6","f2r8"],["f2r6","f2r9"],
-          ["f2r7","f2r9"],["f2r8","f2r9"],
-        ],
-      },
-      {
-        floor: 3,
-        startRoomId: "f3r1",
-        rooms: [
-          { id:"f3r1", type:"monster",  x:2, y:0, label:"最深處通道", meta:{ tier:3, contract:"score_gate", contractParam:8 } },
-          { id:"f3r2", type:"elite",    x:0, y:1, label:"精英守衛",   meta:{ tier:3, contract:"all_hit" } },
-          { id:"f3r3", type:"trap",     x:2, y:1, label:"致命陷阱" },
-          { id:"f3r4", type:"elite",    x:4, y:1, label:"死亡騎士",   meta:{ tier:3, contract:"x_crit" } },
-          { id:"f3r5", type:"event",    x:0, y:2, label:"古老壁畫" },
-          { id:"f3r6", type:"chest",    x:2, y:2, label:"Boss 前寶箱" },
-          { id:"f3r7", type:"rest",     x:4, y:2, label:"最後的休息" },
-          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ tier:4, bossId:"lich-king", contract:"all_hit" } },
-        ],
-        connections: [
-          ["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],
-          ["f3r2","f3r5"],["f3r3","f3r6"],["f3r4","f3r7"],
-          ["f3r5","f3r6"],["f3r6","f3r7"],
-          ["f3r5","f3r8"],["f3r6","f3r8"],["f3r7","f3r8"],
-        ],
-      },
-    ],
-    loot: {
-      common: ["shadow_stone","bone_fragment"],
-      rare:   ["void_crystal","lich_essence"],
-      boss:   ["shadow_crown","lich_scepter","void_eye"],
+// ── 地下城 24 地圖系統（6族 × 4難度）────────────────────────
+const FAMILY_META = {
+  ghost:     { label:"幽冥系", emoji:"👻", loot:{ common:["shadow_stone","bone_fragment"],  rare:["void_crystal","lich_essence"],    boss:["shadow_crown","lich_scepter","void_eye"]    }, names:{ normal:"幽靈廢墟",   advanced:"幽冥地窖",   hard:"亡靈禁地",   hell:"死神殿堂"   } },
+  mountain:  { label:"山嶺系", emoji:"⛰️", loot:{ common:["rough_stone","mountain_herb"],   rare:["ore_crystal","peak_core"],        boss:["summit_gem","mountain_throne","peak_essence"] }, names:{ normal:"山麓探道",   advanced:"岩壁迷宮",   hard:"險峰試煉",   hell:"天柱巔峰"   } },
+  insect:    { label:"昆蟲系", emoji:"🦋", loot:{ common:["insect_shell","silk_thread"],     rare:["wing_dust","queen_pheromone"],    boss:["queen_crystal","hive_core","ancient_silk"]   }, names:{ normal:"草叢探索",   advanced:"蟲穴迷宮",   hard:"蟲后禁地",   hell:"螞蟻帝國"   } },
+  workplace: { label:"職場系", emoji:"💼", loot:{ common:["memo_paper","coffee_bean"],       rare:["boss_seal","overtime_crystal"],   boss:["gold_badge","ceo_key","annual_report"]       }, names:{ normal:"職場初探",   advanced:"會議室迷宮", hard:"加班煉獄",   hell:"企業黑洞"   } },
+  exam:      { label:"考試系", emoji:"📝", loot:{ common:["exam_paper","pencil_stub"],       rare:["answer_key","study_crystal"],     boss:["diploma","exam_god_seal","knowledge_core"]   }, names:{ normal:"小考練習場", advanced:"期中考迷宮", hard:"聯考禁地",   hell:"最終試驗"   } },
+  temple:    { label:"神廟系", emoji:"🏛️", loot:{ common:["stone_tablet","incense_ash"],     rare:["relic_fragment","divine_jade"],   boss:["oracle_staff","divine_crown","eternal_flame"]}, names:{ normal:"神廟前廳",   advanced:"神廟迷宮",   hard:"神聖禁地",   hell:"神明試煉"   } },
+};
+
+const DIFFICULTY_META = {
+  normal:   { label:"普通", icon:"🌱", color:"#4ade80", floorCount:2, bossModifier:{ hp:1.5, atk:1.5, def:1.5 }, bossTier:2 },
+  advanced: { label:"進階", icon:"⚔️", color:"#60a5fa", floorCount:3, bossModifier:{ hp:1.5, atk:1.2, def:1.2 }, bossTier:4 },
+  hard:     { label:"困難", icon:"🔥", color:"#f97316", floorCount:3, bossModifier:{ hp:1.4 },                    bossTier:5 },
+  hell:     { label:"地獄", icon:"💀", color:"#ef4444", floorCount:4, bossModifier:null,                          bossTier:6 },
+};
+
+function mkNormal(bm) {
+  return [
+    { floor:1, startRoomId:"f1r1",
+      rooms:[
+        { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道", meta:{ tier:1, contract:"standard" } },
+        { id:"f1r2", type:"chest",    x:0, y:1, label:"隱藏儲物" },
+        { id:"f1r3", type:"trap",     x:2, y:1, label:"陷阱走廊" },
+        { id:"f1r4", type:"monster",  x:4, y:1, label:"守衛室",   meta:{ tier:1, contract:"hit_count" } },
+        { id:"f1r5", type:"stairs",   x:2, y:2, label:"通往深處" },
+      ],
+      connections:[["f1r1","f1r2"],["f1r1","f1r3"],["f1r1","f1r4"],["f1r2","f1r5"],["f1r3","f1r5"],["f1r4","f1r5"]],
     },
-  },
-];
+    { floor:2, startRoomId:"f2r1",
+      rooms:[
+        { id:"f2r1", type:"monster",  x:2, y:0, label:"深處通道", meta:{ tier:1, contract:"score_gate", contractParam:6 } },
+        { id:"f2r2", type:"rest",     x:0, y:1, label:"休息室" },
+        { id:"f2r3", type:"merchant", x:2, y:1, label:"流浪商人" },
+        { id:"f2r4", type:"elite",    x:4, y:1, label:"精英守衛", meta:{ tier:2, contract:"target_score", contractParam:8 } },
+        { id:"f2r5", type:"boss",     x:2, y:2, label:"首領",     meta:{ tier:2, ...(bm ? {bossModifier:bm}:{}), contract:"score_gate", contractParam:7 } },
+      ],
+      connections:[["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],["f2r2","f2r5"],["f2r3","f2r5"],["f2r4","f2r5"]],
+    },
+  ];
+}
+
+function mkAdvanced(bm) {
+  return [
+    { floor:1, startRoomId:"f1r1",
+      rooms:[
+        { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道", meta:{ tier:3, contract:"standard" } },
+        { id:"f1r2", type:"chest",    x:0, y:1, label:"隱藏寶庫" },
+        { id:"f1r3", type:"trap",     x:2, y:1, label:"機關走廊" },
+        { id:"f1r4", type:"monster",  x:4, y:1, label:"巡邏隊",   meta:{ tier:3, contract:"hit_count" } },
+        { id:"f1r5", type:"event",    x:1, y:2, label:"古老祭壇" },
+        { id:"f1r6", type:"stairs",   x:3, y:2, label:"通往二層" },
+      ],
+      connections:[["f1r1","f1r2"],["f1r1","f1r3"],["f1r1","f1r4"],["f1r2","f1r5"],["f1r3","f1r5"],["f1r4","f1r6"],["f1r5","f1r6"]],
+    },
+    { floor:2, startRoomId:"f2r1",
+      rooms:[
+        { id:"f2r1", type:"monster",  x:2, y:0, label:"中層通道", meta:{ tier:3, contract:"score_gate", contractParam:6 } },
+        { id:"f2r2", type:"elite",    x:0, y:1, label:"精英守衛", meta:{ tier:3, contract:"all_hit" } },
+        { id:"f2r3", type:"rest",     x:2, y:1, label:"休息室" },
+        { id:"f2r4", type:"merchant", x:4, y:1, label:"神秘商人" },
+        { id:"f2r5", type:"monster",  x:1, y:2, label:"深層巡邏", meta:{ tier:4, contract:"score_gate", contractParam:7 } },
+        { id:"f2r6", type:"stairs",   x:3, y:2, label:"通往三層" },
+      ],
+      connections:[["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],["f2r2","f2r5"],["f2r3","f2r5"],["f2r3","f2r6"],["f2r4","f2r6"],["f2r5","f2r6"]],
+    },
+    { floor:3, startRoomId:"f3r1",
+      rooms:[
+        { id:"f3r1", type:"event",    x:2, y:0, label:"詭異現象" },
+        { id:"f3r2", type:"monster",  x:0, y:1, label:"最深通道", meta:{ tier:4, contract:"score_gate", contractParam:8 } },
+        { id:"f3r3", type:"rest",     x:2, y:1, label:"最後的休息" },
+        { id:"f3r4", type:"elite",    x:4, y:1, label:"精英護衛", meta:{ tier:4, contract:"x_crit" } },
+        { id:"f3r5", type:"boss",     x:2, y:2, label:"深淵首領", meta:{ tier:4, ...(bm ? {bossModifier:bm}:{}), contract:"all_hit" } },
+      ],
+      connections:[["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],["f3r2","f3r5"],["f3r3","f3r5"],["f3r4","f3r5"]],
+    },
+  ];
+}
+
+function mkHard(bm) {
+  return [
+    { floor:1, startRoomId:"f1r1",
+      rooms:[
+        { id:"f1r1", type:"monster",  x:2, y:0, label:"危險通道", meta:{ tier:4, contract:"score_gate", contractParam:6 } },
+        { id:"f1r2", type:"trap",     x:0, y:1, label:"致命機關" },
+        { id:"f1r3", type:"elite",    x:2, y:1, label:"精英衛士", meta:{ tier:4, contract:"all_hit" } },
+        { id:"f1r4", type:"chest",    x:4, y:1, label:"隱藏寶庫" },
+        { id:"f1r5", type:"stairs",   x:2, y:2, label:"通往深層" },
+      ],
+      connections:[["f1r1","f1r2"],["f1r1","f1r3"],["f1r1","f1r4"],["f1r2","f1r5"],["f1r3","f1r5"],["f1r4","f1r5"]],
+    },
+    { floor:2, startRoomId:"f2r1",
+      rooms:[
+        { id:"f2r1", type:"monster",  x:2, y:0, label:"中層巡邏", meta:{ tier:4, contract:"score_gate", contractParam:7 } },
+        { id:"f2r2", type:"event",    x:0, y:1, label:"神秘現象" },
+        { id:"f2r3", type:"elite",    x:2, y:1, label:"強化精英", meta:{ tier:4, contract:"target_score", contractParam:9 } },
+        { id:"f2r4", type:"merchant", x:4, y:1, label:"商人" },
+        { id:"f2r5", type:"monster",  x:1, y:2, label:"深層怪物", meta:{ tier:5, contract:"hit_count" } },
+        { id:"f2r6", type:"stairs",   x:3, y:2, label:"通往三層" },
+      ],
+      connections:[["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],["f2r2","f2r5"],["f2r3","f2r5"],["f2r3","f2r6"],["f2r4","f2r6"],["f2r5","f2r6"]],
+    },
+    { floor:3, startRoomId:"f3r1",
+      rooms:[
+        { id:"f3r1", type:"elite",    x:2, y:0, label:"最強精英", meta:{ tier:5, contract:"x_crit" } },
+        { id:"f3r2", type:"chest",    x:0, y:1, label:"Boss前寶庫" },
+        { id:"f3r3", type:"trap",     x:2, y:1, label:"致命陷阱" },
+        { id:"f3r4", type:"rest",     x:4, y:1, label:"最後休息" },
+        { id:"f3r5", type:"boss",     x:2, y:2, label:"試煉首領", meta:{ tier:5, ...(bm ? {bossModifier:bm}:{}), contract:"score_gate", contractParam:8 } },
+      ],
+      connections:[["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],["f3r2","f3r5"],["f3r3","f3r5"],["f3r4","f3r5"]],
+    },
+  ];
+}
+
+function mkHell(bm) {
+  return [
+    { floor:1, startRoomId:"f1r1",
+      rooms:[
+        { id:"f1r1", type:"monster",  x:2, y:0, label:"地獄入口", meta:{ tier:5, contract:"score_gate", contractParam:7 } },
+        { id:"f1r2", type:"trap",     x:0, y:1, label:"奪命陷阱" },
+        { id:"f1r3", type:"elite",    x:2, y:1, label:"地獄精英", meta:{ tier:5, contract:"all_hit" } },
+        { id:"f1r4", type:"stairs",   x:4, y:1, label:"通往深淵" },
+      ],
+      connections:[["f1r1","f1r2"],["f1r1","f1r3"],["f1r2","f1r4"],["f1r3","f1r4"]],
+    },
+    { floor:2, startRoomId:"f2r1",
+      rooms:[
+        { id:"f2r1", type:"monster",  x:2, y:0, label:"深淵巡邏", meta:{ tier:5, contract:"score_gate", contractParam:7 } },
+        { id:"f2r2", type:"event",    x:0, y:1, label:"詛咒現象" },
+        { id:"f2r3", type:"elite",    x:2, y:1, label:"深淵精英", meta:{ tier:5, contract:"target_score", contractParam:9 } },
+        { id:"f2r4", type:"chest",    x:4, y:1, label:"地獄寶庫" },
+        { id:"f2r5", type:"merchant", x:1, y:2, label:"地獄商人" },
+        { id:"f2r6", type:"stairs",   x:3, y:2, label:"通往第三層" },
+      ],
+      connections:[["f2r1","f2r2"],["f2r1","f2r3"],["f2r1","f2r4"],["f2r2","f2r5"],["f2r3","f2r5"],["f2r3","f2r6"],["f2r4","f2r6"],["f2r5","f2r6"]],
+    },
+    { floor:3, startRoomId:"f3r1",
+      rooms:[
+        { id:"f3r1", type:"monster",  x:2, y:0, label:"神魔通道", meta:{ tier:6, contract:"score_gate", contractParam:8 } },
+        { id:"f3r2", type:"trap",     x:0, y:1, label:"神魔陷阱" },
+        { id:"f3r3", type:"elite",    x:2, y:1, label:"神魔精英", meta:{ tier:6, contract:"all_hit" } },
+        { id:"f3r4", type:"rest",     x:4, y:1, label:"短暫喘息" },
+        { id:"f3r5", type:"stairs",   x:2, y:2, label:"最終之路" },
+      ],
+      connections:[["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],["f3r2","f3r5"],["f3r3","f3r5"],["f3r4","f3r5"]],
+    },
+    { floor:4, startRoomId:"f4r1",
+      rooms:[
+        { id:"f4r1", type:"event",    x:2, y:0, label:"最終現象" },
+        { id:"f4r2", type:"chest",    x:0, y:1, label:"最終寶庫" },
+        { id:"f4r3", type:"elite",    x:2, y:1, label:"守門精英", meta:{ tier:6, contract:"x_crit" } },
+        { id:"f4r4", type:"rest",     x:4, y:1, label:"最後休息" },
+        { id:"f4r5", type:"boss",     x:2, y:2, label:"神魔首領", meta:{ tier:6, ...(bm ? {bossModifier:bm}:{}), contract:"all_hit" } },
+      ],
+      connections:[["f4r1","f4r2"],["f4r1","f4r3"],["f4r1","f4r4"],["f4r2","f4r5"],["f4r3","f4r5"],["f4r4","f4r5"]],
+    },
+  ];
+}
+
+const _mkMap = { normal:mkNormal, advanced:mkAdvanced, hard:mkHard, hell:mkHell };
+export const DIFFICULTY_CONFIGS = Object.entries(DIFFICULTY_META).map(([id, m]) => ({ id, ...m }));
+export const FAMILY_CONFIGS = Object.entries(FAMILY_META).map(([id, m]) => ({ id, label:m.label, emoji:m.emoji, names:m.names }));
+export const DUNGEON_MAPS = Object.entries(FAMILY_META).flatMap(([family, fm]) =>
+  Object.entries(DIFFICULTY_META).map(([difficulty, dm]) => ({
+    id: `${family}_${difficulty}`,
+    name: fm.names[difficulty],
+    emoji: fm.emoji,
+    family, difficulty, difficultyLabel: dm.label,
+    description: `${fm.label} · ${dm.label}難度 · ${dm.floorCount}層`,
+    enabled: true,
+    floorCount: dm.floorCount,
+    floors: _mkMap[difficulty](dm.bossModifier),
+    loot: fm.loot,
+  }))
+);

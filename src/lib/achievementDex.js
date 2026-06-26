@@ -37,6 +37,7 @@ export const DEX_CATEGORIES = [
   { id: "forge",    label: "🔮 煉製 & 藥水" },
   { id: "card",     label: "🃏 怪物卡" },
   { id: "guild",    label: "🏰 冒險者公會" },
+  { id: "dungeon",  label: "🏚️ 地下城" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -438,6 +439,56 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "guild_max",          cat: "guild", icon: "👑", name: "神話滿等",   rarity: "mythic",
     desc: "冒險者等級達到最高境界 Lv.60",
     check: c => levelFromXP(c.member?.adventurerXP || 0) >= 60 },
+
+  // ══ 地下城 ══
+  { id: "dungeon_first_clear",   cat: "dungeon", icon: "🗡️", name: "初探地下城",   rarity: "common",
+    desc: "首次通關任意地下城（地圖模式）",
+    check: c => (c.dungeonClears || 0) >= 1 },
+  { id: "dungeon_clear_5",       cat: "dungeon", icon: "⚔️", name: "地下城獵手",   rarity: "uncommon",
+    desc: "累積通關地下城 5 次",
+    check: c => (c.dungeonClears || 0) >= 5 },
+  { id: "dungeon_clear_10",      cat: "dungeon", icon: "💀", name: "地下城老兵",   rarity: "rare",
+    desc: "累積通關地下城 10 次",
+    check: c => (c.dungeonClears || 0) >= 10 },
+  { id: "dungeon_clear_15",      cat: "dungeon", icon: "🔥", name: "深淵探索者",   rarity: "rare",
+    desc: "累積通關地下城 15 次",
+    check: c => (c.dungeonClears || 0) >= 15 },
+  { id: "dungeon_clear_30",      cat: "dungeon", icon: "💀", name: "地下城霸主",   rarity: "epic",
+    desc: "累積通關地下城 30 次",
+    check: c => (c.dungeonClears || 0) >= 30 },
+  { id: "dungeon_first_hard_or_hell", cat: "dungeon", icon: "💀", name: "深入險境",   rarity: "rare",
+    desc: "首次通關困難或地獄難度地下城", hidden: true,
+    riddle: "更高的挑戰在前方…",
+    check: c => (c.dungeonFamClear && Object.values(c.dungeonFamClear).some(
+      fam => fam?.hard || fam?.hell)) },
+  { id: "dungeon_all_normal",    cat: "dungeon", icon: "🌱", name: "普通全制霸",   rarity: "rare",
+    desc: "通關全部 6 族的普通難度地下城", hidden: true,
+    riddle: "六族普通，悉數踏破…",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
+      fam => c.dungeonFamClear?.[fam]?.normal) },
+  { id: "dungeon_all_advanced",  cat: "dungeon", icon: "⚔️", name: "進階全制霸",   rarity: "epic",
+    desc: "通關全部 6 族的進階難度地下城", hidden: true,
+    riddle: "六族進階，悉數踏破…",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
+      fam => c.dungeonFamClear?.[fam]?.advanced) },
+  { id: "dungeon_all_hard",      cat: "dungeon", icon: "🔥", name: "困難全制霸",   rarity: "legendary",
+    desc: "通關全部 6 族的困難難度地下城", hidden: true,
+    riddle: "六族困難，悉數踏破…",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
+      fam => c.dungeonFamClear?.[fam]?.hard) },
+  { id: "dungeon_all_hell",      cat: "dungeon", icon: "💀", name: "地獄全制霸",   rarity: "mythic",
+    desc: "通關全部 6 族的地獄難度地下城", hidden: true,
+    riddle: "六族地獄，悉數踏破…不死不休…",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
+      fam => c.dungeonFamClear?.[fam]?.hell) },
+  { id: "dungeon_all_24",        cat: "dungeon", icon: "👑", name: "24 地獄全通",   rarity: "mythic",
+    desc: "通關全部 24 張地下城地圖", hidden: true,
+    riddle: "二十四道大門，全數為你而開…",
+    check: c => {
+      const fams = ["ghost","mountain","insect","workplace","exam","temple"];
+      const diffs = ["normal","advanced","hard","hell"];
+      return fams.every(fam => diffs.every(diff => c.dungeonFamClear?.[fam]?.[diff]));
+    } },
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
