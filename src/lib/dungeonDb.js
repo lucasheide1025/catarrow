@@ -678,26 +678,32 @@ export async function advanceMapFloor(roomId, dungeon, nextFloorIndex) {
 }
 
 // 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
-export async function enterMapCombatRoom(roomId, room, roomMeta) {
+export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
   try {
+    const { monster = null, formationMap = {}, runeMap = {} } = options;
     const contract = roomMeta?.contract
       ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
       : { type:"standard", param:null };
     const memberIds = Object.keys(room.members || {});
     const upd = {};
     for (const id of memberIds) {
-      upd[`members.${id}.contract`] = contract;
-      upd[`members.${id}.arrows`]   = [];
-      upd[`members.${id}.ready`]    = false;
+      upd[`members.${id}.contract`]  = contract;
+      upd[`members.${id}.arrows`]    = [];
+      upd[`members.${id}.ready`]     = false;
+      if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
+      if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
     await updateDoc(doc(db, D, roomId), {
       ...upd,
+      monster:             monster,
       status:              "active",
       activeRoomContract:  contract,
       round:               1,
       log:                 [],
       result:              null,
       processing:          false,
+      totalFloors:         1,
+      currentFloor:        1,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }

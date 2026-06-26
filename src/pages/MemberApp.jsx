@@ -40,7 +40,7 @@ import PartyBattleRoom   from "../components/party/PartyBattleRoom";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
-import DungeonBattleRoom from "../components/dungeon/DungeonBattleRoom";
+import DungeonController from "../components/dungeon/DungeonController";
 import MemberGuide       from "../components/member/MemberGuide";
 import EquipmentPage     from "../components/member/EquipmentPage";
 import MemberBowSettings from "../components/member/MemberBowSettings";
@@ -483,7 +483,7 @@ export default function MemberApp() {
           key={gachaInitTab} />}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
-        {page==="dungeon-room" && dungeonRoomId && <DungeonBattleRoom roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
+        {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
         {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}

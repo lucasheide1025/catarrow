@@ -6,7 +6,7 @@ import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
-  clearDungeonProcessing, claimDungeonReward,
+  clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS } from "../../lib/dungeonData";
@@ -88,7 +88,7 @@ function pickBg(family) {
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
 }
 
-export default function DungeonBattleRoom({ roomId, onExit }) {
+export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, onReturnToMap }) {
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
   const myId = profile?.id;
@@ -331,7 +331,7 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     if (!isHost) return;
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
     const baseMaterials = rollMaterialDrops(room?.monster);
-    const totalFloors   = room.totalFloors || 7;
+    const totalFloors   = isMapMode ? 1 : (room.totalFloors || 7);
 
     for (const mid of Object.keys(room.members || {})) {
       if (mid.startsWith("guest")) continue;
@@ -371,11 +371,32 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
     }
 
     sfxSuccess();
-    onExit?.();
+    if (isMapMode) {
+      await returnToMapAfterBattle(
+        roomId,
+        room.mapCurrentRoomId || "",
+        room.mapClearedIds || []
+      );
+      // DungeonController 的 Firestore 訂閱會自動路由回 DungeonExplore
+    } else {
+      onExit?.();
+    }
   }
 
   // ── 路線選擇（等動畫和結算結束才顯示）───────────────────────
   if (status === "path_select" && !liveEntry && !showRoundResult) {
+    if (isMapMode) {
+      // 地圖模式下不應出現 path_select（enterMapCombatRoom 已設 totalFloors:1）
+      // 防護：host 自動回地圖，非 host 等待 Firestore 更新
+      if (isHost) {
+        returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []);
+      }
+      return (
+        <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
+          房間通關，返回地圖中…
+        </div>
+      );
+    }
     return <DungeonPathSelect roomId={roomId} room={room} isHost={isHost} />;
   }
 
@@ -533,6 +554,39 @@ export default function DungeonBattleRoom({ roomId, onExit }) {
               返回大廳
             </button>
           </div>
+        </div>
+      );
+    }
+
+    if (isMapMode) {
+      return (
+        <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
+          <div className="text-7xl">✨</div>
+          <div className="text-3xl font-black">房間通關！</div>
+          <div className="text-slate-400 text-sm">擊敗 {room.monster?.icon}{room.monster?.name}，繼續探索地圖</div>
+          <div style={{ display:"flex", gap:16, justifyContent:"center" }}>
+            <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
+              <div style={{ fontSize:20 }}>🏹</div>
+              <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{DUNGEON_FLOOR_XP} XP</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
+            </div>
+            {profile?.equippedCat?.catId && (
+              <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
+                <div style={{ fontSize:20 }}>🐱</div>
+                <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{CAT_DUNGEON_FLOOR_XP} XP</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+              </div>
+            )}
+          </div>
+          {isHost && (
+            <button onClick={handleClaim}
+              className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-violet-500 to-purple-600 text-white text-lg shadow-lg">
+              🗺️ 領取並回地圖
+            </button>
+          )}
+          {!isHost && (
+            <div className="text-slate-400 text-sm">等待隊長領取獎勵…</div>
+          )}
         </div>
       );
     }
