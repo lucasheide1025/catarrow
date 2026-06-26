@@ -19,6 +19,12 @@ export function Btn({ children, v = "primary", size = "md", className = "", ...p
     warn:      "bg-gradient-to-b from-orange-400 to-orange-600 hover:from-orange-300 hover:to-orange-500 text-white shadow-sm shadow-orange-900/30",
     ghost:     "text-blue-600 hover:text-blue-800 underline underline-offset-2",
     cat:       "bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-white shadow-sm shadow-amber-900/30",
+    // 深色背景 variant
+    "dark-primary":  "bg-gradient-to-b from-indigo-600 to-blue-700 hover:from-indigo-500 hover:to-blue-600 text-white shadow-sm shadow-indigo-900/40",
+    "dark-ghost":    "bg-transparent hover:bg-white/10 text-gray-300 border border-white/20 hover:border-white/40",
+    "dark-danger":   "bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white shadow-sm shadow-red-900/40",
+    "dark-success":  "bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-white shadow-sm shadow-emerald-900/40",
+    "dark-warn":     "bg-gradient-to-b from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 text-white shadow-sm shadow-orange-900/40",
   };
   const sz = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2 text-sm", lg: "px-5 py-3 text-base" };
   return (
@@ -193,6 +199,26 @@ export function SearchBar({ value, onChange, placeholder = "搜尋…" }) {
         placeholder={placeholder}
         className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 shadow-sm transition-all placeholder-gray-300"
       />
+    </div>
+  );
+}
+
+// ─── 全螢幕覆蓋彈窗（版本更新/報到/緊急任務共用）─────────────
+export function OverlayModal({ open, onClose, children, zIndex = 99990, bg = "rgba(0,0,0,0.65)" }) {
+  if (!open) return null;
+  return (
+    <div
+      onClick={onClose || undefined}
+      style={{
+        position: "fixed", inset: 0, zIndex,
+        background: bg,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        {children}
+      </div>
     </div>
   );
 }

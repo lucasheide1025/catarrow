@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
@@ -44,6 +44,8 @@ import PartyQuestRoom     from "../components/party/PartyQuestRoom";
 import PartyBattleRoom    from "../components/party/PartyBattleRoom";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
+import { archerLevelFromXP } from "../lib/archerLevel";
+import { APP_VERSION } from "../lib/version";
 import DuelLobby         from "../components/duel/DuelLobby";
 import DuelRoom          from "../components/duel/DuelRoom";
 import DungeonLobby      from "../components/dungeon/DungeonLobby";
@@ -68,6 +70,7 @@ import MemberTrainingHub  from "../components/member/MemberTrainingHub";
 import MemberInventoryHub from "../components/member/MemberInventoryHub";
 import MemberRecordsHub   from "../components/member/MemberRecordsHub";
 import MemberBowSettings  from "../components/member/MemberBowSettings";
+import { OverlayModal } from "../components/shared/UI";
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -95,6 +98,7 @@ export default function AdminApp() {
     saveAppTheme(id);
     setAppTheme(APP_THEMES.find(t => t.id === id) || APP_THEMES[0]);
   }
+  const [gachaInitTab, setGachaInitTab] = useState("village");
   const [selComp, setSelComp]       = useState(null);
   const [scoring, setScoring]       = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -110,6 +114,7 @@ export default function AdminApp() {
   const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
+  const [latestVersion, setLatestVersion] = useState(null);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
   });
@@ -120,6 +125,11 @@ export default function AdminApp() {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.isHost || false; } catch { return false; }
   });
   const [notifications, setNotifications] = useState([]);
+  const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0);
+  const [todayCheckin, setTodayCheckin] = useState(undefined);
+  const [showCheckinPopup, setShowCheckinPopup] = useState(false);
+  const [checkinBusy, setCheckinBusy] = useState(false);
+  const checkinPopupShownRef = useRef(false);
 
   // 射手模式共用狀態（與 MemberApp 一致）
   const [certification, setCertification] = useState(null);
@@ -135,6 +145,41 @@ export default function AdminApp() {
   useEffect(() => {
     if (!profile?.id) return;
     return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
+  }, [profile?.id]); // eslint-disable-line
+
+  // 今日報到訂閱（供浮動視窗判斷）
+  useEffect(() => {
+    if (!profile?.id) return;
+    checkinPopupShownRef.current = false;
+    const unsub = subscribeMyCheckin(profile.id, c => {
+      setTodayCheckin(c);
+      if (c === null && !checkinPopupShownRef.current) {
+        checkinPopupShownRef.current = true;
+        setShowCheckinPopup(true);
+      }
+    });
+    return () => unsub?.();
+  }, [profile?.id]); // eslint-disable-line
+
+  async function handleCheckinSubmit() {
+    if (!profile?.id) return;
+    setCheckinBusy(true);
+    try {
+      await submitCheckin(profile.id, profile.name, profile.nickname);
+    } catch (e) { console.error("checkin:", e?.message); }
+    setCheckinBusy(false);
+    setShowCheckinPopup(false);
+  }
+
+  // 今日練箭數全域訂閱
+  useEffect(() => {
+    if (!profile?.id) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
+      const count = logs.reduce((s, l) =>
+        s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
+      setTodayArrowsGlobal(count);
+    });
   }, [profile?.id]); // eslint-disable-line
 
   useEffect(() => {
@@ -219,24 +264,30 @@ export default function AdminApp() {
     setPage("profile");
   }
 
-  const [duelRoomId,  setDuelRoomId]  = useState(null);
-  const [duelIsHost,  setDuelIsHost]  = useState(false);
-  const [duelMyTeam,  setDuelMyTeam]  = useState("A");
+  const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("admin_duel_room") || "null"); } catch { return null; } })();
+  const [duelRoomId,  setDuelRoomId]  = useState(_savedDuel?.roomId || null);
+  const [duelIsHost,  setDuelIsHost]  = useState(_savedDuel?.isHost || false);
+  const [duelMyTeam,  setDuelMyTeam]  = useState(_savedDuel?.team   || "A");
   function handleEnterDuelRoom(roomId, team, host) {
     setDuelRoomId(roomId); setDuelMyTeam(team); setDuelIsHost(host);
+    sessionStorage.setItem("admin_duel_room", JSON.stringify({ roomId, team, isHost: host }));
     setPage("duel-room");
   }
   function handleLeaveDuel() {
+    sessionStorage.removeItem("admin_duel_room");
     setDuelRoomId(null); setDuelIsHost(false);
     setPage("duel");
   }
 
-  const [dungeonRoomId, setDungeonRoomId] = useState(null);
+  const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("admin_dungeon_room") || "null"); } catch { return null; } })();
+  const [dungeonRoomId, setDungeonRoomId] = useState(_savedDungeon?.roomId || null);
   function handleEnterDungeonRoom(roomId) {
     setDungeonRoomId(roomId);
+    sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId }));
     setPage("dungeon-room");
   }
   function handleLeaveDungeon() {
+    sessionStorage.removeItem("admin_dungeon_room");
     setDungeonRoomId(null);
     setPage("home");
   }
@@ -279,14 +330,20 @@ export default function AdminApp() {
     return () => clearInterval(t);
   }, [pendingCheckinAwaitN]);
 
+  // 版本更新偵測
+  useEffect(() => {
+    return subscribeAppVersion(setLatestVersion);
+  }, []);
+
   // 地下城首殺全系統播報
   useEffect(() => {
-    return subscribeLatestBroadcast(data => {
+    const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
       if (dismissedBroadcastRef.current === data.id) return;
       setDungeonKillAlert(data);
     });
-  }, []);
+    return () => unsub?.();
+  }, []); // eslint-disable-line
 
   // 世界王登場：教練也要看到
   useEffect(() => {
@@ -317,54 +374,112 @@ const adminNav = [
   ];
   const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
   const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice"];
-  const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards"];
+  const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
 
   // ── 射手模式 ──────────────────────────────────────────────
   if (archerMode) {
     return (
       <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
+        {/* 版本更新提醒 */}
+        {latestVersion && latestVersion !== APP_VERSION && (
+          <OverlayModal open={true} zIndex={99999} bg="rgba(0,0,0,0.75)">
+            <div style={{ background:"white", borderRadius:"24px", padding:"36px 28px", width:"100%", textAlign:"center", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
+              <div style={{ fontSize:"56px", marginBottom:"12px" }}>🔄</div>
+              <div style={{ fontWeight:"900", fontSize:"20px", color:"#1e293b", marginBottom:"8px" }}>系統已更新！</div>
+              <div style={{ color:"#64748b", fontSize:"13px", marginBottom:"4px" }}>目前版本：<b>{APP_VERSION}</b></div>
+              <div style={{ color:"#64748b", fontSize:"13px", marginBottom:"20px" }}>最新版本：<b style={{ color:"#2563eb" }}>{latestVersion}</b></div>
+              <div style={{ background:"#eff6ff", borderRadius:"12px", padding:"12px 16px", color:"#1d4ed8", fontSize:"13px", marginBottom:"24px", lineHeight:"1.6" }}>
+                請重新整理頁面，<br />才能使用最新功能與修正 🐱
+              </div>
+              <button onClick={() => window.location.reload()}
+                style={{ width:"100%", padding:"16px", background:"linear-gradient(135deg,#2563eb,#7c3aed)", color:"white", fontWeight:"900", fontSize:"16px", borderRadius:"16px", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+                🔄 立即重整頁面
+              </button>
+            </div>
+          </OverlayModal>
+        )}
+
         <MustReadGate memberId={profile?.id} notifications={notifications} />
         <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
         {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
 
+        {/* 📋 今日報到浮動視窗（教練射手模式） */}
+        <OverlayModal open={showCheckinPopup}>
+          <div style={{ background:"linear-gradient(135deg,#0f172a,#1e293b)", borderRadius:24, padding:"28px 24px", width:"100%", maxWidth:320, border:"1px solid rgba(255,255,255,0.15)", boxShadow:"0 0 40px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize:40, textAlign:"center", marginBottom:12 }}>📋</div>
+            <div style={{ color:"#f1f5f9", fontWeight:900, fontSize:18, textAlign:"center", marginBottom:8 }}>今日報到</div>
+            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", lineHeight:1.6, marginBottom:24 }}>
+              點選報到後，等待教練確認<br />即可開始累積箭數與箭露！
+            </div>
+            <button onClick={handleCheckinSubmit} disabled={checkinBusy}
+              style={{ width:"100%", padding:"13px", borderRadius:12, background:"linear-gradient(135deg,#059669,#0d9488)", color:"white", fontWeight:900, fontSize:15, border:"none", cursor:"pointer", opacity: checkinBusy ? 0.6 : 1 }}>
+              {checkinBusy ? "送出中…" : "✅ 我要報到"}
+            </button>
+            <button onClick={() => setShowCheckinPopup(false)}
+              style={{ width:"100%", padding:"10px", borderRadius:12, background:"transparent", color:"rgba(255,255,255,0.35)", fontSize:13, border:"none", cursor:"pointer", marginTop:8 }}>
+              今日不報到
+            </button>
+          </div>
+        </OverlayModal>
+
         {/* ⚡ 緊急任務浮動通知（教練射手模式） */}
-        {specialAlert && (
-          <div style={{ position:"fixed", inset:0, zIndex:99998, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}
-            onClick={() => setSpecialAlert(null)}>
-            <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}
-              onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize:"52px", marginBottom:"8px" }}>⚡</div>
-              <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
-              <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
-              {specialAlert.desc && <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>}
-              {specialAlert.reward && <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>🎁 獎勵：{specialAlert.reward}</div>}
-              <div style={{ display:"flex", gap:"10px" }}>
-                <button onClick={() => setSpecialAlert(null)} style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>稍後再看</button>
-                <button onClick={() => { setSpecialAlert(null); setPage("guild"); }} style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>⚔️ 立即前往公會</button>
-              </div>
+        <OverlayModal open={!!specialAlert} onClose={() => setSpecialAlert(null)} zIndex={99998} bg="rgba(0,0,0,0.72)">
+          <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}>
+            <div style={{ fontSize:"52px", marginBottom:"8px" }}>⚡</div>
+            <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
+            <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
+            {specialAlert.desc && <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>}
+            {specialAlert.reward && <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>🎁 獎勵：{specialAlert.reward}</div>}
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button onClick={() => setSpecialAlert(null)} style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>稍後再看</button>
+              <button onClick={() => { setSpecialAlert(null); setPage("guild"); }} style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>⚔️ 立即前往公會</button>
             </div>
           </div>
-        )}
+        </OverlayModal>
 
-        <div style={{background:"#1e3a5f",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
-          <div style={{color:"white",fontSize:"13px",fontWeight:"900"}}>🏹 射手模式</div>
-          <button onClick={()=>{setArcherMode(false);setPage("hub-member");setMemberSub(null);}}
-            style={{fontSize:"12px",background:"rgba(255,255,255,0.2)",color:"white",border:"none",borderRadius:"8px",padding:"5px 12px",cursor:"pointer",fontWeight:"bold"}}>
-            ⚙️ 返回後台
-          </button>
+        <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
+          <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div>
+              <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🏹 射手模式</div>
+              <div style={{ fontSize:"11px", color:appTheme.subtitleColor, marginTop:"1px" }}>貓小隊射箭場</div>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap", justifyContent:"flex-end" }}>
+              <span style={{ fontSize:"11px", color:"#fbbf24" }}>🪙{(profile?.coins||0).toLocaleString()}</span>
+              <span style={{ fontSize:"11px", color:"#60a5fa" }}>💧{(profile?.village?.resources?.arrowdew||0).toLocaleString()}</span>
+              <span style={{ fontSize:"11px", color:"#86efac" }}>🏹{todayArrowsGlobal}</span>
+              <span style={{ fontSize:"11px", color:"#f472b6" }}>⚔️Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>
+              <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
+              <button onClick={()=>{setArcherMode(false);setPage("hub-member");setMemberSub(null);}}
+                style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", background:"rgba(255,255,255,0.2)", color:"white", border:"none", fontWeight:"bold" }}>
+                ⚙️ 返回後台
+              </button>
+            </div>
+          </div>
         </div>
         {partyRoomId && !["party-quest","party-battle"].includes(page) && (
           <button onClick={() => setPage(partyRoomType === "quest" ? "party-quest" : "party-battle")}
-            style={{display:"block",width:"100%",background:"#4f46e5",color:"white",padding:"7px 16px",fontSize:"12px",fontWeight:"900",textAlign:"center",border:"none",cursor:"pointer"}}>
+            style={{display:"block",width:"100%",background:appTheme.partyBg,color:"white",padding:"7px 16px",fontSize:"12px",fontWeight:"900",textAlign:"center",border:"none",cursor:"pointer",letterSpacing:"0.02em"}}>
             🎮 組隊進行中 — 點此回到房間
+          </button>
+        )}
+        {duelRoomId && page !== "duel-room" && (
+          <button onClick={() => setPage("duel-room")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#1d4ed8,#7c3aed)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            ⚔️ 決鬥進行中 — 點此回到戰場
+          </button>
+        )}
+        {dungeonRoomId && page !== "dungeon-room" && (
+          <button onClick={() => setPage("dungeon-room")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#7c3aed,#1e1b4b)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            🏰 地下城進行中 — 點此回到地下城
           </button>
         )}
         <div style={{paddingBottom:"80px"}}>
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-              potionDex={potionDex} cardData={cardData} />}
+              potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal} />}
           {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
           {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
           {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
@@ -404,7 +519,9 @@ const adminNav = [
               if (fromGuild) { setFromGuild(false); setPage("guild"); }
               else { setQuestCtx(null); setPage("adventure-hub"); }
             }}
-            questContext={questCtx} onKillForQuest={handleQuestKill}/>}
+            questContext={questCtx} onKillForQuest={handleQuestKill}
+            monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
+            potionDex={potionDex} duelStats={duelStats} />}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
@@ -418,9 +535,9 @@ const adminNav = [
           {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
-          {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} />}
+          {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} key={gachaInitTab} />}
           {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("adventure-hub")}/>}
-          {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")}/>}
+          {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
           {page==="guild"       && <AdventurerGuild
@@ -430,20 +547,23 @@ const adminNav = [
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
         </div>
-        <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:40}}>
-          {memberNav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)}
-              style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",
-                color:(page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile")?"#2563eb":"#94a3b8"}}>
-              <div style={{position:"relative",display:"inline-block"}}>
-                <span style={{fontSize:"18px"}}>{n.icon}</span>
-                {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
-                  <span style={{position:"absolute",top:"-2px",right:"-5px",width:"8px",height:"8px",background:"#ef4444",borderRadius:"50%",border:"2px solid white",display:"block"}}/>
-                )}
-              </div>
-              <span style={{fontSize:"11px",fontWeight:"600"}}>{n.label}</span>
-            </button>
-          ))}
+        <div style={{ flexShrink:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
+          {memberNav.map(n => {
+            const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
+            return (
+              <button key={n.id} onClick={() => setPage(n.id)}
+                style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"white", cursor:"pointer", color: active ? appTheme.navActive : "#94a3b8" }}>
+                <div style={{ height:"2px", width: active ? "20px" : "0px", background:appTheme.navIndicator, borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
+                <div style={{ position:"relative", display:"inline-block" }}>
+                  <span style={{ fontSize:"18px" }}>{n.icon}</span>
+                  {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
+                    <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }} />
+                  )}
+                </div>
+                <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500" }}>{n.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -703,10 +823,17 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
     return () => { try { unsub(); } catch {} };
   }, [comp?.id]);
 
+  const [regChecked, setRegChecked] = useState(false);
+
+  useEffect(() => {
+    if (!comp?.id || !profile?.id) return;
+    isMemberRegistered(comp.id, profile.id).then(yes => { if (yes) setRegChecked(true); }).catch(() => {});
+  }, [comp?.id, profile?.id]); // eslint-disable-line
+
   const myId = profile?.id || null;
   const safeResults = Array.isArray(results) ? results : [];
   const parts = Array.isArray(comp?.participants) ? comp.participants : [];
-  const joined = myId ? parts.includes(myId) : false;
+  const joined = !!(myId && (parts.includes(myId) || regChecked));
   const myResult = safeResults.find(r => r && r.memberId === myId) || null;
   // 檢定：我在這場的所有弓種成績
   const myCertResults = isCert ? safeResults.filter(r => r && r.memberId === myId) : [];

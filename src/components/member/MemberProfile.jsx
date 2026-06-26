@@ -95,36 +95,26 @@ export default function MemberProfile({
 
   const quickLinkGroups = [
     {
-      title: "射箭成長",
+      title: "📌 常用功能",
       links: [
         { id:"learn",    icon:"📓", label:"學習紀錄",  desc:"查看教練回饋" },
-        { id:"certexam", icon:"🎖️", label:"射手證考試", desc:"檢定・級別晉升" },
-      ],
-    },
-    {
-      title: "記錄申報",
-      links: [
         { id:"history",  icon:"📊", label:"成績歷史", desc:"所有參賽紀錄" },
-        { id:"external", icon:"🏅", label:"對外比賽", desc:"申報外部成績" },
-      ],
-    },
-    {
-      title: "溝通聯絡",
-      links: [
-        { id:"msgs",          icon:"✉️", label:"留言教練", desc:"傳送訊息給教練" },
         { id:"notifications", icon:"🔔", label:"訊息中心", desc:"公告與祝賀" },
       ],
     },
     {
-      title: "器材設定",
+      title: "🎖️ 檢定與申報",
       links: [
-        { id:"bowsetting", icon:"🏹", label:"我的弓具", desc:"弓具・防具・配件設定" },
+        { id:"certexam", icon:"🎖️", label:"射手證考試", desc:"檢定・級別晉升" },
+        { id:"external", icon:"🏅", label:"對外比賽", desc:"申報外部成績" },
       ],
     },
     {
-      title: "說明設定",
+      title: "✉️ 溝通與設定",
       links: [
-        { id:"guide", icon:"📘", label:"使用說明", desc:"系統操作指引" },
+        { id:"msgs",       icon:"✉️", label:"留言教練", desc:"傳送訊息給教練" },
+        { id:"bowsetting", icon:"🏹", label:"我的弓具", desc:"弓具・防具・配件設定" },
+        { id:"guide",      icon:"📘", label:"使用說明", desc:"系統操作指引" },
       ],
     },
   ];

@@ -12,6 +12,7 @@ import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
+import { OverlayModal } from "../components/shared/UI";
 import { certLevelStyle } from "../lib/constants";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
@@ -87,6 +88,8 @@ export default function MemberApp() {
   const [notifications, setNotifications] = useState([]);
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
   const [bossIntroEvent, setBossIntroEvent] = useState(null);
+  const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
+  const dismissedBroadcastRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
@@ -111,6 +114,16 @@ export default function MemberApp() {
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
   const checkinPopupShownRef = useRef(false); // 每次登入重置，不用 sessionStorage
+
+  // 地下城首殺全系統播報
+  useEffect(() => {
+    const unsub = subscribeLatestBroadcast(data => {
+      if (!data) return;
+      if (dismissedBroadcastRef.current === data.id) return;
+      setDungeonKillAlert(data);
+    });
+    return () => unsub?.();
+  }, []); // eslint-disable-line
 
   // 今日報到訂閱（供浮動視窗判斷）
   useEffect(() => {
@@ -325,8 +338,8 @@ export default function MemberApp() {
 
       {/* 版本更新提醒 */}
       {needsUpdate && (
-        <div style={{ position:"fixed", inset:0, zIndex:99999, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
-          <div style={{ background:"white", borderRadius:"24px", padding:"36px 28px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
+        <OverlayModal open={true} zIndex={99999} bg="rgba(0,0,0,0.75)">
+          <div style={{ background:"white", borderRadius:"24px", padding:"36px 28px", width:"100%", textAlign:"center", boxShadow:"0 25px 60px rgba(0,0,0,0.4)" }}>
             <div style={{ fontSize:"56px", marginBottom:"12px" }}>🔄</div>
             <div style={{ fontWeight:"900", fontSize:"20px", color:"#1e293b", marginBottom:"8px" }}>系統已更新！</div>
             <div style={{ color:"#64748b", fontSize:"13px", marginBottom:"4px" }}>目前版本：<b>{APP_VERSION}</b></div>
@@ -339,12 +352,29 @@ export default function MemberApp() {
               🔄 立即重整頁面
             </button>
           </div>
-        </div>
+        </OverlayModal>
       )}
 
       <MustReadGate memberId={profile?.id} notifications={notifications} />
       <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
+
+      {/* 地下城首殺全系統公告 */}
+      {dungeonKillAlert && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
+          onClick={() => { dismissedBroadcastRef.current = dungeonKillAlert.id; setDungeonKillAlert(null); }}>
+          <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              ⚡ 地下城首殺！{dungeonKillAlert.emoji} {dungeonKillAlert.dungeonName}（{dungeonKillAlert.difficultyLabel}）
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {dungeonKillAlert.teamNames?.join("、") || dungeonKillAlert.memberName} 成為首殺英雄！
+            </div>
+          </div>
+          <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
+        </div>
+      )}
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
 
       {/* 👑 地下城首殺全系統公告 */}
@@ -365,56 +395,50 @@ export default function MemberApp() {
       )}
 
       {/* 📋 今日報到浮動視窗 */}
-      {showCheckinPopup && (
-        <div style={{ position:"fixed", inset:0, zIndex:99990, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
-          <div style={{ background:"linear-gradient(135deg,#0f172a,#1e293b)", borderRadius:24, padding:"28px 24px", width:"100%", maxWidth:320, border:"1px solid rgba(255,255,255,0.15)", boxShadow:"0 0 40px rgba(0,0,0,0.5)" }}>
-            <div style={{ fontSize:40, textAlign:"center", marginBottom:12 }}>📋</div>
-            <div style={{ color:"#f1f5f9", fontWeight:900, fontSize:18, textAlign:"center", marginBottom:8 }}>今日報到</div>
-            <div style={{ color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", lineHeight:1.6, marginBottom:24 }}>
-              點選報到後，等待教練確認<br />即可開始累積箭數與箭露！
-            </div>
-            <button onClick={handleCheckinSubmit} disabled={checkinBusy}
-              style={{ width:"100%", padding:"13px", borderRadius:12, background:"linear-gradient(135deg,#059669,#0d9488)", color:"white", fontWeight:900, fontSize:15, border:"none", cursor:"pointer", opacity: checkinBusy ? 0.6 : 1 }}>
-              {checkinBusy ? "送出中…" : "✅ 我要報到"}
-            </button>
-            <button onClick={() => setShowCheckinPopup(false)}
-              style={{ width:"100%", padding:"10px", borderRadius:12, background:"transparent", color:"rgba(255,255,255,0.35)", fontSize:13, border:"none", cursor:"pointer", marginTop:8 }}>
-              今日不報到
-            </button>
+      <OverlayModal open={showCheckinPopup}>
+        <div style={{ background:"linear-gradient(135deg,#0f172a,#1e293b)", borderRadius:24, padding:"28px 24px", width:"100%", maxWidth:320, border:"1px solid rgba(255,255,255,0.15)", boxShadow:"0 0 40px rgba(0,0,0,0.5)" }}>
+          <div style={{ fontSize:40, textAlign:"center", marginBottom:12 }}>📋</div>
+          <div style={{ color:"#f1f5f9", fontWeight:900, fontSize:18, textAlign:"center", marginBottom:8 }}>今日報到</div>
+          <div style={{ color:"rgba(255,255,255,0.5)", fontSize:13, textAlign:"center", lineHeight:1.6, marginBottom:24 }}>
+            點選報到後，等待教練確認<br />即可開始累積箭數與箭露！
           </div>
+          <button onClick={handleCheckinSubmit} disabled={checkinBusy}
+            style={{ width:"100%", padding:"13px", borderRadius:12, background:"linear-gradient(135deg,#059669,#0d9488)", color:"white", fontWeight:900, fontSize:15, border:"none", cursor:"pointer", opacity: checkinBusy ? 0.6 : 1 }}>
+            {checkinBusy ? "送出中…" : "✅ 我要報到"}
+          </button>
+          <button onClick={() => setShowCheckinPopup(false)}
+            style={{ width:"100%", padding:"10px", borderRadius:12, background:"transparent", color:"rgba(255,255,255,0.35)", fontSize:13, border:"none", cursor:"pointer", marginTop:8 }}>
+            今日不報到
+          </button>
         </div>
-      )}
+      </OverlayModal>
 
       {/* ⚡ 緊急任務浮動通知 */}
-      {specialAlert && (
-        <div style={{ position:"fixed", inset:0, zIndex:99998, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}
-          onClick={() => setSpecialAlert(null)}>
-          <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", maxWidth:"360px", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:"52px", marginBottom:"8px", animation:"pulse 1s infinite" }}>⚡</div>
-            <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
-            <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
-            {specialAlert.desc && (
-              <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>
-            )}
-            {specialAlert.reward && (
-              <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>
-                🎁 獎勵：{specialAlert.reward}
-              </div>
-            )}
-            <div style={{ display:"flex", gap:"10px" }}>
-              <button onClick={() => setSpecialAlert(null)}
-                style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
-                稍後再看
-              </button>
-              <button onClick={() => { setSpecialAlert(null); setPage("guild"); }}
-                style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
-                ⚔️ 立即前往公會
-              </button>
+      <OverlayModal open={!!specialAlert} onClose={() => setSpecialAlert(null)} zIndex={99998} bg="rgba(0,0,0,0.72)">
+        <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}>
+          <div style={{ fontSize:"52px", marginBottom:"8px", animation:"pulse 1s infinite" }}>⚡</div>
+          <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
+          <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert.title}</div>
+          {specialAlert.desc && (
+            <div style={{ color:"rgba(255,255,255,0.7)", fontSize:"13px", lineHeight:"1.6", marginBottom:"16px" }}>{specialAlert.desc}</div>
+          )}
+          {specialAlert.reward && (
+            <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"12px", padding:"10px 16px", marginBottom:"20px", color:"#fbbf24", fontSize:"13px", fontWeight:"700" }}>
+              🎁 獎勵：{specialAlert.reward}
             </div>
+          )}
+          <div style={{ display:"flex", gap:"10px" }}>
+            <button onClick={() => setSpecialAlert(null)}
+              style={{ flex:1, padding:"14px", background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontWeight:"700", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
+              稍後再看
+            </button>
+            <button onClick={() => { setSpecialAlert(null); setPage("guild"); }}
+              style={{ flex:2, padding:"14px", background:"linear-gradient(135deg,#dc2626,#7c3aed)", color:"white", fontWeight:"900", fontSize:"14px", borderRadius:"14px", border:"none", cursor:"pointer" }}>
+              ⚔️ 立即前往公會
+            </button>
           </div>
         </div>
-      )}
+      </OverlayModal>
 
       {/* Header */}
       <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>

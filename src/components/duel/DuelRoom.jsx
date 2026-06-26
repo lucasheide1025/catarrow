@@ -15,6 +15,7 @@ import {
   removePlayerFromRoom, resetWithRedistribution,
   skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
+import { BattleResultHeader, BattleStatCard } from "../shared/SharedBattleComponents";
 import { generateBotArrows } from "../../lib/botUtils";
 import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP } from "../../lib/db";
 import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
@@ -771,13 +772,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         <ToastContainer />
 
         {/* 結果大字 */}
-        <div className="text-center" style={{ animation:"result-pop .6s cubic-bezier(.34,1.56,.64,1) forwards" }}>
-          <div className="text-7xl mb-2">{draw ? "🤝" : win ? "🏆" : "💀"}</div>
-          <div className={`text-4xl font-black ${draw ? "text-slate-300" : win ? "text-amber-400" : "text-red-400"}`}>
-            {draw ? "平局" : win ? "勝利！" : "落敗"}
-          </div>
-          <div className="text-slate-400 text-sm mt-1">{totalRounds} 回合</div>
-        </div>
+        <BattleResultHeader
+          emoji={draw ? "🤝" : win ? "🏆" : "💀"}
+          title={draw ? "平局" : win ? "勝利！" : "落敗"}
+          subtitle={`${totalRounds} 回合`}
+          color={draw ? "slate" : win ? "amber" : "red"}
+        />
 
         {/* 雙隊 HP 對比 */}
         <div className="w-full max-w-sm flex gap-3">
@@ -792,21 +792,16 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
 
         {/* 我的本場統計 */}
-        <div className="w-full max-w-sm rounded-2xl bg-white/5 border border-white/10 p-4 flex justify-around">
-          <div className="text-center">
-            <div className="text-xl font-black text-white">{myDmg}</div>
-            <div className="text-xs text-slate-400">⚔️ 造成傷害</div>
+        <div className="w-full max-w-sm flex gap-2">
+          <div className="flex-1">
+            <BattleStatCard icon="⚔️" label="造成傷害" value={myDmg} />
           </div>
-          <div className="text-center">
-            <div className="text-xl font-black text-white">{room.log?.reduce((s, e) => s + (e.attacks || []).filter(a => a.attackerId === myId).reduce((ss, a) => ss + (a.crits || 0), 0), 0)}</div>
-            <div className="text-xs text-slate-400">💥 爆擊次數</div>
+          <div className="flex-1">
+            <BattleStatCard icon="💥" label="爆擊次數" value={room.log?.reduce((s, e) => s + (e.attacks || []).filter(a => a.attackerId === myId).reduce((ss, a) => ss + (a.crits || 0), 0), 0) || 0} />
           </div>
           {duelStats && (
-            <div className="text-center">
-              <div className="text-xl font-black text-white">
-                {duelStats.wins + (win ? 0 : 0)}W {duelStats.losses}L
-              </div>
-              <div className="text-xs text-slate-400">📊 累積戰績</div>
+            <div className="flex-1">
+              <BattleStatCard icon="📊" label="累積戰績" value={`${duelStats.wins}W ${duelStats.losses}L`} />
             </div>
           )}
         </div>

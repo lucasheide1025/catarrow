@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-06-26（24 地下城 + 首殺系統 + 成就 + 全系統公告）
+
+### 核心設計
+- **24 個地下城**（6族 × 4難度），從舊版 `shadow-crypt` 原型升級為完整地下城矩陣
+- **首殺系統**：Boss 房通關 → 寫入 `dungeonFirstClears/{dungeonId}`（Firestore），紀錄保持一年後重整，首殺 host 獲得 `dungeonFirstKills` 陣列條目
+- **成就圖鑑**：新增「地下城」類別 + 11 個成就（首通關 / 累積次數 / 各難度全族 / 地獄勇者 / 首殺英雄 / 征服者）
+- **全系統公告**：首殺後寫入 `systemBroadcasts`，MemberApp + AdminApp 訂閱 30 分鐘內播報，顯示橫幅 toast
+
+### 難度設計
+| 難度 | 層數 | 怪物 Tier | Boss Modifier |
+|------|------|-----------|---------------|
+| 普通 | 2層  | T1-T2     | HP×1.5, ATK×1.5, DEF×1.5 |
+| 進階 | 3層  | T3-T4     | HP×1.5, ATK×1.2, DEF×1.2 |
+| 困難 | 3層  | T4-T5     | HP×1.4 only |
+| 地獄 | 4層  | T5-T6     | 無（原始數值）|
+
+### Tier 映射（mapRoomTier 1→6）
+`common / rare / elite / fierce / boss / mythic`
+
+### Firestore 新 Collections
+- `dungeonFirstClears/{dungeonId}` — 首殺紀錄（memberId, memberName, clearedAt, teamNames...）
+- `systemBroadcasts/{id}` — 全系統播報（type, dungeonId, dungeonName, memberName...）
+- `members/{id}.dungeonClearLog.${dungeonId}.{count,lastAt}` — 個人通關記錄
+- `members/{id}.dungeonFirstKills[]` — 首殺地下城 ID 陣列（用於成就）
+
+⚠️ **注意**：`dungeonFirstClears` 與 `systemBroadcasts` 需在 Firebase Console 手動新增 Firestore 安全規則：
+```
+match /dungeonFirstClears/{id} { allow read, write: if request.auth != null; }
+match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write: if request.auth != null; }
+```
+
+### 修改檔案
+- `src/lib/dungeonData.js`：DUNGEON_MAPS 改為 24 個，新增 `DIFFICULTY_CONFIGS`、`FAMILY_CONFIGS` exports，4 個 floor 模板函式
+- `src/lib/dungeonDb.js`：新增 6 個函式（`trySetDungeonFirstClear`, `getDungeonFirstClear`, `updateMemberDungeonLog`, `addMemberFirstKill`, `publishDungeonFirstKill`, `subscribeLatestBroadcast`）
+- `src/lib/achievementDex.js`：新增 dungeon 類別 + 11 個成就
+- `src/components/dungeon/DungeonExplore.jsx`：`mapRoomTier` 支援 tier 1-6
+- `src/components/dungeon/DungeonLobby.jsx`：難度 tab + 六族 2×3 格子選單
+- `src/components/dungeon/DungeonBattleRoom.jsx`：handleClaim 加入 Boss 房偵測、首殺邏輯、首殺橫幅 overlay
+- `src/pages/MemberApp.jsx` / `AdminApp.jsx`：訂閱 `subscribeLatestBroadcast` 顯示首殺橫幅
+
+### 踩坑
+- `setFirstKillData(killMeta)` 是非同步的，同一個 handleClaim 函式內不能用 `if (!firstKillData)` 判斷——改用 `wasFirstKill` local 變數
+- 管理員 AdminApp 已加 `useRef` import，不需重複加
+
+---
+
 ## 2026-06-26（地下城地圖探索模式 Phase 1-3 完整實作）
 
 ### 核心設計
@@ -112,7 +158,71 @@
 
 ---
 
-## 2026-06-25（後段：打怪掉落修正 + 貓貓決鬥/地下城傷害 + 村莊累積生產 + 市集重設計）
+## 2026-06-26（第 4~5 輪：總射箭里程 + 首頁重整 + 教練射手模式統一 + 全部遺漏修復）
+
+### 總射箭里程系統
+**為什麼**：首頁等級卡缺少長期成長回饋，射手想知道自己總共射了多少箭。
+**改了什麼**：
+- `db.js`：`addPracticeLog` 自動累計 `totalArrowsAllTime`（increment）
+- `MemberHome.jsx`：等級卡新增「🏹 總射箭里程」里程碑進度條（100→500→1000→5000→10000→50000 箭）
+
+### 首頁重整 Part 1：徽章精簡 + 貓貓等級加入
+**為什麼**：首頁與「我的」重複區塊過多；射手等級卡沒有貓貓資訊。
+**改了什麼**：
+- `MemberHome.jsx`：
+  - 射手狀態卡徽章三色從完整展開（3 行）改為一行「🐱 ⭐ 🏆」總數摘要
+  - 等級卡加入完整貓夥伴資訊（頭像/名稱/類型/等級XP/羈絆/技能群組/裝備加成）
+  - 清理未使用的 `BadgePip` import
+
+### 教練射手模式統一（AdminApp archerMode）
+**為什麼**：教練切換射手模式時，介面仍用固定深藍色 Header，缺少報到視窗、主題色、今日箭數等。
+**改了什麼**：
+- `AdminApp.jsx`：
+  - Import：加入 `subscribeTodayPracticeLogs / subscribeMyCheckin / submitCheckin`
+  - 狀態：`todayArrowsGlobal / todayCheckin / showCheckinPopup / checkinBusy / checkinPopupShownRef`
+  - Effects：報到訂閱（首次進入自動彈窗）+ 今日箭數訂閱
+  - Header：從固定 `#1e3a5f` → `appTheme` 主題色（含 🪙💧🏹👤 資源列 + 返回後台按鈕）
+  - 報到浮動視窗：與 MemberApp 完全一致
+  - 底部導覽：加入 `appTheme.navActive / navIndicator` 顏色 + active 指示條
+  - 補傳 `todayArrows={todayArrowsGlobal}` 給 MemberHome
+**踩坑提醒**：handleCheckinSubmit 必須定義在 archerMode render 之前（已在元件層級定義）。
+
+### 教練射手模式遺漏功能全部修復（11 項）
+**為什麼**：比對 AdminApp 與 MemberApp，發現共 11 項功能不一致。
+**改了什麼**：
+1. **Header 射手等級** — 加入 `⚔️Lv.{archerLevelFromXP}`
+2. **決鬥 reconnect banner** — 離開決鬥時顯示「⚔️ 決鬥進行中 — 點此回到戰場」
+3. **地下城 reconnect banner** — 同上，🏰 地下城
+4. **決鬥/地下城 sessionStorage 重整恢復** — `admin_duel_room` / `admin_dungeon_room`
+5. **MonsterBattle props** — 補傳 `monsterDex/craftStats/chestStats/potionDex/duelStats`
+6. **CatCollection onOpenForge** — 可從貓收藏跳到鍛造
+7. **CatVillage initialTab+key** — 鍛造連結可直接定位
+8. **版本更新提醒** — `subscribeAppVersion` + `needsUpdate` 彈窗
+9. **CompDetail 報名偵測** — 用 `isMemberRegistered` 確認報名
+10. **組隊 reconnect 顏色** — 改為 `appTheme.partyBg`
+11. **地下城 → DungeonController** — 支援地圖探索模式
+**踩坑提醒**：`DungeonController` 是 `DungeonBattleRoom` 的包裝層（含地圖探索路由），需同步替換 `DungeonBattleRoom` import。
+
+### 首頁重整 Part 2：年度檢定精簡
+**為什麼**：首頁與「我的」都顯示完整三欄檢定卡片，重複且佔空間。
+**改了什麼**：
+- `MemberHome.jsx`：年度檢定從 3 欄完整卡片（含背景圖/等級樣式/分數）→ 單行弓種摘要（弓種·分數·等級標籤） + 「查看詳細 →」導向 profile 頁面
+- 清理未使用的 `CERT_BG` 常數
+**踩坑提醒**：`onPageChange("profile")` 導向的是 MemberProfile，該頁有完整歷年檢定（含展開收合）。
+
+### 首頁重整 Part 3：「我的」快捷連結重新排列
+**為什麼**：原分組過多零散（5 組），部分組只有 1 個連結，視覺碎片化。
+**改了什麼**：
+- `MemberProfile.jsx`：quickLinkGroups 從 5 組 → 3 組：
+  - 📌 **常用功能**：學習紀錄・成績歷史・訊息中心（最常用的 3 個）
+  - 🎖️ **檢定與申報**：射手證考試・對外比賽
+  - ✉️ **溝通與設定**：留言教練・我的弓具・使用說明
+- 所有 8 個連結保留，3 欄網格剛好裝滿
+
+### 其他小型修復
+- `AdminApp.jsx`：`ADMIN_INVENTORY` 補上 `"gacha"`（與 MemberApp 的 `INVENTORY_PAGES` 一致）
+
+---
 
 ### 打怪模式不再掉落徽章碎片與貓貓箱
 **為什麼**：36 隻怪物打怪後給徽章碎片（frag_*）與貓貓箱（cat type chest）不符合設計方向。

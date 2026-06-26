@@ -15,7 +15,7 @@ import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow } from "../shared/SharedBattleComponents";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
@@ -1043,6 +1043,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 slotSize={36}
                 showScore={false}
                 processing={subPhase !== "shooting"}
+                processingIdx={processingIdx}
                 extraContent={
                   subPhase === "shooting" && (
                     <button onClick={() => setTargetMode(m => !m)} style={{
@@ -1135,47 +1136,20 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           ) : result?.ok ? (
             <>
               {result.defeated ? (
-                <div className="text-center space-y-2">
-                  <div className="text-6xl animate-bounce">💥</div>
-                  <div className="text-2xl font-black text-amber-300">BOSS 擊殺！</div>
-                  <div className="text-xs text-slate-400 max-w-xs leading-relaxed">
-                    {event.announcement || "全域廣播：FIRST KILL！"}
-                  </div>
-                </div>
+                <BattleResultHeader emoji="💥" title="BOSS 擊殺！" subtitle={event.announcement || "全域廣播：FIRST KILL！"} color="amber" />
               ) : (
-                <div className="text-center space-y-2">
-                  <div className="text-5xl">⚔️</div>
-                  <div className="text-xl font-black text-white">出戰完成！</div>
-                  <div className="text-xs text-slate-400">Boss 剩餘 {result.newHP?.toLocaleString()} HP</div>
-                </div>
+                <BattleResultHeader emoji="⚔️" title="出戰完成！" subtitle={`Boss 剩餘 ${result.newHP?.toLocaleString()} HP`} color="slate" />
               )}
 
-              <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+              <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1">
                 <div className="text-xs text-slate-400 font-bold mb-2">戰鬥報告</div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">你的總傷害</span>
-                  <span className="font-black text-rose-400">{totalPlayerDmg.toLocaleString()}</span>
-                </div>
+                <BattleStatRow icon="🏹" label="你的總傷害" value={totalPlayerDmg.toLocaleString()} valueColor="#f87171" />
                 {bots.length > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-300">機器人傷害</span>
-                    <span className="font-black text-indigo-400">
-                      {(result.dmg - totalPlayerDmg).toLocaleString()}
-                    </span>
-                  </div>
+                  <BattleStatRow icon="🤖" label="機器人傷害" value={(result.dmg - totalPlayerDmg).toLocaleString()} valueColor="#818cf8" />
                 )}
-                <div className="flex justify-between text-sm border-t border-white/10 pt-2">
-                  <span className="text-slate-300">總傷害</span>
-                  <span className="font-black text-amber-300">{result.dmg?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">暴擊次數</span>
-                  <span className="font-black text-yellow-400">{totalCrits} 次</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">Boss 剩餘 HP</span>
-                  <span className="font-mono text-slate-300">{result.newHP?.toLocaleString()}</span>
-                </div>
+                <BattleStatRow icon="⚔️" label="總傷害" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" borderTop />
+                <BattleStatRow icon="💥" label="暴擊次數" value={`${totalCrits} 次`} valueColor="#facc15" />
+                <BattleStatRow icon="❤️" label="Boss 剩餘 HP" value={result.newHP?.toLocaleString()} valueColor="#cbd5e1" />
               </div>
 
               <div className="w-full space-y-2">
@@ -1194,23 +1168,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
               {/* 每日出戰獎勵 */}
               {result.dailyReward && (
-                <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4">
+                <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4 space-y-1">
                   <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-300">參與金幣</span>
-                    <span className="font-black text-amber-300">+{result.dailyReward.coins} 💰</span>
-                  </div>
+                  <BattleStatRow icon="💰" label="參與金幣" value={`+${result.dailyReward.coins}`} valueColor="#fbbf24" />
                   {result.dailyReward.chest ? (
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-slate-300">傷害寶箱</span>
-                      <span className="font-black text-emerald-300">
-                        {result.dailyReward.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"}
-                      </span>
-                    </div>
+                    <BattleStatRow icon="📦" label="傷害寶箱" value={result.dailyReward.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"} valueColor="#34d399" />
                   ) : (
-                    <div className="text-xs text-slate-500 mt-1">傷害達 Boss HP 1% 可獲鐵寶箱，2.5% 可獲金寶箱</div>
+                    <div className="text-xs text-slate-500">傷害達 Boss HP 1% 可獲鐵寶箱，2.5% 可獲金寶箱</div>
                   )}
-                  <div className="text-xs text-slate-500 mt-1">本次傷害佔 Boss HP {result.dailyReward.pct}%</div>
+                  <div className="text-xs text-slate-500">本次傷害佔 Boss HP {result.dailyReward.pct}%</div>
                 </div>
               )}
 

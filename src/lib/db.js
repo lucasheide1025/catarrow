@@ -188,6 +188,13 @@ export async function addPracticeLog(memberId, data, operatorId) {
 
   if (xpGain > 0) addAdventurerXP(memberId, xpGain).catch(() => {});
 
+  // ── 累計總射箭數（終身里程）───────────────────────────
+  const arrowCount = cleanedData.totalArrows || 0;
+  if (arrowCount > 0 && memberId && !memberId.startsWith("guest")) {
+    await updateDoc(doc(db, C.members, memberId), { totalArrowsAllTime: increment(arrowCount) }).catch(() => {});
+  }
+  // ──────────────────────────────────────────────────────
+
   return ref.id;
 }
 
