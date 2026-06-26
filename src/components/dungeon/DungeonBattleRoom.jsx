@@ -100,6 +100,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
   const [submitted,     setSubmitted]     = useState(false);
+  const [rearChoice,    setRearChoice]    = useState(null); // "heal" | "dmg" | null（後衛選擇）
   const [targetFmt,     setTargetFmt]     = useState(getBattleTargetFmt);
   const [targetMode,    setTargetMode]    = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
@@ -328,7 +329,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     sfxArrowShoot();
     vibrate([10,10,10]);
     setSubmitted(true);
-    await submitDungeonArrows(roomId, myId, arrows);
+    const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
+    await submitDungeonArrows(roomId, myId, arrows, choice);
+    setRearChoice(null);
   }
 
   function addArrow(label) {
@@ -914,6 +917,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
                     {!m.alive?"💀":""}{m.name.slice(0,6)}
                   </div>
+                  <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
+                    color: m.role==="rear"?"#a78bfa":"#34d399",
+                  }}>
+                    {m.role==="rear"?"🛡後衛":"⚔️前衛"}
+                  </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
                     <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk||0}</div>
                     <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{m.def||0}</div>
@@ -997,6 +1005,26 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           </div>
         ) : (
           <>
+            {/* 後衛選擇（前衛死亡後變後衛時出現）*/}
+            {me.role === "rear" && !submitted && (
+              <div style={{ background:"rgba(0,0,0,0.7)", border:"2px solid rgba(168,85,247,0.6)", borderRadius:10, padding:"8px 10px", marginBottom:6 }}>
+                <div style={{ color:"#e2e8f0", fontSize:10, fontWeight:700, textAlign:"center", marginBottom:6 }}>🛡️ 後衛 — 選擇行動</div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => setRearChoice("heal")}
+                    style={{ flex:1, padding:"8px 0", borderRadius:8, border:`2px solid ${rearChoice==="heal"?"#4ade80":"rgba(74,222,128,0.3)"}`,
+                      background: rearChoice==="heal" ? "rgba(74,222,128,0.25)" : "rgba(0,0,0,0.4)",
+                      color:"#4ade80", fontWeight:900, fontSize:12, cursor:"pointer" }}>
+                    💚 治癒 (25% HP)
+                  </button>
+                  <button onClick={() => setRearChoice("dmg")}
+                    style={{ flex:1, padding:"8px 0", borderRadius:8, border:`2px solid ${rearChoice==="dmg"?"#f87171":"rgba(248,113,113,0.3)"}`,
+                      background: rearChoice==="dmg" ? "rgba(248,113,113,0.25)" : "rgba(0,0,0,0.4)",
+                      color:"#f87171", fontWeight:900, fontSize:12, cursor:"pointer" }}>
+                    ⚔️ 攻擊 (+50% 傷害)
+                  </button>
+                </div>
+              </div>
+            )}
             {/* 任務提示 */}
             <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:4, padding:"2px 6px", borderRadius:6, background:"rgba(0,0,0,0.3)" }} className={contractInfo.color}>
               <span style={{ fontSize:11 }}>{contractInfo.icon}</span>

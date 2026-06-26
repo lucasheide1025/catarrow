@@ -7,16 +7,6 @@ import BattleRecords from "../member/BattleRecords";
 
 const TYPE_OPTIONS = [
   {
-    id: "quest",
-    icon: "📋",
-    label: "日常任務分享",
-    desc: "兩人各自設定練習距離，完成後一起獲得寶箱獎勵",
-    color: "from-emerald-400 to-teal-500",
-    border: "border-emerald-400",
-    bg: "bg-emerald-50",
-    textColor: "text-emerald-700",
-  },
-  {
     id: "battle",
     icon: "⚔️",
     label: "組隊打怪",
@@ -33,7 +23,7 @@ const TYPE_OPTIONS = [
 export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleOnly }) {
   const { profile } = useAuth();
   const [tab, setTab]         = useState("create"); // "create" | "join"
-  const [selType, setSelType] = useState(battleOnly ? "battle" : "quest");
+  const [selType, setSelType] = useState("battle");
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState("");
   const [openRooms, setOpenRooms] = useState([]);

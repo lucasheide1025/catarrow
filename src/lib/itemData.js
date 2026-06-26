@@ -68,26 +68,24 @@ export function rollChestType(tier, mode) {
 }
 
 // 產生寶箱（打贏怪物時呼叫）
-// 回傳 { mainChest, catChest|null, potionChest|null }
+// 回傳 { mainChest, bonusChest|null, potionChest|null }
+// 老手/賽事：bonusChest = 第二個主寶箱（已移除 catChest / 章碎片掉落）
 export function makeChests(monster, mode) {
   const type = rollChestType(monster.tier, mode);
-  const mainChest = {
-    id:   `chest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type, family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now(),
-  };
-  // 學生模式：貓貓箱和藥水箱機率各降低 40%
-  const modeMult = mode === "student" ? 0.6 : 1;
-  const catChance = (CAT_CHEST_CHANCE[monster.tier] || 0.01) * modeMult;
-  const catChest = Math.random() < catChance ? {
-    id:   `chest_cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type: "cat", family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now() + 1,
-  } : null;
-  const potionChance = (POTION_CHEST_CHANCE[monster.tier] || 0.02) * modeMult;
+  const now  = Date.now();
+  const mk   = (extra = 0) => ({
+    id: `chest_${now + extra}_${Math.random().toString(36).slice(2, 8)}`,
+    type, family: monster.family, tier: monster.tier, from: monster.name, ts: now + extra,
+  });
+  const mainChest  = mk(0);
+  const bonusChest = (mode === "veteran" || mode === "match") ? mk(1) : null;
+  const potMult    = (mode === "veteran" || mode === "match") ? 1.5 : mode === "novice" ? 0.5 : 1;
+  const potionChance = (POTION_CHEST_CHANCE[monster.tier] || 0.02) * potMult;
   const potionChest = Math.random() < potionChance ? {
-    id:   `chest_potion_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type: "potion", family: monster.family, tier: monster.tier, from: monster.name, ts: Date.now() + 2,
+    id:   `chest_potion_${now + 2}_${Math.random().toString(36).slice(2, 8)}`,
+    type: "potion", family: monster.family, tier: monster.tier, from: monster.name, ts: now + 2,
   } : null;
-  return { mainChest, catChest, potionChest };
+  return { mainChest, bonusChest, potionChest };
 }
 
 // 向下相容舊呼叫（MonsterBattle 會逐步改用 makeChests）

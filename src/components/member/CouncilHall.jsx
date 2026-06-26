@@ -7,10 +7,12 @@ import {
 import { calcArcherPower } from "../../lib/monsterData";
 import {
   checkCouncilDailyLimit, recordCouncilSession, completeCouncilSession,
-  getCertRecords, getCertification, getDexConfig,
+  getCertRecords, getCertification, getDexConfig, subscribeCardCollection,
 } from "../../lib/db";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { calcArcherStats } from "../../lib/monsterData";
+import { calcEquippedBonus } from "../../lib/monsterCards";
+import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { computeDexStats } from "../../lib/achievementDex";
 import CouncilBattle from "./CouncilBattle";
 import ExpeditionPanel from "./ExpeditionPanel";
@@ -43,6 +45,8 @@ export default function CouncilHall({ profile, village, onBack }) {
   useEffect(() => {
     if (!profile?.id) return;
     let cancelled = false;
+    let baseStats = null;
+
     async function load() {
       try {
         const [cr, cert, dcfg] = await Promise.all([
@@ -51,17 +55,35 @@ export default function CouncilHall({ profile, village, onBack }) {
           getDexConfig(),
         ]);
         if (cancelled) return;
-        const ds    = computeDexStats({ member: profile, certification: cert, certRecords: cr, checkinCount: profile?.dailyQuestCount || 0, granted: [], physicalMax: dcfg.physicalMax || 20, pointMax: dcfg.pointMax || 20 });
-        const stats = calcArcherStats({ member: profile, certification: cert, certRecords: cr, dexStats: ds });
-        setArcherStats(stats);
-      } catch { setArcherStats({ hp: 200, atk: 20, def: 15 }); }
+        const ds = computeDexStats({ member: profile, certification: cert, certRecords: cr, checkinCount: profile?.dailyQuestCount || 0, granted: [], physicalMax: dcfg.physicalMax || 20, pointMax: dcfg.pointMax || 20 });
+        baseStats = calcArcherStats({ member: profile, certification: cert, certRecords: cr, dexStats: ds });
+        setArcherStats(baseStats);
+      } catch { baseStats = { hp: 200, atk: 20, def: 15 }; setArcherStats(baseStats); }
       finally { if (!cancelled) setLoadingStats(false); }
     }
     load();
     checkCouncilDailyLimit(profile.id)
       .then(n => { if (!cancelled) setDailyLeft(n); })
       .catch(() => setDailyLeft(5));
-    return () => { cancelled = true; };
+
+    // 卡片加成 + 射手等級加成
+    const unsub = subscribeCardCollection(profile.id, (cardData) => {
+      if (cancelled) return;
+      const equipped   = cardData?.equipped || [];
+      const cardBonus  = calcEquippedBonus(equipped);
+      const archerXP   = profile?.archerXP || 0;
+      const archerLv   = archerLevelFromXP(archerXP);
+      const lvBonus    = archerLevelBonus(archerLv);
+      if (!baseStats) return;
+      setArcherStats({
+        ...baseStats,
+        hp:  baseStats.hp  + (cardBonus.hp  || 0) + (lvBonus.hp  || 0),
+        atk: baseStats.atk + (cardBonus.atk || 0) + (lvBonus.atk || 0),
+        def: baseStats.def + (cardBonus.def || 0) + (lvBonus.def || 0),
+      });
+    });
+
+    return () => { cancelled = true; unsub?.(); };
   }, [profile?.id]); // eslint-disable-line
 
   async function handleEnter(bld) {

@@ -492,13 +492,13 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
 }
 
 // ── Battle：房主勝利後為所有人存入待領獎勵 ───────────────────
-export async function storeBattleRewards(roomId, memberIds, monster) {
+export async function storeBattleRewards(roomId, memberIds, monster, mode = "student") {
   try {
     const rewardPending = {};
     for (const mid of memberIds) {
       if (mid.startsWith("guest")) continue; // 訪客無背包，不需要寶箱紀錄
-      const { mainChest, catChest, potionChest } = makeChests(monster);
-      rewardPending[mid] = [mainChest, catChest, potionChest].filter(Boolean);
+      const { mainChest, bonusChest, potionChest } = makeChests(monster, mode);
+      rewardPending[mid] = [mainChest, bonusChest, potionChest].filter(Boolean);
     }
     await updateDoc(doc(db, PARTY, roomId), { rewardPending });
     return { ok: true };

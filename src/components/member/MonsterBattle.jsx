@@ -27,7 +27,7 @@ import {
   calcArcherStats, calcArcherPower, drawMatchedMonsters,
   calcDamage, calcCounterDamage, resolveHitPart,
 } from "../../lib/monsterData";
-import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollMaterialDrops, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
+import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollMaterialDrops, rollMaterialDropsGuaranteed, rollCardDrop, makeCoinChest, COIN_CHEST_CHANCE_BY_MODE } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { drawRandomEvent, shouldTriggerEvent } from "../../lib/randomEvents";
 import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
@@ -146,7 +146,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
   const [battleMode, setBattleMode] = useState("score");
-  const [mode, setMode]             = useState("novice");
+  const [mode, setMode]             = useState(() => localStorage.getItem("mb_default_mode") || "novice");
   const [monster, setMonster]       = useState(null);
   const [battleBg, setBattleBg]     = useState("/ui/dungeon-bg.webp");
   const [archerStats, setArcherStats] = useState(null);
@@ -635,12 +635,20 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           setAnimMonsterAttack(false); setAnimMonsterCritAtk(false); setAnimArcherHit(false);
 
           if (curArchHP<=0) {
-            if (!revived) {
+            if (mode==="novice") {
+              // 新手：無限復活，完全恢復
+              const reviveHP = bSt?.hp || 100;
+              setArcherHP(reviveHP); curArchHP=reviveHP;
+              addLog({ type:"revive", text:"💚 新手守護！完全恢復！教練說：「繼續加油！」" });
+              sfxRevive(); await delay(1500);
+            } else if (mode==="student" && !revived) {
+              // 學生：一次復活，恢復30% HP
               const reviveHP=Math.ceil((bSt?.hp||100)*0.3);
               setArcherHP(reviveHP); curArchHP=reviveHP; setRevived(true);
               addLog({ type:"revive", text:"💖 教練施展【完全治癒術】！「你不能死在這裡！」恢復 30% HP，最後一條命！" });
               sfxRevive(); await delay(2800);
             } else {
+              // 老手/賽事 或 學生第二次死亡：直接結算
               const roundArr=arrows.map(arrowLabelToVal);
               setAllArrows(prev=>[...prev,...roundArr]);
               setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
@@ -801,10 +809,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     });
     if (throwSkip === "big") setSkipBigRound(true);
 
-    // 怪物倍率：新手HP×1.5, 學生HP×2, 老手HP×4+ATK×2+DEF×2
-    const modeHPMult  = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
-    const modeATKMult = mode==="veteran" ? 2 : 1;
-    const modeDEFMult = mode==="veteran" ? 2 : 1;
+    // 怪物倍率：新手/學生HP×1；老手/賽事HP×1.5+ATK×1.25+DEF×1.25
+    const modeHPMult  = (mode==="veteran" || mode==="match") ? 1.5 : 1.0;
+    const modeATKMult = (mode==="veteran" || mode==="match") ? 1.25 : 1;
+    const modeDEFMult = (mode==="veteran" || mode==="match") ? 1.25 : 1;
     const boosted = {
       ...pickedMonster,
       hp:  Math.round(pickedMonster.hp  * modeHPMult),
@@ -874,8 +882,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const mainChests = [mainChest, potionChest].filter(Boolean);
         setWonChests(mainChests);
 
-        // 材料掉落（機率，依 tier 一次掉多個；過濾徽章碎片）
-        const mats = rollMaterialDrops(monster).filter(m => !m.id?.startsWith("frag_"));
+        // 材料掉落（新手機率；學生/老手/賽事保證掉落；老手/賽事x2）
+        const matMult = (mode==="veteran" || mode==="match") ? 2 : 1;
+        const mats = (mode==="novice"
+          ? rollMaterialDrops(monster)
+          : rollMaterialDropsGuaranteed(monster, matMult)
+        ).filter(m => !m.id?.startsWith("frag_"));
         setDroppedMaterials(mats);
         if (mats.length > 0) {
           addMaterials(profile.id, mats).catch(() => {});
@@ -891,16 +903,17 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           sessionStorage.setItem("guest_coins", String(prev + total));
           setDroppedCoins(total);
         } else {
-          // 金幣寶箱 + 主寶箱合成一次寫入，避免競態覆蓋
-          const coinChest = makeCoinChest(monster.tier, "打怪掉落");
+          // 金幣寶箱：依模式機率決定是否掉落
+          const coinChestChance = COIN_CHEST_CHANCE_BY_MODE[mode] ?? 0.5;
+          const coinChest = Math.random() < coinChestChance ? makeCoinChest(monster.tier, "打怪掉落") : null;
           setDroppedCoins(baseCoins);
-          setDroppedCoinChest(coinChest);
+          if (coinChest) setDroppedCoinChest(coinChest);
           addCoins(profile.id, baseCoins).catch(() => {});
-          addChests(profile.id, [...mainChests, coinChest]).catch(() => {});
+          addChests(profile.id, [...mainChests, ...(coinChest ? [coinChest] : [])]).catch(() => {});
         }
 
-        // 怪物卡片（1%）
-        const card = rollCardDrop(monster);
+        // 怪物卡片（依模式機率）
+        const card = rollCardDrop(monster, mode);
         if (card) {
           setDroppedCard(card);
           addMonsterCard(profile.id, card).catch(() => {});
@@ -1343,26 +1356,26 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         <style>{BATTLE_CSS}</style>
         <button onClick={()=>setPhase("mode")} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="text-white font-black text-xl text-center">選擇難度</div>
-        <button onClick={()=>{ setMode("novice"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
+        <button onClick={()=>{ setMode("novice"); localStorage.setItem("mb_default_mode","novice"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-green-500/40 bg-green-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1 text-white">🟢 新手模式</div>
-          <div className="font-black text-white mb-1">固定距離 5 / 7 / 10 米，無爆擊</div>
-          <div className="text-slate-400 text-sm">怪物 HP×1.5，使用本人射手數值。每2箭怪物反擊一次，傷害穩定。</div>
-          <div className="text-green-400 text-xs font-bold mt-2">💰 金幣×1.0 / 材料40% / 卡片1% / 寶箱必掉</div>
+          <div className="font-black text-white mb-1">固定距離 5 / 7 / 10 米，無爆擊，無限復活</div>
+          <div className="text-slate-400 text-sm">怪物 HP×1，使用含卡片加成的射手數值。</div>
+          <div className="text-green-400 text-xs font-bold mt-2">💰 金幣×1 / 材料機率掉落 / 卡片10% / 金幣寶箱20%</div>
         </button>
-        <button onClick={()=>{ setMode("student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
+        <button onClick={()=>{ setMode("student"); localStorage.setItem("mb_default_mode","student"); setDistanceMode("fixed"); setSelectedDistance(5); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1 text-white">🎓 學生模式</div>
-          <div className="font-black text-white mb-1">自選距離，含爆擊（距離越近越高）</div>
-          <div className="text-slate-400 text-sm">怪物 HP×2，使用本人射手數值。動態模式每回合距離縮短 1~5 米。</div>
-          <div className="text-blue-400 text-xs font-bold mt-2">💰 金幣×1.5 / 材料60% / 卡片1% / 寶箱必掉</div>
+          <div className="font-black text-white mb-1">自選距離，含爆擊（距離越近越高），一次復活</div>
+          <div className="text-slate-400 text-sm">怪物 HP×1，使用含卡片加成的射手數值。30% HP 復活一次。</div>
+          <div className="text-blue-400 text-xs font-bold mt-2">💰 金幣×2 / 材料必掉×1 / 卡片15% / 金幣寶箱50%</div>
         </button>
-        <button onClick={()=>{ setMode("veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
+        <button onClick={()=>{ setMode("veteran"); localStorage.setItem("mb_default_mode","veteran"); setDistanceMode("dynamic"); setSelectedDistance(DISTANCE_START); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-orange-500/40 bg-orange-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1 text-white">🟠 老手模式</div>
-          <div className="font-black text-white mb-1">怪物大幅增強，射手最低 600 HP，加成無上限</div>
-          <div className="text-slate-400 text-sm">怪物 HP×4、ATK×2、DEF×2。固定、隨機、或動態距離（每回合縮短 1~5 米）。</div>
-          <div className="text-orange-400 text-xs font-bold mt-2">💰 金幣×2.0 / 材料75% / 卡片1% / 高品質寶箱</div>
+          <div className="font-black text-white mb-1">怪物增強，射手最低 600 HP，加成無上限，死亡不復活</div>
+          <div className="text-slate-400 text-sm">怪物 HP×1.5、ATK×1.25、DEF×1.25。固定、隨機、或動態距離。</div>
+          <div className="text-orange-400 text-xs font-bold mt-2">💰 金幣×3 / 材料必掉×2 / 卡片20% / 金幣寶箱必出 / 雙寶箱</div>
         </button>
 
         {eventConfig?.active && (
@@ -1480,10 +1493,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     );
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
-    const previewHPMult = mode==="novice" ? 1.5 : mode==="student" ? 2.0 : 4.0;
+    const previewHPMult = (mode==="veteran" || mode==="match") ? 1.5 : 1.0;
     const previewHP  = Math.round(pickedMonster.hp  * previewHPMult);
-    const previewATK = mode==="veteran" ? Math.round(pickedMonster.atk * 2) : pickedMonster.atk;
-    const previewDEF = mode==="veteran" ? Math.round(pickedMonster.def * 2) : pickedMonster.def;
+    const previewATK = (mode==="veteran" || mode==="match") ? Math.round(pickedMonster.atk * 1.25) : pickedMonster.atk;
+    const previewDEF = (mode==="veteran" || mode==="match") ? Math.round(pickedMonster.def * 1.25) : pickedMonster.def;
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -1772,19 +1785,19 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           {/* 右：怪物展示 */}
           <div style={{flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:28}}>
             {/* 名稱列 */}
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3, background:"rgba(0,0,0,0.55)", borderRadius:6, padding:"2px 6px"}}>
               <span style={{color:"white", fontWeight:900, fontSize:17, textShadow:"0 2px 8px #000"}}>{monster?.name}</span>
-              <span style={{color:"#94a3b8", fontSize:10}}>Lv.{monLv}</span>
+              <span style={{color:"#cbd5e1", fontSize:10, fontWeight:700}}>Lv.{monLv}</span>
             </div>
 
             {/* HP 條 */}
             <BattleHPBar current={monsterHP} max={monster?.hp || 0} />
 
             <BattleStatusTags tags={[
-              { icon:"💀", label:`${round}回`, color:"#94a3b8" },
-              { icon:"⚔️", label:monster?.atk, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
-              { icon:"🛡️", label:monster?.def, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
-              ...(distanceMode==="dynamic" ? [{ icon:"📍", label:`${distance}m`, color:"#fbbf24", bg:"rgba(251,191,36,0.15)" }] : []),
+              { icon:"💀", label:`${round}回`, color:"#e2e8f0", bg:"rgba(0,0,0,0.55)" },
+              { icon:"⚔️", label:monster?.atk, color:"#fca5a5", bg:"rgba(239,68,68,0.50)" },
+              { icon:"🛡️", label:monster?.def, color:"#93c5fd", bg:"rgba(59,130,246,0.50)" },
+              ...(distanceMode==="dynamic" ? [{ icon:"📍", label:`${distance}m`, color:"#fde68a", bg:"rgba(251,191,36,0.50)" }] : []),
             ]} />
 
             {/* 怪物大圖 + 浮動傷害 */}
@@ -1887,8 +1900,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 HP {archerHP}/{maxHP}{revived?" 💖":""}
               </div>
               <div style={{display:"flex", gap:6, justifyContent:"center", marginTop:2}}>
-                <span style={{color:"#f87171", fontSize:9, fontWeight:700}}>ATK {archerStats?.atk||0}</span>
-                <span style={{color:"#60a5fa", fontSize:9, fontWeight:700}}>DEF {archerStats?.def||0}</span>
+                <span style={{color:"#f87171", fontSize:9, fontWeight:700}}>ATK {(battleStats||archerStats)?.atk||0}</span>
+                <span style={{color:"#60a5fa", fontSize:9, fontWeight:700}}>DEF {(battleStats||archerStats)?.def||0}</span>
               </div>
             </div>
 

@@ -42,6 +42,8 @@ const DEFAULT_MEMBER = (name) => ({
   buffs: { atkMult:1, defMult:1, dmgMult:1, hasRevival:false },
   revived: false,
   contractReset: false,
+  role: "front",    // "front" | "rear"
+  rearChoice: null, // "heal" | "dmg" | null
 });
 
 // ── 建立房間 ──────────────────────────────────────────────────
@@ -166,12 +168,14 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
 }
 
 // ── 送出箭分 ─────────────────────────────────────────────────
-export async function submitDungeonArrows(roomId, memberId, arrows) {
+export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice = null) {
   try {
-    await updateDoc(doc(db, D, roomId), {
+    const upd = {
       [`members.${memberId}.arrows`]: arrows,
       [`members.${memberId}.ready`]:  true,
-    });
+    };
+    if (rearChoice !== null) upd[`members.${memberId}.rearChoice`] = rearChoice;
+    await updateDoc(doc(db, D, roomId), upd);
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
@@ -198,23 +202,31 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
+    const frontIds = aliveIds.filter(id => (members[id].role || "front") !== "rear");
+    const rearIds  = aliveIds.filter(id => members[id].role === "rear");
     const round    = room.round || 1;
     const mods     = room.nextFloorModifiers || {};
 
-    // Step 1：計算每人 6 箭（帶任務 + buff 加成）
+    // Step 1：計算每人 6 箭（帶任務 + buff 加成；後衛heal選擇→傷害歸零）
     const allData = {};
     for (const id of aliveIds) {
       const m          = members[id];
-      const effectiveAtk = Math.round((m.atk || 10) * (m.buffs?.atkMult || 1));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1);
+      const isRear     = members[id].role === "rear";
+      const rearHeal   = isRear && m.rearChoice === "heal";
+      const rearDmgMul = isRear && m.rearChoice === "dmg" ? 1.5 : 1.0;
+      const effectiveAtk = rearHeal ? 0 : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1));
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * rearDmgMul;
       const contract     = m.contract || { type:"standard", param:null };
-      const raw = calcDmgFn(m.arrows || [], effectiveAtk, room.monster.def, contract, dmgMult);
+      const raw = rearHeal
+        ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(l=>({ dmg:0, partIcon:"💚", partName:"治癒", label:l })) }
+        : calcDmgFn(m.arrows || [], effectiveAtk, room.monster.def, contract, dmgMult);
       allData[id] = {
         name: m.name || "射手",
         totalDmg: raw.dmg || 0,
         crits:    raw.crits || 0,
         arrowBreakdown: raw.arrowBreakdown || [],
         contract,
+        rearHeal,
       };
     }
 
@@ -257,11 +269,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         playerLog: miniLog, totalDmg: miniDmg, monsterHPAfter: monsterHP,
       });
 
-      // ── 反擊小回合（每 ARROWS_PER_CTR 箭後，怪物尚存時）──
+      // ── 反擊小回合（每 ARROWS_PER_CTR 箭後，怪物尚存時；後衛免疫反擊）──
       if (!skipAllCtr && (i + 1) % ARROWS_PER_CTR === 0 && monsterHP > 0) {
         const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
         const ctrLog     = [];
-        for (const id of aliveIds) {
+        for (const id of frontIds) {  // 只有前衛受到反擊
           if (memberHPNow[id] <= 0) continue;
           const m            = members[id];
           const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
@@ -306,25 +318,40 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     if (eff.extraDmg)  monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 
-    // Step 5：更新成員 HP（含復活符）
+    // Step 5：更新成員 HP（含復活符 + 前後衛死亡邏輯）
     const memberUpd = {};
     let   liveAfter = 0;
     for (const id of aliveIds) {
-      const m = members[id];
-      let hp  = memberHPNow[id];
+      const m      = members[id];
+      const isRear = m.role === "rear";
+      let hp       = memberHPNow[id];
+      // 後衛heal：回復 25% maxHP（不計傷害）
+      if (allData[id]?.rearHeal) hp = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * 0.25));
       if (eff.archerHP)   hp = Math.min(m.maxHP || 9999, hp + eff.archerHP);
       if (eff.healArcher) hp = Math.min(m.maxHP || 9999, hp + eff.healArcher);
-      // 復活符：第一次陣亡自動回血
-      if (hp <= 0 && m.buffs?.hasRevival && !m.revived) {
+      // 復活符：第一次陣亡自動回血（僅前衛）
+      if (hp <= 0 && !isRear && m.buffs?.hasRevival && !m.revived) {
         hp = Math.round((m.maxHP || 100) * 0.3);
         memberUpd[`members.${id}.revived`]          = true;
         memberUpd[`members.${id}.buffs.hasRevival`] = false;
       }
-      memberUpd[`members.${id}.hp`]     = hp;
-      memberUpd[`members.${id}.arrows`] = [];
-      memberUpd[`members.${id}.ready`]  = false;
-      if (hp <= 0) memberUpd[`members.${id}.alive`] = false;
-      else liveAfter++;
+      if (hp <= 0) {
+        if (!isRear) {
+          // 前衛第一次死亡 → 變後衛，HP 重置 30%
+          hp = Math.round((m.maxHP || 100) * 0.3);
+          memberUpd[`members.${id}.role`] = "rear";
+          liveAfter++;
+        } else {
+          // 後衛死亡 → 真的陣亡
+          memberUpd[`members.${id}.alive`] = false;
+        }
+      } else {
+        liveAfter++;
+      }
+      memberUpd[`members.${id}.hp`]        = hp;
+      memberUpd[`members.${id}.arrows`]    = [];
+      memberUpd[`members.${id}.ready`]     = false;
+      if (isRear) memberUpd[`members.${id}.rearChoice`] = null; // 每回合清除後衛選擇
     }
 
     // Step 6：log entry

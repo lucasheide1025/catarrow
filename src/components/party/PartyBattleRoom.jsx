@@ -9,7 +9,7 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -38,7 +38,9 @@ const MODE_OPTIONS = [
   { id:"novice",  label:"新手", icon:"🌱" },
   { id:"student", label:"學生", icon:"📚" },
   { id:"veteran", label:"老手", icon:"🏹" },
+  { id:"match",   label:"賽事", icon:"🏆" },
 ];
+const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 
 // 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片 / 射手等級）
 function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
@@ -188,6 +190,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
+  const autoClaimFiredRef = useRef(false); // 自動領取寶箱（每場只觸發一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const logInitializedRef = useRef(false); // 首次載入時跳過已存在的 log（F5 防重播）
   const revealTimersRef   = useRef([]);    // 逐人揭曉計時器
@@ -219,6 +222,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     rewardStoredRef.current  = false;
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
+    autoClaimFiredRef.current = false;
     prevLogLenRef.current    = 0;
     logInitializedRef.current = false;
     roundGuardRef.current = 0;
@@ -337,7 +341,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room.rewardPending) return; // 已存過
     rewardStoredRef.current = true;
     const memberIds = Object.keys(room.members || {});
-    storeBattleRewards(roomId, memberIds, room.monster)
+    storeBattleRewards(roomId, memberIds, room.monster, room.mode || "student")
       .then(res => { if (!res?.ok) rewardStoredRef.current = false; })
       .catch(()  => { rewardStoredRef.current = false; });
   }, [room?.result, room?.rewardPending]); // eslint-disable-line
@@ -447,13 +451,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (room?.result === "lose") sfxSoftFail();
   }, [room?.status, room?.result, liveEntry]); // eslint-disable-line
 
-  // 怪物死亡後：等動畫跑完，房主自動確認進入結算
-  useEffect(() => {
-    if (room?.status !== "pending_confirm" || liveEntry || !isHost) return;
-    const t = setTimeout(() => { handleConfirmResult(); }, 3000);
-    return () => clearTimeout(t);
-  }, [room?.status, liveEntry]); // eslint-disable-line
-
   // processing 卡住防護：processing: true 超過 15 秒自動清除（網路不順時可能殘留）
   useEffect(() => {
     if (!isHost || !room?.processing) return;
@@ -509,6 +506,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const card     = rollCardDrop(room.monster);
     setPreviewReward({ coins, material, card });
   }, [myChests.length, myClaimed]); // eslint-disable-line
+
+  // 自動領取寶箱（previewReward 準備好後立即入庫，無需手動點擊）
+  useEffect(() => {
+    if (!previewReward || !myChests.length || myClaimed || claiming || autoClaimFiredRef.current) return;
+    autoClaimFiredRef.current = true;
+    handleClaim();
+  }, [previewReward]); // eslint-disable-line
 
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -637,11 +641,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           }, myId).catch(() => {});
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
-        // 真實隊友 ≥ 2 人才給組隊 XP 加成；貓貓虛擬夥伴不算
-        const hasRealTeammates = memberList.length >= 2;
-        const xpMult = hasRealTeammates ? PARTY_XP_MULT : 1.0;
+        // 組隊模式永遠給 50% XP 加成
+        const xpMult = PARTY_XP_MULT;
         const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * xpMult);
         addArcherXP(myId, xp).catch(() => {});
+        const advXP = Math.round((ADVENTURER_XP_PER_TIER[monsterTier] || 15) * xpMult);
+        addAdventurerXP(myId, advXP).catch(() => {});
         const _ptyCatId = authProfile?.equippedCat?.catId;
         const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * xpMult) : 0;
         if (_ptyCatId) addCatXP(myId, _ptyCatId, catXP).catch(() => {});
@@ -1238,7 +1243,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     <button onClick={() => {
                       rewardStoredRef.current = false;
                       const memberIds = Object.keys(room.members || {});
-                      storeBattleRewards(roomId, memberIds, room.monster).catch(() => {});
+                      storeBattleRewards(roomId, memberIds, room.monster, room.mode || "student").catch(() => {});
                     }} className="w-full py-2 bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-xs font-black rounded-xl active:opacity-70">
                       🔄 發放獎勵（點此重試）
                     </button>

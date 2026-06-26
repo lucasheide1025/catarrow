@@ -23,8 +23,14 @@ const COIN_RANGE = {
   mythic:  { min: 60, max: 100 },
 };
 
-// 模式倍率
-const MODE_COIN_MULT = { novice: 1.0, student: 1.5, veteran: 2.0 };
+// 模式倍率（金幣）
+const MODE_COIN_MULT = { novice: 1.0, student: 2.0, veteran: 3.0, match: 4.0 };
+
+// 怪物卡片掉落機率（依模式）
+export const CARD_CHANCE_BY_MODE = { novice: 0.10, student: 0.15, veteran: 0.20, match: 0.25 };
+
+// 金幣寶箱掉落機率（依模式）
+export const COIN_CHEST_CHANCE_BY_MODE = { novice: 0.20, student: 0.50, veteran: 1.00, match: 1.00 };
 
 // ── 材料掉落機率（依怪物階級）────────────────────────────
 const MATERIAL_CHANCE = {
@@ -65,9 +71,10 @@ export function rollMaterialDrops(monster) {
   return results;
 }
 
-// 怪物卡片掉落（1%，回傳卡片基本資訊或 null）
-export function rollCardDrop(monster) {
-  if (Math.random() > CARD_CHANCE) return null;
+// 怪物卡片掉落（依模式機率，回傳卡片基本資訊或 null）
+export function rollCardDrop(monster, mode = "student") {
+  const chance = CARD_CHANCE_BY_MODE[mode] ?? CARD_CHANCE;
+  if (Math.random() > chance) return null;
   return {
     monsterId: monster.id,
     name:      monster.name,
@@ -75,6 +82,17 @@ export function rollCardDrop(monster) {
     tier:      monster.tier,
     family:    monster.family,
   };
+}
+
+// 怪物材料掉落（保證版，不做機率判斷）
+export function rollMaterialDropsGuaranteed(monster, multiplier = 1) {
+  const count = getMaterialDropCount(monster?.tier || "common") * multiplier;
+  const results = [];
+  for (let i = 0; i < Math.ceil(count); i++) {
+    const mat = drawMaterial(monster?.id, monster?.tier);
+    if (mat) results.push(mat);
+  }
+  return results;
 }
 
 // ── 金幣寶箱（地下城每層通關掉落）──────────────────────────
