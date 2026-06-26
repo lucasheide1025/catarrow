@@ -710,11 +710,11 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
 }
 
 // 戰鬥結束後返回地圖（房主）
-export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedIds) {
+export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedIds, clearRoom = true) {
   try {
-    const newCleared = prevClearedIds.includes(clearedRoomId)
-      ? prevClearedIds
-      : [...prevClearedIds, clearedRoomId];
+    const newCleared = (clearRoom && clearedRoomId && !prevClearedIds.includes(clearedRoomId))
+      ? [...prevClearedIds, clearedRoomId]
+      : prevClearedIds;
     await updateDoc(doc(db, D, roomId), {
       status:             "map_explore",
       mapClearedIds:      newCleared,

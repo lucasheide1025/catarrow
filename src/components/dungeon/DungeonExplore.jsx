@@ -10,8 +10,12 @@ import {
   castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
 } from "../../lib/dungeonDb";
 import { MONSTERS } from "../../lib/monsterData";
-import { floorToMonsterTier } from "../../lib/lootTable";
 import { RUNES, RUNE_GRADES } from "../../lib/runeData";
+
+// 地圖房間難度 tier (1-4) → 怪物 tier 字串
+function mapRoomTier(tier) {
+  return (["common", "rare", "elite", "fierce"])[Math.min((tier || 1) - 1, 3)];
+}
 
 const VOTE_SEC = 30;
 
@@ -290,7 +294,7 @@ export default function DungeonExplore({
     if (!roomId || !isHost || !eventModal) return;
     setEnteringBattle(true);
     const tier        = eventModal.meta?.tier || 1;
-    const monsterTier = floorToMonsterTier(tier);
+    const monsterTier = mapRoomTier(tier);
     const pool        = MONSTERS.filter(m => m.tier === monsterTier);
     const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
     await enterMapCombatRoom(roomId, room, eventModal.meta || {}, {

@@ -295,7 +295,7 @@ export const DUNGEON_MAPS = [
           { id:"f3r5", type:"event",    x:0, y:2, label:"古老壁畫" },
           { id:"f3r6", type:"chest",    x:2, y:2, label:"Boss 前寶箱" },
           { id:"f3r7", type:"rest",     x:4, y:2, label:"最後的休息" },
-          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ bossId:"lich-king", contract:"all_hit" } },
+          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ tier:4, bossId:"lich-king", contract:"all_hit" } },
         ],
         connections: [
           ["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],

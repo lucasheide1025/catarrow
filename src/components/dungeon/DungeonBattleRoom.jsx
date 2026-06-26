@@ -91,8 +91,9 @@ function pickBg(family) {
 export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, onReturnToMap }) {
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
-  const myId = profile?.id;
+  const myId        = profile?.id;
   const bondSavedRef = useRef(false);
+  const xpSavedRef   = useRef(false); // 非 host win XP/箭露只存一次
   const battleBgRef  = useRef(null);
 
   const [room,          setRoom]          = useState(null);
@@ -153,6 +154,36 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
+
+  // ── 非 host 成員：win 時自動儲存個人箭露/XP（host 由 handleClaim 處理）
+  useEffect(() => {
+    if (room?.status !== "completed" || room?.result !== "win") return;
+    if (isHost) return;
+    if (!myId || myId.startsWith("guest")) return;
+    if (xpSavedRef.current) return;
+    xpSavedRef.current = true;
+    const tFloors = isMapMode ? 1 : (room.totalFloors || 7);
+    const practiceRounds = (room.log || []).map(entry => {
+      const pl = (entry.playerLog || []).find(p => p.id === myId);
+      return (pl?.arrowBreakdown || []).map(a =>
+        a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
+      );
+    }).filter(r => r.length > 0);
+    if (practiceRounds.length > 0) {
+      const arrowCount = practiceRounds.flat().length;
+      addPracticeLog(myId, {
+        date: new Date().toISOString().slice(0, 10), source: "dungeon",
+        monsterName: room.monster?.name || "地下城", result: "win",
+        rounds: practiceRounds,
+        total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+        totalArrows: arrowCount, totalFloors: tFloors,
+      }, myId).catch(() => {});
+      if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
+    }
+    addArcherXP(myId, tFloors * DUNGEON_FLOOR_XP).catch(() => {});
+    const catId = profile?.equippedCat?.catId;
+    if (catId) addCatXP(myId, catId, tFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
+  }, [room?.status, room?.result]); // eslint-disable-line
 
   // ── 進入新回合時觸發貓貓補助提示（整個回合只一次）────────────
   useEffect(() => {
@@ -342,7 +373,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       );
       if (memberChests.length > 0) await addChests(mid, memberChests).catch(() => {});
       if (baseMaterials.length > 0) await addMaterials(mid, baseMaterials).catch(() => {});
-      await recordBattleDex(mid, room.monster.id).catch(() => {});
+      if (room.monster?.id) await recordBattleDex(mid, room.monster.id).catch(() => {});
     }
 
     // 儲存自己的練習紀錄（win）
@@ -548,10 +579,21 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                   if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
                 }
               }
-              onExit?.();
+              if (isMapMode) {
+                // host 讓 Firestore 狀態回 map_explore（不清除房間，允許重試或撤退）
+                if (isHost) {
+                  returnToMapAfterBattle(
+                    roomId, room.mapCurrentRoomId || "", room.mapClearedIds || [], false
+                  ).then(() => onReturnToMap?.());
+                } else {
+                  onReturnToMap?.();
+                }
+              } else {
+                onExit?.();
+              }
             }}
               className="w-full py-4 rounded-2xl font-black bg-white/10 text-slate-300 text-lg active:scale-95">
-              返回大廳
+              {isMapMode ? "返回地圖" : "返回大廳"}
             </button>
           </div>
         </div>
