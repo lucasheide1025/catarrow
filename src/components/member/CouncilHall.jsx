@@ -13,6 +13,7 @@ import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { calcArcherStats } from "../../lib/monsterData";
 import { computeDexStats } from "../../lib/achievementDex";
 import CouncilBattle from "./CouncilBattle";
+import ExpeditionPanel from "./ExpeditionPanel";
 
 const BLD_GRADIENT = {
   mine:      "linear-gradient(135deg,#374151,#1f2937)",
@@ -30,6 +31,7 @@ const CSS = `
 
 export default function CouncilHall({ profile, village, onBack }) {
   const checkinActive = useCheckinActive(profile?.id);
+  const [tab,          setTab]          = useState("collect"); // "collect" | "expedition"
   const [activeBld,    setActiveBld]    = useState(null);
   const [expandedId,   setExpandedId]   = useState(null);
   const [dailyLeft,    setDailyLeft]    = useState(null);
@@ -111,13 +113,34 @@ export default function CouncilHall({ profile, village, onBack }) {
       <style>{CSS}</style>
 
       {/* 標頭 */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
         <button onClick={onBack} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#92400e" }}>←</button>
         <div>
           <div style={{ fontWeight:900, fontSize:17, color:"#fbbf24" }}>🏛️ 議會廳</div>
-          <div style={{ fontSize:11, color:"#78350f" }}>採集任務 · 射箭解決障礙 · 獲得種族素材</div>
+          <div style={{ fontSize:11, color:"#78350f" }}>採集任務 · 遠征派遣 · 獲取貓毛與藥水</div>
         </div>
       </div>
+
+      {/* 分頁切換 */}
+      <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+        {[["collect","⚔️ 採集任務"],["expedition","🚀 遠征隊"]].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{
+              flex:1, padding:"9px 0", borderRadius:12, fontWeight:800, fontSize:13,
+              border:"none", cursor:"pointer", transition:"all 0.15s",
+              background: tab === key ? "linear-gradient(90deg,#d97706,#f59e0b)" : "rgba(255,255,255,0.06)",
+              color: tab === key ? "#1c1008" : "rgba(255,255,255,0.45)",
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 遠征隊 tab */}
+      {tab === "expedition" && (
+        <ExpeditionPanel profile={profile} />
+      )}
+      {tab !== "expedition" && (<>
 
       {/* 提示訊息 */}
       {doneMsg && (
@@ -266,6 +289,7 @@ export default function CouncilHall({ profile, village, onBack }) {
           );
         })}
       </div>
+      </>)}
     </div>
   );
 }

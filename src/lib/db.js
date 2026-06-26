@@ -2866,6 +2866,60 @@ export async function saveEquipNextMats(memberId, slotId, mats) {
   } catch (e) { console.warn("saveEquipNextMats:", e?.message); }
 }
 
+// ─── 遠征隊 ────────────────────────────────────────────────
+
+// 派遣遠征：扣射手資源、寫入 expedition 狀態
+// archerCost: { archer_t1: 50, archer_t2: 30, ... }（從客戶端傳入）
+export async function startExpedition(memberId, catId, catName, missionTier, hours, archerCost) {
+  if (!memberId || !catId || !missionTier) return { ok: false, reason: "參數錯誤" };
+  try {
+    const endsAt = new Date(Date.now() + hours * 3600000);
+    const updates = {
+      expedition: {
+        catId, catName, missionTier, hours,
+        startedAt: serverTimestamp(),
+        endsAt: Timestamp.fromDate(endsAt),
+        status: "active",
+        archerCost,
+      },
+      updatedAt: serverTimestamp(),
+    };
+    for (const [key, count] of Object.entries(archerCost)) {
+      updates[`village.resources.${key}`] = increment(-count);
+    }
+    await updateDoc(doc(db, C.members, memberId), updates);
+    return { ok: true };
+  } catch (e) {
+    console.warn("startExpedition:", e?.message);
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
+}
+
+// 領取遠征獎勵：寫入資源、清除 expedition 狀態
+// rewards: { fur_t1: 3, potion_t2: 2, arrowdew: 20, ... }
+export async function collectExpedition(memberId, rewards) {
+  if (!memberId || !rewards) return { ok: false, reason: "參數錯誤" };
+  try {
+    const updates = {
+      expedition: null,
+      updatedAt: serverTimestamp(),
+    };
+    for (const [key, count] of Object.entries(rewards)) {
+      if (!count) continue;
+      if (key === "gachaToken") {
+        updates["gachaCoins"] = increment(count);
+      } else {
+        updates[`village.resources.${key}`] = increment(count);
+      }
+    }
+    await updateDoc(doc(db, C.members, memberId), updates);
+    return { ok: true };
+  } catch (e) {
+    console.warn("collectExpedition:", e?.message);
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
+}
+
 // ─── 練箭里程碑獎勵 ────────────────────────────────────────
 // milestones: getMilestonesReached() 回傳的陣列
 export async function grantArrowMilestoneRewards(memberId, milestones) {
