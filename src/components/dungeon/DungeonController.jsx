@@ -42,7 +42,7 @@ export default function DungeonController({ roomId, onExit }) {
   // - 其餘狀態（map_explore / waiting）→ 顯示地圖探索
   // 這樣確保戰鬥結束後玩家能看到結算畫面 + 領獎按鈕，
   // 等 host 點「領取並回地圖」後 returnToMapAfterBattle 才回到地圖
-  if (isMapMode && dungeon) {
+  if (isMapMode) {
     const battleStatuses = ["active", "completed", "path_select", "shop", "event", "floor_transition"];
     if (battleStatuses.includes(room.status)) {
       return (
@@ -52,6 +52,16 @@ export default function DungeonController({ roomId, onExit }) {
           isMapMode={true}
           onReturnToMap={onExit}
         />
+      );
+    }
+    // dungeon 找不到（舊 ID 或資料過期）→ 直接離開
+    if (!dungeon) {
+      return (
+        <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.5)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontSize:14 }}>
+          <div style={{ fontSize:32 }}>🏰</div>
+          <div>地下城地圖已過期</div>
+          <button onClick={onExit} style={{ marginTop:8, padding:"8px 24px", borderRadius:12, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none" }}>返回大廳</button>
+        </div>
       );
     }
     return (

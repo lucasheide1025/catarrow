@@ -130,6 +130,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const me     = room?.members?.[myId] || {};
   const status = room?.status;
 
+  // Boss 房間偵測（地圖模式用）
+  const _dungeonForRoom = isMapMode ? DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId) : null;
+  const _curFloorData   = _dungeonForRoom?.floors?.[room?.mapFloorIndex || 0];
+  const _curRoomMeta    = _curFloorData?.rooms?.find(r => r.id === (room?.mapCurrentRoomId || ""));
+  const isBossRoom      = _curRoomMeta?.type === "boss";
+
   // ── 訂閱 ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId) return;
@@ -425,12 +431,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     // ──────────────────────────────────────────────────────────
 
     if (isMapMode) {
-      await returnToMapAfterBattle(
-        roomId,
-        room.mapCurrentRoomId || "",
-        room.mapClearedIds || []
-      );
-      // DungeonController 的 Firestore 訂閱會自動路由回 DungeonExplore
+      if (isBossRoom) {
+        // 地下城通關 → 直接退出大廳，不回地圖
+        onReturnToMap?.();
+      } else {
+        await returnToMapAfterBattle(
+          roomId,
+          room.mapCurrentRoomId || "",
+          room.mapClearedIds || []
+        );
+      }
     } else {
       onExit?.();
     }
@@ -623,6 +633,54 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }
 
     if (isMapMode) {
+      if (isBossRoom) {
+        // ── 地下城首領通關 → 總結算畫面 ──────────────────────
+        const totalFloors = _dungeonForRoom?.floorCount || 1;
+        return (
+          <div className="h-[100dvh] overflow-y-auto flex flex-col bg-gradient-to-b from-amber-950 via-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-5 pb-10">
+            <div className="text-7xl">🏆</div>
+            <div className="text-3xl font-black">地下城通關！</div>
+            {_dungeonForRoom && (
+              <div className="text-amber-300 font-bold text-lg">
+                {_dungeonForRoom.emoji} {_dungeonForRoom.name}（{_dungeonForRoom.difficultyLabel}）
+              </div>
+            )}
+            <div className="text-slate-400 text-sm">全 {totalFloors} 層探索完成，首領已擊敗！</div>
+
+            <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
+              <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
+                <div style={{ fontSize:20 }}>🏹</div>
+                <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{DUNGEON_FLOOR_XP} XP</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
+              </div>
+              {profile?.equippedCat?.catId && (
+                <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
+                  <div style={{ fontSize:20 }}>🐱</div>
+                  <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{CAT_DUNGEON_FLOOR_XP} XP</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+                </div>
+              )}
+              <div style={{ background:"rgba(245,158,11,0.15)", border:"1px solid #f59e0b44", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
+                <div style={{ fontSize:20 }}>💰</div>
+                <div style={{ fontSize:15, fontWeight:900, color:"#fcd34d" }}>金幣 ×2</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>通關獎勵</div>
+              </div>
+            </div>
+
+            {isHost && (
+              <button onClick={handleClaim}
+                className="px-8 py-4 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg active:scale-95 transition-transform">
+                🎊 領取獎勵並返回大廳
+              </button>
+            )}
+            {!isHost && (
+              <div className="text-slate-400 text-sm">等待隊長領取獎勵…</div>
+            )}
+          </div>
+        );
+      }
+
+      // ── 普通房間通關 ───────────────────────────────────────
       return (
         <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
           <div className="text-7xl">✨</div>

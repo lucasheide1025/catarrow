@@ -1016,25 +1016,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px", paddingBottom:"max(10px, env(safe-area-inset-bottom))" }}>
           {/* 箭矢格 */}
           <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
-            {Array.from({ length: ARROWS_PER }).map((_, i) => {
-              const a = arrows[i];
-              const isActive = subPhase === "processing" && i === processingIdx;
-              return (
-                <div key={i} style={{
-                  width:36, height:36, borderRadius:6, flexShrink:0,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:13, fontWeight:900,
-                  background: a ? (isActive ? "#1e3a8a" : "#2563eb") : "rgba(255,255,255,0.05)",
-                  border:`2px solid ${a ? (isActive ? "#fbbf24" : "#60a5fa") : "rgba(255,255,255,0.1)"}`,
-                  color: a ? (isActive ? "#fbbf24" : "white") : "#475569",
-                  transform: isActive ? "scale(1.15)" : "scale(1)",
-                  boxShadow: isActive ? "0 0 12px #fbbf24aa" : undefined,
-                  transition:"transform 0.15s",
-                }}>
-                  {a ? a.label : ""}
-                </div>
-              );
-            })}
             <BattleArrowSlots
                 arrows={arrows}
                 totalArrows={ARROWS_PER}
