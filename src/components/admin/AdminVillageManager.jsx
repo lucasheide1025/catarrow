@@ -5,9 +5,9 @@ import {
   BUILDING_LIST, BUILDINGS, TIERED_RESOURCES, RESOURCE_NAMES, DEFAULT_VILLAGE,
 } from "../../lib/villageData";
 
-const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur'];
+const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer'];
 const TOP_LEVEL_RES = ['gachaCoins'];
-const FLAT_RES = ['arrowdew','archer'];
+const FLAT_RES = ['arrowdew'];
 
 const DEFAULT_BATTLE_EXCHANGE = [
   { type:'wood', icon:'📦', label:'木寶箱',   costs:[{ resource:'ore',  tier:1, count:20 }] },
@@ -202,16 +202,7 @@ export default function AdminVillageManager() {
               busy={busy} onAdjust={d => adjustResource(selected, "gachaCoins", d)} />
           </Section>
 
-          {/* 貓貓射手 */}
-          <Section title="🏹 貓貓射手">
-            <ResourceAdjustRow
-              label="射手" resKey="archer"
-              value={getResources(selected).archer || 0}
-              deltaMap={deltaMap} setDeltaMap={setDeltaMap}
-              busy={busy} onAdjust={d => adjustResource(selected, "archer", d)} />
-          </Section>
-
-          {/* 分 tier 材料 */}
+          {/* 分 tier 材料（含射手）*/}
           <Section title="📦 村莊材料（T1–T5）">
             {TIERED_LIST.map(res =>
               [1,2,3,4,5].map(t => {

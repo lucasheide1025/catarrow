@@ -133,7 +133,7 @@ export function getProductionRate(buildingId, level) {
 export const MAX_COLLECT_HOURS = 8;
 
 // 需要 tier 後綴的資源（_t1~_t5）
-export const TIERED_RESOURCES = new Set(['ore','melon','fish','meat','driedfish','can','potion','fur']);
+export const TIERED_RESOURCES = new Set(['ore','melon','fish','meat','driedfish','can','potion','fur','archer']);
 
 // 取得正確的 Firestore 資源 key
 export function getResourceKey(resource, tier) {
@@ -187,6 +187,6 @@ export function canUpgrade(buildingId, buildings, resources) {
 
 export const DEFAULT_VILLAGE = {
   buildings: { mine:1, farm:1, harbor:1, hunting:1, market:1, warehouse:1, alchemy:1, gacha:1, archery:1 },
-  resources: { arrowdew:0, archer:0, gachaToken:0 },
+  resources: { arrowdew:0, gachaToken:0 },
   lastCollectedAt: null,
 };

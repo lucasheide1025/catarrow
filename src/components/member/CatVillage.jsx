@@ -714,7 +714,7 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 }
 
 // ── 資源總覽列 ───────────────────────────────────────────────
-const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur'];
+const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer'];
 const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'⚓', meat:'🏕️', driedfish:'🛒', can:'📦', potion:'⚗️', fur:'🎰' };
 
 function ResourceRow({ resources, gachaCoins }) {
@@ -726,7 +726,7 @@ function ResourceRow({ resources, gachaCoins }) {
       <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>村莊資源</div>
       {/* 特殊資源 */}
       <div className="flex gap-4 mb-2">
-        {[['archer','🏹','射手','resource-archer1.webp'],['gachaToken','🎰','扭蛋幣',null]].map(([k,em,lb,imgFile]) => (
+        {[['gachaToken','🎰','扭蛋幣',null]].map(([k,em,lb,imgFile]) => (
           <div key={k} className="flex items-center gap-1">
             {imgFile ? (
               <img src={`/ui/village/${imgFile}`} alt={em}
