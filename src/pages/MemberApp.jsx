@@ -88,6 +88,8 @@ export default function MemberApp() {
   const [notifications, setNotifications] = useState([]);
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
   const [bossIntroEvent, setBossIntroEvent] = useState(null);
+  const [wbKillAlert,    setWbKillAlert]    = useState(null);
+  const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
@@ -234,14 +236,23 @@ export default function MemberApp() {
     return subscribeAppVersion(setLatestVersion);
   }, []);
 
-  // 世界王登場：訂閱活躍事件，首次看到新 Boss 時觸發動畫
+  // 世界王登場 + 擊殺公告
   useEffect(() => {
     return subscribeActiveWorldBoss(ev => {
       if (!ev) return;
+      // 登場動畫
       const key = `wb_intro_${ev.id}`;
-      if (sessionStorage.getItem(key)) return; // 本次 session 已看過
-      sessionStorage.setItem(key, "1");
-      setBossIntroEvent(ev);
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        setBossIntroEvent(ev);
+      }
+      // 擊殺公告（每個 eventId 只播一次）
+      if (ev.status === "defeated" && ev.id !== shownWbKillRef.current) {
+        shownWbKillRef.current = ev.id;
+        setWbKillAlert(ev);
+        const t = setTimeout(() => setWbKillAlert(null), 8000);
+        return () => clearTimeout(t);
+      }
     });
   }, []);
 
@@ -364,6 +375,23 @@ export default function MemberApp() {
           <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
         </div>
       )}
+      {/* 🌍 世界王擊殺全系統公告 */}
+      {wbKillAlert && (
+        <div style={{ position:"fixed", top: dungeonKillAlert ? 52 : 0, left:0, right:0, zIndex:998, padding:"10px 16px", background:"linear-gradient(90deg,#1c0a00,#7f1d1d,#1c0a00)", boxShadow:"0 4px 24px rgba(0,0,0,0.6)", display:"flex", alignItems:"center", gap:12, cursor:"pointer", borderBottom:"2px solid #ef4444" }}
+          onClick={() => setWbKillAlert(null)}>
+          <div style={{ fontSize:28, flexShrink:0 }}>🌍</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:900, fontSize:13, color:"#fca5a5", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              ⚔️ 世界王擊殺！{wbKillAlert.bossData?.name || "Boss"} 已倒下！
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {wbKillAlert.lastHitBy?.memberName || "英雄"} 給予最後一擊！全員功勛已發放 🎁
+            </div>
+          </div>
+          <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
+        </div>
+      )}
+
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
 
       {/* 📋 今日報到浮動視窗 */}

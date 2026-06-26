@@ -119,36 +119,68 @@ function HPBar({ label, current, max, color }) {
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Boss 死亡動畫 ────────────────────────────────────────────
-function WorldBossDeathAnim({ boss, killerName, onDone }) {
+const KILL_NARRATIVES = {
+  "X":  { emoji:"🎯", title:"黃金爆頭！",   sub:"正中10環，Boss 瞬間斃命！" },
+  "10": { emoji:"⚔️", title:"精準一擊！",   sub:"完美落點，Boss 轟然倒下！" },
+  "9":  { emoji:"🏹", title:"有效一擊！",   sub:"果斷射出，功成身退！" },
+  "8":  { emoji:"💫", title:"險勝告終！",   sub:"差點讓 Boss 逃走，好險！" },
+  "7":  { emoji:"😅", title:"千鈞一髮！",   sub:"這箭幸好沒飛走，一局定勝負！" },
+  "6":  { emoji:"😱", title:"奇蹟邊界！",   sub:"最後一箭差點打到地板，Boss 倒了！" },
+  "M":  { emoji:"🤯", title:"傳奇脫靶！",   sub:"箭飛了，Boss 竟然嚇死了⋯" },
+};
+
+function WorldBossDeathAnim({ boss, killerName, killerStyle, finishingArrow, onDone }) {
+  const narrative = KILL_NARRATIVES[finishingArrow] || { emoji:"🏆", title:"Boss 擊殺！", sub:"英雄集體努力，終於告捷！" };
   useEffect(() => {
-    const t = setTimeout(onDone, 4800);
+    const t = setTimeout(onDone, 6000);
     return () => clearTimeout(t);
   }, [onDone]);
   return (
     <div onClick={onDone} style={{
-      position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.96)",
+      position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.97)",
       display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
       padding:24, cursor:"pointer", overflow:"hidden",
     }}>
       <div style={{ position:"absolute", inset:0, background:"white", animation:"wb-screen-flash 0.55s ease forwards", pointerEvents:"none" }}/>
-      <div style={{ animation:"wb-death-shake 1.2s ease 0.3s both", marginBottom:16, opacity:0.55 }}>
-        <WorldBossSVG bossKey={boss.pixelKey || boss.bossKey || "dragon"} currentHP={0} maxHP={1000} size={180}/>
+      {/* 射手 vs Boss */}
+      <div style={{ display:"flex", alignItems:"flex-end", gap:16, marginBottom:16 }}>
+        <div style={{ animation:"wb-archer-kill 0.5s ease 0.4s both", opacity:0, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+          <img
+            src={`/cats/archers/${killerStyle || "baobao"}.webp`}
+            alt={killerName || "射手"}
+            onError={e => { e.target.style.display="none"; }}
+            style={{ height:120, objectFit:"contain", objectPosition:"center bottom",
+              filter:"drop-shadow(0 0 16px rgba(251,191,36,0.8))",
+              animation:"mb-archer-attack 0.4s ease 0.8s" }}
+          />
+          <div style={{ fontSize:10, color:"#fbbf24", fontWeight:900 }}>{killerName}</div>
+        </div>
+        <div style={{ fontSize:28, animation:"wb-death-text 0.4s ease 1.0s both", opacity:0 }}>⚔️</div>
+        <div style={{ animation:"wb-death-shake 1.2s ease 0.3s both", opacity:0.45 }}>
+          <WorldBossSVG bossKey={boss.bossKey || boss.pixelKey || "head_coach"} currentHP={0} maxHP={1000} size={120}/>
+        </div>
       </div>
+      {/* DEFEATED! */}
       <div style={{
-        fontSize:"3rem", fontWeight:900, color:"#fbbf24",
+        fontSize:"2.8rem", fontWeight:900, color:"#fbbf24",
         textShadow:"0 0 40px #f59e0b, 0 0 80px #f59e0b88, 0 4px 20px rgba(0,0,0,0.9)",
         animation:"wb-death-text 0.7s cubic-bezier(.17,.67,.35,1.5) 0.7s both",
         letterSpacing:"0.1em", textAlign:"center",
       }}>DEFEATED!</div>
-      <div style={{ fontSize:"1.1rem", color:"#94a3b8", marginTop:6, animation:"wb-death-killer 0.5s ease 1.3s both" }}>
+      {/* 擊殺方式台詞 */}
+      <div style={{ animation:"wb-death-killer 0.5s ease 1.3s both", opacity:0, textAlign:"center", marginTop:12 }}>
+        <div style={{ fontSize:"1.4rem", fontWeight:900, color:"#e2e8f0", marginBottom:4 }}>
+          {narrative.emoji} {narrative.title}
+        </div>
+        {finishingArrow && (
+          <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>最後一箭：<span style={{ color:"#fbbf24", fontWeight:900 }}>{finishingArrow}</span> — {narrative.sub}</div>
+        )}
+      </div>
+      {/* Boss 已被討伐 */}
+      <div style={{ marginTop:8, fontSize:"0.9rem", color:"rgba(255,255,255,0.45)", animation:"wb-death-killer 0.4s ease 1.7s both", opacity:0 }}>
         {boss.name}「{boss.title}」 已被討伐
       </div>
-      {killerName && (
-        <div style={{ marginTop:16, fontSize:"0.95rem", color:"#e2e8f0", animation:"wb-death-killer 0.5s ease 1.7s both", textAlign:"center" }}>
-          ⚔️ 致命一擊：<span style={{ color:"#fbbf24", fontWeight:900 }}>{killerName}</span>
-        </div>
-      )}
-      <div style={{ marginTop:28, fontSize:"0.7rem", color:"rgba(255,255,255,0.25)", animation:"wb-death-killer 0.4s ease 2.2s both" }}>
+      <div style={{ marginTop:24, fontSize:"0.65rem", color:"rgba(255,255,255,0.2)", animation:"wb-death-killer 0.4s ease 2.5s both", opacity:0 }}>
         點擊繼續
       </div>
     </div>
@@ -288,6 +320,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   );
   const [showDeathAnim,     setShowDeathAnim]     = useState(false);
   const [deathKiller,       setDeathKiller]       = useState(null);
+  const [deathFinishArrow,  setDeathFinishArrow]  = useState(null);
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const [showCatRound,      setShowCatRound]      = useState(false);
@@ -342,6 +375,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       @keyframes wb-death-text{0%{opacity:0;transform:scale(0.15) rotate(-18deg)}55%{transform:scale(1.08) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
       @keyframes wb-death-killer{0%{opacity:0;transform:translateY(24px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
       @keyframes wb-screen-flash{0%,100%{opacity:0}20%{opacity:0.9}}
+      @keyframes wb-archer-kill{0%{opacity:0;transform:translateX(-40px) scale(0.7)}70%{transform:translateX(6px) scale(1.05)}100%{opacity:1;transform:translateX(0) scale(1)}}
     `;
     document.head.appendChild(s);
     return () => s.remove();
@@ -555,6 +589,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setSubmitting(true);
     setPhase("result");
 
+    const _killerStyle   = profile?.equippedCat?.catId || (typeof localStorage !== "undefined" ? localStorage.getItem("mb_archer_style") : null) || "baobao";
+    const _lastRound     = rounds[rounds.length - 1];
+    const _lastArrow     = _lastRound?.arrows?.[(_lastRound.arrows.length ?? 1) - 1];
+    const _finishArrow   = _lastArrow?.label ?? null;
+
     const res = await attackWorldBoss({
       eventId:       event.id,
       memberId:      myId,
@@ -567,6 +606,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       memberAtk:     baseATK,
       memberDef:     baseDEF,
       memberHP:      baseHP,
+      killerStyle:   _killerStyle,
+      finishingArrow: _finishArrow,
     });
 
     setResult(res);
@@ -578,6 +619,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         // 發放擊殺獎勵（防重複由 rewardDistributed flag 保護）
         distributeWorldBossRewards(event.id).catch(() => {});
         setDeathKiller(myName);
+        setDeathFinishArrow(_finishArrow);
         setShowDeathAnim(true);
       } else {
         sfxSuccess();
@@ -1020,7 +1062,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                     💢-{counterDmg}
                   </span>
                 )}
-                <img src={`/cats/archers/${(profile || guestOverride)?.archerStyle || "baobao"}.webp`} alt={myName}
+                <img src={`/cats/archers/${profile?.equippedCat?.catId || guestOverride?.archerStyle || "baobao"}.webp`} alt={myName}
                   style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
                     filter: archerShoot ? "drop-shadow(0 0 8px rgba(251,191,36,0.8))" : "drop-shadow(0 0 4px rgba(251,191,36,0.35))",
                     animation: archerShoot ? "mb-archer-attack 0.4s ease" : undefined,
@@ -1095,6 +1137,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <WorldBossDeathAnim
             boss={event.bossData || {}}
             killerName={deathKiller}
+            killerStyle={profile?.equippedCat?.catId || guestOverride?.archerStyle || "baobao"}
+            finishingArrow={deathFinishArrow}
             onDone={() => setShowDeathAnim(false)}
           />
         )}

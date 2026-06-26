@@ -130,7 +130,7 @@ export async function updateWorldBossHP(eventId, newHP) {
 // ── 攻擊大 Boss（每天一次，最多 5 回合 × 6 箭）────────────────
 // roundResults = [{ arrows, dmg, crits }, ...] 最多 5 回合
 // isGuest = true 時不寫 practiceLog
-export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0 }) {
+export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0, killerStyle = "baobao", finishingArrow = null }) {
   try {
     const eventRef  = doc(db, WB, eventId);
     const snap      = await getDoc(eventRef);
@@ -198,7 +198,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       if (defeated) {
         const announcement = buildKillAnnouncement(memberName, weapon || "訪客弓組");
         upd.status       = "defeated";
-        upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組" };
+        upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組", killerStyle: killerStyle || "baobao", finishingArrow: finishingArrow || null };
         upd.announcement = announcement;
         upd.defeatedAt   = serverTimestamp();
       }
