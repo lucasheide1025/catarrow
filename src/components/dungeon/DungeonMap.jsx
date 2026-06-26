@@ -1,5 +1,5 @@
 // src/components/dungeon/DungeonMap.jsx — 地下城 SVG 探索地圖
-import { getRoomMeta } from "../../lib/dungeonData";
+import { getRoomMeta, getContractBadge } from "../../lib/dungeonData";
 
 const CELL  = 70;  // 格距 px
 const PAD   = 44;  // 邊距 px
@@ -141,6 +141,24 @@ export default function DungeonMap({
                   {room.label}
                 </text>
               )}
+
+              {/* 合約標籤（戰鬥房已探索才顯示） */}
+              {isExplored && (() => {
+                const badge = getContractBadge(room);
+                if (!badge) return null;
+                return (
+                  <text
+                    x={cx} y={cy + r + 24}
+                    textAnchor="middle"
+                    fontSize={8}
+                    fontWeight="bold"
+                    fill={badge.color}
+                    style={{ userSelect:"none", pointerEvents:"none" }}
+                  >
+                    [{badge.label}]
+                  </text>
+                );
+              })()}
             </g>
           );
         })}

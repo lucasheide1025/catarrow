@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonExplore.jsx — 地下城探索主畫面（Phase 1 MVP）
 import { useState, useMemo } from "react";
 import DungeonMap from "./DungeonMap";
-import { getDungeonFloor, getReachableRooms, getRoomMeta } from "../../lib/dungeonData";
+import { getDungeonFloor, getReachableRooms, getRoomMeta, getContractBadge, getContractDesc } from "../../lib/dungeonData";
 
 export default function DungeonExplore({ dungeon, onBack }) {
   const [floorIndex,    setFloorIndex]    = useState(0);
@@ -113,9 +113,31 @@ export default function DungeonExplore({ dungeon, onBack }) {
           </div>
 
           {/* 房間類型說明 */}
-          <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginBottom:12 }}>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginBottom:8 }}>
             {ROOM_DESC[roomCard.type] || "未知房間"}
           </div>
+
+          {/* 合約規則說明（戰鬥房才顯示） */}
+          {(() => {
+            const badge = getContractBadge(roomCard);
+            if (!badge) return null;
+            const contract = { type: roomCard.meta?.contract, param: roomCard.meta?.contractParam };
+            return (
+              <div style={{
+                display:"flex", alignItems:"center", gap:8,
+                background:"rgba(255,255,255,0.05)", borderRadius:10,
+                padding:"8px 10px", marginBottom:12,
+                border:`1px solid ${badge.color}33`,
+              }}>
+                <span style={{ fontWeight:900, fontSize:11, color: badge.color }}>
+                  ⚔️ {badge.label}
+                </span>
+                <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)" }}>
+                  {getContractDesc(contract)}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* 行動按鈕 */}
           {roomCard.type === "stairs" ? (

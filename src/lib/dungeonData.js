@@ -219,6 +219,22 @@ export function getDungeonFloor(dungeon, floorIndex) {
   return dungeon?.floors?.[floorIndex] || null;
 }
 
+// 戰鬥房合約的地圖短標籤
+export function getContractBadge(room) {
+  const c = room?.meta?.contract;
+  if (!c) return null;
+  const p = room?.meta?.contractParam;
+  switch (c) {
+    case "standard":     return { label:"標準",    color:"#94a3b8" };
+    case "hit_count":    return { label:"命中",    color:"#4ade80" };
+    case "score_gate":   return { label:`≥${p}分`, color:"#60a5fa" };
+    case "all_hit":      return { label:"全中",    color:"#f97316" };
+    case "x_crit":       return { label:"X爆",     color:"#a78bfa" };
+    case "target_score": return { label:`${p}分×2`,color:"#fbbf24" };
+    default:             return null;
+  }
+}
+
 // ── 地下城地圖資料表 ──────────────────────────────────────────
 export const DUNGEON_MAPS = [
   {
@@ -233,10 +249,10 @@ export const DUNGEON_MAPS = [
         floor: 1,
         startRoomId: "f1r1",
         rooms: [
-          { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道",   meta:{ tier:1 } },
+          { id:"f1r1", type:"monster",  x:2, y:0, label:"入口通道",   meta:{ tier:1, contract:"standard" } },
           { id:"f1r2", type:"chest",    x:0, y:1, label:"隱藏儲藏室" },
           { id:"f1r3", type:"trap",     x:2, y:1, label:"陷阱走廊" },
-          { id:"f1r4", type:"monster",  x:4, y:1, label:"守衛室",     meta:{ tier:1 } },
+          { id:"f1r4", type:"monster",  x:4, y:1, label:"守衛室",     meta:{ tier:1, contract:"hit_count" } },
           { id:"f1r5", type:"rest",     x:1, y:2, label:"廢棄休息室" },
           { id:"f1r6", type:"merchant", x:3, y:2, label:"流浪商人" },
           { id:"f1r7", type:"stairs",   x:2, y:3, label:"通往二層" },
@@ -251,12 +267,12 @@ export const DUNGEON_MAPS = [
         floor: 2,
         startRoomId: "f2r1",
         rooms: [
-          { id:"f2r1", type:"monster",  x:2, y:0, label:"地下通道",   meta:{ tier:2 } },
+          { id:"f2r1", type:"monster",  x:2, y:0, label:"地下通道",   meta:{ tier:2, contract:"score_gate",   contractParam:6 } },
           { id:"f2r2", type:"event",    x:0, y:1, label:"詭異祭壇" },
-          { id:"f2r3", type:"elite",    x:2, y:1, label:"護衛將領",   meta:{ tier:2 } },
+          { id:"f2r3", type:"elite",    x:2, y:1, label:"護衛將領",   meta:{ tier:2, contract:"target_score", contractParam:8 } },
           { id:"f2r4", type:"chest",    x:4, y:1, label:"秘密金庫" },
           { id:"f2r5", type:"teleport", x:0, y:2, label:"傳送陣" },
-          { id:"f2r6", type:"monster",  x:2, y:2, label:"亡靈巡邏",   meta:{ tier:2 } },
+          { id:"f2r6", type:"monster",  x:2, y:2, label:"亡靈巡邏",   meta:{ tier:2, contract:"score_gate",   contractParam:7 } },
           { id:"f2r7", type:"rest",     x:4, y:2, label:"隱秘小室" },
           { id:"f2r8", type:"merchant", x:1, y:3, label:"神秘商人" },
           { id:"f2r9", type:"stairs",   x:3, y:3, label:"通往三層" },
@@ -272,14 +288,14 @@ export const DUNGEON_MAPS = [
         floor: 3,
         startRoomId: "f3r1",
         rooms: [
-          { id:"f3r1", type:"monster",  x:2, y:0, label:"最深處通道", meta:{ tier:3 } },
-          { id:"f3r2", type:"elite",    x:0, y:1, label:"精英守衛",   meta:{ tier:3 } },
+          { id:"f3r1", type:"monster",  x:2, y:0, label:"最深處通道", meta:{ tier:3, contract:"score_gate", contractParam:8 } },
+          { id:"f3r2", type:"elite",    x:0, y:1, label:"精英守衛",   meta:{ tier:3, contract:"all_hit" } },
           { id:"f3r3", type:"trap",     x:2, y:1, label:"致命陷阱" },
-          { id:"f3r4", type:"elite",    x:4, y:1, label:"死亡騎士",   meta:{ tier:3 } },
+          { id:"f3r4", type:"elite",    x:4, y:1, label:"死亡騎士",   meta:{ tier:3, contract:"x_crit" } },
           { id:"f3r5", type:"event",    x:0, y:2, label:"古老壁畫" },
           { id:"f3r6", type:"chest",    x:2, y:2, label:"Boss 前寶箱" },
           { id:"f3r7", type:"rest",     x:4, y:2, label:"最後的休息" },
-          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ bossId:"lich-king" } },
+          { id:"f3r8", type:"boss",     x:2, y:3, label:"地窖之王",   meta:{ bossId:"lich-king", contract:"all_hit" } },
         ],
         connections: [
           ["f3r1","f3r2"],["f3r1","f3r3"],["f3r1","f3r4"],
