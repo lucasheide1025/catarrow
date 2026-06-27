@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-06-27（地下城地圖模式成員復活 Bug 修復）
+
+### 地下城組隊：跨房間死亡 Bug（`enterMapCombatRoom` 未重置 alive）
+- **Bug**：玩家在地圖模式某個戰鬥房間死亡（alive=false），進入下一個房間後仍保持死亡狀態，永遠被排除在戰鬥之外（表現為「被踢掉」）
+- **根因**：`enterMapCombatRoom` 沒有像 `startDungeonFloor` 一樣重置 `alive=true`
+- **修復**：`dungeonDb.js` `enterMapCombatRoom` 的 member 更新迴圈中加入：
+  - `revived: false`（每間房間重置復活旗標，讓復活符重新生效）
+  - 若 `!m.alive`：`alive=true` + `hp = max(1, maxHP*0.3)`（以 30% HP 復活）
+- **坑記錄**：`startDungeonFloor`（舊地下城模式）有重置 alive，但地圖模式的 `enterMapCombatRoom` 是後來寫的，漏掉了這個重置
+
+---
+
 ## 2026-06-27（遠征隊 3 槽 + 遠征獎勵重構 + 村莊三修）
 
 ### 遠征隊：3 槽位同時派遣

@@ -729,9 +729,16 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
     const memberIds = Object.keys(room.members || {});
     const upd = {};
     for (const id of memberIds) {
+      const m = room.members[id] || {};
       upd[`members.${id}.contract`]  = contract;
       upd[`members.${id}.arrows`]    = [];
       upd[`members.${id}.ready`]     = false;
+      upd[`members.${id}.revived`]   = false; // 每間房間重置復活旗標
+      // 上一間死亡的成員進新房間復活（帶 30% HP）
+      if (!m.alive) {
+        upd[`members.${id}.alive`] = true;
+        upd[`members.${id}.hp`]    = Math.max(1, Math.round((m.maxHP || 100) * 0.3));
+      }
       if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
       if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
