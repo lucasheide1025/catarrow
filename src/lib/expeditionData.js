@@ -14,7 +14,8 @@ export const EXPEDITION_MISSIONS = [
       { resource: "ore",   tier: 1, min: 1, max: 3 },
       { resource: "melon", tier: 1, min: 1, max: 2 },
     ],
-    bonusChance: { arrowdew: 0, gachaToken: 0 },
+    bonusChance: { arrowdew: 0.3, gachaToken: 0.3 },
+    bonusAmount: { arrowdew: [5, 10], gachaToken: [1, 1] },
   },
   {
     tier: 2,
@@ -32,8 +33,8 @@ export const EXPEDITION_MISSIONS = [
       { resource: "melon", tier: 1, min: 1, max: 3 },
       { resource: "ore",   tier: 2, min: 1, max: 2 },
     ],
-    bonusChance: { arrowdew: 0.3, gachaToken: 0 },
-    bonusAmount: { arrowdew: [5, 15] },
+    bonusChance: { arrowdew: 0.3, gachaToken: 0.3 },
+    bonusAmount: { arrowdew: [5, 15], gachaToken: [1, 2] },
   },
   {
     tier: 3,
@@ -51,8 +52,8 @@ export const EXPEDITION_MISSIONS = [
       { resource: "fish",  tier: 1, min: 1, max: 3 },
       { resource: "meat",  tier: 1, min: 1, max: 2 },
     ],
-    bonusChance: { arrowdew: 0.5, gachaToken: 0 },
-    bonusAmount: { arrowdew: [10, 30] },
+    bonusChance: { arrowdew: 0.3, gachaToken: 0.3 },
+    bonusAmount: { arrowdew: [10, 30], gachaToken: [1, 3] },
   },
   {
     tier: 4,
@@ -70,8 +71,8 @@ export const EXPEDITION_MISSIONS = [
       { resource: "meat",     tier: 2, min: 1, max: 3 },
       { resource: "driedfish",tier: 1, min: 1, max: 2 },
     ],
-    bonusChance: { arrowdew: 1.0, gachaToken: 0.1 },
-    bonusAmount: { arrowdew: [20, 50], gachaToken: [1, 1] },
+    bonusChance: { arrowdew: 0.3, gachaToken: 0.3 },
+    bonusAmount: { arrowdew: [15, 50], gachaToken: [1, 4] },
   },
   {
     tier: 5,
@@ -90,8 +91,8 @@ export const EXPEDITION_MISSIONS = [
       { resource: "driedfish",tier: 2, min: 1, max: 2 },
       { resource: "can",      tier: 1, min: 1, max: 2 },
     ],
-    bonusChance: { arrowdew: 1.0, gachaToken: 0.3 },
-    bonusAmount: { arrowdew: [30, 80], gachaToken: [1, 2] },
+    bonusChance: { arrowdew: 0.3, gachaToken: 0.3 },
+    bonusAmount: { arrowdew: [25, 75], gachaToken: [1, 5] },
   },
 ];
 
