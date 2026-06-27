@@ -82,8 +82,8 @@ export async function joinDungeonRoom(code, memberId, memberName) {
     );
     if (snap.empty) return { ok:false, reason:"找不到此邀請碼，或地下城已開始" };
     const roomDoc = snap.docs[0];
-    if (Object.keys(roomDoc.data().members || {}).length >= 4)
-      return { ok:false, reason:"地下城最多 4 人" };
+    if (Object.keys(roomDoc.data().members || {}).length >= 8)
+      return { ok:false, reason:"地下城最多 8 人" };
     await updateDoc(doc(db, D, roomDoc.id), {
       [`members.${memberId}`]: DEFAULT_MEMBER(memberName),
     });

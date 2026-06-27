@@ -162,7 +162,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   if (roomId && room) {
     const memberEntries = Object.entries(room.members || {});
     return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+      <div className="h-full overflow-hidden flex flex-col text-white" style={{ backgroundImage:"linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
         {/* Header */}
         <div className="shrink-0 text-center py-5 border-b border-white/10">
           <div className="text-3xl mb-1">🏰</div>
@@ -172,7 +172,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
         {/* 隊伍狀態一覽 */}
         <div className="shrink-0 px-4 py-2 border-b border-white/8">
-          <div className="text-xs text-slate-500 mb-1.5">👥 隊伍狀態（{memberEntries.length} 人）</div>
+          <div className="text-xs text-slate-400 mb-1.5">👥 隊伍狀態（{memberEntries.length} 人）</div>
           <div className="flex flex-wrap gap-2">
             {memberEntries.map(([id, m], i) => (
               <div key={id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5"
@@ -345,22 +345,22 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   // ── 建立 / 加入畫面 ───────────────────────────────────────
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+    <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
       {/* Header */}
       <div className="shrink-0 text-center py-8 relative">
         {onBack && (
-          <button onClick={onBack} className="absolute left-4 top-6 text-slate-400 text-sm font-bold hover:text-white">← 返回</button>
+          <button onClick={onBack} className="absolute left-4 top-6 text-slate-300 text-sm font-bold hover:text-white">← 返回</button>
         )}
         <div className="text-5xl mb-2">🏰</div>
         <div className="text-2xl font-black">地下城模式</div>
-        <div className="text-sm text-slate-400 mt-1">攜帶不同任務，與夥伴深入地下城</div>
+        <div className="text-sm text-slate-300 mt-1">攜帶不同任務，與夥伴深入地下城</div>
       </div>
 
       {/* Tab */}
-      <div className="shrink-0 flex bg-slate-700/50 rounded-2xl p-1 mx-4 mb-4">
+      <div className="shrink-0 flex bg-slate-600/70 rounded-2xl p-1 mx-4 mb-4">
         {["create","join","dex"].map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab===t ? "bg-white/15 text-white" : "text-slate-400"}`}>
+            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab===t ? "bg-white/25 text-white" : "text-slate-300"}`}>
             {t==="create" ? "🏰 建立" : t==="join" ? "🏹 加入" : "🔮 圖鑑"}
           </button>
         ))}
@@ -369,9 +369,9 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
       <div className="flex-1 overflow-y-auto px-4">
         {tab === "dex" ? <DungeonDex /> : tab === "create" ? (
           <div className="space-y-4">
-            <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4">
+            <div className="bg-amber-500/20 border border-amber-400/50 rounded-2xl p-4 shadow-lg">
               <div className="font-bold text-amber-300 mb-1">🗺️ 地下城地圖模式</div>
-              <ul className="text-sm text-slate-300 space-y-1">
+              <ul className="text-sm text-slate-200 space-y-1 font-medium">
                 <li>• 6 大種族（幽冥/山嶺/昆蟲/職場/考試/神廟）</li>
                 <li>• 4 種難度（普通/進階/困難/地獄）</li>
                 <li>• 共 24 張獨特地圖，每張地圖自由探索</li>
