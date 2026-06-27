@@ -233,14 +233,27 @@ export default function DungeonExplore({
       });
     }
 
+    // 入口房：靜默通過，自動標記為已清除
+    if (clickedRoom.type === "entrance") {
+      const newCleared = new Set([...clearedIds, roomId_]);
+      setClearedIds(newCleared);
+      if (roomId && isHost) {
+        await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds: newExplored, clearedIds: newCleared });
+      }
+      return;
+    }
+
+    // 已清除的房間：再次經過不觸發（商人除外，可重複逛）
+    if (clearedIds.has(roomId_) && clickedRoom.type !== "merchant") {
+      if (roomId && isHost) {
+        await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds: newExplored, clearedIds });
+      }
+      return;
+    }
+
     // 決定行為
     if (["monster","elite","boss"].includes(clickedRoom.type)) {
-      if (roomId && isHost) {
-        // Phase 2: 準備進入戰鬥（Phase 3 完整接戰鬥）
-        setEventModal({ ...clickedRoom, _type:"battle_preview" });
-      } else {
-        setEventModal({ ...clickedRoom, _type:"battle_preview" });
-      }
+      setEventModal({ ...clickedRoom, _type:"battle_preview" });
     } else if (clickedRoom.type === "stairs") {
       setEventModal(clickedRoom);
     } else {

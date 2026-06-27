@@ -189,6 +189,7 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
 // ── 房間類型 metadata ─────────────────────────────────────────
 export const ROOM_TYPE_META = {
+  entrance: { label:"入口",   icon:"🚪",  color:"#64748b", nodeColor:"#0f172a" },
   monster:  { label:"怪物房", icon:"⚔️",  color:"#ef4444", nodeColor:"#7f1d1d" },
   elite:    { label:"精英怪", icon:"💀",  color:"#f97316", nodeColor:"#7c2d12" },
   boss:     { label:"Boss",   icon:"👑",  color:"#fbbf24", nodeColor:"#78350f" },
@@ -473,13 +474,15 @@ function _gridConns(fi, cols, rows) {
 }
 
 function _regularFloor(fi, cols, rows, tier) {
+  // 入口固定在 (0,0)，樓梯在 row≥1 的隨機位置（避免與入口同行）
+  const stairRow = 1 + Math.floor(Math.random() * (rows - 1));
   const stairCol = Math.floor(Math.random() * cols);
   const rooms = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const isEntry = row === 0 && col === 0;
-      const isStair = row === rows - 1 && col === stairCol;
-      const type    = isEntry ? "monster" : isStair ? "stairs" : _pickWeighted(GRID_ROOM_WEIGHTS);
+      const isStair = row === stairRow && col === stairCol;
+      const type    = isEntry ? "entrance" : isStair ? "stairs" : _pickWeighted(GRID_ROOM_WEIGHTS);
       const meta    = _roomMeta(type, tier);
       const room    = { id:`f${fi}c${col}r${row}`, type, x:col, y:row, label:ROOM_TYPE_META[type]?.label || type };
       if (meta) room.meta = meta;
@@ -489,9 +492,9 @@ function _regularFloor(fi, cols, rows, tier) {
   return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:_gridConns(fi, cols, rows) };
 }
 
-function _bossFloor(fi, tier) {
+function _bossFloor(fi, tier, bossModifier) {
   const layout = [
-    { col:0, row:0, type:"monster",  label:"入口通道" },
+    { col:0, row:0, type:"entrance", label:"入口通道" },
     { col:1, row:0, type:"rest",     label:"休息室"   },
     { col:0, row:1, type:"elite",    label:"精英守衛" },
     { col:1, row:1, type:"merchant", label:"神秘商人" },
@@ -501,7 +504,9 @@ function _bossFloor(fi, tier) {
   const rooms = layout.map(({ col, row, type, label }) => {
     const meta = _roomMeta(type, tier);
     const room = { id:`f${fi}c${col}r${row}`, type, x:col, y:row, label };
-    if (meta) room.meta = meta;
+    if (meta) {
+      room.meta = (type === "boss" && bossModifier) ? { ...meta, bossModifier } : meta;
+    }
     return room;
   });
   return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:_gridConns(fi, 2, 3), isBossFloor:true };
@@ -509,10 +514,13 @@ function _bossFloor(fi, tier) {
 
 export function generateDungeonFloors(dungeonId) {
   const difficulty = _dungeonDifficulty(dungeonId);
-  const floorCount = DIFFICULTY_FLOOR_COUNTS[difficulty] || 4;
+  const diffMeta   = DIFFICULTY_META[difficulty] || DIFFICULTY_META.normal;
+  const floorCount = diffMeta.floorCount || 4;
   const tier       = _dungeonTier(dungeonId);
+  const bossTier   = diffMeta.bossTier   || tier;     // Boss 使用更高階的 tier
+  const bossMod    = diffMeta.bossModifier || null;   // Boss HP/ATK/DEF 加成
   return Array.from({ length: floorCount }, (_, fi) => {
-    if (fi === floorCount - 1) return _bossFloor(fi, tier);
+    if (fi === floorCount - 1) return _bossFloor(fi, bossTier, bossMod);
     const cfg = FLOOR_GRID_CONFIGS[Math.min(fi, FLOOR_GRID_CONFIGS.length - 1)];
     return _regularFloor(fi, cfg.cols, cfg.rows, tier);
   });
