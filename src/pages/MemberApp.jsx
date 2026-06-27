@@ -556,22 +556,22 @@ export default function MemberApp() {
         )}
       </div>
 
-      {/* 底部導覽 */}
-      <div style={{ flexShrink:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
+      {/* 底部導覽（深藍主題） */}
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
             <button key={n.id} onClick={() => setPage(n.id)}
-              style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"white", cursor:"pointer", color: active ? appTheme.navActive : "#94a3b8" }}>
+              style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"transparent", cursor:"pointer", color: active ? "#60a5fa" : "#64748b" }}>
               {/* 頂部 active 指示條 */}
-              <div style={{ height:"2px", width: active ? "20px" : "0px", background:appTheme.navIndicator, borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
+              <div style={{ height:"2px", width: active ? "20px" : "0px", background:"#f59e0b", borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
               <div style={{ position:"relative", display:"inline-block" }}>
                 <span style={{ fontSize:"18px" }}>{n.icon}</span>
                 {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
-                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }} />
+                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid #0f172a", display:"block" }} />
                 )}
               </div>
-              <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500" }}>{n.label}</span>
+              <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500", color: active ? "#60a5fa" : "#64748b" }}>{n.label}</span>
             </button>
           );
         })}

@@ -380,7 +380,7 @@ const adminNav = [
   // ── 射手模式 ──────────────────────────────────────────────
   if (archerMode) {
     return (
-      <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
+      <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",fontFamily:"sans-serif",overflow:"hidden"}}>
         {/* 版本更新提醒 */}
         {latestVersion && latestVersion !== APP_VERSION && (
           <OverlayModal open={true} zIndex={99999} bg="rgba(0,0,0,0.75)">
@@ -475,7 +475,8 @@ const adminNav = [
             🏰 地下城進行中 — 點此回到地下城
           </button>
         )}
-        <div style={{paddingBottom:"80px"}}>
+        {/* 頁面內容 */}
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
@@ -547,31 +548,32 @@ const adminNav = [
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
         </div>
-        <div style={{ flexShrink:0, background:"white", borderTop:"1px solid #e2e8f0", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
-          {memberNav.map(n => {
-            const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
-            return (
-              <button key={n.id} onClick={() => setPage(n.id)}
-                style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"white", cursor:"pointer", color: active ? appTheme.navActive : "#94a3b8" }}>
-                <div style={{ height:"2px", width: active ? "20px" : "0px", background:appTheme.navIndicator, borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
-                <div style={{ position:"relative", display:"inline-block" }}>
-                  <span style={{ fontSize:"18px" }}>{n.icon}</span>
-                  {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
-                    <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid white", display:"block" }} />
-                  )}
-                </div>
-                <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500" }}>{n.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* 底部導覽（深藍主題） */}
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
+        {memberNav.map(n => {
+          const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
+          return (
+            <button key={n.id} onClick={() => setPage(n.id)}
+              style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"transparent", cursor:"pointer", color: active ? "#60a5fa" : "#64748b" }}>
+              <div style={{ height:"2px", width: active ? "20px" : "0px", background:"#f59e0b", borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
+              <div style={{ position:"relative", display:"inline-block" }}>
+                <span style={{ fontSize:"18px" }}>{n.icon}</span>
+                {n.id==="profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
+                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid #0f172a", display:"block" }} />
+                )}
+              </div>
+              <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500", color: active ? "#60a5fa" : "#64748b" }}>{n.label}</span>
+            </button>
+          );
+        })}
+      </div>
       </div>
     );
   }
 
-  // ── 後台模式 ──────────────────────────────────────────────
+  // ── 後台模式（深藍主題）──────────────────────────────
   return (
-    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"sans-serif"}}>
+    <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"sans-serif"}}>
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
       {/* 👑 地下城首殺全系統公告 */}
@@ -591,18 +593,18 @@ const adminNav = [
         </div>
       )}
 
-      <div style={{background:"white",borderBottom:"1px solid #e2e8f0",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
+      <div style={{background:"linear-gradient(135deg,#0f172a 0%,#0c4a6e 100%)",borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:40}}>
         <div>
-          <div style={{fontWeight:"900",color:"#1e293b",fontSize:"14px"}}>⚙️ 後台管理</div>
-          <div style={{fontSize:"11px",color:"#94a3b8"}}>貓小隊射箭場-學籍系統</div>
+          <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"14px",letterSpacing:"0.02em"}}>⚙️ 後台管理</div>
+          <div style={{fontSize:"11px",color:"#7dd3fc",marginTop:"1px"}}>貓小隊射箭場-學籍系統</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <button onClick={()=>{setArcherMode(true);setPage("home");}}
-            style={{fontSize:"12px",background:"#eff6ff",color:"#2563eb",border:"1px solid #bfdbfe",borderRadius:"8px",padding:"4px 10px",cursor:"pointer",fontWeight:"bold"}}>
+            style={{fontSize:"12px",background:"rgba(255,255,255,0.1)",color:"#cbd5e1",border:"1px solid rgba(255,255,255,0.18)",borderRadius:"8px",padding:"4px 10px",cursor:"pointer",fontWeight:"bold"}}>
             🏹 射手模式
           </button>
           <button onClick={logout}
-            style={{fontSize:"12px",color:"#94a3b8",border:"1px solid #e2e8f0",borderRadius:"8px",padding:"4px 10px",background:"white",cursor:"pointer"}}>
+            style={{fontSize:"12px",color:"#94a3b8",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"8px",padding:"4px 10px",background:"rgba(255,255,255,0.05)",cursor:"pointer"}}>
             登出
           </button>
         </div>
@@ -610,9 +612,9 @@ const adminNav = [
 
       {(pendingCertN + pendingMsgN + pendingExtN + pendingExamN + pendingCheckinN + pendingGuildN) > 0 && (
         <button onClick={() => { setPage("hub-member"); setMemberSub("review"); }}
-          style={{width:"100%",background:"#fffbeb",borderBottom:"1px solid #fde68a",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
+          style={{width:"100%",background:"rgba(251,191,36,0.08)",borderBottom:"1px solid rgba(251,191,36,0.2)",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
           <span style={{fontSize:"16px"}}>🔔</span>
-          <span style={{fontSize:"13px",color:"#b45309",fontWeight:"bold"}}>
+          <span style={{fontSize:"13px",color:"#fbbf24",fontWeight:"bold"}}>
             {[
               pendingCertN > 0 ? `${pendingCertN} 筆檢定待審核` : null,
               pendingExamN > 0 ? `${pendingExamN} 筆畢業考待審` : null,
@@ -622,17 +624,17 @@ const adminNav = [
               pendingGuildN > 0 ? `${pendingGuildN} 筆公會任務待審核` : null,
             ].filter(Boolean).join("、")}
           </span>
-          <span style={{marginLeft:"auto",fontSize:"12px",color:"#d97706",fontWeight:"bold"}}>前往審核 →</span>
+          <span style={{marginLeft:"auto",fontSize:"12px",color:"#f59e0b",fontWeight:"bold"}}>前往審核 →</span>
         </button>
       )}
       {pendingMonthlyN > 0 && (
         <button onClick={() => { setPage("hub-member"); setMemberSub("monthlycard"); }}
-          style={{width:"100%",background:"#eff6ff",borderBottom:"1px solid #bfdbfe",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
+          style={{width:"100%",background:"rgba(96,165,250,0.08)",borderBottom:"1px solid rgba(96,165,250,0.2)",padding:"10px 16px",display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",border:"none",textAlign:"left"}}>
           <span style={{fontSize:"16px"}}>🎫</span>
-          <span style={{fontSize:"13px",color:"#1d4ed8",fontWeight:"bold"}}>
+          <span style={{fontSize:"13px",color:"#60a5fa",fontWeight:"bold"}}>
             {pendingMonthlyN} 筆月卡使用待審核
           </span>
-          <span style={{marginLeft:"auto",fontSize:"12px",color:"#2563eb",fontWeight:"bold"}}>前往審核 →</span>
+          <span style={{marginLeft:"auto",fontSize:"12px",color:"#60a5fa",fontWeight:"bold"}}>前往審核 →</span>
         </button>
       )}
 
@@ -680,7 +682,7 @@ const adminNav = [
         {page==="archery"      && <AdminArchery/>}
       </div>
 
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"white",borderTop:"1px solid #e2e8f0",zIndex:40}}>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",zIndex:40}}>
         <div style={{display:"flex"}}>
           {adminNav.map(n=>{
             const active = page===n.id;
@@ -689,10 +691,10 @@ const adminNav = [
               : 0;
             return (
               <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id==="hub-member")setMemberSub(null); if(n.id==="hub-events")setEventsSub(null); if(n.id==="hub-items")setItemsSub(null); }}
-                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"white",cursor:"pointer",color:active?"#2563eb":"#94a3b8",position:"relative"}}>
+                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"transparent",cursor:"pointer",color:active?"#60a5fa":"#64748b",position:"relative"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {badge>0 && <span style={{position:"absolute",top:"4px",right:"calc(50% - 14px)",background:"#ef4444",color:"white",fontSize:"9px",fontWeight:"900",borderRadius:"99px",padding:"1px 4px",minWidth:"14px",textAlign:"center"}}>{badge}</span>}
-                <span style={{fontSize:"10px",fontWeight:"600",whiteSpace:"nowrap"}}>{n.label}</span>
+                <span style={{fontSize:"10px",fontWeight:"600",whiteSpace:"nowrap",color:active?"#60a5fa":"#64748b"}}>{n.label}</span>
               </button>
             );
           })}
@@ -706,8 +708,8 @@ const adminNav = [
 // ── Hub 共用：返回按鈕 ─────────────────────────────────────
 function HubBack({ onClick }) {
   return (
-    <div style={{background:"white",borderBottom:"1px solid #e2e8f0",padding:"10px 16px",position:"sticky",top:0,zIndex:30}}>
-      <button onClick={onClick} style={{color:"#64748b",fontSize:"13px",fontWeight:"700",background:"none",border:"none",cursor:"pointer"}}>← 返回</button>
+    <div style={{background:"#1e293b",borderBottom:"1px solid rgba(255,255,255,0.08)",padding:"10px 16px",position:"sticky",top:0,zIndex:30}}>
+      <button onClick={onClick} style={{color:"#94a3b8",fontSize:"13px",fontWeight:"700",background:"none",border:"none",cursor:"pointer"}}>← 返回</button>
     </div>
   );
 }
@@ -715,12 +717,12 @@ function HubBack({ onClick }) {
 // ── Hub 共用：選項卡片 ─────────────────────────────────────
 function HubCard({ icon, label, badge, desc, onClick }) {
   return (
-    <button onClick={onClick} style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",background:"white",border:"1px solid #e2e8f0",borderRadius:"16px",padding:"20px 12px",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",width:"100%"}}>
+    <button onClick={onClick} style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",background:"#1e293b",border:"1px solid rgba(255,255,255,0.10)",borderRadius:"16px",padding:"20px 12px",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.2)",transition:"all 0.15s",width:"100%"}}>
       {badge > 0 && (
         <span style={{position:"absolute",top:"8px",right:"8px",background:"#ef4444",color:"white",fontSize:"10px",fontWeight:"900",borderRadius:"99px",padding:"2px 6px",minWidth:"18px",textAlign:"center"}}>{badge}</span>
       )}
       <span style={{fontSize:"28px"}}>{icon}</span>
-      <span style={{fontSize:"13px",fontWeight:"900",color:"#1e293b"}}>{label}</span>
+      <span style={{fontSize:"13px",fontWeight:"900",color:"#f1f5f9"}}>{label}</span>
       {desc && <span style={{fontSize:"11px",color:"#94a3b8",textAlign:"center",lineHeight:"1.4"}}>{desc}</span>}
     </button>
   );
@@ -731,7 +733,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
   const reviewBadge = pendingCertN + pendingCheckinN + pendingExtN + pendingExamN + pendingGuildN;
   return (
     <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
+      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
         <HubCard icon="👤" label="會員管理" desc="帳號、積分、裝備" onClick={() => onSelect("members")} />
         <HubCard icon="🎫" label="財務" badge={pendingMonthlyN} desc="月費卡、收費記錄" onClick={() => onSelect("monthlycard")} />
@@ -747,7 +749,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
 function AdminEventsHub({ onSelect }) {
   return (
     <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>🏆 賽事中心</div>
+      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>🏆 賽事中心</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
         <HubCard icon="🏆" label="比賽管理"   desc="新增、報名、審核" onClick={() => onSelect("comps")} />
         <HubCard icon="🎮" label="打怪賽事"   desc="每日任務、賽事模式" onClick={() => onSelect("battlesetting")} />
@@ -763,7 +765,7 @@ function AdminEventsHub({ onSelect }) {
 function AdminItemsHub({ onSelect }) {
   return (
     <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#1e293b",fontSize:"18px",marginBottom:"16px"}}>⚔️ 裝備 & 故事</div>
+      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>⚔️ 裝備 & 故事</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
         <HubCard icon="🗡️" label="裝備庫"    desc="裝備道具管理"       onClick={() => onSelect("equipitems")} />
         <HubCard icon="📖" label="故事本"    desc="故事章節管理"       onClick={() => onSelect("story-admin")} />
@@ -782,10 +784,10 @@ function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks 
   ];
   return (
     <div>
-      <div style={{display:"flex",gap:"8px",padding:"12px 16px 0",background:"white",borderBottom:"1px solid #e2e8f0",position:"sticky",top:"41px",zIndex:20}}>
+      <div style={{display:"flex",gap:"8px",padding:"12px 16px 0",background:"#1e293b",borderBottom:"1px solid rgba(255,255,255,0.08)",position:"sticky",top:"41px",zIndex:20}}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{flex:1,padding:"8px",borderRadius:"10px",border:`1px solid ${tab===t.id?"#2563eb":"#e2e8f0"}`,background:tab===t.id?"#2563eb":"#f8fafc",color:tab===t.id?"white":"#64748b",fontWeight:"900",fontSize:"13px",cursor:"pointer",marginBottom:"8px"}}>
+            style={{flex:1,padding:"8px",borderRadius:"10px",border:`1px solid ${tab===t.id?"#3b82f6":"rgba(255,255,255,0.12)"}`,background:tab===t.id?"#1d4ed8":"rgba(255,255,255,0.06)",color:tab===t.id?"white":"#94a3b8",fontWeight:"900",fontSize:"13px",cursor:"pointer",marginBottom:"8px"}}>
             {t.label}
           </button>
         ))}
