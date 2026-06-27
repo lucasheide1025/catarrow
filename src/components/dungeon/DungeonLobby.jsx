@@ -224,44 +224,43 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
           </div>
         </div>
 
-        {/* 房主地下城設定（固定不捲動，避免新人加入時跳動）*/}
-        {isHost && (
-          <div className="shrink-0 px-4 py-3 border-b border-white/8">
-            <div className="bg-slate-900/60 rounded-xl p-3">
-              <div className="text-sm text-slate-400 mb-2 font-semibold">🏷️ 難度</div>
-              <div className="flex gap-1.5 mb-3">
-                {DIFFICULTY_CONFIGS.map(dc => (
-                  <button key={dc.id} onClick={() => setSelDifficulty(dc.id)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/30 border-white/50 text-white shadow" : "border-white/10 bg-white/10 text-slate-300"}`}
-                    style={{ borderColor: selDifficulty===dc.id ? dc.color : undefined, color: selDifficulty===dc.id ? dc.color : undefined }}>
-                    {dc.icon} {dc.label}
-                  </button>
-                ))}
-              </div>
-              <div className="text-sm text-slate-400 mb-2 font-semibold">🏛️ 選擇地下城</div>
-              <div className="grid grid-cols-2 gap-3">
-                {FAMILY_CONFIGS.map(fc => {
-                  const d = DUNGEON_MAPS.find(m => m.family === fc.id && m.difficulty === selDifficulty);
-                  if (!d || !d.enabled) return null;
-                  const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
-                  return (
-                    <button key={fc.id} onClick={() => setSelDungeon(d.id)}
-                      className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-slate-900/70"}`}
-                      style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
-                      <span className="text-3xl">{fc.emoji}</span>
-                      <div className={`text-sm font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
-                      <div className="text-xs text-slate-400">{d.name}</div>
-                      <div className="text-xs text-slate-400">{d.floorCount}層</div>
+        {/* Members list + 房主地下城設定（一起捲動，確保開始按鈕永遠可見）*/}
+        <div className="flex-1 overflow-y-auto">
+          {isHost && (
+            <div className="px-4 py-3 border-b border-white/8">
+              <div className="bg-slate-900/60 rounded-xl p-3">
+                <div className="text-sm text-slate-400 mb-2 font-semibold">🏷️ 難度</div>
+                <div className="flex gap-1.5 mb-3">
+                  {DIFFICULTY_CONFIGS.map(dc => (
+                    <button key={dc.id} onClick={() => setSelDifficulty(dc.id)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/30 border-white/50 text-white shadow" : "border-white/10 bg-white/10 text-slate-300"}`}
+                      style={{ borderColor: selDifficulty===dc.id ? dc.color : undefined, color: selDifficulty===dc.id ? dc.color : undefined }}>
+                      {dc.icon} {dc.label}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+                <div className="text-sm text-slate-400 mb-2 font-semibold">🏛️ 選擇地下城</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {FAMILY_CONFIGS.map(fc => {
+                    const d = DUNGEON_MAPS.find(m => m.family === fc.id && m.difficulty === selDifficulty);
+                    if (!d || !d.enabled) return null;
+                    const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
+                    return (
+                      <button key={fc.id} onClick={() => setSelDungeon(d.id)}
+                        className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-slate-900/70"}`}
+                        style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
+                        <span className="text-3xl">{fc.emoji}</span>
+                        <div className={`text-sm font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
+                        <div className="text-xs text-slate-400">{d.name}</div>
+                        <div className="text-xs text-slate-400">{d.floorCount}層</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Members list */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          )}
+          <div className="px-4 py-4 space-y-3">
           {memberEntries.map(([id, m], i) => {
             const isMe = id === myId;
             const isRear = m.role === "rear";
@@ -356,7 +355,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
               </div>
             );
           })}
-
+          </div>
         </div>
 
         {/* Footer */}
