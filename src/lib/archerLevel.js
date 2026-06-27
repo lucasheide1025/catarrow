@@ -1,24 +1,50 @@
-// src/lib/archerLevel.js — 射手等級系統（獨立於冒險者公會等級）
+// src/lib/archerLevel.js — 射手等級系統（每 10 等增加 25 XP 門檻）
 
 export const MAX_ARCHER_LEVEL = 200;
-export const XP_PER_LEVEL    = 20;   // 每升一級所需 XP（固定）
+
+// 每級所需 XP：tier = ceil(level/10)，cost = 50 + (tier-1)*25
+// Lv1-10: 50 / Lv11-20: 75 / ... / Lv191-200: 525
+export function archerXPForLevel(level) {
+  const lv = Math.max(1, Math.min(MAX_ARCHER_LEVEL, level));
+  return 50 + (Math.ceil(lv / 10) - 1) * 25;
+}
+
+// 預計算累計 XP 表：_CUM[n] = 升到第 n+1 級所需的累計 XP
+// _CUM[0] = 0（1 級起點），_CUM[1] = 50（升到 2 級需 50 XP）
+const _CUM = (() => {
+  const t = [0];
+  for (let lv = 1; lv < MAX_ARCHER_LEVEL; lv++) {
+    t.push(t[lv - 1] + archerXPForLevel(lv));
+  }
+  return t;
+})();
 
 // 累積 XP → 等級（1–200）
 export function archerLevelFromXP(totalXP) {
-  const level = Math.floor((totalXP || 0) / XP_PER_LEVEL) + 1;
-  return Math.min(MAX_ARCHER_LEVEL, Math.max(1, level));
+  const xp = Math.max(0, totalXP || 0);
+  let lv = 1;
+  for (let i = 1; i < MAX_ARCHER_LEVEL; i++) {
+    if (xp >= _CUM[i]) lv = i + 1;
+    else break;
+  }
+  return lv;
 }
 
 // 當前等級在本級的 XP 進度
 export function archerXPProgress(totalXP) {
   const level = archerLevelFromXP(totalXP);
   if (level >= MAX_ARCHER_LEVEL) {
-    return { level: MAX_ARCHER_LEVEL, current: XP_PER_LEVEL, needed: XP_PER_LEVEL, pct: 100 };
+    const needed = archerXPForLevel(MAX_ARCHER_LEVEL);
+    return { level: MAX_ARCHER_LEVEL, current: needed, needed, pct: 100 };
   }
-  const currentLevelXP = (level - 1) * XP_PER_LEVEL;
-  const current = (totalXP || 0) - currentLevelXP;
-  return { level, current, needed: XP_PER_LEVEL, pct: Math.round(current / XP_PER_LEVEL * 100) };
+  const baseXP  = _CUM[level - 1];
+  const needed  = archerXPForLevel(level);
+  const current = (totalXP || 0) - baseXP;
+  return { level, current, needed, pct: Math.round(current / needed * 100) };
 }
+
+// 升到滿級所需的累計 XP（供 UI 顯示「還差多少到 200 級」）
+export const TOTAL_XP_TO_MAX = _CUM[MAX_ARCHER_LEVEL - 1];
 
 // 等級加成 { hp, atk, def }（Lv1 = 無加成，Lv200 = +995/+199/+199）
 export function archerLevelBonus(level) {

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { updateMember, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
-import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, XP_PER_LEVEL } from "../../lib/archerLevel";
+import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX } from "../../lib/archerLevel";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
@@ -241,7 +241,7 @@ export default function MemberProfile({
         const xp = profile?.archerXP || 0;
         const { level, current, needed, pct } = archerXPProgress(xp);
         const bonus = archerLevelBonus(level);
-        const totalXPToMax = (MAX_ARCHER_LEVEL - 1) * XP_PER_LEVEL;
+        const totalXPToMax = TOTAL_XP_TO_MAX;
         return (
           <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
             <ST>⚔️ 射手等級</ST>

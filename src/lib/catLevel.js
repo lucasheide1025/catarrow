@@ -1,21 +1,42 @@
-// src/lib/catLevel.js — 貓貓等級系統（公式與射手等級相同）
+// src/lib/catLevel.js — 貓貓等級系統（每 10 等增加 25 XP 門檻，與射手等級同規則）
 
-export const CAT_MAX_LEVEL  = 200;
-export const CAT_XP_PER_LEVEL = 20;
+export const CAT_MAX_LEVEL = 200;
+
+// 每級所需 XP：tier = ceil(level/10)，cost = 50 + (tier-1)*25
+export function catXPForLevel(level) {
+  const lv = Math.max(1, Math.min(CAT_MAX_LEVEL, level));
+  return 50 + (Math.ceil(lv / 10) - 1) * 25;
+}
+
+// 預計算累計 XP 表
+const _CUM = (() => {
+  const t = [0];
+  for (let lv = 1; lv < CAT_MAX_LEVEL; lv++) {
+    t.push(t[lv - 1] + catXPForLevel(lv));
+  }
+  return t;
+})();
 
 export function catLevelFromXP(totalXP) {
-  const level = Math.floor((totalXP || 0) / CAT_XP_PER_LEVEL) + 1;
-  return Math.min(CAT_MAX_LEVEL, Math.max(1, level));
+  const xp = Math.max(0, totalXP || 0);
+  let lv = 1;
+  for (let i = 1; i < CAT_MAX_LEVEL; i++) {
+    if (xp >= _CUM[i]) lv = i + 1;
+    else break;
+  }
+  return lv;
 }
 
 export function catXPProgress(totalXP) {
   const level = catLevelFromXP(totalXP);
   if (level >= CAT_MAX_LEVEL) {
-    return { level: CAT_MAX_LEVEL, current: CAT_XP_PER_LEVEL, needed: CAT_XP_PER_LEVEL, pct: 100 };
+    const needed = catXPForLevel(CAT_MAX_LEVEL);
+    return { level: CAT_MAX_LEVEL, current: needed, needed, pct: 100 };
   }
-  const baseXP  = (level - 1) * CAT_XP_PER_LEVEL;
+  const baseXP  = _CUM[level - 1];
+  const needed  = catXPForLevel(level);
   const current = (totalXP || 0) - baseXP;
-  return { level, current, needed: CAT_XP_PER_LEVEL, pct: Math.round(current / CAT_XP_PER_LEVEL * 100) };
+  return { level, current, needed, pct: Math.round(current / needed * 100) };
 }
 
 // 每級加成同射手：hp+5 / atk+1 / def+1
