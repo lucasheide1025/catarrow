@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-06-27（遠征隊 3 槽 + 遠征獎勵重構 + 村莊三修）
+
+### 遠征隊：3 槽位同時派遣
+- **Firestore 欄位**：`members/{id}.expedition`（舊，單一）→ `members/{id}.expeditions.{0|1|2}`（新，map）
+- `db.js`：`startExpedition(memberId, slotIdx, ...)` / `collectExpedition(memberId, slotIdx, ...)` 加 `slotIdx` 參數
+- `ExpeditionPanel.jsx` 全量重寫：頂部 3 張槽位卡片（空置/進行中/完成）；點空槽展開派遣表單；已在遠征的貓不出現在選貓清單
+- 向後兼容：若 `expeditions` 為空但存在舊 `expedition`，UI 自動顯示為 slot 0
+- **坑**：Firestore map 更新用 `expeditions.${slotIdx}` 路徑，不能用陣列 index 更新
+
+### 遠征獎勵重構
+- `expeditionData.js`：各 T 加入建築材料（ore/melon/fish/meat/driedfish/can），覆蓋 T1-T5
+- 稀有獎勵統一 **30% 機率**（T1 arrowdew 5-10 / T2 5-15 / T3 10-30 / T4 15-50 / T5 25-75；扭蛋幣 T1 1 / T2 1-2 / T3 1-3 / T4 1-4 / T5 1-5）
+- 倍率從 `catLevelMult(catLevel)` 改為 `catPowerMult(catATK)`
+  - `calcCatFullStats(catData)` 純函式：鏡像 useCatCompanion 計算（類型基底+等級+裝備+羈絆）→ 放在 `expeditionData.js` 避免 lib→hook 反向引用
+  - `catPowerMult(catATK) = min(3.0, max(1.0, 1 + (atk-10)/100))`：攻擊型貓、高裝備、高羈絆天然得更高獎勵倍率
+- `calcExpeditionRewards(tier, catData)` 接收完整 catData（不再只傳 catLevel）
+- `handleCollect` 傳 `myCats[exp.catId]`（完整物件）
+
+### 貓貓村三項修正
+1. **扭蛋幣小數**：ResourceRow 改 `Math.floor(gachaCoins || 0)`
+2. **市集掛賣到期**：`listCardForSale` 寫入 `expiredAt`（+7天）；`subscribeCardMarket` 客戶端過濾過期；UI 顯示「⏳ N天後下架」（1天內紅字警告）
+3. **賣家售出通知**：`buyCardListing` 成交後 `createNotification({ targetMemberId: listing.sellerId, type:"market_sale" })`
+
+---
+
+## 2026-06-27（地下城收藏品 + 入口房修正）
+
+### 地下城收藏品系統（全新）
+- `src/lib/dungeonCollectibles.js`（新建）：6族系 × 7件 = 42普通 + 24首殺限定 = 66件
+- `src/lib/dungeonDb.js`：新增 `addCollectible / addCollectibles / subscribeCollectibles`
+- DungeonBattleRoom 結算：Boss 必掉 boss 族系收藏品；普通/精英/寶箱房依機率掉；首殺額外掉限定品
+- `src/components/dungeon/DungeonDex.jsx`（新建）：圖鑑元件，進度條 + 族系篩選 + 首殺限定切換
+- DungeonLobby：加第三個 Tab「🔮 圖鑑」
+
+### 地下城入口房修正
+- `dungeonData.js`：入口格 (0,0) 改為 `entrance` 類型（不再是 monster），`ROOM_TYPE_META` 補 entrance 定義
+- 樓梯改放 `row≥1` 隨機位置，避免跟入口同行
+- `DungeonExplore.jsx`：entrance 房靜默通過（自動清除），已清除房再次踩不觸發（商人除外）
+
+### Firestore 欄位
+- `members/{id}.dungeonCollectibles = { [itemId]: qty }` （increment，不需額外規則）
+
+---
+
 ## 2026-06-27（符文系統 + 貓咪修正 + 世界王 + 報到修復）
 
 ### 符文系統（地下城專屬）

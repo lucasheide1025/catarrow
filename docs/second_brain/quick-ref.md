@@ -50,12 +50,18 @@ systemBroadcasts  "systemBroadcasts"
 
 ### 關鍵 members 欄位
 ```
-archerXP / coins / gachaCoins
+archerXP / coins / gachaCoins  // gachaCoins 顯示用 Math.floor
 village.resources.arrowdew
 fatCat: { gold, silver, bronze }
 achievement: { black, gold, silver }
 dailyQuestCount  // 累積上課次數（下課+1）
 runeInventory: { [runeId]: qty }  // 符文背包（2026-06-27）
+expeditions: {                    // 遠征隊（2026-06-27）3 槽 map
+  "0": { catId, catName, missionTier, hours, startedAt, endsAt, status, archerCost },
+  "1": { ... },
+  "2": { ... },
+}
+// 舊欄位 expedition（單一物件）仍可能存在，UI 向後兼容顯示為 slot 0
 ```
 
 ---
@@ -112,6 +118,24 @@ collectVillageResources(memberId, village)
 upgradeVillageBuilding(memberId, buildingId, village)
 initVillageIfNeeded(memberId, currentVillage)
 adminAdjustVillageResource(memberId, resourceKey, delta)
+```
+
+### 遠征隊（2026-06-27 改版）
+```js
+// 3 槽位同時：Firestore members/{id}.expeditions.{0|1|2}
+// 舊欄位 members/{id}.expedition 向後兼容（UI 自動顯示為 slot 0）
+startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost)
+collectExpedition(memberId, slotIdx, rewards)  // rewards 由客戶端 calcExpeditionRewards 計算
+
+// expeditionData.js
+calcCatFullStats(catData)         // catData: {catXP,type,bond,equip} → {catATK,catHP,catDEF,catLevel}
+catPowerMult(catATK)              // Lv1全能ATK10→1.0x；Lv200→3.0x；類型/裝備/羈絆影響ATK
+calcExpeditionRewards(missionTier, catData)  // 接收完整 catData，用 catPowerMult 計算倍率
+
+// 卡片市集
+listCardForSale(...)   // expiredAt = 上架+7天（新欄位）
+buyCardListing(...)    // 成交後自動 createNotification 給賣家（targetMemberId=sellerId）
+subscribeCardMarket(cb) // 客戶端過濾已過期掛賣
 ```
 
 ### 里程碑 / 轉蛋
@@ -198,13 +222,33 @@ upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap)  // 
 // allround:{ hp:200, atk:10, def:10 }  均衡
 // CAT_COMBAT_BASE = CAT_TYPE_BASE.allround（向後相容）
 //
-// 羈絆技能里程碑（bondTierMult）：
-//   bondLv ≥5  → 主屬性 ×1.2（技能 I）
-//   bondLv ≥10 → 主屬性 ×1.4（技能 II）
-//   攻擊型主屬性=ATK，防禦型=HP+DEF，全能型=全部
+// 羈絆連續加成（bondTierMult）：
+//   攻/防型：+5%/bondLv；全能型：+2.5%/bondLv（無里程碑制，每級都有效）
+//   攻擊型主屬性=ATK；防禦型=HP+DEF；全能型=全部
 //
-// 回傳：catLevel,catXP,skillGroup,triggerCatSkill,saveXP,hasCat,catATK,catHP,catDEF
+// 回傳：catLevel,catXP,bondLv,skillGroup,triggerCatSkill,saveXP,hasCat,catATK,catHP,catDEF
 // triggerCatSkill() → {triggered:false}|{triggered:true,skillGroup,healed/extraMult/reduction/blockFull}
+//
+// ⚠️ CAT_TYPE_BASE 只在 useCatCompanion.js（hook），不在 lib
+//    純函式版本 calcCatFullStats() 在 expeditionData.js（內嵌相同常數）
+```
+
+### 地下城收藏品（2026-06-27 新增）
+```js
+// src/lib/dungeonCollectibles.js
+FAMILY_COLLECTIBLES  // {ghost/mountain/insect/workplace/exam/temple: {common/rare/boss: [{id,name,icon,desc}]}}
+COLLECTIBLE_MAP      // { [itemId]: {id, name, icon, desc, family, rarity} }
+rollFamilyDrop(family, roomType)  // "chest"|"elite"|"monster" → {itemId} | null
+rollBossDrop(family)              // 必掉 boss 池隨機一件
+getFirstClearTrophy(dungeonId)    // → {itemId:"ghost_normal_trophy"} | null
+
+// src/lib/dungeonDb.js 新增
+addCollectible(memberId, itemId, qty=1)
+addCollectibles(memberId, drops=[{itemId,qty}])
+subscribeCollectibles(memberId, cb)  // cb({[itemId]: qty})
+
+// Firestore: members/{id}.dungeonCollectibles = {[itemId]: qty}
+// 掉落率：chest 50%普+20%稀 / elite 35%稀+30%普 / monster 10%普 / boss 必掉1
 ```
 
 ---
