@@ -12,6 +12,7 @@ import { getCatStatMult, getBondLevel } from "../../lib/catData";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { RUNES, RUNE_TYPES, MAX_RUNE_SLOTS, runeEffectLabel, TIER_COLOR, TIER_NAME, calcRuneBonus } from "../../lib/runeData";
 import { subscribeRuneInventory, equipRunesToDungeon, validateRuneEquip } from "../../lib/runeDb";
+import DungeonDex from "./DungeonDex";
 
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
@@ -357,16 +358,16 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
       {/* Tab */}
       <div className="shrink-0 flex bg-slate-700/50 rounded-2xl p-1 mx-4 mb-4">
-        {["create","join"].map(t => (
+        {["create","join","dex"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab===t ? "bg-white/15 text-white" : "text-slate-400"}`}>
-            {t==="create" ? "🏰 建立" : "🏹 加入"}
+            {t==="create" ? "🏰 建立" : t==="join" ? "🏹 加入" : "🔮 圖鑑"}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4">
-        {tab === "create" ? (
+        {tab === "dex" ? <DungeonDex /> : tab === "create" ? (
           <div className="space-y-4">
             <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4">
               <div className="font-bold text-amber-300 mb-1">🗺️ 地下城地圖模式</div>
@@ -389,7 +390,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
               {loading ? "建立中…" : "🏰 建立地下城"}
             </button>
           </div>
-        ) : (
+        ) : tab === "join" ? (
           <div className="space-y-3">
             {openRooms.length === 0 ? (
               <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
@@ -424,13 +425,15 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
               );
             })}
           </div>
-        )}
-        {err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}
+        ) : null}
+        {tab !== "dex" && err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}
 
         {/* 地下城歷史紀錄 */}
-        <div className="mt-6">
-          <BattleRecords logs={dungeonLogs} title="📊 地下城戰鬥紀錄" maxGroups={6}/>
-        </div>
+        {tab !== "dex" && (
+          <div className="mt-6">
+            <BattleRecords logs={dungeonLogs} title="📊 地下城戰鬥紀錄" maxGroups={6}/>
+          </div>
+        )}
       </div>
     </div>
   );

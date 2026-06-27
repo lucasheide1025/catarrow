@@ -3,7 +3,7 @@
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, getDocs, query, where,
-  orderBy, limit, setDoc,
+  orderBy, limit, setDoc, increment,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed } from "./db";
@@ -884,5 +884,40 @@ export async function cleanupStaleDungeonRooms() {
       return t && t < cutoff;
     });
     await Promise.all(stale.map(d => deleteDoc(d.ref)));
+  } catch (_) {}
+}
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  地下城收藏品  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 增加一件收藏品（qty 通常為 1）
+// 寫入 members/{memberId}.dungeonCollectibles.{itemId}
+export async function addCollectible(memberId, itemId, qty = 1) {
+  try {
+    await updateDoc(doc(db, "members", memberId), {
+      [`dungeonCollectibles.${itemId}`]: increment(qty),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 訂閱收藏品（即時同步，用於圖鑑頁）
+// cb 接收：{ [itemId]: qty }
+export function subscribeCollectibles(memberId, cb) {
+  return onSnapshot(doc(db, "members", memberId), snap => {
+    cb(snap.data()?.dungeonCollectibles || {});
+  }, () => cb({}));
+}
+
+// 一次加多個收藏品（批次）
+export async function addCollectibles(memberId, drops = []) {
+  if (!drops.length) return;
+  const updates = {};
+  drops.forEach(({ itemId, qty = 1 }) => {
+    updates[`dungeonCollectibles.${itemId}`] = increment(qty);
+  });
+  try {
+    await updateDoc(doc(db, "members", memberId), updates);
   } catch (_) {}
 }

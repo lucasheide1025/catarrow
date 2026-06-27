@@ -18,6 +18,8 @@ import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import { rollRuneDrop, calcRuneBonus as calcRuneBonusFn } from "../../lib/runeData";
 import { addRune, getEquippedRunes } from "../../lib/runeDb";
+import { rollFamilyDrop, rollBossDrop, getFirstClearTrophy, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
+import { addCollectibles } from "../../lib/dungeonDb";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
   sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, vibrate,
@@ -452,13 +454,25 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         addArrowdew(myId, totalFloors * 8).catch(() => {});
         addGachaCoins(myId, 2).catch(() => {});
         // 符文掉落：依難度掉對應階段符文
-        const dungeonMap = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
-        const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap?.difficulty] || 1;
+        const dungeonMap2 = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
+        const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap2?.difficulty] || 1;
         const droppedRune = rollRuneDrop(dungeonTier);
         if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
+        // 收藏品掉落（boss必掉 + 首殺限定）
+        const collectDrops = [];
+        if (claimLootRef.current?.collectible) collectDrops.push(claimLootRef.current.collectible);
+        if (firstClearBonus && room?.dungeonId) {
+          const trophy = getFirstClearTrophy(room.dungeonId);
+          if (trophy) collectDrops.push(trophy);
+        }
+        if (collectDrops.length > 0) addCollectibles(myId, collectDrops).catch(() => {});
       } else {
         // 普通房間：箭露 5
         addArrowdew(myId, 5).catch(() => {});
+        // 普通/精英房間收藏品掉落
+        if (claimLootRef.current?.collectible) {
+          addCollectibles(myId, [claimLootRef.current.collectible]).catch(() => {});
+        }
       }
     }
 
@@ -680,6 +694,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         const tf        = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
         const myRunes   = getEquippedRunes(room, myId);
         const rb        = calcRuneBonusFn(myRunes);
+        const dungeonMap = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
+        const family    = dungeonMap?.family || "ghost";
+        const roomType  = room?.mapCurrentRoomType || (isBossRoom ? "boss" : "monster");
+        const collectible = isBossRoom
+          ? rollBossDrop(family)
+          : rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster");
         claimLootRef.current = {
           coins:      Math.round(rollCoins(tier, 1) * gm * (isBossRoom ? 2 : 1) * rb.goldMult),
           materials:  rollMaterialDrops(room.monster),
@@ -688,7 +708,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           chestCount: tf,
           arrowdew:   isBossRoom ? tf * 8 : 5,
           gachaCoins: isBossRoom ? 2 : 0,
-          runeDrop:   isBossRoom ? rollRuneDrop({ normal:1, hard:2, elite:3, nightmare:4 }[DUNGEON_MAPS.find(d => d.id === room?.dungeonId)?.difficulty] || 1) : null,
+          runeDrop:   isBossRoom ? rollRuneDrop({ normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap?.difficulty] || 1) : null,
+          collectible,
         };
       }
       const loot        = claimLootRef.current;
@@ -813,11 +834,44 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                 </div>
               )}
 
-              {/* 地下城專屬紀念品（預留） */}
-              <div className="rounded-xl p-3 text-center"
-                style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.15)" }}>
-                <div className="text-xs" style={{ color:"rgba(251,191,36,0.45)" }}>🔮 地下城專屬道具 · 首領紀念品（設計中）</div>
-              </div>
+              {/* 收藏品掉落 */}
+              {(loot?.collectible || firstClearBonus) && (
+                <div className="rounded-2xl p-4 space-y-2"
+                  style={{ background:"rgba(168,85,247,0.07)", border:"1px solid rgba(168,85,247,0.25)" }}>
+                  <div className="text-xs font-bold mb-3" style={{ color:"#c084fc" }}>🔮 收藏品掉落</div>
+                  {loot?.collectible && (() => {
+                    const item = COLLECTIBLE_MAP[loot.collectible.itemId];
+                    return item ? (
+                      <div className="flex items-center gap-3">
+                        <span style={{ fontSize:28 }}>{item.icon}</span>
+                        <div>
+                          <div className="text-sm font-black text-white">{item.name}
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
+                              style={{ background:"rgba(168,85,247,0.3)", color:"#d8b4fe" }}>Boss 掉落</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{item.desc}</div>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+                  {firstClearBonus && room?.dungeonId && (() => {
+                    const trophy = getFirstClearTrophy(room.dungeonId);
+                    const item = trophy ? COLLECTIBLE_MAP[trophy.itemId] : null;
+                    return item ? (
+                      <div className="flex items-center gap-3 pt-2" style={{ borderTop:"1px solid rgba(168,85,247,0.2)" }}>
+                        <span style={{ fontSize:28 }}>{item.icon}</span>
+                        <div>
+                          <div className="text-sm font-black" style={{ color:"#fcd34d" }}>{item.name}
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
+                              style={{ background:"rgba(245,158,11,0.3)", color:"#fde68a" }}>★ 首殺限定</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{item.desc}</div>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="px-5 mt-5">
@@ -888,6 +942,18 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                     </div>
                   </div>
                 )}
+                {loot.collectible && (() => {
+                  const item = COLLECTIBLE_MAP[loot.collectible.itemId];
+                  return item ? (
+                    <div className="flex items-center gap-2 pt-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                      <span style={{ fontSize:20 }}>{item.icon}</span>
+                      <div>
+                        <span className="text-xs font-black text-purple-300">{item.name}</span>
+                        <span className="ml-1.5 text-[10px] text-slate-500">收藏品</span>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             )}
 
