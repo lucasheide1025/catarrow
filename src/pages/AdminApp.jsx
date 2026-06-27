@@ -475,8 +475,8 @@ const adminNav = [
             🏰 地下城進行中 — 點此回到地下城
           </button>
         )}
-        {/* 頁面內容 */}
-      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
+        {/* 頁面內容（深藍覆寫） */}
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
@@ -638,7 +638,7 @@ const adminNav = [
         </button>
       )}
 
-      <div style={{paddingBottom:"80px"}}>
+      <div style={{paddingBottom:"80px"}} className="content-area">
         {/* ── 會員中心 Hub ── */}
         {page==="hub-member" && memberSub===null && (
           <AdminMemberHub

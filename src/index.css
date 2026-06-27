@@ -25,6 +25,109 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ ─── 深藍主題：子頁面內容覆寫 ────────────────────────────────
+ 用 .content-area 範圍保護，貓貓村用 .no-override 包裹跳過。
+ 注意：不使用 !important，依靠 specificity（0,2,0）勝過 Tailwind（0,1,0）。
+ .no-override 用 attribute selector（0,3,0）重置。
+ ──────────────────────────────────────────────────────── */
+.content-area .bg-white           { background-color: #1e293b; }
+.content-area .bg-gray-50         { background-color: #1e293b; }
+.content-area .bg-gray-100        { background-color: #1e293b; }
+.content-area .bg-gray-200        { background-color: rgba(255,255,255,0.06); }
+.content-area .bg-slate-50        { background-color: #1e293b; }
+.content-area .bg-red-50          { background-color: rgba(239,68,68,0.10); }
+.content-area .bg-blue-50         { background-color: rgba(59,130,246,0.12); }
+.content-area .bg-blue-100        { background-color: rgba(59,130,246,0.15); }
+.content-area .bg-green-50        { background-color: rgba(34,197,94,0.10); }
+.content-area .bg-amber-50        { background-color: rgba(251,191,36,0.10); }
+.content-area .bg-purple-50       { background-color: rgba(168,85,247,0.10); }
+.content-area .bg-teal-50         { background-color: rgba(20,184,166,0.10); }
+.content-area .bg-orange-50       { background-color: rgba(249,115,22,0.10); }
+.content-area .bg-rose-50         { background-color: rgba(244,63,94,0.10); }
+.content-area .bg-indigo-50       { background-color: rgba(99,102,241,0.10); }
+.content-area .bg-yellow-50       { background-color: rgba(234,179,8,0.10); }
+
+.content-area .text-gray-900,
+.content-area .text-gray-800        { color: #f1f5f9; }
+.content-area .text-gray-700        { color: #e2e8f0; }
+.content-area .text-gray-600        { color: #94a3b8; }
+.content-area .text-gray-500,
+.content-area .text-gray-400        { color: #64748b; }
+
+.content-area .text-blue-800        { color: #93c5fd; }
+.content-area .text-blue-700        { color: #93c5fd; }
+.content-area .text-blue-600        { color: #60a5fa; }
+.content-area .text-amber-600       { color: #fbbf24; }
+.content-area .text-green-600       { color: #4ade80; }
+.content-area .text-green-700       { color: #4ade80; }
+.content-area .text-purple-600      { color: #c084fc; }
+.content-area .text-purple-700      { color: #c084fc; }
+.content-area .text-orange-600      { color: #fb923c; }
+.content-area .text-orange-700      { color: #fb923c; }
+.content-area .text-teal-600        { color: #2dd4bf; }
+.content-area .text-red-600         { color: #f87171; }
+.content-area .text-red-500         { color: #ef4444; }
+
+.content-area .border-gray-200,
+.content-area .border-gray-100      { border-color: rgba(255,255,255,0.08); }
+.content-area .border-gray-300      { border-color: rgba(255,255,255,0.12); }
+
+.content-area .shadow-sm             { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.content-area .shadow-md             { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+.content-area .bg-blue-600           { background-color: #1d4ed8; }
+
+/* ── 貓貓村保護：attribute selector 重置所有覆寫回到 Tailwind 原始值 ── */
+.content-area .no-override .bg-white         { background-color: #fff; }
+.content-area .no-override .bg-gray-50       { background-color: #f9fafb; }
+.content-area .no-override .bg-gray-100      { background-color: #f3f4f6; }
+.content-area .no-override .bg-gray-200      { background-color: #e5e7eb; }
+.content-area .no-override .bg-gray-300      { background-color: #d1d5db; }
+.content-area .no-override .bg-slate-50      { background-color: #f8fafc; }
+.content-area .no-override .bg-slate-100     { background-color: #f1f5f9; }
+.content-area .no-override .bg-slate-800     { background-color: #1e293b; }
+.content-area .no-override .bg-slate-900     { background-color: #0f172a; }
+.content-area .no-override .bg-blue-50       { background-color: #eff6ff; }
+.content-area .no-override .bg-blue-100      { background-color: #dbeafe; }
+.content-area .no-override .bg-blue-600      { background-color: #2563eb; }
+.content-area .no-override .bg-green-50      { background-color: #f0fdf4; }
+.content-area .no-override .bg-amber-50      { background-color: #fffbeb; }
+.content-area .no-override .bg-purple-50     { background-color: #faf5ff; }
+.content-area .no-override .bg-teal-50       { background-color: #f0fdfa; }
+.content-area .no-override .bg-red-50        { background-color: #fef2f2; }
+.content-area .no-override .bg-yellow-50     { background-color: #fefce8; }
+.content-area .no-override .bg-orange-50     { background-color: #fff7ed; }
+.content-area .no-override .bg-rose-50       { background-color: #fff1f2; }
+.content-area .no-override .bg-indigo-50     { background-color: #eef2ff; }
+.content-area .no-override .bg-white\/20     { background-color: rgba(255,255,255,0.2); }
+.content-area .no-override .text-gray-400    { color: #9ca3af; }
+.content-area .no-override .text-gray-500    { color: #6b7280; }
+.content-area .no-override .text-gray-600    { color: #4b5563; }
+.content-area .no-override .text-gray-700    { color: #374151; }
+.content-area .no-override .text-gray-800    { color: #1f2937; }
+.content-area .no-override .text-gray-900    { color: #111827; }
+.content-area .no-override .text-blue-600     { color: #2563eb; }
+.content-area .no-override .text-blue-700     { color: #1d4ed8; }
+.content-area .no-override .text-blue-800     { color: #1e40af; }
+.content-area .no-override .text-amber-600    { color: #d97706; }
+.content-area .no-override .text-green-600    { color: #16a34a; }
+.content-area .no-override .text-green-700    { color: #15803d; }
+.content-area .no-override .text-purple-600   { color: #9333ea; }
+.content-area .no-override .text-purple-700   { color: #7e22ce; }
+.content-area .no-override .text-orange-600   { color: #ea580c; }
+.content-area .no-override .text-orange-700   { color: #c2410c; }
+.content-area .no-override .text-teal-600     { color: #0d9488; }
+.content-area .no-override .text-red-500      { color: #ef4444; }
+.content-area .no-override .text-red-600      { color: #dc2626; }
+.content-area .no-override .text-white        { color: #fff; }
+.content-area .no-override .border-gray-100   { border-color: #f3f4f6; }
+.content-area .no-override .border-gray-200   { border-color: #e5e7eb; }
+.content-area .no-override .border-gray-300   { border-color: #d1d5db; }
+.content-area .no-override .bg-blue-600       { background-color: #2563eb; }
+.content-area .no-override .shadow-sm         { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.content-area .no-override .shadow-md         { box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(12px) scale(0.95); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }

@@ -476,8 +476,8 @@ export default function MemberApp() {
         )}
       </div>
 
-      {/* 頁面內容 */}
-      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }}>
+      {/* 頁面內容（content-area 套用深藍覆寫；貓貓村跳過） */}
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
@@ -529,11 +529,11 @@ export default function MemberApp() {
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
         {page==="coinshop"    && <CoinShop />}
         {page==="cards"       && <CardCollection />}
-        {page==="gacha"       && <CatVillage
+        {page==="gacha"       && <div className="no-override"><CatVillage
           catCards={profile?.catCards}
           gachaCoins={profile?.gachaCoins ?? 0}
           initialTab={gachaInitTab}
-          key={gachaInitTab} />}
+          key={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
