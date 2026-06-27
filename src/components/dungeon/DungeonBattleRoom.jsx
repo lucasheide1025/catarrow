@@ -98,7 +98,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
   const myId        = profile?.id;
   const bondSavedRef         = useRef(false);
-  const xpSavedRef           = useRef(false);
   const battleBgRef          = useRef(null);
   const claimLootRef         = useRef(null);  // loot preview locked on first render
   const firstClearCheckedRef = useRef(false);
@@ -178,35 +177,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
 
-  // ── 非 host 成員：win 時自動儲存個人箭露/XP（host 由 handleClaim 處理）
-  useEffect(() => {
-    if (room?.status !== "completed" || room?.result !== "win") return;
-    if (isHost) return;
-    if (!myId || myId.startsWith("guest")) return;
-    if (xpSavedRef.current) return;
-    xpSavedRef.current = true;
-    const tFloors = isMapMode ? 1 : (room.totalFloors || 7);
-    const practiceRounds = (room.log || []).map(entry => {
-      const pl = (entry.playerLog || []).find(p => p.id === myId);
-      return (pl?.arrowBreakdown || []).map(a =>
-        a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
-      );
-    }).filter(r => r.length > 0);
-    if (practiceRounds.length > 0) {
-      const arrowCount = practiceRounds.flat().length;
-      addPracticeLog(myId, {
-        date: new Date().toISOString().slice(0, 10), source: "dungeon",
-        monsterName: room.monster?.name || "地下城", result: "win",
-        rounds: practiceRounds,
-        total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-        totalArrows: arrowCount, totalFloors: tFloors,
-      }, myId).catch(() => {});
-      if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
-    }
-    addArcherXP(myId, tFloors * DUNGEON_FLOOR_XP).catch(() => {});
-    const catId = profile?.equippedCat?.catId;
-    if (catId) addCatXP(myId, catId, tFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
-  }, [room?.status, room?.result]); // eslint-disable-line
+  // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
   // ── 進入新回合時觸發貓貓補助提示（整個回合只一次）────────────
   useEffect(() => {
@@ -402,63 +373,63 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     setLoading(false);
   }
 
-  async function handleClaim() {
-    if (!isHost) return;
+  // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
+  async function handleClaimSelf() {
+    if (myId?.startsWith("guest")) {
+      // 訪客直接跳導航
+      if (isMapMode) {
+        if (isBossRoom) { onReturnToMap?.(); }
+        else { await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {}); }
+      } else { onExit?.(); }
+      return;
+    }
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
     const baseMaterials = rollMaterialDrops(room?.monster);
     const totalFloors   = isMapMode
       ? (isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1)
       : (room.totalFloors || 7);
 
-    for (const mid of Object.keys(room.members || {})) {
-      if (mid.startsWith("guest")) continue;
-      const baseCoins = rollCoins(room?.monster?.tier || "common", 1);
-      await claimDungeonReward(mid, baseCoins, goldMult);
-      const memberChests = Array.from({ length: totalFloors }, (_, i) =>
-        makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
+    // 自己的金幣/寶箱/素材/圖鑑
+    const baseCoins = rollCoins(room?.monster?.tier || "common", 1);
+    await claimDungeonReward(myId, baseCoins, goldMult);
+    const memberChests = Array.from({ length: totalFloors }, (_, i) =>
+      makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
+    );
+    if (memberChests.length > 0) await addChests(myId, memberChests).catch(() => {});
+    if (baseMaterials.length > 0) await addMaterials(myId, baseMaterials).catch(() => {});
+    if (room.monster?.id) await recordBattleDex(myId, room.monster.id).catch(() => {});
+
+    // 練習紀錄 + 箭露 + XP
+    const practiceRounds = (room.log || []).map(entry => {
+      const pl = (entry.playerLog || []).find(p => p.id === myId);
+      return (pl?.arrowBreakdown || []).map(a =>
+        a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
       );
-      if (memberChests.length > 0) await addChests(mid, memberChests).catch(() => {});
-      if (baseMaterials.length > 0) await addMaterials(mid, baseMaterials).catch(() => {});
-      if (room.monster?.id) await recordBattleDex(mid, room.monster.id).catch(() => {});
+    }).filter(r => r.length > 0);
+    if (practiceRounds.length > 0) {
+      const arrowCount = practiceRounds.flat().length;
+      addPracticeLog(myId, {
+        date: new Date().toISOString().slice(0, 10), source: "dungeon",
+        monsterName: room.monster?.name || "地下城", result: "win",
+        rounds: practiceRounds,
+        total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+        totalArrows: arrowCount, totalFloors,
+      }, myId).catch(() => {});
+      if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
     }
+    addArcherXP(myId, totalFloors * DUNGEON_FLOOR_XP).catch(() => {});
+    const _selfCatId = profile?.equippedCat?.catId;
+    if (_selfCatId) addCatXP(myId, _selfCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
 
-    // 儲存自己的練習紀錄（win）
-    if (myId && !myId.startsWith("guest")) {
-      const practiceRounds = (room.log || []).map(entry => {
-        const pl = (entry.playerLog || []).find(p => p.id === myId);
-        return (pl?.arrowBreakdown || []).map(a =>
-          a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
-        );
-      }).filter(r => r.length > 0);
-      if (practiceRounds.length > 0) {
-        const arrowCount = practiceRounds.flat().length;
-        addPracticeLog(myId, {
-          date: new Date().toISOString().slice(0, 10), source: "dungeon",
-          monsterName: room.monster?.name || "地下城", result: "win",
-          rounds: practiceRounds,
-          total: practiceRounds.flat().reduce((s, v) => s + v, 0),
-          totalArrows: arrowCount, totalFloors,
-        }, myId).catch(() => {});
-        if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
-      }
-      // 射手等級 XP（每通過一層 15 XP）
-      addArcherXP(myId, totalFloors * DUNGEON_FLOOR_XP).catch(() => {});
-      const _dgCatId = profile?.equippedCat?.catId;
-      if (_dgCatId) addCatXP(myId, _dgCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
-    }
-
-    // 通關地下城稀有獎勵（箭露 + 扭蛋幣 + 符文寶箱）
-    if (isMapMode && myId && !myId.startsWith("guest")) {
+    // 地圖模式稀有獎勵
+    if (isMapMode) {
       if (isBossRoom) {
-        // Boss 通關：箭露 = 層數 × 8，扭蛋幣 2 枚
         addArrowdew(myId, totalFloors * 8).catch(() => {});
         addGachaCoins(myId, 2).catch(() => {});
-        // 符文掉落：依難度掉對應階段符文
         const dungeonMap2 = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
         const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap2?.difficulty] || 1;
         const droppedRune = rollRuneDrop(dungeonTier);
         if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
-        // 收藏品掉落（boss必掉 + 首殺限定）
         const collectDrops = [];
         if (claimLootRef.current?.collectible) collectDrops.push(claimLootRef.current.collectible);
         if (firstClearBonus && room?.dungeonId) {
@@ -467,17 +438,15 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         }
         if (collectDrops.length > 0) addCollectibles(myId, collectDrops).catch(() => {});
       } else {
-        // 普通房間：箭露 5
         addArrowdew(myId, 5).catch(() => {});
-        // 普通/精英房間收藏品掉落
         if (claimLootRef.current?.collectible) {
           addCollectibles(myId, [claimLootRef.current.collectible]).catch(() => {});
         }
       }
     }
 
-    // 首殺獎勵（由 useEffect 已檢查，這裡直接使用結果）
-    if (firstClearBonus && myId && !myId.startsWith("guest")) {
+    // 首殺獎勵
+    if (firstClearBonus) {
       if (firstClearBonus.coins)      addCoins(myId, firstClearBonus.coins).catch(() => {});
       if (firstClearBonus.arrowdew)   addArrowdew(myId, firstClearBonus.arrowdew).catch(() => {});
       if (firstClearBonus.gachaCoins) addGachaCoins(myId, firstClearBonus.gachaCoins).catch(() => {});
@@ -489,11 +458,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       if (isBossRoom) {
         onReturnToMap?.();
       } else {
-        await returnToMapAfterBattle(
-          roomId,
-          room.mapCurrentRoomId || "",
-          room.mapClearedIds || []
-        );
+        await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
       }
     } else {
       onExit?.();
@@ -875,16 +840,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             </div>
 
             <div className="px-5 mt-5">
-              {isHost && (
-                <button onClick={handleClaim}
-                  className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95 transition-transform"
-                  style={{ background:"linear-gradient(90deg,#f59e0b,#ef4444)" }}>
-                  🎊 領取全部獎勵並返回大廳
-                </button>
-              )}
-              {!isHost && (
-                <div className="text-center text-slate-400 text-sm py-3">等待隊長領取獎勵…</div>
-              )}
+              <button onClick={handleClaimSelf}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95 transition-transform"
+                style={{ background:"linear-gradient(90deg,#f59e0b,#ef4444)" }}>
+                🎊 領取獎勵並返回大廳
+              </button>
             </div>
           </div>
         );
@@ -957,16 +917,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               </div>
             )}
 
-            {isHost && (
-              <button onClick={handleClaim}
-                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95"
-                style={{ background:"linear-gradient(90deg,#7c3aed,#8b5cf6)" }}>
-                🗺️ 領取並回地圖
-              </button>
-            )}
-            {!isHost && (
-              <div className="text-center text-slate-400 text-sm py-3">等待隊長領取獎勵…</div>
-            )}
+            <button onClick={handleClaimSelf}
+              className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95"
+              style={{ background:"linear-gradient(90deg,#7c3aed,#8b5cf6)" }}>
+              🗺️ 領取獎勵並回地圖
+            </button>
           </div>
         </div>
       );
@@ -991,12 +946,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             </div>
           )}
         </div>
-        {isHost && (
-          <button onClick={handleClaim}
-            className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg">
-            💰 領取獎勵
-          </button>
-        )}
+        <button onClick={handleClaimSelf}
+          className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg">
+          💰 領取獎勵
+        </button>
         <button onClick={onExit}
           className="px-6 py-2 rounded-xl bg-white/10 text-slate-300 text-sm">
           返回大廳
