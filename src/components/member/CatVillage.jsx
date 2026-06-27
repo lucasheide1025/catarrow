@@ -136,15 +136,17 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
     return h > 0 ? `${h}h${m}m` : `${m}m`;
   }, [nextCollectSec]);
 
+  const COLLECT_EMOJI = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', driedfish:'🐠', can:'🥫', potion:'🍵', fur:'🐾', archer:'🏹', arrowdew:'💧', gachaCoins:'🎰', gachaToken:'🎰' };
+
   const collectedItems = useMemo(() => {
     if (!collectedResult) return [];
     return Object.entries(collectedResult).map(([key, amt]) => {
-      if (key === 'gachaCoins') return { key, name: '扭蛋代幣', tier: null, amt };
+      if (key === 'gachaCoins') return { key, icon:'🎰', name: '扭蛋幣', tier: null, amt };
       if (key.includes('_t')) {
         const [res, t] = key.split('_t');
-        return { key, name: RESOURCE_NAMES[res] || res, tier: `T${t}`, amt };
+        return { key, icon: COLLECT_EMOJI[res] || '📦', name: RESOURCE_NAMES[res] || res, tier: `T${t}`, amt };
       }
-      return { key, name: RESOURCE_NAMES[key] || key, tier: null, amt };
+      return { key, icon: COLLECT_EMOJI[key] || '📦', name: RESOURCE_NAMES[key] || key, tier: null, amt };
     });
   }, [collectedResult]);
 
@@ -189,15 +191,19 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
           <div className="text-[11px] font-black mb-2 text-center" style={{ color: "#FFD580", letterSpacing: 1 }}>
             ✦ 採集成功！
           </div>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {collectedItems.map(({ key, name, tier, amt }) => (
+          <div className="flex flex-wrap justify-center gap-2">
+            {collectedItems.map(({ key, icon, name, tier, amt }) => (
               <div key={key} style={{
-                background: "rgba(255,255,255,0.10)", borderRadius: 10,
-                padding: "4px 10px", display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(255,255,255,0.12)", borderRadius: 12,
+                padding: "6px 12px", display: "flex", alignItems: "center", gap: 6,
               }}>
-                <span className="text-[12px] font-bold">{name}</span>
-                {tier && <span className="text-[9px] font-bold" style={{ color: "#FFD580" }}>{tier}</span>}
-                <span className="text-[13px] font-black" style={{ color: "#7CBF70" }}>+{amt}</span>
+                <span style={{ fontSize: 20 }}>{icon}</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#fff", lineHeight: 1.2 }}>
+                    {name}{tier && <span style={{ fontSize: 10, color: "#FFD580", marginLeft: 3 }}>{tier}</span>}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: "#7CBF70" }}>+{amt}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -715,7 +721,9 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
 
 // ── 資源總覽列 ───────────────────────────────────────────────
 const TIERED_LIST = ['ore','melon','fish','meat','driedfish','can','potion','fur','archer'];
-const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'⚓', meat:'🏕️', driedfish:'🛒', can:'📦', potion:'⚗️', fur:'🎰' };
+// 永遠顯示的特殊材料（升級必需，即使 0 也要讓玩家知道）
+const ALWAYS_SHOW = new Set(['potion','fur']);
+const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', driedfish:'🐠', can:'🥫', potion:'🍵', fur:'🐾', archer:'🏹' };
 
 function ResourceRow({ resources, gachaCoins }) {
   const hasTiered = TIERED_LIST.some(res =>
@@ -723,39 +731,65 @@ function ResourceRow({ resources, gachaCoins }) {
   );
   return (
     <div className="px-4 py-2.5" style={{ borderBottom: `1px solid ${C.border}` }}>
-      <div className="text-[10px] font-bold mb-1.5" style={{ color: C.mid }}>村莊資源</div>
-      {/* 特殊資源 */}
-      <div className="flex gap-4 mb-2">
-        {[['gachaToken','🎰','扭蛋幣',null]].map(([k,em,lb,imgFile]) => (
-          <div key={k} className="flex items-center gap-1">
-            {imgFile ? (
-              <img src={`/ui/village/${imgFile}`} alt={em}
-                style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 4 }}
-                onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="inline"; }} />
-            ) : null}
-            <span style={{ display: imgFile ? "none" : "inline", fontSize: 16 }}>{em}</span>
-            <span className="font-bold text-xs" style={{ color: C.brown }}>{k === 'gachaToken' ? (gachaCoins || 0) : Math.floor(resources?.[k] || 0)}</span>
-            <span className="text-[10px]" style={{ color: C.muted }}>{lb}</span>
+      <div className="text-[10px] font-bold mb-2" style={{ color: C.mid }}>村莊資源</div>
+      {/* 特殊資源（扭蛋幣 + 貓草藥水 + 貓毛） */}
+      <div className="flex gap-3 mb-2 flex-wrap">
+        {/* 扭蛋幣 */}
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
+          <span style={{ fontSize:18 }}>🎰</span>
+          <span className="font-black text-sm" style={{ color: C.brown }}>{gachaCoins || 0}</span>
+          <span className="text-[10px]" style={{ color: C.muted }}>扭蛋幣</span>
+        </div>
+        {/* 貓草藥水：永遠顯示 */}
+        {[1,2,3,4,5].some(t => (resources?.[`potion_t${t}`] || 0) > 0) ? (
+          [1,2,3,4,5].filter(t => (resources?.[`potion_t${t}`] || 0) > 0).map(t => (
+            <div key={t} className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
+              <span style={{ fontSize:18 }}>🍵</span>
+              <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(resources?.[`potion_t${t}`] || 0)}</span>
+              <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水 T{t}</span>
+            </div>
+          ))
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)", opacity:0.5 }}>
+            <span style={{ fontSize:18 }}>🍵</span>
+            <span className="font-black text-sm" style={{ color: C.muted }}>0</span>
+            <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水</span>
           </div>
-        ))}
+        )}
+        {/* 貓毛：永遠顯示 */}
+        {[1,2,3,4,5].some(t => (resources?.[`fur_t${t}`] || 0) > 0) ? (
+          [1,2,3,4,5].filter(t => (resources?.[`fur_t${t}`] || 0) > 0).map(t => (
+            <div key={t} className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
+              <span style={{ fontSize:18 }}>🐾</span>
+              <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(resources?.[`fur_t${t}`] || 0)}</span>
+              <span className="text-[10px]" style={{ color: C.muted }}>貓毛 T{t}</span>
+            </div>
+          ))
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)", opacity:0.5 }}>
+            <span style={{ fontSize:18 }}>🐾</span>
+            <span className="font-black text-sm" style={{ color: C.muted }}>0</span>
+            <span className="text-[10px]" style={{ color: C.muted }}>貓毛</span>
+          </div>
+        )}
       </div>
-      {/* 分 tier 材料 */}
+      {/* 分 tier 一般材料 */}
       {hasTiered ? (
-        <div className="flex flex-col gap-1">
-          {TIERED_LIST.map(res => {
+        <div className="flex flex-col gap-1.5">
+          {TIERED_LIST.filter(r => !ALWAYS_SHOW.has(r)).map(res => {
             const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) })).filter(x => x.count > 0);
             if (!tiers.length) return null;
             return (
               <div key={res} className="flex items-center gap-2">
-                <span className="text-[10px] shrink-0" style={{ color: C.mid, width: 52 }}>
-                  {RES_EMOJI[res]} {RESOURCE_NAMES[res]}
-                </span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-1 shrink-0" style={{ width: 68 }}>
+                  <span style={{ fontSize:15 }}>{RES_EMOJI[res]}</span>
+                  <span className="text-[11px]" style={{ color: C.mid }}>{RESOURCE_NAMES[res]}</span>
+                </div>
+                <div className="flex gap-2 flex-wrap">
                   {tiers.map(({ t, count }) => (
-                    <div key={t} className="flex items-center gap-0.5">
-                      <img src={`/ui/village/resource-${res}${t}.webp`} style={{ width: 18, height: 18, objectFit: "contain", borderRadius: 3 }}
-                        onError={e => { e.target.style.display = 'none'; }} />
-                      <span className="text-[10px] font-bold" style={{ color: C.brown }}>T{t}:{count}</span>
+                    <div key={t} className="flex items-center gap-1 px-1.5 py-0.5 rounded-md" style={{ background:"rgba(0,0,0,0.06)" }}>
+                      <span className="text-[11px] font-bold" style={{ color:"#8B7355" }}>T{t}</span>
+                      <span className="text-[12px] font-black" style={{ color: C.brown }}>{count.toLocaleString()}</span>
                     </div>
                   ))}
                 </div>
@@ -764,7 +798,7 @@ function ResourceRow({ resources, gachaCoins }) {
           })}
         </div>
       ) : (
-        <div className="text-[10px]" style={{ color: C.muted }}>採集後材料將在此顯示</div>
+        <div className="text-[10px]" style={{ color: C.muted }}>採集後村莊材料將在此顯示</div>
       )}
     </div>
   );
