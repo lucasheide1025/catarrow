@@ -1002,8 +1002,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const frontMembers = memberList.slice(0, 4);
   const backMembers  = memberList.slice(4);
   const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
-  const backW  = Math.min(80,  Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
-  const showBackRow  = !!(liveEntry || submitted);
+  const showBackRow  = backMembers.length > 0;
 
   function handleLeave() {
     leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
@@ -1149,37 +1148,63 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             );
           })}
         </div>
-        {/* 後排（第5-8人）戰鬥期才顯示 */}
-        {backMembers.length > 0 && showBackRow && (
+        {/* 後排（第5-8人） — 與前排相同完整資訊 */}
+        {showBackRow && (
           <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
             {backMembers.map(m => {
               const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
               const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
               const isMe = m.id === myId;
+              const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
               return (
                 <div key={m.id} style={{
-                  flexShrink:0, width:backW, display:"flex", flexDirection:"column",
-                  border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
-                  borderRadius:8, overflow:"hidden", background:"rgba(255,255,255,0.01)",
+                  flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
+                  border:`1px solid ${isMe?"rgba(251,191,36,0.55)":m.role==="rear"?"rgba(168,85,247,0.35)":"rgba(255,255,255,0.07)"}`,
+                  borderRadius:8, overflow:"hidden",
+                  background: isMe?"rgba(251,191,36,0.08)":m.role==="rear"?"rgba(168,85,247,0.06)":"rgba(255,255,255,0.01)",
+                  boxShadow: isMe ? "0 0 8px rgba(251,191,36,0.3)" : m.role==="rear" ? "0 0 6px rgba(168,85,247,0.2)" : undefined,
                 }}>
-                  <div style={{ height:60, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                  <div style={{ height:85, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
-                      <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.75rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                      <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.85rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
                     ))}
                     <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
                       style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
-                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined }}
+                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
+                        outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
+                        outlineOffset:"2px", borderRadius:2 }}
                       onError={e => { e.target.style.display="none"; }}/>
                   </div>
-                  <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
-                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
+                  <div style={{ height:1, background:"rgba(255,255,255,0.06)", flexShrink:0 }}/>
+                  <div style={{ padding:"2px 2px 4px", textAlign:"center" }}>
                     <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
                       <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease",
                         background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                     </div>
-                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {!m.alive?"💀":""}{m.name.slice(0,5)}
+                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
+                      {!m.alive?"💀":""}{m.name.slice(0,6)}
                     </div>
+                    <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
+                      color: m.role==="rear"?"#a78bfa":"#34d399",
+                    }}>
+                      {m.role==="rear"?"🛡後衛":"⚔️前衛"}
+                    </div>
+                    <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
+                      <div style={{ fontSize:8, color:"#f87171" }}>⚔️{m.atk||0}</div>
+                      <div style={{ fontSize:8, color:"#60a5fa" }}>🛡{m.def||0}</div>
+                    </div>
+                    <div style={{ fontSize:7, marginBottom:1 }} className={mContract.color}>
+                      {mContract.icon} {mContract.name}
+                    </div>
+                    <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":!m.alive?"#475569":"#fbbf24" }}>
+                      {!m.alive?"⬛":liveEntry?"⚙️":m.ready?"✅":"⏳"}
+                    </div>
+                    {isHost && m.alive && !m.ready && m.id!==myId && (
+                      <button onClick={()=>forceSkipDungeonPlayer(roomId, m.id)}
+                        style={{ fontSize:7, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                        跳
+                      </button>
+                    )}
                   </div>
                 </div>
               );
