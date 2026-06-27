@@ -359,19 +359,22 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10 space-y-2">
-          {isHost && (
-            <button onClick={handleStart} disabled={loading || memberEntries.length < 1}
-              className="w-full py-3 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
-              {loading ? "準備中…" : `🏰 開始地下城（${memberEntries.length}人）`}
+        <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10">
+          {err && <div className="text-center text-rose-400 text-sm font-bold pb-2">{err}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => { if (unsub) unsub(); sessionStorage.removeItem("dungeon_waiting_room"); setRoomId(null); setRoom(null); setErr(""); }}
+              className="px-4 py-3 rounded-2xl text-slate-400 text-sm border border-white/10 bg-white/5 shrink-0">
+              離開
             </button>
-          )}
-          {!isHost && (
-            <div className="text-center text-slate-400 text-sm py-2">等待房主開始…</div>
-          )}
-          {err && <div className="text-center text-rose-400 text-sm font-bold py-1">{err}</div>}
-          <button onClick={() => { if (unsub) unsub(); sessionStorage.removeItem("dungeon_waiting_room"); setRoomId(null); setRoom(null); setErr(""); }}
-            className="w-full py-2 rounded-xl text-slate-400 text-sm">離開等待室</button>
+            {isHost ? (
+              <button onClick={handleStart} disabled={loading || memberEntries.length < 1}
+                className="flex-1 py-3 rounded-2xl font-black text-base bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
+                {loading ? "準備中…" : `🏰 開始地下城（${memberEntries.length}人）`}
+              </button>
+            ) : (
+              <div className="flex-1 text-center text-slate-400 text-sm py-3">等待房主開始…</div>
+            )}
+          </div>
         </div>
       </div>
     );
