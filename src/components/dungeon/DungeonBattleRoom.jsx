@@ -137,6 +137,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const me     = room?.members?.[myId] || {};
   const status = room?.status;
 
+  // 合約 Tailwind class → inline 可用 hex
+  const CONTRACT_HEX = {
+    standard:     "#cbd5e1",
+    score_gate:   "#93c5fd",
+    hit_count:    "#86efac",
+    all_hit:      "#fde047",
+    x_crit:       "#d8b4fe",
+    target_score: "#fda4af",
+  };
+
   // Boss 房間偵測（地圖模式用）— 優先讀 generatedFloors
   const _dungeonForRoom  = isMapMode ? DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId) : null;
   const _generatedFloors = room?.generatedFloors || null;
@@ -1058,7 +1068,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               { icon:"⚔️", label:monster.atk||0, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
               { icon:"🛡️", label:monster.def||0, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
               { icon:"👤", label:`${aliveCount}/${memberCount}`, color:"#94a3b8" },
-              { icon:contractInfo.icon, label:contractInfo.name, color:contractInfo.color, bg:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)" },
+              { icon:contractInfo.icon, label:contractInfo.name, color:CONTRACT_HEX[myContract.type]||"#cbd5e1", bg:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.12)" },
             ]} />
       </div>
 
