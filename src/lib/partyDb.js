@@ -652,3 +652,11 @@ export async function cleanupStalePartyRooms() {
     await Promise.all(stale.map(d => deleteDoc(d.ref)));
   } catch (_) {}
 }
+
+
+// 管理員：刪除所有組隊房間（重置中心用）
+export async function deleteAllPartyRooms() {
+  const snap = await getDocs(query(collection(db, PARTY)));
+  await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+  return snap.size;
+}

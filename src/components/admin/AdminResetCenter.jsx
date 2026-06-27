@@ -11,6 +11,8 @@ import {
   subscribeActiveWorldBoss,
   resetWorldBossAttack, resetAllWorldBossAttacks,
 } from "../../lib/worldBossDb";
+import { deleteAllDungeonRooms } from "../../lib/dungeonDb";
+import { deleteAllPartyRooms } from "../../lib/partyDb";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -22,6 +24,7 @@ export default function AdminResetCenter() {
   const [busyWB,   setBusyWB]   = useState("");
   const [busyC,    setBusyC]    = useState("");
   const [busyK,    setBusyK]    = useState("");
+  const [busyR,    setBusyR]    = useState("");
   const [msg,      setMsg]      = useState("");
   const [tab,      setTab]      = useState("checkin");
   const [wbEvent,  setWbEvent]  = useState(null);
@@ -125,6 +128,29 @@ export default function AdminResetCenter() {
     setBusyWB("");
   }
 
+  // ── 房間清除 ────────────────────────────────────────────────
+  async function handleDeleteDungeonRooms() {
+    if (!window.confirm("確定刪除所有地下城房間？此操作無法復原，所有進行中的地下城都會中斷。")) return;
+    setBusyR("dungeon"); setMsg("");
+    const n = await deleteAllDungeonRooms();
+    setMsg(`✅ 已刪除 ${n} 個地下城房間`);
+    setBusyR("");
+  }
+  async function handleDeletePartyRooms() {
+    if (!window.confirm("確定刪除所有組隊房間？此操作無法復原，所有進行中的組隊戰都會中斷。")) return;
+    setBusyR("party"); setMsg("");
+    const n = await deleteAllPartyRooms();
+    setMsg(`✅ 已刪除 ${n} 個組隊房間`);
+    setBusyR("");
+  }
+  async function handleDeleteAllRooms() {
+    if (!window.confirm("確定刪除所有房間（地下城 + 組隊）？所有進行中的戰鬥都會中斷。")) return;
+    setBusyR("all"); setMsg("");
+    const [nd, np] = await Promise.all([deleteAllDungeonRooms(), deleteAllPartyRooms()]);
+    setMsg(`✅ 已刪除地下城 ${nd} 間 + 組隊 ${np} 間`);
+    setBusyR("");
+  }
+
   const dungeonUsedToday = members.filter(m => m.lastDungeonDate === today);
   const dungeonFree      = members.filter(m => m.lastDungeonDate !== today);
 
@@ -145,6 +171,7 @@ export default function AdminResetCenter() {
           { id: "monster",  label: "⚔️ 打怪" },
           { id: "worldboss", label: "🌍 世界王" },
           { id: "council",  label: "🏛️ 議會廳" },
+          { id: "rooms",    label: "🚪 房間" },
         ].map(t => (
           <button key={t.id} onClick={() => { setTab(t.id); setMsg(""); }}
             className={`py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
@@ -313,6 +340,29 @@ export default function AdminResetCenter() {
                   )}
                 </>
               )}
+            </div>
+          )}
+          {/* ── 房間清除 ────────────────────────────────── */}
+          {tab === "rooms" && (
+            <div className="space-y-3">
+              <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-2 text-xs text-rose-700 leading-relaxed">
+                ⚠️ 刪除房間後，所有正在進行的戰鬥都會<b>立即中斷</b>。<br/>
+                用於清除卡住的殘留房間，不影響會員的資料與獎勵。
+              </div>
+              <button onClick={handleDeleteAllRooms} disabled={!!busyR}
+                className="w-full py-3 rounded-xl bg-rose-600 text-white text-sm font-black disabled:opacity-40">
+                {busyR === "all" ? "刪除中…" : "🚪 刪除所有房間（地下城 + 組隊）"}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={handleDeleteDungeonRooms} disabled={!!busyR}
+                  className="py-2.5 rounded-xl bg-slate-700 text-white text-sm font-black disabled:opacity-40">
+                  {busyR === "dungeon" ? "刪除中…" : "🏰 只清地下城"}
+                </button>
+                <button onClick={handleDeletePartyRooms} disabled={!!busyR}
+                  className="py-2.5 rounded-xl bg-slate-700 text-white text-sm font-black disabled:opacity-40">
+                  {busyR === "party" ? "刪除中…" : "⚔️ 只清組隊"}
+                </button>
+              </div>
             </div>
           )}
         </>

@@ -932,3 +932,11 @@ export async function addCollectibles(memberId, drops = []) {
     await updateDoc(doc(db, "members", memberId), updates);
   } catch (_) {}
 }
+
+
+// 管理員：刪除所有地下城房間（重置中心用）
+export async function deleteAllDungeonRooms() {
+  const snap = await getDocs(collection(db, D));
+  await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+  return snap.size;
+}
