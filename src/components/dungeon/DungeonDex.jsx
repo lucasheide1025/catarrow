@@ -7,11 +7,11 @@ import { DUNGEON_MAPS, FAMILY_CONFIGS } from "../../lib/dungeonData";
 
 const RARITY_LABEL = { common:"普通", rare:"稀有", boss:"首領", superRare:"✦ 超稀有", exclusive:"首殺限定" };
 const RARITY_COLOR = {
-  common:    { bg:"rgba(148,163,184,0.15)", border:"rgba(148,163,184,0.3)", text:"#94a3b8" },
-  rare:      { bg:"rgba(96,165,250,0.15)",  border:"rgba(96,165,250,0.3)",  text:"#60a5fa" },
-  boss:      { bg:"rgba(251,191,36,0.15)",  border:"rgba(251,191,36,0.3)",  text:"#fbbf24" },
-  superRare: { bg:"rgba(250,204,21,0.12)",  border:"rgba(250,204,21,0.45)", text:"#fde047" },
-  exclusive: { bg:"rgba(168,85,247,0.15)",  border:"rgba(168,85,247,0.3)",  text:"#c084fc" },
+  common:    { bg:"rgba(148,163,184,0.35)", border:"rgba(148,163,184,0.4)", text:"#cbd5e1" },
+  rare:      { bg:"rgba(96,165,250,0.30)",  border:"rgba(96,165,250,0.4)",  text:"#93c5fd" },
+  boss:      { bg:"rgba(251,191,36,0.30)",  border:"rgba(251,191,36,0.4)",  text:"#fde68a" },
+  superRare: { bg:"rgba(250,204,21,0.28)",  border:"rgba(250,204,21,0.5)", text:"#fef08a" },
+  exclusive: { bg:"rgba(168,85,247,0.30)",  border:"rgba(168,85,247,0.4)",  text:"#d8b4fe" },
 };
 
 export default function DungeonDex() {
@@ -80,9 +80,8 @@ export default function DungeonDex() {
             const qty = collectibles[itemId] || 0;
             const c = RARITY_COLOR.exclusive;
             return (
-              <div key={dm.id} className="flex items-center gap-3 rounded-xl p-3 transition-all"
-                style={{ background: qty > 0 ? c.bg : "rgba(255,255,255,0.03)", border:`1px solid ${qty > 0 ? c.border : "rgba(255,255,255,0.06)"}`, opacity: qty > 0 ? 1 : 0.45 }}>
-                <span style={{ fontSize:28, filter: qty === 0 ? "grayscale(1)" : "none" }}>{item.icon}</span>
+              <div key={dm.id} className="flex items-center gap-3 rounded-xl p-3 transition-all" style={{ background: qty > 0 ? c.bg : "rgba(255,255,255,0.08)", border:`1px solid ${qty > 0 ? c.border : "rgba(255,255,255,0.12)"}`, opacity: qty > 0 ? 1 : 0.55 }}>
+                        <span style={{ fontSize:28, filter: qty === 0 ? "grayscale(1)" : "none" }}>{item.icon}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-black" style={{ color: qty > 0 ? "#fcd34d" : "#64748b" }}>{item.name}</span>
@@ -91,7 +90,7 @@ export default function DungeonDex() {
                       {dm.emoji} {dm.name}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">{item.desc}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 truncate">{item.desc}</div>
                 </div>
                 {qty > 0 && (
                   <div className="text-xs font-black rounded-full w-6 h-6 flex items-center justify-center"
@@ -147,7 +146,7 @@ export default function DungeonDex() {
                     const c = RARITY_COLOR[fullItem.rarity] || RARITY_COLOR.common;
                     return (
                       <div key={item.id} className="flex items-center gap-3 rounded-xl p-3 transition-all"
-                        style={{ background: qty > 0 ? c.bg : "rgba(255,255,255,0.03)", border:`1px solid ${qty > 0 ? c.border : "rgba(255,255,255,0.06)"}`, opacity: qty > 0 ? 1 : 0.45 }}>
+                        style={{ background: qty > 0 ? c.bg : "rgba(255,255,255,0.08)", border:`1px solid ${qty > 0 ? c.border : "rgba(255,255,255,0.12)"}`, opacity: qty > 0 ? 1 : 0.55 }}>
                         <span style={{ fontSize:26, filter: qty === 0 ? "grayscale(1)" : "none" }}>{item.icon}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -157,7 +156,7 @@ export default function DungeonDex() {
                               {RARITY_LABEL[fullItem.rarity]}
                             </span>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{item.desc}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{item.desc}</div>
                         </div>
                         {qty > 0 && (
                           <div className="text-xs font-black rounded-full w-6 h-6 flex items-center justify-center shrink-0"

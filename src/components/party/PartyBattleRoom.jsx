@@ -269,13 +269,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
 
-  // 戰鬥開始時所有人記錄一次（訪客略過次數限制）
+  // 戰鬥開始時只扣房主的進場次數（其他隊員不扣）
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
     partyRecordedRef.current = true;
-    if (!myId.startsWith("guest")) {
+    if (!myId.startsWith("guest") && isHost) {
       recordPartyBattleSession(myId).catch(() => {});
-      if (isHost) setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
+      setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
     }
   }, [room?.status]); // eslint-disable-line
 

@@ -1,5 +1,5 @@
 # 🎮 game-systems — 遊戲化規格
-> 最後更新：2026-06-25
+> 最後更新：2026-06-27
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
 
@@ -30,6 +30,47 @@ calcEquippedBonus(cards[])：cards = equipped.map(id=>cardColl.cards[id]).filter
 ```
 
 **注意**：MemberPractice 有 `classEndedRef`，下課後不觸發里程碑（防重複結算）
+
+## 前後衛系統（地下城 + 組隊，2026-06-27 統一規格）
+
+```
+role = "front" | "rear"（每回合送箭時選擇）
+
+【前衛】
+- 正常攻擊
+- 怪物反擊只打前衛（frontIds 存活時後衛免疫）
+- HP 歸零 → 不立即陣亡，自動轉後衛 + 復活 50% maxHP
+  → 新 role 由伺服器寫入 Firestore，前端下回合從 room.members[id].role 讀取
+
+【後衛 - 選攻擊 (rearChoice="dmg")】
+- 箭傷 × 0.5
+- 反擊免疫
+
+【後衛 - 選治癒 (rearChoice="heal")】
+- 不攻擊怪物（arrowBreakdown dmg 計算但 dmgMul=... 等等，實際上後衛dmg仍計算，heal選擇下照算箭傷）
+  ⚠️ 注意：heal 選擇下並沒有 dmgMul=0，箭傷照常計算（不是0傷）
+- 每回合末：pool = 25% maxHP → 均分給所有存活隊友（不含自己）
+- 反擊免疫
+```
+
+**實作位置**：
+- `dungeonDb.js` `processDungeonRound` — 地下城版本
+- `partyDb.js` `processPartyRound` — 組隊版本（2026-06-27 新增）
+
+## 怪物人數縮放（地下城 + 組隊，2026-06-27 統一規格）
+
+```
+N = 玩家人數（含 bot），extraMembers = N - 1
+
+monHPMult  = 1.0 + extraMembers * 0.5   (HP  每多一人 +50%)
+monAtkMult = 1.0 + extraMembers * 0.15  (ATK 每多一人 +15%)
+monDefMult = 1.0 + extraMembers * 0.15  (DEF 每多一人 +15%)
+rewardMult = 1.0 + extraMembers * 0.2   (金幣/XP/掉落 每多一人 +20%)
+
+• 地下城：startDungeonBattle → monster.atk/def 已縮放存入 Firestore
+• 組隊：startPartyBattle → 同上；rewardMult 存入 room document
+• 結算時讀取 room.rewardMult，套用於金幣/XP/collectible chanceMult
+```
 
 ## 射手 XP 來源
 

@@ -3,6 +3,52 @@
 
 ---
 
+## 2026-06-27（組隊模式前後衛系統 + 怪物人數縮放）
+
+### partyDb.js — 前後衛戰鬥邏輯
+- **`submitArrows`**：新增 `role="front"|"rear"` 與 `rearChoice="heal"|"dmg"|null` 參數，每次送箭時寫入 Firestore
+- **`processPartyRound` Step 1**：後衛選「攻擊」者，所有箭傷 ×0.5（arrowBreakdown 也同步縮放）
+- **前後衛分類**：`frontIds`（role 未定義或 "front"）/ `rearIds`（role="rear"）
+- **反擊邏輯**：只打存活 `frontIds`；前衛全滅時才打所有存活成員
+- **後衛治癒**：選擇 "heal" → pool = 25% maxHP，均分給所有存活隊友（不含自己）
+- **前衛復活機制**：前衛 HP 歸零 → 不立即陣亡，改為轉後衛 + 復活至 50% HP；後衛 HP 歸零才真正陣亡
+
+### partyDb.js — 怪物人數縮放（補完）
+- `genPartyHPMult` 改為確定性公式：`1.0 + (playerCount-1) * 0.5`（HP 每多一人 +50%）
+- `startPartyBattle` 加入 `monAtkMult = 1+(N-1)*0.15`、`monDefMult = 1+(N-1)*0.15`、`rewardMult = 1+(N-1)*0.2`
+- `rewardMult` 存入 Firestore room document，結算時讀取用
+
+### PartyBattleRoom.jsx — 角色選擇 UI
+- 計分前顯示「⚔️前衛 / 🛡後衛」選擇按鈕
+- 選後衛後出現「💊治癒隊友 / ⚡協助攻擊」策略按鈕
+- 後衛未選策略時送出按鈕鎖住（顯示「請先選擇後衛策略」）
+- 新回合時從 Firestore 讀取 role（捕捉前衛轉後衛通知），否則重置為 "front"
+- 玩家名牌顯示 ⚔️/🛡 角色標籤
+
+**踩坑提醒**：
+- `allPlayerData` 在 Step 1 即縮放，miniRounds 的 pairDmg 自動正確
+- 前衛轉後衛由伺服器寫入 `role="rear"`，下回合 `useEffect([room?.round])` 讀取後更新本地 state
+
+---
+
+## 2026-06-27（地下城/組隊怪物人數縮放 + 後衛機制修正 + 等待室 Bug）
+
+### dungeonDb.js — 後衛機制重設計
+- 後衛傷害倍率：×1.5 → **×0.5**（後衛本應保護，不是輸出強化）
+- 後衛治癒：原「自己回 25% HP」→ **25% maxHP pool 均分給存活隊友（不含自己）**
+  - `receivedHeal` 物件累計，HP update 時套用
+
+### dungeonDb.js — 怪物人數縮放
+- `startDungeonBattle`：新增 `monHPMult = 1+(N-1)*0.5`、`monAtkMult = 1+(N-1)*0.15`、`monDefMult = 1+(N-1)*0.15`、`rewardMult = 1+(N-1)*0.2`
+- 廢除 `memberAtkMult`（玩家 ATK 加成移除）
+
+### DungeonLobby.jsx — 等待室卡死修復 + 按鈕並排
+- **問題**：等待室按鈕被 `overflow-hidden` 截掉，無法點擊「開始地下城」
+- **根因**：House 設定 `div` 用了 `shrink-0`，把 footer 推到視區外
+- **修復**：將地下城設定移到 `flex-1 overflow-y-auto` 捲動區內；footer 改為 `flex gap-2`，「離開」與「開始」並排顯示
+
+---
+
 ## 2026-06-27（地下城收藏品圖鑑全面重設計）
 
 ### dungeonCollectibles.js — 完整重寫（216 件）
@@ -83,6 +129,50 @@
   4. **重新輸入按鈕**：`submitted` 狀態下非房主可點「重新輸入」清掉 Firestore `ready/arrows` + 本地 `submitted`，重新輸入箭分
   5. **5秒安全網**：房主送出後若未全員 `ready`，5 秒後用 `roomRef.current`（最新 room 資料）重新檢查並強制結算（避免 Firestore 同步延遲造成的卡住）
 - **坑**：fallback timeout 不能用 `handleProcess()`（閉包中的 `room` 已過時），必須用 `roomRef.current` 直接呼叫 `processDungeonRound`；`lastProcessedRef.current` 要先鎖定再解鎖，和 `handleProcess` 一致
+
+---
+
+## 2026-06-27（全系統深藍主題改造）
+
+### 改造目標
+全站（射手模式 + 教練模式 + 後台）從淺色背景改為深藍色主題，提升夜間使用舒適度與視覺一致性。貓貓村保留原始淺色風格不受影響。
+
+### 架構設計
+採用 **CSS specificity 三層分級**控制，不使用 `!important`（inline override 例外）：
+
+| 層級 | 選擇器 | Specificity | 作用 |
+|------|--------|-------------|------|
+| Tailwind 原始值 | `.bg-white` | 0,1,0 | 預設樣式 |
+| 深藍覆寫 | `.content-area .bg-white` | **0,2,0** | 子頁面變深藍 |
+| 貓貓村保護 | `.content-area .no-override .bg-white` | **0,3,0** | 還原原始值 |
+
+### 修改檔案
+
+**`src/index.css`**
+- 新增 CSS 變數（`--bg-deep: #0f172a`、`--bg-surface: #1e293b`、`--bg-card: #1e293b`、`--text-primary: #f1f5f9` 等）
+- body 全域深藍背景 + 自訂滾動條
+- **56 行 `.content-area` 覆寫**：背景（bg-white→#1e293b、bg-gray-50→#1e293b 等）、文字（text-gray-900→#f1f5f9、text-gray-600→#94a3b8 等）、邊框（border-gray-200→rgba(255,255,255,0.08)）、陰影
+- **34 行 `.no-override` 重置**：完全還原 Tailwind 原始顏色保護貓貓村
+- **Attribute selector + `!important` 層**：蓋掉後台 inline styles（`background:"white"` → `background:#1e293b !important`、`color:"#1e293b"` → `color:#f1f5f9 !important`），因為 inline style 優先級高於 CSS class
+
+**`src/pages/MemberApp.jsx`**
+- 頁面內容區加入 `className="content-area"`
+- 貓貓村用 `<div className="no-override">` 包裹
+- 底部導覽列：白底黑字 → `#0f172a` 深藍 + `#94a3b8` 淺灰文字（active 用 `#60a5fa` 藍高亮、`#f59e0b` 金色指示條）
+- 小紅點邊框：白 → `#0f172a` 無縫融入
+
+**`src/pages/AdminApp.jsx`**
+- **射手模式容器**：`#f8fafc` 淺灰 → `#0f172a` 深藍，改為 `height:100dvh` flex 布局
+- **後台容器**：`#f8fafc` → `#0f172a`
+- **後台 Header**：白底黑字 → 深藍漸層 `#0f172a→#0c4a6e` + 淺色文字
+- **兩個模式的底部導覽列**：白底 → 深藍 + 淺色文字
+- **Hub 卡片**：白底 → `#1e293b`，深色標題 → `#f1f5f9`
+- 頁面內容區加入 `className="content-area"`
+
+### 踩坑提醒
+1. **CSS class 無法蓋掉 inline style**：`BillingSystem.jsx` 用 `background:"white"` inline 語法，CSS `.bg-white` 覆寫完全無效 → 改用 `[style*="background: white"] { background: #1e293b !important; }` attribute selector
+2. **`unset` 會讓背景變透明**：初始 `.no-override` 用 `background-color: unset` → 貓貓村白底變透明 → 改為顯式指定 `background-color: #fff` 才能正確還原
+3. **`!important` 是必要之惡**：只用在 inline override 層（attribute selector），class-based 覆寫全不用 `!important`
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fchangelog`
 
