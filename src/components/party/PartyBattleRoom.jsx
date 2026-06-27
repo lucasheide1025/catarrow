@@ -180,6 +180,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [liveMiniRoundIdx, setLiveMiniRoundIdx] = useState(0);   // 目前顯示的小回合索引 (0-5)
   const [cheerMsg,        setCheerMsg]        = useState("");
   const [scoringReady,    setScoringReady]    = useState(false);
+  const [myRole,          setMyRole]          = useState("front"); // "front" | "rear"
+  const [myRearChoice,    setMyRearChoice]    = useState(null);    // "heal" | "dmg" | null
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -244,8 +246,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setScoringReady(false);
   }, [room?.status]); // eslint-disable-line
 
-  // 每回合開始時重置計分門禁
-  useEffect(() => { setScoringReady(false); }, [room?.round]); // eslint-disable-line
+  // 每回合開始時重置計分門禁、角色選擇（若前衛轉後衛由 Firestore 通知，保留 Firestore 的值）
+  useEffect(() => {
+    setScoringReady(false);
+    // 從 Firestore 讀取自己目前的 role（前衛倒下時伺服器會寫入 "rear"）
+    const serverRole = room?.members?.[myId]?.role;
+    if (serverRole) { setMyRole(serverRole); if (serverRole === "front") setMyRearChoice(null); }
+    else { setMyRole("front"); setMyRearChoice(null); }
+  }, [room?.round]); // eslint-disable-line
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
   useEffect(() => {
@@ -555,9 +563,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
   async function handleSubmit() {
     if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
+    if (myRole === "rear" && !myRearChoice) return; // 後衛必須選擇策略
     sfxCast(); vibrate([0, 20, 40]);
     setSubmitting(true);
-    const res = await submitArrows(roomId, myId, arrows);
+    const res = await submitArrows(roomId, myId, arrows, myRole, myRearChoice);
     if (res?.ok === false) {
       alert("送出失敗，請重試（" + (res.reason || "未知錯誤") + "）");
       setSubmitting(false);
@@ -1513,7 +1522,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                   </div>
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
-                    {!m.alive&&"💀"}{m.name.slice(0,6)}{m.id===room.hostId?" 👑":""}
+                    {!m.alive&&"💀"}{m.role==="rear"?"🛡":"⚔️"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
                   </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
                     <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk}</div>
@@ -1597,6 +1606,37 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 ⚠️ HP 危急！請謹慎作戰
               </div>
             )}
+            {/* 前後衛選擇 */}
+            <div style={{ display:"flex", gap:6, marginBottom:4 }}>
+              <button onClick={() => { setMyRole("front"); setMyRearChoice(null); }}
+                style={{ flex:1, padding:"6px 0", borderRadius:10, fontWeight:900, fontSize:12, border:"none", cursor:"pointer",
+                  background: myRole==="front" ? "linear-gradient(90deg,#dc2626,#ef4444)" : "rgba(255,255,255,0.07)",
+                  color: myRole==="front" ? "#fff" : "#64748b" }}>
+                ⚔️ 前衛
+              </button>
+              <button onClick={() => setMyRole("rear")}
+                style={{ flex:1, padding:"6px 0", borderRadius:10, fontWeight:900, fontSize:12, border:"none", cursor:"pointer",
+                  background: myRole==="rear" ? "linear-gradient(90deg,#0f766e,#14b8a6)" : "rgba(255,255,255,0.07)",
+                  color: myRole==="rear" ? "#fff" : "#64748b" }}>
+                🛡 後衛
+              </button>
+            </div>
+            {myRole === "rear" && (
+              <div style={{ display:"flex", gap:6, marginBottom:4 }}>
+                <button onClick={() => setMyRearChoice("heal")}
+                  style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="heal"?"#34d399":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
+                    background: myRearChoice==="heal" ? "rgba(16,185,129,0.25)" : "rgba(255,255,255,0.04)",
+                    color: myRearChoice==="heal" ? "#6ee7b7" : "#64748b" }}>
+                  💊 治癒隊友
+                </button>
+                <button onClick={() => setMyRearChoice("dmg")}
+                  style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="dmg"?"#f59e0b":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
+                    background: myRearChoice==="dmg" ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)",
+                    color: myRearChoice==="dmg" ? "#fcd34d" : "#64748b" }}>
+                  ⚡ 協助攻擊
+                </button>
+              </div>
+            )}
             <BattleArrowSlots
                 arrows={arrows}
                 totalArrows={ARROWS_PER_ROUND}
@@ -1630,12 +1670,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
             />
             {/* 送出 */}
-            <button onClick={handleSubmit} disabled={arrows.length<ARROWS_PER_ROUND||submitting||targetPending}
-              style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
-                background: (arrows.length===ARROWS_PER_ROUND&&!targetPending) ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
-                color:"white", border:"none", opacity:(arrows.length<ARROWS_PER_ROUND||submitting||targetPending)?0.55:1 }}>
-              {(submitting||targetPending)?"計算中…":`✅ 送出 (${myArrowTotal}分)`}
-            </button>
+            {(() => {
+              const rearNotReady = myRole === "rear" && !myRearChoice;
+              const disabled = arrows.length<ARROWS_PER_ROUND || submitting || targetPending || rearNotReady;
+              return (
+                <button onClick={handleSubmit} disabled={disabled}
+                  style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
+                    background: !disabled ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
+                    color:"white", border:"none", opacity:disabled?0.55:1 }}>
+                  {(submitting||targetPending)?"計算中…"
+                    : rearNotReady?"🛡 請先選擇後衛策略"
+                    : `✅ 送出 (${myArrowTotal}分)`}
+                </button>
+              );
+            })()}
           </>
         )}
 

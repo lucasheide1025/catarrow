@@ -272,11 +272,13 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
 }
 
 // ── Battle：送出箭分 ──────────────────────────────────────────
-export async function submitArrows(roomId, memberId, arrows) {
+export async function submitArrows(roomId, memberId, arrows, role = "front", rearChoice = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
-      [`members.${memberId}.arrows`]: arrows,
-      [`members.${memberId}.ready`]:  true,
+      [`members.${memberId}.arrows`]:     arrows,
+      [`members.${memberId}.ready`]:      true,
+      [`members.${memberId}.role`]:       role,
+      [`members.${memberId}.rearChoice`]: role === "rear" ? rearChoice : null,
     });
     return { ok: true };
   } catch (e) {
@@ -330,13 +332,21 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of aliveIds) {
       const m   = members[id];
       const raw = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
+      const isRearDmg = (m.role || "front") === "rear" && m.rearChoice === "dmg";
+      const dmgMul = isRearDmg ? 0.5 : 1.0;
+      const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
+      const rawBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
       allPlayerData[id] = {
         name:           m.name || "射手",
-        totalDmg:       typeof raw === "number" ? raw        : (raw.dmg   || 0),
-        crits:          typeof raw === "number" ? 0          : (raw.crits || 0),
-        arrowBreakdown: typeof raw === "object"  ? (raw.arrowBreakdown || []) : [],
+        totalDmg:       Math.round(rawDmg * dmgMul),
+        crits:          typeof raw === "number" ? 0 : (raw.crits || 0),
+        arrowBreakdown: rawBreakdown.map(a => ({ ...a, dmg: Math.round((a.dmg || 0) * dmgMul) })),
       };
     }
+
+    // 前後衛分類（undefined / "front" 都算前衛）
+    const frontIds = aliveIds.filter(id => (members[id].role || "front") === "front");
+    const rearIds  = aliveIds.filter(id => (members[id].role || "front") === "rear");
 
     // Step 2: 隨機事件（大回合開始時決定）
     const eventRaw   = shouldTriggerEvent() ? drawRandomEvent() : null;
@@ -413,11 +423,14 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
-    // 最後怪物反擊全體存活玩家（除非事件跳過）
+    // 最後怪物反擊：只打前衛；前衛全滅時才打全體
     if (!skipAllCtr && monsterHP > 0) {
+      const allFrontDead = frontIds.every(id => memberHPNow[id] <= 0);
+      const ctrTargets   = allFrontDead
+        ? aliveIds.filter(id => memberHPNow[id] > 0)
+        : frontIds.filter(id => memberHPNow[id] > 0);
       const ctrLog = [];
-      for (const id of aliveIds) {
-        if (memberHPNow[id] <= 0) continue;
+      for (const id of ctrTargets) {
         const mem = members[id];
         const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10));
         ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
@@ -433,6 +446,17 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       });
     }
 
+    // 後衛治癒：每位選擇「heal」的後衛，將 25% maxHP 均分給存活隊友
+    const receivedHeal = {};
+    for (const id of rearIds) {
+      if (members[id].rearChoice !== "heal") continue;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.25);
+      const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);
+      if (!targets.length) continue;
+      const perPerson = Math.round(pool / targets.length);
+      for (const tid of targets) receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
+    }
+
     // Step 4: 套用事件額外效果（作用於大回合總結）
     const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0) + catRoundDmg;
     if (eff.extraDmg)                       monsterHP = Math.max(0, monsterHP - eff.extraDmg);
@@ -443,14 +467,29 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     let   liveAfter     = 0;
     for (const id of aliveIds) {
       let hp = memberHPNow[id];
+      // 後衛治癒
+      if (receivedHeal[id]) hp = Math.min(members[id].maxHP || 9999, hp + receivedHeal[id]);
+      // 事件效果
       if (eff.archerHP)                       hp = Math.max(0, Math.min(members[id].maxHP || hp + 200, hp + eff.archerHP));
       if (eff.healArcher)                     hp = Math.min(members[id].maxHP || hp + 200, hp + eff.healArcher);
       if (eff.archerATK && eff.archerATK < 0) hp = Math.max(0, hp + eff.archerATK);
-      memberUpdates[`members.${id}.hp`]     = hp;
       memberUpdates[`members.${id}.arrows`] = [];
       memberUpdates[`members.${id}.ready`]  = false;
-      if (hp <= 0) memberUpdates[`members.${id}.alive`] = false;
-      else liveAfter++;
+      if (hp <= 0) {
+        const isCurrentlyFront = (members[id].role || "front") === "front";
+        if (isCurrentlyFront) {
+          // 前衛第一次倒下 → 轉後衛、復活至 50% HP
+          hp = Math.round((members[id].maxHP || 100) * 0.5);
+          memberUpdates[`members.${id}.role`]       = "rear";
+          memberUpdates[`members.${id}.rearChoice`] = null;
+          liveAfter++;
+        } else {
+          memberUpdates[`members.${id}.alive`] = false;
+        }
+      } else {
+        liveAfter++;
+      }
+      memberUpdates[`members.${id}.hp`] = hp;
     }
 
     // Step 5: 聚合 playerLog（歷史記錄用）
