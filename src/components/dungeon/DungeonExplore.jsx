@@ -75,12 +75,19 @@ function RoomEventModal({ room, memberHPs, onClose }) {
 }
 
 // ── 投票 UI ───────────────────────────────────────────────────
-function VoteOverlay({ proposal, room, memberId, isHost, onVote, onResolve, onSkip }) {
+function VoteOverlay({ proposal, room, memberId, isHost, floorData, onVote, onResolve, onSkip }) {
   const [secLeft, setSecLeft] = useState(VOTE_SEC);
   const timerRef = useRef(null);
 
+  // 查詢目標房間的中文名稱
+  const targetRoomLabel = useMemo(() => {
+    const targetRoom = floorData?.rooms?.find(r => r.id === proposal?.targetRoomId);
+    return targetRoom?.label || proposal?.targetRoomId;
+  }, [floorData, proposal?.targetRoomId]);
+
   useEffect(() => {
     setSecLeft(VOTE_SEC);
+    clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setSecLeft(s => {
         if (s <= 1) {
@@ -100,12 +107,13 @@ function VoteOverlay({ proposal, room, memberId, isHost, onVote, onResolve, onSk
   const voteCount  = Object.values(votes).filter(v => v === proposal.targetRoomId).length;
 
   // 全員投完立刻結算，不等計時器
+  const totalVoteCast = Object.keys(votes).length;
   useEffect(() => {
-    if (isHost && totalVotes > 0 && voteCount >= totalVotes) {
+    if (isHost && totalVoteCast > 0 && totalVoteCast >= totalVotes) {
       clearInterval(timerRef.current);
       onResolve();
     }
-  }, [voteCount, totalVotes]); // eslint-disable-line
+  }, [totalVoteCast, totalVotes, onResolve]); // eslint-disable-line
 
   return (
     <div style={{
@@ -129,8 +137,8 @@ function VoteOverlay({ proposal, room, memberId, isHost, onVote, onResolve, onSk
         </div>
 
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginBottom:16 }}>
-          前往 <b style={{ color:"white" }}>{proposal.targetRoomId}</b> 房間
-          {" — "}已有 <b style={{ color:"#4ade80" }}>{voteCount}/{totalVotes}</b> 人同意
+          前往 <b style={{ color:"white" }}>{targetRoomLabel}</b>
+          {" — "}<b style={{ color:"#4ade80" }}>{voteCount}/{totalVotes}</b> 人同意
         </div>
 
         <div style={{ display:"flex", gap:10 }}>
@@ -395,6 +403,7 @@ export default function DungeonExplore({
           room={room}
           memberId={memberId}
           isHost={isHost}
+          floorData={floorData}
           onVote={handleVote}
           onResolve={handleResolveVote}
           onSkip={isHost ? async () => {
