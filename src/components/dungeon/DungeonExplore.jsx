@@ -99,6 +99,14 @@ function VoteOverlay({ proposal, room, memberId, isHost, onVote, onResolve, onSk
   const votedFor   = votes[memberId];
   const voteCount  = Object.values(votes).filter(v => v === proposal.targetRoomId).length;
 
+  // 全員投完立刻結算，不等計時器
+  useEffect(() => {
+    if (isHost && totalVotes > 0 && voteCount >= totalVotes) {
+      clearInterval(timerRef.current);
+      onResolve();
+    }
+  }, [voteCount, totalVotes]); // eslint-disable-line
+
   return (
     <div style={{
       position:"fixed", inset:0, background:"rgba(0,0,0,0.6)",
