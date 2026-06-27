@@ -126,6 +126,7 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         taskLabel: task.label || task.target || "日常任務", result: "win",
         rounds: [arrows],
         total: arrows.reduce((s, v) => s + v, 0),
+        totalArrows: arrows.length,
         distance: task.distance || null,
       }, myId).catch(() => {});
     }
