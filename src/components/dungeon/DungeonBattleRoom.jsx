@@ -133,6 +133,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
   const [floatDmg,          setFloatDmg]          = useState(null);
   const [localHpOverride,   setLocalHpOverride]   = useState({});
+  const [attackingIds,      setAttackingIds]       = useState(new Set());
 
   const processingRef       = useRef(false);
   const lastProcessedRef    = useRef(null); // "${floor}-${round}" 已處理過就跳過
@@ -230,6 +231,15 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
 
+  // ── processing 超時自動重置（20 秒仍卡住 → 房主自動清除）────
+  useEffect(() => {
+    if (!isHost || !room?.processing) return;
+    const t = setTimeout(() => {
+      clearDungeonProcessing(roomId);
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [room?.processing, isHost, roomId]); // eslint-disable-line
+
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
   // ── 重整後同步：如果 Firestore 顯示已送出但本地未送出，重置 ready 讓玩家重來 ─
@@ -280,6 +290,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         setLiveMiniIdx(idx);
         sfxArrowShoot();
         vibrate(8);
+        // 攻擊動畫：標記本 mini-round 有傷害的成員
+        if (!mini.isCounter) {
+          const atkIds = new Set((mini.playerLog || []).filter(p => (p.dmg||0) > 0).map(p => p.id));
+          if (atkIds.size > 0) {
+            setAttackingIds(atkIds);
+            setTimeout(() => setAttackingIds(new Set()), 500);
+          }
+        }
       }, delay);
       revealTimersRef.current.push(t);
 
@@ -1162,6 +1180,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
 @keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(0)}100%{filter:brightness(1)}}
 @keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(8px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+@keyframes db-archer-atk{0%{transform:translateY(0) scale(1)}30%{transform:translateY(-16px) scale(1.12)}65%{transform:translateY(-8px) scale(1.05)}100%{transform:translateY(0) scale(1)}}
 @keyframes db-intro-archer{0%{opacity:0;transform:translateX(-90px) scale(0.6)}100%{opacity:1;transform:translateX(0) scale(1)}}
 @keyframes db-intro-monster{0%{opacity:0;transform:translateX(90px) scale(0.6)}100%{opacity:1;transform:translateX(0) scale(1)}}
 @keyframes db-intro-vs{0%{opacity:0;transform:scale(0.2) rotate(-18deg)}55%{transform:scale(1.3) rotate(4deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
@@ -1257,12 +1276,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
             const frontCardBorder = isMe ? "rgba(251,191,36,0.45)" : isOverflowRear ? "rgba(20,184,166,0.4)" : "rgba(255,255,255,0.07)";
             const frontCardBg    = isMe ? "rgba(251,191,36,0.04)" : isOverflowRear ? "rgba(20,184,166,0.04)" : "rgba(255,255,255,0.01)";
+            const isAttacking = attackingIds.has(m.id);
             return (
               <div key={m.id} style={{
                 flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
                 border:`1px solid ${frontCardBorder}`,
                 borderRadius:8, overflow:"hidden",
                 background: frontCardBg,
+                animation: isAttacking ? "db-archer-atk 0.45s ease-out" : undefined,
               }}>
                 <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                   {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
@@ -1324,6 +1345,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
               const isMe = m.id === myId;
               const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
+              const isAttackingBack = attackingIds.has(m.id);
               return (
                 <div key={m.id} style={{
                   flexShrink:0, width:backW, display:"flex", flexDirection:"column",
@@ -1331,6 +1353,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                   borderRadius:8, overflow:"hidden",
                   background: isMe?"rgba(251,191,36,0.08)":"rgba(20,184,166,0.05)",
                   boxShadow: isMe ? "0 0 8px rgba(251,191,36,0.3)" : "0 0 6px rgba(20,184,166,0.15)",
+                  animation: isAttackingBack ? "db-archer-atk 0.45s ease-out" : undefined,
                 }}>
                   <div style={{ height:85, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (

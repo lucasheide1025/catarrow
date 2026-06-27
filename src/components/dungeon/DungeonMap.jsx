@@ -245,7 +245,7 @@ export default function DungeonMap({
                 style={{ userSelect:"none", pointerEvents:"none" }}
                 filter={isCurrent ? "url(#dm-glow)" : undefined}
               >
-                {isExplored || isEntry ? meta.icon : (isStairs ? "🪜" : "🔒")}
+                {isExplored || isEntry ? meta.icon : "🔒"}
               </text>
 
               {/* 入口特殊標籤 */}
