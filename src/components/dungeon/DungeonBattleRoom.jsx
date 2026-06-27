@@ -101,6 +101,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const battleBgRef          = useRef(null);
   const claimLootRef         = useRef(null);  // loot preview locked on first render
   const firstClearCheckedRef = useRef(false);
+  const roomRef              = useRef(null);
+  const submitFallbackRef    = useRef(null);
 
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
@@ -132,6 +134,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const lastAnimKeyRef      = useRef(null);
   const revealTimersRef     = useRef([]);
   const prevRoundKeyRef     = useRef(null); // "${floor}-${round}" 換回合才清箭
+  const readySyncedRef      = useRef(false); // 重整後 ready 同步只做一次
 
   const isHost = room?.hostId === myId;
   const me     = room?.members?.[myId] || {};
@@ -160,6 +163,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   useEffect(() => {
     if (!roomId) return;
     const unsub = subscribeDungeonRoom(roomId, r => {
+      roomRef.current = r;
       setRoom(r);
       if (r?.monster?.family && !battleBgRef.current) {
         battleBgRef.current = pickBg(r.monster.family);
@@ -179,7 +183,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         setFirstClearBonus(null);
       }
     });
-    return () => unsub();
+    return () => {
+      unsub();
+      if (submitFallbackRef.current) clearTimeout(submitFallbackRef.current);
+    };
   }, [roomId]);
 
   // ── 日誌捲底 ─────────────────────────────────────────────────
@@ -188,6 +195,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   }, [room?.log]);
 
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
+
+  // ── 重整後同步：如果 Firestore 顯示已送出但本地未送出，重置 ready 讓玩家重來 ─
+  useEffect(() => {
+    if (!room || !myId || myId.startsWith("guest")) return;
+    if (submitted) return;
+    if (readySyncedRef.current) return;
+    if (me.ready && room.status === "active") {
+      readySyncedRef.current = true;
+      import("firebase/firestore").then(({ updateDoc, doc }) =>
+        import("../../lib/firebase").then(({ db }) =>
+          updateDoc(doc(db, "dungeonRooms", roomId), {
+            [`members.${myId}.ready`]: false,
+            [`members.${myId}.arrows`]: [],
+          }).catch(() => {})
+        )
+      );
+    }
+  }, [room?.status, submitted]); // eslint-disable-line
 
   // ── 進入新回合時觸發貓貓補助提示（整個回合只一次）────────────
   useEffect(() => {
@@ -330,10 +355,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     processingRef.current = true;
     setLoading(true);
     sfxCast();
-    const res = await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
-    if (!res?.ok) lastProcessedRef.current = null; // 失敗時允許重試
-    setLoading(false);
-    processingRef.current = false;
+    try {
+      const res = await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
+      if (!res?.ok) lastProcessedRef.current = null; // 失敗時允許重試
+    } catch (e) {
+      console.error("[handleProcess]", e);
+      lastProcessedRef.current = null; // 例外時允許重試
+    } finally {
+      setLoading(false);
+      processingRef.current = false; // 務必重置，永不卡死
+    }
   }
 
   async function handleSubmit() {
@@ -344,6 +375,36 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
     await submitDungeonArrows(roomId, myId, arrows, choice);
     setRearChoice(null);
+
+    // 安全網：房主送出後若尚未全員 ready，5 秒後重新檢查（避免 Firestore 同步延遲卡住）
+    if (isHost) {
+      if (submitFallbackRef.current) clearTimeout(submitFallbackRef.current);
+      const r = roomRef.current;
+      if (r?.status === "active") {
+        const alive = Object.values(r.members || {}).filter(m => m.alive);
+        const allReadyNow = alive.length > 0 && alive.every(m => m.ready);
+        if (!allReadyNow) {
+          submitFallbackRef.current = setTimeout(() => {
+            submitFallbackRef.current = null;
+            const latest = roomRef.current;
+            if (!latest || latest.status !== "active" || processingRef.current) return;
+            const aliveNow = Object.values(latest.members || {}).filter(m => m.alive);
+            if (aliveNow.length > 0 && aliveNow.every(m => m.ready)) {
+              // 直接用最新 room 處理，避免 handleProcess 的閉包過時
+              processingRef.current = true;
+              setLoading(true);
+              sfxCast();
+              const roundKey = `${latest.currentFloor || 1}-${latest.round || 1}`;
+              lastProcessedRef.current = roundKey; // 先鎖定，和 handleProcess 一致
+              processDungeonRound(roomId, latest, calcContractDmgFn, calcCtrFn)
+                .then(res => { if (!res?.ok) lastProcessedRef.current = null; })
+                .catch(() => { lastProcessedRef.current = null; })
+                .finally(() => { setLoading(false); processingRef.current = false; });
+            }
+          }, 5000);
+        }
+      }
+    }
   }
 
   function addArrow(label) {
@@ -1043,6 +1104,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       />
 
       {/* ── 頂部 HUD ── */}
+      {isHost && (
+        <button onClick={() => clearDungeonProcessing(roomId)}
+          style={{ position:"fixed", top:56, right:12, zIndex:100, fontSize:9, padding:"2px 8px", borderRadius:4, background:"rgba(239,68,68,0.15)", border:"1px solid rgba(239,68,68,0.3)", color:"#fca5a5", cursor:"pointer", lineHeight:"18px" }}>
+          ⚙️ 強制重置
+        </button>
+      )}
       <div style={{ flexShrink:0, background:"rgba(0,0,0,0.78)", zIndex:2, borderBottom:"1px solid rgba(255,255,255,0.07)", padding:"4px 10px 5px" }}>
         {/* 第一行：怪物名稱 + 等級徽章 + 離開 */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
@@ -1237,12 +1304,25 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                 <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label]||"bg-slate-600 text-white"}`}>{a.label}</span>
               ))}
             </div>
-            {isHost && (
-              <button onClick={()=>clearDungeonProcessing(roomId)}
-                style={{ marginTop:8, width:"100%", padding:"4px", borderRadius:8, fontSize:10, color:"#64748b", background:"rgba(255,255,255,0.05)", border:"none", cursor:"pointer" }}>
-                房主：強制重置（卡住時）
-              </button>
-            )}
+            <button onClick={() => {
+              if (isHost) {
+                clearDungeonProcessing(roomId);
+              } else {
+                // 非房主：重置本地 submitted + Firestore ready 重新輸入
+                setSubmitted(false);
+                import("firebase/firestore").then(({ updateDoc, doc }) =>
+                  import("../../lib/firebase").then(({ db }) =>
+                    updateDoc(doc(db, "dungeonRooms", roomId), {
+                      [`members.${myId}.ready`]: false,
+                      [`members.${myId}.arrows`]: [],
+                    }).catch(() => {})
+                  )
+                );
+              }
+            }}
+              style={{ marginTop:8, width:"100%", padding:"4px", borderRadius:8, fontSize:10, color:"#64748b", background:"rgba(255,255,255,0.05)", border:"none", cursor:"pointer" }}>
+              {isHost ? "👑 強制重置（卡住時）" : "🔄 重新輸入"}
+            </button>
           </div>
         ) : (
           <>
