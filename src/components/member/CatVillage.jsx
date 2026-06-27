@@ -429,9 +429,17 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
                       <div style={{ padding:"4px 5px 5px" }}>
                         <div style={{ fontSize:8, fontWeight:800, color:C.brown, lineHeight:1.2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{l.cardName}</div>
                         <div style={{ fontSize:7, color:C.mid }}>{l.sellerName}</div>
-                        <div style={{ fontSize:7, fontWeight:700, color:C.brown, marginBottom:3 }}>
+                        <div style={{ fontSize:7, fontWeight:700, color:C.brown, marginBottom:2 }}>
                           {isCardExchange ? "🃏 換卡" : `${pt?.icon} ${l.priceAmount}`}
                         </div>
+                        {l.expiredAt && (() => {
+                          const daysLeft = Math.ceil((l.expiredAt.seconds * 1000 - Date.now()) / 86400000);
+                          return (
+                            <div style={{ fontSize:6, color: daysLeft <= 1 ? "#ef4444" : C.muted, marginBottom:2 }}>
+                              ⏳ {daysLeft <= 0 ? "即將下架" : `${daysLeft}天後下架`}
+                            </div>
+                          );
+                        })()}
                         <div style={{
                           textAlign:"center", fontSize:8, fontWeight:800,
                           padding:"2px 0", borderRadius:5,
@@ -737,7 +745,7 @@ function ResourceRow({ resources, gachaCoins }) {
         {/* 扭蛋幣 */}
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
           <span style={{ fontSize:18 }}>🎰</span>
-          <span className="font-black text-sm" style={{ color: C.brown }}>{gachaCoins || 0}</span>
+          <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(gachaCoins || 0)}</span>
           <span className="text-[10px]" style={{ color: C.muted }}>扭蛋幣</span>
         </div>
         {/* 貓草藥水：永遠顯示 */}

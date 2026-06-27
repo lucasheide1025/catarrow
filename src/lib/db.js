@@ -3154,9 +3154,15 @@ export async function exchangeMaterialsForChest(memberId, chestType, costs, fami
 const C_CARD_MARKET = "cardMarket";
 
 export function subscribeCardMarket(callback) {
+  const nowSec = Date.now() / 1000;
   return onSnapshot(
     query(collection(db, C_CARD_MARKET), where("status", "==", "active")),
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.listedAt?.seconds||0)-(a.listedAt?.seconds||0))),
+    snap => callback(
+      snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(l => !l.expiredAt || l.expiredAt.seconds > nowSec)
+        .sort((a,b) => (b.listedAt?.seconds||0)-(a.listedAt?.seconds||0))
+    ),
     () => callback([])
   );
 }
@@ -3176,6 +3182,7 @@ export async function listCardForSale(memberId, memberName, cardId, cardData, pr
     priceType, priceAmount,
     status: "active",
     listedAt: serverTimestamp(),
+    expiredAt: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 3600000)),
   });
   await batch.commit();
 }
@@ -3216,6 +3223,21 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
   batch.update(doc(db, C.members, buyerId), { [`catCards.${listing.cardId}`]: increment(1) });
   batch.update(listingRef, { status: "sold", buyerId, buyerName, soldAt: serverTimestamp() });
   await batch.commit();
+
+  // 通知賣家
+  const priceText = listing.priceType === "arrowdew"
+    ? `箭露 ×${listing.priceAmount}`
+    : listing.priceType === "gachaToken"
+      ? `扭蛋幣 ×${listing.priceAmount}`
+      : "卡片交換";
+  await createNotification({
+    type: "market_sale",
+    title: `🎉 卡片已售出！`,
+    content: `${buyerName} 購買了你的「${listing.cardName}」，已收到 ${priceText}`,
+    targetMemberId: listing.sellerId,
+    subjectMemberId: buyerId,
+    subjectInfo: { cardName: listing.cardName, priceType: listing.priceType, priceAmount: listing.priceAmount },
+  }, buyerId);
 }
 
 export async function cancelCardListing(memberId, listingId, cardId) {
