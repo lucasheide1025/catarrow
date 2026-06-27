@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-06-27（第二次）
+> 最後更新：2026-06-28
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -271,19 +271,21 @@ public/ui/
 
 ## 🎮 地下城系統速查（2026-06-27 重設計）
 
-### 合約類型（CONTRACT_TYPES in dungeonData.js）
+### 合約類型（CONTRACT_TYPES in dungeonData.js）（2026-06-28 修改）
 ```js
 // 9 種合約
-standard       // 基本傷害
-score_gate     // 低於 param 分數無傷害
-hit_count      // 命中即爆擊（M=0傷）
-all_hit        // 任意 M 則全輪傷害清零
-x_crit         // 指定 param 分數 ×2，其餘 ×0.5
-target_score   // 總分 < param 則全輪清零
-reversal       // 分數倒轉（6↔X，7↔10，8↔9）
-odd_only       // 只算 7/9/X，其餘清零
-even_only      // 只算 6/8/10，其餘清零
-// param 範圍：x_crit=6~10 / target_score=20~50 / score_gate 固定=7
+standard       // 基本傷害；按鈕：X 10 9 8 7 6 M（折疊兩頁）
+score_gate     // 低於 param 分（上限9）每差1分 -10% 傷害（比例懲罰）
+               // 按鈕：9 8 7 6 5 4 3 2 1 M（無 X/10，太難）
+               // param cap: Math.min(6 + tier, 9)
+hit_count      // 命中即固定傷害（M=0傷）；按鈕：命中 / M
+all_hit        // ← 改「M懲罰關」：每發 M 扣 10% 總傷害（可疊加至0）
+               // 按鈕：完整分數（X 10 9...M），不再是命中/M
+x_crit         // 只有X算爆擊，其他傷害減半；按鈕：完整分數
+target_score   // 6箭總分 < param 則全輪清零
+reversal       // 分數倒轉（6↔X，7↔10，8↔9）後正常計算
+odd_only       // 只算 7/9/X，其餘視同脫靶
+even_only      // 只算 6/8/10，其餘視同脫靶
 ```
 
 ### 合約 UI 顏色（CONTRACT_HEX in DungeonBattleRoom.jsx）
@@ -314,11 +316,35 @@ monster_atk_mult// nextFloor monsterAtkMult = value
 skip_counter    // 怪物不反擊（processDungeonRound 讀 currentEvent）
 ```
 
-### 商店購買記憶（shopPurchases）
+### 商店購買記憶（shopPurchases）（2026-06-28 修正）
 ```js
 // Firestore: dungeonRooms/{id}.shopPurchases = { [memberId]: [itemId,...] }
 // hp_potion 不記錄，允許重複購買
 // enterNonCombatRoom / resolveNonCombatRoom 不再重置 shopPurchases
+// ⚠️ 不要用 local `bought` state 判斷已購，只用 myPurchases（Firestore 側）
+//    local state 在 component 重掛時會清除，導致重複購買
+
+// revival_front 購買條件（2026-06-28）：
+const hasFallenFront = Object.values(members).some(m => m.alive && m.role === "rear");
+// !hasFallenFront → 按鈕 disabled，顯示「⚠️ 無前衛倒地」
+```
+
+### 復活邏輯（revival_front）— 踩過的坑（2026-06-28）
+```js
+// ❌ 錯誤：檢查購買者本身的 role（購買者幾乎都是前衛，邏輯永遠不觸發）
+if (choice === "revive_front") {
+  const m = members[id]; // id = 購買者
+  if (m && m.role === "rear") { /* 永遠不執行 */ }
+}
+
+// ✅ 正確：掃描隊伍中所有 alive && role==="rear" 的成員
+const fallenFronters = Object.entries(members)
+  .filter(([, m]) => m.alive && m.role === "rear");
+if (fallenFronters.length > 0) {
+  const [targetId, targetM] = fallenFronters[0];
+  upd[`members.${targetId}.role`] = "front";
+  upd[`members.${targetId}.hp`] = Math.round((targetM.maxHP || 100) * 0.5);
+}
 ```
 
 ### 前後衛顯示系統（displayGroup）

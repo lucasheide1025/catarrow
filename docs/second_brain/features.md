@@ -1,5 +1,5 @@
 # 📋 features — 功能清單
-> 最後更新：2026-06-27（第二次）
+> 最後更新：2026-06-28
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
 
@@ -41,6 +41,20 @@
 - **廣播訊息**：移除底圖，加 8 類分類篩選；type="achievement" 對應「成就」分類
 - **怪物卡片**：改條列式，inline 顯示可升星、快速裝備按鈕；合約 HEX 補三色
 - **地下城前後衛顯示**：改視角分排（單排顯示）；前衛死亡轉排時機修正（動畫後才移動）；`displayGroup` 欄位控制視覺分排；非房主卡住自動恢復；全員 ready 延遲 2 秒結算
+
+## 🔧 2026-06-28 修正
+
+- **復活藥/休息區復活**：修正 `handleResolve` 邏輯——改為掃描隊伍中所有 `alive && role==="rear"` 的成員來復活，不再錯誤檢查購買者本身的 role
+- **商店 revival_front 條件**：只有隊伍中有前衛倒地（role=rear 的存活成員）時才能購買
+- **休息區全員狀態卡**：頂部加橫排 HP 小卡，顯示所有隊員的 HP/role 狀態，便於討論投票選項
+- **商店全員狀態卡**：同上，便於討論購買決策
+- **商店購買限制修正**：移除 local `bought` state，改用 Firestore `shopPurchases` 作唯一購買記錄依據（避免換頁後 local state 重置而允許重複購買）
+- **計分板折疊**：12 顆分數按鈕改為 7 顆折疊切換——Row A（X 10 9 8 7 6 M）/ Row B（6 5 4 3 2 1 M），節省螢幕空間
+- **前衛觀察後衛**：輸入分數時，前衛新增小按鈕可切換角色卡視角至後衛排觀察狀況
+- **關卡機制改版**：
+  - `all_hit`（全中關）→「M懲罰關」：不再全部清零，改為每一發 M 扣除 10% 總傷害，最低歸零
+  - `score_gate`（得分關）→ 比例懲罰：低於門檻的箭依距離降低該箭傷害（差1分-10%），且最高門檻 cap 至 9（不再要求 X/10）；score_gate 的分數按鈕去除 X 和 10
+- **後台暗色主題**：`AdminReviewCenter`、`AdminMembers`、`AdminFinance` 共修正 16 處白底/淺色框（CertReviewCard、ExtReviewCard、MsgReplyCard、CertTaskCard 等）；QR code 白底保留（掃碼必需）
 
 ## 🚧 待辦
 
