@@ -148,14 +148,14 @@ export default function CardCollection() {
         })}
       </div>
 
-      {/* 卡片列表 */}
+      {/* 卡片列表（條列式）*/}
       {cardList.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm">
           <div className="text-4xl mb-3">🃏</div>
           還沒有卡片，打怪有 1% 機率掉落！
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-2">
           {cardList.map(card => {
             const cfg        = TIER_CARD_BONUS[card.tier] || TIER_CARD_BONUS.common;
             const isEquipped = equipped.includes(card.monsterId);
@@ -168,54 +168,84 @@ export default function CardCollection() {
 
             return (
               <div key={card.monsterId}
-                className="rounded-2xl border-2 p-3 flex flex-col gap-2 cursor-pointer transition-all active:scale-95"
+                className="rounded-2xl border transition-all"
                 style={{
-                  borderColor: isEquipped ? cfg.color : cfg.color + "60",
-                  background:  isEquipped ? cfg.bg : "white",
-                }}
-                onClick={() => setSelected(isSelected ? null : card.monsterId)}>
-                <div className="flex items-start justify-between">
-                  <span className="text-3xl">{card.icon}</span>
-                  {isEquipped && (
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full text-white"
-                      style={{ background: cfg.color }}>裝備中</span>
+                  borderColor: isEquipped ? cfg.color : cfg.color + "40",
+                  background:  isEquipped ? cfg.bg : "#f8fafc",
+                }}>
+                {/* 主列 */}
+                <div className="flex items-center gap-3 px-3 py-2.5 cursor-pointer active:opacity-80"
+                  onClick={() => setSelected(isSelected ? null : card.monsterId)}>
+                  <span className="text-2xl shrink-0">{card.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-black text-sm truncate" style={{ color: isEquipped ? cfg.color : "#1e293b" }}>
+                        {card.name}
+                      </span>
+                      {isEquipped && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full text-white shrink-0"
+                          style={{ background: cfg.color }}>裝備中</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0"
+                        style={{ background: cfg.color }}>{cfg.label}</span>
+                      <StarRow stars={card.stars} />
+                      {needMythicStat
+                        ? <span className="text-[10px] text-amber-500 font-bold">⚠️ 選屬性</span>
+                        : <span className="text-[10px] text-slate-500">+{bonus} {getStatLabel(stat)}</span>
+                      }
+                      {canUp && (
+                        <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                          ✨ 可升星
+                        </span>
+                      )}
+                      {card.duplicates > 0 && (
+                        <span className="text-[9px] text-slate-400">重複×{card.duplicates}</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* 快速裝備/卸下 */}
+                  {!needMythicStat && (
+                    <div onClick={e => e.stopPropagation()}>
+                      {isEquipped ? (
+                        <button onClick={() => handleUnequip(card.monsterId)}
+                          className="shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/50 active:scale-95 transition-transform"
+                          style={{ color: cfg.color, border:`1px solid ${cfg.color}60` }}>
+                          卸下
+                        </button>
+                      ) : (
+                        <button onClick={() => handleEquip(card.monsterId)}
+                          disabled={equipped.length >= MAX_EQUIPPED_CARDS}
+                          className="shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-bold text-white disabled:opacity-30 active:scale-95 transition-transform"
+                          style={{ background: cfg.color }}>
+                          裝備
+                        </button>
+                      )}
+                    </div>
                   )}
-                  {!isEquipped && equipped.length < MAX_EQUIPPED_CARDS && (
-                    <span className="text-[10px] text-gray-400">點擊裝備</span>
-                  )}
+                  <span className="text-slate-300 text-xs shrink-0">{isSelected ? "▲" : "▼"}</span>
                 </div>
-                <div className="font-black text-sm text-gray-800 leading-tight">{card.name}</div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white"
-                    style={{ background: cfg.color }}>{cfg.label}</span>
-                  <StarRow stars={card.stars} />
-                </div>
-                <div className="text-xs text-gray-500">
-                  {needMythicStat
-                    ? <span className="text-amber-500 font-bold">⚠️ 尚未選擇屬性</span>
-                    : <span>+{bonus} {getStatLabel(stat)}</span>
-                  }
-                </div>
-                {card.duplicates > 0 && (
-                  <div className="text-[10px] text-gray-400">重複×{card.duplicates}</div>
-                )}
 
                 {/* 展開詳情 */}
                 {isSelected && (
-                  <div className="flex flex-col gap-2 mt-1 pt-2 border-t border-gray-100"
+                  <div className="flex flex-col gap-2 px-3 pb-3 pt-1 border-t"
+                    style={{ borderColor: cfg.color + "30" }}
                     onClick={e => e.stopPropagation()}>
 
                     {/* Mythic 選屬性 */}
                     {needMythicStat && (
                       <div className="flex flex-col gap-1">
                         <div className="text-xs font-black text-amber-600">選擇加成屬性（一次性）</div>
-                        {STAT_OPTIONS.map(s => (
-                          <button key={s.id}
-                            onClick={() => handleMythicStat(card.monsterId, s.id)}
-                            className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold text-left active:scale-95">
-                            {s.label} — {s.desc}
-                          </button>
-                        ))}
+                        <div className="flex gap-1.5">
+                          {STAT_OPTIONS.map(s => (
+                            <button key={s.id}
+                              onClick={() => handleMythicStat(card.monsterId, s.id)}
+                              className="flex-1 px-2 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold text-center active:scale-95">
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -224,29 +254,12 @@ export default function CardCollection() {
                       <button
                         onClick={() => handleUpgrade(card.monsterId)}
                         disabled={!canUp || upgrading}
-                        className="w-full py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 disabled:opacity-40"
+                        className="w-full py-2 rounded-xl text-xs font-black transition-all active:scale-95 disabled:opacity-40"
                         style={canUp ? { background: cfg.color, color: "white" } : { background: "#f1f5f9", color: "#94a3b8" }}>
                         {canUp
                           ? `✨ 升星（消耗 ${upCost} 張）→ ${(card.stars||1)+1}★`
                           : `升星需 ${upCost} 張重複（現有 ${card.duplicates || 0}）`}
                       </button>
-                    )}
-
-                    {/* 裝備/卸下 */}
-                    {!needMythicStat && (
-                      isEquipped ? (
-                        <button onClick={() => handleUnequip(card.monsterId)}
-                          className="w-full py-1.5 rounded-xl text-xs font-black bg-gray-100 text-gray-600 active:scale-95">
-                          ✕ 卸下
-                        </button>
-                      ) : (
-                        <button onClick={() => handleEquip(card.monsterId)}
-                          disabled={equipped.length >= MAX_EQUIPPED_CARDS}
-                          className="w-full py-1.5 rounded-xl text-xs font-black text-white disabled:opacity-40 active:scale-95"
-                          style={{ background: cfg.color }}>
-                          {equipped.length >= MAX_EQUIPPED_CARDS ? "已達上限（5張）" : "裝備"}
-                        </button>
-                      )
                     )}
                   </div>
                 )}

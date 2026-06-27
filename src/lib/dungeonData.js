@@ -7,31 +7,45 @@ export const CONTRACT_TYPES = {
   hit_count:    { id:"hit_count",    name:"命中關",    icon:"🏹",  desc:"命中即固定傷害，分數無關",            color:"text-green-300",  bg:"bg-green-900/40"  },
   all_hit:      { id:"all_hit",      name:"全中關",    icon:"💯",  desc:"六箭全中才能造成傷害",               color:"text-yellow-300", bg:"bg-yellow-900/40" },
   x_crit:       { id:"x_crit",       name:"X爆擊關",  icon:"✨",  desc:"只有X算爆擊，其他傷害減半",          color:"text-purple-300", bg:"bg-purple-900/40" },
-  target_score: { id:"target_score", name:"指定分數關", icon:"🎪", desc:"命中 {param} 分 → 兩倍傷害",         color:"text-rose-300",   bg:"bg-rose-900/40"   },
+  target_score: { id:"target_score", name:"超越分數關", icon:"🎪", desc:"6箭總分 > {param} 才有傷害，未達標全部歸零", color:"text-rose-300",   bg:"bg-rose-900/40"   },
+  reversal:     { id:"reversal",     name:"逆轉關",    icon:"🔄",  desc:"分數反轉：6↔X, 7↔10, 8↔9 後正常計算", color:"text-orange-300", bg:"bg-orange-900/40" },
+  odd_only:     { id:"odd_only",     name:"單數關",    icon:"7️⃣",  desc:"只算 7、9、X，其他分數視同脫靶",        color:"text-cyan-300",   bg:"bg-cyan-900/40"   },
+  even_only:    { id:"even_only",    name:"雙數關",    icon:"8️⃣",  desc:"只算 6、8、10，其他分數視同脫靶",       color:"text-pink-300",   bg:"bg-pink-900/40"   },
 };
 const CONTRACT_IDS = Object.keys(CONTRACT_TYPES);
 
 // ── 商店物品 ──────────────────────────────────────────────────
 export const DUNGEON_SHOP_ITEMS = [
   { id:"hp_potion",      name:"回復藥",      icon:"🧪", desc:"立即回復 30% 最大血量",        cost:50,  effect:"hp_restore",     value:0.3  },
+  { id:"hp_max_boost",   name:"生命上限符",   icon:"💚", desc:"永久提升 30% 最大血量（僅此局）", cost:100, effect:"hp_max_boost",   value:0.3  },
   { id:"atk_boost",      name:"ATK 提升符",  icon:"⚔️", desc:"本次地下城 ATK ×1.2",         cost:80,  effect:"atk_mult",       value:1.2  },
+  { id:"atk_large",      name:"ATK 狂戰符",  icon:"🔥", desc:"本次地下城 ATK ×1.5",          cost:150, effect:"atk_mult",       value:1.5  },
   { id:"def_boost",      name:"DEF 提升符",  icon:"🛡️", desc:"本次地下城 DEF ×1.2",         cost:80,  effect:"def_mult",       value:1.2  },
-  { id:"contract_reset", name:"契約重置",    icon:"🎲", desc:"重抽自己的任務類型",            cost:60,  effect:"contract_reset"            },
+  { id:"def_large",      name:"DEF 鐵壁符",  icon:"🏰", desc:"本次地下城 DEF ×1.5",          cost:150, effect:"def_mult",       value:1.5  },
   { id:"revival",        name:"復活符",      icon:"💫", desc:"下次陣亡自動復活（30% HP）",   cost:100, effect:"revival"                   },
+  { id:"revival_front",  name:"前衛復活藥",  icon:"💊", desc:"復活一名倒地前衛（轉回前衛+50%HP）", cost:120, effect:"revival_front"             },
 ];
 
 // ── 隨機事件 ─────────────────────────────────────────────────
 export const DUNGEON_EVENTS = [
   { id:"healing_rain",  icon:"🌧️", title:"天降甘霖",   desc:"神秘力量降臨，全隊回復 25% 最大血量",          type:"buff",    effect:{ type:"hp_restore_all",    value:0.25 } },
   { id:"cursed_fog",    icon:"🌫️", title:"詛咒之霧",   desc:"毒霧瀰漫，本層全隊 ATK ×0.8",                  type:"debuff",  effect:{ type:"atk_debuff_all",    value:0.8  } },
+  { id:"cursed_spray",  icon:"☁️",  title:"詛咒噴霧",   desc:"強烈毒霧侵襲，本層全隊 ATK ×0.7",               type:"debuff",  effect:{ type:"atk_debuff_all",    value:0.7  } },
+  { id:"blessed_wind",  icon:"🌬️", title:"祝福之風",   desc:"微風吹拂，本層全隊 ATK ×1.2",                    type:"buff",    effect:{ type:"atk_debuff_all",    value:1.2  } },
+  { id:"star_shower",   icon:"⭐",  title:"流星雨",     desc:"流星劃過天際，全隊士氣大振 ATK ×1.2",           type:"buff",    effect:{ type:"atk_debuff_all",    value:1.2  } },
   { id:"lucky_charm",   icon:"🍀", title:"幸運符文",   desc:"獲得祝福，本層金幣掉落 ×2",                    type:"buff",    effect:{ type:"gold_mult",         value:2    } },
   { id:"monster_fear",  icon:"😱", title:"怪物受驚",   desc:"下一層怪物 HP ×0.7",                           type:"buff",    effect:{ type:"monster_hp_mult",   value:0.7  } },
   { id:"team_boost",    icon:"💪", title:"隊友激勵",   desc:"隨機一名隊友本層 ATK ×1.5",                    type:"buff",    effect:{ type:"atk_buff_one",      value:1.5  } },
-  { id:"contract_swap", icon:"🔀", title:"契約轉換",   desc:"全隊任務類型重新隨機分配",                     type:"neutral", effect:{ type:"contract_reassign"             } },
   { id:"treasure",      icon:"📦", title:"隱藏寶箱",   desc:"發現寶箱！每人各獲得 40 金幣",                 type:"buff",    effect:{ type:"gold_bonus",        value:40   } },
   { id:"reinforcement", icon:"👹", title:"敵軍增援",   desc:"怪物召來援軍，本層怪物 ATK ×1.3",             type:"debuff",  effect:{ type:"monster_atk_mult",  value:1.3  } },
   { id:"cursed_arrows", icon:"🏹", title:"詛咒之箭",   desc:"箭矢受詛，本層全隊傷害 ×0.75",                type:"debuff",  effect:{ type:"dmg_mult_all",      value:0.75 } },
-  { id:"scroll",        icon:"📜", title:"古老卷軸",   desc:"隨機一名成員任務類型改為「標準關」",           type:"neutral", effect:{ type:"contract_standard_one"         } },
+  { id:"fairy_blessing",icon:"🧚",  title:"妖精祝福",   desc:"妖精圍繞，全隊回復 40% 最大血量",               type:"buff",    effect:{ type:"hp_restore_all",    value:0.4  } },
+  { id:"dark_ritual",   icon:"🔮", title:"黑暗儀式",   desc:"黑暗力量籠罩，隨機一名隊友本層 ATK ×0.5",      type:"debuff",  effect:{ type:"atk_buff_one",      value:0.5  } },
+  { id:"golden_fountain",icon:"⛲", title:"黃金噴泉",   desc:"發現黃金噴泉！每人各獲得 80 金幣",               type:"buff",    effect:{ type:"gold_bonus",        value:80   } },
+  { id:"time_warp",     icon:"⏳", title:"時光扭曲",   desc:"時間扭曲，怪物無法反擊（本層怪物不反擊）",       type:"buff",    effect:{ type:"skip_counter",      value:true } },
+  { id:"sleepy_dust",   icon:"💤", title:"睡眠花粉",   desc:"吸入睡眠花粉，怪物沉睡一回合（不反擊）",         type:"buff",    effect:{ type:"skip_counter",      value:true } },
+  { id:"defense_boost", icon:"🛡️", title:"守護結界",   desc:"結界展開，本層全隊 DEF ×1.5",                    type:"buff",    effect:{ type:"def_mult_all",      value:1.5  } },
+  { id:"wish_well",     icon:"🤞", title:"許願井",     desc:"許願成功！隨機一名成員獲得雙倍傷害加成",         type:"buff",    effect:{ type:"atk_buff_one",      value:2.0  } },
 ];
 
 // ── 地下城長度 ────────────────────────────────────────────────
@@ -70,8 +84,8 @@ export function assignContracts(memberIds) {
   for (const id of memberIds) {
     const type  = CONTRACT_IDS[Math.floor(Math.random() * CONTRACT_IDS.length)];
     let   param = null;
-    if (type === "score_gate")   param = 6 + Math.floor(Math.random() * 3); // 6, 7, 8
-    if (type === "target_score") param = 6 + Math.floor(Math.random() * 5); // 6~10
+    if (type === "x_crit")       param = 6 + Math.floor(Math.random() * 5); // 6~10
+    if (type === "target_score") param = 20 + Math.floor(Math.random() * 31); // 20~50
     result[id] = { type, param };
   }
   return result;
@@ -81,8 +95,8 @@ export function assignContracts(memberIds) {
 export function rerollContract() {
   const type  = CONTRACT_IDS[Math.floor(Math.random() * CONTRACT_IDS.length)];
   let   param = null;
-  if (type === "score_gate")   param = 6 + Math.floor(Math.random() * 3);
-  if (type === "target_score") param = 6 + Math.floor(Math.random() * 5);
+  if (type === "x_crit")       param = 6 + Math.floor(Math.random() * 5);
+  if (type === "target_score") param = 20 + Math.floor(Math.random() * 31);
   return { type, param };
 }
 
@@ -110,6 +124,19 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
         label: a.label || "M", partIcon:"🛡️", partName:"全部格擋", dmg:0, isCrit:false,
       })),
     };
+  }
+
+  // 超越分數關：先算總分
+  if (type === "target_score") {
+    const totalScore = arrows.reduce((s, a) => s + (a.label === "X" ? 11 : (a.score || 0)), 0);
+    if (totalScore < (param ?? 20)) {
+      return {
+        dmg: 0, crits: 0,
+        arrowBreakdown: arrows.map(a => ({
+          label: a.label || "M", partIcon:"🚫", partName:"未達門檻", dmg:0, isCrit:false,
+        })),
+      };
+    }
   }
 
   let totalDmg = 0, crits = 0;
@@ -143,6 +170,37 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
       continue;
     }
 
+    // 單數關：只算 7/9/X
+    if (type === "odd_only" && ![7,9].includes(score) && arrow.label !== "X") {
+      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非單數", dmg:0, isCrit:false });
+      continue;
+    }
+
+    // 雙數關：只算 6/8/10
+    if (type === "even_only" && ![6,8,10].includes(score)) {
+      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非雙數", dmg:0, isCrit:false });
+      continue;
+    }
+
+    // 逆轉關：分數映射（6↔X, 7↔10, 8↔9）
+    if (type === "reversal") {
+      const revMap = { 6:11, 7:10, 8:9, 9:8, 10:7 };
+      const revScore = arrow.label === "X" ? 6 : (revMap[score] ?? score);
+      const base = 8 + (atk || 10) * 0.7 + revScore * 1.2 - (monsterDef || 0) * 0.35;
+      const m    = 0.85 + Math.random() * 0.3;
+      const isCrit = m > 1.05 || pMult >= 1.8;
+      let d = Math.max(1, Math.round(base * pMult * m));
+      d = Math.round(d * dmgMult);
+      totalDmg += d;
+      if (isCrit) crits++;
+      arrowBreakdown.push({
+        label: arrow.label, partIcon: part.icon,
+        partName: part.name, partMult: pMult, dmg: d, isCrit,
+        note: "逆轉",
+      });
+      continue;
+    }
+
     let d, isCrit;
     if (type === "hit_count") {
       // 命中關：命中必定爆擊，瞄準頭/頸部位
@@ -157,16 +215,15 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
       d = Math.max(1, Math.round(base * pMult * m));
     }
 
-    // X 爆擊關：非 X 傷害減半
-    if (type === "x_crit" && arrow.label !== "X") {
-      d = Math.round(d * 0.5);
-      isCrit = false;
-    }
-
-    // 指定分數關：命中指定分數 × 2
-    if (type === "target_score" && score === (param ?? 8)) {
-      d = d * 2;
-      isCrit = true;
+    // 指定分數爆擊關
+    if (type === "x_crit") {
+      if (score === param) {
+        d = d * 2;
+        isCrit = true;
+      } else {
+        d = Math.round(d * 0.5);
+        isCrit = false;
+      }
     }
 
     // 套用 buff / 事件 dmgMult
@@ -234,7 +291,10 @@ export function getContractBadge(room) {
     case "score_gate":   return { label:`≥${p}分`, color:"#60a5fa" };
     case "all_hit":      return { label:"全中",    color:"#f97316" };
     case "x_crit":       return { label:"X爆",     color:"#a78bfa" };
-    case "target_score": return { label:`${p}分×2`,color:"#fbbf24" };
+    case "target_score": return { label:`≥${p}分`,color:"#fbbf24" };
+    case "reversal":     return { label:"逆轉",    color:"#fb923c" };
+    case "odd_only":     return { label:"單數",    color:"#67e8f9" };
+    case "even_only":    return { label:"雙數",    color:"#f9a8d4" };
     default:             return null;
   }
 }

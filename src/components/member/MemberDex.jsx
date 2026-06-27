@@ -122,26 +122,26 @@ export default function MemberDex({ onBack }) {
     const newOnes = allAuto.filter(a => a.unlocked && !shownIds.has(a.id));
     if (newOnes.length === 0) return;
 
-    // 先存起來，防止重複
+    // 先存起來，防止重複觸發
     newOnes.forEach(a => shownIds.add(a.id));
     saveShownIds(profile.id, shownIds);
 
     setToastQueue(q => [...q, ...newOnes]);
 
-    // 公告：epic 以上
+    // 個人通知：僅推給自己（不做全頻廣播）
     newOnes.forEach(a => {
       if (ANNOUNCE_RARITIES.has(a.rarity)) {
         createNotification({
-          type: "high_score",
-          title: `🏅 ${profile.nickname || profile.name} 解鎖了成就！`,
+          type: "achievement",
+          title: `🏅 新成就解鎖！`,
           content: `【${a.name}】${a.desc}`,
-          targetMemberId: null,
+          targetMemberId: profile.id,
           subjectMemberId: profile.id,
           subjectInfo: { nickname: profile.nickname || profile.name, archerNo: profile.archerNo || "", item: a.name, level: a.rarity },
         }, profile.id).catch(() => {});
       }
     });
-  }, [profile?.id, certification, certRecords, granted]); // eslint-disable-line
+  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData]); // eslint-disable-line
 
   // ── 從佇列取下一個 ──
   useEffect(() => {

@@ -3,6 +3,84 @@
 
 ---
 
+## 2026-06-27（Bug 修正 + 首頁/成就/怪物卡改版）
+
+### Bug 1：商店購買記憶 + 藥水重購
+- `dungeonDb.js`：`enterNonCombatRoom` / `resolveNonCombatRoom` 不再重置 `shopPurchases`
+- `purchaseDungeonItem`：`hp_potion` 跳過記入 bought 清單 → 允許重複購買
+- `DungeonShop.jsx`：本地 `bought` 也跳過 `hp_potion`
+
+### Bug 2：進場動畫 + 樓層顯示
+- `DungeonBattleRoom.jsx`：地圖模式用 `mapCurrentRoomId` 作動畫 key（而非 floor 始終不變）
+- `dungeonDb.js`：`enterMapCombatRoom` 的 `currentFloor` 改從 `mapFloorIndex + 1` 計算
+
+### Bug 3：今日箭數同步
+- `DailyQuest.jsx`：改用 `subscribeTodayPracticeLogs`（Firestore 側限日期），排除 party/duel/dungeon source
+
+### Bug 4：地下城事件效果驗證
+- `dungeonDb.js`：新增 `def_mult_all` case（守護結界事件之前缺失）
+- `dungeonData.js`：修正 `reversal` 合約的 `arrowBreakdown.push` 中 `dmg` → `dmg: d` 拼寫錯誤
+- `DungeonBattleRoom.jsx`：`CONTRACT_HEX` 補上 reversal/odd_only/even_only 顏色
+
+### Bug 5：成就通知系統
+- `MemberDex.jsx`：
+  - 成就 useEffect deps 補上 `monsterDex, craftStats, chestStats, potionDex, cardData`（原先缺失導致部分成就無法即時偵測）
+  - `createNotification` 改為個人通知（`targetMemberId: profile.id`）而非全頻廣播，防止每次進頁就廣播
+  - 通知 type 改為 `"achievement"`
+
+### Bug 6：首頁等級卡改版（MemberHome.jsx）
+- 移除 `bg-white/15` 個人資訊列（徽章總覽/賽事積分/月卡），改放到等級卡
+- 名字旁加入公會等級 pill（`adventurerXP` + `levelFromXP`）
+- 等級卡新增：地下城圖鑑/成就圖鑑/貓貓卡片收藏進度小格
+- 月卡移入等級卡（月卡剩餘次數 + 申請按鈕）
+- 移除「年度檢定摘要」與「最近成績」區塊
+- 引入 `COLLECTIBLE_MAP` from dungeonCollectibles 計算地下城圖鑑總量
+
+### Bug 7：怪物卡片改版（CardCollection.jsx）
+- 改為條列式（`flex-col` 取代 `grid-cols-2`）
+- 每列顯示：icon/名稱/階級/星數/加成 + 直接顯示「✨ 可升星」提示（inline，無需展開）
+- 右側快速裝備/卸下按鈕（inline，無需展開）
+- 展開只剩升星操作與 mythic 屬性選擇
+
+### Bug 8：廣播訊息改版（MemberHome.jsx）
+- 移除 `msg-scroll-bg.webp` 底圖，改為半透明深色背景
+- 新增分類篩選：全部|優惠|重要|考證|成就|地下城|世界王|一般|掉寶
+- 廣播文字顏色改為白色系（深色背景相容）
+
+---
+
+## 2026-06-27（地下城 + 組隊模式前後衛分排統一為 role-based）
+
+### DungeonBattleRoom.jsx + PartyBattleRoom.jsx — role-based 分排顯示
+- **變更前**：前排 = `memberList.slice(0,4)`，後排 = `memberList.slice(4)`（依加入順序，與 role 無關）
+- **變更後**：
+  ```
+  rearRoleMembers   = memberList.filter(m => m.role === "rear")
+  frontRoleMembers  = memberList.filter(m => m.role !== "rear")
+  frontMembers = [...frontRoleMembers, ...rearRoleMembers.slice(4)]  // 後衛滿4時溢位到前排
+  backMembers  = rearRoleMembers.slice(0, 4)                        // 最多4人後排
+  ```
+- **溢位後衛**：role="rear" 但後排已滿4人 → 顯示在前排格子，青色邊框（`rgba(20,184,166,0.4)`）區分
+- **後排邊框**：改為青色（`#14b8a6` 系列），與前衛的紅色形成對比
+- **排頭標籤**：有後排成員時顯示「⚔️ 前衛 / 🛡 後衛」小標（只在有後排時出現）
+- **後排寬度**：地下城改用 `backW`（獨立計算，不再硬借 `frontW`）
+
+### dungeonDb.js + partyDb.js — 攻擊順序統一前衛優先
+```js
+const orderedAliveIds = [
+  ...frontIds.filter(id => aliveIds.includes(id)),
+  ...rearIds.filter(id => aliveIds.includes(id)),
+];
+// 攻擊 pass 改用 orderedAliveIds（前衛先動，後衛後動）
+```
+- miniRounds 中前衛的攻擊動畫先播，後衛後播，再接怪物反擊
+- 反擊仍只打 frontIds（後衛全程免疫，前衛全滅才打後衛）
+
+**踩坑提醒**：
+- `backW` 要獨立計算（`backMembers.length` 分母），地下城舊版錯用 `frontW` 導致後排卡片過寬
+
+---
+
 ## 2026-06-27（組隊模式前後衛系統 + 怪物人數縮放）
 
 ### partyDb.js — 前後衛戰鬥邏輯
@@ -185,6 +263,37 @@
 - **根因**：`DungeonBattleRoom.jsx` Boss 結算畫面中 `{TIER_LABEL[room.monster.tier] || room.monster.tier}` — `TIER_LABEL[tier]` 回傳的是 `{label, color, bg}` 整個物件，React 無法渲染物件 → 擲回 Error #31 → 整個 React 樹掛掉 → 所有依賴同一個 App 殼的頁面都無法運作
 - **修復**：改為 `{TIER_LABEL[room.monster.tier]?.label || room.monster.tier}`（只取 label 字串）
 - **坑記錄**：HUD 區的 TIER_LABEL 使用模式正確（`const tl = TIER_LABEL[...]; ...tl.label`），但 Boss 結算區直接用 `TIER_LABEL[...]` 作為 JSX child，兩處不一致導致漏修
+
+---
+
+## 2026-06-27（地下城任務類型重設計 + 商店/事件清理 + 方型地圖）
+
+### 任務類型 6→9 種
+- **新增 3 種**：`reversal`（逆轉關：6↔X, 7↔10, 8↔9 分數映射）、`odd_only`（單數關：只算 7/9/X）、`even_only`（雙數關：只算 6/8/10）
+- **`assignContracts`/`rerollContract`** 參數改為 `x_crit` 6~10、`target_score` 20~50
+- **`calcDungeonContractDmg`**：加入 reversal 分數映射邏輯、odd_only/even_only 過濾、target_score 總分門檻檢查（6箭總分 > param 才有傷害）
+- **`getContractBadge`**：新增 reversal(橘)/odd_only(青)/even_only(粉) badge
+
+### 商店清理（DUNGEON_SHOP_ITEMS 5→8 項）
+- **移除**：`contract_reset`（契約重置）、`rune_repair`（符文修復石）— 功能不需要
+- **新增**：`hp_max_boost`（HP上限+30%）、`atk_large`（ATK×1.5）、`def_large`（DEF×1.5）、`revival_front`（前衛復活藥）
+- **`dungeonDb.js` `purchaseDungeonItem`**：移除 contract_reset / rune_repair case
+- **`DungeonShop.jsx` `SHOP_ITEM_META`**：同步移除對應定義
+
+### 隨機事件豐富化（DUNGEON_EVENTS 10→18 項）
+- **移除**：`scroll`（古老卷軸）、`contract_swap`（契約轉換）
+- **新增精細級距事件**：`cursed_spray`（ATK×0.7 重度）、`blessed_wind`（ATK×1.2 強化）、`fairy_blessing`（回40%HP）、`dark_ritual`（單人ATK×0.5）、`golden_fountain`（80金幣）、`time_warp` / `sleepy_dust`（怪物不反擊）、`defense_boost`（DEF×1.5）、`wish_well`（單人ATK×2）
+
+### 地圖方形房間改造
+- **`DungeonMap.jsx` 完整重寫**：圓形節點 → SVG 方形房間（`<rect>` 圓角矩形），加入斜線網底（未探索）、發光濾鏡（當前房間）、脈衝外框（可移動）、房間標籤+合約 badge
+- **`DungeonLobby.jsx` 選擇畫面加大**：難度按鈕 `flex` → `grid-cols-2` 大按鈕、地下城卡片放大（`py-5 px-4`）、加入樓層 badge + 地圖序號
+
+### 修正 reversal 關
+- 分數映射：6↔X(11), 7↔10, 8↔9 後走正常傷害公式，非特殊爆擊規則
+
+**踩坑提醒**：
+- `target_score` 的 CONTRACT_TYPES desc 需保持與 spec 一致（超越分數關：總分門檻）
+- calcDungeonContractDmg 的 reversal 是分數映射而非特殊 crit/miss 規則
 
 ---
 

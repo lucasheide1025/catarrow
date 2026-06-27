@@ -12,7 +12,7 @@ import {
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins } from "../../lib/db";
-import { DUNGEON_FLOOR_XP } from "../../lib/archerLevel";
+import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
@@ -120,6 +120,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   // 回合結算覆蓋（動畫結束後顯示）
   const [showRoundResult,   setShowRoundResult]   = useState(false);
   const [firstClearBonus,   setFirstClearBonus]   = useState(null); // null=未檢查 false=非首殺 {coins}=首殺
+  // 進場戰鬥動畫
+  const [showEntryAnim,     setShowEntryAnim]     = useState(false);
+  const entryAnimFloorRef   = useRef(null); // 追蹤哪一層已播過進場
+  // 擊殺動畫
+  const [showKillAnim,      setShowKillAnim]      = useState(false);
+  const [killInfo,          setKillInfo]          = useState(null);   // { memberName, label, monsterName }
   // 戰鬥動畫 states（同組隊風格）
   const [animHit,           setAnimHit]           = useState(false);
   const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
@@ -147,7 +153,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     hit_count:    "#86efac",
     all_hit:      "#fde047",
     x_crit:       "#d8b4fe",
-    target_score: "#fda4af",
+    target_score: "#fbbf24",
+    reversal:     "#fb923c",
+    odd_only:     "#67e8f9",
+    even_only:    "#f9a8d4",
   };
 
   // Boss 房間偵測（地圖模式用）— 優先讀 generatedFloors
@@ -188,6 +197,33 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       if (submitFallbackRef.current) clearTimeout(submitFallbackRef.current);
     };
   }, [roomId]);
+
+  // ── 進場戰鬥動畫（只在戰鬥剛開始時顯示一次）────────────
+  useEffect(() => {
+    if (!room || room.status !== "active") return;
+    // 地圖模式：用 roomId+roomId 區分每個房間；傳統模式：用樓層
+    const animKey = isMapMode
+      ? `${room.mapCurrentRoomId || room.currentFloor || 1}`
+      : `${room.currentFloor || 1}`;
+    if (animKey === entryAnimFloorRef.current) return;
+    const logLen = room?.log?.length || 0;
+    if (logLen > 0) return; // 重整後已有 log 不重播
+    if ((room.round || 1) !== 1) return;
+    entryAnimFloorRef.current = animKey;
+    setShowEntryAnim(true);
+    const t = setTimeout(() => setShowEntryAnim(false), 2800);
+    return () => clearTimeout(t);
+  }, [room?.status, room?.currentFloor, room?.mapCurrentRoomId]); // eslint-disable-line
+
+  // ── 擊殺動畫自動轉場 ───────────────────────────────────
+  useEffect(() => {
+    if (!showKillAnim) return;
+    const t = setTimeout(() => {
+      setShowKillAnim(false);
+      setShowRoundResult(true);
+    }, 3500);
+    return () => clearTimeout(t);
+  }, [showKillAnim]);
 
   // ── 日誌捲底 ─────────────────────────────────────────────────
   useEffect(() => {
@@ -301,10 +337,21 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     const ct = setTimeout(() => {
       setLiveEntry(null);
       setLiveMiniIdx(0);
-      setShowRoundResult(true);
-      if (monsterDied) sfxMonsterDead();
-      else if (allDead) sfxSoftFail();
-      else sfxRoundEnd();
+      if (monsterDied) {
+        // 擊殺動畫
+        const lastHit = entry.lastHit;
+        setKillInfo({
+          memberName: lastHit?.memberName || "未知射手",
+          label: lastHit?.label || "?",
+          monsterName: room?.monster?.name || "",
+        });
+        setShowKillAnim(true);
+        sfxMonsterDead();
+      } else {
+        setShowRoundResult(true);
+        if (allDead) sfxSoftFail();
+        else sfxRoundEnd();
+      }
     }, delay + 500 + minDelay);
     revealTimersRef.current.push(ct);
   }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
@@ -488,7 +535,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       }, myId).catch(() => {});
       if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
     }
-    addArcherXP(myId, totalFloors * DUNGEON_FLOOR_XP).catch(() => {});
+    // XP 依怪物 tier 縮放（打怪模式標準）
+    const monsterTierKey = room?.monster?.tier || "common";
+    const tierXP = MONSTER_TIER_XP[monsterTierKey] || DUNGEON_FLOOR_XP;
+    addArcherXP(myId, totalFloors * tierXP).catch(() => {});
     const _selfCatId = profile?.equippedCat?.catId;
     if (_selfCatId) addCatXP(myId, _selfCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
 
@@ -737,10 +787,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         const collectibles = isBossRoom
           ? rollBossDrops(family, dungeonMap?.difficulty, rewardMult)
           : [rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster", rewardMult)].filter(Boolean);
+        const previewTierXP = MONSTER_TIER_XP[tier] || DUNGEON_FLOOR_XP;
         claimLootRef.current = {
           coins:      Math.round(rollCoins(tier, 1) * gm * rewardMult * (isBossRoom ? 2 : 1) * rb.goldMult),
           materials:  rollMaterialDrops(room.monster),
-          archerXP:   Math.round(tf * DUNGEON_FLOOR_XP * rewardMult * rb.xpMult),
+          archerXP:   Math.round(tf * previewTierXP * rewardMult * rb.xpMult),
           catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rewardMult * rb.xpMult) : 0,
           chestCount: tf,
           arrowdew:   isBossRoom ? tf * 8 : 5,
@@ -981,18 +1032,23 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                     </div>
                   </div>
                 )}
-                {loot.collectible && (() => {
-                  const item = COLLECTIBLE_MAP[loot.collectible.itemId];
-                  return item ? (
-                    <div className="flex items-center gap-2 pt-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
-                      <span style={{ fontSize:20 }}>{item.icon}</span>
-                      <div>
-                        <span className="text-xs font-black text-purple-300">{item.name}</span>
-                        <span className="ml-1.5 text-[10px] text-slate-500">收藏品</span>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
+                {loot.collectibles && loot.collectibles.length > 0 && (
+                  <div className="pt-2 space-y-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                    <div className="text-xs text-slate-400 mb-1">🔮 收藏品掉落</div>
+                    {loot.collectibles.map((drop, i) => {
+                      const item = COLLECTIBLE_MAP[drop.itemId];
+                      return item ? (
+                        <div key={i} className="flex items-center gap-2">
+                          <span style={{ fontSize:20 }}>{item.icon}</span>
+                          <div>
+                            <span className="text-xs font-black text-purple-300">{item.name}</span>
+                            <span className="ml-1.5 text-[10px] text-slate-500">收藏品</span>
+                          </div>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1106,6 +1162,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
 @keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(0)}100%{filter:brightness(1)}}
 @keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(8px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+@keyframes db-intro-archer{0%{opacity:0;transform:translateX(-90px) scale(0.6)}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes db-intro-monster{0%{opacity:0;transform:translateX(90px) scale(0.6)}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes db-intro-vs{0%{opacity:0;transform:scale(0.2) rotate(-18deg)}55%{transform:scale(1.3) rotate(4deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes db-intro-start{0%{opacity:0;transform:translateY(18px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes db-die-monster{0%{filter:brightness(1)}20%{filter:brightness(3.5) drop-shadow(0 0 40px #ef4444)}100%{filter:brightness(0.1) grayscale(0.8) drop-shadow(0 0 6px #555)}}
+@keyframes db-die-badge{0%{opacity:0;transform:scale(2.2) rotate(-20deg)}55%{opacity:1;transform:scale(0.92) rotate(6deg)}100%{opacity:1;transform:scale(1) rotate(-8deg)}}
+@keyframes db-die-victory{0%{opacity:0;transform:scale(0.3) rotate(-12deg)}55%{transform:scale(1.2) rotate(3deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes db-die-stats{0%{opacity:0;transform:translateY(14px)}100%{opacity:1;transform:translateY(0)}}
       `}</style>
 
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
@@ -1227,9 +1291,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                     {m.role==="rear"?"🛡後衛":"⚔️前衛"}
                   </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
-                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk||0}</div>
-                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{m.def||0}</div>
+                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{Math.round((m.atk||0)*(m.buffs?.atkMult||1))}{(m.buffs?.atkMult||1)>1&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
+                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{Math.round((m.def||0)*(m.buffs?.defMult||1))}{(m.buffs?.defMult||1)>1&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
                   </div>
+                  {((m.buffs?.dmgMult||1)>1||(m.buffs?.hasRevival)) && (
+                    <div style={{ fontSize:7, color:"#fbbf24", marginBottom:1 }}>
+                      {(m.buffs?.dmgMult||1)>1&&`傷×${m.buffs.dmgMult}`} {m.buffs?.hasRevival&&"💫"}
+                    </div>
+                  )}
                   <div style={{ fontSize:8, marginBottom:1 }} className={mContract.color}>
                     {mContract.icon} {mContract.name}
                   </div>
@@ -1446,6 +1515,122 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           </>
         )}
       </div>
+
+      {/* ── 進場戰鬥動畫 ── */}
+      {showEntryAnim && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:9999,
+          background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",
+          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:24,
+        }}>
+          {/* VS 對決畫面 */}
+          <div style={{
+            width:"100%", display:"flex", alignItems:"center",
+            justifyContent:"space-around", padding:"0 20px",
+          }}>
+            {/* 射手從左進場 */}
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8,
+              animation:"db-intro-archer 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+              <img src={`/cats/archers/${me.archerStyle||"baobao"}.webp`} alt="archer"
+                style={{ width:100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)" }}/>
+              <span style={{ fontSize:13, fontWeight:700, color:"#c4b5fd", textShadow:"0 0 8px #7c3aed" }}>
+                {me.name || "射手"}
+              </span>
+            </div>
+            {/* VS */}
+            <div style={{
+              fontSize:42, fontWeight:900, color:"#fbbf24",
+              textShadow:"0 0 24px #f59e0b, 0 0 48px #f59e0b",
+              animation:"db-intro-vs 0.8s 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
+            }}>
+              VS
+            </div>
+            {/* 怪物從右進場 */}
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8,
+              animation:"db-intro-monster 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+              <div style={{ filter:"drop-shadow(0 0 16px #ef4444)" }}>
+                <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false}/>
+              </div>
+              <span style={{ fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
+                {monster.name || "怪物"}
+              </span>
+            </div>
+          </div>
+          {/* 戰鬥開始 */}
+          <div style={{ animation:"db-intro-start 0.5s 1.2s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            <div style={{ fontSize:28, fontWeight:900, color:"#fff",
+              textShadow:"0 0 24px #fbbf24", letterSpacing:4, textAlign:"center" }}>
+              ⚔️ 戰鬥開始！
+            </div>
+          </div>
+          {/* 合約提示 */}
+          <div style={{ animation:"db-intro-start 0.5s 1.6s cubic-bezier(0.34,1.56,0.64,1) both",
+            fontSize:12, color:"#94a3b8", textAlign:"center", padding:"0 24px" }}>
+            {contractInfo.icon} {contractInfo.name}
+            {myContract.param != null && <span>（{myContract.param}）</span>}
+            {getContractDesc && <div style={{ fontSize:10, color:"rgba(148,163,184,0.6)", marginTop:2 }}>{getContractDesc(myContract)}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── 擊殺動畫 ── */}
+      {showKillAnim && killInfo && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:9998,
+          background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",
+          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:28,
+        }}>
+          {/* 怪物死亡動畫 + 擊殺印章 */}
+          <div style={{ position:"relative", display:"inline-block" }}>
+            <div style={{ animation:"db-die-monster 1.5s ease-out both" }}>
+              <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false}/>
+            </div>
+            {/* 擊殺印章 */}
+            <div style={{
+              position:"absolute", inset:0,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              animation:"db-die-badge 0.5s 0.5s cubic-bezier(0.34,1.56,0.64,1) both",
+              pointerEvents:"none",
+            }}>
+              <div style={{
+                fontSize:28, fontWeight:900, color:"#ef4444",
+                border:"4px solid #ef4444", borderRadius:8,
+                padding:"4px 14px", letterSpacing:4,
+                textShadow:"0 0 12px #ef4444",
+                boxShadow:"0 0 18px #ef444488",
+                background:"rgba(0,0,0,0.55)",
+                transform:"rotate(-8deg)",
+              }}>
+                擊殺
+              </div>
+            </div>
+          </div>
+
+          {/* 擊殺文字 */}
+          <div style={{ animation:"db-die-victory 0.6s 0.8s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            <div style={{ fontSize:36, fontWeight:900, color:"#fbbf24",
+              textShadow:"0 0 32px #f59e0b", letterSpacing:4, textAlign:"center" }}>
+              💀 擊殺！
+            </div>
+            <div style={{ fontSize:14, color:"#94a3b8", textAlign:"center", marginTop:4 }}>
+              {killInfo.monsterName} 已被消滅
+            </div>
+          </div>
+
+          {/* 最後一擊資訊 */}
+          <div style={{ animation:"db-die-stats 0.5s 1.2s ease-out both",
+            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+            borderRadius:12, padding:"12px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:11, color:"#94a3b8", marginBottom:4 }}>⚡ 最後一擊</div>
+            <div style={{ fontSize:18, fontWeight:900, color:"#fbbf24" }}>
+              {killInfo.memberName}
+            </div>
+            <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>
+              以 {killInfo.label} 分擊殺
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 回合結算蓋板 ── */}
       {showRoundResult && lastEntry && (

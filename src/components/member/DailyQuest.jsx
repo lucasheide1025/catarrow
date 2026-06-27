@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeMyCheckin, submitCheckin, submitClassEnd, addArrowdew,
-  grantArrowMilestoneRewards, subscribePracticeLogs,
+  grantArrowMilestoneRewards, subscribeTodayPracticeLogs,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
@@ -28,10 +28,10 @@ export default function DailyQuest({ onJoinParty }) {
   useEffect(() => {
     if (!profile?.id) return;
     const todayStr = new Date().toISOString().slice(0, 10);
-    const unsub = subscribePracticeLogs(profile.id, logs => {
-      const DIRECT_SOURCES = ["party", "duel", "dungeon"];
+    const DIRECT_SOURCES = ["party", "duel", "dungeon"];
+    const unsub = subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
       const count = logs
-        .filter(l => l.date === todayStr && !DIRECT_SOURCES.includes(l.source))
+        .filter(l => !DIRECT_SOURCES.includes(l.source))
         .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
       setTodayArrows(count);
     });

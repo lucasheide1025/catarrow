@@ -1,5 +1,5 @@
 # 🎮 game-systems — 遊戲化規格
-> 最後更新：2026-06-27
+> 最後更新：2026-06-27（合約/事件全面重設計）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
 
@@ -164,3 +164,113 @@ rollMaterialDrops(monster) → 陣列（MonsterBattle / DungeonBattleRoom 用）
 ```
 
 **踩坑提醒**：PartyBattleRoom 有 previewReward 機制（預覽時先 roll），仍使用 rollMaterialDrop 單一值，避免破壞預覽與實際領取的顯示一致性。
+
+---
+
+## 地下城任務類型/商店/事件重設計（2026-06-27 新版）
+
+### 新任務類型（9 種）
+
+```
+【標準關 standard】
+  六箭正常計算傷害，無特殊規則
+
+【指定得分關 score_gate】
+  每箭需 ≥6 分才計傷害，低於 6 分視同脫靶
+  → param: 無（固定 6 分）
+
+【命中關 hit_count】
+  命中即固定傷害，與分數無關，必定爆擊
+
+【精準關 all_hit】
+  六箭全中才能造成傷害，任一箭 M 則全部歸零
+
+【指定分數爆擊關 x_crit】
+  param = 6~10 隨機一個分數
+  射中該指定分數 → 強制爆擊（傷害 ×2）
+  射中其他分數 → 傷害減半
+
+【超越分數關 target_score】
+  param = 20~50 隨機門檻
+  6 箭總分（X 算 11 分）超過門檻才有傷害
+  未達標 → 全部歸零
+
+【逆轉關 reversal】
+  6 分 → 爆擊
+  7 分 → 必中（正常傷害）
+  8 / 9 / 10 / X → 脫靶（0 傷害）
+
+【單數關 odd_only】
+  只算 7、9、X，其他分數視同脫靶
+
+【雙數關 even_only】
+  只算 6、8、10，其他分數視同脫靶
+```
+
+**實作位置**：`dungeonData.js` `calcDungeonContractDmg` function
+
+**移除的舊類型**：無（僅改名與改邏輯）
+
+### 商店物品（8 種，移除無用項目）
+
+**已移除**：
+- ❌ `contract_reset`（契約重置）— 不需要
+- ❌ `rune_repair`（符文修復石）— 不需要
+
+**保留 8 項**：
+```
+hp_potion      (50金) 回 30% HP
+hp_max_boost   (100金) 永久 HP 上限 +30%（僅此局）
+atk_boost      (80金)  ATK ×1.2
+atk_large      (150金) ATK ×1.5
+def_boost      (80金)  DEF ×1.2
+def_large      (150金) DEF ×1.5
+revival        (100金) 復活符（下次陣亡自動 30% 復活）
+revival_front  (120金) 前衛復活藥（倒地前衛 50% HP 轉回前衛）
+```
+
+**實作位置**：
+- `dungeonData.js` `DUNGEON_SHOP_ITEMS`（資料）
+- `dungeonDb.js` `purchaseDungeonItem`（效果處理）
+- `src/components/dungeon/DungeonShop.jsx` `SHOP_ITEM_META`（前端顯示）
+
+### 隨機事件（21 種，含精細級距）
+
+**已移除**：
+- ❌ `scroll`（古老卷軸）
+- ❌ `contract_swap`（契約轉換）
+- ❌ `mysterious_altar`（神秘祭壇）
+
+**分級 ATK debuff 範例**：
+```
+cursed_fog     ATK ×0.8  (輕度弱化)
+cursed_spray   ATK ×0.7  (重度弱化，新增)
+blessed_wind   ATK ×1.2  (強化，新增)
+star_shower    ATK ×1.2  (強化，原有)
+team_boost     ATK ×1.5  (單人特強，原有)
+```
+
+所有 buff/debuff 效果在換層時由 `nextFloorModifiers` 機制自動清空。
+
+**實作位置**：
+- `dungeonData.js` `DUNGEON_EVENTS`（事件資料）
+- `dungeonDb.js` `confirmDungeonEvent`（效果套用）
+
+### 修改檔案清單（給 Claude 用）
+
+需改 3 個檔案 + 1 個前端同步：
+
+1. **`src/lib/dungeonData.js`**
+   - 替換 `CONTRACT_TYPES`（9 種新定義）
+   - 更新 `assignContracts` / `rerollContract`（參數邏輯）
+   - 更新 `getContractBadge`（新增 4 種 badge）
+   - 更新 `calcDungeonContractDmg`（reversal/odd_only/even_only/target_score 總分檢查）
+   - 替換 `DUNGEON_SHOP_ITEMS`（8 項）
+   - 替換 `DUNGEON_EVENTS`（21 項）
+
+2. **`src/lib/dungeonDb.js`**
+   - `purchaseDungeonItem`：移除 `contract_reset` 和 `rune_repair` 的 case
+   - `confirmDungeonEvent`：移除 `contract_reassign` 的 case
+
+3. **`src/components/dungeon/DungeonShop.jsx`**
+   - `SHOP_ITEM_META`：移除 `contract_reset` 和 `rune_repair` 的定義

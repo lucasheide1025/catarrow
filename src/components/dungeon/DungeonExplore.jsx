@@ -8,6 +8,7 @@ import {
 import {
   subscribeDungeonRoom, saveMapExploration, proposeMapMove,
   castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
+  enterNonCombatRoom,
 } from "../../lib/dungeonDb";
 import { MONSTERS } from "../../lib/monsterData";
 
@@ -272,6 +273,11 @@ export default function DungeonExplore({
       setEventModal({ ...clickedRoom, _type:"battle_preview" });
     } else if (clickedRoom.type === "stairs") {
       setEventModal(clickedRoom);
+    } else if (["merchant","rest","trap","event"].includes(clickedRoom.type)) {
+      // 非戰鬥互動房間 → 透過 Firestore 路由到對應元件
+      if (roomId && isHost) {
+        await enterNonCombatRoom(roomId, clickedRoom.type, { roomId: clickedRoom.id });
+      }
     } else {
       setEventModal(clickedRoom);
     }
@@ -343,7 +349,8 @@ export default function DungeonExplore({
 
   return (
     <div style={{
-      minHeight:"100dvh", background:"linear-gradient(160deg,#0a0a0f,#12091a,#0a0f0a)",
+      height:"100dvh", overflow:"hidden",
+      background:"linear-gradient(160deg,#0a0a0f,#12091a,#0a0f0a)",
       color:"white", display:"flex", flexDirection:"column", position:"relative",
     }}>
       {/* ── 頂部標題列 ── */}

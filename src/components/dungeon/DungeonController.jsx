@@ -6,6 +6,10 @@ import { subscribeDungeonRoom } from "../../lib/dungeonDb";
 import { DUNGEON_MAPS } from "../../lib/dungeonData";
 import DungeonExplore from "./DungeonExplore";
 import DungeonBattleRoom from "./DungeonBattleRoom";
+import DungeonShop from "./DungeonShop";
+import DungeonEvent from "./DungeonEvent";
+import DungeonRest from "./DungeonRest";
+import DungeonTrap from "./DungeonTrap";
 
 export default function DungeonController({ roomId, onExit }) {
   const { profile } = useAuth();
@@ -38,12 +42,51 @@ export default function DungeonController({ roomId, onExit }) {
   const dungeon   = isMapMode ? DUNGEON_MAPS.find(d => d.id === room.mapDungeonId) : null;
 
   // 地圖模式路由：
+  // - non-combat 房間（shop/rest/trap/event）→ 各自對應元件
   // - active / completed（戰鬥中／戰鬥結束等領獎）→ 顯示戰鬥室
   // - 其餘狀態（map_explore / waiting）→ 顯示地圖探索
-  // 這樣確保戰鬥結束後玩家能看到結算畫面 + 領獎按鈕，
-  // 等 host 點「領取並回地圖」後 returnToMapAfterBattle 才回到地圖
   if (isMapMode) {
-    const battleStatuses = ["active", "completed", "path_select", "shop", "event", "floor_transition"];
+    // 非戰鬥房間：各自獨立元件，不進戰鬥室
+    if (room.status === "shop") {
+      return (
+        <DungeonShopWrapper
+          roomId={roomId} room={room}
+          myId={profile?.id}
+          myCoins={profile?.coins || 0}
+          isHost={isHost}
+          onDone={() => {}}
+        />
+      );
+    }
+    if (room.status === "rest") {
+      return (
+        <DungeonRestWrapper
+          roomId={roomId} room={room}
+          myId={profile?.id}
+          isHost={isHost}
+        />
+      );
+    }
+    if (room.status === "trap") {
+      return (
+        <DungeonTrapWrapper
+          roomId={roomId} room={room}
+          myId={profile?.id}
+          isHost={isHost}
+        />
+      );
+    }
+    if (room.status === "event") {
+      return (
+        <DungeonEventWrapper
+          roomId={roomId} room={room}
+          myId={profile?.id}
+          isHost={isHost}
+        />
+      );
+    }
+    // 戰鬥相關狀態
+    const battleStatuses = ["active", "completed", "path_select", "floor_transition"];
     if (battleStatuses.includes(room.status)) {
       return (
         <DungeonBattleRoom
@@ -84,6 +127,48 @@ export default function DungeonController({ roomId, onExit }) {
       onExit={onExit}
       isMapMode={false}
       onReturnToMap={undefined}
+    />
+  );
+}
+
+// ── Wrapper：商店（非戰鬥互動）──────────────────────────────
+function DungeonShopWrapper({ roomId, room, myId, myCoins, isHost }) {
+  const me = room?.members?.[myId] || {};
+  return (
+    <DungeonShop
+      roomId={roomId} room={room}
+      memberId={myId} memberData={{ ...me, coins: myCoins }}
+      isHost={isHost}
+    />
+  );
+}
+
+// ── Wrapper：休息區 ──────────────────────────────────────────
+function DungeonRestWrapper({ roomId, room, myId, isHost }) {
+  return (
+    <DungeonRest
+      roomId={roomId} room={room}
+      memberId={myId} isHost={isHost}
+    />
+  );
+}
+
+// ── Wrapper：陷阱 ────────────────────────────────────────────
+function DungeonTrapWrapper({ roomId, room, myId, isHost }) {
+  return (
+    <DungeonTrap
+      roomId={roomId} room={room}
+      memberId={myId} isHost={isHost}
+    />
+  );
+}
+
+// ── Wrapper：特殊事件 ────────────────────────────────────────
+function DungeonEventWrapper({ roomId, room, myId, isHost }) {
+  return (
+    <DungeonEvent
+      roomId={roomId} room={room}
+      isHost={isHost} memberId={myId}
     />
   );
 }

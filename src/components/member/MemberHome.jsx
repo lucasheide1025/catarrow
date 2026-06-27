@@ -12,6 +12,7 @@ import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "..
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
+import { COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { Card, ST, Spinner } from "../shared/UI";
 import ShareCard from "./ShareCard";
 
@@ -97,6 +98,7 @@ export default function MemberHome({
   const [cardHours, setCardHours]         = useState(1);
   const [cardBusy, setCardBusy]           = useState(false);
   const [cardMsg, setCardMsg]             = useState("");
+  const [notifCat, setNotifCat]           = useState("全部");
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -210,39 +212,76 @@ export default function MemberHome({
         ))}
       </div>
 
-      {/* 廣播訊息（前 5 則）*/}
+      {/* 廣播訊息（分類篩選）*/}
       {notifications.length > 0 && (
-        <Card className="p-4" style={{
-          backgroundImage:"url(/ui/msg-scroll-bg.webp)",
-          backgroundSize:"cover", backgroundPosition:"center",
-          backgroundBlendMode:"multiply",
-        }}>
+        <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
           <ST>📢 最新廣播</ST>
-          {notifications.slice(0, 5).map(n => {
+          {/* 分類篩選 */}
+          {(() => {
+            const TYPE_CAT = {
+              promo:"優惠", important:"重要", cert_pass:"考證", high_score:"考證",
+              achievement:"成就", dungeon:"地下城", worldboss:"世界王",
+              loot:"掉寶", new_comp:"一般", comp_result:"一般", general:"一般",
+            };
+            const CATS = ["全部","優惠","重要","考證","成就","地下城","世界王","一般","掉寶"];
             const TYPE_ICON = {
               important:"🔴", promo:"🎉", new_comp:"🏆",
               cert_pass:"🏅", high_score:"⭐", comp_result:"📊",
+              achievement:"🎖️", dungeon:"🗺️", worldboss:"👑", loot:"💎", general:"📢",
             };
-            const unread = !(n.readBy||[]).includes(profile?.id);
+            const filtered = notifCat === "全部"
+              ? notifications
+              : notifications.filter(n => (TYPE_CAT[n.type] || "一般") === notifCat);
             return (
-              <div key={n.id} className={`py-2.5 border-b border-gray-100 last:border-0 ${unread ? "bg-blue-50/60 -mx-4 px-4 rounded-xl" : ""}`}>
-                <div className="flex items-start gap-2">
-                  <span className="text-sm mt-0.5">{TYPE_ICON[n.type] || "📢"}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm leading-tight ${unread ? "font-black text-gray-800" : "font-bold text-gray-700"}`}>
-                      {n.title}
-                    </div>
-                    {n.content && (
-                      <div className="text-gray-500 text-xs mt-0.5 leading-snug line-clamp-2">{n.content}</div>
-                    )}
-                  </div>
-                  {unread && <span className="flex-shrink-0 w-2 h-2 bg-red-400 rounded-full mt-1.5" />}
+              <>
+                <div className="flex gap-1.5 flex-wrap mb-3 -mt-1">
+                  {CATS.map(c => (
+                    <button key={c} onClick={() => setNotifCat(c)}
+                      style={{
+                        fontSize:10, padding:"2px 8px", borderRadius:999, fontWeight:700, border:"none", cursor:"pointer",
+                        background: notifCat === c ? "#3b82f6" : "rgba(255,255,255,0.1)",
+                        color: notifCat === c ? "white" : "rgba(255,255,255,0.55)",
+                        transition:"all 0.15s",
+                      }}>
+                      {c}
+                    </button>
+                  ))}
                 </div>
-              </div>
+                {filtered.slice(0, 5).map(n => {
+                  const unread = !(n.readBy||[]).includes(profile?.id);
+                  return (
+                    <div key={n.id} style={{
+                      padding: unread ? "10px 16px" : "10px 0",
+                      margin: unread ? "0 -16px" : "0",
+                      borderBottom:"1px solid rgba(255,255,255,0.06)",
+                      background: unread ? "rgba(59,130,246,0.08)" : "transparent",
+                      borderRadius: unread ? 10 : 0,
+                    }}>
+                      <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
+                        <span style={{ fontSize:13, marginTop:1 }}>{TYPE_ICON[n.type] || "📢"}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight: unread ? 900 : 700, color: unread ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.75)", lineHeight:1.3 }}>
+                            {n.title}
+                          </div>
+                          {n.content && (
+                            <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginTop:2, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                              {n.content}
+                            </div>
+                          )}
+                        </div>
+                        {unread && <span style={{ flexShrink:0, width:7, height:7, background:"#f87171", borderRadius:"50%", marginTop:4 }} />}
+                      </div>
+                    </div>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.3)", textAlign:"center", padding:"12px 0" }}>此分類暫無訊息</div>
+                )}
+              </>
             );
-          })}
+          })()}
           <button onClick={() => onPageChange("notifications")}
-            className="text-blue-600 text-xs font-semibold mt-2">
+            style={{ fontSize:11, color:"#60a5fa", fontWeight:700, marginTop:8, background:"none", border:"none", cursor:"pointer", padding:0 }}>
             查看全部訊息 →
           </button>
         </Card>
@@ -298,6 +337,15 @@ export default function MemberHome({
                   {getCohort(profile.joinDate) != null ? `　${cohortLabel(getCohort(profile.joinDate))}` : ""}
                 </span>
                 <CertLevelPip level={certification?.level || "none"} />
+                {(() => {
+                  const gLv = levelFromXP(profile?.adventurerXP || 0);
+                  const gRank = rankFromLevel(gLv);
+                  return (
+                    <span style={{ fontSize:10, fontWeight:900, color:gRank.color, background:"rgba(255,255,255,0.1)", borderRadius:999, padding:"1px 7px" }}>
+                      {gRank.icon} 公會 Lv.{gLv}
+                    </span>
+                  );
+                })()}
               </div>
               {(() => {
                 const ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
@@ -349,50 +397,6 @@ export default function MemberHome({
             </div>
           </div>
 
-          <div className="bg-white/15 rounded-xl p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="text-white/60 text-xs">🎖️ 徽章總覽</div>
-              <div className="text-xs text-white/50">
-                🐱 {((profile?.fatCat?.gold||0)+(profile?.fatCat?.silver||0)+(profile?.fatCat?.bronze||0))}
-                　⭐ {((profile?.score?.gold||0)+(profile?.score?.silver||0)+(profile?.score?.bronze||0))}
-                　🏆 {((profile?.achievement?.black||0)+(profile?.achievement?.gold||0)+(profile?.achievement?.silver||0))}
-              </div>
-            </div>
-            <div className="flex items-center justify-between pt-1 border-t border-white/20">
-              <div className="text-white/60 text-xs">🎪 賽事積分</div>
-              <div className="text-white font-black text-xl">{profile.eventPoints || 0}</div>
-            </div>
-            {/* 月卡資訊 */}
-            {(() => {
-              const card = profile?.monthlyCard;
-              const expires = card?.expiresAt?.toDate ? card.expiresAt.toDate() : null;
-              const days = expires ? Math.ceil((expires - Date.now()) / 86400000) : null;
-              const active = card?.active && days !== null && days > 0;
-              const hasPending = monthlyReqs.some(r => r.status === "pending");
-              if (!active) return null;
-              return (
-                <div className="flex items-center justify-between pt-1 border-t border-white/20">
-                  <div className="flex flex-col">
-                    <div className="text-white/60 text-xs">🎫 月卡</div>
-                    <div className="text-white/50 text-xs">到期 {expires.getMonth()+1}/{expires.getDate()}（剩{days}天）</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-white font-black text-xl">{card.sessions} <span className="text-sm font-normal text-white/60">次</span></div>
-                    {hasPending ? (
-                      <span className="text-xs bg-yellow-400/30 text-yellow-200 font-bold px-2 py-1 rounded-lg">⏳ 審核中</span>
-                    ) : card.sessions > 0 ? (
-                      <button onClick={() => { setShowCardModal(true); setCardMsg(""); setCardHours(1); }}
-                        className="text-xs bg-white/20 text-white font-black px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform border border-white/30">
-                        申請使用
-                      </button>
-                    ) : (
-                      <span className="text-xs text-white/40">次數已用完</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
         </div>
       </div>
 
@@ -403,7 +407,8 @@ export default function MemberHome({
         const lvBonus = archerLevelBonus(level);
         const equipped = (cardData.equipped || []).map(id => cardData.cards?.[id]).filter(Boolean);
         const cardBonus = calcEquippedBonus(equipped);
-        const archerStats = calcArcherStats({ member: profile, certification, certRecords, dexStats: computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats }) });
+        const _ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
+        const archerStats = calcArcherStats({ member: profile, certification, certRecords, dexStats: _ds });
         const totalHP  = archerStats.hp  + lvBonus.hp  + cardBonus.hp;
         const totalATK = archerStats.atk + lvBonus.atk + cardBonus.atk;
         const totalDEF = archerStats.def + lvBonus.def + cardBonus.def;
@@ -567,65 +572,65 @@ export default function MemberHome({
                 <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>今日箭數</span>
               </div>
             </div>
+            {/* 收藏進度列 */}
+            {(() => {
+              const dungeonOwned  = Object.keys(profile?.dungeonCollectibles || {}).length;
+              const dungeonTotal  = Object.keys(COLLECTIBLE_MAP).length;
+              const achOwned      = _ds.totalUnlocked;
+              const achTotal      = _ds.totalAll;
+              const catOwned      = Object.keys(cardData.cards || {}).length;
+              const catTotal      = 100;
+              const cells = [
+                { icon:"🗺️", label:"地下城圖鑑", owned:dungeonOwned, total:dungeonTotal, color:"#a78bfa" },
+                { icon:"🎖️", label:"成就圖鑑",   owned:achOwned,    total:achTotal,    color:"#fbbf24" },
+                { icon:"🐱", label:"貓貓卡片",   owned:catOwned,    total:catTotal,    color:"#f472b6" },
+              ];
+              return (
+                <div style={{ display:"flex", gap:10, marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.08)", flexWrap:"wrap" }}>
+                  {cells.map(c => (
+                    <div key={c.label} style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(255,255,255,0.06)", borderRadius:8, padding:"4px 10px", minWidth:72, flex:1 }}>
+                      <span style={{ fontSize:14 }}>{c.icon}</span>
+                      <span style={{ fontSize:11, fontWeight:900, color:c.color }}>{c.owned}<span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/{c.total}</span></span>
+                      <span style={{ fontSize:8, color:"rgba(255,255,255,0.4)", textAlign:"center" }}>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {/* 月卡資訊 */}
+            {(() => {
+              const card = profile?.monthlyCard;
+              const expires = card?.expiresAt?.toDate ? card.expiresAt.toDate() : null;
+              const days = expires ? Math.ceil((expires - Date.now()) / 86400000) : null;
+              const active = card?.active && days !== null && days > 0;
+              const hasPending = monthlyReqs.some(r => r.status === "pending");
+              if (!active) return null;
+              return (
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+                  <div>
+                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:700 }}>🎫 月卡</div>
+                    <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)" }}>到期 {expires.getMonth()+1}/{expires.getDate()}（剩{days}天）</div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ fontSize:18, fontWeight:900, color:"white" }}>{card.sessions} <span style={{ fontSize:11, color:"rgba(255,255,255,0.5)", fontWeight:400 }}>次</span></span>
+                    {hasPending ? (
+                      <span style={{ fontSize:10, background:"rgba(251,191,36,0.2)", color:"#fde68a", fontWeight:700, padding:"3px 8px", borderRadius:8 }}>⏳ 審核中</span>
+                    ) : card.sessions > 0 ? (
+                      <button onClick={() => { setShowCardModal(true); setCardMsg(""); setCardHours(1); }}
+                        style={{ fontSize:10, background:"rgba(255,255,255,0.15)", color:"white", fontWeight:900, padding:"4px 10px", borderRadius:8, border:"1px solid rgba(255,255,255,0.25)", cursor:"pointer" }}>
+                        申請使用
+                      </button>
+                    ) : (
+                      <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>次數已用完</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </Card>
         );
       })()}
 
-      {/* 年度檢定（精簡摘要） */}
-      <div className="p-3 rounded-xl flex items-center justify-between"
-        style={{ background:"rgba(15,23,42,0.55)", border:"1px solid rgba(255,255,255,0.06)" }}>
-        <div className="flex flex-col gap-1.5">
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontWeight:700 }}>🎖️ {thisYear} 年度檢定</div>
-          <div className="flex gap-2">
-            {CERT_SHOW.map(bk => {
-              const bt = BOW_TYPES[bk];
-              const { score, level } = certOf(bk);
-              return (
-                <div key={bk} className="flex items-center gap-1.5 text-xs"
-                  style={{ background:"rgba(255,255,255,0.06)", borderRadius:6, padding:"3px 8px" }}>
-                  <span style={{ color:"rgba(255,255,255,0.5)" }}>{bt.short}</span>
-                  {score > 0 ? (
-                    <>
-                      <span style={{ color:"#fbbf24", fontWeight:900 }}>{score}</span>
-                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${level ? certLevelStyle(level, "solid") : "bg-white/10 text-white/50"}`}>
-                        {level || "—"}
-                      </span>
-                    </>
-                  ) : (
-                    <span style={{ color:"rgba(255,255,255,0.3)" }}>—</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <button onClick={() => onPageChange("profile")}
-          style={{ fontSize:10, color:"#60a5fa", fontWeight:700, whiteSpace:"nowrap", background:"rgba(96,165,250,0.12)", borderRadius:8, padding:"6px 12px", border:"none", cursor:"pointer" }}>
-          查看詳細 →
-        </button>
-      </div>
-
-      {recentResults.length > 0 && (
-        <Card className="p-4">
-          <ST>最近成績</ST>
-          {recentResults.map(r => {
-            const tc = COMP_TYPE_COLOR[r.compType] || {};
-            return (
-              <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
-                <div className="flex-1">
-                  <div className="text-gray-700 text-sm font-medium">{r.compTitle || "—"}</div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {r.compType && <span className={`text-xs font-bold ${tc.text}`}>{r.compType}</span>}
-                    <span className="text-gray-400 text-xs">{r.submittedAt ? fmtDT(r.submittedAt) : (r.date||"")}</span>
-                  </div>
-                </div>
-                <div className="text-blue-600 font-black text-2xl">{r.total}</div>
-              </div>
-            );
-          })}
-          <button onClick={() => onPageChange("history")} className="text-blue-600 text-xs font-semibold mt-2">查看全部成績 →</button>
-        </Card>
-      )}
     </div>
   );
 }

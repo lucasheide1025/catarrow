@@ -227,32 +227,74 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         {/* Members list + 房主地下城設定（一起捲動，確保開始按鈕永遠可見）*/}
         <div className="flex-1 overflow-y-auto">
           {isHost && (
-            <div className="px-4 py-3 border-b border-white/8">
-              <div className="bg-slate-900/60 rounded-xl p-3">
-                <div className="text-sm text-slate-400 mb-2 font-semibold">🏷️ 難度</div>
-                <div className="flex gap-1.5 mb-3">
+            <div className="px-5 py-4 border-b border-white/8">
+              <div className="bg-slate-900/70 rounded-2xl p-5 shadow-xl">
+                <div className="text-base text-slate-300 mb-3 font-black flex items-center gap-2">
+                  <span>🏷️</span>
+                  <span>選擇難度</span>
+                  <span className="text-[11px] font-normal text-slate-500 ml-auto">影響怪物強度與獎勵</span>
+                </div>
+                {/* 難度：大按鈕 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-5">
                   {DIFFICULTY_CONFIGS.map(dc => (
                     <button key={dc.id} onClick={() => setSelDifficulty(dc.id)}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${selDifficulty===dc.id ? "bg-white/30 border-white/50 text-white shadow" : "border-white/10 bg-white/10 text-slate-300"}`}
-                      style={{ borderColor: selDifficulty===dc.id ? dc.color : undefined, color: selDifficulty===dc.id ? dc.color : undefined }}>
-                      {dc.icon} {dc.label}
+                      className={`relative flex flex-col items-center py-3.5 rounded-xl font-bold border transition-all ${selDifficulty===dc.id ? "shadow-lg scale-[1.02]" : "opacity-70 hover:opacity-100 hover:scale-[1.02]"}`}
+                      style={{
+                        background: selDifficulty===dc.id ? `${dc.color}33` : 'rgba(255,255,255,0.05)',
+                        borderColor: selDifficulty===dc.id ? dc.color : 'rgba(255,255,255,0.1)',
+                        color: selDifficulty===dc.id ? dc.color : '#cbd5e1',
+                      }}>
+                      <span className="text-2xl mb-1">{dc.icon}</span>
+                      <span className="text-sm">{dc.label}</span>
+                      {selDifficulty===dc.id && (
+                        <span className="absolute -top-1.5 -right-1.5 text-xs bg-amber-400 text-black rounded-full w-5 h-5 flex items-center justify-center font-black shadow">✓</span>
+                      )}
                     </button>
                   ))}
                 </div>
-                <div className="text-sm text-slate-400 mb-2 font-semibold">🏛️ 選擇地下城</div>
-                <div className="grid grid-cols-2 gap-3">
+
+                <div className="text-base text-slate-300 mb-3 font-black flex items-center gap-2">
+                  <span>🏛️</span>
+                  <span>選擇地下城</span>
+                  <span className="text-[11px] font-normal text-slate-500 ml-auto">共 {DUNGEON_MAPS.filter(d => d.enabled && d.difficulty === selDifficulty).length} 張地圖</span>
+                </div>
+                {/* 地下城：大卡片網格 */}
+                <div className="grid grid-cols-2 gap-4">
                   {FAMILY_CONFIGS.map(fc => {
                     const d = DUNGEON_MAPS.find(m => m.family === fc.id && m.difficulty === selDifficulty);
                     if (!d || !d.enabled) return null;
                     const dc = DIFFICULTY_CONFIGS.find(dc => dc.id === selDifficulty);
+                    const isSelected = selDungeon === d.id;
+                    // 該難度下各家族的 floor 數
+                    const sameDiffMaps = DUNGEON_MAPS.filter(m => m.difficulty === selDifficulty && m.enabled);
                     return (
                       <button key={fc.id} onClick={() => setSelDungeon(d.id)}
-                        className={`flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all ${selDungeon===d.id ? "border-amber-400 bg-amber-400/30 shadow-lg" : "border-white/10 bg-slate-900/70"}`}
-                        style={{ borderColor: selDungeon===d.id ? dc?.color : undefined }}>
-                        <span className="text-3xl">{fc.emoji}</span>
-                        <div className={`text-sm font-black text-center ${selDungeon===d.id ? "text-amber-300" : "text-white"}`}>{fc.label}</div>
+                        className={`relative flex flex-col items-center gap-2 py-5 px-4 rounded-2xl border-2 transition-all ${isSelected ? 'shadow-xl scale-[1.03]' : 'hover:scale-[1.02]'}`}
+                        style={{
+                          background: isSelected
+                            ? `${dc?.color || '#fbbf24'}22`
+                            : 'rgba(15,23,42,0.8)',
+                          borderColor: isSelected
+                            ? (dc?.color || '#fbbf24')
+                            : 'rgba(255,255,255,0.08)',
+                        }}>
+                        {isSelected && (
+                          <div className="absolute -top-2 -right-2 text-lg">✨</div>
+                        )}
+                        <span className="text-4xl mb-1">{fc.emoji}</span>
+                        <div className={`text-base font-black ${isSelected ? 'text-amber-200' : 'text-white'}`}>
+                          {fc.label}
+                        </div>
                         <div className="text-xs text-slate-400">{d.name}</div>
-                        <div className="text-xs text-slate-400">{d.floorCount}層</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[11px] px-2 py-0.5 rounded-full"
+                            style={{ background:`${dc?.color || '#94a3b8'}22`, color: dc?.color || '#94a3b8' }}>
+                            🏗️ {d.floorCount}層
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {sameDiffMaps.length > 0 && `${sameDiffMaps.indexOf(d)+1}/${sameDiffMaps.length}`}
+                          </span>
+                        </div>
                       </button>
                     );
                   })}

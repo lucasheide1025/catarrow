@@ -266,18 +266,23 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
     const ctrAccum    = {};
 
+    let lastHitInfo = null;
+
     for (let i = 0; i < 6; i++) {
       if (monsterHP <= 0) break;
 
       // ── 攻擊小回合 ─────────────────────────────────────
       const miniLog = [];
       let   miniDmg = 0;
+      let   lastHitPlayer = null;
+      let   lastHitLabel = null;
       for (const id of orderedAliveIds) {
         if (memberHPNow[id] <= 0) continue;
         const m     = members[id];
         const entry = allData[id].arrowBreakdown[i] || { dmg:0, partIcon:"💨", partName:"脫靶", label:"M" };
         const dmg   = entry.dmg || 0;
         miniDmg    += dmg;
+        if (dmg > 0) { lastHitPlayer = id; lastHitLabel = entry.label; }
         const msg   = dmg > 0
           ? `${m.name} 命中 ${entry.partIcon}${entry.partName}，造成 ${dmg} 傷害！`
           : `${m.name} 脫靶了…`;
@@ -288,6 +293,15 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         miniRound: i + 1, isCounter: false,
         playerLog: miniLog, totalDmg: miniDmg, monsterHPAfter: monsterHP,
       });
+
+      // 記錄最後一擊
+      if (monsterHP <= 0 && lastHitPlayer) {
+        lastHitInfo = {
+          memberId: lastHitPlayer,
+          memberName: members[lastHitPlayer]?.name || "未知射手",
+          label: lastHitLabel || "?",
+        };
+      }
 
       // ── 反擊小回合（每 ARROWS_PER_CTR 箭後，怪物尚存時；後衛免疫反擊）──
       if (!skipAllCtr && (i + 1) % ARROWS_PER_CTR === 0 && monsterHP > 0) {
@@ -400,6 +414,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       round, event, miniRounds, playerLog, totalDmg,
       monsterHPBefore: room.monsterHP, monsterHPAfter: monsterHP,
       counterRound: !skipAllCtr,
+      lastHit: lastHitInfo,
     };
 
     // Step 7：判斷結果 & 下一狀態
@@ -448,7 +463,7 @@ export async function selectDungeonPath(roomId, pathKey, pathOptions) {
 
     if (chosen?.preContent === "shop") {
       const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
-      upd.shopItems     = shuffled.slice(0, 4);
+      upd.shopItems     = shuffled.slice(0, 4).map(item => item.id);
       upd.shopPurchases = {};
       status = "shop";
     } else if (chosen?.preContent === "event") {
@@ -465,7 +480,10 @@ export async function selectDungeonPath(roomId, pathKey, pathOptions) {
 export async function purchaseDungeonItem(roomId, memberId, item, memberData) {
   try {
     const m   = memberData;
-    const upd = { [`shopPurchases.${memberId}`]: arrayUnion(item.id) };
+    // hp_potion 不記錄到購買清單（允許重複購買）
+    const upd = item.id === "hp_potion"
+      ? {}
+      : { [`shopPurchases.${memberId}`]: arrayUnion(item.id) };
 
     switch (item.effect) {
       case "hp_restore":
@@ -482,11 +500,15 @@ export async function purchaseDungeonItem(roomId, memberId, item, memberData) {
         upd[`members.${memberId}.buffs.defMult`] =
           Math.round((m.buffs?.defMult || 1) * item.value * 100) / 100;
         break;
-      case "contract_reset":
-        upd[`members.${memberId}.contractReset`] = true;
-        break;
       case "revival":
         upd[`members.${memberId}.buffs.hasRevival`] = true;
+        break;
+      case "hp_max_boost":
+        upd[`members.${memberId}.maxHP`] = Math.round((m.maxHP || 100) * (1 + item.value));
+        upd[`members.${memberId}.hp`]    = Math.round((m.hp || m.maxHP || 100) * (1 + item.value));
+        break;
+      case "revival_front":
+        upd[`members.${memberId}.buffs.hasFrontRevival`] = true;
         break;
     }
 
@@ -531,11 +553,6 @@ export async function confirmDungeonEvent(roomId, room) {
           upd[`members.${id}.buffs.dmgMult`] = Math.round((m.buffs?.dmgMult || 1) * eff.value * 100) / 100;
         }
         break;
-      case "contract_reassign": {
-        const newC = assignContracts(aliveIds);
-        for (const id of aliveIds) upd[`members.${id}.contract`] = newC[id];
-        break;
-      }
       case "contract_standard_one": {
         if (aliveIds.length > 0) {
           const lucky = aliveIds[Math.floor(Math.random() * aliveIds.length)];
@@ -556,6 +573,16 @@ export async function confirmDungeonEvent(roomId, room) {
         break;
       case "gold_mult":
         upd.nextFloorModifiers = { ...(room.nextFloorModifiers || {}), goldMult: eff.value };
+        break;
+      case "def_mult_all":
+        for (const id of aliveIds) {
+          const m = members[id];
+          upd[`members.${id}.buffs.defMult`] = Math.round((m.buffs?.defMult || 1) * eff.value * 100) / 100;
+        }
+        break;
+      case "skip_counter":
+        // skip_counter 在 processDungeonRound 中讀取 room.currentEvent 的 effect
+        // 這裡不需要額外處理，該層級的怪物反擊已被跳過
         break;
     }
 
@@ -764,10 +791,20 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
       if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
-    const monsterHP = monster?.hp || 100;
+
+    // Boss 房間加成：套用 bossModifier 到怪物數值
+    const bossMod = roomMeta?.bossModifier || null;
+    const finalMonster = bossMod && monster ? {
+      ...monster,
+      hp:  Math.round((monster.hp  || 100) * (bossMod.hp  || 1)),
+      atk: Math.round((monster.atk || 10)  * (bossMod.atk || 1)),
+      def: Math.round((monster.def || 5)   * (bossMod.def || 1)),
+    } : monster;
+    const monsterHP = finalMonster?.hp || 100;
+
     await updateDoc(doc(db, D, roomId), {
       ...upd,
-      monster:             monster,
+      monster:             finalMonster,
       monsterHP:           monsterHP,
       monsterMaxHP:        monsterHP,
       status:              "active",
@@ -777,7 +814,9 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       result:              null,
       processing:          false,
       totalFloors:         1,
-      currentFloor:        1,
+      currentFloor:        (room.mapFloorIndex ?? 0) + 1,
+      // 標記 Boss 房間以利結算獎勵判斷
+      ...(bossMod ? { isBossRoom: true } : {}),
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -951,6 +990,75 @@ export async function addCollectibles(memberId, drops = []) {
   } catch (_) {}
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  非戰鬥房間系統（商人/休息/陷阱）  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 進入非戰鬥房間（商人/休息/陷阱）— 房主呼叫
+// roomType: "shop" | "rest" | "trap" | "event"
+export async function enterNonCombatRoom(roomId, roomType, extraData = {}) {
+  try {
+    // 標準化房間類型：地圖裡的 merchant/chest 等映射到系統狀態
+    const normalizedType = roomType === "merchant" ? "shop" : roomType;
+    const upd = {
+      status: normalizedType,
+      activeRoomId: extraData.roomId || null,
+      roomConfirms: {},
+    };
+    if (normalizedType === "shop") {
+      const { DUNGEON_SHOP_ITEMS } = await import("./dungeonData");
+      const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
+      upd.shopItems = shuffled.slice(0, 5).map(item => item.id);
+      // 不重置 shopPurchases，讓購買記錄跨商店持久（hp_potion 除外）
+    }
+    if (normalizedType === "event") {
+      const { drawDungeonEvent } = await import("./dungeonData");
+      upd.currentEvent = drawDungeonEvent();
+    }
+    await updateDoc(doc(db, D, roomId), upd);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 成員確認完成非戰鬥房間
+// 可同時傳入該成員的選擇（休息選項/陷阱確認等）
+export async function confirmNonCombatRoom(roomId, memberId, choice = null) {
+  try {
+    const upd = { [`roomConfirms.${memberId}`]: true };
+    if (choice !== null) upd[`roomChoices.${memberId}`] = choice;
+    await updateDoc(doc(db, D, roomId), upd);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 房主結算非戰鬥房間（全員確認或房主強制）→ 回地圖探索
+// 會將該房間標記為已清除
+export async function resolveNonCombatRoom(roomId, room, hostId, clearedRoomId) {
+  try {
+    const allAliveIds = Object.entries(room.members || {})
+      .filter(([, m]) => m.alive)
+      .map(([id]) => id);
+    const confirmed = Object.keys(room.roomConfirms || {});
+    const allConfirmed = allAliveIds.length === 0 || allAliveIds.every(id => confirmed.includes(id));
+    if (!allConfirmed && !confirmed.includes(hostId)) {
+      return { ok:false, reason:"not all confirmed" };
+    }
+    const prevCleared = room.mapClearedIds || [];
+    const newCleared  = clearedRoomId && !prevCleared.includes(clearedRoomId)
+      ? [...prevCleared, clearedRoomId]
+      : prevCleared;
+    await updateDoc(doc(db, D, roomId), {
+      status:        "map_explore",
+      roomConfirms:  {},
+      roomChoices:   {},
+      currentEvent:  null,
+      mapClearedIds: newCleared,
+      // 不清空 shopPurchases，讓購買記錄跨房間持久
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
 
 // 管理員：刪除所有地下城房間（重置中心用）
 export async function deleteAllDungeonRooms() {
