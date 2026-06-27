@@ -2875,14 +2875,14 @@ export async function saveEquipNextMats(memberId, slotId, mats) {
 
 // ─── 遠征隊 ────────────────────────────────────────────────
 
-// 派遣遠征：扣射手資源、寫入 expedition 狀態
+// 派遣遠征：扣射手資源、寫入 expeditions.{slotIdx} 狀態
 // archerCost: { archer_t1: 50, archer_t2: 30, ... }（從客戶端傳入）
-export async function startExpedition(memberId, catId, catName, missionTier, hours, archerCost) {
+export async function startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost) {
   if (!memberId || !catId || !missionTier) return { ok: false, reason: "參數錯誤" };
   try {
     const endsAt = new Date(Date.now() + hours * 3600000);
     const updates = {
-      expedition: {
+      [`expeditions.${slotIdx}`]: {
         catId, catName, missionTier, hours,
         startedAt: serverTimestamp(),
         endsAt: Timestamp.fromDate(endsAt),
@@ -2902,13 +2902,13 @@ export async function startExpedition(memberId, catId, catName, missionTier, hou
   }
 }
 
-// 領取遠征獎勵：寫入資源、清除 expedition 狀態
+// 領取遠征獎勵：寫入資源、清除 expeditions.{slotIdx}
 // rewards: { fur_t1: 3, potion_t2: 2, arrowdew: 20, ... }
-export async function collectExpedition(memberId, rewards) {
+export async function collectExpedition(memberId, slotIdx, rewards) {
   if (!memberId || !rewards) return { ok: false, reason: "參數錯誤" };
   try {
     const updates = {
-      expedition: null,
+      [`expeditions.${slotIdx}`]: null,
       updatedAt: serverTimestamp(),
     };
     for (const [key, count] of Object.entries(rewards)) {

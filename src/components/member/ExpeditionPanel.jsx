@@ -1,4 +1,4 @@
-// src/components/member/ExpeditionPanel.jsx — 遠征隊派遣面板
+// src/components/member/ExpeditionPanel.jsx — 遠征隊派遣面板（3 槽位）
 import { useState, useEffect, useRef } from "react";
 import { subscribeMyCats } from "../../lib/catDb";
 import { CATS } from "../../lib/catData";
@@ -60,14 +60,86 @@ function RewardPreview({ mission, catLevel }) {
         </div>
       ))}
       {mission.bonusChance?.arrowdew > 0 && (
-        <div className="text-[10px]" style={{ color:"#78350f" }}>
-          💧 箭露 {Math.round(mission.bonusChance.arrowdew*100)}% 機率掉落
+        <div className="text-[10px]" style={{ color:"#fbbf24" }}>
+          💧 箭露 {Math.round(mission.bonusChance.arrowdew*100)}% 機率
         </div>
       )}
       {mission.bonusChance?.gachaToken > 0 && (
-        <div className="text-[10px]" style={{ color:"#78350f" }}>
-          🎰 扭蛋幣 {Math.round(mission.bonusChance.gachaToken*100)}% 機率掉落
+        <div className="text-[10px]" style={{ color:"#fbbf24" }}>
+          🎰 扭蛋幣 {Math.round(mission.bonusChance.gachaToken*100)}% 機率
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── 單個槽位卡片 ──────────────────────────────────────
+function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onCollect, collecting }) {
+  if (!expedition) {
+    return (
+      <button
+        onClick={() => onSelect(slotIdx)}
+        style={{
+          flex:1, minWidth:0,
+          background: isActive ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
+          border: `1.5px solid ${isActive ? "rgba(167,139,250,0.7)" : "rgba(255,255,255,0.1)"}`,
+          borderRadius:16, padding:"14px 8px", cursor:"pointer",
+          display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+          transition:"all 0.15s",
+        }}>
+        <div style={{ fontSize:28 }}>🏕️</div>
+        <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontWeight:600 }}>遠征槽 {slotIdx+1}</div>
+        <div style={{ fontSize:10, color: isActive ? "#a78bfa" : "rgba(255,255,255,0.25)", fontWeight:800 }}>
+          {isActive ? "設定中…" : "空置"}
+        </div>
+      </button>
+    );
+  }
+
+  const endsAt     = expedition.endsAt?.toMillis?.() || 0;
+  const msLeft     = endsAt - now;
+  const isDone     = msLeft <= 0;
+  const expMission = EXPEDITION_MISSIONS.find(m => m.tier === expedition.missionTier);
+  const expCatInfo = CATS[expedition.catId];
+  const catData    = myCats[expedition.catId];
+  const catLv      = catData ? catLevelFromXP(catData.catXP || 0) : "?";
+
+  return (
+    <div style={{
+      flex:1, minWidth:0,
+      background: isDone
+        ? "linear-gradient(135deg,#14532d,#166534)"
+        : "linear-gradient(135deg,#1c1f2e,#2a1a3e)",
+      border: `1.5px solid ${isDone ? "rgba(74,222,128,0.5)" : "rgba(167,139,250,0.3)"}`,
+      borderRadius:16, padding:"10px 8px",
+      display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+    }}>
+      <div style={{ fontSize:20 }}>{expMission?.emoji || "⚡"}</div>
+      <img
+        src={`/cats/portraits/${expedition.catId}.webp`}
+        alt={expedition.catName}
+        style={{ width:36, height:36, borderRadius:"50%", objectFit:"cover", border:"1.5px solid rgba(167,139,250,0.5)" }}
+      />
+      <div style={{ fontSize:10, fontWeight:900, color:"white", textAlign:"center", lineHeight:1.2 }}>
+        {expCatInfo?.name || expedition.catName}
+      </div>
+      <div style={{ fontSize:9, color:"rgba(255,255,255,0.5)" }}>Lv {catLv}</div>
+      <div style={{ fontSize:10, fontWeight:900, color: isDone ? "#4ade80" : "#fbbf24" }}>
+        {isDone ? "✓ 完成" : fmtCountdown(msLeft)}
+      </div>
+      {isDone && (
+        <button
+          onClick={() => onCollect(slotIdx)}
+          disabled={collecting}
+          style={{
+            marginTop:2, width:"100%", padding:"6px 0", borderRadius:10,
+            fontWeight:900, fontSize:10, border:"none",
+            background: collecting ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#4ade80,#16a34a)",
+            color: collecting ? "rgba(255,255,255,0.3)" : "#fff",
+            cursor: collecting ? "not-allowed" : "pointer",
+          }}>
+          {collecting ? "領取中" : "🎁 領取"}
+        </button>
       )}
     </div>
   );
@@ -75,10 +147,11 @@ function RewardPreview({ mission, catLevel }) {
 
 export default function ExpeditionPanel({ profile }) {
   const [myCats,      setMyCats]      = useState({});
+  const [activeSlot,  setActiveSlot]  = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedTier,setSelectedTier]= useState(null);
   const [sending,     setSending]     = useState(false);
-  const [collecting,  setCollecting]  = useState(false);
+  const [collecting,  setCollecting]  = useState({});
   const [msg,         setMsg]         = useState("");
   const [now,         setNow]         = useState(Date.now());
   const timerRef = useRef(null);
@@ -88,46 +161,69 @@ export default function ExpeditionPanel({ profile }) {
     return subscribeMyCats(profile.id, setMyCats);
   }, [profile?.id]); // eslint-disable-line
 
-  // 倒計時每分鐘更新
   useEffect(() => {
     timerRef.current = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timerRef.current);
   }, []);
 
-  const expedition   = profile?.expedition;
-  const villageRes   = profile?.village?.resources || {};
+  const villageRes    = profile?.village?.resources || {};
   const equippedCatId = profile?.equippedCat?.catId;
 
-  // 可派遣的貓（持有且非裝備中）
-  const availableCats = Object.values(myCats).filter(c => c.catId !== equippedCatId);
+  // 向後兼容：支援舊的單一 expedition 欄位
+  const rawExpeditions = profile?.expeditions || {};
+  const expeditions = Object.keys(rawExpeditions).length > 0
+    ? rawExpeditions
+    : (profile?.expedition ? { 0: profile.expedition } : {});
 
-  const mission = selectedTier ? EXPEDITION_MISSIONS.find(m => m.tier === selectedTier) : null;
+  // 已在遠征的貓咪 IDs
+  const onExpeditionCatIds = new Set(
+    Object.values(expeditions).filter(Boolean).map(e => e.catId)
+  );
+
+  // 可派遣：持有、非裝備中、非遠征中
+  const availableCats = Object.values(myCats).filter(
+    c => c.catId !== equippedCatId && !onExpeditionCatIds.has(c.catId)
+  );
+
+  const mission    = selectedTier ? EXPEDITION_MISSIONS.find(m => m.tier === selectedTier) : null;
   const selCatData = selectedCat ? myCats[selectedCat] : null;
   const selCatInfo = selectedCat ? CATS[selectedCat] : null;
   const selCatLevel = selCatData ? catLevelFromXP(selCatData.catXP || 0) : 1;
 
-  // 檢查射手是否足夠
-  const canDispatch = mission && selectedCat && (() => {
-    return Object.entries(mission.archerCost).every(([key, need]) =>
+  const canDispatch = mission && selectedCat && (() =>
+    Object.entries(mission.archerCost).every(([key, need]) =>
       Math.floor(villageRes[key] || 0) >= need
-    );
-  })();
+    )
+  )();
 
   function showMsg(text) {
     setMsg(text);
     setTimeout(() => setMsg(""), 4000);
   }
 
+  function handleSelectSlot(idx) {
+    if (activeSlot === idx) {
+      setActiveSlot(null);
+      setSelectedCat(null);
+      setSelectedTier(null);
+    } else {
+      setActiveSlot(idx);
+      setSelectedCat(null);
+      setSelectedTier(null);
+    }
+  }
+
   async function handleDispatch() {
-    if (!canDispatch || sending) return;
+    if (!canDispatch || sending || activeSlot === null) return;
     setSending(true);
     const result = await startExpedition(
-      profile.id, selectedCat, selCatInfo?.name || selectedCat,
+      profile.id, activeSlot, selectedCat, selCatInfo?.name || selectedCat,
       selectedTier, mission.hours, mission.archerCost,
     );
     setSending(false);
     if (result.ok) {
       showMsg(`✅ ${selCatInfo?.name} 出發了！${mission.hours}小時後回來`);
+      setActiveSlot(null);
       setSelectedCat(null);
       setSelectedTier(null);
     } else {
@@ -135,15 +231,17 @@ export default function ExpeditionPanel({ profile }) {
     }
   }
 
-  async function handleCollect() {
-    if (collecting || !expedition) return;
-    const catLv = myCats[expedition.catId]
-      ? catLevelFromXP(myCats[expedition.catId].catXP || 0)
+  async function handleCollect(slotIdx) {
+    if (collecting[slotIdx]) return;
+    const exp = expeditions[slotIdx];
+    if (!exp) return;
+    const catLv = myCats[exp.catId]
+      ? catLevelFromXP(myCats[exp.catId].catXP || 0)
       : 1;
-    const rewards = calcExpeditionRewards(expedition.missionTier, catLv);
-    setCollecting(true);
-    const result = await collectExpedition(profile.id, rewards);
-    setCollecting(false);
+    const rewards = calcExpeditionRewards(exp.missionTier, catLv);
+    setCollecting(prev => ({ ...prev, [slotIdx]: true }));
+    const result = await collectExpedition(profile.id, slotIdx, rewards);
+    setCollecting(prev => ({ ...prev, [slotIdx]: false }));
     if (result.ok) {
       const lines = Object.entries(rewards).map(([k,v]) => fmtRewardKey(k, v)).join("　");
       showMsg(`🎉 遠征完成！\n${lines}`);
@@ -152,227 +250,170 @@ export default function ExpeditionPanel({ profile }) {
     }
   }
 
-  // ── 進行中的遠征 ─────────────────────────────────────────
-  if (expedition?.status === "active") {
-    const endsAt  = expedition.endsAt?.toMillis?.() || 0;
-    const msLeft  = endsAt - now;
-    const isDone  = msLeft <= 0;
-    const expMission = EXPEDITION_MISSIONS.find(m => m.tier === expedition.missionTier);
-    const expCatInfo = CATS[expedition.catId];
-
-    return (
-      <div style={{ padding:"12px 12px 20px", color:"white" }}>
-        {msg && (
-          <div style={{ background:"#14532d", borderRadius:10, padding:"9px 13px", marginBottom:12, fontWeight:800, fontSize:13 }}>
-            {msg}
-          </div>
-        )}
-
-        <div style={{ background:"linear-gradient(135deg,#1c1f2e,#2a1a3e)", borderRadius:18, padding:18, border:"1.5px solid rgba(167,139,250,0.3)" }}>
-          {/* 標頭 */}
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
-            <div style={{ fontSize:40 }}>{expMission?.emoji || "⚡"}</div>
-            <div>
-              <div style={{ fontWeight:900, fontSize:16, color:"#a78bfa" }}>{expMission?.label}</div>
-              <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>難度 T{expedition.missionTier} · {expMission?.hours}小時任務</div>
-            </div>
-          </div>
-
-          {/* 貓咪資訊 */}
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, background:"rgba(255,255,255,0.05)", borderRadius:12, padding:"10px 12px" }}>
-            <img
-              src={`/cats/portraits/${expedition.catId}.webp`}
-              alt={expedition.catName}
-              style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", border:"2px solid rgba(167,139,250,0.5)", flexShrink:0 }}
-            />
-            <div>
-              <div style={{ fontWeight:900, fontSize:14, color:"white" }}>{expedition.catName}</div>
-              <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>
-                Lv {myCats[expedition.catId] ? catLevelFromXP(myCats[expedition.catId].catXP||0) : "?"} · 領隊中
-              </div>
-            </div>
-            <div style={{ marginLeft:"auto", textAlign:"right" }}>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)" }}>
-                {isDone ? "任務完成" : "預計回來"}
-              </div>
-              <div style={{ fontWeight:900, fontSize:15, color: isDone ? "#4ade80" : "#fbbf24" }}>
-                {fmtCountdown(msLeft)}
-              </div>
-            </div>
-          </div>
-
-          {/* 射手消耗 */}
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:6 }}>消耗射手</div>
-          <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:10, padding:"8px 12px", marginBottom:14 }}>
-            {Object.entries(expedition.archerCost || {}).map(([k, v]) => {
-              const tier = Number(k.replace("archer_t",""));
-              return (
-                <div key={k} className="flex items-center gap-2 text-xs" style={{ marginBottom:3 }}>
-                  <span style={{ color: TIER_COLOR[tier], fontWeight:900 }}>T{tier} 射手</span>
-                  <span style={{ color:"rgba(255,255,255,0.5)", marginLeft:"auto" }}>×{v}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 收取按鈕 */}
-          <button
-            onClick={handleCollect}
-            disabled={!isDone || collecting}
-            style={{
-              width:"100%", padding:"14px 0", borderRadius:14,
-              fontWeight:900, fontSize:16, border:"none",
-              cursor: isDone ? "pointer" : "not-allowed",
-              background: isDone ? "linear-gradient(90deg,#a78bfa,#7c3aed)" : "rgba(255,255,255,0.08)",
-              color: isDone ? "white" : "rgba(255,255,255,0.3)",
-            }}>
-            {collecting ? "領取中…" : isDone ? "🎁 領取遠征獎勵" : `⏳ ${fmtCountdown(msLeft)} 後返回`}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 派遣設定畫面 ─────────────────────────────────────────
   return (
     <div style={{ padding:"12px 12px 80px", color:"white" }}>
       {msg && (
-        <div style={{ background:"#14532d", borderRadius:10, padding:"9px 13px", marginBottom:12, fontWeight:800, fontSize:13 }}>
+        <div style={{ background:"#14532d", borderRadius:10, padding:"9px 13px", marginBottom:12, fontWeight:800, fontSize:13, whiteSpace:"pre-line" }}>
           {msg}
         </div>
       )}
 
       {/* 說明 */}
       <div style={{ background:"rgba(167,139,250,0.07)", borderRadius:12, padding:"9px 13px", marginBottom:14, fontSize:11, color:"rgba(167,139,250,0.8)", border:"1px solid rgba(167,139,250,0.15)" }}>
-        選一隻貓咪擔任領隊，搭配任務難度出發。貓咪等級越高，回來帶的素材越多。<br/>
+        可同時派遣最多 3 隻貓咪遠征。貓咪等級越高，帶回的素材越多。<br/>
         <span style={{ color:"rgba(255,255,255,0.3)" }}>裝備中的貓咪不能派遣 · 射手消耗後不歸還</span>
       </div>
 
-      {/* Step 1：選貓 */}
-      <div style={{ marginBottom:16 }}>
-        <div style={{ fontSize:12, fontWeight:800, color:"#a78bfa", marginBottom:8 }}>① 選擇領隊貓咪</div>
-        {availableCats.length === 0 ? (
-          <div style={{ color:"rgba(255,255,255,0.3)", fontSize:12, padding:"12px", textAlign:"center", background:"rgba(255,255,255,0.04)", borderRadius:12 }}>
-            沒有可派遣的貓咪（所有貓都在裝備中或未持有）
-          </div>
-        ) : (
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:8 }}>
-            {availableCats.map(cat => {
-              const info  = CATS[cat.catId];
-              const lv    = catLevelFromXP(cat.catXP || 0);
-              const isSelected = selectedCat === cat.catId;
-              return (
-                <button key={cat.catId}
-                  onClick={() => setSelectedCat(isSelected ? null : cat.catId)}
-                  style={{
-                    background: isSelected ? "rgba(167,139,250,0.2)" : "rgba(255,255,255,0.05)",
-                    border: `1.5px solid ${isSelected ? "rgba(167,139,250,0.7)" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius:14, padding:"10px 8px", cursor:"pointer",
-                    transition:"all 0.15s",
-                  }}>
-                  <img
-                    src={`/cats/portraits/${cat.catId}.webp`}
-                    alt={info?.name || cat.catId}
-                    style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", marginBottom:4 }}
-                  />
-                  <div style={{ fontWeight:900, fontSize:11, color:"white", marginBottom:2 }}>
-                    {info?.name || cat.catId}
-                  </div>
-                  <div style={{ fontSize:10, color: TYPE_COLOR[cat.type] || "#9ca3af" }}>
-                    {TYPE_LABEL[cat.type] || "—"}
-                  </div>
-                  <div style={{ fontSize:10, color:"#fbbf24", fontWeight:800 }}>Lv {lv}</div>
-                </button>
-              );
-            })}
-          </div>
-        )}
+      {/* 3 個槽位卡片 */}
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {[0, 1, 2].map(idx => (
+          <SlotCard
+            key={idx}
+            slotIdx={idx}
+            expedition={expeditions[idx] || null}
+            myCats={myCats}
+            now={now}
+            onSelect={handleSelectSlot}
+            isActive={activeSlot === idx}
+            onCollect={handleCollect}
+            collecting={!!collecting[idx]}
+          />
+        ))}
       </div>
 
-      {/* 選中貓咪資訊 */}
-      {selCatData && selCatInfo && (
-        <div style={{ background:"rgba(167,139,250,0.08)", borderRadius:12, padding:"10px 13px", marginBottom:14, border:"1px solid rgba(167,139,250,0.2)", fontSize:12 }}>
-          <span style={{ color:"#a78bfa", fontWeight:800 }}>{selCatInfo.name}</span>
-          <span style={{ color:"rgba(255,255,255,0.5)", marginLeft:6 }}>Lv {selCatLevel}</span>
-          <span style={{ color:"#fbbf24", marginLeft:8 }}>× {catLevelMult(selCatLevel).toFixed(2)} 獎勵加成</span>
+      {/* 派遣設定表單（點空槽後展開） */}
+      {activeSlot !== null && (
+        <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(167,139,250,0.2)", borderRadius:16, padding:"14px 12px" }}>
+          <div style={{ fontWeight:900, fontSize:13, color:"#a78bfa", marginBottom:12 }}>
+            遠征槽 {activeSlot+1} — 派遣設定
+          </div>
+
+          {/* Step 1：選貓 */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:"#a78bfa", marginBottom:8 }}>① 選擇領隊貓咪</div>
+            {availableCats.length === 0 ? (
+              <div style={{ color:"rgba(255,255,255,0.3)", fontSize:12, padding:"12px", textAlign:"center", background:"rgba(255,255,255,0.04)", borderRadius:12 }}>
+                沒有可派遣的貓咪（裝備中或全在遠征中）
+              </div>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:8 }}>
+                {availableCats.map(cat => {
+                  const info       = CATS[cat.catId];
+                  const lv         = catLevelFromXP(cat.catXP || 0);
+                  const isSelected = selectedCat === cat.catId;
+                  return (
+                    <button key={cat.catId}
+                      onClick={() => setSelectedCat(isSelected ? null : cat.catId)}
+                      style={{
+                        background: isSelected ? "rgba(167,139,250,0.2)" : "rgba(255,255,255,0.05)",
+                        border: `1.5px solid ${isSelected ? "rgba(167,139,250,0.7)" : "rgba(255,255,255,0.1)"}`,
+                        borderRadius:14, padding:"10px 8px", cursor:"pointer",
+                        transition:"all 0.15s",
+                      }}>
+                      <img
+                        src={`/cats/portraits/${cat.catId}.webp`}
+                        alt={info?.name || cat.catId}
+                        style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", marginBottom:4 }}
+                      />
+                      <div style={{ fontWeight:900, fontSize:11, color:"white", marginBottom:2 }}>
+                        {info?.name || cat.catId}
+                      </div>
+                      <div style={{ fontSize:10, color: TYPE_COLOR[cat.type] || "#9ca3af" }}>
+                        {TYPE_LABEL[cat.type] || "—"}
+                      </div>
+                      <div style={{ fontSize:10, color:"#fbbf24", fontWeight:800 }}>Lv {lv}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 選中貓咪資訊 */}
+          {selCatData && selCatInfo && (
+            <div style={{ background:"rgba(167,139,250,0.08)", borderRadius:12, padding:"10px 13px", marginBottom:14, border:"1px solid rgba(167,139,250,0.2)", fontSize:12 }}>
+              <span style={{ color:"#a78bfa", fontWeight:800 }}>{selCatInfo.name}</span>
+              <span style={{ color:"rgba(255,255,255,0.5)", marginLeft:6 }}>Lv {selCatLevel}</span>
+              <span style={{ color:"#fbbf24", marginLeft:8 }}>× {catLevelMult(selCatLevel).toFixed(2)} 獎勵加成</span>
+            </div>
+          )}
+
+          {/* Step 2：選任務 */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:"#a78bfa", marginBottom:8 }}>② 選擇任務難度</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {EXPEDITION_MISSIONS.map(m => {
+                const isSelected = selectedTier === m.tier;
+                const costOk = Object.entries(m.archerCost).every(([k, need]) =>
+                  Math.floor(villageRes[k] || 0) >= need
+                );
+                return (
+                  <button key={m.tier}
+                    onClick={() => setSelectedTier(isSelected ? null : m.tier)}
+                    style={{
+                      background: isSelected ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
+                      border: `1.5px solid ${isSelected ? "rgba(167,139,250,0.6)" : costOk ? "rgba(255,255,255,0.1)" : "rgba(239,68,68,0.3)"}`,
+                      borderRadius:14, padding:"11px 13px", cursor:"pointer",
+                      textAlign:"left", transition:"all 0.15s",
+                    }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: isSelected ? 8 : 0 }}>
+                      <span style={{ fontSize:22 }}>{m.emoji}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:900, fontSize:13, color:"white" }}>
+                          T{m.tier} {m.label}
+                        </div>
+                        <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)" }}>
+                          {m.hours >= 24 ? `${m.hours/24}天` : `${m.hours}小時`} · {costOk ? "✓ 射手足夠" : "⚠ 射手不足"}
+                        </div>
+                      </div>
+                      <div style={{ fontSize:10, color: costOk ? "#4ade80" : "#f87171", fontWeight:800 }}>
+                        {costOk ? "可派遣" : "不足"}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:8, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                        <div>
+                          <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>消耗射手</div>
+                          <ArcherCostRow archerCost={m.archerCost} villageRes={villageRes} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>
+                            預期獎勵 {selCatLevel > 1 ? `(Lv${selCatLevel}加成)` : ""}
+                          </div>
+                          <RewardPreview mission={m} catLevel={selCatLevel} />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 派遣按鈕 */}
+          <button
+            onClick={handleDispatch}
+            disabled={!canDispatch || sending}
+            style={{
+              width:"100%", padding:"15px 0", borderRadius:16,
+              fontWeight:900, fontSize:16, border:"none",
+              cursor: canDispatch ? "pointer" : "not-allowed",
+              background: canDispatch ? "linear-gradient(90deg,#7c3aed,#a78bfa)" : "rgba(255,255,255,0.07)",
+              color: canDispatch ? "white" : "rgba(255,255,255,0.25)",
+            }}>
+            {sending
+              ? "派遣中…"
+              : !selectedCat
+                ? "請先選擇貓咪"
+                : !selectedTier
+                  ? "請選擇任務難度"
+                  : !canDispatch
+                    ? "射手資源不足"
+                    : `🚀 派遣 ${selCatInfo?.name} 出發！`
+            }
+          </button>
         </div>
       )}
-
-      {/* Step 2：選任務 */}
-      <div style={{ marginBottom:16 }}>
-        <div style={{ fontSize:12, fontWeight:800, color:"#a78bfa", marginBottom:8 }}>② 選擇任務難度</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          {EXPEDITION_MISSIONS.map(m => {
-            const isSelected = selectedTier === m.tier;
-            const costOk = Object.entries(m.archerCost).every(([k, need]) =>
-              Math.floor(villageRes[k] || 0) >= need
-            );
-            return (
-              <button key={m.tier}
-                onClick={() => setSelectedTier(isSelected ? null : m.tier)}
-                style={{
-                  background: isSelected ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
-                  border: `1.5px solid ${isSelected ? "rgba(167,139,250,0.6)" : costOk ? "rgba(255,255,255,0.1)" : "rgba(239,68,68,0.3)"}`,
-                  borderRadius:14, padding:"11px 13px", cursor:"pointer",
-                  textAlign:"left", transition:"all 0.15s",
-                }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: isSelected ? 8 : 0 }}>
-                  <span style={{ fontSize:22 }}>{m.emoji}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:900, fontSize:13, color:"white" }}>
-                      T{m.tier} {m.label}
-                    </div>
-                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)" }}>
-                      {m.hours >= 24 ? `${m.hours/24}天` : `${m.hours}小時`} · {costOk ? "✓ 射手足夠" : "⚠ 射手不足"}
-                    </div>
-                  </div>
-                  <div style={{ fontSize:10, color: costOk ? "#4ade80" : "#f87171", fontWeight:800 }}>
-                    {costOk ? "可派遣" : "不足"}
-                  </div>
-                </div>
-
-                {isSelected && (
-                  <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:8, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                    <div>
-                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>消耗射手</div>
-                      <ArcherCostRow archerCost={m.archerCost} villageRes={villageRes} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>
-                        預期獎勵 {selCatLevel > 1 ? `(Lv${selCatLevel}加成)` : ""}
-                      </div>
-                      <RewardPreview mission={m} catLevel={selCatLevel} />
-                    </div>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 派遣按鈕 */}
-      <button
-        onClick={handleDispatch}
-        disabled={!canDispatch || sending}
-        style={{
-          width:"100%", padding:"15px 0", borderRadius:16,
-          fontWeight:900, fontSize:16, border:"none",
-          cursor: canDispatch ? "pointer" : "not-allowed",
-          background: canDispatch ? "linear-gradient(90deg,#7c3aed,#a78bfa)" : "rgba(255,255,255,0.07)",
-          color: canDispatch ? "white" : "rgba(255,255,255,0.25)",
-        }}>
-        {sending
-          ? "派遣中…"
-          : !selectedCat
-            ? "請先選擇貓咪"
-            : !selectedTier
-              ? "請選擇任務難度"
-              : !canDispatch
-                ? "射手資源不足"
-                : `🚀 派遣 ${selCatInfo?.name} 出發！`
-        }
-      </button>
     </div>
   );
 }
