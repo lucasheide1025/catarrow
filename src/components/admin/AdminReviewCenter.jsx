@@ -42,34 +42,34 @@ export default function AdminReviewCenter({ pendingCert, messages, pendingExtIte
     <div className="p-4 flex flex-col gap-5">
       <ToastContainer />
       <div className="flex items-center justify-between">
-        <h2 className="text-gray-800 font-black text-xl">🔔 審核中心</h2>
+        <h2 className="text-white font-black text-xl">🔔 審核中心</h2>
         <div className="flex gap-2">
           <button onClick={() => { setShowNotify(v => !v); setShowConfig(false); }}
-            className="text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 bg-white">
+            className="text-xs font-bold px-3 py-1.5 rounded-full border border-white/10 text-slate-300" style={{ background:"rgba(255,255,255,0.06)" }}>
             {showNotify ? "✕ 關閉" : "📣 發送通知"}
           </button>
           <button onClick={() => { setShowConfig(v => !v); setShowNotify(false); setShowQuest(false); }}
-            className="text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 bg-white">
+            className="text-xs font-bold px-3 py-1.5 rounded-full border border-white/10 text-slate-300" style={{ background:"rgba(255,255,255,0.06)" }}>
             {showConfig ? "✕ 關閉" : "⚙️ 考證門檻"}
           </button>
           <button onClick={() => { setShowQuest(v => !v); setShowConfig(false); setShowNotify(false); }}
-            className="text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 bg-white">
+            className="text-xs font-bold px-3 py-1.5 rounded-full border border-white/10 text-slate-300" style={{ background:"rgba(255,255,255,0.06)" }}>
             {showQuest ? "✕ 關閉" : "📍 任務設定"}
           </button>
         </div>
       </div>
       {showConfig && (
-        <div className="border border-indigo-200 rounded-2xl overflow-hidden">
+        <div className="border border-indigo-400/30 rounded-2xl overflow-hidden">
           <AdminCertConfig />
         </div>
       )}
       {showNotify && (
-        <div className="border border-pink-200 rounded-2xl overflow-hidden">
+        <div className="border border-pink-400/30 rounded-2xl overflow-hidden">
           <AdminNotify />
         </div>
       )}
       {showQuest && (
-        <div className="border border-indigo-200 rounded-2xl overflow-hidden p-4">
+        <div className="border border-indigo-400/30 rounded-2xl overflow-hidden p-4">
           <AdminDailyQuest mode="config" />
         </div>
       )}
@@ -80,8 +80,8 @@ export default function AdminReviewCenter({ pendingCert, messages, pendingExtIte
           ["畢業考", certTasks.length, "text-indigo-600"],
           ["外賽待審", pendingExt.length, "text-purple-600"],
           ["待回留言", unrepliedMsgs.length, "text-orange-600"]].map(([k,v,c])=>(
-          <div key={k} className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-            <div className="text-gray-400 text-xs">{k}</div>
+          <div key={k} className="rounded-xl border border-white/10 p-3 text-center" style={{ background:"rgba(255,255,255,0.06)" }}>
+            <div className="text-slate-400 text-xs">{k}</div>
             <div className={`font-black text-2xl ${c}`}>{v}</div>
           </div>
         ))}
@@ -166,10 +166,10 @@ function CertReviewCard({ r, comp, operatorId, toast }) {
   }
 
   return (
-    <div className="rounded-xl p-3 border bg-amber-50 border-amber-200">
+    <div className="rounded-xl p-3 border border-amber-400/30" style={{ background:"rgba(120,80,0,0.15)" }}>
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-gray-800 text-sm font-bold">
+          <div className="text-white text-sm font-bold">
             {r.nickname || r.name}
             {r.isRental && <span className="text-orange-500 text-xs ml-1">租借</span>}
           </div>
@@ -179,13 +179,13 @@ function CertReviewCard({ r, comp, operatorId, toast }) {
         </div>
         {editing ? (
           <input type="number" value={score} onChange={e=>setScore(e.target.value)}
-            className="w-20 bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-center font-black text-sm" />
+            className="w-20 border border-white/20 rounded-lg px-2 py-1.5 text-center font-black text-sm text-white" style={{ background:"rgba(255,255,255,0.08)" }} />
         ) : (
           <span className="font-black text-xl text-blue-600">{r.total}</span>
         )}
       </div>
       <div className="flex items-center gap-2 mt-2">
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${level!=="未達標"?certLevelStyle(level,"solid"):"bg-gray-200 text-gray-500"}`}>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${level!=="未達標"?certLevelStyle(level,"solid"):"bg-slate-700 text-slate-400"}`}>
           {level==="未達標"?"未達標":`${level} 級`}
         </span>
       </div>
@@ -229,18 +229,18 @@ function ExtReviewCard({ r, operatorId, toast }) {
   }
 
   return (
-    <div className="rounded-xl p-3 border bg-purple-50 border-purple-200 flex flex-col gap-3">
+    <div className="rounded-xl p-3 border border-purple-400/30 flex flex-col gap-3" style={{ background:"rgba(88,28,135,0.2)" }}>
       {/* 比賽資訊 */}
       <div>
-        <div className="text-gray-800 font-bold text-sm">
-          {r.memberName}{r.memberNickname && <span className="text-gray-400 text-xs ml-1">（{r.memberNickname}）</span>}
+        <div className="text-white font-bold text-sm">
+          {r.memberName}{r.memberNickname && <span className="text-slate-400 text-xs ml-1">（{r.memberNickname}）</span>}
         </div>
-        <div className="text-gray-700 text-sm">{r.compName}</div>
+        <div className="text-slate-300 text-sm">{r.compName}</div>
         <div className="text-gray-400 text-xs mt-0.5">
           📅 {r.date}{r.location && `　📍 ${r.location}`}
         </div>
         <div className="flex gap-1.5 flex-wrap mt-1">
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{r.category}</span>
+          <span className="text-xs px-2 py-0.5 rounded-full text-slate-300" style={{ background:"rgba(255,255,255,0.08)" }}>{r.category}</span>
           <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{r.rank}</span>
           {r.hasAward && <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">🏆 {r.awardKept?"獎項留箭場":"有獎項"}</span>}
         </div>
@@ -248,13 +248,14 @@ function ExtReviewCard({ r, operatorId, toast }) {
       </div>
 
       {/* 審核決定 */}
-      <div className="bg-white rounded-lg p-3 border border-gray-200 flex flex-col gap-3">
-        <div className="text-xs font-black text-gray-500">審核結果</div>
+      <div className="rounded-lg p-3 border border-white/10 flex flex-col gap-3" style={{ background:"rgba(255,255,255,0.06)" }}>
+        <div className="text-xs font-black text-slate-400">審核結果</div>
         <div className="flex gap-2">
           {[["approved","✅ 通過"],["rejected","❌ 不通過"]].map(([v,l])=>(
             <button key={v} onClick={()=>setDecision(v)}
               className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all
-                ${decision===v?(v==="approved"?"bg-green-600 text-white border-green-600":"bg-red-500 text-white border-red-500"):"bg-white text-gray-600 border-gray-200"}`}>
+                ${decision===v?(v==="approved"?"bg-green-600 text-white border-green-600":"bg-red-500 text-white border-red-500"):"border-white/10 text-slate-300"}`}
+              style={decision!==v?{background:"rgba(255,255,255,0.06)"}:{}}>
               {l}
             </button>
           ))}
@@ -299,12 +300,12 @@ function MsgReplyCard({ m, operatorId, toast }) {
   }
 
   return (
-    <div className="rounded-xl p-3 border bg-orange-50 border-orange-200">
+    <div className="rounded-xl p-3 border border-orange-400/30" style={{ background:"rgba(120,53,15,0.2)" }}>
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-gray-800 font-bold text-sm">{m.memberName || "射手"}</span>
-        {m.memberNickname && <span className="text-gray-400 text-xs">（{m.memberNickname}）</span>}
+        <span className="text-white font-bold text-sm">{m.memberName || "射手"}</span>
+        {m.memberNickname && <span className="text-slate-400 text-xs">（{m.memberNickname}）</span>}
       </div>
-      <div className="text-gray-700 text-sm mb-1">{m.content}</div>
+      <div className="text-slate-300 text-sm mb-1">{m.content}</div>
       <div className="text-gray-400 text-xs mb-2">{fmtDT(m.createdAt)}</div>
       {!open ? (
         <Btn v="primary" size="sm" onClick={()=>setOpen(true)}>回覆</Btn>
@@ -357,20 +358,20 @@ function CertTaskCard({ t, member, operatorId, toast }) {
   }
 
   return (
-    <div className="rounded-xl p-3 border bg-indigo-50 border-indigo-200">
+    <div className="rounded-xl p-3 border border-indigo-400/30" style={{ background:"rgba(49,46,129,0.2)" }}>
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-gray-800 text-sm font-bold">
+          <div className="text-white text-sm font-bold">
             {member?.name || "未知射手"}{member?.nickname ? `（${member.nickname}）` : ""}
           </div>
-          <div className="text-gray-500 text-xs mt-0.5">
+          <div className="text-slate-400 text-xs mt-0.5">
             {tierLabel}　{BOW_LABEL[t.bowType] || t.bowType}
           </div>
-          <div className="text-indigo-700 text-xs font-bold mt-0.5 flex items-center gap-2">
+          <div className="text-indigo-300 text-xs font-bold mt-0.5 flex items-center gap-2">
             {taskLabel}：
             {editing ? (
               <input type="number" value={val} onChange={e => setVal(e.target.value)}
-                className="w-20 bg-white border border-gray-300 rounded-lg px-2 py-1 text-center font-black text-sm" />
+                className="w-20 border border-white/20 rounded-lg px-2 py-1 text-center font-black text-sm text-white" style={{ background:"rgba(255,255,255,0.08)" }} />
             ) : (
               <span>{isTask1 ? t.hits : t.score} {unit}</span>
             )}

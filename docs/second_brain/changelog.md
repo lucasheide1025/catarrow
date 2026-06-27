@@ -3,6 +3,45 @@
 
 ---
 
+## 2026-06-28（地下城 7 Bug 修正批次）
+
+### Bug 1：商店 revival_front 復活目標錯誤
+- **根因**：`handleResolve` 檢查購買者自身 `role==="rear"`，應找隊伍中任何 `role==="rear"` 的成員
+- **修正**：改為掃描 `shopPurchases` 確認有人購買後，取 `members` 中第一個 `alive && role==="rear"` 的成員復活
+- `hasFallenFront` 計算移到元件頂層，供按鈕 disabled 和 handleBuy 共用
+
+### Bug 2：休息區全員狀態確認
+- `handleResolve` fallback（無人倒地時投票 revive → 全體回 50% HP）原本即正確，保留
+- 加入全員狀態小卡（Bug 4 合併）
+
+### Bug 3：計分板折疊 + 視角切換
+- **3a 分數折疊**：新增 `scoreRowPage` state；`SCORE_ROW_A=["X","10","9","8","7","6","M"]` / `SCORE_ROW_B=["6","5","4","3","2","1","M"]`；7顆 repeat(7,1fr) + 外部 ▼/▲ 切換按鈕
+- **3b 視角切換**：新增 `viewRearInInput` state；`displayedRowMembers` 在非動畫/非送出時允許切換後衛視角；角色列標頭右側加小按鈕
+
+### Bug 4：商店/休息區全員狀態小卡
+- 兩個元件 header 下方加 `overflowX:auto` 橫排小卡，顯示 HP 條 + 存活狀態 + 角色
+
+### Bug 5：商店購買限制
+- 移除 `bought` state，改為只依賴 Firestore `myPurchases`
+- `revival_front` 購買前需 `hasFallenFront === true`，否則 block + 顯示 ⚠️ 無前衛倒地
+
+### Bug 6：關卡機制修改
+- **6a all_hit → M懲罰關**：移除「有M全歸零」早回，改為回合結束後 `totalDmg *= max(0, 1 - mCount * 0.1)`；不再限制靶面/按鈕（全分數有意義）；icon 改 ⚠️
+- **6b score_gate 比例懲罰**：移除「低於門檻全0」邏輯，改為每箭 `d *= max(0, 1 - (threshold - effectiveScore) * 0.1)`；X/10 視同 9；contractParam cap 9；`_roomMeta` 改 `Math.min(6+tier, 9)`
+
+### Bug 7：後台白底框
+- AdminReviewCenter：三個 toggle 按鈕、統計卡、兩個 input 欄位、外賽審核決定區、category badge 改深色
+- AdminMembers：MemberCard 主框、EquipTabs 非選中、爭議 Modal 修正區、歷程統計卡、檢定卡 改深色
+- AdminFinance：tab 按鈕非選中 改深色
+- QR Code 白框保留（掃碼必需）
+
+**踩坑提醒**：
+- `score_gate` 的 score_gate penalty 在 dmgMult 之前套用（讓 buff 可以再補救）
+- `all_hit` 的 M 計數用 `arrows.filter(a=>(a.score??0)===0)` 而非 breakdown 中的脫靶（breakdown 裡的脫靶還包含 part 未命中的情況）
+- `SCORE_GATE_LABELS.slice(0,5)` = ["9","8","7","6","5"]，`slice(5)` = ["4","3","2","1","M"]
+
+---
+
 ## 2026-06-27（地下城前後衛顯示重設計 + 死亡轉後衛時機修正）
 
 ### Bug A：前衛死亡後在動畫開始前就被移到後排

@@ -36,7 +36,10 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
 
 const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
-const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
+const SCORE_LABELS      = ["X","10","9","8","7","6","5","4","3","2","1","M"];
+const SCORE_ROW_A       = ["X","10","9","8","7","6","M"]; // 前頁（高分）
+const SCORE_ROW_B       = ["6","5","4","3","2","1","M"];  // 後頁（低分）
+const SCORE_GATE_LABELS = ["9","8","7","6","5","4","3","2","1","M"]; // 得分關專用
 const SCORE_COLORS = {
   X:"bg-yellow-400 text-yellow-900", 10:"bg-yellow-300 text-yellow-900",
   9:"bg-red-400 text-white", 8:"bg-red-300 text-white",
@@ -113,6 +116,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [targetPending, setTargetPending] = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [shopDone,      setShopDone]      = useState(false);
+  const [scoreRowPage,    setScoreRowPage]    = useState(0); // 0=前頁 1=後頁（分數按鈕折疊）
+  const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
   // 小回合動畫
   const [liveEntry,         setLiveEntry]         = useState(null);
@@ -1198,6 +1203,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const myRowW    = Math.min(120, Math.floor((528 - Math.max(0, myRowMembers.length   - 1) * 3) / (myRowMembers.length   || 1)));
   const otherRowW = Math.min(76,  Math.floor((528 - Math.max(0, otherRowMembers.length - 1) * 3) / (otherRowMembers.length || 1)));
 
+  // 輸入視角切換（Bug 3b）
+  const hasRearMembers = rearDisplayMembers.length > 0;
+  const displayedRowMembers = (!liveEntry && !submitted && viewRearInInput && hasRearMembers)
+    ? rearDisplayMembers : myRowMembers;
+  const displayRowW = Math.min(120, Math.floor((528 - Math.max(0, displayedRowMembers.length - 1) * 3) / (displayedRowMembers.length || 1)));
+
   function handleLeave() {
     leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
     onExit?.();
@@ -1341,20 +1352,27 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           </div>
         )}
 
-        {/* 排頭標籤（有後衛存在時顯示） */}
+        {/* 排頭標籤（有後衛存在時顯示） + 視角切換按鈕 */}
         {rearDisplayMembers.length > 0 && (
-          <div style={{ padding:"2px 8px 0", pointerEvents:"none" }}>
+          <div style={{ padding:"2px 8px 0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <span style={{ fontSize:9, fontWeight:900, letterSpacing:1,
-              color: myDisplayGroup==="rear" ? "rgba(45,212,191,0.7)" : "rgba(251,113,133,0.7)" }}>
-              {myDisplayGroup==="rear" ? "🛡 後衛" : "⚔️ 前衛"}
+              color: viewRearInInput ? "rgba(45,212,191,0.7)" : "rgba(251,113,133,0.7)" }}>
+              {viewRearInInput ? "🛡 後衛" : "⚔️ 前衛"}
             </span>
+            {!liveEntry && !submitted && (
+              <button onClick={() => setViewRearInInput(v => !v)}
+                style={{ fontSize:9, padding:"1px 6px", borderRadius:4, background:"rgba(255,255,255,0.08)",
+                  color:"#94a3b8", border:"none", cursor:"pointer", fontWeight:700 }}>
+                {viewRearInInput ? "⚔️ 前衛" : "🛡後衛"}
+              </button>
+            )}
           </div>
         )}
 
-        {/* 主排（我的視角）完整卡片 */}
+        {/* 主排（我的視角 / 切換後衛視角）完整卡片 */}
         <div style={{ display:"flex", gap:3, padding:"2px 6px 4px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
-          {myRowMembers.map(m => {
+          {displayedRowMembers.map(m => {
             const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
             const isMe = m.id === myId;
@@ -1362,23 +1380,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             const isAttacking = attackingIds.has(m.id);
             // 邊框：isMe→金；front視角但role已改rear（滿員未移動）→紫；後衛排→青；正常前衛→透明
             const isRearInFront = myDisplayGroup !== "rear" && m.role === "rear";
+            const isViewingRear = viewRearInInput && !liveEntry && !submitted;
             const cardBorder = isMe
               ? "rgba(251,191,36,0.45)"
-              : isRearInFront
+              : isRearInFront || isViewingRear
               ? "rgba(168,85,247,0.45)"
               : myDisplayGroup === "rear"
               ? "rgba(20,184,166,0.4)"
               : "rgba(255,255,255,0.07)";
             const cardBg = isMe
               ? "rgba(251,191,36,0.04)"
-              : isRearInFront
+              : isRearInFront || isViewingRear
               ? "rgba(168,85,247,0.04)"
               : myDisplayGroup === "rear"
               ? "rgba(20,184,166,0.04)"
               : "rgba(255,255,255,0.01)";
             return (
               <div key={m.id} style={{
-                flexShrink:0, width:myRowW, display:"flex", flexDirection:"column",
+                flexShrink:0, width:displayRowW, display:"flex", flexDirection:"column",
                 border:`1px solid ${cardBorder}`,
                 borderRadius:8, overflow:"hidden",
                 background: cardBg,
@@ -1500,7 +1519,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             </div>
             {/* 靶面格式選擇（僅非地圖模式 & 標準合約 & 尚未輸入任何箭時顯示）
                 地圖模式房間自帶合約，不顯示此選擇器 */}
-            {!isMapMode && myContract.type !== "hit_count" && myContract.type !== "all_hit" && arrows.length === 0 && !targetPending && (
+            {!isMapMode && myContract.type !== "hit_count" && arrows.length === 0 && !targetPending && (
               <div style={{ background:"rgba(0,0,0,0.35)", borderRadius:10, padding:"8px 10px", marginBottom:6, display:"flex", flexDirection:"column", gap:6 }}>
                 <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
                 <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />
@@ -1516,7 +1535,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             {/* 分數按鈕格（依合約類型調整）*/}
             {targetPending ? (
               <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>
-            ) : (myContract.type === "hit_count" || myContract.type === "all_hit") ? (
+            ) : myContract.type === "hit_count" ? (
+              /* 命中關：命中/M 兩顆按鈕 */
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:4 }}>
                 <button onClick={() => addArrow("命中")} disabled={arrows.length>=6}
                   className="rounded-xl font-black active:scale-95 bg-emerald-500 text-white"
@@ -1530,15 +1550,47 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                 </button>
               </div>
             ) : !targetMode ? (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:2, marginBottom:4 }}>
-                {SCORE_LABELS.map(label => (
-                  <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
-                    className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
-                    style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
-                    {label}
+              myContract.type === "score_gate" ? (
+                /* 得分關：去除 X/10，顯示 9~M，兩排各5顆 */
+                <div style={{ marginBottom:4 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:2, marginBottom:2 }}>
+                    {SCORE_GATE_LABELS.slice(0,5).map(label => (
+                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
+                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
+                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:2 }}>
+                    {SCORE_GATE_LABELS.slice(5).map(label => (
+                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
+                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
+                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* 其他合約（含 all_hit M懲罰關）：7顆折疊顯示 + 切換按鈕 */
+                <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:4 }}>
+                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
+                    {(scoreRowPage === 0 ? SCORE_ROW_A : SCORE_ROW_B).map(label => (
+                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
+                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
+                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setScoreRowPage(p => 1 - p)}
+                    style={{ flexShrink:0, width:28, height:36, borderRadius:6, background:"rgba(255,255,255,0.08)",
+                      color:"#94a3b8", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", fontSize:12, fontWeight:900 }}>
+                    {scoreRowPage === 0 ? "▼" : "▲"}
                   </button>
-                ))}
-              </div>
+                </div>
+              )
             ) : (
               <div style={{ textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:11, padding:"8px 0" }}>🎯 靶面輸入中…</div>
             )}
@@ -1553,7 +1605,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             )}
             {/* 靶面 Overlay */}
             <TargetFaceOverlay
-              open={targetMode && !targetPending && !submitted && myContract.type !== "hit_count" && myContract.type !== "all_hit"}
+              open={targetMode && !targetPending && !submitted && myContract.type !== "hit_count"}
               fmtId={targetFmt}
               arrowLabels={arrows.map(a => a.label)}
               arrowsPerRound={6}

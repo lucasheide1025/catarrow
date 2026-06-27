@@ -14,7 +14,8 @@ export default function AdminFinance({ adminProfile }) {
           { id: "billing",     label: "💰 會計記帳" },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+            className={`flex-1 py-2.5 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "border-white/10 text-slate-300"}`}
+            style={tab !== t.id ? { background:"rgba(255,255,255,0.06)" } : {}}>
             {t.label}
           </button>
         ))}

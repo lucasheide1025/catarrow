@@ -107,6 +107,24 @@ export default function DungeonRest({ roomId, room, memberId, isHost }) {
         <div className="text-sm text-purple-300/60 mt-1">短暫歇息，恢復戰力</div>
       </div>
 
+      {/* 全員狀態小卡 */}
+      <div style={{ display:"flex", gap:4, padding:"6px 12px", overflowX:"auto", background:"rgba(0,0,0,0.3)", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+        {Object.entries(members).map(([id, m]) => {
+          const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
+          return (
+            <div key={id} style={{ flexShrink:0, minWidth:52, textAlign:"center", padding:"4px 4px 3px", borderRadius:6, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.04)" }}>
+              <div style={{ fontSize:7, color: m.alive ? (m.role==="rear"?"#a78bfa":"#4ade80") : "#f87171", fontWeight:700, marginBottom:2 }}>
+                {m.alive ? (m.role==="rear"?"🛡":"⚔️") : "💀"} {(m.name||"").slice(0,5)}
+              </div>
+              <div style={{ height:3, borderRadius:2, background:"rgba(255,255,255,0.1)", overflow:"hidden", marginBottom:2 }}>
+                <div style={{ height:"100%", width:`${hpPct*100}%`, background:hpPct>0.5?"#16a34a":hpPct>0.25?"#d97706":"#dc2626" }}/>
+              </div>
+              <div style={{ fontSize:7, color:"#94a3b8" }}>{m.hp}/{m.maxHP}</div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* 投票 */}
       <div className="flex-1 overflow-y-auto px-5 py-6 space-y-4">
         <div className="text-center text-sm text-purple-200/70 mb-1 font-semibold">🗳️ 全員投票選擇方式</div>

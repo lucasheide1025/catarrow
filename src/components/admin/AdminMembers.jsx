@@ -108,7 +108,7 @@ export default function AdminMembers() {
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
       <div className="flex justify-between items-center">
-        <h2 className="text-gray-800 font-black text-xl">👥 會員管理</h2>
+        <h2 className="text-white font-black text-xl">👥 會員管理</h2>
         <div className="flex gap-2">
           <Btn v="secondary" size="sm" onClick={() => setGuestModal(true)}>📱 訪客 QR</Btn>
           <Btn v="primary"   size="sm" onClick={() => setAddModal(true)}>+ 新增</Btn>
@@ -229,14 +229,15 @@ function GuestQRModal({ onClose, toast }) {
             </div>
 
             {/* 到期時間 */}
-            <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+            <div className="flex items-center gap-1.5 text-slate-400 text-xs">
               <span>⏰</span>
-              <span>有效至 <strong className="text-gray-700">{expireStr}</strong></span>
+              <span>有效至 <strong className="text-slate-200">{expireStr}</strong></span>
             </div>
 
             {/* 複製連結（備用）*/}
             <button onClick={copyUrl}
-              className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-all ${copied ? "bg-green-50 border-green-300 text-green-700" : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+              className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-all ${copied ? "bg-green-900/40 border-green-400/40 text-green-300" : "border-white/10 text-slate-300 hover:border-white/20"}`}
+              style={!copied?{background:"rgba(255,255,255,0.06)"}:{}}>
               {copied ? "✅ 已複製連結" : "📋 複製連結（備用）"}
             </button>
 
@@ -264,13 +265,13 @@ function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert
   const hasDispute = disputeList.length > 0;
 
   return (
-    <div className={`bg-white rounded-2xl border ${hasDispute ? "border-red-300 ring-2 ring-red-200" : "border-gray-200"} overflow-hidden`}>
-      <button className="w-full text-left p-3 hover:bg-gray-50 transition-colors" onClick={() => setExpanded(v => !v)}>
+    <div className={`rounded-2xl border overflow-hidden ${hasDispute ? "border-red-400/50 ring-2 ring-red-400/20" : "border-white/10"}`} style={{ background:"rgba(255,255,255,0.04)" }}>
+      <button className="w-full text-left p-3 transition-colors hover:bg-white/5" onClick={() => setExpanded(v => !v)}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               {hasDispute && <span className="text-red-500 text-xs animate-pulse">🔴</span>}
-              <span className="font-black text-gray-800 text-sm">{m.nickname || m.name}</span>
+              <span className="font-black text-white text-sm">{m.nickname || m.name}</span>
               {m.nickname && m.name !== m.nickname && (
                 <span className="text-gray-400 text-xs">「{m.name}」</span>
               )}
@@ -449,7 +450,8 @@ function EquipTabs({ active, onChange }) {
     <div className="flex gap-2 mb-3">
       {[["bow","🏹 弓組"],["armor","🛡️ 防具"],["accessory","✨ 飾品"]].map(([k,l]) => (
         <button key={k} onClick={() => onChange(k)}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold border ${active===k?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-600 border-gray-200"}`}>
+          className={`px-3 py-1.5 rounded-full text-xs font-bold border ${active===k?"bg-blue-600 text-white border-blue-600":"border-white/10 text-slate-300"}`}
+          style={active!==k?{background:"rgba(255,255,255,0.06)"}:{}}>
           {l}
         </button>
       ))}
@@ -570,15 +572,15 @@ function DisputeModal({ member, disputeList, onClose, onDone, operatorId, toast 
       <div className="flex flex-col gap-4">
         <ST>射手回報內容</ST>
         {disputeList.map(log => (
-          <div key={log.id} className="bg-red-50 border border-red-200 rounded-xl p-3">
-            <div className="text-gray-700 text-sm font-bold mb-1">
+          <div key={log.id} className="border border-red-400/30 rounded-xl p-3" style={{ background:"rgba(127,29,29,0.2)" }}>
+            <div className="text-slate-200 text-sm font-bold mb-1">
               {BADGE_DEF[log.badgeType]?.label}　<span className="text-gray-400 font-normal">{log.note||"（無備註）"}</span>
             </div>
             <div className="text-red-600 text-sm">回報：{log.disputeReason||"（未填原因）"}</div>
             <div className="text-gray-400 text-xs mt-1">{fmtDT(log.disputedAt)}</div>
           </div>
         ))}
-        <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-3">
+        <div className="rounded-xl p-4 flex flex-col gap-3 border border-white/10" style={{ background:"rgba(255,255,255,0.06)" }}>
           <ST>修正數量</ST>
           {Object.entries(BADGE_DEF).map(([type, def]) => (
             <div key={type} className={disputedTypes.includes(type) ? "" : "opacity-60"}>
@@ -621,8 +623,8 @@ function HistoryModal({ member, onClose }) {
           {[["參賽場數",logs.length,"text-blue-600"],
             ["賽事積分",member.eventPoints||0,"text-orange-600"],
             ["最高單場",logs.length?Math.max(...logs.map(l=>l.total||0)):0,"text-green-600"]].map(([k,v,c])=>(
-            <div key={k} className="bg-gray-50 rounded-xl p-3 text-center">
-              <div className="text-gray-400 text-xs">{k}</div>
+            <div key={k} className="rounded-xl p-3 text-center border border-white/10" style={{ background:"rgba(255,255,255,0.06)" }}>
+              <div className="text-slate-400 text-xs">{k}</div>
               <div className={`font-black text-2xl ${c}`}>{v}</div>
             </div>
           ))}
@@ -630,9 +632,9 @@ function HistoryModal({ member, onClose }) {
         {loading ? <Spinner /> : logs.length === 0 ? <Empty message="尚無參賽紀錄" /> : (
           <div className="flex flex-col gap-2">
             {logs.map(l => (
-              <div key={l.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+              <div key={l.id} className="flex items-center gap-3 py-2 border-b border-white/10 last:border-0">
                 <div className="flex-1">
-                  <div className="text-gray-700 text-sm">{l.compTitle||"—"}</div>
+                  <div className="text-slate-300 text-sm">{l.compTitle||"—"}</div>
                   <div className="text-gray-400 text-xs">{l.submittedAt?fmtDT(l.submittedAt):(l.date||"")}</div>
                 </div>
                 <div className="text-blue-600 font-black text-xl">{l.total??"—"}</div>
@@ -715,13 +717,13 @@ function CertModal({ member, onClose, onDone, operatorId, toast }) {
             const score = getScore(bk, year, half);
             const level = getCertLevel(bk, score);
             return (
-              <div key={bk} className="bg-gray-50 rounded-xl p-4">
+              <div key={bk} className="rounded-xl p-4 border border-white/10" style={{ background:"rgba(255,255,255,0.06)" }}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
-                    <div className="font-bold text-gray-700 text-sm">{bt.icon} {bt.label}</div>
+                    <div className="font-bold text-slate-300 text-sm">{bt.icon} {bt.label}</div>
                     <div className="text-xs text-gray-400">{score>0?`${score}分 ${level||"未通過"}`:"尚未參加"}</div>
                   </div>
-                  {score>0 && level && <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{level}</span>}
+                  {score>0 && level && <span className="text-xs font-bold bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded-full">{level}</span>}
                 </div>
                 <Inp label="成績（留空不變）" type="number" min="0"
                   value={editing[bk]!==undefined?editing[bk]:""}
@@ -729,7 +731,7 @@ function CertModal({ member, onClose, onDone, operatorId, toast }) {
                   onChange={e => setEditing(p => ({ ...p, [bk]: e.target.value }))} />
                 <div className="flex gap-1 flex-wrap mt-2">
                   {Object.entries(bt.thresholds).map(([name, pts]) => (
-                    <span key={name} className={`text-xs px-2 py-0.5 rounded-full ${score>=pts?"bg-blue-600 text-white":"bg-gray-200 text-gray-500"}`}>
+                    <span key={name} className={`text-xs px-2 py-0.5 rounded-full ${score>=pts?"bg-blue-600 text-white":"bg-slate-700 text-slate-400"}`}>
                       {name} {pts}
                     </span>
                   ))}
@@ -750,7 +752,7 @@ function CertModal({ member, onClose, onDone, operatorId, toast }) {
 function Section({ title, children }) {
   return (
     <div>
-      <div className="text-gray-600 text-xs font-bold mb-3">{title}</div>
+      <div className="text-slate-400 text-xs font-bold mb-3">{title}</div>
       <div className="flex flex-col gap-3">{children}</div>
     </div>
   );

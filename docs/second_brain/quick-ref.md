@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-06-25
+> 最後更新：2026-06-27（第二次）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -269,20 +269,115 @@ public/ui/
 
 ---
 
+## 🎮 地下城系統速查（2026-06-27 重設計）
+
+### 合約類型（CONTRACT_TYPES in dungeonData.js）
+```js
+// 9 種合約
+standard       // 基本傷害
+score_gate     // 低於 param 分數無傷害
+hit_count      // 命中即爆擊（M=0傷）
+all_hit        // 任意 M 則全輪傷害清零
+x_crit         // 指定 param 分數 ×2，其餘 ×0.5
+target_score   // 總分 < param 則全輪清零
+reversal       // 分數倒轉（6↔X，7↔10，8↔9）
+odd_only       // 只算 7/9/X，其餘清零
+even_only      // 只算 6/8/10，其餘清零
+// param 範圍：x_crit=6~10 / target_score=20~50 / score_gate 固定=7
+```
+
+### 合約 UI 顏色（CONTRACT_HEX in DungeonBattleRoom.jsx）
+```js
+{ standard:"#cbd5e1", score_gate:"#93c5fd", hit_count:"#86efac",
+  all_hit:"#fde047", x_crit:"#d8b4fe", target_score:"#fbbf24",
+  reversal:"#fb923c", odd_only:"#67e8f9", even_only:"#f9a8d4" }
+```
+
+### 商店商品（DUNGEON_SHOP_ITEMS in dungeonData.js）
+```js
+hp_potion / hp_max_boost / atk_boost / def_boost
+atk_large / def_large / revival / revival_front
+// hp_potion 可重複購買；其他每次進商店各限一件
+```
+
+### 事件效果類型（effect.type → confirmDungeonEvent 處理）
+```js
+hp_restore_all  // 所有人 +value*maxHP
+atk_debuff_all  // 所有人 atkMult *= value（>1 為 buff）
+atk_buff_one    // 隨機一人 atkMult *= value
+dmg_mult_all    // 所有人 dmgMult *= value
+def_mult_all    // 所有人 defMult *= value  ← 2026-06-27 補實裝
+gold_bonus      // 每人 +value 金幣（即時）
+gold_mult       // nextFloor goldMult = value
+monster_hp_mult // nextFloor monsterHpMult = value
+monster_atk_mult// nextFloor monsterAtkMult = value
+skip_counter    // 怪物不反擊（processDungeonRound 讀 currentEvent）
+```
+
+### 商店購買記憶（shopPurchases）
+```js
+// Firestore: dungeonRooms/{id}.shopPurchases = { [memberId]: [itemId,...] }
+// hp_potion 不記錄，允許重複購買
+// enterNonCombatRoom / resolveNonCombatRoom 不再重置 shopPurchases
+```
+
+### 前後衛顯示系統（displayGroup）
+```js
+// DEFAULT_MEMBER 有兩個角色欄位：
+// role         = "front"|"rear"  → 戰鬥邏輯（反擊免疫、heal/dmg 選擇）
+// displayGroup = "front"|"rear"  → 視覺分排（只在有空位時才隨死亡移動）
+
+// 規則：前衛死亡時
+// 若當前後衛 displayGroup=="rear" 人數 < 4 → displayGroup 改 "rear"（真正移位）
+// 若 >= 4 → displayGroup 保持 "front"（紫框 + 🛡後衛標籤，不移動）
+
+// 客戶端 DungeonBattleRoom.jsx：
+const dgOf = (m) =>
+  (liveEntry?.displayGroupsBefore?.[m.id]) ?? (m.displayGroup ?? m.role ?? "front");
+// 動畫中（liveEntry != null）讀 displayGroupsBefore（回合開始前快照）
+// 動畫結束後 liveEntry = null，自動切到最新 displayGroup
+
+// logEntry 結構（dungeonDb.js processDungeonRound）：
+// displayGroupsBefore: { [memberId]: "front"|"rear" }  ← Step 5b 前快照
+
+// 視角分排（每人只看自己那排）：
+// myRowMembers    = 我的 displayGroup 那排（完整卡片）
+// otherRowMembers = 對方排（動畫時顯示緊湊小卡，平時隱藏）
+```
+
+### 卡死預防機制
+```js
+// 房主：processing 超時 20 秒 → clearDungeonProcessing(roomId)
+// 非房主：processing 超時 20 秒 → setSubmitted(false) + Firestore 清 ready/arrows
+// 全員 ready → 延遲 2 秒（allReadyTimerRef）再呼叫 handleProcess
+//   ↑ 防止最後一人送出後，房主在快照傳播前就觸發結算
+```
+
+---
+
 ## 📂 元件路徑速查
 
 ```
 src/pages/         MemberApp.jsx / AdminApp.jsx
 src/components/member/
-  MemberHome.jsx        首頁 widget（射手等級+資源）
+  MemberHome.jsx        首頁（等級卡+公會等級+收藏格+月卡+廣播分類）
   MemberPractice.jsx    自主練習（classEndedRef 里程碑保護）
-  DailyQuest.jsx        報到狀態+下課按鈕（已無任務系統）
+  DailyQuest.jsx        報到狀態+下課按鈕（subscribeTodayPracticeLogs）
   MonsterBattle.jsx     打怪（cardColl: useState+useRef 雙軌）
+  CardCollection.jsx    怪物卡片（條列式，inline 升星提示）
+  MemberDex.jsx         成就圖鑑（個人通知，不再全頻廣播）
   RPGEquipPanel.jsx     裝備升級（傳 clientData 給 upgradeEquipSlot）
 src/components/admin/
   AdminDailyQuest.jsx   後台報到審核+記帳
+src/components/dungeon/
+  DungeonBattleRoom.jsx 戰鬥（前後衛顯示 + buff 指示器）
+  DungeonShop.jsx       商店（購買記憶 + hp_potion 重購）
+  DungeonRest.jsx       ← 新元件（2026-06-27）
+  DungeonTrap.jsx       ← 新元件（2026-06-27）
 src/lib/
   db.js / constants.js / archerLevel.js
   monsterData.js / monsterCards.js / arrowMilestone.js
+  dungeonData.js / dungeonDb.js / dungeonCollectibles.js
+  adventurerSystem.js   levelFromXP(adventurerXP) / rankFromLevel(lv) → {name,icon,color}
   sound.js / theme.js
 ```

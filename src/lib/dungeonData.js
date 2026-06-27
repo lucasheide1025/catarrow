@@ -3,9 +3,9 @@
 // ── 任務類型（Contract）────────────────────────────────────────
 export const CONTRACT_TYPES = {
   standard:     { id:"standard",     name:"標準關",    icon:"⚔️",  desc:"六箭正常計算傷害",                    color:"text-slate-300",  bg:"bg-slate-700/50"  },
-  score_gate:   { id:"score_gate",   name:"得分關",    icon:"🎯",  desc:"需達 {param} 分以上才計傷害",         color:"text-blue-300",   bg:"bg-blue-900/40"   },
+  score_gate:   { id:"score_gate",   name:"得分關",    icon:"🎯",  desc:"低於 {param} 分依比例降低傷害，每差1分 -10%",  color:"text-blue-300",   bg:"bg-blue-900/40"   },
   hit_count:    { id:"hit_count",    name:"命中關",    icon:"🏹",  desc:"命中即固定傷害，分數無關",            color:"text-green-300",  bg:"bg-green-900/40"  },
-  all_hit:      { id:"all_hit",      name:"全中關",    icon:"💯",  desc:"六箭全中才能造成傷害",               color:"text-yellow-300", bg:"bg-yellow-900/40" },
+  all_hit:      { id:"all_hit",      name:"M懲罰關",   icon:"⚠️",  desc:"每發脫靶（M）扣除 10% 傷害",         color:"text-yellow-300", bg:"bg-yellow-900/40" },
   x_crit:       { id:"x_crit",       name:"X爆擊關",  icon:"✨",  desc:"只有X算爆擊，其他傷害減半",          color:"text-purple-300", bg:"bg-purple-900/40" },
   target_score: { id:"target_score", name:"超越分數關", icon:"🎪", desc:"6箭總分 > {param} 才有傷害，未達標全部歸零", color:"text-rose-300",   bg:"bg-rose-900/40"   },
   reversal:     { id:"reversal",     name:"逆轉關",    icon:"🔄",  desc:"分數反轉：6↔X, 7↔10, 8↔9 後正常計算", color:"text-orange-300", bg:"bg-orange-900/40" },
@@ -116,16 +116,6 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
   const type  = contract?.type  || "standard";
   const param = contract?.param ?? null;
 
-  // 全中關：預先檢查 — 有 M 則全部歸零
-  if (type === "all_hit" && arrows.some(a => (a.score ?? 0) === 0)) {
-    return {
-      dmg: 0, crits: 0,
-      arrowBreakdown: arrows.map(a => ({
-        label: a.label || "M", partIcon:"🛡️", partName:"全部格擋", dmg:0, isCrit:false,
-      })),
-    };
-  }
-
   // 超越分數關：先算總分
   if (type === "target_score") {
     const totalScore = arrows.reduce((s, a) => s + (a.label === "X" ? 11 : (a.score || 0)), 0);
@@ -161,12 +151,6 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
     // 脫靶或格擋部位
     if (!score || pMult === 0) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
-      continue;
-    }
-
-    // 得分關：低於門檻 → 無傷害
-    if (type === "score_gate" && score < (param ?? 7)) {
-      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"未達門檻", dmg:0, isCrit:false });
       continue;
     }
 
@@ -226,6 +210,15 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
       }
     }
 
+    // 得分關：依比例降低傷害（X/10視同9分，threshold 上限9）
+    if (type === "score_gate") {
+      const _thresh = Math.min(param ?? 9, 9);
+      const _eff = Math.min(score, 9);
+      if (_eff < _thresh) {
+        d = Math.round(d * Math.max(0, 1 - (_thresh - _eff) * 0.1));
+      }
+    }
+
     // 套用 buff / 事件 dmgMult
     d = Math.round(d * dmgMult);
 
@@ -235,6 +228,12 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
       label: arrow.label, partIcon: part.icon,
       partName: part.name, partMult: pMult, dmg: d, isCrit,
     });
+  }
+
+  // M懲罰關：每個脫靶 -10% 總傷害（最多 -100%）
+  if (type === "all_hit") {
+    const mCount = arrows.filter(a => (a.score ?? 0) === 0).length;
+    totalDmg = Math.round(totalDmg * Math.max(0, 1 - mCount * 0.1));
   }
 
   return { dmg: totalDmg, crits, arrowBreakdown };
@@ -289,7 +288,7 @@ export function getContractBadge(room) {
     case "standard":     return { label:"標準",    color:"#94a3b8" };
     case "hit_count":    return { label:"命中",    color:"#4ade80" };
     case "score_gate":   return { label:`≥${p}分`, color:"#60a5fa" };
-    case "all_hit":      return { label:"全中",    color:"#f97316" };
+    case "all_hit":      return { label:"M罰",     color:"#f97316" };
     case "x_crit":       return { label:"X爆",     color:"#a78bfa" };
     case "target_score": return { label:`≥${p}分`,color:"#fbbf24" };
     case "reversal":     return { label:"逆轉",    color:"#fb923c" };
@@ -520,7 +519,7 @@ function _roomMeta(type, tier) {
   if (!["monster","elite","boss"].includes(type)) return undefined;
   if (type === "monster") return { tier, contract:"standard" };
   if (type === "elite")   return { tier, contract:"all_hit" };
-  return { tier, contract:"score_gate", contractParam: Math.min(6 + tier, 10) };
+  return { tier, contract:"score_gate", contractParam: Math.min(6 + tier, 9) };
 }
 
 function _gridConns(fi, cols, rows) {
