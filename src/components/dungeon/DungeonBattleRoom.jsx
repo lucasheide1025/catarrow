@@ -1078,9 +1078,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     });
   const memberCount  = memberList.length;
   const aliveCount   = memberList.filter(m => m.alive).length;
-  const frontMembers = memberList.slice(0, 4);
-  const backMembers  = memberList.slice(4);
+  // role-based 分排：前衛→前排，後衛→後排（最多各 4 格），後衛滿 4 時溢位到前排顯示
+  const rearRoleMembers   = memberList.filter(m => m.role === "rear");
+  const frontRoleMembers  = memberList.filter(m => m.role !== "rear");
+  const frontMembers = [...frontRoleMembers, ...rearRoleMembers.slice(4)]; // 前排：前衛 + 溢位後衛
+  const backMembers  = rearRoleMembers.slice(0, 4);                        // 後排：後衛（最多 4 人）
   const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
+  const backW  = Math.min(100, Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
   const showBackRow  = backMembers.length > 0;
 
   function handleLeave() {
@@ -1171,20 +1175,30 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 
       {/* ── 角色列（前後排）── */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+        {/* 排頭標籤 */}
+        {backMembers.length > 0 && (
+          <div style={{ display:"flex", justifyContent:"space-between", padding:"2px 8px 0", pointerEvents:"none" }}>
+            <span style={{ fontSize:9, fontWeight:900, color:"rgba(251,113,133,0.7)", letterSpacing:1 }}>⚔️ 前衛</span>
+            <span style={{ fontSize:9, fontWeight:900, color:"rgba(45,212,191,0.7)", letterSpacing:1 }}>🛡 後衛</span>
+          </div>
+        )}
         {/* 前排（最多4人）完整顯示 */}
-        <div style={{ display:"flex", gap:3, padding:"4px 6px 4px", justifyContent:"center",
+        <div style={{ display:"flex", gap:3, padding:"2px 6px 4px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
           {frontMembers.map(m => {
             const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
             const isMe = m.id === myId;
+            const isOverflowRear = m.role === "rear";
             const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
+            const frontCardBorder = isMe ? "rgba(251,191,36,0.45)" : isOverflowRear ? "rgba(20,184,166,0.4)" : "rgba(255,255,255,0.07)";
+            const frontCardBg    = isMe ? "rgba(251,191,36,0.04)" : isOverflowRear ? "rgba(20,184,166,0.04)" : "rgba(255,255,255,0.01)";
             return (
               <div key={m.id} style={{
                 flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
-                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                border:`1px solid ${frontCardBorder}`,
                 borderRadius:8, overflow:"hidden",
-                background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
+                background: frontCardBg,
               }}>
                 <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                   {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
@@ -1233,7 +1247,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             );
           })}
         </div>
-        {/* 後排（第5-8人） — 與前排相同完整資訊 */}
+        {/* 後排（role="rear" 的成員，最多 4 格） */}
         {showBackRow && (
           <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
             {backMembers.map(m => {
@@ -1243,11 +1257,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
               return (
                 <div key={m.id} style={{
-                  flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
-                  border:`1px solid ${isMe?"rgba(251,191,36,0.55)":m.role==="rear"?"rgba(168,85,247,0.35)":"rgba(255,255,255,0.07)"}`,
+                  flexShrink:0, width:backW, display:"flex", flexDirection:"column",
+                  border:`1px solid ${isMe?"rgba(251,191,36,0.55)":"rgba(20,184,166,0.4)"}`,
                   borderRadius:8, overflow:"hidden",
-                  background: isMe?"rgba(251,191,36,0.08)":m.role==="rear"?"rgba(168,85,247,0.06)":"rgba(255,255,255,0.01)",
-                  boxShadow: isMe ? "0 0 8px rgba(251,191,36,0.3)" : m.role==="rear" ? "0 0 6px rgba(168,85,247,0.2)" : undefined,
+                  background: isMe?"rgba(251,191,36,0.08)":"rgba(20,184,166,0.05)",
+                  boxShadow: isMe ? "0 0 8px rgba(251,191,36,0.3)" : "0 0 6px rgba(20,184,166,0.15)",
                 }}>
                   <div style={{ height:85, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (

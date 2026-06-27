@@ -254,6 +254,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const skipAllCtr = !!eff.skipCounter;
 
     // Step 3：攻擊2箭 → 怪物反擊1次（分離的 mini 結構）
+    // 攻擊順序：前衛 → 後衛（動畫用）
+    const orderedAliveIds = [
+      ...frontIds.filter(id => aliveIds.includes(id)),
+      ...rearIds.filter(id => aliveIds.includes(id)),
+    ];
     const ARROWS_PER_CTR = 2;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
@@ -267,7 +272,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       // ── 攻擊小回合 ─────────────────────────────────────
       const miniLog = [];
       let   miniDmg = 0;
-      for (const id of aliveIds) {
+      for (const id of orderedAliveIds) {
         if (memberHPNow[id] <= 0) continue;
         const m     = members[id];
         const entry = allData[id].arrowBreakdown[i] || { dmg:0, partIcon:"💨", partName:"脫靶", label:"M" };
