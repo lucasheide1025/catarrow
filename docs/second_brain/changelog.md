@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-06-27（修正 Boss 通關 React crash）
+
+### Bug：Boss 結算畫面 `TIER_LABEL` 物件當 React child
+- **Bug**：首領通關後畫面卡住並噴 `Error #31: object with keys {label, color, bg}`，且連帶導致組隊模式也無法開房
+- **根因**：`DungeonBattleRoom.jsx` Boss 結算畫面中 `{TIER_LABEL[room.monster.tier] || room.monster.tier}` — `TIER_LABEL[tier]` 回傳的是 `{label, color, bg}` 整個物件，React 無法渲染物件 → 擲回 Error #31 → 整個 React 樹掛掉 → 所有依賴同一個 App 殼的頁面都無法運作
+- **修復**：改為 `{TIER_LABEL[room.monster.tier]?.label || room.monster.tier}`（只取 label 字串）
+- **坑記錄**：HUD 區的 TIER_LABEL 使用模式正確（`const tl = TIER_LABEL[...]; ...tl.label`），但 Boss 結算區直接用 `TIER_LABEL[...]` 作為 JSX child，兩處不一致導致漏修
+
+---
+
+## 2026-06-27（組隊開房自動清除舊房間）
+
+### 新增：createPartyRoom 自動清除該使用者的舊 waiting 房間
+- **為什麼**：前次 React crash 後舊房間殘留在「waiting」狀態，導致使用者無法新建房間
+- **改了什麼**：`partyDb.js` `createPartyRoom` 開頭加入查詢該 hostId + status=waiting 的舊房間，`deleteDoc` 全部清除後再建立新房間
+- **坑記錄**：如果 dungeon room 也有相同問題，可到 `dungeonDb.js` 的 `createDungeonRoom` 加入相同邏輯
+
+---
+
 ## 2026-06-27（地下城地圖模式成員復活 Bug 修復）
 
 ### 地下城組隊：跨房間死亡 Bug（`enterMapCombatRoom` 未重置 alive）

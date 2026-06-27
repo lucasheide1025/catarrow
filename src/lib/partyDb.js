@@ -33,9 +33,15 @@ function genPartyHPMult(playerCount) {
   return Math.round(mult * 100) / 100;
 }
 
-// ── 建立房間 ──────────────────────────────────────────────────
+// ── 建立房間（自動清除該使用者的舊 waiting 房間）────────────
 export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
   try {
+    // 清除該使用者所有舊的 waiting 房間（防止前次 crash 殘留導致無法開房）
+    const oldSnap = await getDocs(
+      query(collection(db, PARTY), where("hostId", "==", hostId), where("status", "==", "waiting"))
+    );
+    await Promise.all(oldSnap.docs.map(d => deleteDoc(d.ref)));
+
     const code = genCode();
     const base = {
       code,

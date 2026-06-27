@@ -750,7 +750,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                   <span style={{ fontSize:32 }}>{room.monster.icon}</span>
                   <div>
                     <div className="font-black text-sm text-white">擊敗首領：{room.monster.name}</div>
-                    <div className="text-xs text-slate-400">{TIER_LABEL[room.monster.tier] || room.monster.tier}</div>
+                    <div className="text-xs text-slate-400">{TIER_LABEL[room.monster.tier]?.label || room.monster.tier}</div>
                   </div>
                 </div>
               )}

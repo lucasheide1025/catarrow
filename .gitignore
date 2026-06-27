@@ -8,3 +8,6 @@ serviceAccountKey.json
 backup_*.json
 restore.js
 backup.js
+.vercel
+firestore-new-rules-snippet.txt
+
