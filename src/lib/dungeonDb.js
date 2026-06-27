@@ -126,12 +126,15 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
     const ms          = MODE_SCALE[mode] || MODE_SCALE.student;
     const memberCount = memberIds.length;
     // 房主強度縮放：hostAtk / 12 決定怪物難度基底（0.7 ~ 2.0x）
-    const hostAtk     = room.hostAtk || 10;
-    const hostScale   = Math.max(0.8, Math.min(1.4, hostAtk / 18));
-    // 人數加成：每多一名隊友，怪物 HP +10%，玩家 ATK +20%
-    const hpMult         = 1.0 + (memberCount - 1) * 0.1;
-    const memberAtkMult  = 1.0 + (memberCount - 1) * 0.2;
-    const scaledHP  = Math.round(monster.hp * ms.hp * hpMult * hostScale);
+    const hostAtk      = room.hostAtk || 10;
+    const hostScale    = Math.max(0.8, Math.min(1.4, hostAtk / 18));
+    // 人數 scaling：每多 1 人 → 怪物 HP+50% / ATK+15% / DEF+15%
+    const extraMembers  = memberCount - 1;
+    const monHPMult     = 1.0 + extraMembers * 0.5;
+    const monAtkMult    = 1.0 + extraMembers * 0.15;
+    const monDefMult    = 1.0 + extraMembers * 0.15;
+    const rewardMult    = 1.0 + extraMembers * 0.2;  // 金幣/XP/掉落 +20%/人
+    const scaledHP      = Math.round(monster.hp * ms.hp * monHPMult * hostScale);
 
     // 一次性分配任務（全程有效，買重置才換）
     const contracts = assignContracts(memberIds);
@@ -143,8 +146,6 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
       upd[`members.${mid}.alive`]    = true;
       upd[`members.${mid}.revived`]  = false;
       upd[`members.${mid}.contract`] = contracts[mid];
-      // 套用人數 ATK 加成（無論是否有預設值）
-      upd[`members.${mid}.atk`] = Math.round((m.atk || 10) * memberAtkMult);
       if (!m.maxHP) {
         upd[`members.${mid}.hp`]    = 500;
         upd[`members.${mid}.maxHP`] = 500;
@@ -158,11 +159,12 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
       monster: {
         id: monster.id, name: monster.name, icon: monster.icon,
         hp:  Math.round(monster.hp  * ms.hp  * hostScale),
-        atk: Math.round(monster.atk * ms.atk * hostScale),
-        def: Math.round(monster.def * ms.def),
+        atk: Math.round(monster.atk * ms.atk * hostScale * monAtkMult),
+        def: Math.round(monster.def * ms.def * monDefMult),
         tier: monster.tier, family: monster.family,
       },
       monsterHP: scaledHP, monsterMaxHP: scaledHP,
+      rewardMult,
       round: 1, log: [], result: null, processing: false,
       pathOptions: null, chosenPath: null, nextFloorModifiers: {},
     });
@@ -226,7 +228,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const m          = members[id];
       const isRear     = members[id].role === "rear";
       const rearHeal   = isRear && m.rearChoice === "heal";
-      const rearDmgMul = isRear && m.rearChoice === "dmg" ? 1.5 : 1.0;
+      const rearDmgMul = isRear && m.rearChoice === "dmg" ? 0.5 : 1.0;
       const effectiveAtk = rearHeal ? 0 : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1));
       const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * rearDmgMul;
       const contract     = m.contract || { type:"standard", param:null };
@@ -332,15 +334,26 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     if (eff.extraDmg)  monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 
-    // Step 5：更新成員 HP（含復活符 + 前後衛死亡邏輯）
+    // Step 5：計算後衛治癒（治癒量均分給全體存活隊友，不包含自己）
+    const receivedHeal = {};
+    for (const id of aliveIds) {
+      if (!allData[id]?.rearHeal) continue;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.25);
+      const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);
+      if (!targets.length) continue;
+      const perPerson = Math.round(pool / targets.length);
+      for (const tid of targets) receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
+    }
+
+    // Step 5b：更新成員 HP（含復活符 + 前後衛死亡邏輯）
     const memberUpd = {};
     let   liveAfter = 0;
     for (const id of aliveIds) {
       const m      = members[id];
       const isRear = m.role === "rear";
       let hp       = memberHPNow[id];
-      // 後衛heal：回復 25% maxHP（不計傷害）
-      if (allData[id]?.rearHeal) hp = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * 0.25));
+      // 後衛heal：治癒量由其他後衛分給（不補自己）
+      if (receivedHeal[id]) hp = Math.min(m.maxHP || 9999, hp + receivedHeal[id]);
       if (eff.archerHP)   hp = Math.min(m.maxHP || 9999, hp + eff.archerHP);
       if (eff.healArcher) hp = Math.min(m.maxHP || 9999, hp + eff.healArcher);
       // 復活符：第一次陣亡自動回血（僅前衛）

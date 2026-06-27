@@ -725,21 +725,23 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       // 鎖定掉寶預覽（渲染時計算一次）
       if (!claimLootRef.current && room.monster) {
         const gm        = room?.nextFloorModifiers?.goldMult || 1;
-        const tier      = room.monster.tier || "common";
-        const tf        = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
-        const myRunes   = getEquippedRunes(room, myId);
-        const rb        = calcRuneBonusFn(myRunes);
+        const tier       = room.monster.tier || "common";
+        const tf         = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
+        const myRunes    = getEquippedRunes(room, myId);
+        const rb         = calcRuneBonusFn(myRunes);
         const dungeonMap = DUNGEON_MAPS.find(d => d.id === (room?.mapDungeonId || room?.dungeonId));
-        const family    = dungeonMap?.family || "ghost";
-        const roomType  = room?.mapCurrentRoomType || (isBossRoom ? "boss" : "monster");
+        const family     = dungeonMap?.family || "ghost";
+        const roomType   = room?.mapCurrentRoomType || (isBossRoom ? "boss" : "monster");
+        // 人數獎勵倍率（從 Firestore 存的 rewardMult 讀取，fallback 自己算）
+        const rewardMult = room?.rewardMult || (1 + (Object.keys(room?.members || {}).length - 1) * 0.2);
         const collectibles = isBossRoom
-          ? rollBossDrops(family, dungeonMap?.difficulty)
-          : [rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster")].filter(Boolean);
+          ? rollBossDrops(family, dungeonMap?.difficulty, rewardMult)
+          : [rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster", rewardMult)].filter(Boolean);
         claimLootRef.current = {
-          coins:      Math.round(rollCoins(tier, 1) * gm * (isBossRoom ? 2 : 1) * rb.goldMult),
+          coins:      Math.round(rollCoins(tier, 1) * gm * rewardMult * (isBossRoom ? 2 : 1) * rb.goldMult),
           materials:  rollMaterialDrops(room.monster),
-          archerXP:   Math.round(tf * DUNGEON_FLOOR_XP * rb.xpMult),
-          catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rb.xpMult) : 0,
+          archerXP:   Math.round(tf * DUNGEON_FLOOR_XP * rewardMult * rb.xpMult),
+          catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rewardMult * rb.xpMult) : 0,
           chestCount: tf,
           arrowdew:   isBossRoom ? tf * 8 : 5,
           gachaCoins: isBossRoom ? 2 : 0,

@@ -26,11 +26,8 @@ export function partyHPRange(playerCount) {
 
 // 開戰時一次性產生實際隨機倍率（每多一人 +0.5~1.0）
 function genPartyHPMult(playerCount) {
-  let mult = 1.0;
-  for (let i = 1; i < Math.max(1, playerCount); i++) {
-    mult += 0.5 + Math.random() * 0.5;
-  }
-  return Math.round(mult * 100) / 100;
+  // 每多 1 人 → 怪物 HP+50%
+  return 1.0 + Math.max(0, playerCount - 1) * 0.5;
 }
 
 // ── 建立房間（自動清除該使用者的舊 waiting 房間）────────────
@@ -207,8 +204,12 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
   try {
     const memberIds = Object.keys(room.members || {});
     const playerCount = memberIds.length;
-    const ms      = MODE_SCALE[mode] || MODE_SCALE.student;
-    const hpMult  = genPartyHPMult(playerCount);
+    const ms         = MODE_SCALE[mode] || MODE_SCALE.student;
+    const extraMembers = playerCount - 1;
+    const hpMult     = genPartyHPMult(playerCount); // 1 + extraMembers*0.5
+    const monAtkMult = 1.0 + extraMembers * 0.15;   // ATK+15%/人
+    const monDefMult = 1.0 + extraMembers * 0.15;   // DEF+15%/人
+    const rewardMult = 1.0 + extraMembers * 0.2;    // 金幣/XP+20%/人
     // 先套模式倍率，再套人數倍率
     const scaledHP = Math.round(monster.hp * ms.hp * hpMult);
 
@@ -231,13 +232,13 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
     await updateDoc(doc(db, PARTY, roomId), {
       ...membersUpdate,
       monster: { id: monster.id, name: monster.name, icon: monster.icon,
-                 hp: Math.round(monster.hp * ms.hp),
-                 atk: Math.round(monster.atk * ms.atk),
-                 def: Math.round(monster.def * ms.def),
+                 hp:  Math.round(monster.hp  * ms.hp),
+                 atk: Math.round(monster.atk * ms.atk * monAtkMult),
+                 def: Math.round(monster.def * ms.def * monDefMult),
                  tier: monster.tier, family: monster.family },
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
-      hpMult,
+      hpMult, rewardMult,
       mode, distanceMode, distance,
       round: 1,
       log: [],

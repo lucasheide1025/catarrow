@@ -327,41 +327,39 @@ Object.entries(FIRST_CLEAR_DEFS).forEach(([dungeonId, item]) => {
 // ── 掉落邏輯 ──────────────────────────────────────────────────
 
 // 普通戰鬥/寶箱/精英房掉落（回傳 {itemId} 或 null）
-export function rollFamilyDrop(family, roomType) {
+// chanceMult: 人數獎勵倍率（1人=1.0，每+1人 +0.2；上限2.0）
+export function rollFamilyDrop(family, roomType, chanceMult = 1.0) {
   const pool = FAMILY_COLLECTIBLES[family];
   if (!pool) return null;
   const rand = Math.random();
+  const cm   = Math.min(2.0, chanceMult);
 
   if (roomType === "chest") {
-    // 寶箱：40% 普通、15% 稀有
-    if (rand < 0.15) return pick(pool.rare);
-    if (rand < 0.55) return pick(pool.common);
+    if (rand < 0.15 * cm) return pick(pool.rare);
+    if (rand < 0.55 * cm) return pick(pool.common);
     return null;
   }
   if (roomType === "elite") {
-    // 精英：20% 稀有、25% 普通
-    if (rand < 0.20) return pick(pool.rare);
-    if (rand < 0.45) return pick(pool.common);
+    if (rand < 0.20 * cm) return pick(pool.rare);
+    if (rand < 0.45 * cm) return pick(pool.common);
     return null;
   }
-  // 普通怪物房：15% 普通
-  if (rand < 0.15) return pick(pool.common);
+  // 普通怪物房
+  if (rand < 0.15 * cm) return pick(pool.common);
   return null;
 }
 
 // Boss 房掉落（回傳 [{itemId}] 陣列，可能含超稀有）
-// difficulty: "normal" | "hard" | "elite" | "nightmare"
-export function rollBossDrops(family, difficulty) {
+export function rollBossDrops(family, difficulty, chanceMult = 1.0) {
   const pool = FAMILY_COLLECTIBLES[family];
   if (!pool) return [];
+  const cm   = Math.min(1.8, chanceMult);
   const drops = [];
 
-  // 65% 機率掉落 boss 物品
-  if (Math.random() < 0.65) drops.push(pick(pool.boss));
+  if (Math.random() < 0.65 * cm) drops.push(pick(pool.boss));
 
-  // 超稀有機率依難度
   const superRate = { normal:0.01, hard:0.02, elite:0.03, nightmare:0.05 }[difficulty] || 0.01;
-  if (Math.random() < superRate) drops.push(pick(pool.superRare));
+  if (Math.random() < superRate * cm) drops.push(pick(pool.superRare));
 
   return drops.filter(Boolean);
 }
