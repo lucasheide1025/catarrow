@@ -56,6 +56,35 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     return () => { unsub?.(); setOpenRooms([]); };
   }, [tab]); // eslint-disable-line
 
+  // 重整後恢復等待室狀態
+  useEffect(() => {
+    const saved = (() => { try { return JSON.parse(sessionStorage.getItem("dungeon_waiting_room") || "null"); } catch { return null; } })();
+    if (!saved?.roomId || !myId) return;
+    let cancelled = false;
+    let unsubFn = null;
+    let initialized = false;
+    unsubFn = subscribeDungeonRoom(saved.roomId, r => {
+      if (cancelled) return;
+      if (!r) {
+        sessionStorage.removeItem("dungeon_waiting_room");
+        unsubFn?.(); cancelled = true; return;
+      }
+      if (r.status === "active" || r.status === "map_explore") {
+        sessionStorage.removeItem("dungeon_waiting_room");
+        unsubFn?.(); cancelled = true; onEnterRoom(saved.roomId); return;
+      }
+      // 只在第一次回調時設定 roomId/isHost（避免反覆覆蓋使用者切換後的房間）
+      if (!initialized) {
+        initialized = true;
+        setRoomId(saved.roomId);
+        setIsHost(saved.isHost || false);
+        setUnsub(() => unsubFn);
+      }
+      setRoom(r);
+    });
+    return () => { cancelled = true; unsubFn?.(); };
+  }, [myId]); // eslint-disable-line
+
   // 難度切換時，保持同族地下城但更新到新難度
   useEffect(() => {
     setSelDungeon(prev => {
@@ -93,6 +122,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setUnsub(() => sub);
     setRoomId(res.roomId);
     setIsHost(true);
+    sessionStorage.setItem("dungeon_waiting_room", JSON.stringify({ roomId: res.roomId, isHost: true }));
     setLoading(false);
   }
 
@@ -104,11 +134,15 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
     const sub = subscribeDungeonRoom(res.roomId, r => {
       setRoom(r);
-      if (r?.status === "active" || r?.status === "map_explore") { sub(); onEnterRoom(res.roomId); }
+      if (r?.status === "active" || r?.status === "map_explore") {
+        sessionStorage.removeItem("dungeon_waiting_room");
+        sub(); onEnterRoom(res.roomId);
+      }
     });
     setUnsub(() => sub);
     setRoomId(res.roomId);
     setIsHost(false);
+    sessionStorage.setItem("dungeon_waiting_room", JSON.stringify({ roomId: res.roomId, isHost: false }));
     setLoading(false);
   }
 
@@ -155,6 +189,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(false);
     if (!result.ok) { setErr(`初始化失敗：${result.reason || "請再試一次"}`); return; }
     if (unsub) unsub();
+    sessionStorage.removeItem("dungeon_waiting_room");
     onEnterRoom(roomId);
   }
 
@@ -336,7 +371,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
             <div className="text-center text-slate-400 text-sm py-2">等待房主開始…</div>
           )}
           {err && <div className="text-center text-rose-400 text-sm font-bold py-1">{err}</div>}
-          <button onClick={() => { if (unsub) unsub(); setRoomId(null); setRoom(null); setErr(""); }}
+          <button onClick={() => { if (unsub) unsub(); sessionStorage.removeItem("dungeon_waiting_room"); setRoomId(null); setRoom(null); setErr(""); }}
             className="w-full py-2 rounded-xl text-slate-400 text-sm">離開等待室</button>
         </div>
       </div>

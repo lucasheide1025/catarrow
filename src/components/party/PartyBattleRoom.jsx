@@ -140,7 +140,7 @@ function pickBg(family) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName, catATK } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catATK } = useCatCompanion();
   const [room,            setRoom]            = useState(null);
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);

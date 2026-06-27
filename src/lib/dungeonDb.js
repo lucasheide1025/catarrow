@@ -82,10 +82,14 @@ export async function joinDungeonRoom(code, memberId, memberName) {
     );
     if (snap.empty) return { ok:false, reason:"找不到此邀請碼，或地下城已開始" };
     const roomDoc = snap.docs[0];
-    if (Object.keys(roomDoc.data().members || {}).length >= 8)
+    const members = roomDoc.data().members || {};
+    if (Object.keys(members).length >= 8)
       return { ok:false, reason:"地下城最多 8 人" };
+    // 前衛固定 4 人：若已有 4 個前衛則預設為後衛
+    const frontCount = Object.values(members).filter(m => (m.role || "front") !== "rear").length;
+    const defaultRole = frontCount >= 4 ? "rear" : "front";
     await updateDoc(doc(db, D, roomDoc.id), {
-      [`members.${memberId}`]: DEFAULT_MEMBER(memberName),
+      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName), role: defaultRole },
     });
     return { ok:true, roomId:roomDoc.id };
   } catch (e) { return { ok:false, reason:e.message }; }
