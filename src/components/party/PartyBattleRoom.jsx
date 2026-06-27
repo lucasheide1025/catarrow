@@ -1335,11 +1335,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     : null;
   const myArrowTotal   = arrows.reduce((s, a) => s + a.score, 0);
   // 每位玩家欄位等寬：(540 容器 - 12px 左右 padding - gap*(n-1)) / n，上限 100px
-  const frontMembers = memberList.slice(0, 4);
-  const backMembers  = memberList.slice(4);
+  // role-based 分排：前衛→前排，後衛→後排（最多各 4 格），後衛滿 4 時溢位到前排顯示
+  const rearRoleMembers   = memberList.filter(m => (m.role || "front") === "rear");
+  const frontRoleMembers  = memberList.filter(m => (m.role || "front") === "front");
+  const frontMembers = [...frontRoleMembers, ...rearRoleMembers.slice(4)]; // 前排：前衛 + 溢位後衛
+  const backMembers  = rearRoleMembers.slice(0, 4);                        // 後排：後衛（最多 4 人）
   const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
-  const backW  = Math.min(80,  Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
-  const showBackRow = !!(liveEntry || room.processing);
+  const backW  = Math.min(100, Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
+  const showBackRow = backMembers.length > 0;
 
   return (
     <div style={{
@@ -1473,9 +1476,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
       {/* 弓箭手 + 玩家資訊：前後排 */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+        {/* 排頭標籤 */}
+        {backMembers.length > 0 && (
+          <div style={{ display:"flex", justifyContent:"space-between", padding:"2px 8px 0", pointerEvents:"none" }}>
+            <span style={{ fontSize:9, fontWeight:900, color:"rgba(251,113,133,0.7)", letterSpacing:1 }}>⚔️ 前衛</span>
+            <span style={{ fontSize:9, fontWeight:900, color:"rgba(45,212,191,0.7)", letterSpacing:1 }}>🛡 後衛</span>
+          </div>
+        )}
         {/* 前排（最多4人）：完整顯示 */}
         <div style={{
-          display:"flex", gap:3, padding:"4px 6px 4px", justifyContent:"center",
+          display:"flex", gap:3, padding:"2px 6px 4px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined,
         }}>
           {frontMembers.map(m => {
@@ -1483,18 +1493,21 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             const isTopHit = liveEntry && m.alive && miniDmg !== undefined && !animCounter && !isCatMini && miniDmg > 0 && miniDmg >= curMiniMaxDmg;
             const memberArcherStyle = m.archerStyle || "baobao";
             const isMe = m.id === myId;
+            const isOverflowRear = (m.role || "front") === "rear"; // 後衛滿4人時溢位到前排顯示
             const pLog = liveEntry && curMini ? (curMini.playerLog||[]).find(p=>p.id===m.id) : null;
             const pArrow = pLog?.arrowBreakdown?.[0];
             const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
             const catId = m.archerStyle || "baobao";
             const hasMyCatMsg = isMe && catMsg;
+            const frontCardBorder = isMe ? "rgba(251,191,36,0.45)" : isOverflowRear ? "rgba(20,184,166,0.4)" : "rgba(255,255,255,0.07)";
+            const frontCardBg = isMe ? "rgba(251,191,36,0.04)" : isOverflowRear ? "rgba(20,184,166,0.04)" : "rgba(255,255,255,0.01)";
             return (
               <div key={m.id} style={{
                 flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
-                border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                border:`1px solid ${frontCardBorder}`,
                 borderRadius:8, overflow:"hidden",
-                background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
+                background: frontCardBg,
               }}>
                 {/* 弓箭手圖 */}
                 <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
@@ -1547,7 +1560,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             );
           })}
         </div>
-        {/* 後排（第5-8人）：僅射手圖+血條+名字，戰鬥期間才顯示 */}
+        {/* 後排（role="rear" 的成員，最多4格）*/}
         {backMembers.length > 0 && showBackRow && (
           <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
             {backMembers.map(m => {
@@ -1555,14 +1568,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
               const memberArcherStyle = m.archerStyle || "baobao";
               const isMe = m.id === myId;
+              const backBorder = isMe ? "rgba(251,191,36,0.45)" : "rgba(20,184,166,0.35)";
+              const backBg = isMe ? "rgba(251,191,36,0.04)" : "rgba(20,184,166,0.04)";
               return (
                 <div key={m.id} style={{
                   flexShrink:0, width:backW, display:"flex", flexDirection:"column",
-                  border:`1px solid ${isMe?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.07)"}`,
+                  border:`1px solid ${backBorder}`,
                   borderRadius:8, overflow:"hidden",
-                  background: isMe?"rgba(251,191,36,0.04)":"rgba(255,255,255,0.01)",
+                  background: backBg,
                 }}>
-                  <div style={{ height:60, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                  <div style={{ height:64, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
                     {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
                       <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.75rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
                     ))}
@@ -1576,13 +1591,22 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       onError={e => { e.target.style.display="none"; }}/>
                   </div>
                   <div style={{ height:1, background:"rgba(255,255,255,0.06)" }}/>
-                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
-                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
+                  <div style={{ padding:"2px 2px 4px", textAlign:"center" }}>
+                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:2 }}>
                       <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                     </div>
-                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {!m.alive&&"💀"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#2dd4bf", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
+                      {!m.alive?"💀":"🛡"}{m.name.slice(0,4)}{m.id===room.hostId?" 👑":""}
                     </div>
+                    <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
+                      {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}
+                    </div>
+                    {isHost && m.alive && !m.ready && m.id!==myId && !room.processing && (
+                      <button onClick={()=>handleForceSkip(m.id)} disabled={skipping===m.id}
+                        style={{ fontSize:8, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
+                        {skipping===m.id?"…":"跳"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

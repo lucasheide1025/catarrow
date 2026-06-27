@@ -356,7 +356,12 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       : null;
     const skipAllCtr = !!eff.skipCounter;
 
-    // Step 3: 三回合制 — 每回合各玩家出 2 箭（共 3 輪），貓咪全員攻擊，最後怪物反擊
+    // Step 3: 三回合制 — 每回合各玩家出 2 箭（共 3 輪），前衛先出後衛後出，貓咪全員攻擊，最後怪物反擊
+    // 攻擊順序：前衛 → 後衛（動畫用）
+    const orderedAliveIds = [
+      ...frontIds.filter(id => aliveIds.includes(id)),
+      ...rearIds.filter(id => aliveIds.includes(id)),
+    ];
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
@@ -367,7 +372,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     let   catRoundDmg = 0;
 
     for (let pass = 0; pass < 3 && !bossKilled; pass++) {
-      for (const id of aliveIds) {
+      for (const id of orderedAliveIds) {
         if (bossKilled) break;
         if (memberHPNow[id] <= 0) continue;
         const pd = allPlayerData[id];
