@@ -5,11 +5,12 @@ import { subscribeCollectibles } from "../../lib/dungeonDb";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { DUNGEON_MAPS, FAMILY_CONFIGS } from "../../lib/dungeonData";
 
-const RARITY_LABEL = { common:"普通", rare:"稀有", boss:"首領", exclusive:"首殺限定" };
+const RARITY_LABEL = { common:"普通", rare:"稀有", boss:"首領", superRare:"✦ 超稀有", exclusive:"首殺限定" };
 const RARITY_COLOR = {
   common:    { bg:"rgba(148,163,184,0.15)", border:"rgba(148,163,184,0.3)", text:"#94a3b8" },
   rare:      { bg:"rgba(96,165,250,0.15)",  border:"rgba(96,165,250,0.3)",  text:"#60a5fa" },
   boss:      { bg:"rgba(251,191,36,0.15)",  border:"rgba(251,191,36,0.3)",  text:"#fbbf24" },
+  superRare: { bg:"rgba(250,204,21,0.12)",  border:"rgba(250,204,21,0.45)", text:"#fde047" },
   exclusive: { bg:"rgba(168,85,247,0.15)",  border:"rgba(168,85,247,0.3)",  text:"#c084fc" },
 };
 
@@ -129,7 +130,7 @@ export default function DungeonDex() {
             const tiers = FAMILY_COLLECTIBLES[family];
             if (!tiers) return null;
             const familyConf = FAMILY_CONFIGS.find(f => f.id === family);
-            const allFamilyItems = [...tiers.common, ...tiers.rare, ...tiers.boss];
+            const allFamilyItems = [...tiers.common, ...tiers.rare, ...tiers.boss, ...(tiers.superRare || [])];
             const ownedCount = allFamilyItems.filter(it => (collectibles[it.id] || 0) > 0).length;
             return (
               <div key={family} className="px-4 mb-4">

@@ -18,7 +18,7 @@ import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import { rollRuneDrop, calcRuneBonus as calcRuneBonusFn } from "../../lib/runeData";
 import { addRune, getEquippedRunes } from "../../lib/runeDb";
-import { rollFamilyDrop, rollBossDrop, getFirstClearTrophy, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
+import { rollFamilyDrop, rollBossDrops, getFirstClearTrophy, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { addCollectibles } from "../../lib/dungeonDb";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
@@ -497,21 +497,20 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       if (isBossRoom) {
         addArrowdew(myId, totalFloors * 8).catch(() => {});
         addGachaCoins(myId, 2).catch(() => {});
-        const dungeonMap2 = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
+        const dungeonMap2 = DUNGEON_MAPS.find(d => d.id === (room?.mapDungeonId || room?.dungeonId));
         const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap2?.difficulty] || 1;
         const droppedRune = rollRuneDrop(dungeonTier);
         if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
-        const collectDrops = [];
-        if (claimLootRef.current?.collectible) collectDrops.push(claimLootRef.current.collectible);
-        if (firstClearBonus && room?.dungeonId) {
-          const trophy = getFirstClearTrophy(room.dungeonId);
+        const collectDrops = [...(claimLootRef.current?.collectibles || [])];
+        if (firstClearBonus && room?.mapDungeonId) {
+          const trophy = getFirstClearTrophy(room.mapDungeonId);
           if (trophy) collectDrops.push(trophy);
         }
         if (collectDrops.length > 0) addCollectibles(myId, collectDrops).catch(() => {});
       } else {
         addArrowdew(myId, 5).catch(() => {});
-        if (claimLootRef.current?.collectible) {
-          addCollectibles(myId, [claimLootRef.current.collectible]).catch(() => {});
+        if (claimLootRef.current?.collectibles?.length) {
+          addCollectibles(myId, claimLootRef.current.collectibles).catch(() => {});
         }
       }
     }
@@ -730,12 +729,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         const tf        = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
         const myRunes   = getEquippedRunes(room, myId);
         const rb        = calcRuneBonusFn(myRunes);
-        const dungeonMap = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
+        const dungeonMap = DUNGEON_MAPS.find(d => d.id === (room?.mapDungeonId || room?.dungeonId));
         const family    = dungeonMap?.family || "ghost";
         const roomType  = room?.mapCurrentRoomType || (isBossRoom ? "boss" : "monster");
-        const collectible = isBossRoom
-          ? rollBossDrop(family)
-          : rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster");
+        const collectibles = isBossRoom
+          ? rollBossDrops(family, dungeonMap?.difficulty)
+          : [rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster")].filter(Boolean);
         claimLootRef.current = {
           coins:      Math.round(rollCoins(tier, 1) * gm * (isBossRoom ? 2 : 1) * rb.goldMult),
           materials:  rollMaterialDrops(room.monster),
@@ -745,7 +744,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           arrowdew:   isBossRoom ? tf * 8 : 5,
           gachaCoins: isBossRoom ? 2 : 0,
           runeDrop:   isBossRoom ? rollRuneDrop({ normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap?.difficulty] || 1) : null,
-          collectible,
+          collectibles,
         };
       }
       const loot        = claimLootRef.current;
@@ -871,27 +870,34 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               )}
 
               {/* 收藏品掉落 */}
-              {(loot?.collectible || firstClearBonus) && (
+              {((loot?.collectibles?.length > 0) || firstClearBonus) && (
                 <div className="rounded-2xl p-4 space-y-2"
                   style={{ background:"rgba(168,85,247,0.07)", border:"1px solid rgba(168,85,247,0.25)" }}>
                   <div className="text-xs font-bold mb-3" style={{ color:"#c084fc" }}>🔮 收藏品掉落</div>
-                  {loot?.collectible && (() => {
-                    const item = COLLECTIBLE_MAP[loot.collectible.itemId];
-                    return item ? (
-                      <div className="flex items-center gap-3">
+                  {(loot?.collectibles || []).map((drop, i) => {
+                    const item = COLLECTIBLE_MAP[drop.itemId];
+                    if (!item) return null;
+                    const isSuperRare = item.rarity === "superRare";
+                    return (
+                      <div key={i} className="flex items-center gap-3"
+                        style={isSuperRare ? { background:"rgba(250,204,21,0.08)", borderRadius:8, padding:"6px 8px" } : {}}>
                         <span style={{ fontSize:28 }}>{item.icon}</span>
                         <div>
-                          <div className="text-sm font-black text-white">{item.name}
-                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
-                              style={{ background:"rgba(168,85,247,0.3)", color:"#d8b4fe" }}>Boss 掉落</span>
+                          <div className="text-sm font-black" style={{ color: isSuperRare ? "#fde047" : "#fff" }}>{item.name}
+                            {isSuperRare
+                              ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
+                                  style={{ background:"rgba(250,204,21,0.3)", color:"#fde047" }}>✦ 超稀有</span>
+                              : <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full"
+                                  style={{ background:"rgba(168,85,247,0.3)", color:"#d8b4fe" }}>Boss 掉落</span>
+                            }
                           </div>
                           <div className="text-[11px] text-slate-400 mt-0.5">{item.desc}</div>
                         </div>
                       </div>
-                    ) : null;
-                  })()}
-                  {firstClearBonus && room?.dungeonId && (() => {
-                    const trophy = getFirstClearTrophy(room.dungeonId);
+                    );
+                  })}
+                  {firstClearBonus && room?.mapDungeonId && (() => {
+                    const trophy = getFirstClearTrophy(room.mapDungeonId);
                     const item = trophy ? COLLECTIBLE_MAP[trophy.itemId] : null;
                     return item ? (
                       <div className="flex items-center gap-3 pt-2" style={{ borderTop:"1px solid rgba(168,85,247,0.2)" }}>

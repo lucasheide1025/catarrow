@@ -3,6 +3,32 @@
 
 ---
 
+## 2026-06-27（地下城收藏品圖鑑全面重設計）
+
+### dungeonCollectibles.js — 完整重寫（216 件）
+- **規格**：6 族系 × (20 普通 + 10 稀有 + 5 首領 + 1 超稀有) = 216 件，加上原有 24 首殺限定
+- **掉落邏輯**：
+  - 普通怪物房 15%（原 10%）
+  - 精英房 20% 稀有 + 25% 普通（原 35%+30%）
+  - 寶箱房 15% 稀有 + 40% 普通（原 20%+50%）
+  - Boss 房：`rollBossDrops(family, difficulty)` 回傳陣列，65% Boss 物品 + 難度依比超稀有（normal 1% / hard 2% / elite 3% / nightmare 5%）
+- **API 變更**：`rollBossDrop` → `rollBossDrops`，回傳 `[{itemId}]` 陣列而非單一物件
+
+### DungeonBattleRoom.jsx — 三處 Bug 修復
+1. **family 偵測**：`room?.dungeonId` → `room?.mapDungeonId || room?.dungeonId`（地圖模式用 mapDungeonId）
+2. **首殺 trophy**：同上，共三個地方（line ~500, ~506, ~893）全改為 mapDungeonId
+3. **collectible → collectibles**：`claimLootRef.current` 改用陣列格式，UI 支援同時顯示多件掉落
+
+### DungeonDex.jsx — 新增超稀有稀有度
+- `RARITY_LABEL` / `RARITY_COLOR` 加入 `superRare`（金黃色 #fde047）
+- `allFamilyItems` 加入 `tiers.superRare`
+
+**踩坑提醒**：
+- `rollBossDrops` 可能回傳空陣列（Boss 沒掉），UI 需做 length 判斷
+- superRare 物品的 rarity 字串是 `"superRare"`（camelCase），RARITY_COLOR 也用同名 key
+
+---
+
 ## 2026-06-27（地下城等待室重整持久化）
 
 ### 地下城等待室：重整後不再跳出
