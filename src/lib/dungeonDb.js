@@ -42,8 +42,9 @@ const DEFAULT_MEMBER = (name) => ({
   buffs: { atkMult:1, defMult:1, dmgMult:1, hasRevival:false },
   revived: false,
   contractReset: false,
-  role: "front",    // "front" | "rear"
-  rearChoice: null, // "heal" | "dmg" | null
+  role: "front",         // "front" | "rear" — 戰鬥用角色
+  displayGroup: "front", // "front" | "rear" — 視覺分排（回合結束後才移動）
+  rearChoice: null,      // "heal" | "dmg" | null
 });
 
 // ── 建立房間 ──────────────────────────────────────────────────
@@ -89,7 +90,7 @@ export async function joinDungeonRoom(code, memberId, memberName) {
     const frontCount = Object.values(members).filter(m => (m.role || "front") !== "rear").length;
     const defaultRole = frontCount >= 4 ? "rear" : "front";
     await updateDoc(doc(db, D, roomDoc.id), {
-      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName), role: defaultRole },
+      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName), role: defaultRole, displayGroup: defaultRole },
     });
     return { ok:true, roomId:roomDoc.id };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -365,6 +366,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // Step 5b：更新成員 HP（含復活符 + 前後衛死亡邏輯）
+    // 先快照各人的顯示分組（動畫播放期間讓客戶端知道回合開始前的位置）
+    const displayGroupsBefore = Object.fromEntries(
+      aliveIds.map(id => [id, members[id].displayGroup || members[id].role || "front"])
+    );
     const memberUpd = {};
     let   liveAfter = 0;
     for (const id of aliveIds) {
@@ -383,9 +388,15 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
       if (hp <= 0) {
         if (!isRear) {
-          // 前衛第一次死亡 → 變後衛，HP 復活 50%
+          // 前衛第一次死亡 → role 改後衛，HP 復活 50%
           hp = Math.round((m.maxHP || 100) * 0.5);
           memberUpd[`members.${id}.role`] = "rear";
+          // displayGroup：後衛位置有空才真正移動，否則維持在前排（只改狀態標籤）
+          const curRearDisplayCount = Object.values(members)
+            .filter(m2 => (m2.displayGroup || m2.role || "front") === "rear").length;
+          if (curRearDisplayCount < 4) {
+            memberUpd[`members.${id}.displayGroup`] = "rear";
+          }
           liveAfter++;
         } else {
           // 後衛死亡 → 真的陣亡
@@ -415,6 +426,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHPBefore: room.monsterHP, monsterHPAfter: monsterHP,
       counterRound: !skipAllCtr,
       lastHit: lastHitInfo,
+      displayGroupsBefore, // 回合開始前各人的視覺分組（客戶端動畫用）
     };
 
     // Step 7：判斷結果 & 下一狀態

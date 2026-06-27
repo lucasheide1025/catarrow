@@ -240,6 +240,23 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId]); // eslint-disable-line
 
+  // ── 非房主：processing 卡住 20 秒 → 自動重置本地 submitted 讓玩家可重新輸入 ──
+  useEffect(() => {
+    if (isHost || !room?.processing) return;
+    const t = setTimeout(() => {
+      setSubmitted(false);
+      import("firebase/firestore").then(({ updateDoc, doc }) =>
+        import("../../lib/firebase").then(({ db }) =>
+          updateDoc(doc(db, "dungeonRooms", roomId), {
+            [`members.${myId}.ready`]: false,
+            [`members.${myId}.arrows`]: [],
+          }).catch(() => {})
+        )
+      );
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [room?.processing, isHost, roomId, myId]); // eslint-disable-line
+
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
   // ── 重整後同步：如果 Firestore 顯示已送出但本地未送出，重置 ready 讓玩家重來 ─
@@ -393,7 +410,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }).catch(() => setFirstClearBonus(false));
   }, [status, room?.result]); // eslint-disable-line
 
-  // ── 所有人 ready → 房主結算 ──────────────────────────────────
+  // ── 所有人 ready → 房主結算（等 2 秒讓 Firestore 快照傳播）──────
+  const allReadyTimerRef = useRef(null);
   useEffect(() => {
     if (!isHost || !room || room.processing || processingRef.current) return;
     if (room.status !== "active") return;
@@ -401,8 +419,18 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     const alive   = Object.values(members).filter(m => m.alive);
     if (alive.length === 0) return;
     const allReady = alive.every(m => m.ready);
-    if (!allReady) return;
-    handleProcess();
+    if (!allReady) {
+      if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
+      return;
+    }
+    if (allReadyTimerRef.current) return; // 已有計時器在跑
+    allReadyTimerRef.current = setTimeout(() => {
+      allReadyTimerRef.current = null;
+      handleProcess();
+    }, 2000);
+    return () => {
+      if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
+    };
   }, [room]); // eslint-disable-line
 
   // ── 進入下一層（floor_transition）────────────────────────────
@@ -1152,14 +1180,23 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     });
   const memberCount  = memberList.length;
   const aliveCount   = memberList.filter(m => m.alive).length;
-  // role-based 分排：前衛→前排，後衛→後排（最多各 4 格），後衛滿 4 時溢位到前排顯示
-  const rearRoleMembers   = memberList.filter(m => m.role === "rear");
-  const frontRoleMembers  = memberList.filter(m => m.role !== "rear");
-  const frontMembers = [...frontRoleMembers, ...rearRoleMembers.slice(4)]; // 前排：前衛 + 溢位後衛
-  const backMembers  = rearRoleMembers.slice(0, 4);                        // 後排：後衛（最多 4 人）
-  const frontW = Math.min(100, Math.floor((528 - Math.max(0, frontMembers.length - 1) * 3) / (frontMembers.length || 1)));
-  const backW  = Math.min(100, Math.floor((528 - Math.max(0, backMembers.length  - 1) * 3) / (backMembers.length  || 1)));
-  const showBackRow  = backMembers.length > 0;
+  const isAnimating  = !!liveEntry;
+
+  // 顯示分組（displayGroup 優先；動畫中用 displayGroupsBefore 防止回合中途跳位）
+  const dgOf = (m) =>
+    (liveEntry?.displayGroupsBefore?.[m.id]) ?? (m.displayGroup ?? m.role ?? "front");
+
+  const frontDisplayMembers = memberList.filter(m => dgOf(m) !== "rear");
+  const rearDisplayMembers  = memberList.filter(m => dgOf(m) === "rear");
+
+  // 我的視角分組
+  const myDisplayGroup   = (liveEntry?.displayGroupsBefore?.[myId]) ?? (me?.displayGroup ?? me?.role ?? "front");
+  const myRowMembers     = myDisplayGroup === "rear" ? rearDisplayMembers  : frontDisplayMembers;
+  const otherRowMembers  = myDisplayGroup === "rear" ? frontDisplayMembers : rearDisplayMembers;
+
+  // 卡片寬度
+  const myRowW    = Math.min(120, Math.floor((528 - Math.max(0, myRowMembers.length   - 1) * 3) / (myRowMembers.length   || 1)));
+  const otherRowW = Math.min(76,  Math.floor((528 - Math.max(0, otherRowMembers.length - 1) * 3) / (otherRowMembers.length || 1)));
 
   function handleLeave() {
     leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
@@ -1256,33 +1293,95 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         )}
       </div>
 
-      {/* ── 角色列（前後排）── */}
+      {/* ── 角色列（視角分排：平時只顯示自己那排，動畫時補顯對方排小卡）── */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", borderTop:"1px solid rgba(255,255,255,0.08)" }}>
-        {/* 排頭標籤 */}
-        {backMembers.length > 0 && (
-          <div style={{ display:"flex", justifyContent:"space-between", padding:"2px 8px 0", pointerEvents:"none" }}>
-            <span style={{ fontSize:9, fontWeight:900, color:"rgba(251,113,133,0.7)", letterSpacing:1 }}>⚔️ 前衛</span>
-            <span style={{ fontSize:9, fontWeight:900, color:"rgba(45,212,191,0.7)", letterSpacing:1 }}>🛡 後衛</span>
+
+        {/* 動畫進行中 → 顯示「對方排」緊湊小卡（前攻/後衛上下文） */}
+        {isAnimating && otherRowMembers.length > 0 && (
+          <div style={{ display:"flex", gap:2, padding:"2px 6px 1px", justifyContent:"center", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+            <span style={{ alignSelf:"center", fontSize:8, color:"rgba(255,255,255,0.35)", marginRight:3 }}>
+              {myDisplayGroup === "rear" ? "⚔️前衛" : "🛡後衛"}
+            </span>
+            {otherRowMembers.map(m => {
+              const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
+              const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
+              const isOtherAtk = attackingIds.has(m.id);
+              const otherBorder = m.role==="rear" ? "rgba(20,184,166,0.35)" : "rgba(251,113,133,0.35)";
+              return (
+                <div key={m.id} style={{
+                  flexShrink:0, width:otherRowW, display:"flex", flexDirection:"column",
+                  border:`1px solid ${otherBorder}`, borderRadius:6, overflow:"hidden",
+                  background:"rgba(0,0,0,0.25)",
+                  animation: isOtherAtk ? "db-archer-atk 0.45s ease-out" : undefined,
+                }}>
+                  <div style={{ height:48, position:"relative", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                    {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
+                      <span key={f.id} style={{ position:"absolute", top:"0%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.7rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
+                    ))}
+                    <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
+                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
+                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined }}
+                      onError={e => { e.target.style.display="none"; }}/>
+                  </div>
+                  <div style={{ padding:"2px 2px 3px", textAlign:"center" }}>
+                    <div style={{ height:3, borderRadius:2, background:"rgba(255,255,255,0.08)", overflow:"hidden", marginBottom:1 }}>
+                      <div style={{ height:"100%", width:`${hpPct*100}%`,
+                        background: hpPct>0.5?"#16a34a":hpPct>0.25?"#d97706":"#dc2626" }}/>
+                    </div>
+                    <div style={{ fontSize:7.5, color:!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {!m.alive?"💀":""}{m.name.slice(0,5)}
+                    </div>
+                    <div style={{ fontSize:7, color:m.role==="rear"?"#a78bfa":"#34d399" }}>
+                      {m.role==="rear"?"🛡":"⚔️"}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-        {/* 前排（最多4人）完整顯示 */}
+
+        {/* 排頭標籤（有後衛存在時顯示） */}
+        {rearDisplayMembers.length > 0 && (
+          <div style={{ padding:"2px 8px 0", pointerEvents:"none" }}>
+            <span style={{ fontSize:9, fontWeight:900, letterSpacing:1,
+              color: myDisplayGroup==="rear" ? "rgba(45,212,191,0.7)" : "rgba(251,113,133,0.7)" }}>
+              {myDisplayGroup==="rear" ? "🛡 後衛" : "⚔️ 前衛"}
+            </span>
+          </div>
+        )}
+
+        {/* 主排（我的視角）完整卡片 */}
         <div style={{ display:"flex", gap:3, padding:"2px 6px 4px", justifyContent:"center",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
-          {frontMembers.map(m => {
+          {myRowMembers.map(m => {
             const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
             const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
             const isMe = m.id === myId;
-            const isOverflowRear = m.role === "rear";
             const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
-            const frontCardBorder = isMe ? "rgba(251,191,36,0.45)" : isOverflowRear ? "rgba(20,184,166,0.4)" : "rgba(255,255,255,0.07)";
-            const frontCardBg    = isMe ? "rgba(251,191,36,0.04)" : isOverflowRear ? "rgba(20,184,166,0.04)" : "rgba(255,255,255,0.01)";
             const isAttacking = attackingIds.has(m.id);
+            // 邊框：isMe→金；front視角但role已改rear（滿員未移動）→紫；後衛排→青；正常前衛→透明
+            const isRearInFront = myDisplayGroup !== "rear" && m.role === "rear";
+            const cardBorder = isMe
+              ? "rgba(251,191,36,0.45)"
+              : isRearInFront
+              ? "rgba(168,85,247,0.45)"
+              : myDisplayGroup === "rear"
+              ? "rgba(20,184,166,0.4)"
+              : "rgba(255,255,255,0.07)";
+            const cardBg = isMe
+              ? "rgba(251,191,36,0.04)"
+              : isRearInFront
+              ? "rgba(168,85,247,0.04)"
+              : myDisplayGroup === "rear"
+              ? "rgba(20,184,166,0.04)"
+              : "rgba(255,255,255,0.01)";
             return (
               <div key={m.id} style={{
-                flexShrink:0, width:frontW, display:"flex", flexDirection:"column",
-                border:`1px solid ${frontCardBorder}`,
+                flexShrink:0, width:myRowW, display:"flex", flexDirection:"column",
+                border:`1px solid ${cardBorder}`,
                 borderRadius:8, overflow:"hidden",
-                background: frontCardBg,
+                background: cardBg,
                 animation: isAttacking ? "db-archer-atk 0.45s ease-out" : undefined,
               }}>
                 <div style={{ height:90, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
@@ -1307,8 +1406,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                     {!m.alive?"💀":""}{m.name.slice(0,6)}
                   </div>
                   <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
-                    color: m.role==="rear"?"#a78bfa":"#34d399",
-                  }}>
+                    color: m.role==="rear"?"#a78bfa":"#34d399" }}>
                     {m.role==="rear"?"🛡後衛":"⚔️前衛"}
                   </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
@@ -1337,71 +1435,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             );
           })}
         </div>
-        {/* 後排（role="rear" 的成員，最多 4 格） */}
-        {showBackRow && (
-          <div style={{ display:"flex", gap:3, padding:"0 6px 6px", justifyContent:"center" }}>
-            {backMembers.map(m => {
-              const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
-              const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, displayHp/m.maxHP)) : 0;
-              const isMe = m.id === myId;
-              const mContract = CONTRACT_TYPES[m.contract?.type] || CONTRACT_TYPES.standard;
-              const isAttackingBack = attackingIds.has(m.id);
-              return (
-                <div key={m.id} style={{
-                  flexShrink:0, width:backW, display:"flex", flexDirection:"column",
-                  border:`1px solid ${isMe?"rgba(251,191,36,0.55)":"rgba(20,184,166,0.4)"}`,
-                  borderRadius:8, overflow:"hidden",
-                  background: isMe?"rgba(251,191,36,0.08)":"rgba(20,184,166,0.05)",
-                  boxShadow: isMe ? "0 0 8px rgba(251,191,36,0.3)" : "0 0 6px rgba(20,184,166,0.15)",
-                  animation: isAttackingBack ? "db-archer-atk 0.45s ease-out" : undefined,
-                }}>
-                  <div style={{ height:85, position:"relative", flexShrink:0, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-                    {floatCounterDmgs.filter(f=>f.memberId===m.id).map(f => (
-                      <span key={f.id} style={{ position:"absolute", top:"5%", left:"50%", transform:"translateX(-50%)", zIndex:10, animation:"mb-float 1.3s ease-out forwards", fontWeight:900, fontSize:"0.85rem", color:"#f43f5e", textShadow:"0 2px 8px rgba(0,0,0,0.9)", whiteSpace:"nowrap", pointerEvents:"none" }}>{f.text}💢</span>
-                    ))}
-                    <img src={`/cats/archers/${m.archerStyle||"baobao"}.webp`} alt={m.name}
-                      style={{ height:"100%", objectFit:"contain", objectPosition:"center bottom",
-                        filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
-                        outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
-                        outlineOffset:"2px", borderRadius:2 }}
-                      onError={e => { e.target.style.display="none"; }}/>
-                  </div>
-                  <div style={{ height:1, background:"rgba(255,255,255,0.06)", flexShrink:0 }}/>
-                  <div style={{ padding:"2px 2px 4px", textAlign:"center" }}>
-                    <div style={{ height:4, borderRadius:3, background:"rgba(255,255,255,0.06)", overflow:"hidden", marginBottom:1 }}>
-                      <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease",
-                        background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
-                    </div>
-                    <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
-                      {!m.alive?"💀":""}{m.name.slice(0,6)}
-                    </div>
-                    <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
-                      color: m.role==="rear"?"#a78bfa":"#34d399",
-                    }}>
-                      {m.role==="rear"?"🛡後衛":"⚔️前衛"}
-                    </div>
-                    <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
-                      <div style={{ fontSize:8, color:"#f87171" }}>⚔️{m.atk||0}</div>
-                      <div style={{ fontSize:8, color:"#60a5fa" }}>🛡{m.def||0}</div>
-                    </div>
-                    <div style={{ fontSize:7, marginBottom:1 }} className={mContract.color}>
-                      {mContract.icon} {mContract.name}
-                    </div>
-                    <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":!m.alive?"#475569":"#fbbf24" }}>
-                      {!m.alive?"⬛":liveEntry?"⚙️":m.ready?"✅":"⏳"}
-                    </div>
-                    {isHost && m.alive && !m.ready && m.id!==myId && (
-                      <button onClick={()=>forceSkipDungeonPlayer(roomId, m.id)}
-                        style={{ fontSize:7, padding:"1px 4px", borderRadius:3, background:"rgba(255,255,255,0.08)", color:"#64748b", border:"none", cursor:"pointer", marginTop:1 }}>
-                        跳
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* ── 輸入區 ── */}
