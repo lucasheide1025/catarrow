@@ -246,7 +246,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "") {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "") {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.hp`]:      hp,
@@ -256,6 +256,7 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
       ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
       [`members.${memberId}.catATK`]:  catATK || 0,
       [`members.${memberId}.catName`]: catName || "",
+      [`members.${memberId}.catId`]:   catId || "",
     });
     return { ok: true };
   } catch (e) {

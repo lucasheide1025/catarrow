@@ -43,6 +43,9 @@ cardCollections   C_CARD_COLL     // { cards:{[monsterId]:{}}, equipped:[monster
 monthlyCards      C_MONTHLY_CARD
 monthlyCardLogs   C_MONTHLY_LOG
 cardMarket        C_CARD_MARKET
+dungeonRooms      "dungeonRooms"  // 地下城房間（含 memberRunes 欄位）
+dungeonFirstClears"dungeonFirstClears"
+systemBroadcasts  "systemBroadcasts"
 ```
 
 ### 關鍵 members 欄位
@@ -52,6 +55,7 @@ village.resources.arrowdew
 fatCat: { gold, silver, bronze }
 achievement: { black, gold, silver }
 dailyQuestCount  // 累積上課次數（下課+1）
+runeInventory: { [runeId]: qty }  // 符文背包（2026-06-27）
 ```
 
 ---

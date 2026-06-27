@@ -926,7 +926,7 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
   const id = checkinId(memberId, date);
   const ref = doc(db, C_CHECKIN, id);
   const snap = await getDoc(ref);
-  if (snap.exists() && snap.data().status !== "cancelled") return { id, already: true, data: snap.data() };
+  if (snap.exists() && snap.data().status !== "cancelled" && snap.data().status !== "rejected") return { id, already: true, data: snap.data() };
   await setDoc(ref, {
     memberId, memberName: memberName || "", memberNickname: memberNickname || "",
     date,

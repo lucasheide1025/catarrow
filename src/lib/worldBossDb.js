@@ -156,7 +156,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       let botDmg = 0;
       const botRounds = [];
       for (let i = 0; i < 5; i++) {
-        const r = simulateBotRound(bot, ev.bossData.atk, ev.bossData.def);
+        const r = simulateBotRound(bot, ev.bossData.atk, ev.bossData.def, memberAtk || 80);
         botDmg += r.dmg;
         botRounds.push(r);
       }

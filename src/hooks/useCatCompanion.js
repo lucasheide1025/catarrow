@@ -67,8 +67,8 @@ export function useCatCompanion() {
   const skillGroup = hasCat ? (CAT_SKILL_GROUPS[catId] || null) : null;
 
   // ── 戰鬥數值（類型基底 + 羈絆技能加成 + 等級 + 裝備）────────
-  // 羈絆里程碑：達到 lv5 解鎖技能 I（主屬性×1.2），lv10 解鎖技能 II（×1.4）
-  const bondTierMult = bondLv >= 10 ? 1.4 : bondLv >= 5 ? 1.2 : 1.0;
+  // 羈絆每級加成：攻/防型 +5%/Lv，全能型 +2.5%/Lv
+  const bondTierMult = catType === "allround" ? 1 + bondLv * 0.025 : 1 + bondLv * 0.05;
   const base = CAT_TYPE_BASE[catType] || CAT_TYPE_BASE.allround;
 
   // 攻擊型：bondTier 強化 ATK；防禦型：強化 HP/DEF；全能型：三者均強化

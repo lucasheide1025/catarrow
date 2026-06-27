@@ -95,7 +95,7 @@ export default function DailyQuest({ onJoinParty }) {
   } else if (isEnded) {
     ciLabel = "🏁 已下課"; ciBg = "#1e293b"; ciColor = "#64748b"; ciDisabled = true;
   } else if (isRejected) {
-    ciLabel = "❌ 未通過"; ciBg = "#450a0a"; ciColor = "#f87171"; ciDisabled = true;
+    ciLabel = "🔄 重新報到"; ciBg = "linear-gradient(135deg,#059669,#0d9488)"; ciColor = "white"; ciDisabled = false;
   } else {
     ciLabel = "📋 報到";
     ciBg = "linear-gradient(135deg,#059669,#0d9488)";
@@ -158,9 +158,9 @@ export default function DailyQuest({ onJoinParty }) {
           ✅ 今日已下課 · 箭露已結算（{todayArrows} 箭）
         </div>
       )}
-      {isRejected && (
-        <div style={{ color:"#f87171", fontSize:12, fontWeight:700, textAlign:"center" }}>
-          ❌ 今日報到未通過，請詢問教練
+      {isRejected && !justSubmitted && (
+        <div style={{ color:"#fb923c", fontSize:12, fontWeight:700, textAlign:"center" }}>
+          ⚠️ 教練拒絕了報到，可點擊按鈕重新報到
         </div>
       )}
 

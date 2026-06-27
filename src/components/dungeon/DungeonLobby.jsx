@@ -10,6 +10,8 @@ import { calcEquippedBonus } from "../../lib/monsterCards";
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { getCatStatMult, getBondLevel } from "../../lib/catData";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
+import { RUNES, RUNE_TYPES, MAX_RUNE_SLOTS, runeEffectLabel, TIER_COLOR, TIER_NAME, calcRuneBonus } from "../../lib/runeData";
+import { subscribeRuneInventory, equipRunesToDungeon, validateRuneEquip } from "../../lib/runeDb";
 
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
@@ -29,17 +31,21 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const [isHost, setIsHost]     = useState(false);
   const [unsub,  setUnsub]      = useState(null);
   const [dungeonLogs, setDungeonLogs] = useState([]);
+  const [runeInv,     setRuneInv]     = useState({});
+  const [equippedRunes, setEquippedRunes] = useState([]); // [{runeId, durability}]
+  const [showRunePicker, setShowRunePicker] = useState(false);
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
   const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
   useEffect(() => {
     if (!myId) return;
-    const unsubLogs = subscribePracticeLogs(myId, logs =>
+    const unsubLogs  = subscribePracticeLogs(myId, logs =>
       setDungeonLogs(logs.filter(l => l.source === "dungeon"))
     );
     const unsubCards = subscribeCardCollection(myId, setCardColl);
-    return () => { unsubLogs?.(); unsubCards?.(); };
+    const unsubRunes = subscribeRuneInventory(myId, setRuneInv);
+    return () => { unsubLogs?.(); unsubCards?.(); unsubRunes?.(); };
   }, [myId]);
 
   useEffect(() => {
@@ -105,11 +111,45 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setLoading(false);
   }
 
+  // ── 符文操作 ──────────────────────────────────────────────
+  function toggleRune(runeId) {
+    const rune = RUNES[runeId];
+    if (!rune) return;
+    const alreadyIdx = equippedRunes.findIndex(s => s.runeId === runeId);
+    if (alreadyIdx >= 0) {
+      setEquippedRunes(prev => prev.filter((_, i) => i !== alreadyIdx));
+      return;
+    }
+    if (equippedRunes.length >= MAX_RUNE_SLOTS) return;
+    const sameType = equippedRunes.find(s => RUNES[s.runeId]?.typeId === rune.typeId);
+    if (sameType) return;
+    const dur = rune.durability;
+    setEquippedRunes(prev => [...prev, { runeId, durability: dur }]);
+  }
+
+  async function saveAndStartRunes() {
+    if (roomId && equippedRunes.length > 0) {
+      await equipRunesToDungeon(roomId, myId, equippedRunes).catch(() => {});
+    }
+  }
+
   async function handleStart() {
     if (!room) return;
     setLoading(true);
     const dungeon = DUNGEON_MAPS.find(d => d.id === selDungeon);
     if (!dungeon) { setErr("請先選擇地下城"); setLoading(false); return; }
+    await saveAndStartRunes();
+    // 有裝備符文時，用符文加成重新寫入屬性
+    if (equippedRunes.length > 0) {
+      const rb = calcRuneBonus(equippedRunes);
+      await updateDungeonMemberStats(
+        roomId, myId,
+        Math.round(myHP * rb.hpMult), Math.round(myHP * rb.hpMult),
+        Math.round(myATK * rb.atkMult),
+        Math.round(myDEF * rb.defMult),
+        myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0
+      );
+    }
     const result = await initDungeonMapRun(roomId, dungeon.id, myId);
     setLoading(false);
     if (!result.ok) { setErr(`初始化失敗：${result.reason || "請再試一次"}`); return; }
@@ -127,6 +167,25 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
           <div className="text-3xl mb-1">🏰</div>
           <div className="text-xl font-black">地下城等待室</div>
           <div className="text-sm text-slate-400 mt-0.5">等待夥伴從大廳加入…</div>
+        </div>
+
+        {/* 隊伍狀態一覽 */}
+        <div className="shrink-0 px-4 py-2 border-b border-white/8">
+          <div className="text-xs text-slate-500 mb-1.5">👥 隊伍狀態（{memberEntries.length} 人）</div>
+          <div className="flex flex-wrap gap-2">
+            {memberEntries.map(([id, m], i) => (
+              <div key={id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5"
+                style={{ background:"rgba(255,255,255,0.07)" }}>
+                <span className="text-sm">{m.role === "rear" ? "🛡️" : "⚔️"}</span>
+                <div>
+                  <div className="text-xs font-bold text-white leading-tight">
+                    {m.name}{i === 0 ? " ⭐" : ""}
+                  </div>
+                  <div className="text-[10px] text-slate-400">HP {m.maxHP} · ATK {m.atk}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Members list */}
@@ -150,16 +209,77 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
                 </div>
                 {/* 只有自己可以切換角色 */}
                 {isMe && (
-                  <div className="flex gap-2">
-                    <button onClick={() => setDungeonMemberRole(roomId, myId, "front")}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${!isRear ? "border-emerald-400 bg-emerald-400/20 text-emerald-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
-                      ⚔️ 前衛（承受反擊）
-                    </button>
-                    <button onClick={() => setDungeonMemberRole(roomId, myId, "rear")}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${isRear ? "border-purple-400 bg-purple-400/20 text-purple-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
-                      🛡 後衛（免疫反擊）
-                    </button>
-                  </div>
+                  <>
+                    <div className="flex gap-2">
+                      <button onClick={() => setDungeonMemberRole(roomId, myId, "front")}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${!isRear ? "border-emerald-400 bg-emerald-400/20 text-emerald-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                        ⚔️ 前衛（承受反擊）
+                      </button>
+                      <button onClick={() => setDungeonMemberRole(roomId, myId, "rear")}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${isRear ? "border-purple-400 bg-purple-400/20 text-purple-300" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                        🛡 後衛（免疫反擊）
+                      </button>
+                    </div>
+                    {/* 符文槽 */}
+                    <div className="mt-2 pt-2 border-t border-white/8">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] text-slate-500 font-bold">🔮 符文槽（最多{MAX_RUNE_SLOTS}個，不同類型）</span>
+                        <button onClick={() => setShowRunePicker(p => !p)}
+                          className="text-[10px] text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-lg">
+                          {showRunePicker ? "收起" : "裝備"}
+                        </button>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {equippedRunes.length === 0
+                          ? <span className="text-[10px] text-slate-600">未裝備符文</span>
+                          : equippedRunes.map(slot => {
+                              const r = RUNES[slot.runeId];
+                              if (!r) return null;
+                              return (
+                                <div key={slot.runeId}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer active:scale-95"
+                                  style={{ background:`${r.color}22`, border:`1px solid ${r.color}55`, color: r.color }}
+                                  onClick={() => toggleRune(slot.runeId)}>
+                                  {r.icon} {r.label} <span className="text-slate-400">({slot.durability}次)</span> ×
+                                </div>
+                              );
+                            })
+                        }
+                      </div>
+                      {showRunePicker && (
+                        <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                          {Object.entries(runeInv).filter(([,qty]) => qty > 0).length === 0
+                            ? <div className="text-[10px] text-slate-500 text-center py-2">背包中沒有符文</div>
+                            : Object.entries(runeInv)
+                                .filter(([,qty]) => qty > 0)
+                                .map(([runeId, qty]) => {
+                                  const r = RUNES[runeId];
+                                  if (!r) return null;
+                                  const isEquipped = equippedRunes.some(s => s.runeId === runeId);
+                                  const sameTypeConflict = !isEquipped && equippedRunes.some(s => RUNES[s.runeId]?.typeId === r.typeId);
+                                  const slotFull = !isEquipped && equippedRunes.length >= MAX_RUNE_SLOTS;
+                                  const disabled = sameTypeConflict || slotFull;
+                                  return (
+                                    <button key={runeId}
+                                      disabled={disabled}
+                                      onClick={() => toggleRune(runeId)}
+                                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all disabled:opacity-30"
+                                      style={{ background: isEquipped ? `${r.color}22` : "rgba(255,255,255,0.05)", border:`1px solid ${isEquipped ? r.color : "rgba(255,255,255,0.1)"}` }}>
+                                      <span className="text-sm">{r.icon}</span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-[10px] font-black" style={{ color: r.color }}>{r.label}</div>
+                                        <div className="text-[9px] text-slate-400">{runeEffectLabel(runeId)} · 耐久{r.durability}次</div>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500">×{qty}</span>
+                                      {isEquipped && <span className="text-emerald-400 text-[10px] font-black">✓</span>}
+                                    </button>
+                                  );
+                                })
+                          }
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             );

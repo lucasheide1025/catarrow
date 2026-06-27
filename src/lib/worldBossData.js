@@ -234,12 +234,12 @@ export function drawRandomBot() {
 }
 
 // 機器人模擬一回合傷害（6 箭）
-export function simulateBotRound(bot, bossAtk, bossDef) {
+export function simulateBotRound(bot, bossAtk, bossDef, playerAtk = 80) {
   let dmg = 0;
   const arrows = [];
   for (let i = 0; i < 6; i++) {
     const score = Math.max(0, Math.round((bot.avgScore + (Math.random() * 4 - 2))));
-    const atk   = Math.round(60 * bot.atkMult);
+    const atk   = Math.round(playerAtk * bot.atkMult);
     const base  = 8 + atk * 0.7 + score * 1.2 - bossDef * 0.35;
     const mult  = 0.85 + Math.random() * 0.3;
     const hit   = Math.max(0, Math.round(base * mult));

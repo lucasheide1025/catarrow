@@ -11,11 +11,13 @@ import {
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins } from "../../lib/db";
 import { DUNGEON_FLOOR_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
+import { rollRuneDrop, calcRuneBonus as calcRuneBonusFn } from "../../lib/runeData";
+import { addRune, getEquippedRunes } from "../../lib/runeDb";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
   sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, vibrate,
@@ -93,9 +95,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
   const myId        = profile?.id;
-  const bondSavedRef = useRef(false);
-  const xpSavedRef   = useRef(false); // 非 host win XP/箭露只存一次
-  const battleBgRef  = useRef(null);
+  const bondSavedRef         = useRef(false);
+  const xpSavedRef           = useRef(false);
+  const battleBgRef          = useRef(null);
+  const claimLootRef         = useRef(null);  // loot preview locked on first render
+  const firstClearCheckedRef = useRef(false);
 
   const [room,          setRoom]          = useState(null);
   const [arrows,        setArrows]        = useState([]);
@@ -112,6 +116,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [liveMiniIdx,       setLiveMiniIdx]       = useState(0);
   // 回合結算覆蓋（動畫結束後顯示）
   const [showRoundResult,   setShowRoundResult]   = useState(false);
+  const [firstClearBonus,   setFirstClearBonus]   = useState(null); // null=未檢查 false=非首殺 {coins}=首殺
   // 戰鬥動畫 states（同組隊風格）
   const [animHit,           setAnimHit]           = useState(false);
   const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
@@ -149,13 +154,18 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         battleBgRef.current = pickBg(r.monster.family);
       }
       if (r && r.status === "active" && r.round !== undefined) {
-        // 只有「層＋回合」組合真的變了才清箭，避免其他人送出觸發時誤清
         const key = `${r.currentFloor || 1}-${r.round}`;
         if (key !== prevRoundKeyRef.current) {
           prevRoundKeyRef.current = key;
           setSubmitted(false);
           setArrows([]);
         }
+      }
+      // 返回地圖探索時重置結算狀態，準備下一個房間
+      if (r?.status === "map_explore") {
+        claimLootRef.current = null;
+        firstClearCheckedRef.current = false;
+        setFirstClearBonus(null);
       }
     });
     return () => unsub();
@@ -291,6 +301,25 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     revealTimersRef.current.push(ct);
   }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
 
+  // ── 首殺檢查（Boss 房通關時，提前顯示徽章用）─────────────────
+  useEffect(() => {
+    if (!isBossRoom || !isMapMode || !isHost) return;
+    if (status !== "completed" || room?.result !== "win") return;
+    if (firstClearCheckedRef.current) return;
+    firstClearCheckedRef.current = true;
+    const dungeonInfo = DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId);
+    if (!dungeonInfo) { setFirstClearBonus(false); return; }
+    const teamNames = Object.values(room?.members || {}).map(m => m.name).filter(Boolean);
+    trySetDungeonFirstClear(room.mapDungeonId, myId, me.name || "", teamNames).then(fcRes => {
+      if (fcRes?.ok && fcRes?.isFirst) {
+        setFirstClearBonus({ coins: 500, arrowdew: 50, gachaCoins: 5 });
+        addDungeonBroadcast(room.mapDungeonId, dungeonInfo.name, dungeonInfo.difficultyLabel, dungeonInfo.emoji, teamNames).catch(() => {});
+      } else {
+        setFirstClearBonus(false);
+      }
+    }).catch(() => setFirstClearBonus(false));
+  }, [status, room?.result]); // eslint-disable-line
+
   // ── 所有人 ready → 房主結算 ──────────────────────────────────
   useEffect(() => {
     if (!isHost || !room || room.processing || processingRef.current) return;
@@ -375,7 +404,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     if (!isHost) return;
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
     const baseMaterials = rollMaterialDrops(room?.monster);
-    const totalFloors   = isMapMode ? 1 : (room.totalFloors || 7);
+    const totalFloors   = isMapMode
+      ? (isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1)
+      : (room.totalFloors || 7);
 
     for (const mid of Object.keys(room.members || {})) {
       if (mid.startsWith("guest")) continue;
@@ -414,31 +445,34 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       if (_dgCatId) addCatXP(myId, _dgCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
     }
 
-    sfxSuccess();
-
-    // ── 首殺檢測（地圖模式通關時）──────────────────────────
-    if (isMapMode && room.mapDungeonId && room.result === "win") {
-      const dungeonInfo = DUNGEON_MAPS.find(d => d.id === room.mapDungeonId);
-      if (dungeonInfo) {
-        const teamNames = Object.values(room.members || {}).map(m => m.name).filter(Boolean);
-        const fcRes = await trySetDungeonFirstClear(room.mapDungeonId, myId, me.name || "", teamNames);
-        if (fcRes.ok && fcRes.isFirst) {
-          // 首殺！發送全域廣播
-          await addDungeonBroadcast(
-            room.mapDungeonId,
-            dungeonInfo.name,
-            dungeonInfo.difficultyLabel,
-            dungeonInfo.emoji,
-            teamNames
-          );
-        }
+    // 通關地下城稀有獎勵（箭露 + 扭蛋幣 + 符文寶箱）
+    if (isMapMode && myId && !myId.startsWith("guest")) {
+      if (isBossRoom) {
+        // Boss 通關：箭露 = 層數 × 8，扭蛋幣 2 枚
+        addArrowdew(myId, totalFloors * 8).catch(() => {});
+        addGachaCoins(myId, 2).catch(() => {});
+        // 符文掉落：依難度掉對應階段符文
+        const dungeonMap = DUNGEON_MAPS.find(d => d.id === room?.dungeonId);
+        const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap?.difficulty] || 1;
+        const droppedRune = rollRuneDrop(dungeonTier);
+        if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
+      } else {
+        // 普通房間：箭露 5
+        addArrowdew(myId, 5).catch(() => {});
       }
     }
-    // ──────────────────────────────────────────────────────────
+
+    // 首殺獎勵（由 useEffect 已檢查，這裡直接使用結果）
+    if (firstClearBonus && myId && !myId.startsWith("guest")) {
+      if (firstClearBonus.coins)      addCoins(myId, firstClearBonus.coins).catch(() => {});
+      if (firstClearBonus.arrowdew)   addArrowdew(myId, firstClearBonus.arrowdew).catch(() => {});
+      if (firstClearBonus.gachaCoins) addGachaCoins(myId, firstClearBonus.gachaCoins).catch(() => {});
+    }
+
+    sfxSuccess();
 
     if (isMapMode) {
       if (isBossRoom) {
-        // 地下城通關 → 直接退出大廳，不回地圖
         onReturnToMap?.();
       } else {
         await returnToMapAfterBattle(
@@ -639,82 +673,235 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }
 
     if (isMapMode) {
+      // 鎖定掉寶預覽（渲染時計算一次）
+      if (!claimLootRef.current && room.monster) {
+        const gm        = room?.nextFloorModifiers?.goldMult || 1;
+        const tier      = room.monster.tier || "common";
+        const tf        = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
+        const myRunes   = getEquippedRunes(room, myId);
+        const rb        = calcRuneBonusFn(myRunes);
+        claimLootRef.current = {
+          coins:      Math.round(rollCoins(tier, 1) * gm * (isBossRoom ? 2 : 1) * rb.goldMult),
+          materials:  rollMaterialDrops(room.monster),
+          archerXP:   Math.round(tf * DUNGEON_FLOOR_XP * rb.xpMult),
+          catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rb.xpMult) : 0,
+          chestCount: tf,
+          arrowdew:   isBossRoom ? tf * 8 : 5,
+          gachaCoins: isBossRoom ? 2 : 0,
+          runeDrop:   isBossRoom ? rollRuneDrop({ normal:1, hard:2, elite:3, nightmare:4 }[DUNGEON_MAPS.find(d => d.id === room?.dungeonId)?.difficulty] || 1) : null,
+        };
+      }
+      const loot        = claimLootRef.current;
+      const memberList  = Object.entries(room.members || {});
+      const hostMember  = memberList.find(([id]) => id === room.hostId);
+      const otherMembers = memberList.filter(([id]) => id !== room.hostId);
+
       if (isBossRoom) {
-        // ── 地下城首領通關 → 總結算畫面 ──────────────────────
+        // ── 地下城首領通關 → 詳細結算畫面 ─────────────────────
         const totalFloors = _generatedFloors?.length || _dungeonForRoom?.floorCount || 1;
         return (
-          <div className="h-[100dvh] overflow-y-auto flex flex-col bg-gradient-to-b from-amber-950 via-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-5 pb-10">
-            <div className="text-7xl">🏆</div>
-            <div className="text-3xl font-black">地下城通關！</div>
-            {_dungeonForRoom && (
-              <div className="text-amber-300 font-bold text-lg">
-                {_dungeonForRoom.emoji} {_dungeonForRoom.name}（{_dungeonForRoom.difficultyLabel}）
-              </div>
-            )}
-            <div className="text-slate-400 text-sm">全 {totalFloors} 層探索完成，首領已擊敗！</div>
+          <div className="h-[100dvh] overflow-y-auto text-white pb-10"
+            style={{ background:"linear-gradient(160deg,#1c0a04,#0f172a,#0a0f1a)" }}>
 
-            <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
-              <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
-                <div style={{ fontSize:20 }}>🏹</div>
-                <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{DUNGEON_FLOOR_XP} XP</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
-              </div>
-              {profile?.equippedCat?.catId && (
-                <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
-                  <div style={{ fontSize:20 }}>🐱</div>
-                  <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{CAT_DUNGEON_FLOOR_XP} XP</div>
-                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+            {/* 標題 */}
+            <div className="text-center pt-8 pb-4 px-5">
+              <div style={{ fontSize:72 }}>🏆</div>
+              <div className="text-3xl font-black mt-2">地下城通關！</div>
+              {_dungeonForRoom && (
+                <div className="text-amber-300 font-bold text-lg mt-1">
+                  {_dungeonForRoom.emoji} {_dungeonForRoom.name}（{_dungeonForRoom.difficultyLabel}）
                 </div>
               )}
-              <div style={{ background:"rgba(245,158,11,0.15)", border:"1px solid #f59e0b44", borderRadius:12, padding:"8px 16px", textAlign:"center", minWidth:80 }}>
-                <div style={{ fontSize:20 }}>💰</div>
-                <div style={{ fontSize:15, fontWeight:900, color:"#fcd34d" }}>金幣 ×2</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>通關獎勵</div>
+              <div className="text-slate-400 text-sm mt-1">全 {totalFloors} 層探索完成，首領已擊敗！</div>
+              {firstClearBonus && (
+                <div className="inline-flex items-center gap-2 mt-3 px-4 py-1.5 rounded-full font-black text-sm"
+                  style={{ background:"rgba(245,158,11,0.2)", border:"1px solid rgba(245,158,11,0.5)", color:"#fcd34d" }}>
+                  🌟 首殺！+{firstClearBonus.coins} 金幣 +{firstClearBonus.gachaCoins} 扭蛋幣 +{firstClearBonus.arrowdew} 箭露
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 space-y-3">
+              {/* 首領資訊 */}
+              {room.monster && (
+                <div className="rounded-2xl p-3 flex items-center gap-3"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
+                  <span style={{ fontSize:32 }}>{room.monster.icon}</span>
+                  <div>
+                    <div className="font-black text-sm text-white">擊敗首領：{room.monster.name}</div>
+                    <div className="text-xs text-slate-400">{TIER_LABEL[room.monster.tier] || room.monster.tier}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 參戰成員 */}
+              {memberList.length > 0 && (
+                <div className="rounded-2xl p-3"
+                  style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)" }}>
+                  <div className="text-xs text-slate-400 font-bold mb-2">👥 參戰成員</div>
+                  <div className="flex flex-wrap gap-2">
+                    {hostMember && (
+                      <div className="flex items-center gap-1.5 rounded-full px-3 py-1"
+                        style={{ background:"rgba(245,158,11,0.15)", border:"1px solid rgba(245,158,11,0.35)" }}>
+                        <span className="text-xs">⭐</span>
+                        <span className="text-sm font-bold" style={{ color:"#fcd34d" }}>{hostMember[1].name}</span>
+                        <span className="text-xs" style={{ color:"rgba(252,211,77,0.6)" }}>隊長</span>
+                      </div>
+                    )}
+                    {otherMembers.map(([id, m]) => (
+                      <div key={id} className="flex items-center gap-1.5 rounded-full px-3 py-1"
+                        style={{ background:"rgba(255,255,255,0.08)" }}>
+                        <span className="text-xs">{m.role === "rear" ? "🛡️" : "⚔️"}</span>
+                        <span className="text-sm font-bold">{m.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 獎勵明細 */}
+              {loot && (
+                <div className="rounded-2xl p-4 space-y-2"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
+                  <div className="text-xs text-slate-400 font-bold mb-3">📊 獎勵明細</div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">🏹 射手經驗</span>
+                    <span className="font-black" style={{ color:"#7dd3fc" }}>+{loot.archerXP} XP</span>
+                  </div>
+                  {loot.catXP > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-300">🐱 貓貓經驗</span>
+                      <span className="font-black" style={{ color:"#f9a8d4" }}>+{loot.catXP} XP</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">💰 金幣 <span className="text-xs" style={{ color:"#fbbf24" }}>×2 通關</span></span>
+                    <span className="font-black" style={{ color:"#fcd34d" }}>+{loot.coins.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">📦 寶箱</span>
+                    <span className="font-black" style={{ color:"#4ade80" }}>{loot.chestCount} 個（各層各一）</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">💧 箭露</span>
+                    <span className="font-black" style={{ color:"#38bdf8" }}>+{loot.arrowdew}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">🎰 扭蛋幣</span>
+                    <span className="font-black" style={{ color:"#e879f9" }}>+{loot.gachaCoins}</span>
+                  </div>
+                  {firstClearBonus && (
+                    <div className="flex items-center justify-between text-sm pt-2"
+                      style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                      <span className="text-slate-300">🌟 首殺加碼</span>
+                      <span className="font-black" style={{ color:"#fcd34d" }}>+{firstClearBonus.coins} 金 · +{firstClearBonus.gachaCoins} 扭蛋 · +{firstClearBonus.arrowdew} 箭露</span>
+                    </div>
+                  )}
+                  {loot.materials.length > 0 && (
+                    <div className="pt-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                      <div className="text-xs text-slate-400 mb-2">素材掉落</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {loot.materials.map((m, i) => (
+                          <span key={i} className="text-xs rounded-full px-2 py-0.5"
+                            style={{ background:"rgba(255,255,255,0.08)", color:"#cbd5e1" }}>
+                            {m.icon} {m.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 地下城專屬紀念品（預留） */}
+              <div className="rounded-xl p-3 text-center"
+                style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.15)" }}>
+                <div className="text-xs" style={{ color:"rgba(251,191,36,0.45)" }}>🔮 地下城專屬道具 · 首領紀念品（設計中）</div>
               </div>
             </div>
 
-            {isHost && (
-              <button onClick={handleClaim}
-                className="px-8 py-4 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg active:scale-95 transition-transform">
-                🎊 領取獎勵並返回大廳
-              </button>
-            )}
-            {!isHost && (
-              <div className="text-slate-400 text-sm">等待隊長領取獎勵…</div>
-            )}
+            <div className="px-5 mt-5">
+              {isHost && (
+                <button onClick={handleClaim}
+                  className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95 transition-transform"
+                  style={{ background:"linear-gradient(90deg,#f59e0b,#ef4444)" }}>
+                  🎊 領取全部獎勵並返回大廳
+                </button>
+              )}
+              {!isHost && (
+                <div className="text-center text-slate-400 text-sm py-3">等待隊長領取獎勵…</div>
+              )}
+            </div>
           </div>
         );
       }
 
       // ── 普通房間通關 ───────────────────────────────────────
       return (
-        <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
-          <div className="text-7xl">✨</div>
-          <div className="text-3xl font-black">房間通關！</div>
-          <div className="text-slate-400 text-sm">擊敗 {room.monster?.icon}{room.monster?.name}，繼續探索地圖</div>
-          <div style={{ display:"flex", gap:16, justifyContent:"center" }}>
-            <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
-              <div style={{ fontSize:20 }}>🏹</div>
-              <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{DUNGEON_FLOOR_XP} XP</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
+        <div className="h-[100dvh] overflow-y-auto text-white pb-8"
+          style={{ background:"linear-gradient(160deg,#0f172a,#1e1b4b)" }}>
+          <div className="text-center pt-8 pb-4 px-5">
+            <div style={{ fontSize:64 }}>✨</div>
+            <div className="text-3xl font-black mt-2">房間通關！</div>
+            <div className="text-sm mt-1 text-slate-400">
+              擊敗 {room.monster?.icon}{room.monster?.name}，繼續探索地圖
             </div>
-            {profile?.equippedCat?.catId && (
-              <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
-                <div style={{ fontSize:20 }}>🐱</div>
-                <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{CAT_DUNGEON_FLOOR_XP} XP</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
+          </div>
+
+          <div className="px-5 space-y-3">
+            {loot && (
+              <div className="rounded-2xl p-4 space-y-2"
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
+                <div className="text-xs text-slate-400 font-bold mb-3">📊 本房間獎勵</div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">🏹 射手經驗</span>
+                  <span className="font-black" style={{ color:"#7dd3fc" }}>+{loot.archerXP} XP</span>
+                </div>
+                {loot.catXP > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">🐱 貓貓經驗</span>
+                    <span className="font-black" style={{ color:"#f9a8d4" }}>+{loot.catXP} XP</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">💰 金幣</span>
+                  <span className="font-black" style={{ color:"#fcd34d" }}>+{loot.coins.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">📦 寶箱</span>
+                  <span className="font-black" style={{ color:"#4ade80" }}>1 個</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">💧 箭露</span>
+                  <span className="font-black" style={{ color:"#38bdf8" }}>+5</span>
+                </div>
+                {loot.materials.length > 0 && (
+                  <div className="pt-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                    <div className="text-xs text-slate-400 mb-2">素材掉落</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {loot.materials.map((m, i) => (
+                        <span key={i} className="text-xs rounded-full px-2 py-0.5"
+                          style={{ background:"rgba(255,255,255,0.08)", color:"#cbd5e1" }}>
+                          {m.icon} {m.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+
+            {isHost && (
+              <button onClick={handleClaim}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95"
+                style={{ background:"linear-gradient(90deg,#7c3aed,#8b5cf6)" }}>
+                🗺️ 領取並回地圖
+              </button>
+            )}
+            {!isHost && (
+              <div className="text-center text-slate-400 text-sm py-3">等待隊長領取獎勵…</div>
+            )}
           </div>
-          {isHost && (
-            <button onClick={handleClaim}
-              className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-violet-500 to-purple-600 text-white text-lg shadow-lg">
-              🗺️ 領取並回地圖
-            </button>
-          )}
-          {!isHost && (
-            <div className="text-slate-400 text-sm">等待隊長領取獎勵…</div>
-          )}
         </div>
       );
     }
@@ -1108,6 +1295,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       {showRoundResult && lastEntry && (
         <RoundResultOverlay
           entry={lastEntry} room={room} status={status}
+          isBossRoom={isBossRoom} isMapMode={isMapMode}
           onContinue={() => { setShowRoundResult(false); setSubmitted(false); setArrows([]); }}
         />
       )}
@@ -1115,11 +1303,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   );
 }
 
-function RoundResultOverlay({ entry, room, status, onContinue }) {
+function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onContinue }) {
   const monsterKilled  = entry.monsterHPAfter <= 0;
   const allMembersDead = Object.values(room?.members || {}).every(m => !m.alive);
   const partyWiped     = (status === "completed" && room?.result === "lose") || allMembersDead;
-  const finalWin       = status === "completed" && room?.result === "win";
+  // 地圖模式：只有 Boss 房算最終通關；普通房間通關不算
+  const finalWin       = status === "completed" && room?.result === "win" && (!isMapMode || isBossRoom);
   const floorCleared   = monsterKilled && !finalWin;
 
   let title, icon, btnLabel, btnColor;
@@ -1127,9 +1316,11 @@ function RoundResultOverlay({ entry, room, status, onContinue }) {
     const killer = room?.monster ? `${room.monster.icon}${room.monster.name}` : "怪物";
     icon = "💀"; title = `被《${killer}》擊殺！`; btnLabel = "查看結果"; btnColor = "bg-rose-600";
   } else if (finalWin) {
-    icon = "🏆"; title = `第 ${room.currentFloor} 層通關！\n地下城完全攻略！`; btnLabel = "🎉 領取獎勵"; btnColor = "bg-gradient-to-r from-amber-500 to-orange-500";
+    icon = "🏆"; title = isMapMode ? "Boss 擊倒！\n地下城完全攻略！" : `第 ${room.currentFloor} 層通關！\n地下城完全攻略！`;
+    btnLabel = "🎉 查看結算"; btnColor = "bg-gradient-to-r from-amber-500 to-orange-500";
   } else if (floorCleared) {
-    icon = "✨"; title = `第 ${room.currentFloor} 層通關！`; btnLabel = "選擇路線 →"; btnColor = "bg-gradient-to-r from-indigo-500 to-purple-600";
+    icon = "✨"; title = isMapMode ? "房間通關！" : `第 ${room.currentFloor} 層通關！`;
+    btnLabel = isMapMode ? "查看結算" : "選擇路線 →"; btnColor = "bg-gradient-to-r from-indigo-500 to-purple-600";
   } else {
     icon = "⚔️"; title = `第 ${entry.round} 回合結束`; btnLabel = "下一回合"; btnColor = "bg-slate-700";
   }

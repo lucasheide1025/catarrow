@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-06-27（符文系統 + 貓咪修正 + 世界王 + 報到修復）
+
+### 符文系統（地下城專屬）
+- `src/lib/runeData.js`（新建）：13類型 × 4階段 = 52種符文，`calcRuneBonus()` 計算加成
+- `src/lib/runeDb.js`（新建）：Firestore 操作（getRuneInventory, addRune, equipRunesToDungeon）
+- DungeonLobby 等待室加入符文槽 UI，開始時套用 ATK/DEF/HP 加成
+- DungeonBattleRoom Boss 通關後掉符文，金幣/XP 獎勵套符文倍數
+- Firestore：`members/{id}.runeInventory`、`dungeonRooms/{id}.memberRunes.{memberId}`
+
+### 貓咪系統
+- **羈絆每級連續加成**：攻/防型 `+5%/Lv`，全能型 `+2.5%/Lv`（移除 Lv5/Lv10 里程碑制）
+- 移除 CatCollection.jsx 手動類型選擇器，改顯示 `CAT_TYPE_MAP` 固定類型
+- 修正 PartyBattleRoom catOverlayCats 中 catId 錯誤取了 archerStyle
+
+### 世界王
+- `simulateBotRound(bot, bossAtk, bossDef, playerAtk=80)` — 機器人 ATK 改用玩家實際數值
+
+### 報到修復
+- rejected 狀態可重新報到：`submitCheckin` 允許覆蓋、按鈕改為「🔄 重新報到」
+
+---
+
 ## 2026-06-26（24 地下城 + 首殺系統 + 成就 + 全系統公告）
 
 ### 核心設計

@@ -292,7 +292,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!me) return;
     statsWaitingRef.current = true;
     const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "");
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "");
   }, [room?.status, myId]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
@@ -304,7 +304,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     // 若已有 HP（中途重連），不覆蓋——避免戰鬥中途重連時把 HP 重置回滿血
     if (me.hp > 0 && me.maxHP > 0 && (room.round || 1) > 1) return;
     const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "");
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "");
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -1311,7 +1311,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const isCatMini      = !!(curMini?.isCat);
   const catOverlayCats = (isCatMini && curMini?.playerLog)
     ? curMini.playerLog.map(p => ({
-        catId:   room?.members?.[p.id]?.archerStyle || "baobao",
+        catId:   room?.members?.[p.id]?.catId || room?.members?.[p.id]?.archerStyle || "baobao",
         catName: (p.name || "").replace(/^🐱/, "") || "貓貓",
         dmg:     p.dmg || 0,
       }))
