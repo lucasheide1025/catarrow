@@ -5,7 +5,8 @@ import { CATS } from "../../lib/catData";
 import { catLevelFromXP } from "../../lib/catLevel";
 import { startExpedition, collectExpedition } from "../../lib/db";
 import {
-  EXPEDITION_MISSIONS, calcExpeditionRewards, fmtCountdown, catLevelMult,
+  EXPEDITION_MISSIONS, calcExpeditionRewards, fmtCountdown,
+  calcCatFullStats, catPowerMult,
 } from "../../lib/expeditionData";
 
 const TYPE_LABEL = { attack:"攻擊型", defense:"防禦型", allround:"全能型" };
@@ -45,8 +46,9 @@ function ArcherCostRow({ archerCost, villageRes }) {
   );
 }
 
-function RewardPreview({ mission, catLevel }) {
-  const mult = catLevelMult(catLevel);
+function RewardPreview({ mission, catData }) {
+  const { catATK } = calcCatFullStats(catData || {});
+  const mult = catPowerMult(catATK);
   const catResources = ["fur","potion"];
   const matResources = ["ore","melon","fish","meat","driedfish","can"];
   const catRewards = mission.baseRewards.filter(r => catResources.includes(r.resource));
@@ -202,6 +204,7 @@ export default function ExpeditionPanel({ profile }) {
   const selCatData = selectedCat ? myCats[selectedCat] : null;
   const selCatInfo = selectedCat ? CATS[selectedCat] : null;
   const selCatLevel = selCatData ? catLevelFromXP(selCatData.catXP || 0) : 1;
+  const selCatStats = selCatData ? calcCatFullStats(selCatData) : { catATK:10, catHP:200, catDEF:10 };
 
   const canDispatch = mission && selectedCat && (() =>
     Object.entries(mission.archerCost).every(([key, need]) =>
@@ -248,10 +251,8 @@ export default function ExpeditionPanel({ profile }) {
     if (collecting[slotIdx]) return;
     const exp = expeditions[slotIdx];
     if (!exp) return;
-    const catLv = myCats[exp.catId]
-      ? catLevelFromXP(myCats[exp.catId].catXP || 0)
-      : 1;
-    const rewards = calcExpeditionRewards(exp.missionTier, catLv);
+    const catData = myCats[exp.catId] || {};
+    const rewards = calcExpeditionRewards(exp.missionTier, catData);
     setCollecting(prev => ({ ...prev, [slotIdx]: true }));
     const result = await collectExpedition(profile.id, slotIdx, rewards);
     setCollecting(prev => ({ ...prev, [slotIdx]: false }));
@@ -345,9 +346,16 @@ export default function ExpeditionPanel({ profile }) {
           {/* 選中貓咪資訊 */}
           {selCatData && selCatInfo && (
             <div style={{ background:"rgba(167,139,250,0.08)", borderRadius:12, padding:"10px 13px", marginBottom:14, border:"1px solid rgba(167,139,250,0.2)", fontSize:12 }}>
-              <span style={{ color:"#a78bfa", fontWeight:800 }}>{selCatInfo.name}</span>
-              <span style={{ color:"rgba(255,255,255,0.5)", marginLeft:6 }}>Lv {selCatLevel}</span>
-              <span style={{ color:"#fbbf24", marginLeft:8 }}>× {catLevelMult(selCatLevel).toFixed(2)} 獎勵加成</span>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                <span style={{ color:"#a78bfa", fontWeight:800 }}>{selCatInfo.name}</span>
+                <span style={{ color:"rgba(255,255,255,0.4)" }}>Lv {selCatLevel}</span>
+                <span style={{ color:"#fbbf24", fontWeight:900, marginLeft:"auto" }}>× {catPowerMult(selCatStats.catATK).toFixed(2)} 獎勵加成</span>
+              </div>
+              <div style={{ display:"flex", gap:10, fontSize:11 }}>
+                <span style={{ color:"#f87171" }}>⚔️ ATK {selCatStats.catATK}</span>
+                <span style={{ color:"#60a5fa" }}>🛡️ DEF {selCatStats.catDEF}</span>
+                <span style={{ color:"#4ade80" }}>❤️ HP {selCatStats.catHP}</span>
+              </div>
             </div>
           )}
 
@@ -391,9 +399,9 @@ export default function ExpeditionPanel({ profile }) {
                         </div>
                         <div>
                           <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>
-                            預期獎勵 {selCatLevel > 1 ? `(Lv${selCatLevel}加成)` : ""}
+                            預期獎勵 {selCatData ? `(ATK ${selCatStats.catATK})` : ""}
                           </div>
-                          <RewardPreview mission={m} catLevel={selCatLevel} />
+                          <RewardPreview mission={m} catData={selCatData} />
                         </div>
                       </div>
                     )}
