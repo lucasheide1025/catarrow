@@ -479,5 +479,7 @@ export function calcPotionBuffs(potionIds) {
   });
   buffs.monAtkMult = Math.max(0.1, buffs.monAtkMult);
   buffs.monDefMult = Math.max(0.1, buffs.monDefMult);
+  buffs.hpMult  = 1 + (buffs.hpPct  || 0) / 100;
+  buffs.atkMult = 1 + (buffs.atkPct || 0) / 100;
   return buffs;
 }
