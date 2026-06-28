@@ -461,7 +461,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); submitRound(); }, 2000);
   }
-n  // 🧪 使用攜帶型藥水（回合開始喝）
+  // 🧪 使用攜帶型藥水（回合開始喝）
   function useCarryPotion(potion) {
     if (potionUsedThisRound || processing) return;
     if (!profile?.id || isGuest) return;
