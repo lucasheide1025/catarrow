@@ -174,14 +174,14 @@ body {
 
 /* ─── View Transitions ──────────────────────────────────── */
 :root {
-  --duration-exit:  150ms;
-  --duration-enter: 210ms;
-  --duration-move:  350ms;
+  --duration-exit:  120ms;
+  --duration-enter: 180ms;
+  --duration-move:  300ms;
 }
 
 @keyframes vt-fade {
-  from { filter: blur(2px); opacity: 0; }
-  to   { filter: blur(0);   opacity: 1; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes vt-slide-y {
@@ -189,7 +189,13 @@ body {
   to   { transform: translateY(0); }
 }
 
-/* page cross-fade */
+/* 禁用 root 整頁 cross-fade（避免和 VT element 動畫疊加造成殘影） */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+/* page cross-fade：先淡出，後淡入（不重疊，無殘影） */
 ::view-transition-old(.fade-out) {
   animation: var(--duration-exit) ease-in vt-fade reverse;
 }
