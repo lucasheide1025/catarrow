@@ -67,6 +67,36 @@ const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
 
+// hover / touch 預載：使用者碰到導覽按鈕時就開始下載對應 chunk
+const NAV_PRELOADS = {
+  "adventure-hub": () => {
+    import("../components/member/MemberAdventureHub");
+    import("../components/member/MonsterBattle");
+    import("../components/dungeon/DungeonLobby");
+    import("../components/dungeon/DungeonController");
+  },
+  "training-hub": () => {
+    import("../components/member/MemberTrainingHub");
+    import("../components/member/MemberPractice");
+    import("../components/member/MemberComps");
+  },
+  "gacha": () => {
+    import("../components/member/CatVillage");
+    import("../components/cat/CatCollection");
+  },
+  "inventory-hub": () => {
+    import("../components/member/MemberInventoryHub");
+    import("../components/member/MemberMaterials");
+    import("../components/member/CardCollection");
+    import("../components/member/CoinShop");
+  },
+  "profile": () => {
+    import("../components/member/MemberProfile");
+    import("../components/member/MemberAchievements");
+    import("../components/member/MemberHistory");
+  },
+};
+
 export default function MemberApp() {
   const { logout, profile } = useAuth();
   const [page, setPage]       = useState(()=>sessionStorage.getItem("member_page")||"home");
@@ -234,6 +264,19 @@ export default function MemberApp() {
 
   useEffect(() => {
     return subscribeAppVersion(setLatestVersion);
+  }, []);
+
+  // 瀏覽器空閒時預載最常用的頁面 chunk（手機也適用）
+  useEffect(() => {
+    const idle = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb) => setTimeout(cb, 1000);
+    const cancel = typeof cancelIdleCallback !== "undefined" ? cancelIdleCallback : clearTimeout;
+    const h = idle(() => {
+      import("../components/member/MemberPractice");
+      import("../components/member/MemberAdventureHub");
+      import("../components/member/MonsterBattle");
+      import("../components/member/MemberProfile");
+    }, { timeout: 4000 });
+    return () => cancel(h);
   }, []);
 
   // 世界王登場 + 擊殺公告
@@ -564,6 +607,7 @@ export default function MemberApp() {
           const active = isNavActive(n.id, page);
           return (
             <button key={n.id} onClick={() => setPage(n.id)}
+              onPointerEnter={() => NAV_PRELOADS[n.id]?.()}
               style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"transparent", cursor:"pointer", color: active ? "#60a5fa" : "#64748b" }}>
               {/* 頂部 active 指示條 */}
               <div style={{ height:"2px", width: active ? "20px" : "0px", background:"#f59e0b", borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
