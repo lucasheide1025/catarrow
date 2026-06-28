@@ -75,6 +75,58 @@ const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossI
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
+// 教練後台 nav 預載
+const ADMIN_NAV_PRELOADS = {
+  "hub-member": () => {
+    import("../components/admin/AdminMembers");
+    import("../components/admin/AdminFinance");
+    import("../components/admin/AdminReviewCenter");
+    import("../components/admin/AdminMessages");
+    import("../components/admin/AdminLearn");
+  },
+  "hub-events": () => {
+    import("../components/admin/AdminCompetitions");
+    import("../components/admin/AdminBattleEvent");
+    import("../components/admin/AdminGuildQuests");
+    import("../components/admin/AdminWorldBoss");
+  },
+  "givetool": () => {
+    import("../components/admin/AdminGiveTool");
+  },
+  "hub-items": () => {
+    import("../components/admin/AdminEquipItems");
+    import("../components/admin/AdminStoryManager");
+    import("../components/admin/AdminVillageManager");
+  },
+  "archery": () => {
+    import("../components/admin/AdminArchery");
+  },
+};
+
+// 射手模式（教練切換後）nav 預載
+const ARCHER_NAV_PRELOADS = {
+  "adventure-hub": () => {
+    import("../components/member/MemberAdventureHub");
+    import("../components/member/MonsterBattle");
+    import("../components/dungeon/DungeonLobby");
+  },
+  "training-hub": () => {
+    import("../components/member/MemberTrainingHub");
+    import("../components/member/MemberPractice");
+  },
+  "gacha": () => {
+    import("../components/member/CatVillage");
+  },
+  "inventory-hub": () => {
+    import("../components/member/MemberInventoryHub");
+    import("../components/member/MemberMaterials");
+  },
+  "profile": () => {
+    import("../components/member/MemberProfile");
+    import("../components/member/MemberHistory");
+  },
+};
+
 export default function AdminApp() {
   const { logout, profile } = useAuth();
   const VALID_PAGES = new Set(["hub-member","hub-events","givetool","hub-items","archery"]);
@@ -357,6 +409,18 @@ export default function AdminApp() {
     });
   }, []);
 
+  // 瀏覽器空閒時預載最常用後台頁面
+  useEffect(() => {
+    const idle = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb) => setTimeout(cb, 1200);
+    const cancel = typeof cancelIdleCallback !== "undefined" ? cancelIdleCallback : clearTimeout;
+    const h = idle(() => {
+      import("../components/admin/AdminMembers");
+      import("../components/admin/AdminReviewCenter");
+      import("../components/admin/AdminCompetitions");
+    }, { timeout: 4000 });
+    return () => cancel(h);
+  }, []);
+
 const adminNav = [
   { id:"hub-member",  icon:"👥", label:"會員中心" },
   { id:"hub-events",  icon:"🏆", label:"賽事中心" },
@@ -557,6 +621,7 @@ const adminNav = [
           const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
           return (
             <button key={n.id} onClick={() => setPage(n.id)}
+              onPointerEnter={() => ARCHER_NAV_PRELOADS[n.id]?.()}
               style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"transparent", cursor:"pointer", color: active ? "#60a5fa" : "#64748b" }}>
               <div style={{ height:"2px", width: active ? "20px" : "0px", background:"#f59e0b", borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
               <div style={{ position:"relative", display:"inline-block" }}>
@@ -695,7 +760,9 @@ const adminNav = [
               ? (pendingCertN+pendingMsgN+pendingCheckinN+pendingExtN+pendingExamN+pendingGuildN+pendingMonthlyN)
               : 0;
             return (
-              <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id==="hub-member")setMemberSub(null); if(n.id==="hub-events")setEventsSub(null); if(n.id==="hub-items")setItemsSub(null); }}
+              <button key={n.id}
+                onClick={()=>{ setPage(n.id); if(n.id==="hub-member")setMemberSub(null); if(n.id==="hub-events")setEventsSub(null); if(n.id==="hub-items")setItemsSub(null); }}
+                onPointerEnter={() => ADMIN_NAV_PRELOADS[n.id]?.()}
                 style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px",gap:"2px",border:"none",background:"transparent",cursor:"pointer",color:active?"#60a5fa":"#64748b",position:"relative"}}>
                 <span style={{fontSize:"18px"}}>{n.icon}</span>
                 {badge>0 && <span style={{position:"absolute",top:"4px",right:"calc(50% - 14px)",background:"#ef4444",color:"white",fontSize:"9px",fontWeight:"900",borderRadius:"99px",padding:"1px 4px",minWidth:"14px",textAlign:"center"}}>{badge}</span>}
