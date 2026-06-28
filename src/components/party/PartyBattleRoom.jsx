@@ -16,7 +16,7 @@ import { CAT_TIER_XP } from "../../lib/catLevel";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
 import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
-import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
+import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
@@ -751,46 +751,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
           )}
         </div>
-
-        {/* 藥水選擇（自己的庫存）*/}
-        {Object.values(potionInv).some(v => v > 0) && (
-          <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-2">
-            <div className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              開戰前選擇藥水（最多 {MAX_POTIONS_PER_BATTLE} 瓶）
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {Object.entries(potionInv).filter(([, c]) => c > 0).map(([pid, count]) => {
-                const p = getPotion(pid);
-                if (!p) return null;
-                const selected = selectedPotions.includes(pid);
-                return (
-                  <button key={pid}
-                    onClick={() => {
-                      if (selected) setSelectedPotions(prev => prev.filter(id => id !== pid));
-                      else if (selectedPotions.length < MAX_POTIONS_PER_BATTLE)
-                        setSelectedPotions(prev => [...prev, pid]);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-left transition-all text-sm ${
-                      selected ? "border-indigo-400 bg-indigo-900/40" : "border-slate-600 bg-slate-700/30"
-                    }`}>
-                    <span className="text-xl">{p.icon}</span>
-                    <div className="flex-1">
-                      <div className={`font-bold text-xs ${selected ? "text-indigo-200" : "text-white"}`}>{p.name}</div>
-                      <div className="text-xs text-slate-400">{p.effectText}</div>
-                    </div>
-                    <span className="text-xs text-slate-500">×{count}</span>
-                    {selected && <span className="text-indigo-400">✅</span>}
-                  </button>
-                );
-              })}
-            </div>
-            {selectedPotions.length > 0 && (
-              <div className="text-xs text-indigo-300 font-bold mt-1">
-                已選：{selectedPotions.map(pid => getPotion(pid)?.name).join("、")}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* 怪物選擇（房主）*/}
         {isHost && (
