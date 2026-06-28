@@ -24,6 +24,8 @@ import {
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
+import { craftPotion, subscribePotions } from "../../lib/db";
+import { CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 
 // 手繪風配色常數
 const C = {
@@ -1175,6 +1177,158 @@ function ForgePanel({ profile, resources }) {
   );
 }
 
+// ── 藥水製作面板 ────────────────────────────────────────────
+function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCrafted }) {
+  const [tab, setTab] = useState("carry");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  // 稀有度顏色
+  const RARITY_COLORS = {
+    common:    { bg:"rgba(156,163,175,0.12)", text:"#6b7280", label:"普通" },
+    uncommon:  { bg:"rgba(34,197,94,0.12)",  text:"#16a34a", label:"非凡" },
+    rare:      { bg:"rgba(59,130,246,0.12)", text:"#2563eb", label:"稀有" },
+    epic:      { bg:"rgba(168,85,247,0.12)", text:"#9333ea", label:"史詩" },
+    legendary: { bg:"rgba(234,179,8,0.12)",  text:"#ca8a04", label:"傳說" },
+  };
+
+  const potions = tab === "carry" ? CARRY_POTIONS : THROW_POTIONS;
+
+  async function handleCraft(potion) {
+    if (busy || !memberId) return;
+    setBusy(true);
+    try {
+      const res = await craftPotion(memberId, potion.id);
+      if (res.ok) {
+        setMsg(`✅ 成功合成 ${potion.icon} ${potion.name}！`);
+        sfxSuccess();
+        onCrafted?.();
+      } else {
+        setMsg(`❌ ${res.reason}`);
+      }
+    } catch (e) {
+      setMsg(`❌ ${e.message}`);
+    } finally {
+      setBusy(false);
+      setTimeout(() => setMsg(null), 3000);
+    }
+  }
+
+  return (
+    <div>
+      <div className="text-xs font-bold mb-3" style={{ color: C.mid }}>🧪 藥水製作</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>
+        消耗村莊資源 + 金幣來合成藥水，合成後到背包使用。
+      </div>
+
+      {/* 即時訊息 */}
+      {msg && (
+        <div className="rounded-xl px-4 py-2 mb-3 text-xs font-bold text-center"
+          style={{ background: msg.startsWith("✅") ? "rgba(90,158,80,0.15)" : "rgba(192,83,58,0.12)",
+            border: `1px solid ${msg.startsWith("✅") ? "#5A9E50" : "#C0533A"}`,
+            color: msg.startsWith("✅") ? "#3D7A3A" : "#9B3A20" }}>
+          {msg}
+        </div>
+      )}
+
+      {/* 頁籤：攜帶型 vs 投擲型 */}
+      <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
+        {[["carry","💊 攜帶型"],["throw","💣 投擲型"]].map(([id, lb]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className="flex-1 py-2 text-[11px] font-bold transition-colors"
+            style={{
+              background: tab === id ? C.brown : "rgba(255,255,255,0.5)",
+              color: tab === id ? "#FFF8F0" : C.mid,
+            }}>
+            {lb}
+          </button>
+        ))}
+      </div>
+
+      {/* 金幣顯示 */}
+      <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl"
+        style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 18 }}>🪙</span>
+        <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(coins || 0).toLocaleString()}</span>
+        <span className="text-[10px]" style={{ color: C.muted }}>金幣</span>
+      </div>
+
+      {/* 藥水製作清單 */}
+      <div className="flex flex-col gap-2.5">
+        {potions.map(p => {
+          const havePotion = potionInventory?.[p.id] || 0;
+          const canAffordMat = p.recipe.every(r => (resources?.[r.id] || 0) >= r.count);
+          const canAffordGold = (coins || 0) >= (p.gold || 0);
+          const canCraft = canAffordMat && canAffordGold;
+          return (
+            <div key={p.id} className="rounded-xl p-3"
+              style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+              {/* 標題列 */}
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 22 }}>{p.icon}</span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-black" style={{ color: C.brown }}>{p.name}</div>
+                      {/* 稀有度標籤 */}
+                      {RARITY_COLORS[p.rarity] && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: RARITY_COLORS[p.rarity].bg, color: RARITY_COLORS[p.rarity].text }}>
+                          {RARITY_COLORS[p.rarity].label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px]" style={{ color: C.sage }}>{p.effectText}</div>
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  <div className="text-[10px] font-bold" style={{ color: C.mid }}>庫存</div>
+                  <div className="text-sm font-black" style={{ color: havePotion > 0 ? C.sage : C.muted }}>×{havePotion}</div>
+                </div>
+              </div>
+              {/* 描述 */}
+              <div className="text-[10px] mb-2" style={{ color: C.muted }}>{p.desc}</div>
+              {/* 材料 */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {p.recipe.map(r => {
+                  const have = Math.floor(resources?.[r.id] || 0);
+                  const ok = have >= r.count;
+                  const resEmoji = RES_EMOJI[r.id.split("_t")[0]] || "📦";
+                  return (
+                    <div key={r.id} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                      style={{ background: ok ? "rgba(90,158,80,0.10)" : "rgba(192,83,58,0.08)",
+                        color: ok ? C.sage : "#C0533A" }}>
+                      {resEmoji} {formatResKey(r.id)} ×{r.count}（{have}）
+                    </div>
+                  );
+                })}
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                  style={{ background: canAffordGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
+                    color: canAffordGold ? "#D4933A" : "#C0533A" }}>
+                  🪙 {p.gold} 金幣
+                </div>
+              </div>
+              {/* 製作按鈕 */}
+              <button
+                disabled={!canCraft || busy}
+                onClick={() => handleCraft(p)}
+                className="w-full py-2 rounded-lg text-xs font-bold active:scale-95 transition-all"
+                style={{
+                  background: canCraft ? "linear-gradient(135deg,#7CBF70,#5A9E50)" : C.lockBd,
+                  color: canCraft ? "white" : C.muted,
+                  boxShadow: canCraft ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
+                  cursor: canCraft ? "pointer" : "default",
+                }}>
+                {busy ? "合成中…" : canCraft ? `✦ 合成 ${p.name}` : "材料不足"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── 主元件 ───────────────────────────────────────────────────
 export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
   const { profile } = useAuth();
@@ -1184,6 +1338,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   const [upgrading, setUpgrading]   = useState(false);
   const [localVillage, setLocalVillage] = useState(null);
   const [collectedResult, setCollectedResult] = useState(null);
+  const [potionInventory, setPotionInventory] = useState({});
 
   const village    = localVillage || profile?.village || DEFAULT_VILLAGE;
   const buildings  = village.buildings || DEFAULT_VILLAGE.buildings;
@@ -1208,6 +1363,11 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
     if (!profile?.id) return;
     const unsub = subscribeMyCats(profile.id, setMyCats);
     return unsub;
+  }, [profile?.id]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    return subscribePotions(profile.id, setPotionInventory);
   }, [profile?.id]); // eslint-disable-line
 
   const secretaryCat = useMemo(() => {
@@ -1283,7 +1443,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
       {/* 頁籤 */}
       <div className="flex shrink-0" style={{ background: "#FDF6EC", borderBottom: `1px solid ${C.border}` }}>
-        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["forge","🔨 鍛造"],["cardmarket","🛒 市集"]].map(([id, label]) => (
+        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["forge","🔨 鍛造"],["potioncraft","🧪 藥水"],["cardmarket","🛒 市集"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className="flex-1 py-3 text-sm font-black transition-colors"
             style={{
@@ -1312,6 +1472,21 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           profile={profile}
           resources={resources}
         />
+      )}
+
+      {tab === "potioncraft" && (
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <PotionCraftingPanel
+            resources={resources}
+            potionInventory={potionInventory}
+            coins={profile?.coins || 0}
+            memberId={profile?.id}
+            onCrafted={() => {
+              setLocalVillage(null);
+              sfxVillageExchange();
+            }}
+          />
+        </div>
       )}
 
       {tab === "cardmarket" && (

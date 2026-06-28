@@ -1,6 +1,6 @@
 // src/lib/itemData.js
-// 寶箱系統 + 藥劑系統 + 碎片定義
-// v3：8種藥劑（含投擲型）、貓貓箱、章碎片合成系統、MAX_POTIONS=3
+// 寶箱系統 + 藥劑系統（2026-06-28 改版）
+// 藥水分兩大類：攜帶型(carry, 9種) / 投擲型(throw, 7種)
 
 import { drawMaterial, MATERIALS } from "./monsterMaterials";
 import { MONSTERS } from "./monsterData";
@@ -125,105 +125,179 @@ export const FRAGMENTS = [
 
 export function getFragment(id) { return FRAGMENTS.find(f => f.id === id) || null; }
 
-// ── 藥劑定義（8種）────────────────────────────────────────
-// effect 欄位：
-//   被動（戰鬥開始生效）: hpPct / atkPct / monAtkPct / monDefPct / critBonus / scorePlus
-//   主動投擲（立即扣血）: throwDmg（固定傷害）+ monAtkPct 或 skipRound
-//     throwDmg: 直接對怪扣血（不計回合）
-//     skipRound: "small"(跳過下一次反擊) / "big"(跳過整個大回合反擊)
-//     scorePlus: 每箭+N分（10→X→雙倍必出）
-//     critBonus: 爆擊率+N（0~1）
+// ════════════════════════════════════════════════════════════
+//  藥劑定義（2026-06-28 改版）
+// ════════════════════════════════════════════════════════════
+// 兩大類（全模式通用）：
+//   carry  - 攜帶型：每回合可選一種喝，消耗一瓶，效果持續該回合
+//   throw  - 投擲型：取代一箭，消耗一瓶，即時效果
+//
+// 效果欄位：
+//   攜帶型: hpPct(回血%) / atkPct(ATK+%) / defPct(DEF+%)
+//   投擲型: throwDmg(固定傷) / throwPct(比例傷 maxHP%) /
+//           throwDmgMin+throwDmgMax(隨機傷) /
+//           monAtkPct(降ATK%) / monDefPct(降DEF%) /
+//           skipRound(禁反擊, "big")
+// recipe 使用村莊資源（非怪物材料）
+// ════════════════════════════════════════════════════════════
+
 export const POTIONS = [
-  // ─ 被動：回血 ──────────────────────────────────────────
+  // ══ 攜帶型：HP恢復（3 級）════════════════════════════════
   {
-    id:"heal_s", name:"小型生命藥水", icon:"🧪", rarity:"common",
-    kind: "passive",
-    effect:{ hpPct:15 }, effectText:"本場最大HP +15%",
-    desc:"教練特調的草藥水，喝了渾身是勁。",
-    recipe:[ { id:"ghost_m1", count:3 }, { id:"mountain_m1", count:2 } ],
-    dropFrom: ["wood","iron"],
+    id:"hp_5",   name:"HP恢復 Lv1", icon:"❤️",   rarity:"common",
+    kind:"carry",
+    effect:{ hpPct:5 },  effectText:"回復 5% HP",
+    desc:"貓草熬製的基礎恢復藥水。",
+    recipe:[ { id:"potion_t1", count:5 } ],
+    gold:500,
   },
   {
-    id:"heal_l", name:"大型生命藥水", icon:"❤️‍🩹", rarity:"rare",
-    kind: "passive",
-    effect:{ hpPct:30 }, effectText:"本場最大HP +30%",
-    desc:"濃縮版生命藥水，連百步蛇毒都拿來入藥。",
-    recipe:[ { id:"ghost_m2", count:3 }, { id:"mountain_m2", count:2 } ],
-    dropFrom: ["iron","gold","epic","mythic"],
-  },
-  // ─ 被動：ATK ───────────────────────────────────────────
-  {
-    id:"atk_s", name:"力量藥水", icon:"💪", rarity:"common",
-    kind: "passive",
-    effect:{ atkPct:15 }, effectText:"本場ATK +15%",
-    desc:"喝下去手臂發燙，拉弓特別有力。",
-    recipe:[ { id:"insect_m1", count:3 }, { id:"temple_m1", count:2 } ],
-    dropFrom: ["wood","iron"],
+    id:"hp_10",  name:"HP恢復 Lv2", icon:"❤️",   rarity:"uncommon",
+    kind:"carry",
+    effect:{ hpPct:10 }, effectText:"回復 10% HP",
+    desc:"加入蜂蜜調味的強化恢復藥水。",
+    recipe:[ { id:"potion_t2", count:5 } ],
+    gold:1000,
   },
   {
-    id:"atk_l", name:"狂暴藥水", icon:"🔥", rarity:"rare",
-    kind: "passive",
-    effect:{ atkPct:30 }, effectText:"本場ATK +30%",
-    desc:"蜂毒與碎骨熬製，喝完眼睛都紅了。",
-    recipe:[ { id:"insect_m2", count:3 }, { id:"temple_m2", count:2 } ],
-    dropFrom: ["iron","gold","epic","mythic"],
+    id:"hp_15",  name:"HP恢復 Lv3", icon:"❤️",   rarity:"rare",
+    kind:"carry",
+    effect:{ hpPct:15 }, effectText:"回復 15% HP",
+    desc:"貓村長特製秘方，療效顯著。",
+    recipe:[ { id:"potion_t3", count:5 } ],
+    gold:2000,
   },
-  // ─ 被動：爆擊率 ────────────────────────────────────────
+  // ══ 攜帶型：ATK提升（3 級）══════════════════════════════
   {
-    id:"crit_brew", name:"爆擊靈藥", icon:"💥", rarity:"rare",
-    kind: "passive",
-    effect:{ critBonus:0.20 }, effectText:"本場爆擊率 +20%",
-    desc:"山魈的幻影石磨粉，瞄準時感覺時間變慢了。",
-    recipe:[ { id:"mountain_m3", count:2 }, { id:"exam_m2", count:2 } ],
-    dropFrom: ["gold","epic","mythic"],
+    id:"atk_5",  name:"ATK提升 Lv1", icon:"⚔️",  rarity:"common",
+    kind:"carry",
+    effect:{ atkPct:5 },  effectText:"ATK +5%",
+    desc:"微辣配方，拉弓更順手。",
+    recipe:[ { id:"potion_t1", count:5 } ],
+    gold:500,
   },
-  // ─ 被動：分數加成 ───────────────────────────────────────
   {
-    id:"score_up", name:"穿心藥水", icon:"🎯", rarity:"epic",
-    kind: "passive",
-    effect:{ scorePlus:1 }, effectText:"本場每箭 +1分（10→X→雙倍必出）",
-    desc:"淬煉自學測准考證的絕望，化壓力為精準。",
-    recipe:[ { id:"exam_m4", count:2 }, { id:"ghost_m3", count:2 } ],
-    dropFrom: ["epic","mythic"],
+    id:"atk_10", name:"ATK提升 Lv2", icon:"⚔️",  rarity:"uncommon",
+    kind:"carry",
+    effect:{ atkPct:10 }, effectText:"ATK +10%",
+    desc:"加入辣椒粉，戰鬥力倍增。",
+    recipe:[ { id:"potion_t2", count:5 } ],
+    gold:1000,
   },
-  // ─ 主動投擲：毒藥 ──────────────────────────────────────
   {
-    id:"poison_throw", name:"投擲毒藥", icon:"🌑", rarity:"rare",
-    kind: "throw",
-    effect:{ monAtkPct:30 }, effectText:"敵方ATK −30%",
-    desc:"戰鬥前擲向怪物，毒素讓牠ATK大幅下降。",
-    recipe:[ { id:"workplace_m2", count:2 }, { id:"insect_m1", count:3 } ],
-    dropFrom: ["gold","epic","mythic"],
+    id:"atk_15", name:"ATK提升 Lv3", icon:"⚔️",  rarity:"rare",
+    kind:"carry",
+    effect:{ atkPct:15 }, effectText:"ATK +15%",
+    desc:"用龍血草調製，一箭穿雲！",
+    recipe:[ { id:"potion_t3", count:5 } ],
+    gold:2000,
   },
-  // ─ 主動投擲：麻痺 ──────────────────────────────────────
+  // ══ 攜帶型：DEF提升（3 級）══════════════════════════════
   {
-    id:"paralyze_throw", name:"麻痺毒素", icon:"🕸️", rarity:"epic",
-    kind: "throw",
-    effect:{ throwDmg:15, skipRound:"big" }, effectText:"直接對怪扣15血 + 跳過本輪整個大回合反擊",
-    desc:"蜘蛛絲提煉，命中後怪物全身僵硬一整回合。",
-    recipe:[ { id:"insect_m5", count:1 }, { id:"workplace_m3", count:2 } ],
-    dropFrom: ["mythic"],
+    id:"def_5",  name:"DEF提升 Lv1", icon:"🛡️",  rarity:"common",
+    kind:"carry",
+    effect:{ defPct:5 },  effectText:"DEF +5%",
+    desc:"樹皮精華，讓皮膚硬一些。",
+    recipe:[ { id:"potion_t1", count:5 } ],
+    gold:500,
   },
-  // ─ 被動：雙效 ──────────────────────────────────────────
   {
-    id:"holy_water", name:"神聖水", icon:"✨", rarity:"legendary",
-    kind: "passive",
-    effect:{ atkPct:15, monDefPct:25 }, effectText:"本場ATK +15% + 敵方DEF −25%",
-    desc:"廟會族的神力結晶，攻守俱備的傳說藥水。",
-    recipe:[ { id:"temple_m6", count:1 }, { id:"ghost_m5", count:1 } ],
-    dropFrom: ["mythic"],
+    id:"def_10", name:"DEF提升 Lv2", icon:"🛡️",  rarity:"uncommon",
+    kind:"carry",
+    effect:{ defPct:10 }, effectText:"DEF +10%",
+    desc:"龜殼粉入藥，防禦力大增。",
+    recipe:[ { id:"potion_t2", count:5 } ],
+    gold:1000,
+  },
+  {
+    id:"def_15", name:"DEF提升 Lv3", icon:"🛡️",  rarity:"rare",
+    kind:"carry",
+    effect:{ defPct:15 }, effectText:"DEF +15%",
+    desc:"融合鎧甲花的汁液，堅不可摧。",
+    recipe:[ { id:"potion_t3", count:5 } ],
+    gold:2000,
+  },
+
+  // ══ 投擲型：傷害藥水（3 種）════════════════════════════
+  {
+    id:"throw_fixed",  name:"固定傷藥水", icon:"💉", rarity:"uncommon",
+    kind:"throw",
+    effect:{ throwDmg:30 }, effectText:"對怪固定扣 30 HP",
+    desc:"強酸配方，碰到就燒一塊肉。",
+    recipe:[ { id:"ore_t2", count:3 }, { id:"melon_t2", count:3 } ],
+    gold:300,
+  },
+  {
+    id:"throw_pct",    name:"比例傷藥水", icon:"💉", rarity:"rare",
+    kind:"throw",
+    effect:{ throwPct:0.10 }, effectText:"對怪扣 maxHP 10%",
+    desc:"用詛咒草藥調製，傷口會不斷擴大。",
+    recipe:[ { id:"fish_t3", count:3 }, { id:"meat_t3", count:3 } ],
+    gold:500,
+  },
+  {
+    id:"throw_random", name:"隨機傷藥水", icon:"💉", rarity:"uncommon",
+    kind:"throw",
+    effect:{ throwDmgMin:15, throwDmgMax:50 }, effectText:"對怪扣 15~50 HP",
+    desc:"不穩定的煉金產物，效果飄忽不定。",
+    recipe:[ { id:"driedfish_t2", count:3 }, { id:"can_t2", count:3 } ],
+    gold:300,
+  },
+  // ══ 投擲型：弱化藥水（2 種）════════════════════════════
+  {
+    id:"throw_atkdown",  name:"降ATK藥水", icon:"🧪", rarity:"rare",
+    kind:"throw",
+    effect:{ monAtkPct:20 }, effectText:"怪物 ATK -20%",
+    desc:"麻痺怪物的肌肉，讓牠攻擊無力。",
+    recipe:[ { id:"fur_t3", count:3 }, { id:"ore_t3", count:3 } ],
+    gold:500,
+  },
+  {
+    id:"throw_defdown",  name:"降DEF藥水", icon:"🧴", rarity:"rare",
+    kind:"throw",
+    effect:{ monDefPct:20 }, effectText:"怪物 DEF -20%",
+    desc:"腐蝕性液體，削弱怪物的護甲。",
+    recipe:[ { id:"fish_t3", count:3 }, { id:"driedfish_t3", count:3 } ],
+    gold:500,
+  },
+  // ══ 投擲型：控制道具（2 種）════════════════════════════
+  {
+    id:"throw_paralyze", name:"麻痺藥水", icon:"🕸️", rarity:"epic",
+    kind:"throw",
+    effect:{ skipRound:"big" }, effectText:"禁止怪物反擊一次（全隊共用）",
+    desc:"蜘蛛王毒液提煉，怪物全身僵硬。",
+    recipe:[ { id:"meat_t4", count:3 }, { id:"can_t4", count:3 } ],
+    gold:800,
+  },
+  {
+    id:"throw_knife",    name:"投擲小刀", icon:"🔪", rarity:"common",
+    kind:"throw",
+    effect:{ throwDmg:15 }, effectText:"直接造成 15 傷害（不吃 ATK/DEF）",
+    desc:"磨利的貓爪刀片，輕巧好丟。",
+    recipe:[ { id:"ore_t2", count:5 } ],
+    gold:200,
   },
 ];
 
 export function getPotion(id) { return POTIONS.find(p => p.id === id) || null; }
 
-// 每場戰鬥最多帶幾瓶藥
-export const MAX_POTIONS_PER_BATTLE = 3;
+// 攜帶型藥水分類輔助
+export const CARRY_POTIONS = POTIONS.filter(p => p.kind === "carry");
+export const THROW_POTIONS = POTIONS.filter(p => p.kind === "throw");
 
-// 各寶箱可掉的藥劑池（依 dropFrom 欄位自動建立）
+// 舊系統 MAX_POTIONS_PER_BATTLE = 3 已移除（新系統改為回合中消耗，無每戰上限）
+
+// 各寶箱可掉的藥劑池（依 rarity 分層）
+const RARITY_TIER_MAP = {
+  wood:   ["common"],
+  iron:   ["common", "uncommon"],
+  gold:   ["common", "uncommon", "rare"],
+  epic:   ["common", "uncommon", "rare", "epic"],
+  mythic: ["common", "uncommon", "rare", "epic"],
+};
 const CHEST_POTION_POOL = {};
-for (const type of ["wood","iron","gold","epic","mythic"]) {
-  CHEST_POTION_POOL[type] = POTIONS.filter(p => (p.dropFrom||[]).includes(type)).map(p => p.id);
+for (const [type, rarities] of Object.entries(RARITY_TIER_MAP)) {
+  CHEST_POTION_POOL[type] = POTIONS.filter(p => rarities.includes(p.rarity)).map(p => p.id);
 }
 
 // ── 材料分層開箱設定 ─────────────────────────────────────
@@ -241,15 +315,26 @@ const CHEST_TIER_CFG = {
 
 // 藥水箱抽表（權重越高越容易出現）
 const POTION_CHEST_TABLE = [
-  { id:"heal_s",         weight:20 },
-  { id:"atk_s",          weight:20 },
-  { id:"heal_l",         weight:15 },
-  { id:"atk_l",          weight:15 },
-  { id:"poison_throw",   weight:10 },
-  { id:"crit_brew",      weight:8  },
-  { id:"score_up",       weight:6  },
-  { id:"paralyze_throw", weight:4  },
-  { id:"holy_water",     weight:2  },
+  // 攜帶型 - common
+  { id:"hp_5",           weight:16 },
+  { id:"atk_5",          weight:16 },
+  { id:"def_5",          weight:16 },
+  { id:"throw_knife",    weight:14 },
+  // 攜帶型 - uncommon
+  { id:"hp_10",          weight:12 },
+  { id:"atk_10",         weight:12 },
+  { id:"def_10",         weight:12 },
+  { id:"throw_fixed",    weight:10 },
+  { id:"throw_random",   weight:10 },
+  // 攜帶型 - rare
+  { id:"hp_15",          weight:6 },
+  { id:"atk_15",         weight:6 },
+  { id:"def_15",         weight:6 },
+  { id:"throw_pct",      weight:6 },
+  { id:"throw_atkdown",  weight:6 },
+  { id:"throw_defdown",  weight:6 },
+  // 投擲型 - epic
+  { id:"throw_paralyze", weight:3 },
 ];
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
@@ -275,9 +360,9 @@ function drawRandomCards(count = 3) {
 // ── 開箱：抽出寶箱內容 ───────────────────────────────────
 // 回傳 { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件], cards:[卡片物件] }
 export function openChestContents(chest) {
-  // 圖片收集卡包：抽 1 張怪物卡
+  // 圖片收集卡包：抽 3 張怪物卡
   if (chest.type === "card_pack") {
-    return { materials: [], potions: [], fragments: [], cards: drawRandomCards(1) };
+    return { materials: [], potions: [], fragments: [], cards: drawRandomCards(3) };
   }
 
   // 咪咪箱：由 db.js openChest 直接呼叫 openCatBox，這裡只標記類型
@@ -339,16 +424,28 @@ export function openChestContents(chest) {
   return { materials, potions, fragments: [] };
 }
 
-// ── 計算戰鬥加成（戰鬥開始時呼叫）────────────────────────
-// 回傳 { hpMult, atkMult, monAtkMult, monDefMult,
-//        critBonus, scorePlus, throwEffects:[{dmg,monAtkMult,skipRound}],
-//        used:[藥劑物件] }
+// ── 計算戰鬥加成 ────────────────────────────────────────
+// 新版支援 carry / throw 兩類藥水：
+//   carry -> 回傳 { hpPct, atkPct, defPct } 疊加
+//   throw -> 回傳 throwEffects 陣列 + monAtkMult/monDefMult/skipRound
+//
+// 參數 potionIds: string[] - 該回合使用的藥水 ID 列表
+// 回傳 {
+//   hpPct: number,      // 攜帶型：HP 恢復 % 總和
+//   atkPct: number,     // 攜帶型：ATK +% 總和
+//   defPct: number,     // 攜帶型：DEF +% 總和
+//   monAtkMult: number, // 投擲型：怪物 ATK 倍率（累乘）
+//   monDefMult: number, // 投擲型：怪物 DEF 倍率（累乘）
+//   skipRound: string|null, // 投擲型：跳過反擊 "big" | null
+//   throwEffects: [],   // 投擲型傷害效果
+//   used: [],           // 使用的藥水物件
+// }
 export function calcPotionBuffs(potionIds) {
   const buffs = {
-    hpMult: 1, atkMult: 1, monAtkMult: 1, monDefMult: 1,
-    critBonus: 0, scorePlus: 0,
-    throwEffects: [],   // 投擲型藥劑效果（開戰前立即生效）
-    skipRound: null,    // "small" | "big" | null
+    hpPct: 0, atkPct: 0, defPct: 0,
+    monAtkMult: 1, monDefMult: 1,
+    skipRound: null,
+    throwEffects: [],
     used: [],
   };
   (potionIds || []).forEach(pid => {
@@ -356,22 +453,27 @@ export function calcPotionBuffs(potionIds) {
     if (!p) return;
     const e = p.effect || {};
     if (p.kind === "throw") {
-      // 投擲型：記錄投擲效果，在 startBattle 裡直接對怪扣血
-      buffs.throwEffects.push({
+      // 投擲型
+      const eff = {
         name: p.name, icon: p.icon, effectText: p.effectText,
-        dmg:        e.throwDmg   || 0,
-        monAtkMult: e.monAtkPct  ? (1 - e.monAtkPct / 100) : 1,
-        skipRound:  e.skipRound  || null,
-      });
-      if (e.monAtkPct)  buffs.monAtkMult = Math.max(0.1, buffs.monAtkMult - e.monAtkPct / 100);
-      if (e.skipRound)  buffs.skipRound  = e.skipRound;
+        dmg:        e.throwDmg    || 0,
+        dmgPct:     e.throwPct    || 0,
+        dmgMin:     e.throwDmgMin || 0,
+        dmgMax:     e.throwDmgMax || 0,
+        weaponDmg:  e.weaponDmg   || 0,
+        monAtkPct:  e.monAtkPct   || 0,
+        monDefPct:  e.monDefPct   || 0,
+        skipRound:  e.skipRound   || null,
+      };
+      buffs.throwEffects.push(eff);
+      if (e.monAtkPct) buffs.monAtkMult = Math.max(0.1, buffs.monAtkMult * (1 - e.monAtkPct / 100));
+      if (e.monDefPct) buffs.monDefMult = Math.max(0.1, buffs.monDefMult * (1 - e.monDefPct / 100));
+      if (e.skipRound) buffs.skipRound = e.skipRound;
     } else {
-      if (e.hpPct)     buffs.hpMult     += e.hpPct / 100;
-      if (e.atkPct)    buffs.atkMult    += e.atkPct / 100;
-      if (e.monAtkPct) buffs.monAtkMult  = Math.max(0.1, buffs.monAtkMult - e.monAtkPct / 100);
-      if (e.monDefPct) buffs.monDefMult  = Math.max(0.1, buffs.monDefMult - e.monDefPct / 100);
-      if (e.critBonus) buffs.critBonus  += e.critBonus;
-      if (e.scorePlus) buffs.scorePlus  += e.scorePlus;
+      // 攜帶型
+      if (e.hpPct)  buffs.hpPct  += e.hpPct;
+      if (e.atkPct) buffs.atkPct += e.atkPct;
+      if (e.defPct) buffs.defPct += e.defPct;
     }
     buffs.used.push(p);
   });

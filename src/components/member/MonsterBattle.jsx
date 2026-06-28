@@ -20,7 +20,7 @@ import { useCheckinActive } from "../../hooks/useCheckinActive";
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import BattleRecords from "./BattleRecords";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
-import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, MAX_POTIONS_PER_BATTLE } from "../../lib/itemData";
+import { makeChests, openChestContents, CHEST_TYPES, getPotion, calcPotionBuffs, CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
   MONSTERS, FAMILIES, TIER_LABEL,
@@ -36,6 +36,7 @@ import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard } from "../shared/SharedBattleComponents";
+import BattleBottomBar from "./BattleBottomBar";
 
 const ARROWS_PER_ROUND   = 6;
 const ARROWS_PER_COUNTER = 2;
@@ -194,6 +195,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const catDefShieldRef = useRef(null); // { reduction, blockFull } — 貓貓防禦技能保護下回合
   const [catCurrentHP,  setCatCurrentHP]  = useState(0);
   const catCurrentHPRef = useRef(0);
+  const pendingPotionRef = useRef([]); // 擱置的藥水消耗，submitRound 時批次寫入
   const [processing, setProcessing]     = useState(false);
   const [targetMode, setTargetMode]     = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
@@ -231,6 +233,11 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [battleStats, setBattleStats]         = useState(null); // 本場有效數值（含藥劑加成）
   const [wonChests, setWonChests]             = useState([]); // 本場掉落的寶箱陣列（含貓貓箱）
   const [skipBigRound, setSkipBigRound]       = useState(false); // 麻痺毒素：跳過整個大回合反擊
+  const [bottomTab, setBottomTab]               = useState("score"); // "score"|"potion"|"party"
+  const [potionSubTab, setPotionSubTab]         = useState("carry"); // "carry"|"throw"
+  const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
+  const [usedPotionThisRound, setUsedPotionThisRound] = useState(null); // { icon, name, effectText }
+  const [scoringModeChosen, setScoringModeChosen]     = useState(false);
   const [distanceMode, setDistanceMode]       = useState("fixed"); // "fixed"|"random"|"dynamic"
   const [selectedDistance, setSelectedDistance] = useState(15);
   const [eventConfig, setEventConfig]         = useState(null); // 賽事模式設定
@@ -305,6 +312,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     if (isGuest) return;
     if (phase === "loot" || phase === "result" || phase === "select") {
       if (phase === "loot" || phase === "result") sessionStorage.removeItem("mb_battle_save");
+      pendingPotionRef.current = []; // 離開戰鬥時清空未寫的藥水
       return;
     }
     if (phase !== "battle") return;
@@ -453,11 +461,58 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); submitRound(); }, 2000);
   }
+n  // 🧪 使用攜帶型藥水（回合開始喝）
+  function useCarryPotion(potion) {
+    if (potionUsedThisRound || processing) return;
+    if (!profile?.id || isGuest) return;
+    const count = potionInv[potion.id] || 0;
+    if (count <= 0) return;
+    sfxPotionDrink();
+    pendingPotionRef.current.push(potion.id); // 延後寫入，submitRound 時批次消耗
+    setPotionInv(prev => ({ ...prev, [potion.id]: (prev[potion.id]||0) - 1 }));
+    if (potion.effect.atkPct) {
+      const baseATK = (battleStats||archerStats)?.atk || 10;
+      setArcherATKMod(m => m + Math.round(baseATK * potion.effect.atkPct / 100));
+    }
+    if (potion.effect.hpPct) {
+      const maxHP = (battleStats||archerStats)?.hp||100;
+      const heal = Math.round(maxHP * potion.effect.hpPct / 100);
+      setArcherHP(h => Math.min(maxHP, h + heal));
+    }
+    setUsedPotionThisRound({ icon:potion.icon, name:potion.name, effectText:potion.effectText });
+    setPotionUsedThisRound(true);
+    setBottomTab("score");
+  }
+
+  // 🎯 使用投擲道具（取代一箭）
+  function useThrowPotion(potion) {
+    if (potionUsedThisRound || processing) return;
+    if (arrows.length >= ARROWS_PER_ROUND) return;
+    if (!profile?.id || isGuest) return;
+    const count = potionInv[potion.id] || 0;
+    if (count <= 0) return;
+    sfxTap();
+    pendingPotionRef.current.push(potion.id); // 延後寫入，submitRound 時批次消耗
+    setPotionInv(prev => ({ ...prev, [potion.id]: (prev[potion.id]||0) - 1 }));
+    setArrows(prev => [...prev, potion.id]);
+    setUsedPotionThisRound({ icon:potion.icon, name:potion.name, effectText:potion.effectText });
+    setPotionUsedThisRound(true);
+    setBottomTab("score");
+  }
 
   async function submitRound() {
     if (arrows.length<ARROWS_PER_ROUND||processing) return;
     setProcessing(true);
     setBattlePhase("processing");
+    // 🧪 批次消耗擱置藥水
+    const pendingPotions = pendingPotionRef.current;
+    if (pendingPotions.length > 0) {
+      pendingPotionRef.current = [];
+      if (profile?.id && !isGuest) {
+        usePotions(profile.id, pendingPotions).catch(()=>{});
+        recordPotionUsed(profile.id, pendingPotions).catch(()=>{});
+      }
+    }
     try {
     const bSt = battleStats || archerStats; // 本場有效數值（含藥劑加成）
 
@@ -472,25 +527,62 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     await delay(400);
 
     for (let i=0; i<ARROWS_PER_ROUND; i++) {
-      // 分數藥水：每箭 +1分，10→X 再+1 = 雙倍爆擊
       const rawLabel = arrows[i];
-      const isX = rawLabel === "X";
-      const rawScore = arrowLabelToVal(rawLabel);
-      const maxFmtScore = targetFmt === "field_16" ? 6 : 10;
-      const sp = (battleStats?.scorePlus) || 0;
-      let boostedRaw = rawScore;
-      let forceCrit = false;
-      if (sp > 0 && rawScore > 0) {
-        boostedRaw = Math.min(rawScore + sp, maxFmtScore);
-        if (rawScore >= maxFmtScore) { boostedRaw = maxFmtScore; forceCrit = true; }
+
+      // 🎯 投擲道具（potion.id 標籤）→ 不走計分，直接處理效果
+      const throwPotion = rawLabel && getPotion(rawLabel);
+      if (throwPotion && throwPotion.kind === "throw") {
+        const ef = throwPotion.effect;
+        let throwDmg = 0;
+        if (ef.throwDmg) throwDmg = ef.throwDmg;
+        else if (ef.throwPct) throwDmg = Math.ceil(curMonHP * ef.throwPct);
+        else if (ef.throwDmgMin && ef.throwDmgMax) throwDmg = Math.floor(Math.random() * (ef.throwDmgMax - ef.throwDmgMin + 1)) + ef.throwDmgMin;
+        if (ef.skipRound === "big") setSkipBigRound(true);
+        // 🧬 弱化藥水：直接對怪物 ATK/DEF 扣 %
+        if (ef.monAtkPct) {
+          const oldAtk = monster.atk;
+          setMonster(prev => ({ ...prev, atk: Math.max(1, Math.round(prev.atk * (100 - ef.monAtkPct) / 100)) }));
+          addLog({ type:"event_bad", text:`💀 ${throwPotion.icon} 怪物 ATK -${ef.monAtkPct}%（${oldAtk} → ${Math.max(1, Math.round(oldAtk * (100 - ef.monAtkPct) / 100))}）` });
+        }
+        if (ef.monDefPct) {
+          const oldDef = monster.def;
+          setMonster(prev => ({ ...prev, def: Math.max(0, Math.round(prev.def * (100 - ef.monDefPct) / 100)) }));
+          addLog({ type:"event_bad", text:`💀 ${throwPotion.icon} 怪物 DEF -${ef.monDefPct}%（${oldDef} → ${Math.max(0, Math.round(oldDef * (100 - ef.monDefPct) / 100))}）` });
+        }
+        curMonHP = Math.max(0, curMonHP - throwDmg);
+        setMonsterHP(curMonHP);
+        setAnimArcherShoot(true); setTimeout(()=>setAnimArcherShoot(false), 500);
+        setAnimHit(true); setTimeout(()=>setAnimHit(false), 600);
+        if (throwDmg > 0) setTotalDmgDealt(v => v + throwDmg);
+        addLog({ type:"hit", text:`${i+1}箭 🎯 ${throwPotion.icon} ${throwPotion.name}：${throwPotion.effectText}` });
+        await delay(1000);
+        if (curMonHP <= 0) {
+          const roundArr=arrows.map(arrowLabelToVal);
+          setAllArrows(prev=>[...prev,...roundArr]);
+          setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
+          await endBattle("win",curArchHP,curMonHP,roundArr);
+          setProcessing(false); return;
+        }
+        continue; // 投擲道具處理完畢，跳過計分/反擊流程
       }
-      // 原野靶 1-6：線性映射至半靶級距（1→6, 6→X爆擊）
-      if (targetFmt === "field_16" && boostedRaw === 6) forceCrit = true;
-      const score = (targetFmt === "field_16" && boostedRaw > 0)
-        ? Math.min(boostedRaw + 5, 10)
-        : boostedRaw;
-      const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
-      const part = resolveHitPart(score, curUnlocked, isX);
+        // 分數藥水：每箭 +1分，10→X 再+1 = 雙倍爆擊
+        const isX = rawLabel === "X";
+        const rawScore = arrowLabelToVal(rawLabel);
+        const maxFmtScore = targetFmt === "field_16" ? 6 : 10;
+        const sp = (battleStats?.scorePlus) || 0;
+        let boostedRaw = rawScore;
+        let forceCrit = false;
+        if (sp > 0 && rawScore > 0) {
+          boostedRaw = Math.min(rawScore + sp, maxFmtScore);
+          if (rawScore >= maxFmtScore) { boostedRaw = maxFmtScore; forceCrit = true; }
+        }
+        // 原野靶 1-6：線性映射至半靶級距（1→6, 6→X爆擊）
+        if (targetFmt === "field_16" && boostedRaw === 6) forceCrit = true;
+        const score = (targetFmt === "field_16" && boostedRaw > 0)
+          ? Math.min(boostedRaw + 5, 10)
+          : boostedRaw;
+        const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
+        const part = resolveHitPart(score, curUnlocked, isX);
       if (part.id==="chest") curUnlocked=new Set([...curUnlocked,"chest"]);
       if (part.id==="belly") curUnlocked=new Set([...curUnlocked,"belly"]);
       if (part.id==="groin") curUnlocked=new Set([...curUnlocked,"groin"]);
@@ -765,6 +857,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     if (s.battleStats) setBattleStats(s.battleStats);
     setLog(s.log || [{ type:"system", text:"⚔️ 戰鬥已從中斷點恢復！繼續作戰！" }]);
     setArrows([]); setBattlePhase("input"); setProcessing(false);
+    setPotionUsedThisRound(false); setUsedPotionThisRound(null);
+    setBottomTab("score"); setScoringModeChosen(false);
+    pendingPotionRef.current = []; // 恢復戰鬥時清空未寫的藥水
     setPhase("battle");
     sessionStorage.removeItem("mb_battle_save");
     setShowRestorePrompt(false);
@@ -780,10 +875,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       buffs.monAtkMult = Math.max(0, buffs.monAtkMult);
       buffs.monDefMult = Math.max(0, buffs.monDefMult);
     }
-    if (selectedPotions.length>0 && profile?.id && !isGuest) {
-      await usePotions(profile.id, selectedPotions).catch(()=>{});
-      await recordPotionUsed(profile.id, selectedPotions).catch(()=>{});
-    }
+    // 戰前藥水已移至 BattleBottomBar 回合中消耗，此處不再使用
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
     // 怪物卡片裝備加成（優先用 ref 避免 closure stale 問題）
@@ -850,6 +942,10 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setCurrentEvent(null); setSkipCounter(false); setArcherATKMod(0);
     setDroppedCoins(0); setDroppedCard(null); setGuestWonBefore(false); setDroppedCoinChest(null);
     setTotalDmgDealt(0); setTotalDmgRecvd(0); setCritCount(0); setDroppedMaterials([]);
+    setBottomTab("score");
+    setPotionUsedThisRound(false);
+    setUsedPotionThisRound(null);
+    setScoringModeChosen(false);
     setPhase("battle_intro");
   }
 
@@ -1537,43 +1633,6 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             {mode==="veteran"?"⚔️ 老手・起始15米":mode==="student"?`🎓 學生・${distanceMode==="dynamic"?"動態15m起":`固定${selectedDistance}米`}`:`🟢 新手・固定${selectedDistance}米`}　每 {ARROWS_PER_COUNTER} 箭反擊
           </div>
 
-          {/* ⚗️ 戰前喝藥（只影響本場） */}
-          {!isGuest && Object.values(potionInv).some(v=>v>0) && (
-            <div className="bg-white/10 rounded-xl p-3 mb-4 text-left">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-purple-200 text-xs font-black">⚗️ 戰前喝藥（最多 {MAX_POTIONS_PER_BATTLE} 瓶）</span>
-                <span className="text-purple-300 text-xs">只影響本場</span>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {Object.entries(potionInv).filter(([,c])=>c>0).map(([pid,count])=>{
-                  const p=getPotion(pid);
-                  if (!p) return null;
-                  const selected=selectedPotions.includes(pid);
-                  return (
-                    <button key={pid}
-                      onClick={()=>{
-                        sfxPotionDrink();
-                        setSelectedPotions(prev=>
-                          prev.includes(pid)
-                            ? prev.filter(x=>x!==pid)
-                            : prev.length>=MAX_POTIONS_PER_BATTLE ? prev : [...prev,pid]
-                        );
-                      }}
-                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 border-2
-                        ${selected?"bg-amber-400 text-amber-900 border-amber-300":"bg-white/10 text-white border-white/20"}`}>
-                      {p.icon} {p.name}{p.kind==="throw"?" 🎯投":""}  ×{count}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedPotions.length>0 && (
-                <div className="mt-2 text-amber-300 text-xs font-bold">
-                  {selectedPotions.map(pid=>getPotion(pid)?.effectText).filter(Boolean).join("、")}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* 外觀更換 */}
           <button
             onClick={() => { setArcherSelectReturn("prebattle"); setPhase("archer_select"); }}
@@ -1591,7 +1650,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
           )}
           <button onClick={startBattle} className="w-full py-4 rounded-2xl font-black text-lg"
             style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
-            ⚔️ 開始挑戰！{selectedPotions.length>0?`（帶 ${selectedPotions.length} 瓶藥）`:""}
+            ⚔️ 開始挑戰！
           </button>
         </div>
       </div>
@@ -2008,17 +2067,29 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 </div>
               )}
 
-              {/* 分數按鈕（按鈕模式才顯示）*/}
-              {!targetMode && arrows.length < ARROWS_PER_ROUND &&
-                <BattleScoreButtons
-                  labels={HALF_SCORES.map(s => s.label)}
-                  onScore={inputArrow}
-                  disabled={false}
-                  variant="image"
-                  btnSize="md"
-                />
-              }
+              {/* 藥水效果提示 */}
+              {usedPotionThisRound && (
+                <div style={{
+                  textAlign:"center", fontSize:11, fontWeight:900,
+                  color:"#fbbf24", marginBottom:3,
+                  background:"rgba(251,191,36,0.1)", borderRadius:6, padding:"3px 0",
+                }}>
+                  {usedPotionThisRound.icon} {usedPotionThisRound.name}：{usedPotionThisRound.effectText}
+                </div>
+              )}
 
+              {/* 底部 Tab 系統 */}
+              <BattleBottomBar
+                bottomTab={bottomTab} setBottomTab={setBottomTab}
+                potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
+                potionUsedThisRound={potionUsedThisRound}
+                scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
+                targetMode={targetMode} setTargetMode={setTargetMode}
+                arrows={arrows} onArrow={inputArrow}
+                potionInv={potionInv}
+                onCarryPotion={useCarryPotion}
+                onThrowPotion={useThrowPotion}
+              />
               <TargetFaceOverlay
                 open={targetMode && !targetPending && !processing}
                 fmtId={targetFmt}
