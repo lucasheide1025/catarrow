@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeMyCheckin, submitCheckin, submitClassEnd, addArrowdew,
+  subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
   grantArrowMilestoneRewards, subscribeTodayPracticeLogs,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
@@ -42,7 +42,11 @@ export default function DailyQuest({ onJoinParty }) {
     if (!profile?.id || submitBusy) return;
     setSubmitBusy(true);
     try {
-      await submitCheckin(profile.id, profile.name, profile.nickname);
+      const { id } = await submitCheckin(profile.id, profile.name, profile.nickname);
+      // 教練自主報到 → 立即審核通過，不需等另一位教練
+      if (profile.isAdmin) {
+        await approveCheckin(id, profile.id).catch(() => {});
+      }
       sfxTap();
       setJustSubmitted(true);
     } catch (e) { console.warn("checkin:", e?.message); }

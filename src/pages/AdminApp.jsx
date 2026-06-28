@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback, ViewTransition } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
@@ -219,7 +219,9 @@ export default function AdminApp() {
     if (!profile?.id) return;
     setCheckinBusy(true);
     try {
-      await submitCheckin(profile.id, profile.name, profile.nickname);
+      const { id } = await submitCheckin(profile.id, profile.name, profile.nickname);
+      // 教練在射手模式自主報到 → 自動審核通過（不需等另一位教練）
+      await approveCheckin(id, profile.id).catch(() => {});
     } catch (e) { console.error("checkin:", e?.message); }
     setCheckinBusy(false);
     setShowCheckinPopup(false);
