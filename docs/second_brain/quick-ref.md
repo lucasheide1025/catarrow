@@ -371,6 +371,27 @@ const dgOf = (m) =>
 // otherRowMembers = 對方排（動畫時顯示緊湊小卡，平時隱藏）
 ```
 
+### 地下城多人廣播設計（2026-06-28 修正）
+```js
+// 問題1：非房主點「領取獎勵」→ returnToMapAfterBattle 把所有人拖出戰鬥
+// ✅ 解法：只有 isHost 才呼叫 returnToMapAfterBattle；非房主設 localClaimed=true 顯示 overlay
+if (isHost) {
+  await returnToMapAfterBattle(...);
+} else {
+  setLocalClaimed(true); // 等 Firestore status 自然切換
+}
+
+// 問題2：房主走到怪物房→modal 是 local state，隊員看不到任何東西
+// ✅ 解法：房主寫 mapPendingRoom 到 Firestore；隊員 subscribe 顯示唯讀 modal
+// dungeonDb: proposeMapBattle(roomId, roomData) → updateDoc({ mapPendingRoom: roomData })
+// dungeonDb: clearMapPendingRoom(roomId)        → updateDoc({ mapPendingRoom: deleteField() })
+// 觸發時機：
+//   handleRoomClick → proposeMapBattle（房主選怪物房時）
+//   handleEnterBattle → clearMapPendingRoom（進戰前清除）
+//   撤退按鈕 → clearMapPendingRoom（退出清除）
+// 非房主：讀 room.mapPendingRoom 顯示「⏳ 等待隊長決定是否出戰…」
+```
+
 ### 卡死預防機制
 ```js
 // 房主：processing 超時 20 秒 → clearDungeonProcessing(roomId)

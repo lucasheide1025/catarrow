@@ -1,5 +1,5 @@
 // src/pages/MemberApp.jsx
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback, ViewTransition } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
@@ -99,7 +99,8 @@ const NAV_PRELOADS = {
 
 export default function MemberApp() {
   const { logout, profile } = useAuth();
-  const [page, setPage]       = useState(()=>sessionStorage.getItem("member_page")||"home");
+  const [page, setPageState]   = useState(()=>sessionStorage.getItem("member_page")||"home");
+  const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   const [gachaInitTab, setGachaInitTab] = useState("village");
   const [selComp, setSelComp] = useState(null);
   const [scoring, setScoring] = useState(false);
@@ -521,6 +522,7 @@ export default function MemberApp() {
 
       {/* 頁面內容（content-area 套用深藍覆寫；貓貓村跳過） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
+        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
@@ -599,10 +601,11 @@ export default function MemberApp() {
           <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}
         </Suspense>
+        </ViewTransition>
       </div>
 
       {/* 底部導覽（深藍主題） */}
-      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (

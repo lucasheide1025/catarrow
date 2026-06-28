@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback, ViewTransition } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
@@ -130,12 +130,13 @@ const ARCHER_NAV_PRELOADS = {
 export default function AdminApp() {
   const { logout, profile } = useAuth();
   const VALID_PAGES = new Set(["hub-member","hub-events","givetool","hub-items","archery"]);
-  const [page, setPage]             = useState(() => {
+  const [page, setPageState]        = useState(() => {
     const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
     const s = sessionStorage.getItem("admin_page");
     if (isArcher) return (s && !VALID_PAGES.has(s)) ? s : "home";
     return (s && VALID_PAGES.has(s)) ? s : "hub-member";
   });
+  const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   const [memberSub, setMemberSub]   = useState(null);
   const [eventsSub, setEventsSub]   = useState(null);
   const [itemsSub,  setItemsSub]    = useState(null);
@@ -542,6 +543,7 @@ const adminNav = [
         )}
         {/* 頁面內容（深藍覆寫） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
+        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
@@ -614,9 +616,10 @@ const adminNav = [
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
         </Suspense>
+        </ViewTransition>
         </div>
         {/* 底部導覽（深藍主題） */}
-      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
         {memberNav.map(n => {
           const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
           return (
@@ -707,6 +710,7 @@ const adminNav = [
       )}
 
       <div style={{paddingBottom:"80px"}} className="content-area">
+        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {/* ── 會員中心 Hub ── */}
         {page==="hub-member" && memberSub===null && (
@@ -750,9 +754,10 @@ const adminNav = [
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="archery"      && <AdminArchery/>}
         </Suspense>
+        </ViewTransition>
       </div>
 
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",zIndex:40}}>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",zIndex:40,viewTransitionName:"admin-nav"}}>
         <div style={{display:"flex"}}>
           {adminNav.map(n=>{
             const active = page===n.id;

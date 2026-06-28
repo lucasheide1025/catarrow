@@ -56,6 +56,29 @@
   - `score_gate`（得分關）→ 比例懲罰：低於門檻的箭依距離降低該箭傷害（差1分-10%），且最高門檻 cap 至 9（不再要求 X/10）；score_gate 的分數按鈕去除 X 和 10
 - **後台暗色主題**：`AdminReviewCenter`、`AdminMembers`、`AdminFinance` 共修正 16 處白底/淺色框（CertReviewCard、ExtReviewCard、MsgReplyCard、CertTaskCard 等）；QR code 白底保留（掃碼必需）
 
+## ⚡ 2026-06-28 效能優化（vercel-react-best-practices）
+
+- **Lazy Loading**（bundle-dynamic-imports）：MemberApp / AdminApp 共 50+ 元件改 `React.lazy`，主 bundle 676KB → **475KB（-30%）**
+- **React.memo**（rerender-memo）：`MonsterSVG`、`BadgeSVG`、`SharedBattleComponents` 全員加 memo，戰鬥畫面 timer tick 不再重渲染純 SVG/HP bar
+- **智能預載**（bundle-preload + js-request-idle-callback）：
+  - `MemberApp` / `AdminApp` 登入後瀏覽器空閒時預下載最常用 chunk
+  - nav 按鈕加 `onPointerEnter`，碰到就開始下載，切頁無 loading 感
+  - Safari 無 `requestIdleCallback` 時 fallback 到 `setTimeout(cb, 1000)`
+
+## ✨ 2026-06-28 View Transitions（vercel-react-view-transitions）
+
+- **react@canary** 升級（19.3.0-canary）：`ViewTransition` 只在 canary 可用，用 `--legacy-peer-deps` 安裝
+- **全分頁 cross-fade**：所有 `setPage()` 呼叫改透過 `startTransition()` 包裹（`useCallback` 封裝為新的 `setPage`）
+- `MemberApp` 與 `AdminApp` 兩個 content-area 加 `<ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">` 包裹 Suspense
+- **底部導覽列隔離**：`member-nav` / `admin-nav` 加 `viewTransitionName`，切頁時導覽列不跟著動
+- CSS recipes 加入 `src/index.css`：fade / slide-y keyframes、nav persistent isolation、reduced motion 支援
+
+## 🔧 2026-06-28（續）地下城多人 Bug 修正
+
+- **非房主拖出地圖**：`DungeonBattleRoom.handleClaimSelf` 改為：房主才呼叫 `returnToMapAfterBattle`，非房主設 `localClaimed=true` 顯示「等待房主」overlay，等 Firestore status 自然切換
+- **隊員看不到房主選的怪物房**：`DungeonExplore.handleRoomClick` 選到怪物房時寫 `mapPendingRoom` 到 Firestore；非房主 subscribe 到後顯示唯讀預告 modal（「等待隊長決定是否出戰…」）；房主按出戰或撤退後清除 `mapPendingRoom`
+- `dungeonDb.js` 新增 `proposeMapBattle(roomId, roomData)` / `clearMapPendingRoom(roomId)`
+
 ## 🚧 待辦
 
 - [ ] 射箭偵測 (player.html) 整合 Firebase Auth（目前獨立 HTML 無登入）
