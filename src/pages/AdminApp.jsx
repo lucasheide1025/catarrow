@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
@@ -6,71 +6,72 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify } from "../lib/sound";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
-import AdminMembers       from "../components/admin/AdminMembers";
-import AdminCompetitions  from "../components/admin/AdminCompetitions";
-import AdminLearn         from "../components/admin/AdminLearn";
-import AdminGiveTool      from "../components/admin/AdminGiveTool";
-import AdminBattleEvent   from "../components/admin/AdminBattleEvent";
-import AdminEquipItems    from "../components/admin/AdminEquipItems";
-import EquipmentPage      from "../components/member/EquipmentPage";
-import CoinShop           from "../components/member/CoinShop";
-import AdminFinance       from "../components/admin/AdminFinance";
-import AdminReviewCenter  from "../components/admin/AdminReviewCenter";
-import AdminMessages       from "../components/admin/AdminMessages";
-import MemberHome         from "../components/member/MemberHome";
-import MemberComps        from "../components/member/MemberComps";
-import MemberScoring      from "../components/member/MemberScoring";
-import MemberLearn        from "../components/member/MemberLearn";
-import MemberMessages     from "../components/member/MemberMessages";
-import MemberHistory      from "../components/member/MemberHistory";
-import MemberPractice     from "../components/member/MemberPractice";
-import MemberLeaderboard  from "../components/member/MemberLeaderboard";
-import MemberProfile      from "../components/member/MemberProfile";
-import MemberExternalComp from "../components/member/MemberExternalComp";
-import MemberAchievements from "../components/member/MemberAchievements";
-import MemberCertExam     from "../components/member/MemberCertExam";
-import MemberNotifications from "../components/member/MemberNotifications";
-import MustReadGate       from "../components/member/MustReadGate";
-import HonorCelebration   from "../components/member/HonorCelebration";
-import MemberDex          from "../components/member/MemberDex";
-import MemberMaterials    from "../components/member/MemberMaterials";
-import MemberMonsterDex  from "../components/member/MemberMonsterDex";
-import CardCollection    from "../components/member/CardCollection";
-import CatVillage       from "../components/member/CatVillage";
-import MemberGuide      from "../components/member/MemberGuide";
-import MonsterBattle      from "../components/member/MonsterBattle";
-import PartyLobby         from "../components/party/PartyLobby";
-import PartyQuestRoom     from "../components/party/PartyQuestRoom";
-import PartyBattleRoom    from "../components/party/PartyBattleRoom";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
 import { APP_VERSION } from "../lib/version";
-import DuelLobby         from "../components/duel/DuelLobby";
-import DuelRoom          from "../components/duel/DuelRoom";
-import DungeonLobby      from "../components/dungeon/DungeonLobby";
-import DungeonController from "../components/dungeon/DungeonController";
-import AdminResetCenter       from "../components/admin/AdminResetCenter";
-import AdminWorldBoss         from "../components/admin/AdminWorldBoss";
-import AdminGuildQuests        from "../components/admin/AdminGuildQuests";
-import AdventurerGuild    from "../components/member/AdventurerGuild";
-import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
-import WorldBossLobby    from "../components/worldboss/WorldBossLobby";
-import CatCollection     from "../components/cat/CatCollection";
-import CatStoryBook      from "../components/cat/CatStoryBook";
-import StoryBook         from "../components/story/StoryBook";
-import AdminStoryManager    from "../components/admin/AdminStoryManager";
-import AdminArchery          from "../components/admin/AdminArchery";
-import AdminVillageManager   from "../components/admin/AdminVillageManager";
-import WorldBossIntro    from "../components/worldboss/WorldBossIntro";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
-import MemberAdventureHub from "../components/member/MemberAdventureHub";
-import MemberTrainingHub  from "../components/member/MemberTrainingHub";
-import MemberInventoryHub from "../components/member/MemberInventoryHub";
-import MemberRecordsHub   from "../components/member/MemberRecordsHub";
-import MemberBowSettings  from "../components/member/MemberBowSettings";
 import { OverlayModal } from "../components/shared/UI";
+import MemberHome         from "../components/member/MemberHome";
+import MustReadGate       from "../components/member/MustReadGate";
+import HonorCelebration   from "../components/member/HonorCelebration";
+import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
+
+const AdminMembers       = lazy(() => import("../components/admin/AdminMembers"));
+const AdminCompetitions  = lazy(() => import("../components/admin/AdminCompetitions"));
+const AdminLearn         = lazy(() => import("../components/admin/AdminLearn"));
+const AdminGiveTool      = lazy(() => import("../components/admin/AdminGiveTool"));
+const AdminBattleEvent   = lazy(() => import("../components/admin/AdminBattleEvent"));
+const AdminEquipItems    = lazy(() => import("../components/admin/AdminEquipItems"));
+const AdminFinance       = lazy(() => import("../components/admin/AdminFinance"));
+const AdminReviewCenter  = lazy(() => import("../components/admin/AdminReviewCenter"));
+const AdminMessages      = lazy(() => import("../components/admin/AdminMessages"));
+const AdminResetCenter   = lazy(() => import("../components/admin/AdminResetCenter"));
+const AdminWorldBoss     = lazy(() => import("../components/admin/AdminWorldBoss"));
+const AdminGuildQuests   = lazy(() => import("../components/admin/AdminGuildQuests"));
+const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryManager"));
+const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
+const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
+const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
+const CoinShop           = lazy(() => import("../components/member/CoinShop"));
+const MemberComps        = lazy(() => import("../components/member/MemberComps"));
+const MemberScoring      = lazy(() => import("../components/member/MemberScoring"));
+const MemberLearn        = lazy(() => import("../components/member/MemberLearn"));
+const MemberMessages     = lazy(() => import("../components/member/MemberMessages"));
+const MemberHistory      = lazy(() => import("../components/member/MemberHistory"));
+const MemberPractice     = lazy(() => import("../components/member/MemberPractice"));
+const MemberLeaderboard  = lazy(() => import("../components/member/MemberLeaderboard"));
+const MemberProfile      = lazy(() => import("../components/member/MemberProfile"));
+const MemberExternalComp = lazy(() => import("../components/member/MemberExternalComp"));
+const MemberAchievements = lazy(() => import("../components/member/MemberAchievements"));
+const MemberCertExam     = lazy(() => import("../components/member/MemberCertExam"));
+const MemberNotifications= lazy(() => import("../components/member/MemberNotifications"));
+const MemberDex          = lazy(() => import("../components/member/MemberDex"));
+const MemberMaterials    = lazy(() => import("../components/member/MemberMaterials"));
+const MemberMonsterDex   = lazy(() => import("../components/member/MemberMonsterDex"));
+const MemberGuide        = lazy(() => import("../components/member/MemberGuide"));
+const MemberBowSettings  = lazy(() => import("../components/member/MemberBowSettings"));
+const MemberAdventureHub = lazy(() => import("../components/member/MemberAdventureHub"));
+const MemberTrainingHub  = lazy(() => import("../components/member/MemberTrainingHub"));
+const MemberInventoryHub = lazy(() => import("../components/member/MemberInventoryHub"));
+const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
+const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
+const CardCollection     = lazy(() => import("../components/member/CardCollection"));
+const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
+const CatVillage         = lazy(() => import("../components/member/CatVillage"));
+const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
+const CatStoryBook       = lazy(() => import("../components/cat/CatStoryBook"));
+const StoryBook          = lazy(() => import("../components/story/StoryBook"));
+const PartyLobby         = lazy(() => import("../components/party/PartyLobby"));
+const PartyQuestRoom     = lazy(() => import("../components/party/PartyQuestRoom"));
+const PartyBattleRoom    = lazy(() => import("../components/party/PartyBattleRoom"));
+const DuelLobby          = lazy(() => import("../components/duel/DuelLobby"));
+const DuelRoom           = lazy(() => import("../components/duel/DuelRoom"));
+const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby"));
+const DungeonController  = lazy(() => import("../components/dungeon/DungeonController"));
+const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
+const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -477,6 +478,7 @@ const adminNav = [
         )}
         {/* 頁面內容（深藍覆寫） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
+        <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
@@ -547,6 +549,7 @@ const adminNav = [
             questCtx={questCtx?.completed ? null : questCtx}
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
+        </Suspense>
         </div>
         {/* 底部導覽（深藍主題） */}
       <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)" }}>
@@ -639,6 +642,7 @@ const adminNav = [
       )}
 
       <div style={{paddingBottom:"80px"}} className="content-area">
+        <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {/* ── 會員中心 Hub ── */}
         {page==="hub-member" && memberSub===null && (
           <AdminMemberHub
@@ -680,6 +684,7 @@ const adminNav = [
         {/* ── 單一頁面 ── */}
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="archery"      && <AdminArchery/>}
+        </Suspense>
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",zIndex:40}}>
