@@ -1,5 +1,6 @@
 // src/components/BadgeSVG.jsx — 成就徽章 SVG 框架
 // 使用方式：<BadgeSVG icon="🏹" rarity="rare" size={64} unlocked />
+import { memo } from "react";
 
 const RARITY_STYLE = {
   common:    { ring:"#6b7280", glow:"#9ca3af", bg:"#1f2937", bg2:"#374151", shape:"circle",  stars:0 },
@@ -77,7 +78,7 @@ function ShapeStroke({ shape, r = 44, ...rest }) {
   }
 }
 
-export default function BadgeSVG({ icon = "🏆", rarity = "common", size = 64, unlocked = true, className = "" }) {
+function BadgeSVG({ icon = "🏆", rarity = "common", size = 64, unlocked = true, className = "" }) {
   const s    = RARITY_STYLE[rarity] || RARITY_STYLE.common;
   const uid  = `badge_${rarity}_${Math.random().toString(36).slice(2,7)}`;
 
@@ -163,3 +164,5 @@ export default function BadgeSVG({ icon = "🏆", rarity = "common", size = 64, 
     </svg>
   );
 }
+
+export default memo(BadgeSVG);

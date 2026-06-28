@@ -1,7 +1,8 @@
 // src/components/shared/SharedBattleComponents.jsx
 // 戰鬥模式共用元件庫 — 統一 MonsterBattle / PartyBattleRoom / DungeonBattleRoom / WorldBossAttack 的 UI 元件
+import { memo } from "react";
 
-export function BattleHPBar({ current, max, height = 21, showBorder = true, label, compact = false }) {
+export const BattleHPBar = memo(function BattleHPBar({ current, max, height = 21, showBorder = true, label, compact = false }) {
   const pct = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
   const barStyle = {
     background: "#1e293b",
@@ -43,9 +44,9 @@ export function BattleHPBar({ current, max, height = 21, showBorder = true, labe
       </div>
     </div>
   );
-}
+});
 
-export function BattleArrowSlots({
+export const BattleArrowSlots = memo(function BattleArrowSlots({
   arrows = [], totalArrows = 6, onUndo, showUndo = false,
   slotSize = 28, highlightNext = true, showScore = true,
   totalScore, extraContent, processing = false, processingIdx = -1,
@@ -98,9 +99,9 @@ export function BattleArrowSlots({
       {extraContent}
     </div>
   );
-}
+});
 
-export function BattleScoreButtons({
+export const BattleScoreButtons = memo(function BattleScoreButtons({
   labels = ["X","10","9","8","7","6","5","4","3","2","1","M"],
   onScore, disabled = false, variant = "image", btnSize = "md",
 }) {
@@ -157,9 +158,9 @@ export function BattleScoreButtons({
       })}
     </div>
   );
-}
+});
 
-export function BattleStatusTags({ tags = [] }) {
+export const BattleStatusTags = memo(function BattleStatusTags({ tags = [] }) {
   return (
     <div style={{ display: "flex", gap: 3, marginBottom: 4, flexWrap: "wrap" }}>
       {tags.map((tag, i) => (
@@ -174,7 +175,7 @@ export function BattleStatusTags({ tags = [] }) {
       ))}
     </div>
   );
-}
+});
 
 // ── 結算畫面共用元件 ──────────────────────────────────────
 // 使用方式範例：
@@ -182,7 +183,7 @@ export function BattleStatusTags({ tags = [] }) {
 
 const RESULT_CSS = `@keyframes result-pop{0%{opacity:0;transform:scale(0.7) rotate(-4deg)}60%{transform:scale(1.06) rotate(1deg)}100%{opacity:1;transform:scale(1)}}`;
 
-export function BattleResultHeader({ emoji, title, subtitle, color = "amber", animDelay = "0s" }) {
+export const BattleResultHeader = memo(function BattleResultHeader({ emoji, title, subtitle, color = "amber", animDelay = "0s" }) {
   const colorMap = {
     amber: { text: "text-amber-400", border: "border-amber-400/50", bg: "from-yellow-900/80" },
     red:   { text: "text-red-400",   border: "border-red-400/50",   bg: "from-red-900/80" },
@@ -206,9 +207,9 @@ export function BattleResultHeader({ emoji, title, subtitle, color = "amber", an
     </div>
     </>
   );
-}
+});
 
-export function BattleStatCard({ label, value, icon, accent = false }) {
+export const BattleStatCard = memo(function BattleStatCard({ label, value, icon, accent = false }) {
   return (
     <div style={{
       background: accent ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.06)",
@@ -222,9 +223,9 @@ export function BattleStatCard({ label, value, icon, accent = false }) {
       <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{label}</div>
     </div>
   );
-}
+});
 
-export function BattleStatRow({ label, value, icon, valueColor, borderTop }) {
+export const BattleStatRow = memo(function BattleStatRow({ label, value, icon, valueColor, borderTop }) {
   return (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -240,9 +241,9 @@ export function BattleStatRow({ label, value, icon, valueColor, borderTop }) {
       }}>{value}</span>
     </div>
   );
-}
+});
 
-export function BattleRewardItem({ icon, name, desc, tier, highlight = false }) {
+export const BattleRewardItem = memo(function BattleRewardItem({ icon, name, desc, tier, highlight = false }) {
   const tierColor = tier === "gold" ? "#fbbf24" : tier === "rare" ? "#a78bfa" : tier === "mythic" ? "#f43f5e" : "#94a3b8";
   return (
     <div style={{
@@ -271,4 +272,4 @@ export function BattleRewardItem({ icon, name, desc, tier, highlight = false }) 
       )}
     </div>
   );
-}
+});

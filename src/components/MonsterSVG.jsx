@@ -1,6 +1,6 @@
 // src/components/MonsterSVG.jsx — 36 隻怪物 SVG 插圖
 // 使用方式：<MonsterSVG id="ghost_1" size={80} />
-import { useState } from "react";
+import { useState, memo } from "react";
 
 const S = {
   // ══════════════════════════════════════════════
@@ -1027,7 +1027,7 @@ const S = {
   </>),
 };
 
-export default function MonsterSVG({ id, size = 80, className = "" }) {
+function MonsterSVG({ id, size = 80, className = "" }) {
   const fn = S[id];
   return (
     <svg
@@ -1045,6 +1045,7 @@ export default function MonsterSVG({ id, size = 80, className = "" }) {
     </svg>
   );
 }
+export default memo(MonsterSVG);
 
 /**
  * 戰鬥畫面專用：有 /monsters/{id}.webp 就顯示圖片，否則退回 SVG
