@@ -119,15 +119,21 @@ function HPBar({ current, max, color = "#22c55e" }) {
   );
 }
 
-function PartyMonsterImg({ id, icon, charge, size }) {
+function PartyMonsterImg({ id, icon, charge, size, variant }) {
   const [err, setErr] = useState(false);
   const anim = charge ? "mb-charge 0.7s ease infinite" : undefined;
   const h = size || 148;
+  const glowShadow = variant === "weak"
+    ? "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)"
+    : variant === "strong"
+    ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
+    : "none";
   return err ? (
     <span style={{ fontSize: size ? Math.round(size*0.6) : 40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
     <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
-      style={{ maxWidth: size ? size : "82%", maxHeight: h, objectFit:"contain", animation:anim }}/>
+      style={{ maxWidth: size ? size : "82%", maxHeight: h, objectFit:"contain", animation:anim,
+        boxShadow: glowShadow, borderRadius: 14, transition:"box-shadow 0.3s ease" }}/>
   );
 }
 
@@ -824,13 +830,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                         setupMonster?.id === m.id ? "border-indigo-500 bg-indigo-900/40" : "border-slate-600 bg-slate-700/30"
                       }`}>
                       <div className="flex items-center gap-2 mb-1">
-                        <PartyMonsterImg id={m.id} icon={m.icon} charge={false} size={52}/>
+                        <PartyMonsterImg id={m.id} icon={m.icon} charge={false} size={52} variant={m.variant}/>
                         <div className="flex-1 min-w-0">
                           <div className="text-white font-bold text-sm leading-tight truncate">{m.name}</div>
                           <div className="text-xs" style={{ color: tier?.color }}>{tier?.label} · {fam?.label}</div>
                         </div>
                         {setupMonster?.id === m.id && <span className="text-indigo-400 shrink-0 self-start">✅</span>}
                       </div>
+                      {m.variant && m.variant !== "normal" && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full inline-block self-start"
+                          style={{
+                            background: m.variant === "weak" ? "rgba(96,165,250,0.2)" : "rgba(239,68,68,0.2)",
+                            color: m.variant === "weak" ? "#60a5fa" : "#ef4444",
+                            border: `1px solid ${m.variant === "weak" ? "rgba(96,165,250,0.4)" : "rgba(239,68,68,0.4)"}`,
+                          }}>
+                          {m.variant === "weak" ? "🔵 弱化版" : "🔴 強化版"}
+                        </span>
+                      )}
                       <div className="text-xs text-slate-400">
                         ❤️ {Math.round(m.hp * ms * min)}~{Math.round(m.hp * ms * max)}
                       </div>

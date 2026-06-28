@@ -29,37 +29,37 @@ export const MONSTERS = [
   {
     id:"ghost_1", family:"ghost", tier:"common",
     name:"好兄弟", icon:"👻",
-    hp:80,  atk:12, def:5,
+    hp:250, atk:20, def:14,
     desc:"在路邊徘徊的無名鬼魂，看到食物就停下來。",
   },
   {
     id:"ghost_2", family:"ghost", tier:"rare",
     name:"魔神仔", icon:"🌀",
-    hp:160, atk:24, def:12,
+    hp:400, atk:35, def:24,
     desc:"會把人帶到奇怪的地方，找不到回家的路。",
   },
   {
     id:"ghost_3", family:"ghost", tier:"elite",
     name:"林投姐", icon:"🌿",
-    hp:280, atk:40, def:22,
+    hp:650, atk:55, def:40,
     desc:"在林投樹下等待復仇，長髮遮面令人膽寒。",
   },
   {
     id:"ghost_4", family:"ghost", tier:"fierce",
     name:"城隍爺", icon:"⚖️",
-    hp:880, atk:72, def:62,
+    hp:1000, atk:82, def:68,
     desc:"掌管生死簿，善惡到頭終有報。",
   },
   {
     id:"ghost_5", family:"ghost", tier:"boss",
     name:"十八王公", icon:"🐺",
-    hp:3250, atk:115, def:145,
+    hp:1600, atk:125, def:105,
     desc:"義犬成神，靈力無邊，香火鼎盛。",
   },
   {
     id:"ghost_6", family:"ghost", tier:"mythic",
     name:"地獄閻羅", icon:"👹",
-    hp:8000, atk:200, def:285,
+    hp:2500, atk:175, def:155,
     desc:"陰間最高審判者，生死輪迴皆在一念之間。",
   },
 
@@ -67,37 +67,37 @@ export const MONSTERS = [
   {
     id:"mountain_1", family:"mountain", tier:"common",
     name:"山豬精", icon:"🐗",
-    hp:90,  atk:14, def:8,
+    hp:270, atk:18, def:15,
     desc:"台灣山林的橫衝直撞王者，遇到就跑。",
   },
   {
     id:"mountain_2", family:"mountain", tier:"rare",
     name:"百步蛇王", icon:"🐍",
-    hp:150, atk:28, def:10,
+    hp:432, atk:32, def:26,
     desc:"劇毒無比，百步之內必取人命。",
   },
   {
     id:"mountain_3", family:"mountain", tier:"elite",
     name:"山魈", icon:"🦊",
-    hp:260, atk:44, def:24,
+    hp:702, atk:51, def:43,
     desc:"山中精靈，能幻化人形，誘人深入山林。",
   },
   {
     id:"mountain_4", family:"mountain", tier:"fierce",
     name:"霧社巨人", icon:"🗿",
-    hp:960, atk:84, def:80,
+    hp:1080, atk:75, def:73,
     desc:"霧氣中現形的巨人，腳踩山嶺如履平地。",
   },
   {
     id:"mountain_5", family:"mountain", tier:"boss",
     name:"食人巨熊", icon:"🐻",
-    hp:3500, atk:124, def:180,
+    hp:1728, atk:115, def:113,
     desc:"深山中的巨熊之王，曾吞食無數獵人，掌風能劈裂巨木。",
   },
   {
     id:"mountain_6", family:"mountain", tier:"mythic",
     name:"深山惡蛟", icon:"🐲",
-    hp:8800, atk:215, def:315,
+    hp:2700, atk:161, def:167,
     desc:"盤踞深山水潭的千年惡蛟，興風作浪，吞雲吐霧禍害山民。",
   },
 
@@ -105,37 +105,37 @@ export const MONSTERS = [
   {
     id:"insect_1", family:"insect", tier:"common",
     name:"大蟑螂", icon:"🪳",
-    hp:70,  atk:10, def:4,
+    hp:213, atk:23, def:12,
     desc:"台灣最強生存者，打不死的神話。",
   },
   {
     id:"insect_2", family:"insect", tier:"rare",
     name:"虎頭蜂", icon:"🐝",
-    hp:140, atk:26, def:8,
+    hp:340, atk:40, def:20,
     desc:"台灣山林頭號殺手，蜂群一出無人生還。",
   },
   {
     id:"insect_3", family:"insect", tier:"elite",
     name:"蜈蚣精", icon:"🐛",
-    hp:250, atk:42, def:20,
+    hp:553, atk:63, def:34,
     desc:"百腳精怪，毒液能腐蝕一切，令人聞風喪膽。",
   },
   {
     id:"insect_4", family:"insect", tier:"fierce",
     name:"蠍子王", icon:"🦂",
-    hp:840, atk:78, def:70,
+    hp:850, atk:94, def:58,
     desc:"毒刺一揮，五臟俱毀，連神明都要退三步。",
   },
   {
     id:"insect_5", family:"insect", tier:"boss",
     name:"蜘蛛女王", icon:"🕷️",
-    hp:3400, atk:118, def:163,
+    hp:1360, atk:144, def:89,
     desc:"織出命運之網，凡落網者皆逃不過宿命。",
   },
   {
     id:"insect_6", family:"insect", tier:"mythic",
     name:"蟲神", icon:"🦋",
-    hp:8400, atk:208, def:300,
+    hp:2125, atk:201, def:132,
     desc:"所有蟲類的神祇，萬蟲朝聖，天地變色。",
   },
 
@@ -143,37 +143,37 @@ export const MONSTERS = [
   {
     id:"workplace_1", family:"workplace", tier:"common",
     name:"奧客", icon:"😤",
-    hp:75,  atk:11, def:6,
+    hp:250, atk:22, def:14,
     desc:"無理取鬧專業戶，投訴書寫到手抽筋。",
   },
   {
     id:"workplace_2", family:"workplace", tier:"rare",
     name:"爛主管", icon:"🗣️",
-    hp:155, atk:25, def:14,
+    hp:400, atk:38, def:24,
     desc:"PUA語錄信手拈來，讓你懷疑人生的那種。",
   },
   {
     id:"workplace_3", family:"workplace", tier:"elite",
     name:"壞老闆", icon:"💸",
-    hp:270, atk:43, def:26,
+    hp:650, atk:59, def:40,
     desc:"畫餅充飢大師，承諾從不兌現，年終永遠0元。",
   },
   {
     id:"workplace_4", family:"workplace", tier:"fierce",
     name:"黑心包租婆", icon:"🏚️",
-    hp:900, atk:82, def:74,
+    hp:1000, atk:89, def:68,
     desc:"每個月準時漲租，浴室有謎之內衣三年未取。",
   },
   {
     id:"workplace_5", family:"workplace", tier:"boss",
     name:"財閥總裁", icon:"🤵",
-    hp:3600, atk:128, def:195,
+    hp:1600, atk:135, def:105,
     desc:"壟斷市場、操控輿論，笑容背後是無盡的算計。",
   },
   {
     id:"workplace_6", family:"workplace", tier:"mythic",
     name:"資本魔王", icon:"💰",
-    hp:9600, atk:225, def:330,
+    hp:2500, atk:189, def:155,
     desc:"剝削制度的化身，讓打工人永遠無法翻身的終極BOSS。",
   },
 
@@ -181,37 +181,37 @@ export const MONSTERS = [
   {
     id:"exam_1", family:"exam", tier:"common",
     name:"小考", icon:"📝",
-    hp:65,  atk:9,  def:3,
+    hp:238, atk:19, def:13,
     desc:"突然宣布的小考，讓你昨晚的遊戲白打了。",
   },
   {
     id:"exam_2", family:"exam", tier:"rare",
     name:"段考", icon:"📚",
-    hp:145, atk:22, def:11,
+    hp:380, atk:33, def:23,
     desc:"三個月的努力在這兩天決勝負，壓力山大。",
   },
   {
     id:"exam_3", family:"exam", tier:"elite",
     name:"期末考", icon:"😱",
-    hp:265, atk:41, def:23,
+    hp:618, atk:52, def:38,
     desc:"所有科目同時來臨，睡眠成為奢侈品。",
   },
   {
     id:"exam_4", family:"exam", tier:"fierce",
     name:"學測魔王", icon:"🎯",
-    hp:860, atk:78, def:67,
+    hp:950, atk:78, def:65,
     desc:"十二年寒窗的終極審判，一試定終身的殘酷。",
   },
   {
     id:"exam_5", family:"exam", tier:"boss",
     name:"國考煉獄", icon:"📜",
-    hp:3450, atk:120, def:175,
+    hp:1520, atk:119, def:100,
     desc:"考了五年還在考，人生黃金歲月全押在這裡。",
   },
   {
     id:"exam_6", family:"exam", tier:"mythic",
     name:"升學制度本體", icon:"🏫",
-    hp:9200, atk:220, def:324,
+    hp:2375, atk:166, def:147,
     desc:"無法打倒的終極存在，它不是怪物，它是系統。",
   },
 
@@ -219,37 +219,37 @@ export const MONSTERS = [
   {
     id:"temple_1", family:"temple", tier:"common",
     name:"哥布林", icon:"👺",
-    hp:85,  atk:13, def:7,
+    hp:263, atk:21, def:15,
     desc:"西方森林裡的小型魔物，貪財又狡猾，成群結隊偷襲旅人。",
   },
   {
     id:"temple_2", family:"temple", tier:"rare",
     name:"骷髏劍士", icon:"💀",
-    hp:165, atk:27, def:15,
+    hp:420, atk:37, def:25,
     desc:"從墓地爬出的不死戰士，揮舞生鏽長劍，越夜越強。",
   },
   {
     id:"temple_3", family:"temple", tier:"elite",
     name:"狼人", icon:"🐺",
-    hp:290, atk:46, def:28,
+    hp:683, atk:58, def:42,
     desc:"月圓之夜化身狼形，速度與利爪令獵人聞風喪膽。",
   },
   {
     id:"temple_4", family:"temple", tier:"fierce",
     name:"吸血鬼伯爵", icon:"🧛",
-    hp:920, atk:86, def:83,
+    hp:1050, atk:86, def:71,
     desc:"古堡中的不死貴族，優雅外表下藏著嗜血的獠牙。",
   },
   {
     id:"temple_5", family:"temple", tier:"boss",
     name:"巫妖王", icon:"🧙",
-    hp:3550, atk:125, def:188,
+    hp:1680, atk:131, def:110,
     desc:"捨棄肉身追求永生的大法師，麾下亡靈大軍聽令行事。",
   },
   {
     id:"temple_6", family:"temple", tier:"mythic",
     name:"末日惡龍", icon:"🐉",
-    hp:8640, atk:212, def:306,
+    hp:2625, atk:184, def:163,
     desc:"噴吐烈焰的西方巨龍，所到之處化為焦土，勇者的終極試煉。",
   },
 ];
@@ -418,8 +418,38 @@ export function getTierPoolByPower(power) {
   return ["common"];
 }
 
+// ── 變體倍率 ─────────────────────────────────────────────
+// weak: -40% HP/ATK/DEF；strong: +50% HP, +40% ATK/DEF
+const VARIANT_MULT = {
+  weak:   { hp: 0.6, atk: 0.6, def: 0.6 },
+  normal: { hp: 1.0, atk: 1.0, def: 1.0 },
+  strong: { hp: 1.5, atk: 1.4, def: 1.4 },
+};
+
+// ── 依戰力隨機選變體 ────────────────────────────────────
+// 戰力越高，出現強化的機率越高；弱化不受戰力影響
+function pickVariant(archerPower) {
+  const r = Math.random();
+  if (r < 0.3) return "weak";
+  if (archerPower >= 300) return r < 0.7 ? "strong" : "normal";
+  if (archerPower >= 150) return r < 0.6 ? "normal" : "strong";
+  return "normal";
+}
+
+// ── 對怪物套用變體（回傳新物件，不修改原資料）───────────
+export function applyVariant(monster, variant) {
+  const mult = VARIANT_MULT[variant] || VARIANT_MULT.normal;
+  return {
+    ...monster,
+    variant,
+    hp:  Math.round(monster.hp  * mult.hp),
+    atk: Math.round(monster.atk * mult.atk),
+    def: Math.round(monster.def * mult.def),
+  };
+}
+
 // ── 六族各抽1隻（依射手戰力匹配，不烙單）────────────────
-// 每族保證有1隻，共6隻選怪
+// 每族保證有1隻，每隻隨機賦予弱化/普通/強化變體，共6隻選怪
 export function drawMatchedMonsters(archerPower) {
   const tierPool = getTierPoolByPower(archerPower);
   const families = ["ghost","mountain","insect","workplace","exam","temple"];
@@ -430,15 +460,20 @@ export function drawMatchedMonsters(archerPower) {
     const candidates = MONSTERS.filter(m =>
       m.family === family && tierPool.includes(m.tier)
     );
+    let monster;
     if (candidates.length === 0) {
       // fallback：取該族最低階
       const fallback = MONSTERS.filter(m => m.family === family)
         .sort((a,b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
-      if (fallback.length > 0) result.push(fallback[0]);
+      if (fallback.length === 0) return;
+      monster = fallback[0];
     } else {
       // 隨機從候選中抽1隻
-      result.push(candidates[Math.floor(Math.random() * candidates.length)]);
+      monster = candidates[Math.floor(Math.random() * candidates.length)];
     }
+    // 賦予隨機變體
+    const variant = pickVariant(archerPower);
+    result.push(applyVariant(monster, variant));
   });
 
   return result;

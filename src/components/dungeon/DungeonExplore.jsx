@@ -10,7 +10,7 @@ import {
   castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
   enterNonCombatRoom, proposeMapBattle, clearMapPendingRoom,
 } from "../../lib/dungeonDb";
-import { MONSTERS } from "../../lib/monsterData";
+import { MONSTERS, applyVariant } from "../../lib/monsterData";
 
 // 地圖房間難度 tier (1-6) → 怪物 tier 字串
 function mapRoomTier(tier) {
@@ -339,7 +339,8 @@ export default function DungeonExplore({
     const monsterTier = mapRoomTier(tier);
     const pool        = MONSTERS.filter(m => m.tier === monsterTier);
     const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
-    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, { monster });
+    const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
+    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, { monster: applyVariant(monster, variant) });
     // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
     setEnteringBattle(false);
     setEventModal(null);

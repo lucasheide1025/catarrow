@@ -9,7 +9,7 @@ import {
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL } from "../../lib/monsterData";
+import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL, applyVariant } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
@@ -59,14 +59,22 @@ function calcCtrFn(monsterAtk, archerDef) {
   return Math.max(1, Math.round(base * m));
 }
 
-function DungeonMonsterImg({ id, icon, charge, hit }) {
+function DungeonMonsterImg({ id, icon, charge, hit, variant }) {
   const [err, setErr] = useState(false);
   const anim = charge ? "mb-charge 0.7s ease infinite" : hit ? "mb-monster-hit 0.5s ease" : undefined;
+  const glowShadow = variant === "weak"
+    ? "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)"
+    : variant === "strong"
+    ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
+    : "none";
   return err ? (
     <span style={{ fontSize:80, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
-    <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
-      style={{ maxWidth:"82%", maxHeight:200, objectFit:"contain", animation:anim }}/>
+    <div style={{ display:"inline-flex", position:"relative" }}>
+      <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
+        style={{ maxWidth:"82%", maxHeight:200, objectFit:"contain", animation:anim,
+          boxShadow: glowShadow, borderRadius: 14, transition:"box-shadow 0.3s ease" }}/>
+    </div>
   );
 }
 
@@ -537,7 +545,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     const maxTierIdx  = nextFloor <= 2 ? 0 : nextFloor <= 4 ? 1 : nextFloor <= 6 ? 2 : 3;
     const allMonsters = MONSTERS.filter(m => TIER_ORDER.indexOf(m.tier) <= maxTierIdx);
     const pool        = allMonsters.length ? allMonsters : MONSTERS.filter(m => m.tier === "common");
-    const nextMonster = pool[Math.floor(Math.random() * pool.length)];
+    const baseMon     = pool[Math.floor(Math.random() * pool.length)];
+    const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
+    const nextMonster = baseMon ? applyVariant(baseMon, variant) : baseMon;
     setLoading(true);
     await advanceDungeonFloor(roomId, room, nextMonster);
     setLoading(false);
@@ -1289,7 +1299,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 
       {/* ── 怪物展示區 ── */}
       <div style={{ flex:"1 1 0", position:"relative", minHeight:0, overflow:"hidden", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:6 }}>
-        <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={animMonsterCharge} hit={animHit}/>
+        <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={animMonsterCharge} hit={animHit} variant={monster.variant}/>
         {/* 浮動傷害 */}
         {floatDmg && (
           floatDmg.isMiss
@@ -1662,7 +1672,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8,
               animation:"db-intro-monster 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
               <div style={{ filter:"drop-shadow(0 0 16px #ef4444)" }}>
-                <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false}/>
+                <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false} variant={monster.variant}/>
               </div>
               <span style={{ fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
                 {monster.name || "怪物"}
@@ -1696,7 +1706,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           {/* 怪物死亡動畫 + 擊殺印章 */}
           <div style={{ position:"relative", display:"inline-block" }}>
             <div style={{ animation:"db-die-monster 1.5s ease-out both" }}>
-              <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false}/>
+              <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false} variant={monster.variant}/>
             </div>
             {/* 擊殺印章 */}
             <div style={{

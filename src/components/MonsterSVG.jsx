@@ -2,6 +2,24 @@
 // 使用方式：<MonsterSVG id="ghost_1" size={80} />
 import { useState, memo } from "react";
 
+// ── 變體光暈效果（弱化=藍光、強化=紅橙光）───────────────
+const VARIANT_GLOW = {
+  weak:   <circle cx="50" cy="50" r="46" fill="none" stroke="#60a5fa" strokeWidth="3" opacity="0.5">
+            <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="r" values="44;48;44" dur="2.5s" repeatCount="indefinite" />
+          </circle>,
+  strong: <>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#ef4444" strokeWidth="3" opacity="0.6">
+              <animate attributeName="opacity" values="0.4;0.85;0.4" dur="1.5s" repeatCount="indefinite" />
+              <animate attributeName="r" values="44;49;44" dur="2s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#f97316" strokeWidth="1.5" opacity="0.3">
+              <animate attributeName="opacity" values="0.2;0.5;0.2" dur="1.8s" repeatCount="indefinite" />
+              <animate attributeName="r" values="46;52;46" dur="2.2s" repeatCount="indefinite" />
+            </circle>
+          </>,
+};
+
 const S = {
   // ══════════════════════════════════════════════
   // 鬼怪族
@@ -1027,7 +1045,7 @@ const S = {
   </>),
 };
 
-function MonsterSVG({ id, size = 80, className = "" }) {
+function MonsterSVG({ id, size = 80, className = "", variant }) {
   const fn = S[id];
   return (
     <svg
@@ -1042,6 +1060,8 @@ function MonsterSVG({ id, size = 80, className = "" }) {
           <text x="50" y="58" textAnchor="middle" fontSize="42">👾</text>
         </>
       )}
+      {/* 變體光暈 overlay：弱化=藍光，強化=紅橙雙光環 */}
+      {variant && VARIANT_GLOW[variant]}
     </svg>
   );
 }
@@ -1051,23 +1071,38 @@ export default memo(MonsterSVG);
  * 戰鬥畫面專用：有 /monsters/{id}.webp 就顯示圖片，否則退回 SVG
  * 圖片以原始比例顯示，不強制裁切為正方形
  */
-export function MonsterBattleImg({ id }) {
+export function MonsterBattleImg({ id, variant }) {
   const [failed, setFailed] = useState(false);
   if (!failed) {
+    // 變體光暈用 CSS box-shadow 做在 <img> 外層容器上
+    const glowShadow = variant === "weak"
+      ? "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)"
+      : variant === "strong"
+      ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
+      : "none";
     return (
-      <img
-        src={`/monsters/${id}.webp`}
-        alt={id || "monster"}
-        onError={() => setFailed(true)}
-        style={{
-          display:"block",
-          maxHeight:200, maxWidth:"100%",
-          width:"auto", height:"auto",
-          objectFit:"contain",
-          imageRendering:"auto"
-        }}
-      />
+      <div style={{
+        display:"inline-flex",
+        position:"relative",
+        filter: glowShadow !== "none" ? undefined : undefined,
+      }}>
+        <img
+          src={`/monsters/${id}.webp`}
+          alt={id || "monster"}
+          onError={() => setFailed(true)}
+          style={{
+            display:"block",
+            maxHeight:200, maxWidth:"100%",
+            width:"auto", height:"auto",
+            objectFit:"contain",
+            imageRendering:"auto",
+            boxShadow: glowShadow,
+            borderRadius: 14,
+            transition:"box-shadow 0.3s ease",
+          }}
+        />
+      </div>
     );
   }
-  return <MonsterSVG id={id} size={160}/>;
+  return <MonsterSVG id={id} size={160} variant={variant}/>;
 }
