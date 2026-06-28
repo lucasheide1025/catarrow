@@ -116,6 +116,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [targetPending, setTargetPending] = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [shopDone,      setShopDone]      = useState(false);
+  const [localClaimed,  setLocalClaimed]  = useState(false); // 非房主領取後等待狀態
   const [scoreRowPage,    setScoreRowPage]    = useState(0); // 0=前頁 1=後頁（分數按鈕折疊）
   const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
@@ -545,7 +546,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
   async function handleClaimSelf() {
     if (myId?.startsWith("guest")) {
-      // 訪客直接跳導航
+      // 訪客直接跳導航（訪客視為房主行為，不顯示等待畫面）
       if (isMapMode) {
         if (isBossRoom) { onReturnToMap?.(); }
         else { await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {}); }
@@ -628,8 +629,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     if (isMapMode) {
       if (isBossRoom) {
         onReturnToMap?.();
-      } else {
+      } else if (isHost) {
+        // 只有房主呼叫，觸發 Firestore status→map_explore，全員跟著路由
         await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
+      } else {
+        // 非房主：顯示等待房主畫面，DungeonController 訂閱 status 變化後自動路由
+        setLocalClaimed(true);
       }
     } else {
       onExit?.();
@@ -1747,6 +1752,31 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           isBossRoom={isBossRoom} isMapMode={isMapMode}
           onContinue={() => { setShowRoundResult(false); setSubmitted(false); setArrows([]); }}
         />
+      )}
+
+      {/* ── 非房主：已領取獎勵，等待房主回地圖 ── */}
+      {localClaimed && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:10000,
+          background:"rgba(10,10,15,0.96)",
+          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20,
+          color:"white",
+        }}>
+          <style>{`@keyframes lc-pulse{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:1;transform:scale(1.2)}}`}</style>
+          <div style={{ fontSize:52 }}>✅</div>
+          <div style={{ fontSize:20, fontWeight:900 }}>獎勵已領取！</div>
+          <div style={{ fontSize:14, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>
+            等待房主進行下一步…
+          </div>
+          <div style={{ display:"flex", gap:8, marginTop:4 }}>
+            {[0,1,2].map(i => (
+              <div key={i} style={{
+                width:9, height:9, borderRadius:"50%", background:"#60a5fa",
+                animation:`lc-pulse 1.2s ease-in-out ${i*0.4}s infinite`,
+              }}/>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

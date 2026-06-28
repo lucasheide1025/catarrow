@@ -8,7 +8,7 @@ import {
 import {
   subscribeDungeonRoom, saveMapExploration, proposeMapMove,
   castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
-  enterNonCombatRoom,
+  enterNonCombatRoom, proposeMapBattle, clearMapPendingRoom,
 } from "../../lib/dungeonDb";
 import { MONSTERS } from "../../lib/monsterData";
 
@@ -271,6 +271,10 @@ export default function DungeonExplore({
     // 決定行為
     if (["monster","elite","boss"].includes(clickedRoom.type)) {
       setEventModal({ ...clickedRoom, _type:"battle_preview" });
+      // 同步到 Firestore，讓隊員也看到房間預告
+      if (roomId && isHost) {
+        proposeMapBattle(roomId, { ...clickedRoom, _type:"battle_preview" }).catch(() => {});
+      }
     } else if (clickedRoom.type === "stairs") {
       setEventModal(clickedRoom);
     } else if (["merchant","rest","trap","event"].includes(clickedRoom.type)) {
@@ -330,6 +334,7 @@ export default function DungeonExplore({
   const handleEnterBattle = useCallback(async () => {
     if (!roomId || !isHost || !eventModal) return;
     setEnteringBattle(true);
+    await clearMapPendingRoom(roomId).catch(() => {});
     const tier        = eventModal.meta?.tier || 1;
     const monsterTier = mapRoomTier(tier);
     const pool        = MONSTERS.filter(m => m.tier === monsterTier);
@@ -444,6 +449,61 @@ export default function DungeonExplore({
         />
       )}
 
+      {/* ── 非房主：房主選擇了怪物房，顯示唯讀預告 ── */}
+      {!isHost && room?.mapPendingRoom && (
+        <div style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.75)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+          zIndex:95, backdropFilter:"blur(4px)",
+        }}>
+          <div style={{
+            width:"100%", maxWidth:480, background:"linear-gradient(160deg,#1a0a0a,#2d1212)",
+            borderRadius:"24px 24px 0 0", padding:"24px 20px 36px",
+            border:"1.5px solid rgba(239,68,68,0.3)", borderBottom:"none",
+          }}>
+            {(() => {
+              const pending = room.mapPendingRoom;
+              const meta    = getRoomMeta(pending.type);
+              const badge   = getContractBadge(pending);
+              const desc    = getContractDesc({ type: pending.meta?.contract, param: pending.meta?.contractParam });
+              return (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+                    <div style={{
+                      width:52, height:52, borderRadius:14, fontSize:28,
+                      background: meta.color + "22", border:`1.5px solid ${meta.color}44`,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                    }}>
+                      {meta.icon}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight:900, fontSize:17, color: meta.color }}>{meta.label}</div>
+                      <div style={{ fontSize:12, color:"rgba(255,255,255,0.45)" }}>{pending.label}</div>
+                    </div>
+                  </div>
+                  {badge && (
+                    <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"8px 12px", marginBottom:14, border:`1px solid ${badge.color}33` }}>
+                      <span style={{ fontWeight:900, color: badge.color }}>⚔️ {badge.label}</span>
+                      <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginLeft:8 }}>{desc}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:18 }}>
+                    T{pending.meta?.tier || 1} 等級怪物正在等待。
+                  </div>
+                  <div style={{
+                    padding:"13px 0", textAlign:"center", borderRadius:14,
+                    background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.2)",
+                    color:"rgba(255,100,100,0.7)", fontSize:14, fontWeight:700,
+                  }}>
+                    ⏳ 等待隊長決定是否出戰…
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* ── 戰鬥房間預告（多步驟）── */}
       {eventModal?._type === "battle_preview" && (
         <div style={{
@@ -495,7 +555,10 @@ export default function DungeonExplore({
                         等待隊長下令…
                       </div>
                     )}
-                    <button onClick={() => { setEventModal(null); }} style={{
+                    <button onClick={() => {
+                      setEventModal(null);
+                      if (roomId && isHost) clearMapPendingRoom(roomId).catch(() => {});
+                    }} style={{
                       flex:1, padding:"13px 0", borderRadius:14, fontWeight:800,
                       fontSize:13, border:"1px solid rgba(255,255,255,0.1)",
                       background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.5)", cursor:"pointer",

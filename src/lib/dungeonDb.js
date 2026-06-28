@@ -3,7 +3,7 @@
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, getDocs, query, where,
-  orderBy, limit, setDoc, increment,
+  orderBy, limit, setDoc, increment, deleteField,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed } from "./db";
@@ -848,6 +848,22 @@ export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedI
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// 提議戰鬥（房主）：寫入 mapPendingRoom，讓非房主也能看到即將進入的房間資訊
+export async function proposeMapBattle(roomId, roomData) {
+  try {
+    await updateDoc(doc(db, D, roomId), { mapPendingRoom: roomData || null });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 清除戰鬥提議（確認進入戰鬥或撤退時呼叫）
+export async function clearMapPendingRoom(roomId) {
+  try {
+    await updateDoc(doc(db, D, roomId), { mapPendingRoom: deleteField() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 // 累積地圖戰利品
