@@ -9,7 +9,7 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -21,7 +21,8 @@ import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleResultHeader } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
+import BattleBottomBar from "../member/BattleBottomBar";
 
 const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
@@ -188,6 +189,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [scoringReady,    setScoringReady]    = useState(false);
   const [myRole,          setMyRole]          = useState("front"); // "front" | "rear"
   const [myRearChoice,    setMyRearChoice]    = useState(null);    // "heal" | "dmg" | null
+  const [showBattleLog,   setShowBattleLog]   = useState(false);
+  const [bottomTab, setBottomTab] = useState("score");
+  const [potionSubTab, setPotionSubTab] = useState("carry");
+  const [scoringModeChosen, setScoringModeChosen] = useState(false);
+  const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
@@ -1408,7 +1414,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               <span style={{ color:"white", fontWeight:900, fontSize:17, textShadow:"0 2px 8px #000" }}>{room.monster?.name}</span>
               {tierInfo && <span style={{ fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:4, color:tierInfo.color, background:tierInfo.bg }}>{tierInfo.label}</span>}
             </div>
-            <button onClick={handleLeave} style={{ padding:"3px 9px", borderRadius:8, fontSize:11, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
+            <div style={{ display:"flex", gap:4 }}>
+              <button onClick={() => setShowBattleLog(v => !v)}
+                style={{ width:28, height:26, borderRadius:8, fontSize:12, fontWeight:700, border:"none", cursor:"pointer",
+                  background: showBattleLog ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.07)",
+                  color: showBattleLog ? "#fbbf24" : "#94a3b8" }}>📜</button>
+              <button onClick={handleLeave} style={{ padding:"3px 9px", borderRadius:8, fontSize:11, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
+            </div>
           </div>
 
           <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
@@ -1436,6 +1448,37 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 </span>
               );
             })()}
+
+            {/* ── 戰鬥紀錄折疊面板 ── */}
+            <BattleLogPanel open={showBattleLog} onClose={() => setShowBattleLog(false)}>
+              {(room?.log || []).length === 0 ? (
+                <div style={{ color:"#475569", padding:"20px 0", textAlign:"center" }}>尚無戰鬥紀錄</div>
+              ) : (
+                (room.log || []).map((entry, i) => (
+                  <div key={i} style={{ marginBottom:8, borderBottom:"1px solid rgba(255,255,255,0.04)", paddingBottom:6 }}>
+                    <div style={{ color:"#fbbf24", fontWeight:700, fontSize:11, marginBottom:2 }}>
+                      第 {entry.round} 回合 · 傷害 {entry.totalDmg} · HP {entry.monsterHPBefore}→{entry.monsterHPAfter}
+                    </div>
+                    {(entry.playerLog || []).map((p, j) => (
+                      <div key={j} style={{ paddingLeft:6, color:"#cbd5e1", marginBottom:1, lineHeight:1.5 }}>
+                        <span style={{ color:"#94a3b8" }}>🏹</span> {p.name}: <span style={{ color:"#f87171", fontWeight:700 }}>+{p.dmg}</span>
+                        {p.crits > 0 && <span style={{ color:"#fbbf24" }}> 💥{p.crits}</span>}
+                        {p.ctr > 0 && <span style={{ color:"#fb923c" }}> ⚡-{p.ctr}</span>}
+                        <span style={{ color:"#475569", fontSize:9, marginLeft:4 }}>{(p.arrowBreakdown || []).map(a => a.label).join(" ")}</span>
+                      </div>
+                    ))}
+                    {entry.event && (
+                      <div style={{ paddingLeft:6, color:"#67e8f9", fontSize:10, marginTop:1 }}>
+                        ✨ {entry.event.icon} {entry.event.title}: {entry.event.desc}
+                      </div>
+                    )}
+                    {entry.counterRound && (
+                      <div style={{ paddingLeft:6, color:"#fb923c", fontSize:10, marginTop:1 }}>💥 反擊回合</div>
+                    )}
+                  </div>
+                ))
+              )}
+            </BattleLogPanel>
           </div>
 
           {/* 小回合進度點 */}
@@ -1594,7 +1637,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       {/* 輸入區 */}
       <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.68)", padding:"3px 6px 10px" }}>
         {me.alive && !myReady && !liveEntry && !scoringReady && (
-          <button onClick={() => setScoringReady(true)} style={{ width:"100%", padding:"11px 0", borderRadius:12, fontWeight:900, fontSize:14, cursor:"pointer", background:"linear-gradient(90deg,#7c3aed,#2563eb)", color:"white", border:"none", marginTop:2 }}>
+          <button onClick={() => { setScoringReady(true); setScoringModeChosen(true); }} style={{ width:"100%", padding:"11px 0", borderRadius:12, fontWeight:900, fontSize:14, cursor:"pointer", background:"linear-gradient(90deg,#7c3aed,#2563eb)", color:"white", border:"none", marginTop:2 }}>
             🎯 開始計分
           </button>
         )}
@@ -1654,11 +1697,35 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             {targetPending && (
               <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>
             )}
-            <BattleScoreButtons
-                labels={SCORE_LABELS}
-                onScore={addArrow}
-                variant="image"
-              />
+            <BattleBottomBar
+              bottomTab={bottomTab} setBottomTab={setBottomTab}
+              potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
+              potionUsedThisRound={potionUsedThisRound}
+              scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
+              targetMode={targetMode} setTargetMode={setTargetMode}
+              arrows={arrows} onArrow={addArrow}
+              potionInv={potionInv}
+              onCarryPotion={async lv => {
+                setPotionUsedThisRound(true);
+                const pot = getPotion(lv.id);
+                if (pot) {
+                  const buff = calcPotionBuffs([lv.id]);
+                  // 藥水 buff 由 getArcherStats 在下一回合寫入時套用
+                  await recordPotionUsed(myId, lv.id).catch(() => {});
+                  sfxPotionDrink();
+                  setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
+                  setBottomTab("score");
+                }
+              }}
+              onThrowPotion={async p => {
+                if (arrows.length >= 6) return;
+                setPotionUsedThisRound(true);
+                await recordPotionUsed(myId, p.id).catch(() => {});
+                sfxPotionDrink();
+                setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
+                setBottomTab("score");
+              }}
+            />
             <TargetFaceOverlay
               open={targetMode && !targetPending && !myReady}
               fmtId={targetFmt}

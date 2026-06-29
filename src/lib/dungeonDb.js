@@ -926,6 +926,63 @@ export async function checkDungeonFirstClear(dungeonId) {
   }
 }
 
+// ── 檢查房間是否仍有效（MemberApp/AdminApp 載入時驗證，避免跳到已結束的房間）───
+// 完成的地城（status=completed with result）視為無效
+// 不存在的房間也視為無效
+// 這樣 sessionStorage 的舊 roomId 就不會讓玩家卡在無限載入
+export async function checkDungeonRoomExists(roomId) {
+  try {
+    const snap = await getDocs(query(collection(db, D), where("__name__", "==", roomId)));
+    if (snap.empty) return { ok: false, exists: false, reason: "room_not_found" };
+    const data = snap.docs[0].data();
+    if (data.status === "completed" && data.result) return { ok: false, exists: false, reason: "completed" };
+    const validStatuses = ["waiting", "map_explore", "active", "shop", "rest", "trap", "event", "chest", "path_select", "floor_transition"];
+    if (!validStatuses.includes(data.status)) return { ok: false, exists: false, reason: "stale_status" };
+    return { ok: true, exists: true };
+  } catch (e) { return { ok: false, exists: false, reason: e.message }; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  會員地下城狀態管理（斷線重連 / 防重複加入）▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 設定該成員當前正在進行的地下城（寫入 members/{memberId}.activeDungeon）
+export async function setActiveDungeon(memberId, roomId) {
+  try {
+    await updateDoc(doc(db, "members", memberId), {
+      activeDungeon: { roomId, joinedAt: serverTimestamp() },
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 清除該成員的 activeDungeon（離開/完成地下城時呼叫）
+export async function clearActiveDungeon(memberId) {
+  try {
+    await updateDoc(doc(db, "members", memberId), {
+      activeDungeon: deleteField(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 檢查該 member 是否已經在進行中的地下城（用於防重複加入）
+export async function checkMemberActiveDungeon(memberId) {
+  try {
+    const snap = await getDocs(query(collection(db, "members"), where("__name__", "==", memberId)));
+    if (snap.empty) return { ok: true, inDungeon: false };
+    const active = snap.docs[0].data()?.activeDungeon;
+    if (!active?.roomId) return { ok: true, inDungeon: false };
+    const roomSnap = await getDocs(query(collection(db, D), where("__name__", "==", active.roomId)));
+    if (roomSnap.empty) return { ok: true, inDungeon: false };
+    const data = roomSnap.docs[0].data();
+    if (data.status === "completed" && data.result) return { ok: true, inDungeon: false };
+    const validStatuses = ["waiting", "map_explore", "active", "shop", "rest", "trap", "event", "chest", "path_select", "floor_transition"];
+    if (!validStatuses.includes(data.status)) return { ok: true, inDungeon: false };
+    return { ok: true, inDungeon: true, roomId: active.roomId };
+  } catch (e) { return { ok: false, inDungeon: false, reason: e.message }; }
+}
+
 // 訂閱最新一筆廣播（MemberApp/AdminApp 用）
 export function subscribeLatestBroadcast(callback) {
   const q = query(collection(db, "dungeonBroadcasts"), orderBy("createdAt", "desc"), limit(1));

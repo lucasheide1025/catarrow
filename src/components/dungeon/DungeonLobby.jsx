@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城等待室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, initDungeonMapRun, setDungeonMemberRole } from "../../lib/dungeonDb";
+import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, initDungeonMapRun, setDungeonMemberRole, leaveDungeonRoom, setActiveDungeon, clearActiveDungeon, checkMemberActiveDungeon } from "../../lib/dungeonDb";
 import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
 import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
@@ -115,6 +115,13 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
 
   async function handleCreate() {
     setLoading(true); setErr("");
+    // 檢查是否已在另一個進行中的地下城
+    const activeCheck = await checkMemberActiveDungeon(myId);
+    if (activeCheck.inDungeon && activeCheck.roomId && activeCheck.roomId !== roomId) {
+      // 強制離開舊的地下城房間
+      await leaveDungeonRoom(activeCheck.roomId, myId, false).catch(() => {});
+      await clearActiveDungeon(myId).catch(() => {});
+    }
     const res = await createDungeonRoom(myId, myName, myATK);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
@@ -123,12 +130,20 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setRoomId(res.roomId);
     setIsHost(true);
     sessionStorage.setItem("dungeon_waiting_room", JSON.stringify({ roomId: res.roomId, isHost: true }));
+    // 寫入服務端 activeDungeon（供斷線重連 + 防重複加入）
+    setActiveDungeon(myId, res.roomId).catch(() => {});
     setLoading(false);
   }
 
   async function handleJoinRoom(openRoom) {
     if (loading) return;
     setLoading(true); setErr("");
+    // 檢查是否已在另一個進行中的地下城
+    const activeCheck = await checkMemberActiveDungeon(myId);
+    if (activeCheck.inDungeon && activeCheck.roomId && activeCheck.roomId !== openRoom.id) {
+      await leaveDungeonRoom(activeCheck.roomId, myId, false).catch(() => {});
+      await clearActiveDungeon(myId).catch(() => {});
+    }
     const res = await joinDungeonRoom(openRoom.code, myId, myName);
     if (!res.ok) { setErr(res.reason); setLoading(false); return; }
     await updateDungeonMemberStats(res.roomId, myId, myHP, myMaxHP, myATK, myDEF, myCatName, localStorage.getItem("mb_archer_style") || "baobao", myCatATK || 0);
@@ -143,6 +158,8 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     setRoomId(res.roomId);
     setIsHost(false);
     sessionStorage.setItem("dungeon_waiting_room", JSON.stringify({ roomId: res.roomId, isHost: false }));
+    // 寫入服務端 activeDungeon（供斷線重連 + 防重複加入）
+    setActiveDungeon(myId, res.roomId).catch(() => {});
     setLoading(false);
   }
 
@@ -404,7 +421,14 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
         <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10">
           {err && <div className="text-center text-rose-400 text-sm font-bold pb-2">{err}</div>}
           <div className="flex gap-2">
-            <button onClick={() => { if (unsub) unsub(); sessionStorage.removeItem("dungeon_waiting_room"); setRoomId(null); setRoom(null); setErr(""); }}
+            <button onClick={async () => {
+              if (unsub) unsub();
+              sessionStorage.removeItem("dungeon_waiting_room");
+              // 離開時從房間移除自己 + 清除服務端 activeDungeon
+              await leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
+              await clearActiveDungeon(myId).catch(() => {});
+              setRoomId(null); setRoom(null); setErr("");
+            }}
               className="px-4 py-3 rounded-2xl text-slate-400 text-sm border border-white/10 bg-white/5 shrink-0">
               離開
             </button>

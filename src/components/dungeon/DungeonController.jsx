@@ -2,7 +2,7 @@
 // 根據 Firestore room.status 決定顯示地圖探索還是戰鬥室
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeDungeonRoom } from "../../lib/dungeonDb";
+import { subscribeDungeonRoom, checkDungeonRoomExists } from "../../lib/dungeonDb";
 import { DUNGEON_MAPS } from "../../lib/dungeonData";
 import DungeonExplore from "./DungeonExplore";
 import DungeonBattleRoom from "./DungeonBattleRoom";
@@ -10,20 +10,66 @@ import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
 import DungeonRest from "./DungeonRest";
 import DungeonTrap from "./DungeonTrap";
+import DungeonChest from "./DungeonChest";
 
 export default function DungeonController({ roomId, onExit }) {
   const { profile } = useAuth();
   const [room, setRoom] = useState(null);
+  const [roomError, setRoomError] = useState(null); // "not_found" | "completed" | "stale"
 
   useEffect(() => {
     if (!roomId) return;
-    return subscribeDungeonRoom(roomId, setRoom);
+    setRoom(null);
+    setRoomError(null);
+    // 在短暫超時後檢查房間是否存在（防止中間狀態的快速閃爍）
+    const timeoutId = setTimeout(async () => {
+      const res = await checkDungeonRoomExists(roomId);
+      if (!res.exists) setRoomError(res.reason || "not_found");
+    }, 3000); // 3 秒後仍無資料 → 房間可能已不存在
+    const unsub = subscribeDungeonRoom(roomId, r => {
+      if (r) {
+        setRoom(r);
+        setRoomError(null); // 成功載入 → 清除錯誤
+        clearTimeout(timeoutId);
+      } else {
+        // Firestore 文件不存在或已被刪除
+        setRoomError("not_found");
+        clearTimeout(timeoutId);
+      }
+    });
+    return () => {
+      unsub();
+      clearTimeout(timeoutId);
+    };
   }, [roomId]);
+
+  if (roomError === "not_found") {
+    return (
+      <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.5)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontSize:14 }}>
+        <div style={{ fontSize:48 }}>🏚️</div>
+        <div style={{ fontWeight:700, color:"rgba(255,255,255,0.7)" }}>地下城房間已關閉或不存在</div>
+        <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>可能是房主已結束地下城，或房間已過期</div>
+        <button onClick={onExit} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
+      </div>
+    );
+  }
+
+  if (roomError === "completed") {
+    return (
+      <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.5)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontSize:14 }}>
+        <div style={{ fontSize:48 }}>🏁</div>
+        <div style={{ fontWeight:700, color:"rgba(255,255,255,0.7)" }}>地下城已結束</div>
+        <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>此地下城的冒險已完成，獎勵已結算</div>
+        <button onClick={onExit} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
+      </div>
+    );
+  }
 
   if (!room) {
     return (
-      <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
-        載入中…
+      <div style={{ minHeight:"100dvh", background:"#0a0a0f", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8 }}>
+        <div style={{ fontSize:32, color:"rgba(255,255,255,0.15)" }}>🏰</div>
+        <div style={{ color:"rgba(255,255,255,0.3)", fontSize:14 }}>載入地下城中…</div>
       </div>
     );
   }
@@ -79,6 +125,15 @@ export default function DungeonController({ roomId, onExit }) {
     if (room.status === "event") {
       return (
         <DungeonEventWrapper
+          roomId={roomId} room={room}
+          myId={profile?.id}
+          isHost={isHost}
+        />
+      );
+    }
+    if (room.status === "chest") {
+      return (
+        <DungeonChestWrapper
           roomId={roomId} room={room}
           myId={profile?.id}
           isHost={isHost}
@@ -169,6 +224,16 @@ function DungeonEventWrapper({ roomId, room, myId, isHost }) {
     <DungeonEvent
       roomId={roomId} room={room}
       isHost={isHost} memberId={myId}
+    />
+  );
+}
+
+// ── Wrapper：寶箱 ──────────────────────────────────────────
+function DungeonChestWrapper({ roomId, room, myId, isHost }) {
+  return (
+    <DungeonChest
+      roomId={roomId} room={room}
+      memberId={myId} isHost={isHost}
     />
   );
 }

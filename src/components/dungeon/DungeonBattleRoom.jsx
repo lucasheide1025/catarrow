@@ -8,10 +8,11 @@ import {
   forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
+  clearActiveDungeon,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL, applyVariant } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -22,7 +23,7 @@ import { rollFamilyDrop, rollBossDrops, getFirstClearTrophy, COLLECTIBLE_MAP } f
 import { addCollectibles } from "../../lib/dungeonDb";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
-  sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, vibrate,
+  sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, sfxPotionDrink, vibrate,
 } from "../../lib/sound";
 import DungeonPathSelect from "./DungeonPathSelect";
 import DungeonShop from "./DungeonShop";
@@ -33,12 +34,12 @@ import TargetFaceOverlay, {
   getBattleInputMode, setBattleInputMode,
 } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags } from "../shared/SharedBattleComponents";
+import BattleBottomBar from "../member/BattleBottomBar";
+import { getPotion } from "../../lib/itemData";
+import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
 
 const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
 const SCORE_LABELS      = ["X","10","9","8","7","6","5","4","3","2","1","M"];
-const SCORE_ROW_A       = ["X","10","9","8","7","6","M"]; // 前頁（高分）
-const SCORE_ROW_B       = ["6","5","4","3","2","1","M"];  // 後頁（低分）
 const SCORE_GATE_LABELS = ["9","8","7","6","5","4","3","2","1","M"]; // 得分關專用
 const SCORE_COLORS = {
   X:"bg-yellow-400 text-yellow-900", 10:"bg-yellow-300 text-yellow-900",
@@ -125,7 +126,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   const [loading,       setLoading]       = useState(false);
   const [shopDone,      setShopDone]      = useState(false);
   const [localClaimed,  setLocalClaimed]  = useState(false); // 非房主領取後等待狀態
-  const [scoreRowPage,    setScoreRowPage]    = useState(0); // 0=前頁 1=後頁（分數按鈕折疊）
   const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
   // 小回合動畫
@@ -140,6 +140,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
   // 擊殺動畫
   const [showKillAnim,      setShowKillAnim]      = useState(false);
   const [killInfo,          setKillInfo]          = useState(null);   // { memberName, label, monsterName }
+  const [showBattleLog,     setShowBattleLog]     = useState(false);
+  const [bottomTab,           setBottomTab]           = useState("score");
+  const [potionSubTab,        setPotionSubTab]        = useState("carry");
+  const [scoringModeChosen,   setScoringModeChosen]   = useState(false);
+  const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
+  const [potionInv,          setPotionInv]           = useState(() => ({}));
   // 戰鬥動畫 states（同組隊風格）
   const [animHit,           setAnimHit]           = useState(false);
   const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
@@ -270,6 +276,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }, 20000);
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId, myId]); // eslint-disable-line
+
+  // ── 同步 potionInv（room 更新時從 me.items 刷新）──────────────────
+  useEffect(() => {
+    const items = room?.members?.[myId]?.items;
+    if (items) setPotionInv(items);
+  }, [room?.members?.[myId]?.items]); // eslint-disable-line
 
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
@@ -472,6 +484,35 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       setLoading(false);
       processingRef.current = false; // 務必重置，永不卡死
     }
+  }
+
+  // ── 藥水處理器 ────────────────────────────────────────────────
+  function onCarryPotion(lv) {
+    if (potionUsedThisRound) return;
+    const count = (potionInv[lv.id] || 0);
+    if (count <= 0) return;
+    sfxPotionDrink();
+    setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
+    setPotionUsedThisRound(true);
+    const pot = getPotion(lv.id);
+    if (pot && myId && !myId.startsWith("guest")) {
+      usePotions(myId, [lv.id]).catch(() => {});
+    }
+    setBottomTab("score");
+  }
+
+  function onThrowPotion(p) {
+    if (potionUsedThisRound || arrows.length >= 6) return;
+    const count = (potionInv[p.id] || 0);
+    if (count <= 0) return;
+    sfxCast();
+    setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
+    setPotionUsedThisRound(true);
+    if (myId && !myId.startsWith("guest")) {
+      usePotions(myId, [p.id]).catch(() => {});
+    }
+    addArrow(p.id);
+    setBottomTab("score");
   }
 
   async function handleSubmit() {
@@ -795,7 +836,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               )}
             </div>
 
-            <button onClick={() => {
+            <button onClick={async () => {
               // 儲存失敗紀錄
               if (myId && !myId.startsWith("guest")) {
                 const practiceRounds = (room.log || []).map(entry => {
@@ -817,13 +858,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                 }
               }
               if (isMapMode) {
-                // host 讓 Firestore 狀態回 map_explore（不清除房間，允許重試或撤退）
-                if (isHost) {
-                  returnToMapAfterBattle(
-                    roomId, room.mapCurrentRoomId || "", room.mapClearedIds || [], false
-                  ).then(() => onReturnToMap?.());
-                } else {
+                // 非 Boss 房：回地圖重試或撤退（Firestore status→map_explore，Controller 自動路由）
+                // Boss 房：地下城結束，離開
+                if (isBossRoom) {
                   onReturnToMap?.();
+                } else if (isHost) {
+                  await returnToMapAfterBattle(
+                    roomId, room.mapCurrentRoomId || "", room.mapClearedIds || [], false
+                  ).catch(() => {});
+                } else {
+                  setLocalClaimed(true);
                 }
               } else {
                 onExit?.();
@@ -1226,6 +1270,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 
   function handleLeave() {
     leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
+    // 清除服務端 activeDungeon（如果 onExit 已包含清理，則 clearActiveDungeon 只是確保）
+    clearActiveDungeon(myId).catch(() => {});
     onExit?.();
   }
 
@@ -1282,10 +1328,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
               );
             })()}
           </div>
-          <button onClick={handleLeave}
-            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
-            離開
-          </button>
+          <div style={{ display:"flex", gap:4 }}>
+            <button onClick={() => setShowBattleLog(v => !v)}
+              style={{ background: showBattleLog?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color: showBattleLog?"#fbbf24":"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+              📜
+            </button>
+            <button onClick={handleLeave}
+              style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+              離開
+            </button>
+          </div>
         </div>
         <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
         <BattleStatusTags tags={[
@@ -1317,6 +1369,37 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             {curMini?.isCounter && <span style={{ fontSize:10, color:"#fb923c", fontWeight:900, marginLeft:4 }}>⚡反擊</span>}
           </div>
         )}
+
+        {/* ── 戰鬥紀錄折疊面板 ── */}
+        <BattleLogPanel open={showBattleLog} onClose={() => setShowBattleLog(false)}>
+          {(room?.log || []).length === 0 ? (
+            <div style={{ color:"#475569", padding:"20px 0", textAlign:"center" }}>尚無戰鬥紀錄</div>
+          ) : (
+            (room.log || []).map((entry, i) => (
+              <div key={i} style={{ marginBottom:8, borderBottom:"1px solid rgba(255,255,255,0.04)", paddingBottom:6 }}>
+                <div style={{ color:"#fbbf24", fontWeight:700, fontSize:11, marginBottom:2 }}>
+                  第 {entry.round} 回合 · 傷害 {entry.totalDmg} · HP {entry.monsterHPBefore}→{entry.monsterHPAfter}
+                </div>
+                {(entry.playerLog || []).map((p, j) => (
+                  <div key={j} style={{ paddingLeft:6, color:"#cbd5e1", marginBottom:1, lineHeight:1.5 }}>
+                    <span style={{ color:"#94a3b8" }}>🏹</span> {p.name}: <span style={{ color:"#f87171", fontWeight:700 }}>+{p.dmg}</span>
+                    {p.crits > 0 && <span style={{ color:"#fbbf24" }}> 💥{p.crits}</span>}
+                    {p.ctr > 0 && <span style={{ color:"#fb923c" }}> ⚡-{p.ctr}</span>}
+                    <span style={{ color:"#475569", fontSize:9, marginLeft:4 }}>{(p.arrowBreakdown || []).map(a => a.label).join(" ")}</span>
+                  </div>
+                ))}
+                {entry.event && (
+                  <div style={{ paddingLeft:6, color:"#67e8f9", fontSize:10, marginTop:1 }}>
+                    ✨ {entry.event.icon} {entry.event.title}: {entry.event.desc}
+                  </div>
+                )}
+                {entry.counterRound && (
+                  <div style={{ paddingLeft:6, color:"#fb923c", fontSize:10, marginTop:1 }}>💥 反擊回合</div>
+                )}
+              </div>
+            ))
+          )}
+        </BattleLogPanel>
       </div>
 
       {/* ── 角色列（視角分排：平時只顯示自己那排，動畫時補顯對方排小卡）── */}
@@ -1548,9 +1631,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                 slotSize={36}
               />
             {/* 分數按鈕格（依合約類型調整）*/}
-            {targetPending ? (
-              <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>
-            ) : myContract.type === "hit_count" ? (
+            {myContract.type === "hit_count" ? (
               /* 命中關：命中/M 兩顆按鈕 */
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:4 }}>
                 <button onClick={() => addArrow("命中")} disabled={arrows.length>=6}
@@ -1564,50 +1645,20 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
                   M
                 </button>
               </div>
-            ) : !targetMode ? (
-              myContract.type === "score_gate" ? (
-                /* 得分關：去除 X/10，顯示 9~M，兩排各5顆 */
-                <div style={{ marginBottom:4 }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:2, marginBottom:2 }}>
-                    {SCORE_GATE_LABELS.slice(0,5).map(label => (
-                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
-                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
-                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:2 }}>
-                    {SCORE_GATE_LABELS.slice(5).map(label => (
-                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
-                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
-                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                /* 其他合約（含 all_hit M懲罰關）：7顆折疊顯示 + 切換按鈕 */
-                <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:4 }}>
-                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
-                    {(scoreRowPage === 0 ? SCORE_ROW_A : SCORE_ROW_B).map(label => (
-                      <button key={label} onClick={() => addArrow(label)} disabled={arrows.length>=6}
-                        className={`rounded-lg font-black active:scale-95 ${SCORE_COLORS[label]||"bg-slate-600 text-white"}`}
-                        style={{ fontSize:12, padding:"8px 2px", opacity:arrows.length>=6?0.3:1 }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => setScoreRowPage(p => 1 - p)}
-                    style={{ flexShrink:0, width:28, height:36, borderRadius:6, background:"rgba(255,255,255,0.08)",
-                      color:"#94a3b8", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", fontSize:12, fontWeight:900 }}>
-                    {scoreRowPage === 0 ? "▼" : "▲"}
-                  </button>
-                </div>
-              )
+            ) : targetPending ? (
+              <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>
             ) : (
-              <div style={{ textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:11, padding:"8px 0" }}>🎯 靶面輸入中…</div>
+              <BattleBottomBar
+                bottomTab={bottomTab} setBottomTab={setBottomTab}
+                potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
+                potionUsedThisRound={potionUsedThisRound}
+                scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
+                targetMode={targetMode} setTargetMode={setTargetMode}
+                arrows={arrows} onArrow={addArrow}
+                potionInv={me.items || {}}
+                onCarryPotion={onCarryPotion}
+                onThrowPotion={onThrowPotion}
+              />
             )}
             {/* 送出 */}
             {!targetPending && (

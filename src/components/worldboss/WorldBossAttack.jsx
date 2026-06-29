@@ -15,7 +15,7 @@ import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 
 // ── 分數按鈕 ────────────────────────────────────────────────────
@@ -238,12 +238,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // 必須在 baseHP 之後宣告，否則 TDZ ReferenceError
   const _saveKey = `wb_battle_${event.id}`;
   const _saved = (() => {
-    try { return JSON.parse(sessionStorage.getItem(_saveKey) || "null"); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem(_saveKey) || "null"); } catch { return null; }
   })();
   const _hasSave = _saved && _saved.eventId === event.id && (_saved.roundIdx || 0) > 0;
 
   // ── 狀態 ───────────────────────────────────────────────────
   const [showFullLog, setShowFullLog] = useState(true);
+  const [showBattleLog, setShowBattleLog] = useState(false);
 
   // 隨機從參戰勇者中取最多 8 位同伴
   const [companions] = useState(() => {
@@ -486,6 +487,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     setProcessingIdx(-1);
 
+    // ── 箭矢結算完成時存檔（防中斷遺失）───────────────
+    try {
+      localStorage.setItem(_saveKey, JSON.stringify({
+        eventId: event.id, roundIdx: allRounds.length + (nextRounds.length > allRounds.length ? 1 : 0),
+        allRounds: nextRounds, myHP,
+        localBossHP, companionHPs,
+      }));
+    } catch { /**/ }
+
     // ── 貓貓每回合攻擊（與打怪模式相同，HP > 0 才出擊）────────
     if (hasCat && catATK && localBossHP > 0) {
       let catDmg = 0;
@@ -564,7 +574,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           } else {
             // 中途記憶：反擊結算後，下一回合開始前儲存
             try {
-              sessionStorage.setItem(_saveKey, JSON.stringify({
+              localStorage.setItem(_saveKey, JSON.stringify({
                 eventId: event.id, roundIdx: nextRounds.length,
                 allRounds: nextRounds, myHP: nextMyHP,
                 localBossHP, companionHPs: nextCompHPs,
@@ -585,7 +595,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     if (processingRef.current) return;
     processingRef.current = true;
     // 清除中途記憶（戰鬥已結束）
-    try { sessionStorage.removeItem(_saveKey); } catch { /**/ }
+    try { localStorage.removeItem(_saveKey); } catch { /**/ }
     setSubmitting(true);
     setPhase("result");
 
@@ -910,6 +920,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                   {isLastRound && <span style={{ fontSize:9, color:"#fca5a5", marginLeft:2 }}>⚠️</span>}
                 </div>
               </div>
+              <button onClick={() => setShowBattleLog(v => !v)}
+                style={{ background: showBattleLog?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color: showBattleLog?"#fbbf24":"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer", marginRight:4 }}>
+                📜
+              </button>
               <button onClick={() => setShowExitConfirm(true)}
                 style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
                 離開
@@ -942,6 +956,38 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                   -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
                 </span>
           )}
+
+          {/* ── 戰鬥紀錄折疊面板 ── */}
+          <BattleLogPanel open={showBattleLog} onClose={() => setShowBattleLog(false)}>
+              {/* 已完成回合總覽 */}
+              {allRounds.length === 0 && dmgLog.length === 0 ? (
+                <div style={{ color:"#475569", padding:"20px 0", textAlign:"center" }}>戰鬥尚未開始</div>
+              ) : (
+                <>
+                  {allRounds.map((r, i) => (
+                    <div key={i} style={{ marginBottom:6, borderBottom:"1px solid rgba(255,255,255,0.04)", paddingBottom:5 }}>
+                      <div style={{ color:"#fbbf24", fontWeight:700, fontSize:11, marginBottom:2 }}>
+                        第 {i+1} 回合 · 傷害 {r.dmg} · 暴擊 {r.crits} 次
+                      </div>
+                      <div style={{ display:"flex", gap:2, flexWrap:"wrap", marginBottom:2 }}>
+                        {r.arrows.map((a, j) => (
+                          <span key={j} style={{ fontSize:10, fontWeight:700, padding:"1px 4px", borderRadius:3, color: scoreColor(a.label), background:`${scoreColor(a.label)}22` }}>{a.label}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {/* 本回合即時傷害紀錄 */}
+                  {dmgLog.length > 0 && (
+                    <div>
+                      <div style={{ color:"#94a3b8", fontWeight:700, fontSize:10, marginBottom:3 }}>即時紀錄</div>
+                      {dmgLog.map((l, i, arr) => (
+                        <div key={i} style={{ fontSize:10, lineHeight:1.6, color: i===arr.length-1 ? "#e2e8f0" : "rgba(255,255,255,0.45)" }}>{l}</div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </BattleLogPanel>
         </div>
 
         {/* ── 輸入區（Boss 圖正下方） ── */}

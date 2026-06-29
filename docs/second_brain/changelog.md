@@ -3,6 +3,29 @@
 
 ---
 
+## 2026-06-29（佈署 Bug 修正 3 連）
+
+### Bug 1：MonsterBattle 進場報 `ReferenceError: n is not defined`
+- **根因**：`MonsterBattle.jsx` 第 464 行在 `useCarryPotion` 函式上方多了一個孤立的 `n` 字元，被 JS 當成未宣告變數執行
+- **修正**：刪除該 `n` 字元（`n  // 🧪 使用攜帶型藥水...` → `  // 🧪 使用攜帶型藥水...`）
+- **踩坑**：minified bundle 的 `n is not defined` 指向的是源碼中的孤立識別字，不一定是某個真實變數名稱
+
+### Bug 2：進場後 HP NaN/100、ATK 0（DEF 正常）
+- **根因**：`calcPotionBuffs`（`itemData.js`）重設計時把回傳格式從 `{ hpMult, atkMult }` 改成 `{ hpPct, atkPct }`，但 `MonsterBattle.jsx` 計算 `bStats` 仍讀 `buffs.hpMult` / `buffs.atkMult`，取到 `undefined`，乘法結果變 `NaN`
+- **DEF 正常原因**：`def = baseStats.def + ... `（加法，不乘 buffs）
+- **HP 顯示 NaN**：`archerHP` 初始化為 `bStats.hp = NaN`
+- **ATK 顯示 0**：UI 有 `||0` fallback，`NaN || 0 = 0`
+- **修正**：在 `calcPotionBuffs` 結尾補算 `buffs.hpMult = 1 + hpPct/100`、`buffs.atkMult = 1 + atkPct/100`，兩種格式並存向後相容
+
+### Bug 3：Push 失敗——`codebase-memory-mcp.exe` 超過 GitHub 100MB 限制
+- **根因**：`codebase-ui-extracted/` 資料夾含 257MB `.exe` 被 git 追蹤
+- **修正**：`.gitignore` 加入 `codebase-ui-extracted/`、`codebase-ui.zip`、`install.ps1`
+- **踩坑**：大型二進位工具資料夾務必在第一次 `git add` 前就加進 `.gitignore`
+
+**重要架構提醒**：`calcPotionBuffs` 現在同時輸出 `hpPct/atkPct`（百分比數字）和 `hpMult/atkMult`（倍率）。未來修改此函式時，兩種格式都要維護，否則會影響 MonsterBattle 的開戰數值計算。
+
+---
+
 ## 2026-06-28（地下城 7 Bug 修正批次）
 
 ### Bug 1：商店 revival_front 復活目標錯誤

@@ -1,5 +1,5 @@
 // src/pages/MemberApp.jsx
-import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback, ViewTransition } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
@@ -343,7 +343,37 @@ export default function MemberApp() {
   }
 
   const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("dungeon_room") || "null"); } catch { return null; } })();
-  const [dungeonRoomId, setDungeonRoomId] = useState(_savedDungeon?.roomId || null);
+  // 服務端存檔備案：若 sessionStorage 沒有但 profile.activeDungeon 有，則使用它
+  const _savedDungeonFallback = (!_savedDungeon?.roomId && profile?.activeDungeon?.roomId)
+    ? { roomId: profile.activeDungeon.roomId }
+    : null;
+  const _initialDungeonRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId || null;
+  const [dungeonRoomId, setDungeonRoomId] = useState(_initialDungeonRoomId);
+  // 載入時驗證 sessionStorage / activeDungeon 中的地下城房間是否仍有效
+  // 若房間已結束或不存在，自動清除，避免玩家卡在無限載入
+  useEffect(() => {
+    const checkRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId;
+    if (!checkRoomId) return;
+    let cancelled = false;
+    import("../lib/dungeonDb").then(({ checkDungeonRoomExists, setActiveDungeon }) => {
+      checkDungeonRoomExists(checkRoomId).then(res => {
+        if (cancelled) return;
+        if (!res.exists) {
+          sessionStorage.removeItem("dungeon_room");
+          setDungeonRoomId(null);
+        } else if (_savedDungeonFallback && !_savedDungeon?.roomId) {
+          // 從 activeDungeon 恢復：同步寫回 sessionStorage
+          sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId: checkRoomId }));
+          setDungeonRoomId(checkRoomId);
+        }
+      });
+      // 若使用 activeDungeon 備案，確保服務端記錄仍存在
+      if (_savedDungeonFallback) {
+        setActiveDungeon(profile?.id, checkRoomId).catch(() => {});
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
   function handleEnterDungeonRoom(roomId) {
     setDungeonRoomId(roomId);
     sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId }));
@@ -352,6 +382,9 @@ export default function MemberApp() {
   function handleLeaveDungeon() {
     sessionStorage.removeItem("dungeon_room");
     setDungeonRoomId(null);
+    import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
+      clearActiveDungeon(profile?.id).catch(() => {})
+    );
     setPage("adventure-hub");
   }
 
@@ -522,7 +555,6 @@ export default function MemberApp() {
 
       {/* 頁面內容（content-area 套用深藍覆寫；貓貓村跳過） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
-        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
@@ -601,7 +633,6 @@ export default function MemberApp() {
           <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}
         </Suspense>
-        </ViewTransition>
       </div>
 
       {/* 底部導覽（深藍主題） */}

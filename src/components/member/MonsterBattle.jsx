@@ -35,7 +35,7 @@ import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard } from "../shared/SharedBattleComponents";
+import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard, BattleLogPanel } from "../shared/SharedBattleComponents";
 import BattleBottomBar from "./BattleBottomBar";
 
 const ARROWS_PER_ROUND   = 6;
@@ -1805,41 +1805,20 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         <div style={{flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0"}}>
 
           {/* 左：戰鬥紀錄（可折疊，高度自適應內容不超過怪物） */}
-          <div style={{
-            flexShrink:0, background:"rgba(0,0,0,0.82)", borderRadius:8,
-            border:"1px solid rgba(255,255,255,0.07)",
-            display:"flex", flexDirection:"column", overflow:"hidden",
-            width: logOpen ? 180 : 36, transition:"width .2s ease",
-            alignSelf:"flex-start", maxHeight:200
-          }}>
-            {/* 標題列 + 折疊按鈕 */}
-            <button onClick={()=>setLogOpen(v=>!v)} style={{
-              display:"flex", alignItems:"center", gap:4, padding:"5px 6px",
-              background:"none", border:"none", cursor:"pointer", width:"100%",
-              borderBottom: logOpen?"1px solid rgba(255,255,255,0.06)":"none"
-            }}>
-              <span style={{fontSize:12}}>📜</span>
-              {logOpen && <span style={{color:"#475569", fontSize:9, fontWeight:900, letterSpacing:1, whiteSpace:"nowrap"}}>戰鬥紀錄</span>}
-              <span style={{marginLeft:"auto", color:"#475569", fontSize:10}}>{logOpen?"◀":"▶"}</span>
-            </button>
-            {/* 內容 */}
-            {logOpen && (
-              <div style={{flex:1, overflowY:"auto", padding:"2px 6px"}}>
-                {log.map((e,i)=>(
-                  <div key={i} style={{
-                    fontSize:10, lineHeight:1.5, padding:"0.5px 0",
-                    color: e.type==="win"?"#fbbf24":e.type==="lose"?"#f87171":
-                      e.type==="revive"?"#f472b6":e.type==="event_good"?"#34d399":
-                      e.type==="event_bad"?"#f87171":e.type==="counter"?"#fb923c":
-                      e.type==="total"?"#67e8f9":e.type==="hit_organ"?"#c084fc":
-                      e.type==="hit_crit"?"#fb923c":e.type==="hit"?"#86efac":
-                      e.type==="miss"?"#64748b":"#94a3b8"
-                  }}>{e.text}</div>
-                ))}
-                <div ref={logEndRef}/>
-              </div>
-            )}
-          </div>
+          <BattleLogPanel variant="sidebar" open={logOpen} onClose={()=>setLogOpen(v=>!v)}>
+            {log.map((e,i)=>(
+              <div key={i} style={{
+                fontSize:10, lineHeight:1.5, padding:"0.5px 0",
+                color: e.type==="win"?"#fbbf24":e.type==="lose"?"#f87171":
+                  e.type==="revive"?"#f472b6":e.type==="event_good"?"#34d399":
+                  e.type==="event_bad"?"#f87171":e.type==="counter"?"#fb923c":
+                  e.type==="total"?"#67e8f9":e.type==="hit_organ"?"#c084fc":
+                  e.type==="hit_crit"?"#fb923c":e.type==="hit"?"#86efac":
+                  e.type==="miss"?"#64748b":"#94a3b8"
+              }}>{e.text}</div>
+            ))}
+            <div ref={logEndRef}/>
+          </BattleLogPanel>
 
           {/* 右：怪物展示 */}
           <div style={{flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:28}}>

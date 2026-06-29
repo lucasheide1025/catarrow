@@ -277,7 +277,29 @@ export default function DungeonExplore({
       }
     } else if (clickedRoom.type === "stairs") {
       setEventModal(clickedRoom);
-    } else if (["merchant","rest","trap","event"].includes(clickedRoom.type)) {
+    } else if (clickedRoom.type === "teleport") {
+      // 傳送房間：隨機傳送到同層已探索的其他房間
+      if (!floorData) return;
+      const sameFloorRooms = floorData.rooms.filter(r => r.id !== roomId_);
+      const exploredOthers = sameFloorRooms.filter(r => exploredIds.has(r.id));
+      if (exploredOthers.length > 0) {
+        const target = exploredOthers[Math.floor(Math.random() * exploredOthers.length)];
+        const newExplored = new Set([...exploredIds, target.id]);
+        setCurrentRoomId(target.id);
+        setExploredIds(newExplored);
+        if (roomId && isHost) {
+          await saveMapExploration(roomId, { floorIndex, currentRoomId: target.id, exploredIds: newExplored, clearedIds });
+        }
+      } else {
+        // 無其他已探索房間 → 原地清除（等於空房間）
+        const newCleared = new Set([...clearedIds, roomId_]);
+        setClearedIds(newCleared);
+        if (roomId && isHost) {
+          await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds, clearedIds: newCleared });
+        }
+      }
+      return;
+    } else if (["merchant","rest","trap","event","chest"].includes(clickedRoom.type)) {
       // 非戰鬥互動房間 → 透過 Firestore 路由到對應元件
       if (roomId && isHost) {
         await enterNonCombatRoom(roomId, clickedRoom.type, { roomId: clickedRoom.id });

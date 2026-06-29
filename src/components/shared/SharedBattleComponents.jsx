@@ -2,6 +2,16 @@
 // 戰鬥模式共用元件庫 — 統一 MonsterBattle / PartyBattleRoom / DungeonBattleRoom / WorldBossAttack 的 UI 元件
 import { memo } from "react";
 
+/**
+ * BattleHPBar — 怪物 HP 血條
+ * @param {Object}  props
+ * @param {number}  props.current       - 當前 HP
+ * @param {number}  props.max           - 最大 HP
+ * @param {number}  [props.height=21]   - 血條高度（px）
+ * @param {boolean} [props.showBorder=true] - 是否顯示邊框
+ * @param {string}  [props.label]       - 可選的文字標籤，有標籤時 HP 數字顯示在血條上方而非內部
+ * @param {boolean} [props.compact=false] - 精簡模式（移除 marginBottom）
+ */
 export const BattleHPBar = memo(function BattleHPBar({ current, max, height = 21, showBorder = true, label, compact = false }) {
   const pct = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
   const barStyle = {
@@ -46,6 +56,21 @@ export const BattleHPBar = memo(function BattleHPBar({ current, max, height = 21
   );
 });
 
+/**
+ * BattleArrowSlots — 箭槽顯示（已射箭分數佔位格）
+ * @param {Object}   props
+ * @param {Array<{label:string,score:number}|string>} [props.arrows=[]] - 已射的箭陣列，可為物件或純字串
+ * @param {number}   [props.totalArrows=6]  - 總箭格數
+ * @param {Function} [props.onUndo]         - 撤回最後一箭的回呼
+ * @param {boolean}  [props.showUndo=false] - 是否顯示撤回按鈕
+ * @param {number}   [props.slotSize=28]    - 每格寬高（px）
+ * @param {boolean}  [props.highlightNext=true] - 是否高亮下一個空格
+ * @param {boolean}  [props.showScore=true] - 是否顯示合計分數
+ * @param {number}   [props.totalScore]     - 自訂總分（預設自動加總）
+ * @param {React.ReactNode} [props.extraContent] - 箭槽旁的額外內容
+ * @param {boolean}  [props.processing=false]     - 處理中模式（顯示動畫格）
+ * @param {number}   [props.processingIdx=-1]    - 當前處理中的箭索引
+ */
 export const BattleArrowSlots = memo(function BattleArrowSlots({
   arrows = [], totalArrows = 6, onUndo, showUndo = false,
   slotSize = 28, highlightNext = true, showScore = true,
@@ -101,6 +126,18 @@ export const BattleArrowSlots = memo(function BattleArrowSlots({
   );
 });
 
+/**
+ * BattleScoreButtons — 分數按鈕格（支援 3 種視覺變體）
+ * @param {Object}   props
+ * @param {string[]} [props.labels=['X','10','9','8','7','6','5','4','3','2','1','M']] - 按鈕標籤陣列
+ * @param {Function} props.onScore   - 點擊按鈕回呼，接收標籤字串
+ * @param {boolean}  [props.disabled=false] - 是否禁用
+ * @param {'image'|'minimal'|'tailwind'} [props.variant='image']
+ *   - 'image':    木紋背景按鈕（預設，MonsterBattle 風格）
+ *   - 'minimal':  半透明簡約按鈕
+ *   - 'tailwind': Tailwind CSS 色票按鈕
+ * @param {'sm'|'md'|'lg'} [props.btnSize='md'] - 按鈕尺寸
+ */
 export const BattleScoreButtons = memo(function BattleScoreButtons({
   labels = ["X","10","9","8","7","6","5","4","3","2","1","M"],
   onScore, disabled = false, variant = "image", btnSize = "md",
@@ -160,6 +197,11 @@ export const BattleScoreButtons = memo(function BattleScoreButtons({
   );
 });
 
+/**
+ * BattleStatusTags — 狀態標籤列（回數、ATK、DEF、人數等）
+ * @param {Object} props
+ * @param {Array<{icon?:string, label:string, color?:string, bg?:string, border?:string, style?:object}>} [props.tags=[]]
+ */
 export const BattleStatusTags = memo(function BattleStatusTags({ tags = [] }) {
   return (
     <div style={{ display: "flex", gap: 3, marginBottom: 4, flexWrap: "wrap" }}>
@@ -183,6 +225,15 @@ export const BattleStatusTags = memo(function BattleStatusTags({ tags = [] }) {
 
 const RESULT_CSS = `@keyframes result-pop{0%{opacity:0;transform:scale(0.7) rotate(-4deg)}60%{transform:scale(1.06) rotate(1deg)}100%{opacity:1;transform:scale(1)}}`;
 
+/**
+ * BattleResultHeader — 結算畫面頂部標題（動畫彈出）
+ * @param {Object}   props
+ * @param {string}   props.emoji          - 大圖示 emoji
+ * @param {string}   props.title          - 主標題文字
+ * @param {string}   [props.subtitle]     - 副標題
+ * @param {'amber'|'red'|'slate'|'emerald'|'indigo'} [props.color='amber'] - 配色主題
+ * @param {string}   [props.animDelay='0s'] - 動畫延遲（CSS 時間值）
+ */
 export const BattleResultHeader = memo(function BattleResultHeader({ emoji, title, subtitle, color = "amber", animDelay = "0s" }) {
   const colorMap = {
     amber: { text: "text-amber-400", border: "border-amber-400/50", bg: "from-yellow-900/80" },
@@ -209,6 +260,14 @@ export const BattleResultHeader = memo(function BattleResultHeader({ emoji, titl
   );
 });
 
+/**
+ * BattleStatCard — 統計卡片（結算畫面中的單一數值方塊）
+ * @param {Object}  props
+ * @param {string}  props.label  - 數值名稱
+ * @param {number|string} props.value - 數值
+ * @param {string}  [props.icon] - 圖示
+ * @param {boolean} [props.accent=false] - 是否強調（金色高亮）
+ */
 export const BattleStatCard = memo(function BattleStatCard({ label, value, icon, accent = false }) {
   return (
     <div style={{
@@ -225,6 +284,15 @@ export const BattleStatCard = memo(function BattleStatCard({ label, value, icon,
   );
 });
 
+/**
+ * BattleStatRow — 統計列（結算畫面中的標籤-數值橫列）
+ * @param {Object}   props
+ * @param {string}   props.label       - 左側標籤
+ * @param {number|string} props.value  - 右側數值
+ * @param {string}   [props.icon]      - 圖示
+ * @param {string}   [props.valueColor] - 數值顏色
+ * @param {boolean}  [props.borderTop]  - 是否顯示頂部分隔線
+ */
 export const BattleStatRow = memo(function BattleStatRow({ label, value, icon, valueColor, borderTop }) {
   return (
     <div style={{
@@ -243,6 +311,73 @@ export const BattleStatRow = memo(function BattleStatRow({ label, value, icon, v
   );
 });
 
+// ── 戰鬥紀錄折疊面板（四個打怪模式共用）──
+// variant="overlay" → 暗色覆蓋層（組隊/地下城/世界王）
+// variant="sidebar" → 側邊可折疊條（單人打怪）
+
+/**
+ * BattleLogPanel — 戰鬥紀錄折疊面板
+ *
+ * @param {Object}   props
+ * @param {boolean}  props.open       - 是否展開面板
+ * @param {Function} props.onClose    - 關閉回呼（overlay 模式為 ✕ 按鈕；sidebar 模式為標題列點擊）
+ * @param {'overlay'|'sidebar'} [props.variant='overlay']
+ *   - 'overlay':  絕對定位暗色覆蓋層，覆蓋整個怪物區（組隊/地下城/世界王）
+ *   - 'sidebar':  左側可折疊條，寬度在 36px（折疊）與 180px（展開）之間切換（單人打怪）
+ * @param {string}   [props.title='📜 戰鬥紀錄'] - 面板標題文字
+ * @param {React.ReactNode} props.children       - 面板內容
+ */
+export const BattleLogPanel = memo(function BattleLogPanel({
+  open,
+  onClose,
+  variant = "overlay",
+  title = "📜 戰鬥紀錄",
+  children,
+}) {
+  if (variant === "sidebar") {
+    return (
+      <div style={{
+        flexShrink:0, background:"rgba(0,0,0,0.82)", borderRadius:8,
+        border:"1px solid rgba(255,255,255,0.07)",
+        display:"flex", flexDirection:"column", overflow:"hidden",
+        width: open ? 180 : 36, transition:"width .2s ease",
+        alignSelf:"flex-start", maxHeight:200
+      }}>
+        <button onClick={onClose} style={{
+          display:"flex", alignItems:"center", gap:4, padding:"5px 6px",
+          background:"none", border:"none", cursor:"pointer", width:"100%",
+          borderBottom: open ? "1px solid rgba(255,255,255,0.06)" : "none"
+        }}>
+          <span style={{fontSize:12}}>📜</span>
+          {open && <span style={{color:"#475569", fontSize:9, fontWeight:900, letterSpacing:1, whiteSpace:"nowrap"}}>{title.replace("📜 ","")}</span>}
+          <span style={{marginLeft:"auto", color:"#475569", fontSize:10}}>{open?"◀":"▶"}</span>
+        </button>
+        {open && <div style={{flex:1, overflowY:"auto", padding:"2px 6px"}}>{children}</div>}
+      </div>
+    );
+  }
+  // overlay variant (default)
+  if (!open) return null;
+  return (
+    <div style={{ position:"absolute", inset:0, zIndex:40, background:"rgba(0,0,0,0.92)", overflowY:"auto", padding:"8px 10px", fontSize:11 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6, borderBottom:"1px solid rgba(255,255,255,0.08)", paddingBottom:4 }}>
+        <span style={{ color:"#fbbf24", fontWeight:900, fontSize:12 }}>{title}</span>
+        <button onClick={onClose} style={{ color:"#64748b", fontSize:16, background:"none", border:"none", cursor:"pointer", lineHeight:1 }}>✕</button>
+      </div>
+      {children}
+    </div>
+  );
+});
+
+/**
+ * BattleRewardItem — 獎勵物品條（結算畫面中的單一獎勵）
+ * @param {Object}  props
+ * @param {string}  props.icon              - 物品圖示
+ * @param {string}  props.name              - 物品名稱
+ * @param {string}  [props.desc]            - 物品描述
+ * @param {'gold'|'rare'|'mythic'|string} [props.tier] - 稀有度（控制顏色）
+ * @param {boolean} [props.highlight=false] - 是否高亮（金色背景）
+ */
 export const BattleRewardItem = memo(function BattleRewardItem({ icon, name, desc, tier, highlight = false }) {
   const tierColor = tier === "gold" ? "#fbbf24" : tier === "rare" ? "#a78bfa" : tier === "mythic" ? "#f43f5e" : "#94a3b8";
   return (

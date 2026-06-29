@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback, ViewTransition } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
@@ -336,7 +336,35 @@ export default function AdminApp() {
   }
 
   const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("admin_dungeon_room") || "null"); } catch { return null; } })();
-  const [dungeonRoomId, setDungeonRoomId] = useState(_savedDungeon?.roomId || null);
+  // 服務端存檔備案：若 sessionStorage 沒有但 profile.activeDungeon 有，則使用它
+  const _savedDungeonFallback = (!_savedDungeon?.roomId && profile?.activeDungeon?.roomId)
+    ? { roomId: profile.activeDungeon.roomId }
+    : null;
+  const _initialDungeonRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId || null;
+  const [dungeonRoomId, setDungeonRoomId] = useState(_initialDungeonRoomId);
+  // 載入時驗證 sessionStorage / activeDungeon 中的地下城房間是否仍有效
+  useEffect(() => {
+    const checkRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId;
+    if (!checkRoomId) return;
+    let cancelled = false;
+    import("../lib/dungeonDb").then(({ checkDungeonRoomExists, setActiveDungeon }) => {
+      checkDungeonRoomExists(checkRoomId).then(res => {
+        if (cancelled) return;
+        if (!res.exists) {
+          sessionStorage.removeItem("admin_dungeon_room");
+          setDungeonRoomId(null);
+        } else if (_savedDungeonFallback && !_savedDungeon?.roomId) {
+          // 從 activeDungeon 恢復：同步寫回 sessionStorage
+          sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId: checkRoomId }));
+          setDungeonRoomId(checkRoomId);
+        }
+      });
+      if (_savedDungeonFallback) {
+        setActiveDungeon(profile?.id, checkRoomId).catch(() => {});
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
   function handleEnterDungeonRoom(roomId) {
     setDungeonRoomId(roomId);
     sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId }));
@@ -345,6 +373,9 @@ export default function AdminApp() {
   function handleLeaveDungeon() {
     sessionStorage.removeItem("admin_dungeon_room");
     setDungeonRoomId(null);
+    import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
+      clearActiveDungeon(profile?.id).catch(() => {})
+    );
     setPage("home");
   }
 
@@ -545,7 +576,6 @@ const adminNav = [
         )}
         {/* 頁面內容（深藍覆寫） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
-        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
@@ -618,7 +648,6 @@ const adminNav = [
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
         </Suspense>
-        </ViewTransition>
         </div>
         {/* 底部導覽（深藍主題） */}
       <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
@@ -712,7 +741,6 @@ const adminNav = [
       )}
 
       <div style={{paddingBottom:"80px"}} className="content-area">
-        <ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {/* ── 會員中心 Hub ── */}
         {page==="hub-member" && memberSub===null && (
@@ -756,7 +784,6 @@ const adminNav = [
         {page==="givetool"     && <AdminGiveTool/>}
         {page==="archery"      && <AdminArchery/>}
         </Suspense>
-        </ViewTransition>
       </div>
 
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",zIndex:40,viewTransitionName:"admin-nav"}}>

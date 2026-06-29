@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-06-28
+> 最後更新：2026-06-29
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -20,6 +20,9 @@
 | 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
 | Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則 |
 | 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
+| `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
+| 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |
+| 大型二進位不進 git | `codebase-ui-extracted/`（含 .exe）超過 GitHub 100MB；務必先加 `.gitignore` 再 `git add` |
 
 ---
 
