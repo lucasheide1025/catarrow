@@ -249,9 +249,11 @@ export default function DungeonExplore({
     if (!roomId || !isHost || !eventModal) return;
     setEnteringBattle(true);
     await clearMapPendingRoom(roomId).catch(() => {});
+    const family      = dungeon?.family || "ghost";
     const tier        = eventModal.meta?.tier || 1;
     const monsterTier = mapRoomTier(tier);
-    const pool        = MONSTERS.filter(m => m.tier === monsterTier);
+    let pool          = MONSTERS.filter(m => m.family === family && m.tier === monsterTier);
+    if (pool.length === 0) pool = MONSTERS.filter(m => m.family === family); // fallback 同族任意 tier
     const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
     const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
     const totalFloors = generatedFloors?.length || dungeon?.floorCount || 1;

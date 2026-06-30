@@ -11,7 +11,7 @@ import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
-import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getResourceKey, TIERED_RESOURCES } from "./villageData";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -3010,72 +3010,99 @@ export async function drawGachaCards(memberId, type = "single") {
 
 // ─── 貓貓村 ────────────────────────────────────────────────
 export async function collectVillageResources(memberId, village) {
-  const now = Date.now();
-  const lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
-  const hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
+  var now = Date.now();
+  var lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
+  var hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
   if (hours < 0.05) return { collected: {}, hours: 0 };
 
-  const buildings = village?.buildings || {};
-  const collected = {};
-  const updates = { "village.lastCollectedAt": serverTimestamp() };
+  var buildings    = village?.buildings    || {};
+  var allocations  = village?.allocations  || {};
+  var collected    = {};
+  var updates      = { "village.lastCollectedAt": serverTimestamp() };
 
-  for (const id of BUILDING_LIST) {
+  for (var id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
-    const lv     = buildings[id] || 1;
-    const res    = VB[id]?.resource;
+    var lv     = buildings[id] || 1;
+    var res    = VB[id]?.resource;
     if (!res) continue;
 
-    // 扭蛋亭：產出直接累加到頂層 gachaCoins（與練箭里程碑同一個桶）
-    if (id === 'gacha') {
-      const fracKey  = 'gachaTokenFrac';
-      const prevFrac = village?.resources?.[fracKey] || 0;
-      const rawAmt   = getProductionRate(id, lv) * hours + prevFrac;
-      const amt      = Math.floor(rawAmt);
-      updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
+    // Gacha: accumulate to top-level gachaCoins
+    if (id === "gacha") {
+      var fracKey  = "gachaTokenFrac";
+      var prevFrac = village?.resources?.[fracKey] || 0;
+      var rawAmt   = getProductionRate(id, lv) * hours + prevFrac;
+      var amt      = Math.floor(rawAmt);
+      var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
+      updates["village.resources." + fracKey] = remain;
       if (amt > 0) {
-        updates['gachaCoins'] = increment(amt);
-        collected['gachaCoins'] = (collected['gachaCoins'] || 0) + amt;
+        updates.gachaCoins = increment(amt);
+        collected.gachaCoins = (collected.gachaCoins || 0) + amt;
       }
       continue;
     }
 
-    const maxTier = getBuildingStage(lv);
-    const rate    = getProductionRate(id, lv);
+    var rate    = getProductionRate(id, lv);
+    var maxTier = getBuildingStage(lv);
 
     if (!TIERED_RESOURCES.has(res)) {
-      // 非分層資源（箭露、射手等）：原邏輯不變
-      const resKey  = res;
-      const fracKey = `${resKey}Frac`;
-      const prevFrac = village?.resources?.[fracKey] || 0;
-      const rawAmt   = rate * hours + prevFrac;
-      const amt      = Math.floor(rawAmt);
-      updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
+      // Non-tiered resources (arrowdew etc.)
+      var resKey  = res;
+      var fracKey = resKey + "Frac";
+      var prevFrac = village?.resources?.[fracKey] || 0;
+      var rawAmt   = rate * hours + prevFrac;
+      var amt      = Math.floor(rawAmt);
+      var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
+      updates["village.resources." + fracKey] = remain;
       if (amt > 0) {
-        updates[`village.resources.${resKey}`] = increment(amt);
+        updates["village.resources." + resKey] = increment(amt);
         collected[resKey] = (collected[resKey] || 0) + amt;
       }
     } else {
-      // 分層資源：累積生產（T2 建築同時產出 T1+T2，各自以相同速率計算）
-      for (let tier = 1; tier <= maxTier; tier++) {
-        const resKey  = getResourceKey(res, tier);
-        const fracKey = `${resKey}Frac`;
-        const prevFrac = village?.resources?.[fracKey] || 0;
-        const rawAmt   = rate * hours + prevFrac;
-        const amt      = Math.floor(rawAmt);
-        updates[`village.resources.${fracKey}`] = Math.round((rawAmt - amt) * 1000) / 1000;
-        if (amt > 0) {
-          updates[`village.resources.${resKey}`] = increment(amt);
-          collected[resKey] = (collected[resKey] || 0) + amt;
+      // Tiered resources: pool * stageMult, split by allocation%
+      var stageMult = getStageMultiplier(lv);
+      var pool      = rate * stageMult * hours;
+      var alloc     = allocations[id] || getDefaultAllocation(lv);
+
+      // Calculate per-tier raw values (including fraction carryover)
+      var tierRaw = {};
+      for (var tier = 1; tier <= maxTier; tier++) {
+        var pct    = alloc[String(tier)] || 0;
+        if (pct <= 0) continue;
+        var resKey2  = getResourceKey(res, tier);
+        var fracKey2 = resKey2 + "Frac";
+        var prevFrac2 = village?.resources?.[fracKey2] || 0;
+        var rawAmt2   = pool * (pct / 100) + prevFrac2;
+        tierRaw[String(tier)] = { resKey: resKey2, fracKey: fracKey2, rawAmt: rawAmt2 };
+      }
+
+      // Write updates
+      var tierKeys = Object.keys(tierRaw);
+      for (var ti = 0; ti < tierKeys.length; ti++) {
+        var t = tierKeys[ti];
+        var item = tierRaw[t];
+        var amt2 = Math.floor(item.rawAmt);
+        var remain2 = Math.round((item.rawAmt - amt2) * 1000) / 1000;
+        updates["village.resources." + item.fracKey] = remain2;
+        if (amt2 > 0) {
+          updates["village.resources." + item.resKey] = increment(amt2);
+          collected[item.resKey] = (collected[item.resKey] || 0) + amt2;
         }
       }
     }
   }
 
   await updateDoc(doc(db, C.members, memberId), updates);
-  // 回傳 collected 讓 UI 更新顯示；resources 由 Firestore 訂閱同步
-  const curResources = { ...(village?.resources || {}) };
-  Object.entries(collected).forEach(([k, v]) => { curResources[k] = (curResources[k] || 0) + v; });
-  return { collected, resources: curResources, hours };
+  var curResources = Object.assign({}, village?.resources || {});
+  Object.keys(collected).forEach(function(k) { curResources[k] = (curResources[k] || 0) + collected[k]; });
+  return { collected: collected, resources: curResources, hours: hours };
+}
+
+// ── Set per-building allocation ────────────────────────────
+export async function setBuildingAllocation(memberId, buildingId, allocation) {
+  if (!memberId || !buildingId || !allocation) return;
+  await setDoc(doc(db, C.members, memberId), {
+    ["village.allocations." + buildingId]: allocation,
+  }, { merge: true });
 }
 
 export async function upgradeVillageBuilding(memberId, buildingId, village) {

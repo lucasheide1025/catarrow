@@ -5,7 +5,7 @@ import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing,
-  subscribeVillageMarketConfig,
+  subscribeVillageMarketConfig, setBuildingAllocation,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
 import { subscribeMyCats, upgradeCatEquip, equipCat } from "../../lib/catDb";
@@ -21,6 +21,7 @@ import {
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, DEFAULT_VILLAGE,
   UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
+  getStageMultiplier, getMaxSlots, getDefaultAllocation, MAX_COLLECT_HOURS,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
@@ -577,8 +578,153 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
   );
 }
 
+// ── 產能分配設定 ─────────────────────────────────────────────
+function AllocationSettings({ buildingId, level, allocations, memberId }) {
+  const building    = BUILDINGS[buildingId];
+  const hasTier     = building && TIERED_RESOURCES.has(building.resource);
+  const maxTier     = getBuildingStage(level);
+  const maxSlots    = getMaxSlots(level);
+  const stageMult   = getStageMultiplier(level);
+
+  // 如果不是分層資源建築（如煉金室、扭蛋亭），不顯示分配 UI
+  if (!hasTier) return null;
+
+  const [editing, setEditing] = useState(false);
+  const [alloc, setAlloc]     = useState(null);
+  const [saving, setSaving]   = useState(false);
+
+  // 讀取當前分配（或預設）
+  const currentAlloc = allocations[buildingId] || getDefaultAllocation(level);
+
+  function startEdit() {
+    setAlloc({ ...(allocations[buildingId] || getDefaultAllocation(level)) });
+    setEditing(true);
+  }
+
+  function adjust(tierStr, delta) {
+    if (!alloc) return;
+    const newVal = Math.max(0, Math.min(100, (alloc[tierStr] || 0) + delta));
+    const oldVal = alloc[tierStr] || 0;
+    const diff   = newVal - oldVal;
+    if (diff === 0) return;
+
+    const next = { ...alloc, [tierStr]: newVal };
+    // 調整其他 tier 補償差額
+    const others = Object.keys(next).filter(k => k !== tierStr && (next[k] || 0) > 0);
+    if (others.length > 0) {
+      let remaining = -diff;
+      for (const k of others) {
+        if (remaining === 0) break;
+        const cur = next[k] || 0;
+        const adj = Math.max(0, Math.min(cur, remaining));
+        next[k] = cur - adj;
+        remaining -= adj;
+      }
+      // 如果還有剩餘，均分到所有正值的 tier
+      if (remaining !== 0) {
+        const pos = Object.keys(next).filter(k => (next[k] || 0) > 0);
+        const each = Math.floor(remaining / pos.length);
+        let rem = remaining - each * pos.length;
+        for (const k of pos) {
+          next[k] = Math.max(0, (next[k] || 0) + each + (rem > 0 ? 1 : 0));
+          if (rem > 0) rem--;
+        }
+      }
+    }
+    // 確保總和 = 100
+    const sum = Object.values(next).reduce((a, b) => a + b, 0);
+    if (sum !== 100) {
+      const diff2 = 100 - sum;
+      const pos2 = Object.keys(next).filter(k => (next[k] || 0) > 0);
+      if (pos2.length > 0) {
+        next[pos2[0]] = (next[pos2[0]] || 0) + diff2;
+      }
+    }
+    setAlloc(next);
+  }
+
+  async function saveAlloc() {
+    if (!alloc || saving || !memberId) return;
+    setSaving(true);
+    await setBuildingAllocation(memberId, buildingId, alloc);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  // 當前生效的分配（編輯中或已儲存）
+  const displayAlloc = editing ? alloc : currentAlloc;
+  const activeTiers  = [1,2,3,4,5].filter(t => (displayAlloc[String(t)] || 0) > 0);
+
+  return (
+    <div className="mt-4" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold" style={{ color: C.mid }}>
+          🎛️ 產能分配 ×{stageMult.toFixed(1)}（{maxSlots}槽可用）
+        </div>
+        {!editing && (
+          <button onClick={startEdit}
+            className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
+            style={{ background: C.sage, color: "white" }}>
+            ✏️ 調整
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="flex flex-wrap gap-1.5">
+          {activeTiers.map(t => (
+            <div key={t} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+              style={{ background: "rgba(255,255,255,0.7)", border: `1px solid ${C.border}` }}>
+              <span style={{ color: C.brown }}>T{t}</span>
+              <span style={{ color: C.sage }}>{displayAlloc[String(t)]}%</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div>
+          {[1,2,3,4,5].slice(0, maxTier).map(t => {
+            const pct = alloc?.[String(t)] || 0;
+            if (pct <= 0 && activeTiers.length >= maxSlots && ![1].includes(t)) return null;
+            return (
+              <div key={t} className="flex items-center gap-2 mb-1.5">
+                <span className="text-[11px] font-bold shrink-0" style={{ width: 24, color: C.brown }}>T{t}</span>
+                <div className="flex-1 h-2 rounded-full" style={{ background: C.border, overflow: "hidden" }}>
+                  <div style={{
+                    width: `${pct}%`, height: "100%",
+                    background: pct > 0 ? C.sage : C.lockBd,
+                    borderRadius: 99, transition: "width .2s",
+                  }} />
+                </div>
+                <span className="text-[10px] font-bold shrink-0" style={{ width: 30, textAlign: "right", color: C.brown }}>{pct}%</span>
+                <div className="flex gap-0.5 shrink-0">
+                  <button onClick={() => adjust(String(t), -10)}
+                    className="w-6 h-6 rounded-md text-xs font-bold active:scale-90"
+                    style={{ background: pct > 0 ? "rgba(192,83,58,0.15)" : C.lockBd, color: pct > 0 ? "#C0533A" : C.muted }}>-</button>
+                  <button onClick={() => adjust(String(t), 10)}
+                    className="w-6 h-6 rounded-md text-xs font-bold active:scale-90"
+                    style={{ background: pct < 100 && activeTiers.length >= 1 ? "rgba(90,158,80,0.15)" : C.lockBd, color: pct < 100 ? C.sage : C.muted }}>+</button>
+                </div>
+              </div>
+            );
+          })}
+          <div className="flex gap-2 mt-2">
+            <button onClick={() => setEditing(false)}
+              className="flex-1 py-1.5 rounded-lg text-[10px] font-bold"
+              style={{ background: C.lockBd, color: C.muted }}>取消</button>
+            <button onClick={saveAlloc} disabled={saving}
+              className="flex-1 py-1.5 rounded-lg text-[10px] font-bold active:scale-95"
+              style={{ background: C.sage, color: "white" }}>
+              {saving ? "儲存中…" : "💾 儲存分配"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, village }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -713,6 +859,14 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
               </button>
             </>
           ) : null}
+
+          {/* ── 產能分配 ── */}
+          <AllocationSettings
+            buildingId={buildingId}
+            level={level}
+            allocations={village?.allocations || {}}
+            memberId={memberId}
+          />
 
           {/* 市集專屬：兌換面板 + 卡片市集 */}
           {buildingId === 'market' && (
@@ -1389,7 +1543,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
   const nextCollectSec = useMemo(() => {
     const lastMs = village?.lastCollectedAt?.toMillis?.() || (Date.now() - hours * 3600000);
-    return Math.max(0, Math.floor((lastMs + 8 * 3600000 - Date.now()) / 1000));
+    return Math.max(0, Math.floor((lastMs + MAX_COLLECT_HOURS * 3600000 - Date.now()) / 1000));
   }, [village, hours]);
 
   async function handleCollect() {
@@ -1514,6 +1668,12 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
             collectedResult={collectedResult}
           />
 
+          {/* 採集計時器 */}
+          <div className="px-4 py-1.5 text-[10px]" style={{ color: C.muted, borderBottom: `1px solid ${C.border}`, textAlign:"center" }}>
+            ⏱ 每 {MAX_COLLECT_HOURS} 小時可採集一次{nextCollectSec > 0 && `（下次：${Math.floor(nextCollectSec/3600)}h${Math.floor((nextCollectSec%3600)/60)}m）`}
+            {nextCollectSec <= 0 && "（可採集！）"}
+          </div>
+
           <ResourceRow resources={resources} gachaCoins={gachaCoins} />
 
           {/* 建築網格 */}
@@ -1571,6 +1731,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           catCards={catCards}
           battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
           onExchangeDone={() => setLocalVillage(null)}
+          village={village}
         />
       )}
     </div>

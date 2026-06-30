@@ -90,6 +90,21 @@ export function getBuildingStage(level) {
   return 5;
 }
 
+// ── Stage 倍率表 ──────────────────────────────────────────
+// Stage 越高產能加成越多，鼓勵玩家提升建築品質
+const STAGE_MULTIPLIERS = [1.0, 1.0, 1.1, 1.2, 1.4];
+
+export function getStageMultiplier(lv) {
+  const stage = getBuildingStage(lv);
+  return STAGE_MULTIPLIERS[stage - 1] || 1.0;
+}
+
+// 可同時生產的 tier 數量上限（產能分配槽數）
+export function getMaxSlots(lv) {
+  const stage = getBuildingStage(lv);
+  return [1, 2, 2, 3, 3][stage - 1] || 1;
+}
+
 // 解鎖條件表（null = 預設解鎖）
 export const UNLOCK_REQS = {
   mine:      null,
@@ -121,16 +136,18 @@ export function getVillageLevel(buildings) {
 }
 
 const BASE_PROD = {
-  archery:3, gacha:0.01, warehouse:2, market:1.5,
-  mine:1, farm:1, harbor:1, hunting:1, alchemy:0.05,
+  archery:3, gacha:0.002, warehouse:2, market:1.5,
+  mine:1, farm:1, harbor:1, hunting:1, alchemy:0.25,
 };
 
+// ── 生產曲線：1.18^(level-1) ──────────────────────────────
+// 讓後期成長更有感，Lv.20 ≈ 21×
 export function getProductionRate(buildingId, level) {
   const base = BASE_PROD[buildingId] || 2;
-  return Math.round(base * Math.pow(1.15, level - 1) * 10) / 10;
+  return Math.round(base * Math.pow(1.18, level - 1) * 10) / 10;
 }
 
-export const MAX_COLLECT_HOURS = 8;
+export const MAX_COLLECT_HOURS = 24;
 
 // 需要 tier 後綴的資源（_t1~_t5）
 export const TIERED_RESOURCES = new Set(['ore','melon','fish','meat','driedfish','can','potion','fur','archer']);
@@ -140,26 +157,57 @@ export function getResourceKey(resource, tier) {
   return TIERED_RESOURCES.has(resource) ? `${resource}_t${tier}` : resource;
 }
 
+// ── 預設產能分配（等分）───────────────────────────────────
+export function getDefaultAllocation(lv) {
+  const maxTier = getBuildingStage(lv);
+  const slots   = getMaxSlots(lv);
+  const alloc   = {};
+  // 取可用的前 slots 個 tier 等分；其餘 0
+  const activeCount = Math.min(maxTier, slots);
+  const each        = Math.floor(100 / activeCount);
+  let remainder     = 100 - each * activeCount;
+  for (let t = 1; t <= maxTier; t++) {
+    if (t <= activeCount) {
+      alloc[String(t)] = each + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder--;
+    } else {
+      alloc[String(t)] = 0;
+    }
+  }
+  return alloc;
+}
+
+// ── 計算待採集資源（前端預覽用）───────────────────────────
 export function calcPendingResources(village) {
   const now = Date.now();
   const lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
   const hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
   const buildings = village?.buildings || {};
+  const allocations = village?.allocations || {};
   const pending = {};
+
   for (const id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
+
     const lv      = buildings[id] || 1;
     const rate    = getProductionRate(id, lv);
     const res     = BUILDINGS[id].resource;
     const maxTier = getBuildingStage(lv);
+
     if (!TIERED_RESOURCES.has(res)) {
-      // 非分層資源
-      pending[res] = (pending[res] || 0) + Math.floor(rate * hours);
+      // 非分層資源（箭露、扭蛋代幣）：直接累積速率 × 小時，保留小數
+      pending[res] = (pending[res] || 0) + rate * hours;
     } else {
-      // 分層資源：累積生產（T1 ~ Tmaxd，各自加滿速率）
+      // 分層資源：產能池 = rate × stageMult × hours，按分配比例拆分
+      const stageMult = getStageMultiplier(lv);
+      const pool      = rate * stageMult * hours;
+      const alloc     = allocations[id] || getDefaultAllocation(lv);
+
       for (let tier = 1; tier <= maxTier; tier++) {
+        const pct    = alloc[String(tier)] || 0;
+        if (pct <= 0) continue;
         const resKey = getResourceKey(res, tier);
-        pending[resKey] = (pending[resKey] || 0) + Math.floor(rate * hours);
+        pending[resKey] = (pending[resKey] || 0) + pool * (pct / 100);
       }
     }
   }
@@ -188,5 +236,6 @@ export function canUpgrade(buildingId, buildings, resources) {
 export const DEFAULT_VILLAGE = {
   buildings: { mine:1, farm:1, harbor:1, hunting:1, market:1, warehouse:1, alchemy:1, gacha:1, archery:1 },
   resources: { arrowdew:0, gachaToken:0 },
+  allocations: {},
   lastCollectedAt: null,
 };

@@ -738,7 +738,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }
 
   // ── 完成畫面（等動畫和結算結束才顯示）─────────────────────
-  if (status === "completed" && !liveEntry && !showRoundResult) {
+  // 檢查最新 log 是否已播完動畫（避免 Firestore 剛更新 status 但動畫未播時閃爍）
+  const latestLogEntry = (room?.log || []).at(-1);
+  const animKey = latestLogEntry ? `${room.currentFloor || 1}-${latestLogEntry.round}` : null;
+  const hasNewAnim = animKey && animKey !== lastAnimKeyRef.current;
+
+  if (status === "completed" && !liveEntry && !showRoundResult && !hasNewAnim) {
     const won = room?.result === "win";
     if (won && !bondSavedRef.current) { bondSavedRef.current = true; saveBond("dungeon"); }
 
@@ -1845,12 +1850,20 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 }
 
 function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onContinue }) {
+  const [countdown, setCountdown] = useState(5);
   const monsterKilled  = entry.monsterHPAfter <= 0;
   const allMembersDead = Object.values(room?.members || {}).every(m => !m.alive);
   const partyWiped     = (status === "completed" && room?.result === "lose") || allMembersDead;
   // 地圖模式：只有 Boss 房算最終通關；普通房間通關不算
   const finalWin       = status === "completed" && room?.result === "win" && (!isMapMode || isBossRoom);
   const floorCleared   = monsterKilled && !finalWin;
+
+  // 5 秒倒數計時
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   let title, icon, btnLabel, btnColor;
   if (partyWiped) {
@@ -1865,6 +1878,8 @@ function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onCont
   } else {
     icon = "⚔️"; title = `第 ${entry.round} 回合結束`; btnLabel = "下一回合"; btnColor = "bg-slate-700";
   }
+
+  const canContinue = countdown <= 0;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center px-5 gap-5 text-white"
@@ -1897,10 +1912,14 @@ function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onCont
         )}
       </div>
 
-      <button onClick={onContinue}
-        className={`w-full max-w-sm py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95 transition-all ${btnColor}`}>
-        {btnLabel}
+      <button onClick={canContinue ? onContinue : undefined}
+        disabled={!canContinue}
+        className={`w-full max-w-sm py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95 transition-all ${
+          canContinue ? btnColor : "bg-slate-700/50 text-slate-400 cursor-not-allowed"
+        }`}>
+        {canContinue ? btnLabel : `⏳ ${countdown} 秒後可繼續`}
       </button>
     </div>
   );
 }
+
