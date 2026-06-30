@@ -122,13 +122,18 @@ export function sfxNotify() {
 
 // 普通命中
 export function sfxArrowHit() {
-  playAudio("normal_atk", 0.85);
+  noiseBurst(0, 0.06, 1200, 0.4);
+  tone(220, 0.08, "sine", 0.18, 0);
+  tone(440, 0.05, "triangle", 0.12, 0.04);
   vibrate(16);
 }
 
 // 爆擊
 export function sfxCritBoom() {
-  playAudio("crit", 0.9);
+  noiseBurst(0, 0.18, 800, 0.8);
+  tone(440, 0.10, "sine", 0.28, 0);
+  tone(660, 0.08, "triangle", 0.22, 0.07);
+  tone(880, 0.16, "sine", 0.16, 0.14);
   vibrate([0, 30, 55, 35]);
 }
 
@@ -142,13 +147,16 @@ export function sfxOrganHit() {
 
 // 脫靶
 export function sfxSoftFail() {
-  playAudio("miss", 0.8);
+  tone(180, 0.12, "sine", 0.12, 0);
+  tone(150, 0.15, "sawtooth", 0.08, 0.08);
   vibrate(12);
 }
 
 // 射箭弓弦聲
 export function sfxArrowShoot() {
-  playAudio("normal_atk", 0.85);
+  noiseBurst(0, 0.05, 1500, 0.35);
+  tone(260, 0.06, "triangle", 0.18, 0);
+  tone(520, 0.04, "sine", 0.10, 0.03);
   vibrate(12);
 }
 
@@ -156,7 +164,9 @@ export function sfxArrowShoot() {
 
 // 怪物反擊
 export function sfxCounter() {
-  playAudio("monster_atk", 0.9);
+  distTone(120, 80, 0.35, 0.35, 0);
+  noiseBurst(0.08, 0.12, 250, 0.5);
+  tone(80, 0.30, "sawtooth", 0.18, 0);
   vibrate([0, 55, 75, 50]);
 }
 
@@ -324,19 +334,51 @@ export function sfxEpic() {
 
 // 升等/通過檢定
 export function sfxLevelUp() {
-  playAudio("level_up", 0.9);
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  [440, 554, 659, 880].forEach((freq, i) => {
+    const n = c.createOscillator(); const g = c.createGain();
+    n.type = "triangle"; n.frequency.value = freq;
+    const st = t + i * 0.09;
+    g.gain.setValueAtTime(0.22, st);
+    g.gain.exponentialRampToValueAtTime(0.001, st + 0.28);
+    n.connect(g); g.connect(c.destination);
+    n.start(st); n.stop(st + 0.3);
+  });
   vibrate([0, 60, 80, 100]);
 }
 
 // 開寶箱
 export function sfxOpenChest() {
-  playAudio("open_chest", 0.9);
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  [660, 880, 1100].forEach((freq, i) => {
+    const n = c.createOscillator(); const g = c.createGain();
+    n.type = "triangle"; n.frequency.value = freq;
+    const st = t + i * 0.08;
+    g.gain.setValueAtTime(0.24, st);
+    g.gain.exponentialRampToValueAtTime(0.001, st + 0.20);
+    n.connect(g); g.connect(c.destination);
+    n.start(st); n.stop(st + 0.22);
+  });
+  noiseBurst(0.02, 0.12, 2000, 0.28);
   vibrate([0, 40, 60, 80, 100]);
 }
 
 // 大勝利
 export function sfxVictory() {
-  playAudio("victory", 0.95);
+  const c = ctx(); if (!c) return;
+  const t = c.currentTime;
+  [523, 659, 784, 1047, 1318].forEach((freq, i) => {
+    const n = c.createOscillator(); const g = c.createGain();
+    n.type = "triangle"; n.frequency.value = freq;
+    const st = t + i * 0.10;
+    g.gain.setValueAtTime(0.26, st);
+    g.gain.exponentialRampToValueAtTime(0.001, st + 0.35);
+    n.connect(g); g.connect(c.destination);
+    n.start(st); n.stop(st + 0.38);
+  });
+  noiseBurst(0.45, 0.25, 1500, 0.5);
   vibrate([0, 50, 60, 80, 100, 80]);
 }
 

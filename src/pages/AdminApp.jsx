@@ -183,7 +183,7 @@ export default function AdminApp() {
   const [todayCheckin, setTodayCheckin] = useState(undefined);
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
-  const checkinPopupShownRef = useRef(false);
+  const checkinPopupShownRef = useRef(!!sessionStorage.getItem("admin_checkin_popup_shown"));
 
   // 射手模式共用狀態（與 MemberApp 一致）
   const [certification, setCertification] = useState(null);
@@ -201,14 +201,14 @@ export default function AdminApp() {
     return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
   }, [profile?.id]); // eslint-disable-line
 
-  // 今日報到訂閱（供浮動視窗判斷）
+  // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
     if (!profile?.id) return;
-    checkinPopupShownRef.current = false;
     const unsub = subscribeMyCheckin(profile.id, c => {
       setTodayCheckin(c);
       if (c === null && !checkinPopupShownRef.current) {
         checkinPopupShownRef.current = true;
+        sessionStorage.setItem("admin_checkin_popup_shown", "1");
         setShowCheckinPopup(true);
       }
     });

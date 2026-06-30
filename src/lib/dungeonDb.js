@@ -887,7 +887,7 @@ export async function advanceMapFloor(roomId, dungeonOrFloors, nextFloorIndex) {
 // 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
 export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
   try {
-    const { monster = null, formationMap = {}, runeMap = {} } = options;
+    const { monster = null, formationMap = {}, runeMap = {}, totalFloors = 1 } = options;
     const contract = roomMeta?.contract
       ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
       : { type:"standard", param:null };
@@ -942,7 +942,7 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       log:                 [],
       result:              null,
       processing:          false,
-      totalFloors:         1,
+      totalFloors:         totalFloors,
       currentFloor:        floorIndex + 1,
       // 標記 Boss 房間以利結算獎勵判斷
       ...(bossMod ? { isBossRoom: true } : {}),

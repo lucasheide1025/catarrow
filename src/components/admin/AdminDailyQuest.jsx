@@ -417,13 +417,26 @@ export default function AdminDailyQuest({ mode = "all" }) {
               <ST>🏹 上課中（{inProgress.length}）</ST>
               <div className="flex flex-col gap-2">
                 {inProgress.map(c => (
-                  <div key={c.id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                  <div key={c.id} className="rounded-xl p-3 border border-emerald-600/30" style={{ background:"rgba(5,150,105,0.12)" }}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-gray-800 text-sm font-bold">{c.memberNickname || c.memberName}</div>
-                        <div className="text-emerald-600 text-xs">練習中，等待下課…</div>
+                        <div className="text-emerald-200 text-sm font-bold">{c.memberNickname || c.memberName}</div>
+                        <div className="text-emerald-400/70 text-xs">練習中，等待下課…</div>
                       </div>
-                      <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
+                      <div className="flex gap-2">
+                        <Btn v="danger" size="sm" onClick={() => doCancel(c)}>✕</Btn>
+                        {c.memberId && (
+                          <button onClick={async () => {
+                            try {
+                              const { submitClassEnd } = await import("../../lib/db");
+                              await submitClassEnd(c.memberId, c.id);
+                              toast(`✅ ${c.memberNickname || c.memberName} 已強制下課`);
+                            } catch (e) { toast("下課失敗：" + (e?.message || ""), "error"); }
+                          }} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-500/50 text-orange-300" style={{ background:"rgba(255,255,255,0.06)" }}>
+                            ⏹ 強制下課
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

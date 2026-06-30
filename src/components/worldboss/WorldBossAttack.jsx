@@ -355,7 +355,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       setAnimBossHit(false); setAnimCrit(false);
       setAnimMonsterHit(false); setArcherShoot(false);
     }, 430);
-    setTimeout(() => setFloatDmg(null), 1300);
+    setTimeout(() => setFloatDmg(null), 2000);
   }
 
   // 注入 CSS keyframes（只一次）
@@ -567,10 +567,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         setTimeout(() => setAnimPlayerHit(false), 650);
 
         addTimer(() => {
-          if (bossKilledThisRound || isLast) {
-            // Boss 已死 或 最後一回合 → 結束
+          const playerDied = nextMyHP <= 0;
+          if (bossKilledThisRound || isLast || playerDied) {
+            // Boss 已死／最後一回合／玩家陣亡 → 結束
             setSubPhase("done");
-            submitAttack(nextRounds);
+            submitAttack(nextRounds, playerDied);
           } else {
             // 中途記憶：反擊結算後，下一回合開始前儲存
             try {
@@ -591,7 +592,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   }
 
   // ── 送出攻擊 ─────────────────────────────────────────────
-  async function submitAttack(rounds) {
+  async function submitAttack(rounds, playerDied = false) {
     if (processingRef.current) return;
     processingRef.current = true;
     // 清除中途記憶（戰鬥已結束）
@@ -620,7 +621,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       finishingArrow: _finishArrow,
     });
 
-    setResult(res);
+    setResult({ ...res, playerDied });
     setSubmitting(false);
     processingRef.current = false;
     if (res.ok) {
@@ -951,8 +952,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           {/* 浮動傷害 / MISS */}
           {floatDmg && (
             floatDmg.isMiss
-              ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
-              : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize: floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color: floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+              ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 2.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
+              : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize: floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color: floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 2.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
                   -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
                 </span>
           )}
@@ -1205,6 +1206,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <>
               {result.defeated ? (
                 <BattleResultHeader emoji="💥" title="BOSS 擊殺！" subtitle={event.announcement || "全域廣播：FIRST KILL！"} color="amber" />
+              ) : result.playerDied ? (
+                <BattleResultHeader emoji="💀" title="陣亡…" subtitle={`你倒在了第 ${allRounds.length} 回合的反擊中`} color="red" />
               ) : (
                 <BattleResultHeader emoji="⚔️" title="出戰完成！" subtitle={`Boss 剩餘 ${result.newHP?.toLocaleString()} HP`} color="slate" />
               )}

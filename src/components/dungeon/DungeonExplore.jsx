@@ -254,11 +254,15 @@ export default function DungeonExplore({
     const pool        = MONSTERS.filter(m => m.tier === monsterTier);
     const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
     const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
-    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, { monster: applyVariant(monster, variant) });
+    const totalFloors = generatedFloors?.length || dungeon?.floorCount || 1;
+    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, {
+      monster: applyVariant(monster, variant),
+      totalFloors,
+    });
     // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
     setEnteringBattle(false);
     setEventModal(null);
-  }, [roomId, isHost, eventModal, room]);
+  }, [roomId, isHost, eventModal, room, generatedFloors, dungeon]);
 
   if (!inited || (!dungeon && !generatedFloors)) {
     return <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>載入地圖…</div>;

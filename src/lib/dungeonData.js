@@ -167,19 +167,33 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
     }
 
     // 逆轉關：分數映射（6↔X, 7↔10, 8↔9）
+    // ⚠️ 注意：先用翻轉後分數重新判定部位，避免原始分數導致高脫靶率
     if (type === "reversal") {
       const revMap = { 6:11, 7:10, 8:9, 9:8, 10:7 };
       const revScore = arrow.label === "X" ? 6 : (revMap[score] ?? score);
+      const revIsXHit = revScore >= 11; // X 分數是 11
+      const revPart  = resolveHitPartFn(revScore, unlocked, revIsXHit);
+      if (!revPart) {
+        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+        continue;
+      }
+      if (revPart.id === "chest") unlocked.add("chest");
+      if (revPart.id === "belly") unlocked.add("belly");
+      if (revPart.id === "groin") unlocked.add("groin");
+      if (!revScore || revPart.mult === 0) {
+        arrowBreakdown.push({ label: arrow.label, partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+        continue;
+      }
       const base = 8 + (atk || 10) * 0.7 + revScore * 1.2 - (monsterDef || 0) * 0.35;
       const m    = 0.85 + Math.random() * 0.3;
-      const isCrit = m > 1.05 || pMult >= 1.8;
-      let d = Math.max(1, Math.round(base * pMult * m));
+      const isCrit = m > 1.05 || revPart.mult >= 1.8;
+      let d = Math.max(1, Math.round(base * revPart.mult * m));
       d = Math.round(d * dmgMult);
       totalDmg += d;
       if (isCrit) crits++;
       arrowBreakdown.push({
-        label: arrow.label, partIcon: part.icon,
-        partName: part.name, partMult: pMult, dmg: d, isCrit,
+        label: arrow.label, partIcon: revPart.icon,
+        partName: revPart.name, partMult: revPart.mult, dmg: d, isCrit,
         note: "逆轉",
       });
       continue;

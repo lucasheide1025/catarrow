@@ -144,7 +144,7 @@ export default function MemberApp() {
   const [checkinBusy, setCheckinBusy] = useState(false);
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
-  const checkinPopupShownRef = useRef(false); // 每次登入重置，不用 sessionStorage
+  const checkinPopupShownRef = useRef(!!sessionStorage.getItem("member_checkin_popup_shown")); // 一天只彈一次（跨重整）
 
   // 地下城首殺全系統播報
   useEffect(() => {
@@ -156,15 +156,15 @@ export default function MemberApp() {
     return () => unsub?.();
   }, []); // eslint-disable-line
 
-  // 今日報到訂閱（供浮動視窗判斷）
+  // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
     if (!profile?.id) return;
-    checkinPopupShownRef.current = false; // 換帳號/重新登入時重置
     const unsub = subscribeMyCheckin(profile.id, c => {
       setTodayCheckin(c);
-      // 第一次拿到 null（未報到）且本次登入尚未彈過 → 彈出視窗
+      // 未報到且今天還沒彈過 → 彈出視窗
       if (c === null && !checkinPopupShownRef.current) {
         checkinPopupShownRef.current = true;
+        sessionStorage.setItem("member_checkin_popup_shown", "1");
         setShowCheckinPopup(true);
       }
     });

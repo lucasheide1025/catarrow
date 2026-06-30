@@ -134,8 +134,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const [showRoundResult,   setShowRoundResult]   = useState(false);
   const [firstClearBonus,   setFirstClearBonus]   = useState(null); // null=未檢查 false=非首殺 {coins}=首殺
   // 進場戰鬥動畫
-  const [showEntryAnim,     setShowEntryAnim]     = useState(false);
-  const entryAnimFloorRef   = useRef(null); // 追蹤哪一層已播過進場
+  const [showEntryAnim,     setShowEntryAnim]     = useState(true); // 預設 true 防止閃爍
+  const entryAnimFloorRef   = useRef(null); // 追蹤哪個房間已播過進場
   // 擊殺動畫
   const [showKillAnim,      setShowKillAnim]      = useState(false);
   const [killInfo,          setKillInfo]          = useState(null);   // { memberName, label, monsterName }
@@ -219,16 +219,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }, [roomId]);
 
   // ── 進場戰鬥動畫（只在戰鬥剛開始時顯示一次）────────────
+  // showEntryAnim 預設 true 防止首次渲染閃爍，
+  // 此 effect 負責在不需要動畫時立即隱藏，需要時延遲隱藏。
   useEffect(() => {
-    if (!room || room.status !== "active") return;
+    if (!room || room.status !== "active") {
+      setShowEntryAnim(false);
+      return;
+    }
     // 地圖模式：用 roomId+roomId 區分每個房間；傳統模式：用樓層
     const animKey = isMapMode
       ? `${room.mapCurrentRoomId || room.currentFloor || 1}`
       : `${room.currentFloor || 1}`;
-    if (animKey === entryAnimFloorRef.current) return;
+    if (animKey === entryAnimFloorRef.current) {
+      setShowEntryAnim(false);
+      return;
+    }
     const logLen = room?.log?.length || 0;
-    if (logLen > 0) return; // 重整後已有 log 不重播
-    if ((room.round || 1) !== 1) return;
+    if (logLen > 0) { setShowEntryAnim(false); return; } // 重整後已有 log 不重播
+    if ((room.round || 1) !== 1) { setShowEntryAnim(false); return; }
     entryAnimFloorRef.current = animKey;
     setShowEntryAnim(true);
     const t = setTimeout(() => setShowEntryAnim(false), 2800);
@@ -387,7 +395,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           const th = setTimeout(() => {
             setAnimHit(true);
             setFloatDmg({ dmg: totalDmg, isCrit: hasCrit });
-            setTimeout(() => { setAnimHit(false); setFloatDmg(null); }, 1200);
+            setTimeout(() => { setAnimHit(false); setFloatDmg(null); }, 2000);
           }, delay + 200);
           revealTimersRef.current.push(th);
         }
@@ -1243,8 +1251,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       display:"flex", flexDirection:"column", fontFamily:"sans-serif",
     }}>
       <style>{`
-@keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-60px) scale(0.85);opacity:0}}
-@keyframes mb-miss{0%{transform:translateY(0) scale(1);opacity:1}100%{transform:translateY(-50px) scale(0.7);opacity:0}}
+@keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-70px) scale(0.80);opacity:0}}
+@keyframes mb-miss{0%{transform:translateY(0) scale(1.1);opacity:1}100%{transform:translateY(-55px) scale(0.65);opacity:0}}
 @keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
 @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
 @keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(0)}100%{filter:brightness(1)}}
@@ -1339,8 +1347,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         {/* 浮動傷害 */}
         {floatDmg && (
           floatDmg.isMiss
-            ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 1.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
-            : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize:floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color:floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 1.3s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
+            ? <span style={{ position:"absolute", top:"25%", left:"50%", transform:"translateX(-50%)", fontSize:"1.3rem", fontWeight:900, color:"#94a3b8", textShadow:"0 2px 8px rgba(0,0,0,0.9)", animation:"mb-miss 2.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>MISS</span>
+            : <span style={{ position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", fontSize:floatDmg.isCrit?"2rem":"1.6rem", fontWeight:900, color:floatDmg.isCrit?"#fbbf24":"#f87171", textShadow:"0 2px 10px rgba(0,0,0,0.9)", animation:"mb-float 2.0s ease-out forwards", pointerEvents:"none", whiteSpace:"nowrap" }}>
                 -{floatDmg.dmg}{floatDmg.isCrit?"💥":""}
               </span>
         )}
