@@ -2,9 +2,18 @@
 // 全站共用 UI 元件
 
 // ─── 基礎元件 ──────────────────────────────────────────────
-export function Card({ children, className = "", style }) {
+// Card 元件 — 支援 light/dark 兩種主題
+// light: 白底灰邊（傳統淺色主題）
+// dark:  深藍底白邊（後台/地下城暗色主題）
+const CARD_THEMES = {
+  light: "rounded-2xl border border-gray-200 bg-white shadow-sm",
+  dark:  "rounded-2xl border border-white/10 bg-slate-800 shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-sm",
+};
+
+export function Card({ children, className = "", style, theme = "light" }) {
+  const base = CARD_THEMES[theme] || CARD_THEMES.light;
   return (
-    <div className={`rounded-2xl border border-white/10 shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-sm ${className}`} style={{ background:"#1e293b", ...style }}>
+    <div className={`${base} ${className}`} style={style}>
       {children}
     </div>
   );

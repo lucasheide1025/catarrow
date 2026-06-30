@@ -27,9 +27,10 @@ body {
 
 /*
  ─── 深藍主題：子頁面內容覆寫 ────────────────────────────────
- 用 .content-area 範圍保護，貓貓村用 .no-override 包裹跳過。
- 注意：不使用 !important，依靠 specificity（0,2,0）勝過 Tailwind（0,1,0）。
- .no-override 用 attribute selector（0,3,0）重置。
+ 用 .content-area 範圍保護。
+ 只覆蓋 Tailwind class（不碰 inline styles），
+ 避免破壞 BillingSystem 等使用自己 light 主題的元件。
+ 貓貓村用 .no-override 跳過。
  ──────────────────────────────────────────────────────── */
 .content-area .bg-white           { background-color: #1e293b; }
 .content-area .bg-gray-50         { background-color: #1e293b; }
@@ -54,6 +55,9 @@ body {
 .content-area .text-gray-600        { color: #94a3b8; }
 .content-area .text-gray-500,
 .content-area .text-gray-400        { color: #64748b; }
+.content-area .text-gray-300        { color: #cbd5e1; }
+.content-area .text-gray-200        { color: #e2e8f0; }
+.content-area .text-gray-100        { color: #f1f5f9; }
 
 .content-area .text-blue-800        { color: #93c5fd; }
 .content-area .text-blue-700        { color: #93c5fd; }
@@ -78,59 +82,17 @@ body {
 
 .content-area .bg-blue-600           { background-color: #1d4ed8; }
 
-/* ── 補充：低對比 Tailwind class ── */
-.content-area .text-gray-300        { color: #cbd5e1; }
-.content-area .text-gray-200        { color: #e2e8f0; }
-.content-area .text-gray-100        { color: #f1f5f9; }
-.content-area .text-white           { color: #f1f5f9; }
+/* ── 低透明度白底（dungeon 等） ── */
 .content-area .bg-white\/5,
 .content-area .bg-white\/8,
 .content-area .bg-white\/10          { background-color: rgba(255,255,255,0.06); }
 .content-area .bg-white\/20          { background-color: rgba(255,255,255,0.08); }
 
 /*
- ─── Inline style 覆寫 ───────────────────────────────────────
- 有些 admin 組件用 inline styles（background:"white"），
- CSS class 覆寫無效，需要用 attribute selector + !important 才能蓋掉。
+ ─── 保護 light 主題元件 ────────────────────────────────────
+ BillingSystem、AdminMessages 等使用 light 背景的元件，
+ 用 .no-override 跳過所有暗色覆寫。
  ──────────────────────────────────────────────────────── */
-.content-area [style*="background: white"]         { background: #1e293b !important; }
-.content-area [style*="background: #fff"]           { background: #1e293b !important; }
-.content-area [style*="background: #ffffff"]        { background: #1e293b !important; }
-.content-area [style*="background-color: white"]    { background-color: #1e293b !important; }
-.content-area [style*="background-color: #fff"]     { background-color: #1e293b !important; }
-.content-area [style*="background-color: rgb(255, 255, 255)"] { background-color: #1e293b !important; }
-.content-area [style*="background: #f8fafc"]       { background: #1e293b !important; }
-.content-area [style*="background: #eff6ff"]       { background: rgba(59,130,246,0.12) !important; }
-.content-area [style*="background: #f0fdf4"]       { background: rgba(34,197,94,0.10) !important; }
-.content-area [style*="background: #fef9c3"]       { background: rgba(251,191,36,0.10) !important; }
-
-.content-area [style*="color: #1e293b"]            { color: #f1f5f9 !important; }
-.content-area [style*="color: #0f172a"]            { color: #f1f5f9 !important; }
-.content-area [style*="color: #374151"]            { color: #e2e8f0 !important; }
-.content-area [style*="color: #475569"]            { color: #94a3b8 !important; }
-.content-area [style*="color: #1f2937"]            { color: #f1f5f9 !important; }
-.content-area [style*="color: #111827"]            { color: #f1f5f9 !important; }
-
-.content-area [style*="background: rgba(255,255,255,0.88"] { background: #1e293b !important; }
-.content-area [style*="background-color: rgba(255,255,255,0.88"] { background-color: #1e293b !important; }
-
-.content-area [style*="border-color: #e2e8f0"]    { border-color: rgba(255,255,255,0.08) !important; }
-.content-area [style*="border: 1px solid #e2e8f0"] { border-color: rgba(255,255,255,0.08) !important; }
-.content-area [style*="border-bottom: 1px solid #e2e8f0"] { border-bottom-color: rgba(255,255,255,0.08) !important; }
-.content-area [style*="border-bottom: 1px solid #f1f5f9"] { border-bottom-color: rgba(255,255,255,0.04) !important; }
-
-/* ── 貓貓村保護：還原 inline style 覆寫 ── */
-.content-area .no-override [style*="background: white"]         { background: white !important; }
-.content-area .no-override [style*="background: #fff"]          { background: #fff !important; }
-.content-area .no-override [style*="background-color: white"]   { background-color: white !important; }
-.content-area .no-override [style*="background: #f8fafc"]      { background: #f8fafc !important; }
-.content-area .no-override [style*="background: #eff6ff"]      { background: #eff6ff !important; }
-.content-area .no-override [style*="background: #f0fdf4"]      { background: #f0fdf4 !important; }
-.content-area .no-override [style*="background: #fef9c3"]      { background: #fef9c3 !important; }
-.content-area .no-override [style*="color: #1e293b"]           { color: #1e293b !important; }
-.content-area .no-override [style*="color: #0f172a"]           { color: #0f172a !important; }
-
-/* ── 貓貓村保護：Tailwind class 重置 ── */
 .content-area .no-override .bg-white         { background-color: #fff; }
 .content-area .no-override .bg-gray-50       { background-color: #f9fafb; }
 .content-area .no-override .bg-gray-100      { background-color: #f3f4f6; }
@@ -202,13 +164,11 @@ body {
   to   { transform: translateY(0); }
 }
 
-/* 禁用 root 整頁 cross-fade（避免和 VT element 動畫疊加造成殘影） */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
 }
 
-/* page fade-in only：舊頁保持不動，新頁淡入覆蓋（無空窗閃爍） */
 ::view-transition-old(.fade-out) {
   animation: none;
 }
@@ -216,7 +176,6 @@ body {
   animation: var(--duration-enter) ease-out vt-fade;
 }
 
-/* Suspense reveal: fallback slides down, content slides up */
 ::view-transition-old(.slide-down) {
   animation:
     var(--duration-exit) ease-out both vt-fade reverse,
@@ -229,14 +188,12 @@ body {
     var(--duration-move)  ease-in both vt-slide-y;
 }
 
-/* persistent bottom / top nav — stay static during page transitions */
 ::view-transition-group(member-nav),
 ::view-transition-group(admin-nav) {
   animation: none;
   z-index: 100;
 }
 
-/* reduced motion */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*),
   ::view-transition-new(*),
