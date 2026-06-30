@@ -175,14 +175,15 @@ export default function DungeonController({ roomId, onExit }) {
     );
   }
 
-  // 舊版地下城
+  // 經典模式已移除，一律使用地圖模式
+  // 若無 mapDungeonId 且 status 非 waiting，視為過期房間
   return (
-    <DungeonBattleRoom
-      roomId={roomId}
-      onExit={onExit}
-      isMapMode={false}
-      onReturnToMap={undefined}
-    />
+    <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.5)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontSize:14 }}>
+      <div style={{ fontSize:48 }}>🏚️</div>
+      <div style={{ fontWeight:700, color:"rgba(255,255,255,0.7)" }}>地下城格式不支援</div>
+      <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>此房間版本過舊，請建立新的地下城</div>
+      <button onClick={onExit} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
+    </div>
   );
 }
 

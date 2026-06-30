@@ -5,13 +5,13 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
-  forceSkipDungeonPlayer, advanceDungeonFloor, leaveDungeonRoom,
+  forceSkipDungeonPlayer, leaveDungeonRoom,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
   clearActiveDungeon,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS, TIER_ORDER, TIER_LABEL, applyVariant } from "../../lib/monsterData";
-import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_LENGTHS, DUNGEON_MAPS } from "../../lib/dungeonData";
+import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
+import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
@@ -25,7 +25,6 @@ import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
   sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, sfxPotionDrink, vibrate,
 } from "../../lib/sound";
-import DungeonPathSelect from "./DungeonPathSelect";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
 import TargetFaceOverlay, {
@@ -105,7 +104,7 @@ function pickBg(family) {
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
 }
 
-export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, onReturnToMap }) {
+export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap }) {
   const { profile } = useAuth();
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
   const myId        = profile?.id;
@@ -251,19 +250,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
 
-  // ── processing 超時自動重置（20 秒仍卡住 → 房主自動清除）────
+  // ── processing 超時自動重置（15 秒仍卡住 → 強制清除 ref + Firestore）────
   useEffect(() => {
     if (!isHost || !room?.processing) return;
     const t = setTimeout(() => {
       clearDungeonProcessing(roomId);
-    }, 20000);
+      processingRef.current = false; // 同時重置本地鎖
+      lastProcessedRef.current = null; // 允許重試
+    }, 15000);
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId]); // eslint-disable-line
 
-  // ── 非房主：processing 卡住 20 秒 → 自動重置本地 submitted 讓玩家可重新輸入 ──
+  // ── 非房主：processing 卡住 12 秒 → 自動重置本地 submitted 讓玩家可重新輸入 ──
   useEffect(() => {
     if (isHost || !room?.processing) return;
     const t = setTimeout(() => {
+      // 只有 status 還是 active 才重置（completed 時不重置）
+      const r = roomRef.current;
+      if (!r || r.status !== "active") return;
       setSubmitted(false);
       import("firebase/firestore").then(({ updateDoc, doc }) =>
         import("../../lib/firebase").then(({ db }) =>
@@ -273,7 +277,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
           }).catch(() => {})
         )
       );
-    }, 20000);
+    }, 12000);
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId, myId]); // eslint-disable-line
 
@@ -436,8 +440,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }).catch(() => setFirstClearBonus(false));
   }, [status, room?.result]); // eslint-disable-line
 
-  // ── 所有人 ready → 房主結算（等 2 秒讓 Firestore 快照傳播）──────
+  // ── 所有人 ready → 房主結算（縮短為 1 秒，並加入強制結算機制）──────
   const allReadyTimerRef = useRef(null);
+  const forceProcessTimerRef = useRef(null);
   useEffect(() => {
     if (!isHost || !room || room.processing || processingRef.current) return;
     if (room.status !== "active") return;
@@ -447,24 +452,36 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     const allReady = alive.every(m => m.ready);
     if (!allReady) {
       if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
+      if (forceProcessTimerRef.current) { clearTimeout(forceProcessTimerRef.current); forceProcessTimerRef.current = null; }
       return;
     }
     if (allReadyTimerRef.current) return; // 已有計時器在跑
     allReadyTimerRef.current = setTimeout(() => {
       allReadyTimerRef.current = null;
       handleProcess();
-    }, 2000);
+    }, 1000); // 縮短為 1 秒
+    // 安全網：若 8 秒後仍未結算（ref 被卡），強制觸發
+    forceProcessTimerRef.current = setTimeout(() => {
+      forceProcessTimerRef.current = null;
+      const latest = roomRef.current;
+      if (!latest || latest.status !== "active") return;
+      const aliveNow = Object.values(latest.members || {}).filter(m => m.alive);
+      if (aliveNow.length > 0 && aliveNow.every(m => m.ready) && !processingRef.current) {
+        processingRef.current = true;
+        setLoading(true);
+        const roundKey = `${latest.currentFloor || 1}-${latest.round || 1}`;
+        lastProcessedRef.current = roundKey;
+        processDungeonRound(roomId, latest, calcContractDmgFn, calcCtrFn)
+          .then(res => { if (!res?.ok) lastProcessedRef.current = null; })
+          .catch(() => { lastProcessedRef.current = null; })
+          .finally(() => { setLoading(false); processingRef.current = false; });
+      }
+    }, 8000);
     return () => {
       if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
+      if (forceProcessTimerRef.current) { clearTimeout(forceProcessTimerRef.current); forceProcessTimerRef.current = null; }
     };
   }, [room]); // eslint-disable-line
-
-  // ── 進入下一層（floor_transition）────────────────────────────
-  useEffect(() => {
-    if (!isHost || !room) return;
-    if (room.status !== "floor_transition") return;
-    handleNextFloor();
-  }, [room?.status]); // eslint-disable-line
 
   async function handleProcess() {
     if (processingRef.current) return;
@@ -578,22 +595,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
     }, 2000);
   }
 
-  async function handleNextFloor() {
-    if (!isHost || !room) return;
-    const nextFloor = (room.currentFloor || 0) + 1;
-    // 層數對應最高 tier（索引）：1-2層=common(0), 3-4=rare(1), 5-6=elite(2), 7+=fierce(3)
-    // 地下城不出 boss/mythic
-    const maxTierIdx  = nextFloor <= 2 ? 0 : nextFloor <= 4 ? 1 : nextFloor <= 6 ? 2 : 3;
-    const allMonsters = MONSTERS.filter(m => TIER_ORDER.indexOf(m.tier) <= maxTierIdx);
-    const pool        = allMonsters.length ? allMonsters : MONSTERS.filter(m => m.tier === "common");
-    const baseMon     = pool[Math.floor(Math.random() * pool.length)];
-    const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
-    const nextMonster = baseMon ? applyVariant(baseMon, variant) : baseMon;
-    setLoading(true);
-    await advanceDungeonFloor(roomId, room, nextMonster);
-    setLoading(false);
-  }
-
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
   async function handleClaimSelf() {
     if (myId?.startsWith("guest")) {
@@ -677,36 +678,27 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
 
     sfxSuccess();
 
-    if (isMapMode) {
-      if (isBossRoom) {
-        onReturnToMap?.();
-      } else if (isHost) {
-        // 只有房主呼叫，觸發 Firestore status→map_explore，全員跟著路由
-        await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
-      } else {
-        // 非房主：顯示等待房主畫面，DungeonController 訂閱 status 變化後自動路由
-        setLocalClaimed(true);
-      }
+    if (isBossRoom) {
+      onReturnToMap?.();
+    } else if (isHost) {
+      // 只有房主呼叫，觸發 Firestore status→map_explore，全員跟著路由
+      await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
     } else {
-      onExit?.();
+      // 非房主：顯示等待房主畫面，DungeonController 訂閱 status 變化後自動路由
+      setLocalClaimed(true);
     }
   }
 
-  // ── 路線選擇（等動畫和結算結束才顯示）───────────────────────
+  // ── path_select 僅經典模式使用，地圖模式自動回地圖 ──────────
   if (status === "path_select" && !liveEntry && !showRoundResult) {
-    if (isMapMode) {
-      // 地圖模式下不應出現 path_select（enterMapCombatRoom 已設 totalFloors:1）
-      // 防護：host 自動回地圖，非 host 等待 Firestore 更新
-      if (isHost) {
-        returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []);
-      }
-      return (
-        <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
-          房間通關，返回地圖中…
-        </div>
-      );
+    if (isHost) {
+      returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []);
     }
-    return <DungeonPathSelect roomId={roomId} room={room} isHost={isHost} />;
+    return (
+      <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>
+        房間通關，返回地圖中…
+      </div>
+    );
   }
 
   // ── 商店 ───────────────────────────────────────────────────
@@ -881,8 +873,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
       );
     }
 
-    if (isMapMode) {
-      // 鎖定掉寶預覽（渲染時計算一次）
+    // 鎖定掉寶預覽（渲染時計算一次）
       if (!claimLootRef.current && room.monster) {
         const gm        = room?.nextFloorModifiers?.goldMult || 1;
         const tier       = room.monster.tier || "common";
@@ -1090,7 +1081,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         );
       }
 
-      // ── 普通房間通關 ───────────────────────────────────────
+        }
+
+    // ── 普通房間通關 ───────────────────────────────────────
       return (
         <div className="h-[100dvh] overflow-y-auto text-white pb-8"
           style={{ background:"linear-gradient(160deg,#0f172a,#1e1b4b)" }}>
@@ -1171,36 +1164,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         </div>
       );
     }
-
-    return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white items-center justify-center px-6 text-center gap-6">
-        <div className="text-7xl">🏆</div>
-        <div className="text-3xl font-black">地下城攻略完成！</div>
-        <div className="text-slate-400 text-sm">恭喜通關全 {room.totalFloors} 層，金幣收益 ×2！</div>
-        <div style={{ display:"flex", gap:16, justifyContent:"center" }}>
-          <div style={{ background:"rgba(14,165,233,0.15)", border:"1px solid #0ea5e944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
-            <div style={{ fontSize:20 }}>🏹</div>
-            <div style={{ fontSize:15, fontWeight:900, color:"#7dd3fc" }}>+{(room.totalFloors || 7) * DUNGEON_FLOOR_XP} XP</div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>射手經驗</div>
-          </div>
-          {profile?.equippedCat?.catId && (
-            <div style={{ background:"rgba(236,72,153,0.15)", border:"1px solid #ec489944", borderRadius:12, padding:"8px 16px", textAlign:"center" }}>
-              <div style={{ fontSize:20 }}>🐱</div>
-              <div style={{ fontSize:15, fontWeight:900, color:"#f9a8d4" }}>+{(room.totalFloors || 7) * CAT_DUNGEON_FLOOR_XP} XP</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>貓貓經驗</div>
-            </div>
-          )}
-        </div>
-        <button onClick={handleClaimSelf}
-          className="px-8 py-3 rounded-2xl font-black bg-gradient-to-r from-amber-500 to-orange-500 text-white text-lg shadow-lg">
-          💰 領取獎勵
-        </button>
-        <button onClick={onExit}
-          className="px-6 py-2 rounded-xl bg-white/10 text-slate-300 text-sm">
-          返回大廳
-        </button>
-      </div>
-    );
   }
 
   if (!room || status === "waiting") {
@@ -1339,9 +1302,33 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
             </button>
           </div>
         </div>
-        <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
-        <BattleStatusTags tags={[
-              { icon:"🏰", label:`${room.currentFloor||1}/${room.totalFloors||7}層 R${room.round||1}`, color:"#94a3b8" },
+        <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />            {/* 樓層強度 & 獎勵指示器 */}
+            {(() => {
+              const rewardMult = room?.rewardMult || 1;
+              const floor = room?.currentFloor || 1;
+              const total = room?.totalFloors || 7;
+              const isLastFloor = floor >= total;
+              const rewardPct = Math.round((rewardMult - 1) * 100);
+              return (
+                <div style={{ display:"flex", gap:6, marginTop:3, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:10, color:"#94a3b8", background:"rgba(0,0,0,0.35)", borderRadius:5, padding:"1px 7px", display:"inline-flex", alignItems:"center", gap:3 }}>
+                    🏰 {floor}/{total}層 R{room?.round||1}
+                  </span>
+                  <span style={{ fontSize:10, color:"#fcd34d", background:"rgba(251,192,45,0.12)", borderRadius:5, padding:"1px 7px", display:"inline-flex", alignItems:"center", gap:3 }}>
+                    ✦ {rewardPct >= 0 ? `+${rewardPct}%` : `${rewardPct}%`}獎勵
+                  </span>
+                  <span style={{ fontSize:10, color:isLastFloor?"#f87171":"#60a5fa", background:"rgba(255,255,255,0.06)", borderRadius:5, padding:"1px 7px", display:"inline-flex", alignItems:"center", gap:3 }}>
+                    {isLastFloor ? "👑 Boss" : `⚔️ 層${floor}`}
+                  </span>
+                  {isLastFloor && room?.isBossRoom && (
+                    <span style={{ fontSize:10, color:"#fbbf24", background:"rgba(251,191,36,0.15)", borderRadius:5, padding:"1px 7px", fontWeight:900 }}>
+                      🏆 首領戰
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+            <BattleStatusTags tags={[
               { icon:"⚔️", label:monster.atk||0, color:"#f87171", bg:"rgba(239,68,68,0.15)" },
               { icon:"🛡️", label:monster.def||0, color:"#60a5fa", bg:"rgba(59,130,246,0.15)" },
               { icon:"👤", label:`${aliveCount}/${memberCount}`, color:"#94a3b8" },
@@ -1811,7 +1798,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = false, o
         <RoundResultOverlay
           entry={lastEntry} room={room} status={status}
           isBossRoom={isBossRoom} isMapMode={isMapMode}
-          onContinue={() => { setShowRoundResult(false); setSubmitted(false); setArrows([]); }}
+          onContinue={() => {
+            setShowRoundResult(false);
+            // 全隊陣亡時不重置 submitted/arrows，直接顯示失敗畫面
+            const allDead = Object.values(room?.members || {}).every(m => !m.alive);
+            const isWipe = (status === "completed" && room?.result === "lose") || allDead;
+            if (!isWipe) {
+              setSubmitted(false);
+              setArrows([]);
+            }
+          }}
         />
       )}
 

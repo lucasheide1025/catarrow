@@ -2,7 +2,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
-  serverTimestamp, arrayUnion, getDocs, query, where,
+  serverTimestamp, arrayUnion, getDoc, getDocs, query, where,
   orderBy, limit, setDoc, increment, deleteField,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -11,6 +11,9 @@ import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import {
   assignContracts, rerollContract, generatePathOptions,
   drawDungeonEvent, DUNGEON_SHOP_ITEMS, generateDungeonFloors,
+  rollHiddenRoomDiscovery,
+  FLOOR_TIER_OFFSET, FLOOR_STAT_SCALE, FLOOR_REWARD_SCALE,
+  DIFFICULTY_REWARD_MULT, DYNAMIC_DIFFICULTY,
 } from "./dungeonData";
 
 const D = "dungeonRooms";
@@ -126,6 +129,8 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
     const memberIds   = Object.keys(room.members || {});
     const ms          = MODE_SCALE[mode] || MODE_SCALE.student;
     const memberCount = memberIds.length;
+    const currentFloor = 1;
+    const fi = 0; // floor index = currentFloor - 1
     // 房主強度縮放：hostAtk / 12 決定怪物難度基底（0.7 ~ 2.0x）
     const hostAtk      = room.hostAtk || 10;
     const hostScale    = Math.max(0.8, Math.min(1.4, hostAtk / 18));
@@ -134,10 +139,15 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
     const monHPMult     = 1.0 + extraMembers * 0.5;
     const monAtkMult    = 1.0 + extraMembers * 0.15;
     const monDefMult    = 1.0 + extraMembers * 0.15;
-    const rewardMult    = 1.0 + extraMembers * 0.2;  // 金幣/XP/掉落 +20%/人
-    const scaledHP      = Math.round(monster.hp * ms.hp * monHPMult * hostScale);
+    // 深度 scaling：越深層怪物越強
+    const floorScale    = FLOOR_STAT_SCALE[fi] ?? 1.0;
+    const tierOffset    = FLOOR_TIER_OFFSET[fi] ?? 0;
+    const floorTier     = Math.min(9, (monster.tier || 1) + tierOffset);
+    const rewardMult    = (1.0 + extraMembers * 0.2) * (FLOOR_REWARD_SCALE[fi] ?? 1.0);  // +20%/人 × 深度
+    const scaledHP      = Math.round(monster.hp * ms.hp * monHPMult * hostScale * floorScale);
+    const diffReward    = 1.0; // 起始層
 
-    // 一次性分配任務（全程有效，買重置才換）
+    // 分配初始合約（後續每層 advanceDungeonFloor 會重新抽選）
     const contracts = assignContracts(memberIds);
     const upd = {};
     for (const mid of memberIds) {
@@ -154,18 +164,30 @@ export async function startDungeonFloor(roomId, room, monster, mode, length, tot
       }
     }
 
+    // 初始化動態難度追蹤
+    const initPerf = {
+      totalDeaths: 0,
+      totalRounds: 0,
+      totalCtrHits: 0,
+      difficultyAdjust: 0,  // 累積難度偏移（正=更難，負=更簡單）
+      rewardAdjust: 0,      // 累積獎勵偏移
+      floorLog: [],
+    };
+
     await updateDoc(doc(db, D, roomId), {
       ...upd,
-      status: "active", length, totalFloors, currentFloor: 1, mode,
+      status: "active", length, totalFloors, currentFloor, mode,
       monster: {
         id: monster.id, name: monster.name, icon: monster.icon,
-        hp:  Math.round(monster.hp  * ms.hp  * hostScale),
-        atk: Math.round(monster.atk * ms.atk * hostScale * monAtkMult),
-        def: Math.round(monster.def * ms.def * monDefMult),
-        tier: monster.tier, family: monster.family,
+        hp:  Math.round(monster.hp  * ms.hp  * hostScale * floorScale),
+        atk: Math.round(monster.atk * ms.atk * hostScale * monAtkMult * floorScale),
+        def: Math.round(monster.def * ms.def * monDefMult * floorScale),
+        tier: floorTier, family: monster.family,
       },
       monsterHP: scaledHP, monsterMaxHP: scaledHP,
       rewardMult,
+      diffReward,
+      floorPerformance: initPerf,
       round: 1, log: [], result: null, processing: false,
       pathOptions: null, chosenPath: null, nextFloorModifiers: {},
     });
@@ -429,7 +451,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       displayGroupsBefore, // 回合開始前各人的視覺分組（客戶端動畫用）
     };
 
-    // Step 7：判斷結果 & 下一狀態
+    // Step 7：動態難度追蹤 + 調整
     const currentFloor = room.currentFloor || 1;
     const totalFloors  = room.totalFloors  || 7;
     let result    = null;
@@ -447,12 +469,73 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
+    // ── 動態難度更新（非結算回合才記錄性能） ────────────────
+    const perf = room.floorPerformance || { totalDeaths:0, totalRounds:0, totalCtrHits:0, difficultyAdjust:0, rewardAdjust:0, floorLog:[] };
+    if (newStatus === "path_select" || newStatus === "completed") {
+      // 更新該層的效能資料
+      // 使用 liveAfter（本回合結束後存活人數）與 aliveIds（本回合開始時存活人數）計算新陣亡數
+      const newDeaths = Math.max(0, aliveIds.length - liveAfter);
+      const ctrHitsThisFloor = miniRounds.filter(m => m.isCounter).reduce((s, m) => s + m.playerLog.length, 0);
+
+      perf.totalRounds  += round;
+      perf.totalDeaths  += newDeaths;
+      perf.totalCtrHits += ctrHitsThisFloor;
+
+      if (DYNAMIC_DIFFICULTY.enabled) {
+        // 依據表現調整下一層難度 & 獎勵
+        let diffAdj = 0;
+        let rewAdj  = 0;
+        // 打得久（超過3回合）→ 下一層微調弱
+        if (round > 3) {
+          diffAdj -= DYNAMIC_DIFFICULTY.difficultyReductionPerDeath * (round - 3) * 0.5;
+          rewAdj  += DYNAMIC_DIFFICULTY.rewardBonusPerExtraRound * (round - 3);
+        }
+        // 陣亡多人 → 降低難度
+        if (newDeaths > 1) {
+          diffAdj -= DYNAMIC_DIFFICULTY.difficultyReductionPerDeath * (newDeaths - 1);
+        }
+        // 被反擊命中多 → 獎勵加成
+        if (ctrHitsThisFloor > 0) {
+          rewAdj += DYNAMIC_DIFFICULTY.rewardBonusPerCounterHit * ctrHitsThisFloor;
+        }
+
+        // 累積調整（有正負界限）
+        perf.difficultyAdjust = Math.max(-DYNAMIC_DIFFICULTY.maxAdjustment, Math.min(DYNAMIC_DIFFICULTY.maxAdjustment,
+          (perf.difficultyAdjust || 0) + diffAdj
+        ));
+        perf.rewardAdjust = Math.max(-DYNAMIC_DIFFICULTY.maxAdjustment, Math.min(DYNAMIC_DIFFICULTY.maxAdjustment,
+          (perf.rewardAdjust || 0) + rewAdj
+        ));
+
+        perf.floorLog.push({
+          floor: currentFloor,
+          rounds: round,
+          deaths: newDeaths,
+          ctrHits: ctrHitsThisFloor,
+          diffAfter: perf.difficultyAdjust,
+          rewAfter: perf.rewardAdjust,
+        });
+      }
+    }
+
+    // 適用 floorPerformance 到 nextFloorModifiers（後續層用）
+    const diffAdj = perf.difficultyAdjust || 0;
+    const nextMods = { ...(room.nextFloorModifiers || {}) };
+    if (newStatus !== "completed") {
+      // 難度調整反映在下一層
+      nextMods.dynamicHpMult  = Math.max(0.7, 1 + diffAdj);
+      nextMods.dynamicAtkMult = Math.max(0.7, 1 + diffAdj * 0.7);
+      nextMods.dynamicDefMult = Math.max(0.7, 1 + diffAdj * 0.5);
+    }
+
     await updateDoc(doc(db, D, roomId), {
       ...memberUpd,
       monsterHP, round: round + 1,
       log: arrayUnion(logEntry),
       result, status: newStatus,
       processing: false,
+      nextFloorModifiers: nextMods,
+      floorPerformance: perf,
       ...(newStatus === "path_select"
         ? { pathOptions: generatePathOptions(), chosenPath: null }
         : {}),
@@ -607,23 +690,41 @@ export async function confirmDungeonEvent(roomId, room) {
 export async function advanceDungeonFloor(roomId, room, nextMonster) {
   try {
     const currentFloor = (room.currentFloor || 0) + 1;
+    const fi           = Math.min(currentFloor - 1, FLOOR_STAT_SCALE.length - 1); // currentFloor 是 1-based，陣列是 0-based
     const mode         = room.mode || "student";
     const ms           = MODE_SCALE[mode] || MODE_SCALE.student;
     const mods         = room.nextFloorModifiers || {};
     const chosenPath   = room.pathOptions?.[room.chosenPath || "A"];
     const eliteBoost   = chosenPath?.eliteBoost || 1.0;
     const memberIds    = Object.keys(room.members || {});
+    const perf         = room.floorPerformance || { totalDeaths:0, totalRounds:0, totalCtrHits:0, difficultyAdjust:0, rewardAdjust:0, floorLog:[] };
 
     const hostAtk   = room.hostAtk || 10;
     const hostScale = Math.max(0.8, Math.min(1.4, hostAtk / 18)); // 與 startDungeonFloor 一致
-    const hpMult    = (1.0 + (memberIds.length - 1) * 0.1) * eliteBoost * (mods.monsterHpMult || 1);
-    const atkMult   = eliteBoost * (mods.monsterAtkMult || 1);
-    const scaledHP  = Math.round(nextMonster.hp  * ms.hp  * hpMult * hostScale);
-    const scaledAtk = Math.round(nextMonster.atk * ms.atk * atkMult * hostScale);
-    const scaledDef = Math.round(nextMonster.def * ms.def);
+    // 套用動態難度調整（由 processDungeonRound 寫入 nextFloorModifiers）
+    const dynHpMult  = mods.dynamicHpMult || 1;
+    const dynAtkMult = mods.dynamicAtkMult || 1;
+    const dynDefMult = mods.dynamicDefMult || 1;
+    const hpMult     = (1.0 + (memberIds.length - 1) * 0.5) * eliteBoost * (mods.monsterHpMult || 1) * dynHpMult;
+    const atkMult    = eliteBoost * (mods.monsterAtkMult || 1) * dynAtkMult;
+    // 深度 scaling：越深層怪物越強
+    const floorScale = FLOOR_STAT_SCALE[fi] ?? 1.0;
+    const scaledHP   = Math.round(nextMonster.hp  * ms.hp  * hpMult * hostScale * floorScale);
+    const scaledAtk  = Math.round(nextMonster.atk * ms.atk * atkMult * hostScale * floorScale);
+    const scaledDef  = Math.round(nextMonster.def * ms.def * floorScale * dynDefMult);
+    // 深度獎勵 scaling
+    const floorReward = FLOOR_REWARD_SCALE[fi] ?? 1.0;
+    const baseReward  = (1.0 + (memberIds.length - 1) * 0.2);
+    // 動態難度獎勵調整
+    const dynamicReward = perf.rewardAdjust || 0;
+    const newRewardMult = Math.max(0.5, baseReward * floorReward * (1 + dynamicReward));
+
+    // tier offset：深度遞增
+    const tierOffset = FLOOR_TIER_OFFSET[fi] ?? 0;
+    const floorTier  = Math.min(9, (nextMonster.tier || 1) + tierOffset);
 
     // 每換一層怪物就重新抽任務
-    const aliveIds = memberIds.filter(id => room.members[id].alive);
+    const aliveIds = memberIds.filter(id => room.members[id]?.alive);
     const upd = {};
     for (const id of aliveIds) {
       upd[`members.${id}.arrows`]        = [];
@@ -639,15 +740,18 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
         id: nextMonster.id, name: nextMonster.name, icon: nextMonster.icon,
         hp:  Math.round(nextMonster.hp  * ms.hp),
         atk: scaledAtk, def: scaledDef,
-        tier: nextMonster.tier, family: nextMonster.family,
+        tier: floorTier, family: nextMonster.family,
       },
       monsterHP: scaledHP, monsterMaxHP: scaledHP,
+      rewardMult: newRewardMult,
       round: 1, log: [], result: null,
       status: "active", processing: false,
       pathOptions: null, chosenPath: null,
       shopItems: [], shopPurchases: {},
       currentEvent: null,
       nextFloorModifiers: {},
+      // 保留 floorPerformance（跨樓層累積）
+      floorPerformance: perf,
     });
     return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -788,6 +892,11 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
       : { type:"standard", param:null };
     const memberIds = Object.keys(room.members || {});
+    const floorIndex = room.mapFloorIndex ?? 0;
+    const fi = Math.min(floorIndex, FLOOR_STAT_SCALE.length - 1);
+    const floorScale = FLOOR_STAT_SCALE[fi] ?? 1.0;
+    const rewardScale = FLOOR_REWARD_SCALE[fi] ?? 1.0;
+
     const upd = {};
     for (const id of memberIds) {
       const m = room.members[id] || {};
@@ -808,11 +917,18 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
     const bossMod = roomMeta?.bossModifier || null;
     const finalMonster = bossMod && monster ? {
       ...monster,
-      hp:  Math.round((monster.hp  || 100) * (bossMod.hp  || 1)),
-      atk: Math.round((monster.atk || 10)  * (bossMod.atk || 1)),
-      def: Math.round((monster.def || 5)   * (bossMod.def || 1)),
-    } : monster;
+      hp:  Math.round((monster.hp  || 100) * (bossMod.hp  || 1) * floorScale),
+      atk: Math.round((monster.atk || 10)  * (bossMod.atk || 1) * floorScale),
+      def: Math.round((monster.def || 5)   * (bossMod.def || 1) * floorScale),
+    } : (monster ? {
+      ...monster,
+      hp:  Math.round((monster.hp  || 100) * floorScale),
+      atk: Math.round((monster.atk || 10)  * floorScale),
+      def: Math.round((monster.def || 5)   * floorScale),
+    } : null);
     const monsterHP = finalMonster?.hp || 100;
+    const baseReward = 1.0 + Math.max(0, memberIds.length - 1) * 0.2;
+    const rewardMult = baseReward * rewardScale;
 
     await updateDoc(doc(db, D, roomId), {
       ...upd,
@@ -821,12 +937,13 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       monsterMaxHP:        monsterHP,
       status:              "active",
       activeRoomContract:  contract,
+      rewardMult,
       round:               1,
       log:                 [],
       result:              null,
       processing:          false,
       totalFloors:         1,
-      currentFloor:        (room.mapFloorIndex ?? 0) + 1,
+      currentFloor:        floorIndex + 1,
       // 標記 Boss 房間以利結算獎勵判斷
       ...(bossMod ? { isBossRoom: true } : {}),
     });
@@ -866,7 +983,67 @@ export async function clearMapPendingRoom(roomId) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-// 累積地圖戰利品
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  隱藏房間系統  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// 房主進入一個可觸發隱藏房間的房間後，呼叫此函式檢查是否有隱藏房間
+// 若有，會將新的隱藏房間寫入 generatedFloors（只對當前樓層寫入）
+// 回傳 { found: true, hiddenRoom } 或 { found: false }
+export async function tryDiscoverHiddenRoom(roomId, room, floorIndex, currentRoomId) {
+  try {
+    const floors = room?.generatedFloors || [];
+    const floor  = floors[floorIndex];
+    if (!floor) return { found: false };
+    // 檢查是否已有隱藏房間在該樓層
+    const hasHidden = floor.rooms.some(r => r.type === "hidden");
+    if (hasHidden) return { found: false }; // 每層最多一個隱藏房間
+    const tier = room.mapDungeonId ? _dungeonTier(room.mapDungeonId) : 1;
+    const result = rollHiddenRoomDiscovery(floor, currentRoomId, tier);
+    if (!result) return { found: false };
+    // 將新房間寫入 generatedFloors（更新 Firestore 中該樓層的 rooms 陣列）
+    const updatedRooms = [...floor.rooms, result];
+    const updatedConnections = [...(floor.connections || [])];
+    // 連接隱藏房間到當前房間
+    updatedConnections.push({ a: currentRoomId, b: result.id });
+    // 更新到 Firestore
+    await updateDoc(doc(db, D, roomId), {
+      [`generatedFloors.${floorIndex}.rooms`]: updatedRooms,
+      [`generatedFloors.${floorIndex}.connections`]: updatedConnections,
+    });
+    return { found: true, hiddenRoom: result };
+  } catch (e) {
+    return { found: false, reason: e.message };
+  }
+}
+
+// 進入隱藏房間（房主呼叫）— 類似寶箱房間，但獎勵更豐
+// 獎勵由 DungeonChest 元件在玩家點擊確認時個別發放（避免重複給幣）
+export async function enterHiddenRoom(roomId, room, roomMeta) {
+  try {
+    const coins = roomMeta?.coins || 30;
+    // 切換到寶箱模式顯示獎勵（DungeonChest 會讀 hiddenRoomLoot 發放獎勵）
+    await updateDoc(doc(db, D, roomId), {
+      status: "chest",
+      activeRoomId: roomMeta?.id || null,
+      roomConfirms: {},
+      roomChoices:  {},
+      hiddenRoomLoot: { coins, found: true },
+    });
+    return { ok: true, coins };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// 取得隱藏房間樓層的 dungeon tier
+export { _dungeonTier };
+function _dungeonTier(dungeonId) {
+  return { normal:1, advanced:3, hard:4, hell:5 }[dungeonId?.split("_")[1]] || 1;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ▼▼▼  累積地圖戰利品  ▼▼▼
 export async function addMapLoot(roomId, prevLoot, newItems) {
   try {
     const merged = { ...prevLoot };
@@ -919,8 +1096,8 @@ export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabe
 // 取得某個 dungeon 是否已被首殺
 export async function checkDungeonFirstClear(dungeonId) {
   try {
-    const snap = await getDocs(query(collection(db, "dungeonBroadcasts"), where("dungeonId", "==", dungeonId)));
-    return { ok: true, isFirstClear: !snap.empty, data: snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } };
+    const snap = await getDoc(doc(db, "dungeonFirstClear", dungeonId));
+    return { ok: true, isFirstClear: snap.exists(), data: snap.exists() ? { id: snap.id, ...snap.data() } : null };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
@@ -1092,13 +1269,11 @@ export async function enterNonCombatRoom(roomId, roomType, extraData = {}) {
       roomConfirms: {},
     };
     if (normalizedType === "shop") {
-      const { DUNGEON_SHOP_ITEMS } = await import("./dungeonData");
       const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
       upd.shopItems = shuffled.slice(0, 5).map(item => item.id);
       // 不重置 shopPurchases，讓購買記錄跨商店持久（hp_potion 除外）
     }
     if (normalizedType === "event") {
-      const { drawDungeonEvent } = await import("./dungeonData");
       upd.currentEvent = drawDungeonEvent();
     }
     await updateDoc(doc(db, D, roomId), upd);

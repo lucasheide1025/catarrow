@@ -358,7 +358,7 @@ export function rollBossDrops(family, difficulty, chanceMult = 1.0) {
 
   if (Math.random() < 0.65 * cm) drops.push(pick(pool.boss));
 
-  const superRate = { normal:0.01, hard:0.02, elite:0.03, nightmare:0.05 }[difficulty] || 0.01;
+  const superRate = { normal:0.01, advanced:0.02, hard:0.03, hell:0.05 }[difficulty] || 0.01;
   if (Math.random() < superRate * cm) drops.push(pick(pool.superRare));
 
   return drops.filter(Boolean);

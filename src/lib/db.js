@@ -1960,26 +1960,50 @@ export function subscribePotions(memberId, callback) {
   );
 }
  
-// 合成藥劑：檢查配方材料 → 扣材料 → 加 1 瓶藥
+// 合成藥劑：檢查配方材料（村莊資源）→ 扣材料 + 扣金幣 → 加 1 瓶藥
+// 2026-06-30 修正：改從 members/{id}.village.resources 讀取材料（非 materialInventory）
 export async function craftPotion(memberId, potionId) {
   if (!memberId || !potionId) return { ok: false, reason: "參數錯誤" };
   const potion = POTIONS.find(p => p.id === potionId);
   if (!potion?.recipe?.length) return { ok: false, reason: "這個藥劑沒有合成配方" };
   try {
-    // 1. 檢查並扣除材料
-    const matRef  = doc(db, C_MATERIALS, memberId);
-    const matSnap = await getDoc(matRef);
-    const inventory = matSnap.exists() ? (matSnap.data().items || {}) : {};
+    // 1. 讀取會員文件（村莊資源 + 金幣）
+    const memRef = doc(db, C.members, memberId);
+    const memSnap = await getDoc(memRef);
+    if (!memSnap.exists()) return { ok: false, reason: "找不到會員資料" };
+    const memData = memSnap.data();
+    const resources = memData.village?.resources || {};
+    const coins = memData.coins || 0;
+
+    // 2. 檢查配方材料（從村莊資源）
     for (const r of potion.recipe) {
-      if ((inventory[r.id] || 0) < r.count) {
-        const mat = MATERIALS.find(m => m.id === r.id);
-        return { ok: false, reason: `材料不足：「${mat?.name || r.id}」需要 ${r.count} 個，目前 ${inventory[r.id] || 0} 個` };
+      const have = Math.floor(resources[r.id] || 0);
+      if (have < r.count) {
+        const parts = r.id.split("_t");
+        const resName = parts[1] ? `${parts[0]} T${parts[1]}` : r.id;
+        return { ok: false, reason: `材料不足：「${resName}」需要 ${r.count} 個，目前 ${have} 個` };
       }
     }
-    potion.recipe.forEach(r => { inventory[r.id] = (inventory[r.id] || 0) - r.count; });
-    await setDoc(matRef, { items: inventory, updatedAt: serverTimestamp() }, { merge: true });
 
-    // 2. 加入藥劑
+    // 3. 檢查金幣
+    if ((coins || 0) < (potion.gold || 0)) {
+      return { ok: false, reason: `金幣不足：需要 ${potion.gold} 金幣，目前 ${Math.floor(coins)} 金幣` };
+    }
+
+    // 4. 扣除村莊資源 + 金幣
+    const newResources = { ...resources };
+    potion.recipe.forEach(r => {
+      newResources[r.id] = Math.max(0, (newResources[r.id] || 0) - r.count);
+    });
+    await setDoc(memRef, {
+      village: {
+        ...(memData.village || {}),
+        resources: newResources,
+      },
+      coins: Math.max(0, (coins || 0) - (potion.gold || 0)),
+    }, { merge: true });
+
+    // 5. 加入藥劑
     await addPotions(memberId, [{ id: potionId, count: 1 }]);
     await updateCraftStats(memberId, "potion", { potionId }).catch(() => {});
     return { ok: true, potion };
@@ -1988,7 +2012,6 @@ export async function craftPotion(memberId, potionId) {
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
   }
 }
- 
 // 使用藥劑（戰鬥開始時呼叫，potionIds = ["heal_s", ...] 每個扣 1 瓶）
 export async function usePotions(memberId, potionIds) {
   if (!memberId || !potionIds?.length) return { ok: true };

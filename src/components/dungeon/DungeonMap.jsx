@@ -23,6 +23,15 @@ const CSS = `
   100% { opacity: 1; transform: scale(1); }
 }
 .dm-room-enter { animation: dm-fade-in 0.3s ease both; }
+@keyframes dm-elite-glow {
+  0%   { filter: drop-shadow(0 0 3px rgba(249,115,22,0.4)); }
+  50%  { filter: drop-shadow(0 0 10px rgba(249,115,22,0.8)); }
+  100% { filter: drop-shadow(0 0 3px rgba(249,115,22,0.4)); }
+}
+@keyframes dm-hidden-pulse {
+  0%,100% { opacity: 0.8; transform: scale(1); }
+  50%     { opacity: 1;   transform: scale(1.12); }
+}
 `;
 
 function roomRect(room) {
@@ -227,12 +236,26 @@ export default function DungeonMap({
               />
 
               {/* 未探索房間：斜線網底 */}
-              {!isExplored && !isEntry && (
+              {!isExplored && !isEntry && !isStairs && (
                 <rect
                   x={x} y={y}
                   width={w} height={h}
                   rx={rx}
                   fill="url(#p-locked)"
+                />
+              )}
+
+              {/* 精英強化：火焰外框 */}
+              {room.type === "elite" && isExplored && (
+                <rect
+                  x={x - 3} y={y - 3}
+                  width={w + 6} height={h + 6}
+                  rx={rx + 1}
+                  fill="none"
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  style={{ animation: "dm-elite-glow 2s ease-in-out infinite" }}
                 />
               )}
 
@@ -248,6 +271,22 @@ export default function DungeonMap({
                 {isExplored || isEntry ? meta.icon : "🔒"}
               </text>
 
+              {/* 隱藏房間特殊顯示：已探索時用 ? 圖示 + 動畫 */}
+              {room.type === "hidden" && isExplored && (
+                <text
+                  x={rect.cx} y={rect.cy + 5}
+                  textAnchor="middle"
+                  fontSize={22}
+                  fill="#a78bfa"
+                  style={{
+                    userSelect:"none", pointerEvents:"none",
+                    animation: "dm-hidden-pulse 1.5s ease-in-out infinite",
+                  }}
+                >
+                  ❓
+                </text>
+              )}
+
               {/* 入口特殊標籤 */}
               {isEntry && (
                 <text
@@ -258,6 +297,20 @@ export default function DungeonMap({
                   style={{ userSelect:"none", pointerEvents:"none" }}
                 >
                   入口
+                </text>
+              )}
+
+              {/* 精英標籤 */}
+              {room.type === "elite" && isExplored && (
+                <text
+                  x={rect.cx} y={y - 6}
+                  textAnchor="middle"
+                  fontSize={7.5}
+                  fontWeight="bold"
+                  fill="#f97316"
+                  style={{ userSelect:"none", pointerEvents:"none" }}
+                >
+                  ⚡ 精英
                 </text>
               )}
 
@@ -290,9 +343,10 @@ export default function DungeonMap({
               {isExplored && (() => {
                 const badge = getContractBadge(room);
                 if (!badge) return null;
+                const isElite = room.type === "elite";
                 return (
                   <text
-                    x={rect.cx} y={y + h + 23}
+                    x={rect.cx} y={y + h + (isElite ? 30 : 23)}
                     textAnchor="middle"
                     fontSize={7.5}
                     fontWeight="bold"

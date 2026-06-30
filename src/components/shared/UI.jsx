@@ -4,7 +4,7 @@
 // ─── 基礎元件 ──────────────────────────────────────────────
 export function Card({ children, className = "", style }) {
   return (
-    <div className={`rounded-2xl border border-white/20 shadow-[0_2px_12px_rgba(0,0,0,0.25)] backdrop-blur-sm ${className}`} style={{ background:"rgba(255,255,255,0.88)", ...style }}>
+    <div className={`rounded-2xl border border-white/10 shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-sm ${className}`} style={{ background:"#1e293b", ...style }}>
       {children}
     </div>
   );

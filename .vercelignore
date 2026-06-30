@@ -1,0 +1,22 @@
+# 排除開發/技能目錄
+.claude
+.gemini
+.cursor
+.hooks
+
+# 排除文件
+token.pickle
+*.md
+AGENTS.md
+SETUP.md
+STUDENT_GUIDE.md
+GUEST_GUIDE.md
+CLAUDE.md
+PROJECT_STATE.md
+cat-card-prompts.md
+
+# 排除腳本
+scripts/
+image-prompts/
+docs/
+.trellis/

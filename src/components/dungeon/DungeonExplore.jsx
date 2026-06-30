@@ -4,11 +4,12 @@ import DungeonMap from "./DungeonMap";
 import {
   getDungeonFloor, getReachableRooms, getRoomMeta, getContractBadge,
   getContractDesc, DUNGEON_MAPS,
+  canTriggerHiddenRoom,
 } from "../../lib/dungeonData";
 import {
-  subscribeDungeonRoom, saveMapExploration, proposeMapMove,
-  castMapVote, resolveMapVote, advanceMapFloor, enterMapCombatRoom,
+  subscribeDungeonRoom, saveMapExploration, advanceMapFloor, enterMapCombatRoom,
   enterNonCombatRoom, proposeMapBattle, clearMapPendingRoom,
+  tryDiscoverHiddenRoom, enterHiddenRoom,
 } from "../../lib/dungeonDb";
 import { MONSTERS, applyVariant } from "../../lib/monsterData";
 
@@ -16,8 +17,6 @@ import { MONSTERS, applyVariant } from "../../lib/monsterData";
 function mapRoomTier(tier) {
   return (["common", "rare", "elite", "fierce", "boss", "mythic"])[Math.min((tier || 1) - 1, 5)];
 }
-
-const VOTE_SEC = 30;
 
 // ── 非戰鬥房間事件 modal ──────────────────────────────────────
 function RoomEventModal({ room, memberHPs, onClose }) {
@@ -30,6 +29,7 @@ function RoomEventModal({ room, memberHPs, onClose }) {
     trap:     { title:"陷阱！",     color:"#f87171", desc:"踩到機關，全體受到傷害。", icon:"🪤" },
     merchant: { title:"神秘商人",   color:"#60a5fa", desc:"可用金幣購買道具。（Phase 3 接商店）", icon:"🛒" },
     teleport: { title:"傳送陣",     color:"#e879f9", desc:"傳送到同層已探索的另一個房間。", icon:"🌀" },
+    hidden:   { title:"隱藏房間！", color:"#a78bfa", desc:"發現秘密通道！獲得隱藏獎勵。", icon:"❓" },
     event:    { title:"特殊事件",   color:"#fde68a", desc:"發生了神秘的事件……", icon:"✨" },
     stairs:   { title:"找到樓梯！", color:"#94a3b8", desc:"可以前往下一層。", icon:"🪜" },
   }[room.type] || { title: meta.label, color: meta.color, desc: "", icon: meta.icon };
@@ -70,103 +70,6 @@ function RoomEventModal({ room, memberHPs, onClose }) {
         }}>
           確認，繼續探索
         </button>
-      </div>
-    </div>
-  );
-}
-
-// ── 投票 UI ───────────────────────────────────────────────────
-function VoteOverlay({ proposal, room, memberId, isHost, floorData, onVote, onResolve, onSkip }) {
-  const [secLeft, setSecLeft] = useState(VOTE_SEC);
-  const timerRef = useRef(null);
-
-  // 查詢目標房間的中文名稱
-  const targetRoomLabel = useMemo(() => {
-    const targetRoom = floorData?.rooms?.find(r => r.id === proposal?.targetRoomId);
-    return targetRoom?.label || proposal?.targetRoomId;
-  }, [floorData, proposal?.targetRoomId]);
-
-  useEffect(() => {
-    setSecLeft(VOTE_SEC);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setSecLeft(s => {
-        if (s <= 1) {
-          clearInterval(timerRef.current);
-          if (isHost) onResolve();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [proposal?.targetRoomId]); // eslint-disable-line
-
-  const votes      = room?.mapVotes || {};
-  const totalVotes = Object.keys(room?.members || {}).length;
-  const votedFor   = votes[memberId];
-  const voteCount  = Object.values(votes).filter(v => v === proposal.targetRoomId).length;
-
-  // 全員投完立刻結算，不等計時器
-  const totalVoteCast = Object.keys(votes).length;
-  useEffect(() => {
-    if (isHost && totalVoteCast > 0 && totalVoteCast >= totalVotes) {
-      clearInterval(timerRef.current);
-      onResolve();
-    }
-  }, [totalVoteCast, totalVotes, onResolve]); // eslint-disable-line
-
-  return (
-    <div style={{
-      position:"fixed", inset:0, background:"rgba(0,0,0,0.6)",
-      display:"flex", alignItems:"flex-end", justifyContent:"center",
-      zIndex:90, backdropFilter:"blur(3px)",
-    }}>
-      <div style={{
-        width:"100%", maxWidth:480, background:"linear-gradient(160deg,#1c1008,#2d1a0a)",
-        borderRadius:"24px 24px 0 0", padding:"20px 18px 32px",
-        border:"1.5px solid rgba(245,158,11,0.3)", borderBottom:"none",
-      }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-          <div style={{ fontWeight:900, fontSize:15, color:"#fbbf24" }}>🗺️ 隊長提議移動</div>
-          <div style={{
-            fontWeight:900, fontSize:22, color: secLeft <= 10 ? "#ef4444" : "#fbbf24",
-            minWidth:36, textAlign:"right",
-          }}>
-            {secLeft}s
-          </div>
-        </div>
-
-        <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginBottom:16 }}>
-          前往 <b style={{ color:"white" }}>{targetRoomLabel}</b>
-          {" — "}<b style={{ color:"#4ade80" }}>{voteCount}/{totalVotes}</b> 人同意
-        </div>
-
-        <div style={{ display:"flex", gap:10 }}>
-          <button
-            onClick={() => onVote(proposal.targetRoomId)}
-            disabled={!!votedFor}
-            style={{
-              flex:2, padding:"12px 0", borderRadius:14, fontWeight:900,
-              fontSize:14, border:"none", cursor: votedFor ? "default" : "pointer",
-              background: votedFor === proposal.targetRoomId
-                ? "rgba(74,222,128,0.3)"
-                : "linear-gradient(90deg,#22c55e,#16a34a)",
-              color: votedFor === proposal.targetRoomId ? "#4ade80" : "white",
-            }}>
-            {votedFor ? "✓ 已同意" : "👍 同意前往"}
-          </button>
-          {isHost && (
-            <button onClick={onSkip} style={{
-              flex:1, padding:"12px 0", borderRadius:14, fontWeight:800,
-              fontSize:13, border:"1px solid rgba(255,255,255,0.15)",
-              background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.5)",
-              cursor:"pointer",
-            }}>
-              取消
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -230,9 +133,7 @@ export default function DungeonExplore({
     [floorData, currentRoomId]
   );
 
-  const voteProposal = room?.mapVoteProposal || null;
-
-  // ── 處理房間點擊 ─────────────────────────────────────────────
+  // ── 處理房間點擊（隊長直接決定，無需投票）──────────────────────
   const handleRoomClick = useCallback(async (roomId_) => {
     if (!floorData) return;
     const clickedRoom = floorData.rooms.find(r => r.id === roomId_);
@@ -275,6 +176,21 @@ export default function DungeonExplore({
       if (roomId && isHost) {
         proposeMapBattle(roomId, { ...clickedRoom, _type:"battle_preview" }).catch(() => {});
       }
+      // 進入戰鬥房後嘗試發現隱藏房間
+      if (roomId && isHost && canTriggerHiddenRoom(clickedRoom.type)) {
+        tryDiscoverHiddenRoom(roomId, room, floorIndex, roomId_)
+          .then(res => {
+            if (res?.found) {
+              // 發現隱藏房間後，會自動更新 generatedFloors 在 Firestore 上
+              // DungeonMap 會自動透過 room 訂閱更新
+            }
+          }).catch(() => {});
+      }
+    } else if (clickedRoom.type === "hidden") {
+      // 隱藏房間：直接給獎勵後標記為清除
+      if (roomId && isHost) {
+        await enterHiddenRoom(roomId, room, clickedRoom.meta);
+      }
     } else if (clickedRoom.type === "stairs") {
       setEventModal(clickedRoom);
     } else if (clickedRoom.type === "teleport") {
@@ -308,30 +224,6 @@ export default function DungeonExplore({
       setEventModal(clickedRoom);
     }
   }, [floorData, exploredIds, clearedIds, floorIndex, roomId, isHost]);
-
-  // host 提案移動（有多人時走投票）
-  const handleProposeMove = useCallback(async (targetRoomId) => {
-    const memberCount = Object.keys(room?.members || {}).length;
-    if (memberCount <= 1 || !roomId) {
-      // 單人直接移動
-      handleRoomClick(targetRoomId);
-    } else {
-      // 多人：發起投票
-      await proposeMapMove(roomId, targetRoomId);
-      await castMapVote(roomId, memberId, targetRoomId); // host 自動投自己
-    }
-  }, [room, roomId, memberId, handleRoomClick]);
-
-  const handleVote = useCallback(async (targetRoomId) => {
-    if (!roomId || !memberId) return;
-    await castMapVote(roomId, memberId, targetRoomId);
-  }, [roomId, memberId]);
-
-  const handleResolveVote = useCallback(async () => {
-    if (!roomId || !isHost) return;
-    const res = await resolveMapVote(roomId, room, voteProposal?.targetRoomId);
-    if (res.ok) handleRoomClick(res.winner);
-  }, [roomId, isHost, room, voteProposal, handleRoomClick]);
 
   // 切換樓層
   const handleNextFloor = useCallback(async () => {
@@ -420,34 +312,15 @@ export default function DungeonExplore({
           currentRoomId={currentRoomId}
           reachableIds={reachableIds}
           clearedIds={clearedIds}
-          onRoomClick={isHost ? handleProposeMove : undefined}
-          pendingVoteRoomId={voteProposal?.targetRoomId}
-          disabled={!!voteProposal || !isHost}
+          onRoomClick={isHost ? handleRoomClick : undefined}
+          disabled={!isHost}
         />
       </div>
 
       {/* ── 底部提示 ── */}
       <div style={{ flexShrink:0, padding:"8px 16px 24px", textAlign:"center", fontSize:11, color:"rgba(255,255,255,0.2)" }}>
-        {isHost ? "點擊發光的房間移動" : "等待隊長決定路線"}
+        {isHost ? "點擊發光的房間移動（隊長決定）" : "等待隊長決定路線"}
       </div>
-
-      {/* ── 投票 overlay ── */}
-      {voteProposal && (
-        <VoteOverlay
-          proposal={voteProposal}
-          room={room}
-          memberId={memberId}
-          isHost={isHost}
-          floorData={floorData}
-          onVote={handleVote}
-          onResolve={handleResolveVote}
-          onSkip={isHost ? async () => {
-            const { updateDoc, doc: firestoreDoc } = await import("firebase/firestore");
-            const { db: firestoreDb } = await import("../../lib/firebase");
-            await updateDoc(firestoreDoc(firestoreDb, "dungeonRooms", roomId), { mapVoteProposal: null, mapVotes: {} });
-          } : undefined}
-        />
-      )}
 
       {/* ── 非戰鬥房間 modal ── */}
       {eventModal && eventModal._type !== "battle_preview" && (

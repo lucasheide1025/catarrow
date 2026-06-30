@@ -78,6 +78,16 @@ body {
 
 .content-area .bg-blue-600           { background-color: #1d4ed8; }
 
+/* ── 補充：低對比 Tailwind class ── */
+.content-area .text-gray-300        { color: #cbd5e1; }
+.content-area .text-gray-200        { color: #e2e8f0; }
+.content-area .text-gray-100        { color: #f1f5f9; }
+.content-area .text-white           { color: #f1f5f9; }
+.content-area .bg-white\/5,
+.content-area .bg-white\/8,
+.content-area .bg-white\/10          { background-color: rgba(255,255,255,0.06); }
+.content-area .bg-white\/20          { background-color: rgba(255,255,255,0.08); }
+
 /*
  ─── Inline style 覆寫 ───────────────────────────────────────
  有些 admin 組件用 inline styles（background:"white"），
@@ -100,6 +110,9 @@ body {
 .content-area [style*="color: #475569"]            { color: #94a3b8 !important; }
 .content-area [style*="color: #1f2937"]            { color: #f1f5f9 !important; }
 .content-area [style*="color: #111827"]            { color: #f1f5f9 !important; }
+
+.content-area [style*="background: rgba(255,255,255,0.88"] { background: #1e293b !important; }
+.content-area [style*="background-color: rgba(255,255,255,0.88"] { background-color: #1e293b !important; }
 
 .content-area [style*="border-color: #e2e8f0"]    { border-color: rgba(255,255,255,0.08) !important; }
 .content-area [style*="border: 1px solid #e2e8f0"] { border-color: rgba(255,255,255,0.08) !important; }

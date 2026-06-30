@@ -240,6 +240,47 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 }
 
 // ══════════════════════════════════════════════════════════════
+// ▼▼▼  平衡性常數  ▼▼▼
+// ══════════════════════════════════════════════════════════════
+
+// ── 每樓層怪物強度遞增曲線（floorIndex → 額外 tier offset）──
+// 讓深層樓層的怪物基礎數值更高，避免前期後期感受一致
+// floor 0=首層無加成, floor 4=第5層開始 +1 tier, floor 6=第7層 +2 tier
+export const FLOOR_TIER_OFFSET = [0, 0, 0, 0, 0, 1, 1, 2, 2, 3];
+
+// ── 每層對怪物數值的額外乘數（在 hostScale / 人數縮放之外）──
+// 讓怪物 HP/ATK/DEF 隨樓層深度逐步上升
+// floor 0 是起始層（正常 1.0），最後一層 Boss 層達約 2.0x
+export const FLOOR_STAT_SCALE = [1.0, 1.0, 1.05, 1.1, 1.2, 1.3, 1.5, 1.7, 2.0, 2.2];
+
+// ── 每層獎勵倍率（遞增）────────────────────────────────────
+// 金幣/掉落物/經驗值隨深度指數成長
+// 讓玩家有動力深入探索
+// floor 0=首層 1.0x, 最後一層 Boss 層達約 2.5x
+export const FLOOR_REWARD_SCALE = [1.0, 1.0, 1.1, 1.2, 1.35, 1.5, 1.7, 1.9, 2.2, 2.5];
+
+// ── 難度對獎勵的加成倍率────────────────────────────────────
+export const DIFFICULTY_REWARD_MULT = {
+  normal:   1.0,
+  advanced: 1.5,
+  hard:     2.0,
+  hell:     3.0,
+};
+
+// ── 動態難度調整參數────────────────────────────────────────
+export const DYNAMIC_DIFFICULTY = {
+  enabled: true,
+  // 每多一回合（超出 3 回合），怪物 +5% 經驗回饋（soft catch-up）
+  rewardBonusPerExtraRound: 0.05,
+  // 每陣亡一人次，下一層難度 -2%（降低挫敗感）
+  difficultyReductionPerDeath: 0.02,
+  // 每被反擊命中一次，下一層獎勵 +3%（鼓勵高風險玩法）
+  rewardBonusPerCounterHit: 0.01,
+  // 最大累積調整幅度
+  maxAdjustment: 0.4,
+};
+
+// ══════════════════════════════════════════════════════════════
 // ▼▼▼  新版地下城地圖系統（Phase 1）  ▼▼▼
 // ══════════════════════════════════════════════════════════════
 
@@ -254,6 +295,7 @@ export const ROOM_TYPE_META = {
   merchant: { label:"商人",   icon:"🛒",  color:"#60a5fa", nodeColor:"#1e3a5f" },
   rest:     { label:"休息",   icon:"💤",  color:"#a78bfa", nodeColor:"#2e1065" },
   teleport: { label:"傳送",   icon:"🌀",  color:"#e879f9", nodeColor:"#581c87" },
+  hidden:   { label:"隱藏",   icon:"❓",  color:"#a78bfa", nodeColor:"#2e1065" },
   event:    { label:"特殊",   icon:"✨",  color:"#fde68a", nodeColor:"#713f12" },
   stairs:   { label:"樓梯",   icon:"🪜",  color:"#94a3b8", nodeColor:"#1e293b" },
 };
@@ -494,13 +536,15 @@ export const DIFFICULTY_FLOOR_COUNTS = {
 };
 
 const GRID_ROOM_WEIGHTS = [
-  { type:"monster",  w:35 },
+  { type:"monster",  w:32 },
   { type:"elite",    w:10 },
-  { type:"chest",    w:15 },
-  { type:"rest",     w:15 },
-  { type:"trap",     w:10 },
-  { type:"merchant", w:10 },
+  { type:"chest",    w:14 },
+  { type:"rest",     w:14 },
+  { type:"trap",     w:9  },
+  { type:"merchant", w:9  },
   { type:"event",    w:5  },
+  { type:"teleport", w:5  },
+  { type:"hidden",   w:2  }, // 低機率直接出現，通常從探索發現
 ];
 
 function _pickWeighted(weights) {
@@ -515,11 +559,62 @@ function _dungeonTier(dungeonId) {
   return { normal:1, advanced:3, hard:4, hell:5 }[_dungeonDifficulty(dungeonId)] || 1;
 }
 
+// 精英強化：隨機選一種高難度合約
+const ELITE_CONTRACTS = ["x_crit", "reversal", "score_gate", "all_hit", "odd_only", "even_only"];
+function _pickEliteContract(tier) {
+  const type = ELITE_CONTRACTS[Math.floor(Math.random() * ELITE_CONTRACTS.length)];
+  let param = null;
+  if (type === "x_crit")       param = 6 + Math.floor(Math.random() * 5);
+  if (type === "score_gate")   param = Math.min(6 + Math.floor(tier / 2), 9);
+  if (type === "odd_only" || type === "even_only") param = null;
+  return { tier: tier + 1, contract: type, contractParam: param }; // 精英 tier+1
+}
+
 function _roomMeta(type, tier) {
   if (!["monster","elite","boss"].includes(type)) return undefined;
   if (type === "monster") return { tier, contract:"standard" };
-  if (type === "elite")   return { tier, contract:"all_hit" };
+  if (type === "elite")   return _pickEliteContract(tier);
   return { tier, contract:"score_gate", contractParam: Math.min(6 + tier, 9) };
+}
+
+// ── 隱藏房間發現機率（進入普通房間後觸發）─────────────────────
+export const HIDDEN_ROOM_DISCOVER_CHANCE = 0.08; // 8%
+const HIDDEN_TRIGGER_TYPES = ["monster", "elite", "chest", "trap", "event"];
+
+// 檢查該房間類型能否觸發隱藏房間發現
+export function canTriggerHiddenRoom(roomType) {
+  return HIDDEN_TRIGGER_TYPES.includes(roomType);
+}
+
+// 擲骰決定是否發現隱藏房間，並回傳新房間的資料
+export function rollHiddenRoomDiscovery(floorData, currentRoomId, tier) {
+  if (Math.random() > HIDDEN_ROOM_DISCOVER_CHANCE) return null;
+  if (!floorData) return null;
+  const allIds = new Set(floorData.rooms.map(r => r.id));
+  // 找一個與已探索房間相鄰的空位（往右/往下偏移 1 格，避開已有房間的位置）
+  const currentRoom = floorData.rooms.find(r => r.id === currentRoomId);
+  if (!currentRoom) return null;
+  // 嘗試在 (currentX+1, currentY) 或 (currentX, currentY+1) 找空位
+  const candidates = [
+    { x: currentRoom.x + 1, y: currentRoom.y },
+    { x: currentRoom.x,     y: currentRoom.y + 1 },
+    { x: currentRoom.x - 1, y: currentRoom.y },
+    { x: currentRoom.x,     y: currentRoom.y - 1 },
+  ];
+  for (const { x, y } of candidates) {
+    const candidateId = `hidden_${x}_${y}`;
+    if (!allIds.has(candidateId) && x >= 0 && y >= 0) {
+      const rewardTier = Math.min(9, tier + 2);
+      return {
+        id: candidateId,
+        type: "hidden",
+        x, y,
+        label: "隱藏房間",
+        meta: { tier: rewardTier, coins: 20 + Math.floor(Math.random() * 60) },
+      };
+    }
+  }
+  return null;
 }
 
 function _gridConns(fi, cols, rows) {
@@ -552,13 +647,14 @@ function _regularFloor(fi, cols, rows, tier) {
 }
 
 function _bossFloor(fi, tier, bossModifier) {
+  // 固定線性路線：入口 → 精英（1 間）→ 休息 → 商店/寶箱（隨機二出一）→ Boss
+  const hasShop = Math.random() < 0.5;
   const layout = [
     { col:0, row:0, type:"entrance", label:"入口通道" },
-    { col:1, row:0, type:"rest",     label:"休息室"   },
     { col:0, row:1, type:"elite",    label:"精英守衛" },
-    { col:1, row:1, type:"merchant", label:"神秘商人" },
-    { col:0, row:2, type:"monster",  label:"深處通道" },
-    { col:1, row:2, type:"boss",     label:"BOSS"     },
+    { col:0, row:2, type:"rest",     label:"休息室"   },
+    { col:1, row:0, type: hasShop ? "merchant" : "chest", label: hasShop ? "神秘商人" : "隱藏寶庫" },
+    { col:1, row:1, type:"boss",     label:"BOSS"     },
   ];
   const rooms = layout.map(({ col, row, type, label }) => {
     const meta = _roomMeta(type, tier);
@@ -568,7 +664,14 @@ function _bossFloor(fi, tier, bossModifier) {
     }
     return room;
   });
-  return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:_gridConns(fi, 2, 3), isBossFloor:true };
+  // 手動線性連接（一條路到底）
+  const conns = [
+    { a:`f${fi}c0r0`, b:`f${fi}c0r1` },  // entrance → elite
+    { a:`f${fi}c0r1`, b:`f${fi}c0r2` },  // elite → rest
+    { a:`f${fi}c0r2`, b:`f${fi}c1r0` },  // rest → shop/chest
+    { a:`f${fi}c1r0`, b:`f${fi}c1r1` },  // shop/chest → boss
+  ];
+  return { floor:fi+1, startRoomId:`f${fi}c0r0`, rooms, connections:conns, isBossFloor:true };
 }
 
 export function generateDungeonFloors(dungeonId) {
