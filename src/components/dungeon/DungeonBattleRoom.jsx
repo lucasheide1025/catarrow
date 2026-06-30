@@ -1081,8 +1081,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         );
       }
 
-        }
-
     // ── 普通房間通關 ───────────────────────────────────────
       return (
         <div className="h-[100dvh] overflow-y-auto text-white pb-8"
