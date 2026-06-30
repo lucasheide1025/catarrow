@@ -1161,7 +1161,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           </div>
         </div>
       );
-    }
   }
 
   if (!room || status === "waiting") {
