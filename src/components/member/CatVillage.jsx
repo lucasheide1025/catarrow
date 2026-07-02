@@ -1708,7 +1708,6 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
       {tab === "village" && (
         <>
-          <VillageGoalBanner />
           <PanoramaView villageLevel={villageLevel} />
 
           <SecretaryCat cat={secretaryCat} />
@@ -1729,6 +1728,8 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           </div>
 
           <ResourceRow resources={resources} gachaCoins={gachaCoins} />
+
+          <VillageGoalBanner />
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">

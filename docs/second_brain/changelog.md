@@ -3,6 +3,47 @@
 
 ---
 
+## 2026-07-02（BattleResultPanel 統一結算 — WB / Party / Dungeon / Duel）
+
+### 改了什麼
+
+**BattleResultPanel.jsx — PartySection 新增 isMvp + alive 支援**
+- `isMvp === true` → 顯示 "👑 MVP" 黃色 badge（緊接在名字旁）
+- `alive === false` → 顯示 "💀 陣亡" 紅色 badge，頭像半透明，傷害字體變灰
+- `m.crits ?? 0` 防 undefined 爆炸
+
+**WorldBossAttack.jsx — 結果畫面重整**
+- `wbResultConfig` 追加 `showDmgDealt: true` + `showCritCount: true`
+- 移除舊 "戰鬥報告" div（5 行 BattleStatRow），改成精簡的 3 行：機器人傷害（conditional）+ 本次總傷害 + Boss 剩餘 HP
+- 移除 allRounds 回合 log 顯示（資訊移入 BattleResultPanel 分數分布）
+- `BattleResultPanel` 現在一次顯示：傷害 + 爆擊 + 平均分 + 箭數 + 回合數 + 分數分布
+
+**PartyBattleRoom.jsx — 戰績表統一進 BattleResultPanel**
+- 在 `mvpId` 計算之後，將 `partyResultData.party` 補入隊伍成員（含 `isMvp` / `alive`）
+- `partyStatsConfig` 追加 `showPartyMembers: true` + `showPartyLeader: true`
+- 移除舊的 `statsList.map(...)` JSX 詳細戰績表 div
+- 結算頁現在只有一個 `<BattleResultPanel>` 統一呈現（含怪物資訊、個人統計、隊伍成員）
+
+**DungeonBattleRoom.jsx — 普通房間結算改用 BattleResultPanel**
+- 新增 import `BattleResultPanel`, `RESULT_CONFIG_DUNGEON`
+- 舊的「本房間獎勵」div 完全移除，改為 IIFE 計算 `dungeonRoomData` + `dungeonRoomConfig`
+- drops 包含：coins / materials / arrowDew / chest（chestCount > 0 → true）
+- stats：從 `room.log` 加總個人傷害，有傷害才顯示 `showDmgDealt`，沒有 log 則 stats = null
+- 另加獨立「經驗獎勵」block（archerXP / catXP / gachaCoins）和收藏品 block
+
+**DuelRoom.jsx — 結算統計改用 BattleResultPanel**
+- 新增 import `BattleResultPanel`
+- 計算 `duelArrowBreakdown`（從 log.attacks 過濾自己的 arrowBreakdown）→ scoreBreakdown / avgScore / critCount
+- 舊的 3 個 BattleStatCard flex div 替換為 `<BattleResultPanel>` 顯示完整統計
+- `duelStats` 累積戰績保留為獨立的 BattleStatCard
+
+### 踩坑提醒
+- `partyResultData.party` 要在 `mvpId` 算完後再賦值（statsList 才有 mvpId 可用）
+- DuelRoom 的 `arrowBreakdown` 在 log 裡是 per-attack 層級（`entry.attacks[].arrowBreakdown`），不是 per-round
+- Dungeon non-boss 的 `loot.arrowdew`（小寫 d）要對應到 `drops.arrowDew`（大寫 D）
+
+---
+
 ## 2026-07-02（事件彈窗倒數 + banner 淡出 + 角色往上攻擊動作）
 
 ### 改了什麼

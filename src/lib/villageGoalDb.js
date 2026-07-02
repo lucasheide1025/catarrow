@@ -209,6 +209,63 @@ export async function expireGoal(goalId) {
   }
 }
 
+// ── 後台自定義村目標 ──────────────────────────────────────
+export async function adminCreateCustomGoal({
+  goalType,
+  targetValue,
+  rewards,
+  title,
+  description,
+  durationHours = 24,
+}) {
+  try {
+    // 先關閉現有 active 目標（如果有）
+    const activeSnap = await getDocs(
+      query(collection(db, COLLECTION), where("status", "==", "active"), limit(1))
+    );
+    if (!activeSnap.empty) {
+      await updateDoc(doc(db, COLLECTION, activeSnap.docs[0].id), {
+        status: "cancelled",
+        cancelledAt: serverTimestamp(),
+      });
+    }
+
+    const endAt = new Date(Date.now() + durationHours * 3600000);
+
+    const ref = await addDoc(collection(db, COLLECTION), {
+      goalType,
+      targetValue: Number(targetValue),
+      currentValue: 0,
+      status: "active",
+      startAt: serverTimestamp(),
+      endAt,
+      rewards: {
+        arrowdew: Number(rewards.arrowdew || 0),
+        coins: Number(rewards.coins || 0),
+        gachaToken: Number(rewards.gachaToken || 0),
+      },
+      participants: {},
+      announced: false,
+      createdAt: serverTimestamp(),
+      isAdminCreated: true,
+      customTitle: title || null,
+      customDescription: description || null,
+    });
+
+    // 發公告
+    await createNotification({
+      type: "village_goal",
+      title: title || buildGoalTitle(goalType, targetValue),
+      content: description || buildGoalDesc(goalType, targetValue) + " 一起來完成吧！",
+      targetMemberId: null,
+    }, "system").catch(() => {});
+
+    return { ok: true, goalId: ref.id };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── 檢查目標狀態（完成或過期）— 前端每分鐘呼叫一次 ────────
 export async function checkGoalStatus(goal) {
   if (!goal || goal.status !== "active") return;

@@ -266,7 +266,7 @@ export default function DungeonExplore({
     // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
     setEnteringBattle(false);
     setEventModal(null);
-  }, [roomId, isHost, eventModal, room, generatedFloors, dungeon]);
+  }, [roomId, isHost, eventModal, room, generatedFloors, dungeon, pendingArrowCount]);
 
   if (!inited || (!dungeon && !generatedFloors)) {
     return <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>載入地圖…</div>;
