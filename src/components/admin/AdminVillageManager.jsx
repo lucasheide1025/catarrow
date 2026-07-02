@@ -1,8 +1,8 @@
 // src/components/admin/AdminVillageManager.jsx — 後台村莊調試工具
 import { useState, useEffect } from "react";
 import { getMembers, adminSetVillageBuilding, adminAdjustVillageResource, adminResetVillage, subscribeVillageMarketConfig, saveVillageMarketConfig } from "../../lib/db";
-import { adminCreateCustomGoal } from "../../lib/villageGoalDb";
-import { GOAL_TYPES } from "../../lib/villageGoalData";
+import { adminCreateCustomGoal, adminCancelGoal, adminForceCompleteGoal, adminUpdateGoal, subscribeActiveGoal } from "../../lib/villageGoalDb";
+import { GOAL_TYPES, GOAL_TYPE_MAP } from "../../lib/villageGoalData";
 import {
   BUILDING_LIST, BUILDINGS, TIERED_RESOURCES, RESOURCE_NAMES, DEFAULT_VILLAGE,
 } from "../../lib/villageData";
@@ -29,6 +29,8 @@ export default function AdminVillageManager() {
   const [marketCfg, setMarketCfg] = useState(null);
   const [showCfg,     setShowCfg]     = useState(false);
   const [showGoal,     setShowGoal]     = useState(false);
+  const [activeGoal,   setActiveGoal]   = useState(null);
+  const [goalEditMode, setGoalEditMode] = useState(false);
   const [goalForm,     setGoalForm]     = useState({
     goalType: "total_arrows", targetValue: 5000, durationHours: 24,
     rewardArrowdew: 200, rewardCoins: 100, rewardGachaToken: 3,
@@ -36,6 +38,10 @@ export default function AdminVillageManager() {
   });
 
   useEffect(() => { getMembers().then(setMembers); }, []);
+  useEffect(() => {
+    const unsub = subscribeActiveGoal(g => setActiveGoal(g));
+    return unsub;
+  }, []);
   useEffect(() => {
     const unsub = subscribeVillageMarketConfig(setMarketCfg);
     return unsub;
@@ -239,6 +245,123 @@ export default function AdminVillageManager() {
                 {busy ? "發送中…" : "🎯 啟動自定義目標"}
               </button>
             </div>
+
+            {/* ── 當前 active 目標管理 ── */}
+            {activeGoal && (
+              <div style={{ borderTop: "1px solid #fde68a", paddingTop: 10, marginTop: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#92400e", marginBottom: 8 }}>
+                  📌 當前進行中的目標
+                </div>
+
+                {/* 目標摘要 */}
+                <div style={{ fontSize: 11, color: "#78350f", marginBottom: 8, background: "#fef3c7",
+                  padding: "8px 10px", borderRadius: 8 }}>
+                  {GOAL_TYPE_MAP[activeGoal.goalType]?.icon || "🏡"} {activeGoal.goalType}
+                  &nbsp;· 進度 {activeGoal.currentValue?.toLocaleString() || 0} / {activeGoal.targetValue?.toLocaleString() || "?"}
+                  &nbsp;· 貢獻者 {Object.keys(activeGoal.participants || {}).length} 人
+                </div>
+
+                {/* 編輯模式 */}
+                {goalEditMode ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e" }}>✏️ 編輯目標</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: "#a16207" }}>目標值</div>
+                        <input type="number" min={1} value={goalForm.targetValue}
+                          onChange={e => setGoalForm(p => ({ ...p, targetValue: Number(e.target.value) }))}
+                          style={inputStyle} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: "#a16207" }}>當前值</div>
+                        <input type="number" min={0} value={goalForm.currentValue ?? activeGoal.currentValue}
+                          onChange={e => setGoalForm(p => ({ ...p, currentValue: Number(e.target.value) }))}
+                          style={inputStyle} />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: "#a16207" }}>💧箭露獎勵</div>
+                        <input type="number" min={0} value={goalForm.rewardArrowdew}
+                          onChange={e => setGoalForm(p => ({ ...p, rewardArrowdew: Number(e.target.value) }))}
+                          style={inputStyle} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: "#a16207" }}>🪙金幣獎勵</div>
+                        <input type="number" min={0} value={goalForm.rewardCoins}
+                          onChange={e => setGoalForm(p => ({ ...p, rewardCoins: Number(e.target.value) }))}
+                          style={inputStyle} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: "#a16207" }}>🎰扭蛋幣</div>
+                        <input type="number" min={0} value={goalForm.rewardGachaToken}
+                          onChange={e => setGoalForm(p => ({ ...p, rewardGachaToken: Number(e.target.value) }))}
+                          style={inputStyle} />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <ActionBtn onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const r = await adminUpdateGoal(activeGoal.id, {
+                            targetValue: goalForm.targetValue,
+                            currentValue: goalForm.currentValue,
+                            rewards: {
+                              arrowdew: goalForm.rewardArrowdew,
+                              coins: goalForm.rewardCoins,
+                              gachaToken: goalForm.rewardGachaToken,
+                            },
+                          });
+                          if (r.ok) { flash("✓ 目標已更新"); setGoalEditMode(false); }
+                          else flash("❌ " + r.reason);
+                        } catch(e) { flash("❌ " + e.message); }
+                        setBusy(false);
+                      }} disabled={busy}>💾 儲存修改</ActionBtn>
+                      <ActionBtn onClick={() => setGoalEditMode(false)} disabled={busy}>取消</ActionBtn>
+                    </div>
+                  </div>
+                ) : (
+                  /* 操作按鈕列 */
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <ActionBtn onClick={() => {
+                      setGoalForm(p => ({
+                        ...p,
+                        targetValue: activeGoal.targetValue,
+                        currentValue: activeGoal.currentValue,
+                        rewardArrowdew: activeGoal.rewards?.arrowdew || 0,
+                        rewardCoins: activeGoal.rewards?.coins || 0,
+                        rewardGachaToken: activeGoal.rewards?.gachaToken || 0,
+                      }));
+                      setGoalEditMode(true);
+                    }} disabled={busy}>✏️ 編輯</ActionBtn>
+                    <ActionBtn onClick={async () => {
+                      if (!window.confirm("確定強制完成此目標並發放獎勵給所有貢獻者？")) return;
+                      setBusy(true);
+                      try {
+                        const r = await adminForceCompleteGoal(activeGoal.id);
+                        if (r.ok) flash("✓ 目標已強制完成，獎勵已發放！");
+                        else flash("❌ " + (r.reason || "失敗"));
+                      } catch(e) { flash("❌ " + e.message); }
+                      setBusy(false);
+                    }} disabled={busy}>
+                      🎁 完成並發獎勵
+                    </ActionBtn>
+                    <ActionBtn onClick={async () => {
+                      if (!window.confirm("確定取消此目標？已貢獻的進度將保留，但不會發放獎勵。")) return;
+                      setBusy(true);
+                      try {
+                        const r = await adminCancelGoal(activeGoal.id);
+                        if (r.ok) flash("✓ 目標已取消");
+                        else flash("❌ " + (r.reason || "失敗"));
+                      } catch(e) { flash("❌ " + e.message); }
+                      setBusy(false);
+                    }} disabled={busy}>
+                      🛑 取消目標
+                    </ActionBtn>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

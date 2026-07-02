@@ -19,6 +19,7 @@ export default function VillageGoalBanner() {
   const { profile } = useAuth();
   const [goal, setGoal] = useState(null);
   const [timeLeft, setTimeLeft] = useState("");
+  const [showRewards, setShowRewards] = useState(false);
   const [myContribution, setMyContribution] = useState(0);
 
   useEffect(() => {
@@ -41,9 +42,10 @@ export default function VillageGoalBanner() {
       if (!endMs) { setTimeLeft(""); return; }
       const diff = endMs - Date.now();
       if (diff <= 0) { setTimeLeft("即將結束"); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      setTimeLeft(h >= 24 ? `${Math.floor(h/24)}天 ${h%24}小時` : `${h}小時 ${m}分`);
+      const days = Math.max(0, Math.floor(diff / 86400000));
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      setTimeLeft(`${days}日 ${hours}小時 ${mins}分`);
     }
     tick();
     const t = setInterval(tick, 60000);
@@ -51,6 +53,10 @@ export default function VillageGoalBanner() {
   }, [goal]);
 
   if (!goal) return null;
+
+  // 有貢獻的參與者人數（不含自己）
+  const participantEntries = Object.entries(goal.participants || {});
+  const totalCount = participantEntries.filter(([, p]) => (p.contributed || 0) > 0).length;
 
   const meta = GOAL_TYPE_MAP[goal.goalType];
   const pct = Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100));
@@ -87,10 +93,43 @@ export default function VillageGoalBanner() {
         </span>
       </div>
 
-      {/* 描述 */}
-      <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6 }}>
-        {meta?.desc || ""} 我的貢獻：{myContribution.toLocaleString()}
+      {/* 描述 + 貢獻 + 參與者 */}
+      <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>
+          {meta?.desc || ""}
+          {totalCount > 0 && (
+            <span style={{ marginLeft: 8, color: C.goldDim, fontWeight: 700 }}>
+              👥 {profile?.name || profile?.nickname || "我"} + {totalCount - 1}位村民
+            </span>
+          )}
+        </span>
+        <span style={{ fontWeight: 700, color: C.goldDim }}>我的貢獻：{myContribution.toLocaleString()}</span>
       </div>
+
+      {/* 完成獎勵預覽（可點擊展開） */}
+      <div
+        onClick={e => { e.stopPropagation(); setShowRewards(p => !p); }}
+        style={{
+          fontSize: 10, color: C.goldDim, cursor: "pointer",
+          marginBottom: showRewards ? 6 : 0,
+          userSelect: "none",
+          display: "flex", alignItems: "center", gap: 4,
+        }}>
+        <span>🎁 完成獎勵</span>
+        <span style={{ fontSize: 8 }}>{showRewards ? "▲" : "▼"}</span>
+      </div>
+      {showRewards && goal.rewards && (
+        <div style={{
+          display: "flex", gap: 12, marginBottom: 8,
+          padding: "6px 10px", borderRadius: 8,
+          background: "rgba(255,255,255,0.06)",
+          fontSize: 11, fontWeight: 700,
+        }}>
+          <span>💧 箭露 <span style={{ fontWeight: 900, color: C.gold }}>+{goal.rewards.arrowdew ?? 0}</span></span>
+          <span>🪙 金幣 <span style={{ fontWeight: 900, color: C.gold }}>+{goal.rewards.coins ?? 0}</span></span>
+          <span>🎰 扭蛋幣 <span style={{ fontWeight: 900, color: C.gold }}>+{goal.rewards.gachaToken ?? 0}</span></span>
+        </div>
+      )}
 
       {/* 進度條 */}
       <div style={{

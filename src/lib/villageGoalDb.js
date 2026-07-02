@@ -209,6 +209,82 @@ export async function expireGoal(goalId) {
   }
 }
 
+// ── 後台取消當前 active 目標 ──────────────────────────────
+export async function adminCancelGoal(goalId) {
+  try {
+    await updateDoc(doc(db, COLLECTION, goalId), {
+      status: "cancelled",
+      cancelledAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── 後台強制完成目標 & 發放獎勵 ───────────────────────────
+export async function adminForceCompleteGoal(goalId, rewardOverride) {
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, goalId));
+    if (!snap.exists()) return { ok: false, reason: "找不到目標" };
+    const goal = snap.data();
+    if (goal.rewardDistributed) return { ok: true, reason: "already_distributed" };
+
+    const reward = rewardOverride || goal.rewards;
+    if (!reward) return { ok: false, reason: "無獎勵設定" };
+
+    const participants = goal.participants || {};
+    for (const [mid, p] of Object.entries(participants)) {
+      if (p.contributed > 0) {
+        if (reward.arrowdew > 0)  await addArrowdew(mid, reward.arrowdew).catch(() => {});
+        if (reward.coins > 0)     await addCoins(mid, reward.coins).catch(() => {});
+        if (reward.gachaToken > 0) await addGachaCoins(mid, reward.gachaToken).catch(() => {});
+      }
+    }
+
+    await updateDoc(doc(db, COLLECTION, goalId), {
+      status: "completed",
+      rewardDistributed: true,
+      completedAt: serverTimestamp(),
+      completedByAdmin: true,
+    });
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── 後台修改目標（僅限 active 狀態）──────────────────────────
+export async function adminUpdateGoal(goalId, updates) {
+  try {
+    const allowedFields = {};
+    if (updates.targetValue !== undefined) allowedFields.targetValue = Number(updates.targetValue);
+    if (updates.currentValue !== undefined) allowedFields.currentValue = Number(updates.currentValue);
+    if (updates.rewards) {
+      allowedFields.rewards = {
+        arrowdew: Number(updates.rewards.arrowdew ?? 0),
+        coins: Number(updates.rewards.coins ?? 0),
+        gachaToken: Number(updates.rewards.gachaToken ?? 0),
+      };
+    }
+    if (updates.customTitle !== undefined) allowedFields.customTitle = updates.customTitle || null;
+    if (updates.customDescription !== undefined) allowedFields.customDescription = updates.customDescription || null;
+    if (updates.durationHours !== undefined) {
+      allowedFields.endAt = new Date(Date.now() + Number(updates.durationHours) * 3600000);
+    }
+    if (Object.keys(allowedFields).length === 0) return { ok: false, reason: "無有效欄位" };
+
+    allowedFields.updatedAt = serverTimestamp();
+    allowedFields.updatedByAdmin = true;
+
+    await updateDoc(doc(db, COLLECTION, goalId), allowedFields);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── 後台自定義村目標 ──────────────────────────────────────
 export async function adminCreateCustomGoal({
   goalType,

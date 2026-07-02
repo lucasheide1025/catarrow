@@ -8,6 +8,7 @@ import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
 import GuestBattle from "./components/member/GuestBattle";
 import { getGuestSession, deleteGuestSession } from "./lib/db";
+import { initGoalTracker } from "./lib/villageGoalDb";
 
 // ── 訪客路由層：讀 ?guest=TOKEN，驗證後進 GuestBattle ──────
 function GuestRoute() {
@@ -89,6 +90,12 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // 啟動村目標追蹤器（訂閱 active 目標，供 addRoundArrows 貢獻箭數）
+  useEffect(() => {
+    const unsub = initGoalTracker();
+    return () => unsub?.();
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>

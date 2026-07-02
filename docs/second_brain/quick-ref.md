@@ -19,6 +19,7 @@
 | 怪物/徽章全用 SVG | `MonsterSVG` / `BadgeSVG` 元件，不用圖片 |
 | 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
 | Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
+| **`totalArrowsAllTime` 要在 hasOnly 列表** | `addRoundArrows` 用 `increment("totalArrowsAllTime")` 但規則沒放行 → Firestore 靜默擋掉，終身箭數永遠不增加；**所有會員自己更新的新欄位都要加進 hasOnly** |
 | 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
@@ -55,6 +56,7 @@ systemBroadcasts  "systemBroadcasts"
 
 ### 關鍵 members 欄位
 ```
+totalArrowsAllTime  // 終身箭數（由 addRoundArrows increment，需在 firestore.rules hasOnly 中）
 archerXP / coins / gachaCoins  // gachaCoins 顯示用 Math.floor
 village.resources.arrowdew
 fatCat: { gold, silver, bronze }
