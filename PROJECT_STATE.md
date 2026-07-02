@@ -188,3 +188,39 @@ resolveHitPart() 套用部位加成
 2. Firestore 安全規則 `isAdmin()` 用 `exists()` 查 admins collection，`admins` 的 read rule 不能設成 `if isAdmin()`（循環依賴），目前正確設定為 `if request.auth.uid == uid`
 3. 打怪、決鬥、組隊邏輯盡量在瀏覽器端計算，Firestore 只存最終結果
 4. 教練也有 `members` 文件（以 uid 查詢），這是刻意設計，確保背包等功能正常
+
+---
+
+## 十、戰鬥系統架構交接（2026-07-02）
+
+> 以下為 Phase 1-8 戰鬥系統重構後的架構，給後續開發者。
+
+### 核心架構：src/battle/（9 個模組，勿刪除）
+
+| 檔案 | 職責 |
+|------|------|
+| BattleConfig.js | 所有戰鬥參數（ARROWS_OPTIONS=[3,6]、距離、倍率） |
+| BattleEvents.js | 22 種 EventType + builder 函式 |
+| BattleEngine.js | 單人戰鬥事件產生器（generateRoundEvents） |
+| BattleAnimation.js | 動畫派遣器（EVENT_DISPATCH + playXxx） |
+| RoundController.js | 通用事件播放控制器（playEvents） |
+| useBattleRound.js | React hook 封裝 RoundController |
+| useFirestoreRound.js | 多人房間回合生命週期 hook（含 onSubmitSuccess） |
+| useMiniRoundReveal.js | 共用 mini-round 動畫 hook（Party/Dungeon） |
+| useDuelReveal.js | 決鬥逐箭揭露 hook |
+
+### 重要設計決策
+
+1. **src/battle/ 目錄不能刪**，所有戰鬥模式都 import 這裡的模組
+2. **大回合制**（取代舊的小回合每 2 箭反擊）：
+   - arrowsPerRound: 3 | 6，存在 Firestore room document
+   - 所有箭打完後才反擊一次，無中途反擊
+   - dungeonDb.js → processDungeonRound：改用 room.arrowsPerRound || 6 控制迴圈，反擊移到貓貓之後
+   - partyDb.js → processPartyRound：每位玩家一個 mini-round 含全部箭矢
+   - COUNTER_INTERVAL 已移除，勿重新加回去
+3. **統一計箭**：
+   - db.js 新增 addRoundArrows(memberId, count)（更新 totalArrowsAllTime）
+   - addPracticeLog 已移除 totalArrowsAllTime increment（防雙重計算）
+   - useFirestoreRound 新增 onSubmitSuccess callback，submit 成功後即時呼叫
+4. **processDungeonRound 和 processPartyRound 的大回合邏輯已重構**，改動前請先讀完這兩個函式
+5. **path_select 處理**：地圖模式非最後層擊殺後 status 為 path_select，DungeonBattleRoom 會跳過中間 UI 直接顯示完成畫面
