@@ -18,6 +18,7 @@ import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { labelToValue, valueToLabel, getScoreColor } from "../../lib/score";
 import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter } from "../../lib/damage";
+import { BattleResultPanel } from "../shared/BattleResultPanel";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
@@ -1205,6 +1206,48 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const totalPlayerDmg = allRounds.reduce((s, r) => s + r.dmg, 0);
     const totalCrits     = allRounds.reduce((s, r) => s + r.crits, 0);
 
+    // 聚合箭矢分數分佈
+    const wbAllArrows = allRounds.flatMap(r => r.arrows || []);
+    const wbScoreBreakdown = {};
+    for (const a of wbAllArrows) {
+      const key = a.label === "X" ? "X" : a.label === "M" || (a.score ?? 0) === 0 ? "M" : String(a.score);
+      wbScoreBreakdown[key] = (wbScoreBreakdown[key] || 0) + 1;
+    }
+    const wbAvgScore = wbAllArrows.length
+      ? parseFloat((wbAllArrows.reduce((s, a) => s + (a.score ?? 0), 0) / wbAllArrows.length).toFixed(1))
+      : 0;
+
+    const wbResultData = {
+      monster: {
+        id: event?.bossData?.id || "world_boss",
+        name: event?.bossData?.name || "世界 Boss",
+        icon: event?.bossData?.icon || "👹",
+        tier: "mythic",
+        family: event?.bossData?.family || "ghost",
+        variant: "boss",
+        isDungeonBoss: false,
+      },
+      drops: { coins: 0, materials: [], chest: false, goldChest: false, card: null, arrowDew: 0 },
+      stats: {
+        dmgDealt: totalPlayerDmg,
+        dmgTaken: 0,
+        avgScore: wbAvgScore,
+        arrowCount: wbAllArrows.length,
+        roundCount: allRounds.length,
+        critCount: totalCrits,
+        scoreBreakdown: wbScoreBreakdown,
+      },
+    };
+
+    // WorldBoss 專屬 config：只顯示分數統計（傷害和爆擊已在戰鬥報告顯示）
+    const wbResultConfig = {
+      showMonsterInfo: false,
+      showAvgScore: true,
+      showArrowCount: true,
+      showRoundCount: true,
+      showScoreBreakdown: true,
+    };
+
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
         {showDeathAnim && (
@@ -1263,6 +1306,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                   </div>
                 ))}
               </div>
+
+              {wbAllArrows.length > 0 && (
+                <BattleResultPanel data={wbResultData} config={wbResultConfig} />
+              )}
 
               {/* 每日出戰獎勵 */}
               {result.dailyReward && (
