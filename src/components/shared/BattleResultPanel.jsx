@@ -44,6 +44,8 @@ const S = {
     color: "#e2e8f0",
     fontFamily: "sans-serif",
     fontSize: 14,
+    width: "100%",
+    boxSizing: "border-box",
   },
   section: {
     background: "#1e293b",
