@@ -3,6 +3,508 @@
 
 ---
 
+## 2026-07-02（事件彈窗倒數 + banner 淡出 + 角色往上攻擊動作）
+
+### 改了什麼
+
+**事件彈窗：5 秒倒數 + 自動繼續（PartyBattleRoom.jsx）**
+- 新增 `eventCountdown` state（預設 5）
+- 新增 `useEffect` 監聽 `showEvent`：每秒 -1、5 秒後自動執行 dismiss 邏輯
+- 彈窗 UI 加入圓形倒數圓環 + "點擊或等 X 秒繼續" 文字
+- 自動倒數的 dismiss 邏輯直接在 effect 內執行（不呼叫 `handleDismissEvent`，避免 stale closure）
+
+**「玩家回合」banner 先淡出再攻擊（useMiniRoundReveal.js + PartyBattleRoom.jsx）**
+- `useMiniRoundReveal` 新增：在 `initialDelay - 500ms` 觸發 `setAnimPhase("bannerFadeOut")`
+- `"bannerFadeOut"` 相位：banner 播 `party-banner-exit 0.5s ease forwards`（縮小淡出）
+- 等 0.5s 動畫跑完，第一個 mini 才開始（攻擊開始時 banner 已消失）
+- 新增 CSS `@keyframes party-banner-enter`（進場）、`party-banner-exit`（退場），取代舊的 `mb-float`（定位會跑掉）
+- Banner JSX 加 `key={isCounter ? "counter" : "player"}` 讓 React 重新 mount 觸發進場動畫
+
+**角色往上攻擊動作（PartyBattleRoom.jsx）**
+- `mb-archer-attack` 改成 `translateY`：`0→-22px→-10px→0`（向上衝刺再落回）
+- 時長從 0.4s 改為 0.55s
+- 觸發條件不變：`isTopHit && !animCounter`（傷害最高的玩家才播）
+
+### 踩坑提醒
+- `"bannerFadeOut"` timer 要判斷 `!activeRef.current`，否則 stopReveal 後舊 timer 仍觸發
+- 倒數 effect 的 auto-dismiss 直接用 `pendingRevealRef.current`（ref 永遠是最新值），不呼叫 `handleDismissEvent`（stale closure 問題）
+- `party-banner-enter/exit` 的 transform 必須包含 `translate(-50%,-50%)`，否則定位錯誤（banner 使用 absolute + left:50% + translate 定位）
+
+---
+
+## 2026-07-02（怪物被秒殺沒看到死亡動畫）
+
+### 改了什麼
+
+**單人打怪（BattleAnimation.js）**
+- 新增 `playBattleWin(d, p)` 函式並加入 `EVENT_DISPATCH`
+- 效果：`anim.hit(true)`（怪物閃白 crit 效果）+ `sfxCritBoom()` + `await d.delay(2000)`
+- 意義：以前 `BATTLE_WIN` 在 EVENT_DISPATCH 沒有對應動畫，擊殺後幾乎瞬間跳結算；現在有 2 秒停頓讓玩家看到擊殺
+
+**組隊打怪（PartyBattleRoom.jsx）**
+- 新增 `isKillingRound` 判斷：`entry.miniRounds.some(m => m.monsterHPAfter <= 0)`
+- 擊殺回合 `entryEndExtra: 3500`（一般 1500ms）
+- `onEntryEnd` 播 `sfxMonsterDead()` + 600ms 後 `sfxSuccess()`
+- 新增 `sfxMonsterDead` import
+- 新增「💀 擊倒！」全畫面 overlay：當 `liveEntry !== null && displayHP <= 0` 時出現，持續到結算畫面
+- `handleDismissEvent` 也加入 `isKillingRound` 邏輯（事件觸發死亡的情況）
+
+### 踩坑提醒
+- `entryEndExtra` 只影響最後一個 mini 結束 → `setLiveEntry(null)` 的等待時間，並非動畫速度
+- `displayHP` = `curMini?.monsterHPAfter ?? room.monsterHP`；殺死那一箭的 mini HP after = 0，overlay 在那瞬間出現
+- 擊殺 overlay `zIndex:44`，比事件彈窗（50）低，不會擋住隨機事件確認
+
+---
+
+## 2026-07-02（「玩家回合」banner 與攻擊同時顯示）
+
+### 改了什麼
+
+**`src/battle/useMiniRoundReveal.js`**
+- 玩家攻擊 mini 觸發時，`setAnimPhase("attacking")`（原本是 `"player"`）
+- 現在 `animPhase` 語意：
+  - `"player"` = initialDelay 預備期（banner 顯示，還沒開打）
+  - `"attacking"` = 玩家實際攻擊中（banner 消失）
+  - `"cat"` = 貓貓攻擊中
+  - `"counter"` = 怪物反擊中
+
+**`src/components/party/PartyBattleRoom.jsx`**
+- Banner 條件從 `animPhase === "player" && liveMiniRoundIdx === 0 && !curMini?.isCounter` 簡化為 `animPhase === "player"`
+- `initialDelay` 從 1200ms 改為 2000ms（兩個 startReveal 呼叫點都改）
+
+### 踩坑提醒
+- 舊條件 `liveMiniRoundIdx === 0` 是錯的：第一個 mini 開始後 idx 仍為 0，導致 banner 和攻擊同時顯示
+- `"attacking"` 是新加的相位值，不出現在 banner 判斷裡（直接忽略）
+
+---
+
+## 2026-07-02（隨機事件彈窗暫停後續動畫）
+
+### 改了什麼
+
+**問題**：事件彈窗出現後，後面的箭矢/反擊動畫繼續跑，玩家無法在彈窗出現時暫停觀看。
+
+**單人打怪（MonsterBattle + RoundController）：**
+- `RoundController.playEvents` 第 4 步改為 `await handlers.onRandomEventEnd?.()`（加 await）
+- `onRandomEventEnd` 現在回傳 Promise，把 `resolve` 存進 `randomEventResolveRef`
+- 事件卡 UI 改為點擊才能繼續：點擊後清 `currentEvent`、還原 `battlePhase`、呼叫 `resolve()`
+- 效果：箭矢動畫等玩家點事件卡才開始
+
+**組隊打怪（PartyBattleRoom）：**
+- 有 `entry.event` 時：不立即呼叫 `startReveal`，改把 entry 存進 `pendingRevealRef`，顯示彈窗
+- 新增 `handleDismissEvent()`：玩家點彈窗後清 `showEvent`、讀 `pendingRevealRef`、才呼叫 `startReveal`
+- 彈窗改為 `cursor:pointer`、移除 `pointerEvents:none`，顯示「點擊繼續 ▶」提示
+
+### 踩坑提醒
+- `onRandomEventEnd` 必須回傳 Promise，否則 `await` 會立即通過（undefined 被 await 視為 resolved）
+- Party mode：`startReveal` 必須在 `handleDismissEvent` 裡呼叫，才能拿到最新的 `room?.members`
+- 組隊事件彈窗原本有 `pointerEvents:"none"` — 要刪掉才能接收點擊事件
+
+---
+
+## 2026-07-02（BattleEngine 隨機事件重排：Phase 0 先行）
+
+### 改了什麼
+
+`src/battle/BattleEngine.js` 回合順序重整：
+
+**舊**：箭矢 → 隨機事件 → 貓貓 → 怪物反擊
+
+**新**：Phase 0 隨機事件 → Phase 1 玩家箭矢 → Phase 2 貓貓回合 → Phase 3 怪物回合
+
+技術重點：
+- `const effATK` 改 `let`，Phase 0 更新 `curATKMod` 後立即重算，讓 ATK buff/debuff 影響本回合箭傷
+- Phase 0 若直接擊殺怪物提前返回 `BATTLE_WIN`
+- MonsterBattle 的 `RANDOM_EVENT` handler 不需修改：事件在列的第一個 → UI 自動先彈 popup，確認後才播箭矢動畫
+
+兩種「隨機事件」釐清：
+- **狀態隨機事件**（`RANDOM_EVENTS`）→ Phase 0，影響 ATK/HP/skipCounter
+- **貓貓反應訊息**（`triggerCatAction()`）→ 每箭命中觸發，純 UI 文字，不動
+
+### 踩坑提醒
+
+- ATK 修正在 Phase 0 後必須同步更新 `effATK`，否則箭傷用舊值
+- Phase 0 結束若 monsterHP ≤ 0，`processedArrowScores` 為空，BATTLE_WIN handler 從組件 `arrows` state 讀已輸入分數
+
+---
+
+## 2026-07-02（移除報到限制 + 下課里程碑全覽板）
+
+### 改了什麼
+
+**邏輯調整：移除「需報到才能累積箭數」限制**
+- `MonsterBattle.jsx`：`addRoundArrows` 和 `addPracticeLog` 的呼叫條件從 `checkinActive && profile?.id` 改為只要 `profile?.id && !isGuest`，即不管有沒有報到，射箭都會記錄
+- 箭露和里程碑獎勵仍需點「下課」才兌換
+
+**DailyQuest.jsx 大改版**
+1. `subscribeTodayPracticeLogs` 移除 `DIRECT_SOURCES` 過濾 → 全模式射箭都計入「今日箭數」
+2. 「今日 X 箭」卡片：只要 `todayArrows > 0` 就顯示（不限狀態）
+3. 下課確認對話框新增「今日里程碑全覽板（`MilestoneBoard`）」：全部 11 個門檻，解鎖=亮色，未解鎖=暗色 35%，附帶進度條
+4. `arrowMilestone.js` 新增 `export const ALL_MILESTONES`（原本未導出）
+
+### 為什麼
+
+射手不知道射箭里程碑有獎勵，每次只看到 6 箭 popup。改成在「下課」時一次顯示全覽板，讓學生清楚今天解鎖了哪些、還差多少到下一個。
+
+### 踩坑提醒
+
+- `addPracticeLog` 的 `totalArrows` 用於 `subscribeTodayPracticeLogs` 計算今日總量；`addRoundArrows` 只更新 `totalArrowsAllTime`，兩者不重疊
+- DIRECT_SOURCES 移除後，party/duel/dungeon 的 session-end log 也計入 todayArrows，但這些在戰鬥結束後才寫，中途不會立即反映
+- `MilestoneBoard` 是純 UI 預覽；`grantArrowMilestoneRewards` 在 `confirmClassEnd` 才實際寫 Firestore
+
+---
+
+## 2026-07-02（戰鬥回合大重構：大回合制 + 箭數選擇）
+
+### 總覽
+
+將地下城（`dungeonDb.js`）和組隊（`partyDb.js`）的回合邏輯從「每 2 箭中途反擊」改為「全箭打完後大回合末唯一一次反擊」，並新增 3/6 箭數選擇 UI。
+
+### 改了什麼
+
+- **`src/battle/BattleConfig.js`**：移除 `COUNTER_INTERVAL`，新增 `ARROWS_OPTIONS = [3, 6]` 和 `ARROWS_PER_ROUND_DEFAULT = 6`
+- **`src/lib/dungeonDb.js` `processDungeonRound`**：`ARROWS_PER_CTR` 移除，迴圈改用 `room.arrowsPerRound || 6`，反擊移至貓貓攻擊後（大回合末唯一一次）
+- **`src/lib/partyDb.js` `processPartyRound`**：三輪雙箭迴圈改為每位玩家一個 mini-round 含全部箭矢（`arrowsPerRound` 箭）
+- **`src/components/dungeon/DungeonBattleRoom.jsx`**：`status === "waiting"` 顯示 3/6 箭選擇 UI（房主可設定，他人唯讀）；戰鬥中各箭數相關 hardcode 6 改為讀 `room.arrowsPerRound || 6`
+- **`src/components/party/PartyBattleRoom.jsx`**：等待室加入 3/6 箭選擇 UI（同樣邏輯）
+
+### 為什麼
+
+玩家反映「每 2 箭反擊」節奏太快、多人局搞混不清楚傷害輸出，改成大回合末反擊可讓玩家先看到全部攻擊動畫再承受一次反擊，節奏更清晰。
+
+### 踩坑提醒
+
+- `ctrAccum` 累積保留（dungeonDb 用於 `ctrHitsThisFloor` 難度追蹤）
+- `partyDb.js` 新循環中 `totalDmgP` 是 block-scoped，不衝突外層的 `totalDmg`
+- `DungeonBattleRoom` 的 `status === "waiting"` 在地圖模式下幾乎不會被到達（DungeonController 只對 active/completed/path_select/floor_transition 顯示 DungeonBattleRoom）；但保留此 UI 確保非地圖模式兼容
+- `BattleEngine.js` 不需修改（已是大回合末單次反擊結構，且未使用 `COUNTER_INTERVAL`）
+
+---
+
+## 2026-07-02（角色系統修正 + 統一箭數更新）
+
+### 改了什麼
+
+**修正 1：PartyBattleRoom 移除「自由選擇前後衛」按鈕**
+- 原本在輸入區域有一組 ⚔️前衛 / 🛡後衛 toggle button，讓玩家可以在戰鬥中途自由切換，脫離原本設計
+- **根本原因**：`myRole` 已由 Firestore 透過 `useEffect` 同步（`if (serverRole) { setMyRole(serverRole); }`），只要前後衛分配在遊戲開始時確定，玩家就不應再手動切換
+- **修正**：移除前衛/後衛 toggle buttons；改為只在 `myRole === "rear"` 時顯示「後衛行動選擇」（heal/dmg），附加「後衛」提示標題，與 DungeonBattleRoom 的設計一致
+- **踩坑提醒**：DungeonBattleRoom 的角色鎖定設計一直是正確的（只在 `me.role === "rear"` 時顯示後衛選項），PartyBattleRoom 是後來寫的時候誤加了 toggle
+
+**修正 2：統一每回合箭數更新（totalArrowsAllTime）**
+- **背景問題**：`addPracticeLog` 是在戰鬥結束後才批次更新 `totalArrowsAllTime`，若連線中斷或 Firestore 規則問題會導致整局箭數遺失
+- **修正**：
+  - `db.js` 新增 `addRoundArrows(memberId, count)` — 只更新 `members/{id}.totalArrowsAllTime: increment(count)`，輕量且即時
+  - `db.js` 從 `addPracticeLog` 移除 `totalArrowsAllTime` 更新（避免雙重計算）
+  - `useFirestoreRound.js` 新增 `onSubmitSuccess(...extraArgs)` callback（用 ref 存，避免 stale closure），submit 成功後立即呼叫
+  - **Party** / **Dungeon** / **Duel**：在 `useFirestoreRound` 的 `onSubmitSuccess` 呼叫 `addRoundArrows(myId, arrows.length)`
+  - **MonsterBattle**：在 `submitRound` 開頭（引擎前）呼叫 `addRoundArrows(profile.id, arrowsPerRound)`，只有 `!isGuest && checkinActive` 時才執行
+  - **WorldBossAttack** / **CouncilBattle**：在 `addPracticeLog` 呼叫前加 `addRoundArrows(myId/memberId, totalArrows)`
+
+### 踩坑提醒
+
+- `addPracticeLog` 現在**不再**更新 `totalArrowsAllTime`；所有模式必須自己呼叫 `addRoundArrows`，否則終身箭數不會累計
+- `onSubmitSuccess` 的參數是 `...extraArgs`（即 `handleSubmit` 的參數），DuelRoom 的 extraArgs 是 `(team, arrows, target)`，所以 callback 要 `(_team, submittedArrows) => ...`
+- CouncilBattle 的 `logCouncilArrows` 是在戰鬥結束後才呼叫（不是每回合），所以它的 `addRoundArrows` 是一次補計整場所有箭數，仍屬於「結束時更新」——若要改成真正每回合更新，需要在 Council 的回合 submit 處理
+
+---
+
+## 2026-07-02（Check Agent 補丁：PartyBattleRoom + DungeonBattleRoom 修正）
+
+### 改了什麼
+
+**`src/components/party/PartyBattleRoom.jsx`（3 項修正）**：
+1. 移除 `const [room, setRoom] = useState(null)` — 此 state 從未被更新（訂閱已由 `useFirestoreRound` hook 內部處理），導致 `room` 永遠是 `null`，畫面永遠顯示「載入中…」
+2. 改為從 `useFirestoreRound` 的返回值解構取得 `room`（`const { room, handleSubmit, ... } = useFirestoreRound(...)`）
+3. 將 `const myId = ...` 移到 `useFirestoreRound` hook 呼叫之前（原在第 185 行，hook 在第 119 行）— 避免 `const` 時間死區（TDZ）錯誤，`myId` 在 hook 呼叫時必須已初始化
+
+**`src/components/dungeon/DungeonBattleRoom.jsx`（1 項修正）**：
+1. 第 1469 行：`setSubmitted(false)` → `setFsSubmitted(false)` — `setSubmitted` 已在解構時別名為 `setFsSubmitted`（`setSubmitted: setFsSubmitted`），直接呼叫 `setSubmitted` 會拋出 ReferenceError
+
+### 為什麼
+
+這兩個 bug 是在 `useFirestoreRound` hook 整合時引入的——hook 的訂閱結果（`room`）沒有被組件使用，且變數別名沒有同步更新呼叫端。
+
+### 踩坑提醒
+
+- `useFirestoreRound` 回傳 `{ room, setRoom, submitted, setSubmitted, handleSubmit, localProcessing }`，呼叫端若需要 `room` 必須明確解構
+- 解構時使用別名（如 `setSubmitted: setFsSubmitted`）後，呼叫端所有地方都要用別名，不可再用原名
+
+---
+
+## 2026-07-01（Phase 1-6 戰鬥系統全面模組化重構）
+
+### 總覽
+
+將 5 個戰鬥模式（MonsterBattle / PartyBattleRoom / DuelRoom / DungeonBattleRoom / CouncilBattle / WorldBossAttack）中的重複程式碼萃取為 8 個共用模組，歸納至 `src/battle/` 與 `src/lib/`。
+
+**統計**：+2242 / −833 行（淨 +1409 行），8 新檔 + 7 檔修改
+
+---
+
+### Phase 1: 統一傷害公式 (`src/lib/damage.js`, +235 行)
+
+**為什麼**：5 個戰鬥模式各自內聯計算箭矢傷害/反擊/貓貓攻擊，公式不一致（爆擊倍率、DEX 加成、前後衛修飾等細節各異）。
+
+**改了什麼**：
+- `calcArrowDamage(score, atk, def, dex, options)` — 共用的單箭傷害公式（含爆擊×1.5、DEX+1、隨機±10%）
+- `calcCounterDamage(monAtk, def)` — 反擊傷害
+- `calcStandardArrowDmg` / `calcStandardCounter` — 標準戰鬥模式封裝
+- `calcWorldBossArrowDmg` — 世界王專用（含助攻縮放）
+- `calcCatDamage` — 貓貓攻擊
+
+**踩坑提醒**：`options.forceCrit` 用於 `hit_count` 合約強制爆擊；CouncilBattle 與 WorldBossAttack 仍使用自己的公式，尚未遷移。
+
+---
+
+### Phase 2: 統一計分邏輯 (`src/lib/score.js`, +201 行)
+
+**為什麼**：分數 label↔value 轉換（X/11 → 6/0）、SCORE_MAP、COLORS 散落在各元件中。
+
+**改了什麼**：
+- `SCORE_MAP` / `SCORE_COLORS` / `SCORE_MAP_REVERSE` — 集中管理
+- `scoreLabel(score)` / `scoreValue(label)` — 轉換函式
+- `SCORE_ROW_A/B` — 折疊計分板兩頁定義
+- 5 個戰鬥模式改用 `score.value` 取代硬編碼
+
+**踩坑提醒**：`score.js` 的 `scoreValue("X")` 回傳 11，`scoreValue("M")` 回傳 0；各模式務必使用回傳值而非再自定義映射。
+
+---
+
+### Phase 3: 戰鬥引擎 (`src/battle/BattleEvents.js` / `BattleConfig.js` / `BattleEngine.js`, +682 行)
+
+**為什麼**：MonsterBattle 的 50 行 event loop 耦合了事件產生、動畫播放、音效、狀態更新，難以在其他模式複用。
+
+**改了什麼**：
+- **`BattleEvents.js`** — 22 個 EventType（`arrow_hit` / `arrow_crit` / `counter` / `random_event` / `battle_win` 等）+ `createXxxEvent` builder
+- **`BattleConfig.js`** — 戰鬥模式參數（箭數、距離、倍率、機率）統一管理
+- **`BattleEngine.js`** — 單人戰鬥事件產生器（`generateRoundEvents`），接收 `roundResult` → 產生完整事件陣列
+
+**踩坑提醒**：EventType 字串值用 camelCase（`arrow_hit`），不要在元件中再自創 type；用 `EventType.ARROW_HIT` 引用。
+
+---
+
+### Phase 4: 動畫派遣器 (`src/battle/BattleAnimation.js`, +234 行)
+
+**為什麼**：19 個 `playXxx` 動畫函式散布在 MonsterBattle 內，需要拆出讓所有模式共用。
+
+**改了什麼**：
+- `playSoundEffect(type)` / `playHitAnimation(type)` / `playVisualEffect(type)` — 動畫三層封裝
+- `addRoundLog(phase, msg)` / `addEventLog(...)` — log 系統標準化
+- **`EVENT_DISPATCH`** — 事件→動畫映射表（22 個 EventType 各自對應 `playXxx`）
+- `createDispatch()` — 工廠函式，回傳 `{ playSoundEffect, playHitAnimation, playVisualEffect, dispatch, ...addLog }`
+
+**踩坑提醒**：`EVENT_DISPATCH` 的 handler 簽名為 `(payload, eventCtx, dispatch)`，請勿改變順序；`dispatch.animate()` 回傳 Promise 讓 RoundController 可以 await。
+
+---
+
+### Phase 5: Firestore 回合抽象層 (`src/battle/useFirestoreRound.js`, +183 行；3 元件重構)
+
+**為什麼**：PartyBattleRoom / DuelRoom / DungeonBattleRoom 三模式的 Firestore 訂閱+提交+房主處理邏輯高度重複（每人約 30~50 行），且都有卡死 bug 歷史。
+
+**改了什麼**：
+- **`useFirestoreRound(config)`** — 統一 hook，參數：
+  - `subscribe` / `submit` — Firestore 訂閱/提交箭分
+  - `processRound` — 房主處理回合邏輯
+  - `getMembers` / `isProcessing` / `canProcess` / `getBotsUnready` / `submitBotArrows` / `getExtraProcessArgs` / `processDelayMs` / `maxRetries`
+  - `onBeforeSubmit` / `onSubmitError` — 生命週期回呼
+  - 回傳：`{ room, submitted, submitting, handleSubmit, fsHandleSubmit, setFsSubmitted, retryCount }`
+- 自動管理：subscribe lifecycle、submitted state、submitting guard、all-ready detection、delay、host processing、retry
+
+**重構的元件**：
+| 模式 | 關鍵變更 |
+|------|---------|
+| PartyBattleRoom (Pilot) | 36 行 handleSubmit → 5 行；host processing effect 移除 |
+| DuelRoom (Bot 支援) | subscribe + host processing effects 移除；getBotsUnready + submitBotArrows 移至 hook config |
+| **DungeonBattleRoom (最複雜)** | subscribe callback 4 職責 split；35 行 host processing（含 1s delay + 8s safety-net）→ hook config；5 個 ref 移除（processingRef, lastProcessedRef, allReadyTimerRef, forceProcessTimerRef, submitFallbackRef）；dead code `loading` state 清理 |
+
+**踩坑提醒**：
+- `submit` config 必須封裝 team 參數（DuelRoom 需要傳 team A/B）
+- `getBotsUnready` 必須回傳 `{ id, team, m }` 結構
+- `processDelayMs: 1000` 保留地下城原有的 1 秒延遲（防 Firestore 快照競爭）
+- non-host processing timeout 20s 保留在 hook 內部（永不遺忘）
+
+---
+
+### Phase 6: RoundController (`src/battle/RoundController.js` / `useBattleRound.js`, +179 行；3 元件重構)
+
+**為什麼**：MonsterBattle 的 50 行 event loop（for + switch + 15 case）需要抽象為共用控制器，讓 CouncilBattle 與 WorldBossAttack 也能使用。
+
+**改了什麼**：
+- **`RoundController` class** — `playEvents(events, eventCtx, handlers)` 方法：
+  - 事件迭代 loop（for...of）
+  - 動畫派遣（透過 EVENT_DISPATCH）
+  - 計時管理：箭矢事件 1500ms 延遲，其他 0ms（可自訂）
+  - BATTLE_WIN / BATTLE_LOSE 自動中斷
+  - RANDOM_EVENT 清理回呼
+  - 回傳 `{ battleEnded, battleResult }`
+  - 建構子接受 `options.customDelays` 覆寫延遲
+
+- **`useBattleRound` hook** — 封裝 RoundController、管理 `isPlaying` 狀態
+
+**重構的元件**：
+
+| 模式 | 事件迴圈 | Handlers |
+|------|---------|----------|
+| **MonsterBattle** | 50 行 for+switch → `controller.playEvents(events, ctx, handlers)` | 15 per-type handlers |
+| **CouncilBattle** | 自訂 CB_EVT（Arrow/Counter/Result/End）→ playEvents + 4 handlers | 箭矢動畫、反擊動畫、結果顯示、戰鬥結束 |
+| **WorldBossAttack** | 25 行 for+600ms delay → events 陣列 + playEvents | WB_EVT（Arrow/CatMsg/Support）自訂型別 + customDelays 600ms |
+
+**踩坑提醒**：
+- CouncilBattle 與 WorldBossAttack 使用自訂 EventType（`CB_EVT` / `WB_EVT`），不在 BattleAnimation 中，dispatch 會跳過 animate step（只跑 handler）
+- WorldBossAttack 的 `processingIdx` 在事件預先計算時 batch 為同步，不會觸發 re-render → 修復為播放前一次性 `setProcessingIdx(totalEvents-1)`
+- `customDelays` 向後相容，不傳 options 的既有呼叫（MonsterBattle, CouncilBattle）不受影響
+
+---
+
+### Phase 7: 共用 mini-round 動畫 hook (`useMiniRoundReveal.js`)
+
+**為什麼**：PartyBattleRoom 與 DungeonBattleRoom 的 mini-round 逐箭動畫邏輯 ~85% 相同（setTimeout 鏈管理 liveEntry/animHit/animMonsterCharge/floatDmg 等 8 個 state），但寫在兩個元件中各 80+ 行，導致維護雙倍成本。
+
+**改了什麼**：
+- **`src/battle/useMiniRoundReveal.js`**（新增，+134 行）— 共用 mini-round 動畫 hook：
+  - 管理 8 個動畫 state：`liveEntry` / `liveMiniIdx` / `animHit` / `animMonsterCharge` / `animScreenShake` / `floatCounterDmgs` / `localHpOverride` / `floatDmg` / `attackingIds`
+  - `startReveal(entry, opts)` — 啟動 setTimeout 鏈播放 mini-round：
+    - `key` — 去重 key（防止 F5 重整重播）
+    - `attackDelay` / `counterDelay` / `entryEndExtra` — 可自訂計時（預設 1400/2700/1500ms）
+    - `members` — 用於反擊 HP lock 計算
+    - `onMiniTick(mini, idx)` — 每 mini-round 開始時回呼（sfx/attackingIds）
+    - `onCounterHit(mini, idx)` — 反擊命中時回呼（sfxCounter/vibrate）
+    - `onEntryEnd(entry)` — 全部播放完時回呼（擊殺動畫/回合結算）
+  - `stopReveal()` — 清除計時器 + 重置所有 state
+  - 自動 `clearTimers` 在下次 `startReveal` 時清理前一輪 timer
+
+**重構的元件**：
+
+| 元件 | 行數變化 | 關鍵變更 |
+|------|---------|---------|
+| **PartyBattleRoom.jsx** | +245/−245 | 80+ 行 inline setTimeout 鏈 → `reveal.startReveal()` + 回呼；移除 `isAnimating` 手動 state（hook 直接提供） |
+| **DungeonBattleRoom.jsx** | +366/−366 | 90+ 行 inline setTimeout 鏈 → `reveal.startReveal()` + onMiniTick/onCounterHit/onEntryEnd；移除 8 個 animation state + `revealTimersRef` |
+
+**踩坑提醒**：
+- `setAttackingIds` 需暴露給 `onMiniTick` 回呼使用 → hook 回傳值中加 `setAttackingIds`（向後相容）
+- DungeonBattleRoom 保留 `lastAnimKeyRef` 作為 render guard（`hasNewAnim` 檢查），確保完成畫面不會在動畫開始前閃爍
+- DuelRoom 的動畫架構（逐箭揭露 12 步 + cross-referencing attacks[]）與 mini-round 不同，不適用此 hook
+- 計時差異：hook 預設 `entryEndExtra: 1500ms`，原本 DungeonBattleRoom 是 `delay + 500 + minDelay` → 回合結果 overlay 約晚 1 秒顯示
+
+---
+
+### 最終架構關係（Phases 1-7）
+
+```
+src/lib/
+  damage.js          ← 各模式共用傷害公式
+  score.js           ← 各模式共用計分邏輯
+
+src/battle/
+  BattleEvents.js    ← 22 種標準事件型別 + builder
+  BattleConfig.js    ← 戰鬥模式參數集中管理
+  BattleEngine.js    ← 單人戰鬥事件產生器
+  BattleAnimation.js ← 19 個 playXxx + EVENT_DISPATCH
+  useFirestoreRound.js ← Firestore 回合 hook（Party/Duel/Dungeon）
+  RoundController.js ← 通用事件播放控制器（Monster/Council/WorldBoss）
+  useBattleRound.js  ← React hook 封裝 RoundController
+  useMiniRoundReveal.js ← 共用 mini-round 動畫 hook（Party/Dungeon）
+```
+
+---
+
+### Phase 8: 逐箭揭露 hook (`useDuelReveal.js`) + damage.js 公式補完
+
+**為什麼**：
+- DuelRoom 的 12 步逐箭揭露邏輯（~170 行 inline useEffect + 11 個 state + 4 個 effect）無法被 `useMiniRoundReveal` 共用（架構不同——逐箭揭露 vs mini-round 離散回合）
+- CouncilBattle 的 `getPartMult()` 與 damage.js 的 `getCouncilPartMult()` 重複
+- CouncilBattle 的 `scoreVal()` 與 score.js 的 `labelToValue()` 重複
+- WorldBossAttack 的 `calcArrowDmg`/`calcCounterDmg` wrapper 只是 damage.js 的傳遞函式
+
+**改了什麼**：
+
+#### 新檔：`src/battle/useDuelReveal.js`（~190 行）
+
+封裝 DuelRoom 的逐箭揭露邏輯：
+- 管理 11 個 state：`revealEntry`, `revealIdx`, `displayHp`, `floats`, `flashIds`, `attackingIds`, `hittingIds`, `eventPhase`, `showCatRound`, `duelCatCats`, `revealPhaseBanner`
+- 4 個內部 effect：log 偵測 → 事件暫停/揭露 → 逐箭計時器（1000ms）→ 揭露完成（貓貓 overlay + 清理）
+- 對外 callback：`onSoundEffect(hasCrit, hasHit)`、`onComplete(entry)`
+- 方法：`skipEvent()`（跳過事件暫停）、`stopReveal()`（清理重置）
+
+#### 修改：`src/components/duel/DuelRoom.jsx`
+
+```
+Before (4 effects, ~170 行):          After (~10 行 hook + callbacks):
+ log 偵測 effect                       useDuelReveal({ room,
+ 逐一揭露計時器 effect                    onSoundEffect,
+ 事件暫停 effect                        onComplete })
+ 完成清理 effect                       + skipEvent → skipEvent
+ + 11 個 state 宣告                    + resetLocalState → stopReveal()
+ + lastLogLen ref
+ + startReveal()
+```
+
+#### 修改：`src/components/member/CouncilBattle.jsx`
+
+```
+Before:                               After:
+ getPartMult(label, fmt)  (內聯)       getCouncilPartMult(label, fmt)  (damage.js)
+ scoreVal(label)          (內聯)       labelToValue(label)              (score.js)
+ getMappedScore (內聯 parseInt)        getMappedScore 使用 labelToValue
+```
+
+#### 修改：`src/components/worldboss/WorldBossAttack.jsx`
+
+```
+Before:                               After:
+ calcArrowDmg(s, a, b, p) → wrapper   wbArrowDmg(s, a, b, p) → direct call
+ calcCounterDmg(a, d) → wrapper        wbCounter(a, d) → direct call
+```
+
+**踩坑提醒**：
+- `useDuelReveal` 只在 DuelRoom 使用（無跨模式複用價值），抽取是為了隔離程式碼而非複用
+- `revealEntry` 和 `revealIdx` 使用 ref 同步防止閉包陳舊（timers 中的 callback 讀最新的值）
+- 完成 effect 必須依賴 `room` 物件來計算貓貓攻擊（`room.teamA`/`room.teamB` 找 `allMembersMap`）
+- CouncilBattle 的 `getCouncilPartMult` 比舊 `getPartMult` 多處理 `"M"` label（但不影響 CouncilBattle 的 `"0"` 標籤）
+- WorldBossAttack 的 `scoreVal`/`scoreLabel` 包裝保留（大量 JSX 使用，移除成本 > 收益）
+
+---
+
+### 最終架構關係（Phases 1-8）
+
+```
+src/lib/
+  damage.js          ← 各模式共用傷害公式
+  score.js           ← 各模式共用計分邏輯
+  itemData.js        ← 藥水資料（9 攜帶型 + 7 投擲型 + 村莊配方）
+  villageData.js     ← 煉金室產出箭露（arrowdew，微量）
+
+src/battle/
+  BattleEvents.js    ← 22 種標準事件型別 + builder
+  BattleConfig.js    ← 戰鬥模式參數集中管理
+  BattleEngine.js    ← 單人戰鬥事件產生器
+  BattleAnimation.js ← 19 個 playXxx + EVENT_DISPATCH
+  useFirestoreRound.js ← Firestore 回合 hook（Party/Duel/Dungeon）
+  RoundController.js ← 通用事件播放控制器（Monster/Council/WorldBoss）
+  useBattleRound.js  ← React hook 封裝 RoundController
+  useMiniRoundReveal.js ← mini-round 動畫 hook（Party/Dungeon）
+  useDuelReveal.js   ← 決鬥逐箭揭露 hook（DuelRoom）
+```
+
+### Phases 1-8 總覽
+
+```
+Phase 1  Damage Engine     ██████████████████████████████ ✅
+Phase 2  Score Engine      ██████████████████████████████ ✅
+Phase 3  Battle Engine     ██████████████████████████████ ✅
+Phase 4  Animation Manager ██████████████████████████████ ✅
+Phase 5  Firestore 回合     ██████████████████████████████ ✅
+Phase 6  RoundController   ██████████████████████████████ ✅
+Phase 7  Mini-Round Reveal ██████████████████████████████ ✅
+Phase 8  Duel Reveal +     ██████████████████████████████ ✅
+         damage.js 補完
+```
+
+---
+
+---
+
 ## 2026-06-29（佈署 Bug 修正 3 連）
 
 ### Bug 1：MonsterBattle 進場報 `ReferenceError: n is not defined`

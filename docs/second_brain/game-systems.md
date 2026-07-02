@@ -82,6 +82,282 @@ rewardMult = 1.0 + extraMembers * 0.2   (金幣/XP/掉落 每多一人 +20%)
 世界首領：每回合 × 2.0，上限 300
 ```
 
+## 🏗️ 戰鬥系統架構（2026-07-01 Phase 1-8）
+
+### 資料流
+
+```
+傷害引擎 (damage.js)
+  ↓
+事件產生器 (BattleEngine.js) 或 自訂回合邏輯
+  ↓
+標準化事件陣列 (EventType 22 種)
+  ↓
+動畫派遣器 (BattleAnimation.js → EVENT_DISPATCH)
+  ↓
+RoundController.playEvents() 排程播放
+  ↓
+per-event-type handlers 更新 React state
+```
+
+### 核心模組
+
+#### `src/lib/damage.js` — 統一傷害公式
+
+```
+calcArrowDamage(score, atk, def, dex, options)
+  → { dmg, isCrit }
+  → 爆擊 ×1.5、DEX +1 分、±10% 隨機
+  → options: { forceCrit, isRear, monHPMult, monDefMult, extraDmgMult }
+
+calcCounterDamage(monAtk, def)
+  → counterDmg
+
+calcStandardArrowDmg(roundResult, state)  → [arrowResults]
+  → 封裝 MonsterBattle 的完整箭矢計算
+
+calcStandardCounter(state)  → counterResults
+  → 封裝 MonsterBattle 的反擊計算
+
+calcWorldBossArrowDmg(score, atk, def, bossAtk, bossDef, assistSum)
+  → { dmg, isCrit }
+  → 世界王專用：支援助攻縮放
+
+calcCatDamage(catAtk, targetDef, isDuelVariant=false)
+  → { dmg }
+```
+
+#### `src/lib/score.js` — 統一計分邏輯
+
+```
+SCORE_MAP = { X: 11, "10": 10, "9": 9, ..., M: 0 }
+SCORE_MAP_REVERSE = { 11: "X", 10: "10", ..., 0: "M" }
+SCORE_COLORS = { X: amber, "10": green, ... }
+SCORE_ROW_A = ["X", "10", "9", "8", "7", "6", "M"]
+SCORE_ROW_B = ["6", "5", "4", "3", "2", "1", "M"]
+
+scoreLabel(score)  → string
+scoreValue(label)  → number
+```
+
+#### `src/battle/BattleEvents.js` — 標準化事件型別
+
+22 個 EventType（字串值）：
+```
+ARROW_HIT / ARROW_CRIT / ARROW_ORGAN_HIT / ARROW_MISS / ARROW_SCORE_POTION / ARROW_THROW_POTION
+COUNTER_PHYSICAL / COUNTER_TOTAL / COUNTER_SKIPPED / COUNTER_BLOCKED
+CAT_ATTACK / CAT_HEAL / CAT_DEFEND / CAT_HIT / REVIVE / ROUND_RESULT
+RANDOM_EVENT / DISTANCE_CHANGE / BATTLE_WIN / BATTLE_LOSE / THROW_DISPLAY / DEATH
+```
+
+每個 EventType 有對應的 `createXxxEvent()` builder 函式。
+
+#### `src/battle/BattleConfig.js` — 戰鬥參數
+
+```
+ARROWS_PER_ROUND = 6          // MonsterBattle 預設箭數
+ARROWS_OPTIONS = [3, 6]        // 地下城/組隊可選箭數（2026-07-02 新增）
+ARROWS_PER_ROUND_DEFAULT = 6   // fallback（2026-07-02 新增）
+FIGHT_DISTANCE = 20
+FIGHT_MAX_RANGE = 40
+HEAL_POOL_PCT = 0.25
+REAR_NERF = 0.5      // 後衛傷害 ×0.5
+COUNTER_NERF = 0.5    // 反擊傷害 ×0.5
+// COUNTER_INTERVAL 已移除（2026-07-02 大回合制重構）
+
+getConfig(mode)  → { arrows, distance, ... }
+```
+
+#### 地下城/組隊回合流程（2026-07-02 大回合制重構）
+
+```
+大回合流程（dungeonDb + partyDb）：
+1. 所有箭矢攻擊 mini-rounds（arrowsPerRound 箭，每箭一個 miniRound entry）
+2. 貓貓攻擊（若存在）
+3. 怪物反擊 1 次（大回合末，isCounter: true）
+
+arrowsPerRound 來源：room.arrowsPerRound || 6（房主在等待室設定，存入 Firestore）
+選項：3 箭 或 6 箭
+
+舊制（已廢棄）：每 2 箭反擊 1 次（ARROWS_PER_CTR = 2），共 3 次反擊/大回合
+```
+
+#### `src/battle/BattleEngine.js` — 事件產生器
+
+```
+generateRoundEvents(roundResult, state)
+  → events: Array<{ type: EventType, payload: {...} }>
+```
+
+用於 MonsterBattle 模式。事件順序（2026-07-02 重排）：
+- **Phase 0**：隨機事件（先決定 ATK/HP 修正，可能直接 BATTLE_WIN）
+- **Phase 1**：玩家箭矢（ARROW_HIT / ARROW_CRIT / ARROW_MISS / ARROW_THROW_POTION）
+- **Phase 2**：貓貓回合（CAT_ATTACK / CAT_HEAL / CAT_DEFEND）
+- **Phase 3**：怪物反擊（COUNTER / COUNTER_CRIT / COUNTER_SKIPPED…）
+- **Phase 4/5**：ROUND_RESULT / BATTLE_WIN / BATTLE_LOSE
+
+#### `src/battle/BattleAnimation.js` — 動畫派遣器
+
+```
+createDispatch()  → {
+  playSoundEffect(type, ctx),
+  playHitAnimation(type, ctx),
+  playVisualEffect(type, ctx),
+  dispatch(eventType, payload, context),  // ← 主要入口
+  addRoundLog(phase, msg),
+  addEventLog(arrowResult, monsterIdx),
+  addBattleLog(entry),
+  ...helpers
+}
+
+EVENT_DISPATCH = {
+  [EventType.ARROW_HIT]:      animateArrowHit,
+  [EventType.ARROW_CRIT]:     animateArrowCrit,
+  [EventType.COUNTER_...]:    animateCounter,
+  ...全部 22 個 EventType
+}
+```
+
+dispatch 會自動查表執行對應的 playXxx，若找不到對應 handler（如自訂 EventType），則跳過 animate step。
+
+#### `src/battle/useFirestoreRound.js` — Firestore 回合 hook
+
+```
+useFirestoreRound({
+  roomId, myId, isHost,
+  subscribe,         // (roomId, cb) => unsub
+  submit,            // (roomId, memberId, ...args) => { ok, reason }
+  processRound,      // (roomId, room, ...extraArgs) => void
+  getMembers,        // (room) => Member[]
+  isProcessing,      // (room) => boolean
+  canProcess,        // (room) => boolean
+  getBotsUnready,    // (room) => { id, team, m }[]      (DuelRoom)
+  submitBotArrows,   // (roomId, team, id, m) => void   (DuelRoom)
+  getExtraProcessArgs, // (room) => any[]               (DungeonBattleRoom)
+  onBeforeSubmit,    // (memberId, room) => void
+  onSubmitError,     // (error) => void
+  processDelayMs,    // default 0 (Dungeon: 1000)
+  maxRetries,        // default 4
+}) → {
+  room,              // Firestore room document
+  submitted,         // boolean — 是否有提交
+  submitting,        // boolean — 提交中
+  handleSubmit,      // (...args) => submit + setSubmitted(true)
+  fsHandleSubmit,    // 不自動 setSubmitted 的 submit
+  setFsSubmitted,    // 重置 submitted
+  retryCount,        // 當前重試次數
+}
+```
+
+**內部管理**：
+- subscribe lifecycle（auto cleanup on unmount）
+- submitted / submitting state
+- all-ready detection（每當 room 變更時檢查）
+- host processing delay + retry（含 maxRetries 安全網）
+- bot arrows submission（DuelRoom）
+- non-host processing timeout（20s 自動重置）
+
+#### `src/battle/RoundController.js` — 通用事件播放控制器
+
+```
+new RoundController({ customDelays })  // customDelays: { [type]: ms }
+
+controller.playEvents(events, eventCtx, handlers)
+  → Promise<{ battleEnded: boolean, battleResult: string | null }>
+```
+
+**處理流程**（每個 event）：
+1. EVENT_DISPATCH animation handler（若存在）
+2. per-event-type state handler（從 handlers 映射查表）
+3. Delay（箭矢類 1500ms，其他 0ms，可自訂）
+4. `await handlers.onRandomEventEnd?.()` — RANDOM_EVENT 後**等待 Promise resolve**（玩家點擊彈窗才繼續）
+5. BATTLE_WIN/LOSE 自動中斷 loop
+
+**預設延遲映射**：
+- `arrow_hit` / `arrow_crit` / `arrow_organ_hit` / `arrow_miss` / `arrow_throw_potion` → 1500ms
+- 其他 EventType → 0ms
+- `customDelays` 優先級最高，可用於覆寫（如 WorldBossAttack 用 600ms）
+
+**per-event-type handlers**：每個 handler 簽名為 `(payload, eventCtx) => void`
+
+#### `src/battle/useMiniRoundReveal.js` — 共用 mini-round 動畫 hook（Phase 7）
+
+```
+useMiniRoundReveal() → {
+  liveEntry,           // 當前播放中的 log entry（null = 無動畫）
+  liveMiniIdx,         // 當前播放到的 mini-round index
+  animHit,             // 怪物閃白動畫
+  animMonsterCharge,   // 怪物蓄力狀態
+  animScreenShake,     // 螢幕震動
+  floatCounterDmgs,    // 反擊浮動傷害 [{ id, memberId, text }]
+  localHpOverride,     // 反擊期間 HP 暫存 { [memberId]: hp }
+  floatDmg,            // 攻擊浮動傷害 { dmg, isCrit }
+  attackingIds,        // 當前攻擊中的 memberId Set
+  animPhase,           // "player"|"attacking"|"cat"|"counter"|null（2026-07-02 新增）
+  isPlaying,           // !!liveEntry
+  startReveal(entry, opts),
+  stopReveal(),
+  clearTimers(),
+}
+
+// animPhase 語意（2026-07-02）：
+//   "player"    = initialDelay 預備期（還未攻擊，顯示「玩家回合」banner）
+//   "attacking" = 玩家攻擊 mini 進行中（banner 消失）← 舊版是 "player"，已修正
+//   "cat"       = 貓貓 mini
+//   "counter"   = 怪物反擊 mini（顯示「怪物反擊！」banner）
+
+// opts 參數：
+//   key           — 去重 key（相同 key 不重播）
+//   initialDelay  — 第一個 mini 前的預備期（預設 0ms；PartyBattleRoom 用 2000ms）
+//   attackDelay   — 每攻擊 mini 間隔（預設 1400ms）
+//   counterDelay  — 每反擊 mini 間隔（預設 2700ms）
+//   entryEndExtra — 最後一個 mini 結束後額外停留（預設 1500ms；擊殺回合用 3500ms）
+//   members       — room.members（反擊 HP lock 用）
+//   onMiniTick(mini, idx)   — 每個 mini 開始時
+//   onCounterHit(mini, idx) — 反擊命中時
+//   onEntryEnd(entry)       — 全部播完 + entryEndExtra 後（此時 liveEntry 已清為 null）
+```
+
+#### `src/battle/useDuelReveal.js` — 決鬥逐箭揭露 hook（Phase 8）
+
+```
+useDuelReveal({ room, onSoundEffect, onComplete, opts? })
+  → { revealEntry, revealIdx, displayHp, floats, flashIds,
+      attackingIds, hittingIds, eventPhase, showCatRound,
+      duelCatCats, revealPhaseBanner, isRevealing,
+      hasRevealed, skipEvent, stopReveal }
+
+// 內部 effect 流程：
+// room?.log?.length 改變 → 計算 preHp → 設定 displayHp/revealEntry
+//   └─ 有 event? → eventPhase=true（等待 skipEvent 或 4s 自動）
+//   └─ 無 event? → revealIdx=0
+// revealIdx 0~5  → A 隊 6 箭（每 1000ms 揭露一步）
+// revealIdx 6    → 換邊橫幅「隊伍 B 反擊！」（900ms）
+// revealIdx 7~11 → B 隊 6 箭（每 1000ms 揭露一步）
+// revealIdx >= 12 → 貓貓 overlay + 清理 displayHp + onComplete
+
+// opts 可選項：
+//   arrowDelayMs: 1000,     // 每箭延遲
+//   phaseBannerDelay: 900,  // 換邊橫幅延遲
+//   eventPauseMs: 4000,     // 事件暫停時間
+//   catOverlayMs: 2500,     // 貓貓 overlay 時間
+
+// callbacks：
+//   onSoundEffect(hasCrit, hasHit) → 音效處理（sfxCritBoom / sfxArrowHit）
+//   onComplete(entry) → 揭露完成後清理（sfxMonsterDead 檢查）
+```
+
+**三種 hook 對比**：
+
+| 特性 | RoundController (Phase 6) | useMiniRoundReveal (Phase 7) | useDuelReveal (Phase 8) |
+|------|--------------------------|-----------------------------|-------------------------|
+| 適用場景 | 事件驅動、EVENT_DISPATCH 動畫 | mini-round 離散回合動畫 | 逐箭揭露（A 隊→B 隊） |
+| 播放單位 | EventType 陣列 + per-type handlers | miniRounds 陣列 + callbacks | 12 步 revealIdx 計時器 |
+| 動畫派遣 | 自動透過 EVENT_DISPATCH | 由 callbacks 自行處理 | 內部管理 floats/flashIds |
+| 計時管理 | 依 EventType 映射延遲 | 依 mini-round 類型（攻擊/反擊）延遲 | 依步數（1000ms/箭） |
+| 使用模式 | Monster/Council/WorldBossAttack | PartyBattleRoom/DungeonBattleRoom | DuelRoom |
+| 狀態管理 | 外部 eventCtx | hook 內部管理 8 個 state | hook 內部管理 11 個 state |
+
 ## 卡片系統
 
 ```

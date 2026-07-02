@@ -282,7 +282,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       ...frontIds.filter(id => aliveIds.includes(id)),
       ...rearIds.filter(id => aliveIds.includes(id)),
     ];
-    const ARROWS_PER_CTR = 2;
+    const arrowsPerRound = room.arrowsPerRound || 6;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
@@ -291,7 +291,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     let lastHitInfo = null;
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < arrowsPerRound; i++) {
       if (monsterHP <= 0) break;
 
       // ── 攻擊小回合 ─────────────────────────────────────
@@ -325,32 +325,6 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           label: lastHitLabel || "?",
         };
       }
-
-      // ── 反擊小回合（每 ARROWS_PER_CTR 箭後，怪物尚存時；後衛免疫反擊）──
-      if (!skipAllCtr && (i + 1) % ARROWS_PER_CTR === 0 && monsterHP > 0) {
-        const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
-        const ctrLog     = [];
-        const ctrTargets = frontIds.length > 0 ? frontIds : rearIds; // 前衛全滅時後衛暴露
-        for (const id of ctrTargets) {  // 有前衛→只打前衛；前衛全陣亡→打後衛
-          if (memberHPNow[id] <= 0) continue;
-          const m            = members[id];
-          const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
-          const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef));
-          ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
-          const prevHP       = memberHPNow[id];
-          memberHPNow[id]    = Math.max(0, prevHP - ctr);
-          const died         = prevHP > 0 && memberHPNow[id] <= 0;
-          ctrLog.push({
-            id, name:m.name, dmg:0, ctr, arrowBreakdown:[],
-            message: `${room.monster.icon||"👾"} ${room.monster.name} 反擊 ${m.name}，造成 ${ctr} 傷害！${died ? ` 💀 ${m.name} 陣亡！` : ""}`,
-            died,
-          });
-        }
-        miniRounds.push({
-          miniRound: null, isCounter: true,
-          playerLog: ctrLog, totalDmg: 0, monsterHPAfter: monsterHP,
-        });
-      }
     }
 
     // 貓貓攻擊（所有存活成員的貓各出 6 箭，合算傷害）
@@ -368,6 +342,32 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       miniRounds.push({
         miniRound: "cat", isCounter: false, isCat: true,
         playerLog: catMiniLog, totalDmg: catTotalDmg, monsterHPAfter: monsterHP,
+      });
+    }
+
+    // 大回合末：唯一一次怪物反擊（所有箭矢 + 貓貓攻擊後）
+    if (!skipAllCtr && monsterHP > 0) {
+      const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
+      const ctrLog     = [];
+      const ctrTargets = frontIds.length > 0 ? frontIds : rearIds;
+      for (const id of ctrTargets) {
+        if (memberHPNow[id] <= 0) continue;
+        const m            = members[id];
+        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
+        const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef));
+        ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
+        const prevHP       = memberHPNow[id];
+        memberHPNow[id]    = Math.max(0, prevHP - ctr);
+        const died         = prevHP > 0 && memberHPNow[id] <= 0;
+        ctrLog.push({
+          id, name: m.name, dmg: 0, ctr, arrowBreakdown: [],
+          message: `${room.monster.icon||"👾"} ${room.monster.name} 反擊 ${m.name}，造成 ${ctr} 傷害！${died ? ` 💀 ${m.name} 陣亡！` : ""}`,
+          died,
+        });
+      }
+      miniRounds.push({
+        miniRound: null, isCounter: true,
+        playerLog: ctrLog, totalDmg: 0, monsterHPAfter: monsterHP,
       });
     }
 
@@ -913,7 +913,10 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
 
-    // Boss 房間加成：套用 bossModifier 到怪物數值
+      // 保留 arrowsPerRound 或預設 6
+    const apr = room.arrowsPerRound || 6;
+
+  // Boss 房間加成：套用 bossModifier 到怪物數值
     const bossMod = roomMeta?.bossModifier || null;
     const finalMonster = bossMod && monster ? {
       ...monster,
@@ -935,6 +938,7 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       monster:             finalMonster,
       monsterHP:           monsterHP,
       monsterMaxHP:        monsterHP,
+      arrowsPerRound:      apr,
       status:              "active",
       activeRoomContract:  contract,
       rewardMult,

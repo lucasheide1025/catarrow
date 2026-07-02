@@ -12,7 +12,7 @@ export default function HonorTicker({ memberId, memberCreatedAt, onGoPage }) {
     // ✅ 補傳 memberCreatedAt，防止新會員看到舊通知
     const unsub = subscribeNotifications(memberId, list => {
       const h = list
-        .filter(n => n.type === "high_score" || n.type === "cert_pass")
+        .filter(n => n.type === "high_score" || n.type === "cert_pass" || n.type === "village_goal" || n.type === "village_goal_complete")
         .filter(n => !(n.deletedBy || []).includes(memberId))
         .slice(0, 5); // 最新 5 筆（list 已按 createdAt desc）
       setHonors(h);

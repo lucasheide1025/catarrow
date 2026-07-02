@@ -25,6 +25,8 @@ import {
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
+import VillageGoalBanner from "./VillageGoalBanner";
+import { autoSpawnVillageGoal } from "../../lib/villageGoalDb";
 import { craftPotion, subscribePotions } from "../../lib/db";
 import { CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 
@@ -217,7 +219,46 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
 }
 
 // ── 建築卡片 ─────────────────────────────────────────────────
-function BuildingCard({ buildingId, level, resources, onClick }) {
+// 產能分層顯示（資源 tier breakdown）
+function ProductionBreakdown({ buildingId, level, allocations }) {
+  const b     = BUILDINGS[buildingId];
+  const hasTier = b && TIERED_RESOURCES.has(b.resource);
+  if (!hasTier) {
+    // 非分層資源（煉金室/扭蛋亭）：只顯示總產率
+    const rate = getProductionRate(buildingId, level);
+    return <span className="text-[10px]" style={{ color: C.mid }}>{rate}/hr</span>;
+  }
+  const stageMult = getStageMultiplier(level);
+  const maxTier   = getBuildingStage(level);
+  const baseRate  = getProductionRate(buildingId, level);
+  const pool      = baseRate * stageMult;
+  const alloc     = allocations?.[buildingId] || getDefaultAllocation(level);
+  const tiers     = [];
+  for (let t = 1; t <= maxTier; t++) {
+    const pct = alloc[String(t)] || 0;
+    if (pct <= 0) continue;
+    const tierRate = Math.round(pool * (pct / 100) * 10) / 10;
+    tiers.push({ tier: t, rate: tierRate });
+  }
+  if (tiers.length === 0) {
+    return <span className="text-[10px]" style={{ color: C.mid }}>{baseRate}/hr</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {tiers.map(({ tier, rate }) => (
+        <span key={tier} style={{
+          fontSize: 9, fontWeight: 700,
+          background: "rgba(107,142,94,0.10)", borderRadius: 4,
+          padding: "1px 5px", color: C.sage,
+        }}>
+          T{tier} {rate < 0.01 ? "<0.01" : rate}/hr
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BuildingCard({ buildingId, level, resources, onClick, village }) {
   const b     = BUILDINGS[buildingId];
   const stage = getBuildingStage(level);
   const rate  = getProductionRate(buildingId, level);
@@ -254,7 +295,8 @@ function BuildingCard({ buildingId, level, resources, onClick }) {
       </div>
       <div className="p-2.5">
         <div className="font-black text-xs leading-tight" style={{ color: C.brown }}>{b.name}</div>
-        <div className="text-[10px] mt-0.5" style={{ color: C.mid }}>{b.resourceName} {rate}/hr</div>
+        <div className="text-[10px] mt-0.5" style={{ color: C.mid }}>{b.resourceName}</div>
+        <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} />
         <div className="mt-1.5 text-[10px] font-bold" style={{ color: statusColor }}>● {statusText}</div>
       </div>
     </button>
@@ -579,7 +621,7 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
 }
 
 // ── 產能分配設定 ─────────────────────────────────────────────
-function AllocationSettings({ buildingId, level, allocations, memberId }) {
+function AllocationSettings({ buildingId, level, allocations, memberId, onSaved }) {
   const building    = BUILDINGS[buildingId];
   const hasTier     = building && TIERED_RESOURCES.has(building.resource);
   const maxTier     = getBuildingStage(level);
@@ -649,6 +691,7 @@ function AllocationSettings({ buildingId, level, allocations, memberId }) {
     await setBuildingAllocation(memberId, buildingId, alloc);
     setSaving(false);
     setEditing(false);
+    onSaved?.(buildingId, alloc);
   }
 
   // 當前生效的分配（編輯中或已儲存）
@@ -866,6 +909,10 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
             level={level}
             allocations={village?.allocations || {}}
             memberId={memberId}
+            onSaved={(bid, newAlloc) => onVillageUpdate?.(prev => {
+              const base = prev || village;
+              return { ...base, allocations: { ...(base?.allocations || {}), [bid]: newAlloc } };
+            })}
           />
 
           {/* 市集專屬：兌換面板 + 卡片市集 */}
@@ -1504,9 +1551,16 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
   useEffect(() => {
     if (profile?.id && !profile?.village) {
-      initVillageIfNeeded(profile.id, profile?.village).catch(() => {});
+    initVillageIfNeeded(profile.id, profile?.village).catch(() => {});
+  }
+}, [profile?.id]); // eslint-disable-line
+
+  // 進入村莊頁時檢查村目標狀態（自動刷新）
+  useEffect(() => {
+    if (tab === "village" && profile?.id) {
+      autoSpawnVillageGoal(getVillageLevel(buildings));
     }
-  }, [profile?.id]); // eslint-disable-line
+  }, [tab, profile?.id]); // eslint-disable-line
 
   useEffect(() => {
     const unsub = subscribeVillageMarketConfig(setMarketConfig);
@@ -1655,6 +1709,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
       {tab === "village" && (
         <>
+          <VillageGoalBanner />
           <PanoramaView villageLevel={villageLevel} />
 
           <SecretaryCat cat={secretaryCat} />
@@ -1693,6 +1748,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
                           buildingId={id}
                           level={buildings[id] || 1}
                           resources={resources}
+                          village={village}
                           onClick={() => { sfxTap(); setSelectedBuilding(id); }}
                         />
                       ) : (
@@ -1731,6 +1787,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           catCards={catCards}
           battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
           onExchangeDone={() => setLocalVillage(null)}
+          onVillageUpdate={setLocalVillage}
           village={village}
         />
       )}

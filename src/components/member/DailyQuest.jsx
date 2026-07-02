@@ -5,9 +5,84 @@ import {
   subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
   grantArrowMilestoneRewards, subscribeTodayPracticeLogs,
 } from "../../lib/db";
-import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { ALL_MILESTONES, getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
+
+// ── 今日里程碑全覽板 ─────────────────────────────────────────────
+function MilestoneBoard({ todayArrows }) {
+  return (
+    <div style={{
+      background: "rgba(0,0,0,0.4)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 12,
+      padding: "10px 12px",
+      marginTop: 8,
+    }}>
+      <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>
+        🏹 今日射箭里程碑
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {ALL_MILESTONES.map(ms => {
+          const unlocked = todayArrows >= ms.arrows;
+          const rewards = getRewardsForMilestone(ms);
+          const rewardText = [
+            rewards.gachaCoins ? `+${rewards.gachaCoins}抽獎幣` : "",
+            rewards.catBoxes   ? `+${rewards.catBoxes}貓箱`     : "",
+          ].filter(Boolean).join(" ");
+          return (
+            <div key={ms.arrows} style={{
+              display: "flex", alignItems: "center", gap: 8,
+              opacity: unlocked ? 1 : 0.35,
+            }}>
+              {/* 勾 / 圓 */}
+              <div style={{
+                width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                background: unlocked ? "linear-gradient(135deg,#22c55e,#16a34a)" : "rgba(255,255,255,0.08)",
+                border: unlocked ? "none" : "1px solid rgba(255,255,255,0.12)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10,
+              }}>
+                {unlocked ? "✓" : ""}
+              </div>
+              {/* 標籤 */}
+              <div style={{ flex: 1, fontSize: 11, color: unlocked ? "#e2e8f0" : "#64748b", fontWeight: unlocked ? 700 : 400 }}>
+                {ms.label}
+              </div>
+              {/* 獎勵 */}
+              <div style={{ fontSize: 10, color: unlocked ? "#fbbf24" : "#475569", fontWeight: 700 }}>
+                {rewardText}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* 進度條 */}
+      {(() => {
+        const nextMs = ALL_MILESTONES.find(m => m.arrows > todayArrows);
+        if (!nextMs) return (
+          <div style={{ color: "#22c55e", fontSize: 10, fontWeight: 700, textAlign: "center", marginTop: 8 }}>
+            🎉 今日所有里程碑已全解！
+          </div>
+        );
+        const prevMs = ALL_MILESTONES.slice().reverse().find(m => m.arrows <= todayArrows);
+        const from = prevMs?.arrows || 0;
+        const pct = Math.round(((todayArrows - from) / (nextMs.arrows - from)) * 100);
+        return (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#64748b", marginBottom: 3 }}>
+              <span>下個里程碑：{nextMs.arrows}箭</span>
+              <span>還差 {nextMs.arrows - todayArrows} 箭</span>
+            </div>
+            <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(90deg,#3b82f6,#06b6d4)", borderRadius: 4, transition: "width 0.4s" }} />
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
 
 export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
@@ -28,11 +103,12 @@ export default function DailyQuest({ onJoinParty }) {
   useEffect(() => {
     if (!profile?.id) return;
     const todayStr = new Date().toISOString().slice(0, 10);
-    const DIRECT_SOURCES = ["party", "duel", "dungeon"];
+    // 全模式都計入（不排除任何 source），讓「今日箭數」反映真實射箭量
     const unsub = subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
-      const count = logs
-        .filter(l => !DIRECT_SOURCES.includes(l.source))
-        .reduce((s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
+      const count = logs.reduce(
+        (s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)),
+        0
+      );
       setTodayArrows(count);
     });
     return () => unsub?.();
@@ -126,6 +202,20 @@ export default function DailyQuest({ onJoinParty }) {
           onAllClose={() => setMilestoneQueue([])} />
       )}
 
+      {/* 今日箭數（任何狀態都顯示，讓射手即時看到累積進度） */}
+      {todayArrows > 0 && !showConfirm && (
+        <div style={{
+          background: "rgba(59,130,246,0.08)",
+          border: "1px solid rgba(59,130,246,0.2)",
+          borderRadius: 10, padding: "7px 12px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <span style={{ color: "#94a3b8", fontSize: 12 }}>🏹 今日已射</span>
+          <span style={{ color: "#60a5fa", fontWeight: 900, fontSize: 15 }}>{todayArrows} 箭</span>
+          {isEnded && <span style={{ color: "#4ade80", fontSize: 10, fontWeight: 700 }}>已結算</span>}
+        </div>
+      )}
+
       {/* 兩按鈕並排 */}
       <div style={{ display:"flex", gap:8 }}>
         <button
@@ -152,29 +242,26 @@ export default function DailyQuest({ onJoinParty }) {
           📣 已報到！請告知教練進行審核
         </div>
       )}
-      {isActive && (
-        <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, textAlign:"center" }}>
-          上課中 · 今日已射 {todayArrows} 箭
-        </div>
-      )}
-      {isEnded && (
-        <div style={{ color:"#4ade80", fontSize:12, fontWeight:700, textAlign:"center" }}>
-          ✅ 今日已下課 · 箭露已結算（{todayArrows} 箭）
-        </div>
-      )}
       {isRejected && !justSubmitted && (
         <div style={{ color:"#fb923c", fontSize:12, fontWeight:700, textAlign:"center" }}>
           ⚠️ 教練拒絕了報到，可點擊按鈕重新報到
         </div>
       )}
 
-      {/* 下課確認 */}
+      {/* 下課確認（含里程碑全覽板） */}
       {showConfirm && (
         <div style={{ paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.1)" }}>
-          <div style={{ color:"rgba(255,255,255,0.7)", fontSize:13, marginBottom:12 }}>
-            確定要下課嗎？今日 {todayArrows} 箭的箭露將立即結算。
+          <div style={{ color:"rgba(255,255,255,0.85)", fontSize:14, fontWeight:700, textAlign:"center", marginBottom:4 }}>
+            確定下課嗎？
           </div>
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, textAlign:"center", marginBottom:4 }}>
+            今日 {todayArrows} 箭的箭露將立即結算
+          </div>
+
+          {/* 里程碑全覽板 */}
+          <MilestoneBoard todayArrows={todayArrows} />
+
+          <div style={{ display:"flex", gap:8, marginTop:12 }}>
             <button onClick={() => setShowConfirm(false)}
               style={{ flex:1, padding:"8px", borderRadius:10, background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.6)", fontSize:13, border:"none", cursor:"pointer" }}>
               取消

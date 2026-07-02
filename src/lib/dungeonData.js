@@ -617,7 +617,9 @@ export function rollHiddenRoomDiscovery(floorData, currentRoomId, tier) {
   ];
   for (const { x, y } of candidates) {
     const candidateId = `hidden_${x}_${y}`;
-    if (!allIds.has(candidateId) && x >= 0 && y >= 0) {
+    // ⚠️ 檢查 ID 不重複 **且** 座標不與任何現有房間重疊
+    const coordOccupied = floorData.rooms.some(r => r.x === x && r.y === y);
+    if (!allIds.has(candidateId) && !coordOccupied && x >= 0 && y >= 0) {
       const rewardTier = Math.min(9, tier + 2);
       return {
         id: candidateId,

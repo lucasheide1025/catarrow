@@ -9,7 +9,7 @@ export const BUILDINGS = {
   hunting:   { id:'hunting',   name:'獵場',      emoji:'🏕️',  resource:'meat',      resourceName:'動物肉',     layer:1 },
   market:    { id:'market',    name:'貓貓市集',  emoji:'🛒',  resource:'driedfish', resourceName:'小魚乾',     layer:1 },
   warehouse: { id:'warehouse', name:'露天倉庫',  emoji:'📦',  resource:'can',       resourceName:'貓罐頭',     layer:2 },
-  alchemy:   { id:'alchemy',   name:'煉金室',    emoji:'⚗️',  resource:'arrowdew',  resourceName:'箭露（微量）', layer:2 },
+  alchemy:   { id:'alchemy',   name:'煉金室',    emoji:'⚗️',  resource:'arrowdew',resourceName:'箭露（微量）', layer:2 },
   gacha:     { id:'gacha',     name:'扭蛋亭',    emoji:'🎰',  resource:'gachaToken',resourceName:'扭蛋代幣',   layer:3 },
   archery:   { id:'archery',   name:'練箭場',    emoji:'🏹',  resource:'archer',    resourceName:'貓貓射手',   layer:3 },
 };
@@ -144,7 +144,10 @@ const BASE_PROD = {
 // 讓後期成長更有感，Lv.20 ≈ 21×
 export function getProductionRate(buildingId, level) {
   const base = BASE_PROD[buildingId] || 2;
-  return Math.round(base * Math.pow(1.18, level - 1) * 10) / 10;
+  const raw = base * Math.pow(1.18, level - 1);
+  if (raw < 0.1) return Math.round(raw * 10000) / 10000; // 4 位小數（扭蛋幣等超低產能）
+  if (raw < 1)   return Math.round(raw * 100) / 100;     // 2 位小數（<1/hr）
+  return Math.round(raw * 10) / 10;                      // 1 位小數（≥1/hr）
 }
 
 export const MAX_COLLECT_HOURS = 24;

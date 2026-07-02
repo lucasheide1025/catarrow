@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
+import { useFirestoreRound } from "../../battle/useFirestoreRound";
+import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
@@ -12,7 +14,8 @@ import {
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions } from "../../lib/db";
+import { calcDungeonCounter } from "../../lib/damage";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -36,27 +39,16 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import BattleBottomBar from "../member/BattleBottomBar";
 import { getPotion } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
+import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
 
-const SCORE_MAP = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
-const SCORE_LABELS      = ["X","10","9","8","7","6","5","4","3","2","1","M"];
-const SCORE_GATE_LABELS = ["9","8","7","6","5","4","3","2","1","M"]; // 得分關專用
-const SCORE_COLORS = {
-  X:"bg-yellow-400 text-yellow-900", 10:"bg-yellow-300 text-yellow-900",
-  9:"bg-red-400 text-white", 8:"bg-red-300 text-white",
-  7:"bg-blue-400 text-white", 6:"bg-blue-300 text-white",
-  5:"bg-gray-500 text-white", 4:"bg-gray-400 text-white",
-  3:"bg-gray-300 text-gray-800", 2:"bg-gray-200 text-gray-700",
-  1:"bg-gray-100 text-gray-600", M:"bg-black/30 text-gray-300",
-};
+// SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
 function calcContractDmgFn(arrows, atk, monsterDef, contract, dmgMult = 1) {
   return calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolveHitPart, dmgMult);
 }
 
 function calcCtrFn(monsterAtk, archerDef) {
-  const base = 4 + monsterAtk * 0.6 - archerDef * 0.3;
-  const m    = 0.8 + Math.random() * 0.4;
-  return Math.max(1, Math.round(base * m));
+  return calcDungeonCounter(monsterAtk, archerDef);
 }
 
 function DungeonMonsterImg({ id, icon, charge, hit, variant }) {
@@ -112,24 +104,53 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const battleBgRef          = useRef(null);
   const claimLootRef         = useRef(null);  // loot preview locked on first render
   const firstClearCheckedRef = useRef(false);
-  const roomRef              = useRef(null);
-  const submitFallbackRef    = useRef(null);
+  const roomRef              = useRef(null); // sync with hook's room for timeout closures
 
-  const [room,          setRoom]          = useState(null);
+  // ── 統一 Firestore 回合生命週期 ────────────────────────────
+  const {
+    room: fsRoom,
+    submitted,
+    setSubmitted: setFsSubmitted,
+    handleSubmit: fsHandleSubmit,
+    localProcessing: submitting,
+  } = useFirestoreRound({
+    roomId, myId,
+    subscribe: subscribeDungeonRoom,
+    submit: (roomId, id, arrows, choice) => submitDungeonArrows(roomId, id, arrows, choice),
+    processRound: processDungeonRound,
+    getMembers: (r) => Object.entries(r.members || {}).map(([id, m]) => ({ id, ...m })),
+    isProcessing: (r) => r.processing,
+    getRound: (r) => r.round || 1,
+    getExtraProcessArgs: () => [calcContractDmgFn, calcCtrFn],
+    processDelayMs: 1000,
+    maxRetries: 5,
+    onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
+    onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
+    onSubmitSuccess: (submittedArrows) => {
+      if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
+        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+      }
+    },
+  });
+  const room = fsRoom;
+
   const [arrows,        setArrows]        = useState([]);
-  const [submitted,     setSubmitted]     = useState(false);
   const [rearChoice,    setRearChoice]    = useState(null); // "heal" | "dmg" | null（後衛選擇）
   const [targetFmt,     setTargetFmt]     = useState(getBattleTargetFmt);
   const [targetMode,    setTargetMode]    = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
-  const [loading,       setLoading]       = useState(false);
   const [shopDone,      setShopDone]      = useState(false);
   const [localClaimed,  setLocalClaimed]  = useState(false); // 非房主領取後等待狀態
   const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
-  // 小回合動畫
-  const [liveEntry,         setLiveEntry]         = useState(null);
-  const [liveMiniIdx,       setLiveMiniIdx]       = useState(0);
+  // ── 小回合動畫（useMiniRoundReveal 統一管理）───────────────
+  const reveal = useMiniRoundReveal();
+  const {
+    liveEntry, liveMiniIdx,
+    animHit, animMonsterCharge, animScreenShake,
+    floatCounterDmgs, floatDmg, localHpOverride, attackingIds,
+    setAttackingIds,
+  } = reveal;
   // 回合結算覆蓋（動畫結束後顯示）
   const [showRoundResult,   setShowRoundResult]   = useState(false);
   const [firstClearBonus,   setFirstClearBonus]   = useState(null); // null=未檢查 false=非首殺 {coins}=首殺
@@ -145,20 +166,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const [scoringModeChosen,   setScoringModeChosen]   = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
   const [potionInv,          setPotionInv]           = useState(() => ({}));
-  // 戰鬥動畫 states（同組隊風格）
-  const [animHit,           setAnimHit]           = useState(false);
-  const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
-  const [animScreenShake,   setAnimScreenShake]   = useState(false);
-  const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
-  const [floatDmg,          setFloatDmg]          = useState(null);
-  const [localHpOverride,   setLocalHpOverride]   = useState({});
-  const [attackingIds,      setAttackingIds]       = useState(new Set());
 
-  const processingRef       = useRef(false);
-  const lastProcessedRef    = useRef(null); // "${floor}-${round}" 已處理過就跳過
   const logEndRef           = useRef(null);
   const lastAnimKeyRef      = useRef(null);
-  const revealTimersRef     = useRef([]);
   const prevRoundKeyRef     = useRef(null); // "${floor}-${round}" 換回合才清箭
   const readySyncedRef      = useRef(false); // 重整後 ready 同步只做一次
 
@@ -188,35 +198,38 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const _curRoomMeta    = _curFloorData?.rooms?.find(r => r.id === (room?.mapCurrentRoomId || ""));
   const isBossRoom      = _curRoomMeta?.type === "boss";
 
-  // ── 訂閱 ─────────────────────────────────────────────────────
+  // ── 訂閱：已遷移至 useFirestoreRound hook 內部管理 ────────────
+  // 以下 effect 處理訂閱 callback 中的額外副作用
+
+  // roomRef sync（供 timeout closures 讀取最新 room）
+  useEffect(() => { roomRef.current = room; }, [room]);
+
+  // 戰鬥背景圖
   useEffect(() => {
-    if (!roomId) return;
-    const unsub = subscribeDungeonRoom(roomId, r => {
-      roomRef.current = r;
-      setRoom(r);
-      if (r?.monster?.family && !battleBgRef.current) {
-        battleBgRef.current = pickBg(r.monster.family);
-      }
-      if (r && r.status === "active" && r.round !== undefined) {
-        const key = `${r.currentFloor || 1}-${r.round}`;
-        if (key !== prevRoundKeyRef.current) {
-          prevRoundKeyRef.current = key;
-          setSubmitted(false);
-          setArrows([]);
-        }
-      }
-      // 返回地圖探索時重置結算狀態，準備下一個房間
-      if (r?.status === "map_explore") {
-        claimLootRef.current = null;
-        firstClearCheckedRef.current = false;
-        setFirstClearBonus(null);
-      }
-    });
-    return () => {
-      unsub();
-      if (submitFallbackRef.current) clearTimeout(submitFallbackRef.current);
-    };
-  }, [roomId]);
+    if (room?.monster?.family && !battleBgRef.current) {
+      battleBgRef.current = pickBg(room.monster.family);
+    }
+  }, [room?.monster?.family]);
+
+  // 換回合時重置 submitted/arrows（Firestore round 變化）
+  useEffect(() => {
+    if (!room || room.status !== "active") return;
+    const key = `${room.currentFloor || 1}-${room.round || 1}`;
+    if (key !== prevRoundKeyRef.current) {
+      prevRoundKeyRef.current = key;
+      setFsSubmitted(false);
+      setArrows([]);
+    }
+  }, [room?.status, room?.currentFloor, room?.round]); // eslint-disable-line
+
+  // 返回地圖探索時重置結算狀態
+  useEffect(() => {
+    if (room?.status === "map_explore") {
+      claimLootRef.current = null;
+      firstClearCheckedRef.current = false;
+      setFirstClearBonus(null);
+    }
+  }, [room?.status]); // eslint-disable-line
 
   // ── 進場戰鬥動畫（只在戰鬥剛開始時顯示一次）────────────
   // showEntryAnim 預設 true 防止首次渲染閃爍，
@@ -244,12 +257,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }, [room?.status, room?.currentFloor, room?.mapCurrentRoomId]); // eslint-disable-line
 
   // ── 擊殺動畫自動轉場 ───────────────────────────────────
+  // 擊殺後：Boss/普通房都跳過 RoundResultOverlay，直接進完成畫面
+  // 因為 Firestore 已將 status 設為 "completed"，hide kill anim 後完成畫面自動渲染
   useEffect(() => {
     if (!showKillAnim) return;
     const t = setTimeout(() => {
       setShowKillAnim(false);
-      setShowRoundResult(true);
-    }, 3500);
+      // 不再 setShowRoundResult(true) — 擊殺後直接讓 status="completed" 渲染完成畫面
+    }, 3000);
     return () => clearTimeout(t);
   }, [showKillAnim]);
 
@@ -258,13 +273,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     logEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [room?.log]);
 
-  // ── processing 超時自動重置（15 秒仍卡住 → 強制清除 ref + Firestore）────
+  // ── processing 超時自動重置（15 秒仍卡住 → 強制清除 Firestore）────
   useEffect(() => {
     if (!isHost || !room?.processing) return;
     const t = setTimeout(() => {
       clearDungeonProcessing(roomId);
-      processingRef.current = false; // 同時重置本地鎖
-      lastProcessedRef.current = null; // 允許重試
     }, 15000);
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId]); // eslint-disable-line
@@ -273,10 +286,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   useEffect(() => {
     if (isHost || !room?.processing) return;
     const t = setTimeout(() => {
-      // 只有 status 還是 active 才重置（completed 時不重置）
       const r = roomRef.current;
       if (!r || r.status !== "active") return;
-      setSubmitted(false);
+      setFsSubmitted(false);
       import("firebase/firestore").then(({ updateDoc, doc }) =>
         import("../../lib/firebase").then(({ db }) =>
           updateDoc(doc(db, "dungeonRooms", roomId), {
@@ -321,7 +333,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     triggerCatAction();
   }, [room?.round, room?.currentFloor]); // eslint-disable-line
 
-  // ── 小回合動畫（新 log 到 → 逐箭播放，同組隊風格）────────────
+  // ── 小回合動畫（新 log 到 → 逐箭播放，useMiniRoundReveal）──
   useEffect(() => {
     const len = room?.log?.length || 0;
     if (len === 0) return;
@@ -331,21 +343,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (key === lastAnimKeyRef.current) return;
     lastAnimKeyRef.current = key;
 
-    revealTimersRef.current.forEach(clearTimeout);
-    revealTimersRef.current = [];
     setShowRoundResult(false);
-    setLocalHpOverride({});
-    setLiveEntry(entry);
-    setLiveMiniIdx(0);
 
-    const minis = entry.miniRounds || [];
-    let delay = 0;
-    minis.forEach((mini, idx) => {
-      const t = setTimeout(() => {
-        setLiveMiniIdx(idx);
+    reveal.startReveal(entry, {
+      key,
+      members: room?.members || {},
+      onMiniTick: (mini, idx) => {
         sfxArrowShoot();
         vibrate(8);
-        // 攻擊動畫：標記本 mini-round 有傷害的成員
         if (!mini.isCounter) {
           const atkIds = new Set((mini.playerLog || []).filter(p => (p.dmg||0) > 0).map(p => p.id));
           if (atkIds.size > 0) {
@@ -353,80 +358,32 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             setTimeout(() => setAttackingIds(new Set()), 500);
           }
         }
-      }, delay);
-      revealTimersRef.current.push(t);
-
-      if (mini.isCounter) {
-        // 反擊：先鎖 HP → 怪物蓄力 → 衝擊 + 浮動傷害
-        const ctrLog = mini.playerLog || [];
-        const tLock = setTimeout(() => {
-          setLocalHpOverride(prev => {
-            const next = { ...prev };
-            ctrLog.forEach(p => {
-              const mem = room?.members?.[p.id];
-              if (mem) next[p.id] = Math.min(mem.maxHP || 9999, (mem.hp || 0) + (p.ctr || 0));
-            });
-            return next;
+      },
+      onCounterHit: (mini, idx) => {
+        sfxCounter();
+        vibrate([0, 35, 55, 30]);
+      },
+      onEntryEnd: (entry) => {
+        const monsterDied = entry.monsterHPAfter <= 0;
+        const allDead     = Object.values(room?.members || {}).every(m => !m.alive);
+        if (monsterDied) {
+          const lastHit = entry.lastHit;
+          setKillInfo({
+            memberName: lastHit?.memberName || "未知射手",
+            label: lastHit?.label || "?",
+            monsterName: room?.monster?.name || "",
           });
-        }, delay);
-        const t1 = setTimeout(() => setAnimMonsterCharge(true), delay + 600);
-        const t2 = setTimeout(() => {
-          setAnimMonsterCharge(false);
-          setAnimScreenShake(true);
-          setLocalHpOverride({});
-          sfxCounter();
-          vibrate([0, 35, 55, 30]);
-          const floats = ctrLog
-            .filter(p => p.ctr > 0)
-            .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}` }));
-          if (floats.length) {
-            setFloatCounterDmgs(floats);
-            setTimeout(() => setFloatCounterDmgs([]), 1400);
-          }
-          setTimeout(() => setAnimScreenShake(false), 850);
-        }, delay + 1400);
-        revealTimersRef.current.push(tLock, t1, t2);
-        delay += 2700;
-      } else {
-        // 攻擊：怪物閃白 + 浮動傷害數字
-        const totalDmg = (mini.playerLog || []).reduce((s, p) => s + (p.dmg || 0), 0);
-        const hasCrit  = (mini.playerLog || []).some(p => (p.crits || 0) > 0);
-        if (totalDmg > 0) {
-          const th = setTimeout(() => {
-            setAnimHit(true);
-            setFloatDmg({ dmg: totalDmg, isCrit: hasCrit });
-            setTimeout(() => { setAnimHit(false); setFloatDmg(null); }, 2000);
-          }, delay + 200);
-          revealTimersRef.current.push(th);
+          setShowKillAnim(true);
+          sfxMonsterDead();
+          sfxSuccess();
+        } else {
+          if (allDead) { sfxSoftFail(); }
+          else         { sfxRoundEnd(); }
+          setShowRoundResult(true);
         }
-        delay += 1400;
-      }
+      },
     });
-
-    const monsterDied = entry.monsterHPAfter <= 0;
-    const allDead     = Object.values(room?.members || {}).every(m => !m.alive);
-    const minDelay    = minis.length === 0 && !monsterDied && !allDead ? 1500 : 0;
-
-    const ct = setTimeout(() => {
-      setLiveEntry(null);
-      setLiveMiniIdx(0);
-      if (monsterDied) {
-        // 擊殺動畫
-        const lastHit = entry.lastHit;
-        setKillInfo({
-          memberName: lastHit?.memberName || "未知射手",
-          label: lastHit?.label || "?",
-          monsterName: room?.monster?.name || "",
-        });
-        setShowKillAnim(true);
-        sfxMonsterDead();
-      } else {
-        setShowRoundResult(true);
-        if (allDead) sfxSoftFail();
-        else sfxRoundEnd();
-      }
-    }, delay + 500 + minDelay);
-    revealTimersRef.current.push(ct);
+    return () => reveal.stopReveal();
   }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
 
   // ── 首殺檢查（Boss 房通關時，提前顯示徽章用）─────────────────
@@ -448,68 +405,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     }).catch(() => setFirstClearBonus(false));
   }, [status, room?.result]); // eslint-disable-line
 
-  // ── 所有人 ready → 房主結算（縮短為 1 秒，並加入強制結算機制）──────
-  const allReadyTimerRef = useRef(null);
-  const forceProcessTimerRef = useRef(null);
-  useEffect(() => {
-    if (!isHost || !room || room.processing || processingRef.current) return;
-    if (room.status !== "active") return;
-    const members = room.members || {};
-    const alive   = Object.values(members).filter(m => m.alive);
-    if (alive.length === 0) return;
-    const allReady = alive.every(m => m.ready);
-    if (!allReady) {
-      if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
-      if (forceProcessTimerRef.current) { clearTimeout(forceProcessTimerRef.current); forceProcessTimerRef.current = null; }
-      return;
-    }
-    if (allReadyTimerRef.current) return; // 已有計時器在跑
-    allReadyTimerRef.current = setTimeout(() => {
-      allReadyTimerRef.current = null;
-      handleProcess();
-    }, 1000); // 縮短為 1 秒
-    // 安全網：若 8 秒後仍未結算（ref 被卡），強制觸發
-    forceProcessTimerRef.current = setTimeout(() => {
-      forceProcessTimerRef.current = null;
-      const latest = roomRef.current;
-      if (!latest || latest.status !== "active") return;
-      const aliveNow = Object.values(latest.members || {}).filter(m => m.alive);
-      if (aliveNow.length > 0 && aliveNow.every(m => m.ready) && !processingRef.current) {
-        processingRef.current = true;
-        setLoading(true);
-        const roundKey = `${latest.currentFloor || 1}-${latest.round || 1}`;
-        lastProcessedRef.current = roundKey;
-        processDungeonRound(roomId, latest, calcContractDmgFn, calcCtrFn)
-          .then(res => { if (!res?.ok) lastProcessedRef.current = null; })
-          .catch(() => { lastProcessedRef.current = null; })
-          .finally(() => { setLoading(false); processingRef.current = false; });
-      }
-    }, 8000);
-    return () => {
-      if (allReadyTimerRef.current) { clearTimeout(allReadyTimerRef.current); allReadyTimerRef.current = null; }
-      if (forceProcessTimerRef.current) { clearTimeout(forceProcessTimerRef.current); forceProcessTimerRef.current = null; }
-    };
-  }, [room]); // eslint-disable-line
-
-  async function handleProcess() {
-    if (processingRef.current) return;
-    const roundKey = `${room.currentFloor || 1}-${room.round || 1}`;
-    if (roundKey === lastProcessedRef.current) return;
-    lastProcessedRef.current = roundKey;
-    processingRef.current = true;
-    setLoading(true);
-    sfxCast();
-    try {
-      const res = await processDungeonRound(roomId, room, calcContractDmgFn, calcCtrFn);
-      if (!res?.ok) lastProcessedRef.current = null; // 失敗時允許重試
-    } catch (e) {
-      console.error("[handleProcess]", e);
-      lastProcessedRef.current = null; // 例外時允許重試
-    } finally {
-      setLoading(false);
-      processingRef.current = false; // 務必重置，永不卡死
-    }
-  }
+  // 註：host processing 邏輯已移至 useFirestoreRound hook 內部管理
+  // （包含 1000ms processDelayMs, guardRef, maxRetries, processing 防重複）
+  // loading 狀態由 hook 的 submitting 處理
 
   // ── 藥水處理器 ────────────────────────────────────────────────
   function onCarryPotion(lv) {
@@ -527,7 +425,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }
 
   function onThrowPotion(p) {
-    if (potionUsedThisRound || arrows.length >= 6) return;
+    const _apr = room?.arrowsPerRound || 6;
+    if (potionUsedThisRound || arrows.length >= _apr) return;
     const count = (potionInv[p.id] || 0);
     if (count <= 0) return;
     sfxCast();
@@ -541,47 +440,18 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }
 
   async function handleSubmit() {
-    if (arrows.length < 6) return;
-    sfxArrowShoot();
-    vibrate([10,10,10]);
-    setSubmitted(true);
+    const _apr = room?.arrowsPerRound || 6;
+    if (arrows.length < _apr || submitted || submitting) return;
     const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
-    await submitDungeonArrows(roomId, myId, arrows, choice);
-    setRearChoice(null);
-
-    // 安全網：房主送出後若尚未全員 ready，5 秒後重新檢查（避免 Firestore 同步延遲卡住）
-    if (isHost) {
-      if (submitFallbackRef.current) clearTimeout(submitFallbackRef.current);
-      const r = roomRef.current;
-      if (r?.status === "active") {
-        const alive = Object.values(r.members || {}).filter(m => m.alive);
-        const allReadyNow = alive.length > 0 && alive.every(m => m.ready);
-        if (!allReadyNow) {
-          submitFallbackRef.current = setTimeout(() => {
-            submitFallbackRef.current = null;
-            const latest = roomRef.current;
-            if (!latest || latest.status !== "active" || processingRef.current) return;
-            const aliveNow = Object.values(latest.members || {}).filter(m => m.alive);
-            if (aliveNow.length > 0 && aliveNow.every(m => m.ready)) {
-              // 直接用最新 room 處理，避免 handleProcess 的閉包過時
-              processingRef.current = true;
-              setLoading(true);
-              sfxCast();
-              const roundKey = `${latest.currentFloor || 1}-${latest.round || 1}`;
-              lastProcessedRef.current = roundKey; // 先鎖定，和 handleProcess 一致
-              processDungeonRound(roomId, latest, calcContractDmgFn, calcCtrFn)
-                .then(res => { if (!res?.ok) lastProcessedRef.current = null; })
-                .catch(() => { lastProcessedRef.current = null; })
-                .finally(() => { setLoading(false); processingRef.current = false; });
-            }
-          }, 5000);
-        }
-      }
+    const ok = await fsHandleSubmit(arrows, choice);
+    if (ok) {
+      setRearChoice(null);
+      setArrows([]);
     }
   }
 
   function addArrow(label) {
-    if (arrows.length >= 6) return;
+    if (arrows.length >= (room?.arrowsPerRound || 6)) return;
     sfxTap();
     const rawScore = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
     const score = (targetFmt === "field_16" && rawScore > 0)
@@ -592,7 +462,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   function undoArrow() {
     setArrows(prev => prev.slice(0, -1));
-    if (submitted) setSubmitted(false);
+    if (submitted) setFsSubmitted(false);
   }
 
   async function handleTargetSubmit() {
@@ -1176,10 +1046,44 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       );
   }
 
-  if (!room || status === "waiting") {
+  if (!room) {
     return (
       <div className="h-[100dvh] flex items-center justify-center bg-slate-900 text-slate-400">
         等待房間資料…
+      </div>
+    );
+  }
+
+  if (status === "waiting") {
+    return (
+      <div style={{ minHeight:"100dvh", background:"#0f172a", color:"white", display:"flex", flexDirection:"column", padding:"20px 16px", gap:12 }}>
+        <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24" }}>⚔️ 地下城戰鬥準備</div>
+        {isHost ? (
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <span style={{ color:"#94a3b8", fontSize:12 }}>每回合箭數：</span>
+            {[3, 6].map(n => (
+              <button
+                key={n}
+                onClick={() => import("firebase/firestore").then(({ updateDoc, doc: fsDoc }) =>
+                  import("../../lib/firebase").then(({ db: fsDb }) =>
+                    updateDoc(fsDoc(fsDb, "dungeonRooms", roomId), { arrowsPerRound: n })
+                  )
+                )}
+                style={{
+                  padding:"6px 18px", borderRadius:8, fontWeight:700, cursor:"pointer",
+                  background: room?.arrowsPerRound === n ? "#f59e0b" : "#1e293b",
+                  color: room?.arrowsPerRound === n ? "#000" : "#94a3b8",
+                  border: "1px solid #334155",
+                }}
+              >{n} 箭</button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize:12, color:"#94a3b8" }}>
+            每回合：{room?.arrowsPerRound || 6} 箭（由隊長設定）
+          </div>
+        )}
+        <div style={{ color:"#64748b", fontSize:13 }}>等待房主開始戰鬥…</div>
       </div>
     );
   }
@@ -1570,7 +1474,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 clearDungeonProcessing(roomId);
               } else {
                 // 非房主：重置本地 submitted + Firestore ready 重新輸入
-                setSubmitted(false);
+                setFsSubmitted(false);
                 import("firebase/firestore").then(({ updateDoc, doc }) =>
                   import("../../lib/firebase").then(({ db }) =>
                     updateDoc(doc(db, "dungeonRooms", roomId), {
@@ -1587,6 +1491,28 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           </div>
         ) : (
           <>
+            {/* 箭數選擇（房主專用，開戰前可設定）*/}
+            {isHost && arrows.length === 0 && !submitted && !liveEntry && (
+              <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6 }}>
+                <span style={{ color:"#94a3b8", fontSize:10, fontWeight:700 }}>每回合箭數：</span>
+                {[3, 6].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => import("firebase/firestore").then(({ updateDoc, doc: fsDoc }) =>
+                      import("../../lib/firebase").then(({ db: fsDb }) =>
+                        updateDoc(fsDoc(fsDb, "dungeonRooms", roomId), { arrowsPerRound: n })
+                      )
+                    )}
+                    style={{
+                      padding:"4px 16px", borderRadius:6, fontWeight:800, cursor:"pointer", fontSize:11,
+                      background: (room?.arrowsPerRound || 6) === n ? "#f59e0b" : "rgba(255,255,255,0.08)",
+                      color: (room?.arrowsPerRound || 6) === n ? "#000" : "#94a3b8",
+                      border: "1px solid #334155",
+                    }}
+                  >{n} 箭</button>
+                ))}
+              </div>
+            )}
             {/* 後衛選擇（前衛死亡後變後衛時出現）*/}
             {me.role === "rear" && !submitted && (
               <div style={{ background:"rgba(0,0,0,0.7)", border:"2px solid rgba(168,85,247,0.6)", borderRadius:10, padding:"8px 10px", marginBottom:6 }}>
@@ -1612,9 +1538,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               <span style={{ fontSize:11 }}>{contractInfo.icon}</span>
               <span style={{ fontSize:9, fontWeight:700 }}>{getContractDesc(myContract)}</span>
             </div>
-            {/* 靶面格式選擇（僅非地圖模式 & 標準合約 & 尚未輸入任何箭時顯示）
-                地圖模式房間自帶合約，不顯示此選擇器 */}
-            {!isMapMode && myContract.type !== "hit_count" && arrows.length === 0 && !targetPending && (
+            {/* 靶面格式選擇（標準合約 & 尚未輸入任何箭時顯示）
+                地圖模式也讓玩家選擇（各自設定存在 localStorage） */}
+            {myContract.type !== "hit_count" && arrows.length === 0 && !targetPending && (
               <div style={{ background:"rgba(0,0,0,0.35)", borderRadius:10, padding:"8px 10px", marginBottom:6, display:"flex", flexDirection:"column", gap:6 }}>
                 <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
                 <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />
@@ -1622,7 +1548,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             )}
             <BattleArrowSlots
                 arrows={arrows}
-                totalArrows={6}
+                totalArrows={room.arrowsPerRound || 6}
                 onUndo={undoArrow}
                 showUndo={arrows.length>0}
                 slotSize={36}
@@ -1631,14 +1557,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             {myContract.type === "hit_count" ? (
               /* 命中關：命中/M 兩顆按鈕 */
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:4 }}>
-                <button onClick={() => addArrow("命中")} disabled={arrows.length>=6}
+                <button onClick={() => addArrow("命中")} disabled={arrows.length>=(room.arrowsPerRound||6)}
                   className="rounded-xl font-black active:scale-95 bg-emerald-500 text-white"
-                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=6?0.3:1 }}>
+                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=(room.arrowsPerRound||6)?0.3:1 }}>
                   命中
                 </button>
-                <button onClick={() => addArrow("M")} disabled={arrows.length>=6}
+                <button onClick={() => addArrow("M")} disabled={arrows.length>=(room.arrowsPerRound||6)}
                   className={`rounded-xl font-black active:scale-95 ${SCORE_COLORS["M"]}`}
-                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=6?0.3:1 }}>
+                  style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=(room.arrowsPerRound||6)?0.3:1 }}>
                   M
                 </button>
               </div>
@@ -1659,11 +1585,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             )}
             {/* 送出 */}
             {!targetPending && (
-              <button onClick={handleSubmit} disabled={arrows.length<6}
+              <button onClick={handleSubmit} disabled={arrows.length<(room.arrowsPerRound||6)}
                 style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",
-                  background: arrows.length>=6?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
-                  opacity: arrows.length<6?0.5:1, transition:"all 0.2s" }}>
-                🏹 送出 6 箭 {arrows.length>0?`(${arrows.length}/6)`:""}
+                  background: arrows.length>=(room.arrowsPerRound||6)?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
+                  opacity: arrows.length<(room.arrowsPerRound||6)?0.5:1, transition:"all 0.2s" }}>
+                🏹 送出 {room.arrowsPerRound||6} 箭 {arrows.length>0?`(${arrows.length}/${room.arrowsPerRound||6})`:""}
               </button>
             )}
             {/* 靶面 Overlay */}
@@ -1671,7 +1597,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               open={targetMode && !targetPending && !submitted && myContract.type !== "hit_count"}
               fmtId={targetFmt}
               arrowLabels={arrows.map(a => a.label)}
-              arrowsPerRound={6}
+              arrowsPerRound={room.arrowsPerRound||6}
               onArrow={label => addArrow(label)}
               onUndo={undoArrow}
               onSubmit={handleTargetSubmit}
@@ -1813,10 +1739,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             // 全隊陣亡時不重置 submitted/arrows，直接顯示失敗畫面
             const allDead = Object.values(room?.members || {}).every(m => !m.alive);
             const isWipe = (status === "completed" && room?.result === "lose") || allDead;
-            if (!isWipe) {
-              setSubmitted(false);
-              setArrows([]);
-            }
+    if (!isWipe) {
+      setFsSubmitted(false);
+      setArrows([]);
+    }
           }}
         />
       )}

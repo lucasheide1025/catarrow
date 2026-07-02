@@ -1,7 +1,7 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
 import { useState, useRef, useEffect } from "react";
-import { calcDamage, calcCounterDamage } from "../../lib/monsterData";
-import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP } from "../../lib/db";
+import { calcStandardArrowDmg, calcStandardCounter, getCouncilPartMult } from "../../lib/damage";
+import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP, addRoundArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -18,6 +18,19 @@ import {
   sfxCouncilWork,
 } from "../../lib/sound";
 import { useCatCompanion, CAT_COMBAT_BASE } from "../../hooks/useCatCompanion";
+import { labelToValue } from "../../lib/score";
+import { createDispatch } from "../../battle/BattleAnimation";
+import { RoundController } from "../../battle/RoundController";
+
+// ── CouncilBattle 事件型別 ────────────────────────────────────
+const CB_EVT = {
+  ARROW:      'cb_arrow',
+  COUNTER:    'cb_counter',
+  COUNTER_CAT:'cb_counter_cat',
+  PLAYER_DEAD:'cb_player_dead',
+  MONSTER_KILLED:'cb_monster_killed',
+  ROUND_END:  'cb_round_end',
+};
 
 const MAT_MAP = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 
@@ -274,25 +287,10 @@ function HpBar({ current, max, label, accent }) {
 }
 
 // ── score helpers ────────────────────────────────────────────
-function scoreVal(label) {
-  if (label === "X") return 10;
-  return parseInt(label, 10) || 0;
-}
-function getPartMult(label, targetFmt) {
-  if (label === "0") return 0;
-  if (targetFmt === "field_16") {
-    const v = parseInt(label);
-    if (v === 6) return 2.0; if (v === 5) return 1.5; if (v >= 3) return 1.2; return 1.0;
-  }
-  if (label === "X") return 2.0;
-  const v = parseInt(label);
-  if (v === 10) return 1.5; if (v >= 8) return 1.2; return 1.0;
-}
 function getMappedScore(label, targetFmt) {
-  if (label === "X") return 10;
-  const v = parseInt(label) || 0;
-  if (targetFmt === "field_16" && v > 0) return Math.min(v + 5, 10);
-  return v;
+  const raw = labelToValue(label);
+  if (targetFmt === "field_16" && raw > 0) return Math.min(raw + 5, 10);
+  return raw;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -346,6 +344,32 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
+  // ⚡ 動畫派遣器 + 回合控制器（只在首次渲染時建立）
+  const dispatchRef = useRef(null);
+  const controllerRef = useRef(null);
+  if (!dispatchRef.current) {
+    dispatchRef.current = createDispatch(
+      {
+        shake(hard) {
+          const dur = hard ? 380 : 300;
+          setShaking(true);
+          setTimeout(() => setShaking(false), dur);
+        },
+      },
+      { critBoom: sfxCritBoom, softFail: sfxSoftFail,
+        councilWork: sfxCouncilWork, roundEnd: sfxRoundEnd,
+        monsterDead: sfxMonsterDead },
+      {},
+      (text, type = 'normal') => setLog(prev => [...prev.slice(-50), { text, type }]),
+      ms => new Promise(r => setTimeout(r, ms)),
+    );
+  }
+  if (!controllerRef.current) {
+    controllerRef.current = new RoundController(dispatchRef.current);
+  }
+  const councilDispatch = dispatchRef.current;
+  const controller = controllerRef.current;
+
   function addLog(text, type = "normal") {
     setLog(prev => [...prev.slice(-50), { text, type }]);
   }
@@ -354,6 +378,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   function logCouncilArrows(completedRound) {
     if (!memberId || !checkinActive) return;
     const totalArrows = completedRound * ARROWS_PER_ROUND;
+    if (totalArrows > 0) addRoundArrows(memberId, totalArrows).catch(() => {});
     const todayStr = new Date().toISOString().slice(0, 10);
     addPracticeLog(memberId, {
       date: todayStr, source: "council",
@@ -380,76 +405,120 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     setProcessing(true);
     setPhase("resolving");
 
+    const act = BUILDING_ACTIONS[bId] || { verb:"攻擊", dmgWord:"傷害", unit:"次" };
+    const actDesc = TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label;
+
+    // ── 1. 預先計算所有事件 ─────────────────────────────────
     let curMonHp  = monsterHp;
     let curArchHp = archerHp;
-    const act = BUILDING_ACTIONS[bId] || { verb:"攻擊", dmgWord:"傷害", unit:"次" };
 
-    addLog(`⚔️ 第 ${round} 回合（${distance}m · ${TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label}）`, "system");
-
+    // 逐箭計算傷害
+    const arrowEvts = [];
     for (let i = 0; i < ARROWS_PER_ROUND; i++) {
       const label    = arrows[i];
-      const partMult = getPartMult(label, targetFmt);
+      const partMult = getCouncilPartMult(label, targetFmt);
       const score    = getMappedScore(label, targetFmt);
-      const dmg      = calcDamage({ score, archerATK:archerStats.atk, monsterDEF:currentMonster.def, partMult });
-
-      if (partMult === 0) {
-        sfxSoftFail();
-        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 失誤！無效果`, "miss");
-      } else if (partMult >= 2.0) {
-        sfxCritBoom();
-        sfxCouncilWork(bId);
-        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 爆擊！${act.dmgWord} ${dmg} 💥`, "crit");
-        setShaking(true); setTimeout(() => setShaking(false), 380);
-      } else if (partMult >= 1.5) {
-        sfxCouncilWork(bId);
-        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — 重擊！${act.dmgWord} ${dmg}`, "hit");
-        setShaking(true); setTimeout(() => setShaking(false), 300);
-      } else {
-        sfxCouncilWork(bId);
-        addLog(`${act.verb}第${i+1}${act.unit} [${label}] — ${act.dmgWord} ${dmg}`, "normal");
-      }
-
+      const dmg      = calcStandardArrowDmg(score, archerStats.atk, currentMonster.def, partMult);
+      const hitType  = partMult === 0 ? 'miss' : partMult >= 2.0 ? 'crit' : partMult >= 1.5 ? 'hit' : 'normal';
+      arrowEvts.push({ i, label, dmg, hitType, act });
       curMonHp = Math.max(0, curMonHp - dmg);
-      setMonsterHp(curMonHp);
-      await delay(1100);
       if (curMonHp <= 0) break;
     }
 
-    // 回合結束後怪物反擊一次（與 MonsterBattle 相同節奏）
-    if (curMonHp > 0) {
-      const archerDmg = calcCounterDamage({ monsterATK: currentMonster.atk, archerDEF: archerStats.def });
-      curArchHp       = Math.max(0, curArchHp - archerDmg);
-      setArcherHp(curArchHp);
-      const msgs = BUILDING_PAIN_MSGS[bId] || ["怪物反擊了！"];
-      const msg  = msgs[Math.floor(Math.random() * msgs.length)];
-      addLog(`⚡ ${currentMonster.name} 反擊！${msg} 射手 -${archerDmg} HP`, "counter");
+    const monsterKilled = curMonHp <= 0;
 
-      if (hasCat && catHpRef.current > 0) {
-        const catDmg = calcCounterDamage({ monsterATK: currentMonster.atk, archerDEF: catDEF });
-        catHpRef.current = Math.max(0, catHpRef.current - catDmg);
-        setCatCurrentHp(catHpRef.current);
-        addLog(`🐱 ${catName} 也被反擊！-${catDmg} HP`, "counter");
-      }
+    // 建立事件陣列
+    const events = [];
 
-      setPainEvent({ msg, dmg: archerDmg });
-      await delay(1800);
-      setPainEvent(null);
+    // Round header
+    addLog(`⚔️ 第 ${round} 回合（${distance}m · ${actDesc}）`, "system");
 
-      if (curArchHp <= 0) {
-        addLog("💀 體力不支…帶著已完成的任務先撤退！", "system");
-        await delay(600);
-        setProcessing(false);
-        setFailedTier(currentMonster.tier);
-        logCouncilArrows(round);
-        setPhase("result");
-        return;
-      }
+    // 箭矢事件
+    for (const a of arrowEvts) {
+      events.push({ type: CB_EVT.ARROW, payload: a });
     }
 
-    if (curMonHp <= 0) {
-      sfxMonsterDead();
-      setTimeout(() => sfxSuccess(), 500);
-      addLog(`✅ ${currentMonster.name} 解決了！任務完成！`, "win");
+    // 反擊事件
+    let playerDied = false;
+    if (!monsterKilled) {
+      const archerDmg = calcStandardCounter(currentMonster.atk, archerStats.def);
+      curArchHp       = Math.max(0, curArchHp - archerDmg);
+      const msgs = BUILDING_PAIN_MSGS[bId] || ["怪物反擊了！"];
+      const msg  = msgs[Math.floor(Math.random() * msgs.length)];
+      events.push({ type: CB_EVT.COUNTER, payload: { dmg: archerDmg, msg, newArchHp: curArchHp } });
+
+      if (hasCat && catHpRef.current > 0) {
+        const catDmg = calcStandardCounter(currentMonster.atk, catDEF);
+        catHpRef.current = Math.max(0, catHpRef.current - catDmg);
+        events.push({ type: CB_EVT.COUNTER_CAT, payload: { catDmg } });
+      }
+
+      if (curArchHp <= 0) {
+        events.push({ type: CB_EVT.PLAYER_DEAD, payload: {} });
+        playerDied = true;
+      }
+    } else {
+      events.push({ type: CB_EVT.MONSTER_KILLED, payload: {} });
+    }
+
+    // 無死亡則回合結算
+    if (!monsterKilled && !playerDied) {
+      events.push({ type: CB_EVT.ROUND_END, payload: { roundTotal: arrows.reduce((s, l) => s + labelToValue(l), 0) } });
+    }
+
+    // ── 2. 透過 RoundController 播放事件 ────────────────────
+    const eventCtx = { monster: currentMonster, name: currentMonster?.name, bId, tier: currentMonster?.tier };
+
+    await controller.playEvents(events, eventCtx, {
+      [CB_EVT.ARROW]: (p) => {
+        const { i, label, dmg, hitType, act: a } = p;
+        if (hitType === 'miss') {
+          councilDispatch.sfx.softFail();
+          councilDispatch.log(`${a.verb}第${i+1}${a.unit} [${label}] — 失誤！無效果`, 'miss');
+        } else if (hitType === 'crit') {
+          councilDispatch.sfx.critBoom();
+          councilDispatch.sfx.councilWork(bId);
+          councilDispatch.log(`${a.verb}第${i+1}${a.unit} [${label}] — 爆擊！${a.dmgWord} ${dmg} 💥`, 'crit');
+          councilDispatch.anim.shake(true);
+        } else if (hitType === 'hit') {
+          councilDispatch.sfx.councilWork(bId);
+          councilDispatch.log(`${a.verb}第${i+1}${a.unit} [${label}] — 重擊！${a.dmgWord} ${dmg}`, 'hit');
+          councilDispatch.anim.shake(false);
+        } else {
+          councilDispatch.sfx.councilWork(bId);
+          councilDispatch.log(`${a.verb}第${i+1}${a.unit} [${label}] — ${a.dmgWord} ${dmg}`, 'normal');
+        }
+        curMonHp = Math.max(0, curMonHp - dmg);
+        setMonsterHp(curMonHp);
+      },
+      [CB_EVT.COUNTER]: (p) => {
+        setArcherHp(p.newArchHp);
+        councilDispatch.log(`⚡ ${currentMonster.name} 反擊！${p.msg} 射手 -${p.dmg} HP`, 'counter');
+        setPainEvent({ msg: p.msg, dmg: p.dmg });
+        setTimeout(() => setPainEvent(null), 1800);
+      },
+      [CB_EVT.COUNTER_CAT]: (p) => {
+        setCatCurrentHp(catHpRef.current);
+        councilDispatch.log(`🐱 ${catName} 也被反擊！-${p.catDmg} HP`, 'counter');
+      },
+      [CB_EVT.PLAYER_DEAD]: () => {
+        councilDispatch.log('💀 體力不支…帶著已完成的任務先撤退！', 'system');
+      },
+      [CB_EVT.MONSTER_KILLED]: () => {
+        councilDispatch.sfx.monsterDead();
+        setTimeout(() => sfxSuccess(), 500);
+        councilDispatch.log(`✅ ${currentMonster.name} 解決了！任務完成！`, 'win');
+      },
+      [CB_EVT.ROUND_END]: (p) => {
+        councilDispatch.sfx.roundEnd();
+        const hpPct     = Math.round(curMonHp / currentMonster.maxHp * 100);
+        const statusTag = hpPct <= 15 ? '⚠️ 快解決了！' : hpPct <= 35 ? '💪 繼續！' : '';
+        councilDispatch.log(`第 ${round} 回合結算：${p.roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, 'total');
+      },
+    });
+
+    // ── 3. 後置處理 ────────────────────────────────────────
+    if (monsterKilled) {
       if (memberId) {
         addArcherXP(memberId, MONSTER_TIER_XP[currentMonster.tier] || 5).catch(() => {});
         if (activeCatId) {
@@ -457,27 +526,30 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           saveCatXP(CAT_TIER_XP[currentMonster.tier] || 5).catch(() => {});
         }
       }
-      const matId       = getRaceMaterialId(race, currentMonster.tier);
-      const newDefeated = [...defeated, { tier:currentMonster.tier, materialId:matId }];
-      setDefeated(newDefeated);
+      const matId = getRaceMaterialId(race, currentMonster.tier);
+      setDefeated(prev => [...prev, { tier: currentMonster.tier, materialId: matId }]);
       await delay(700);
       setProcessing(false);
-      if (isLastMonster) { logCouncilArrows(round); sfxEpic(); setPhase("result"); }
-      else setPhase("obstacle_clear");
+      if (isLastMonster) { logCouncilArrows(round); sfxEpic(); setPhase('result'); }
+      else setPhase('obstacle_clear');
       return;
     }
 
-    sfxRoundEnd();
-    const roundTotal = arrows.reduce((s, l) => s + scoreVal(l), 0);
-    const hpPct      = Math.round(curMonHp / currentMonster.maxHp * 100);
-    const statusTag  = hpPct <= 15 ? "⚠️ 快解決了！" : hpPct <= 35 ? "💪 繼續！" : "";
-    addLog(`第 ${round} 回合結算：${roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, "total");
-    await delay(700);
+    if (playerDied) {
+      await delay(600);
+      setProcessing(false);
+      setFailedTier(currentMonster.tier);
+      logCouncilArrows(round);
+      setPhase('result');
+      return;
+    }
 
+    // 正常下一回合
+    await delay(700);
     setRound(r => r + 1);
     setArrows([]);
     setProcessing(false);
-    setPhase("input");
+    setPhase('input');
   }
 
   function nextObstacle() {
@@ -761,8 +833,8 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   // ══════════════════════════════════════════════════════════════
   // ── 戰鬥中（input / resolving）────────────────────────────────
   // ══════════════════════════════════════════════════════════════
-  const roundScore = arrows.reduce((s, l) => s + scoreVal(l), 0);
-  const maxScore   = ARROWS_PER_ROUND * scoreVal(scoreLabels[0]);
+  const roundScore = arrows.reduce((s, l) => s + labelToValue(l), 0);
+  const maxScore   = ARROWS_PER_ROUND * labelToValue(scoreLabels[0]);
   const gridCols   = scoreLabels.length > 7 ? 6 : scoreLabels.length;
 
 

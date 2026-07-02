@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins, addRoundArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -16,34 +16,24 @@ import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
+import { labelToValue, valueToLabel, getScoreColor } from "../../lib/score";
+import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter } from "../../lib/damage";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
+import { createDispatch } from "../../battle/BattleAnimation";
+import { RoundController } from "../../battle/RoundController";
 
-// ── 分數按鈕 ────────────────────────────────────────────────────
+// ── WorldBoss 事件型別（客製，不經過 BattleAnimation） ──────
+const WB_EVT = {
+  ARROW:   'wb_arrow',
+  CAT_MSG: 'wb_cat_msg',
+  SUPPORT: 'wb_support',
+};
+
+// SCORE_BTNS/scoreVal/scoreLabel/scoreColor 統一由 ../../lib/score 管理
 const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
-function scoreVal(s) { return s === "X" ? 10 : s === "M" ? 0 : Number(s); }
-function scoreLabel(s) { return s === "X" ? "X" : s === "M" ? "M" : String(s); }
-function scoreColor(s) {
-  if (s === "X" || s === 10) return "#f59e0b";
-  if (s === 9 || s === 8)    return "#ef4444";
-  if (s === 7 || s === 6)    return "#3b82f6";
-  if (s === "M")             return "#475569";
-  return "#94a3b8";
-}
-
-// ── 計算傷害 ─────────────────────────────────────────────────
-function calcArrowDmg(score, myATK, bossDef, participantBonus) {
-  if (score === 0) return 0;
-  const atkFinal = myATK * participantBonus;
-  const base     = 5 + atkFinal * 0.6 + score * 1.5 - bossDef * 0.3;
-  const mult     = 0.85 + Math.random() * 0.3;
-  return Math.max(1, Math.round(base * mult));
-}
-
-function calcCounterDmg(bossAtk, myDEF) {
-  const base = bossAtk * 0.4 - myDEF * 0.3;
-  const mult = 0.8 + Math.random() * 0.4;
-  return Math.max(5, Math.round(base * mult));
-}
+function scoreVal(s) { return labelToValue(s); }
+function scoreLabel(s) { return valueToLabel(s); }
+function scoreColor(s) { return getScoreColor(s === 10 ? "X" : s === 0 ? "M" : String(s), "hex"); }
 
 // ── Boss 反擊台詞池 ──────────────────────────────────────────
 const BOSS_TAUNTS = [
@@ -329,6 +319,23 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [catRoundTotalDmg,  setCatRoundTotalDmg]  = useState(0);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
+  // ⚡ 事件派遣器 + 回合控制器（只在首次渲染時建立）
+  const dispatchRef = useRef(null);
+  const controllerRef = useRef(null);
+  if (!dispatchRef.current) {
+    dispatchRef.current = createDispatch(
+      { shoot() {}, hit() {}, miss() {}, crit() {} },
+      {},
+      {},
+      () => {},
+      ms => new Promise(r => setTimeout(r, ms)),
+    );
+  }
+  if (!controllerRef.current) {
+    controllerRef.current = new RoundController(dispatchRef.current, {
+      customDelays: { [WB_EVT.ARROW]: 600 },
+    });
+  }
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
@@ -432,76 +439,89 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       .map(p => ({ ...p, atk: Math.max(p.atk || 0, 30) }));
     const supportChance = Math.min(0.3 + teammates.length * 0.12, 0.85);
 
-    // 一箭一箭順序計算，600ms 間隔
+    // ── 1. 預先計算所有事件 ─────────────────────────────────
+    const events = [];
+
     for (let i = 0; i < fullArrows.length; i++) {
-      setProcessingIdx(i);
       const a   = fullArrows[i];
-      const dmg = Math.round(calcArrowDmg(a.score, baseATK, boss.def, participantBonus) * potionMult);
+      const dmg = Math.round(wbArrowDmg(a.score, baseATK, boss.def, participantBonus) * potionMult);
       const isCrit = a.score >= 10;
       if (isCrit) crits++;
       totalDmg += dmg;
-
-      if (a.score === 0) { sfxSoftFail(); flashBossHit(false, 0, true); }
-      else if (isCrit) { sfxCritBoom(); flashBossHit(true, dmg, false); vibrate(30); }
-      else { sfxArrowHit(); flashBossHit(false, dmg, false); vibrate(10); }
-
-      setDmgLog(prev => [...prev,
-        isCrit      ? `💥 ${a.label} 暴擊！ -${dmg}`
-        : a.score===0 ? `💨 M 飛矢落空`
-                      : `🏹 ${a.label}環 -${dmg}`
-      ]);
       localBossHP = Math.max(0, localBossHP - dmg);
-      setBossHP(localBossHP);
 
-      // 貓咪助攻（25%）
+      events.push({
+        type: WB_EVT.ARROW,
+        payload: { i, label: a.label, dmg, isCrit, isMiss: a.score === 0, currentBossHP: localBossHP },
+      });
+
+      // 貓咪助攻（25%，視覺效果）
       if (profile?.equippedCat && Math.random() < 0.25) {
         const name = profile.equippedCat.name || "貓咪";
         const msgs = [`🐱 ${name} 撲了過去！暴擊加成 ×1.2 ⚡`, `🐱 ${name} 舔了你的傷口，回復 HP 💚`,
                       `🐱 ${name} 偷藏了一枚金幣 💰`, `🐱 ${name} 嚇到 Boss！防禦暫時下降 🐾`];
-        setCatMsg(msgs[Math.floor(Math.random() * msgs.length)]);
+        events.push({
+          type: WB_EVT.CAT_MSG,
+          payload: { msg: msgs[Math.floor(Math.random() * msgs.length)] },
+        });
       }
 
       // 隊友助攻（隊員越多、觸發率越高）
       if (teammates.length > 0 && Math.random() < supportChance) {
-        await delay(300);
         const tm    = teammates[Math.floor(Math.random() * teammates.length)];
         const tmATK = tm.atk || Math.round(baseATK * 0.8);
-        const sdmg  = Math.max(1, Math.round(calcArrowDmg(
+        const sdmg  = Math.max(1, Math.round(wbArrowDmg(
           6 + Math.floor(Math.random() * 4), tmATK * 0.7, boss.def, participantBonus
         )));
         totalDmg += sdmg;
-        const tmMsg = SUPPORT_MSGS[Math.floor(Math.random() * SUPPORT_MSGS.length)](tm.name, sdmg);
-        setDmgLog(prev => [...prev, tmMsg]);
         localBossHP = Math.max(0, localBossHP - sdmg);
-        setBossHP(localBossHP);
-        // 找到對應同伴並播放攻擊動畫
-        const cIdx = companions.findIndex(c => c.name === tm.name);
-        if (cIdx >= 0) {
-          setCompanionShootIdx(cIdx);
-          setTimeout(() => setCompanionShootIdx(-1), 500);
-        }
+        const tmMsg = SUPPORT_MSGS[Math.floor(Math.random() * SUPPORT_MSGS.length)](tm.name, sdmg);
+        events.push({
+          type: WB_EVT.SUPPORT,
+          payload: { sdmg, msg: tmMsg, tmName: tm.name, currentBossHP: localBossHP },
+        });
       }
-
-      await delay(600);
     }
 
     setProcessingIdx(-1);
 
-    // ── 箭矢結算完成時存檔（防中斷遺失）───────────────
-    try {
-      localStorage.setItem(_saveKey, JSON.stringify({
-        eventId: event.id, roundIdx: allRounds.length + (nextRounds.length > allRounds.length ? 1 : 0),
-        allRounds: nextRounds, myHP,
-        localBossHP, companionHPs,
-      }));
-    } catch { /**/ }
+    // ── 2. 透過 RoundController 播放事件序列 ────────────────
+    const controller = controllerRef.current;
+    await controller.playEvents(events, {}, {
+      [WB_EVT.ARROW]: (p) => {
+        const { i, label, dmg, isCrit, isMiss, currentBossHP } = p;
+        setProcessingIdx(i);
+        if (isMiss) { sfxSoftFail(); flashBossHit(false, 0, true); }
+        else if (isCrit) { sfxCritBoom(); flashBossHit(true, dmg, false); vibrate(30); }
+        else { sfxArrowHit(); flashBossHit(false, dmg, false); vibrate(10); }
+        setDmgLog(prev => [...prev,
+          isCrit      ? `💥 ${label} 暴擊！ -${dmg}`
+          : isMiss    ? `💨 M 飛矢落空`
+                      : `🏹 ${label}環 -${dmg}`
+        ]);
+        setBossHP(currentBossHP);
+      },
+      [WB_EVT.CAT_MSG]: (p) => {
+        setCatMsg(p.msg);
+      },
+      [WB_EVT.SUPPORT]: (p) => {
+        const { msg, tmName, currentBossHP } = p;
+        setDmgLog(prev => [...prev, msg]);
+        setBossHP(currentBossHP);
+        const cIdx = companions.findIndex(c => c.name === tmName);
+        if (cIdx >= 0) {
+          setCompanionShootIdx(cIdx);
+          setTimeout(() => setCompanionShootIdx(-1), 500);
+        }
+      },
+    });
 
     // ── 貓貓每回合攻擊（與打怪模式相同，HP > 0 才出擊）────────
     if (hasCat && catATK && localBossHP > 0) {
       let catDmg = 0;
       for (let i = 0; i < 6; i++) {
         const s = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-        catDmg += calcArrowDmg(s, catATK, boss.def, participantBonus);
+        catDmg += wbArrowDmg(s, catATK, boss.def, participantBonus);
       }
       catDmg = Math.round(catDmg);
       const catSkill = triggerCatSkill?.();
@@ -543,7 +563,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     addTimer(() => {
       setAnimBossCharge(false);
-      const cdmg   = calcCounterDmg(boss.atk || 100, baseDEF);
+      const cdmg   = wbCounter(boss.atk || 100, baseDEF);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
       const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
@@ -638,6 +658,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       saveBond("worldboss");
       if (myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r => r.arrows);
+        const totalArrowsSent = practiceRounds.flat().length;
+        if (totalArrowsSent > 0) addRoundArrows(myId, totalArrowsSent).catch(() => {});
         addPracticeLog(myId, {
           date: todayStr, source: "worldboss",
           bossName: event.bossData?.name || "世界王",

@@ -1,6 +1,6 @@
 // src/lib/arrowMilestone.js
 // 固定門檻：每天每個門檻只觸發一次，不循環
-const ALL_MILESTONES = [
+export const ALL_MILESTONES = [
   { arrows:   6, catBoxes: 0, label: "6箭！" },
   { arrows:  12, catBoxes: 0, label: "12箭！" },
   { arrows:  24, catBoxes: 0, label: "24箭！" },

@@ -1,11 +1,14 @@
 // src/components/duel/DuelRoom.jsx — 決鬥戰鬥室
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
+import { useFirestoreRound } from "../../battle/useFirestoreRound";
 import CatMsg from "../cat/CatMsg";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
-import { resolveHitPart, BODY_PARTS } from "../../lib/monsterData";
+import { useDuelReveal } from "../../battle/useDuelReveal";
+import { calcDuelRoundDamage } from "../../lib/damage";
+import { SCORE_BTNS } from "../../lib/score";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
@@ -17,7 +20,7 @@ import {
 } from "../../lib/duelDb";
 import { BattleResultHeader, BattleStatCard } from "../shared/SharedBattleComponents";
 import { generateBotArrows } from "../../lib/botUtils";
-import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows } from "../../lib/db";
 import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUEL_WIN_XP, CAT_DUEL_LOSE_XP } from "../../lib/catLevel";
@@ -27,12 +30,7 @@ import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 const ARROWS = 6;
 const REVEAL_TOTAL = ARROWS * 2; // A 隊先攻 6 箭 + B 隊後攻 6 箭
-const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
-const SCORE_BTNS = [
-  { label:"X", score:10 }, { label:"10", score:10 }, { label:"9", score:9 }, { label:"8", score:8 },
-  { label:"7", score:7 },  { label:"6",  score:6  }, { label:"5", score:5 }, { label:"4", score:4 },
-  { label:"3", score:3 },  { label:"2",  score:2  }, { label:"1", score:1 }, { label:"M", score:0 },
-];
+// SCORE_BTNS 統一由 ../../lib/score 管理
 
 const DUEL_CSS = `
 @keyframes dmg-float{0%{opacity:1;transform:translateY(0) scale(1)}80%{opacity:1;transform:translateY(-28px) scale(1.1)}100%{opacity:0;transform:translateY(-36px) scale(0.9)}}
@@ -169,54 +167,6 @@ function DuelIntro({ room, myId, onDone }) {
 }
 
 // ── 傷害計算（client-side，用於 host 處理回合）─────────────
-function calcDmgFn(arrows, atk, targetDef) {
-  // 防玻璃心：≥3 M → 40% 機率「天外飛箭」，救回 1~2 支
-  const missCount = arrows.filter(a => a.score === 0).length;
-  let processedArrows = arrows;
-  let luckyEvent = null;
-  if (missCount >= 3 && Math.random() < 0.40) {
-    let saved = 0;
-    processedArrows = arrows.map(a => {
-      if (a.score === 0 && saved < 2 && Math.random() < 0.60) {
-        saved++;
-        const s = 5 + Math.floor(Math.random() * 3); // 5~7 分
-        return { ...a, score: s, label: `✨${s}`, lucky: true };
-      }
-      return a;
-    });
-    if (saved > 0) {
-      luckyEvent = {
-        icon: "✨",
-        title: "天外飛箭",
-        desc: `${saved} 支脫靶的箭竟然擦中了目標！`,
-      };
-    }
-  }
-
-  let dmg = 0, crits = 0;
-  const arrowBreakdown = [];
-  for (const arrow of processedArrows) {
-    const score = arrow.score ?? 0;
-    const part  = resolveHitPart(score, ALL_PARTS, arrow.label === "X");
-    const pMult = part?.mult ?? 1.0;
-    if (!score || pMult === 0) {
-      arrowBreakdown.push({ label: "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
-      continue;
-    }
-    const base = 2 + atk * 0.5 + score * 0.4 - targetDef * 0.3;
-    const mult = 0.85 + Math.random() * 0.3;
-    const isCrit = mult > 1.05 || pMult >= 1.8;
-    const d = Math.max(1, Math.round(base * pMult * mult));
-    dmg += d;
-    if (isCrit) crits++;
-    arrowBreakdown.push({
-      label: arrow.lucky ? `✨${score}` : (arrow.label || String(score)),
-      partIcon: part?.icon || "❤️", partName: part?.name || "胸腔",
-      partMult: pMult, dmg: d, isCrit, lucky: arrow.lucky || false,
-    });
-  }
-  return { dmg, crits, arrowBreakdown, luckyEvent };
-}
 
 // ── 決鬥玩家小卡 ────────────────────────────────────────────
 function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, teamA, teamB }) {
@@ -254,19 +204,75 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const checkinActive = useCheckinActive(profile?.id);
   const { catMsg, clearCatMsg, showCatEntry, saveBond, hasCat, catName: myCatName, calcCatRoundDamage, catATK } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
-  const [room, setRoom]           = useState(null);
+
+  // ── 統一 Firestore 回合生命週期 ────────────────────────────
+  const {
+    room: fsRoom,
+    submitted,
+    setSubmitted: setFsSubmitted,
+    handleSubmit: fsHandleSubmit,
+    localProcessing: submitting,
+  } = useFirestoreRound({
+    roomId, myId, isHost,
+    subscribe: subscribeDuelRoom,
+    submit: (roomId, id, team, arrows, target) => submitDuelArrows(roomId, team, id, arrows, target),
+    processRound: processDuelRound,
+    getMembers: (r) => [
+      ...Object.entries(r.teamA || {}).map(([id, m]) => ({ id, ...m })),
+      ...Object.entries(r.teamB || {}).map(([id, m]) => ({ id, ...m })),
+    ],
+    isProcessing: (r) => r.processing,
+    getRound: (r) => r.round || 1,
+    canProcess: (r) => {
+      const aliveA = Object.entries(r.teamA || {}).filter(([, m]) => m.alive);
+      const aliveB = Object.entries(r.teamB || {}).filter(([, m]) => m.alive);
+      return aliveA.length > 0 && aliveB.length > 0;
+    },
+    getBotsUnready: (r) => [
+      ...Object.entries(r.teamA || {}).filter(([, m]) => m.isBot && m.alive && !m.ready).map(([id, m]) => ({ id, team: "A", m })),
+      ...Object.entries(r.teamB || {}).filter(([, m]) => m.isBot && m.alive && !m.ready).map(([id, m]) => ({ id, team: "B", m })),
+    ],
+    submitBotArrows: (roomId, team, id, m) => {
+      const arrows = generateBotArrows(m.difficulty || "normal");
+      return submitDuelArrows(roomId, team, id, arrows);
+    },
+    onBeforeSubmit: () => {},
+    onSubmitError: (reason) => { toast("送出失敗：" + reason); },
+    onSubmitSuccess: (_team, submittedArrows) => {
+      if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
+        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+      }
+    },
+  });
+  const room = fsRoom;
+
+  // ── 逐箭揭露 hook ──────────────────────────────────────
+  const duelReveal = useDuelReveal({
+    room,
+    onSoundEffect: (hasCrit, hasHit) => {
+      if (hasCrit) sfxCritBoom();
+      else if (hasHit) sfxArrowHit();
+    },
+    onComplete: () => {
+      const allMembers = [
+        ...Object.entries(room?.teamA || {}).map(([id, m]) => ({ id, ...m })),
+        ...Object.entries(room?.teamB || {}).map(([id, m]) => ({ id, ...m })),
+      ];
+      if (allMembers.some(m => !m.alive && m.hp <= 0)) sfxMonsterDead();
+    },
+  });
+  const {
+    revealEntry, revealIdx, displayHp, floats, flashIds,
+    attackingIds, hittingIds, eventPhase, showCatRound, duelCatCats,
+    revealPhaseBanner, isRevealing, hasRevealed, skipEvent, stopReveal,
+  } = duelReveal;
+
   const [myArrows, setMyArrows]   = useState([]);
-  const [submitted, setSubmitted] = useState(false);
   const [targetMode, setTargetMode]   = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt, setTargetFmt]     = useState(getBattleTargetFmt);
-  const [revealEntry, setRevealEntry] = useState(null);
-  const [revealIdx, setRevealIdx]     = useState(-1);
-  const [floats, setFloats]           = useState([]);   // { id, text, team, memberId, isCrit }
-  const [flashIds, setFlashIds]       = useState({});   // { memberId: true }
   const [resultShown, setResultShown] = useState(false);
   const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
-  const [eventPhase,  setEventPhase]  = useState(false); // 事件暫停畫面
   const [duelStats, setDuelStats]     = useState(null);
   const [showDuelCard, setShowDuelCard] = useState(false);
   const [milestoneQueue, setMilestoneQueue] = useState([]);
@@ -274,18 +280,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [showIntro,    setShowIntro]    = useState(false);
   const [selectedTarget, setSelectedTarget] = useState(null);
-  const [attackingIds, setAttackingIds] = useState(new Set());
-  const [hittingIds,   setHittingIds]   = useState(new Set());
-  const [displayHp, setDisplayHp]    = useState(null); // 揭露動畫期間的血量暫存（回合前→逐箭扣）
   const [showEndAnim, setShowEndAnim]  = useState(false); // 結束動畫（kill feed + MVP）
-  const [revealPhaseBanner, setRevealPhaseBanner] = useState(null); // "A" | "B" | null
-  const [showCatRound, setShowCatRound]   = useState(false);
-  const [duelCatCats,  setDuelCatCats]    = useState([]);
   const battleAreaRef = useRef(null);
-  const lastLogLen      = useRef(0);
   const lastCheerTs     = useRef(0);
   const heartbeatRef    = useRef(null);
-  const lastRoundFired  = useRef(0);
   const catAppliedRef   = useRef(false);
   const prevDuelRound   = useRef(0);
   const introShownRef   = useRef(false);
@@ -298,13 +296,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     ? (Object.keys(room.teamA || {}).includes(myId) ? "A" : "B")
     : null;
 
-  // ── 訂閱房間 ────────────────────────────────────────────
+  // host 進場時清除可能卡住的 processing（前次異常遺留）
   useEffect(() => {
-    const unsub = subscribeDuelRoom(roomId, r => setRoom(r));
-    // host 進場時清除可能卡住的 processing（前次異常遺留）
     if (isHost) clearDuelProcessing(roomId).catch(() => {});
-    return unsub;
-  }, [roomId]);
+  }, [roomId, isHost]);
 
   // ── 入場動畫：第一次進入 active 且 log 為空才觸發 ─────────
   useEffect(() => {
@@ -356,139 +351,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     return () => clearTimeout(t);
   }, [needsSubmit]); // eslint-disable-line
 
-  // ── 偵測新 log 並開始揭露動畫 ───────────────────────────
+  // ── 新 log 時重置本地狀態 ───────────────────────────────
   useEffect(() => {
     if (!room?.log?.length) return;
-    if (room.log.length <= lastLogLen.current) return;
-    lastLogLen.current = room.log.length;
-    const entry = room.log[room.log.length - 1];
-    // 從 hpDelta 反推回合開始前的 HP（hpDelta 為負值，故 preHp = m.hp - hpDelta）
-    const preHp = {};
-    [...Object.entries(room.teamA || {}), ...Object.entries(room.teamB || {})].forEach(([id, m]) => {
-      preHp[id] = Math.max(0, (m.hp || 0) - (entry.hpDelta?.[id] || 0));
-    });
-    setDisplayHp(preHp);
-    setRevealEntry(entry);
-    setSubmitted(false);
+    setFsSubmitted(false);
     setMyArrows([]);
-    // 有事件 → 先全員暫停看事件畫面，之後再播逐箭動畫
-    if (entry.event) {
-      setEventPhase(true);
-    } else {
-      setRevealIdx(0);
-    }
-  }, [room?.log?.length]);
-
-  // ── 逐箭揭露計時器（一來一往：前 6 步 A 攻 B，後 6 步 B 攻 A）──
-  useEffect(() => {
-    if (revealIdx < 0 || !revealEntry) return;
-    if (revealIdx >= REVEAL_TOTAL) return;
-
-    // 判斷當前是 A 攻還是 B 攻
-    const phase     = revealIdx < ARROWS ? "A" : "B";
-    const arrowIdx  = revealIdx % ARROWS;
-
-    // 換邊時顯示相間橫幅
-    if (revealIdx === ARROWS) {
-      setRevealPhaseBanner("B");
-      const bt = setTimeout(() => setRevealPhaseBanner(null), 800);
-      // 延遲 900ms 後繼續（讓橫幅看得到）
-      const t = setTimeout(() => setRevealIdx(i => i + 1), 900);
-      return () => { clearTimeout(bt); clearTimeout(t); };
-    }
-
-    // 只處理本回合攻擊方的攻擊
-    const teamAIds = new Set(Object.keys(room?.teamA || {}));
-    const phaseAttacks = (revealEntry.attacks || []).filter(a =>
-      phase === "A" ? teamAIds.has(a.attackerId) : !teamAIds.has(a.attackerId)
-    );
-
-    const t = setTimeout(() => {
-      const lungers = phaseAttacks.filter(a => (a.arrowBreakdown?.[arrowIdx]?.dmg || 0) > 0).map(a => a.attackerId);
-      const targets = phaseAttacks.filter(a => (a.arrowBreakdown?.[arrowIdx]?.dmg || 0) > 0).map(a => a.targetId);
-      if (lungers.length) {
-        setAttackingIds(new Set(lungers));
-        setHittingIds(new Set(targets));
-        setTimeout(() => { setAttackingIds(new Set()); setHittingIds(new Set()); }, 700);
-      }
-
-      // 音效：每箭只播一次（最強音效優先）
-      let playCrit = false, playHit = false;
-      const newFloats = [];
-      for (const atk of phaseAttacks) {
-        const bk = atk.arrowBreakdown?.[arrowIdx];
-        if (!bk || bk.dmg === 0) continue;
-        if (bk.isCrit) playCrit = true; else playHit = true;
-        newFloats.push({
-          id: `${atk.attackerId}-${revealIdx}-${Date.now()}`,
-          text: bk.isCrit ? `💥 ${bk.dmg}!` : `-${bk.dmg}`,
-          memberId: atk.targetId,
-          isCrit: bk.isCrit,
-        });
-        setFlashIds(prev => ({ ...prev, [atk.targetId]: true }));
-        setTimeout(() => setFlashIds(prev => { const n = {...prev}; delete n[atk.targetId]; return n; }), 400);
-      }
-      if (playCrit) sfxCritBoom(); else if (playHit) sfxArrowHit();
-
-      if (newFloats.length) {
-        setFloats(prev => [...prev, ...newFloats]);
-        setTimeout(() => setFloats(prev => prev.filter(f => !newFloats.find(n => n.id === f.id))), 1400);
-      }
-      // 逐箭扣血條（本階段攻擊者造成的傷害）
-      setDisplayHp(prev => {
-        if (!prev) return prev;
-        const next = { ...prev };
-        for (const atk of phaseAttacks) {
-          const bk = atk.arrowBreakdown?.[arrowIdx];
-          if (!bk || bk.dmg === 0) continue;
-          next[atk.targetId] = Math.max(0, (next[atk.targetId] ?? 0) - bk.dmg);
-        }
-        return next;
-      });
-      setRevealIdx(i => i + 1);
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [revealIdx, revealEntry]); // eslint-disable-line
-
-  // 事件暫停：4 秒後自動進入逐箭揭露
-  useEffect(() => {
-    if (!eventPhase) return;
-    const t = setTimeout(() => { setEventPhase(false); setRevealIdx(0); }, 4000);
-    return () => clearTimeout(t);
-  }, [eventPhase]);
-
-  // 揭露完畢 → 若有貓咪攻擊先顯示 overlay，再清暫存血量
-  useEffect(() => {
-    if (revealIdx < REVEAL_TOTAL || !room) return;
-    setRevealPhaseBanner(null);
-
-    // 收集本回合的貓咪攻擊（isCat: true）
-    const allMembersMap = { ...room.teamA, ...room.teamB };
-    const catAttacks = (revealEntry?.attacks || []).filter(a => a.isCat && (a.dmg || 0) > 0);
-    if (catAttacks.length > 0) {
-      const cats = catAttacks.map(a => ({
-        catId:   allMembersMap[a.attackerId]?.archerStyle || "baobao",
-        catName: a.catName || "貓貓",
-        dmg:     a.dmg || 0,
-      }));
-      setDuelCatCats(cats);
-      setShowCatRound(true);
-      const t = setTimeout(() => {
-        setShowCatRound(false);
-        setDisplayHp(null);
-        const allMembers = Object.values(allMembersMap);
-        if (allMembers.some(m => !m.alive && m.hp <= 0)) sfxMonsterDead();
-      }, 2500);
-      return () => clearTimeout(t);
-    }
-
-    setDisplayHp(null); // 回到 room 真實 HP
-    const allMembers = [
-      ...Object.entries(room.teamA || {}).map(([id, m]) => ({ id, ...m })),
-      ...Object.entries(room.teamB || {}).map(([id, m]) => ({ id, ...m })),
-    ];
-    if (allMembers.some(m => !m.alive && m.hp <= 0)) sfxMonsterDead();
-  }, [revealIdx]); // eslint-disable-line
+  }, [room?.log?.length]); // eslint-disable-line
 
   // ── 加油訊息 ────────────────────────────────────────────
   useEffect(() => {
@@ -499,33 +367,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setTimeout(() => setCheerMsg(""), 3000);
   }, [room?.cheer?.ts]);
 
-  // ── Host：偵測所有人就緒 → 先幫機器人補送箭分，再處理回合 ──
-  useEffect(() => {
-    if (!isHost || !room || room.status !== "active" || room.processing) return;
-    const currentRound = room.round || 1;
-    if (lastRoundFired.current >= currentRound) return; // 同一回合只結算一次
-    const teamA = room.teamA || {};
-    const teamB = room.teamB || {};
-    const aliveA = Object.entries(teamA).filter(([, m]) => m.alive);
-    const aliveB = Object.entries(teamB).filter(([, m]) => m.alive);
-    if (!aliveA.length || !aliveB.length) return;
-    // 未 ready 的機器人：立即幫牠送出箭分，等下一次 snapshot 再結算
-    const botsUnready = [
-      ...aliveA.map(([id, m]) => ({ id, m, team: "A" })),
-      ...aliveB.map(([id, m]) => ({ id, m, team: "B" })),
-    ].filter(({ m }) => m.isBot && !m.ready);
-    if (botsUnready.length > 0) {
-      botsUnready.forEach(({ id, m, team }) => {
-        const arrows = generateBotArrows(m.difficulty || "normal");
-        submitDuelArrows(roomId, team, id, arrows).catch(() => {});
-      });
-      return;
-    }
-    const allReady = [...aliveA, ...aliveB].every(([, m]) => m.ready);
-    if (!allReady) return;
-    lastRoundFired.current = currentRound;
-    processDuelRound(roomId, room, calcDmgFn);
-  }, [room]); // eslint-disable-line
+  // 註：host processing 邏輯已移至 useFirestoreRound hook 內部管理
 
   // ── 結算時記錄成就/統計 ─────────────────────────────────
   useEffect(() => {
@@ -605,33 +447,20 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
   async function handleSubmit() {
-    if (myArrows.length < ARROWS || submitted || !myTeam) return;
-    setSubmitted(true);
+    if (myArrows.length < ARROWS || submitted || !myTeam || submitting) return;
     battleAreaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    await submitDuelArrows(roomId, myTeam, myId, myArrows, selectedTarget || null);
+    await fsHandleSubmit(myTeam, myArrows, selectedTarget || null);
   }
 
   async function handleCheer() {
     await sendDuelCheer(roomId, myName);
   }
-  function startReveal() {
-    setEventPhase(false);
-    setRevealIdx(0);
-  }
-
   function resetLocalState() {
     setResultShown(false);
     setShowResult(false);
     setShowEndAnim(false);
-    setRevealPhaseBanner(null);
-    setEventPhase(false);
-    setRevealEntry(null);
-    setRevealIdx(-1);
     setSelectedTarget(null);
-    setAttackingIds(new Set());
-    setHittingIds(new Set());
-    lastLogLen.current = 0;
-    lastRoundFired.current = 0;
+    stopReveal();
   }
 
   async function handleReset() {
@@ -915,7 +744,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           )}
         </div>
 
-        <button onClick={startReveal}
+        <button onClick={skipEvent}
           className="px-8 py-3 rounded-2xl font-black text-sm text-white border border-white/30 bg-white/10 active:scale-95 transition-all">
           繼續 →
         </button>
@@ -932,9 +761,8 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const aliveA = allA.filter(([, m]) => m.alive);
   const aliveB = allB.filter(([, m]) => m.alive);
 
-  const isRevealing = revealIdx >= 0 && revealIdx < REVEAL_TOTAL;
   const myPlayer = (myTeam === "A" ? teamA : teamB)?.[myId];
-  const canSubmit = myArrows.length >= ARROWS && !submitted && !targetPending;
+  const canSubmit = myArrows.length >= ARROWS && !submitted && !targetPending && !submitting;
   const amAlive   = myPlayer?.alive !== false;
 
   // Host 斷線偵測：90 秒未心跳視為可能斷線

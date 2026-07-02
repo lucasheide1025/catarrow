@@ -121,6 +121,7 @@ collectVillageResources(memberId, village)
 upgradeVillageBuilding(memberId, buildingId, village)
 initVillageIfNeeded(memberId, currentVillage)
 adminAdjustVillageResource(memberId, resourceKey, delta)
+
 ```
 
 ### 遠征隊（2026-06-27 改版）
@@ -253,6 +254,134 @@ subscribeCollectibles(memberId, cb)  // cb({[itemId]: qty})
 // Firestore: members/{id}.dungeonCollectibles = {[itemId]: qty}
 // 掉落率：chest 50%普+20%稀 / elite 35%稀+30%普 / monster 10%普 / boss 必掉1
 ```
+
+---
+
+## ⚙️ 戰鬥系統快速速查（2026-07-02 更新）
+
+### 檔案一覽
+
+| 檔案 | 職責 |
+|------|------|
+| `src/lib/damage.js` | 統一傷害公式（箭矢/反擊/貓貓/世界王） |
+| `src/lib/score.js` | 統一計分邏輯（label↔value） |
+| `src/battle/BattleEvents.js` | 22 種 EventType + builder |
+| `src/battle/BattleConfig.js` | 戰鬥參數集中管理 |
+| `src/battle/BattleEngine.js` | 單人戰鬥事件產生器（Phase 0=隨機事件，1=箭矢，2=貓貓，3=反擊） |
+| `src/battle/BattleAnimation.js` | playXxx + EVENT_DISPATCH（含 playBattleWin） |
+| `src/battle/useFirestoreRound.js` | Firestore 回合 hook（支援 onSubmitSuccess 回呼） |
+| `src/battle/RoundController.js` | 通用事件播放控制器（RANDOM_EVENT await 等玩家確認） |
+| `src/battle/useBattleRound.js` | React hook 封裝 RoundController |
+| `src/battle/useMiniRoundReveal.js` | mini-round 動畫 hook（animPhase / initialDelay / entryEndExtra） |
+| `src/battle/useDuelReveal.js` | 決鬥逐箭揭露 hook |
+
+### 使用模式速查
+
+**PartyBattleRoom / DungeonBattleRoom**（mini-round 動畫播放）：
+```js
+import { useMiniRoundReveal } from "../battle/useMiniRoundReveal";
+
+const {
+  liveEntry, liveMiniIdx, animHit, animMonsterCharge, animPhase,
+  startReveal, stopReveal, ...
+} = useMiniRoundReveal();
+
+// animPhase 語意（2026-07-02）：
+//   "player"    = initialDelay 預備期，尚未攻擊（顯示「玩家回合」banner）
+//   "attacking" = 玩家攻擊 mini 進行中（banner 消失）
+//   "cat"       = 貓貓攻擊 mini
+//   "counter"   = 怪物反擊 mini（顯示「怪物反擊！」banner）
+//   null        = 無動畫
+
+// 擊殺回合偵測（PartyBattleRoom 標準做法）
+const isKillingRound = (entry.miniRounds || []).some(m => (m.monsterHPAfter ?? Infinity) <= 0);
+
+startReveal(entry, {
+  key: `party-${entry.round}`,
+  initialDelay: 2000,                              // 預備期（玩家回合 banner）
+  entryEndExtra: isKillingRound ? 3500 : 1500,    // 擊殺後多停 3.5s
+  members: room?.members || {},
+  onMiniTick: (mini, idx) => { sfxArrowShoot(); },
+  onCounterHit: (mini, idx) => { sfxCounter(); },
+  onEntryEnd: (entry) => {
+    if (isKillingRound) { sfxMonsterDead(); setTimeout(() => sfxSuccess(), 600); }
+  },
+});
+
+// 有隨機事件時：不立即 startReveal，等玩家點擊彈窗確認（handleDismissEvent 才呼叫）
+// 擊殺 overlay：{liveEntry && displayHP <= 0 && <div>💀 擊倒！</div>}
+```
+
+**MonsterBattle / CouncilBattle / WorldBossAttack**（單人回合動畫）：
+```js
+import { createDispatch } from "../battle/BattleAnimation";
+import { RoundController } from "../battle/RoundController";
+
+const dispatchRef = useRef(null);
+const controllerRef = useRef(null);
+if (!dispatchRef.current) dispatchRef.current = createDispatch({ animate, sfx, vis, log });
+if (!controllerRef.current) controllerRef.current = new RoundController({ customDelays: { [MY_EVT]: 600 } });
+
+// 構建事件陣列
+const events = [...];
+// 播放
+const { battleResult } = await controllerRef.current.playEvents(events, eventCtx, {
+  [EventType.ARROW_HIT]: (p, ctx) => { /* 更新 state */ },
+  [EventType.ARROW_CRIT]: ...
+});
+```
+
+**DuelRoom**（逐箭揭露 A→B 隊 12 步）：
+```js
+import { useDuelReveal } from "../battle/useDuelReveal";
+
+const duelReveal = useDuelReveal({
+  room,
+  onSoundEffect: (hasCrit, hasHit) => {
+    if (hasCrit) sfxCritBoom();
+    else if (hasHit) sfxArrowHit();
+  },
+  onComplete: () => { /* sfxMonsterDead if anyone dead */ },
+});
+const { revealEntry, revealIdx, displayHp, floats, flashIds,
+        attackingIds, hittingIds, eventPhase, isRevealing,
+        skipEvent, stopReveal } = duelReveal;
+
+// hook 內部自動監聽 room?.log?.length，不需 useEffect 手動處理
+// 事件暫停畫面：{eventPhase && revealEntry?.event && <EventOverlay onSkip={skipEvent} />}
+// 貓貓回合：<CatRoundOverlay open={duelReveal.showCatRound} cats={duelReveal.duelCatCats} />
+// 重置：resetLocalState() { stopReveal(); /* 清除 component state */ }
+// 揭露完成檢查：{revealIdx >= 12 ? <結果按鈕/> : <結算中/>}
+```
+
+**PartyBattleRoom / DuelRoom / DungeonBattleRoom**（Firestore 多人房間）：
+```js
+import { useFirestoreRound } from "../battle/useFirestoreRound";
+
+const { room, submitted, submitting, handleSubmit, setFsSubmitted } = useFirestoreRound({
+  roomId, myId, isHost,
+  subscribe: (id, cb) => subscribeFirestoreRoom(id, cb),
+  submit: (id, memberId, ...args) => submitToFirestore(id, ...args),
+  processRound: async (id, room) => { await processMyRound(id, room); },
+  getMembers: (r) => Object.values(r.members || {}),
+  isProcessing: (r) => r.processing,
+  processDelayMs: 1000,  // 地下城市需要 1s delay
+  maxRetries: 4,
+});
+```
+
+### 踩坑提醒
+
+- **CouncilBattle/WorldBossAttack 自訂 EventType**（`CB_EVT` / `WB_EVT`）：這些不在 `EVENT_DISPATCH` 中，dispatch 會跳過 animate step（只跑 handler）
+- **`submit` config 參數順序**：DuelRoom 的 submit 是 `(roomId, team, memberId, arrows, target)`，其他模式是 `(roomId, memberId, arrows, choice)`
+- **`customDelays`**：只影響 getDelayMs 的查表，不影響 EVENT_DISPATCH 的行為
+- **`useFirestoreRound` 的 `setFsSubmitted(false)`**：重設 submitted 讓玩家可以重新輸入箭分（用於 undo、new round restart、非房主卡住 recovery）
+- **RoundController `onRandomEventEnd` 必須回傳 Promise**：2026-07-02 起加了 `await`，若回傳 undefined（非 Promise）await 會立即 resolve，等同沒暫停
+- **組隊隨機事件彈窗**：有事件時不呼叫 `startReveal`，存 `pendingRevealRef.current = entry`；`handleDismissEvent` 點擊後才啟動。彈窗 div 原本有 `pointerEvents:"none"` — 必須刪掉才能接收點擊
+- **`animPhase = "player"` 只在 initialDelay 期**：mini 開始時立即變 `"attacking"`；banner 判斷只用 `animPhase === "player"`，不檢查 liveMiniIdx
+- **擊殺 overlay 與 pending_confirm 衝突**：`liveEntry !== null` 時不會跳出結算畫面（pending_confirm 判斷需 `!liveEntry`），3.5s entryEndExtra 期間兩者安全共存
+- **`useDuelReveal` 只服務 DuelRoom**：無跨模式複用價值，抽取是為了隔離程式碼（−165 行 inline logic）
+- **DuelRoom 的 `skipEvent`**：取代舊的 `startReveal()` 手動設定 eventPhase+revealIdx
 
 ---
 

@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
+import { useFirestoreRound } from "../../battle/useFirestoreRound";
+import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
@@ -9,13 +11,15 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed, addRoundArrows } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
 import { calcEquippedBonus } from "../../lib/monsterCards";
-import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, vibrate } from "../../lib/sound";
-import { calcDamage, calcCounterDamage, calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES, resolveHitPart } from "../../lib/monsterData";
+import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
+import { calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
+import { calcRoundDamage, calcPartyCounter } from "../../lib/damage";
+import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS } from "../../lib/score";
 import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
@@ -24,16 +28,7 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
 import BattleBottomBar from "../member/BattleBottomBar";
 
-const SCORE_MAP    = { X:10, 10:10, 9:9, 8:8, 7:7, 6:6, 5:5, 4:4, 3:3, 2:2, 1:1, M:0 };
-const SCORE_LABELS = ["X","10","9","8","7","6","5","4","3","2","1","M"];
-const SCORE_COLORS = {
-  X:"bg-yellow-400 text-yellow-900", 10:"bg-yellow-300 text-yellow-900",
-  9:"bg-red-400 text-white", 8:"bg-red-300 text-white",
-  7:"bg-blue-400 text-white", 6:"bg-blue-300 text-white",
-  5:"bg-gray-500 text-white", 4:"bg-gray-400 text-white",
-  3:"bg-gray-300 text-gray-800", 2:"bg-gray-200 text-gray-700",
-  1:"bg-gray-100 text-gray-600", M:"bg-black/30 text-gray-300"
-};
+// SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
 const MODE_OPTIONS = [
   { id:"novice",  label:"新手", icon:"🌱" },
@@ -73,43 +68,7 @@ function equipSummary(profile) {
   return { bows, armor, acc };
 }
 
-// 回傳 { dmg, crits, arrowBreakdown } — 部位在結算時才決定，送出前不預覽
-function calcDmgFn(arrows, atk, monsterDEF) {
-  let dmg = 0, crits = 0;
-  const arrowBreakdown = [];
-  const unlocked = new Set();
-  for (const arrow of arrows) {
-    const score = arrow.score ?? 0;
-    const part  = resolveHitPart(score, unlocked, arrow.label === "X");
-    if (!part) {
-      console.error("[calcDmgFn] resolveHitPart undefined", { score, label: arrow.label, unlocked: [...unlocked] });
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
-      continue;
-    }
-    if (part.id === "chest") unlocked.add("chest");
-    if (part.id === "belly") unlocked.add("belly");
-    if (part.id === "groin") unlocked.add("groin");
-    const pMult = part.mult;
-    if (!score || pMult === 0) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
-      continue;
-    }
-    const base   = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDEF || 0) * 0.35;
-    const mult   = 0.85 + Math.random() * 0.3;
-    const isCrit = mult > 1.05 || pMult >= 1.8;
-    const d      = Math.max(1, Math.round(base * pMult * mult));
-    dmg  += d;
-    if (isCrit) crits++;
-    arrowBreakdown.push({
-      label: arrow.label, partIcon: part.icon,
-      partName: part.name, partMult: pMult, dmg: d, isCrit,
-    });
-  }
-  return { dmg, crits, arrowBreakdown };
-}
-function calcCtrFn(monsterATK, archerDEF) {
-  return calcCounterDamage({ monsterATK, archerDEF: archerDEF || 10, headStunned: false, isCrit: Math.random() < 0.1 });
-}
+// 回傳 { dmg, crits, arrowBreakdown } — 由 unified damage.js 統一處理
 
 function HPBar({ current, max, color = "#22c55e" }) {
   const pct = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
@@ -148,14 +107,38 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const { profile: authProfile } = useAuth();
   const profile = guestOverride ? null : authProfile;
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catATK } = useCatCompanion();
-  const [room,            setRoom]            = useState(null);
+  const myId = guestOverride?.id || authProfile?.id;
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
   const [targetMode,      setTargetMode]      = useState(() => getBattleInputMode() === "target");
   const [targetPending,   setTargetPending]   = useState(false);
   const [targetFmt,       setTargetFmt]       = useState(getBattleTargetFmt);
-  const [submitting,      setSubmitting]      = useState(false);
   const [setupMonster,    setSetupMonster]    = useState(null);
+
+  // ── 統一 Firestore 回合生命週期 ────────────────────────────
+  const {
+    room,
+    handleSubmit: fsHandleSubmit,
+    localProcessing: submitting,
+    setSubmitted: setFsSubmitted,
+  } = useFirestoreRound({
+    roomId, myId, isHost,
+    subscribe: subscribePartyRoom,
+    submit: submitArrows,
+    processRound: processPartyRound,
+    getMembers: (r) => Object.entries(r?.members || {}).map(([id, m]) => ({ id, ...m })),
+    isProcessing: (r) => r?.processing,
+    getRound: (r) => r?.round || 1,
+    getExtraProcessArgs: () => [calcRoundDamage, calcPartyCounter],
+    onBeforeSubmit: () => { sfxCast(); vibrate([0, 20, 40]); },
+    onSubmitError: (reason) => { alert("送出失敗，請重試（" + reason + "）"); },
+    onSubmitSuccess: (submittedArrows) => {
+      if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
+        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+      }
+    },
+  });
+
   const [setupMode,       setSetupMode]       = useState("student");
   const [starting,        setStarting]        = useState(false);
   const [copied,          setCopied]          = useState(false);
@@ -168,13 +151,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [resetting,       setResetting]       = useState(false);
   const [partyBattleLeft, setPartyBattleLeft] = useState(null);
   const [startError,      setStartError]      = useState("");
-  const [animHit,         setAnimHit]         = useState(false);
-  const [animCounter,       setAnimCounter]       = useState(false);
-  const [animMonsterCharge, setAnimMonsterCharge] = useState(false);
-  const [animScreenShake,   setAnimScreenShake]   = useState(false);
-  const [floatCounterDmgs,  setFloatCounterDmgs]  = useState([]);
-  const [localHpOverride,   setLocalHpOverride]   = useState({});
   const [showEvent,       setShowEvent]       = useState(null);
+  const [eventCountdown,  setEventCountdown]  = useState(5); // 事件彈窗倒數（5→0 自動繼續）
   const [logInited,       setLogInited]       = useState(false); // 首次 log 初始化後為 true，用於 pending_confirm 時序
   const [showFullLog,     setShowFullLog]     = useState(false);
   const [showShareCard,   setShowShareCard]   = useState(false);
@@ -183,44 +161,42 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
   const [previewReward,   setPreviewReward]   = useState(null); // 領取前預覽
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
-  const [liveEntry,       setLiveEntry]       = useState(null);  // 正在逐人揭曉的回合
-  const [liveMiniRoundIdx, setLiveMiniRoundIdx] = useState(0);   // 目前顯示的小回合索引 (0-5)
   const [cheerMsg,        setCheerMsg]        = useState("");
   const [scoringReady,    setScoringReady]    = useState(false);
   const [myRole,          setMyRole]          = useState("front"); // "front" | "rear"
   const [myRearChoice,    setMyRearChoice]    = useState(null);    // "heal" | "dmg" | null
-  const [showBattleLog,   setShowBattleLog]   = useState(false);
+  const [showBattleLog,   setShowBattleLog]   = useState(true);
   const [bottomTab, setBottomTab] = useState("score");
   const [potionSubTab, setPotionSubTab] = useState("carry");
   const [scoringModeChosen, setScoringModeChosen] = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
 
+  const {
+    liveEntry, liveMiniIdx: liveMiniRoundIdx,
+    animHit, animCounter, animMonsterCharge, animScreenShake,
+    floatCounterDmgs, localHpOverride,
+    animPhase,
+    startReveal, stopReveal,
+  } = useMiniRoundReveal();
+
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
   const statsWaitingRef   = useRef(false); // 等待室寫入
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
-  const roundGuardRef  = useRef(0);    // 已派出結算的回合號（ref = 同步，避免 stale closure）
-  const retryCountRef  = useRef(0);   // 同回合連續失敗次數（≥3 停止重試）
-  const retryRoundRef  = useRef(0);   // retryCount 所屬的回合（換回合時歸零）
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const autoClaimFiredRef = useRef(false); // 自動領取寶箱（每場只觸發一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const logInitializedRef = useRef(false); // 首次載入時跳過已存在的 log（F5 防重播）
-  const revealTimersRef   = useRef([]);    // 逐人揭曉計時器
   const logEndRef         = useRef(null);
+  const pendingRevealRef  = useRef(null);  // 有事件時暫存 entry，等玩家確認彈窗後再啟動動畫
 
-  const myId = guestOverride?.id || authProfile?.id;
-
+  // 背景圖：room 更新時設定一次
   useEffect(() => {
-    const unsub = subscribePartyRoom(roomId, r => {
-      setRoom(r);
-      if (r?.monster?.family && !battleBgRef.current) {
-        battleBgRef.current = pickBg(r.monster.family);
-      }
-    });
-    return unsub;
-  }, [roomId]);
+    if (room?.monster?.family && !battleBgRef.current) {
+      battleBgRef.current = pickBg(room.monster.family);
+    }
+  }, [room?.monster?.family]);
 
   // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
   useEffect(() => {
@@ -239,28 +215,25 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     autoClaimFiredRef.current = false;
     prevLogLenRef.current    = 0;
     logInitializedRef.current = false;
-    roundGuardRef.current = 0;
-    retryCountRef.current = 0;
-    retryRoundRef.current = 0;
     setLocalCompleted(false);
     setArrows([]);
     setSetupMonster(null);
     setSelectedPotions([]);
     setGuestLoot(null);
     setGuestAlreadyWon(false);
-    setLiveEntry(null);
+    stopReveal();
     setShowFullLog(false);
     setClaimResult(null);
     setPreviewReward(null);
     setStartError("");
     setLogInited(false);
-    setLocalHpOverride({});
     setScoringReady(false);
   }, [room?.status]); // eslint-disable-line
 
-  // 每回合開始時重置計分門禁、角色選擇（若前衛轉後衛由 Firestore 通知，保留 Firestore 的值）
+  // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
   useEffect(() => {
     setScoringReady(false);
+    setFsSubmitted(false);
     // 從 Firestore 讀取自己目前的 role（前衛倒下時伺服器會寫入 "rear"）
     const serverRole = room?.members?.[myId]?.role;
     if (serverRole) { setMyRole(serverRole); if (serverRole === "front") setMyRearChoice(null); }
@@ -328,34 +301,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
-  // 房主：檢查所有人是否 ready → 先幫機器人補送箭分，再觸發結算
-  useEffect(() => {
-    if (!room || !isHost || room.status !== "active") return;
-    if (!room.monster) return;
-    const currentRound = room.round || 1;
-    if (roundGuardRef.current === currentRound) return; // 同回合已派出，等結果
-
-    // 進入新回合時，重置 retryCount（前回合的失敗次數不應影響下一回合）
-    if (currentRound !== retryRoundRef.current) {
-      retryRoundRef.current = currentRound;
-      retryCountRef.current = 0;
-    }
-
-    if (room.processing) return; // Firestore 正在寫入，等下次 snapshot
-    const members  = room.members || {};
-    const aliveIds = Object.keys(members).filter(id => members[id].alive);
-    if (aliveIds.length === 0) return;
-    if (!aliveIds.every(id => members[id].ready)) return;
-    if (retryCountRef.current >= 5) return; // 同回合失敗 5 次，停止重試（網路不順給更多機會）
-    roundGuardRef.current = currentRound; // 立即鎖住，同步生效，不等 re-render
-    processPartyRound(roomId, room, calcDmgFn, calcCtrFn)
-      .then(res => {
-        if (res?.ok) { retryCountRef.current = 0; }
-        else { roundGuardRef.current = 0; retryCountRef.current++; }
-      })
-      .catch(() => { roundGuardRef.current = 0; retryCountRef.current++; });
-  }, [room]); // eslint-disable-line
-
   // 房主：勝利 → 存獎勵到 Firestore（每人一份獨立寶箱）
   useEffect(() => {
     if (!room || !isHost || room.result !== "win" || rewardStoredRef.current) return;
@@ -372,7 +317,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [room?.log?.length]);
 
-  // 回合更新：動畫 + 音效 + 事件先觸發 → 再逐人揭曉傷害（每 2 秒一位）
+  // 回合更新：統一透過 useMiniRoundReveal 管理 mini-round 動畫
   useEffect(() => {
     const len = room?.log?.length || 0;
     // 首次載入（含 F5）：直接把 ref 同步到當前長度，跳過歷史 log 不重播
@@ -382,87 +327,70 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const entry = room.log[len - 1];
     if (!entry) return;
 
-    // 清除上一回合的揭曉計時器
-    revealTimersRef.current.forEach(t => clearTimeout(t));
-    revealTimersRef.current = [];
-
-    // 重置即時揭曉
-    setLiveEntry(entry);
-    setLiveMiniRoundIdx(0);
-
-    // 音效（事件優先）
-    if (entry.event?.type === "buff")    sfxBuff();
+    // 音效（事件優先）：擊殺回合不播 sfxEpic，由 victory useEffect 統一播
+    if (entry.event?.type === "buff")      sfxBuff();
     else if (entry.event?.type === "debuff") sfxDebuff();
-    else if (entry.totalDmg > 150)       sfxEpic();
-    else                                 sfxRoundEnd();
+    else                                   sfxRoundEnd();
     vibrate(20);
 
-    // 有突發事件：先顯示彈窗 3.5s
-    const eventDelay = entry.event ? 3500 : 0;
+    // 此回合是否為擊殺回合（任一 mini 的 monsterHPAfter <= 0）
+    const isKillingRound = (entry.miniRounds || []).some(m => (m.monsterHPAfter ?? Infinity) <= 0);
+
+    // 有突發事件：先顯示彈窗，等玩家確認後再啟動動畫（零延遲競跑問題解決）
     if (entry.event) {
       setShowEvent(entry.event);
-      const et = setTimeout(() => setShowEvent(null), 3500);
-      revealTimersRef.current.push(et);
-    }
-
-    // 逐小回合播放（每位玩家 1.4s，反擊回合 2.7s）
-    const miniRounds = entry.miniRounds || [];
-    let delay = eventDelay;
-    miniRounds.forEach((mini, idx) => {
-      const t = setTimeout(() => { setLiveMiniRoundIdx(idx); sfxArrowShoot(); vibrate(8); triggerCatAction(); }, delay);
-      revealTimersRef.current.push(t);
-
-      if (mini.isCounter) {
-        // 反擊開始前：先把 HP bar 鎖在「受擊前」，讓 Firestore 已更新的值不提前顯示
-        const ctrLog = mini.playerLog || [];
-        const tLock = setTimeout(() => {
-          setLocalHpOverride(prev => {
-            const next = { ...prev };
-            ctrLog.forEach(p => {
-              // 從 room.members 讀目前值（已是扣血後），加回 ctr 還原為受擊前 HP
-              const mem = room?.members?.[p.id];
-              if (mem) next[p.id] = Math.min(mem.maxHP || 9999, (mem.hp || 0) + (p.ctr || 0));
-            });
-            return next;
-          });
-        }, delay);
-        // 600ms 後蓄力（讓玩家先看清箭傷），1400ms 反擊
-        const t1 = setTimeout(() => setAnimMonsterCharge(true),  delay + 600);
-        const t2 = setTimeout(() => {
-          setAnimMonsterCharge(false);
-          setAnimCounter(true);
-          setAnimScreenShake(true);
-          // 反擊動畫同步：清除 override，血條帶 CSS transition 順滑滑落
-          setLocalHpOverride({});
-          // 根據反擊傷害選擇音效
-          const totalCtrDmg = ctrLog.reduce((s, p) => s + (p.ctr || 0), 0);
+      pendingRevealRef.current = entry; // 存起來，等 handleDismissEvent 呼叫
+    } else {
+      startReveal(entry, {
+        key: `party-${entry.round}`,
+        initialDelay: 2000, // 先顯示「玩家回合」banner 2s，攻擊開始後 banner 消失
+        // 擊殺回合：最後 mini 結束後多停 1.5s，讓玩家看到擊倒特效再跳結算畫面
+        entryEndExtra: isKillingRound ? 1500 : 1200,
+        members: room.members,
+        onMiniTick: () => { sfxArrowShoot(); vibrate(8); triggerCatAction(); },
+        onCounterHit: (mini) => {
+          const totalCtrDmg = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
           if (totalCtrDmg > 80) sfxCounterCrit(); else sfxCounter();
           vibrate([0, 35, 55, 30]);
-          const floats = ctrLog
-            .filter(p => p.ctr > 0)
-            .map(p => ({ id: Date.now() + Math.random(), memberId: p.id, text: `-${p.ctr}`, left: 15 + Math.floor(Math.random() * 55) }));
-          if (floats.length) {
-            setFloatCounterDmgs(floats);
-            setTimeout(() => setFloatCounterDmgs([]), 1400);
-          }
-          setTimeout(() => { setAnimCounter(false); setAnimScreenShake(false); }, 850);
-        }, delay + 1400);
-        revealTimersRef.current.push(tLock, t1, t2);
-        delay += 2700;
-      } else {
-        // 玩家攻擊：200ms 後怪物閃白受擊
-        if (mini.totalDmg > 0) {
-          const th = setTimeout(() => { setAnimHit(true); setTimeout(() => setAnimHit(false), 450); }, delay + 200);
-          revealTimersRef.current.push(th);
-        }
-        delay += 1400;
-      }
-    });
-
-    // liveEntry 清除
-    const ct = setTimeout(() => { setLiveEntry(null); setLiveMiniRoundIdx(0); }, delay + 1500);
-    revealTimersRef.current.push(ct);
+        },
+        onEntryEnd: () => {
+          if (isKillingRound) { sfxMonsterDead(); } // sfxSuccess/sfxEpic 由 victory useEffect 統一播，避免重複
+        },
+      });
+    }
   }, [room?.log?.length]); // eslint-disable-line
+
+  // 事件彈窗倒數：5 秒後自動確認（同 handleDismissEvent 邏輯，避免 stale closure 用 ref 直接讀）
+  useEffect(() => {
+    if (!showEvent) { setEventCountdown(5); return; }
+    setEventCountdown(5);
+    const tick = setInterval(() => setEventCountdown(prev => Math.max(0, prev - 1)), 1000);
+    const autoId = setTimeout(() => {
+      const entry = pendingRevealRef.current;
+      pendingRevealRef.current = null;
+      setShowEvent(null);
+      setEventCountdown(5);
+      if (entry) {
+        const isKillingRound = (entry.miniRounds || []).some(m => (m.monsterHPAfter ?? Infinity) <= 0);
+        startReveal(entry, {
+          key: `party-${entry.round}`,
+          initialDelay: 2000,
+          entryEndExtra: isKillingRound ? 1500 : 1200,
+          members: room?.members || {},
+          onMiniTick: () => { sfxArrowShoot(); vibrate(8); triggerCatAction(); },
+          onCounterHit: (mini) => {
+            const totalCtrDmg = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
+            if (totalCtrDmg > 80) sfxCounterCrit(); else sfxCounter();
+            vibrate([0, 35, 55, 30]);
+          },
+          onEntryEnd: () => {
+            if (isKillingRound) { sfxMonsterDead(); } // sfxSuccess/sfxEpic 由 victory useEffect 統一播，避免重複
+          },
+        });
+      }
+    }, 5000);
+    return () => { clearInterval(tick); clearTimeout(autoId); };
+  }, [showEvent]); // eslint-disable-line
 
   // 勝利音效：等動畫播完（liveEntry 清除）再播，讓玩家先看到擊殺動畫
   useEffect(() => {
@@ -535,6 +463,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     handleClaim();
   }, [previewReward]); // eslint-disable-line
 
+  // 玩家確認隨機事件彈窗 → 關掉彈窗並啟動本回合動畫
+  const handleDismissEvent = () => {
+    const entry = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+    setShowEvent(null);
+    if (!entry) return;
+    const isKillingRound = (entry.miniRounds || []).some(m => (m.monsterHPAfter ?? Infinity) <= 0);
+    startReveal(entry, {
+      key: `party-${entry.round}`,
+      initialDelay: 2000, // 先顯示「玩家回合」banner 2s，攻擊開始後 banner 消失
+      entryEndExtra: isKillingRound ? 1500 : 1200,
+      members: room?.members || {},
+      onMiniTick: () => { sfxArrowShoot(); vibrate(8); triggerCatAction(); },
+      onCounterHit: (mini) => {
+        const totalCtrDmg = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
+        if (totalCtrDmg > 80) sfxCounterCrit(); else sfxCounter();
+        vibrate([0, 35, 55, 30]);
+      },
+      onEntryEnd: () => {
+        if (isKillingRound) { sfxMonsterDead(); } // sfxSuccess/sfxEpic 由 victory useEffect 統一播，避免重複
+      },
+    });
+  };
+
   if (!room) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <div className="text-white text-lg font-bold animate-pulse">載入中…</div>
@@ -557,7 +509,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const isGuestPlayer = myId?.startsWith("guest");
 
   function addArrow(label) {
-    if (arrows.length >= ARROWS_PER_ROUND || myReady) return;
+    if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady) return;
     const rawScore = SCORE_MAP[label] ?? 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
@@ -574,18 +526,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
   async function handleSubmit() {
-    if (arrows.length < ARROWS_PER_ROUND || myReady || submitting) return;
-    if (myRole === "rear" && !myRearChoice) return; // 後衛必須選擇策略
-    sfxCast(); vibrate([0, 20, 40]);
-    setSubmitting(true);
-    const res = await submitArrows(roomId, myId, arrows, myRole, myRearChoice);
-    if (res?.ok === false) {
-      alert("送出失敗，請重試（" + (res.reason || "未知錯誤") + "）");
-      setSubmitting(false);
-      return;
-    }
-    setArrows([]);
-    setSubmitting(false);
+    if (arrows.length < (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady || submitting) return;
+    if (myRole === "rear" && !myRearChoice) return;
+    const ok = await fsHandleSubmit(arrows, myRole, myRearChoice);
+    if (ok) setArrows([]);
   }
   async function handleStart() {
     if (!setupMonster || starting) return;
@@ -850,6 +794,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {startError}
               </div>
             )}
+            {/* 每回合箭數選擇 */}
+            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3">
+              <div className="text-xs font-bold text-slate-400 mb-2">每回合箭數</div>
+              <div style={{ display:"flex", gap:8 }}>
+                {[3, 6].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => import("firebase/firestore").then(({ updateDoc, doc: fsDoc }) =>
+                      import("../../lib/firebase").then(({ db: fsDb }) =>
+                        updateDoc(fsDoc(fsDb, "partyRooms", roomId), { arrowsPerRound: n })
+                      )
+                    )}
+                    style={{
+                      padding:"6px 18px", borderRadius:8, fontWeight:700, cursor:"pointer",
+                      background: (room?.arrowsPerRound ?? 6) === n ? "#f59e0b" : "#1e293b",
+                      color: (room?.arrowsPerRound ?? 6) === n ? "#000" : "#94a3b8",
+                      border: "1px solid #334155",
+                    }}
+                  >{n} 箭</button>
+                ))}
+              </div>
+            </div>
             <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 flex flex-col gap-3">
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
@@ -872,8 +838,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
         )}
         {!isHost && (
-          <div className="text-center text-slate-400 text-sm py-8 animate-pulse">
-            等待房主選擇怪物並開始戰鬥…
+          <div className="flex flex-col gap-3">
+            <div style={{ fontSize:12, color:"#94a3b8" }}>
+              每回合：{room?.arrowsPerRound || 6} 箭（由隊長設定）
+            </div>
+            <div className="text-center text-slate-400 text-sm py-8 animate-pulse">
+              等待房主選擇怪物並開始戰鬥…
+            </div>
           </div>
         )}
       </div>
@@ -882,8 +853,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // ── 怪物死亡確認畫面（華麗擊殺動畫 + 3秒後自動結算）────────
   // logInited：確保 F5 後也等初始化完才顯示，防止搶在擊殺動畫前跳出
+  // pendingRevealRef：有事件彈窗待確認時（entry 暫存在 ref），不跳結算—動畫在玩家確認後才播
   const hasUnseenLog = !logInited || (room?.log?.length || 0) > prevLogLenRef.current;
-  if (room.status === "pending_confirm" && !liveEntry && !hasUnseenLog) {
+  if (room.status === "pending_confirm" && !liveEntry && !hasUnseenLog && !pendingRevealRef.current) {
     const lastEntry = room.log?.[room.log.length - 1];
     const totalTeamDmg = (room.log || []).reduce((s, e) => s + (e.totalDmg || 0), 0);
     const totalRounds  = room.log?.length || 0;
@@ -1295,8 +1267,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // ── 戰鬥中畫面 ────────────────────────────────────────────
   // 動畫期間用當前小回合的 HP，動畫結束後回到 Firestore 最終值
+  // ⚠️ banner 相位（"player"/"bannerFadeOut"）：攻擊還未發生，要顯示回合前 HP（monsterHPBefore）
+  //    攻擊相位（"attacking"/"cat"/"counter"）：顯示本 mini 打完後的 HP（monsterHPAfter）
   const curMini        = liveEntry?.miniRounds?.[liveMiniRoundIdx];
-  const displayHP      = liveEntry ? (curMini?.monsterHPAfter ?? room.monsterHP) : room.monsterHP;
+  const displayHP      = liveEntry
+    ? (animPhase === "player" || animPhase === "bannerFadeOut"
+        ? (liveEntry.monsterHPBefore ?? room.monsterHP)          // banner 期：顯示打前 HP
+        : (curMini?.monsterHPAfter ?? liveEntry.monsterHPBefore ?? room.monsterHP))  // 攻擊期：顯示打後 HP
+    : room.monsterHP;
   const monsterPct     = room.monsterMaxHP > 0 ? (displayHP / room.monsterMaxHP) : 0;
   // 當前小回合每位玩家的傷害 Map（高亮用）
   const isCatMini      = !!(curMini?.isCat);
@@ -1338,8 +1316,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 @keyframes mb-charge{0%{transform:scale(1) rotate(0deg)}25%{transform:scale(1.35) rotate(-12deg)}60%{transform:scale(1.5) rotate(0deg)}80%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0deg)}}
 @keyframes mb-screen-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-10px)}30%{transform:translateX(9px)}45%{transform:translateX(-7px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
 @keyframes mb-monster-hit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(0)}100%{filter:brightness(1)}}
-@keyframes mb-archer-attack{0%{transform:translateX(0)}30%{transform:translateX(8px)}60%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+@keyframes mb-archer-attack{0%{transform:translateY(0) scale(1)}35%{transform:translateY(-22px) scale(1.12)}65%{transform:translateY(-10px) scale(1.06)}100%{transform:translateY(0) scale(1)}}
 @keyframes pop{0%{transform:scale(0.7);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
+@keyframes party-banner-enter{0%{opacity:0;transform:translate(-50%,-50%) scale(0.75)}60%{transform:translate(-50%,-50%) scale(1.06)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes party-banner-exit{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(0.82) translateY(-8px)}}
       `}</style>
 
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
@@ -1348,6 +1328,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         cats={catOverlayCats}
         totalDmg={curMini?.totalDmg}
       />
+
+      {/* 離開按鈕（右上角懸浮，與單機模式相同位置） */}
+      <button onClick={handleLeave} style={{
+        position:"absolute", top:8, right:8, zIndex:100,
+        background:"rgba(0,0,0,0.7)", border:"1px solid rgba(255,255,255,0.2)",
+        borderRadius:20, padding:"3px 10px", color:"#94a3b8",
+        fontSize:11, fontWeight:700, cursor:"pointer"
+      }}>✕ 離開</button>
 
       {/* 加油通知 */}
       {cheerMsg && (
@@ -1358,9 +1346,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         </div>
       )}
 
-      {/* 隨機事件彈窗 */}
+      {/* 擊殺瞬間特效：攻擊相位觸發後（非 banner 期）、HP ≤ 0 → 顯示「擊倒！」直到 entryEndExtra 結束後跳結算 */}
+      {liveEntry && displayHP <= 0 && animPhase !== "player" && animPhase !== "bannerFadeOut" && (
+        <div style={{ position:"fixed", inset:0, zIndex:44, pointerEvents:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{
+            fontSize:40, fontWeight:900, color:"#ef4444",
+            textShadow:"0 0 40px #ef4444, 0 0 80px #ef444466",
+            background:"rgba(0,0,0,0.45)", padding:"12px 36px", borderRadius:18,
+            letterSpacing:6, animation:"pop 0.5s ease",
+          }}>
+            💀 擊倒！
+          </div>
+        </div>
+      )}
+
+      {/* 隨機事件彈窗（點擊立即繼續 / 5 秒後自動繼續） */}
       {showEvent && (
-        <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px", background:"rgba(0,0,0,0.72)", pointerEvents:"none" }}>
+        <div
+          onClick={handleDismissEvent}
+          style={{ position:"fixed", inset:0, zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px", background:"rgba(0,0,0,0.72)", cursor:"pointer" }}
+        >
           <div style={{
             borderRadius:20, padding:"20px 24px", textAlign:"center", maxWidth:280, width:"100%", animation:"pop .4s ease",
             background: showEvent.type==="buff" ? "linear-gradient(135deg,#064e3b,#065f46)" : showEvent.type==="debuff" ? "linear-gradient(135deg,#450a0a,#7f1d1d)" : "linear-gradient(135deg,#1e3a5f,#1e40af)",
@@ -1369,60 +1374,64 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <div style={{ fontSize:48, marginBottom:8 }}>{showEvent.icon}</div>
             <div style={{ fontWeight:900, fontSize:17, marginBottom:8, color: showEvent.type==="buff" ? "#6ee7b7" : showEvent.type==="debuff" ? "#fca5a5" : "#93c5fd" }}>{showEvent.title}</div>
             <div style={{ color:"#cbd5e1", fontSize:12, lineHeight:1.6 }}>{showEvent.desc}</div>
+            <div style={{ marginTop:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              <div style={{
+                width:28, height:28, borderRadius:"50%", flexShrink:0,
+                border:`3px solid ${showEvent.type==="buff"?"#10b981":showEvent.type==="debuff"?"#ef4444":"#3b82f6"}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:13, fontWeight:900, color:"white",
+              }}>{eventCountdown}</div>
+              <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>點擊或等 {eventCountdown} 秒繼續</span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 戰鬥日誌（左上角小視窗）*/}
-      {room.status === "active" && (() => {
-        const events = [];
-        for (const entry of (room.log || []).slice(-3)) {
-          for (const mini of (entry.miniRounds || [])) {
-            if (mini.isCounter) {
-              const totalCtr = (mini.playerLog || []).reduce((s, p) => s + (p.ctr || 0), 0);
-              events.push({ key: `c${entry.round}_${mini.miniRound}`, text: `⚡ 反擊 -${totalCtr}`, color: "#fb923c" });
-            } else if (mini.isCat) {
-              const totalCat = (mini.playerLog || []).reduce((s, p) => s + (p.dmg || 0), 0);
-              events.push({ key: `k${entry.round}_${mini.miniRound}`, text: `🐱 貓咪 -${totalCat}`, color: "#f9a8d4" });
-            } else {
-              const pl = mini.playerLog?.[0];
-              if (pl) events.push({ key: `a${entry.round}_${mini.miniRound}`, text: `🏹 ${pl.name.slice(0, 4)} -${pl.dmg}${pl.crits > 0 ? "💥" : ""}`, color: "#93c5fd" });
-            }
-          }
-        }
-        const shown = events.slice(-8);
-        if (!shown.length) return null;
-        return (
-          <div style={{ position:"absolute", top:8, left:8, width:160, zIndex:30, display:"flex", flexDirection:"column", gap:2, pointerEvents:"none" }}>
-            {shown.map(ev => (
-              <div key={ev.key} style={{ background:"rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 6px", fontSize:10, fontWeight:700, color:ev.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                {ev.text}
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* 上半：左側 log + 右側怪物 */}
+      {/* 上半：左側 sidebar log + 右側怪物 */}
       <div style={{ flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0" }}>
 
-        {/* 怪物區（全寬） */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:8 }}>
-          {/* 怪物名稱 + 離開按鈕 */}
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
-            <div style={{ display:"flex", alignItems:"baseline", gap:5 }}>
-              <span style={{ color:"white", fontWeight:900, fontSize:17, textShadow:"0 2px 8px #000" }}>{room.monster?.name}</span>
-              {tierInfo && <span style={{ fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:4, color:tierInfo.color, background:tierInfo.bg }}>{tierInfo.label}</span>}
-            </div>
-            <div style={{ display:"flex", gap:4 }}>
-              <button onClick={() => setShowBattleLog(v => !v)}
-                style={{ width:28, height:26, borderRadius:8, fontSize:12, fontWeight:700, border:"none", cursor:"pointer",
-                  background: showBattleLog ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.07)",
-                  color: showBattleLog ? "#fbbf24" : "#94a3b8" }}>📜</button>
-              <button onClick={handleLeave} style={{ padding:"3px 9px", borderRadius:8, fontSize:11, fontWeight:700, border:"none", cursor:"pointer", background:"rgba(255,255,255,0.07)", color:"#94a3b8" }}>離開</button>
-            </div>
+        {/* 左側：戰鬥紀錄 sidebar（和單人打怪相同的文字行格式） */}
+        <BattleLogPanel variant="sidebar" open={showBattleLog} onClose={() => setShowBattleLog(v => !v)}>
+          {(room?.log || []).length === 0 ? (
+            <div style={{ color:"#475569", padding:"8px 0", textAlign:"center", fontSize:10 }}>尚無紀錄</div>
+          ) : (() => {
+            // 將回合 log 展平成文字行（與單機模式相同格式）
+            const lines = [];
+            for (const entry of (room.log || [])) {
+              lines.push({ key:`r${entry.round}`, type:"total", text:`R${entry.round} 傷害 -${entry.totalDmg}　HP ${entry.monsterHPBefore}→${entry.monsterHPAfter}` });
+              for (const mini of (entry.miniRounds || [])) {
+                if (mini.isCounter) {
+                  const ctr = (mini.playerLog||[]).reduce((s,p)=>s+(p.ctr||0),0);
+                  lines.push({ key:`c${entry.round}_${mini.miniRound}`, type:"counter", text:`  ⚡ 反擊 -${ctr}` });
+                } else if (mini.isCat) {
+                  const dmg = (mini.playerLog||[]).reduce((s,p)=>s+(p.dmg||0),0);
+                  lines.push({ key:`k${entry.round}_${mini.miniRound}`, type:"cat", text:`  🐱 貓咪 -${dmg}` });
+                } else {
+                  for (const p of (mini.playerLog||[])) {
+                    if ((p.dmg||0) > 0) lines.push({ key:`a${entry.round}_${mini.miniRound}_${p.id}`, type: p.crits>0?"hit_crit":"hit", text:`  🏹 ${(p.name||"").slice(0,4)} -${p.dmg}${p.crits>0?"💥":""}` });
+                  }
+                }
+              }
+            }
+            return lines.map(e => (
+              <div key={e.key} style={{
+                fontSize:10, lineHeight:1.5, padding:"0.5px 0",
+                color: e.type==="total"?"#67e8f9":e.type==="counter"?"#fb923c":e.type==="cat"?"#f9a8d4":e.type==="hit_crit"?"#fb923c":"#86efac"
+              }}>{e.text}</div>
+            ));
+          })()}
+          <div ref={logEndRef}/>
+        </BattleLogPanel>
+
+        {/* 右側：怪物區（縮減，對齊單機模式版型） */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, paddingTop:28, minHeight:0 }}>
+          {/* 怪物名稱 + 等級（與單機相同設計） */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3, background:"rgba(0,0,0,0.55)", borderRadius:6, padding:"2px 6px" }}>
+            <span style={{ color:"white", fontWeight:900, fontSize:15, textShadow:"0 2px 8px #000", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:130 }}>{room.monster?.name}</span>
+            {tierInfo && <span style={{ fontSize:9, fontWeight:700, padding:"1px 5px", borderRadius:3, color:tierInfo.color, background:tierInfo.bg, flexShrink:0 }}>{tierInfo.label}</span>}
           </div>
 
+          {/* HP 條 */}
           <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
 
           <BattleStatusTags tags={[
@@ -1433,11 +1442,39 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               ...(isCatMini ? [{ icon:"🐱", label:"貓咪出擊！", color:"#f9a8d4", bg:"rgba(236,72,153,0.2)", style:{fontWeight:900} }] : []),
             ]} />
 
-          {/* 怪物圖（上對齊，縮小顯示）*/}
+          {/* 怪物圖 + 相位 banner + 浮動傷害 */}
           <div style={{ flex:1, position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"center", minHeight:0 }}>
             <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"center", animation: animMonsterCharge ? "mb-charge 0.7s ease infinite" : animHit ? "mb-monster-hit 0.5s ease" : undefined }}>
               <PartyMonsterImg id={room.monster?.id} icon={room.monster?.icon} charge={false}/>
             </div>
+
+            {/* 「玩家回合 / 怪物反擊」相位 banner
+                "player"       = initialDelay 預備期（banner 進場）
+                "bannerFadeOut"= 攻擊前 500ms（banner 淡出，讓玩家看到 banner 消失再攻擊）
+                "counter"      = 怪物反擊 mini 期間              */}
+            {liveEntry && animPhase && !isCatMini && (() => {
+              const isCounter    = animPhase === "counter";
+              const isFadingOut  = animPhase === "bannerFadeOut";
+              const showBanner   = animPhase === "player" || isFadingOut;
+              const showCounter  = isCounter;
+              if (!showBanner && !showCounter) return null;
+              const exitAnim = isFadingOut ? "party-banner-exit 0.5s ease forwards" : undefined;
+              return (
+                <div key={isCounter ? "counter" : "player"} style={{
+                  position:"absolute", top:"30%", left:"50%", transform:"translate(-50%,-50%)",
+                  background: isCounter ? "rgba(239,68,68,0.92)" : "rgba(30,41,59,0.92)",
+                  border: `2px solid ${isCounter ? "#f87171" : "#6366f1"}`,
+                  borderRadius:14, padding:"8px 22px", zIndex:20,
+                  fontWeight:900, fontSize:15, color:"white",
+                  textShadow:"0 2px 6px #000", letterSpacing:1,
+                  pointerEvents:"none",
+                  animation: exitAnim || "party-banner-enter 0.4s ease-out",
+                }}>
+                  {isCounter ? "⚡ 怪物反擊！" : "⚔️ 玩家回合"}
+                </div>
+              );
+            })()}
+
             {/* 浮動傷害數字 */}
             {liveEntry && curMini && (() => {
               const totalNow = Object.values(curMiniDmgMap).reduce((s,d)=>s+d,0);
@@ -1448,37 +1485,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 </span>
               );
             })()}
-
-            {/* ── 戰鬥紀錄折疊面板 ── */}
-            <BattleLogPanel open={showBattleLog} onClose={() => setShowBattleLog(false)}>
-              {(room?.log || []).length === 0 ? (
-                <div style={{ color:"#475569", padding:"20px 0", textAlign:"center" }}>尚無戰鬥紀錄</div>
-              ) : (
-                (room.log || []).map((entry, i) => (
-                  <div key={i} style={{ marginBottom:8, borderBottom:"1px solid rgba(255,255,255,0.04)", paddingBottom:6 }}>
-                    <div style={{ color:"#fbbf24", fontWeight:700, fontSize:11, marginBottom:2 }}>
-                      第 {entry.round} 回合 · 傷害 {entry.totalDmg} · HP {entry.monsterHPBefore}→{entry.monsterHPAfter}
-                    </div>
-                    {(entry.playerLog || []).map((p, j) => (
-                      <div key={j} style={{ paddingLeft:6, color:"#cbd5e1", marginBottom:1, lineHeight:1.5 }}>
-                        <span style={{ color:"#94a3b8" }}>🏹</span> {p.name}: <span style={{ color:"#f87171", fontWeight:700 }}>+{p.dmg}</span>
-                        {p.crits > 0 && <span style={{ color:"#fbbf24" }}> 💥{p.crits}</span>}
-                        {p.ctr > 0 && <span style={{ color:"#fb923c" }}> ⚡-{p.ctr}</span>}
-                        <span style={{ color:"#475569", fontSize:9, marginLeft:4 }}>{(p.arrowBreakdown || []).map(a => a.label).join(" ")}</span>
-                      </div>
-                    ))}
-                    {entry.event && (
-                      <div style={{ paddingLeft:6, color:"#67e8f9", fontSize:10, marginTop:1 }}>
-                        ✨ {entry.event.icon} {entry.event.title}: {entry.event.desc}
-                      </div>
-                    )}
-                    {entry.counterRound && (
-                      <div style={{ paddingLeft:6, color:"#fb923c", fontSize:10, marginTop:1 }}>💥 反擊回合</div>
-                    )}
-                  </div>
-                ))
-              )}
-            </BattleLogPanel>
           </div>
 
           {/* 小回合進度點 */}
@@ -1542,7 +1548,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     style={{
                       height:"100%", objectFit:"contain", objectPosition:"center bottom",
                       filter: !m.alive ? "grayscale(100%) opacity(0.25)" : undefined,
-                      animation: isTopHit && !animCounter ? "mb-archer-attack 0.4s ease" : undefined,
+                      animation: isTopHit && !animCounter && animPhase === "attacking" ? "mb-archer-attack 0.55s ease" : undefined,
                       outline: isMe ? "2px solid rgba(251,191,36,0.6)" : undefined,
                       outlineOffset:"2px", borderRadius:2,
                     }}
@@ -1649,40 +1655,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 ⚠️ HP 危急！請謹慎作戰
               </div>
             )}
-            {/* 前後衛選擇 */}
-            <div style={{ display:"flex", gap:6, marginBottom:4 }}>
-              <button onClick={() => { setMyRole("front"); setMyRearChoice(null); }}
-                style={{ flex:1, padding:"6px 0", borderRadius:10, fontWeight:900, fontSize:12, border:"none", cursor:"pointer",
-                  background: myRole==="front" ? "linear-gradient(90deg,#dc2626,#ef4444)" : "rgba(255,255,255,0.07)",
-                  color: myRole==="front" ? "#fff" : "#64748b" }}>
-                ⚔️ 前衛
-              </button>
-              <button onClick={() => setMyRole("rear")}
-                style={{ flex:1, padding:"6px 0", borderRadius:10, fontWeight:900, fontSize:12, border:"none", cursor:"pointer",
-                  background: myRole==="rear" ? "linear-gradient(90deg,#0f766e,#14b8a6)" : "rgba(255,255,255,0.07)",
-                  color: myRole==="rear" ? "#fff" : "#64748b" }}>
-                🛡 後衛
-              </button>
-            </div>
+            {/* 後衛策略選擇（只在伺服器將玩家設為後衛後出現，前衛不顯示此選項） */}
             {myRole === "rear" && (
-              <div style={{ display:"flex", gap:6, marginBottom:4 }}>
-                <button onClick={() => setMyRearChoice("heal")}
-                  style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="heal"?"#34d399":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
-                    background: myRearChoice==="heal" ? "rgba(16,185,129,0.25)" : "rgba(255,255,255,0.04)",
-                    color: myRearChoice==="heal" ? "#6ee7b7" : "#64748b" }}>
-                  💊 治癒隊友
-                </button>
-                <button onClick={() => setMyRearChoice("dmg")}
-                  style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="dmg"?"#f59e0b":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
-                    background: myRearChoice==="dmg" ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)",
-                    color: myRearChoice==="dmg" ? "#fcd34d" : "#64748b" }}>
-                  ⚡ 協助攻擊
-                </button>
+              <div style={{ background:"rgba(0,0,0,0.5)", border:"2px solid rgba(20,184,166,0.5)", borderRadius:10, padding:"8px 10px", marginBottom:6 }}>
+                <div style={{ color:"#e2e8f0", fontSize:10, fontWeight:700, textAlign:"center", marginBottom:6 }}>🛡️ 後衛 — 選擇行動</div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => setMyRearChoice("heal")}
+                    style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="heal"?"#34d399":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
+                      background: myRearChoice==="heal" ? "rgba(16,185,129,0.25)" : "rgba(255,255,255,0.04)",
+                      color: myRearChoice==="heal" ? "#6ee7b7" : "#64748b" }}>
+                    💊 治癒隊友
+                  </button>
+                  <button onClick={() => setMyRearChoice("dmg")}
+                    style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="dmg"?"#f59e0b":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
+                      background: myRearChoice==="dmg" ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)",
+                      color: myRearChoice==="dmg" ? "#fcd34d" : "#64748b" }}>
+                    ⚡ 協助攻擊
+                  </button>
+                </div>
               </div>
             )}
             <BattleArrowSlots
                 arrows={arrows}
-                totalArrows={ARROWS_PER_ROUND}
+                totalArrows={room?.arrowsPerRound || ARROWS_PER_ROUND}
                 onUndo={removeLastArrow}
                 showUndo={arrows.length>0}
                 extraContent={
@@ -1704,6 +1699,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
               targetMode={targetMode} setTargetMode={setTargetMode}
               arrows={arrows} onArrow={addArrow}
+              targetFmt={targetFmt}
+              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
               potionInv={potionInv}
               onCarryPotion={async lv => {
                 setPotionUsedThisRound(true);
@@ -1718,7 +1715,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 }
               }}
               onThrowPotion={async p => {
-                if (arrows.length >= 6) return;
+                if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND)) return;
                 setPotionUsedThisRound(true);
                 await recordPotionUsed(myId, p.id).catch(() => {});
                 sfxPotionDrink();
@@ -1730,7 +1727,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               open={targetMode && !targetPending && !myReady}
               fmtId={targetFmt}
               arrowLabels={arrows.map(a => a.label)}
-              arrowsPerRound={ARROWS_PER_ROUND}
+              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
               onArrow={addArrow}
               onUndo={removeLastArrow}
               onSubmit={handleTargetSubmit}
@@ -1739,7 +1736,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             {/* 送出 */}
             {(() => {
               const rearNotReady = myRole === "rear" && !myRearChoice;
-              const disabled = arrows.length<ARROWS_PER_ROUND || submitting || targetPending || rearNotReady;
+              const disabled = arrows.length<(room?.arrowsPerRound || ARROWS_PER_ROUND) || submitting || targetPending || rearNotReady;
               return (
                 <button onClick={handleSubmit} disabled={disabled}
                   style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",

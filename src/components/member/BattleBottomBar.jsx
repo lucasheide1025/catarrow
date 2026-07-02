@@ -57,7 +57,17 @@ function PotionGroupRow({ icon, label, potions, potionInv, potionUsedThisRound, 
   );
 }
 
-function ScoreTabContent({ scoringModeChosen, setScoringModeChosen, targetMode, setTargetMode, arrows, onArrow }) {
+// 根據靶面格式決定計分按鈕標籤
+// full_110（全靶，預設）：X 10 9 8 7 6 5 4 3 2 1 M
+// half_610（半靶）     ：X 10 9 8 7 6 M
+// field_16（原野射箭） ：6 5 4 3 2 1 M
+function getLabelsForFmt(targetFmt) {
+  if (targetFmt === "half_610") return ["X","10","9","8","7","6","M"];
+  if (targetFmt === "field_16") return ["6","5","4","3","2","1","M"];
+  return ["X","10","9","8","7","6","5","4","3","2","1","M"]; // full_110 or default
+}
+
+function ScoreTabContent({ scoringModeChosen, setScoringModeChosen, targetMode, setTargetMode, arrows, onArrow, targetFmt, arrowsPerRound = 6 }) {
   if (!scoringModeChosen) {
     return (
       <div style={{ padding: "3px 0" }}>
@@ -83,10 +93,10 @@ function ScoreTabContent({ scoringModeChosen, setScoringModeChosen, targetMode, 
       </div>
     );
   }
-  if (!targetMode && arrows.length < 6) {
+  if (!targetMode && arrows.length < arrowsPerRound) {
     return (
       <BattleScoreButtons
-        labels={["X","10","9","8","7","6","5","4","3","2","1","M"]}
+        labels={getLabelsForFmt(targetFmt)}
         onScore={onArrow}
         disabled={false}
         variant="image"
@@ -94,8 +104,8 @@ function ScoreTabContent({ scoringModeChosen, setScoringModeChosen, targetMode, 
       />
     );
   }
-  if (!targetMode && arrows.length >= 6) {
-    return <div style={{textAlign:"center", fontSize:11, color:"#4ade80", fontWeight:700, padding:"12px 0"}}>6 箭已滿，按送出！</div>;
+  if (!targetMode && arrows.length >= arrowsPerRound) {
+    return <div style={{textAlign:"center", fontSize:11, color:"#4ade80", fontWeight:700, padding:"12px 0"}}>{arrowsPerRound} 箭已滿，按送出！</div>;
   }
   return null;
 }
@@ -146,6 +156,8 @@ export default function BattleBottomBar({
   targetMode, setTargetMode,
   arrows, onArrow,
   potionInv, onCarryPotion, onThrowPotion,
+  targetFmt,        // 靶面格式（"full_110"/"half_610"/"field_16"），控制計分按鈕
+  arrowsPerRound,   // 每回合箭數（黨模式可能非預設 6）
 }) {
   return (
     <div style={{ background:"rgba(0,0,0,0.55)", borderRadius:8, padding:"5px 5px", marginBottom:4 }}>
@@ -159,6 +171,8 @@ export default function BattleBottomBar({
           scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
           targetMode={targetMode} setTargetMode={setTargetMode}
           arrows={arrows} onArrow={onArrow}
+          targetFmt={targetFmt}
+          arrowsPerRound={arrowsPerRound}
         />
       )}
       {bottomTab === "potion" && (

@@ -356,12 +356,13 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       : null;
     const skipAllCtr = !!eff.skipCounter;
 
-    // Step 3: 三回合制 — 每回合各玩家出 2 箭（共 3 輪），前衛先出後衛後出，貓咪全員攻擊，最後怪物反擊
+    // Step 3: 大回合制 — 每位玩家一個 mini-round 包含全部箭矢，前衛先後衛後，最後怪物反擊一次
     // 攻擊順序：前衛 → 後衛（動畫用）
     const orderedAliveIds = [
       ...frontIds.filter(id => aliveIds.includes(id)),
       ...rearIds.filter(id => aliveIds.includes(id)),
     ];
+    const arrowsPerRound = room.arrowsPerRound || 6;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
@@ -371,26 +372,23 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     let   bossKilled  = false;
     let   catRoundDmg = 0;
 
-    for (let pass = 0; pass < 3 && !bossKilled; pass++) {
-      for (const id of orderedAliveIds) {
-        if (bossKilled) break;
-        if (memberHPNow[id] <= 0) continue;
-        const pd = allPlayerData[id];
-        const start = pass * 2;
-        const pairBreakdown = pd.arrowBreakdown.slice(start, start + 2);
-        const pairDmg   = pairBreakdown.reduce((s, a) => s + (a.dmg || 0), 0);
-        const pairCrits = pairBreakdown.filter(a => a.isCrit).length;
-        monsterHP = Math.max(0, monsterHP - pairDmg);
-        miniRounds.push({
-          miniRound:      miniRounds.length + 1,
-          isCounter:      false,
-          attackerId:     id,
-          playerLog:      [{ id, name: pd.name, dmg: pairDmg, ctr: 0, arrowBreakdown: pairBreakdown, crits: pairCrits }],
-          totalDmg:       pairDmg,
-          monsterHPAfter: monsterHP,
-        });
-        if (monsterHP <= 0) { bossKilled = true; break; }
-      }
+    for (const id of orderedAliveIds) {
+      if (bossKilled) break;
+      if (memberHPNow[id] <= 0) continue;
+      const pd = allPlayerData[id];
+      const allArrows  = pd.arrowBreakdown.slice(0, arrowsPerRound);
+      const totalDmgP  = allArrows.reduce((s, a) => s + (a.dmg || 0), 0);
+      const totalCrits = allArrows.filter(a => a.isCrit).length;
+      monsterHP = Math.max(0, monsterHP - totalDmgP);
+      miniRounds.push({
+        miniRound:      miniRounds.length + 1,
+        isCounter:      false,
+        attackerId:     id,
+        playerLog:      [{ id, name: pd.name, dmg: totalDmgP, ctr: 0, arrowBreakdown: allArrows, crits: totalCrits }],
+        totalDmg:       totalDmgP,
+        monsterHPAfter: monsterHP,
+      });
+      if (monsterHP <= 0) { bossKilled = true; break; }
     }
 
     // 貓咪攻擊（三輪結束後 Boss 仍存活時）

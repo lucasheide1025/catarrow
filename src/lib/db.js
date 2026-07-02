@@ -188,14 +188,24 @@ export async function addPracticeLog(memberId, data, operatorId) {
 
   if (xpGain > 0) addAdventurerXP(memberId, xpGain).catch(() => {});
 
-  // ── 累計總射箭數（終身里程）───────────────────────────
-  const arrowCount = cleanedData.totalArrows || 0;
-  if (arrowCount > 0 && memberId && !memberId.startsWith("guest")) {
-    await updateDoc(doc(db, C.members, memberId), { totalArrowsAllTime: increment(arrowCount) }).catch(() => {});
-  }
-  // ──────────────────────────────────────────────────────
+  // 注意：totalArrowsAllTime 已改為由 addRoundArrows() 在每回合送出時即時更新，
+  // 此處不再重複累加（防止雙重計算）。
 
   return ref.id;
+}
+
+// ── 每回合送出箭後立刻更新終身箭數 ─────────────────────────────
+// 統一由各模式的 submit handler 呼叫，取代 addPracticeLog 的批次更新。
+export async function addRoundArrows(memberId, count) {
+  if (!memberId || !count || count <= 0 || memberId.startsWith("guest")) return;
+  await updateDoc(doc(db, C.members, memberId), {
+    totalArrowsAllTime: increment(count),
+  }).catch(() => {});
+  // 村目标贡献 hook（非同步，不阻塞）
+  try {
+    const { contributeArrowsToGoal } = await import("./villageGoalDb");
+    await contributeArrowsToGoal(memberId, count);
+  } catch (e) { /* ignore */ }
 }
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {

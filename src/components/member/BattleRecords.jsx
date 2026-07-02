@@ -1,5 +1,6 @@
 // src/components/member/BattleRecords.jsx — 通用戰鬥紀錄元件（日/週/月/年 + 分布 + 穩定性 + 曲線）
 import { useState, useMemo } from "react";
+import { SCORE_HEX_COLORS } from "../../lib/score";
 
 // ─── 工具函式 ────────────────────────────────────────────────
 
@@ -127,10 +128,7 @@ function GrowthChart({ points }) {
 
 // ─── 分數分布條形 ─────────────────────────────────────────────
 
-const SCORE_COLORS = {
-  10:"#fbbf24", 9:"#ef4444", 8:"#f87171", 7:"#3b82f6", 6:"#60a5fa",
-  5:"#6b7280",  4:"#9ca3af", 3:"#d1d5db", 2:"#e5e7eb", 1:"#f3f4f6", 0:"#475569",
-};
+const SCORE_COLORS = SCORE_HEX_COLORS;
 
 function ScoreDist({ dist, total }) {
   const maxC = Math.max(1, ...Object.values(dist));

@@ -12,6 +12,8 @@ const TYPE_META = {
   cert_pass:   { label:"榮耀",  color:"bg-amber-100 text-amber-700",icon:"🎖️" },
   high_score:  { label:"榮耀",  color:"bg-amber-100 text-amber-700",icon:"🎯" },
   comp_result: { label:"成績",  color:"bg-green-100 text-green-700",icon:"🏅" },
+  village_goal:          { label:"村莊", color:"bg-emerald-100 text-emerald-700", icon:"🏡" },
+  village_goal_complete: { label:"村莊", color:"bg-amber-100 text-amber-800",   icon:"🎉" },
 };
 
 const FILTERS = [

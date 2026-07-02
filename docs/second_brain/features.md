@@ -1,5 +1,5 @@
 # 📋 features — 功能清單
-> 最後更新：2026-06-28
+> 最後更新：2026-07-01
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
 
@@ -29,6 +29,47 @@
 - 貓貓獨立 HP 條：打怪/議會廳各自扣血，HP 歸零無法攻擊/技能
 - 議會廳陪練、組隊模式虛擬夥伴（貓貓單人可開組隊模式，XP×1.5 需真實隊友）
 **後台**：記帳、通知、訊息、月卡申請/審核、圖鑑、版本更新提示
+
+## 🏗️ 戰鬥系統架構（2026-07-01 Phases 1-8）
+
+### 共用模組（9 新檔）
+
+```
+src/lib/
+  damage.js          ← 5 模式共用傷害公式（箭矢/反擊/貓貓/世界王）
+  score.js           ← 集中計分邏輯（label↔value、SCORE_MAP、COLORS）
+
+src/battle/
+  BattleEvents.js    ← 22 個標準化 EventType + createXxxEvent builders
+  BattleConfig.js    ← 戰鬥參數集中管理（箭數、距離、倍率、機率）
+  BattleEngine.js    ← 單人戰鬥事件產生器（MonsterBattle pilot）
+  BattleAnimation.js ← 19 個 playXxx + EVENT_DISPATCH 映射表
+  useFirestoreRound.js ← Firestore 回合生命週期 hook（Party/Duel/Dungeon）
+  RoundController.js ← 通用事件播放控制器（Monster/Council/WorldBoss）
+  useBattleRound.js  ← React hook 封裝 RoundController
+  useMiniRoundReveal.js ← mini-round 動畫 hook（Party/Dungeon）
+  useDuelReveal.js   ← 決鬥逐箭揭露 hook（DuelRoom）
+```
+
+### 重構的 8 個元件
+
+| 模式 | Phase | 重構目標 | 行數變化 |
+|------|-------|---------|---------|
+| MonsterBattle.jsx | 6 | 50 行 event loop → RoundController | −263 |
+| PartyBattleRoom.jsx | 5, 7 | handleSubmit + host processing → useFirestoreRound；mini-round 動畫 → useMiniRoundReveal | +58 |
+| DuelRoom.jsx | 5, 8 | subscribe + host processing → useFirestoreRound；12 步逐箭揭露 → useDuelReveal | +58 |
+| DungeonBattleRoom.jsx | 5, 7 | 4 合 1 subscribe + host processing → useFirestoreRound；90 行 inline mini-round → useMiniRoundReveal | +94 |
+| CouncilBattle.jsx | 6 | 內聯動畫/音效/log → RoundController | +138 |
+| WorldBossAttack.jsx | 6 | 25 行 arrow loop → RoundController + customDelays 600ms | +12 |
+
+### 架構原則
+
+- **事件驅動**：標準化 EventType 22 種，EventType-driven dispatch
+- **關注點分離**：傷害引擎 (damage.js) → 事件產生 (BattleEngine) → 動畫派遣 (BattleAnimation) → 回合控制 (RoundController/useFirestoreRound)
+- **Firestore 回合抽象**：subscribe + submit + host process 三合一 hook，減少重複 30-50 行/元件
+- **向後相容**：customDelays 等參數使用 options 物件，預設值不影響既有呼叫
+
+---
 
 ## 🔧 2026-06-27 修正/改版
 
@@ -82,3 +123,7 @@
 ## 🚧 待辦
 
 - [ ] 射箭偵測 (player.html) 整合 Firebase Auth（目前獨立 HTML 無登入）
+- [ ] 藥水系統大改版——三層藥水架構 + 底部 tab 列 UI（see `potion-system-redesign.md`）——原設計藥水應從遠征隊取得，煉金室仍維持箭露生產
+- [x] CouncilBattle / WorldBossAttack 改用統一 `damage.js` 公式（Phase 8）
+- [x] 透過 `RoundController` 重構 Party/Duel/Dungeon 戰鬥模式的 event playback
+- [x] 透過 `useDuelReveal` 重構 DuelRoom 的逐箭揭露動畫
