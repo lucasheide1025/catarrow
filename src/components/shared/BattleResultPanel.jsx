@@ -134,7 +134,7 @@ function DropsSection({ drops, config }) {
 
   const hasAny = (
     (config.showCoins && drops.coins > 0) ||
-    (config.showMaterial && drops.material) ||
+    (config.showMaterial && (drops.material || drops.materials?.length > 0)) ||
     (config.showChest && drops.chest) ||
     (config.showGoldChest && drops.goldChest) ||
     (config.showCard && drops.card) ||
@@ -165,6 +165,17 @@ function DropsSection({ drops, config }) {
           <span>{drops.material.icon}</span>
           <span style={S.label}>素材</span>
           <span style={S.value}>{drops.material.name}</span>
+        </div>
+      )}
+      {config.showMaterial && drops.materials?.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
+          {drops.materials.map((m, i) => (
+            <div key={i} style={S.row}>
+              <span>{m.icon}</span>
+              <span style={S.label}>素材</span>
+              <span style={S.value}>{m.name}</span>
+            </div>
+          ))}
         </div>
       )}
       {config.showChest && drops.chest && (

@@ -40,6 +40,7 @@ import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard, BattleLogPanel } from "../shared/SharedBattleComponents";
 import BattleBottomBar from "./BattleBottomBar";
 import { labelToValue, HALF_SCORES, calcArrowStats } from "../../lib/score";
+import { BattleResultPanel, RESULT_CONFIG_SOLO } from "../shared/BattleResultPanel";
 
 // 向後相容 alias（逐步取代為直接使用 labelToValue / calcArrowStats）
 const arrowLabelToVal = labelToValue;
@@ -2057,6 +2058,40 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     // 直接從 monster.tier 計算，避免 state 時序問題
     const lootArcherXP = !isGuest && monster?.tier ? (MONSTER_TIER_XP[monster.tier] || 5) : 0;
     const lootCatXP    = !isGuest && hasCat && monster?.tier ? (CAT_TIER_XP[monster.tier] || 5) : 0;
+    const resultData = {
+      monster: {
+        id: monster?.id,
+        name: monster?.name,
+        icon: monster?.icon,
+        tier: monster?.tier,
+        family: monster?.family,
+        variant: "normal",
+        isDungeonBoss: false,
+      },
+      drops: {
+        coins: droppedCoins,
+        materials: droppedMaterials,
+        chest: wonChests.some(ch => ch.type !== "coin_chest"),
+        goldChest: !!droppedCoinChest,
+        card: droppedCard,
+        arrowDew: 0,
+        specialItem: null,
+      },
+      stats: {
+        dmgDealt:   totalDmgDealt,
+        dmgTaken:   totalDmgRecvd,
+        avgScore:   stats?.avg ?? 0,
+        arrowCount: stats?.count ?? 0,
+        roundCount: round,
+        critCount,
+        scoreBreakdown: Object.fromEntries(
+          ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"].map(s => {
+            const numVal = s === "X" ? 10 : s === "M" ? 0 : s;
+            return [String(s), stats?.dist?.[numVal] || 0];
+          }).filter(([, v]) => v > 0)
+        ),
+      },
+    };
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -2108,40 +2143,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             </div>
           </div>
         )}
-        <div className="w-full grid grid-cols-3 gap-2">
-          {[["⚔️ 總傷害",totalDmgDealt],["🛡️ 承傷",totalDmgRecvd],["💥 爆擊",`${critCount}次`]].map(([lbl,val])=>(
-            <div key={lbl} className="bg-white/5 rounded-xl p-3 text-center border border-white/10">
-              <div className="text-slate-400 text-xs">{lbl}</div>
-              <div className="font-black text-white text-xl">{val}</div>
-            </div>
-          ))}
-        </div>
-        {stats&&(
-          <div className="w-full bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4">
-            <div className="text-blue-300 text-xs font-black mb-3">🎯 本場射箭統計（{stats.count} 箭）</div>
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[["總分",stats.total],["平均",stats.avg],["X/10",stats.tens],["脫靶",stats.misses]].map(([l,v])=>(
-                <div key={l} className="bg-white/5 rounded-xl p-2 text-center border border-white/10">
-                  <div className="text-blue-400 text-xs">{l}</div>
-                  <div className="font-black text-white text-lg">{v}</div>
-                </div>
-              ))}
-            </div>
-            <div className="text-blue-400 text-xs font-bold mb-1.5">分數分佈</div>
-            <div className="flex gap-1 flex-wrap">
-              {[10,9,8,7,6,5,4,3,2,1,0].map(s=>{
-                const c=stats.dist[s]||0;
-                if (!c) return null;
-                const col=HALF_SCORES.find(h=>h.val===s)?.color||"#9ca3af";
-                return (
-                  <div key={s} className="flex flex-col items-center gap-0.5">
-                    <span className="text-xs font-black text-slate-300">{c}</span>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded text-white" style={{ background:col }}>{s===0?"M":s===10?"X":s}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        {/* === 戰鬥統計 + 戰利品面板 === */}
+        {!isGuest && (
+          <BattleResultPanel data={resultData} config={RESULT_CONFIG_SOLO} />
         )}
         {/* 經驗值顯示（打怪勝利） */}
         {!isGuest && (gainedXP > 0 || lootArcherXP > 0 || lootCatXP > 0) && (
@@ -2198,70 +2202,26 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             </div>
           ) : null
         ) : (
-          /* 射手掉落區 */
-          <div className="w-full flex flex-col gap-3">
-            {/* 即時掉落（材料、金幣、卡片）*/}
-            {(droppedMaterials.length > 0 || droppedCoins > 0 || droppedCard || droppedCoinChest) && (
-              <div className="w-full rounded-2xl border-2 border-yellow-500/40 bg-yellow-900/20 p-3">
-                <div className="text-yellow-400 text-xs font-black mb-2 text-center">⚔️ 擊殺掉落</div>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {droppedCoins > 0 && (
-                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-yellow-400/30 rounded-xl"
-                      style={{ animation:"mb-coin .7s ease" }}>
-                      <span className="text-2xl">🪙</span>
-                      <span className="font-black text-yellow-800 text-sm">+{droppedCoins}</span>
-                      <span className="text-yellow-600 text-xs">金幣</span>
-                    </div>
-                  )}
-                  {droppedCoinChest && (
-                    <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl"
-                      style={{ background:`${droppedCoinChest.color}22`, border:`1px solid ${droppedCoinChest.color}66` }}>
-                      <span className="text-2xl">{droppedCoinChest.icon}</span>
-                      <span className="font-black text-xs" style={{ color: droppedCoinChest.color }}>{droppedCoinChest.name}</span>
-                      <span className="text-yellow-600 text-xs">🎒 已放入背包</span>
-                    </div>
-                  )}
-                  {droppedMaterials.map((m,i) => (
-                    <div key={i} className="flex flex-col items-center gap-1 px-3 py-2 bg-purple-900/30 rounded-xl"
-                      style={{ animation:`mb-drop .6s ease ${0.15+i*0.1}s both` }}>
-                      <span className="text-2xl">{m.icon}</span>
-                      <span className="font-black text-purple-300 text-xs">{m.name}</span>
-                      <span className="text-purple-400 text-xs">材料</span>
-                    </div>
-                  ))}
-                  {droppedCard && (
-                    <div className="flex flex-col items-center gap-1 px-3 py-2 bg-rose-900/30 rounded-xl"
-                      style={{ animation:"mb-drop .6s ease .3s both" }}>
-                      <span className="text-2xl">{droppedCard.icon}</span>
-                      <span className="font-black text-rose-300 text-xs">{droppedCard.name}</span>
-                      <span className="text-rose-400 text-xs">🃏 卡片！</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* 寶箱（進背包）*/}
-            {wonChests.length > 0 && (
-              <div className="w-full flex flex-col gap-2">
-                {wonChests.map((ch, idx) => {
-                  const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
-                  return (
-                    <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
-                      style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
-                      <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
-                      <div className="flex-1">
-                        <div className="font-black text-sm" style={{ color:cc.color }}>
-                          獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
-                        </div>
-                        <div className="text-slate-400 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
+          /* 射手掉落區：即時掉落已由 BattleResultPanel 顯示，此處只保留寶箱入背包 */
+          wonChests.length > 0 ? (
+            <div className="w-full flex flex-col gap-2">
+              {wonChests.map((ch, idx) => {
+                const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
+                return (
+                  <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
+                    style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
+                    <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
+                    <div className="flex-1">
+                      <div className="font-black text-sm" style={{ color:cc.color }}>
+                        獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
                       </div>
+                      <div className="text-slate-400 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null
         )}
 
         <button onClick={()=>setShowBattleCard(true)}
