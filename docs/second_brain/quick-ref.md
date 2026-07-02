@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-06-29
+> 最後更新：2026-07-02
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -18,8 +18,9 @@
 | 音效全用 Web Audio 合成 | 不用音檔，用 `sfxTap/sfxSuccess/sfxCast/sfxBuff...` |
 | 怪物/徽章全用 SVG | `MonsterSVG` / `BadgeSVG` 元件，不用圖片 |
 | 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
-| Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則 |
+| Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
 | 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
+| MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |
 | 大型二進位不進 git | `codebase-ui-extracted/`（含 .exe）超過 GitHub 100MB；務必先加 `.gitignore` 再 `git add` |
@@ -45,7 +46,8 @@ monsterLogs       C_MONSTER_LOG
 cardCollections   C_CARD_COLL     // { cards:{[monsterId]:{}}, equipped:[monsterId,...] }
 monthlyCards      C_MONTHLY_CARD
 monthlyCardLogs   C_MONTHLY_LOG
-cardMarket        C_CARD_MARKET
+cardMarket        C_CARD_MARKET   // ★ 規則移到正確 block（2026-07-02 修）
+villageGoals      "villageGoals"  // 村目標（由 villageGoalDb.js 管理，2026-07-02 補規則）
 dungeonRooms      "dungeonRooms"  // 地下城房間（含 memberRunes 欄位）
 dungeonFirstClears"dungeonFirstClears"
 systemBroadcasts  "systemBroadcasts"
@@ -145,8 +147,19 @@ subscribeCardMarket(cb) // 客戶端過濾已過期掛賣
 ### 里程碑 / 轉蛋
 ```js
 grantArrowMilestoneRewards(memberId, milestones)
-getMilestonesReached(oldArrows, newArrows)  // 從 arrowMilestone.js
+getMilestonesReached(oldArrows, newArrows)  // 從 arrowMilestone.js，每日防重複由 arrowMilestoneDone 保護
 drawGachaCards(memberId, type)  // "single" | "ten"
+
+// MonsterBattle 里程碑正確用法（2026-07-02 修）：
+// 用 sessionArrowsRef（useRef(0)）跨回合累積；startBattle 時重置為 0
+// getMilestonesReached(sessionArrowsRef.current, sessionArrowsRef.current + arrowCount)
+// ★ 不可用 getMilestonesReached(0, arrowCount)，否則每場都從 0 算，跨局里程碑全錯
+
+// villageGoalDb.js（村目標）
+contributeArrowsToGoal(memberId, count)   // 由 addRoundArrows 自動 hook 呼叫
+adminCreateCustomGoal({goalType, targetValue, rewards, ...})  // 後台發布村目標
+autoSpawnVillageGoal(villageLevel)        // 前端自動觸發（24h 冷卻）
+checkGoalStatus(goal)                     // 前端每分鐘輪詢（完成或過期）
 ```
 
 ---

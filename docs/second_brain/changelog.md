@@ -3,6 +3,35 @@
 
 ---
 
+## 2026-07-02（Firestore 規則補齊 + 射箭里程碑多回合修正）
+
+### 改了什麼
+
+**firestore.rules — 補 villageGoals / cardMarket**
+- `villageGoals`：原本完全沒有規則 → 預設 deny，教練無法發佈村目標
+- `cardMarket`：原本在 `service cloud.firestore { }` 的 **外面**（無效位置），移入正確位置
+- `villageGoals` 規則：`read/create/update` 登入者皆可（autoSpawnVillageGoal 由前端觸發）；`delete` 限 admin
+
+**MonsterBattle.jsx — 修正多回合箭數計算**
+- 根本原因：`setRoundScores` 只在 `BATTLE_WIN/LOSE` 事件（最終回合）呼叫，非最終回合從未 push
+- 導致：`endBattle` 裡 `roundScores = []`，`practiceRounds.flat().length = 6`（永遠只有最後一回合）
+- 修正：非最終回合路徑（line ~682）補加 `setRoundScores(prev => [...prev, {round, scores: midRoundArr}])`
+- 里程碑計算：加 `sessionArrowsRef`（`useRef(0)`），跨回合累積；`getMilestonesReached(oldSession, oldSession + arrowCount)` 取代舊的 `getMilestonesReached(0, arrowCount)`
+- `startBattle` 時 `sessionArrowsRef.current = 0` 重置（新一場重算）
+
+**WorldBossAttack.jsx — 補里程碑觸發**
+- 世界王完全沒有里程碑邏輯
+- 在 `addRoundArrows` 之後補 `getMilestonesReached(0, totalArrowsSent)` + `grantArrowMilestoneRewards`
+- 加 `milestoneQueue` state + `SmallMilestonePopup` 在 result 頁面顯示
+
+### 踩坑提醒
+- **Firestore 規則在正確 service block 內部**：`match /databases/{database}/documents { }` 裡才有效；外面的規則一律被忽略（cardMarket 已修）
+- **React 非同步 state**：`endBattle` 閉包捕獲的 `roundScores` 是呼叫當下的 stale value；這就是為什麼 `lastRoundArr` 要單獨傳入。但非最終回合若從未呼叫 `setRoundScores`，前幾回合分數就全丟了
+- **`sessionArrowsRef` 跨打怪局累積**：同一個 session 打多隻怪時里程碑正確遞增，不會每局重從 0 算（`grantArrowMilestoneRewards` 已有每日防重複保護）
+- CLI `firebase deploy --only firestore:rules` 有 403，**規則必須手動貼到 Firebase Console**
+
+---
+
 ## 2026-07-02（BattleResultPanel 統一結算 — WB / Party / Dungeon / Duel）
 
 ### 改了什麼
