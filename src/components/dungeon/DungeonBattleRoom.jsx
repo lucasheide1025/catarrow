@@ -567,8 +567,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     }
   }
 
-  // ── path_select 僅經典模式使用，地圖模式自動回地圖 ──────────
-  if (status === "path_select" && !liveEntry && !showRoundResult) {
+  // ── path_select 處理 ──────────────────────────────────────
+  // 經典模式（!isMapMode）：path_select 不可能發生（已移除），保留做 fallback
+  // 地圖模式：path_select 是怪物擊殺後（非最後一層）的正常狀態，
+  // 跳過中間 UI，由完成畫面處理（與 completed 共用渲染）
+  if (!isMapMode && status === "path_select" && !liveEntry && !showRoundResult) {
     if (isHost) {
       returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []);
     }
@@ -613,8 +616,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const animKey = latestLogEntry ? `${room.currentFloor || 1}-${latestLogEntry.round}` : null;
   const hasNewAnim = animKey && animKey !== lastAnimKeyRef.current;
 
-  if (status === "completed" && !liveEntry && !showRoundResult && !hasNewAnim) {
-    const won = room?.result === "win";
+  if ((status === "completed" || (status === "path_select" && isMapMode)) && !liveEntry && !showRoundResult && !hasNewAnim) {
+    // 地圖模式 path_select = 怪物已被擊殺 = 勝利
+    const isPathSelectWin = status === "path_select" && isMapMode;
+    const won = isPathSelectWin || room?.result === "win";
     if (won && !bondSavedRef.current) { bondSavedRef.current = true; saveBond("dungeon"); }
 
     if (!won) {
@@ -756,8 +761,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       );
     }
 
-    // 鎖定掉寶預覽（渲染時計算一次）
-      if (!claimLootRef.current && room.monster) {
+    // 鎖定掉寶預覽（Boss 房渲染時計算一次；path_select 也計算）
+      if (!claimLootRef.current && room.monster && (status === "completed" || status === "path_select")) {
         const gm        = room?.nextFloorModifiers?.goldMult || 1;
         const tier       = room.monster.tier || "common";
         const tf         = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
