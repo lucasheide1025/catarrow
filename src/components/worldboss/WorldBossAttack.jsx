@@ -194,19 +194,22 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // ── 正確載入檢定資料，確保 ATK 包含檢定加成 ─────────────
   const [certRecords,   setCertRecords]   = useState([]);
   const [certification, setCertification] = useState(null);
+  const [certReady,     setCertReady]     = useState(false);
   useEffect(() => {
-    if (isGuest || !profile?.id) return;
-    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
+    if (isGuest || !profile?.id) { setCertReady(true); return; }
+    getCertRecords(profile.id).then(r => { setCertRecords(r); setCertReady(true); }).catch(() => setCertReady(true));
     const unsub = subscribeCertification(profile.id, setCertification);
     return () => unsub?.();
   }, [profile?.id]); // eslint-disable-line
 
+  const [cardColl,  setCardColl]  = useState({ cards: {}, equipped: [] });
+  const [cardReady, setCardReady] = useState(false);
   useEffect(() => {
-    if (isGuest || !profile?.id) return;
-    return subscribeCardCollection(profile.id, setCardColl);
+    if (isGuest || !profile?.id) { setCardReady(true); return; }
+    return subscribeCardCollection(profile.id, c => { setCardColl(c); setCardReady(true); });
   }, [profile?.id, isGuest]); // eslint-disable-line
 
-  const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
+  const statsReady = certReady && cardReady;
 
   const archerBase = useMemo(() =>
     calcArcherStats({ member: profile, certification, certRecords, dexStats: null }),
@@ -1061,8 +1064,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           )}
           {subPhase === "shooting" && arrows.length >= ARROWS_PER && !targetPending && (
             <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4 }}>
+              {!statsReady && <div style={{ textAlign:"center", fontSize:11, color:"#94a3b8", paddingBottom:4 }}>⏳ 數值載入中…</div>}
               <button onClick={() => { sfxCast(); finishRound(arrows); }}
-                style={{ width:"100%", padding:"12px", background:`linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)`, border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor:"pointer", boxShadow:`0 4px 20px ${boss.accent||"#f59e0b"}44` }}>
+                disabled={!statsReady}
+                style={{ width:"100%", padding:"12px", background: statsReady ? `linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)` : "#374151", border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor: statsReady ? "pointer" : "not-allowed", boxShadow: statsReady ? `0 4px 20px ${boss.accent||"#f59e0b"}44` : "none", opacity: statsReady ? 1 : 0.5 }}>
                 ⚔️ 送出 {ARROWS_PER} 箭！
               </button>
               <button onClick={() => setArrows(prev => prev.slice(0,-1))}
