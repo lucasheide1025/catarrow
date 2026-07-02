@@ -319,22 +319,29 @@ function PartySection({ party, config }) {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 14, fontWeight: 900, color: isLeader ? "#fbbf24" : "#94a3b8",
                 flexShrink: 0,
+                opacity: m.alive === false ? 0.5 : 1,
               }}>
                 {m.name?.[0] ?? "?"}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{m.name}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{m.name ?? "?"}</span>
                   {isLeader && (
                     <span style={{ ...S.tag, color: "#fbbf24", background: "#422006", fontSize: 10 }}>隊長</span>
                   )}
+                  {m.isMvp === true && (
+                    <span style={{ ...S.tag, color: "#fbbf24", background: "#422006", fontSize: 10 }}>👑 MVP</span>
+                  )}
+                  {m.alive === false && (
+                    <span style={{ ...S.tag, color: "#f87171", background: "#450a0a", fontSize: 10 }}>💀 陣亡</span>
+                  )}
                 </div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ color: "#f87171", fontSize: 12, fontWeight: 700 }}>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ color: m.alive === false ? "#475569" : "#f87171", fontSize: 12, fontWeight: 700 }}>
                   {(m.dmgDealt ?? 0).toLocaleString()} 傷
                 </div>
-                {m.crits > 0 && (
+                {(m.crits ?? 0) > 0 && (
                   <div style={{ color: "#fbbf24", fontSize: 10 }}>
                     ×{m.crits} 爆擊
                   </div>

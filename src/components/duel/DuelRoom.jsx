@@ -19,6 +19,7 @@ import {
   skipDisconnected, applyPlayerCatToRoom,
 } from "../../lib/duelDb";
 import { BattleResultHeader, BattleStatCard } from "../shared/SharedBattleComponents";
+import { BattleResultPanel } from "../shared/BattleResultPanel";
 import { generateBotArrows } from "../../lib/botUtils";
 import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows } from "../../lib/db";
 import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
@@ -595,6 +596,45 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     }, 0);
     const totalRounds = room.log?.length || 0;
 
+    // 聚合我的箭矢分數資料
+    const duelArrowBreakdown = (room.log || []).flatMap(entry =>
+      (entry.attacks || [])
+        .filter(a => a.attackerId === myId)
+        .flatMap(a => a.arrowBreakdown || [])
+    );
+    const duelScoreBreakdown = {};
+    for (const a of duelArrowBreakdown) {
+      const key = a.label === "X" ? "X" : (!a.label || a.label === "M") ? "M" : String(a.label);
+      duelScoreBreakdown[key] = (duelScoreBreakdown[key] || 0) + 1;
+    }
+    const duelAvgScore = duelArrowBreakdown.length
+      ? parseFloat((duelArrowBreakdown.reduce((s, a) => {
+          const v = a.label === "X" ? 10 : a.label === "M" ? 0 : Number(a.label) || 0;
+          return s + v;
+        }, 0) / duelArrowBreakdown.length).toFixed(1))
+      : 0;
+    const duelCrits = (room.log || []).reduce((s, e) =>
+      s + (e.attacks || []).filter(a => a.attackerId === myId).reduce((ss, a) => ss + (a.crits || 0), 0), 0);
+
+    const duelResultData = {
+      stats: {
+        dmgDealt:       myDmg,
+        critCount:      duelCrits,
+        avgScore:       duelAvgScore,
+        arrowCount:     duelArrowBreakdown.length,
+        roundCount:     totalRounds,
+        scoreBreakdown: Object.keys(duelScoreBreakdown).length ? duelScoreBreakdown : null,
+      },
+    };
+    const duelStatsConfig = {
+      showDmgDealt:       true,
+      showCritCount:      true,
+      showAvgScore:       duelArrowBreakdown.length > 0,
+      showArrowCount:     duelArrowBreakdown.length > 0,
+      showRoundCount:     true,
+      showScoreBreakdown: duelArrowBreakdown.length > 0,
+    };
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center p-4 gap-4">
         <style>{DUEL_CSS}</style>
@@ -621,19 +661,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
 
         {/* 我的本場統計 */}
-        <div className="w-full max-w-sm flex gap-2">
-          <div className="flex-1">
-            <BattleStatCard icon="⚔️" label="造成傷害" value={myDmg} />
-          </div>
-          <div className="flex-1">
-            <BattleStatCard icon="💥" label="爆擊次數" value={room.log?.reduce((s, e) => s + (e.attacks || []).filter(a => a.attackerId === myId).reduce((ss, a) => ss + (a.crits || 0), 0), 0) || 0} />
-          </div>
-          {duelStats && (
-            <div className="flex-1">
-              <BattleStatCard icon="📊" label="累積戰績" value={`${duelStats.wins}W ${duelStats.losses}L`} />
-            </div>
-          )}
+        <div className="w-full max-w-sm">
+          <BattleResultPanel data={duelResultData} config={duelStatsConfig} />
         </div>
+        {duelStats && (
+          <div className="w-full max-w-sm">
+            <BattleStatCard icon="📊" label="累積戰績" value={`${duelStats.wins}W ${duelStats.losses}L`} />
+          </div>
+        )}
 
         {/* 按鈕 */}
         <div className="w-full max-w-sm flex flex-col gap-2">

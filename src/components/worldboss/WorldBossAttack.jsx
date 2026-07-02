@@ -1239,9 +1239,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       },
     };
 
-    // WorldBoss 專屬 config：只顯示分數統計（傷害和爆擊已在戰鬥報告顯示）
+    // WorldBoss 專屬 config：傷害 + 爆擊 + 分數統計一次顯示
     const wbResultConfig = {
       showMonsterInfo: false,
+      showDmgDealt: true,
+      showCritCount: true,
       showAvgScore: true,
       showArrowCount: true,
       showRoundCount: true,
@@ -1283,28 +1285,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               )}
 
               <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1">
-                <div className="text-xs text-slate-400 font-bold mb-2">戰鬥報告</div>
-                <BattleStatRow icon="🏹" label="你的總傷害" value={totalPlayerDmg.toLocaleString()} valueColor="#f87171" />
+                <div className="text-xs text-slate-400 font-bold mb-2">Boss 出戰報告</div>
                 {bots.length > 0 && (
                   <BattleStatRow icon="🤖" label="機器人傷害" value={(result.dmg - totalPlayerDmg).toLocaleString()} valueColor="#818cf8" />
                 )}
-                <BattleStatRow icon="⚔️" label="總傷害" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" borderTop />
-                <BattleStatRow icon="💥" label="暴擊次數" value={`${totalCrits} 次`} valueColor="#facc15" />
+                <BattleStatRow icon="⚔️" label="本次總傷害（含機器人）" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" />
                 <BattleStatRow icon="❤️" label="Boss 剩餘 HP" value={result.newHP?.toLocaleString()} valueColor="#cbd5e1" />
-              </div>
-
-              <div className="w-full space-y-2">
-                {allRounds.map((r, i) => (
-                  <div key={i} className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-3">
-                    <span className="text-xs text-slate-500 w-12">第{i+1}回合</span>
-                    <div className="flex gap-1 flex-1 flex-wrap">
-                      {r.arrows.map((a, j) => (
-                        <span key={j} className="text-xs font-bold" style={{ color: scoreColor(a.label) }}>{a.label}</span>
-                      ))}
-                    </div>
-                    <span className="text-xs font-black text-rose-400">-{r.dmg.toLocaleString()}</span>
-                  </div>
-                ))}
               </div>
 
               {wbAllArrows.length > 0 && (

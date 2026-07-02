@@ -39,6 +39,7 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import BattleBottomBar from "../member/BattleBottomBar";
 import { getPotion } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
+import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
@@ -986,64 +987,95 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           </div>
 
           <div className="px-5 space-y-3">
-            {loot && (
-              <div className="rounded-2xl p-4 space-y-2"
-                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
-                <div className="text-xs text-slate-400 font-bold mb-3">📊 本房間獎勵</div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300">🏹 射手經驗</span>
-                  <span className="font-black" style={{ color:"#7dd3fc" }}>+{loot.archerXP} XP</span>
-                </div>
-                {loot.catXP > 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-300">🐱 貓貓經驗</span>
-                    <span className="font-black" style={{ color:"#f9a8d4" }}>+{loot.catXP} XP</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300">💰 金幣</span>
-                  <span className="font-black" style={{ color:"#fcd34d" }}>+{loot.coins.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300">📦 寶箱</span>
-                  <span className="font-black" style={{ color:"#4ade80" }}>1 個</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300">💧 箭露</span>
-                  <span className="font-black" style={{ color:"#38bdf8" }}>+5</span>
-                </div>
-                {loot.materials.length > 0 && (
-                  <div className="pt-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
-                    <div className="text-xs text-slate-400 mb-2">素材掉落</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {loot.materials.map((m, i) => (
-                        <span key={i} className="text-xs rounded-full px-2 py-0.5"
-                          style={{ background:"rgba(255,255,255,0.08)", color:"#cbd5e1" }}>
-                          {m.icon} {m.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {loot.collectibles && loot.collectibles.length > 0 && (
-                  <div className="pt-2 space-y-2" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
-                    <div className="text-xs text-slate-400 mb-1">🔮 收藏品掉落</div>
-                    {loot.collectibles.map((drop, i) => {
-                      const item = COLLECTIBLE_MAP[drop.itemId];
-                      return item ? (
-                        <div key={i} className="flex items-center gap-2">
-                          <span style={{ fontSize:20 }}>{item.icon}</span>
-                          <div>
-                            <span className="text-xs font-black text-purple-300">{item.name}</span>
-                            <span className="ml-1.5 text-[10px] text-slate-500">收藏品</span>
-                          </div>
+            {(() => {
+              // 從 room.log 嘗試提取個人傷害統計
+              const logs = room.log || [];
+              const totalDmg = logs.reduce((sum, entry) => {
+                const p = (entry.playerLog || []).find(pl => pl.id === myId);
+                return sum + (p?.dmg || 0);
+              }, 0);
+              const dungeonRoomStats = totalDmg > 0 ? { dmgDealt: totalDmg } : null;
+
+              const dungeonRoomData = {
+                monster: room.monster || null,
+                drops: loot ? {
+                  coins:     loot.coins    || 0,
+                  materials: loot.materials || [],
+                  arrowDew:  loot.arrowdew  || 0,
+                  chest:     (loot.chestCount || 0) > 0,
+                } : null,
+                stats: dungeonRoomStats,
+              };
+
+              const dungeonRoomConfig = {
+                ...RESULT_CONFIG_DUNGEON,
+                showIsDungeonBoss: false,
+                showSpecialItem:   false,
+                showDmgTaken:      false,
+                showAvgScore:      false,
+                showCritCount:     false,
+                showArrowCount:    false,
+                showRoundCount:    false,
+                showScoreBreakdown:false,
+                showPartyMembers:  false,
+                showPartyLeader:   false,
+                showDmgDealt:      !!dungeonRoomStats?.dmgDealt,
+                showGoldChest:     false,
+                showCard:          false,
+              };
+
+              return (
+                <>
+                  <BattleResultPanel data={dungeonRoomData} config={dungeonRoomConfig} />
+
+                  {/* 經驗 + 扭蛋幣（BattleResultPanel 不支援的欄位） */}
+                  {loot && (loot.archerXP > 0 || loot.catXP > 0 || loot.gachaCoins > 0) && (
+                    <div className="rounded-2xl p-3 space-y-1.5"
+                      style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)" }}>
+                      <div className="text-xs text-slate-400 font-bold mb-2">✨ 經驗獎勵</div>
+                      {loot.archerXP > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">🏹 射手 XP</span>
+                          <span className="font-black" style={{ color:"#7dd3fc" }}>+{loot.archerXP}</span>
                         </div>
-                      ) : null;
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                      )}
+                      {loot.catXP > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">🐱 貓貓 XP</span>
+                          <span className="font-black" style={{ color:"#f9a8d4" }}>+{loot.catXP}</span>
+                        </div>
+                      )}
+                      {loot.gachaCoins > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">🎰 扭蛋幣</span>
+                          <span className="font-black" style={{ color:"#e879f9" }}>+{loot.gachaCoins}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 收藏品掉落 */}
+                  {loot?.collectibles && loot.collectibles.length > 0 && (
+                    <div className="rounded-2xl p-4 space-y-2"
+                      style={{ background:"rgba(168,85,247,0.07)", border:"1px solid rgba(168,85,247,0.25)" }}>
+                      <div className="text-xs font-bold mb-2" style={{ color:"#c084fc" }}>🔮 收藏品掉落</div>
+                      {loot.collectibles.map((drop, i) => {
+                        const item = COLLECTIBLE_MAP[drop.itemId];
+                        return item ? (
+                          <div key={i} className="flex items-center gap-2">
+                            <span style={{ fontSize:20 }}>{item.icon}</span>
+                            <div>
+                              <span className="text-xs font-black text-purple-300">{item.name}</span>
+                              <span className="ml-1.5 text-[10px] text-slate-500">收藏品</span>
+                            </div>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             <button onClick={handleClaimSelf}
               className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-lg active:scale-95"

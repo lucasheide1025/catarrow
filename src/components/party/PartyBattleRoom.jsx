@@ -1053,6 +1053,21 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     })).sort((a, b) => b.dmgDealt - a.dmgDealt);
     const mvpId = statsList[0]?.dmgDealt > 0 ? statsList[0].id : null;
 
+    // 加入隊伍成員到 partyResultData（含 MVP / 存活狀態）
+    partyResultData.party = {
+      leaderId: room.hostId,
+      members: statsList.map(s => ({
+        id:       s.id,
+        name:     s.name,
+        dmgDealt: s.dmgDealt ?? 0,
+        crits:    s.crits    ?? 0,
+        alive:    members[s.id]?.alive !== false,
+        isMvp:    s.id === mvpId && won,
+      })),
+    };
+    partyStatsConfig.showPartyMembers = true;
+    partyStatsConfig.showPartyLeader  = true;
+
     return (
       <div className={`min-h-screen flex flex-col px-4 py-6 gap-4 max-w-lg mx-auto overflow-y-auto ${
         won ? "bg-gradient-to-b from-yellow-900 to-slate-900" : "bg-gradient-to-b from-red-900 to-slate-900"
@@ -1065,42 +1080,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           color={won ? "amber" : "red"}
         />
 
-        {/* 詳細戰績表 */}
-        <div className="bg-white/10 rounded-2xl overflow-hidden">
-          <div className="px-4 py-2 bg-white/5 text-xs font-black text-slate-400 uppercase tracking-widest">
-            戰鬥詳情
-          </div>
-          {statsList.map(s => {
-            const isMvp = s.id === mvpId && won;
-            const isMe  = s.id === myId;
-            return (
-              <div key={s.id}
-                className={`px-4 py-3 border-t border-white/5 flex flex-col gap-1.5 ${
-                  isMvp ? "bg-yellow-500/20" : ""
-                }`}>
-                <div className="flex items-center gap-2">
-                  {isMvp && <span className="text-yellow-400 text-xs font-black bg-yellow-500/30 px-2 py-0.5 rounded-full">👑 MVP</span>}
-                  <span className={`font-black text-sm ${isMe ? "text-indigo-300" : "text-white"}`}>
-                    {s.name}{isMe ? " (我)" : ""}
-                  </span>
-                  <span className="ml-auto text-xs text-slate-400">
-                    {members[s.id]?.alive ? "✅ 存活" : "💀 陣亡"}
-                  </span>
-                </div>
-                <div className="flex gap-3 text-xs flex-wrap">
-                  <span className="text-rose-400 font-bold">⚔️ 造成 {s.dmgDealt}</span>
-                  <span className="text-orange-400">🛡️ 承受 {s.dmgRecvd}</span>
-                  {s.crits > 0 && <span className="text-yellow-300">✨ 爆擊 {s.crits} 次</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* 我的個人分數統計 */}
-        {myArrowBreakdown.length > 0 && (
-          <BattleResultPanel data={partyResultData} config={partyStatsConfig} />
-        )}
+        {/* 戰鬥詳情：統一用 BattleResultPanel（含隊伍成員 + 個人分數統計） */}
+        <BattleResultPanel data={partyResultData} config={partyStatsConfig} />
 
         {/* 完整戰鬥紀錄（可展開）*/}
         {(room.log || []).length > 0 && (
