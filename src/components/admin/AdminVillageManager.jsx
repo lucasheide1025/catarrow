@@ -1,6 +1,8 @@
 // src/components/admin/AdminVillageManager.jsx — 後台村莊調試工具
 import { useState, useEffect } from "react";
 import { getMembers, adminSetVillageBuilding, adminAdjustVillageResource, adminResetVillage, subscribeVillageMarketConfig, saveVillageMarketConfig } from "../../lib/db";
+import { adminCreateCustomGoal } from "../../lib/villageGoalDb";
+import { GOAL_TYPES } from "../../lib/villageGoalData";
 import {
   BUILDING_LIST, BUILDINGS, TIERED_RESOURCES, RESOURCE_NAMES, DEFAULT_VILLAGE,
 } from "../../lib/villageData";
@@ -25,7 +27,13 @@ export default function AdminVillageManager() {
   const [deltaMap, setDeltaMap]   = useState({});
   const [lvMap, setLvMap]         = useState({});
   const [marketCfg, setMarketCfg] = useState(null);
-  const [showCfg, setShowCfg]     = useState(false);
+  const [showCfg,     setShowCfg]     = useState(false);
+  const [showGoal,     setShowGoal]     = useState(false);
+  const [goalForm,     setGoalForm]     = useState({
+    goalType: "total_arrows", targetValue: 5000, durationHours: 24,
+    rewardArrowdew: 200, rewardCoins: 100, rewardGachaToken: 3,
+    customTitle: "", customDescription: "",
+  });
 
   useEffect(() => { getMembers().then(setMembers); }, []);
   useEffect(() => {
@@ -93,8 +101,8 @@ export default function AdminVillageManager() {
   }
 
   return (
-    <div style={{ padding: "16px", fontFamily: "system-ui, sans-serif" }}>
-      <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12 }}>🏡 村莊調試工具</div>
+    <div style={{ padding: "16px", fontFamily: "system-ui, sans-serif", background: "#f8fafc", minHeight: "100vh", color: "#1e293b" }}>
+      <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12, color: "#0f172a" }}>🏡 村莊調試工具</div>
 
       {/* ── 市集兌換設定 ── */}
       <div style={{ marginBottom: 16 }}>
@@ -117,6 +125,121 @@ export default function AdminVillageManager() {
               setBusy(false);
             }}
           />
+        )}
+      </div>
+
+      {/* ── 村目標設定 ── */}
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={() => setShowGoal(p => !p)}
+          style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #fde68a",
+            background: "#fffbeb", color: "#b45309", fontWeight: 800, fontSize: 13, cursor: "pointer",
+            display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>🎯 村目標設定（自定義）</span>
+          <span>{showGoal ? "▲ 收起" : "▼ 展開"}</span>
+        </button>
+        {showGoal && (
+          <div style={{ border: "1px solid #fde68a", borderTop: "none", borderRadius: "0 0 10px 10px",
+            padding: "12px", background: "#fffcf2", display: "flex", flexDirection: "column", gap: 10 }}>
+            
+            {/* 目標類型 */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>目標類型</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {GOAL_TYPES.map(g => (
+                  <button key={g.id} onClick={() => setGoalForm(p => ({ ...p, goalType: g.id }))}
+                    style={{
+                      padding: "6px 12px", borderRadius: 8, border: "1px solid #d4a373",
+                      background: goalForm.goalType === g.id ? "#92400e" : "white",
+                      color: goalForm.goalType === g.id ? "white" : "#92400e",
+                      fontWeight: 800, fontSize: 12, cursor: "pointer",
+                    }}>
+                    {g.icon} {g.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 目標值 & 時長 */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 2 }}>目標值</div>
+                <input type="number" min={1} value={goalForm.targetValue}
+                  onChange={e => setGoalForm(p => ({ ...p, targetValue: Number(e.target.value) }))}
+                  style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 2 }}>持續時間（小時）</div>
+                <input type="number" min={1} max={720} value={goalForm.durationHours}
+                  onChange={e => setGoalForm(p => ({ ...p, durationHours: Number(e.target.value) }))}
+                  style={inputStyle} />
+              </div>
+            </div>
+
+            {/* 獎勵 */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>完成獎勵（每人）</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: "#a16207", marginBottom: 1 }}>💧 箭露</div>
+                  <input type="number" min={0} value={goalForm.rewardArrowdew}
+                    onChange={e => setGoalForm(p => ({ ...p, rewardArrowdew: Number(e.target.value) }))}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#a16207", marginBottom: 1 }}>🪙 金幣</div>
+                  <input type="number" min={0} value={goalForm.rewardCoins}
+                    onChange={e => setGoalForm(p => ({ ...p, rewardCoins: Number(e.target.value) }))}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#a16207", marginBottom: 1 }}>🎰 扭蛋幣</div>
+                  <input type="number" min={0} value={goalForm.rewardGachaToken}
+                    onChange={e => setGoalForm(p => ({ ...p, rewardGachaToken: Number(e.target.value) }))}
+                    style={inputStyle} />
+                </div>
+              </div>
+            </div>
+
+            {/* 自定義標題/描述 */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>自定義標題與描述（留空則自動產生）</div>
+              <input type="text" placeholder="標題（例如：🏆 射破十萬！）" value={goalForm.customTitle}
+                onChange={e => setGoalForm(p => ({ ...p, customTitle: e.target.value }))}
+                style={{ ...inputStyle, width: "100%", marginBottom: 4 }} />
+              <input type="text" placeholder="描述（例如：全體村民合作射破十萬大關！）" value={goalForm.customDescription}
+                onChange={e => setGoalForm(p => ({ ...p, customDescription: e.target.value }))}
+                style={{ ...inputStyle, width: "100%" }} />
+            </div>
+
+            {/* 操作按鈕 */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await adminCreateCustomGoal({
+                    goalType: goalForm.goalType,
+                    targetValue: goalForm.targetValue,
+                    durationHours: goalForm.durationHours,
+                    rewards: {
+                      arrowdew: goalForm.rewardArrowdew,
+                      coins: goalForm.rewardCoins,
+                      gachaToken: goalForm.rewardGachaToken,
+                    },
+                    title: goalForm.customTitle || undefined,
+                    description: goalForm.customDescription || undefined,
+                  });
+                  if (r.ok) flash("✓ 自定義村目標已啟動！");
+                  else flash("❌ " + r.reason);
+                } catch(e) { flash("❌ " + e.message); }
+                setBusy(false);
+              }} disabled={busy}
+                style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none",
+                  background: busy ? "#e2e8f0" : "#d97706", color: busy ? "#94a3b8" : "white",
+                  fontWeight: 800, fontSize: 12, cursor: busy ? "default" : "pointer" }}>
+                {busy ? "發送中…" : "🎯 啟動自定義目標"}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -144,7 +267,7 @@ export default function AdminVillageManager() {
               style={{ textAlign: "left", padding: "10px 14px", borderRadius: 10,
                 border: "1px solid #e2e8f0", background: "white", cursor: "pointer",
                 display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{m.name || m.id}</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{m.name || m.id}</span>
               <span style={{ fontSize: 12, color: "#64748b" }}>
                 村莊 Lv.{m.village ? Object.values(m.village.buildings || {}).reduce((a,b)=>a+b,0) : "?"} · 🪙{m.gachaCoins || 0}
               </span>
@@ -161,7 +284,7 @@ export default function AdminVillageManager() {
             ← 返回列表
           </button>
 
-          <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>{selected.name || selected.id}</div>
+          <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4, color: "#0f172a" }}>{selected.name || selected.id}</div>
           <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
             🪙 扭蛋幣：{selected.gachaCoins || 0}
           </div>
@@ -248,7 +371,7 @@ function Row({ label, value, children }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white",
       border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px" }}>
-      <span style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{label}</span>
+      <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{label}</span>
       <span style={{ fontSize: 12, color: "#64748b", minWidth: 44, textAlign: "right" }}>{value}</span>
       {children}
     </div>
@@ -309,7 +432,7 @@ function MarketExchangeConfig({ config, defaults, busy, onSave }) {
       padding: "12px", background: "#f8faff", display: "flex", flexDirection: "column", gap: 10 }}>
       {items.map((ex, ei) => (
         <div key={ex.type} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px" }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{ex.icon} {ex.label}</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "#1e293b" }}>{ex.icon} {ex.label}</div>
           {ex.costs.map((c, ci) => (
             <div key={ci} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <select value={c.resource} onChange={e => setCost(ei, ci, 'resource', e.target.value)}
@@ -347,5 +470,5 @@ function MarketExchangeConfig({ config, defaults, busy, onSave }) {
 
 const inputStyle = {
   width: 72, padding: "4px 6px", borderRadius: 7, border: "1px solid #e2e8f0",
-  fontSize: 12, textAlign: "center",
+  fontSize: 12, textAlign: "center", background: "white", color: "#1e293b",
 };
