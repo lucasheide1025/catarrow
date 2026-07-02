@@ -113,6 +113,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     setSubmitted: setFsSubmitted,
     handleSubmit: fsHandleSubmit,
     localProcessing: submitting,
+    allReady,
+    readyCountdown,
+    confirmNow,
   } = useFirestoreRound({
     roomId, myId,
     subscribe: subscribeDungeonRoom,
@@ -123,6 +126,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     getRound: (r) => r.round || 1,
     getExtraProcessArgs: () => [calcContractDmgFn, calcCtrFn],
     processDelayMs: 1000,
+    confirmDelayMs: 5000,
     maxRetries: 5,
     onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
@@ -1469,6 +1473,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         ) : submitted ? (
           <div style={{ textAlign:"center", padding:"6px 0" }}>
             <div style={{ color:"#4ade80", fontWeight:900, fontSize:12, marginBottom:6 }}>✅ 已送出，等待隊友…</div>
+            {allReady && isHost && (
+              <div style={{ textAlign:"center", padding:12 }}>
+                <div style={{ color:"#fbbf24", fontWeight:700, fontSize:14, marginBottom:6 }}>
+                  ⚔️ 全員就緒！{readyCountdown} 秒後自動開始
+                </div>
+                <button onClick={confirmNow} style={{
+                  padding:"8px 24px", borderRadius:8, fontWeight:700,
+                  background:"#22c55e", color:"#000", fontSize:13, cursor:"pointer", border:"none",
+                }}>
+                  立即開始
+                </button>
+              </div>
+            )}
+            {allReady && !isHost && (
+              <div style={{ color:"#94a3b8", fontSize:12, textAlign:"center", marginBottom:6 }}>
+                ⏳ 等待隊長確認…
+              </div>
+            )}
             <div style={{ display:"flex", justifyContent:"center", gap:2, flexWrap:"wrap" }}>
               {arrows.map((a,i) => (
                 <span key={i} className={`px-2 py-0.5 rounded-lg text-xs font-bold ${SCORE_COLORS[a.label]||"bg-slate-600 text-white"}`}>{a.label}</span>
@@ -1738,7 +1760,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       {showRoundResult && lastEntry && (
         <RoundResultOverlay
           entry={lastEntry} room={room} status={status}
-          isBossRoom={isBossRoom} isMapMode={isMapMode}
           onContinue={() => {
             setShowRoundResult(false);
             // 全隊陣亡時不重置 submitted/arrows，直接顯示失敗畫面
@@ -1780,14 +1801,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   );
 }
 
-function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onContinue }) {
+function RoundResultOverlay({ entry, room, status, onContinue }) {
   const [countdown, setCountdown] = useState(5);
-  const monsterKilled  = entry.monsterHPAfter <= 0;
   const allMembersDead = Object.values(room?.members || {}).every(m => !m.alive);
   const partyWiped     = (status === "completed" && room?.result === "lose") || allMembersDead;
-  // 地圖模式：只有 Boss 房算最終通關；普通房間通關不算
-  const finalWin       = status === "completed" && room?.result === "win" && (!isMapMode || isBossRoom);
-  const floorCleared   = monsterKilled && !finalWin;
 
   // 5 秒倒數計時
   useEffect(() => {
@@ -1800,13 +1817,8 @@ function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onCont
   if (partyWiped) {
     const killer = room?.monster ? `${room.monster.icon}${room.monster.name}` : "怪物";
     icon = "💀"; title = `被《${killer}》擊殺！`; btnLabel = "查看結果"; btnColor = "bg-rose-600";
-  } else if (finalWin) {
-    icon = "🏆"; title = isMapMode ? "Boss 擊倒！\n地下城完全攻略！" : `第 ${room.currentFloor} 層通關！\n地下城完全攻略！`;
-    btnLabel = "🎉 查看結算"; btnColor = "bg-gradient-to-r from-amber-500 to-orange-500";
-  } else if (floorCleared) {
-    icon = "✨"; title = isMapMode ? "房間通關！" : `第 ${room.currentFloor} 層通關！`;
-    btnLabel = isMapMode ? "查看結算" : "選擇路線 →"; btnColor = "bg-gradient-to-r from-indigo-500 to-purple-600";
   } else {
+    // 一般回合結束（怪物存活，非擊殺回合）
     icon = "⚔️"; title = `第 ${entry.round} 回合結束`; btnLabel = "下一回合"; btnColor = "bg-slate-700";
   }
 
@@ -1835,12 +1847,10 @@ function RoundResultOverlay({ entry, room, status, isBossRoom, isMapMode, onCont
             {p.ctr  > 0 && <span className="text-rose-400 text-xs">-{p.ctr}</span>}
           </div>
         ))}
-        {!monsterKilled && (
-          <div className="flex justify-between text-xs text-slate-400 border-t border-white/10 pt-2 mt-1">
-            <span>怪物剩餘 HP</span>
-            <span className="text-rose-300 font-bold">{room.monsterHP?.toLocaleString()}</span>
-          </div>
-        )}
+        <div className="flex justify-between text-xs text-slate-400 border-t border-white/10 pt-2 mt-1">
+          <span>怪物剩餘 HP</span>
+          <span className="text-rose-300 font-bold">{room.monsterHP?.toLocaleString()}</span>
+        </div>
       </div>
 
       <button onClick={canContinue ? onContinue : undefined}

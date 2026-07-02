@@ -85,8 +85,9 @@ export default function DungeonExplore({
   onBack,
 }) {
   const [room,          setRoom]          = useState(null);
-  const [eventModal,    setEventModal]    = useState(null);
-  const [enteringBattle,    setEnteringBattle]    = useState(false);
+  const [eventModal,         setEventModal]         = useState(null);
+  const [enteringBattle,     setEnteringBattle]     = useState(false);
+  const [pendingArrowCount,  setPendingArrowCount]  = useState(6);
 
   const [floorIndex,    setFloorIndex]    = useState(0);
   const [currentRoomId, setCurrentRoomId] = useState(null);
@@ -260,6 +261,7 @@ export default function DungeonExplore({
     await enterMapCombatRoom(roomId, room, eventModal.meta || {}, {
       monster: applyVariant(monster, variant),
       totalFloors,
+      arrowCount: pendingArrowCount,
     });
     // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
     setEnteringBattle(false);
@@ -442,6 +444,24 @@ export default function DungeonExplore({
                   <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:18 }}>
                     T{eventModal.meta?.tier || 1} 等級怪物正在等待。
                   </div>
+                  {/* 3/6 箭數選擇（房主專用，出戰前設定）*/}
+                  {isHost && (
+                    <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:10 }}>
+                      <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700 }}>每回合箭數：</span>
+                      {[3, 6].map(n => (
+                        <button
+                          key={n}
+                          onClick={() => setPendingArrowCount(n)}
+                          style={{
+                            padding:"4px 16px", borderRadius:6, fontWeight:800, cursor:"pointer", fontSize:11,
+                            background: pendingArrowCount === n ? "#f59e0b" : "rgba(255,255,255,0.08)",
+                            color: pendingArrowCount === n ? "#000" : "#94a3b8",
+                            border: "1px solid #334155",
+                          }}
+                        >{n} 箭</button>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ display:"flex", gap:10 }}>
                     {isHost ? (
                       <button onClick={handleEnterBattle} disabled={enteringBattle} style={{

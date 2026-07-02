@@ -887,7 +887,7 @@ export async function advanceMapFloor(roomId, dungeonOrFloors, nextFloorIndex) {
 // 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
 export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
   try {
-    const { monster = null, formationMap = {}, runeMap = {}, totalFloors = 1 } = options;
+    const { monster = null, formationMap = {}, runeMap = {}, totalFloors = 1, arrowCount } = options;
     const contract = roomMeta?.contract
       ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
       : { type:"standard", param:null };
@@ -913,8 +913,8 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
       if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
 
-      // 保留 arrowsPerRound 或預設 6
-    const apr = room.arrowsPerRound || 6;
+    // 優先使用箭數選項，其次 room 的現有值，預設 6
+    const apr = arrowCount || room.arrowsPerRound || 6;
 
   // Boss 房間加成：套用 bossModifier 到怪物數值
     const bossMod = roomMeta?.bossModifier || null;

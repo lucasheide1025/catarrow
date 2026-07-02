@@ -65,6 +65,7 @@ export function useFirestoreRound({
   onBeforeSubmit, onSubmitError,
   onSubmitSuccess,
   processDelayMs = 0,
+  confirmDelayMs = 0,   // 全員 ready 後的確認倒數（ms）
   maxRetries = 5,
   canProcess,
 }) {
@@ -72,11 +73,14 @@ export function useFirestoreRound({
   const [room, setRoom] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [localProcessing, setLocalProcessing] = useState(false);
+  const [allReady, setAllReady] = useState(false);
+  const [readyCountdown, setReadyCountdown] = useState(0);
 
   // ── Refs（避免 stale closure）───────────────────────────
   const guardRef = useRef(0);       // 已處理的回合號
   const retryCountRef = useRef(0);  // 連續失敗次數
   const retryRoundRef = useRef(0);  // retryCount 所屬回合
+  const confirmNowRef = useRef(null); // { timer, interval, doProcess, processDelayMs }
 
   const onBeforeSubmitRef = useRef(onBeforeSubmit);
   onBeforeSubmitRef.current = onBeforeSubmit;
@@ -167,12 +171,57 @@ export function useFirestoreRound({
       }
     };
 
+    if (confirmDelayMs > 0) {
+      setAllReady(true);
+      setReadyCountdown(Math.round(confirmDelayMs / 1000));
+
+      const countdownInterval = setInterval(() => {
+        setReadyCountdown(prev => Math.max(0, prev - 1));
+      }, 1000);
+
+      const t = setTimeout(() => {
+        clearInterval(countdownInterval);
+        confirmNowRef.current = null;
+        setAllReady(false);
+        setReadyCountdown(0);
+        if (processDelayMs > 0) {
+          setTimeout(doProcess, processDelayMs);
+        } else {
+          doProcess();
+        }
+      }, confirmDelayMs);
+
+      confirmNowRef.current = { timer: t, interval: countdownInterval, doProcess, processDelayMs };
+
+      return () => {
+        clearTimeout(t);
+        clearInterval(countdownInterval);
+        confirmNowRef.current = null;
+      };
+    }
+
     if (processDelayMs > 0) {
       const t = setTimeout(doProcess, processDelayMs);
       return () => clearTimeout(t);
     }
     doProcess();
   }, [room]); // eslint-disable-line
+
+  // ── confirmNow：房主手動提前觸發 ──────────────────────────
+  const confirmNow = useCallback(() => {
+    if (!confirmNowRef.current) return;
+    const { timer, interval, doProcess, processDelayMs: pDelay } = confirmNowRef.current;
+    clearTimeout(timer);
+    clearInterval(interval);
+    confirmNowRef.current = null;
+    setAllReady(false);
+    setReadyCountdown(0);
+    if (pDelay > 0) {
+      setTimeout(doProcess, pDelay);
+    } else {
+      doProcess();
+    }
+  }, []);
 
   return {
     room,
@@ -181,5 +230,8 @@ export function useFirestoreRound({
     setSubmitted,
     handleSubmit,
     localProcessing,
+    allReady,
+    readyCountdown,
+    confirmNow,
   };
 }

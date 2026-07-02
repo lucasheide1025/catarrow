@@ -148,21 +148,40 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
     const pMult = part.mult;
 
-    // 脫靶或格擋部位
-    if (!score || pMult === 0) {
+    // 格擋部位（pMult=0）→ 無效
+    if (pMult === 0) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
       continue;
     }
-
-    // 單數關：只算 7/9/X
-    if (type === "odd_only" && ![7,9].includes(score) && arrow.label !== "X") {
-      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非單數", dmg:0, isCrit:false });
+    // M 分（score=0）→ 50% base 傷害（無 score 加成）
+    if (!score) {
+      const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
+      let halfDmg = Math.max(1, Math.round(base * 0.5));
+      halfDmg = Math.round(halfDmg * dmgMult);
+      totalDmg += halfDmg;
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon: part.icon, partName: part.name, partMult: pMult, dmg: halfDmg, isCrit: false });
       continue;
     }
 
-    // 雙數關：只算 6/8/10
+    // 單數關：只算 7/9/X，其他給 50% 傷害
+    if (type === "odd_only" && ![7,9].includes(score) && arrow.label !== "X") {
+      const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
+      const m = 0.85 + Math.random() * 0.3;
+      let d = Math.max(1, Math.round(Math.max(1, Math.round(base * pMult * m)) * 0.5));
+      d = Math.round(d * dmgMult);
+      totalDmg += d;
+      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非單數", dmg: d, isCrit:false });
+      continue;
+    }
+
+    // 雙數關：只算 6/8/10，其他給 50% 傷害
     if (type === "even_only" && ![6,8,10].includes(score)) {
-      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非雙數", dmg:0, isCrit:false });
+      const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
+      const m = 0.85 + Math.random() * 0.3;
+      let d = Math.max(1, Math.round(Math.max(1, Math.round(base * pMult * m)) * 0.5));
+      d = Math.round(d * dmgMult);
+      totalDmg += d;
+      arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非雙數", dmg: d, isCrit:false });
       continue;
     }
 
@@ -180,8 +199,16 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
       if (revPart.id === "chest") unlocked.add("chest");
       if (revPart.id === "belly") unlocked.add("belly");
       if (revPart.id === "groin") unlocked.add("groin");
-      if (!revScore || revPart.mult === 0) {
-        arrowBreakdown.push({ label: arrow.label, partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+      if (revPart.mult === 0) {
+        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+        continue;
+      }
+      if (!revScore) {
+        const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
+        let halfDmg = Math.max(1, Math.round(base * 0.5));
+        halfDmg = Math.round(halfDmg * dmgMult);
+        totalDmg += halfDmg;
+        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"M", dmg: halfDmg, isCrit:false, note:"逆轉" });
         continue;
       }
       const base = 8 + (atk || 10) * 0.7 + revScore * 1.2 - (monsterDef || 0) * 0.35;

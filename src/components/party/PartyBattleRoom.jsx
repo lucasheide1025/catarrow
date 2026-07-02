@@ -121,6 +121,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     handleSubmit: fsHandleSubmit,
     localProcessing: submitting,
     setSubmitted: setFsSubmitted,
+    allReady,
+    readyCountdown,
+    confirmNow,
   } = useFirestoreRound({
     roomId, myId, isHost,
     subscribe: subscribePartyRoom,
@@ -130,6 +133,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     isProcessing: (r) => r?.processing,
     getRound: (r) => r?.round || 1,
     getExtraProcessArgs: () => [calcRoundDamage, calcPartyCounter],
+    confirmDelayMs: 5000,
     onBeforeSubmit: () => { sfxCast(); vibrate([0, 20, 40]); },
     onSubmitError: (reason) => { alert("送出失敗，請重試（" + reason + "）"); },
     onSubmitSuccess: (submittedArrows) => {
@@ -1757,6 +1761,24 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               ✅ 已送出，等待其他隊員…
               {room.processing && <span style={{ color:"#fbbf24", marginLeft:8 }}>⚙️</span>}
             </div>
+            {allReady && isHost && (
+              <div style={{ textAlign:"center", padding:12 }}>
+                <div style={{ color:"#fbbf24", fontWeight:700, fontSize:14, marginBottom:6 }}>
+                  ⚔️ 全員就緒！{readyCountdown} 秒後自動開始
+                </div>
+                <button onClick={confirmNow} style={{
+                  padding:"8px 24px", borderRadius:8, fontWeight:700,
+                  background:"#22c55e", color:"#000", fontSize:13, cursor:"pointer", border:"none",
+                }}>
+                  立即開始
+                </button>
+              </div>
+            )}
+            {allReady && !isHost && (
+              <div style={{ color:"#94a3b8", fontSize:12, textAlign:"center" }}>
+                ⏳ 等待隊長確認…
+              </div>
+            )}
             <button onClick={() => sendPartyCheer(roomId, me.name)}
               style={{ padding:"6px 18px", borderRadius:12, fontWeight:900, fontSize:12, cursor:"pointer", background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc" }}>
               💪 為隊友加油！

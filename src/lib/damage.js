@@ -60,8 +60,20 @@ export function calcRoundDamage(arrows, atk, def) {
     if (part.id === "groin") unlocked.add("groin");
 
     const pMult = part.mult;
-    if (!score || pMult === 0) {
+    if (pMult === 0) {
       arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      continue;
+    }
+    // M 分（score=0）但有 pMult：50% base 傷害
+    if (!score) {
+      const base = 8 + (atk || 10) * 0.7 - (def || 0) * 0.35;
+      const halfDmg = Math.max(1, Math.round(base * 0.5));
+      arrowBreakdown.push({
+        label: arrow.label || "M",
+        partIcon: part.icon, partName: part.name,
+        partMult: pMult, dmg: halfDmg, isCrit: false,
+      });
+      dmg += halfDmg;
       continue;
     }
 
