@@ -651,36 +651,32 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
     if (diff === 0) return;
 
     const next = { ...alloc, [tierStr]: newVal };
-    // 調整其他 tier 補償差額
+    // remaining > 0 = 其他 tier 需要加總; remaining < 0 = 其他 tier 需要減總
     const others = Object.keys(next).filter(k => k !== tierStr && (next[k] || 0) > 0);
     if (others.length > 0) {
       let remaining = -diff;
       for (const k of others) {
         if (remaining === 0) break;
         const cur = next[k] || 0;
-        const adj = Math.max(0, Math.min(cur, remaining));
-        next[k] = cur - adj;
-        remaining -= adj;
-      }
-      // 如果還有剩餘，均分到所有正值的 tier
-      if (remaining !== 0) {
-        const pos = Object.keys(next).filter(k => (next[k] || 0) > 0);
-        const each = Math.floor(remaining / pos.length);
-        let rem = remaining - each * pos.length;
-        for (const k of pos) {
-          next[k] = Math.max(0, (next[k] || 0) + each + (rem > 0 ? 1 : 0));
-          if (rem > 0) rem--;
+        if (remaining > 0) {
+          // 本 tier 減少 → 其他 tier 增加
+          const add = Math.min(100 - cur, remaining);
+          next[k] = cur + add;
+          remaining -= add;
+        } else {
+          // 本 tier 增加 → 其他 tier 減少
+          const sub = Math.min(cur, -remaining);
+          next[k] = cur - sub;
+          remaining += sub;
         }
       }
     }
-    // 確保總和 = 100
+    // 確保總和 = 100（浮點補正）
     const sum = Object.values(next).reduce((a, b) => a + b, 0);
     if (sum !== 100) {
       const diff2 = 100 - sum;
       const pos2 = Object.keys(next).filter(k => (next[k] || 0) > 0);
-      if (pos2.length > 0) {
-        next[pos2[0]] = (next[pos2[0]] || 0) + diff2;
-      }
+      if (pos2.length > 0) next[pos2[0]] = (next[pos2[0]] || 0) + diff2;
     }
     setAlloc(next);
   }
@@ -767,7 +763,7 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
 }
 
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, village }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, onVillageUpdate = null, village }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -909,10 +905,13 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
             level={level}
             allocations={village?.allocations || {}}
             memberId={memberId}
-            onSaved={(bid, newAlloc) => onVillageUpdate?.(prev => {
-              const base = prev || village;
-              return { ...base, allocations: { ...(base?.allocations || {}), [bid]: newAlloc } };
-            })}
+            onSaved={(bid, newAlloc) => {
+              if (typeof onVillageUpdate !== "function") return;
+              onVillageUpdate(prev => {
+                const base = prev || village;
+                return { ...base, allocations: { ...(base?.allocations || {}), [bid]: newAlloc } };
+              });
+            }}
           />
 
           {/* 市集專屬：兌換面板 + 卡片市集 */}

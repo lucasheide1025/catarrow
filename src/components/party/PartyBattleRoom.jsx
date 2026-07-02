@@ -26,6 +26,7 @@ import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, 
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
+import { BattleResultPanel } from "../shared/BattleResultPanel";
 import BattleBottomBar from "../member/BattleBottomBar";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
@@ -970,6 +971,66 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   if (room.status === "completed" || localCompleted) {
     const won = room.result === "win";
 
+    // 從 log 聚合我的個人箭矢分數
+    const myArrowBreakdown = (room.log || []).flatMap(entry =>
+      (entry.playerLog || []).find(p => p.id === myId)?.arrowBreakdown || []
+    );
+    const partyScoreBreakdown = {};
+    for (const a of myArrowBreakdown) {
+      const key = a.label === "X" ? "X" : (!a.label || a.label === "M") ? "M" : String(a.label);
+      partyScoreBreakdown[key] = (partyScoreBreakdown[key] || 0) + 1;
+    }
+    const partyAvgScore = myArrowBreakdown.length
+      ? parseFloat((myArrowBreakdown.reduce((s, a) => {
+          const v = a.label === "X" ? 10 : a.label === "M" ? 0 : Number(a.label) || 0;
+          return s + v;
+        }, 0) / myArrowBreakdown.length).toFixed(1))
+      : 0;
+
+    // 我的個人戰績（從 statsMap 取，statsMap 在後面才 build，先從 log 直接算）
+    const myLogStats = (room.log || []).reduce((acc, entry) => {
+      const p = (entry.playerLog || []).find(pl => pl.id === myId);
+      if (p) {
+        acc.dmg   += p.dmg   || 0;
+        acc.ctr   += p.ctr   || 0;
+        acc.crits += p.crits || 0;
+      }
+      return acc;
+    }, { dmg: 0, ctr: 0, crits: 0 });
+
+    const partyResultData = {
+      monster: {
+        id:      room.monster?.id     || "party_monster",
+        name:    room.monster?.name   || "怪物",
+        icon:    room.monster?.icon   || "👾",
+        tier:    room.monster?.tier   || "common",
+        family:  room.monster?.family || "ghost",
+        variant: "normal",
+      },
+      drops: { coins: 0, materials: [], chest: false, goldChest: false, card: null, arrowDew: 0 },
+      stats: {
+        dmgDealt:       myLogStats.dmg,
+        dmgTaken:       myLogStats.ctr,
+        avgScore:       partyAvgScore,
+        arrowCount:     myArrowBreakdown.length,
+        roundCount:     room.log?.length || 0,
+        critCount:      myLogStats.crits,
+        scoreBreakdown: partyScoreBreakdown,
+      },
+    };
+
+    // 只顯示統計（戰績表和掉落已有獨立 UI）
+    const partyStatsConfig = {
+      showMonsterInfo:    true,
+      showDmgDealt:       true,
+      showDmgTaken:       true,
+      showAvgScore:       true,
+      showArrowCount:     true,
+      showRoundCount:     true,
+      showCritCount:      true,
+      showScoreBreakdown: true,
+    };
+
     // 從戰鬥 log 彙總各人數據
     const statsMap = {};
     (room.log || []).forEach(entry => {
@@ -1035,6 +1096,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             );
           })}
         </div>
+
+        {/* 我的個人分數統計 */}
+        {myArrowBreakdown.length > 0 && (
+          <BattleResultPanel data={partyResultData} config={partyStatsConfig} />
+        )}
 
         {/* 完整戰鬥紀錄（可展開）*/}
         {(room.log || []).length > 0 && (
