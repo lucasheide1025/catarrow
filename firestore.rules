@@ -32,7 +32,8 @@ service cloud.firestore {
                     "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
                     "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
-                    "gachaCoins", "catCards", "dungeonCollectibles"]);
+                    "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
+                    "totalArrowsAllTime"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）

@@ -1,7 +1,7 @@
 # 貓小隊射箭場 — 專案開發狀態說明（給 Claude 看）
 
 > 這份文件供新對話的 Claude 快速建立上下文，避免重複探索。
-> 最後更新：2026-06-13
+> 最後更新：2026-07-02
 
 ---
 
@@ -220,6 +220,7 @@ resolveHitPart() 套用部位加成
    - COUNTER_INTERVAL 已移除，勿重新加回去
 3. **統一計箭**：
    - db.js 新增 addRoundArrows(memberId, count)（更新 totalArrowsAllTime）
+   - ⚠️ **totalArrowsAllTime 須在 firestore.rules 的 members.update hasOnly 列表中**，否則 Firestore 會靜默擋掉（2026-07-02 已修復）
    - addPracticeLog 已移除 totalArrowsAllTime increment（防雙重計算）
    - useFirestoreRound 新增 onSubmitSuccess callback，submit 成功後即時呼叫
 4. **processDungeonRound 和 processPartyRound 的大回合邏輯已重構**，改動前請先讀完這兩個函式

@@ -3,6 +3,27 @@
 
 ---
 
+## 2026-07-02（Firestore 規則補 totalArrowsAllTime + dungeonClearLog + dungeonFirstKills）
+
+### 改了什麼
+
+**根因分析**：
+- `addRoundArrows(memberId, count)` 每回合射完箭就呼叫 `increment("totalArrowsAllTime")`
+- 但 Firestore 安全規則的 `members.update` 中 `hasOnly([])` 沒有包含 `totalArrowsAllTime`
+- 會員自己更新 `members` 文件時，Firestore 比對 affectedKeys → 發現 `totalArrowsAllTime` 不在允許清單 → **拒絕寫入**
+- 效果：終身箭數永遠不會增加，所有依賴 `totalArrowsAllTime` 的功能（里程碑、村目標貢獻、排行榜）都拿不到正確資料
+
+**修正**（`firestore.rules`）：
+- `members.update` 的 `hasOnly()` 加入 `"totalArrowsAllTime"`
+- 同時補上 CLAUDE 版本中已有的 `"dungeonClearLog"` 和 `"dungeonFirstKills"`（本地檔案 vs Firebase 已同步，但跟 CLAUDE 版本有差異）
+
+### 踩坑提醒
+- **`totalArrowsAllTime` 是隱形的 bug**：`addRoundArrows` 有 `.catch(() => {})`，寫入失敗完全靜默，沒有人發現箭數沒累積
+- **日後新增 member 欄位**時，若會員需要自行更新（非 only admin），務必同步加到 `hasOnly()` 列表，否則 Firestore 靜默擋掉
+- **Firebase Console 部署**：CLI `firebase deploy --only firestore:rules` 有 403，需手動將 `firestore.rules` 內容貼到 Firebase Console → Firestore → 規則
+
+---
+
 ## 2026-07-02（Firestore 規則補齊 + 射箭里程碑多回合修正）
 
 ### 改了什麼
