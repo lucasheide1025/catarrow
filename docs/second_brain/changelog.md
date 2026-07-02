@@ -3,6 +3,40 @@
 
 ---
 
+## 2026-07-03（UI 全面改版 Phase 0-2：設計系統 + 導覽 + 首頁儀表板）
+
+### 改了什麼
+
+**Phase 0 — 設計系統**（Trellis 任務 `07-03-ui-redesign-p0`）
+- `index.css`：`:root` 補齊 design tokens（語意色 success/warn/danger/info 各 fg+bg、accent/accent-soft/primary、圓角 --r-sm~xl、陰影、玻璃卡 --glass-*）；新增 `.ui-card` / `.ui-input` 元件層 CSS 類
+- `shared/UI.jsx`：15 個共用元件全部深色 token 化（dark-first）；Card light/dark 都輸出玻璃卡；Btn 淺色 variant 改深色視覺、`dark-*` 變 alias、新增 `outline`；API 完全向後相容（props/variant key 零刪除）
+- `shared/Widgets.jsx`（新檔）：SectionHeader / StatBar / ProgressRing / Skeleton / HubTile
+- `theme.js` 收斂為單一 navy 主題（API 保留；舊 localStorage 值自動 fallback）；MemberProfile 主題選擇器以 `APP_THEMES.length > 1` 守門隱藏
+
+**Phase 1 — 導覽**
+- MemberApp header：頭像+等級環（ProgressRing + archerXPProgress）、檢定 pill、金幣/箭露/轉蛋幣 chips（點擊跳轉）、通知鈴鐺紅點
+- 底部 nav：token 化、active 金色指示條、觸控目標 ≥44px（NAV_PRELOADS / viewTransitionName 保留）
+- 四個 hub 頁（Adventure/Training/Inventory/Records）改 SectionHeader + HubTile 2 欄格線；入口改 module-level 常數陣列；hub 新增選用 prop `badges = {}`
+
+**Phase 2 — 首頁儀表板**（MemberHome）
+- 今日卡：報到狀態 pill + 今日箭數 + 下一每日里程碑 ProgressRing（用 `ALL_MILESTONES`）
+- 進行中卡（無內容整卡隱藏）：世界王入口 / 遠征 3 槽倒數（舊 `expedition` 欄位兼容為槽 0）/ 村目標 StatBar（用既有 `subscribeActiveGoal`）
+- MemberApp/AdminApp 新增下傳 props：`todayCheckin`、`worldBoss`（掛既有訂閱 callback，零新增 Firestore 讀取）
+- 快速入口 4 格：打怪/自主練習/商店/排行榜；cell-*.webp 引用全數移除（檔案保留）
+
+### 為什麼
+- 原本深色 = 靠 `.content-area` 覆寫 Tailwind 淺色 class 的補丁層，顏色散落各元件難維護（後台 16 處白底事件的病根）
+- 收斂 token 後元件原生深色，不再命中覆寫規則；覆寫層暫留保護未遷移頁面（比賽/練習/排行等）
+
+### 踩坑提醒
+- **Tailwind 是 CDN 版**（非 build-time）：focus/placeholder 偽類要寫在 index.css 純 CSS 類（`.ui-card`/`.ui-input`），不能靠任意 Tailwind class
+- **HubTile 的 `accent` 必須傳 6 碼 hex**：內部 `${accent}26` 疊 15% 透明層，傳 `var(--xxx)` 會產生非法 CSS（預設值地雷已修為 `#f59e0b`）
+- **BillingSystem / CatVillage 零依賴 shared/UI**（全自帶樣式），深色化不影響
+- 全站原本沒有任何呼叫點傳 `theme` prop 給 Card → 統一深色安全
+- 待實機驗證（靜態檢查無法取代）：教練切射手模式逐頁不空白、390px 手機寬 header/nav 排版
+
+---
+
 ## 2026-07-02（Firestore 規則補 totalArrowsAllTime + dungeonClearLog + dungeonFirstKills）
 
 ### 改了什麼

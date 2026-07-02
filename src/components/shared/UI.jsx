@@ -2,12 +2,12 @@
 // 全站共用 UI 元件
 
 // ─── 基礎元件 ──────────────────────────────────────────────
-// Card 元件 — 支援 light/dark 兩種主題
-// light: 白底灰邊（傳統淺色主題）
-// dark:  深藍底白邊（後台/地下城暗色主題）
+// Card 元件 — 深色原生（dark-first, 2026-07 UI 改版）
+// theme prop 保留向後相容，但 light/dark 皆輸出同一組深色玻璃卡 token 樣式
+// （樣式定義在 index.css 的 .ui-card，讀 --glass-bg / --glass-border 等變數）
 const CARD_THEMES = {
-  light: "rounded-2xl border border-gray-200 bg-white shadow-sm",
-  dark:  "rounded-2xl border border-white/10 bg-slate-800 shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-sm",
+  light: "ui-card",
+  dark:  "ui-card",
 };
 
 export function Card({ children, className = "", style, theme = "light" }) {
@@ -20,21 +20,25 @@ export function Card({ children, className = "", style, theme = "light" }) {
 }
 
 export function Btn({ children, v = "primary", size = "md", className = "", ...p }) {
+  // 深色原生 variant（2026-07 UI 改版）：
+  // 淺色系（secondary/danger/ghost）改為深色版視覺；
+  // dark-* 系列保留為 alias，指向對應基礎 variant（API 向後相容）。
   const vs = {
     primary:   "bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white shadow-sm shadow-blue-900/30",
-    secondary: "bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 shadow-sm",
-    danger:    "bg-gradient-to-b from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 text-red-600 border border-red-200",
+    secondary: "bg-white/10 hover:bg-white/15 text-gray-200 border border-white/15 shadow-sm",
+    danger:    "bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white shadow-sm shadow-red-900/40",
     success:   "bg-gradient-to-b from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white shadow-sm shadow-emerald-900/30",
     warn:      "bg-gradient-to-b from-orange-400 to-orange-600 hover:from-orange-300 hover:to-orange-500 text-white shadow-sm shadow-orange-900/30",
-    ghost:     "text-blue-600 hover:text-blue-800 underline underline-offset-2",
+    ghost:     "text-blue-400 hover:text-blue-300 underline underline-offset-2",
+    outline:   "bg-transparent hover:bg-white/10 text-gray-300 border border-white/20 hover:border-white/40",
     cat:       "bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-white shadow-sm shadow-amber-900/30",
-    // 深色背景 variant
-    "dark-primary":  "bg-gradient-to-b from-indigo-600 to-blue-700 hover:from-indigo-500 hover:to-blue-600 text-white shadow-sm shadow-indigo-900/40",
-    "dark-ghost":    "bg-transparent hover:bg-white/10 text-gray-300 border border-white/20 hover:border-white/40",
-    "dark-danger":   "bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 text-white shadow-sm shadow-red-900/40",
-    "dark-success":  "bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-white shadow-sm shadow-emerald-900/40",
-    "dark-warn":     "bg-gradient-to-b from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 text-white shadow-sm shadow-orange-900/40",
   };
+  // dark-* alias（呼叫點不需改動）
+  vs["dark-primary"] = vs.primary;
+  vs["dark-ghost"]   = vs.outline; // dark-ghost 是帶框透明鈕，對應 outline（非底線 ghost）
+  vs["dark-danger"]  = vs.danger;
+  vs["dark-success"] = vs.success;
+  vs["dark-warn"]    = vs.warn;
   const sz = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2 text-sm", lg: "px-5 py-3 text-base" };
   return (
     <button
@@ -46,16 +50,20 @@ export function Btn({ children, v = "primary", size = "md", className = "", ...p
   );
 }
 
+// 表單元件底層樣式定義在 index.css 的 .ui-input（token 驅動，含 focus/placeholder）
+const FIELD_LABEL = "text-xs font-semibold";
+const FIELD_LABEL_STYLE = { color: "var(--text-secondary)" };
+
 export function Inp({ label, hint, error, ...p }) {
   return (
     <div className="flex flex-col gap-1">
-      {label && <label className="text-xs text-gray-500 font-semibold">{label}</label>}
+      {label && <label className={FIELD_LABEL} style={FIELD_LABEL_STYLE}>{label}</label>}
       <input
-        className={`bg-white border rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 transition-all shadow-sm ${error ? "border-red-400 focus:border-red-400 focus:ring-red-100" : "border-gray-200"}`}
+        className={`ui-input px-3 py-2.5 text-sm shadow-sm ${error ? "ui-input-error" : ""}`}
         {...p}
       />
-      {hint  && <p className="text-xs text-gray-400">{hint}</p>}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {hint  && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hint}</p>}
+      {error && <p className="text-xs" style={{ color: "var(--danger-fg)" }}>{error}</p>}
     </div>
   );
 }
@@ -63,9 +71,9 @@ export function Inp({ label, hint, error, ...p }) {
 export function TA({ label, ...p }) {
   return (
     <div className="flex flex-col gap-1">
-      {label && <label className="text-xs text-gray-500 font-semibold">{label}</label>}
+      {label && <label className={FIELD_LABEL} style={FIELD_LABEL_STYLE}>{label}</label>}
       <textarea
-        className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 resize-none shadow-sm transition-all"
+        className="ui-input px-3 py-2.5 text-sm resize-none shadow-sm"
         {...p}
       />
     </div>
@@ -75,9 +83,9 @@ export function TA({ label, ...p }) {
 export function Sel({ label, options, ...p }) {
   return (
     <div className="flex flex-col gap-1">
-      {label && <label className="text-xs text-gray-500 font-semibold">{label}</label>}
+      {label && <label className={FIELD_LABEL} style={FIELD_LABEL_STYLE}>{label}</label>}
       <select
-        className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 shadow-sm transition-all"
+        className="ui-input px-3 py-2.5 text-sm shadow-sm"
         {...p}
       >
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -91,12 +99,15 @@ export function Modal({ open, onClose, title, children, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div
-        className={`bg-white rounded-2xl shadow-2xl shadow-black/20 w-full ${wide ? "max-w-2xl" : "max-w-lg"} max-h-[92vh] overflow-y-auto`}
+        className={`rounded-2xl w-full ${wide ? "max-w-2xl" : "max-w-lg"} max-h-[92vh] overflow-y-auto`}
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border-card)", boxShadow: "var(--shadow-elevated)" }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-sm z-10">
-          <h2 className="font-bold text-gray-800">{title}</h2>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none transition-colors">×</button>
+        <div className="flex items-center justify-between px-5 py-4 sticky top-0 backdrop-blur-sm z-10"
+          style={{ background: "rgba(30,41,59,0.95)", borderBottom: "1px solid var(--border-subtle)" }}>
+          <h2 className="font-bold" style={{ color: "var(--text-primary)" }}>{title}</h2>
+          <button onClick={onClose} className="text-2xl leading-none transition-colors"
+            style={{ color: "var(--text-muted)" }}>×</button>
         </div>
         <div className="p-5">{children}</div>
       </div>
@@ -105,37 +116,47 @@ export function Modal({ open, onClose, title, children, wide }) {
 }
 
 export function Pill({ status }) {
+  // 語意 token 淡色底版本（fg 文字 + bg 淡色底）
+  const PURPLE = { color: "#c084fc", background: "rgba(168,85,247,0.12)" };
   const m = {
-    "報名中":   "bg-emerald-50 text-emerald-700 border border-emerald-200",
-    "進行中":   "bg-blue-50 text-blue-700 border border-blue-200",
-    "已結束":   "bg-gray-100 text-gray-400 border border-gray-200",
-    "結算完成": "bg-purple-50 text-purple-700 border border-purple-200",
-    "upcoming": "bg-amber-50 text-amber-700 border border-amber-200",
-    "settled":  "bg-purple-50 text-purple-700 border border-purple-200",
+    "報名中":   { color: "var(--success-fg)", background: "var(--success-bg)" },
+    "進行中":   { color: "var(--info-fg)",    background: "var(--info-bg)" },
+    "已結束":   { color: "var(--text-muted)", background: "rgba(255,255,255,0.06)" },
+    "結算完成": PURPLE,
+    "upcoming": { color: "var(--warn-fg)",    background: "var(--warn-bg)" },
+    "settled":  PURPLE,
   };
   const labels = { upcoming:"即將開始", settled:"結算完成" };
+  const s = m[status] || { color: "var(--text-secondary)", background: "rgba(255,255,255,0.06)" };
   return (
-    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${m[status] || "bg-gray-100 text-gray-500"}`}>
+    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full"
+      style={{ ...s, border: "1px solid var(--border-subtle)" }}>
       {labels[status] || status}
     </span>
   );
 }
 
 export function ST({ children }) {
-  return <div className="text-gray-400 text-[11px] font-bold uppercase tracking-widest mb-2">{children}</div>;
+  return (
+    <div className="text-[11px] font-bold uppercase tracking-widest mb-2"
+      style={{ color: "var(--text-secondary)" }}>
+      {children}
+    </div>
+  );
 }
 
 export function Spinner() {
   return (
     <div className="flex items-center justify-center py-12">
-      <div className="w-8 h-8 border-[3px] border-gray-100 border-t-blue-500 rounded-full animate-spin" />
+      <div className="w-8 h-8 rounded-full animate-spin"
+        style={{ border: "3px solid var(--border-card)", borderTopColor: "var(--primary)" }} />
     </div>
   );
 }
 
 export function Empty({ icon = "🐱", message = "沒有資料" }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-gray-300">
+    <div className="flex flex-col items-center justify-center py-12" style={{ color: "var(--text-muted)" }}>
       <span className="text-4xl mb-3 opacity-60">{icon}</span>
       <p className="text-sm font-medium">{message}</p>
     </div>
@@ -188,7 +209,7 @@ export const CAT_ICONS = {
 export function ConfirmModal({ open, title, message, onConfirm, onCancel, confirmLabel = "確認", confirmVariant = "danger" }) {
   return (
     <Modal open={open} onClose={onCancel} title={title}>
-      <p className="text-gray-500 text-sm mb-5 leading-relaxed">{message}</p>
+      <p className="text-sm mb-5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{message}</p>
       <div className="flex gap-3">
         <Btn v="secondary" className="flex-1" onClick={onCancel}>取消</Btn>
         <Btn v={confirmVariant} className="flex-1" onClick={onConfirm}>{confirmLabel}</Btn>
@@ -201,12 +222,12 @@ export function ConfirmModal({ open, title, message, onConfirm, onCancel, confir
 export function SearchBar({ value, onChange, placeholder = "搜尋…" }) {
   return (
     <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm">🔍</span>
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm opacity-60">🔍</span>
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 shadow-sm transition-all placeholder-gray-300"
+        className="ui-input w-full pl-9 pr-4 py-2.5 text-sm shadow-sm"
       />
     </div>
   );
@@ -242,17 +263,22 @@ export function useToast() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
   }, []);
   function ToastContainer() {
+    // token 化：success 用 elevated 深底；error/warn 維持實色（提示需高對比）
     const styles = {
-      success: "bg-gray-900 text-white border border-gray-700",
-      error:   "bg-red-600 text-white border border-red-500",
-      warn:    "bg-amber-500 text-white border border-amber-400",
+      success: { background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border-card)" },
+      error:   { background: "#dc2626", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" },
+      warn:    { background: "var(--accent)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" },
     };
     return (
       <div className="fixed bottom-28 left-0 right-0 flex flex-col items-center gap-2 z-50 pointer-events-none px-4">
         {toasts.map(t => (
           <div key={t.id}
-            className={`px-4 py-3 rounded-2xl font-medium text-sm shadow-xl ${styles[t.type] || styles.success}`}
-            style={{ animation:"toast-in .25s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+            className="px-4 py-3 rounded-2xl font-medium text-sm shadow-xl"
+            style={{
+              ...(styles[t.type] || styles.success),
+              boxShadow: "var(--shadow-elevated)",
+              animation: "toast-in .25s cubic-bezier(0.34,1.56,0.64,1) both",
+            }}>
             {t.message}
           </div>
         ))}

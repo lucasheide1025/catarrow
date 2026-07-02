@@ -13,42 +13,39 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
 import { COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
-import { Card, ST, Spinner } from "../shared/UI";
+import { ALL_MILESTONES } from "../../lib/arrowMilestone";
+import { EXPEDITION_MISSIONS, fmtCountdown } from "../../lib/expeditionData";
+import { subscribeActiveGoal } from "../../lib/villageGoalDb";
+import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
+import { Card, ST } from "../shared/UI";
+import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
-// ── UI 圖片對照 ──────────────────────────────────────────
-const CELL_BG = {
-  checkin:   "/ui/cell-checkin.webp",
-  monster:   "/ui/cell-monster.webp",
-  duel:      "/ui/cell-duel.webp",
-  party:     "/ui/cell-party.webp",
-  dungeon:   "/ui/cell-dungeon.webp",
-  worldboss: "/ui/cell-worldboss.webp",
-  cats:      "/ui/cell-cat.webp",
-  materials: "/ui/cell-bag.webp",
-  coinshop:  "/ui/cell-shop.webp",
-  equipment: "/ui/cell-equip.webp",
-  dex:       "/ui/cell-achieve.webp",
-  story:     "/ui/cell-story.webp",
-  guild:     "/ui/guild.webp",
-};
-const CELL_TINT = "linear-gradient(rgba(255,255,255,0.15),rgba(255,255,255,0.15))";
-function cellStyle(key, gradient) {
-  const img = CELL_BG[key];
-  if (img) {
-    return {
-      backgroundImage: `url(${img}), ${CELL_TINT}, ${gradient}`,
-      backgroundSize: "cover, cover, cover",
-      backgroundBlendMode: "overlay, normal, normal",
-    };
-  }
-  return {
-    backgroundImage: `${CELL_TINT}, ${gradient}`,
-    backgroundSize: "cover, cover",
-    backgroundBlendMode: "normal, normal",
-  };
+// ── 4 大功能 Hub 入口（HubTile CSS 漸層底，取代 cell-*.webp）──
+const HOME_HUBS = [
+  { page:"training-hub",  icon:"🏹", title:"每日功能", desc:"練箭・比賽",         accent:"#0d9488" },
+  { page:"adventure-hub", icon:"🗺️", title:"冒險出發", desc:"打怪・地城・世界王", accent:"#7c3aed" },
+  { page:"inventory-hub", icon:"🎒", title:"我的背包", desc:"商店・材料・裝備",   accent:"#d97706" },
+  { page:"records-hub",   icon:"🏆", title:"我的戰績", desc:"成就圖鑑・排行榜",   accent:"#2563eb" },
+];
+
+// ── 快速入口（常用功能捷徑）─────────────────────────────
+const QUICK_LINKS = [
+  { page:"monster",     icon:"⚔️", label:"打怪" },
+  { page:"practice",    icon:"🎯", label:"自主練習" },
+  { page:"coinshop",    icon:"🛒", label:"商店" },
+  { page:"leaderboard", icon:"🏅", label:"排行榜" },
+];
+
+// Firestore Timestamp / Date / string → ms
+function tsToMs(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (v.seconds != null) return v.seconds * 1000;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
 }
 
 // ── 主題定義 ──────────────────────────────────────────────
@@ -81,7 +78,9 @@ export default function MemberHome({
   certification = null,
   dexConfig = { physicalMax:10, pointMax:10 }, dexGrants = [],
   duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
-  potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0
+  potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0,
+  todayCheckin,       // 今日報到（MemberApp/AdminApp 既有訂閱下傳；undefined=載入中, null=未報到）
+  worldBoss = null,   // 世界王事件（MemberApp/AdminApp 既有訂閱下傳）
 }) {
   const { profile } = useAuth();
   const { catHP, catATK, catDEF, hasCat } = useCatCompanion();
@@ -99,6 +98,32 @@ export default function MemberHome({
   const [cardBusy, setCardBusy]           = useState(false);
   const [cardMsg, setCardMsg]             = useState("");
   const [notifCat, setNotifCat]           = useState("全部");
+  // 進行中卡資料
+  const [villageGoal, setVillageGoal]     = useState(null);
+  const [nowMs, setNowMs]                 = useState(Date.now());
+
+  // 村目標（重用 villageGoalDb 既有訂閱函式）
+  useEffect(() => subscribeActiveGoal(setVillageGoal), []);
+
+  // ── 遠征 3 槽（expeditions map；舊欄位 expedition 向後兼容顯示為 slot 0）──
+  const expSlots = (() => {
+    const exps = profile?.expeditions || {};
+    const slots = ["0", "1", "2"]
+      .filter(k => exps[k]?.catId)
+      .map(k => ({ slot: Number(k), ...exps[k] }));
+    if (!exps["0"] && profile?.expedition?.catId) {
+      slots.unshift({ slot: 0, ...profile.expedition });
+    }
+    return slots;
+  })();
+
+  // 倒數計時器：只在有遠征/村目標時每 30 秒 tick 一次
+  const needTick = expSlots.length > 0 || !!villageGoal;
+  useEffect(() => {
+    if (!needTick) return;
+    const t = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, [needTick]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -185,30 +210,144 @@ export default function MemberHome({
       {/* ── 教練新回饋通知 ── */}
       {profile?.hasNewLearnLog && (
         <button onClick={() => onPageChange("learn")}
-          className="w-full bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3 active:scale-98 transition-transform text-left">
+          className="w-full p-3 flex items-center gap-3 active:scale-98 transition-transform text-left"
+          style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:"var(--r-md)" }}>
           <span className="text-xl flex-shrink-0">📓</span>
           <div className="flex-1 min-w-0">
-            <div className="text-orange-700 font-black text-sm">教練有新的學習回饋！</div>
-            <div className="text-orange-500 text-xs">點此查看教練的指導內容</div>
+            <div className="font-black text-sm" style={{ color:"var(--warn-fg)" }}>教練有新的學習回饋！</div>
+            <div className="text-xs" style={{ color:"var(--text-secondary)" }}>點此查看教練的指導內容</div>
           </div>
-          <span className="text-orange-400 text-xs font-bold flex-shrink-0">查看 →</span>
+          <span className="text-xs font-bold flex-shrink-0" style={{ color:"var(--warn-fg)" }}>查看 →</span>
         </button>
       )}
 
-      {/* ── 4 大功能 Hub ──────────────────────────────────────── */}
+      {/* ── 今日卡：報到狀態＋今日箭數＋下一里程碑 ─────────────── */}
+      {(() => {
+        const checkinMeta = (() => {
+          if (todayCheckin === undefined) return { icon:"⏱", label:"讀取中…",      fg:"var(--text-muted)",     bg:"rgba(255,255,255,0.06)" };
+          if (todayCheckin === null)      return { icon:"⚪", label:"尚未報到",     fg:"var(--text-secondary)", bg:"rgba(255,255,255,0.06)" };
+          if (todayCheckin.classEnded)    return { icon:"🏁", label:"今日已下課",   fg:"var(--info-fg)",        bg:"var(--info-bg)" };
+          if (todayCheckin.status === "pending")  return { icon:"⏳", label:"等待教練確認", fg:"var(--warn-fg)",   bg:"var(--warn-bg)" };
+          if (todayCheckin.status === "rejected") return { icon:"❌", label:"報到未通過",   fg:"var(--danger-fg)", bg:"var(--danger-bg)" };
+          return { icon:"✅", label:"上課中", fg:"var(--success-fg)", bg:"var(--success-bg)" };
+        })();
+        const nextDaily = ALL_MILESTONES.find(m => m.arrows > todayArrows) || null;
+        const prevDailyArrows = [...ALL_MILESTONES].reverse().find(m => m.arrows <= todayArrows)?.arrows || 0;
+        const ringVal = nextDaily ? todayArrows - prevDailyArrows : 1;
+        const ringMax = nextDaily ? nextDaily.arrows - prevDailyArrows : 1;
+        return (
+          <Card className="p-4">
+            <SectionHeader icon="📋" title="今日狀態" action={
+              <button onClick={() => onPageChange("training-hub")}
+                style={{ fontSize:11, color:"var(--text-accent)", fontWeight:700, background:"none", border:"none", cursor:"pointer", padding:0 }}>
+                前往練箭 →
+              </button>
+            } />
+            <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{ flexShrink:0 }}>
+                <ProgressRing value={ringVal} max={ringMax} size={72} stroke={6} color="var(--success-fg)">
+                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
+                    <div style={{ fontSize:18, fontWeight:900, color:"var(--text-primary)" }}>{todayArrows}</div>
+                    <div style={{ fontSize:9, color:"var(--text-muted)" }}>箭</div>
+                  </div>
+                </ProgressRing>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:12, fontWeight:800, color:checkinMeta.fg, background:checkinMeta.bg, borderRadius:999, padding:"3px 10px" }}>
+                  {checkinMeta.icon} {checkinMeta.label}
+                </span>
+                <div style={{ fontSize:11, color:"var(--text-secondary)", marginTop:6 }}>
+                  {nextDaily
+                    ? <>下一里程碑 <b style={{ color:"var(--success-fg)" }}>{nextDaily.arrows} 箭</b>（還差 {nextDaily.arrows - todayArrows} 箭）</>
+                    : "🏆 今日里程碑全數達成！"}
+                </div>
+                {nextDaily?.catBoxes > 0 && (
+                  <div style={{ fontSize:10, color:"var(--text-gold)", marginTop:2 }}>🎁 達成可獲得貓貓禮盒！</div>
+                )}
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* ── 進行中卡：世界王／遠征倒數／村目標（有內容才顯示）──── */}
+      {(() => {
+        const wbActive = worldBoss && worldBoss.status === "active";
+        if (!wbActive && expSlots.length === 0 && !villageGoal) return null;
+        const rowStyle = (bg, border) => ({
+          display:"flex", alignItems:"center", gap:10, width:"100%",
+          background:bg, border:`1px solid ${border}`, borderRadius:"var(--r-md)",
+          padding:"8px 12px", cursor:"pointer", textAlign:"left",
+        });
+        return (
+          <Card className="p-4">
+            <SectionHeader icon="⏳" title="進行中" />
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {wbActive && (
+                <button onClick={() => onPageChange("worldboss")} style={rowStyle("var(--danger-bg)", "rgba(239,68,68,0.35)")}>
+                  <span style={{ fontSize:20, flexShrink:0 }}>👑</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:900, color:"var(--danger-fg)" }}>
+                      世界王現身！{worldBoss.bossData?.name || ""}
+                    </div>
+                    <div style={{ fontSize:10, color:"var(--text-secondary)" }}>全體射手協力討伐</div>
+                  </div>
+                  <span style={{ fontSize:11, color:"var(--danger-fg)", fontWeight:700, flexShrink:0 }}>參戰 →</span>
+                </button>
+              )}
+              {expSlots.map(e => {
+                const mission = EXPEDITION_MISSIONS.find(m => m.tier === e.missionTier);
+                const left = tsToMs(e.endsAt) - nowMs;
+                const done = left <= 0;
+                return (
+                  <button key={e.slot} onClick={() => onPageChange("gacha")}
+                    style={rowStyle(done ? "var(--success-bg)" : "rgba(255,255,255,0.05)", done ? "rgba(34,197,94,0.35)" : "var(--glass-border)")}>
+                    <span style={{ fontSize:20, flexShrink:0 }}>{mission?.emoji || "🐾"}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12, fontWeight:800, color:"var(--text-primary)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {e.catName || "貓咪"}・{mission?.label || `遠征 T${e.missionTier}`}
+                      </div>
+                      <div style={{ fontSize:10, color:"var(--text-secondary)" }}>遠征隊 槽位 {e.slot + 1}</div>
+                    </div>
+                    <span style={{ fontSize:11, fontWeight:900, flexShrink:0, color: done ? "var(--success-fg)" : "var(--text-gold)" }}>
+                      {done ? "✅ 可領取" : `⏱ ${fmtCountdown(left)}`}
+                    </span>
+                  </button>
+                );
+              })}
+              {villageGoal && (() => {
+                const meta = GOAL_TYPE_MAP[villageGoal.goalType] || {};
+                const goalLeft = tsToMs(villageGoal.endAt) - nowMs;
+                return (
+                  <button onClick={() => onPageChange("gacha")}
+                    style={{ ...rowStyle("rgba(255,255,255,0.05)", "var(--glass-border)"), flexDirection:"column", alignItems:"stretch", gap:6 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <div style={{ flex:1, minWidth:0, fontSize:12, fontWeight:800, color:"var(--text-primary)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {villageGoal.customTitle || buildGoalTitle(villageGoal.goalType, villageGoal.targetValue)}
+                      </div>
+                      <span style={{ fontSize:10, color:"var(--text-muted)", flexShrink:0 }}>
+                        {goalLeft > 0 ? `剩 ${fmtCountdown(goalLeft)}` : "結算中"}
+                      </span>
+                    </div>
+                    <StatBar value={Math.min(villageGoal.currentValue || 0, villageGoal.targetValue || 0)}
+                      max={villageGoal.targetValue || 1} height={6}
+                      color={meta.color || "var(--info-fg)"} />
+                    <div style={{ fontSize:10, color:"var(--text-secondary)", textAlign:"right" }}>
+                      {(villageGoal.currentValue || 0).toLocaleString()} / {(villageGoal.targetValue || 0).toLocaleString()} {meta.contributionLabel || ""}
+                    </div>
+                  </button>
+                );
+              })()}
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* ── 4 大功能 Hub（HubTile 格線）───────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {[
-          { page:"training-hub",  key:"checkin",   label:"每日功能", desc:"練箭・比賽",         gradient:"linear-gradient(135deg,#0f766e,#064e3b)" },
-          { page:"adventure-hub", key:"monster",   label:"冒險出發", desc:"打怪・地城・世界王", gradient:"linear-gradient(135deg,#7c3aed,#1e3a8a)" },
-          { page:"inventory-hub", key:"materials", label:"我的背包", desc:"商店・材料・裝備",   gradient:"linear-gradient(135deg,#b45309,#92400e)" },
-          { page:"records-hub",   key:"dex",       label:"我的戰績", desc:"成就圖鑑・排行榜",  gradient:"linear-gradient(135deg,#1d4ed8,#1e3a8a)" },
-        ].map(hub => (
-          <button key={hub.page} onClick={() => onPageChange(hub.page)}
-            className="rounded-2xl aspect-square flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform relative overflow-hidden"
-            style={cellStyle(hub.key, hub.gradient)}>
-            <span className="text-white font-black text-sm leading-tight text-center relative z-10 px-2 drop-shadow">{hub.label}</span>
-            <span className="text-[10px] relative z-10 text-white/75 text-center px-1">{hub.desc}</span>
-          </button>
+        {HOME_HUBS.map(hub => (
+          <HubTile key={hub.page} icon={hub.icon} title={hub.title} desc={hub.desc}
+            accent={hub.accent} onClick={() => onPageChange(hub.page)} />
         ))}
       </div>
 
@@ -288,11 +427,11 @@ export default function MemberHome({
       )}
 
       {pendingBadges.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="text-amber-700 font-bold text-sm mb-2">🎖️ 你有 {pendingBadges.length} 個徽章待確認領取！</div>
+        <Card className="p-4" style={{ border:"1px solid rgba(251,191,36,0.30)" }}>
+          <div className="font-bold text-sm mb-2" style={{ color:"var(--warn-fg)" }}>🎖️ 你有 {pendingBadges.length} 個徽章待確認領取！</div>
           {pendingBadges.map(b => (
-            <div key={b.id} className="flex items-center justify-between py-2 border-b border-amber-100 last:border-0">
-              <div className="text-amber-800 text-sm">
+            <div key={b.id} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor:"rgba(255,255,255,0.08)" }}>
+              <div className="text-sm" style={{ color:"var(--text-primary)" }}>
                 {b.badgeType==="fatCat"?"🐱 肥貓章":b.badgeType==="score"?"⭐ 積分章":"🏆 成就章"}
                 　{b.color==="gold"?"金":b.color==="silver"?"銀":b.color==="black"?"黑":"銅"}章 × {b.count}
               </div>
@@ -302,7 +441,7 @@ export default function MemberHome({
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       {/* ── 射手狀態卡（可換主題）──────────────────────────── */}
@@ -630,6 +769,21 @@ export default function MemberHome({
           </Card>
         );
       })()}
+
+      {/* ── 快速入口（常用功能捷徑）───────────────────────────── */}
+      <div>
+        <SectionHeader icon="⚡" title="快速入口" />
+        <div className="grid grid-cols-4 gap-2">
+          {QUICK_LINKS.map(q => (
+            <button key={q.page} onClick={() => onPageChange(q.page)}
+              className="flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
+              style={{ minHeight:64, borderRadius:"var(--r-md)", border:"1px solid var(--glass-border)", background:"var(--glass-bg)", boxShadow:"var(--shadow-card)", cursor:"pointer" }}>
+              <span style={{ fontSize:20 }}>{q.icon}</span>
+              <span style={{ fontSize:10, fontWeight:700, color:"var(--text-secondary)" }}>{q.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
     </div>
   );

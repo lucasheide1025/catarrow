@@ -168,7 +168,7 @@ export default function MemberProfile({
                         </button>
                       ))}
                     </div>
-                    {onAppThemeChange && (
+                    {onAppThemeChange && APP_THEMES.length > 1 && (
                       <>
                         <div className="border-t border-gray-100 my-2" />
                         <div className="text-gray-500 text-xs font-bold mb-2 px-1">🎨 App 主題</div>

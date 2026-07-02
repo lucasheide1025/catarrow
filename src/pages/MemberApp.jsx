@@ -13,9 +13,10 @@ import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { OverlayModal } from "../components/shared/UI";
+import { ProgressRing } from "../components/shared/Widgets";
 import { certLevelStyle } from "../lib/constants";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
-import { archerLevelFromXP } from "../lib/archerLevel";
+import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
 import MemberHome         from "../components/member/MemberHome";
 import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
@@ -120,6 +121,8 @@ export default function MemberApp() {
   const [appTheme, setAppTheme] = useState(() => getAppTheme());
   const [bossIntroEvent, setBossIntroEvent] = useState(null);
   const [wbKillAlert,    setWbKillAlert]    = useState(null);
+  const [activeWorldBoss, setActiveWorldBoss] = useState(null); // 供首頁「進行中」卡顯示世界王入口
+
   const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
@@ -283,6 +286,7 @@ export default function MemberApp() {
   // 世界王登場 + 擊殺公告
   useEffect(() => {
     return subscribeActiveWorldBoss(ev => {
+      setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       // 登場動畫
       const key = `wb_intro_${ev.id}`;
@@ -410,6 +414,21 @@ export default function MemberApp() {
 
   const needsUpdate = latestVersion && latestVersion !== APP_VERSION;
 
+  // ── Header 顯示資料（全部來自既有 state / profile，無新增訂閱）──
+  const archerLv  = archerLevelFromXP(profile?.archerXP || 0);
+  const xpProg    = archerXPProgress(profile?.archerXP || 0);
+  const certLevel = certification?.level && certification.level !== "none" ? certification.level : null;
+  const unreadNotifCount = notifications.filter(x =>
+    !(x.readBy    || []).includes(profile?.id) &&
+    !(x.deletedBy || []).includes(profile?.id)
+  ).length;
+  const avatarChar = (profile?.nickname || profile?.name || "🏹").trim().charAt(0) || "🏹";
+  const currencyChips = [
+    { icon:"🪙", value:(profile?.coins || 0).toLocaleString(),                        color:"var(--text-gold)", page:"coinshop", label:"金幣" },
+    { icon:"💧", value:(profile?.village?.resources?.arrowdew || 0).toLocaleString(), color:"var(--info-fg)",   page:"gacha",    label:"箭露" },
+    { icon:"🎫", value:Math.floor(profile?.gachaCoins ?? 0).toLocaleString(),          color:"#f9a8d4",          page:"gacha",    label:"轉蛋幣" },
+  ];
+
   return (
     <div style={{ height:"100dvh", display:"flex", flexDirection:"column", fontFamily:"sans-serif", overflow:"hidden", background:"#0f172a" }}>
 
@@ -519,18 +538,52 @@ export default function MemberApp() {
 
       {/* Header */}
       <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
-        <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div>
-            <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🎯 貓小隊射箭場</div>
-            <div style={{ fontSize:"11px", color:appTheme.subtitleColor, marginTop:"1px" }}>Barebow Indoor Archery</div>
+        <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"10px 14px 8px" }}>
+          {/* 第一列：頭像等級環｜暱稱＋檢定 pill｜通知鈴鐺｜登出 */}
+          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            <button onClick={() => setPage("profile")} aria-label="我的檔案"
+              style={{ border:"none", background:"transparent", padding:0, cursor:"pointer", flexShrink:0, lineHeight:0 }}>
+              <ProgressRing value={xpProg.current} max={xpProg.needed} size={44} stroke={3} color="var(--accent)">
+                <div style={{ width:34, height:34, borderRadius:"50%", background:"rgba(255,255,255,0.10)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:900, color:"var(--text-primary)" }}>
+                  {avatarChar}
+                </div>
+              </ProgressRing>
+            </button>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                <span style={{ fontWeight:"900", color:"var(--text-primary)", fontSize:"14px", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  {profile?.nickname || profile?.name || "射手"}
+                </span>
+                {certLevel && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${certLevelStyle(certLevel, "solid")}`} style={{ flexShrink:0 }}>
+                    {certLevel}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize:"11px", color:"var(--text-secondary)", marginTop:"1px", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                ⚔️ Lv.{archerLv}・🏹 今日 {todayArrowsGlobal} 箭
+              </div>
+            </div>
+            <button onClick={() => setPage("notifications")} aria-label="通知"
+              style={{ position:"relative", width:"40px", height:"40px", borderRadius:"12px", border:"1px solid var(--glass-border)", background:"rgba(255,255,255,0.06)", cursor:"pointer", fontSize:"17px", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              🔔
+              {unreadNotifCount > 0 && (
+                <span style={{ position:"absolute", top:"-4px", right:"-4px", minWidth:"16px", height:"16px", padding:"0 3px", background:"#ef4444", borderRadius:"999px", fontSize:"9px", fontWeight:900, color:"white", display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid var(--bg-deep)", boxSizing:"content-box" }}>
+                  {unreadNotifCount > 99 ? "99+" : unreadNotifCount}
+                </span>
+              )}
+            </button>
+            <button onClick={logout} style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", flexShrink:0, ...appTheme.logoutStyle }}>登出</button>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap", justifyContent:"flex-end" }}>
-            <span style={{ fontSize:"11px", color:"#fbbf24" }}>🪙{(profile?.coins||0).toLocaleString()}</span>
-            <span style={{ fontSize:"11px", color:"#60a5fa" }}>💧{(profile?.village?.resources?.arrowdew||0).toLocaleString()}</span>
-            <span style={{ fontSize:"11px", color:"#86efac" }}>🏹{todayArrowsGlobal}</span>
-            <span style={{ fontSize:"11px", color:"#f472b6" }}>⚔️Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>
-            <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
-            <button onClick={logout} style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", ...appTheme.logoutStyle }}>登出</button>
+          {/* 第二列：貨幣 chips（點擊跳轉對應頁）*/}
+          <div style={{ display:"flex", gap:"6px", marginTop:"8px" }}>
+            {currencyChips.map(c => (
+              <button key={c.label} onClick={() => setPage(c.page)} aria-label={c.label}
+                style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:"4px", padding:"5px 8px", borderRadius:"999px", border:"1px solid var(--glass-border)", background:"rgba(255,255,255,0.06)", cursor:"pointer", minWidth:0 }}>
+                <span style={{ fontSize:"12px", flexShrink:0 }}>{c.icon}</span>
+                <span style={{ fontSize:"12px", fontWeight:800, color:c.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.value}</span>
+              </button>
+            ))}
           </div>
         </div>
         {partyRoomId && !["party-quest","party-battle"].includes(page) && (
@@ -559,7 +612,8 @@ export default function MemberApp() {
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-            potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal} />}
+            potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
+            todayCheckin={todayCheckin} worldBoss={activeWorldBoss} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}
@@ -635,23 +689,23 @@ export default function MemberApp() {
         </Suspense>
       </div>
 
-      {/* 底部導覽（深藍主題） */}
-      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
+      {/* 底部導覽（token 化，active 用 --accent 指示條）*/}
+      <div style={{ flexShrink:0, background:"var(--bg-deep)", borderTop:"1px solid var(--border-subtle)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
             <button key={n.id} onClick={() => setPage(n.id)}
               onPointerEnter={() => NAV_PRELOADS[n.id]?.()}
-              style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingTop:"6px", paddingBottom:"8px", gap:"2px", border:"none", background:"transparent", cursor:"pointer", color: active ? "#60a5fa" : "#64748b" }}>
+              style={{ flex:1, minHeight:"56px", display:"flex", flexDirection:"column", alignItems:"center", paddingTop:0, paddingBottom:"6px", gap:"2px", border:"none", background:"transparent", cursor:"pointer" }}>
               {/* 頂部 active 指示條 */}
-              <div style={{ height:"2px", width: active ? "20px" : "0px", background:"#f59e0b", borderRadius:"0 0 2px 2px", marginBottom:"3px", transition:"width 0.2s ease" }} />
+              <div style={{ height:"3px", width: active ? "24px" : "0px", background:"var(--accent)", borderRadius:"0 0 3px 3px", marginBottom:"4px", transition:"width 0.2s ease" }} />
               <div style={{ position:"relative", display:"inline-block" }}>
-                <span style={{ fontSize:"18px" }}>{n.icon}</span>
+                <span style={{ fontSize: active ? "20px" : "18px", display:"inline-block", transition:"font-size 0.15s ease", filter: active ? "none" : "grayscale(35%)", opacity: active ? 1 : 0.85 }}>{n.icon}</span>
                 {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
-                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid #0f172a", display:"block" }} />
+                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block" }} />
                 )}
               </div>
-              <span style={{ fontSize:"10px", fontWeight: active ? "700" : "500", color: active ? "#60a5fa" : "#64748b" }}>{n.label}</span>
+              <span style={{ fontSize:"10px", fontWeight: active ? "800" : "500", color: active ? "var(--accent)" : "var(--text-muted)" }}>{n.label}</span>
             </button>
           );
         })}

@@ -1,5 +1,13 @@
 # 📋 features — 功能清單
-> 最後更新：2026-07-02
+> 最後更新：2026-07-03
+
+## 🎨 2026-07-03 UI 全面改版 Phase 0-2
+
+- **設計系統**：index.css design tokens（語意色/圓角/陰影/玻璃卡）+ `.ui-card`/`.ui-input` CSS 類；shared/UI.jsx 15 元件深色 token 化（API 向後相容）；新增 shared/Widgets.jsx（SectionHeader/StatBar/ProgressRing/Skeleton/HubTile）
+- **主題收斂**：theme.js 只留單一 navy 深海金（要復活多主題往 APP_THEMES 加元素即可）
+- **導覽**：header 改版（等級環+貨幣 chips+通知鈴鐺）、底部 nav token 化、四 hub 頁 HubTile 格線（cell-*.webp 引用移除）
+- **首頁儀表板**：今日卡（報到/箭數/每日里程碑環）+ 進行中卡（世界王/遠征倒數/村目標）+ 快速入口 4 格
+- 待辦：Phase 3 逐頁套版（戰鬥/貓村/卡片/排行）、Phase 4 後台、Phase 5 打磨（見 Trellis 任務 07-03-ui-redesign-p0 的 prd）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
 

@@ -166,6 +166,7 @@ export default function AdminApp() {
   const pendingMonthlyRef = useRef(0);
   const [pendingGuildN,    setPendingGuildN]    = useState(0);
   const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
+  const [activeWorldBoss,  setActiveWorldBoss]  = useState(null); // 供首頁「進行中」卡顯示世界王入口
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
@@ -435,6 +436,7 @@ export default function AdminApp() {
   // 世界王登場：教練也要看到
   useEffect(() => {
     return subscribeActiveWorldBoss(ev => {
+      setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       const key = `wb_intro_${ev.id}`;
       if (sessionStorage.getItem(key)) return;
@@ -580,7 +582,8 @@ const adminNav = [
           {page==="home"          && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-              potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal} />}
+              potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
+              todayCheckin={todayCheckin} worldBoss={activeWorldBoss} />}
           {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
           {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
           {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}

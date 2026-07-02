@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-07-02
+> 最後更新：2026-07-03
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -25,6 +25,9 @@
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |
 | 大型二進位不進 git | `codebase-ui-extracted/`（含 .exe）超過 GitHub 100MB；務必先加 `.gitignore` 再 `git add` |
+| Tailwind 是 CDN 版 | 偽類（focus/placeholder）樣式寫 index.css 純 CSS 類（`.ui-card`/`.ui-input`），不能靠任意 Tailwind class |
+| HubTile `accent` 只吃 hex | 內部 `${accent}26` 疊透明層，傳 `var(--xxx)` 產生非法 CSS |
+| 主題已收斂單一 navy | `theme.js` 只剩 1 組；要加主題就往 `APP_THEMES` 加元素，MemberProfile 選擇器自動出現（`length > 1` 守門） |
 
 ---
 
@@ -406,12 +409,30 @@ const { room, submitted, submitting, handleSubmit, setFsSubmitted } = useFiresto
 public/ui/
   page-bg.webp / login-bg.webp / dungeon-bg.webp
   profile-banner.webp / party-bar.webp / card-bg.webp
-  cell-{monster|party|duel|dungeon|shop|checkin|...}.webp
+  cell-{monster|party|duel|dungeon|shop|checkin|...}.webp  ← ★ 2026-07-03 起已無程式引用（hub/首頁改 CSS 漸層），檔案保留
   cert-{beginner|novice|intermediate|advanced|elite}.webp
   badge-frame-{black|gold|silver|bronze}.webp
   equip-slot.webp / equip-slot-filled.webp
   battle-bg/bg_{family}_{1-6}.webp   ← family: forest/dragon/undead/beast/demon/machine
   village/                            ← 貓村圖片
+```
+
+---
+
+## 🎨 設計系統（2026-07-03 UI 改版）
+
+```
+tokens：index.css :root
+  既有：--bg-deep/surface/card/elevated、--text-primary/secondary/muted/accent/gold、--border-subtle/card、--nav-active/indicator
+  新增：--success/warn/danger/info-{fg,bg}、--accent/--accent-soft/--primary、--r-{sm,md,lg,xl}、--shadow-{card,elevated}、--glass-{bg,border}
+元件層 CSS 類（index.css）：.ui-card（玻璃卡）/ .ui-input / .ui-input-error
+共用元件：
+  shared/UI.jsx      15 元件全深色 token 化；Btn 有 outline variant；dark-* 為 alias
+  shared/Widgets.jsx SectionHeader / StatBar / ProgressRing / Skeleton / HubTile（accent 傳 hex！）
+覆寫層：.content-area .bg-white{...} 暫留保護未遷移頁（比賽/練習/排行/訊息）；元件 token 化後不再命中
+MemberHome 新 props：todayCheckin / worldBoss（MemberApp+AdminApp 下傳，掛既有訂閱）
+hub 頁新 props：badges = {}（badgeKey→count）
+BillingSystem / CatVillage 不用 shared/UI（自帶樣式），改元件不影響
 ```
 
 ---
