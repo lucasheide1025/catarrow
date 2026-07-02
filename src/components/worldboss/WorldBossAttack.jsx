@@ -19,6 +19,8 @@ import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, 
 import { labelToValue, valueToLabel, getScoreColor } from "../../lib/score";
 import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter } from "../../lib/damage";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
+import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { SmallMilestonePopup } from "../member/ArrowMilestonePopup";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
@@ -316,6 +318,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showDeathAnim,     setShowDeathAnim]     = useState(false);
   const [deathKiller,       setDeathKiller]       = useState(null);
   const [deathFinishArrow,  setDeathFinishArrow]  = useState(null);
+  const [milestoneQueue,    setMilestoneQueue]    = useState([]);
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const [showCatRound,      setShowCatRound]      = useState(false);
@@ -663,7 +666,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       if (myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r => r.arrows);
         const totalArrowsSent = practiceRounds.flat().length;
-        if (totalArrowsSent > 0) addRoundArrows(myId, totalArrowsSent).catch(() => {});
+        if (totalArrowsSent > 0) {
+          addRoundArrows(myId, totalArrowsSent).catch(() => {});
+          const wbMilestones = getMilestonesReached(0, totalArrowsSent);
+          if (wbMilestones.length > 0) {
+            const { grantArrowMilestoneRewards } = await import("../../lib/db");
+            grantArrowMilestoneRewards(myId, wbMilestones).catch(() => {});
+            setMilestoneQueue(wbMilestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
+        }
         addPracticeLog(myId, {
           date: todayStr, source: "worldboss",
           bossName: event.bossData?.name || "世界王",
@@ -1252,6 +1263,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     return (
       <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+        {milestoneQueue.length > 0 && (
+          <SmallMilestonePopup
+            milestone={milestoneQueue[0].ms}
+            rewards={milestoneQueue[0].rewards}
+            onClose={() => setMilestoneQueue(q => q.slice(1))} />
+        )}
         {showDeathAnim && (
           <WorldBossDeathAnim
             boss={event.bossData || {}}

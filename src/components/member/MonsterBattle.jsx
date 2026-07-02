@@ -417,6 +417,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const dispatchRef = useRef(null);
   const controllerRef = useRef(null);
   const randomEventResolveRef = useRef(null); // 等玩家確認隨機事件彈窗再繼續
+  const sessionArrowsRef = useRef(0); // 本場 session 累積箭數（供跨回合里程碑計算）
   if (!dispatchRef.current) {
     dispatchRef.current = createDispatch(
       {
@@ -678,6 +679,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     }
 
     // ── 5. 下一回合準備 ─────────────────────────────────
+    // 累積非最終回合的分數（讓 endBattle 的 practiceRounds 包含所有回合）
+    const midRoundArr = arrows.map(arrowLabelToVal);
+    setRoundScores(prev => [...prev, { round, scores: midRoundArr, total: midRoundArr.reduce((s,v)=>s+v,0) }]);
     await delay(500);
     setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
     } catch(err) {
@@ -772,7 +776,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     if (hasCat) { catCurrentHPRef.current = catMaxHP; setCatCurrentHP(catMaxHP); }
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
-    setAllArrows([]); setRoundScores([]);
+    setAllArrows([]); setRoundScores([]); sessionArrowsRef.current = 0;
     setLog([
       { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
@@ -882,10 +886,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             distance: selectedDistance,
           }, profile.id).catch(() => {});
 
-          // 里程碑即時提示（箭露由 DailyQuest 下課結算）
+          // 里程碑即時提示（跨回合累積，sessionArrowsRef 追蹤本 session 今日累計）
           const arrowCount = practiceRounds.flat().length;
           if (arrowCount > 0) {
-            const milestones = getMilestonesReached(0, arrowCount);
+            const oldSessionTotal = sessionArrowsRef.current;
+            sessionArrowsRef.current += arrowCount;
+            const milestones = getMilestonesReached(oldSessionTotal, oldSessionTotal + arrowCount);
             if (milestones.length > 0) {
               const { grantArrowMilestoneRewards } = await import("../../lib/db");
               grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
