@@ -257,7 +257,7 @@ function StatsSection({ stats, config }) {
   const cells = [];
   if (config.showDmgDealt)   cells.push({ label: "造成傷害", value: (stats.dmgDealt ?? 0).toLocaleString(), color: "#f87171" });
   if (config.showDmgTaken)   cells.push({ label: "承受傷害", value: (stats.dmgTaken ?? 0).toLocaleString(), color: "#fbbf24" });
-  if (config.showAvgScore)   cells.push({ label: "平均箭分", value: (stats.avgScore ?? 0).toFixed(1), color: "#34d399" });
+  if (config.showAvgScore)   cells.push({ label: "平均箭分", value: parseFloat(stats.avgScore ?? 0).toFixed(1), color: "#34d399" });
   if (config.showArrowCount) cells.push({ label: "總箭數",   value: stats.arrowCount ?? 0 });
   if (config.showRoundCount) cells.push({ label: "回合數",   value: stats.roundCount ?? 0 });
   if (config.showCritCount)  cells.push({ label: "爆擊次數", value: stats.critCount ?? 0, color: "#fbbf24" });

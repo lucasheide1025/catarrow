@@ -36,8 +36,9 @@ export default function AdminNotify() {
       type,
       title: title.trim(),
       content: content.trim(),
-      targetMemberId: null,                 // 全體
-      mustRead: type === "promo",           // 優惠 = 強制閱讀
+      targetMemberId: null,
+      mustRead: type === "promo",
+      subjectInfo: { fromName: profile.nickname || profile.name || "教練" },
     }, profile.id);
     toast("通知已發送 ✓");
     setTitle(""); setContent("");

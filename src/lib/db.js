@@ -3110,9 +3110,9 @@ export async function collectVillageResources(memberId, village) {
 // ── Set per-building allocation ────────────────────────────
 export async function setBuildingAllocation(memberId, buildingId, allocation) {
   if (!memberId || !buildingId || !allocation) return;
-  await setDoc(doc(db, C.members, memberId), {
-    ["village.allocations." + buildingId]: allocation,
-  }, { merge: true });
+  await updateDoc(doc(db, C.members, memberId), {
+    [`village.allocations.${buildingId}`]: allocation,
+  });
 }
 
 export async function upgradeVillageBuilding(memberId, buildingId, village) {
@@ -3284,19 +3284,39 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
   batch.update(listingRef, { status: "sold", buyerId, buyerName, soldAt: serverTimestamp() });
   await batch.commit();
 
+  // 查詢交換卡片名稱（card 交換時）
+  let offeredCardName = "";
+  if (listing.priceType === "card" && offeredCardId) {
+    const { CAT_CARDS } = await import("./catCardData");
+    offeredCardName = CAT_CARDS.find(c => c.id === offeredCardId)?.name || offeredCardId;
+  }
+
   // 通知賣家
   const priceText = listing.priceType === "arrowdew"
     ? `箭露 ×${listing.priceAmount}`
     : listing.priceType === "gachaToken"
       ? `扭蛋幣 ×${listing.priceAmount}`
-      : "卡片交換";
+      : `「${offeredCardName}」（卡片交換）`;
   await createNotification({
     type: "market_sale",
     title: `🎉 卡片已售出！`,
     content: `${buyerName} 購買了你的「${listing.cardName}」，已收到 ${priceText}`,
     targetMemberId: listing.sellerId,
     subjectMemberId: buyerId,
-    subjectInfo: { cardName: listing.cardName, priceType: listing.priceType, priceAmount: listing.priceAmount },
+    subjectInfo: { cardName: listing.cardName, priceType: listing.priceType, priceAmount: listing.priceAmount, offeredCardName },
+  }, buyerId);
+
+  // 通知買家（告知收到了哪張卡）
+  const fromText = listing.priceType === "card"
+    ? `以「${offeredCardName}」交換`
+    : `以 ${priceText} 購得`;
+  await createNotification({
+    type: "market_sale",
+    title: `🛒 卡片入手！`,
+    content: `${fromText}「${listing.cardName}」，已加入你的卡片收藏`,
+    targetMemberId: buyerId,
+    subjectMemberId: listing.sellerId,
+    subjectInfo: { cardName: listing.cardName },
   }, buyerId);
 }
 

@@ -6,14 +6,21 @@ import { markNotificationRead, deleteNotificationForMe, addCongrats } from "../.
 import { Card, Btn, TA, ST, Spinner, Empty, useToast } from "../shared/UI";
 
 const TYPE_META = {
-  important:   { label:"重要",  color:"bg-red-100 text-red-700",    icon:"📢" },
-  promo:       { label:"優惠",  color:"bg-pink-100 text-pink-700",  icon:"🎁" },
-  new_comp:    { label:"賽事",  color:"bg-blue-100 text-blue-700",  icon:"🏆" },
-  cert_pass:   { label:"榮耀",  color:"bg-amber-100 text-amber-700",icon:"🎖️" },
-  high_score:  { label:"榮耀",  color:"bg-amber-100 text-amber-700",icon:"🎯" },
-  comp_result: { label:"成績",  color:"bg-green-100 text-green-700",icon:"🏅" },
-  village_goal:          { label:"村莊", color:"bg-emerald-100 text-emerald-700", icon:"🏡" },
-  village_goal_complete: { label:"村莊", color:"bg-amber-100 text-amber-800",   icon:"🎉" },
+  important:             { label:"重要",  color:"bg-red-100 text-red-700",     icon:"📢" },
+  promo:                 { label:"優惠",  color:"bg-pink-100 text-pink-700",   icon:"🎁" },
+  promo_unlock:          { label:"重要",  color:"bg-red-100 text-red-700",     icon:"⚔️" },
+  new_comp:              { label:"賽事",  color:"bg-blue-100 text-blue-700",   icon:"🏆" },
+  comp_result:           { label:"成績",  color:"bg-green-100 text-green-700", icon:"🏅" },
+  cert_pass:             { label:"榮耀",  color:"bg-amber-100 text-amber-700", icon:"🎖️" },
+  high_score:            { label:"榮耀",  color:"bg-amber-100 text-amber-700", icon:"🎯" },
+  achievement:           { label:"成就",  color:"bg-purple-100 text-purple-700",icon:"🏅" },
+  village_goal:          { label:"村莊",  color:"bg-emerald-100 text-emerald-700",icon:"🏡" },
+  village_goal_complete: { label:"村莊",  color:"bg-amber-100 text-amber-800", icon:"🎉" },
+  market_sale:           { label:"市集",  color:"bg-teal-100 text-teal-700",   icon:"🛒" },
+  card_pack:             { label:"市集",  color:"bg-indigo-100 text-indigo-700",icon:"🃏" },
+  dungeon:               { label:"地下城",color:"bg-slate-100 text-slate-700", icon:"🗺️" },
+  worldboss:             { label:"世界王",color:"bg-rose-100 text-rose-700",   icon:"👑" },
+  loot:                  { label:"掉寶",  color:"bg-yellow-100 text-yellow-700",icon:"💎" },
 };
 
 const FILTERS = [
@@ -21,6 +28,9 @@ const FILTERS = [
   { id:"important", label:"重要/優惠" },
   { id:"new_comp",  label:"賽事" },
   { id:"honor",     label:"榮耀時刻" },
+  { id:"achievement",label:"成就" },
+  { id:"market",    label:"市集" },
+  { id:"village",   label:"村莊" },
 ];
 
 export default function MemberNotifications({ notifications = [] }) {
@@ -33,10 +43,13 @@ export default function MemberNotifications({ notifications = [] }) {
   const notifs = notifications.filter(n => !(n.deletedBy || []).includes(profile?.id));
 
   function matchFilter(n) {
-    if (filter === "all")       return true;
-    if (filter === "important") return n.type === "important" || n.type === "promo";
-    if (filter === "new_comp")  return n.type === "new_comp";
-    if (filter === "honor")     return n.type === "cert_pass" || n.type === "high_score";
+    if (filter === "all")        return true;
+    if (filter === "important")  return n.type === "important" || n.type === "promo" || n.type === "promo_unlock";
+    if (filter === "new_comp")   return n.type === "new_comp" || n.type === "comp_result";
+    if (filter === "honor")      return n.type === "cert_pass" || n.type === "high_score";
+    if (filter === "achievement") return n.type === "achievement";
+    if (filter === "market")     return n.type === "market_sale" || n.type === "card_pack";
+    if (filter === "village")    return n.type === "village_goal" || n.type === "village_goal_complete";
     return true;
   }
   function monthOf(n) {
@@ -137,6 +150,9 @@ function NotifCard({ n, myId, onRead, onDelete, onCongrat }) {
           </div>
           <div className="text-gray-800 font-bold text-sm">{n.title}</div>
           <div className="text-gray-600 text-sm mt-0.5">{n.content}</div>
+          {n.subjectInfo?.fromName && (
+            <div className="text-gray-400 text-xs mt-1">— {n.subjectInfo.fromName}</div>
+          )}
         </div>
         <button onClick={onDelete} className="text-gray-300 hover:text-red-400 text-xs flex-shrink-0">刪除</button>
       </div>
