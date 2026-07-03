@@ -3,8 +3,31 @@
 
 ---
 
+## 2026-07-04（官網重製：website/ 靜態 SEO 網站）
+
+### 改了什麼
+- 新增 `website/` 資料夾（與 React App 完全獨立）：`index.html`（單頁，inline CSS/JS 零依賴）、`robots.txt`、`sitemap.xml`、`assets/`（11 張圖，自 imgbb 下載本地託管：logo + 001~009 + 015）。
+- 設計：暖米紙底 `#faf6ef` + 炭墨 `#2b2926` + 品牌橘 `#e8720c`（取自 logo 本色），Noto Serif TC 大標編輯風，與 SimplyBook 舊站深藍金完全區隔。
+- SEO/GEO：JSON-LD ×2（SportsActivityLocation 含價目 OfferCatalog + FAQPage 8 題）、OG tags、GEO 實體描述段（hero 下方）、語意標籤、單一 h1、全圖 alt、lazy loading。
+- 預約 CTA 全部連 `https://catarcherycom.simplybook.asia/v2/#book`（保留 SimplyBook，不自建預約）。
+
+### 為什麼
+- SimplyBook 預設版型無法自訂 SEO；靜態單頁最快最省，Vercel 可另建專案（root=website/）獨立部署。
+
+### 踩坑提醒
+- **正式網域未定**：全檔用 placeholder `https://catarchery.tw`，部署後需全域取代（index.html canonical/OG/JSON-LD + robots.txt + sitemap.xml）。
+- **地址疑義**：舊站主文寫「8 弄 12 號」、SimplyBook footer 寫「14 號」，目前採 12 號，需向老闆確認。
+- 本機預覽：`py -3 -m http.server 8899 --directory website`（file:// 會被瀏覽器工具擋）。
+
+## 2026-07-04（九隻陪練貓個體化）
+
+- 保留 `allround` 資料鍵相容舊帳號，顯示名稱改為「治癒型」；九隻貓維持上排治癒、中排攻擊、下排防禦。
+- 新增每隻貓獨立的 HP／ATK／DEF 最終配點、技能威力與觸發率特性，高等級與高裝備時仍有明顯差異。
+- 戰鬥 hook、遠征與貓咪詳情統一使用 `calcCatCombatStats()`，頁面新增三排定位與個體流派介紹。
+
 ## 2026-07-04（地下城 Boss、四階出怪與獎勵結算修正）
 
+- 組隊遠征不再使用舊版三場直戰：改與單人共用前兩層 5×5 迷霧地圖、功能房、第三層分支、Boss 與寶藏房；房主控制路線並同步全隊，前衛／後衛、HP 與 buff 跨戰鬥保留。
 - 組隊等待室移除 `h-full + overflow-hidden` 導致的手機捲動死鎖，改由主內容區統一捲動；開始／解散操作列固定於底部並加入安全區。
 - 戰鬥進場外框與狀態徽章統一讀取怪物 `variant`；補回擊殺演出、裝備貓咪進場與攻擊回合，並修正寶藏房怪物卡片名稱 `undefined` 及翻牌無音效。
 - 組隊地下城新增斷線恢復：進入地下城首頁時查找仍包含自己的未完成協調房，可手動返回等待室、進行中的戰鬥或尚未領取的結算。
