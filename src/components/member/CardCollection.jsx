@@ -10,6 +10,7 @@ import {
   TIER_CARD_BONUS, FAMILY_STAT, calcCardBonus, canUpgradeStar, getUpgradeCost,
   getCardStat, getStatLabel, MAX_EQUIPPED_CARDS,
 } from "../../lib/monsterCards";
+import { sfxLevelUp, sfxBuff, sfxError } from "../../lib/sound";
 
 const STAT_OPTIONS = [
   { id: "hp",  label: "HP ❤️",  desc: "增加血量" },
@@ -56,11 +57,12 @@ export default function CardCollection() {
     setUpgrading(true);
     const res = await upgradeCard(profile.id, monsterId);
     setUpgrading(false);
-    if (res.ok) showNotice(`✨ 升星成功！現在 ${res.newStars}★`);
-    else showNotice(res.reason || "升星失敗");
+    if (res.ok) { sfxLevelUp(); showNotice(`✨ 升星成功！現在 ${res.newStars}★`); }
+    else { sfxError(); showNotice(res.reason || "升星失敗"); }
   }
   async function handleMythicStat(monsterId, stat) {
     await setMythicCardStat(profile.id, monsterId, stat);
+    sfxBuff();
     setMythicPick(null);
     showNotice("✅ 屬性已設定！");
   }

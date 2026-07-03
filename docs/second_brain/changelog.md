@@ -3,6 +3,32 @@
 
 ---
 
+## 2026-07-03（音效/動畫批次 C：慶祝與獎勵層 — Confetti + 分階段音效）
+
+### 改了什麼
+
+**新元件 `src/components/shared/Confetti.jsx`**
+- 全螢幕彩帶粒子（canvas、零依賴）：props `pieces/duration/colors/onDone`
+- 尊重動畫開關：`<html class="no-anim">` 時直接跳過（立即 onDone）
+- 播完自動停 rAF、unmount 自動清理；`pointer-events:none` 不擋點擊
+
+**慶祝時刻接線**
+- `ArrowMilestonePopup.jsx`：Big（百箭）→ `sfxVictoryFanfare` + Confetti；Small → `sfxLevelUp`（遵守「不干擾戰鬥」原則，小里程碑不用全螢幕）
+- `CardCollection.jsx`：升星成功 `sfxLevelUp` / 失敗 `sfxError` / 神話選屬性 `sfxBuff`（原本全程無聲）
+- `MemberMaterials.jsx`：碎片合成銀章 → Confetti；epic/legendary 藥水合成 → Confetti；開箱結果含卡片/貓/全開 → Confetti；金幣寶箱開箱 → `sfxSuccess` 後 350ms 追加 `sfxCoinDrop`
+- `GachaMachine.jsx`：抽到新卡 showing 階段 → Confetti（`key` 換 idx，十連抽每張新卡各播一次）
+
+### 為什麼
+- HonorCelebration 已有自製 canvas 煙火，**不**重複疊加
+- 震動回饋已內建在各 sfx 函式（批次 A 的 vibrate 閘門管制），無需另做
+
+### 踩坑提醒
+- Confetti 想「重播」要換 `key`（同 fx-bounce 的教訓）；同 key 重 render 不會重播
+- Confetti 不傳 `onDone` 也安全：rAF 播完自停，canvas 留著透明直到 overlay unmount
+- 待做批次 D：戰鬥層（受擊震屏、爆擊 hit-stop、怪物死亡溶解）
+
+---
+
 ## 2026-07-03（音效/動畫批次 A+B：全域開關基礎設施 + UI 回饋層 + 亂播音效/畫面亂跑修復）
 
 ### 改了什麼

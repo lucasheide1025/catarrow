@@ -2,6 +2,8 @@
 // 設計原則：不干擾戰鬥。小里程碑用頂部 toast banner；120箭才用全螢幕慶祝。
 import { useState, useEffect } from "react";
 import { getWarmMessage, getBigMessage } from "../../lib/arrowMilestone";
+import { sfxLevelUp, sfxVictoryFanfare } from "../../lib/sound";
+import Confetti from "../shared/Confetti";
 
 function RewardRow({ label, icon, count }) {
   if (!count) return null;
@@ -22,6 +24,7 @@ export function SmallMilestonePopup({ milestone, rewards, onClose }) {
   const color = tierColor[milestone.tier] || "#10b981";
 
   useEffect(() => {
+    sfxLevelUp(); // 小里程碑：輕快升級音（不用全螢幕慶祝，遵守「不干擾戰鬥」）
     setTimeout(() => setVisible(true), 30);
     const t = setTimeout(() => { setVisible(false); setTimeout(onClose, 400); }, 5000);
     return () => clearTimeout(t);
@@ -63,11 +66,16 @@ export function SmallMilestonePopup({ milestone, rewards, onClose }) {
 export function BigMilestonePopup({ milestone, rewards, onClose }) {
   const [msg] = useState(() => getBigMessage(milestone.arrows));
   const [show, setShow] = useState(false);
-  useEffect(() => { setTimeout(() => setShow(true), 50); }, []);
+  const [confetti, setConfetti] = useState(true);
+  useEffect(() => {
+    sfxVictoryFanfare(); // 百箭大里程碑：凱旋號角 + 彩帶
+    setTimeout(() => setShow(true), 50);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.85)" }}>
+      {confetti && <Confetti onDone={() => setConfetti(false)} />}
       <div
         className={`w-full max-w-sm mx-4 rounded-3xl bg-gradient-to-b from-yellow-500 to-orange-600 p-6 shadow-2xl
           transition-all duration-500 ${show ? "opacity-100 scale-100" : "opacity-0 scale-90"}`}>

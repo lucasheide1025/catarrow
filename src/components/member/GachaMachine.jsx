@@ -4,6 +4,7 @@ import { drawGachaCards } from "../../lib/db";
 import { CAT_CARD_MAP, CAT_CARD_CATEGORIES, CAT_CARDS } from "../../lib/catCardData";
 import { useAuth } from "../../hooks/useAuth";
 import { sfxGachaRoll, sfxGachaReveal } from "../../lib/sound";
+import Confetti from "../shared/Confetti";
 
 const C = {
   brown: "#5C3D2E",
@@ -184,6 +185,9 @@ function RevealOverlay({ results, onDone }) {
         cursor: phase==="showing" ? "pointer" : "default",
       }}>
       <style>{STYLE}</style>
+
+      {/* 新卡揭曉彩帶（key 換 idx 讓每張新卡重播一次）*/}
+      {phase === "showing" && isNew && <Confetti key={`confetti-${idx}`} pieces={90} duration={2000} />}
 
       {/* 進度點 */}
       <div style={{

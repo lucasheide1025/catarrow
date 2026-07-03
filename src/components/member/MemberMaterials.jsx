@@ -6,7 +6,8 @@ import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment,
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
-import { sfxBuff, sfxEpic, sfxSuccess, sfxCast } from "../../lib/sound";
+import { sfxBuff, sfxEpic, sfxSuccess, sfxCast, sfxCoinDrop } from "../../lib/sound";
+import Confetti from "../shared/Confetti";
 
 const FAMILY_CONFIG = {
   ghost:     { label: "鬼怪族",    icon: "👻", color: "#7c3aed" },
@@ -131,6 +132,7 @@ export default function MemberMaterials({ onBack }) {
     setOpeningChest(null);
     if (res.ok) {
       sfxSuccess();
+      if (isCoin) setTimeout(sfxCoinDrop, 350); // 金幣寶箱：成功音後叮鈴收尾
       setOpenResult(isCoin ? { coins: res.coins } : { ...contents, catResult: res.catResult });
       if (!isCoin) updateChestOpenStats(profile.id, chest.type).catch(() => {});
     } else {
@@ -487,6 +489,7 @@ export default function MemberMaterials({ onBack }) {
           {openResult && (
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
               onClick={() => setOpenResult(null)}>
+              {(openResult.cards?.length > 0 || openResult.catResult || openResult.bulk) && <Confetti />}
               <div className="rounded-3xl p-6 w-full max-w-sm"
                 style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
                 onClick={e => e.stopPropagation()}>
@@ -848,6 +851,7 @@ export default function MemberMaterials({ onBack }) {
       {potionCelebrate && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-6"
           onClick={() => setPotionCelebrate(null)}>
+          {(potionCelebrate.rarity === "epic" || potionCelebrate.rarity === "legendary") && <Confetti />}
           <div className="text-center" onClick={e => e.stopPropagation()}>
             <div className="text-8xl mb-4 animate-bounce"
               style={{ filter: `drop-shadow(0 0 20px ${RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af"})` }}>
@@ -879,6 +883,7 @@ export default function MemberMaterials({ onBack }) {
       {craftCelebrate && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
           onClick={() => setCraftCelebrate(null)}>
+          <Confetti />
           <div className="text-center">
             <div className="text-7xl mb-3 animate-bounce">
               {craftCelebrate.frag.craftResult?.badgeLevel === "gold" ? "🥇" : craftCelebrate.frag.craftResult?.badgeLevel === "bronze" ? "🥉" : "🥈"}
