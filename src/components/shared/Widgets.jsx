@@ -1,6 +1,7 @@
 // src/components/shared/Widgets.jsx
 // 儀表板/導覽用小元件 — token 驅動、深色原生（2026-07 UI 改版）
 // ⚠️ 本檔不從 UI.jsx import / re-export 任何常數（避免循環 import）
+import { useEffect, useRef, useState } from "react";
 
 // ─── 區塊標題列 ────────────────────────────────────────────
 // <SectionHeader icon="🏹" title="今日訓練" action={<button>更多</button>} />
@@ -32,7 +33,7 @@ export function StatBar({ value = 0, max = 100, color = "var(--primary)", label,
       )}
       <div className="w-full overflow-hidden"
         style={{ height, borderRadius: height, background: "rgba(255,255,255,0.08)" }}>
-        <div style={{
+        <div className={pct >= 100 ? "fx-pulse" : ""} style={{
           width: `${pct}%`, height: "100%", borderRadius: height,
           background: color, transition: "width .4s ease",
         }} />
@@ -102,4 +103,35 @@ export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b" 
       {desc && <span className="text-[11px] leading-tight" style={{ color: "var(--text-secondary)" }}>{desc}</span>}
     </button>
   );
+}
+
+// ─── 數字滾動動畫（金幣/XP counter roll-up，批次 B）─────────
+// <CountUp value={coins} /> — value 變動時由舊值平滑滾動到新值
+// 動畫關閉（.no-anim）時直接跳到目標值
+export function CountUp({ value = 0, duration = 600, className = "", style }) {
+  const [disp, setDisp] = useState(value);
+  const prevRef = useRef(value);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to   = value;
+    prevRef.current = value;
+    if (from === to) return;
+    if (typeof document !== "undefined" && document.documentElement.classList.contains("no-anim")) {
+      setDisp(to);
+      return;
+    }
+    const t0 = performance.now();
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / duration);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      setDisp(Math.round(from + (to - from) * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+
+  return <span className={`tabular-nums ${className}`} style={style}>{disp.toLocaleString()}</span>;
 }

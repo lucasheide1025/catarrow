@@ -1,9 +1,13 @@
 // src/lib/sound.js
 // 真實 mp3 音效（/sounds/*.mp3）+ Web Audio API 合成（其餘）
+// 全域開關：fxSettings.getSoundEnabled() — ctx() 單點閘門，關閉時所有合成音效靜音
+
+import { getSoundEnabled } from "./fxSettings";
 
 // ── mp3 播放輔助 ──────────────────────────────────────────────
 const _sfxCache = {};
 function playAudio(name, volume = 1) {
+  if (!getSoundEnabled()) return;
   try {
     if (!_sfxCache[name]) _sfxCache[name] = new Audio(`/sounds/${name}.mp3`);
     const a = _sfxCache[name].cloneNode();
@@ -15,6 +19,7 @@ function playAudio(name, volume = 1) {
 let _ctx = null;
 function ctx() {
   if (typeof window === "undefined") return null;
+  if (!getSoundEnabled()) return null; // 總閘門：所有合成音效（tone/noiseBurst/distTone/直接用 ctx 的函式）都會靜音
   try {
     if (!_ctx || _ctx.state === "closed") {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -37,6 +42,7 @@ if (typeof window !== "undefined") {
 }
 
 export function vibrate(pattern = 30) {
+  if (!getSoundEnabled()) return; // 震動跟隨音效開關
   try { if (_gestured && navigator?.vibrate) navigator.vibrate(pattern); } catch {}
 }
 
@@ -116,6 +122,33 @@ export function sfxNotify() {
   tone(1100, 0.16, "triangle", 0.2,  0.13);
   tone(1320, 0.12, "triangle", 0.16, 0.26);
   vibrate([0, 30, 60, 30]);
+}
+
+// tab / 開關切換 — 短促雙音（比 sfxTap 更輕）
+export function sfxSwitch() {
+  tone(600, 0.05, "triangle", 0.14, 0);
+  tone(900, 0.04, "sine",     0.10, 0.03);
+  vibrate(8);
+}
+
+// 彈窗開啟 — 上滑感
+export function sfxOpen() {
+  tone(440, 0.06, "sine",     0.14, 0);
+  tone(660, 0.08, "triangle", 0.12, 0.05);
+  vibrate(10);
+}
+
+// 彈窗關閉 — 下滑感
+export function sfxClose() {
+  tone(660, 0.05, "sine",     0.12, 0);
+  tone(440, 0.07, "triangle", 0.10, 0.04);
+}
+
+// 錯誤/不可行操作 — 低音雙頓
+export function sfxError() {
+  tone(220, 0.09, "square", 0.14, 0);
+  tone(185, 0.14, "square", 0.14, 0.11);
+  vibrate([0, 40, 40, 40]);
 }
 
 // ── 射箭音效 ─────────────────────────────────────────────────

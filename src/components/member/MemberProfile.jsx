@@ -10,6 +10,8 @@ import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
 import { auth } from "../../lib/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { APP_THEMES } from "../../lib/theme";
+import { getSoundEnabled, setSoundEnabled, getAnimEnabled, setAnimEnabled } from "../../lib/fxSettings";
+import { sfxTap } from "../../lib/sound";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 const HALF_LABEL = { first:"上半年", second:"下半年" };
@@ -310,8 +312,58 @@ export default function MemberProfile({
         </div>
       ))}
 
+      <FxSettings />
       <AccountSettings profile={profile} />
     </div>
+  );
+}
+
+// ── 音效與動畫開關（fxSettings.js）──────────────────────────
+function FxToggleRow({ icon, label, desc, on, onToggle }) {
+  return (
+    <button onClick={onToggle}
+      className="w-full flex items-center gap-3 py-2 text-left active:opacity-80"
+      style={{ minHeight: 44 }}>
+      <span className="text-xl w-8 text-center">{icon}</span>
+      <div className="flex-1">
+        <div className="text-gray-200 text-sm font-bold">{label}</div>
+        <div className="text-gray-400 text-xs">{desc}</div>
+      </div>
+      <span className="relative inline-block w-11 h-6 rounded-full transition-colors flex-shrink-0"
+        style={{ background: on ? "var(--primary)" : "rgba(255,255,255,0.15)" }}>
+        <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+          style={{ left: on ? 22 : 2 }} />
+      </span>
+    </button>
+  );
+}
+
+function FxSettings() {
+  const [sound, setSound] = useState(getSoundEnabled());
+  const [anim,  setAnim]  = useState(getAnimEnabled());
+
+  function toggleSound() {
+    const v = !sound;
+    setSound(v);
+    setSoundEnabled(v);
+    if (v) sfxTap(); // 開啟時立刻回饋一聲，確認有效
+  }
+  function toggleAnim() {
+    const v = !anim;
+    setAnim(v);
+    setAnimEnabled(v);
+  }
+
+  return (
+    <Card className="p-4">
+      <ST>🔊 音效與動畫</ST>
+      <div className="flex flex-col divide-y divide-white/10">
+        <FxToggleRow icon="🔊" label="音效與震動" desc="按鈕、戰鬥、獎勵等所有音效"
+          on={sound} onToggle={toggleSound} />
+        <FxToggleRow icon="✨" label="介面動畫" desc="關閉後減少畫面晃動與耗電"
+          on={anim} onToggle={toggleAnim} />
+      </div>
+    </Card>
   );
 }
 

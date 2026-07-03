@@ -41,6 +41,63 @@
 }
 
 /*
+ ─── 動畫總開關（fxSettings.js 控制）─────────────────────────
+ <html class="no-anim"> 時抑制所有動畫/轉場（含 View Transitions）。
+ 手動關閉或系統 prefers-reduced-motion 都會加上此 class。
+ ──────────────────────────────────────────────────────── */
+.no-anim *, .no-anim *::before, .no-anim *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+.no-anim::view-transition-group(*),
+.no-anim::view-transition-old(*),
+.no-anim::view-transition-new(*) {
+  animation: none !important;
+}
+
+/*
+ ─── 通用動畫庫（批次 A）───────────────────────────────────
+ keyframes 前綴 fx-；utility class 直接掛元素即可。
+ ──────────────────────────────────────────────────────── */
+@keyframes fx-pop-in {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes fx-fade-up {
+  0%   { transform: translateY(12px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes fx-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+@keyframes fx-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+  50%      { box-shadow: 0 0 14px 3px rgba(245,158,11,0.25); }
+}
+@keyframes fx-float-up {
+  0%   { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-36px); opacity: 0; }
+}
+@keyframes fx-bounce-once {
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-6px); }
+  70%      { transform: translateY(2px); }
+}
+.fx-pop        { animation: fx-pop-in 0.35s cubic-bezier(.34,1.56,.64,1) both; }
+.fx-fade-up    { animation: fx-fade-up 0.3s ease-out both; }
+.fx-shake      { animation: fx-shake 0.4s ease-in-out; }
+.fx-pulse      { animation: fx-pulse-glow 1.6s ease-in-out infinite; }
+.fx-float-up   { animation: fx-float-up 0.8s ease-out both; }
+.fx-bounce     { animation: fx-bounce-once 0.45s ease-out; }
+
+/*
  ─── Token 元件層（shared/UI.jsx 使用）──────────────────────
  深色原生元件樣式：偽類（focus/placeholder）用純 CSS 定義，
  不依賴 Tailwind CDN 的 JIT。

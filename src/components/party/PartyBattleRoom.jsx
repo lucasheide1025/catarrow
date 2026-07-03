@@ -319,7 +319,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 滾動 log 到底
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [room?.log?.length]);
 
   // 回合更新：統一透過 useMiniRoundReveal 管理 mini-round 動畫

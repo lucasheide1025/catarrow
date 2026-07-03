@@ -384,7 +384,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   useEffect(() => { if (pickedMonster) lastPickedRef.current = pickedMonster; }, [pickedMonster]);
 
   useEffect(() => {
-    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth" });
+    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }, [log]);
 
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }

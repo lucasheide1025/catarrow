@@ -1,5 +1,6 @@
 // src/components/shared/UI.jsx
 // 全站共用 UI 元件
+import { sfxTap } from "../../lib/sound";
 
 // ─── 基礎元件 ──────────────────────────────────────────────
 // Card 元件 — 深色原生（dark-first, 2026-07 UI 改版）
@@ -19,7 +20,7 @@ export function Card({ children, className = "", style, theme = "light" }) {
   );
 }
 
-export function Btn({ children, v = "primary", size = "md", className = "", ...p }) {
+export function Btn({ children, v = "primary", size = "md", className = "", silent = false, onClick, ...p }) {
   // 深色原生 variant（2026-07 UI 改版）：
   // 淺色系（secondary/danger/ghost）改為深色版視覺；
   // dark-* 系列保留為 alias，指向對應基礎 variant（API 向後相容）。
@@ -40,9 +41,15 @@ export function Btn({ children, v = "primary", size = "md", className = "", ...p
   vs["dark-success"] = vs.success;
   vs["dark-warn"]    = vs.warn;
   const sz = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2 text-sm", lg: "px-5 py-3 text-base" };
+  // 全站按鈕點擊音（批次 B）：silent prop 可關閉（戰鬥等自帶音效的按鈕用）
+  function handleClick(e) {
+    if (!silent) sfxTap();
+    if (onClick) onClick(e);
+  }
   return (
     <button
       className={`font-bold rounded-xl transition-all active:scale-95 active:brightness-95 disabled:opacity-40 ${vs[v] || vs.primary} ${sz[size]} ${className}`}
+      onClick={handleClick}
       {...p}
     >
       {children}
