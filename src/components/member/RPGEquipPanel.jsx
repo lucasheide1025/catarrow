@@ -1,10 +1,11 @@
 // src/components/member/RPGEquipPanel.jsx — RPG 裝備面板
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
-import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus } from "../../lib/constants";
+import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats } from "../../lib/equipData";
+import { sfxLevelUp } from "../../lib/sound";
 
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
@@ -31,7 +32,7 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
   const grade   = equipped?.grade     || "common";
   const plus    = equipped?.plusLevel || 0;
   const idx     = gradeIdx(grade);
-  const bonus   = (idx * 5 + 1) + plus;
+  const bonus   = getEquipSlotBonus(slotDef, equipped);
   const gStyle  = gradeStyle(grade);
   const itemList = (itemsMap || {})[slotDef.id] || [];
   const item     = itemList.find(i => i.id === equipped?.itemId);
@@ -39,48 +40,140 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
 
   if (isEmpty) {
     return (
-      <button onClick={onGoShop}
-        className="w-full text-left rounded-xl p-2.5 border border-dashed border-slate-700/40 bg-slate-900/20 transition-all hover:border-slate-600/60 active:scale-95">
-        <div className="flex items-center gap-2">
-          <span className="text-lg opacity-30">{slotDef.icon}</span>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] text-slate-600 font-bold">{slotDef.name}</div>
-            <div className="text-[10px] text-slate-700">🔒 前往金幣商店購買</div>
+      <button type="button" onClick={onGoShop}
+        className="min-h-40 w-full touch-manipulation rounded-2xl border border-dashed border-slate-700/60 bg-slate-950/25 p-3 text-left transition-[transform,border-color,background-color] hover:border-slate-500 hover:bg-slate-900/50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+        <div className="flex h-full flex-col">
+          <div className="flex items-start justify-between">
+            <span className="text-[11px] font-black text-slate-500">{slotDef.name}</span>
+            <span className="text-xs text-slate-600" aria-hidden="true">🏪</span>
           </div>
-          <span className="text-slate-700 text-xs">🏪</span>
+          <div className="my-3 flex flex-1 items-center justify-center">
+            <span className="grid size-14 place-items-center rounded-2xl border border-slate-700/50 bg-slate-900/60 text-3xl opacity-40">
+              {slotDef.icon}
+            </span>
+          </div>
+          <div className="text-center text-xs font-bold text-slate-500">尚未裝備</div>
+          <div className="mt-1 text-center text-[10px] text-slate-600">點擊前往商店</div>
         </div>
       </button>
     );
   }
 
   return (
-    <button onClick={onClick}
-      className="w-full text-left rounded-xl p-2.5 border border-slate-600/50 bg-slate-800/50 hover:border-slate-500 transition-all active:scale-95">
-      <div className="flex items-center gap-2">
-        <span className="text-lg">{slotDef.icon}</span>
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] text-slate-500 font-bold">{slotDef.name}</div>
-          <div className="text-xs font-bold truncate" style={gStyle}>
+    <button type="button" onClick={onClick}
+      className="relative min-h-40 w-full touch-manipulation overflow-hidden rounded-2xl border p-3 text-left shadow-lg transition-[transform,border-color,background-color] hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+      style={{
+        borderColor: `${gStyle.color}66`,
+        background: `linear-gradient(145deg, ${gStyle.color}20 0%, rgba(15,23,42,.92) 55%)`,
+      }}>
+      <div className="absolute -right-5 -top-5 size-20 rounded-full opacity-15 blur-2xl"
+        style={{ backgroundColor: gStyle.color }} />
+      <div className="relative flex h-full flex-col">
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-[11px] font-black text-slate-400">{slotDef.name}</span>
+          {isMax && <span className="rounded-full bg-pink-500/15 px-1.5 py-0.5 text-[9px] font-black text-pink-300">MAX</span>}
+        </div>
+        <div className="my-2 flex items-center justify-between gap-2">
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl border bg-black/20 text-3xl"
+            style={{ borderColor: `${gStyle.color}45` }}>
+            {slotDef.icon}
+          </span>
+          <div className="text-right">
+            <div className="text-[10px] font-bold text-slate-500">
+              {slotDef.stat === "hp" ? "HP" : slotDef.stat.toUpperCase()} 加成
+            </div>
+            <div className="text-xl font-black" style={gStyle}>+{bonus}</div>
+          </div>
+        </div>
+        <div className="mt-auto min-w-0">
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-bold" style={gStyle}>
             <span className="opacity-70">{GRADE_PREFIX[grade] || ""}</span>
             {item?.name || equipped.itemId}
           </div>
-          <div className="flex items-center gap-1 mt-0.5">
-            <span className="text-[10px] font-black" style={gStyle}>
-              {gradeName(grade)}{plus > 0 ? `+${plus}` : ""}
+          <div className="mt-1 flex items-center justify-between gap-1">
+            <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-black" style={gStyle}>
+              {gradeName(grade)}{plus > 0 ? ` +${plus}` : ""}
             </span>
-            {isMax && <span className="text-[9px] text-pink-400">MAX</span>}
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-[10px] text-slate-500">
-            {slotDef.stat === "hp" ? "HP" : slotDef.stat.toUpperCase()}
-          </div>
-          <div className="text-sm font-black" style={gStyle}>
-            +{slotDef.stat === "hp" ? bonus * 5 : bonus}
+            <span className="text-[10px] font-bold text-slate-500">查看 ›</span>
           </div>
         </div>
       </div>
     </button>
+  );
+}
+
+// ── 強化成功演出 ───────────────────────────────────────────
+function UpgradeCelebration({ result, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 2600);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-slate-950/90 px-6"
+      role="status" aria-live="assertive">
+      <style>{`
+        @keyframes equip-flash { 0% { opacity: 0; } 18% { opacity: .9; } 100% { opacity: 0; } }
+        @keyframes equip-card-in {
+          0% { opacity: 0; transform: scale(.55) rotateY(90deg); }
+          55% { opacity: 1; transform: scale(1.08) rotateY(0); }
+          100% { opacity: 1; transform: scale(1) rotateY(0); }
+        }
+        @keyframes equip-ray { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes equip-spark {
+          0% { opacity: 0; transform: rotate(var(--angle)) translateY(0) scale(.3); }
+          35% { opacity: 1; }
+          100% { opacity: 0; transform: rotate(var(--angle)) translateY(-145px) scale(1); }
+        }
+        .equip-fx-card { animation: equip-card-in .7s cubic-bezier(.16,1,.3,1) both; }
+        .equip-fx-flash { animation: equip-flash .8s ease-out both; }
+        .equip-fx-ray { animation: equip-ray 8s linear infinite; }
+        .equip-fx-spark { animation: equip-spark 1.4s ease-out both; animation-delay: var(--delay); }
+        @media (prefers-reduced-motion: reduce) {
+          .equip-fx-card, .equip-fx-flash, .equip-fx-ray, .equip-fx-spark { animation: none !important; }
+          .equip-fx-spark { display: none; }
+        }
+      `}</style>
+
+      <div className="equip-fx-flash pointer-events-none absolute inset-0 bg-white" />
+      <div className="equip-fx-ray pointer-events-none absolute size-[28rem] rounded-full opacity-20"
+        style={{ background: `conic-gradient(from 0deg, transparent, ${result.gradeColor}, transparent, ${result.gradeColor}, transparent)` }} />
+      {Array.from({ length: 12 }, (_, index) => (
+        <span key={index}
+          className="equip-fx-spark pointer-events-none absolute left-1/2 top-1/2 size-2 rounded-full"
+          style={{
+            "--angle": `${index * 30}deg`,
+            "--delay": `${0.2 + (index % 4) * 0.08}s`,
+            backgroundColor: result.gradeColor,
+            boxShadow: `0 0 14px ${result.gradeColor}`,
+          }} />
+      ))}
+
+      <div className="equip-fx-card relative w-full max-w-xs text-center">
+        <div className="mb-3 text-sm font-black tracking-[.3em] text-amber-200">
+          {result.upgraded ? "品級突破" : "強化成功"}
+        </div>
+        <div className="rounded-[2rem] border-2 bg-slate-900/95 p-6 shadow-2xl"
+          style={{ borderColor: result.gradeColor, boxShadow: `0 0 45px ${result.gradeColor}55` }}>
+          <div className="mx-auto grid size-24 place-items-center rounded-3xl border bg-black/20 text-6xl"
+            style={{ borderColor: `${result.gradeColor}80` }}>
+            {result.icon}
+          </div>
+          <div className="mt-4 text-xs font-bold text-slate-400">{result.slotName}</div>
+          <div className="mt-1 truncate text-lg font-black text-white">{result.itemName}</div>
+          <div className="mt-3 text-2xl font-black" style={{ color: result.gradeColor }}>
+            {result.gradeName}{result.plusLevel > 0 ? ` +${result.plusLevel}` : ""}
+          </div>
+          <div className="mt-2 text-sm font-bold text-emerald-300">
+            {result.statLabel} 加成提升至 +{result.bonus}
+          </div>
+        </div>
+        <button type="button" onClick={onClose}
+          className="mt-5 min-h-11 rounded-full border border-white/15 bg-white/10 px-8 text-sm font-black text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          繼續
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -96,6 +189,12 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   const mats      = nextMats || {};
   const itemList  = (itemsMap || {})[slotDef.id] || [];
   const curItem   = itemList.find(i => i.id === equipped?.itemId);
+  const currentBonus = getEquipSlotBonus(slotDef, equipped);
+  const nextGrade = plus >= 4 ? EQUIP_GRADES[idx + 1]?.id : grade;
+  const nextEquip = nextGrade
+    ? { ...equipped, grade: nextGrade, plusLevel: plus >= 4 ? 0 : plus + 1 }
+    : null;
+  const nextBonus = nextEquip ? getEquipSlotBonus(slotDef, nextEquip) : currentBonus;
 
   // 計算是否可升級
   const inv = matInv || {};
@@ -108,7 +207,8 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-0"
       onClick={onClose}>
-      <div className="w-full max-w-md bg-slate-900 rounded-t-2xl p-4 pb-8"
+      <div role="dialog" aria-modal="true" aria-labelledby="equip-dialog-title"
+        className="w-full max-w-md bg-slate-900 rounded-t-2xl p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] overscroll-contain"
         onClick={e => e.stopPropagation()}>
 
         {/* 標題 */}
@@ -116,13 +216,14 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
           <div className="flex items-center gap-2">
             <span className="text-2xl">{slotDef.icon}</span>
             <div>
-              <div className="font-black text-white">{slotDef.name}</div>
+              <div id="equip-dialog-title" className="font-black text-white">{slotDef.name}</div>
               <div className="text-xs text-slate-500">
                 {slotDef.stat === "atk" ? "⚔️ 攻擊" : slotDef.stat === "def" ? "🛡️ 防禦" : "❤️ 生命"}裝備
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-500 text-xl">✕</button>
+          <button type="button" aria-label="關閉裝備視窗" onClick={onClose}
+            className="min-h-11 min-w-11 rounded-lg text-slate-400 text-xl hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70">✕</button>
         </div>
 
         {isEmpty ? (
@@ -130,6 +231,11 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
           <div>
             <div className="text-xs text-slate-400 mb-3">選擇要裝備的品項：</div>
             <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+              {itemList.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-xs text-slate-500">
+                  此槽位目前沒有可裝備品項，請先前往金幣商店購買。
+                </div>
+              )}
               {itemList.map(item => (
                 <button key={item.id}
                   onClick={() => onEquip(item.id)}
@@ -171,14 +277,18 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                   <div className="mt-2 flex items-center gap-4">
                     <div className="text-xs text-slate-500">加成</div>
                     <div className="font-black text-sm" style={gradeStyle(grade)}>
-                      {slotDef.stat === "hp"
-                        ? `❤️ HP +${(idx + 1) * 5}`
-                        : slotDef.stat === "atk"
-                          ? `⚔️ ATK +${idx + 1}`
-                          : `🛡️ DEF +${idx + 1}`
-                      }
+                      {slotDef.stat === "hp" ? "❤️ HP" : slotDef.stat === "atk" ? "⚔️ ATK" : "🛡️ DEF"} +{currentBonus}
                     </div>
                   </div>
+                  {!isMax && (
+                    <div className="mt-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-slate-300">
+                      下次升級：
+                      <span className="ml-1 font-black text-emerald-300">
+                        +{currentBonus} → +{nextBonus}
+                      </span>
+                      <span className="ml-1 text-slate-500">（提升 +{nextBonus - currentBonus}）</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 升級進度條 */}
@@ -299,6 +409,11 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
             {tab === "change" && (
               <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
                 <div className="text-xs text-amber-400 mb-1">⚠️ 更換品項不影響品級與等級</div>
+                {itemList.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-xs text-slate-500">
+                    沒有其他可更換的品項。
+                  </div>
+                )}
                 {itemList.map(item => (
                   <button key={item.id}
                     onClick={() => onEquip(item.id)}
@@ -321,13 +436,14 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
 }
 
 // ── 主元件 ─────────────────────────────────────────────────
-export default function RPGEquipPanel({ onGoShop }) {
+export default function RPGEquipPanel({ onGoShop, showSummary = true }) {
   const { profile } = useAuth();
   const [activeSlot,      setActiveSlot]      = useState(null);
   const [displayNextMats, setDisplayNextMats] = useState(null);
   const [upgrading,       setUpgrading]       = useState(false);
   const [msg,             setMsg]             = useState("");
   const [upgradeErr,      setUpgradeErr]      = useState("");
+  const [upgradeFx,       setUpgradeFx]       = useState(null);
   const [rawItems,        setRawItems]        = useState([]);
   const [matInv,          setMatInv]          = useState({});
 
@@ -338,11 +454,11 @@ export default function RPGEquipPanel({ onGoShop }) {
   }, [profile?.id]); // eslint-disable-line
 
   // 轉成 { slotId: [...items] } 的 map，方便子元件查找
-  const itemsMap = rawItems.reduce((acc, item) => {
+  const itemsMap = useMemo(() => rawItems.reduce((acc, item) => {
     if (!acc[item.slotId]) acc[item.slotId] = [];
     acc[item.slotId].push(item);
     return acc;
-  }, {});
+  }, {}), [rawItems]);
 
   const equipment = profile?.rpgEquip || {};
   const bonus     = calcEquipBonus(equipment);
@@ -392,20 +508,37 @@ export default function RPGEquipPanel({ onGoShop }) {
 
   async function handleUpgrade() {
     if (!activeSlot || !profile?.id || upgrading) return;
+    const slotDef = activeSlot;
+    const currentEquip = equipment[slotDef.id];
+    const currentItem = (itemsMap[slotDef.id] || []).find(item => item.id === currentEquip?.itemId);
     setUpgrading(true);
     setUpgradeErr("");
-    const result = await upgradeEquipSlot(profile.id, activeSlot.id, {
-      equip:    equipment[activeSlot.id],
+    const result = await upgradeEquipSlot(profile.id, slotDef.id, {
+      equip:    currentEquip,
       coins:    profile.coins || 0,
       matItems: matInv,
       nextMats: displayNextMats,
     });
     setUpgrading(false);
     if (result.ok) {
-      const upgraded = result.upgraded;
-      showMsg(upgraded
-        ? `🎉 升品！→ ${EQUIP_GRADES.find(g => g.id === result.newGrade)?.name}`
-        : `✅ 升至 +${result.newPlusLevel}`);
+      const nextEquip = {
+        ...currentEquip,
+        grade: result.newGrade,
+        plusLevel: result.newPlusLevel,
+      };
+      const nextGrade = EQUIP_GRADES.find(grade => grade.id === result.newGrade);
+      sfxLevelUp();
+      setUpgradeFx({
+        upgraded: result.upgraded,
+        icon: slotDef.icon,
+        slotName: slotDef.name,
+        itemName: currentItem?.name || currentEquip?.itemId || slotDef.name,
+        gradeName: nextGrade?.name || gradeName(result.newGrade),
+        gradeColor: nextGrade?.color || "#f8fafc",
+        plusLevel: result.newPlusLevel,
+        bonus: getEquipSlotBonus(slotDef, nextEquip),
+        statLabel: slotDef.stat === "hp" ? "HP" : slotDef.stat.toUpperCase(),
+      });
       setUpgradeErr("");
       setActiveSlot(null);
     } else {
@@ -418,7 +551,7 @@ export default function RPGEquipPanel({ onGoShop }) {
   return (
     <div className="pb-4">
       {/* 總加成摘要 */}
-      <div className="flex gap-2 mb-4 px-1">
+      {showSummary && <div className="flex gap-2 mb-4 px-1">
         {[
           { label: "ATK 加成", val: `+${bonus.atkBonus}`, color: "text-orange-400" },
           { label: "DEF 加成", val: `+${bonus.defBonus}`, color: "text-blue-400"   },
@@ -429,13 +562,13 @@ export default function RPGEquipPanel({ onGoShop }) {
             <div className={`text-lg font-black ${color}`}>{val}</div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* 各槽位分區顯示 */}
       {STAT_SECTIONS.map(sec => (
         <div key={sec.stat} className={`mb-4 rounded-xl p-3 border ${sec.border} ${sec.bg}`}>
           <div className={`text-xs font-black mb-2 ${sec.color}`}>{sec.label}</div>
-          <div className="flex flex-col gap-1.5">
+          <div className="grid grid-cols-2 gap-2.5">
             {EQUIP_SLOT_DEFS.filter(s => s.stat === sec.stat).map(slotDef => (
               <SlotCard
                 key={slotDef.id}
@@ -452,11 +585,15 @@ export default function RPGEquipPanel({ onGoShop }) {
 
       {/* 訊息提示 */}
       {msg && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50
+        <div aria-live="polite" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50
           bg-slate-800 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg
           border border-slate-600">
           {msg}
         </div>
+      )}
+
+      {upgradeFx && (
+        <UpgradeCelebration result={upgradeFx} onClose={() => setUpgradeFx(null)} />
       )}
 
       {/* 槽位操作 Modal */}

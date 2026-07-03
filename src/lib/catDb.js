@@ -44,7 +44,7 @@ export async function claimStarterCat(memberId) {
       name:        cat.name,
       color:       cat.color,
       bond:        0,
-      type:        "allround",   // 預設全能型，可之後更換
+      type:        "allround",   // 相容鍵；UI 顯示為治癒型
       chapter:     1,
       unlockedChs: [1],
       isStarter:   true,

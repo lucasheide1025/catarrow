@@ -86,6 +86,9 @@ function LootCard({ item, icon, label, flipped }) {
 export default function DungeonTreasureRoom({
   onClaim,
   onLoot,               // 選填：獎勵生成後回傳一次（父層可據此實際發放）
+  lootOverride = null,  // 組隊模式由房主生成並同步，其他成員只顯示同一份獎勵
+  claimDisabled = false,
+  claimLabel = "📊 查看遠征報告",
   difficultyTier = 1,
   family = "treasure",
   bossVariant = "boss",
@@ -101,6 +104,10 @@ export default function DungeonTreasureRoom({
   useEffect(() => {
     if (generatedRef.current) return;
     generatedRef.current = true;
+    if (lootOverride) {
+      setLoot(lootOverride);
+      return;
+    }
     // 用寶箱族最高 tier 的怪來生成獎勵
     const tier = TIER_ORDER[Math.min(5, Math.max(0, difficultyTier - 1))] || "common";
     const treasureMonster = MONSTERS.find(monster =>
@@ -124,7 +131,7 @@ export default function DungeonTreasureRoom({
     result.extraItem = extraItem;
     setLoot(result);
     if (typeof onLoot === "function") onLoot(result); // 只在生成時呼叫一次
-  }, []); // eslint-disable-line
+  }, [lootOverride]); // eslint-disable-line
 
   const cards = useMemo(() => {
     if (!loot) return [];
@@ -252,8 +259,8 @@ export default function DungeonTreasureRoom({
                 : "下一張獎勵 →"}
           </button>
         ) : phase === "done" ? (
-          <button onClick={onClaim}
-            className="w-full py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98]"
+          <button onClick={onClaim} disabled={claimDisabled}
+            className="w-full py-4 rounded-2xl font-black text-base shadow-lg transition-transform active:scale-[0.98] disabled:opacity-50"
             style={{
               background:"linear-gradient(90deg,#f59e0b,#d97706)",
               color:"white",
@@ -261,7 +268,7 @@ export default function DungeonTreasureRoom({
             }}
             onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 0 50px rgba(245,158,11,0.5)"; e.currentTarget.style.transform = "scale(1.02)"; }}
             onMouseLeave={e => { e.currentTarget.style.boxShadow = ""; e.currentTarget.style.transform = ""; }}>
-            📊 查看遠征報告
+            {claimLabel}
           </button>
         ) : (
           <div className="text-center text-amber-700/60 text-sm py-4">

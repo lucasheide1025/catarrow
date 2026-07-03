@@ -1,31 +1,9 @@
 // src/lib/expeditionData.js — 遠征隊任務定義與獎勵計算
-import { catLevelFromXP, catLevelBonus } from "./catLevel";
-import { calcCatEquipBonus, getBondLevel } from "./catData";
-
-// 鏡像 useCatCompanion.js CAT_TYPE_BASE（避免 lib 反向引用 hook）
-const _CAT_TYPE_BASE = {
-  attack:   { hp: 140, atk: 16, def: 7  },
-  defense:  { hp: 300, atk: 7,  def: 16 },
-  allround: { hp: 200, atk: 10, def: 10 },
-};
+import { calcCatCombatStats } from "./catCombat";
 
 // 計算貓咪完整戰力（同 useCatCompanion 邏輯，純函式版）
 export function calcCatFullStats(catData = {}) {
-  const { catXP = 0, type = "allround", bond = 0, equip = {} } = catData;
-  const base       = _CAT_TYPE_BASE[type] || _CAT_TYPE_BASE.allround;
-  const catLevel   = catLevelFromXP(catXP);
-  const lvBonus    = catLevelBonus(catLevel);
-  const equipBonus = calcCatEquipBonus(equip);
-  const bondLv     = getBondLevel(bond);
-  const bondMult   = type === "allround" ? 1 + bondLv * 0.025 : 1 + bondLv * 0.05;
-  const atkMult    = (type === "attack"  || type === "allround") ? bondMult : 1.0;
-  const tkhMult    = (type === "defense" || type === "allround") ? bondMult : 1.0;
-  return {
-    catLevel,
-    catATK: Math.round((base.atk + bondLv + lvBonus.atk + equipBonus.atkBonus) * atkMult),
-    catHP:  Math.round((base.hp  + lvBonus.hp  + equipBonus.hpBonus)  * tkhMult),
-    catDEF: Math.round((base.def + lvBonus.def + equipBonus.defBonus) * tkhMult),
-  };
+  return calcCatCombatStats(catData);
 }
 
 // 遠征獎勵倍率：Lv1全能 ATK≈10→1.0x；Lv100 ATK≈109→2.0x；Lv200 ATK≈209→3.0x

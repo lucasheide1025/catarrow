@@ -1,11 +1,16 @@
 // src/components/dungeon/TeamExpeditionBattle.jsx
 // 組隊遠征戰鬥管理器 — 三層戰鬥流程 + DungeonBattleRoom 整合 + 獎勵結算
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { drawFloorMonsters } from "../../lib/monsterData";
+import { drawFloorMonsters, drawMixedMonsterPool } from "../../lib/monsterData";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
+import {
+  generateGridFloor,
+  generateBranchFloor,
+  isAdjacent,
+} from "../../lib/expeditionGrid";
 import {
   createTeamExpeditionBattleRoom,
   subscribeTeamExpeditionRoom,
@@ -27,6 +32,76 @@ import {
 } from "../../lib/expeditionRewards";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
+import DungeonTreasureRoom from "./DungeonTreasureRoom";
+import { GridMapStage, BranchStage } from "./DungeonExpedition";
+
+function attachGridMonsters(gridFloor, floorIndex, difficulty, plan) {
+  const queue = [...(plan.monsters || [])];
+  const fallbackVariant = floorIndex === 0 ? "weak" : "normal";
+  return {
+    ...gridFloor,
+    rooms: gridFloor.rooms.map(room => {
+      if (room.type === "elite_battle") {
+        return { ...room, monster: plan.elite || drawMixedMonsterPool(1, "strong", difficulty)[0] };
+      }
+      if (room.type !== "battle") return room;
+      return {
+        ...room,
+        monster: queue.shift() || drawMixedMonsterPool(1, fallbackVariant, difficulty)[0],
+      };
+    }),
+  };
+}
+
+function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
+  const plan = drawFloorMonsters(floorIndex, difficulty, { family, fixedBoss });
+  if (floorIndex < 2) {
+    const gridFloor = attachGridMonsters(
+      generateGridFloor(floorIndex, difficulty),
+      floorIndex,
+      difficulty,
+      plan,
+    );
+    const start = gridFloor.rooms.find(room => room.type === "entrance");
+    return {
+      phase: "floor_intro",
+      floorIndex,
+      gridFloor,
+      playerPos: start?.pos || gridFloor.startPos,
+      visitedIds: start ? [start.id] : [],
+      branchFloor: null,
+      branchChoice: null,
+      branchStep: 0,
+      pendingRoom: null,
+    };
+  }
+
+  const branchFloor = generateBranchFloor();
+  const withMonsters = {
+    ...branchFloor,
+    branches: Object.fromEntries(Object.entries(branchFloor.branches).map(([key, branch]) => [
+      key,
+      {
+        ...branch,
+        rooms: branch.rooms.map(room => room.type === "battle"
+          ? { ...room, monster: drawMixedMonsterPool(1, "strong", difficulty)[0] }
+          : room),
+      },
+    ])),
+    boss: { ...branchFloor.boss, monster: plan.boss || fixedBoss },
+  };
+  return {
+    phase: "floor_intro",
+    floorIndex,
+    gridFloor: null,
+    playerPos: null,
+    visitedIds: [],
+    branchFloor: withMonsters,
+    branchChoice: null,
+    branchStep: 0,
+    pendingRoom: null,
+  };
+}
 
 // ── 戰鬥房間包裝元件（監聽戰況 + 清理房間）───────────────
 function TeamBattleRoom({ roomId, isHost, onDone, onAbandon }) {
@@ -135,11 +210,16 @@ export default function TeamExpeditionBattle({
   const dungeonDifficulty = teamRoom?.dungeonDifficulty || 1;
   const dungeonIsHidden = teamRoom?.dungeonIsHidden || false;
   const dungeonBoss = teamRoom?.dungeonBoss || null;
+  const mapState = teamRoom?.expeditionMapState || null;
+  const branchSeq = useMemo(() => {
+    if (!mapState?.branchFloor || !mapState?.branchChoice) return [];
+    const branch = mapState.branchFloor.branches[mapState.branchChoice];
+    return [...branch.rooms, mapState.branchFloor.boss, mapState.branchFloor.treasure];
+  }, [mapState?.branchFloor, mapState?.branchChoice]);
 
   // ── 樓層狀態 ──────────────────────────────────────────────
   const [phase, setPhase] = useState("loading"); // "loading" | "floor_intro" | "battle" | "result"
   const [floorIndex, setFloorIndex] = useState(0);
-  const [floorMonsters, setFloorMonsters] = useState(null);  // 房主預先產生
   const [currentRoomId, setCurrentRoomId] = useState(null);
   const [floorsCleared, setFloorsCleared] = useState(0);
   const [wonLast, setWonLast] = useState(false);
@@ -147,19 +227,6 @@ export default function TeamExpeditionBattle({
   const [flowError, setFlowError] = useState("");
   const prevRoomIdRef = useRef(null);
   const floorStartingRef = useRef(false);
-
-  // ── 房主：初始化三層怪物 ────────────────────────────────
-  useEffect(() => {
-    if (!isHost || !teamRoom || floorMonsters) return;
-    const monsters = [];
-    for (let i = 0; i < 3; i++) {
-      monsters.push(drawFloorMonsters(i, dungeonDifficulty, {
-        family: dungeonFamily,
-        fixedBoss: dungeonBoss,
-      }));
-    }
-    setFloorMonsters(monsters);
-  }, [isHost, teamRoom, dungeonDifficulty, dungeonFamily, dungeonBoss]); // eslint-disable-line
 
   // ── 全員：偵測戰鬥房與最終結果 ──────────────────────────
   useEffect(() => {
@@ -174,7 +241,14 @@ export default function TeamExpeditionBattle({
       onAbandon?.();
       return;
     }
-    if (!teamRoom?.currentBattleRoomId) return;
+    if (!teamRoom?.currentBattleRoomId) {
+      setCurrentRoomId(null);
+      if (teamRoom?.expeditionMapState?.phase) {
+        setPhase(teamRoom.expeditionMapState.phase);
+        setFloorIndex(teamRoom.expeditionMapState.floorIndex || 0);
+      }
+      return;
+    }
     if (teamRoom.currentBattleRoomId === prevRoomIdRef.current) return;
     prevRoomIdRef.current = teamRoom.currentBattleRoomId;
     setCurrentRoomId(teamRoom.currentBattleRoomId);
@@ -195,11 +269,22 @@ export default function TeamExpeditionBattle({
       floorsCleared: cleared,
       won,
     });
+    const treasureLoot = teamRoom?.expeditionTreasureLoot;
+    const finalLoot = {
+      ...(loot || { chests: [], defeated: [] }),
+      bonusCoins: (loot?.bonusCoins || 0) + (treasureLoot?.coins || 0),
+      bonusArrowDew: (loot?.bonusArrowDew || 0) + (treasureLoot?.arrowDew || 0),
+      treasure: treasureLoot ? [
+        ...(treasureLoot.material ? [{ ...treasureLoot.material, kind: "material" }] : []),
+        ...(treasureLoot.extraItem ? [{ ...treasureLoot.extraItem, kind: "collectible" }] : []),
+        ...(treasureLoot.card ? [{ ...treasureLoot.card, kind: "card" }] : []),
+      ] : [],
+    };
     const expeditionResult = {
       won,
       floorsCleared: cleared,
       rewards,
-      loot: loot || { chests: [], defeated: [] },
+      loot: finalLoot,
       stats: stats || {},
       party: buildExpeditionParty(members, teamRoom?.hostId, stats),
       boss: dungeonBoss,
@@ -220,33 +305,29 @@ export default function TeamExpeditionBattle({
     return true;
   }, [dungeonDifficulty, teamRoomId, teamRoom, dungeonBoss]);
 
-  // ── 房主：開始某一層 ─────────────────────────────────────
-  const startFloor = useCallback(async (fi, memberOverride = null) => {
-    if (!isHost || !floorMonsters || !teamRoom) return;
+  const startFloor = useCallback(async fi => {
+    if (!isHost || !teamRoom) return;
+    const expeditionMapState = buildTeamFloorState(
+      fi,
+      dungeonDifficulty,
+      dungeonFamily,
+      dungeonBoss,
+    );
+    setFloorIndex(fi);
+    setPhase("floor_intro");
+    setCurrentRoomId(null);
+    prevRoomIdRef.current = null;
+    const saved = await updateTeamExpeditionRoom(teamRoomId, {
+      expeditionMapState,
+      expeditionFloorIndex: fi,
+      currentBattleRoomId: null,
+    });
+    if (!saved.ok) setFlowError(`無法建立探索地圖：${saved.reason}`);
+  }, [isHost, teamRoom, dungeonDifficulty, dungeonFamily, dungeonBoss, teamRoomId]);
 
-    const floorData = floorMonsters[fi];
-    if (!floorData) {
-      await publishResult(true, 3);
-      return;
-    }
-
-    // 計算該層使用的怪物
-    const monster = fi === 2
-      ? (floorData.boss || floorData.elite || floorData.monsters[0])
-      : (floorData.elite || floorData.monsters[0]);
-
-    if (!monster) {
-      // 沒有怪物資料 → 跳過或完成
-      if (fi >= 2) {
-        await publishResult(true, 3);
-      } else {
-        await startFloor(fi + 1, memberOverride);
-      }
-      return;
-    }
-
-    // 取得所有隊員資料
-    const members = Object.entries(memberOverride || teamRoom.members || {})
+  const startRoomBattle = useCallback(async (room, baseMapState = teamRoom?.expeditionMapState) => {
+    if (!isHost || !teamRoom || !room?.monster || floorStartingRef.current) return;
+    const members = Object.entries(teamRoom.members || {})
       .filter(([, m]) => m !== null)
       .map(([id, m]) => ({
         memberId: id,
@@ -260,30 +341,34 @@ export default function TeamExpeditionBattle({
         archerStyle: m.archerStyle || profile?.archerStyle || "baobao",
         catAtk: m.catAtk || 0,
         alive: m.alive !== false,
+        role: m.role || "front",
+        displayGroup: m.displayGroup || m.role || "front",
+        buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
       }));
 
-    // 建立戰鬥房間
-    if (floorStartingRef.current) return;
     floorStartingRef.current = true;
     setFlowError("");
     const res = await createTeamExpeditionBattleRoom({
       members,
       hostId: teamRoom.hostId,
-      monster,
+      monster: room.monster,
       difficultyTier: dungeonDifficulty,
-      floorIndex: fi,
-      roomType: fi === 2 ? "boss" : "monster",
+      floorIndex,
+      roomType: room.type === "boss_battle" ? "boss" : room.type === "elite_battle" ? "elite" : "monster",
       arrowsPerRound: teamRoom.arrowsPerRound || 6,
       targetFmt: teamRoom.targetFmt || "full_110",
     });
 
     if (res.ok) {
-      setFloorIndex(fi);
-      setPhase("floor_intro");
-      // 寫入組隊房間，通知所有成員
+      const nextMapState = {
+        ...baseMapState,
+        phase: "battle",
+        pendingRoom: room,
+      };
       const updateResult = await updateTeamExpeditionRoom(teamRoomId, {
         currentBattleRoomId: res.roomId,
-        expeditionFloorIndex: fi,
+        expeditionFloorIndex: floorIndex,
+        expeditionMapState: nextMapState,
       });
       if (!updateResult.ok) {
         await cleanupExpeditionRoom(res.roomId).catch(() => {});
@@ -292,20 +377,19 @@ export default function TeamExpeditionBattle({
         floorStartingRef.current = false;
         return;
       }
-      // 下一輪 effect 會自動將 phase 設為 battle
       setCurrentRoomId(res.roomId);
       setPhase("battle");
     } else {
       setFlowError(`無法建立戰鬥房：${res.reason}`);
     }
     floorStartingRef.current = false;
-  }, [isHost, floorMonsters, teamRoom, teamRoomId, dungeonDifficulty, profile, publishResult]);
+  }, [isHost, teamRoom, teamRoomId, dungeonDifficulty, floorIndex, profile]);
 
-  // ── 房主：開始第一層 ─────────────────────────────────────
   useEffect(() => {
-    if (!isHost || !floorMonsters || currentRoomId || phase !== "loading") return;
+    if (!isHost || !teamRoom || teamRoom.expeditionMapState
+      || teamRoom.currentBattleRoomId || teamRoom.expeditionPhase === "result") return;
     startFloor(0);
-  }, [isHost, floorMonsters, currentRoomId, phase, startFloor]);
+  }, [isHost, teamRoom, startFloor]);
 
   // ── 房主：樓層戰鬥結束回調 ──────────────────────────────
   const handleFloorDone = useCallback(async ({ won, members: battleMembers, battle }) => {
@@ -340,24 +424,162 @@ export default function TeamExpeditionBattle({
       );
     }
 
-    // 勝利：前進下一層
-    const nextFi = floorIndex + 1;
-    const newCleared = Math.max(floorsCleared, floorIndex + 1);
-    setFloorsCleared(newCleared);
-
-    if (nextFi >= 3) {
-      return await publishResult(
-        true,
-        3,
-        syncResult.loot,
-        syncResult.stats,
-        nextMembers,
-      );
-    } else {
-      await startFloor(nextFi, nextMembers);
+    const mapState = teamRoom?.expeditionMapState;
+    const pendingRoom = mapState?.pendingRoom;
+    if (!mapState) {
+      if (floorIndex >= 2) {
+        const treasureState = buildTeamFloorState(2, dungeonDifficulty, dungeonFamily, dungeonBoss);
+        treasureState.phase = "treasure";
+        await updateTeamExpeditionRoom(teamRoomId, {
+          currentBattleRoomId: null,
+          expeditionMapState: treasureState,
+        });
+      } else {
+        await startFloor(floorIndex + 1);
+      }
       return true;
     }
-  }, [isHost, myId, myName, dungeonDifficulty, floorIndex, floorsCleared, teamRoomId, teamRoom?.members, startFloor, publishResult]);
+    let nextMapState;
+    if (pendingRoom?.type === "boss_battle") {
+      nextMapState = {
+        ...mapState,
+        phase: "treasure",
+        pendingRoom: null,
+      };
+      setFloorsCleared(3);
+    } else if (floorIndex < 2) {
+      nextMapState = {
+        ...mapState,
+        phase: "grid",
+        pendingRoom: null,
+        gridFloor: {
+          ...mapState.gridFloor,
+          rooms: mapState.gridFloor.rooms.map(room =>
+            room.id === pendingRoom?.id ? { ...room, cleared: true } : room
+          ),
+        },
+      };
+    } else {
+      nextMapState = {
+        ...mapState,
+        phase: "branch",
+        pendingRoom: null,
+        branchStep: (mapState.branchStep || 0) + 1,
+      };
+    }
+    prevRoomIdRef.current = null;
+    setCurrentRoomId(null);
+    setPhase(nextMapState.phase);
+    const saved = await updateTeamExpeditionRoom(teamRoomId, {
+      currentBattleRoomId: null,
+      expeditionMapState: nextMapState,
+    });
+    if (!saved.ok) {
+      setFlowError(`無法返回探索地圖：${saved.reason}`);
+      return false;
+    }
+    return true;
+  }, [isHost, myName, dungeonDifficulty, dungeonFamily, dungeonBoss, floorIndex, teamRoomId, teamRoom, startFloor, publishResult]);
+
+  const enterExplorationRoom = useCallback(async (room, positionedState) => {
+    if (!isHost || !room) return;
+    if (["battle", "elite_battle", "boss_battle"].includes(room.type)) {
+      await startRoomBattle(room, positionedState);
+      return;
+    }
+    if (room.type === "stairs" || room.type === "entrance" || room.cleared) {
+      await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: positionedState });
+      return;
+    }
+    await updateTeamExpeditionRoom(teamRoomId, {
+      expeditionMapState: {
+        ...positionedState,
+        phase: room.type === "treasure" ? "treasure" : "func_room",
+        pendingRoom: room,
+      },
+    });
+  }, [isHost, startRoomBattle, teamRoomId]);
+
+  const handleCellClick = useCallback(async room => {
+    if (!isHost || !mapState?.playerPos || !isAdjacent(room.pos, mapState.playerPos)) return;
+    const visitedIds = mapState.visitedIds?.includes(room.id)
+      ? mapState.visitedIds
+      : [...(mapState.visitedIds || []), room.id];
+    const positionedState = {
+      ...mapState,
+      playerPos: room.pos,
+      visitedIds,
+    };
+    await enterExplorationRoom(room, positionedState);
+  }, [isHost, mapState, enterExplorationRoom]);
+
+  const handleDescend = useCallback(async () => {
+    if (!isHost || floorIndex >= 2) return;
+    const cleared = floorIndex + 1;
+    setFloorsCleared(cleared);
+    await updateTeamExpeditionRoom(teamRoomId, { expeditionFloorsCleared: cleared });
+    await startFloor(floorIndex + 1);
+  }, [isHost, floorIndex, teamRoomId, startFloor]);
+
+  const handleChooseBranch = useCallback(async choice => {
+    if (!isHost || !mapState?.branchFloor?.branches?.[choice]) return;
+    await updateTeamExpeditionRoom(teamRoomId, {
+      expeditionMapState: { ...mapState, branchChoice: choice, branchStep: 0 },
+    });
+  }, [isHost, mapState, teamRoomId]);
+
+  const handleBranchNext = useCallback(async () => {
+    if (!isHost) return;
+    const room = branchSeq[mapState?.branchStep || 0];
+    if (!room) return;
+    await enterExplorationRoom(room, mapState);
+  }, [isHost, branchSeq, mapState, enterExplorationRoom]);
+
+  const resolveFunctionRoom = useCallback(async () => {
+    if (!isHost || !mapState?.pendingRoom) return;
+    const roomType = mapState.pendingRoom.type;
+    const members = Object.fromEntries(Object.entries(teamRoom?.members || {}).map(([id, member]) => {
+      if (!member) return [id, member];
+      if (roomType === "rest") {
+        return [id, { ...member, hp: Math.min(member.maxHP || 1, (member.hp || 0) + Math.round((member.maxHP || 1) * 0.35)) }];
+      }
+      if (roomType === "trap") {
+        return [id, { ...member, hp: Math.max(1, (member.hp || 1) - Math.round((member.maxHP || 1) * 0.1)) }];
+      }
+      if (roomType === "event") {
+        return [id, {
+          ...member,
+          buffs: { ...(member.buffs || {}), atkMult: Math.round(((member.buffs?.atkMult || 1) * 1.05) * 100) / 100 },
+        }];
+      }
+      return [id, member];
+    }));
+    let nextMapState;
+    if (floorIndex < 2) {
+      nextMapState = {
+        ...mapState,
+        phase: "grid",
+        pendingRoom: null,
+        gridFloor: {
+          ...mapState.gridFloor,
+          rooms: mapState.gridFloor.rooms.map(room =>
+            room.id === mapState.pendingRoom.id ? { ...room, cleared: true } : room
+          ),
+        },
+      };
+    } else {
+      nextMapState = {
+        ...mapState,
+        phase: "branch",
+        pendingRoom: null,
+        branchStep: (mapState.branchStep || 0) + 1,
+      };
+    }
+    await updateTeamExpeditionRoom(teamRoomId, {
+      members,
+      expeditionMapState: nextMapState,
+    });
+  }, [isHost, mapState, teamRoom, floorIndex, teamRoomId]);
 
   // ── 領取獎勵 + 儲存紀錄 ──────────────────────────────────
   const handleFinish = useCallback(async () => {
@@ -429,6 +651,133 @@ export default function TeamExpeditionBattle({
         onFinish={handleFinish}
         teamMode={true}
         teamSize={Object.values(teamRoom?.members || {}).filter(Boolean).length}
+      />
+    );
+  }
+
+  const myMember = teamRoom.members?.[myId] || {};
+  const playerState = {
+    hp: myMember.hp ?? 0,
+    maxHP: myMember.maxHP ?? 1,
+    atk: myMember.atk ?? 0,
+    def: myMember.def ?? 0,
+    buffs: myMember.buffs || {},
+  };
+
+  if (mapState?.phase === "floor_intro") {
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center gap-5 px-6 text-center bg-[#0a0a0f] text-white">
+        <div className="text-6xl">{floorIndex === 2 ? "👑" : floorIndex === 1 ? "⚔️" : "🌿"}</div>
+        <div className="text-2xl font-black">第 {floorIndex + 1} 層</div>
+        <div className="text-sm text-slate-400">
+          {floorIndex === 2 ? "選擇分支並突破王關" : "探索迷霧地圖，清除房間並尋找階梯"}
+        </div>
+        {isHost ? (
+          <button
+            type="button"
+            onClick={() => updateTeamExpeditionRoom(teamRoomId, {
+              expeditionMapState: { ...mapState, phase: floorIndex < 2 ? "grid" : "branch" },
+            })}
+            className="min-h-12 w-full max-w-sm rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3 font-black"
+          >
+            進入第 {floorIndex + 1} 層
+          </button>
+        ) : (
+          <div className="text-sm text-slate-400">等待隊長開始探索…</div>
+        )}
+      </div>
+    );
+  }
+
+  if (mapState?.phase === "grid" && mapState.gridFloor) {
+    return (
+      <GridMapStage
+        gridFloor={mapState.gridFloor}
+        playerPos={mapState.playerPos}
+        visitedIds={new Set(mapState.visitedIds || [])}
+        floorIndex={floorIndex}
+        playerState={playerState}
+        coins={profile?.coins || 0}
+        onCellClick={handleCellClick}
+        onDescend={handleDescend}
+        onRetreat={handleAbandon}
+        canControl={isHost}
+      />
+    );
+  }
+
+  if (mapState?.phase === "branch" && mapState.branchFloor) {
+    return (
+      <BranchStage
+        branchFloor={mapState.branchFloor}
+        branchChoice={mapState.branchChoice}
+        branchSeq={branchSeq}
+        branchStep={mapState.branchStep || 0}
+        playerState={playerState}
+        coins={profile?.coins || 0}
+        onChoose={handleChooseBranch}
+        onEnterNext={handleBranchNext}
+        onRetreat={handleAbandon}
+        canControl={isHost}
+      />
+    );
+  }
+
+  if (mapState?.phase === "func_room" && mapState.pendingRoom) {
+    const roomLabels = {
+      shop: ["🛒", "行腳商店", "隊伍整備後繼續前進。"],
+      event: ["✨", "神秘事件", "全隊獲得小幅攻擊增益。"],
+      trap: ["🪤", "陷阱房", "全隊受到少量傷害。"],
+      chest: ["📦", "寶箱房", "隊伍找到額外戰利品。"],
+      rest: ["💤", "休息區", "全隊恢復 35% HP。"],
+    };
+    const [icon, title, desc] = roomLabels[mapState.pendingRoom.type] || ["🚪", "未知房間", "確認後繼續前進。"];
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center gap-5 px-6 text-center bg-[#0a0a0f] text-white">
+        <div className="text-7xl">{icon}</div>
+        <div className="text-2xl font-black">{title}</div>
+        <div className="text-sm text-slate-300">{desc}</div>
+        <div className="text-xs text-slate-500">前衛／後衛狀態與剩餘 HP 會帶入下一場戰鬥</div>
+        {isHost ? (
+          <button
+            type="button"
+            onClick={resolveFunctionRoom}
+            className="min-h-12 w-full max-w-sm rounded-2xl bg-indigo-500 px-5 py-3 font-black"
+          >
+            完成房間並繼續
+          </button>
+        ) : (
+          <div className="text-sm text-slate-400">等待隊長處理房間…</div>
+        )}
+      </div>
+    );
+  }
+
+  if (mapState?.phase === "treasure") {
+    if (!isHost && !teamRoom.expeditionTreasureLoot) {
+      return (
+        <div className="h-[100dvh] flex items-center justify-center bg-[#0a0a0f] text-white/50">
+          等待隊長開啟寶藏房…
+        </div>
+      );
+    }
+    return (
+      <DungeonTreasureRoom
+        difficultyTier={dungeonDifficulty}
+        family={dungeonFamily}
+        lootOverride={teamRoom.expeditionTreasureLoot || null}
+        onLoot={isHost ? loot => updateTeamExpeditionRoom(teamRoomId, {
+          expeditionTreasureLoot: loot,
+        }) : undefined}
+        claimDisabled={!isHost}
+        claimLabel={isHost ? "📊 帶領隊伍查看遠征報告" : "等待隊長前往結算…"}
+        onClaim={isHost ? () => publishResult(
+          true,
+          3,
+          teamRoom.expeditionLoot,
+          teamRoom.expeditionStats,
+          teamRoom.members,
+        ) : undefined}
       />
     );
   }

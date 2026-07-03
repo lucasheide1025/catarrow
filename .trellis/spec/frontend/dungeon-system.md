@@ -306,6 +306,15 @@ Do not install temporary browser-automation packages into this project's live `n
 - Ignore result rooms already claimed by the current member.
 - Reconstruct the lobby descriptor from the coordination room, including its persisted boss, arrows-per-round, and target format. The coordination room and its current battle-room ID remain the source of truth after a client disconnect.
 
+## Team Expedition Map Parity
+
+- Solo and team expeditions share `GridMapStage` and `BranchStage`; do not maintain a separate direct three-battle team flow.
+- Persist the complete team exploration state on the coordination room as `expeditionMapState`: phase, floor, generated grid/branch, party position, visited IDs, branch choice/step, and pending room.
+- The host is the only map controller. Other members render the same persisted state and wait for host navigation.
+- Attach each generated monster to its room before persisting the map so reconnects and all clients see the same monster.
+- Per-room battle documents remain multiplayer `DungeonBattleRoom` documents. Copy `role`, `displayGroup`, `buffs`, HP, and alive state both into and back out of every battle room so front/rear behavior survives the entire expedition.
+- After the final boss, synchronize one treasure-room loot object before rendering teammates' treasure cards, then publish the shared final result.
+
 ## Expedition Battle Presentation
 
 - The persisted `monster.variant` is the only source for the entry glow, battle badge, combat stats, and result label. Never infer a variant from room type or use a hard-coded red entry glow.

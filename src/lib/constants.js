@@ -215,18 +215,25 @@ export const EQUIP_SLOT_DEFS = [
 // 品級基底：普通=1, 稀有=6, 精英=11, 史詩=16, 傳說=21, 神話=26（每品+5）
 // plusLevel 直接疊加：slot bonus = gradeBase + plusLevel
 // HP 欄位再乘 5
+export function getEquipSlotBonus(slotOrStat, equipment) {
+  if (!equipment?.grade) return 0;
+  const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === equipment.grade);
+  if (gradeIdx < 0) return 0;
+  const stat = typeof slotOrStat === "string" ? slotOrStat : slotOrStat?.stat;
+  const rawBonus = (gradeIdx * 5 + 1) + (equipment.plusLevel || 0);
+  return stat === "hp" ? rawBonus * 5 : rawBonus;
+}
+
 export function calcEquipBonus(equipment) {
   let atkBonus = 0, defBonus = 0, hpBonus = 0;
   if (!equipment) return { atkBonus, defBonus, hpBonus };
   for (const slot of EQUIP_SLOT_DEFS) {
     const e = equipment[slot.id];
     if (!e?.grade) continue;
-    const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === e.grade);
-    if (gradeIdx < 0) continue;
-    const bonus = (gradeIdx * 5 + 1) + (e.plusLevel || 0);
+    const bonus = getEquipSlotBonus(slot, e);
     if (slot.stat === "atk") atkBonus += bonus;
     else if (slot.stat === "def") defBonus += bonus;
-    else if (slot.stat === "hp") hpBonus += bonus * 5;
+    else if (slot.stat === "hp") hpBonus += bonus;
   }
   return { atkBonus, defBonus, hpBonus };
 }

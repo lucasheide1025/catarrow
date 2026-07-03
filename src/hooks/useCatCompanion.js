@@ -3,19 +3,13 @@ import { useState, useCallback, useMemo } from "react";
 import { useAuth } from "./useAuth";
 import { addCatBond, addCatXP } from "../lib/catDb";
 import {
-  getBondLevel,
   CAT_SKILL_GROUPS, calcCatSkillChance, calcCatSkillEffect,
-  calcCatEquipBonus,
+  CAT_COMBAT_BASE as CAT_TYPE_BASE_DATA,
 } from "../lib/catData";
+import { calcCatCombatStats } from "../lib/catCombat";
 import { calcDamage } from "../lib/monsterData";
-import { catLevelFromXP, catLevelBonus } from "../lib/catLevel";
 
-// ── 三類型基底數值（各有特化）────────────────────────────────
-export const CAT_TYPE_BASE = {
-  attack:   { hp: 140, atk: 16, def:  7 }, // 高傷低耐
-  defense:  { hp: 300, atk:  7, def: 16 }, // 高血高防
-  allround: { hp: 200, atk: 10, def: 10 }, // 均衡
-};
+export const CAT_TYPE_BASE = CAT_TYPE_BASE_DATA;
 // 向後相容（其他 import 此常數的地方不需改）
 export const CAT_COMBAT_BASE = CAT_TYPE_BASE.allround;
 
@@ -49,41 +43,20 @@ export function useCatCompanion() {
   const catType  = equippedCat?.type   || "allround";
   const hasCat   = !!catId;
 
-  // 羈絆等級
-  const bondLv = hasCat ? getBondLevel(equippedCat?.bond || 0) : 0;
-
-  // 貓貓等級（從 equippedCat.catXP 計算）
-  const catXP    = hasCat ? (equippedCat?.catXP || 0) : 0;
-  const catLevel = hasCat ? catLevelFromXP(catXP) : 1;
-  const lvBonus  = catLevelBonus(catLevel);
-
-  // 裝備加成
-  const equipBonus = useMemo(() =>
-    hasCat ? calcCatEquipBonus(equippedCat?.equip || {}) : { atkBonus: 0, defBonus: 0, hpBonus: 0 },
-    [hasCat, equippedCat?.equip]
+  const combatStats = useMemo(
+    () => calcCatCombatStats(equippedCat || {}, catId),
+    [equippedCat, catId],
   );
+  const bondLv = hasCat ? combatStats.bondLv : 0;
+  const catXP = hasCat ? (equippedCat?.catXP || 0) : 0;
+  const catLevel = hasCat ? combatStats.catLevel : 1;
 
   // 技能分組（決定哪種技能會觸發）
   const skillGroup = hasCat ? (CAT_SKILL_GROUPS[catId] || null) : null;
 
-  // ── 戰鬥數值（類型基底 + 羈絆技能加成 + 等級 + 裝備）────────
-  // 羈絆每級加成：攻/防型 +5%/Lv，全能型 +2.5%/Lv
-  const bondTierMult = catType === "allround" ? 1 + bondLv * 0.025 : 1 + bondLv * 0.05;
-  const base = CAT_TYPE_BASE[catType] || CAT_TYPE_BASE.allround;
-
-  // 攻擊型：bondTier 強化 ATK；防禦型：強化 HP/DEF；全能型：三者均強化
-  const atkMult = (catType === "attack"  || catType === "allround") ? bondTierMult : 1.0;
-  const tkhMult = (catType === "defense" || catType === "allround") ? bondTierMult : 1.0;
-
-  const catHP  = hasCat
-    ? Math.round((base.hp  + lvBonus.hp  + equipBonus.hpBonus)  * tkhMult)
-    : base.hp;
-  const catDEF = hasCat
-    ? Math.round((base.def + lvBonus.def + equipBonus.defBonus) * tkhMult)
-    : base.def;
-  const catATK = hasCat
-    ? Math.round((base.atk + bondLv + lvBonus.atk + equipBonus.atkBonus) * atkMult)
-    : 0;
+  const catHP = hasCat ? combatStats.catHP : CAT_TYPE_BASE.allround.hp;
+  const catDEF = hasCat ? combatStats.catDEF : CAT_TYPE_BASE.allround.def;
+  const catATK = hasCat ? combatStats.catATK : 0;
 
   // ── 貓貓攻擊：6箭合一，回傳總傷害 ───────────────────────────
   const calcCatRoundDamage = useCallback((monster) => {
@@ -102,11 +75,11 @@ export function useCatCompanion() {
   // 回傳 { triggered: false } 或 { triggered: true, skillGroup, ...effectData }
   const triggerCatSkill = useCallback(() => {
     if (!hasCat || !skillGroup) return { triggered: false };
-    const chance = calcCatSkillChance(catLevel, bondLv);
+    const chance = calcCatSkillChance(catLevel, bondLv, catId);
     if (Math.random() >= chance)   return { triggered: false };
-    const effect = calcCatSkillEffect(skillGroup, catLevel, bondLv);
+    const effect = calcCatSkillEffect(skillGroup, catLevel, bondLv, catId);
     return { triggered: true, skillGroup, ...effect };
-  }, [hasCat, skillGroup, catLevel, bondLv]);
+  }, [hasCat, skillGroup, catLevel, bondLv, catId]);
 
   // ── 輔助功能 ─────────────────────────────────────────────────
   const triggerCatAction = useCallback(() => {

@@ -82,8 +82,10 @@ export default function DungeonLobby({ onBack }) {
     if (teamLobby.hostId === myId) return;
     const unsub = subscribeTeamExpeditionRoom(teamLobby.roomId, (room) => {
       if (!room) return;
-      // 偵測到房主建立了戰鬥房間
-      if (room.currentBattleRoomId && room.expeditionFloorIndex !== undefined) {
+      // 房主開始遠征後先進同步地圖，不必等到建立第一個戰鬥房。
+      if (room.status === "expedition_active"
+        || room.currentBattleRoomId
+        || room.expeditionMapState) {
         setExpeditionStart({
           teamMode: true,
           teamRoomId: teamLobby.roomId,

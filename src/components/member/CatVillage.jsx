@@ -1197,7 +1197,7 @@ function ForgePanel({ profile, resources }) {
   const catLevel = catLevelFromXP(catXP);
   const xpProg   = catXPProgress(catXP);
   const bondLevel = getBondLevel(equippedCat.bond || 0);
-  const typeLabel = { attack:"攻擊型", defense:"防禦型", allround:"全能型" }[equippedCat.type] || "全能型";
+  const typeLabel = { attack:"攻擊型", defense:"防禦型", allround:"治癒型" }[equippedCat.type] || "治癒型";
   const typeColor = { attack:"#ef4444", defense:"#3b82f6", allround:"#22c55e" }[equippedCat.type] || "#22c55e";
 
   async function handleForge(slotId) {

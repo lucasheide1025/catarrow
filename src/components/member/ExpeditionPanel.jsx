@@ -9,7 +9,7 @@ import {
   calcCatFullStats, catPowerMult,
 } from "../../lib/expeditionData";
 
-const TYPE_LABEL = { attack:"攻擊型", defense:"防禦型", allround:"全能型" };
+const TYPE_LABEL = { attack:"攻擊型", defense:"防禦型", allround:"治癒型" };
 const TYPE_COLOR = { attack:"#f87171", defense:"#60a5fa", allround:"#a78bfa" };
 const TIER_COLOR = ["","#9ca3af","#4ade80","#60a5fa","#a78bfa","#fbbf24"];
 

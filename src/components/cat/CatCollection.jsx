@@ -9,10 +9,9 @@ import {
   CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
-  calcCatEquipBonus, catEquipLevel,
+  catEquipLevel,
 } from "../../lib/catData";
-import { catLevelFromXP, catLevelBonus } from "../../lib/catLevel";
-import { CAT_TYPE_BASE } from "../../hooks/useCatCompanion";
+import { calcCatCombatStats } from "../../lib/catCombat";
 import CatSVG from "./CatSVG";
 
 // ── 羈絆條 ──────────────────────────────────────────────────
@@ -235,17 +234,11 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
   const bondLevel  = getBondLevel(catData?.bond || 0);
   const isEquipped = equippedCat?.catId === catId;
 
-  // 即時計算能力值（類型基底 + 羈絆加成 + 等級 + 裝備）
-  const catLevel   = catLevelFromXP(catData?.catXP || 0);
-  const lvBonus    = catLevelBonus(catLevel);
-  const equipBonus = calcCatEquipBonus(catData?.equip || {});
-  const base       = CAT_TYPE_BASE[catFixedType] || CAT_TYPE_BASE.allround;
-  const bondTierMult = catFixedType === "allround" ? 1 + bondLevel * 0.025 : 1 + bondLevel * 0.05;
-  const atkMult = (catFixedType === "attack"  || catFixedType === "allround") ? bondTierMult : 1.0;
-  const tkhMult = (catFixedType === "defense" || catFixedType === "allround") ? bondTierMult : 1.0;
-  const catHP  = Math.round((base.hp  + lvBonus.hp  + equipBonus.hpBonus)  * tkhMult);
-  const catDEF = Math.round((base.def + lvBonus.def + equipBonus.defBonus) * tkhMult);
-  const catATK = Math.round((base.atk + bondLevel + lvBonus.atk + equipBonus.atkBonus) * atkMult);
+  const combat = calcCatCombatStats({ ...catData, type: catFixedType }, catId);
+  const { catLevel, catHP, catATK, catDEF, profile: buildProfile } = combat;
+  const bondTierMult = catFixedType === "allround"
+    ? 1 + bondLevel * 0.03
+    : 1 + bondLevel * 0.05;
 
   async function handleEquip() {
     setUpdating(true);
@@ -353,6 +346,19 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
               )}
               <div className="text-[10px] text-slate-600 mt-1 leading-relaxed">
                 {CAT_TYPES[catFixedType]?.desc}
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3">
+              <div className="text-xs font-black text-amber-200">
+                🎯 {buildProfile.title}
+              </div>
+              <div className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                {buildProfile.trait}
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-center text-[10px]">
+                <div className="rounded-lg bg-black/20 py-1 text-emerald-300">HP ×{buildProfile.allocation.hp.toFixed(2)}</div>
+                <div className="rounded-lg bg-black/20 py-1 text-rose-300">ATK ×{buildProfile.allocation.atk.toFixed(2)}</div>
+                <div className="rounded-lg bg-black/20 py-1 text-sky-300">DEF ×{buildProfile.allocation.def.toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -536,6 +542,18 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6 space-y-4">
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <h2 className="text-sm font-black text-white">九隻貓，九種配點</h2>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+            上排是治癒型、中排是攻擊型、下排是防禦型。同類貓仍有不同的 HP／ATK／DEF 配點與固有特性，不再只有外觀差異。
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-emerald-500/10 px-1 py-2 text-[10px] font-bold text-emerald-300">💚 治癒型<br/>續戰支援</div>
+            <div className="rounded-xl bg-rose-500/10 px-1 py-2 text-[10px] font-bold text-rose-300">⚔️ 攻擊型<br/>追加傷害</div>
+            <div className="rounded-xl bg-sky-500/10 px-1 py-2 text-[10px] font-bold text-sky-300">🛡️ 防禦型<br/>減傷格擋</div>
+          </div>
+        </section>
+
         {/* 裝備中的貓 */}
         {equipped && myCats[equipped.catId] && (
           <div className="bg-indigo-900/30 border border-indigo-400/30 rounded-2xl px-4 py-3 flex items-center gap-3">
@@ -589,6 +607,9 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
                 <div className="text-center">
                   <div className="text-xs font-black text-white">{cat?.name}</div>
                   <div className="text-[10px] text-slate-500">{cat?.color}</div>
+                  <div className="text-[10px] font-bold" style={{ color: CAT_TYPES[CAT_TYPE_MAP[catId]]?.color }}>
+                    {CAT_TYPES[CAT_TYPE_MAP[catId]]?.icon} {CAT_TYPES[CAT_TYPE_MAP[catId]]?.label}
+                  </div>
                   {owned && (
                     <div className="text-[10px] text-indigo-300 font-bold">羈絆 {bond}</div>
                   )}

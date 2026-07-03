@@ -248,10 +248,10 @@ export async function createTeamExpeditionBattleRoom({
         ready: false,
         arrows: [],
         contract: { type: "standard", param: null },
-        buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+        buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
         revived: false,
-        role: "front",
-        displayGroup: "front",
+        role: m.role || "front",
+        displayGroup: m.displayGroup || m.role || "front",
         rearChoice: null,
         catId: m.catId || "",
         catName: m.catName || "",
@@ -320,6 +320,9 @@ export async function syncTeamExpeditionMembers(roomId, battleMembers, battleSum
           atk: battleMember.atk ?? member.atk,
           def: battleMember.def ?? member.def,
           alive: battleMember.alive !== false,
+          role: battleMember.role || member.role || "front",
+          displayGroup: battleMember.displayGroup || battleMember.role || member.displayGroup || member.role || "front",
+          buffs: battleMember.buffs || member.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
           ready: false,
         } : member;
       }

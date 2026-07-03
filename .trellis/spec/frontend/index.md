@@ -21,6 +21,8 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
 | [Dungeon System](./dungeon-system.md) | Dungeon contracts, role model, contract types, dark-mode admin | ✅ Active |
+| [Cat Companion](./cat-companion.md) | Cat roles, individual stat allocation, skill traits, shared combat calculation | ✅ Active |
+| [RPG Equipment](./equipment-system.md) | Equipment bonus formula, upgrade display, and equipment-page contracts | ✅ Active |
 
 ---
 

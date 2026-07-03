@@ -60,13 +60,32 @@ export const CATS = {
 
 export const CAT_IDS = Object.keys(CATS);
 
+export const CAT_COMBAT_BASE = {
+  attack:   { hp: 150, atk: 18, def: 7 },
+  defense:  { hp: 320, atk: 7, def: 18 },
+  allround: { hp: 230, atk: 9, def: 11 },
+};
+
+// 個體配點套在等級、羈絆與裝備之後，確保高等級仍保有明顯差異。
+export const CAT_BUILD_PROFILES = {
+  daming:   { title:"守護治療", allocation:{ hp:1.18, atk:0.82, def:1.15 }, skillPower:1.30, skillChance:1.00, trait:"治療量 +30%，高生命與防禦" },
+  gege:     { title:"穩定治療", allocation:{ hp:1.08, atk:0.95, def:1.08 }, skillPower:1.20, skillChance:1.10, trait:"治療量 +20%，技能較常發動" },
+  meimei:   { title:"迅捷治療", allocation:{ hp:0.95, atk:1.12, def:0.92 }, skillPower:1.10, skillChance:1.35, trait:"技能觸發率 +35%，保留較高攻擊" },
+  niuniu:   { title:"精準強攻", allocation:{ hp:0.95, atk:1.25, def:1.00 }, skillPower:1.18, skillChance:1.05, trait:"追加攻擊效果 +18%，攻守較均衡" },
+  haji:     { title:"持續輸出", allocation:{ hp:1.10, atk:1.15, def:1.00 }, skillPower:1.10, skillChance:1.20, trait:"技能觸發率 +20%，生命較高" },
+  baobao:   { title:"極限爆發", allocation:{ hp:0.85, atk:1.35, def:0.85 }, skillPower:1.28, skillChance:0.95, trait:"追加攻擊效果 +28%，但生存較弱" },
+  youyou:   { title:"均衡護衛", allocation:{ hp:1.15, atk:0.90, def:1.20 }, skillPower:1.18, skillChance:1.10, trait:"減傷效果 +18%，能力均衡" },
+  xiaoan:   { title:"生命堡壘", allocation:{ hp:1.30, atk:0.78, def:1.10 }, skillPower:1.12, skillChance:1.20, trait:"最高生命，技能觸發率 +20%" },
+  diandian: { title:"鐵壁格擋", allocation:{ hp:1.05, atk:0.95, def:1.30 }, skillPower:1.28, skillChance:0.95, trait:"減傷效果 +28%，最高防禦" },
+};
+
 // ── 三種類型 ─────────────────────────────────────────────────
 // isSkill: true = 里程碑羈絆事件（bond 0/5/10）顯示特殊樣式
 // desc = 純故事敘述，無任何機制加成
 export const CAT_TYPES = {
   attack: {
     id: "attack", label: "攻擊型", icon: "⚔️",
-    desc: "衝動、好鬥，把練習場當獵場在用。",
+    desc: "以追加傷害為核心；三隻貓分別偏向精準強攻、持續輸出與極限爆發。",
     skills: [
       { bond: 0,  name: "第一眼就盯上你",   isSkill: true,
         desc: "你才剛踏進箭場，牠已經蹲在角落盯了你半小時，你移動牠的眼睛跟著動，你停下來牠還是盯著。你問隊友那隻貓在幹嘛，隊友說：「來了三年了，只有新人第一天才會被這樣盯，恭喜你入選了。」" },
@@ -95,7 +114,7 @@ export const CAT_TYPES = {
   },
   defense: {
     id: "defense", label: "防禦型", icon: "🛡️",
-    desc: "霸道、黏人，把你的行程當成牠的行程在管理。",
+    desc: "以減傷與格擋為核心；三隻貓分別偏向均衡護衛、生命堡壘與鐵壁防禦。",
     skills: [
       { bond: 0,  name: "腳上宣告主權",     isSkill: true,
         desc: "你才剛找到一個舒服的位置坐下，牠立刻走過來，踩著你的大腿繞了半圈，然後整個坐在你腳上。你說等一下要去練習，牠把重量往下壓了一點，表示聽到了，不接受。你遲到了二十分鐘，但你肩膀放鬆了，因為牠一直在呼嚕。" },
@@ -123,8 +142,8 @@ export const CAT_TYPES = {
     color: "#3b82f6",
   },
   allround: {
-    id: "allround", label: "全能型", icon: "✨",
-    desc: "好奇心旺盛，把整個箭場當成個人實驗室。",
+    id: "allround", label: "治癒型", icon: "💚",
+    desc: "以恢復與續戰為核心；三隻貓分別偏向厚實治療、穩定支援與高頻治療。",
     skills: [
       { bond: 0,  name: "嫌棄巡邏",         isSkill: true,
         desc: "牠走進練習場，系統性地嗅了你每一支箭，表情隨著進度越來越難看，眉頭越皺越深。最後一支嗅完，牠在地上打了個大噴嚏，甩了甩頭，轉身走掉了，留下你拿著那排箭不知道該怎麼辦。你換了一批新箭，牠下次來又重新嗅了一遍。" },
@@ -219,7 +238,7 @@ export function getCatStatMult(catType, bondLevel) {
   if (!lv) return 1.0;
   if (catType === "attack")  return 1 + lv * 0.02;   // 攻擊型每級 +2% ATK
   if (catType === "defense") return 1 + lv * 0.015;  // 防禦型每級 +1.5% 全體
-  return 1 + lv * 0.01;                              // 全能型每級 +1%
+  return 1 + lv * 0.01;                              // 治癒型每級 +1%
 }
 
 // ── 抽貓機率（開貓貓箱）────────────────────────────────────
@@ -338,31 +357,34 @@ export function calcForgeCost(slotId, currentGrade, currentPlus) {
 }
 
 // ── 貓貓技能觸發機率（0–0.25）──────────────────────────────
-export function calcCatSkillChance(catLevel, bondLv) {
-  return Math.min(0.25, 0.05 + (catLevel || 1) * 0.0005 + (bondLv || 0) * 0.01);
+export function calcCatSkillChance(catLevel, bondLv, catId = null) {
+  const profile = CAT_BUILD_PROFILES[catId];
+  const baseChance = 0.05 + (catLevel || 1) * 0.0005 + (bondLv || 0) * 0.01;
+  return Math.min(0.35, baseChance * (profile?.skillChance || 1));
 }
 
 // ── 貓貓技能效果（回傳 { skillGroup, healed?, extraMult?, reduction? }）
 // heal → { healed: number }
 // atk  → { extraMult: number }（0 = +20%, 1.0 = 翻倍傷害）
 // def  → { reduction: number }（0.2–0.8），blockFull 可能為 true
-export function calcCatSkillEffect(skillGroup, catLevel, bondLv) {
+export function calcCatSkillEffect(skillGroup, catLevel, bondLv, catId = null) {
   const lv = catLevel || 1;
   const bl = bondLv  || 0;
+  const skillPower = CAT_BUILD_PROFILES[catId]?.skillPower || 1;
   if (skillGroup === "heal") {
     const maxHeal = 10 + lv * 0.5 + bl * 5;
-    const healed  = Math.round(maxHeal * (0.7 + Math.random() * 0.3));
+    const healed  = Math.round(maxHeal * (0.7 + Math.random() * 0.3) * skillPower);
     return { healed };
   }
   if (skillGroup === "atk") {
     // min = 0.2 + level×0.001 + bond×0.02，max = 1.0（翻倍）
     const minMult = Math.min(1.0, 0.2 + lv * 0.001 + bl * 0.02);
-    const extraMult = minMult + Math.random() * (1.0 - minMult);
+    const extraMult = Math.min(1.25, (minMult + Math.random() * (1.0 - minMult)) * skillPower);
     return { extraMult };
   }
   // def
   const minRed  = Math.min(0.8, 0.2 + lv * 0.001 + bl * 0.02);
-  const reduction = minRed + Math.random() * (0.8 - minRed);
+  const reduction = Math.min(0.9, (minRed + Math.random() * (0.8 - minRed)) * skillPower);
   // 高等級+高羈絆 3% 機率完全格擋
   const blockFull = (lv > 150 && bl >= 8) && Math.random() < 0.03;
   return { reduction, blockFull };

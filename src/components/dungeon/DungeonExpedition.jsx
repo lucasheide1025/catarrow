@@ -126,9 +126,10 @@ function PlayerStatusBar({ playerState, coins }) {
 }
 
 // ── 第 1、2 層：5×5 迷霧格子地圖 ────────────────────────
-function GridMapStage({
+export function GridMapStage({
   gridFloor, playerPos, visitedIds, floorIndex,
   playerState, coins, onCellClick, onDescend, onRetreat,
+  canControl = true,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const CELL = 64;
@@ -207,7 +208,7 @@ function GridMapStage({
             if (!visited && !fog) return null; // 迷霧之外：完全隱藏
 
             const isCurrent = playerPos && room.pos.x === playerPos.x && room.pos.y === playerPos.y;
-            const clickable = isAdjacent(room.pos, playerPos);
+            const clickable = canControl && isAdjacent(room.pos, playerPos);
             const x = PAD + room.pos.x * CELL + 4;
             const y = PAD + room.pos.y * CELL + 4;
             const s = CELL - 8;
@@ -267,7 +268,7 @@ function GridMapStage({
             </div>
           </div>
         </div>
-        {showStairs && (
+        {showStairs && canControl && (
           <button onClick={onDescend}
             style={{
               width:"100%", padding:"13px 0", borderRadius:14, border:"none",
@@ -276,6 +277,11 @@ function GridMapStage({
             }}>
             🪜 前往第 {floorIndex + 2} 層
           </button>
+        )}
+        {!canControl && (
+          <div style={{ textAlign:"center", fontSize:12, color:"#94a3b8", padding:"10px 0 2px" }}>
+            等待隊長選擇前進路線…
+          </div>
         )}
       </div>
 
@@ -314,9 +320,10 @@ function GridMapStage({
 }
 
 // ── 第 3 層：A/B/C 分支王關 ─────────────────────────────
-function BranchStage({
+export function BranchStage({
   branchFloor, branchChoice, branchSeq, branchStep,
   playerState, coins, onChoose, onEnterNext, onRetreat,
+  canControl = true,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
 
@@ -364,7 +371,8 @@ function BranchStage({
           {["A", "B", "C"].map((key, i) => {
             const b = branchFloor.branches[key];
             return (
-              <button key={key} onClick={() => onChoose(key)}
+              <button key={key} onClick={() => canControl && onChoose(key)}
+                disabled={!canControl}
                 style={{
                   display:"flex", alignItems:"center", gap:12, textAlign:"left",
                   padding:"14px 16px", borderRadius:16, cursor:"pointer",
@@ -412,13 +420,14 @@ function BranchStage({
               );
             })}
           </div>
-          <button onClick={onEnterNext}
+          <button onClick={onEnterNext} disabled={!canControl}
             style={{
               width:"100%", padding:"14px 0", borderRadius:16, border:"none",
               fontWeight:900, fontSize:15, cursor:"pointer", marginTop:12,
               background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"white",
             }}>
-            {branchSeq[branchStep]?.type === "boss_battle" ? "⚔️ 挑戰 Boss！"
+            {!canControl ? "等待隊長前進…"
+              : branchSeq[branchStep]?.type === "boss_battle" ? "⚔️ 挑戰 Boss！"
               : branchSeq[branchStep]?.type === "treasure" ? "🏆 進入寶藏房！"
               : "🚪 進入下一間房"}
           </button>

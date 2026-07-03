@@ -12,6 +12,7 @@ export const EQUIP_UPGRADE_COST = {
   elite:  { gold: 800  },
   epic:   { gold: 2000 },
   legend: { gold: 5000 },
+  mythic: { gold: 10000 },
 };
 
 // ── 隨機材料生成 ─────────────────────────────────────────────
@@ -24,6 +25,7 @@ const _GRADE_MAT_TIER = {
   elite:  { main: "m3", key: "m4" },
   epic:   { main: "m4", key: "m5" },
   legend: { main: "m5", key: "m6" },
+  mythic: { main: "m6", key: "m6" },
 };
 
 export function generateRandomMats(grade) {
