@@ -34,6 +34,14 @@
 - **`website/simplybook-home-full.html`**：把完整官網設計（hero＋為什麼＋四弓種＋價目表＋訓練＋團康＋場地師資＋評論＋FAQ＋聯絡）改寫成**一大塊可貼的自足 HTML**——全 inline 樣式、圖片用 i.ibb.co 線上網址、FAQ 用原生 `<details>`（免 JS）、無 `<script>`/`<style>`（不怕後台過濾）、響應式靠 flex-wrap。供整份貼到 SimplyBook 後台首頁內容欄位。
 - **`website/_preview-sb-home.html`**：本機預覽外殼（帶 `<meta charset=UTF-8>`，fetch 注入 full 檔）。⚠ 純內容片段直接用瀏覽器開會因缺 charset 顯示中文亂碼，那是預覽假象；貼進 SimplyBook（UTF-8 頁）就正常。此外殼不需貼進 SimplyBook。
 
+### 2026-07-04 再續（官網正式部署 Vercel，使用者改走「部署+轉址」路線）
+- 使用者在 SimplyBook 發現「重新導向網址」設定 → 決定改走最佳路線：官網獨立部署，SimplyBook 轉址過去。
+- **已部署**：`website/` 公開檔案（index.html/robots.txt/sitemap.xml/assets）→ Vercel 新專案 **catarrow-archery**，正式網址 **https://catarrow-archery.vercel.app**（已實測線上正常）。
+  - Vercel 帳號 `broudes-1864`、team slug `broudes-1864s-projects`（與現有 React App 專案 catarrow 同 org，但**獨立專案**，root 目錄那個 `.vercel/project.json` 是 catarrow 不要動）。
+  - 部署方式：把公開檔複製到 scratchpad `catarrow-archery/` 再 `vercel deploy --prod`（未接 git 自動部署；之後改內容要重跑，或未來再設 git root=website 自動化）。
+- **canonical/OG/JSON-LD/sitemap/robots 已全部從占位 `catarchery.tw` 改成真實 `catarrow-archery.vercel.app`**（否則 Google 因 canonical 指死網域不收錄）。未來買自訂網域再全域替換一次。
+- **待使用者操作**：SimplyBook 後台「重新導向網址」填 `https://catarrow-archery.vercel.app`。注意 iframe 迴圈風險（見上），設好要一起測預約嵌入。
+
 ## 2026-07-04（九隻陪練貓個體化）
 
 - 保留 `allround` 資料鍵相容舊帳號，顯示名稱改為「治癒型」；九隻貓維持上排治癒、中排攻擊、下排防禦。
