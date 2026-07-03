@@ -121,6 +121,35 @@ header.web.custom-bg {
   color: #c8c0b2 !important;
 }
 
+/* ---------- 手機日曆防溢出（右側「日」欄被裁掉修正） ----------
+   SimplyBook 日曆每列 .inner 是 flex + nowrap，內含固定寬的 7 個
+   .name（星期標題）/ .date（日期）。窄螢幕下 7 格加總超過容器 →
+   右欄被裁。改成 7 格彈性均分（各 1/7），永遠塞得下。
+   iframe 內的 media query 以 iframe 寬度為準，故只在窄嵌入時生效。 */
+@media (max-width: 767px) {
+  .calendar .inner,
+  .top-date-select .inner {
+    width: 100% !important;
+    flex-wrap: nowrap !important;
+    box-sizing: border-box !important;
+  }
+  .calendar .inner > .date,
+  .calendar .inner > .name,
+  .top-date-select .inner > .date,
+  .top-date-select .inner > .name {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    box-sizing: border-box !important;
+  }
+  .calendar,
+  .top-date-select {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+}
+
 /* ---------- 可選時段 ---------- */
 .slots-view .slot,
 .sb-cell,
