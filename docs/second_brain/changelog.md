@@ -41,6 +41,8 @@
   - 部署方式：把公開檔複製到 scratchpad `catarrow-archery/` 再 `vercel deploy --prod`（未接 git 自動部署；之後改內容要重跑，或未來再設 git root=website 自動化）。
 - **canonical/OG/JSON-LD/sitemap/robots 已全部從占位 `catarchery.tw` 改成真實 `catarrow-archery.vercel.app`**（否則 Google 因 canonical 指死網域不收錄）。未來買自訂網域再全域替換一次。
 - **待使用者操作**：SimplyBook 後台「重新導向網址」填 `https://catarrow-archery.vercel.app`。注意 iframe 迴圈風險（見上），設好要一起測預約嵌入。
+- **✅ 已驗證上線（2026-07-04）**：舊站首頁自動轉址到新官網（實測 `catarcherycom.simplybook.asia` → `catarrow-archery.vercel.app`）；新站預約 iframe 正常載入無迴圈（`!inBooking` 放行 `#book`）。轉址採「重新導向網址」欄位法（純 URL，不用貼 script）；script 版曾因貼進「首頁內容」欄位被即時預覽執行、害編輯頁自我跳轉點不到套用，已加 hostname 防呆。
+- **手機日曆右欄被裁修正**：SimplyBook 日曆每列 `.inner` 是 `flex + nowrap`，內含固定寬 7 個 `.name`/`.date`，窄螢幕溢出裁掉「日」欄。`simplybook-custom.css` 加 `@media(max-width:767px)` 讓 `.inner > .date/.name` 改 `flex:1 1 0; min-width:0`（1/7 均分）。同源注入實測：容器 320px 時 7 格自動 46px、`overflow:false`。⚠ 改完 CSS 使用者需重貼到 SimplyBook 後台兩個 CSS 欄位。
 
 ## 2026-07-04（九隻陪練貓個體化）
 
