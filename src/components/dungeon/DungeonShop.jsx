@@ -62,22 +62,29 @@ function BuyFloat({ item, onDone }) {
   );
 }
 
-export default function DungeonShop({ roomId, room, memberId, memberData, isHost }) {
+// localMode（遠征單人）：不寫 Firestore 房間文件；
+// 購買透過 onLocalBuy 交給父層套用效果與扣款，離開時呼叫 onLocalDone
+export default function DungeonShop({
+  roomId, room, memberId, memberData, isHost,
+  localMode = false, onLocalBuy, onLocalDone,
+}) {
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [animPhase, setAnimPhase] = useState("entering"); // entering | open | bought | leaving
   const [buyFloatItem, setBuyFloatItem] = useState(null);
   const [buyPulseItem, setBuyPulseItem] = useState(null);
   const [showParticles, setShowParticles] = useState(false);
+  const [localConfirms, setLocalConfirms] = useState({});
+  const [localPurchases, setLocalPurchases] = useState([]);
   const prevPurchaseCountRef = useRef(0);
 
   const shopItems     = room?.shopItems     || [];
   const shopPurchases = room?.shopPurchases || {};
-  const myPurchases   = shopPurchases[memberId] || [];
+  const myPurchases   = localMode ? localPurchases : (shopPurchases[memberId] || []);
   const coins         = memberData?.coins ?? 0;
   const members       = room?.members || {};
   const aliveIds      = Object.keys(members).filter(id => members[id].alive);
-  const roomConfirms  = room?.roomConfirms || {};
+  const roomConfirms  = localMode ? localConfirms : (room?.roomConfirms || {});
 
   const hasFallenFront = Object.values(members).some(m => m.alive && m.role === "rear");
 
@@ -109,6 +116,13 @@ export default function DungeonShop({ roomId, room, memberId, memberData, isHost
     setBuyFloatItem(null); // 重設
     setTimeout(() => setBuyFloatItem(item), 50);
     setTimeout(() => setBuyPulseItem(item.id), 50);
+    if (localMode) {
+      // 本地單人：由父層扣金幣 + 套用效果，不寫 Firestore
+      if (!isPotion) setLocalPurchases(p => [...p, item.id]);
+      onLocalBuy?.(item);
+      setTimeout(() => setLoading(false), 400);
+      return;
+    }
     await purchaseDungeonItem(roomId, memberId, item, memberData);
     const { addCoins } = await import("../../lib/db");
     await addCoins(memberId, -item.cost).catch(() => {});
@@ -119,11 +133,19 @@ export default function DungeonShop({ roomId, room, memberId, memberData, isHost
     if (confirmed) return;
     setConfirmed(true);
     setAnimPhase("leaving");
+    if (localMode) {
+      setLocalConfirms({ [memberId]: true });
+      return;
+    }
     await confirmNonCombatRoom(roomId, memberId, "done");
   }
 
   async function handleResolve() {
     if (!isHost) return;
+    if (localMode) {
+      onLocalDone?.();
+      return;
+    }
     const anyRevival = Object.values(shopPurchases).some(list => list.includes("revival_front"));
     if (anyRevival) {
       const fallenFronters = Object.entries(members)

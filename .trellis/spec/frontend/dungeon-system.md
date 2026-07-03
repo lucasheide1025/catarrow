@@ -215,3 +215,101 @@ Pattern for displaying member status in non-combat rooms:
 ```
 
 Place after the room header, before main content.
+
+---
+
+## Team Expedition Coordination
+
+Team expeditions use two document roles in the shared `dungeonRooms` collection:
+
+- Coordination room: waiting members, selected dungeon, current battle room, final result.
+- Battle room: one floor handled by `DungeonBattleRoom`.
+
+### Host authority
+
+- Persist the coordination room's `hostId`; never infer the host from Firestore map iteration order.
+- Only the host creates the next battle room, advances floors, publishes the final result, broadcasts failure, and deletes per-floor battle rooms.
+- Non-host clients subscribe and route only. They must never delete a battle room after observing its terminal state.
+
+### Membership
+
+- Joining must use a transaction that rechecks `status === "expedition_waiting"` and the maximum member count.
+- Leaving must delete the member field with `deleteField()`. A `null` member still occupies a key and causes incorrect capacity counts.
+- Starting changes the coordination status before entering combat so the room disappears from open-room queries and rejects late joins.
+
+### Floor carry-over
+
+- After each floor, copy `hp`, `maxHP`, `atk`, `def`, and `alive` from the battle-room snapshot back to the coordination room.
+- Use nullish fallback (`??`) for numeric combat fields. `value || default` revives members whose valid HP is `0`.
+- Synchronization must preserve concurrent departures and must not recreate a member who already left.
+
+### Result consistency
+
+- `calculateExpeditionRewards()` is random. Calculate it exactly once, persist the result in `expeditionResult.rewards`, and render/grant that same object.
+- Keep the coordination room until all active members have claimed, otherwise the host can delete the result before teammates receive it.
+- `members.expeditionRecords` must remain in the Firestore member-update allowlist.
+
+### Saved-dungeon boundary
+
+Saving a revealed dungeon already clears the previous pending reveal/progress and starts the next excavation cycle. Starting a saved dungeon consumes only the selected saved slot.
+
+**Never call `completeExcavation()` or `abandonExcavation()` when a saved-slot run ends.** Doing so destroys the player's newly accumulated excavation progress. This applies to success, wipe, and manual exit.
+
+### Local E2E tooling
+
+Do not install temporary browser-automation packages into this project's live `node_modules` while the development server is running. npm may re-layout nested Firebase packages; an interrupted install can leave `firebase/node_modules/@firebase/auth` incomplete and make webpack report that every `firebase/auth` export is missing. Use an isolated temporary tool directory instead.
+
+## Expedition Monster Plan
+
+- Expedition difficulty maps to one exact base monster tier:
+  `1..6 -> common, rare, elite, fierce, boss, mythic`.
+- Never build an expedition pool from every tier below the selected difficulty. That allowed high-level dungeons to produce T1 bosses.
+- Variants are assigned by room role:
+  - floor 1 encounters: `weak`
+  - floor 2 encounters: `normal`
+  - floor 2 elite and floor 3 branch encounters: `strong`
+  - final room: `boss`
+- Generate and persist the final boss when the dungeon descriptor is created. Selection UI, solo runs, and team coordination rooms must reuse that same boss.
+- A persisted boss already has its variant stats. Do not apply the boss multiplier a second time when starting a floor.
+
+## Expedition Loot and Claims
+
+- Every defeated expedition monster produces two matching family/tier material chests and two matching-tier coin chests.
+- Keep the complete run loot summary for the final report, including defeated monsters and treasure-room bonuses.
+- Treasure-room reward data is generated once. Animation state may reveal it progressively but must not reroll it.
+- Team loot is persisted on the coordination room. Claiming must atomically:
+  1. verify membership and an available result;
+  2. reject an existing member claim;
+  3. increment member resources;
+  4. append the expedition record and chests;
+  5. write `resultClaims[memberId]`.
+- Do not grant resources before setting the claim marker in a separate operation.
+
+## Dungeon Lobby Scrolling
+
+- `MemberApp .content-area` is the only vertical scroll owner for the dungeon lobby.
+- `DungeonLobby` and its excavate, storage, and dex tabs must use natural content height. Do not add `100dvh`, `overflow-y-auto`, or another vertical scroll viewport inside the lobby.
+- Horizontal filter strips may keep `overflow-x-auto`; overlays and battle screens remain independent full-screen surfaces.
+
+## Locked Run Settings
+
+- The host selects `arrowsPerRound` (`3` or `6`) and `targetFmt` (`full_110`, `half_610`, or `field_16`) before an expedition starts.
+- Persist both values on the solo run descriptor or team coordination room, then copy them into every floor battle room.
+- Team setting updates require the coordination room host and `status === "expedition_waiting"`.
+- `DungeonBattleRoom` only reads these settings. Never expose arrows-per-round or target-format mutation controls after the run starts or inside individual map encounters.
+
+## Team Expedition Reconnect
+
+- On entering the dungeon lobby, query for a coordination room that still contains the current member and has `expedition_waiting` or `expedition_active` status.
+- Do not force navigation. Show an explicit resume action so the player may return to the waiting room, current battle, or an unclaimed final result.
+- Ignore result rooms already claimed by the current member.
+- Reconstruct the lobby descriptor from the coordination room, including its persisted boss, arrows-per-round, and target format. The coordination room and its current battle-room ID remain the source of truth after a client disconnect.
+
+## Expedition Battle Presentation
+
+- The persisted `monster.variant` is the only source for the entry glow, battle badge, combat stats, and result label. Never infer a variant from room type or use a hard-coded red entry glow.
+- Every expedition battle must visibly label `weak`, `normal`, `strong`, or `boss` as 弱化、普通、強悍、BOSS.
+- If a generated monster queue is exhausted, the fallback variant still follows the floor contract: floor 1 weak, floor 2 normal, floor 3 strong.
+- The completed/result branch must not render while the kill overlay is active.
+- Flatten the equipped cat into expedition member data (`catId`, `catName`, `catAtk`) before creating solo or team battle rooms. Cat attack rounds read these persisted fields, not the current client's profile.
+- Treasure-room card rewards must be generated from a real monster descriptor with a stable ID and name. Play reveal audio from the user-triggered flip action.

@@ -88,3 +88,57 @@ state `showMapPreview` → 顯示 `<DungeonExplore dungeon={DUNGEON_MAPS[0]} onB
 - Phase 1 全 local state，無 Firestore 寫入
 - SVG `<text>` 的 emoji 在部分 Android 可能 fallback 到文字，可接受
 - 地圖若超出螢幕寬度，容器加 `overflow-x: auto`
+
+---
+
+# Phase G｜5×5 格子遠征重構（2026-07-03 定案）
+
+## 背景與已修項目
+
+- ✅ 已修：`expeditionDb.js:153` `coinBase` → `coinBase: coinsBase`（結算 crash）。
+- 前一個 AI 工具重構時把遠征功能房弄丟：`DungeonExpedition.jsx` 的商人/陷阱/事件/寶箱房全部進 `ExpeditionRoomStage` 佔位畫面（只有繼續按鈕，無任何效果）。
+- 原功能元件完好：`DungeonShop` / `DungeonTrap`（賭大小閃避）/ `DungeonEvent` / `DungeonChest` / `DungeonRest` / `DungeonTreasureRoom`，皆為多人 Firestore confirm→resolve 設計。
+
+## 使用者定案決策
+
+1. **範圍**：單人遠征（DungeonExpedition.jsx）與團隊遠征（TeamExpeditionBattle.jsx + expeditionTeamDb.js）都改。
+2. **第 1、2 層**：5×5 格子、部分空格（牆）＋迷霧。約 11~13 間房，生成樹保證連通；起點隨機；樓梯房放離起點最遠處；上下左右移動；只顯示已探索＋相鄰格；走過的房間標記清除、再經過不再觸發。
+3. **第 3 層**：固定入口 → A/B/C 三選一（選定即鎖）→ 每條 3 間隨機功能房 → 休息區 → 王房 → 寶箱房（最終獎勵）。
+4. **團隊移動**：房主移動、全員跟隨；進房後沿用既有多人 confirm→resolve。
+
+## 實作步驟
+
+### Step G1｜`src/lib/expeditionGrid.js`（新檔，單人/團隊共用）
+- `generateGridFloor(floorIndex, difficultyTier)` → `{ grid, startPos, rooms }`
+  - 5×5；隨機漫步/生成樹挑 11~13 格連通房間，其餘 null（牆）
+  - 房型分配：入口(start)、樓梯(stairs, BFS 距起點最遠)、battle×N、elite（第2層1隻）、event/trap/shop/chest/rest 按樓層權重（參考 `EXCAVATION_FLOOR_CONFIG.roomTypes`）
+  - 房物件：`{ id, type, label, pos:{x,y}, cleared:false }`
+- `generateBranchFloor(difficultyTier)` → `{ entrance, branches:{A,B,C}, boss, treasure }`
+  - 每分支：3 間隨機功能房（battle/event/trap/shop/chest 混合）+ 1 休息區
+
+### Step G2｜單人 `DungeonExpedition.jsx` 重構
+- 第1、2層：`GridMapStage` 取代現有 `ExpeditionMapStage`——SVG 5×5 網格、迷霧（未探索相鄰格半透明、不相鄰不顯示）、點擊相鄰格移動、cleared 房可自由通過
+- 第3層：`BranchStage`——入口選 A/B/C 鎖定 → 依序房間 → 王 → 寶箱
+- 進房觸發改依房型分流（見 G3），刪除 `ExpeditionRoomStage` 佔位
+- 樓梯房進入 → 下一層（重新 generateGridFloor）
+
+### Step G3｜功能房單人本地接入
+- 原元件加「本地單人模式」轉接：以 props 傳入單人 member 狀態與 onResolve callback，不寫 Firestore；**不得改動多人模式行為**
+- 陷阱房保留賭大小閃避；商人房用遠征金幣；事件房接 buff/debuff；寶箱房隨機獎勵；休息房回血
+- 房間效果補動畫與音效（`sound.js` Web Audio 合成，參考 noiseBurst/distTone 慣例）
+- HP/buff 需在單人遠征全程持續（跨房間、跨樓層帶著走），戰鬥房進出時同步
+
+### Step G4｜團隊遠征接格子
+- 協調房存 `floorLayout`（generateGridFloor 結果序列化）+ `currentPos`；房主寫移動、成員 onSnapshot 跟隨
+- 非戰鬥房建房間文件走既有 confirm→resolve；戰鬥房沿用現有流程
+- 遵守 spec：host authority、floor carry-over 用 `??`、獎勵只算一次存 `expeditionResult.rewards`
+
+## 驗收清單
+
+- [ ] 單人第1/2層為隨機 5×5 迷霧地圖、起點隨機、可自由移動、cleared 不重複觸發
+- [ ] 樓梯房 → 下一層重新生成
+- [ ] 第3層 A/B/C 三選一鎖定 → 3房+休息 → 王 → 寶箱
+- [ ] 商人/陷阱(賭大小)/事件/寶箱/休息房在單人遠征實際生效，含音效動畫
+- [ ] 最終寶箱房結算不 crash（coinBase 已修）、獎勵只計算一次
+- [ ] 團隊遠征同格子玩法、房主移動全員跟隨、多人房間功能正常
+- [ ] 原多人地下城（DungeonController 流程）行為不變

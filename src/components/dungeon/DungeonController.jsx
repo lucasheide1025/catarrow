@@ -49,7 +49,7 @@ export default function DungeonController({ roomId, onExit }) {
         <div style={{ fontSize:48 }}>🏚️</div>
         <div style={{ fontWeight:700, color:"rgba(255,255,255,0.7)" }}>地下城房間已關閉或不存在</div>
         <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>可能是房主已結束地下城，或房間已過期</div>
-        <button onClick={onExit} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
+        <button onClick={() => onExit?.({ preserve: false })} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
       </div>
     );
   }
@@ -60,7 +60,7 @@ export default function DungeonController({ roomId, onExit }) {
         <div style={{ fontSize:48 }}>🏁</div>
         <div style={{ fontWeight:700, color:"rgba(255,255,255,0.7)" }}>地下城已結束</div>
         <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>此地下城的冒險已完成，獎勵已結算</div>
-        <button onClick={onExit} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
+        <button onClick={() => onExit?.({ preserve: false })} style={{ marginTop:8, padding:"10px 32px", borderRadius:14, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none", fontSize:14 }}>返回大廳</button>
       </div>
     );
   }
@@ -146,9 +146,9 @@ export default function DungeonController({ roomId, onExit }) {
       return (
         <DungeonBattleRoom
           roomId={roomId}
-          onExit={undefined}
+          onExit={() => onExit?.({ preserve: true })}
           isMapMode={true}
-          onReturnToMap={onExit}
+          onReturnToMap={() => onExit?.({ preserve: true })}
         />
       );
     }
@@ -158,7 +158,7 @@ export default function DungeonController({ roomId, onExit }) {
         <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.5)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, fontSize:14 }}>
           <div style={{ fontSize:32 }}>🏰</div>
           <div>地下城地圖已過期</div>
-          <button onClick={onExit} style={{ marginTop:8, padding:"8px 24px", borderRadius:12, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none" }}>返回大廳</button>
+          <button onClick={() => onExit?.({ preserve: false })} style={{ marginTop:8, padding:"8px 24px", borderRadius:12, background:"#334155", color:"#e2e8f0", fontWeight:700, cursor:"pointer", border:"none" }}>返回大廳</button>
         </div>
       );
     }
@@ -170,7 +170,7 @@ export default function DungeonController({ roomId, onExit }) {
         isHost={isHost}
         memberId={profile?.id}
         profile={profile}
-        onBack={onExit}
+        onBack={() => onExit?.({ preserve: true })}
       />
     );
   }

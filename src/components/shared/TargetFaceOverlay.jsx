@@ -1,6 +1,7 @@
 // src/components/shared/TargetFaceOverlay.jsx
 // 戰鬥模式通用靶面輸入層（fixed overlay）
 import { useState } from "react";
+import { DUNGEON_TARGET_FORMATS } from "../../lib/dungeonRunSettings";
 
 const RING_DEFS = {
   full_110: [
@@ -32,11 +33,7 @@ const RING_DEFS = {
   ],
 };
 
-export const BATTLE_TARGET_FORMATS = [
-  { id:"full_110", label:"全靶", sub:"1-10 環" },
-  { id:"half_610", label:"半靶", sub:"6-10 環" },
-  { id:"field_16", label:"原野", sub:"1-6 環" },
-];
+export const BATTLE_TARGET_FORMATS = DUNGEON_TARGET_FORMATS;
 
 export const BATTLE_INPUT_MODES = [
   { id:"button", label:"點擊分數", icon:"⌨️" },

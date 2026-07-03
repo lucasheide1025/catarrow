@@ -3,6 +3,164 @@
 
 ---
 
+## 2026-07-04（地下城 Boss、四階出怪與獎勵結算修正）
+
+- 戰鬥進場外框與狀態徽章統一讀取怪物 `variant`；補回擊殺演出、裝備貓咪進場與攻擊回合，並修正寶藏房怪物卡片名稱 `undefined` 及翻牌無音效。
+- 組隊地下城新增斷線恢復：進入地下城首頁時查找仍包含自己的未完成協調房，可手動返回等待室、進行中的戰鬥或尚未領取的結算。
+- 3／6 箭與靶紙格式改由房主在進場前設定；單人、組隊協調房及每層戰鬥房共用同一設定，開始後鎖定，移除探索遭遇與戰鬥中的切換入口。
+- 地下城三個功能分頁移除 `100dvh` 子畫面與巢狀垂直捲動，統一由 `MemberApp` 主內容區滾動；分頁列改為 sticky，手機滑動不再搶手勢。
+- 地下城建立時固定守關 Boss，進場畫面放大並顯示 Boss、保證寶箱與 `×2` 掉落倍率。
+- 修正高難度地下城仍可能抽到 T1 Boss：所有怪物改用地下城指定 Tier，一樓 weak、二樓 normal/strong、三樓 strong、王房 boss。
+- 每隻遠征怪改掉對應族系／Tier 材料寶箱 ×2 與金幣寶箱 ×2。
+- 寶藏房保留金幣噴泉，後續改為玩家逐張翻牌；最終報告加入總獎勵、隊員傷害與 MVP。
+- 組隊領獎改為 Firestore transaction，並修正結算同步失敗、儲存槽靜默失敗及房主退出留下戰鬥房等問題。
+
+## 2026-07-03（Phase G：單人遠征 5×5 迷霧格子重構 — Step G1~G3）
+
+### 改了什麼
+
+- **新檔 `src/lib/expeditionGrid.js`**（單人／團隊共用純函式）
+  - `generateGridFloor(floorIndex, difficultyTier)`：5×5 格子抽 11~13 間連通房（邊界擴張生成，保證連通）；起點隨機、樓梯 BFS 放最遠；房型 = 保底戰鬥（依 `EXCAVATION_FLOOR_CONFIG.monsterCount`）+ 第 2 層 1 精英 + 1 休息 + 權重抽（events/traps/merchants/chests）。回傳 `{ size, grid, rooms, startPos, stairsPos }`，房物件 `{ id, type, label, pos:{x,y}, cleared }`。
+  - `generateBranchFloor()`：第 3 層入口 → A/B/C 各「3 隨機功能房（保底 1 戰鬥）+ 休息」→ boss → treasure。
+- **`DungeonExpedition.jsx` 全面重構**
+  - 第 1、2 層 `GridMapStage`：SVG 迷霧地圖（只顯示已探索＋相鄰格）、點相鄰格移動、cleared 房自由通行不再觸發、樓梯站上後底部面板確認下樓。
+  - 第 3 層 `BranchStage`：A/B/C 選定即鎖 → 依序進房 → 王 → 寶箱（`DungeonTreasureRoom`）。
+  - 刪除佔位 `ExpeditionRoomStage`；商人/陷阱/事件/寶箱/休息房改復用多人元件的「本地單人模式」。
+  - `playerState`（hp/maxHP/atk/def/buffs）全程跨房間跨樓層帶著走；戰鬥房出場從房間快照同步回來（`??` 防 0 復活）。
+  - 事件效果本地映射：hp_restore_all/atk/def/dmg mult/gold_bonus 立即生效；monster_hp_mult 存下一層、monster_atk_mult 存本層（進戰鬥時乘到怪物身上）；skip_counter 僅存欄位（單人戰鬥房尚未支援，已註記）。
+- **五個多人房間元件加 `localMode` 轉接**（DungeonShop/Trap/Event/Chest/Rest）
+  - `localMode=true` 時 confirm/choice 走元件內部 state，效果經 `onLocalEffect`、結束經 `onLocalDone` 回父層，完全不寫 Firestore 房間文件；**多人路徑一行未動**（僅新增 gated 分支與 gated 音效）。
+  - 陷阱房保留賭大小閃避；商店由父層 `onLocalBuy` 扣真金幣＋套效果；寶箱金幣經父層發放、收藏品照常寫 member 文件。
+- **`DungeonTreasureRoom.jsx`** 加選填 `onLoot(loot)`：生成獎勵時回傳一次，單人遠征據此實發金幣＋收藏品（不影響原無 prop 行為）。
+- **`expeditionDb.js`**
+  - 修 bug：`grantExpeditionRewards` 用了 `increment` 但沒 import → 之前獎勵靜默發放失敗，已補 import。
+  - `createExpeditionBattleRoom` buffs 改帶入 `memberData.buffs`（`??` 預設），讓商店符/事件 buff 進戰鬥生效。
+
+### 為什麼
+
+- 前一輪 AI 重構把遠征功能房弄丟成「只有繼續按鈕」的佔位畫面；本次照 Phase G 定案恢復並升級成迷霧格子玩法。
+
+### 踩坑提醒
+
+- 金幣顯示直接讀 `profile.coins`（useAuth 有 onSnapshot 即時同步），**不要**另外累計 delta，會雙算。
+- `finishPendingRoom` 不可在 setState updater 內呼叫其他 setState（updater 必須純函式）。
+- Step G4（團隊遠征接格子）尚未做；`TeamExpeditionBattle.jsx` / `expeditionTeamDb.js` 本次完全未動。
+
+### 驗證
+
+- `npm run build` 通過（Compiled successfully，無 ESLint 警告）。
+- expeditionGrid 生成器 500+200 次隨機驗證：連通性、房數 11~13、entrance/stairs 唯一、第 2 層必有精英、每層必有休息與戰鬥、分支必含戰鬥＋休息，全數通過。
+
+---
+
+## 2026-07-03（Freebuff 交接後：組隊遠征一致性收尾）
+
+### 修正內容
+
+- `expeditionTeamDb.js`
+  - 等待室加入改用 Firestore transaction，避免兩人同時加入突破 4 人上限。
+  - 離房改用 `deleteField()`，不再留下 `null` 成員佔用名額。
+  - 開始遠征時原子切換為 `expedition_active`，開始後不再出現在開放列表，也不能中途加入。
+  - 建戰鬥房改為顯式傳入 `hostId`，不再依 Firestore map 順序猜房主。
+  - 新增樓層成員狀態同步與全員結算領取追蹤。
+- `DungeonLobby.jsx` / `DungeonTeamLobby.jsx`
+  - 加入碼回傳真正房主資訊；離開等待室會實際移除成員。
+  - 隊員初始戰鬥數值改由 `calcArcherStats + archerLevelBonus` 計算，不再全員落到 500/10/10 預設值。
+- `TeamExpeditionBattle.jsx`
+  - 只有房主能推進及清理戰鬥房，避免隊員先刪房造成房主卡住。
+  - 非房主可正確收到 `expeditionPhase=result`，三層之間保留 HP／死亡狀態。
+  - 結算獎勵由房主抽一次並同步全隊，畫面與實際發放不再重新抽值。
+  - 最後一名領獎者才清理組隊協調房，避免房主先領造成隊員失去結算。
+  - 增加建房／同步失敗畫面與重試，防止靜默卡在載入中。
+- `DungeonExpedition.jsx`
+  - 單人結算獎勵同樣固定一次，畫面與實際發放一致。
+- `firestore.rules`
+  - `members.update` 白名單加入 `expeditionRecords`，修正遠征紀錄被規則靜默阻擋。
+
+### 儲存槽重要語意
+
+- 保存地下城時已清除上一輪 pending/progress；開始遠征只消耗選定槽位。
+- 儲存槽遠征成功、失敗或離開，都不得再呼叫 complete/abandon 清掉玩家正在累積的新一輪挖掘。
+- 組隊遠征只消耗房主槽位；隊員的挖掘與槽位不受影響。
+
+### 驗證
+
+- `npm test -- --watchAll=false --passWithNoTests`：通過（專案目前無測試檔）。
+- `npm run build`：production build 通過；只有既有 bundle size 與 Node `fs.F_OK` deprecation 警告。
+- 尚需兩個真實帳號實測 Firestore 多客戶端流程。
+
+### 測試工具踩坑（2026-07-03）
+
+- 不要在使用者正在跑 `npm start` 的專案 `node_modules` 內臨時安裝 Playwright。一次 `npm install --no-save playwright-core` 逾時，留下半安裝的 `firebase/node_modules/@firebase/auth`，造成 development server 誤報所有 `firebase/auth` exports 不存在。
+- 已用原 lockfile 執行 `npm install` 修復；`package.json` / `package-lock.json` 均無變動，production build 與 development bundle 都恢復。
+- 後續瀏覽器自動化應放在獨立暫存目錄，避免 npm 重排正式專案依賴。
+
+---
+
+## 2026-07-14（三大地下城來源系統 + 組隊遠征接 DungeonBattleRoom）
+
+### 改了什麼
+
+**功能 A：地下城三大來源系統**
+
+`dungeonExcavation.js` 完整重寫，三個獨立來源並存：
+
+**① ⏳ 定時生成（新系統）**
+- `initAutoDigTimer(memberId)` — 初始化隨機 24~144 小時倒數計時器，寫入 `autoDigNextAt`
+- `checkAutoDigStatus(ex)` — 純函式，回傳 `{ ready, remainingMs }`
+- `claimAutoDig(memberId)` — 時間到後領取，隨機 6 族 + T1~T6 均等，產出 `pendingReveal`
+- `resetAutoDigTimer(memberId)` — 領取/保存/放棄後自動重設計時器（下一輪）
+- `abandonExcavation` / `saveExcavation` 自動連動計時器重置
+
+**② ⛏️ 練箭挖掘（公式修正）**
+- `addExcavationByCheckin` → +20 進度（原 +10）
+- `addExcavationByArrows` → 每箭 +1 進度（原 +0.3）
+- `getTierProbabilities(dailyArrows)` — 回傳 T1~T6 機率陣列：
+  ```
+  maxTier = min(6, 1 + floor(dailyArrows / 30))
+  每 30 箭提升一級最高可開等級，各級均等機率
+  ex: dailyArrows=0 → T1=100%；dailyArrows=30 → T1=50%, T2=50%
+      dailyArrows=60 → T1=33%, T2=33%, T3=33%
+      dailyArrows=150 → T1~T6 各 ~16.7%
+  ```
+- `downgradeExcavationDifficulty` — 免費降級（T6→T1，無限制）
+- `revealExcavation` — 改用機率表抽難度（取代舊 fixed 稀有度骰）
+- 金幣強化保留（反向升級：向上升一級）
+
+**③ 📜 世界王卷軸（新系統）**
+- `grantDungeonScroll(memberId)` / `grantWorldBossDungeon`（別名）— 擊殺後給 1 卷軸
+- `useDungeonScroll(memberId)` — 檢查 `scrollCount > 0` + `savedDungeons.length < 3` → 隨機生成 T1~T6 直接存入
+- `getDungeonScrollCount(memberId)` — 讀取卷軸持有數
+- worldBossDb.js `distributeWorldBossRewards` 改為呼叫 `grantDungeonScroll`（非直接寫入 savedDungeons）
+
+**DungeonExcavationTab.jsx 三卡 UI**：
+- 卡 1：⏳ 定時生成 — 倒數計時器 + 就緒時「領取」按鈕
+- 卡 2：⛏️ 練箭挖掘 — 進度條 + T1~T6 即時機率表 + 揭曉 overlay（含免費降級/金幣強化）
+- 卡 3：📜 世界王卷軸 — 持有數顯示 + 「使用」按鈕（偵測儲存槽空位）
+
+**功能 B：組隊遠征路由修正（接現有 DungeonBattleRoom）**
+
+之前組隊遠征出發後錯誤地進了 `DungeonExpedition`（單人遠征），現在改接現有的多人戰鬥系統：
+
+- `expeditionTeamDb.js`：新增 `createTeamExpeditionBattleRoom(members, monster, ...)` — 建立含所有隊員 HP/ATK/DEF 的戰鬥房間
+- `DungeonBattleRoom.jsx`：新增 `expeditionMode` prop — 遠征模式跳過個人獎勵，僅 host 可呼叫 `returnToMapAfterBattle`
+- **NEW** `TeamExpeditionBattle.jsx`：三層團隊戰鬥管理器 — 房主生成怪物 → 創建戰鬥房間 → 全員進 `DungeonBattleRoom` → 樓層推進 → 結算畫面
+- `DungeonTeamLobby.jsx`：開始按鈕傳遞全員資料給 `onStart`
+- `DungeonLobby.jsx`：組隊遠征改走 `TeamExpeditionBattle`；非房主自動訂閱組隊房間偵測戰鬥開始
+
+### 為什麼
+- 原本練箭挖掘的公式太慢（+0.3/箭）且機率不透明，玩家不知道要練多少箭才能開高等
+- 世界王掉落應該要讓玩家可以選擇「何時使用」，而非直接塞入槽位（可能滿槽）
+- 組隊遠征之前偷懶接了單人遠征( Expedition)，應使用現成的多人戰鬥系統
+
+### 踩坑提醒
+- `grantWorldBossDungeon` 和 `adminSetSavedDungeon` 共享 ~80% 邏輯（讀取→檢查→寫入），若有更多「幫玩家加地下城」函式出現，建議萃取共用 helper
+- `getTierProbabilities` 是純函式，不直接讀 Firestore——`dailyArrows` 由上層傳入
+- 組隊遠征的 `createTeamExpeditionBattleRoom` 怪物參數必須含所有戰鬥數值（HP/ATK/DEF/rewardMult），否則 `DungeonBattleRoom` 會算錯
+- 非房主訂閱組隊房間的 `currentBattleRoomId`，變更時自動切換 `DungeonBattleRoom`；不需要手動清理舊房間
+
+---
+
 ## 2026-07-03（音效/動畫批次 C：慶祝與獎勵層 — Confetti + 分階段音效）
 
 ### 改了什麼
@@ -1067,6 +1225,74 @@ const orderedAliveIds = [
 
 ---
 
+## 2026-07-14（世界王噴地下城 + 3 槽固定顯示 + 後台測試工具簡化）
+
+### 改了什麼
+
+**功能 A：世界王擊殺掉落地下城**
+- `dungeonExcavation.js`：新增 `grantWorldBossDungeon(memberId)` — 隨機挑選 6 族 + 難度 2~4（稀有~強悍），標記 `fromWorldBoss: true`，寫入 `savedDungeons`（max 3 自動跳過）
+- `worldBossDb.js` `distributeWorldBossRewards`：擊殺獎勵 loop 中對每位真實參與者（不含訪客）呼叫 `grantWorldBossDungeon`，放在 `rewardDistributed` 標記前（失敗可重試）
+
+**功能 B：🌍 世界王掉落標示 UI**
+- `DungeonStorageTab.jsx`：已保存卡片旁邊顯示 🌍 世界王掉落（橘色 #fb923c）badge
+- `DungeonSelectionPanel.jsx`：資訊卡 + 確認 overlay 兩處都顯示該 badge
+
+**功能 C：3 槽固定顯示**
+- `DungeonStorageTab.jsx`：改為固定 3 槽卡片設計（`Array.from({length:3}).map`），空格顯示 🕳️ 空槽 placeholder，已滿顯示族系卡片
+
+**功能 D：後台測試工具簡化**
+- `AdminDungeon.jsx`：移除地下城次數重置功能（`resetDungeonUsed`/`resetAllDungeonUsed` import、`busy`/`showReset`/`loading` state、`handleResetOne`/`handleResetAll`、重置 JSX 區塊）
+- 現在專注於：挑玩家 → 選種族/難度 → 存入選單 → 檢視/刪除槽位
+
+### 為什麼
+- 世界王擊殺後缺乏實質獎勵，掉落地下城讓參與者有長期目標
+- 儲存槽固定 3 格視覺化，空槽可視讓玩家知道還有空間
+- 地下城已無每日次數限制（改為挖掘進度制），重置功能不再需要
+
+### 踩坑提醒
+- `grantWorldBossDungeon` 和 `adminSetSavedDungeon` 共享 ~80% 邏輯（讀取→檢查→寫入），若有更多「幫玩家加地下城」函式出現，建議萃取 `_pushSavedDungeon(memberId, entry)` 共用 helper
+- 世界王掉落只發給真實參與者（`!isGuest`），訪客無此獎勵
+
+---
+
+## 2026-07-14（地下城選單系統 + 組隊遠征 + Phase E 獎勵結算）
+
+### 改了什麼
+
+**功能 A：地下城選單系統（儲存槽 + 選擇面板）**
+- `dungeonExcavation.js`：新增 `saveExcavation(memberId)` — 揭曉時保存到 `savedDungeons` 陣列（最多 3 個）；`removeSavedDungeon` / `getSavedDungeons`
+- `DungeonExcavationTab.jsx`：揭曉後改為「📦 保存到地下城選單」，滿 3 個時紅字提示並禁用挖掘
+- `DungeonStorageTab.jsx`（新）：即時訂閱已保存地下城清單（族系 emoji + 難度徽章 + 隱藏標記），支援單個移除
+- `DungeonSelectionPanel.jsx`（新）：選定地下城後顯示單人確認 overlay / 組隊探索入口
+- `DungeonLobby.jsx`：分頁改為「⛏️ 挖掘探索 | 🗺️ 進入地下城 | 🔮 圖鑑」，加入地下城面板含「加入地下城」入口
+- `DungeonExpedition.jsx`：支援 `fromStorage` 標記，啟動時自動釋放槽位
+
+**功能 B：組隊遠征系統（建立房間 + 等待 + 加入）**
+- `expeditionTeamDb.js`（新）：Firestore 操作層 — `createTeamExpeditionRoom`（含地下城資訊）、`joinTeamExpeditionRoom`（6 碼邀請碼）、`subscribeOpenTeamExpeditionRooms`（開放房間列表）、`disbandTeamExpeditionRoom` / `cleanupTeamExpeditionRoom`
+- `DungeonTeamLobby.jsx`（新）：等待室 — 地下城資訊卡 + 隊員清單（最多 4 人）+ 房主可複製邀請碼 + 「開始遠征」/「解散」按鈕；成員顯示「等待房主」+「離開」
+- 路由整合至 `DungeonLobby.jsx`：選地城→組隊→建立房間→分享邀請碼→夥伴輸入代碼或從開放列表加入→房主開始
+- 加入地下城分頁：輸入邀請碼 + 顯示開放中房間列表
+
+**功能 C（Phase E）：遠征獎勵結算 + 紀錄保存**
+- `expeditionDb.js`：新增 `calculateExpeditionRewards`（6 級難度獎勵表金幣/箭露/XP）、`saveExpeditionRecord`（最多保留 20 筆）、`grantExpeditionRewards`（Firestore increment）
+- `DungeonExpeditionResult.jsx`（新）：三階段進場動畫 + 成功/失敗配色 + 獎勵明細 + 「🎊 領取獎勵」按鈕
+- `DungeonExpedition.jsx`：追蹤 `floorsCleared` 和 `wonLast`，完成/失敗統一顯示結算畫面，領取時自動發放獎勵 + 儲存紀錄 + 重置挖掘
+- 清理：移除無用 `ExpeditionFailed` 元件、`resultRewards` state、`showRewards` state；恢復 `broadcastExpeditionFailure` 失敗廣播
+
+### 為什麼
+- 原本地下城挖掘後直接進入遠征，缺乏選單管理與組隊功能
+- 玩家需要能儲存多個地下城、選擇何時出發、與夥伴組隊
+- Phase E 補齊獎勵回饋閉環（打怪→獎勵→紀錄），讓遠征有完整結束感
+
+### 踩坑提醒
+- `saveExcavation` 最多存 3 個，滿時 Disable 挖掘（`storageFull` 狀態驅動）
+- 組隊遠征使用 6 碼代碼加入，與舊 `dungeonDb` 的代碼空間不衝突
+- `DungeonExpedition` mount 時自動 `removeSavedDungeon` 釋放槽位
+- `broadcastExpeditionFailure` 仍在 `handleBattleDone` 失敗分支中呼叫（`useCallback` 加入 `profile` 依賴）
+- `floorsCleared` 計算：改用 `floorIndex`（0-based）而非 `Math.max(1, floorIndex)`，更精確
+
+---
+
 ## 2026-07-14（地下城終戰模式設計定稿）
 
 ### 設計完成
@@ -1520,6 +1746,34 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 - `DuelRoom.jsx`：`applyPlayerCatToRoom` 固定傳 1.0
 - `PartyBattleRoom.jsx`：`getArcherStats` catStatMult 參數全換成 1.0
 **踩坑提醒**：catData.js 的 `getCatStatMult` / `getCatBattleBonus` 函式保留（以防 UI 有用），但已不被 hook 呼叫。
+
+## 2026-07-03（地下城探索/戰鬥介面修整）
+
+### 進度
+**為什麼**：實測發現地下城現在缺少原本想要的「逐房探索地圖」感，而且戰鬥輸入列太早展開，容易卡到點擊。
+
+**改了什麼**：
+- `DungeonExpedition.jsx`：新增遠征地圖過場，房間會一格一格往前推進，不再只剩純文字跳轉
+- `DungeonBattleRoom.jsx` / `BattleBottomBar.jsx`：戰鬥改成先按「開始計分」，再展開「計分｜藥水｜隊友」
+- `DungeonBattleRoom.jsx`：地下城戰鬥預設直接給分數按鈕，移除戰前的額外模式選擇
+
+**踩坑提醒**：
+- 剛把地圖過場做完時，`ExpeditionMapStage` 出現 runtime error，原因是新地圖頁面用了未穩定的元件路徑；後來改成內嵌 SVG 地圖，避免再碰到 import / HMR 的 undefined 問題。
+- 這次遠征獎勵流程仍維持原本的單人/組隊分流，沒有動到地下城資料結構。
+
+### 進度
+**為什麼**：實測遠征還有三個核心問題：不小心退出後回不去、探索流程太系統自動化、以及進場素質沒正確帶入。
+
+**改了什麼**：
+- `MemberApp.jsx` / `AdminApp.jsx`：地下城離開時改成「暫離保留房號」，只有房間真的不存在或結束時才清掉 `activeDungeon`
+- `DungeonController.jsx` / `DungeonBattleRoom.jsx`：把「暫時離開」和「房間失效」分流，避免誤刪重連資料
+- `DungeonExpedition.jsx`：遠征改為手動推進，每一房都要玩家點確認，不再自動跳房
+- `expeditionMemberData.js`：抽出遠征戰鬥素質組裝共用 helper，避免 single-player 與 lobby 算法分裂
+- `expeditionDb.js`：建立戰鬥房時改用 `??` 預設值，避免 0 值被 `||` 誤判成缺值
+
+**踩坑提醒**：
+- `DungeonController` 的 `not_found / completed` 一定要清掉房號，不然 banner 會一直掛著死房。
+- 暫離時不能再呼叫 `leaveDungeonRoom()`，否則 host 會被直接結束房間、隊友會被標成離場。
 
 ### 貓貓等級 / 裝備 / 技能 三系統實作
 **為什麼**：從輔助型升為「真正陪伴玩家的戰鬥夥伴」，與射手等級系統平行。

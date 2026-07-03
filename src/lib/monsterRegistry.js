@@ -13,7 +13,7 @@ export const VARIANT_MULT = {
 export const VARIANT_LABEL = {
   weak:   { label: "弱化", color: "#94a3b8", bg: "#1e293b" },
   normal: { label: "普通", color: "#6b7280", bg: "#f3f4f6" },
-  strong: { label: "強化", color: "#f97316", bg: "#fff7ed" },
+  strong: { label: "強悍", color: "#f97316", bg: "#fff7ed" },
   boss:   { label: "BOSS", color: "#ef4444", bg: "#fef2f2" },
 };
 

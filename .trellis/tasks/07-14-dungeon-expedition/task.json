@@ -3,7 +3,7 @@
   "name": "dungeon-expedition",
   "title": "地下城終戰模式（發掘→三層探險→Boss）",
   "description": "全新地下城玩法：發掘進度累積 → 手動揭曉 → 三層固定結構探險 → Boss 終戰 → 寶箱族獎勵房",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "dungeon",
   "package": "frontend",

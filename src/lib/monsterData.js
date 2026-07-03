@@ -464,6 +464,7 @@ const VARIANT_MULT = {
   weak:   { hp: 0.6, atk: 0.6, def: 0.6 },
   normal: { hp: 1.0, atk: 1.0, def: 1.0 },
   strong: { hp: 1.5, atk: 1.4, def: 1.4 },
+  boss:   { hp: 2.0, atk: 1.6, def: 1.6 },
 };
 
 // ── 依戰力隨機選變體 ────────────────────────────────────
@@ -534,13 +535,13 @@ const FAMILY_KEYS = ["ghost","mountain","insect","workplace","exam","temple"];
  * @returns {Array} 怪物物件陣列（已套用變體）
  */
 export function drawMixedMonsterPool(count, variant, tier) {
-  const tierKeys = TIER_ORDER.slice(0, Math.max(1, Math.min(tier, 6)));
+  const tierKey = TIER_ORDER[Math.max(0, Math.min(5, (tier || 1) - 1))];
   const shuffled = [...FAMILY_KEYS].sort(() => Math.random() - 0.5);
   const selectedFamilies = shuffled.slice(0, Math.min(count, 6));
 
   return selectedFamilies.map(family => {
     const candidates = MONSTERS.filter(m =>
-      m.family === family && tierKeys.includes(m.tier)
+      m.family === family && m.tier === tierKey
     );
     let monster;
     if (candidates.length === 0) {
@@ -555,37 +556,51 @@ export function drawMixedMonsterPool(count, variant, tier) {
   }).filter(Boolean);
 }
 
+export function drawExpeditionBoss(difficultyTier, family = null) {
+  const tierKey = TIER_ORDER[Math.max(0, Math.min(5, (difficultyTier || 1) - 1))];
+  const familyKey = FAMILY_KEYS.includes(family)
+    ? family
+    : FAMILY_KEYS[Math.floor(Math.random() * FAMILY_KEYS.length)];
+  const monster = MONSTERS.find(m => m.family === familyKey && m.tier === tierKey)
+    || MONSTERS.find(m => m.tier === tierKey)
+    || MONSTERS[0];
+  return applyVariant(monster, "boss");
+}
+
 /**
  * 根據樓層決定終戰模式的怪物組合
  * @param {number} floorIndex - 0=第1層, 1=第2層, 2=第3層
  * @param {number} difficultyTier - 難度 (1-6)
  * @returns {{ monsters: Array, elite: Object|null, boss: Object|null }}
  */
-export function drawFloorMonsters(floorIndex, difficultyTier) {
+export function drawFloorMonsters(floorIndex, difficultyTier, options = {}) {
   if (floorIndex === 0) {
     // 第1層：探索層，2-3 隻弱化怪
     const count = 2 + Math.floor(Math.random() * 2);
     return {
-      monsters: drawMixedMonsterPool(count, "weak", Math.max(1, difficultyTier - 1)),
+      monsters: drawMixedMonsterPool(count, "weak", difficultyTier),
       elite: null, boss: null,
     };
   }
   if (floorIndex === 1) {
-    // 第2層：戰鬥層，3-4 隻普通/強悍怪
+    // 第2層：一般房固定普通，精英房固定強悍
     const count = 3 + Math.floor(Math.random() * 2);
-    const variant = Math.random() < 0.3 ? "strong" : "normal";
+    const [elite] = drawMixedMonsterPool(1, "strong", difficultyTier);
     return {
-      monsters: drawMixedMonsterPool(count, variant, difficultyTier),
-      elite: null, boss: null,
+      monsters: drawMixedMonsterPool(count, "normal", difficultyTier),
+      elite: elite || null, boss: null,
     };
   }
-  // 第3層：王關層
-  const bossTier = Math.min(6, difficultyTier);
-  const [elite] = drawMixedMonsterPool(1, "strong", bossTier);
-  const [boss] = drawMixedMonsterPool(1, "boss", bossTier);
+  // 第3層：分支遭遇固定強悍，王房使用地下城建立時已固定的 Boss
+  const [elite] = drawMixedMonsterPool(1, "strong", difficultyTier);
+  const fixedBoss = options.fixedBoss
+    ? (options.fixedBoss.variant === "boss"
+      ? { ...options.fixedBoss }
+      : applyVariant(options.fixedBoss, "boss"))
+    : drawExpeditionBoss(difficultyTier, options.family);
   return {
-    monsters: [],
+    monsters: drawMixedMonsterPool(3, "strong", difficultyTier),
     elite: elite || null,
-    boss: boss || null,
+    boss: fixedBoss || null,
   };
 }

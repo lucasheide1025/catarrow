@@ -2,6 +2,7 @@
 // 三種傷害類型（HP↓ / ATK↓ / DEF↓）+ 全員賭大小閃躲機制 + 動畫過場
 import { useState, useEffect, useMemo } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { sfxCast, sfxSuccess, sfxCounter } from "../../lib/sound";
 
 // 陷阱類型
 const TRAP_TYPES = [
@@ -14,17 +15,24 @@ function rollDice() {
   return Math.floor(Math.random() * 6) + 1;
 }
 
-export default function DungeonTrap({ roomId, room, memberId, isHost }) {
+// localMode（遠征單人）：賭大小照舊，但效果透過 onLocalEffect 回傳父層、
+// 結束呼叫 onLocalDone，不寫 Firestore
+export default function DungeonTrap({
+  roomId, room, memberId, isHost,
+  localMode = false, onLocalEffect, onLocalDone,
+}) {
   const [trapType,  setTrapType]  = useState(null);
   const [animPhase, setAnimPhase] = useState("entering"); // entering | trap_reveal | dice_bet | dice_result | done
   const [diceValue, setDiceValue] = useState(null);
   const [dodgeSuccess, setDodgeSuccess] = useState(null); // null | true | false
   const [myBet, setMyBet] = useState(null); // "big" | "small" | null
+  const [localConfirms, setLocalConfirms] = useState({});
+  const [localChoices, setLocalChoices] = useState({});
 
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id].alive);
-  const roomConfirms = room?.roomConfirms || {};
-  const roomChoices  = room?.roomChoices || {};
+  const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
+  const roomChoices  = localMode ? localChoices : (room?.roomChoices || {});
   const allConfirmed = aliveIds.length === 0 || aliveIds.every(id => roomConfirms[id]);
 
   // 初始化陷阱（首次渲染固定）
@@ -57,6 +65,11 @@ export default function DungeonTrap({ roomId, room, memberId, isHost }) {
   async function handleBet(bet) {
     if (myBet || animPhase !== "dice_bet") return;
     setMyBet(bet);
+    if (localMode) {
+      setLocalChoices({ [memberId]: bet });
+      setLocalConfirms({ [memberId]: true });
+      return;
+    }
     await confirmNonCombatRoom(roomId, memberId, bet);
   }
 
@@ -72,6 +85,7 @@ export default function DungeonTrap({ roomId, room, memberId, isHost }) {
     const dice = rollDice();
     setDiceValue(dice);
     setAnimPhase("dice_result");
+    if (localMode) sfxCast();
 
     const isBig = dice >= 4;
     const success = majorityBet === "big" ? isBig : !isBig;
@@ -80,6 +94,22 @@ export default function DungeonTrap({ roomId, room, memberId, isHost }) {
     // 繼續動畫
     setTimeout(async () => {
       setAnimPhase("done");
+      if (localMode) (success ? sfxSuccess() : sfxCounter());
+
+      // 本地單人：效果交給父層套用（不寫 Firestore）
+      if (localMode) {
+        if (trapType && !success) {
+          const m = members[memberId];
+          if (trapType.id === "hp") {
+            onLocalEffect?.({ type:"hp_loss", value: Math.round((m?.maxHP || 100) * (0.15 + Math.random() * 0.15)) });
+          } else if (trapType.id === "atk") {
+            onLocalEffect?.({ type:"buff_mult", key:"atkMult", value: Math.round((0.75 + Math.random() * 0.1) * 100) / 100 });
+          } else {
+            onLocalEffect?.({ type:"buff_mult", key:"defMult", value: Math.round((0.75 + Math.random() * 0.1) * 100) / 100 });
+          }
+        }
+        return;
+      }
 
       // 寫入效果到 Firestore
       if (trapType && !success) {
@@ -113,6 +143,10 @@ export default function DungeonTrap({ roomId, room, memberId, isHost }) {
 
   async function handleResolve() {
     if (!isHost) return;
+    if (localMode) {
+      onLocalDone?.();
+      return;
+    }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
   }
 

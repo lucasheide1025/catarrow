@@ -5,6 +5,7 @@ import {
   serverTimestamp, increment, getDoc, getDocs, query,
   where, orderBy, limit, arrayUnion,
 } from "firebase/firestore";
+import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
 import { addCoins, addMaterials, addChests, addCardPack } from "./db";
 import { openCoinChest } from "./lootTable";
@@ -328,6 +329,12 @@ export async function distributeWorldBossRewards(eventId) {
         type: "cat_box", family: "worldboss", tier: "boss", from: "世界王最後一擊", ts: Date.now(),
       }]).catch(() => {});
       await addCardPack(lastHitId).catch(() => {});
+    }
+
+    // 🌍 世界王噴地下城：所有真實參與者獲得一個隨機地下城
+    for (const [mid, p] of Object.entries(participants)) {
+      if (p?.isGuest) continue;
+      await grantWorldBossDungeon(mid).catch(() => {});
     }
 
     await updateDoc(doc(db, WB, eventId), { rewardDistributed: true });

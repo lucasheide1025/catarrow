@@ -67,8 +67,18 @@ function getLabelsForFmt(targetFmt) {
   return ["X","10","9","8","7","6","5","4","3","2","1","M"]; // full_110 or default
 }
 
-function ScoreTabContent({ scoringModeChosen, setScoringModeChosen, targetMode, setTargetMode, arrows, onArrow, targetFmt, arrowsPerRound = 6 }) {
-  if (!scoringModeChosen) {
+function ScoreTabContent({
+  scoringModeChosen,
+  setScoringModeChosen,
+  targetMode,
+  setTargetMode,
+  arrows,
+  onArrow,
+  targetFmt,
+  arrowsPerRound = 6,
+  showModeChooser = true,
+}) {
+  if (showModeChooser && !scoringModeChosen) {
     return (
       <div style={{ padding: "3px 0" }}>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 5, letterSpacing: 1 }}>
@@ -158,7 +168,30 @@ export default function BattleBottomBar({
   potionInv, onCarryPotion, onThrowPotion,
   targetFmt,        // 靶面格式（"full_110"/"half_610"/"field_16"），控制計分按鈕
   arrowsPerRound,   // 每回合箭數（黨模式可能非預設 6）
+  controlsLocked = false,
+  onStartScoring,
+  showModeChooser = true,
 }) {
+  if (controlsLocked) {
+    return (
+      <div style={{ background:"rgba(0,0,0,0.55)", borderRadius:8, padding:"8px 8px", marginBottom:4 }}>
+        <button
+          onClick={onStartScoring}
+          style={{
+            width:"100%", padding:"12px 0", borderRadius:10, border:"none",
+            fontSize:14, fontWeight:900, cursor:"pointer",
+            background:"linear-gradient(90deg,#f59e0b,#ef4444)",
+            color:"white",
+          }}>
+          開始計分
+        </button>
+        <div style={{ marginTop:6, textAlign:"center", fontSize:10, color:"rgba(255,255,255,0.35)" }}>
+          點一下後再進入「計分｜藥水｜隊友」
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background:"rgba(0,0,0,0.55)", borderRadius:8, padding:"5px 5px", marginBottom:4 }}>
       <div style={{ display: "flex", gap: 2, marginBottom: 5 }}>
@@ -173,6 +206,7 @@ export default function BattleBottomBar({
           arrows={arrows} onArrow={onArrow}
           targetFmt={targetFmt}
           arrowsPerRound={arrowsPerRound}
+          showModeChooser={showModeChooser}
         />
       )}
       {bottomTab === "potion" && (

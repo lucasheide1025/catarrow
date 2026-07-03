@@ -1,7 +1,8 @@
 // src/components/dungeon/DungeonEvent.jsx — 隨機事件揭示（含全員確認流程）
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { confirmDungeonEvent } from "../../lib/dungeonDb";
+import { sfxBuff, sfxDebuff } from "../../lib/sound";
 
 const TYPE_STYLE = {
   buff:    "border-emerald-400/50 bg-emerald-900/30 text-emerald-300",
@@ -11,13 +12,24 @@ const TYPE_STYLE = {
 
 const TYPE_LABEL = { buff:"增益", debuff:"負面", neutral:"中立" };
 
-export default function DungeonEvent({ roomId, room, isHost, memberId }) {
+// localMode（遠征單人）：事件效果透過 onLocalEffect({type:"event", event}) 回傳父層，
+// 結束呼叫 onLocalDone，不寫 Firestore
+export default function DungeonEvent({
+  roomId, room, isHost, memberId,
+  localMode = false, onLocalEffect, onLocalDone,
+}) {
   const [loading, setLoading] = useState(false);
+  const [localConfirms, setLocalConfirms] = useState({});
   const ev = room?.currentEvent;
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id]?.alive);
-  const roomConfirms = room?.roomConfirms || {};
+  const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
+
+  // 本地單人：事件揭示音效
+  useEffect(() => {
+    if (localMode && ev) (ev.type === "debuff" ? sfxDebuff() : sfxBuff());
+  }, []); // eslint-disable-line
 
   if (!ev) return null;
 
@@ -26,6 +38,10 @@ export default function DungeonEvent({ roomId, room, isHost, memberId }) {
 
   async function handleConfirm() {
     if (loading) return;
+    if (localMode) {
+      setLocalConfirms({ [memberId]: true });
+      return;
+    }
     setLoading(true);
     await confirmNonCombatRoom(roomId, memberId, "acknowledged");
     setLoading(false);
@@ -33,6 +49,11 @@ export default function DungeonEvent({ roomId, room, isHost, memberId }) {
 
   async function handleResolve() {
     if (!isHost || loading) return;
+    if (localMode) {
+      onLocalEffect?.({ type:"event", event: ev });
+      onLocalDone?.();
+      return;
+    }
     setLoading(true);
     // 先套用事件效果，再返回地圖
     await confirmDungeonEvent(roomId, room);

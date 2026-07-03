@@ -33,6 +33,7 @@ const AdminGuildQuests   = lazy(() => import("../components/admin/AdminGuildQues
 const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryManager"));
 const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
+const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const MemberComps        = lazy(() => import("../components/member/MemberComps"));
@@ -372,12 +373,14 @@ export default function AdminApp() {
     sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId }));
     setPage("dungeon-room");
   }
-  function handleLeaveDungeon() {
-    sessionStorage.removeItem("admin_dungeon_room");
-    setDungeonRoomId(null);
-    import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
-      clearActiveDungeon(profile?.id).catch(() => {})
-    );
+  function handleLeaveDungeon(options = {}) {
+    if (options?.preserve === false) {
+      sessionStorage.removeItem("admin_dungeon_room");
+      setDungeonRoomId(null);
+      import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
+        clearActiveDungeon(profile?.id).catch(() => {})
+      );
+    }
     setPage("home");
   }
 
@@ -639,7 +642,7 @@ const adminNav = [
           )}
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
-          {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
+          {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} />}
           {page==="dungeon-room" && dungeonRoomId && (
             <div style={{ position:"fixed", inset:0, zIndex:60 }}>
               <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
@@ -776,6 +779,9 @@ const adminNav = [
         {page==="hub-member" && memberSub==="messages"   && (
           <><HubBack onClick={()=>setMemberSub(null)}/><AdminMessages /></>
         )}
+        {page==="hub-member" && memberSub==="dungeon-test" && (
+          <><HubBack onClick={()=>setMemberSub(null)}/><AdminDungeon/></>
+        )}
 
         {/* ── 賽事中心 Hub ── */}
         {page==="hub-events" && eventsSub===null              && <AdminEventsHub onSelect={setEventsSub}/>}
@@ -857,6 +863,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
         <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="檢定、報到、外賽審核" onClick={() => onSelect("review")} />
         <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />
         <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
+        <HubCard icon="🏰" label="地下城測試" desc="設定玩家地下城類型" onClick={() => onSelect("dungeon-test")} />
       </div>
     </div>
   );

@@ -1,8 +1,10 @@
 // src/components/dungeon/DungeonTreasureRoom.jsx — 寶箱族獎勵房
 // 非戰鬥、純獎勵：打贏 Boss 後的專屬獎勵空間
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { rollBattleLoot } from "../../lib/monsterRegistry";
+import { MONSTERS, TIER_ORDER } from "../../lib/monsterData";
+import { sfxCoinDrop, sfxGachaReveal } from "../../lib/sound";
 
 // ── 粒子背景（金色） ────────────────────────────────────
 function GoldParticles({ count = 24 }) {
@@ -54,28 +56,28 @@ function CoinFountain({ count = 20 }) {
 }
 
 // ── 物品卡片 ─────────────────────────────────────────────
-function LootCard({ item, icon, label, delay = 0 }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setVisible(true), delay);
-    return () => clearTimeout(t);
-  }, [delay]);
-
-  if (!visible) return null;
+function LootCard({ item, icon, label, flipped }) {
   return (
     <div style={{
-      display:"flex", alignItems:"center", gap:10,
-      padding:"10px 16px", borderRadius:12,
-      background:"rgba(255,255,255,0.06)",
-      border:"1px solid rgba(251,191,36,0.15)",
-      animation:"tr-card-in 0.5s ease both",
-      minWidth:160,
+      width:"min(82vw,320px)", minHeight:220, borderRadius:22,
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12,
+      padding:"24px", textAlign:"center",
+      background:flipped
+        ? "linear-gradient(145deg,rgba(251,191,36,0.22),rgba(120,53,15,0.55))"
+        : "linear-gradient(145deg,#78350f,#451a03)",
+      border:"2px solid rgba(251,191,36,0.55)",
+      boxShadow:"0 18px 55px rgba(0,0,0,0.45),0 0 35px rgba(251,191,36,0.15)",
+      animation:flipped ? "tr-card-flip 0.55s ease both" : "tr-card-in 0.45s ease both",
     }}>
-      <span style={{ fontSize:28, filter:"drop-shadow(0 0 8px rgba(251,191,36,0.3))" }}>{icon || item?.icon || "🎁"}</span>
-      <div>
-        <div style={{ fontSize:14, fontWeight:900, color:"#fbbf24" }}>{label || item?.name || "寶物"}</div>
-        <div style={{ fontSize:10, color:"#94a3b8" }}>{item?.desc || ""}</div>
+      <span style={{ fontSize:flipped ? 70 : 84, filter:"drop-shadow(0 0 18px rgba(251,191,36,0.45))" }}>
+        {flipped ? (icon || item?.icon || "🎁") : "🂠"}
+      </span>
+      <div style={{ fontSize:20, fontWeight:900, color:flipped ? "#fde68a" : "#fbbf24" }}>
+        {flipped ? (label || item?.name || "寶物") : "點擊下方按鈕翻牌"}
       </div>
+      {flipped && item?.desc && (
+        <div style={{ fontSize:14, lineHeight:1.6, color:"#cbd5e1" }}>{item.desc}</div>
+      )}
     </div>
   );
 }
@@ -83,22 +85,27 @@ function LootCard({ item, icon, label, delay = 0 }) {
 // ── 主元件 ───────────────────────────────────────────────
 export default function DungeonTreasureRoom({
   onClaim,
+  onLoot,               // 選填：獎勵生成後回傳一次（父層可據此實際發放）
   difficultyTier = 1,
   family = "treasure",
   bossVariant = "boss",
 }) {
-  const [phase, setPhase] = useState("enter"); // enter → fountain → loot → done
+  const [phase, setPhase] = useState("enter"); // enter → fountain → cards → done
   const [showFountain, setShowFountain] = useState(false);
   const [loot, setLoot] = useState(null);
+  const [cardIndex, setCardIndex] = useState(0);
+  const [cardFlipped, setCardFlipped] = useState(false);
+  const generatedRef = useRef(false);
 
   // 生成獎勵（一次性）
   useEffect(() => {
+    if (generatedRef.current) return;
+    generatedRef.current = true;
     // 用寶箱族最高 tier 的怪來生成獎勵
-    const treasureMonster = {
-      id:"treasure_reward",
-      family: "treasure",
-      tier: ["common","rare","elite","fierce","boss","mythic"][Math.min(5, difficultyTier - 1)] || "common",
-    };
+    const tier = TIER_ORDER[Math.min(5, Math.max(0, difficultyTier - 1))] || "common";
+    const treasureMonster = MONSTERS.find(monster =>
+      monster.family === "treasure" && monster.tier === tier
+    ) || MONSTERS.find(monster => monster.family === "treasure");
     const result = rollBattleLoot(treasureMonster, bossVariant, "veteran");
 
     // 寶箱族加倍
@@ -116,15 +123,52 @@ export default function DungeonTreasureRoom({
     const extraItem = extraItems[Math.floor(Math.random() * extraItems.length)];
     result.extraItem = extraItem;
     setLoot(result);
+    if (typeof onLoot === "function") onLoot(result); // 只在生成時呼叫一次
   }, []); // eslint-disable-line
 
-  // 自動播放動畫
+  const cards = useMemo(() => {
+    if (!loot) return [];
+    return [
+      ...(loot.material ? [{ item:loot.material }] : []),
+      ...(loot.chest ? [{ icon:"📦", label:"額外材料寶箱 ×2" }] : []),
+      ...(loot.goldChest ? [{ icon:"🎁", label:"額外金幣寶箱 ×2" }] : []),
+      ...(loot.card ? [{ icon:"🃏", label:`怪物卡片：${loot.card.name}` }] : []),
+      ...(loot.extraItem ? [{
+        item:loot.extraItem,
+        icon:"👑",
+        label:`珍藏品：${loot.extraItem.name}`,
+      }] : []),
+      ...(loot.arrowDew > 0 ? [{ icon:"💧", label:`箭露 +${loot.arrowDew}` }] : []),
+    ];
+  }, [loot]);
+
+  // 金幣噴泉保留自動演出；卡片改由玩家手動推進。
   useEffect(() => {
-    const t1 = setTimeout(() => { setPhase("fountain"); setShowFountain(true); }, 800);
-    const t2 = setTimeout(() => { setPhase("loot"); }, 2500);
-    const t3 = setTimeout(() => { setPhase("done"); }, 4500);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const t1 = setTimeout(() => {
+      setPhase("fountain");
+      setShowFountain(true);
+      sfxCoinDrop();
+    }, 800);
+    const t2 = setTimeout(() => {
+      setShowFountain(false);
+      setPhase("cards");
+    }, 2800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
+
+  function handleCardNext() {
+    if (!cardFlipped) {
+      sfxGachaReveal(false);
+      setCardFlipped(true);
+      return;
+    }
+    if (cardIndex >= cards.length - 1) {
+      setPhase("done");
+      return;
+    }
+    setCardIndex(index => index + 1);
+    setCardFlipped(false);
+  }
 
   // ── 靜態樣式 ──────────────────────────────────────────
   const styles = `
@@ -132,6 +176,7 @@ export default function DungeonTreasureRoom({
     @keyframes tr-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
     @keyframes tr-fade-in{0%{opacity:0;transform:translateY(-20px)}100%{opacity:1;transform:translateY(0)}}
     @keyframes tr-card-in{0%{opacity:0;transform:translateX(-20px) scale(0.9)}100%{opacity:1;transform:translateX(0) scale(1)}}
+    @keyframes tr-card-flip{0%{transform:rotateY(90deg) scale(0.9)}100%{transform:rotateY(0) scale(1)}}
     @keyframes tr-scale-in{0%{opacity:0;transform:scale(0)}60%{opacity:1;transform:scale(1.15)}100%{transform:scale(1)}}
     @keyframes tr-bounce{0%,100%{transform:translateY(0)}30%{transform:translateY(-15px)}60%{transform:translateY(-5px)}}
   `;
@@ -157,7 +202,8 @@ export default function DungeonTreasureRoom({
         <div className="text-sm mt-1 text-amber-600/80">
           {phase === "enter" ? "寶箱怪讓出一條路，前方金光閃閃…" :
            phase === "fountain" ? "金幣如瀑布般傾瀉而出！" :
-           phase === "loot" ? "所有的寶物都在這裡了！" : ""}
+           phase === "cards" ? `逐張揭曉寶物（${Math.min(cardIndex + 1, cards.length)}/${cards.length}）` :
+           phase === "done" ? "所有寶物已完成清點！" : ""}
         </div>
       </div>
 
@@ -165,10 +211,10 @@ export default function DungeonTreasureRoom({
       <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 gap-4">
 
         {/* 金幣獎勵 */}
-        {loot && phase !== "enter" && (
+        {loot && phase === "fountain" && (
           <div className="text-center" style={{ animation:"tr-scale-in 0.6s ease both" }}>
             <div className="text-5xl mb-1"
-              style={{ animation:"tr-bounce 1s ease infinite" }}>{phase === "fountain" ? "💰" : "🪙"}</div>
+              style={{ animation:"tr-bounce 1s ease infinite" }}>💰</div>
             <div className="text-4xl font-black" style={{ color:"#fbbf24" }}>
               +{loot.coins.toLocaleString()}
             </div>
@@ -176,73 +222,36 @@ export default function DungeonTreasureRoom({
           </div>
         )}
 
-        {/* 材料掉落 */}
-        {loot?.material && phase === "loot" && (
+        {phase === "cards" && cards[cardIndex] && (
           <LootCard
-            item={loot.material}
-            delay={200}
-          />
-        )}
-
-        {/* 寶箱 */}
-        {phase === "loot" && (
-          <div style={{ display:"flex", gap:12, flexWrap:"wrap", justifyContent:"center" }}>
-            {loot?.chest && (
-              <LootCard
-                icon="📦"
-                label="普通寶箱 ×1"
-                delay={400}
-              />
-            )}
-            {loot?.goldChest && (
-              <LootCard
-                icon="🎁"
-                label="黃金寶箱 ×1"
-                delay={600}
-              />
-            )}
-          </div>
-        )}
-
-        {/* 卡片 */}
-        {loot?.card && phase === "loot" && (
-          <LootCard
-            icon="🃏"
-            label={`卡片：${loot.card.name}`}
-            delay={800}
-          />
-        )}
-
-        {/* 額外收藏品 */}
-        {loot?.extraItem && phase === "loot" && (
-          <LootCard
-            item={loot.extraItem}
-            delay={1000}
-            icon="👑"
-            label={`✨ ${loot.extraItem.name}`}
-          />
-        )}
-
-        {/* 箭露 */}
-        {loot?.arrowDew > 0 && phase === "loot" && (
-          <LootCard
-            icon="💧"
-            label={`箭露 +${loot.arrowDew}`}
-            delay={1200}
+            {...cards[cardIndex]}
+            flipped={cardFlipped}
           />
         )}
 
         {/* 全部完成 */}
         {phase === "done" && (
           <div className="text-center" style={{ animation:"tr-fade-in 0.5s ease both", marginTop:8 }}>
-            <div className="text-lg font-bold text-amber-400">✨ 寶物已全數入袋！</div>
+            <div className="text-6xl mb-4">🎊</div>
+            <div className="text-2xl font-black text-amber-300">寶物清點完成</div>
+            <div className="text-sm text-slate-300 mt-2">下一步查看本次遠征完整報告</div>
           </div>
         )}
       </div>
 
       {/* Footer */}
       <div className="shrink-0 px-4 pb-8 pt-3 border-t border-amber-700/30">
-        {phase === "done" ? (
+        {phase === "cards" ? (
+          <button onClick={handleCardNext}
+            className="w-full py-4 rounded-2xl font-black text-base shadow-lg active:scale-[0.98]"
+            style={{ background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"white" }}>
+            {!cardFlipped
+              ? "✨ 翻開卡片"
+              : cardIndex >= cards.length - 1
+                ? "📊 查看完整結算"
+                : "下一張獎勵 →"}
+          </button>
+        ) : phase === "done" ? (
           <button onClick={onClaim}
             className="w-full py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98]"
             style={{
@@ -252,13 +261,12 @@ export default function DungeonTreasureRoom({
             }}
             onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 0 50px rgba(245,158,11,0.5)"; e.currentTarget.style.transform = "scale(1.02)"; }}
             onMouseLeave={e => { e.currentTarget.style.boxShadow = ""; e.currentTarget.style.transform = ""; }}>
-            🎉 領取所有寶物！
+            📊 查看遠征報告
           </button>
         ) : (
           <div className="text-center text-amber-700/60 text-sm py-4">
             {phase === "enter" ? "寶藏正一一浮現…" :
-             phase === "fountain" ? "金幣還在噴湧…" :
-             "獎勵結算中…"}
+             "金幣還在噴湧…"}
           </div>
         )}
       </div>

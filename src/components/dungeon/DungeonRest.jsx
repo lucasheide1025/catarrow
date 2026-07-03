@@ -1,6 +1,7 @@
 // src/components/dungeon/DungeonRest.jsx — 地下城休息區（動畫強化版）
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { sfxPotionDrink, sfxBuff } from "../../lib/sound";
 
 const REST_OPTIONS = [
   { id: "heal",   icon: "💤", title: "恢復全體血量", desc: "全體隊員恢復 50~100% 隨機最大血量",   color: "#4ade80" },
@@ -60,18 +61,25 @@ function HealEffect({ optionId, memberPositions = {} }) {
   );
 }
 
-export default function DungeonRest({ roomId, room, memberId, isHost }) {
+// localMode（遠征單人）：投票即定案，效果透過 onLocalEffect 回傳父層、
+// 結束呼叫 onLocalDone，不寫 Firestore
+export default function DungeonRest({
+  roomId, room, memberId, isHost,
+  localMode = false, onLocalEffect, onLocalDone,
+}) {
   const [animPhase, setAnimPhase] = useState("entering"); // entering | open | voting | effect | done
   const [showHealEffect, setShowHealEffect] = useState(false);
   const [healOptionId, setHealOptionId] = useState(null);
   const [resultText, setResultText] = useState("");
   const [floatingMemberHps, setFloatingMemberHps] = useState([]);
+  const [localConfirms, setLocalConfirms] = useState({});
+  const [localChoices, setLocalChoices] = useState({});
   const effectTimeoutRef = useRef(null);
 
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id].alive);
-  const roomConfirms = room?.roomConfirms || {};
-  const roomChoices = room?.roomChoices || {};
+  const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
+  const roomChoices = localMode ? localChoices : (room?.roomChoices || {});
   const hasFrontFallen = useMemo(() => aliveIds.some(id => members[id]?.role === "rear"), [aliveIds, members]);
   const myChoice = roomChoices[memberId] || null;
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
@@ -141,11 +149,31 @@ export default function DungeonRest({ roomId, room, memberId, isHost }) {
     if (animPhase !== "voting" && animPhase !== "open") return;
     if (myChoice) return;
     setAnimPhase("voting");
+    if (localMode) {
+      (optionId === "cure" ? sfxBuff() : sfxPotionDrink());
+      setLocalChoices({ [memberId]: optionId });
+      setLocalConfirms({ [memberId]: true });
+      return;
+    }
     await confirmNonCombatRoom(roomId, memberId, optionId);
   }
 
   async function handleResolve() {
     if (!isHost) return;
+    if (localMode) {
+      // 本地單人：自己的選擇即定案，效果交給父層套用
+      const bestOption = roomChoices[memberId] || "heal";
+      if (bestOption === "cure") {
+        onLocalEffect?.({ type:"cure" });
+      } else if (bestOption === "revive") {
+        // 單人無倒地前衛 → 比照多人 fallback：全體回復 50%
+        onLocalEffect?.({ type:"heal_pct", value: 0.5 });
+      } else {
+        onLocalEffect?.({ type:"heal_pct", value: 0.5 + Math.random() * 0.5 });
+      }
+      onLocalDone?.();
+      return;
+    }
     const votes = Object.values(roomChoices);
     const count = {};
     let bestOption = "heal";

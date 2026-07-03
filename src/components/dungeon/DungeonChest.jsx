@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { FAMILY_COLLECTIBLES } from "../../lib/dungeonCollectibles";
+import { sfxOpenChest, sfxCoinDrop } from "../../lib/sound";
 
 // 粒子背景
 function Particles({ count = 16, color = "rgba(74,222,128" }) {
@@ -121,15 +122,21 @@ function ItemReveal({ item, delay = 0, isHidden = false }) {
   );
 }
 
-export default function DungeonChest({ roomId, room, memberId, isHost }) {
+// localMode（遠征單人）：金幣透過 onLocalEffect({type:"coins"}) 交給父層，
+// 收藏品照常寫入 member 文件；結束呼叫 onLocalDone，不寫房間文件
+export default function DungeonChest({
+  roomId, room, memberId, isHost,
+  localMode = false, onLocalEffect, onLocalDone,
+}) {
   const [animPhase, setAnimPhase] = useState("entering"); // entering | opening | reveal | done
   const [confirmed, setConfirmed] = useState(false);
   const [showFountain, setShowFountain] = useState(false);
   const [showRays, setShowRays] = useState(false);
+  const [localConfirms, setLocalConfirms] = useState({});
 
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id].alive);
-  const roomConfirms = room?.roomConfirms || {};
+  const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
   const dungeonMapId = room?.mapDungeonId || "";
   const family = dungeonMapId.split("_")[0] || "ghost";
   const isHidden = !!room?.hiddenRoomLoot?.found;
@@ -152,15 +159,31 @@ export default function DungeonChest({ roomId, room, memberId, isHost }) {
 
   // 自動播放開箱動畫
   useEffect(() => {
-    const t1 = setTimeout(() => { setAnimPhase("opening"); setShowRays(true); }, 500);
-    const t2 = setTimeout(() => { setAnimPhase("reveal"); setShowFountain(true); }, 1600);
+    const t1 = setTimeout(() => {
+      setAnimPhase("opening"); setShowRays(true);
+      if (localMode) sfxOpenChest();
+    }, 500);
+    const t2 = setTimeout(() => {
+      setAnimPhase("reveal"); setShowFountain(true);
+      if (localMode) sfxCoinDrop();
+    }, 1600);
     const t3 = setTimeout(() => { setAnimPhase("done"); setShowRays(false); }, 2400);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, []);
+  }, []); // eslint-disable-line
 
   async function handleConfirm() {
     if (confirmed) return;
     setConfirmed(true);
+    if (localMode) {
+      // 本地單人：金幣交由父層發放（含音效），收藏品照常入背包
+      if (chestLoot.coins > 0) onLocalEffect?.({ type:"coins", value: chestLoot.coins });
+      if (chestLoot.item) {
+        const { addCollectibles } = await import("../../lib/dungeonDb");
+        addCollectibles(memberId, [{ itemId: chestLoot.item.id, qty: 1 }]).catch(() => {});
+      }
+      setLocalConfirms({ [memberId]: true });
+      return;
+    }
     const { addCoins } = await import("../../lib/db");
     const { addCollectibles } = await import("../../lib/dungeonDb");
     if (chestLoot.coins > 0) {
@@ -174,6 +197,10 @@ export default function DungeonChest({ roomId, room, memberId, isHost }) {
 
   async function handleResolve() {
     if (!isHost) return;
+    if (localMode) {
+      onLocalDone?.();
+      return;
+    }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
   }
 

@@ -387,12 +387,14 @@ export default function MemberApp() {
     sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId }));
     setPage("dungeon-room");
   }
-  function handleLeaveDungeon() {
-    sessionStorage.removeItem("dungeon_room");
-    setDungeonRoomId(null);
-    import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
-      clearActiveDungeon(profile?.id).catch(() => {})
-    );
+  function handleLeaveDungeon(options = {}) {
+    if (options?.preserve === false) {
+      sessionStorage.removeItem("dungeon_room");
+      setDungeonRoomId(null);
+      import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
+        clearActiveDungeon(profile?.id).catch(() => {})
+      );
+    }
     setPage("adventure-hub");
   }
 
@@ -673,7 +675,7 @@ export default function MemberApp() {
           initialTab={gachaInitTab}
           key={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
-        {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
+        {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon-room" && dungeonRoomId && (
           <div style={{ position:"fixed", inset:0, zIndex:60 }}>
             <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />

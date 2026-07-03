@@ -7,12 +7,12 @@ import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
-  forceSkipDungeonPlayer, leaveDungeonRoom,
+  forceSkipDungeonPlayer,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
-  clearActiveDungeon,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
+import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows } from "../../lib/db";
@@ -30,17 +30,13 @@ import {
 } from "../../lib/sound";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
-import TargetFaceOverlay, {
-  TargetFmtPicker, InputModePicker,
-  getBattleTargetFmt, setBattleTargetFmt,
-  getBattleInputMode, setBattleInputMode,
-} from "../shared/TargetFaceOverlay";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import BattleBottomBar from "../member/BattleBottomBar";
 import { getPotion } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
+import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
@@ -52,14 +48,62 @@ function calcCtrFn(monsterAtk, archerDef) {
   return calcDungeonCounter(monsterAtk, archerDef);
 }
 
+const MONSTER_VARIANT_STYLE = {
+  weak: {
+    icon: "🔵",
+    color: "#93c5fd",
+    background: "rgba(37,99,235,0.2)",
+    border: "rgba(96,165,250,0.55)",
+    glow: "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)",
+  },
+  normal: {
+    icon: "⚪",
+    color: "#e2e8f0",
+    background: "rgba(100,116,139,0.22)",
+    border: "rgba(148,163,184,0.45)",
+    glow: "0 0 14px rgba(148,163,184,0.22)",
+  },
+  strong: {
+    icon: "🔴",
+    color: "#fdba74",
+    background: "rgba(194,65,12,0.24)",
+    border: "rgba(249,115,22,0.6)",
+    glow: "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)",
+  },
+  boss: {
+    icon: "👑",
+    color: "#fda4af",
+    background: "rgba(159,18,57,0.28)",
+    border: "rgba(244,63,94,0.65)",
+    glow: "0 0 22px rgba(244,63,94,0.6), 0 0 46px rgba(190,24,93,0.3)",
+  },
+};
+
+function getMonsterVariantStyle(variant) {
+  return MONSTER_VARIANT_STYLE[variant] || MONSTER_VARIANT_STYLE.normal;
+}
+
+function MonsterVariantBadge({ variant }) {
+  const key = MONSTER_VARIANT_STYLE[variant] ? variant : "normal";
+  const style = getMonsterVariantStyle(key);
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center", gap:3,
+      padding:"2px 7px", borderRadius:999, flexShrink:0,
+      fontSize:10, lineHeight:1.4, fontWeight:900,
+      color:style.color, background:style.background,
+      border:`1px solid ${style.border}`,
+    }}>
+      <span aria-hidden="true">{style.icon}</span>
+      {VARIANT_LABEL[key]?.label || "普通"}
+    </span>
+  );
+}
+
 function DungeonMonsterImg({ id, icon, charge, hit, variant }) {
   const [err, setErr] = useState(false);
   const anim = charge ? "mb-charge 0.7s ease infinite" : hit ? "mb-monster-hit 0.5s ease" : undefined;
-  const glowShadow = variant === "weak"
-    ? "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)"
-    : variant === "strong"
-    ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
-    : "none";
+  const glowShadow = getMonsterVariantStyle(variant).glow;
   return err ? (
     <span style={{ fontSize:80, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
@@ -97,9 +141,9 @@ function pickBg(family) {
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
 }
 
-export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap }) {
+export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false }) {
   const { profile } = useAuth();
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName, calcCatRoundDamage } = useCatCompanion();
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName } = useCatCompanion();
   const myId        = profile?.id;
   const bondSavedRef         = useRef(false);
   const battleBgRef          = useRef(null);
@@ -141,11 +185,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   const [arrows,        setArrows]        = useState([]);
   const [rearChoice,    setRearChoice]    = useState(null); // "heal" | "dmg" | null（後衛選擇）
-  const [targetFmt,     setTargetFmt]     = useState(getBattleTargetFmt);
-  const [targetMode,    setTargetMode]    = useState(() => getBattleInputMode() === "target");
-  const [targetPending, setTargetPending] = useState(false);
+  const targetFmt = room?.targetFmt || "full_110";
   const [shopDone,      setShopDone]      = useState(false);
   const [localClaimed,  setLocalClaimed]  = useState(false); // 非房主領取後等待狀態
+  const [controlsStarted, setControlsStarted] = useState(false); // 先點開始計分，再開啟底部控制列
   const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
   // ── 小回合動畫（useMiniRoundReveal 統一管理）───────────────
@@ -470,22 +513,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (submitted) setFsSubmitted(false);
   }
 
-  async function handleTargetSubmit() {
-    setTargetPending(true);
-    setTimeout(async () => {
-      setTargetPending(false);
-      await handleSubmit();
-    }, 2000);
-  }
-
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
   async function handleClaimSelf() {
+    if (expeditionMode) {
+      // 遠征模式：不發放個人獎勵，僅跳轉（獎勵由遠征系統統一發放）
+      if (isHost) {
+        await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
+      } else {
+        setLocalClaimed(true);
+      }
+      return;
+    }
+
     if (myId?.startsWith("guest")) {
       // 訪客直接跳導航（訪客視為房主行為，不顯示等待畫面）
       if (isMapMode) {
         if (isBossRoom) { onReturnToMap?.(); }
         else { await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {}); }
-      } else { onExit?.(); }
+      } else { onExit?.({ preserve: true }); }
       return;
     }
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
@@ -621,7 +666,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const animKey = latestLogEntry ? `${room.currentFloor || 1}-${latestLogEntry.round}` : null;
   const hasNewAnim = animKey && animKey !== lastAnimKeyRef.current;
 
-  if ((status === "completed" || (status === "path_select" && isMapMode)) && !liveEntry && !showRoundResult && !hasNewAnim) {
+  if ((status === "completed" || (status === "path_select" && isMapMode))
+    && !liveEntry && !showRoundResult && !showKillAnim && !hasNewAnim) {
     // 地圖模式 path_select = 怪物已被擊殺 = 勝利
     const isPathSelectWin = status === "path_select" && isMapMode;
     const won = isPathSelectWin || room?.result === "win";
@@ -755,7 +801,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   setLocalClaimed(true);
                 }
               } else {
-                onExit?.();
+                onExit?.({ preserve: true });
               }
             }}
               className="w-full py-4 rounded-2xl font-black bg-white/10 text-slate-300 text-lg active:scale-95">
@@ -1099,31 +1145,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     return (
       <div style={{ minHeight:"100dvh", background:"#0f172a", color:"white", display:"flex", flexDirection:"column", padding:"20px 16px", gap:12 }}>
         <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24" }}>⚔️ 地下城戰鬥準備</div>
-        {isHost ? (
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <span style={{ color:"#94a3b8", fontSize:12 }}>每回合箭數：</span>
-            {[3, 6].map(n => (
-              <button
-                key={n}
-                onClick={() => import("firebase/firestore").then(({ updateDoc, doc: fsDoc }) =>
-                  import("../../lib/firebase").then(({ db: fsDb }) =>
-                    updateDoc(fsDoc(fsDb, "dungeonRooms", roomId), { arrowsPerRound: n })
-                  )
-                )}
-                style={{
-                  padding:"6px 18px", borderRadius:8, fontWeight:700, cursor:"pointer",
-                  background: room?.arrowsPerRound === n ? "#f59e0b" : "#1e293b",
-                  color: room?.arrowsPerRound === n ? "#000" : "#94a3b8",
-                  border: "1px solid #334155",
-                }}
-              >{n} 箭</button>
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize:12, color:"#94a3b8" }}>
-            每回合：{room?.arrowsPerRound || 6} 箭（由隊長設定）
-          </div>
-        )}
+        <div style={{ fontSize:12, color:"#94a3b8" }}>
+          本場規則：{room?.arrowsPerRound || 6} 箭／回合 · {getDungeonTargetLabel(targetFmt)}
+        </div>
         <div style={{ color:"#64748b", fontSize:13 }}>等待房主開始戰鬥…</div>
       </div>
     );
@@ -1134,6 +1158,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const aliveIds    = Object.keys(members).filter(id => members[id].alive);
   const isDead      = me.alive === false;
   const monster     = room.monster || {};
+  const entryCatId  = me.catId || profile?.equippedCat?.catId || "";
+  const entryCatName = me.catName || profile?.equippedCat?.name || "";
   const myContract  = me.contract || { type:"standard", param:null };
   const contractInfo= CONTRACT_TYPES[myContract.type] || CONTRACT_TYPES.standard;
 
@@ -1144,7 +1170,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const isCatMini    = !!(curMini?.isCat);
   const catOverlayCats = (isCatMini && curMini?.playerLog)
     ? curMini.playerLog.map(p => ({
-        catId:   members[p.id]?.archerStyle || "baobao",
+        catId:   members[p.id]?.catId || "baobao",
         catName: p.catName || p.name || "貓貓",
         dmg:     p.dmg || 0,
       }))
@@ -1187,10 +1213,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const displayRowW = Math.min(120, Math.floor((528 - Math.max(0, displayedRowMembers.length - 1) * 3) / (displayedRowMembers.length || 1)));
 
   function handleLeave() {
-    leaveDungeonRoom(roomId, myId, isHost).catch(() => {});
-    // 清除服務端 activeDungeon（如果 onExit 已包含清理，則 clearActiveDungeon 只是確保）
-    clearActiveDungeon(myId).catch(() => {});
-    onExit?.();
+    onExit?.({ preserve: true });
   }
 
   return (
@@ -1245,6 +1268,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 </span>
               );
             })()}
+            <MonsterVariantBadge variant={monster.variant} />
           </div>
           <div style={{ display:"flex", gap:4 }}>
             <button onClick={() => setShowBattleLog(v => !v)}
@@ -1550,28 +1574,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           </div>
         ) : (
           <>
-            {/* 箭數選擇（房主專用，開戰前可設定）*/}
-            {isHost && arrows.length === 0 && !submitted && !liveEntry && (
-              <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6 }}>
-                <span style={{ color:"#94a3b8", fontSize:10, fontWeight:700 }}>每回合箭數：</span>
-                {[3, 6].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => import("firebase/firestore").then(({ updateDoc, doc: fsDoc }) =>
-                      import("../../lib/firebase").then(({ db: fsDb }) =>
-                        updateDoc(fsDoc(fsDb, "dungeonRooms", roomId), { arrowsPerRound: n })
-                      )
-                    )}
-                    style={{
-                      padding:"4px 16px", borderRadius:6, fontWeight:800, cursor:"pointer", fontSize:11,
-                      background: (room?.arrowsPerRound || 6) === n ? "#f59e0b" : "rgba(255,255,255,0.08)",
-                      color: (room?.arrowsPerRound || 6) === n ? "#000" : "#94a3b8",
-                      border: "1px solid #334155",
-                    }}
-                  >{n} 箭</button>
-                ))}
-              </div>
-            )}
             {/* 後衛選擇（前衛死亡後變後衛時出現）*/}
             {me.role === "rear" && !submitted && (
               <div style={{ background:"rgba(0,0,0,0.7)", border:"2px solid rgba(168,85,247,0.6)", borderRadius:10, padding:"8px 10px", marginBottom:6 }}>
@@ -1597,14 +1599,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               <span style={{ fontSize:11 }}>{contractInfo.icon}</span>
               <span style={{ fontSize:9, fontWeight:700 }}>{getContractDesc(myContract)}</span>
             </div>
-            {/* 靶面格式選擇（標準合約 & 尚未輸入任何箭時顯示）
-                地圖模式也讓玩家選擇（各自設定存在 localStorage） */}
-            {myContract.type !== "hit_count" && arrows.length === 0 && !targetPending && (
-              <div style={{ background:"rgba(0,0,0,0.35)", borderRadius:10, padding:"8px 10px", marginBottom:6, display:"flex", flexDirection:"column", gap:6 }}>
-                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
-                <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v==="target"; setTargetMode(t); setBattleInputMode(v); }} />
-              </div>
-            )}
             <BattleArrowSlots
                 arrows={arrows}
                 totalArrows={room.arrowsPerRound || 6}
@@ -1627,23 +1621,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   M
                 </button>
               </div>
-            ) : targetPending ? (
-              <div style={{ textAlign:"center", color:"#a78bfa", fontWeight:900, fontSize:14, padding:"14px 0" }}>計算中…⚔️</div>
             ) : (
               <BattleBottomBar
                 bottomTab={bottomTab} setBottomTab={setBottomTab}
                 potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
                 potionUsedThisRound={potionUsedThisRound}
                 scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
-                targetMode={targetMode} setTargetMode={setTargetMode}
+                targetMode={false} setTargetMode={() => {}}
                 arrows={arrows} onArrow={addArrow}
                 potionInv={me.items || {}}
                 onCarryPotion={onCarryPotion}
                 onThrowPotion={onThrowPotion}
+                controlsLocked={!controlsStarted}
+                onStartScoring={() => { setControlsStarted(true); setBottomTab("score"); }}
+                showModeChooser={false}
               />
             )}
             {/* 送出 */}
-            {!targetPending && (
+            {controlsStarted && (
               <button onClick={handleSubmit} disabled={arrows.length<(room.arrowsPerRound||6)}
                 style={{ width:"100%", padding:"10px", borderRadius:10, fontWeight:900, fontSize:14, color:"white", cursor:"pointer", border:"none",
                   background: arrows.length>=(room.arrowsPerRound||6)?"linear-gradient(135deg,#059669,#10b981)":"rgba(255,255,255,0.1)",
@@ -1651,17 +1646,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 🏹 送出 {room.arrowsPerRound||6} 箭 {arrows.length>0?`(${arrows.length}/${room.arrowsPerRound||6})`:""}
               </button>
             )}
-            {/* 靶面 Overlay */}
-            <TargetFaceOverlay
-              open={targetMode && !targetPending && !submitted && myContract.type !== "hit_count"}
-              fmtId={targetFmt}
-              arrowLabels={arrows.map(a => a.label)}
-              arrowsPerRound={room.arrowsPerRound||6}
-              onArrow={label => addArrow(label)}
-              onUndo={undoArrow}
-              onSubmit={handleTargetSubmit}
-              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
-            />
             {hasCat && (
               <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4, padding:"2px 6px", borderRadius:6, background:"rgba(79,70,229,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>
                 <span style={{ fontSize:11 }}>🐱</span>
@@ -1687,11 +1671,38 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             {/* 射手從左進場 */}
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8,
               animation:"db-intro-archer 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
-              <img src={`/cats/archers/${me.archerStyle||"baobao"}.webp`} alt="archer"
-                style={{ width:100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)" }}/>
+              <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"center", gap:4 }}>
+                <img src={`/cats/archers/${me.archerStyle||"baobao"}.webp`} alt={me.name || "射手"}
+                  style={{ width:entryCatId ? 82 : 100, height:100, objectFit:"contain", filter:"drop-shadow(0 0 16px #7c3aed)" }}/>
+                {entryCatId && (
+                  <div style={{ position:"relative", marginLeft:-12 }}>
+                    <img
+                      src={`/cats/portraits/${entryCatId}.webp`}
+                      alt={entryCatName || "陪練貓咪"}
+                      width="62"
+                      height="62"
+                      style={{
+                        width:62, height:62, borderRadius:"50%", objectFit:"cover",
+                        border:"3px solid #f472b6",
+                        boxShadow:"0 0 18px rgba(244,114,182,0.65)",
+                      }}
+                    />
+                    <span style={{
+                      position:"absolute", right:-3, bottom:-3,
+                      fontSize:16, lineHeight:1, padding:3, borderRadius:"50%",
+                      background:"#4c1d95", border:"1px solid #f9a8d4",
+                    }} aria-hidden="true">🐾</span>
+                  </div>
+                )}
+              </div>
               <span style={{ fontSize:13, fontWeight:700, color:"#c4b5fd", textShadow:"0 0 8px #7c3aed" }}>
                 {me.name || "射手"}
               </span>
+              {entryCatId && (
+                <span style={{ marginTop:-5, fontSize:10, fontWeight:800, color:"#f9a8d4" }}>
+                  🐱 {entryCatName || "貓貓"} 陪練
+                </span>
+              )}
             </div>
             {/* VS */}
             <div style={{
@@ -1704,12 +1715,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             {/* 怪物從右進場 */}
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8,
               animation:"db-intro-monster 0.6s cubic-bezier(0.34,1.56,0.64,1) both" }}>
-              <div style={{ filter:"drop-shadow(0 0 16px #ef4444)" }}>
+              <div>
                 <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false} variant={monster.variant}/>
               </div>
               <span style={{ fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
                 {monster.name || "怪物"}
               </span>
+              <MonsterVariantBadge variant={monster.variant} />
             </div>
           </div>
           {/* 戰鬥開始 */}
@@ -1895,4 +1907,3 @@ function RoundResultOverlay({ entry, room, status, onContinue }) {
     </div>
   );
 }
-
