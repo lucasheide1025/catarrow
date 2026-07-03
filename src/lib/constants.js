@@ -142,34 +142,43 @@ export function getCertLevel(bowType, score) {
 export const CERT_LEVEL_ORDER = ["入門", "初級", "中級", "進階", "精英", "菁英"];
  
 // 級別 → 樣式（越高越華麗）。回傳 Tailwind class 字串。
-// variant: "solid"（實心徽章）| "soft"（淺底）
+// variant: "solid"（實心徽章）| "soft"（深色底頁用）| "softLight"（淺色底頁用，AdminApp 未遷移前使用）
 export function certLevelStyle(level, variant = "solid") {
   const styles = {
     入門: {
       solid: "bg-gray-400 text-white",
       soft:  "bg-white/10 text-gray-300 border border-white/15",
+      softLight: "bg-gray-100 text-gray-600 border border-gray-200",
     },
     初級: {
       solid: "bg-emerald-500 text-white",
       soft:  "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30",
+      softLight: "bg-emerald-50 text-emerald-700 border border-emerald-200",
     },
     中級: {
       solid: "bg-blue-500 text-white",
       soft:  "bg-blue-500/15 text-blue-300 border border-blue-400/30",
+      softLight: "bg-blue-50 text-blue-700 border border-blue-200",
     },
     進階: {
       solid: "bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white",
       soft:  "bg-purple-500/15 text-purple-300 border border-purple-400/30",
+      softLight: "bg-purple-50 text-purple-700 border border-purple-200",
     },
     精英: {
       solid: "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-amber-950 shadow-md shadow-amber-200",
       soft:  "bg-amber-500/15 text-amber-300 border border-amber-400/30",
+      softLight: "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 border border-amber-300",
     },
   };
   // 傳統弓的「菁英」與其他弓的「精英」同級
   styles["菁英"] = styles["精英"];
 
-  const fallback = { solid: "bg-gray-300 text-gray-600", soft: "bg-white/10 text-gray-400 border border-white/15" };
+  const fallback = {
+    solid: "bg-gray-300 text-gray-600",
+    soft: "bg-white/10 text-gray-400 border border-white/15",
+    softLight: "bg-gray-50 text-gray-500 border border-gray-200",
+  };
   return (styles[level] || fallback)[variant] || fallback[variant];
 }
  

@@ -1079,7 +1079,7 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
                             {r.nickname || r.name || "匿名射手"}{isMe && "（我）"}
                           </div>
                           {r.certLevel && r.certLevel !== "未達標" && (
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${certLevelStyle(r.certLevel, "soft")}`}>{r.certLevel}</span>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${certLevelStyle(r.certLevel, "softLight")}`}>{r.certLevel}</span>
                           )}
                           {r.isRental && <span className="text-orange-500 text-xs ml-1">· 租借</span>}
                         </div>
