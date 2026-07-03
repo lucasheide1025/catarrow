@@ -7,7 +7,8 @@
 - **主題收斂**：theme.js 只留單一 navy 深海金（要復活多主題往 APP_THEMES 加元素即可）
 - **導覽**：header 改版（等級環+貨幣 chips+通知鈴鐺）、底部 nav token 化、四 hub 頁 HubTile 格線（cell-*.webp 引用移除）
 - **首頁儀表板**：今日卡（報到/箭數/每日里程碑環）+ 進行中卡（世界王/遠征倒數/村目標）+ 快速入口 4 格
-- 待辦：Phase 3 逐頁套版（戰鬥/貓村/卡片/排行）、Phase 4 後台、Phase 5 打磨（見 Trellis 任務 07-03-ui-redesign-p0 的 prd）
+- **Phase 3 完工（2026-07-03）**：會員端 17 頁逐頁套版（訓練/排行/我的/背包系列），`certLevelStyle` 加 `softLight` 供後台白底；commit `997c0ec` + `a340aa1`
+- 待辦：Phase 4 後台套版、shared/Equipment.jsx 內層、戰鬥頁 token 收斂、最終刪 `.content-area` 覆寫層；Phase 5 打磨
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
 
@@ -130,6 +131,18 @@ src/battle/
 
 ## 🚧 待辦
 
+## 🚧 待辦
+
+- [ ] 地下城終戰模式（發掘→三層探險→Boss）— Trellis task `07-14-dungeon-expedition`
+  - 發掘進度累積（登入+10、報到+10、每箭+0.3）
+  - 金幣強化（隨機 500~2000 強化一級）
+  - 三層固定結構（探索層→戰鬥層→王關層）
+  - 6 級難度 × 7 族（含寶箱族獎勵房）
+  - 混種怪物（每層從六族隨機抽不同種）
+  - ✅ Phase A（dungeonExcavation.js 資料層 + db.js hooks + firestore.rules）
+  - ✅ Phase B（DungeonExcavationTab + 進度條 + Lobby 分頁）
+  - ✅ Phase C（難度擴增 4→6 級 + 混種抽怪 + 寶箱族資料 + DungeonTreasureRoom）
+  - 失敗全區廣播 + 進度歸零（已獲獎勵保留）
 - [ ] 射箭偵測 (player.html) 整合 Firebase Auth（目前獨立 HTML 無登入）
 - [ ] 藥水系統大改版——三層藥水架構 + 底部 tab 列 UI（see `potion-system-redesign.md`）——原設計藥水應從遠征隊取得，煉金室仍維持箭露生產
 - [x] CouncilBattle / WorldBossAttack 改用統一 `damage.js` 公式（Phase 8）

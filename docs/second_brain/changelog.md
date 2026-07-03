@@ -3,6 +3,56 @@
 
 ---
 
+## 2026-07-03（音效/動畫批次 A+B：全域開關基礎設施 + UI 回饋層 + 亂播音效/畫面亂跑修復）
+
+### 改了什麼
+
+**批次 A — 基礎設施**
+- `src/lib/fxSettings.js`（新檔）：音效/動畫全域開關，localStorage `fx_sound`/`fx_anim`（預設開）；動畫關閉或系統 `prefers-reduced-motion` → `<html class="no-anim">`；`initFxSettings()` 在 `index.js` render 前呼叫
+- `sound.js`：`ctx()` 單點總閘門（音效關閉回 null，所有合成音效靜音）；`playAudio`（mp3）/`vibrate` 各自補 guard（震動跟隨音效開關）；新增 UI 音效家族 `sfxSwitch`/`sfxOpen`/`sfxClose`/`sfxError`
+- `index.css`：`.no-anim` 全域抑制（animation/transition/scroll-behavior + View Transitions pseudo）；`fx-` 前綴通用動畫庫（pop-in/fade-up/shake/pulse-glow/float-up/bounce-once）+ utility classes（`.fx-pop`/`.fx-shake`…）
+- `MemberProfile.jsx`：新增 `FxSettings` 卡（🔊 音效與震動 / ✨ 介面動畫 兩個 toggle，44px 觸控目標），放帳號設定上方
+
+**批次 B — UI 回饋層**
+- `shared/UI.jsx` Btn：全站按鈕點擊音（`sfxTap`），新增 `silent` prop 逃生門（自帶音效的按鈕可關）
+- `MemberApp.jsx` 底部 nav：切換 tab 播 `sfxSwitch` + icon `fx-bounce` 彈跳（用 `key={active}` 重掛重播動畫）
+- `shared/Widgets.jsx`：新增 `CountUp` 數字滾動元件（easeOutCubic，`.no-anim` 時直接跳值）；header 三個貨幣 chips 改用 CountUp；`StatBar` 滿值時 `fx-pulse` 發光
+
+**Bug 修復（使用者回報「亂播音效、畫面亂跑」）**
+- `AdminApp.jsx`：`pendingMonthlyRef` 初始 `0` → `null`——首次 Firestore 快照若已有 pending 月卡申請，開頁就播 `sfxNotify`（亂播音效根源之一）；改為首次快照只記錄不播
+- `MonsterBattle` / `DungeonBattleRoom` / `PartyBattleRoom` 三處戰鬥 log 捲底：`scrollIntoView({behavior:"smooth"})` 補 `block:"nearest"`——預設 `block:"start"` 會把**所有可捲動祖先**（含整頁）捲到元素置頂，戰鬥中 log 每更新一次整頁被拉走（畫面亂跑根源）
+
+### 為什麼
+- 使用者要求全面加音效/動畫前，必須先有全域開關（否則吵到使用者無法關）與 reduced-motion 尊重
+- 教練後台 12 秒提醒輪播（`pendingCheckinAwaitN`）是刻意設計（工作電腦提醒用），保留但現在受音效總開關管制
+
+### 踩坑提醒
+- **音效總閘門在 `ctx()` 單點**：所有直接 `const c = ctx()` 的合成函式自動被閘；日後新增音效不需個別 guard，但 mp3（`playAudio`）與 `vibrate` 是獨立路徑要記得
+- **`scrollIntoView` 不加 `block:"nearest"` = 整頁亂捲**：日後任何 log 捲底一律加
+- **Firestore 訂閱首次快照會觸發「計數增加」判斷**：比較型音效（n > prev）ref 初始值要用 `null` 區分「尚未收到首次快照」
+- `fx-bounce` 重播靠 `key` 換值重掛元素；純 class 切換不會重播 CSS animation
+- 待做批次：C（慶祝 confetti/fanfare/震動）、D（戰鬥 screen shake/hit-stop/死亡溶解）
+
+---
+
+## 2026-07-03（UI 全面改版 Phase 3：會員端逐頁套版完工）
+
+### 改了什麼
+
+Trellis 任務 `07-03-ui-redesign-p3`（commit `997c0ec` 主體 + `a340aa1` 檢查修正）：
+
+- **Step 1-2 訓練/排行系列**：MemberComps / MemberScoring / MemberLeaderboard / MemberHistory / MemberExternalComp 淺色 class 全改 token tint；MemberPractice / DailyQuest / MemberRecordsHub 勘查後已是深色原生零改動
+- **Step 3-4 我的/背包系列**：MemberProfile / MemberAchievements / MemberNotifications / MemberMessages / MemberLearn / MemberCertExam / MemberDex / MemberGuide / MemberBowSettings / CardCollection / MemberMaterials / MemberMonsterDex 共 12 檔套版；CoinShop / EquipmentPage 原生深色零改動
+- **constants.js**：`COMP_TYPE_COLOR` 加 `darkText` key（additive）；`certLevelStyle` 的 `soft` 深色化 + 新增 `softLight`（原淺色）
+- 品質檢查 8 項全過：build 無警告、純視覺 diff（handler/props/訂閱零改動）、無循環 import、覆寫層未動
+
+### 踩坑提醒
+- **`certLevelStyle("soft")` 深色化會讓未遷移的後台白卡上徽章隱形** → 後台（AdminApp CompDetail）改用 `softLight`；日後改共用 style 函式時要 grep 所有呼叫點確認背景色
+- 刻意保留的功能性白底：MemberMaterials 慶祝彈窗 CTA、MemberProfile 宇宙星點、MemberScoring 10 分金色鈕
+- UI 改版剩餘（另開任務）：後台 AdminApp 系列、shared/Equipment.jsx 內層、戰鬥頁 token 收斂 → 全部完成後才能刪 `.content-area` 覆寫層
+
+---
+
 ## 2026-07-03（UI 全面改版 Phase 0-2：設計系統 + 導覽 + 首頁儀表板）
 
 ### 改了什麼
@@ -987,6 +1037,59 @@ const orderedAliveIds = [
 3. **`!important` 是必要之惡**：只用在 inline override 層（attribute selector），class-based 覆寫全不用 `!important`
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fchangelog`
+
+---
+
+## 2026-07-14（地下城終戰模式設計定稿）
+
+### 設計完成
+
+地下城全新模式定稿，記錄於 Trellis task `07-14-dungeon-expedition` 的 `prd.md`。
+
+**核心機制**：
+- 發掘進度（登入+10、報到+10、每箭+0.3）→ 100% 時手動揭曉
+- 金幣強化（隨機 500~2000 強化一級）
+- 三層固定結構（探索層→戰鬥層→王關層）
+- 六級難度 × 七族（含寶箱族）
+- 混種怪物（每層從六族隨機抽不同種）
+- 失敗處理：已獲獎勵不收回，進度歸零＋全區廣播
+
+### 第二大腦更新
+- `features.md`：新增地下城終戰模式條目
+- `quick-ref.md`：新增發掘進度 / 寶箱族 / 難度表速查
+
+---
+
+## 2026-07-14（Phase C：難度擴增 4→6 級 + 混種抽怪 + 寶箱族資料）
+
+### 改了什麼
+
+**Phase C** 為地下城終戰模式建立資料基礎，涵蓋 Trellis task `07-14-dungeon-expedition` 的 Phase C。
+
+**`src/lib/monsterData.js`**
+- `FAMILIES` 新增第 7 族 `treasure`（寶箱族 📦）
+- 新增 6 隻寶箱怪（寶箱怪 → 神話寶箱巨像，設計為高防低攻型）
+- 新增 `drawMixedMonsterPool(count, variant, tier)` — 從六族隨機抽不同種怪物
+- 新增 `drawFloorMonsters(floorIndex, difficultyTier)` — 依三層結構生成怪物組合
+
+**`src/lib/monsterRegistry.js`**
+- `FAMILY_LOOT` 新增 `treasure` 族掉落表（金幣 ×5、高寶箱率、專屬收藏品）
+
+**`src/lib/dungeonData.js`**
+- `EXCAVATION_DIFFICULTIES` — 6 級難度（普通級→神話級，對應 monster tier 1-6）
+- `EXCAVATION_FLOOR_CONFIG` — 三層房間類型權重定義（第1層探索/第2層戰鬥/第3層王關）
+- `MIXED_FAMILY_WEIGHTS` — 六族均等權重
+- `UPGRADE_COIN_RANGE` — 強化金幣 500~2000 隨機
+- `EXCAVATION_RARITY_WEIGHTS` — 稀有度骰子權重（依練箭量調整）
+
+**`src/components/dungeon/DungeonTreasureRoom.jsx`** — NEW
+- 寶箱族獎勵房元件：金幣噴泉、材料卡、寶箱、收藏品、箭露
+- 四階段動畫（enter → fountain → loot → done）
+- 使用 `rollBattleLoot` 生成獎勵（金幣 ×5 加成）
+
+### 踩坑提醒
+- `drawFloorMonsters` 每次呼叫生成隨機怪物，Phase D 需用 `useMemo` 或 state 快取結果
+- 寶箱族怪物掉落的 `rollBattleLoot` 使用 `COIN_RANGE[treasureMonster.tier]`，tier 字串映射需與 `monsterData.js` 的 `TIER_ORDER` 一致
 
 ---
 
