@@ -9,6 +9,15 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;900&display=swap');
 
+/* ---------- 隱藏 Cookie 同意橫幅 ----------
+   嵌入 iframe 時 iOS 會封鎖第三方 Cookie，「已接受」狀態存不住，
+   橫幅每次都重複跳出。嵌入情境直接隱藏它最乾淨。
+   （若同時想在 SimplyBook 後台的 GDPR/隱私設定關掉通知，效果一樣。） */
+#sb_cookies_block,
+.cookies.sb-important {
+  display: none !important;
+}
+
 /* ---------- 整體底色與文字 ---------- */
 body,
 .sb-layout,

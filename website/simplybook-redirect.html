@@ -3,7 +3,7 @@
   用途：貼到 SimplyBook 後台「首頁內容（HTML）」欄位，
         讓首頁自動無縫轉到新官網，但放過預約頁（#book），
         避免新官網內嵌的預約 iframe 被一起轉走造成無限迴圈。
-  目標網址：https://catarrow-archery.vercel.app
+  目標網址：https://archery.catgroup.com.tw
   ⚠ 未來換自訂網域時，把下面兩處網址一起改掉。
   ============================================================ -->
 
@@ -23,7 +23,7 @@
     // 防呆③：不在 iframe 內才轉（若本頁被別人嵌入就不轉）。
     var isFramed = window.top !== window.self;
     if (ON_LIVE && !inBooking && !isFramed) {
-      window.location.replace('https://catarrow-archery.vercel.app');
+      window.location.replace('https://archery.catgroup.com.tw');
     }
   } catch (e) {}
 })();
@@ -32,13 +32,13 @@
 <!-- 後備手段：若上面 <script> 被後台過濾掉，這行 meta 會在 3 秒後轉址。
      （meta 無法判斷是否預約頁，故延遲 3 秒，讓預約 iframe 有時間自行載入；
       若你確定 script 有生效，可整行刪除。）-->
-<noscript><meta http-equiv="refresh" content="0; url=https://catarrow-archery.vercel.app"></noscript>
+<noscript><meta http-equiv="refresh" content="0; url=https://archery.catgroup.com.tw"></noscript>
 
 <!-- 轉址中的過場畫面（幾乎瞬間，使用者通常看不到）-->
 <div style="min-height:60vh;display:flex;align-items:center;justify-content:center;background:#faf6ef;font-family:'Noto Sans TC',sans-serif;color:#5c5750;">
   <div style="text-align:center;">
     <img src="https://i.ibb.co/n8QGPZ0Z/logo.png" alt="貓小隊射箭場" width="90" style="display:block;margin:0 auto 16px;">
     <p style="margin:0 0 4px;font-size:16px;">正在前往貓小隊官方網站…</p>
-    <p style="margin:0;font-size:14px;">若未自動跳轉，請點 <a href="https://catarrow-archery.vercel.app" style="color:#e8720c;font-weight:700;">這裡</a></p>
+    <p style="margin:0;font-size:14px;">若未自動跳轉，請點 <a href="https://archery.catgroup.com.tw" style="color:#e8720c;font-weight:700;">這裡</a></p>
   </div>
 </div>
