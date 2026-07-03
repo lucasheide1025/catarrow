@@ -620,7 +620,7 @@ const adminNav = [
           {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
           {page==="notifications" && <MemberNotifications notifications={notifications}/>}
           {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
-          {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")}/>}
+          {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")} onGoVillage={()=>{ setGachaInitTab("potioncraft"); setPage("gacha"); }}/>}
           {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
           {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")}/>}

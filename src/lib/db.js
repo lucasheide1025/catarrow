@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch
+  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch, runTransaction
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -10,6 +10,7 @@ import { POTIONS, FRAGMENTS } from "./itemData";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
+import { SHOP_PRODUCT_MAP, getShopPeriodKey } from "./shopData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
@@ -2691,6 +2692,73 @@ export async function setAppVersion(version) {
 
 // ─── 金幣商店 ──────────────────────────────────────────────
 
+// 商品白名單購買：扣款、發貨與限購計數必須在同一交易完成。
+export async function shopBuyProduct(memberId, productId) {
+  if (!memberId || !productId) return { ok:false, reason:"商品參數錯誤" };
+  const product = SHOP_PRODUCT_MAP.get(productId);
+  if (!product) return { ok:false, reason:"這項商品未開放販售" };
+
+  const periodKey = getShopPeriodKey(product);
+  const memberRef = doc(db, C.members, memberId);
+  const destination = product.kind === "chest"
+    ? doc(db, C_CHESTS, memberId)
+    : product.kind === "material"
+      ? doc(db, C_MATERIALS, memberId)
+      : null;
+
+  try {
+    await runTransaction(db, async transaction => {
+      const memberSnap = await transaction.get(memberRef);
+      if (!memberSnap.exists()) throw new Error("找不到會員資料");
+      const destinationSnap = destination ? await transaction.get(destination) : null;
+      const member = memberSnap.data();
+      const coins = Math.floor(member.coins || 0);
+      const purchases = member.coinShopPurchases || {};
+      const periodPurchases = purchases[periodKey] || {};
+      const purchased = periodPurchases[product.id] || 0;
+
+      if (purchased >= product.limit) throw new Error("本期已達購買上限");
+      if (coins < product.price) throw new Error(`金幣不足（需要 ${product.price.toLocaleString()}）`);
+
+      const memberUpdate = {
+        coins: coins - product.price,
+        coinShopPurchases: {
+          ...purchases,
+          [periodKey]: { ...periodPurchases, [product.id]: purchased + 1 },
+        },
+        updatedAt: serverTimestamp(),
+      };
+
+      if (product.kind === "gachaCoins") {
+        memberUpdate.gachaCoins = Math.floor(member.gachaCoins || 0) + product.amount;
+      } else if (product.kind === "dungeonScroll") {
+        memberUpdate.dungeonScrollCount = Math.floor(member.dungeonScrollCount || 0) + product.amount;
+      } else if (product.kind === "chest") {
+        const current = destinationSnap?.exists() ? (destinationSnap.data().chests || []) : [];
+        const chest = {
+          id:`chest_shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          type:product.chestType, family:"shop", tier:"common", from:"金幣商店", ts:Date.now(),
+        };
+        transaction.set(destination, { chests:[...current, chest], updatedAt:serverTimestamp() }, { merge:true });
+      } else if (product.kind === "material") {
+        const items = destinationSnap?.exists() ? (destinationSnap.data().items || {}) : {};
+        transaction.set(destination, {
+          items:{ ...items, [product.materialId]:(items[product.materialId] || 0) + product.amount },
+          updatedAt:serverTimestamp(),
+        }, { merge:true });
+      } else {
+        throw new Error("尚未支援這種商品");
+      }
+
+      transaction.update(memberRef, memberUpdate);
+    });
+    return { ok:true, product, periodKey };
+  } catch (error) {
+    console.warn("shopBuyProduct:", error?.message);
+    return { ok:false, reason:error?.message || "購買失敗，請稍後再試" };
+  }
+}
+
 // 扣金幣（回傳 ok/reason）
 export async function spendCoins(memberId, amount) {
   if (!memberId || amount <= 0) return { ok: false, reason: "參數錯誤" };
@@ -2707,56 +2775,25 @@ export async function spendCoins(memberId, amount) {
 // 金幣商店：購買裝備（花費金幣 + 裝備進槽位，保留現有品級/等級）
 export async function shopBuyEquip(memberId, slotId, itemId, price) {
   try {
-    const spend = await spendCoins(memberId, price);
-    if (!spend.ok) return spend;
-    const snap = await getDoc(doc(db, C.members, memberId));
-    const cur  = snap.data()?.rpgEquip?.[slotId];
-    if (cur?.itemId) {
-      await updateDoc(doc(db, C.members, memberId), {
-        [`rpgEquip.${slotId}.itemId`]: itemId,
-        updatedAt: serverTimestamp(),
+    const memberRef = doc(db, C.members, memberId);
+    await runTransaction(db, async transaction => {
+      const snap = await transaction.get(memberRef);
+      if (!snap.exists()) throw new Error("找不到會員資料");
+      const data = snap.data();
+      const coins = Math.floor(data.coins || 0);
+      if (coins < price) throw new Error(`金幣不足（需要 ${price.toLocaleString()}）`);
+      const cur = data.rpgEquip?.[slotId];
+      transaction.update(memberRef, {
+        coins:coins - price,
+        [`rpgEquip.${slotId}`]:cur?.itemId
+          ? { ...cur, itemId }
+          : { itemId, grade:"common", plusLevel:0 },
+        updatedAt:serverTimestamp(),
       });
-    } else {
-      await updateDoc(doc(db, C.members, memberId), {
-        [`rpgEquip.${slotId}`]: { itemId, grade: "common", plusLevel: 0 },
-        updatedAt: serverTimestamp(),
-      });
-    }
+    });
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e?.message || "購買失敗，請稍後再試" };
-  }
-}
-
-// 金幣商店：購買消耗品
-// type: "chest" | "material" | "fragment" | "potion"
-export async function shopBuyConsumable(memberId, item) {
-  const { price, type, payload } = item;
-  const spend = await spendCoins(memberId, price);
-  if (!spend.ok) return spend;
-  try {
-    if (type === "chest") {
-      const chest = {
-        id:   `chest_shop_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-        type: payload.chestType, family: "shop", tier: "common",
-        from: "金幣商店", ts: Date.now(),
-      };
-      await addChests(memberId, [chest]);
-    } else if (type === "material") {
-      const mats = (payload.materialIds || []).map(id => ({ id }));
-      await addMaterials(memberId, mats);
-    } else if (type === "fragment") {
-      const ref  = doc(db, "fragmentInventory", memberId);
-      const snap = await getDoc(ref);
-      const items = snap.exists() ? (snap.data().items || {}) : {};
-      items[payload.fragId] = (items[payload.fragId] || 0) + (payload.count || 1);
-      await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
-    } else if (type === "potion") {
-      await addPotions(memberId, [{ id: payload.potionId, count: 1 }]);
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: e?.message || "系統錯誤" };
   }
 }
 

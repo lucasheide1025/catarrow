@@ -663,7 +663,7 @@ export default function MemberApp() {
           potionDex={potionDex} duelStats={duelStats} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
-        {page==="materials"   && <MemberMaterials  onBack={()=>setPage("inventory-hub")} />}
+        {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")} onGoVillage={()=>{ setGachaInitTab("potioncraft"); setPage("gacha"); }} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
         {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")} />}
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}

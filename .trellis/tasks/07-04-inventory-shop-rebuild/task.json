@@ -1,0 +1,38 @@
+{
+  "id": "inventory-shop-rebuild",
+  "name": "inventory-shop-rebuild",
+  "title": "背包與金幣商店重建",
+  "description": "重建背包資訊架構、移除重複的舊藥水製作介面，並將金幣商店改造成可持續使用的補給與外觀商店。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "member-inventory-shop",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-07-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [
+    "Phase A: 背包資訊架構與統一物品卡片",
+    "Phase B: 舊藥水介面移除與貓貓村製作導流",
+    "Phase C: 金幣商店商品結構與交易安全",
+    "Phase D: 每日精選、外觀解鎖與素材回收"
+  ],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/components/member/MemberInventoryHub.jsx",
+    "src/components/member/MemberMaterials.jsx",
+    "src/components/member/CoinShop.jsx",
+    "src/components/member/CatVillage.jsx",
+    "src/lib/itemData.js",
+    "src/lib/db.js"
+  ],
+  "notes": "因環境沒有 Python，依 Trellis task.py 產出格式手動建立。",
+  "meta": {}
+}

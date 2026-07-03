@@ -1,66 +1,44 @@
 // src/components/member/CoinShop.jsx — 金幣商店
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { shopBuyEquip, shopBuyConsumable, subscribeEquipItems } from "../../lib/db";
+import { shopBuyEquip, shopBuyProduct, subscribeEquipItems } from "../../lib/db";
 import { EQUIP_SLOT_DEFS, EQUIP_GRADES } from "../../lib/constants";
 import { GRADE_PREFIX } from "../../lib/equipData";
+import { getDailyShopProducts, getWeeklyShopProduct, getShopDailyKey, getShopWeeklyKey } from "../../lib/shopData";
 
 // ── 裝備定價 ────────────────────────────────────────────────
 const EQUIP_PRICE = { atk: 200, def: 180, hp: 150 };
 
-// ── 消耗品定義 ───────────────────────────────────────────────
-const CONSUMABLES = [
-  {
-    id: "chest_iron",
-    name: "鐵寶箱",
-    icon: "🧰",
-    price: 120,
-    desc: "普通＋稀有材料各 1~2 個，15% 掉藥水",
-    type: "chest",
-    payload: { chestType: "iron" },
-    badge: "",
-  },
-  {
-    id: "chest_gold",
-    name: "黃金寶箱",
-    icon: "🎁",
-    price: 350,
-    desc: "前三階段材料各 1~3 個，20% 掉藥水",
-    type: "chest",
-    payload: { chestType: "gold" },
-    badge: "熱門",
-  },
-  {
-    id: "mat_pack_s",
-    name: "材料包（小）",
-    icon: "🪨",
-    price: 80,
-    desc: "直接獲得 3 個普通材料",
-    type: "material",
-    payload: { materialIds: ["ghost_m1", "mountain_m1", "insect_m1"] },
-    badge: "",
-  },
-  {
-    id: "mat_pack_m",
-    name: "材料包（中）",
-    icon: "💎",
-    price: 220,
-    desc: "直接獲得 2 個稀有材料",
-    type: "material",
-    payload: { materialIds: ["ghost_m3", "mountain_m3"] },
-    badge: "",
-  },
-  {
-    id: "potion_chest",
-    name: "藥水箱",
-    icon: "🧪",
-    price: 150,
-    desc: "隨機獲得 1 瓶藥水（機率依稀有度調整）",
-    type: "chest",
-    payload: { chestType: "potion" },
-    badge: "",
-  },
-];
+const RARITY_STYLE = {
+  common:"#94a3b8", uncommon:"#4ade80", rare:"#60a5fa", epic:"#c084fc", legendary:"#fbbf24",
+};
+
+function ShopProductCard({ product, coins, purchased, onBuy, buying }) {
+  const soldOut = purchased >= product.limit;
+  const color = RARITY_STYLE[product.rarity] || RARITY_STYLE.common;
+  return (
+    <article className="flex min-h-52 flex-col rounded-2xl border bg-slate-800/60 p-3"
+      style={{ borderColor:`${color}55` }}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-4xl" aria-hidden="true">{product.icon}</span>
+        <span className="rounded-full px-2 py-1 text-[10px] font-black"
+          style={{ color, backgroundColor:`${color}20` }}>
+          剩餘 {Math.max(0, product.limit - purchased)}/{product.limit}
+        </span>
+      </div>
+      <h3 className="mt-3 break-words text-sm font-black text-white">{product.name}</h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{product.desc}</p>
+      <div className="mt-auto pt-3">
+        <div className="mb-2 text-[10px] font-bold text-slate-500">購買後放入：{product.destination}</div>
+        <button type="button" onClick={() => onBuy(product.id)}
+          disabled={buying || soldOut || coins < product.price}
+          className="min-h-11 w-full touch-manipulation rounded-xl bg-yellow-500 px-2 text-xs font-black text-slate-950 transition-[transform,background-color] hover:bg-yellow-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500">
+          {soldOut ? "本期已購買" : coins < product.price ? `還差 ${(product.price - coins).toLocaleString()}` : `🪙 ${product.price.toLocaleString()} 購買`}
+        </button>
+      </div>
+    </article>
+  );
+}
 
 // ── 裝備選牌 Modal ───────────────────────────────────────────
 function EquipBuyModal({ slotDef, onBuy, onClose, buying, equipped, items }) {
@@ -141,7 +119,7 @@ function EquipBuyModal({ slotDef, onBuy, onClose, buying, equipped, items }) {
 // ── 主元件 ──────────────────────────────────────────────────
 export default function CoinShop() {
   const { profile } = useAuth();
-  const [tab,        setTab]        = useState("equip"); // equip | consume
+  const [tab,        setTab]        = useState("today");
   const [modal,      setModal]      = useState(null);    // slotDef | null
   const [buying,     setBuying]     = useState(false);
   const [msg,        setMsg]        = useState("");
@@ -174,14 +152,21 @@ export default function CoinShop() {
     else showMsg(`❌ ${result.reason}`, false);
   }
 
-  async function handleBuyConsumable(item) {
+  async function handleBuyProduct(productId) {
     if (!profile?.id || buying) return;
     setBuying(true);
-    const result = await shopBuyConsumable(profile.id, item);
+    const result = await shopBuyProduct(profile.id, productId);
     setBuying(false);
-    if (result.ok) showMsg(`✅ 已購買「${item.name}」`);
+    if (result.ok) showMsg(`✅ ${result.product.name}已放入${result.product.destination}`);
     else showMsg(`❌ ${result.reason}`, false);
   }
+
+  const dailyProducts = getDailyShopProducts();
+  const weeklyProduct = getWeeklyShopProduct();
+  const dailyKey = getShopDailyKey();
+  const weeklyKey = getShopWeeklyKey();
+  const purchases = profile?.coinShopPurchases || {};
+  const purchasedCount = product => (purchases[product === weeklyProduct ? weeklyKey : dailyKey]?.[product.id] || 0);
 
   return (
     <div className="min-h-full bg-slate-950 text-white">
@@ -202,8 +187,9 @@ export default function CoinShop() {
         {/* 分頁 */}
         <div className="flex gap-2 mt-3">
           {[
-            { id: "equip",   label: "⚔️ 裝備" },
-            { id: "consume", label: "🧪 消耗品" },
+            { id: "today",  label: "☀️ 今日精選" },
+            { id: "weekly", label: "💎 每週珍寶" },
+            { id: "equip",  label: "⚔️ 基本裝備" },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all ${
@@ -286,34 +272,27 @@ export default function CoinShop() {
           </div>
         )}
 
-        {/* ── 消耗品頁 ───────────────────────────────────── */}
-        {tab === "consume" && (
+        {tab === "today" && (
           <div className="flex flex-col gap-3">
-            <div className="text-xs text-slate-500">購買後立即加入背包或庫存。</div>
-            {CONSUMABLES.map(item => (
-              <div key={item.id}
-                className="flex items-center gap-3 rounded-xl p-3.5 bg-slate-800/60 border border-slate-700">
-                <span className="text-3xl shrink-0">{item.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-black text-sm text-white">{item.name}</span>
-                    {item.badge && (
-                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                        item.badge === "熱門" ? "bg-red-500/20 text-red-400" : "bg-purple-500/20 text-purple-400"
-                      }`}>{item.badge}</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
-                </div>
-                <button
-                  onClick={() => handleBuyConsumable(item)}
-                  disabled={buying || coins < item.price}
-                  className="shrink-0 flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl bg-yellow-500 text-slate-900 font-black text-xs disabled:opacity-40 active:scale-95 transition-all">
-                  <span>🪙{item.price}</span>
-                  <span style={{ fontSize: 9 }}>購買</span>
-                </button>
-              </div>
-            ))}
+            <div className="text-xs text-slate-500">全服每日同步更新；每件商品的限購次數獨立計算。</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {dailyProducts.map(product => (
+                <ShopProductCard key={product.id} product={product} coins={coins}
+                  purchased={purchasedCount(product)} onBuy={handleBuyProduct} buying={buying} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "weekly" && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-purple-400/25 bg-purple-500/10 px-3 py-2 text-xs leading-relaxed text-purple-200">
+              每週一更新，全服玩家看到相同珍寶；每人每週限購 1 次。
+            </div>
+            <div className="mx-auto w-full max-w-xs">
+              <ShopProductCard product={weeklyProduct} coins={coins}
+                purchased={purchasedCount(weeklyProduct)} onBuy={handleBuyProduct} buying={buying} />
+            </div>
           </div>
         )}
       </div>

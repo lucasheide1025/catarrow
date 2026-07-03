@@ -27,7 +27,7 @@ const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 const HOME_HUBS = [
   { page:"training-hub",  icon:"🏹", title:"每日功能", desc:"練箭・比賽",         accent:"#0d9488" },
   { page:"adventure-hub", icon:"🗺️", title:"冒險出發", desc:"打怪・地城・世界王", accent:"#7c3aed" },
-  { page:"inventory-hub", icon:"🎒", title:"我的背包", desc:"商店・材料・裝備",   accent:"#d97706" },
+  { page:"inventory-hub", icon:"🎒", title:"我的背包", desc:"戰利品・消耗品・素材", accent:"#d97706" },
   { page:"records-hub",   icon:"🏆", title:"我的戰績", desc:"成就圖鑑・排行榜",   accent:"#2563eb" },
 ];
 

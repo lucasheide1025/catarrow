@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, craftPotion, updateChestOpenStats } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, updateChestOpenStats } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -22,12 +22,18 @@ const FAMILY_ORDER = ["ghost", "mountain", "insect", "workplace", "exam", "templ
 const TIER_ORDER   = ["common", "rare", "elite", "fierce", "boss", "mythic", "all"];
 const RARITY_ORDER = ["legendary", "rare", "uncommon", "common"];
 
-export default function MemberMaterials({ onBack }) {
+export default function MemberMaterials({ onBack, onGoVillage }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
 
   // ── tab ──────────────────────────────────────────────────
-  const [tab, setTab] = useState("materials"); // "materials" | "fragments"
+  const [tab, setTab] = useState(() => {
+    const requested = sessionStorage.getItem("inventory_initial_tab");
+    sessionStorage.removeItem("inventory_initial_tab");
+    return ["materials", "chests", "fragments", "potions", "special"].includes(requested)
+      ? requested
+      : "chests";
+  });
 
   // ── 材料庫存 ─────────────────────────────────────────────
   const [inventory,      setInventory]      = useState({});
@@ -43,7 +49,6 @@ export default function MemberMaterials({ onBack }) {
   const [confirmFrag,    setConfirmFrag]    = useState(null);
   const [crafting,       setCrafting]       = useState(false);
   const [craftCelebrate,  setCraftCelebrate]  = useState(null); // { frag, label }
-  const [potionCelebrate, setPotionCelebrate] = useState(null); // potion 物件
 
   // ── 寶箱庫存 ─────────────────────────────────────────────
   const [chests,       setChests]       = useState([]);
@@ -57,7 +62,6 @@ export default function MemberMaterials({ onBack }) {
   // ── 藥水庫存 ─────────────────────────────────────────────
   const [potions,        setPotions]        = useState({});
   const [potionLoading,  setPotionLoading]  = useState(!!profile?.id);
-  const [craftingPotion, setCraftingPotion] = useState(null);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -82,7 +86,6 @@ export default function MemberMaterials({ onBack }) {
   }, [profile?.id]);
 
   // ── 統計 ─────────────────────────────────────────────────
-  const totalKinds      = MATERIALS.length;
   const ownedKinds      = MATERIALS.filter(m => (m.family === "all" ? (fragments[m.id] || 0) : (inventory[m.id] || 0)) > 0).length;
   const totalCount      = Object.values(inventory).reduce((s, v) => s + (v || 0), 0);
   const upgradableCount = MATERIALS.filter(m =>
@@ -96,6 +99,7 @@ export default function MemberMaterials({ onBack }) {
   function matsOfFamily(fam) {
     return MATERIALS
       .filter(m => m.family === fam)
+      .filter(m => (m.family === "all" ? (fragments[m.id] || 0) : (inventory[m.id] || 0)) > 0)
       .sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
   }
 
@@ -200,20 +204,6 @@ export default function MemberMaterials({ onBack }) {
     }
   }
 
-  async function doCraftPotion(potion) {
-    if (craftingPotion) return;
-    setCraftingPotion(potion.id);
-    const res = await craftPotion(profile.id, potion.id);
-    setCraftingPotion(null);
-    if (res.ok) {
-      if (potion.rarity === "epic" || potion.rarity === "legendary") sfxEpic();
-      else sfxBuff();
-      setPotionCelebrate(potion);
-    } else {
-      toast(res.reason || "合成失敗，請稍後再試");
-    }
-  }
-
   // ── render ────────────────────────────────────────────────
   if (!profile?.id) return (
     <div className="p-4 flex flex-col gap-4">
@@ -244,21 +234,17 @@ export default function MemberMaterials({ onBack }) {
       <div className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
-            <div className="text-purple-200 text-xs mb-0.5">已收集種類</div>
-            <div className="font-black text-2xl">{ownedKinds}<span className="text-purple-300 text-sm font-normal">/{totalKinds}</span></div>
+            <div className="text-purple-200 text-xs mb-0.5">持有素材種類</div>
+            <div className="font-black text-2xl">{ownedKinds}</div>
           </div>
           <div>
             <div className="text-purple-200 text-xs mb-0.5">材料總數</div>
             <div className="font-black text-2xl">{totalCount}</div>
           </div>
           <div>
-            <div className="text-purple-200 text-xs mb-0.5">圖鑑完成度</div>
-            <div className="font-black text-2xl">{Math.round(ownedKinds / totalKinds * 100)}<span className="text-purple-300 text-sm font-normal">%</span></div>
+            <div className="text-purple-200 text-xs mb-0.5">未開戰利品</div>
+            <div className="font-black text-2xl">{chests.length}</div>
           </div>
-        </div>
-        <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
-          <div className="h-full bg-amber-400 rounded-full transition-all duration-700"
-            style={{ width: `${ownedKinds / totalKinds * 100}%` }} />
         </div>
         <div className="mt-2 flex gap-2 flex-wrap">
           {upgradableCount > 0 && (
@@ -275,11 +261,11 @@ export default function MemberMaterials({ onBack }) {
       </div>
 
       {/* Tab 切換 */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1">
         <button onClick={() => setTab("materials")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all
             ${tab === "materials" ? "bg-purple-600 text-white" : "bg-white/10 text-gray-400"}`}>
-          🧪 材料
+          🪨 素材
         </button>
         <button onClick={() => setTab("chests")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all relative
@@ -304,7 +290,12 @@ export default function MemberMaterials({ onBack }) {
         <button onClick={() => setTab("potions")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all
             ${tab === "potions" ? "bg-green-500 text-white" : "bg-white/10 text-gray-400"}`}>
-          🔮 藥水
+          🧪 消耗品
+        </button>
+        <button onClick={() => setTab("special")}
+          className={`flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-black transition-colors
+            ${tab === "special" ? "bg-indigo-500 text-white" : "bg-white/10 text-gray-400"}`}>
+          🎟️ 特殊
         </button>
       </div>
 
@@ -642,92 +633,48 @@ export default function MemberMaterials({ onBack }) {
       {tab === "potions" && (
         <div className="flex flex-col gap-3">
           <div className="bg-green-500/10 border border-green-400/30 rounded-xl px-3 py-2 text-green-300 text-xs leading-relaxed">
-            🔮 消耗怪物材料可合成藥劑！戰鬥前最多帶 <b>3 瓶</b>，被動型開戰自動生效，投擲型可手動擲出。
+            每回合最多使用 1 個消耗品；攜帶型立即生效，投擲型會占用 1 箭。
           </div>
-
-          {/* 持有藥水一覽 */}
-          {!potionLoading && (
-            <div className="bg-white/5 rounded-2xl p-3 border border-white/15">
-              <div className="text-gray-400 text-xs font-bold mb-2">🧴 目前持有</div>
-              {POTIONS.some(p => (potions[p.id] || 0) > 0) ? (
-                <div className="flex flex-wrap gap-2">
-                  {POTIONS.filter(p => (potions[p.id] || 0) > 0).map(p => (
-                    <div key={p.id} className="flex items-center gap-1.5 bg-green-500/10 border border-green-400/30 rounded-xl px-2.5 py-1.5">
-                      <span>{p.icon}</span>
-                      <span className="text-xs font-bold text-gray-200">{p.name}</span>
-                      <span className="text-xs font-black text-green-300">×{potions[p.id]}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-gray-500 text-xs text-center py-1">尚無藥水，合成後會顯示在這裡</div>
-              )}
-            </div>
-          )}
-
-          {/* 合成配方清單 */}
           {potionLoading ? (
             <div className="text-center py-6 text-gray-400 text-sm">載入中…</div>
+          ) : POTIONS.some(p => (potions[p.id] || 0) > 0) ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              {POTIONS.filter(p => (potions[p.id] || 0) > 0).map(potion => (
+                <article key={potion.id} className="min-h-36 rounded-2xl border border-green-400/25 bg-green-500/10 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-3xl" aria-hidden="true">{potion.icon}</span>
+                    <span className="rounded-full bg-green-400/15 px-2 py-0.5 text-xs font-black text-green-300">
+                      ×{potions[potion.id]}
+                    </span>
+                  </div>
+                  <h3 className="mt-3 break-words text-sm font-black text-gray-100">{potion.name}</h3>
+                  <div className="mt-1 text-[10px] font-bold text-green-300">
+                    {potion.kind === "throw" ? "投擲型・占用 1 箭" : "攜帶型・立即生效"}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{potion.effectText}</p>
+                </article>
+              ))}
+            </div>
           ) : (
-            POTIONS.map(potion => {
-              const owned      = potions[potion.id] || 0;
-              const canCraft   = potion.recipe?.every(r => (inventory[r.id] || 0) >= r.count);
-              const isCrafting = craftingPotion === potion.id;
-              const RARITY_COLOR = { common:"bg-white/10 text-gray-400", rare:"bg-blue-500/15 text-blue-300", epic:"bg-purple-500/15 text-purple-300", legendary:"bg-amber-500/15 text-amber-300" };
-              const RARITY_LABEL = { common:"普通", rare:"稀有", epic:"史詩", legendary:"傳說" };
-              return (
-                <div key={potion.id}
-                  className={`rounded-2xl p-3 border transition-all
-                    ${canCraft ? "bg-white/5 border-green-400/40" : "bg-white/5 border-white/10"}`}>
-                  {/* 名稱 + 功效列 */}
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <span className="text-2xl flex-shrink-0">{potion.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className={`font-black text-sm ${canCraft ? "text-gray-100" : "text-gray-400"}`}>{potion.name}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${RARITY_COLOR[potion.rarity] || RARITY_COLOR.common}`}>
-                          {RARITY_LABEL[potion.rarity] || potion.rarity}
-                        </span>
-                        {potion.kind === "throw" && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-300">投擲</span>
-                        )}
-                      </div>
-                      <div className="text-gray-400 text-[11px] mt-0.5 leading-snug">{potion.effectText}</div>
-                    </div>
-                    {owned > 0 && (
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-[10px] font-black">
-                        {owned}
-                      </div>
-                    )}
-                  </div>
-                  {/* 配方材料 */}
-                  <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                    {(potion.recipe || []).map(r => {
-                      const mat    = MATERIALS.find(m => m.id === r.id);
-                      const have   = inventory[r.id] || 0;
-                      const enough = have >= r.count;
-                      return (
-                        <div key={r.id}
-                          className={`flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-lg font-bold border
-                            ${enough ? "bg-green-500/10 text-green-300 border-green-400/30" : "bg-red-500/10 text-red-400 border-red-400/30"}`}>
-                          <span>{mat?.icon}</span>
-                          <span>{mat?.name}</span>
-                          <span className="opacity-60">{have}/{r.count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button
-                    onClick={() => canCraft && !craftingPotion && doCraftPotion(potion)}
-                    disabled={!canCraft || !!craftingPotion}
-                    className={`w-full py-2 rounded-xl text-xs font-black transition-all active:scale-95
-                      ${canCraft ? "bg-green-500 text-white" : "bg-white/10 text-gray-500"}`}>
-                    {isCrafting ? "合成中…" : canCraft ? `🔮 合成 ${potion.name}` : "材料不足"}
-                  </button>
-                </div>
-              );
-            })
+            <div className="rounded-2xl border border-dashed border-white/15 py-10 text-center text-sm text-gray-500">
+              <div className="mb-2 text-4xl" aria-hidden="true">🧪</div>
+              目前沒有消耗品
+            </div>
           )}
+          {onGoVillage ? (
+            <button type="button" onClick={onGoVillage}
+              className="min-h-11 touch-manipulation rounded-xl bg-green-600 px-4 text-sm font-black text-white transition-colors hover:bg-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-300">
+              前往貓貓村製作藥水
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {tab === "special" && (
+        <div className="rounded-2xl border border-dashed border-indigo-400/25 bg-indigo-500/5 px-4 py-12 text-center">
+          <div className="mb-3 text-5xl" aria-hidden="true">🎟️</div>
+          <h3 className="font-black text-gray-200">目前沒有特殊道具</h3>
+          <p className="mt-1 text-xs text-gray-500">活動券與任務道具會收納在這裡。</p>
         </div>
       )}
 
@@ -843,38 +790,6 @@ export default function MemberMaterials({ onBack }) {
               <span>開箱中…</span>
               <span className="animate-spin inline-block" style={{ animationDirection: "reverse" }}>✨</span>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 藥水合成成功動畫 ────────────────────────────────── */}
-      {potionCelebrate && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-6"
-          onClick={() => setPotionCelebrate(null)}>
-          {(potionCelebrate.rarity === "epic" || potionCelebrate.rarity === "legendary") && <Confetti />}
-          <div className="text-center" onClick={e => e.stopPropagation()}>
-            <div className="text-8xl mb-4 animate-bounce"
-              style={{ filter: `drop-shadow(0 0 20px ${RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af"})` }}>
-              {potionCelebrate.icon}
-            </div>
-            <div className="font-black text-2xl mb-1"
-              style={{ color: RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af" }}>
-              ⚗️ 合成成功！
-            </div>
-            <div className="text-white font-bold text-lg mb-1">{potionCelebrate.name}</div>
-            <div className="inline-block px-3 py-0.5 rounded-full text-xs font-black mb-3"
-              style={{
-                background: (RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af") + "33",
-                color: RARITY_CONFIG[potionCelebrate.rarity]?.color || "#9ca3af",
-              }}>
-              {RARITY_CONFIG[potionCelebrate.rarity]?.label || ""}
-            </div>
-            <div className="text-white/70 text-sm mb-2">{potionCelebrate.effectText}</div>
-            <div className="text-white/50 text-xs mb-6">{potionCelebrate.desc}</div>
-            <button onClick={() => setPotionCelebrate(null)}
-              className="px-8 py-3 rounded-full bg-white text-gray-800 text-sm font-black">
-              收下！
-            </button>
           </div>
         </div>
       )}
