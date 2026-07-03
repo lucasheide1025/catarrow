@@ -1611,7 +1611,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)", boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                   </div>
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
-                    {!m.alive&&"💀"}{m.role==="rear"?"🛡":"⚔️"}{m.name.slice(0,5)}{m.id===room.hostId?" 👑":""}
+                    {!m.alive&&"💀"}{m.role==="rear"?"🛡":"⚔️"}{(m.name||"").slice(0,5)}{m.id===room.hostId?" 👑":""}
                   </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
                     <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk}</div>
@@ -1672,7 +1672,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                       <div style={{ height:"100%", borderRadius:3, width:`${hpPct*100}%`, transition:"width 0.5s ease", background: hpPct>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":hpPct>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                     </div>
                     <div style={{ fontSize:9, fontWeight:700, color:isMe?"#fbbf24":"#2dd4bf", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
-                      {!m.alive?"💀":"🛡"}{m.name.slice(0,4)}{m.id===room.hostId?" 👑":""}
+                      {!m.alive?"💀":"🛡"}{(m.name||"").slice(0,4)}{m.id===room.hostId?" 👑":""}
                     </div>
                     <div style={{ fontSize:8, color: liveEntry?"#64748b":m.ready?"#4ade80":m.arrows?.length>0?"#fbbf24":"#475569" }}>
                       {!m.alive?"💀":liveEntry?"⚙️":m.ready?(m.skipped?"⏭":"✅"):m.arrows?.length>0?`🏹${m.arrows.length}`:"⏳"}

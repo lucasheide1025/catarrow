@@ -1380,7 +1380,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                         background: hpPct>0.5?"#16a34a":hpPct>0.25?"#d97706":"#dc2626" }}/>
                     </div>
                     <div style={{ fontSize:7.5, color:!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {!m.alive?"💀":""}{m.name.slice(0,5)}
+                      {!m.alive?"💀":""}{(m.name||"").slice(0,5)}
                     </div>
                     <div style={{ fontSize:7, color:m.role==="rear"?"#a78bfa":"#34d399" }}>
                       {m.role==="rear"?"🛡":"⚔️"}
@@ -1462,7 +1462,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                       boxShadow:hpPct<=0.25?"0 0 6px rgba(239,68,68,0.8)":undefined }}/>
                   </div>
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
-                    {!m.alive?"💀":""}{m.name.slice(0,6)}
+                    {!m.alive?"💀":""}{(m.name||"").slice(0,6)}
                   </div>
                   <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
                     color: m.role==="rear"?"#a78bfa":"#34d399" }}>
