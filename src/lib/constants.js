@@ -52,11 +52,11 @@ export function thisYear() {
 export const COMP_TYPES = ["實體賽","積分賽","挑戰賽","臨時任務賽","年度檢定"];
 
 export const COMP_TYPE_COLOR = {
-  "實體賽":   { text:"text-purple-600", bg:"bg-purple-100 text-purple-700" },
-  "積分賽":   { text:"text-blue-600",   bg:"bg-blue-100 text-blue-700"     },
-  "挑戰賽":   { text:"text-orange-600", bg:"bg-orange-100 text-orange-700" },
-  "臨時任務賽":{ text:"text-green-600", bg:"bg-green-100 text-green-700"   },
-  "年度檢定": { text:"text-teal-600",   bg:"bg-teal-100 text-teal-700"     },
+  "實體賽":   { text:"text-purple-600", darkText:"text-purple-400", bg:"bg-purple-100 text-purple-700" },
+  "積分賽":   { text:"text-blue-600",   darkText:"text-blue-400",   bg:"bg-blue-100 text-blue-700"     },
+  "挑戰賽":   { text:"text-orange-600", darkText:"text-orange-400", bg:"bg-orange-100 text-orange-700" },
+  "臨時任務賽":{ text:"text-green-600", darkText:"text-green-400",  bg:"bg-green-100 text-green-700"   },
+  "年度檢定": { text:"text-teal-600",   darkText:"text-teal-400",   bg:"bg-teal-100 text-teal-700"     },
 };
 
 export const EVENT_POINTS = { 0:3, 1:2, 2:1 };
@@ -147,29 +147,29 @@ export function certLevelStyle(level, variant = "solid") {
   const styles = {
     入門: {
       solid: "bg-gray-400 text-white",
-      soft:  "bg-gray-100 text-gray-600 border border-gray-200",
+      soft:  "bg-white/10 text-gray-300 border border-white/15",
     },
     初級: {
       solid: "bg-emerald-500 text-white",
-      soft:  "bg-emerald-50 text-emerald-700 border border-emerald-200",
+      soft:  "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30",
     },
     中級: {
       solid: "bg-blue-500 text-white",
-      soft:  "bg-blue-50 text-blue-700 border border-blue-200",
+      soft:  "bg-blue-500/15 text-blue-300 border border-blue-400/30",
     },
     進階: {
       solid: "bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white",
-      soft:  "bg-purple-50 text-purple-700 border border-purple-200",
+      soft:  "bg-purple-500/15 text-purple-300 border border-purple-400/30",
     },
     精英: {
       solid: "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-amber-950 shadow-md shadow-amber-200",
-      soft:  "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 border border-amber-300",
+      soft:  "bg-amber-500/15 text-amber-300 border border-amber-400/30",
     },
   };
   // 傳統弓的「菁英」與其他弓的「精英」同級
   styles["菁英"] = styles["精英"];
- 
-  const fallback = { solid: "bg-gray-300 text-gray-600", soft: "bg-gray-50 text-gray-500 border border-gray-200" };
+
+  const fallback = { solid: "bg-gray-300 text-gray-600", soft: "bg-white/10 text-gray-400 border border-white/15" };
   return (styles[level] || fallback)[variant] || fallback[variant];
 }
  

@@ -6,21 +6,21 @@ import { markNotificationRead, deleteNotificationForMe, addCongrats } from "../.
 import { Card, Btn, TA, ST, Spinner, Empty, useToast } from "../shared/UI";
 
 const TYPE_META = {
-  important:             { label:"重要",  color:"bg-red-100 text-red-700",     icon:"📢" },
-  promo:                 { label:"優惠",  color:"bg-pink-100 text-pink-700",   icon:"🎁" },
-  promo_unlock:          { label:"重要",  color:"bg-red-100 text-red-700",     icon:"⚔️" },
-  new_comp:              { label:"賽事",  color:"bg-blue-100 text-blue-700",   icon:"🏆" },
-  comp_result:           { label:"成績",  color:"bg-green-100 text-green-700", icon:"🏅" },
-  cert_pass:             { label:"榮耀",  color:"bg-amber-100 text-amber-700", icon:"🎖️" },
-  high_score:            { label:"榮耀",  color:"bg-amber-100 text-amber-700", icon:"🎯" },
-  achievement:           { label:"成就",  color:"bg-purple-100 text-purple-700",icon:"🏅" },
-  village_goal:          { label:"村莊",  color:"bg-emerald-100 text-emerald-700",icon:"🏡" },
-  village_goal_complete: { label:"村莊",  color:"bg-amber-100 text-amber-800", icon:"🎉" },
-  market_sale:           { label:"市集",  color:"bg-teal-100 text-teal-700",   icon:"🛒" },
-  card_pack:             { label:"市集",  color:"bg-indigo-100 text-indigo-700",icon:"🃏" },
-  dungeon:               { label:"地下城",color:"bg-slate-100 text-slate-700", icon:"🗺️" },
-  worldboss:             { label:"世界王",color:"bg-rose-100 text-rose-700",   icon:"👑" },
-  loot:                  { label:"掉寶",  color:"bg-yellow-100 text-yellow-700",icon:"💎" },
+  important:             { label:"重要",  color:"bg-red-500/15 text-red-300",     icon:"📢" },
+  promo:                 { label:"優惠",  color:"bg-pink-500/15 text-pink-300",   icon:"🎁" },
+  promo_unlock:          { label:"重要",  color:"bg-red-500/15 text-red-300",     icon:"⚔️" },
+  new_comp:              { label:"賽事",  color:"bg-blue-500/15 text-blue-300",   icon:"🏆" },
+  comp_result:           { label:"成績",  color:"bg-green-500/15 text-green-300", icon:"🏅" },
+  cert_pass:             { label:"榮耀",  color:"bg-amber-500/15 text-amber-300", icon:"🎖️" },
+  high_score:            { label:"榮耀",  color:"bg-amber-500/15 text-amber-300", icon:"🎯" },
+  achievement:           { label:"成就",  color:"bg-purple-500/15 text-purple-300",icon:"🏅" },
+  village_goal:          { label:"村莊",  color:"bg-emerald-500/15 text-emerald-300",icon:"🏡" },
+  village_goal_complete: { label:"村莊",  color:"bg-amber-500/15 text-amber-300", icon:"🎉" },
+  market_sale:           { label:"市集",  color:"bg-teal-500/15 text-teal-300",   icon:"🛒" },
+  card_pack:             { label:"市集",  color:"bg-indigo-500/15 text-indigo-300",icon:"🃏" },
+  dungeon:               { label:"地下城",color:"bg-white/10 text-gray-300",      icon:"🗺️" },
+  worldboss:             { label:"世界王",color:"bg-rose-500/15 text-rose-300",   icon:"👑" },
+  loot:                  { label:"掉寶",  color:"bg-yellow-500/15 text-yellow-300",icon:"💎" },
 };
 
 const FILTERS = [
@@ -77,14 +77,14 @@ export default function MemberNotifications({ notifications = [] }) {
   return (
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
-      <h2 className="text-gray-800 font-black text-xl">🔔 訊息中心</h2>
+      <h2 className="text-gray-100 font-black text-xl">🔔 訊息中心</h2>
 
       {/* 分類 */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all
-              ${filter === f.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+              ${filter === f.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
             {f.label}
           </button>
         ))}
@@ -95,13 +95,13 @@ export default function MemberNotifications({ notifications = [] }) {
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => setMonth("all")}
             className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap border
-              ${month === "all" ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-500 border-gray-200"}`}>
+              ${month === "all" ? "bg-white/25 text-white border-white/40" : "bg-white/10 text-gray-400 border-white/15"}`}>
             全部月份
           </button>
           {months.map(m => (
             <button key={m} onClick={() => setMonth(m)}
               className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap border
-                ${month === m ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-500 border-gray-200"}`}>
+                ${month === m ? "bg-white/25 text-white border-white/40" : "bg-white/10 text-gray-400 border-white/15"}`}>
               {m}
             </button>
           ))}
@@ -112,7 +112,7 @@ export default function MemberNotifications({ notifications = [] }) {
 
       {monthKeys.map(m => (
         <div key={m} className="flex flex-col gap-2">
-          <div className="text-gray-500 text-sm font-black">{m}</div>
+          <div className="text-gray-400 text-sm font-black">{m}</div>
           {byMonth[m].map(n => (
             <NotifCard key={n.id} n={n} myId={profile.id}
               onRead={() => handleRead(n)}
@@ -141,35 +141,35 @@ function NotifCard({ n, myId, onRead, onDelete, onCongrat }) {
   useEffect(() => { if (!isRead) onRead(); }, []); // eslint-disable-line
 
   return (
-    <Card className={`p-4 ${!isRead ? "ring-1 ring-blue-200" : ""}`}>
+    <Card className={`p-4 ${!isRead ? "ring-1 ring-blue-400/40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.icon} {meta.label}</span>
             {!isRead && <span className="w-2 h-2 rounded-full bg-blue-500" />}
           </div>
-          <div className="text-gray-800 font-bold text-sm">{n.title}</div>
-          <div className="text-gray-600 text-sm mt-0.5">{n.content}</div>
+          <div className="text-gray-100 font-bold text-sm">{n.title}</div>
+          <div className="text-gray-300 text-sm mt-0.5">{n.content}</div>
           {n.subjectInfo?.fromName && (
             <div className="text-gray-400 text-xs mt-1">— {n.subjectInfo.fromName}</div>
           )}
         </div>
-        <button onClick={onDelete} className="text-gray-300 hover:text-red-400 text-xs flex-shrink-0">刪除</button>
+        <button onClick={onDelete} className="text-gray-500 hover:text-red-400 text-xs flex-shrink-0 py-1">刪除</button>
       </div>
 
       {/* 榮耀：祝賀區 */}
       {isHonor && (
-        <div className="mt-3 border-t border-gray-100 pt-3">
+        <div className="mt-3 border-t border-white/10 pt-3">
           {isSubject ? (
             <>
-              <div className="text-amber-600 text-xs font-bold mb-2">🎉 你收到 {congrats.length} 則祝賀</div>
+              <div className="text-amber-300 text-xs font-bold mb-2">🎉 你收到 {congrats.length} 則祝賀</div>
               {congrats.length === 0 ? (
                 <div className="text-gray-400 text-xs">還沒有人留言祝賀</div>
               ) : (
                 <div className="flex flex-col gap-2">
                   {congrats.slice().reverse().map((c,i) => (
-                    <div key={i} className="bg-amber-50 rounded-lg px-3 py-2">
-                      <div className="text-gray-700 text-sm">{c.text}</div>
+                    <div key={i} className="bg-amber-500/10 rounded-lg px-3 py-2">
+                      <div className="text-gray-200 text-sm">{c.text}</div>
                       <div className="text-gray-400 text-xs mt-0.5">— {c.anon ? "匿名" : (c.name || "某位射手")}</div>
                     </div>
                   ))}
@@ -178,7 +178,7 @@ function NotifCard({ n, myId, onRead, onDelete, onCongrat }) {
             </>
           ) : (
             <button onClick={onCongrat}
-              className="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-lg border border-amber-200">
+              className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-sm font-bold rounded-lg border border-amber-400/30">
               🎉 送上祝賀
             </button>
           )}
@@ -203,11 +203,13 @@ function CongratModal({ n, profile, onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="text-gray-800 font-black text-lg mb-1">🎉 送上祝賀</div>
-        <div className="text-gray-500 text-xs mb-3">{n.title}</div>
+      <div className="rounded-2xl p-5 w-full max-w-md"
+        style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
+        onClick={e => e.stopPropagation()}>
+        <div className="text-gray-100 font-black text-lg mb-1">🎉 送上祝賀</div>
+        <div className="text-gray-400 text-xs mb-3">{n.title}</div>
         <TA value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="寫下你的祝賀…" />
-        <label className="flex items-center gap-2 text-gray-600 text-sm mt-3 cursor-pointer">
+        <label className="flex items-center gap-2 text-gray-300 text-sm mt-3 cursor-pointer">
           <input type="checkbox" checked={anon} onChange={e => setAnon(e.target.checked)} className="accent-blue-600" />
           匿名祝賀（不顯示我的名字）
         </label>

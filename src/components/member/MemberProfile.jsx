@@ -154,32 +154,32 @@ export default function MemberProfile({
                   className="text-xl leading-none opacity-70 hover:opacity-100 transition-opacity"
                   title="更換主題">🎨</button>
                 {showThemePicker && (
-                  <div className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-2xl p-3 w-52"
-                    style={{ border:"1px solid #e2e8f0" }}>
-                    <div className="text-gray-500 text-xs font-bold mb-2 px-1">🃏 卡片主題</div>
+                  <div className="absolute right-0 top-8 z-50 rounded-2xl p-3 w-52"
+                    style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}>
+                    <div className="text-gray-400 text-xs font-bold mb-2 px-1">🃏 卡片主題</div>
                     <div className="grid grid-cols-4 gap-2">
                       {CARD_THEMES.map(t => (
                         <button key={t.id} onClick={() => { setCardTheme(t.id); setShowThemePicker(false); }}
                           title={t.label}
                           className="flex flex-col items-center gap-1 p-1.5 rounded-xl transition-all active:scale-90"
-                          style={{ background:cardTheme===t.id?"#ede9fe":"transparent", border:cardTheme===t.id?"2px solid #7c3aed":"2px solid transparent" }}>
+                          style={{ background:cardTheme===t.id?"rgba(124,58,237,0.25)":"transparent", border:cardTheme===t.id?"2px solid #7c3aed":"2px solid transparent" }}>
                           <div className="w-7 h-7 rounded-full" style={{ background:t.bg }} />
-                          <span className="text-gray-600 text-[9px] font-bold leading-tight text-center">{t.label}</span>
+                          <span className="text-gray-300 text-[9px] font-bold leading-tight text-center">{t.label}</span>
                         </button>
                       ))}
                     </div>
                     {onAppThemeChange && APP_THEMES.length > 1 && (
                       <>
-                        <div className="border-t border-gray-100 my-2" />
-                        <div className="text-gray-500 text-xs font-bold mb-2 px-1">🎨 App 主題</div>
+                        <div className="border-t border-white/10 my-2" />
+                        <div className="text-gray-400 text-xs font-bold mb-2 px-1">🎨 App 主題</div>
                         <div className="flex gap-2 justify-center">
                           {APP_THEMES.map(t => (
                             <button key={t.id} onClick={() => { onAppThemeChange(t.id); setShowThemePicker(false); }}
                               title={t.label}
                               className="flex flex-col items-center gap-1 p-1.5 rounded-xl transition-all active:scale-90"
-                              style={{ background:appTheme?.id===t.id?"#ede9fe":"transparent", border:appTheme?.id===t.id?"2px solid #7c3aed":"2px solid transparent" }}>
+                              style={{ background:appTheme?.id===t.id?"rgba(124,58,237,0.25)":"transparent", border:appTheme?.id===t.id?"2px solid #7c3aed":"2px solid transparent" }}>
                               <div className="w-8 h-8 rounded-full shadow-sm" style={{ background:`linear-gradient(135deg,${t.preview[0]},${t.preview[1]})` }} />
-                              <span className="text-gray-600 text-[9px] font-bold leading-tight text-center">{t.label}</span>
+                              <span className="text-gray-300 text-[9px] font-bold leading-tight text-center">{t.label}</span>
                             </button>
                           ))}
                         </div>
@@ -374,23 +374,23 @@ function AccountSettings({ profile }) {
       {open && (
         <div className="flex flex-col gap-5 mt-3">
           <div className="flex flex-col gap-2">
-            <div className="text-gray-600 text-xs font-bold">修改暱稱</div>
+            <div className="text-gray-300 text-xs font-bold">修改暱稱</div>
             <Inp label="暱稱" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="輸入新暱稱" />
             <Btn v="primary" className="w-full" onClick={saveNick} disabled={savingNick}>
               {savingNick?"儲存中…":"更新暱稱"}
             </Btn>
-            {nickMsg && <div className={`text-xs ${nickMsg.startsWith("✅")?"text-green-600":"text-red-500"}`}>{nickMsg}</div>}
+            {nickMsg && <div className={`text-xs ${nickMsg.startsWith("✅")?"text-green-400":"text-red-400"}`}>{nickMsg}</div>}
           </div>
-          <div className="flex flex-col gap-2 border-t border-gray-100 pt-4">
-            <div className="text-gray-600 text-xs font-bold">修改密碼</div>
+          <div className="flex flex-col gap-2 border-t border-white/10 pt-4">
+            <div className="text-gray-300 text-xs font-bold">修改密碼</div>
             <Inp label="目前密碼" type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="輸入目前密碼" />
             <Inp label="新密碼（至少 6 字元）" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="輸入新密碼" />
             <Inp label="確認新密碼" type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)} placeholder="再次輸入新密碼" />
             <Btn v="primary" className="w-full" onClick={changePw} disabled={savingPw}>
               {savingPw?"更新中…":"更新密碼"}
             </Btn>
-            {pwErr && <div className="text-xs text-red-500">{pwErr}</div>}
-            {pwMsg && <div className="text-xs text-green-600">{pwMsg}</div>}
+            {pwErr && <div className="text-xs text-red-400">{pwErr}</div>}
+            {pwMsg && <div className="text-xs text-green-400">{pwMsg}</div>}
           </div>
         </div>
       )}

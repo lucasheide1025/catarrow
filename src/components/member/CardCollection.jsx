@@ -100,7 +100,7 @@ export default function CardCollection() {
 
       {/* 提示通知 */}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-300 rounded-xl px-4 py-2 text-emerald-700 font-bold text-sm text-center">
+        <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-xl px-4 py-2 text-emerald-300 font-bold text-sm text-center">
           {notice}
         </div>
       )}
@@ -108,7 +108,7 @@ export default function CardCollection() {
       {/* 已裝備 */}
       {equipped.length > 0 && (
         <div className="flex flex-col gap-2">
-          <div className="text-xs font-black text-gray-500 uppercase tracking-widest">已裝備</div>
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest">已裝備</div>
           <div className="flex flex-wrap gap-2">
             {equippedCards.map(card => {
               if (!card) return null;
@@ -119,12 +119,12 @@ export default function CardCollection() {
                 <button key={card.monsterId}
                   onClick={() => handleUnequip(card.monsterId)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 text-xs font-bold active:scale-95 transition-transform"
-                  style={{ borderColor: cfg.color, background: cfg.bg, color: cfg.color }}>
+                  style={{ borderColor: cfg.color, background: cfg.color + "1f", color: cfg.color }}>
                   <span>{card.icon}</span>
                   <span>{card.name}</span>
                   <span><StarRow stars={card.stars} /></span>
-                  <span className="text-gray-500">+{val} {getStatLabel(stat)}</span>
-                  <span className="text-gray-400 text-[10px]">✕</span>
+                  <span className="text-gray-300">+{val} {getStatLabel(stat)}</span>
+                  <span className="text-gray-500 text-[10px]">✕</span>
                 </button>
               );
             })}
@@ -141,7 +141,7 @@ export default function CardCollection() {
               className="shrink-0 px-3 py-1 rounded-full text-xs font-black border transition-all"
               style={filterTier === t
                 ? { background: cfg.color, color: "white", borderColor: cfg.color }
-                : { background: "white", color: cfg.color, borderColor: cfg.color + "80" }}>
+                : { background: "rgba(255,255,255,0.06)", color: cfg.color, borderColor: cfg.color + "80" }}>
               {cfg.label || t}
             </button>
           );
@@ -171,7 +171,7 @@ export default function CardCollection() {
                 className="rounded-2xl border transition-all"
                 style={{
                   borderColor: isEquipped ? cfg.color : cfg.color + "40",
-                  background:  isEquipped ? cfg.bg : "#f8fafc",
+                  background:  isEquipped ? cfg.color + "1a" : "rgba(255,255,255,0.05)",
                 }}>
                 {/* 主列 */}
                 <div className="flex items-center gap-3 px-3 py-2.5 cursor-pointer active:opacity-80"
@@ -179,7 +179,7 @@ export default function CardCollection() {
                   <span className="text-2xl shrink-0">{card.icon}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-black text-sm truncate" style={{ color: isEquipped ? cfg.color : "#1e293b" }}>
+                      <span className="font-black text-sm truncate" style={{ color: isEquipped ? cfg.color : "#e2e8f0" }}>
                         {card.name}
                       </span>
                       {isEquipped && (
@@ -192,11 +192,11 @@ export default function CardCollection() {
                         style={{ background: cfg.color }}>{cfg.label}</span>
                       <StarRow stars={card.stars} />
                       {needMythicStat
-                        ? <span className="text-[10px] text-amber-500 font-bold">⚠️ 選屬性</span>
-                        : <span className="text-[10px] text-slate-500">+{bonus} {getStatLabel(stat)}</span>
+                        ? <span className="text-[10px] text-amber-400 font-bold">⚠️ 選屬性</span>
+                        : <span className="text-[10px] text-slate-400">+{bonus} {getStatLabel(stat)}</span>
                       }
                       {canUp && (
-                        <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                        <span className="text-[9px] text-emerald-300 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-400/30">
                           ✨ 可升星
                         </span>
                       )}
@@ -210,7 +210,7 @@ export default function CardCollection() {
                     <div onClick={e => e.stopPropagation()}>
                       {isEquipped ? (
                         <button onClick={() => handleUnequip(card.monsterId)}
-                          className="shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/50 active:scale-95 transition-transform"
+                          className="shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/10 active:scale-95 transition-transform"
                           style={{ color: cfg.color, border:`1px solid ${cfg.color}60` }}>
                           卸下
                         </button>
@@ -224,7 +224,7 @@ export default function CardCollection() {
                       )}
                     </div>
                   )}
-                  <span className="text-slate-300 text-xs shrink-0">{isSelected ? "▲" : "▼"}</span>
+                  <span className="text-slate-500 text-xs shrink-0">{isSelected ? "▲" : "▼"}</span>
                 </div>
 
                 {/* 展開詳情 */}
@@ -236,12 +236,12 @@ export default function CardCollection() {
                     {/* Mythic 選屬性 */}
                     {needMythicStat && (
                       <div className="flex flex-col gap-1">
-                        <div className="text-xs font-black text-amber-600">選擇加成屬性（一次性）</div>
+                        <div className="text-xs font-black text-amber-300">選擇加成屬性（一次性）</div>
                         <div className="flex gap-1.5">
                           {STAT_OPTIONS.map(s => (
                             <button key={s.id}
                               onClick={() => handleMythicStat(card.monsterId, s.id)}
-                              className="flex-1 px-2 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold text-center active:scale-95">
+                              className="flex-1 px-2 py-2 rounded-xl bg-amber-500/10 border border-amber-400/40 text-amber-300 text-xs font-bold text-center active:scale-95">
                               {s.label}
                             </button>
                           ))}
@@ -255,7 +255,7 @@ export default function CardCollection() {
                         onClick={() => handleUpgrade(card.monsterId)}
                         disabled={!canUp || upgrading}
                         className="w-full py-2 rounded-xl text-xs font-black transition-all active:scale-95 disabled:opacity-40"
-                        style={canUp ? { background: cfg.color, color: "white" } : { background: "#f1f5f9", color: "#94a3b8" }}>
+                        style={canUp ? { background: cfg.color, color: "white" } : { background: "rgba(255,255,255,0.08)", color: "#94a3b8" }}>
                         {canUp
                           ? `✨ 升星（消耗 ${upCost} 張）→ ${(card.stars||1)+1}★`
                           : `升星需 ${upCost} 張重複（現有 ${card.duplicates || 0}）`}

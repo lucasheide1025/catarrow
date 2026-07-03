@@ -90,13 +90,13 @@ export default function MemberHistory() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      <h2 className="text-gray-800 font-black text-xl">📊 成績歷史</h2>
+      <h2 className="text-gray-100 font-black text-xl">📊 成績歷史</h2>
 
       <div className="grid grid-cols-3 gap-3">
-        {[["參賽場數", results.length, "text-blue-600"],
-          ["最高分", best, "text-green-600"],
-          ["平均分", avg, "text-orange-600"]].map(([k, v, c]) => (
-          <div key={k} className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+        {[["參賽場數", results.length, "text-blue-400"],
+          ["最高分", best, "text-green-400"],
+          ["平均分", avg, "text-orange-400"]].map(([k, v, c]) => (
+          <div key={k} className="ui-card p-3 text-center">
             <div className="text-gray-400 text-xs">{k}</div>
             <div className={`font-black text-2xl ${c}`}>{v}</div>
           </div>
@@ -113,7 +113,7 @@ export default function MemberHistory() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all
-              ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+              ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
             {t.label}
           </button>
         ))}
@@ -124,7 +124,7 @@ export default function MemberHistory() {
       {/* 按年份分組 */}
       {years.map(y => (
         <div key={y} className="flex flex-col gap-2">
-          <div className="text-gray-500 text-sm font-black sticky top-0">{y} 年</div>
+          <div className="text-gray-400 text-sm font-black sticky top-0">{y} 年</div>
           {groups[y].map((item, i) =>
             item.kind === "ext"
               ? <ExtCard key={"e" + (item.data.id || i)} e={item.data} />
@@ -143,43 +143,43 @@ function ResultCard({ r }) {
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs font-bold ${tc.text || "text-gray-500"}`}>{r.compType || "比賽"}</span>
+        <span className={`text-xs font-bold ${tc.darkText || "text-gray-400"}`}>{r.compType || "比賽"}</span>
         <span className="text-gray-400 text-xs">{timeStr}</span>
       </div>
       <div className="flex items-center justify-between">
-        <div className="text-gray-700 font-bold text-sm">{r.compTitle || "—"}</div>
-        <div className="text-blue-600 font-black text-2xl">{r.total}</div>
+        <div className="text-gray-200 font-bold text-sm">{r.compTitle || "—"}</div>
+        <div className="text-blue-400 font-black text-2xl">{r.total}</div>
       </div>
 
       {/* 檢定：弓種、級別、審核狀態、租借 */}
       {r.isCert && (
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {(r.bowLabel || BOW_GROUP_LABEL[r.certBowType]) && (
-            <span className="text-gray-500 text-xs">{r.bowLabel || BOW_GROUP_LABEL[r.certBowType]}</span>
+            <span className="text-gray-400 text-xs">{r.bowLabel || BOW_GROUP_LABEL[r.certBowType]}</span>
           )}
           {r.reviewStatus === "approved" && r.certLevel && r.certLevel !== "未達標" && (
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(r.certLevel, "soft")}`}>{r.certLevel}</span>
           )}
           {r.reviewStatus === "pending" && (
-            <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">審核中</span>
+            <span className="text-xs font-bold bg-yellow-500/15 text-yellow-300 px-2 py-0.5 rounded-full">審核中</span>
           )}
           {r.reviewStatus === "rejected" && (
-            <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">已退回</span>
+            <span className="text-xs font-bold bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full">已退回</span>
           )}
-          {r.isRental && <span className="text-orange-500 text-xs">租借</span>}
+          {r.isRental && <span className="text-orange-400 text-xs">租借</span>}
         </div>
       )}
 
       {/* 一般賽：名次 */}
       {!r.isCert && r.rank && (
-        <div className="text-gray-500 text-xs mt-1">名次：第 {r.rank} 名</div>
+        <div className="text-gray-400 text-xs mt-1">名次：第 {r.rank} 名</div>
       )}
 
       {r.miss > 0 && <div className="text-red-400 text-xs mt-0.5">脫靶 {r.miss} 支</div>}
       {Array.isArray(r.rounds) && r.rounds.length > 0 && (
         <div className="flex gap-1 flex-wrap mt-2">
           {r.rounds.map((round, j) => (
-            <span key={j} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+            <span key={j} className="text-xs bg-white/10 text-gray-300 px-2 py-0.5 rounded font-medium">
               回{j + 1}:{Array.isArray(round) ? round.filter(s => s !== "M").reduce((a, b) => a + b, 0) : 0}
             </span>
           ))}
@@ -222,14 +222,14 @@ function CompGrowthSection({ results }) {
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-800 font-black text-sm">📈 成長曲線</span>
+        <span className="text-gray-100 font-black text-sm">📈 成長曲線</span>
         <TrendBadge values={values} n={5} />
       </div>
       <div className="flex gap-1.5 flex-wrap mb-3">
         {BOW_FILTERS.map(b => (
           <button key={b.id} onClick={() => setBowFilter(b.id)}
             className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all
-              ${bowFilter === b.id ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+              ${bowFilter === b.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-400 border-white/15"}`}>
             {b.label}
           </button>
         ))}
@@ -250,14 +250,14 @@ function ExtCard({ e }) {
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold text-pink-600">場外賽</span>
+        <span className="text-xs font-bold text-pink-400">場外賽</span>
         <span className="text-gray-400 text-xs">{e.date || ""}</span>
       </div>
-      <div className="text-gray-700 font-bold text-sm">{e.compName || "—"}</div>
+      <div className="text-gray-200 font-bold text-sm">{e.compName || "—"}</div>
       <div className="flex items-center gap-2 mt-1 flex-wrap">
-        {e.category && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{e.category}</span>}
-        {e.rank && <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{e.rank}</span>}
-        {e.hasAward && <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">🏆 {e.awardKept ? "獎項留箭場" : "有獎項"}</span>}
+        {e.category && <span className="text-xs bg-white/10 text-gray-300 px-2 py-0.5 rounded-full">{e.category}</span>}
+        {e.rank && <span className="text-xs bg-blue-500/15 text-blue-300 font-bold px-2 py-0.5 rounded-full">{e.rank}</span>}
+        {e.hasAward && <span className="text-xs bg-yellow-500/15 text-yellow-300 font-bold px-2 py-0.5 rounded-full">🏆 {e.awardKept ? "獎項留箭場" : "有獎項"}</span>}
         {e.location && <span className="text-gray-400 text-xs">📍 {e.location}</span>}
       </div>
       {e.note && <div className="text-gray-400 text-xs italic mt-1">「{e.note}」</div>}

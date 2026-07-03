@@ -37,9 +37,9 @@ export default function MemberAchievements() {
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <div className="text-amber-700 text-xs font-bold mb-1">📋 任務說明</div>
-        <div className="text-amber-600 text-xs leading-relaxed">
+      <div className="bg-amber-500/10 border border-amber-400/30 rounded-xl p-3">
+        <div className="text-amber-300 text-xs font-bold mb-1">📋 任務說明</div>
+        <div className="text-amber-200/80 text-xs leading-relaxed">
           完成任務條件後，點「申請領章」送出申請，等教練審核通過後系統會自動發放成就章。若未通過，可修正後重新申請。
         </div>
       </div>
@@ -50,12 +50,12 @@ export default function MemberAchievements() {
         <Card key={task.id} className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <div className="text-gray-800 font-bold text-sm">{task.title}</div>
+              <div className="text-gray-100 font-bold text-sm">{task.title}</div>
               {task.expiresAt && <div className="text-red-400 text-xs mt-0.5">截止日期：{task.expiresAt}</div>}
             </div>
             {task.expiresAt && new Date(task.expiresAt) < new Date()
-              ? <span className="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">已截止</span>
-              : <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">進行中</span>
+              ? <span className="text-xs bg-red-500/15 text-red-400 font-bold px-2 py-0.5 rounded-full">已截止</span>
+              : <span className="text-xs bg-green-500/15 text-green-300 font-bold px-2 py-0.5 rounded-full">進行中</span>
             }
           </div>
 
@@ -63,8 +63,8 @@ export default function MemberAchievements() {
             {[["silver","🥈 銀章","silverTask"],["gold","🥇 金章","goldTask"],["black","⬛ 黑章","blackTask"]].map(([color,label,key])=>{
               if (!task[key]) return null;
               const myApp = getMyApp(task.id, color);
-              const bgMap = { silver:"bg-gray-50 border-gray-200", gold:"bg-yellow-50 border-yellow-200", black:"bg-gray-800" };
-              const textMap = { silver:"text-gray-700", gold:"text-gray-700", black:"text-gray-200" };
+              const bgMap = { silver:"bg-white/5 border-white/15", gold:"bg-yellow-500/10 border-yellow-400/30", black:"bg-black/40 border-white/20" };
+              const textMap = { silver:"text-gray-200", gold:"text-gray-200", black:"text-gray-200" };
               const subTextMap = { silver:"text-gray-400", gold:"text-gray-400", black:"text-gray-400" };
               const rejected = myApp?.status === "rejected";
               return (
@@ -85,18 +85,18 @@ export default function MemberAchievements() {
                     </Btn>
                   )}
                   {myApp?.status === "pending" && (
-                    <div className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-yellow-100 text-yellow-700">
+                    <div className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-yellow-500/15 text-yellow-300">
                       ⏳ 申請審核中
                     </div>
                   )}
                   {myApp?.status === "approved" && (
-                    <div className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-green-100 text-green-700">
+                    <div className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-green-500/15 text-green-300">
                       ✅ 已通過
                     </div>
                   )}
                   {rejected && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-red-100 text-red-600">
+                      <span className="text-xs font-bold px-2 py-1 rounded-lg inline-block bg-red-500/15 text-red-400">
                         ❌ 未通過
                       </span>
                       <Btn v="secondary" size="sm" onClick={() => setApplyModal({ task, color, label })}>
@@ -118,21 +118,21 @@ export default function MemberAchievements() {
             const task = tasks.find(t => t.id === a.taskId);
             return (
               <div key={a.id} className={`rounded-xl p-3 border mb-2
-                ${a.status==="pending"?"bg-yellow-50 border-yellow-200":
-                  a.status==="approved"?"bg-green-50 border-green-200":
-                  "bg-gray-50 border-gray-200"}`}>
+                ${a.status==="pending"?"bg-yellow-500/10 border-yellow-400/30":
+                  a.status==="approved"?"bg-green-500/10 border-green-400/30":
+                  "bg-white/5 border-white/15"}`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-gray-700 text-sm font-medium">{task?.title || a.taskTitle || "任務"}</div>
+                    <div className="text-gray-200 text-sm font-medium">{task?.title || a.taskTitle || "任務"}</div>
                     <div className="text-gray-400 text-xs">
                       {a.targetColor==="silver"?"🥈 銀章":a.targetColor==="gold"?"🥇 金章":"⬛ 黑章"}
                       　{fmtDT(a.submittedAt)}
                     </div>
                   </div>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full
-                    ${a.status==="pending"?"bg-yellow-100 text-yellow-700":
-                      a.status==="approved"?"bg-green-100 text-green-700":
-                      "bg-gray-100 text-gray-500"}`}>
+                    ${a.status==="pending"?"bg-yellow-500/15 text-yellow-300":
+                      a.status==="approved"?"bg-green-500/15 text-green-300":
+                      "bg-white/10 text-gray-400"}`}>
                     {a.status==="pending"?"審核中":a.status==="approved"?"已通過":"未通過"}
                   </span>
                 </div>
@@ -180,7 +180,7 @@ function ApplyModal({ task, color, label, profile, onClose, onDone }) {
   return (
     <Modal open onClose={onClose} title={`申請 ${label} — ${task.title}`}>
       <div className="flex flex-col gap-4">
-        <div className="bg-gray-50 rounded-xl p-3 text-gray-600 text-sm">
+        <div className="bg-white/5 rounded-xl p-3 text-gray-300 text-sm">
           {task[`${color}Task`]}
           {task[`${color}TaskArrows`] && (
             <div className="text-gray-400 text-xs mt-1">

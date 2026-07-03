@@ -3,7 +3,7 @@ export default function MemberGuide({ onBack }) {
   return (
     <div className="p-4 flex flex-col gap-4 pb-8">
       {onBack && (
-        <button onClick={onBack} className="text-gray-500 text-sm self-start">← 返回</button>
+        <button onClick={onBack} className="text-gray-400 text-sm self-start py-1">← 返回</button>
       )}
 
       {/* 標題 */}
@@ -67,9 +67,9 @@ export default function MemberGuide({ onBack }) {
             ["📖","怪物圖鑑","擊殺記錄"],
             ["🏅","對外比賽","申報外部成績"],
           ].map(([ic, lb, dc]) => (
-            <div key={lb} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+            <div key={lb} className="bg-white/5 rounded-xl p-3 border border-white/10">
               <div className="text-xl mb-1">{ic}</div>
-              <div className="text-gray-700 font-bold text-xs">{lb}</div>
+              <div className="text-gray-200 font-bold text-xs">{lb}</div>
               <div className="text-gray-400 text-xs mt-0.5">{dc}</div>
             </div>
           ))}
@@ -78,7 +78,7 @@ export default function MemberGuide({ onBack }) {
 
       {/* 射手證 */}
       <Section icon="🎯" title="年度檢定 ＆ 射手證">
-        <p className="text-gray-600 text-sm leading-relaxed">
+        <p className="text-gray-300 text-sm leading-relaxed">
           完成年度檢定並通過教練審核後，可取得射手證。<br />
           藍證為初階，金證為最高階。射手證記錄你的弓組與成績。
         </p>
@@ -93,8 +93,8 @@ export default function MemberGuide({ onBack }) {
           "教練發放徽章獎勵",
           "完成打怪任務",
         ].map(t => (
-          <div key={t} className="flex items-start gap-2 text-sm text-gray-600 py-1">
-            <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+          <div key={t} className="flex items-start gap-2 text-sm text-gray-300 py-1">
+            <span className="text-green-400 mt-0.5 flex-shrink-0">✓</span>
             <span>{t}</span>
           </div>
         ))}
@@ -113,18 +113,18 @@ export default function MemberGuide({ onBack }) {
 
 function Section({ icon, title, children }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-col gap-2">
-      <div className="text-gray-800 font-black text-sm mb-1">{icon} {title}</div>
+    <div className="ui-card p-4 flex flex-col gap-2">
+      <div className="text-gray-100 font-black text-sm mb-1">{icon} {title}</div>
       {children}
     </div>
   );
 }
 function Row({ icon, label, desc }) {
   return (
-    <div className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+    <div className="flex items-center gap-3 py-1.5 border-b border-white/10 last:border-0">
       <span className="text-lg w-7 text-center">{icon}</span>
       <div>
-        <div className="text-gray-700 font-bold text-xs">{label}</div>
+        <div className="text-gray-200 font-bold text-xs">{label}</div>
         <div className="text-gray-400 text-xs">{desc}</div>
       </div>
     </div>
@@ -134,22 +134,22 @@ function Step({ n, text }) {
   return (
     <div className="flex items-start gap-2.5 py-1">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center mt-0.5">{n}</span>
-      <span className="text-gray-600 text-sm">{text}</span>
+      <span className="text-gray-300 text-sm">{text}</span>
     </div>
   );
 }
 function Note({ text }) {
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mt-1">
-      <span className="text-amber-700 text-xs">💡 {text}</span>
+    <div className="bg-amber-500/10 border border-amber-400/30 rounded-xl p-2.5 mt-1">
+      <span className="text-amber-300 text-xs">💡 {text}</span>
     </div>
   );
 }
 function QA({ q, a }) {
   return (
-    <div className="py-2 border-b border-gray-50 last:border-0">
-      <div className="text-gray-700 font-bold text-xs mb-1">Q：{q}</div>
-      <div className="text-gray-500 text-xs leading-relaxed">A：{a}</div>
+    <div className="py-2 border-b border-white/10 last:border-0">
+      <div className="text-gray-200 font-bold text-xs mb-1">Q：{q}</div>
+      <div className="text-gray-400 text-xs leading-relaxed">A：{a}</div>
     </div>
   );
 }

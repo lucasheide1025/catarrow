@@ -36,11 +36,12 @@ export default function MemberBowSettings({ onBack }) {
   }
 
   return (
-    <div className="min-h-full bg-white">
+    <div className="min-h-full" style={{ background:"var(--bg-deep)" }}>
       {/* 頁首 */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={onBack} className="text-gray-400 text-xl leading-none">←</button>
-        <div className="font-black text-gray-800 text-base flex-1">🏹 我的弓具設定</div>
+      <div className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 flex items-center gap-3"
+        style={{ background:"var(--bg-surface)" }}>
+        <button onClick={onBack} className="text-gray-400 text-xl leading-none px-1">←</button>
+        <div className="font-black text-gray-100 text-base flex-1">🏹 我的弓具設定</div>
         <button onClick={save} disabled={saving}
           className={`px-4 py-1.5 rounded-full text-sm font-black transition-all ${
             saved
@@ -52,12 +53,12 @@ export default function MemberBowSettings({ onBack }) {
       </div>
 
       {/* 分頁切換 */}
-      <div className="flex border-b border-gray-100 px-4 gap-1 bg-gray-50">
+      <div className="flex border-b border-white/10 px-4 gap-1 bg-white/5">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`py-2.5 px-3 text-sm font-bold border-b-2 transition-colors ${
               tab === t.id
-                ? "border-indigo-600 text-indigo-700"
+                ? "border-indigo-400 text-indigo-300"
                 : "border-transparent text-gray-400"
             }`}>
             {t.label}

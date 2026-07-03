@@ -23,10 +23,20 @@ const RANKS = [
   "前8名", "前16名", "參賽",
 ].map(v => ({ value: v, label: v }));
 
+// 深色原生：語意 token 淡色底 + 同色系文字（style 疊在玻璃卡上，不再依賴覆寫層）
 const STATUS_STYLE = {
-  pending_review: { bg: "bg-yellow-50 border-yellow-200", text: "text-yellow-700", label: "⏳ 審核中" },
-  approved:       { bg: "bg-green-50 border-green-200",  text: "text-green-700",  label: "✅ 已通過" },
-  rejected:       { bg: "bg-red-50 border-red-200",      text: "text-red-700",    label: "❌ 未通過" },
+  pending_review: {
+    style: { background: "linear-gradient(0deg, var(--warn-bg), var(--warn-bg)), var(--glass-bg)", borderColor: "rgba(251,191,36,0.3)" },
+    text: "text-yellow-300", label: "⏳ 審核中",
+  },
+  approved: {
+    style: { background: "linear-gradient(0deg, var(--success-bg), var(--success-bg)), var(--glass-bg)", borderColor: "rgba(74,222,128,0.3)" },
+    text: "text-green-300", label: "✅ 已通過",
+  },
+  rejected: {
+    style: { background: "linear-gradient(0deg, var(--danger-bg), var(--danger-bg)), var(--glass-bg)", borderColor: "rgba(248,113,113,0.3)" },
+    text: "text-red-300", label: "❌ 未通過",
+  },
 };
 
 export default function MemberExternalComp() {
@@ -70,20 +80,20 @@ export default function MemberExternalComp() {
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
       <div className="flex justify-between items-center">
-        <h2 className="text-gray-800 font-black text-xl">🏅 對外比賽</h2>
+        <h2 className="text-gray-100 font-black text-xl">🏅 對外比賽</h2>
         {!adding && <Btn v="primary" size="sm" onClick={() => setAdding(true)}>+ 新增申報</Btn>}
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-        <div className="text-blue-700 text-xs font-bold mb-1">📋 說明</div>
-        <div className="text-blue-600 text-xs leading-relaxed">
+      <div className="rounded-xl p-3" style={{ background: "var(--info-bg)", border: "1px solid rgba(96,165,250,0.25)" }}>
+        <div className="text-blue-300 text-xs font-bold mb-1">📋 說明</div>
+        <div className="text-blue-200 text-xs leading-relaxed">
           參加對外比賽後，填寫申報表送給教練審核。通過後系統會自動依名次發放對應徽章。
         </div>
       </div>
 
       {/* 申報表單 */}
       {adding && (
-        <Card className="p-4 flex flex-col gap-3 border-blue-200">
+        <Card className="p-4 flex flex-col gap-3">
           <ST>對外比賽申報</ST>
           <Inp label="比賽名稱" value={form.compName}
             onChange={e => setForm(p=>({...p, compName:e.target.value}))}
@@ -103,16 +113,16 @@ export default function MemberExternalComp() {
             options={RANKS} />
 
           {/* 獎狀獎牌 */}
-          <div className="bg-gray-50 rounded-xl p-3 flex flex-col gap-2">
-            <div className="text-xs font-bold text-gray-500">獎狀/獎牌</div>
-            <label className="flex items-center gap-2 text-gray-700 text-sm cursor-pointer">
+          <div className="bg-white/5 rounded-xl p-3 flex flex-col gap-2">
+            <div className="text-xs font-bold text-gray-400">獎狀/獎牌</div>
+            <label className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer">
               <input type="checkbox" checked={form.hasAward}
                 onChange={e => setForm(p=>({...p, hasAward:e.target.checked}))}
                 className="accent-blue-600" />
               有獲得獎狀/獎牌
             </label>
             {form.hasAward && (
-              <label className="flex items-center gap-2 text-gray-700 text-sm cursor-pointer ml-5">
+              <label className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer ml-5">
                 <input type="checkbox" checked={form.awardKept}
                   onChange={e => setForm(p=>({...p, awardKept:e.target.checked}))}
                   className="accent-blue-600" />
@@ -140,10 +150,10 @@ export default function MemberExternalComp() {
       {records.map(r => {
         const st = STATUS_STYLE[r.status] || STATUS_STYLE.pending_review;
         return (
-          <Card key={r.id} className={`p-4 border ${st.bg}`}>
+          <Card key={r.id} className="p-4" style={st.style}>
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1">
-                <div className="text-gray-800 font-bold text-sm">{r.compName}</div>
+                <div className="text-gray-100 font-bold text-sm">{r.compName}</div>
                 <div className="text-gray-400 text-xs mt-0.5">
                   📅 {r.date}
                   {r.location && `　📍 ${r.location}`}
@@ -155,29 +165,29 @@ export default function MemberExternalComp() {
             </div>
 
             <div className="flex gap-2 flex-wrap mb-2">
-              <span className="text-xs bg-white border border-gray-200 text-gray-600 font-medium px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-white/10 border border-white/15 text-gray-300 font-medium px-2 py-0.5 rounded-full">
                 {r.category}
               </span>
-              <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-blue-500/15 text-blue-300 font-bold px-2 py-0.5 rounded-full">
                 {r.rank}
               </span>
               {r.hasAward && (
-                <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-yellow-500/15 text-yellow-300 font-bold px-2 py-0.5 rounded-full">
                   🏆 {r.awardKept ? "獎項留箭場" : "有獎項"}
                 </span>
               )}
             </div>
 
             {r.note && (
-              <div className="text-gray-500 text-xs bg-white/60 rounded-lg px-3 py-2 mb-2 italic">
+              <div className="text-gray-400 text-xs bg-white/5 rounded-lg px-3 py-2 mb-2 italic">
                 「{r.note}」
               </div>
             )}
 
             {/* 教練審核結果 */}
             {r.status === "approved" && r.badgeType && (
-              <div className="bg-green-100 border border-green-200 rounded-lg px-3 py-2">
-                <div className="text-green-700 text-xs font-bold">
+              <div className="bg-green-500/15 border border-green-400/30 rounded-lg px-3 py-2">
+                <div className="text-green-300 text-xs font-bold">
                   🎖️ 已發放：
                   {r.badgeType==="fatCat"?"肥貓章":r.badgeType==="score"?"積分章":"成就章"}
                   　{r.badgeColor==="gold"?"金":r.badgeColor==="silver"?"銀":r.badgeColor==="black"?"黑":"銅"}章
@@ -186,12 +196,12 @@ export default function MemberExternalComp() {
               </div>
             )}
             {r.status === "rejected" && (
-              <div className="bg-red-100 border border-red-200 rounded-lg px-3 py-2">
-                <div className="text-red-600 text-xs">未通過審核，請聯繫教練了解原因</div>
+              <div className="bg-red-500/15 border border-red-400/30 rounded-lg px-3 py-2">
+                <div className="text-red-400 text-xs">未通過審核，請聯繫教練了解原因</div>
               </div>
             )}
 
-            <div className="text-gray-300 text-xs mt-2">{fmtDT(r.submittedAt)}</div>
+            <div className="text-gray-500 text-xs mt-2">{fmtDT(r.submittedAt)}</div>
           </Card>
         );
       })}

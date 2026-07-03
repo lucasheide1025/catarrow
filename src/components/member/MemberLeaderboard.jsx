@@ -111,9 +111,9 @@ export default function MemberLeaderboard() {
       const d = member.fatCat || {};
       return (
         <div className="flex gap-1 text-xs">
-          <span className="bg-yellow-100 text-yellow-700 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-gray-100 text-gray-600 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
-          <span className="bg-orange-100 text-orange-600 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
+          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
+          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
+          <span className="bg-orange-500/15 text-orange-300 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
         </div>
       );
     }
@@ -121,9 +121,9 @@ export default function MemberLeaderboard() {
       const d = member.score || {};
       return (
         <div className="flex gap-1 text-xs">
-          <span className="bg-yellow-100 text-yellow-700 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-gray-100 text-gray-600 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
-          <span className="bg-orange-100 text-orange-600 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
+          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
+          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
+          <span className="bg-orange-500/15 text-orange-300 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
         </div>
       );
     }
@@ -131,9 +131,9 @@ export default function MemberLeaderboard() {
       const d = member.achievement || {};
       return (
         <div className="flex gap-1 text-xs">
-          <span className="bg-gray-800 text-white font-bold px-1.5 py-0.5 rounded">黑{d.black||0}</span>
-          <span className="bg-yellow-100 text-yellow-700 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-gray-100 text-gray-600 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
+          <span className="bg-black/40 text-gray-100 font-bold px-1.5 py-0.5 rounded border border-white/20">黑{d.black||0}</span>
+          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
+          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
         </div>
       );
     }
@@ -225,7 +225,7 @@ export default function MemberLeaderboard() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      <h2 className="text-gray-800 font-black text-xl">📊 排行榜</h2>
+      <h2 className="text-gray-100 font-black text-xl">📊 排行榜</h2>
 
       {/* Tab 切換（按分組排列）*/}
       {["活動","徽章","檢定","魔物獵人","公會"].map(group => (
@@ -235,7 +235,7 @@ export default function MemberLeaderboard() {
             {TABS.filter(t => t.group === group).map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`py-2 rounded-xl text-xs font-bold border transition-all
-                  ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+                  ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
                 {t.label}
               </button>
             ))}
@@ -263,26 +263,26 @@ export default function MemberLeaderboard() {
                 const isMe = m.id === profile?.id;
                 return (
                   <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                     <div className="w-8 text-center flex-shrink-0">
                       {["🥇","🥈","🥉"][i]
                         ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
                         : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                       </div>
                       <div className="flex gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-500">{m.wins}勝 {m.losses}負{m.draws > 0 ? ` ${m.draws}平` : ""}</span>
                         <span className="text-xs text-gray-400">勝率 {m.rate}%</span>
                         {m.flawless > 0 && (
-                          <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-1.5 py-0.5 rounded">全勝 ×{m.flawless}</span>
+                          <span className="text-xs bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">全勝 ×{m.flawless}</span>
                         )}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.wins}</div>
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.wins}</div>
                       <div className="text-gray-400 text-xs">勝場</div>
                     </div>
                   </div>
@@ -301,20 +301,20 @@ export default function MemberLeaderboard() {
                 const isMe = m.id === profile?.id;
                 return (
                   <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                     <div className="w-8 text-center flex-shrink-0">
                       {["🥇","🥈","🥉"][i]
                         ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
                         : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                       </div>
                       <div className="text-xs text-gray-400 mt-0.5">累積報到 {m.cnt} 天</div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.cnt}</div>
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.cnt}</div>
                       <div className="text-gray-400 text-xs">次</div>
                     </div>
                   </div>
@@ -341,17 +341,17 @@ export default function MemberLeaderboard() {
                         const level = getCertLevel("recurve_bare", m.total);
                         return (
                           <div key={m.memberId}
-                            className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                            className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                             <div className="w-8 text-center flex-shrink-0">
                               {["🥇","🥈","🥉"][i]
                                 ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
                                 : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                              <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
                                 {m.nickname || m.name}
                                 {tag && <span className="ml-1 text-xs text-gray-400">{tag}</span>}
-                                {isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                                {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                               </div>
                               {level && (
                                 <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(level, "soft")}`}>
@@ -360,7 +360,7 @@ export default function MemberLeaderboard() {
                               )}
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.total}</div>
+                              <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
                               <div className="text-gray-400 text-xs">分</div>
                             </div>
                           </div>
@@ -384,16 +384,16 @@ export default function MemberLeaderboard() {
                 const level = getCertLevel(certBow, m.total);
                 return (
                   <div key={m.memberId}
-                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                     <div className="w-8 text-center flex-shrink-0">
                       {["🥇","🥈","🥉"][i]
                         ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
                         : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
                         {m.nickname || m.name}
-                        {isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                        {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                       </div>
                       {level && (
                         <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(level, "soft")}`}>
@@ -402,7 +402,7 @@ export default function MemberLeaderboard() {
                       )}
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.total}</div>
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
                       <div className="text-gray-400 text-xs">分</div>
                     </div>
                   </div>
@@ -419,16 +419,16 @@ export default function MemberLeaderboard() {
             const medal = ["🥇","🥈","🥉"][i];
             return (
               <div key={m.id}
-                className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                 <div className="w-8 text-center flex-shrink-0">
                   {medal
                     ? <span className="text-2xl">{medal}</span>
                     : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                  <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
                     {m.nickname || m.name}
-                    {isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                    {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                   </div>
                   {tab !== "event" && <BadgeSummary member={m} type={tab} />}
                   {tab === "event" && (
@@ -436,7 +436,7 @@ export default function MemberLeaderboard() {
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.pts}</div>
+                  <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.pts}</div>
                   <div className="text-gray-400 text-xs">{tab === "event" ? "積分" : "徽章分"}</div>
                 </div>
               </div>
@@ -454,7 +454,7 @@ export default function MemberLeaderboard() {
                 const isMe = m.id === profile?.id;
                 return (
                   <div key={m.id}
-                    className={`flex flex-col gap-1.5 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    className={`flex flex-col gap-1.5 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-8 text-center flex-shrink-0">
                         {["🥇","🥈","🥉"][i]
@@ -462,12 +462,12 @@ export default function MemberLeaderboard() {
                           : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
-                          {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                        <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
+                          {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.total}</div>
+                        <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
                         <div className="text-gray-400 text-xs">總擊殺</div>
                       </div>
                     </div>
@@ -499,20 +499,20 @@ export default function MemberLeaderboard() {
                 const isMe = m.id === profile?.id;
                 return (
                   <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                     <div className="w-8 text-center flex-shrink-0">
                       {["🥇","🥈","🥉"][i]
                         ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
                         : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-500">（我）</span>}
+                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
+                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
                       </div>
                       <div className="text-xs text-gray-400 mt-0.5">頭目級以上</div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-600" : "text-gray-800"}`}>{m.bossKills}</div>
+                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.bossKills}</div>
                       <div className="text-gray-400 text-xs">擊殺</div>
                     </div>
                   </div>
@@ -545,12 +545,12 @@ export default function MemberLeaderboard() {
               <div className="text-xs text-gray-400 font-black mb-2">按階級篩選</div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => setRankFilter(null)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === null ? "bg-slate-700 text-white border-slate-700" : "bg-white text-gray-500 border-gray-200"}`}>
+                  className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === null ? "bg-slate-700 text-white border-slate-700" : "bg-white/10 text-gray-400 border-white/15"}`}>
                   全部
                 </button>
                 {RANKS.map((r, idx) => (
                   <button key={idx} onClick={() => setRankFilter(idx === rankFilter ? null : idx)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === idx ? "text-white border-transparent" : "bg-white text-gray-500 border-gray-200"}`}
+                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === idx ? "text-white border-transparent" : "bg-white/10 text-gray-400 border-white/15"}`}
                     style={rankFilter === idx ? { background: r.color, borderColor: r.color } : {}}>
                     {r.icon} {r.name}
                   </button>
@@ -565,7 +565,7 @@ export default function MemberLeaderboard() {
                     const medal = rankFilter === null ? ["🥇","🥈","🥉"][i] : null;
                     return (
                       <div key={m.id}
-                        className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${isMe ? "bg-blue-50 -mx-4 px-4 rounded-xl" : ""}`}>
+                        className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {medal
                             ? <span className="text-2xl">{medal}</span>
@@ -574,24 +574,24 @@ export default function MemberLeaderboard() {
                         <div className="text-xl flex-shrink-0">{m.rank.icon}</div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className={`font-bold text-sm ${isMe ? "text-blue-700" : "text-gray-800"}`}>
+                            <span className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
                               {m.nickname || m.name}
                             </span>
-                            {isMe && <span className="text-xs text-blue-500">（我）</span>}
+                            {isMe && <span className="text-xs text-blue-400">（我）</span>}
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
                               style={{ background: m.rank.color + "22", color: m.rank.color }}>
                               Lv.{m.level} {m.rank.name}
                             </span>
                           </div>
                           {m.level < 60 && (
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                               <div className="h-full rounded-full transition-all"
                                 style={{ width: `${m.prog.pct}%`, background: m.rank.color }} />
                             </div>
                           )}
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className={`font-black text-lg ${isMe ? "text-blue-600" : "text-gray-800"}`}>
+                          <div className={`font-black text-lg ${isMe ? "text-blue-400" : "text-gray-100"}`}>
                             {m.xp.toLocaleString()}
                           </div>
                           <div className="text-gray-400 text-xs">XP</div>
@@ -617,13 +617,13 @@ export default function MemberLeaderboard() {
             if (sorted.length === 0) return null;
             return (
               <Card key={c.id} className="p-4 mb-3">
-                <div className={`text-xs font-bold mb-1 ${tc.text}`}>{c.type}</div>
-                <div className="text-gray-800 font-bold text-sm mb-3">{c.title}</div>
+                <div className={`text-xs font-bold mb-1 ${tc.darkText || "text-gray-400"}`}>{c.type}</div>
+                <div className="text-gray-100 font-bold text-sm mb-3">{c.title}</div>
                 {sorted.map((r, i) => {
                   const isMe = r.memberId === profile?.id;
                   return (
                     <div key={r.memberId}
-                      className={`flex items-center gap-2 py-1.5 border-b border-gray-100 last:border-0 ${isMe ? "text-blue-600" : "text-gray-700"}`}>
+                      className={`flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0 ${isMe ? "text-blue-400" : "text-gray-200"}`}>
                       <span className="w-6 text-center text-sm">{["🥇","🥈","🥉"][i] || i+1}</span>
                       <span className="flex-1 text-sm font-medium">
                         {r.nickname || r.name}{isMe && " (我)"}
@@ -644,11 +644,12 @@ export default function MemberLeaderboard() {
   );
 }
 
+// 深色原生：語意淡色底 + 同色系亮字（不再依賴覆寫層）
 const COLOR_MAP = {
-  blue:    "bg-blue-50 border-blue-100 text-blue-600",
-  indigo:  "bg-indigo-50 border-indigo-100 text-indigo-600",
-  teal:    "bg-teal-50 border-teal-100 text-teal-600",
-  emerald: "bg-emerald-50 border-emerald-100 text-emerald-600",
+  blue:    "bg-blue-500/10 border-blue-400/20 text-blue-300",
+  indigo:  "bg-indigo-500/10 border-indigo-400/20 text-indigo-300",
+  teal:    "bg-teal-500/10 border-teal-400/20 text-teal-300",
+  emerald: "bg-emerald-500/10 border-emerald-400/20 text-emerald-300",
 };
 function InfoBar({ color = "blue", children }) {
   return (

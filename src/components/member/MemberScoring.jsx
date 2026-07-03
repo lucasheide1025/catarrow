@@ -158,25 +158,25 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
   if(phase==="confirm"){
     return (
       <div className="p-4 flex flex-col gap-4">
-        <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>
+        <button onClick={onBack} className="text-gray-400 text-sm text-left py-1">← 返回</button>
         <Card className="p-5">
-          <div className="text-gray-500 text-xs mb-1">年度檢定</div>
-          <div className="text-gray-800 font-black text-lg mb-3">{comp.title}</div>
+          <div className="text-gray-400 text-xs mb-1">年度檢定</div>
+          <div className="text-gray-100 font-black text-lg mb-3">{comp.title}</div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-400 text-xs">射程</div><div className="text-gray-700 font-bold text-sm">{comp.distance||"—"} 米</div></div>
-            <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-400 text-xs">規格</div><div className="text-gray-700 font-bold text-sm">{arrowCount}箭×{roundCount}回</div></div>
+            <div className="bg-white/5 rounded-xl p-3"><div className="text-gray-400 text-xs">射程</div><div className="text-gray-200 font-bold text-sm">{comp.distance||"—"} 米</div></div>
+            <div className="bg-white/5 rounded-xl p-3"><div className="text-gray-400 text-xs">規格</div><div className="text-gray-200 font-bold text-sm">{arrowCount}箭×{roundCount}回</div></div>
           </div>
         </Card>
 
         {lastResult && (
           <Card className="p-4">
-            <div className="text-gray-500 text-xs font-bold mb-2">上一次成績</div>
+            <div className="text-gray-400 text-xs font-bold mb-2">上一次成績</div>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-gray-700 text-sm">{lastResult.bowLabel||"—"}</div>
-                {lastResult.certLevel && <div className="text-amber-600 text-xs font-bold">{lastResult.certLevel}</div>}
+                <div className="text-gray-200 text-sm">{lastResult.bowLabel||"—"}</div>
+                {lastResult.certLevel && <div className="text-amber-400 text-xs font-bold">{lastResult.certLevel}</div>}
               </div>
-              <div className="text-blue-600 font-black text-2xl">{lastResult.total}</div>
+              <div className="text-blue-400 font-black text-2xl">{lastResult.total}</div>
             </div>
           </Card>
         )}
@@ -193,17 +193,17 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
   if(phase==="selectBow"){
     return (
       <div className="p-4 flex flex-col gap-4">
-        <button onClick={()=>setPhase("confirm")} className="text-gray-500 text-sm">← 返回</button>
+        <button onClick={()=>setPhase("confirm")} className="text-gray-400 text-sm text-left py-1">← 返回</button>
         <Card className="p-4">
-          <div className="text-gray-800 font-black text-base">選擇本次檢定裝備</div>
+          <div className="text-gray-100 font-black text-base">選擇本次檢定裝備</div>
           <div className="text-gray-400 text-xs mt-1">系統會依弓種對應標準判定級別。</div>
         </Card>
 
         {/* 自備器材：帶入自建清單 */}
         <div>
-          <div className="text-gray-500 text-xs font-bold mb-2">自備器材</div>
+          <div className="text-gray-400 text-xs font-bold mb-2">自備器材</div>
           {myEquip.length === 0 ? (
-            <div className="text-gray-400 text-xs bg-gray-50 rounded-xl p-3 mb-2">尚未建立裝備,可用下方「新建裝備」或選擇租借。</div>
+            <div className="text-gray-400 text-xs bg-white/5 rounded-xl p-3 mb-2">尚未建立裝備,可用下方「新建裝備」或選擇租借。</div>
           ) : (
             <div className="grid grid-cols-1 gap-2 mb-2">
               {myEquip.map(set => {
@@ -211,8 +211,8 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
                 return (
                   <button key={set.id}
                     onClick={()=>pickChoice({ label: `${meta.label} - ${set.label||"未命名"}`, cert: meta.cert, rental: false, equipId: set.id })}
-                    className="text-left rounded-xl border border-gray-200 bg-white p-3 hover:border-blue-400 hover:bg-blue-50 transition-all">
-                    <div className="text-gray-700 text-sm font-bold">{meta.label} - {set.label||"未命名"}</div>
+                    className="text-left rounded-xl border border-white/15 bg-white/5 p-3 hover:border-blue-400 hover:bg-blue-500/10 transition-all">
+                    <div className="text-gray-200 text-sm font-bold">{meta.label} - {set.label||"未命名"}</div>
                   </button>
                 );
               })}
@@ -221,18 +221,18 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
 
           {/* 新建裝備 */}
           {newBow ? (
-            <div className="border-2 border-dashed border-blue-200 rounded-xl p-3 flex flex-col gap-2">
+            <div className="border-2 border-dashed border-blue-400/30 rounded-xl p-3 flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2">
                 {BOW_CATEGORIES.map(c=>(
                   <button key={c.value} onClick={()=>setNewBow(p=>({...p,bowCategory:c.value}))}
-                    className={`text-xs rounded-lg border p-2 ${newBow.bowCategory===c.value?"bg-blue-600 text-white border-blue-600":"bg-white border-gray-200 text-gray-600"}`}>
+                    className={`text-xs rounded-lg border p-2 ${newBow.bowCategory===c.value?"bg-blue-600 text-white border-blue-600":"bg-white/5 border-white/15 text-gray-300"}`}>
                     {c.icon} {c.label}
                   </button>
                 ))}
               </div>
               <input value={newBow.label} onChange={e=>setNewBow(p=>({...p,label:e.target.value}))}
                 placeholder="裝備名稱（例如：大啊耿）"
-                className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+                className="ui-input px-3 py-2 text-sm"/>
               <div className="flex gap-2">
                 <button onClick={()=>setNewBow(null)} className="flex-1 text-gray-400 text-xs py-2">取消</button>
                 <button onClick={createAndPick} disabled={!newBow.bowCategory||!newBow.label}
@@ -241,7 +241,7 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
             </div>
           ) : (
             <button onClick={()=>setNewBow({bowCategory:"recurve_bare",label:""})}
-              className="w-full py-2.5 border-2 border-dashed border-blue-200 rounded-xl text-blue-500 text-sm font-bold hover:bg-blue-50">
+              className="w-full py-2.5 border-2 border-dashed border-blue-400/30 rounded-xl text-blue-400 text-sm font-bold hover:bg-blue-500/10">
               + 新建裝備
             </button>
           )}
@@ -249,13 +249,13 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
 
         {/* 現場租借 */}
         <div>
-          <div className="text-gray-500 text-xs font-bold mb-2">現場租借</div>
+          <div className="text-gray-400 text-xs font-bold mb-2">現場租借</div>
           <div className="grid grid-cols-3 gap-2">
             {RENTALS.map(r=>(
               <button key={r.value} onClick={()=>pickChoice({ label: r.label, cert: r.cert, rental: true })}
-                className="rounded-xl border border-orange-200 bg-orange-50 p-3 hover:border-orange-400 transition-all">
-                <div className="text-gray-700 text-xs font-bold">{r.label}</div>
-                <div className="text-orange-500 text-xs mt-0.5">場地器材</div>
+                className="rounded-xl border border-orange-400/30 bg-orange-500/10 p-3 hover:border-orange-400 transition-all">
+                <div className="text-gray-200 text-xs font-bold">{r.label}</div>
+                <div className="text-orange-400 text-xs mt-0.5">場地器材</div>
               </button>
             ))}
           </div>
@@ -273,7 +273,7 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
           <div className="text-blue-200 text-sm mb-1">第一輪成績</div>
           <div className="font-black text-6xl">{roundOneScore}</div>
         </Card>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-700 text-xs">
+        <div className="rounded-xl p-3 text-xs" style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.3)", color:"var(--warn-fg)" }}>
           可選擇再挑戰第二輪,系統會自動取兩輪中的最高分送審核。
         </div>
         <Btn v="primary" className="w-full py-3 text-base" onClick={startSecondRound}>繼續挑戰第二輪</Btn>
@@ -298,7 +298,7 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
             沒有比之前高
           </div>
         </Card>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-700 text-xs text-center">
+        <div className="rounded-xl p-3 text-xs text-center" style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.3)", color:"var(--warn-fg)" }}>
           你目前的最佳紀錄是 <span className="font-black">{prevBest}</span> 分，本次 {finalScore} 分未超過，成績不會送審。可以再挑戰一次刷新紀錄！
         </div>
         <Btn v="primary" className="w-full py-3 text-base" onClick={onDone}>返回</Btn>
@@ -320,7 +320,7 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
           )}
         </Card>
         {isCert && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-700 text-xs">
+          <div className="rounded-xl p-3 text-xs" style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.3)", color:"var(--warn-fg)" }}>
             教練審核通過後,才會正式認可級別。審核完成前無法再次參加;若不通過則可重新挑戰。
           </div>
         )}
@@ -333,20 +333,20 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
   const rt=cur.filter(s=>s!=="M").reduce((a,b)=>a+b,0);
   return(
     <div className="p-4 flex flex-col gap-4">
-      <button onClick={isCert ? ()=>setPhase("selectBow") : onBack} className="text-gray-500 text-sm">← 返回</button>
+      <button onClick={isCert ? ()=>setPhase("selectBow") : onBack} className="text-gray-400 text-sm text-left py-1">← 返回</button>
       <Card className="p-4">
-        <div className="text-gray-500 text-xs mb-1">
+        <div className="text-gray-400 text-xs mb-1">
           {comp.title}{isCert && choice ? `　·　${choice.label}` : ""}{isCert ? `　·　第 ${whichRound} 輪` : ""}
         </div>
-        <div className="text-gray-800 font-black text-2xl">第 {round+1} 回 <span className="text-gray-400 font-medium text-base ml-2">/ {roundCount}</span></div>
-        <div className="mt-2 bg-gray-100 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{width:`${(round/roundCount)*100}%`}}/></div>
+        <div className="text-gray-100 font-black text-2xl">第 {round+1} 回 <span className="text-gray-500 font-medium text-base ml-2">/ {roundCount}</span></div>
+        <div className="mt-2 bg-white/10 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{width:`${(round/roundCount)*100}%`}}/></div>
       </Card>
-      {comp.target&&<img src={comp.target} alt="靶紙" className="w-full rounded-2xl max-h-44 object-contain bg-gray-100"/>}
-      <div className="flex gap-2">{Array.from({length:arrowCount}).map((_,i)=><div key={i} className={`flex-1 h-12 rounded-xl flex items-center justify-center font-black text-lg border-2 ${i<cur.length?"bg-blue-600 border-blue-600 text-white":"border-gray-200 text-gray-300"}`}>{i<cur.length?(cur[i]==="M"?"✗":cur[i]):"—"}</div>)}</div>
-      <div className="grid grid-cols-4 gap-2">{btns.map(s=><button key={s} onClick={()=>addArrow(s)} disabled={cur.length>=arrowCount} className={`py-3 rounded-xl font-black text-xl active:scale-90 disabled:opacity-30 border ${s==="M"?"bg-red-50 text-red-500 border-red-200":s===10?"bg-yellow-400 text-yellow-900 border-yellow-500":s>=8?"bg-red-50 text-red-600 border-red-200":s>=6?"bg-blue-50 text-blue-600 border-blue-200":"bg-gray-50 text-gray-700 border-gray-200"}`}>{s}</button>)}</div>
+      {comp.target&&<img src={comp.target} alt="靶紙" className="w-full rounded-2xl max-h-44 object-contain bg-white/10"/>}
+      <div className="flex gap-2">{Array.from({length:arrowCount}).map((_,i)=><div key={i} className={`flex-1 h-12 rounded-xl flex items-center justify-center font-black text-lg border-2 ${i<cur.length?"bg-blue-600 border-blue-600 text-white":"border-white/15 text-gray-500"}`}>{i<cur.length?(cur[i]==="M"?"✗":cur[i]):"—"}</div>)}</div>
+      <div className="grid grid-cols-4 gap-2">{btns.map(s=><button key={s} onClick={()=>addArrow(s)} disabled={cur.length>=arrowCount} className={`py-3 rounded-xl font-black text-xl active:scale-90 disabled:opacity-30 border ${s==="M"?"bg-red-500/10 text-red-400 border-red-400/30":s===10?"bg-yellow-400 text-yellow-900 border-yellow-500":s>=8?"bg-red-500/10 text-red-400 border-red-400/30":s>=6?"bg-blue-500/10 text-blue-400 border-blue-400/30":"bg-white/10 text-gray-200 border-white/15"}`}>{s}</button>)}</div>
       <Card className="p-4 flex items-center justify-between">
-        <div className="text-center"><div className="text-gray-400 text-xs">本回</div><div className="text-gray-800 font-black text-3xl">{rt}</div></div>
-        <div className="text-center"><div className="text-gray-400 text-xs">累計</div><div className="text-blue-600 font-black text-3xl">{soFar()+rt}</div></div>
+        <div className="text-center"><div className="text-gray-400 text-xs">本回</div><div className="text-gray-100 font-black text-3xl">{rt}</div></div>
+        <div className="text-center"><div className="text-gray-400 text-xs">累計</div><div className="text-blue-400 font-black text-3xl">{soFar()+rt}</div></div>
         <Btn v="primary" className="py-3 px-5 text-base" onClick={submitRoundBtn} disabled={cur.length<arrowCount||saving}>{saving?"儲存中…":round+1>=roundCount?"完成 ✓":"下一回 →"}</Btn>
       </Card>
       {cur.length>0&&<button onClick={()=>setCur(p=>p.slice(0,-1))} className="text-gray-400 text-sm text-center">← 撤銷上一支</button>}

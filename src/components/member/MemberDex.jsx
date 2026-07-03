@@ -22,7 +22,7 @@ const PIXEL_BADGE_STYLE = `
   .px-badge.rarity-epic::before     { border-color:#a855f7; }
   .px-badge.rarity-legendary::before{ border-color:#f59e0b; box-shadow:0 0 0 1px #fcd34d44; }
   .px-badge.rarity-mythic::before   { border-color:#ef4444; box-shadow:0 0 0 2px #fca5a544; animation:mythic-pulse 1.5s ease-in-out infinite; }
-  .px-badge.locked::before          { border-color:#cbd5e1; }
+  .px-badge.locked::before          { border-color:#475569; }
   @keyframes mythic-pulse { 0%,100%{box-shadow:0 0 4px #ef444488;} 50%{box-shadow:0 0 14px #ef4444cc;} }
   .px-tile {
     width:36px; height:36px; border-radius:3px;
@@ -181,7 +181,7 @@ export default function MemberDex({ onBack }) {
     <div className="p-4 flex flex-col gap-4">
       <style>{PIXEL_BADGE_STYLE}</style>
 
-      {onBack && <button onClick={onBack} className="text-gray-500 text-sm self-start">← 返回</button>}
+      {onBack && <button onClick={onBack} className="text-gray-400 text-sm self-start py-1">← 返回</button>}
 
       {/* 標題 */}
       <div className="rounded-2xl p-5 text-white" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
@@ -207,7 +207,7 @@ export default function MemberDex({ onBack }) {
       <div className="flex gap-2 overflow-x-auto pb-1">
         {DEX_CATEGORIES.map(c => (
           <button key={c.id} onClick={() => setCat(c.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
             {c.label}
           </button>
         ))}
@@ -243,8 +243,8 @@ function DexCell({ a, onTap }) {
     <button onClick={onTap}
       className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-transform active:scale-95"
       style={{
-        background: unlocked ? "#0f172a" : "#f8fafc",
-        border: `1.5px solid ${unlocked ? (RARITY_STYLE[a.rarity]?.ring || "#94a3b8") : "#e2e8f0"}`,
+        background: unlocked ? "#0f172a" : "rgba(255,255,255,0.05)",
+        border: `1.5px solid ${unlocked ? (RARITY_STYLE[a.rarity]?.ring || "#94a3b8") : "rgba(255,255,255,0.12)"}`,
       }}>
       <div className={`px-badge ${unlocked ? rarityClass(a.rarity) : "locked"}`}>
         <div className={`px-tile ${unlocked ? "unlocked" : "locked"} ${isLegendary ? "legendary-shine" : ""}`}>
@@ -278,9 +278,9 @@ function RoundGrid({ cells, catLabel, onTap }) {
   const unlockedCount = cells.filter(c => c.unlocked).length;
 
   return (
-    <div className="border border-gray-200 rounded-2xl overflow-hidden">
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 bg-gray-50">
-        <span className="text-gray-700 font-black text-sm">{catLabel}　已收集 {unlockedCount}/{cells.length} 屆</span>
+    <div className="border border-white/15 rounded-2xl overflow-hidden bg-white/5">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 bg-white/5">
+        <span className="text-gray-200 font-black text-sm">{catLabel}　已收集 {unlockedCount}/{cells.length} 屆</span>
         <span className="text-gray-400 text-xs">{open ? "▲ 收起" : "▼ 展開"}</span>
       </button>
       {open && (
@@ -359,17 +359,19 @@ function DexDetailModal({ a, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
-      <div className="bg-white rounded-3xl p-6 w-full max-w-xs text-center" onClick={e => e.stopPropagation()}>
+      <div className="rounded-3xl p-6 w-full max-w-xs text-center"
+        style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
+        onClick={e => e.stopPropagation()}>
         <div className="mx-auto mb-4 w-20 h-20 rounded-2xl flex items-center justify-center text-5xl"
           style={{
-            background: unlocked ? "#0f172a" : "#f1f5f9",
-            border: `3px solid ${unlocked ? (isRound ? rk?.ring : (rs?.ring || "#94a3b8")) : "#e2e8f0"}`,
+            background: unlocked ? "#0f172a" : "rgba(255,255,255,0.06)",
+            border: `3px solid ${unlocked ? (isRound ? rk?.ring : (rs?.ring || "#94a3b8")) : "rgba(255,255,255,0.12)"}`,
             filter: unlocked ? "none" : "grayscale(1) opacity(.4)",
           }}>
           {isHidden ? "❓" : isRound ? (unlocked ? rk.icon : "🔒") : a.icon}
         </div>
 
-        <div className="font-black text-xl text-gray-800 mb-1">
+        <div className="font-black text-xl text-gray-100 mb-1">
           {isHidden ? "??? 隱藏成就"
             : isRound ? `${a.cat==="physical" ? "實體賽" : "積分賽"} 第 ${a.round} 屆`
             : a.name}
@@ -382,19 +384,19 @@ function DexDetailModal({ a, onClose }) {
           </span>
         )}
         {isRound && unlocked && (
-          <span className="inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-2 bg-amber-100 text-amber-700">{rk.label}</span>
+          <span className="inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-2 bg-amber-500/15 text-amber-300">{rk.label}</span>
         )}
 
-        <div className="text-gray-500 text-sm mt-2">
+        <div className="text-gray-400 text-sm mt-2">
           {isHidden ? (a.riddle || "達成隱藏條件即可解鎖")
             : isRound ? (unlocked ? "恭喜參與這一屆賽事！" : "參加這一屆即可點亮")
             : a.desc}
         </div>
 
-        {unlocked && !isRound && !isHidden && <div className="text-emerald-600 text-sm font-bold mt-3">✅ 已解鎖</div>}
+        {unlocked && !isRound && !isHidden && <div className="text-emerald-400 text-sm font-bold mt-3">✅ 已解鎖</div>}
         {!unlocked && !isHidden && <div className="text-gray-400 text-sm mt-3">🔒 尚未解鎖</div>}
 
-        <button onClick={onClose} className="mt-5 w-full py-2.5 rounded-xl bg-gray-100 text-gray-600 font-bold">關閉</button>
+        <button onClick={onClose} className="mt-5 w-full py-2.5 rounded-xl bg-white/10 text-gray-300 font-bold border border-white/15">關閉</button>
       </div>
     </div>
   );
