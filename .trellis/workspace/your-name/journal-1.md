@@ -38,3 +38,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: UI 改版 Phase 3：會員端逐頁套版完工
+
+**Date**: 2026-07-03
+**Task**: UI 改版 Phase 3：會員端逐頁套版完工
+**Branch**: `main`
+
+### Summary
+
+17 個會員頁套版（訓練/排行/我的/背包四批），5 頁勘查後已深色原生零改動。品質檢查 8 項全過，發現並修復 certLevelStyle soft 深色化導致後台白卡徽章隱形問題（新增 softLight）。平行 session（地下城終戰模式）工作全程隔離未觸碰。剩餘：Phase 4 後台、Equipment.jsx 內層、戰鬥頁 token 收斂。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `997c0ec` | (see git log) |
+| `a340aa1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
