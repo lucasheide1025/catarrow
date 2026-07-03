@@ -3,13 +3,19 @@
 
 ---
 
+## 2026-07-04（我的裝備顯示與加成修正）
+
+- 修正品級說明與裝備詳情漏算每品 +5 及強化值；所有單槽與總加成統一使用同一計算函式。
+- 裝備頁改為槽位完成度、實際 ATK／DEF／HP 加成、公式說明及升級前後差值；品牌明確標示不影響數值。
+- 補齊神話 +0～+4 的金幣與 T6 材料需求，並改善手機底部視窗、空品項與提示訊息。
+
 ## 2026-07-04（官網重製：website/ 靜態 SEO 網站）
 
 ### 改了什麼
 - 新增 `website/` 資料夾（與 React App 完全獨立）：`index.html`（單頁，inline CSS/JS 零依賴）、`robots.txt`、`sitemap.xml`、`assets/`（11 張圖，自 imgbb 下載本地託管：logo + 001~009 + 015）。
 - 設計：暖米紙底 `#faf6ef` + 炭墨 `#2b2926` + 品牌橘 `#e8720c`（取自 logo 本色），Noto Serif TC 大標編輯風，與 SimplyBook 舊站深藍金完全區隔。
 - SEO/GEO：JSON-LD ×2（SportsActivityLocation 含價目 OfferCatalog + FAQPage 8 題）、OG tags、GEO 實體描述段（hero 下方）、語意標籤、單一 h1、全圖 alt、lazy loading。
-- 預約 CTA 全部連 `https://catarcherycom.simplybook.asia/v2/#book`（保留 SimplyBook，不自建預約）。
+- **SimplyBook widget 完整嵌入**：新增「09 線上預約」區塊（`#booking`），用官方 `simplybook.asia/v2/widget/widget.js` 的 `SimplybookWidget({widget_type:'iframe', container_id:'sb-widget'})` 把預約日曆內嵌頁內；捲動接近（rootMargin 800px）或點 CTA 才載入 script，不拖慢首屏；所有預約 CTA 改頁內錨點 `#booking`，widget 下保留「新視窗開啟」備援連結（外連 `.../v2/#book`）。
 
 ### 為什麼
 - SimplyBook 預設版型無法自訂 SEO；靜態單頁最快最省，Vercel 可另建專案（root=website/）獨立部署。

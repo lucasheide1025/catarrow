@@ -326,6 +326,13 @@ h1 .line2{display:block}
 .faq-list details[open] summary::after{transform:rotate(45deg)}
 .faq-list .a{padding:0 4px 24px 40px;color:var(--ink-soft);font-size:14.5px}
 
+/* ── 線上預約 widget ── */
+.book-box{background:#fff;border:1.5px solid var(--line);border-radius:22px;padding:14px;box-shadow:0 18px 44px rgba(43,41,38,.08)}
+#sb-widget{height:min(80vh,760px)}
+#sb-widget iframe{width:100%;height:100%;border:0;border-radius:14px}
+.book-alt{text-align:center;font-size:13px;color:var(--ink-soft);padding:12px 0 4px}
+.book-alt a{color:var(--orange);font-weight:700;border-bottom:1.5px solid var(--orange)}
+
 /* ── Info / 地圖 ── */
 .info{background:var(--paper-deep)}
 .info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-bottom:36px}
@@ -397,7 +404,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       <a href="#faq">常見問題</a>
       <a href="#visit">交通資訊</a>
     </nav>
-    <a class="nav-book" href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener">立即預約</a>
+    <a class="nav-book" href="#booking">立即預約</a>
     <button class="burger" id="burger" aria-label="開啟選單" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
@@ -417,7 +424,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       <p class="hero-sub rv">專業裸弓 · 舒壓療癒 · 貓咪陪伴</p>
       <p class="hero-desc rv">隱身社區巷弄的室內射箭場。一支箭、一個靶，還有隨緣出沒的貓店長——一個只屬於你的專注時刻。</p>
       <div class="hero-cta rv">
-        <a class="btn" href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener">立即預約體驗 <span class="arr">➔</span></a>
+        <a class="btn" href="#booking">立即預約體驗 <span class="arr">➔</span></a>
         <a class="btn-ghost" href="#price">查看價目表</a>
       </div>
       <ul class="hero-tags rv">
@@ -732,7 +739,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       </details>
       <details>
         <summary>需要預約嗎？怎麼預約？</summary>
-        <p class="a">建議先線上預約，系統開放當日預約。個人透過<a href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener" style="color:var(--orange);font-weight:700"> 線上預約系統 </a>選時段即可；8 人以上團體活動請來電 0973-770-682 洽詢。</p>
+        <p class="a">建議先線上預約，系統開放當日預約。個人在本頁<a href="#booking" style="color:var(--orange);font-weight:700"> 線上預約區 </a>選時段即可完成；8 人以上團體活動請來電 0973-770-682 洽詢。</p>
       </details>
       <details>
         <summary>需要自備弓箭或裝備嗎？</summary>
@@ -758,10 +765,23 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
+<!-- 09 線上預約 -->
+<section id="booking">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">Booking · 線上預約</span></div>
+    <h2 class="rv">選好時段，<span class="accent">直接預約</span>。</h2>
+    <p class="sec-lead rv">選擇方案與時段，立即完成預約——系統開放當日預約。8 人以上團體活動請來電 0973-770-682。</p>
+    <div class="book-box rv">
+      <div id="sb-widget" aria-label="SimplyBook 線上預約系統"></div>
+      <p class="book-alt">預約畫面沒有正常載入？<a href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener">改用新視窗開啟預約頁 ➔</a></p>
+    </div>
+  </div>
+</section>
+
 <!-- 交通資訊 -->
 <section class="info" id="visit">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
+    <div class="sec-head rv"><span class="sec-num">10</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
     <h2 class="rv">找到<span class="accent">我們</span>。</h2>
     <div class="info-grid">
       <div class="icard rv">
@@ -798,7 +818,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <img src="assets/002.png" alt="" aria-hidden="true" width="596" height="817" loading="lazy" class="rv">
     <h2 class="rv">準備好按下<span class="accent">暫停鍵</span>了嗎？</h2>
     <p class="rv">拿起弓，讓這一刻只屬於你自己。</p>
-    <a class="btn rv" href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener">立即預約專屬時光 <span class="arr">➔</span></a>
+    <a class="btn rv" href="#booking">立即預約專屬時光 <span class="arr">➔</span></a>
   </div>
 </section>
 
@@ -815,7 +835,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </footer>
 
-<a class="fab" href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener">🎯 立即預約</a>
+<a class="fab" href="#booking">🎯 立即預約</a>
 
 <script>
 // sticky nav 狀態
@@ -842,6 +862,29 @@ document.querySelectorAll('.rv').forEach(el => io.observe(el));
 const track = document.getElementById('mqTrack');
 track.innerHTML += track.innerHTML;
 track.querySelectorAll('.rev:nth-child(n+13)').forEach(el => el.setAttribute('aria-hidden','true'));
+
+// SimplyBook 預約 widget：捲動接近或點擊預約鈕時才載入，不拖慢首屏
+let sbLoaded = false;
+function loadSB(){
+  if (sbLoaded) return; sbLoaded = true;
+  const s = document.createElement('script');
+  s.src = 'https://simplybook.asia/v2/widget/widget.js';
+  s.onload = () => new SimplybookWidget({
+    widget_type: 'iframe',
+    url: 'https://catarcherycom.simplybook.asia',
+    theme: 'default',
+    timeline: 'modern',
+    datepicker: 'top_calendar',
+    is_rtl: false,
+    app_config: {clear_session: 0, allow_switch_to_ada: 0, predefined: []},
+    container_id: 'sb-widget'
+  });
+  document.head.appendChild(s);
+}
+new IntersectionObserver((es, o) => {
+  if (es[0].isIntersecting) { loadSB(); o.disconnect(); }
+}, {rootMargin:'800px'}).observe(document.getElementById('booking'));
+document.querySelectorAll('a[href="#booking"]').forEach(a => a.addEventListener('click', loadSB));
 </script>
 </body>
 </html>
