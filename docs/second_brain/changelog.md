@@ -27,6 +27,7 @@
 - 教練後台 12 秒提醒輪播（`pendingCheckinAwaitN`）是刻意設計（工作電腦提醒用），保留但現在受音效總開關管制
 
 ### 踩坑提醒
+- **腳本生成的檔案要跑 parse check**：`monsterConfig.js` 混入 4 行 shell 指令 `echo "Phase N done"`（phase 腳本 heredoc 貼歪），造成 build 失敗；已清除。快速全樹檢查：`@babel/parser` 掃 `src/**/*.{js,jsx}`（179 檔數秒完成）
 - **音效總閘門在 `ctx()` 單點**：所有直接 `const c = ctx()` 的合成函式自動被閘；日後新增音效不需個別 guard，但 mp3（`playAudio`）與 `vibrate` 是獨立路徑要記得
 - **`scrollIntoView` 不加 `block:"nearest"` = 整頁亂捲**：日後任何 log 捲底一律加
 - **Firestore 訂閱首次快照會觸發「計數增加」判斷**：比較型音效（n > prev）ref 初始值要用 `null` 區分「尚未收到首次快照」

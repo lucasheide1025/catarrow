@@ -63,7 +63,6 @@ export const TIER_DROP_CONFIG = {
     dungeonItemChance: 0.50,
   },
 };
-echo "Phase 2 done"
 
 // 3. 各怪物專屬掉落
 export const MONSTER_SPECIAL_DROPS = {
@@ -122,7 +121,6 @@ export const MONSTER_SPECIAL_DROPS = {
     { id: "temple_mythic_orb", name: "\u4E16\u754C\u4E4B\u6838",   icon: "\uD83C\uDF0D", chance: 0.15, qty: 1, rarity: "mythic" },
   ],
 };
-echo "Phase 3 done"
 
 // 4. 地下城道具池
 export const DUNGEON_ITEM_POOL = {
@@ -163,7 +161,6 @@ export const COIN_CHEST_TIERS = {
   boss:   { name: "\u91D1\u5E63\u5B9D\u77F3\u5B9D\u7BB1", icon: "\uD83D\uDC8E", color: "#818cf8", min: 600,  max: 1000 },
   mythic: { name: "\u91D1\u5E63\u50B3\u8AAA\u5B9D\u7BB1", icon: "\uD83D\uDC51", color: "#a855f7", min: 1200, max: 2000 },
 };
-echo "Phase 4 done"
 
 // 5. 輔助函式
 export function getVariantMultipliers(variant) {
@@ -284,4 +281,3 @@ export function rollFullDropResult(monster, variant, options = {}) {
     dungeonItem,
   };
 }
-echo "Phase 5 done"
