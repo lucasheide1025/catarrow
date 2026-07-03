@@ -11,14 +11,18 @@
 <script>
 (function () {
   try {
-    // 只有「不在預約流程（網址沒有 book）」時才轉址，
-    // 這樣被嵌入的預約 iframe（網址帶 #book）不會被轉 → 不會迴圈。
+    // 防呆①：只在「正式公開的預約網域」才轉址。
+    //   後台編輯器 / 預覽在別的網域，hostname 不符 → 不轉，
+    //   所以貼進內容欄位時不會把你的編輯頁跳走（你才點得到「套用」）。
+    var ON_LIVE = window.location.hostname === 'catarcherycom.simplybook.asia';
+    // 防呆②：不在預約流程（網址沒有 book）才轉，
+    //   這樣被嵌入的預約 iframe（網址帶 #book）不會被轉 → 不會迴圈。
     var h = (window.location.hash || '').toLowerCase();
     var s = (window.location.search || '').toLowerCase();
     var inBooking = h.indexOf('book') !== -1 || s.indexOf('book') !== -1;
-    // 也避免在 iframe 內轉址（雙保險：若本頁被別人嵌入就不轉）
+    // 防呆③：不在 iframe 內才轉（若本頁被別人嵌入就不轉）。
     var isFramed = window.top !== window.self;
-    if (!inBooking && !isFramed) {
+    if (ON_LIVE && !inBooking && !isFramed) {
       window.location.replace('https://catarrow-archery.vercel.app');
     }
   } catch (e) {}
