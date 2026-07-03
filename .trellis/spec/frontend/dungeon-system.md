@@ -288,7 +288,8 @@ Do not install temporary browser-automation packages into this project's live `n
 ## Dungeon Lobby Scrolling
 
 - `MemberApp .content-area` is the only vertical scroll owner for the dungeon lobby.
-- `DungeonLobby` and its excavate, storage, and dex tabs must use natural content height. Do not add `100dvh`, `overflow-y-auto`, or another vertical scroll viewport inside the lobby.
+- `DungeonLobby`, `DungeonTeamLobby`, and the excavate, storage, and dex tabs must use natural content height. Do not add `100dvh`, fixed `h-full + overflow-hidden`, `overflow-y-auto`, or another vertical scroll viewport inside these lobby surfaces.
+- The team waiting-room action footer may be `position: sticky; bottom: 0`, but it must remain in normal document flow and include `env(safe-area-inset-bottom)`.
 - Horizontal filter strips may keep `overflow-x-auto`; overlays and battle screens remain independent full-screen surfaces.
 
 ## Locked Run Settings

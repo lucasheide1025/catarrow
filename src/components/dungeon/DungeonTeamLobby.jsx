@@ -83,6 +83,7 @@ export default function DungeonTeamLobby({
       maxHP: m.maxHP,
       atk: m.atk,
       def: m.def,
+      catId: m.catId || "",
       catName: m.catName || "",
       archerStyle: m.archerStyle || "baobao",
       catAtk: m.catAtk || 0,
@@ -108,10 +109,15 @@ export default function DungeonTeamLobby({
   }
 
   return (
-    <div className="h-full overflow-hidden flex flex-col"
-      style={{ background:"linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+    <div className="min-h-full overflow-x-hidden flex flex-col text-white"
+      style={{
+        background:"linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),url(/ui/page-bg.webp)",
+        backgroundSize:"cover",
+        backgroundPosition:"center",
+        touchAction:"pan-y",
+      }}>
       {/* Header */}
-      <div className="shrink-0 text-center py-5 border-b border-white/10">
+      <div className="text-center py-5 border-b border-white/10">
         <div className="text-3xl mb-1">👥</div>
         <div className="text-xl font-black text-white">組隊遠征等待室</div>
         {isHost && (
@@ -119,8 +125,9 @@ export default function DungeonTeamLobby({
             style={{ background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)" }}>
             <span className="text-xs" style={{ color:"#a5b4fc" }}>📋 邀請碼</span>
             <span className="text-sm font-black text-white tracking-widest">{room?.code || "..."}</span>
-            <button onClick={() => navigator.clipboard?.writeText(room?.code || "")}
-              className="text-xs font-bold" style={{ color:"#818cf8" }}>
+            <button type="button" onClick={() => navigator.clipboard?.writeText(room?.code || "")}
+              className="min-h-11 px-2 text-xs font-bold rounded-lg hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-indigo-300"
+              style={{ color:"#818cf8", touchAction:"manipulation" }}>
               複製
             </button>
           </div>
@@ -133,7 +140,7 @@ export default function DungeonTeamLobby({
       </div>
 
       {/* 地下城資訊 */}
-      <div className="shrink-0 px-4 py-3 border-b border-white/8">
+      <div className="px-4 py-3 border-b border-white/8">
         <div className="rounded-2xl p-4 flex items-center gap-4"
           style={{
             background:"rgba(245,158,11,0.08)",
@@ -158,7 +165,7 @@ export default function DungeonTeamLobby({
         </div>
       </div>
 
-      <div className="shrink-0 px-4 py-3 border-b border-white/8">
+      <div className="px-4 py-3 border-b border-white/8">
         <DungeonRunSettings
           arrowsPerRound={room?.arrowsPerRound || DEFAULT_DUNGEON_ARROWS}
           targetFmt={room?.targetFmt || DEFAULT_DUNGEON_TARGET}
@@ -177,7 +184,7 @@ export default function DungeonTeamLobby({
       </div>
 
       {/* 隊員清單 */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 px-4 py-3">
         <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>
           👥 隊員（{memberCount}/4）
         </div>
@@ -218,16 +225,24 @@ export default function DungeonTeamLobby({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10 space-y-2">
+      <div
+        className="sticky bottom-0 z-20 px-4 pt-3 border-t border-white/10 space-y-2"
+        style={{
+          paddingBottom:"calc(1.5rem + env(safe-area-inset-bottom))",
+          background:"linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.99))",
+          backdropFilter:"blur(12px)",
+        }}
+      >
         {isHost ? (
           <>
-            <button onClick={handleStart} disabled={memberCount < 1 || loading || settingsBusy}
-              className="w-full py-3 rounded-2xl font-black text-base bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40 active:scale-95 transition-all">
+            <button type="button" onClick={handleStart} disabled={memberCount < 1 || loading || settingsBusy}
+              className="min-h-12 w-full py-3 rounded-2xl font-black text-base bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40 active:scale-95 transition-transform hover:brightness-110 focus-visible:ring-2 focus-visible:ring-amber-200"
+              style={{ touchAction:"manipulation" }}>
               {loading ? "準備中…" : `⚔️ 開始遠征（${memberCount} 人）`}
             </button>
-            <button onClick={handleDisband} disabled={loading}
-              className="w-full py-2.5 rounded-2xl text-sm font-bold border"
-              style={{ borderColor:"rgba(255,255,255,0.15)", color:"var(--text-secondary)" }}>
+            <button type="button" onClick={handleDisband} disabled={loading}
+              className="min-h-11 w-full py-2.5 rounded-2xl text-sm font-bold border hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+              style={{ borderColor:"rgba(255,255,255,0.15)", color:"var(--text-secondary)", touchAction:"manipulation" }}>
               解散房間
             </button>
           </>
@@ -237,9 +252,9 @@ export default function DungeonTeamLobby({
               style={{ background:"rgba(255,255,255,0.06)", color:"var(--text-secondary)" }}>
               等待房主開始遠征…
             </div>
-            <button onClick={handleLeave} disabled={loading}
-              className="w-full py-2.5 rounded-2xl text-sm font-bold border"
-              style={{ borderColor:"rgba(255,255,255,0.15)", color:"var(--text-secondary)" }}>
+            <button type="button" onClick={handleLeave} disabled={loading}
+              className="min-h-11 w-full py-2.5 rounded-2xl text-sm font-bold border hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+              style={{ borderColor:"rgba(255,255,255,0.15)", color:"var(--text-secondary)", touchAction:"manipulation" }}>
               離開房間
             </button>
           </>
