@@ -163,12 +163,13 @@ export default function AdminApp() {
   const [pendingCheckinN,      setPendingCheckinN]      = useState(0);
   const [pendingCheckinAwaitN, setPendingCheckinAwaitN] = useState(0);
   const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
-  const pendingMonthlyRef = useRef(0);
+  const pendingMonthlyRef = useRef(null); // null = 尚未收到首次快照（首次不播提醒音）
   const [pendingGuildN,    setPendingGuildN]    = useState(0);
   const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
   const [activeWorldBoss,  setActiveWorldBoss]  = useState(null); // 供首頁「進行中」卡顯示世界王入口
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
+  const lastBroadcastIdRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("admin_party_room"))?.roomId || null; } catch { return null; }
@@ -402,7 +403,8 @@ export default function AdminApp() {
     });
     const u6 = subscribePendingMonthlyRequests(list => {
       const n = list.length;
-      if (n > pendingMonthlyRef.current) sfxNotify();
+      // 首次快照（ref 為 null）只記錄不播音，避免開頁面就「亂播音效」
+      if (pendingMonthlyRef.current !== null && n > pendingMonthlyRef.current) sfxNotify();
       pendingMonthlyRef.current = n;
       setPendingMonthlyN(n);
     });
@@ -423,11 +425,13 @@ export default function AdminApp() {
     return subscribeAppVersion(setLatestVersion);
   }, []);
 
-  // 地下城首殺全系統播報
+  // 地下城首殺全系統播報（防重複：lastBroadcastIdRef 過濾 onSnapshot 重複觸發）
   useEffect(() => {
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
       if (dismissedBroadcastRef.current === data.id) return;
+      if (lastBroadcastIdRef.current === data.id) return;
+      lastBroadcastIdRef.current = data.id;
       setDungeonKillAlert(data);
     });
     return () => unsub?.();
@@ -636,7 +640,11 @@ const adminNav = [
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
           {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
-          {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
+          {page==="dungeon-room" && dungeonRoomId && (
+            <div style={{ position:"fixed", inset:0, zIndex:60 }}>
+              <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
+            </div>
+          )}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} key={gachaInitTab} />}

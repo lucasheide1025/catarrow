@@ -219,6 +219,40 @@ export const FAMILY_LOOT = {
       ],
     },
   },
+  treasure: {
+    arrowDew:      { weak: 2, normal: 3, strong: 5, boss: 10 },
+    chestChance:   { weak: 0.60, normal: 0.80, strong: 1.00, boss: 1.00 },
+    goldChestChance:{ weak: 0.10, normal: 0.20, strong: 0.40, boss: 0.60 },
+    cardChance:    { weak: 0.30, normal: 0.50, strong: 0.70, boss: 1.00 },
+    materialChance:{ weak: 0.80, normal: 0.90, strong: 1.00, boss: 1.00 },
+    materials: {
+      common: [
+        { id: "copper_coin",    name: "銅幣",     icon: "🪙", weight: 60 },
+        { id: "silver_nugget",  name: "銀塊",     icon: "🥈", weight: 40 },
+      ],
+      rare: [
+        { id: "gold_bar",       name: "金條",     icon: "💛", weight: 60 },
+        { id: "gem_shard",      name: "寶石碎片", icon: "💎", weight: 40 },
+      ],
+      boss: [
+        { id: "treasure_crown", name: "寶藏王冠", icon: "👑", weight: 40 },
+        { id: "mythic_gem",     name: "神話寶石", icon: "🔮", weight: 35 },
+        { id: "golden_statue",  name: "黃金雕像", icon: "🗿", weight: 25 },
+      ],
+    },
+    dungeonDrops: {
+      room: [
+        { id: "treasure_map",   name: "藏寶圖", icon: "🗺️", chance: 0.20 },
+        { id: "golden_key",     name: "黃金鑰匙", icon: "🔑", chance: 0.15 },
+      ],
+      boss: [
+        { id: "treasure_trophy",name: "寶藏王徽章", icon: "🏆", chance: 1.00 },
+        { id: "divine_crown",   name: "神聖皇冠",   icon: "👑", chance: 0.40 },
+        { id: "treasure_key",   name: "萬能鑰匙",   icon: "🗝️", chance: 0.25 },
+      ],
+    },
+  },
+
 };
 
 // ── 工具函式 ─────────────────────────────────────────────────────

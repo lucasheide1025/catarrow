@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createDungeonRoom, joinDungeonRoom, subscribeDungeonRoom, subscribeOpenDungeonRooms, cleanupStaleDungeonRooms, updateDungeonMemberStats, initDungeonMapRun, setDungeonMemberRole, leaveDungeonRoom, setActiveDungeon, clearActiveDungeon, checkMemberActiveDungeon } from "../../lib/dungeonDb";
 import { subscribePracticeLogs, subscribeCardCollection } from "../../lib/db";
-import BattleRecords from "../member/BattleRecords";
 import { DUNGEON_MAPS, DIFFICULTY_CONFIGS, FAMILY_CONFIGS } from "../../lib/dungeonData";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus } from "../../lib/monsterCards";
@@ -13,6 +12,8 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { RUNES, RUNE_TYPES, MAX_RUNE_SLOTS, runeEffectLabel, TIER_COLOR, TIER_NAME, calcRuneBonus } from "../../lib/runeData";
 import { subscribeRuneInventory, equipRunesToDungeon, validateRuneEquip } from "../../lib/runeDb";
 import DungeonDex from "./DungeonDex";
+import DungeonExcavationTab from "./DungeonExcavationTab";
+import DungeonExpedition from "./DungeonExpedition";
 
 
 export default function DungeonLobby({ onEnterRoom, onBack }) {
@@ -35,6 +36,7 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
   const [runeInv,     setRuneInv]     = useState({});
   const [equippedRunes, setEquippedRunes] = useState([]); // [{runeId, durability}]
   const [showRunePicker, setShowRunePicker] = useState(false);
+  const [expeditionStart, setExpeditionStart] = useState(null); // { family, difficulty, isHidden }
 
   const myId   = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
@@ -48,6 +50,15 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     const unsubRunes = subscribeRuneInventory(myId, setRuneInv);
     return () => { unsubLogs?.(); unsubCards?.(); unsubRunes?.(); };
   }, [myId]);
+
+  // 監聽遠征開始事件
+  useEffect(() => {
+    function handler(e) {
+      setExpeditionStart(e.detail || {});
+    }
+    window.addEventListener("expedition-start", handler);
+    return () => window.removeEventListener("expedition-start", handler);
+  }, []);
 
   useEffect(() => {
     if (tab !== "join") return;
@@ -94,9 +105,6 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     });
   }, [selDifficulty]);
 
-  const _d = new Date();
-  const todayStr = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,"0")}-${String(_d.getDate()).padStart(2,"0")}`;
-  const dungeonUsedToday = profile?.lastDungeonDate === todayStr;
   const _base    = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const _equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
   const _equip   = calcEquippedBonus(_equipped);
@@ -446,6 +454,18 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
     );
   }
 
+  // ── 遠征模式 ─────────────────────────────────────────────
+  if (expeditionStart) {
+    return (
+      <DungeonExpedition
+        excavation={expeditionStart}
+        profile={profile}
+        onComplete={() => setExpeditionStart(null)}
+        onAbandon={() => setExpeditionStart(null)}
+      />
+    );
+  }
+
   // ── 建立 / 加入畫面 ───────────────────────────────────────
   return (
     <div className="h-[100dvh] overflow-hidden flex flex-col text-white" style={{ backgroundImage:"linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
@@ -455,88 +475,72 @@ export default function DungeonLobby({ onEnterRoom, onBack }) {
           <button onClick={onBack} className="absolute left-4 top-6 text-slate-300 text-sm font-bold hover:text-white">← 返回</button>
         )}
         <div className="text-5xl mb-2">🏰</div>
-        <div className="text-2xl font-black">地下城模式</div>
-        <div className="text-sm text-slate-300 mt-1">攜帶不同任務，與夥伴深入地下城</div>
+        <div className="text-2xl font-black">地下城</div>
+        <div className="text-sm text-slate-300 mt-1">發掘地下城，挑戰終極首領</div>
       </div>
 
       {/* Tab */}
       <div className="shrink-0 flex bg-slate-600/70 rounded-2xl p-1 mx-4 mb-4">
-        {["create","join","dex"].map(t => (
+        {["excavate","create","dex"].map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab===t ? "bg-white/25 text-white" : "text-slate-300"}`}>
-            {t==="create" ? "🏰 建立" : t==="join" ? "🏹 加入" : "🔮 圖鑑"}
+            {t==="excavate" ? "⛏️ 挖掘探索" : t==="create" ? "🗺️ 進入地下城" : "🔮 圖鑑"}
           </button>
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4">
-        {tab === "dex" ? <DungeonDex /> : tab === "create" ? (
+      <div className="flex-1 overflow-y-auto px-4 pb-6">
+        {tab === "excavate" ? (
+          <DungeonExcavationTab profile={profile} />
+        ) : tab === "dex" ? (
+          <DungeonDex />
+        ) : tab === "create" ? (
           <div className="space-y-4">
-            <div className="bg-amber-500/20 border border-amber-400/50 rounded-2xl p-4 shadow-lg">
-              <div className="font-bold text-amber-300 mb-1">🗺️ 地下城地圖模式</div>
-              <ul className="text-sm text-slate-200 space-y-1 font-medium">
-                <li>• 6 大種族（幽冥/山嶺/昆蟲/職場/考試/神廟）</li>
-                <li>• 4 種難度（普通/進階/困難/地獄）</li>
-                <li>• 共 24 張獨特地圖，每張地圖自由探索</li>
-                <li>• 房間自帶合約（標準/命中/得分/全中/X爆/指定分數）</li>
-                <li>• 前後衛陣型 + 符文強化</li>
-                <li>• 隊伍投票移動路線</li>
-              </ul>
-            </div>
-            {dungeonUsedToday && (
-              <div className="bg-rose-500/10 border border-rose-400/30 rounded-2xl p-3 text-sm text-rose-300 text-center">
-                🔒 今日地下城次數已使用，明天再來挑戰吧！
-              </div>
-            )}
-            <button onClick={handleCreate} disabled={loading || !!dungeonUsedToday}
-              className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40">
-              {loading ? "建立中…" : "🏰 建立地下城"}
-            </button>
-          </div>
-        ) : tab === "join" ? (
-          <div className="space-y-3">
-            {openRooms.length === 0 ? (
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
-                <div className="text-3xl mb-2 animate-pulse">🔍</div>
-                <div className="text-slate-400 text-sm">目前沒有開放中的地下城</div>
-                <div className="text-slate-600 text-xs mt-1">等待夥伴建立後自動更新</div>
-              </div>
-            ) : openRooms.map(r => {
-              const memberCount = Object.keys(r.members || {}).length;
-              const hostName = Object.values(r.members || {})[0]?.name || "未知";
-              return (
-                <div key={r.id} className="rounded-2xl border border-amber-500/30 bg-amber-900/10 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">🏰</span>
-                      <div>
-                        <div className="text-white font-black text-sm">地下城探索</div>
-                        <div className="text-slate-400 text-xs mt-0.5">
-                          🧙 {hostName} 的隊伍・{memberCount} 人等待中
+            {/* 加入房間 */}
+            <div className="space-y-3">
+              <div className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>🏹 加入開放中的房間</div>
+              {openRooms.length === 0 ? (
+                <div className="rounded-2xl bg-white/5 border border-white/10 p-6 text-center">
+                  <div className="text-2xl mb-1 animate-pulse">🔍</div>
+                  <div className="text-slate-400 text-sm">目前沒有開放中的地下城</div>
+                  <div className="text-slate-600 text-xs mt-1">建立一個新的或等夥伴加入</div>
+                </div>
+              ) : openRooms.map(r => {
+                const memberCount = Object.keys(r.members || {}).length;
+                const hostName = Object.values(r.members || {})[0]?.name || "未知";
+                return (
+                  <div key={r.id} className="rounded-2xl border border-amber-500/30 bg-amber-900/10 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">🏰</span>
+                        <div>
+                          <div className="text-white font-black text-sm">地下城探索</div>
+                          <div className="text-slate-400 text-xs mt-0.5">
+                            🧙 {hostName} 的隊伍・{memberCount} 人等待中
+                          </div>
                         </div>
                       </div>
+                      <button
+                        onClick={() => handleJoinRoom(r)}
+                        disabled={loading}
+                        className="px-5 py-2 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40 active:scale-95 transition-all"
+                      >
+                        {loading ? "…" : "加入"}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleJoinRoom(r)}
-                      disabled={loading}
-                      className="px-5 py-2 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40 active:scale-95 transition-all"
-                    >
-                      {loading ? "…" : "加入"}
-                    </button>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {/* 建立新房間 */}
+            <button onClick={handleCreate} disabled={loading}
+              className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg disabled:opacity-40 active:scale-95 transition-all">
+              {loading ? "建立中…" : "🏰 建立新地下城房間（地圖模式）"}
+            </button>
           </div>
         ) : null}
-        {tab !== "dex" && err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}
-
-        {/* 地下城歷史紀錄 */}
-        {tab !== "dex" && (
-          <div className="mt-6">
-            <BattleRecords logs={dungeonLogs} title="📊 地下城戰鬥紀錄" maxGroups={6}/>
-          </div>
-        )}
+        {tab !== "dex" && tab !== "excavate" && err && <div className="mt-3 text-center text-rose-400 text-sm">{err}</div>}
       </div>
     </div>
   );

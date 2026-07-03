@@ -206,6 +206,11 @@ export async function addRoundArrows(memberId, count) {
     const { contributeArrowsToGoal } = await import("./villageGoalDb");
     await contributeArrowsToGoal(memberId, count);
   } catch (e) { /* ignore */ }
+  // 地下城發掘進度 hook（非同步，不阻塞）
+  try {
+    const { addExcavationByArrows } = await import("./dungeonExcavation");
+    await addExcavationByArrows(memberId, count);
+  } catch (e) { /* ignore */ }
 }
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {
@@ -945,6 +950,11 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
     classEnded: false,
     createdAt: serverTimestamp(),
   }, { merge: false });
+  // 地下城發掘進度 +10
+  try {
+    const { addExcavationByCheckin } = await import("./dungeonExcavation");
+    addExcavationByCheckin(memberId);
+  } catch (e) { /* ignore */ }
   return { id, already: false };
 }
 
@@ -955,6 +965,15 @@ export async function approveCheckin(checkinDocId, operatorId) {
     approvedAt: serverTimestamp(),
     approvedBy: operatorId,
   });
+  // 地下城發掘進度 +10
+  try {
+    const snap = await getDoc(doc(db, C_CHECKIN, checkinDocId));
+    const memberId = snap.data()?.memberId;
+    if (memberId) {
+      const { addExcavationByCheckin } = await import("./dungeonExcavation");
+      addExcavationByCheckin(memberId);
+    }
+  } catch (e) { /* ignore */ }
 }
 
 // 教練審核不通過

@@ -275,7 +275,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   // ── 日誌捲底 ─────────────────────────────────────────────────
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior:"smooth" });
+    logEndRef.current?.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }, [room?.log]);
 
   // ── processing 超時自動重置（15 秒仍卡住 → 強制清除 Firestore）────

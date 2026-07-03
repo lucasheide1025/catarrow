@@ -13,7 +13,8 @@ import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { OverlayModal } from "../components/shared/UI";
-import { ProgressRing } from "../components/shared/Widgets";
+import { ProgressRing, CountUp } from "../components/shared/Widgets";
+import { sfxSwitch } from "../lib/sound";
 import { certLevelStyle } from "../lib/constants";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
@@ -126,6 +127,7 @@ export default function MemberApp() {
   const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const dismissedBroadcastRef = useRef(null);
+  const lastBroadcastIdRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
 
   const [certification, setCertification] = useState(null);
@@ -149,11 +151,13 @@ export default function MemberApp() {
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
   const checkinPopupShownRef = useRef(!!sessionStorage.getItem("member_checkin_popup_shown")); // 一天只彈一次（跨重整）
 
-  // 地下城首殺全系統播報
+  // 地下城首殺全系統播報（防重複：lastBroadcastIdRef 過濾 onSnapshot 重複觸發）
   useEffect(() => {
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
       if (dismissedBroadcastRef.current === data.id) return;
+      if (lastBroadcastIdRef.current === data.id) return;
+      lastBroadcastIdRef.current = data.id;
       setDungeonKillAlert(data);
     });
     return () => unsub?.();
@@ -424,9 +428,9 @@ export default function MemberApp() {
   ).length;
   const avatarChar = (profile?.nickname || profile?.name || "🏹").trim().charAt(0) || "🏹";
   const currencyChips = [
-    { icon:"🪙", value:(profile?.coins || 0).toLocaleString(),                        color:"var(--text-gold)", page:"coinshop", label:"金幣" },
-    { icon:"💧", value:(profile?.village?.resources?.arrowdew || 0).toLocaleString(), color:"var(--info-fg)",   page:"gacha",    label:"箭露" },
-    { icon:"🎫", value:Math.floor(profile?.gachaCoins ?? 0).toLocaleString(),          color:"#f9a8d4",          page:"gacha",    label:"轉蛋幣" },
+    { icon:"🪙", value:(profile?.coins || 0),                                 color:"var(--text-gold)", page:"coinshop", label:"金幣" },
+    { icon:"💧", value:(profile?.village?.resources?.arrowdew || 0),          color:"var(--info-fg)",   page:"gacha",    label:"箭露" },
+    { icon:"🎫", value:Math.floor(profile?.gachaCoins ?? 0),                  color:"#f9a8d4",          page:"gacha",    label:"轉蛋幣" },
   ];
 
   return (
@@ -581,7 +585,9 @@ export default function MemberApp() {
               <button key={c.label} onClick={() => setPage(c.page)} aria-label={c.label}
                 style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:"4px", padding:"5px 8px", borderRadius:"999px", border:"1px solid var(--glass-border)", background:"rgba(255,255,255,0.06)", cursor:"pointer", minWidth:0 }}>
                 <span style={{ fontSize:"12px", flexShrink:0 }}>{c.icon}</span>
-                <span style={{ fontSize:"12px", fontWeight:800, color:c.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.value}</span>
+                <span style={{ fontSize:"12px", fontWeight:800, color:c.color, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  <CountUp value={c.value} />
+                </span>
               </button>
             ))}
           </div>
@@ -668,7 +674,11 @@ export default function MemberApp() {
           key={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onEnterRoom={handleEnterDungeonRoom} onBack={()=>setPage("adventure-hub")} />}
-        {page==="dungeon-room" && dungeonRoomId && <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />}
+        {page==="dungeon-room" && dungeonRoomId && (
+          <div style={{ position:"fixed", inset:0, zIndex:60 }}>
+            <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
+          </div>
+        )}
         {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
@@ -694,13 +704,15 @@ export default function MemberApp() {
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
-            <button key={n.id} onClick={() => setPage(n.id)}
+            <button key={n.id} onClick={() => { if (!active) sfxSwitch(); setPage(n.id); }}
               onPointerEnter={() => NAV_PRELOADS[n.id]?.()}
               style={{ flex:1, minHeight:"56px", display:"flex", flexDirection:"column", alignItems:"center", paddingTop:0, paddingBottom:"6px", gap:"2px", border:"none", background:"transparent", cursor:"pointer" }}>
               {/* 頂部 active 指示條 */}
               <div style={{ height:"3px", width: active ? "24px" : "0px", background:"var(--accent)", borderRadius:"0 0 3px 3px", marginBottom:"4px", transition:"width 0.2s ease" }} />
               <div style={{ position:"relative", display:"inline-block" }}>
-                <span style={{ fontSize: active ? "20px" : "18px", display:"inline-block", transition:"font-size 0.15s ease", filter: active ? "none" : "grayscale(35%)", opacity: active ? 1 : 0.85 }}>{n.icon}</span>
+                {/* key 換值讓 icon 在變 active 時重掛，重播 fx-bounce 彈跳 */}
+                <span key={active ? "on" : "off"} className={active ? "fx-bounce" : ""}
+                  style={{ fontSize: active ? "20px" : "18px", display:"inline-block", transition:"font-size 0.15s ease", filter: active ? "none" : "grayscale(35%)", opacity: active ? 1 : 0.85 }}>{n.icon}</span>
                 {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
                   <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block" }} />
                 )}
