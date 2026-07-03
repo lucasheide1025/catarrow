@@ -44,6 +44,12 @@
 - **✅ 已驗證上線（2026-07-04）**：舊站首頁自動轉址到新官網（實測 `catarcherycom.simplybook.asia` → `catarrow-archery.vercel.app`）；新站預約 iframe 正常載入無迴圈（`!inBooking` 放行 `#book`）。轉址採「重新導向網址」欄位法（純 URL，不用貼 script）；script 版曾因貼進「首頁內容」欄位被即時預覽執行、害編輯頁自我跳轉點不到套用，已加 hostname 防呆。
 - **手機日曆右欄被裁修正**：SimplyBook 日曆每列 `.inner` 是 `flex + nowrap`，內含固定寬 7 個 `.name`/`.date`，窄螢幕溢出裁掉「日」欄。`simplybook-custom.css` 加 `@media(max-width:767px)` 讓 `.inner > .date/.name` 改 `flex:1 1 0; min-width:0`（1/7 均分）。同源注入實測：容器 320px 時 7 格自動 46px、`overflow:false`。⚠ 改完 CSS 使用者需重貼到 SimplyBook 後台兩個 CSS 欄位。
 
+### 2026-07-04 定案網域 + Cookie 橫幅
+- **最終網域規劃**：射箭官網 `archery.catgroup.com.tw`、學籍/學生系統 `student.catgroup.com.tw`（domain `catgroup.com.tw`，NS 在 `ns1/ns2.cyberdns.tw`）。
+- 官網全站 URL（canonical/OG/JSON-LD/sitemap/robots + `simplybook-redirect.html` 轉址目標 + `simplybook-home.html` 官網連結）從 `catarrow-archery.vercel.app` 改成 `archery.catgroup.com.tw`，已重新部署。
+- Vercel：`archery.catgroup.com.tw` 已指派到 `catarrow-archery` 專案（`vercel domains inspect` 確認）；**待使用者在 cyberdns.tw 加 DNS**：CNAME `archery` → `cname.vercel-dns.com`。DNS 生效後再把 SimplyBook「重新導向網址」從 vercel.app 換成 archery.catgroup.com.tw。
+- **Cookie 橫幅**：SimplyBook 的 `<div id="sb_cookies_block" class="cookies sb-important">`（fixed, z1000）在手機嵌入時一直跳出——iOS 封鎖 iframe 第三方 cookie，「已接受」存不住。`simplybook-custom.css` 加 `#sb_cookies_block{display:none}` 隱藏。⚠ 需重貼 CSS。
+
 ## 2026-07-04（九隻陪練貓個體化）
 
 - 保留 `allround` 資料鍵相容舊帳號，顯示名稱改為「治癒型」；九隻貓維持上排治癒、中排攻擊、下排防禦。
