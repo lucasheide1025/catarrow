@@ -30,6 +30,9 @@
 - **`website/simplybook-custom.css`**：貼到後台「預約首頁 CSS」＋「預約套件 CSS」兩欄（同一份）。已把 v2 版型選擇器（`.step_info_item`/`.service-item`/`.calendar`/`.slot`/`.btn` 等，實地檢查 DOM 得來）+ 舊版模板選擇器（`#events`/`#widget_container`）都填品牌色。使用者已貼上，實測：步驟列變橘、服務卡白底圓角、日曆/時段橘色選中——生效。
 - **`website/simplybook-home.html`**：SimplyBook 後台首頁描述欄位用的品牌內容（暖紙橘風入口：logo＋標語＋雙 CTA＋三特色＋價格摘要＋聯絡）。⚠ 內含「認識貓小隊→官方網站」連結指向 placeholder `catarchery.tw`，部署後要換。
 - **踩坑**：SimplyBook v2 首頁頂部深藍金 banner 是後台上傳的**背景圖片**，非 CSS，custom CSS 改不動；要換得進後台換圖或改用 simplybook-home.html 內容。
+- **使用者決定不獨立部署**：整個新官網要留在 SimplyBook 裡（不買網域、不架站）。已誠實告知：這樣 SEO/GEO 會打折（綁 simplybook.asia 子網域，title/meta/JSON-LD/sitemap 都改不了）。`website/index.html` 那套完整 SEO 版仍保留在 repo，未來想獨立上線可直接部署。
+- **`website/simplybook-home-full.html`**：把完整官網設計（hero＋為什麼＋四弓種＋價目表＋訓練＋團康＋場地師資＋評論＋FAQ＋聯絡）改寫成**一大塊可貼的自足 HTML**——全 inline 樣式、圖片用 i.ibb.co 線上網址、FAQ 用原生 `<details>`（免 JS）、無 `<script>`/`<style>`（不怕後台過濾）、響應式靠 flex-wrap。供整份貼到 SimplyBook 後台首頁內容欄位。
+- **`website/_preview-sb-home.html`**：本機預覽外殼（帶 `<meta charset=UTF-8>`，fetch 注入 full 檔）。⚠ 純內容片段直接用瀏覽器開會因缺 charset 顯示中文亂碼，那是預覽假象；貼進 SimplyBook（UTF-8 頁）就正常。此外殼不需貼進 SimplyBook。
 
 ## 2026-07-04（九隻陪練貓個體化）
 
