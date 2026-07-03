@@ -21,9 +21,15 @@
 - SimplyBook 預設版型無法自訂 SEO；靜態單頁最快最省，Vercel 可另建專案（root=website/）獨立部署。
 
 ### 踩坑提醒
-- **正式網域未定**：全檔用 placeholder `https://catarchery.tw`，部署後需全域取代（index.html canonical/OG/JSON-LD + robots.txt + sitemap.xml）。
+- **正式網域未定**：全檔用 placeholder `https://catarchery.tw`，部署後需全域取代（index.html canonical/OG/JSON-LD + robots.txt + sitemap.xml + simplybook-home.html 官網連結）。
 - **地址疑義**：舊站主文寫「8 弄 12 號」、SimplyBook footer 寫「14 號」，目前採 12 號，需向老闆確認。
 - 本機預覽：`py -3 -m http.server 8899 --directory website`（file:// 會被瀏覽器工具擋）。
+
+### 2026-07-04 續（SimplyBook 品牌整合，已驗證生效）
+- **嵌入改直接 iframe**：`loadSB()` 從 `widget.js` script 改成直接建 `<iframe src=".../v2/#book">`，理由：iframe 版預約頁會吃 SimplyBook 後台的自訂 CSS，能與官網同色系；widget.js 版不吃。仍保留 IntersectionObserver 延遲載入 + CTA 點擊載入。
+- **`website/simplybook-custom.css`**：貼到後台「預約首頁 CSS」＋「預約套件 CSS」兩欄（同一份）。已把 v2 版型選擇器（`.step_info_item`/`.service-item`/`.calendar`/`.slot`/`.btn` 等，實地檢查 DOM 得來）+ 舊版模板選擇器（`#events`/`#widget_container`）都填品牌色。使用者已貼上，實測：步驟列變橘、服務卡白底圓角、日曆/時段橘色選中——生效。
+- **`website/simplybook-home.html`**：SimplyBook 後台首頁描述欄位用的品牌內容（暖紙橘風入口：logo＋標語＋雙 CTA＋三特色＋價格摘要＋聯絡）。⚠ 內含「認識貓小隊→官方網站」連結指向 placeholder `catarchery.tw`，部署後要換。
+- **踩坑**：SimplyBook v2 首頁頂部深藍金 banner 是後台上傳的**背景圖片**，非 CSS，custom CSS 改不動；要換得進後台換圖或改用 simplybook-home.html 內容。
 
 ## 2026-07-04（九隻陪練貓個體化）
 
