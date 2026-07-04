@@ -164,6 +164,14 @@ export function generateGridFloor(floorIndex, difficultyTier) {
   };
 }
 
+// 組隊模式把 gridFloor 寫入 Firestore 前，剔除 grid（2D 陣列，Firestore 不支援巢狀陣列）。
+// grid 只是本地渲染輔助資料，下游（GridMapStage）只用 rooms 重建查找表，完全用不到它。
+export function stripGridForSync(gridFloor) {
+  if (!gridFloor) return gridFloor;
+  const { grid, ...rest } = gridFloor;
+  return rest;
+}
+
 // ── 第 3 層：分支王關 ────────────────────────────────────────
 
 const BRANCH_META = {

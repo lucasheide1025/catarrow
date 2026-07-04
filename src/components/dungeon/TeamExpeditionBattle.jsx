@@ -10,6 +10,7 @@ import {
   generateGridFloor,
   generateBranchFloor,
   isAdjacent,
+  stripGridForSync,
 } from "../../lib/expeditionGrid";
 import {
   createTeamExpeditionBattleRoom,
@@ -51,6 +52,12 @@ function attachGridMonsters(gridFloor, floorIndex, difficulty, plan) {
       };
     }),
   };
+}
+
+// expeditionMapState 寫入 Firestore 前，剔除 gridFloor.grid（巢狀陣列，Firestore 不支援）
+function stripMapStateGrid(state) {
+  if (!state?.gridFloor) return state;
+  return { ...state, gridFloor: stripGridForSync(state.gridFloor) };
 }
 
 function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
@@ -318,7 +325,7 @@ export default function TeamExpeditionBattle({
     setCurrentRoomId(null);
     prevRoomIdRef.current = null;
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
-      expeditionMapState,
+      expeditionMapState: stripMapStateGrid(expeditionMapState),
       expeditionFloorIndex: fi,
       currentBattleRoomId: null,
     });
@@ -368,7 +375,7 @@ export default function TeamExpeditionBattle({
       const updateResult = await updateTeamExpeditionRoom(teamRoomId, {
         currentBattleRoomId: res.roomId,
         expeditionFloorIndex: floorIndex,
-        expeditionMapState: nextMapState,
+        expeditionMapState: stripMapStateGrid(nextMapState),
       });
       if (!updateResult.ok) {
         await cleanupExpeditionRoom(res.roomId).catch(() => {});
@@ -432,7 +439,7 @@ export default function TeamExpeditionBattle({
         treasureState.phase = "treasure";
         await updateTeamExpeditionRoom(teamRoomId, {
           currentBattleRoomId: null,
-          expeditionMapState: treasureState,
+          expeditionMapState: stripMapStateGrid(treasureState),
         });
       } else {
         await startFloor(floorIndex + 1);
@@ -472,7 +479,7 @@ export default function TeamExpeditionBattle({
     setPhase(nextMapState.phase);
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
       currentBattleRoomId: null,
-      expeditionMapState: nextMapState,
+      expeditionMapState: stripMapStateGrid(nextMapState),
     });
     if (!saved.ok) {
       setFlowError(`無法返回探索地圖：${saved.reason}`);
@@ -488,15 +495,15 @@ export default function TeamExpeditionBattle({
       return;
     }
     if (room.type === "stairs" || room.type === "entrance" || room.cleared) {
-      await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: positionedState });
+      await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
       return;
     }
     await updateTeamExpeditionRoom(teamRoomId, {
-      expeditionMapState: {
+      expeditionMapState: stripMapStateGrid({
         ...positionedState,
         phase: room.type === "treasure" ? "treasure" : "func_room",
         pendingRoom: room,
-      },
+      }),
     });
   }, [isHost, startRoomBattle, teamRoomId]);
 
@@ -524,7 +531,7 @@ export default function TeamExpeditionBattle({
   const handleChooseBranch = useCallback(async choice => {
     if (!isHost || !mapState?.branchFloor?.branches?.[choice]) return;
     await updateTeamExpeditionRoom(teamRoomId, {
-      expeditionMapState: { ...mapState, branchChoice: choice, branchStep: 0 },
+      expeditionMapState: stripMapStateGrid({ ...mapState, branchChoice: choice, branchStep: 0 }),
     });
   }, [isHost, mapState, teamRoomId]);
 
@@ -577,7 +584,7 @@ export default function TeamExpeditionBattle({
     }
     await updateTeamExpeditionRoom(teamRoomId, {
       members,
-      expeditionMapState: nextMapState,
+      expeditionMapState: stripMapStateGrid(nextMapState),
     });
   }, [isHost, mapState, teamRoom, floorIndex, teamRoomId]);
 
@@ -676,7 +683,7 @@ export default function TeamExpeditionBattle({
           <button
             type="button"
             onClick={() => updateTeamExpeditionRoom(teamRoomId, {
-              expeditionMapState: { ...mapState, phase: floorIndex < 2 ? "grid" : "branch" },
+              expeditionMapState: stripMapStateGrid({ ...mapState, phase: floorIndex < 2 ? "grid" : "branch" }),
             })}
             className="min-h-12 w-full max-w-sm rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3 font-black"
           >

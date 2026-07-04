@@ -9,7 +9,7 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
-  resetPartyRoom, sendPartyCheer, clearPartyProcessing,
+  resetPartyRoom, sendPartyCheer, clearPartyProcessing, setPartyMemberRole,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed, addRoundArrows } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -175,6 +175,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [potionSubTab, setPotionSubTab] = useState("carry");
   const [scoringModeChosen, setScoringModeChosen] = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
+  const [roleBusy, setRoleBusy] = useState(false); // 等待室：初始角色選擇中
+  const [roleError, setRoleError] = useState("");
 
   const {
     liveEntry, liveMiniIdx: liveMiniRoundIdx,
@@ -509,6 +511,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return a.id < b.id ? -1 : 1;
     });
   const me         = members[myId] || {};
+  const frontCount = memberList.filter(m => (m.role || "front") === "front").length;
+  const rearCount  = memberList.length - frontCount;
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
   const isGuestPlayer = myId?.startsWith("guest");
@@ -559,6 +563,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStarting(true);
     await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18);
     setStarting(false);
+  }
+  async function handleChooseRole(role) {
+    if (roleBusy || !myId) return;
+    setRoleBusy(true);
+    setRoleError("");
+    const res = await setPartyMemberRole(roomId, myId, role);
+    if (!res.ok) setRoleError(res.reason);
+    setRoleBusy(false);
   }
   async function handleLeave() {
     // 戰鬥進行中：防誤觸確認
@@ -701,15 +713,24 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
         {/* 隊員列表（含數值）*/}
         <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-3">
-          <div className="text-xs font-black text-slate-400 uppercase tracking-widest">隊員 {memberList.length}/8</div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-black text-slate-400 uppercase tracking-widest">隊員 {memberList.length}/8</div>
+            <div className="text-xs font-bold text-slate-400">
+              🛡️ 前衛 {frontCount}/4 ・ 🏳️ 後衛 {rearCount}/4
+            </div>
+          </div>
           {memberList.map(m => {
             const isMe = m.id === myId;
+            const mRole = m.role || "front";
             return (
               <div key={m.id} className={`rounded-xl p-3 flex flex-col gap-1.5 ${isMe ? "bg-indigo-900/40 border border-indigo-500/30" : "bg-slate-700/30"}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-sm">{m.id === room.hostId ? "👑" : "🏹"}</span>
                   <span className={`font-black text-sm ${isMe ? "text-indigo-300" : "text-white"}`}>
                     {m.name}{isMe ? " (我)" : ""}
+                  </span>
+                  <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${mRole === "front" ? "bg-rose-500/20 text-rose-300" : "bg-sky-500/20 text-sky-300"}`}>
+                    {mRole === "front" ? "前衛" : "後衛"}
                   </span>
                 </div>
                 {m.maxHP > 0 && (
@@ -727,11 +748,32 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     {hasCat && <span className="text-indigo-300 bg-indigo-900/30 px-1.5 py-0.5 rounded">🐱 {catName} 光環 +10%</span>}
                   </div>
                 )}
+                {isMe && (
+                  <div className="flex gap-2 mt-1">
+                    <button type="button" onClick={() => handleChooseRole("front")}
+                      disabled={roleBusy || mRole === "front" || frontCount >= 4}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40 ${
+                        mRole === "front" ? "bg-rose-600 text-white border-rose-600" : "bg-slate-700 text-slate-300 border-slate-600"
+                      }`}>
+                      🛡️ 前衛
+                    </button>
+                    <button type="button" onClick={() => handleChooseRole("rear")}
+                      disabled={roleBusy || mRole === "rear" || rearCount >= 4}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40 ${
+                        mRole === "rear" ? "bg-sky-600 text-white border-sky-600" : "bg-slate-700 text-slate-300 border-slate-600"
+                      }`}>
+                      🏳️ 後衛
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
           {memberList.length < 8 && (
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
+          )}
+          {roleError && (
+            <div className="text-rose-300 text-xs font-bold text-center" aria-live="polite">{roleError}</div>
           )}
         </div>
 

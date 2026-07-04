@@ -95,7 +95,7 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
         Object.entries(data.members || {}).filter(([, value]) => value != null)
       );
       if (members[memberId]) throw new Error("你已在房間中");
-      if (Object.keys(members).length >= 4) throw new Error("房間已滿（最多 4 人）");
+      if (Object.keys(members).length >= 8) throw new Error("房間已滿（最多 8 人）");
       tx.update(roomRef, { [`members.${memberId}`]: member });
       return data;
     });
@@ -108,6 +108,35 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       arrowsPerRound: roomData.arrowsPerRound || 6,
       targetFmt: roomData.targetFmt || "full_110",
     }, hostId: roomData.hostId, hostName: roomData.hostName };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── 等待室選擇初始角色（前衛/後衛，各上限 4 人）─────────────
+// 只決定進入遠征時戰鬥房的初始 role，不影響戰鬥中「前衛倒下→自動轉後衛復活」機制
+export async function setTeamExpeditionMemberRole(roomId, memberId, role) {
+  try {
+    if (!["front", "rear"].includes(role)) return { ok: false, reason: "角色錯誤" };
+    const roomRef = doc(db, D, roomId);
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) throw new Error("房間不存在");
+      const data = snap.data();
+      const members = Object.fromEntries(
+        Object.entries(data.members || {}).filter(([, value]) => value != null)
+      );
+      if (!members[memberId]) throw new Error("你不在房間中");
+      if ((members[memberId].role || "front") === role) return;
+      const sameRoleCount = Object.entries(members)
+        .filter(([id, m]) => id !== memberId && (m.role || "front") === role)
+        .length;
+      if (sameRoleCount >= 4) {
+        throw new Error(role === "front" ? "前衛人數已達上限（4 人）" : "後衛人數已達上限（4 人）");
+      }
+      tx.update(roomRef, { [`members.${memberId}.role`]: role });
+    });
+    return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
   }

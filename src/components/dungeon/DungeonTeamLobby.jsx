@@ -8,6 +8,7 @@ import {
   cleanupTeamExpeditionRoom,
   leaveTeamExpeditionRoom,
   updateTeamExpeditionSettings,
+  setTeamExpeditionMemberRole,
 } from "../../lib/expeditionTeamDb";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import DungeonRunSettings from "./DungeonRunSettings";
@@ -40,6 +41,8 @@ export default function DungeonTeamLobby({
   const [loading, setLoading] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState("");
+  const [roleBusy, setRoleBusy] = useState(false);
+  const [roleError, setRoleError] = useState("");
   const unsubRef = useRef(null);
 
   useEffect(() => {
@@ -58,6 +61,8 @@ export default function DungeonTeamLobby({
   const family = FAMILY_LABEL[dungeon?.family] || { emoji:"🏰", label:"未知族系" };
   const memberEntries = room ? Object.entries(room.members || {}).filter(([, m]) => m !== null) : [];
   const memberCount = memberEntries.length;
+  const frontCount = memberEntries.filter(([, m]) => (m.role || "front") === "front").length;
+  const rearCount = memberCount - frontCount;
 
   async function handleDisband() {
     setLoading(true);
@@ -87,9 +92,19 @@ export default function DungeonTeamLobby({
       catName: m.catName || "",
       archerStyle: m.archerStyle || "baobao",
       catAtk: m.catAtk || 0,
+      role: m.role || "front",
     }));
     const started = await onStart(memberList);
     if (started === false) setLoading(false);
+  }
+
+  async function handleChooseRole(role) {
+    if (roleBusy || !myId) return;
+    setRoleBusy(true);
+    setRoleError("");
+    const result = await setTeamExpeditionMemberRole(roomId, myId, role);
+    if (!result.ok) setRoleError(result.reason);
+    setRoleBusy(false);
   }
 
   async function handleSettingsChange(nextSettings) {
@@ -185,36 +200,71 @@ export default function DungeonTeamLobby({
 
       {/* 隊員清單 */}
       <div className="flex-1 px-4 py-3">
-        <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>
-          👥 隊員（{memberCount}/4）
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>
+            👥 隊員（{memberCount}/8）
+          </div>
+          <div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>
+            🛡️ 前衛 {frontCount}/4 ・ 🏳️ 後衛 {rearCount}/4
+          </div>
         </div>
         <div className="space-y-2">
           {memberEntries.map(([id, m], i) => {
             const isMe = id === myId;
             const isLeader = id === hostId;
+            const mRole = m.role || "front";
             return (
-              <div key={id} className="rounded-xl px-4 py-3 flex items-center gap-3"
+              <div key={id} className="rounded-xl px-4 py-3 flex flex-col gap-2"
                 style={{ background:"rgba(255,255,255,0.06)" }}>
-                <span className="text-lg">{isLeader ? "⭐" : "🏹"}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white">
-                    {m.name}{isMe ? "（你）" : ""}
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">{isLeader ? "⭐" : "🏹"}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-white">
+                      {m.name}{isMe ? "（你）" : ""}
+                    </div>
+                    <div className="text-[10px]" style={{ color:"var(--text-muted)" }}>
+                      HP {m.maxHP || "?"} · ATK {m.atk || "?"}
+                    </div>
                   </div>
-                  <div className="text-[10px]" style={{ color:"var(--text-muted)" }}>
-                    HP {m.maxHP || "?"} · ATK {m.atk || "?"}
-                  </div>
-                </div>
-                {isLeader && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
-                    style={{ background:"rgba(251,191,36,0.2)", color:"#fbbf24" }}>
-                    房主
+                    style={{
+                      background: mRole === "front" ? "rgba(244,63,94,0.2)" : "rgba(56,189,248,0.2)",
+                      color: mRole === "front" ? "#fb7185" : "#38bdf8",
+                    }}>
+                    {mRole === "front" ? "前衛" : "後衛"}
                   </span>
+                  {isLeader && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                      style={{ background:"rgba(251,191,36,0.2)", color:"#fbbf24" }}>
+                      房主
+                    </span>
+                  )}
+                </div>
+                {isMe && (
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => handleChooseRole("front")}
+                      disabled={roleBusy || mRole === "front" || frontCount >= 4}
+                      className="flex-1 min-h-9 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40"
+                      style={mRole === "front"
+                        ? { background:"#e11d48", color:"#fff", borderColor:"#e11d48" }
+                        : { background:"rgba(255,255,255,0.05)", color:"var(--text-secondary)", borderColor:"rgba(255,255,255,0.15)" }}>
+                      🛡️ 前衛
+                    </button>
+                    <button type="button" onClick={() => handleChooseRole("rear")}
+                      disabled={roleBusy || mRole === "rear" || rearCount >= 4}
+                      className="flex-1 min-h-9 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40"
+                      style={mRole === "rear"
+                        ? { background:"#0284c7", color:"#fff", borderColor:"#0284c7" }
+                        : { background:"rgba(255,255,255,0.05)", color:"var(--text-secondary)", borderColor:"rgba(255,255,255,0.15)" }}>
+                      🏳️ 後衛
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
           {/* 空位提示 */}
-          {Array.from({ length: Math.max(0, 4 - memberCount) }).map((_, i) => (
+          {Array.from({ length: Math.max(0, 8 - memberCount) }).map((_, i) => (
             <div key={`empty-${i}`} className="rounded-xl px-4 py-3 flex items-center gap-3"
               style={{ background:"rgba(255,255,255,0.03)", border:"1px dashed rgba(255,255,255,0.08)" }}>
               <span className="text-lg">⬜</span>
@@ -222,6 +272,11 @@ export default function DungeonTeamLobby({
             </div>
           ))}
         </div>
+        {roleError && (
+          <div className="mt-2 text-xs font-bold text-rose-300" aria-live="polite">
+            {roleError}
+          </div>
+        )}
       </div>
 
       {/* Footer */}

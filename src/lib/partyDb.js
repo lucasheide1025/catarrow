@@ -1,7 +1,7 @@
 // src/lib/partyDb.js — partyRooms 的所有 Firestore 操作
 import {
   collection, doc, getDoc, addDoc, updateDoc, onSnapshot, deleteDoc,
-  serverTimestamp, arrayUnion, query, where, getDocs
+  serverTimestamp, arrayUnion, query, where, getDocs, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addChests, recordBattleDex } from "./db";
@@ -100,6 +100,33 @@ export async function joinPartyRoom(code, memberId, memberName) {
       [`members.${memberId}`]: memberData,
     });
     return { ok: true, roomId: roomDoc.id };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── Battle：等待室選擇初始角色（前衛/後衛，各上限 4 人）─────────
+// 只決定戰鬥開始時的初始 role，不影響「前衛倒下→自動轉後衛復活」的既有機制
+export async function setPartyMemberRole(roomId, memberId, role) {
+  try {
+    if (!["front", "rear"].includes(role)) return { ok: false, reason: "角色錯誤" };
+    const roomRef = doc(db, PARTY, roomId);
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) throw new Error("房間不存在");
+      const data = snap.data();
+      const members = data.members || {};
+      if (!members[memberId]) throw new Error("你不在房間中");
+      if ((members[memberId].role || "front") === role) return;
+      const sameRoleCount = Object.entries(members)
+        .filter(([id, m]) => id !== memberId && (m.role || "front") === role)
+        .length;
+      if (sameRoleCount >= 4) {
+        throw new Error(role === "front" ? "前衛人數已達上限（4 人）" : "後衛人數已達上限（4 人）");
+      }
+      tx.update(roomRef, { [`members.${memberId}.role`]: role });
+    });
+    return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
   }

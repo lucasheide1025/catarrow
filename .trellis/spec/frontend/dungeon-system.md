@@ -309,11 +309,38 @@ Do not install temporary browser-automation packages into this project's live `n
 ## Team Expedition Map Parity
 
 - Solo and team expeditions share `GridMapStage` and `BranchStage`; do not maintain a separate direct three-battle team flow.
-- Persist the complete team exploration state on the coordination room as `expeditionMapState`: phase, floor, generated grid/branch, party position, visited IDs, branch choice/step, and pending room.
+- Persist the complete team exploration state on the coordination room as `expeditionMapState`: phase, floor, generated `rooms`/branch, party position, visited IDs, branch choice/step, and pending room. **Never persist `gridFloor.grid` itself** — see "Firestore Cannot Store Nested Arrays" below.
 - The host is the only map controller. Other members render the same persisted state and wait for host navigation.
 - Attach each generated monster to its room before persisting the map so reconnects and all clients see the same monster.
 - Per-room battle documents remain multiplayer `DungeonBattleRoom` documents. Copy `role`, `displayGroup`, `buffs`, HP, and alive state both into and back out of every battle room so front/rear behavior survives the entire expedition.
 - After the final boss, synchronize one treasure-room loot object before rendering teammates' treasure cards, then publish the shared final result.
+
+## Firestore Cannot Store Nested Arrays
+
+`generateGridFloor()` (`src/lib/expeditionGrid.js`) returns a `gridFloor` object whose `grid` field is a literal 2D array (`grid[y][x] = roomId`). Firestore's `updateDoc`/`setDoc` reject any array-of-arrays with `"Function updateDoc() called with invalid data. Nested arrays are not supported"`. Solo play never hit this because its `gridFloor` lives only in local React state; team play crashed immediately on `建立組隊 → 進入` because `TeamExpeditionBattle.jsx` persists the map to the coordination room's `expeditionMapState`.
+
+`grid` has **no downstream consumer** — `GridMapStage` builds its own `roomByPos` lookup from `gridFloor.rooms` (array-of-objects, which Firestore allows) and never reads `.grid`. So the fix does not need a read-side reconstruction:
+
+```js
+// expeditionGrid.js
+export function stripGridForSync(gridFloor) {
+  if (!gridFloor) return gridFloor;
+  const { grid, ...rest } = gridFloor;
+  return rest;
+}
+```
+
+Call this (via a local `stripMapStateGrid(state)` wrapper) at **every** site in `TeamExpeditionBattle.jsx` that writes `expeditionMapState` through `updateTeamExpeditionRoom(...)` — there are 9 such call sites; missing even one reintroduces the crash. Do not change `generateGridFloor()`'s own return shape — it is a shared pure function and solo mode still relies on the full `grid` array.
+
+**General rule**: before putting any board/grid-shaped game state into a Firestore write, check whether it's actually array-of-arrays. If so, either flatten it into an array of `{pos:{x,y}, ...}` objects (already the project convention — see `posKey(x,y)` in `expeditionGrid.js`) or strip it before the write and reconstruct from the flat form on read, whichever the consumer actually needs.
+
+## Front/Rear Initial Role Selection (Pre-Battle) vs Mid-Battle Auto-Promotion
+
+Two independent mechanisms, do not conflate them:
+
+- **Pre-battle selection** (new): `setTeamExpeditionMemberRole()` (`expeditionTeamDb.js`) and `setPartyMemberRole()` (`partyDb.js`) let each member pick their own starting `role` in the waiting room, each a Firestore transaction capped at 4 per role. This only sets the *initial* `role` before the battle room is created.
+- **Mid-battle auto-promotion** (existing, untouched): when a front-line member's HP hits 0, the server flips their `role` to `"rear"` and revives them at 50% HP. For Party mode this lives in `partyDb.js::processPartyRound` (~line 508-518); the dungeon equivalent is the `revival_front` shop/rest handler documented above (`handleResolve — revival_front target`).
+- Never let a "pre-battle role picker" feature touch the mid-battle promotion logic, and never assume `role` is static for the whole battle — it changes dynamically regardless of what was picked at the start.
 
 ## Expedition Battle Presentation
 
