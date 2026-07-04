@@ -100,36 +100,130 @@ function SecretaryCat({ cat }) {
   );
 }
 
-// ── 全景圖（可橫移） ─────────────────────────────────────────
+// ── 全景圖（多幀輪播 + 交叉淡出）─────────────────────────────
+// 幀標籤：a, b, c, d, e → 產生 panorama-lv01-a.webp ~ panorama-lv01-e.webp
+// 若無多幀圖檔，自動降級為單張靜態圖
+const PANORAMA_FRAMES = ['a', 'b', 'c', 'd', 'e'];
+const FRAME_INTERVAL_MS = 2500;
+const FADE_DURATION_MS = 600;
+
+const PANORAMA_CSS = `
+@keyframes panoramaFadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes panoramaFadeOut {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+`;
+
 function PanoramaView({ villageLevel }) {
   const lv  = Math.max(1, Math.min(20, villageLevel || 1));
   const pad = String(lv).padStart(2, "0");
-  const src = `/ui/village/panorama-lv${pad}.webp`;
+  const baseSrc = `/ui/village/panorama-lv${pad}`;
+
+  // 同一等級不變時，用一個 frameCounter 持續推進即可
+  const [frameCounter, setFrameCounter] = useState(0);
+  const [hasError, setHasError] = useState(false);
+  const frameCount = PANORAMA_FRAMES.length;
+
+  // 目前與前一刻的幀
+  const curIdx  = frameCounter % frameCount;
+  const prevIdx = (frameCounter - 1 + frameCount) % frameCount;
+  const showPrev = frameCounter > 0 && !hasError;
+
+  // 定時推進幀
+  useEffect(() => {
+    if (hasError) return;
+    const t = setInterval(() => {
+      setFrameCounter(c => c + 1);
+    }, FRAME_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [hasError, lv]);
+
+  // 等級改變時重置
+  useEffect(() => {
+    setFrameCounter(0);
+    setHasError(false);
+  }, [lv]);
+
+  // 降級為原始單張
+  if (hasError) {
+    const fallbackSrc = `${baseSrc}.webp`;
+    return (
+      <div className="px-4 pt-4">
+        <style>{PANORAMA_CSS}</style>
+        <div style={{
+          width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
+          borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
+        }}>
+          <img src={fallbackSrc} alt={`村莊 Lv${lv}`}
+            width="750" height="370" fetchPriority="high"
+            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
+            onError={e => { e.target.style.display = "none"; }} />
+          <LevelBadge lv={lv} />
+        </div>
+      </div>
+    );
+  }
+
+  const curSrc = `${baseSrc}-${PANORAMA_FRAMES[curIdx]}.webp`;
+  const prevSrc = `${baseSrc}-${PANORAMA_FRAMES[prevIdx]}.webp`;
 
   return (
     <div className="px-4 pt-4">
+      <style>{PANORAMA_CSS}</style>
       <div style={{
         width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
         borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
+        background:"#EDE0CE",
       }}>
+        {/* 前幀（淡出中） */}
+        {showPrev && (
+          <img
+            key={`prev-${frameCounter}`}
+            src={prevSrc}
+            alt=""
+            width="750" height="370"
+            style={{
+              position:"absolute", inset:0, width:"100%", height:"100%",
+              objectFit:"cover", display:"block",
+              animation:`panoramaFadeOut ${FADE_DURATION_MS}ms ease both`,
+            }}
+            onError={e => { e.target.style.display = "none"; }}
+          />
+        )}
+        {/* 當前幀（淡入） */}
         <img
-          src={src}
+          key={`cur-${frameCounter}`}
+          src={curSrc}
           alt={`村莊 Lv${lv}`}
-          width="750"
-          height="370"
-          fetchPriority="high"
-          style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
-          onError={e => { e.target.style.display = "none"; }}
+          width="750" height="370" fetchPriority="high"
+          style={{
+            width:"100%", height:"100%", objectFit:"cover", display:"block",
+            animation:`panoramaFadeIn ${FADE_DURATION_MS}ms ease both`,
+          }}
+          onError={() => { setHasError(true); }}
         />
-        <div style={{
-          position: "absolute", top: 10, left: 12,
-          background: "rgba(60,35,15,0.62)", backdropFilter: "blur(6px)",
-          borderRadius: "20px", padding: "4px 14px",
-          color: "#FFF8F0", fontWeight: 900, fontSize: "13px",
-        }}>
-          🏡 村莊 Lv.{lv}
-        </div>
+
+        <LevelBadge lv={lv} />
       </div>
+    </div>
+  );
+}
+
+// ── 等級角標（復用） ─────────────────────────────────────────
+function LevelBadge({ lv }) {
+  return (
+    <div style={{
+      position: "absolute", top: 10, left: 12,
+      background: "rgba(60,35,15,0.62)", backdropFilter: "blur(6px)",
+      borderRadius: "20px", padding: "4px 14px",
+      color: "#FFF8F0", fontWeight: 900, fontSize: "13px",
+      pointerEvents: "none",
+    }}>
+      🏡 村莊 Lv.{lv}
     </div>
   );
 }
