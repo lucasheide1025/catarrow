@@ -7,7 +7,6 @@ const CATEGORIES = [
   { tab:"materials", icon:"🪨", title:"怪物素材", desc:"裝備強化・素材升級",     accent:"#a855f7" },
   { tab:"fragments", icon:"✨", title:"徽章碎片", desc:"收集進度・合成徽章",     accent:"#ec4899" },
   { tab:"special",   icon:"🎟️", title:"特殊道具", desc:"活動券・任務道具",       accent:"#6366f1" },
-  { tab:"EquipmentPage",   icon:"⚔️", title:"我的裝備", desc:"虛擬裝備強化",       accent:"#9a4141" },
 ];
 
 export default function MemberInventoryHub({ onPageChange, badges = {} }) {
@@ -38,6 +37,8 @@ export default function MemberInventoryHub({ onPageChange, badges = {} }) {
             accent="#64748b" onClick={() => onPageChange("equipment")} />
           <HubTile icon="🪙" title="金幣商店" desc="每日精選・每週珍寶"
             accent="#f59e0b" onClick={() => onPageChange("coinshop")} />
+          <HubTile icon="🐱" title="貓貓陪練" desc="九隻貓咪夥伴"
+            accent="#a855f7" onClick={() => onPageChange("cats")} />
         </div>
       </div>
     </div>
