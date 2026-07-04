@@ -33,7 +33,7 @@ service cloud.firestore {
                     "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
-                    "dungeonScrollCount", "coinShopPurchases",
+                    "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
                     "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords"]);
     }
 

@@ -1,10 +1,11 @@
 // src/components/member/CoinShop.jsx — 金幣商店
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { shopBuyEquip, shopBuyProduct, subscribeEquipItems } from "../../lib/db";
+import { shopBuyEquip, shopBuyProduct, shopUnlockEquipAppearance, shopRecycleMaterial, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
 import { EQUIP_SLOT_DEFS, EQUIP_GRADES } from "../../lib/constants";
 import { GRADE_PREFIX } from "../../lib/equipData";
 import { getDailyShopProducts, getWeeklyShopProduct, getShopDailyKey, getShopWeeklyKey } from "../../lib/shopData";
+import { MATERIALS } from "../../lib/monsterMaterials";
 
 // ── 裝備定價 ────────────────────────────────────────────────
 const EQUIP_PRICE = { atk: 200, def: 180, hp: 150 };
@@ -124,8 +125,13 @@ export default function CoinShop() {
   const [buying,     setBuying]     = useState(false);
   const [msg,        setMsg]        = useState("");
   const [rawItems,   setRawItems]   = useState([]);
+  const [materials,  setMaterials]  = useState({});
 
   useEffect(() => subscribeEquipItems(setRawItems), []);
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    return subscribeMaterials(profile.id, setMaterials);
+  }, [profile?.id]);
 
   // { slotId: [...items] }
   const itemsMap = rawItems.reduce((acc, item) => {
@@ -161,6 +167,24 @@ export default function CoinShop() {
     else showMsg(`❌ ${result.reason}`, false);
   }
 
+  async function handleUnlockAppearance(item) {
+    if (!profile?.id || buying) return;
+    setBuying(true);
+    const result = await shopUnlockEquipAppearance(profile.id, item.id);
+    setBuying(false);
+    if (result.ok) showMsg(`✅ 已永久解鎖「${item.name}」`);
+    else showMsg(`❌ ${result.reason}`, false);
+  }
+
+  async function handleRecycle(materialId, amount) {
+    if (!profile?.id || buying) return;
+    setBuying(true);
+    const result = await shopRecycleMaterial(profile.id, materialId, amount);
+    setBuying(false);
+    if (result.ok) showMsg(`✅ 回收完成，獲得 ${result.earned.toLocaleString()} 金幣`);
+    else showMsg(`❌ ${result.reason}`, false);
+  }
+
   const dailyProducts = getDailyShopProducts();
   const weeklyProduct = getWeeklyShopProduct();
   const dailyKey = getShopDailyKey();
@@ -185,14 +209,16 @@ export default function CoinShop() {
         </div>
 
         {/* 分頁 */}
-        <div className="flex gap-2 mt-3">
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {[
             { id: "today",  label: "☀️ 今日精選" },
             { id: "weekly", label: "💎 每週珍寶" },
             { id: "equip",  label: "⚔️ 基本裝備" },
+            { id: "looks",  label: "🎨 外觀" },
+            { id: "recycle", label: "♻️ 回收" },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all ${
+              className={`min-h-10 flex-none whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-black transition-colors ${
                 tab === t.id
                   ? "bg-yellow-500 text-slate-900"
                   : "bg-slate-800 text-slate-400"
@@ -295,6 +321,73 @@ export default function CoinShop() {
             </div>
           </div>
         )}
+
+        {tab === "looks" && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs leading-relaxed text-cyan-200">
+              品牌只改變裝備名稱與外觀，不增加能力。購買一次後可永久自由切換。
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {rawItems.map(item => {
+                const slot = EQUIP_SLOT_DEFS.find(entry => entry.id === item.slotId);
+                const equipped = rpgEquip[item.slotId]?.itemId === item.id;
+                const unlocked = equipped || profile?.unlockedEquipItems?.[item.id];
+                const price = slot?.stat === "atk" ? 1500 : slot?.stat === "def" ? 1300 : 1000;
+                return (
+                  <article key={item.id} className="flex min-h-44 flex-col rounded-2xl border border-cyan-400/20 bg-slate-800/60 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-3xl" aria-hidden="true">{slot?.icon || "🛡️"}</span>
+                      <span className="text-[10px] font-black text-cyan-300">{slot?.name}</span>
+                    </div>
+                    <h3 className="mt-2 break-words text-sm font-black text-white">{item.name}</h3>
+                    <p className="mt-1 text-[10px] text-slate-400">{item.brand}</p>
+                    <button type="button" onClick={() => handleUnlockAppearance(item)}
+                      disabled={buying || unlocked || coins < price}
+                      className="mt-auto min-h-11 rounded-xl bg-cyan-500 px-2 text-xs font-black text-slate-950 transition-colors hover:bg-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:bg-slate-700 disabled:text-slate-500">
+                      {unlocked ? "✓ 已永久解鎖" : coins < price ? `還差 ${(price - coins).toLocaleString()}` : `🪙 ${price.toLocaleString()} 解鎖`}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {tab === "recycle" && (() => {
+          const dailyRecycled = profile?.coinShopRecycle?.[dailyKey] || 0;
+          const recyclable = MATERIALS.filter(item => /_m[1-3]$/.test(item.id) && (materials[item.id] || 0) > 0);
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                每日最多回收 20 個 T1～T3 素材。今日已回收 {dailyRecycled}/20。
+              </div>
+              {recyclable.length ? recyclable.map(material => {
+                const tier = Number(material.id.match(/_m([1-3])$/)?.[1]);
+                const unitPrice = { 1:10, 2:25, 3:60 }[tier];
+                const count = materials[material.id] || 0;
+                const amount = Math.min(5, count, 20 - dailyRecycled);
+                return (
+                  <article key={material.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-800/60 p-3">
+                    <span className="text-3xl" aria-hidden="true">{material.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-black text-white">{material.name}</h3>
+                      <p className="text-xs text-slate-400">持有 {count}・每個 🪙{unitPrice}</p>
+                    </div>
+                    <button type="button" onClick={() => handleRecycle(material.id, amount)}
+                      disabled={buying || amount <= 0}
+                      className="min-h-11 rounded-xl bg-emerald-500 px-3 text-xs font-black text-slate-950 transition-colors hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:bg-slate-700 disabled:text-slate-500">
+                      回收 {amount} 個
+                    </button>
+                  </article>
+                );
+              }) : (
+                <div className="rounded-2xl border border-dashed border-white/15 py-10 text-center text-sm text-slate-500">
+                  沒有可回收的 T1～T3 素材
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* 訊息 Toast */}

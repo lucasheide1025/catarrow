@@ -8,9 +8,9 @@ import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
 import { makeCoinChest } from "./lootTable";
-import { EQUIP_GRADES } from "./constants";
+import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
-import { SHOP_PRODUCT_MAP, getShopPeriodKey } from "./shopData";
+import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
@@ -2785,6 +2785,7 @@ export async function shopBuyEquip(memberId, slotId, itemId, price) {
       const cur = data.rpgEquip?.[slotId];
       transaction.update(memberRef, {
         coins:coins - price,
+        unlockedEquipItems:{ ...(data.unlockedEquipItems || {}), [itemId]:true },
         [`rpgEquip.${slotId}`]:cur?.itemId
           ? { ...cur, itemId }
           : { itemId, grade:"common", plusLevel:0 },
@@ -2794,6 +2795,76 @@ export async function shopBuyEquip(memberId, slotId, itemId, price) {
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e?.message || "購買失敗，請稍後再試" };
+  }
+}
+
+export async function shopUnlockEquipAppearance(memberId, itemId) {
+  if (!memberId || !itemId) return { ok:false, reason:"外觀參數錯誤" };
+  try {
+    const memberRef = doc(db, C.members, memberId);
+    const itemRef = doc(db, C_EQUIP_ITEMS, itemId);
+    let paid = 0;
+    await runTransaction(db, async transaction => {
+      const [memberSnap, itemSnap] = await Promise.all([
+        transaction.get(memberRef),
+        transaction.get(itemRef),
+      ]);
+      if (!memberSnap.exists() || !itemSnap.exists()) throw new Error("找不到這個裝備外觀");
+      const member = memberSnap.data();
+      if (member.unlockedEquipItems?.[itemId]) throw new Error("已經解鎖這個外觀");
+      const item = itemSnap.data();
+      const slot = EQUIP_SLOT_DEFS.find(entry => entry.id === item.slotId);
+      const price = slot?.stat === "atk" ? 1500 : slot?.stat === "def" ? 1300 : 1000;
+      const coins = Math.floor(member.coins || 0);
+      if (coins < price) throw new Error(`金幣不足（需要 ${price.toLocaleString()}）`);
+      paid = price;
+      transaction.update(memberRef, {
+        coins:coins - price,
+        unlockedEquipItems:{ ...(member.unlockedEquipItems || {}), [itemId]:true },
+        updatedAt:serverTimestamp(),
+      });
+    });
+    return { ok:true, price:paid };
+  } catch (error) {
+    return { ok:false, reason:error?.message || "解鎖失敗，請稍後再試" };
+  }
+}
+
+export async function shopRecycleMaterial(memberId, materialId, amount = 1) {
+  const material = MATERIALS.find(item => item.id === materialId);
+  const tier = Number(materialId?.match(/_m([1-3])$/)?.[1]);
+  if (!memberId || !material || !tier || amount < 1) return { ok:false, reason:"這項素材不能回收" };
+  const unitPrice = { 1:10, 2:25, 3:60 }[tier];
+  const dailyKey = getShopDailyKey();
+  try {
+    let earned = 0;
+    await runTransaction(db, async transaction => {
+      const memberRef = doc(db, C.members, memberId);
+      const inventoryRef = doc(db, C_MATERIALS, memberId);
+      const [memberSnap, inventorySnap] = await Promise.all([
+        transaction.get(memberRef), transaction.get(inventoryRef),
+      ]);
+      if (!memberSnap.exists()) throw new Error("找不到會員資料");
+      const member = memberSnap.data();
+      const items = inventorySnap.exists() ? (inventorySnap.data().items || {}) : {};
+      const recycled = member.coinShopRecycle?.[dailyKey] || 0;
+      const allowed = Math.min(amount, 20 - recycled);
+      if (allowed <= 0) throw new Error("今日素材回收已達 20 個上限");
+      if ((items[materialId] || 0) < allowed) throw new Error("素材數量不足");
+      earned = allowed * unitPrice;
+      transaction.set(inventoryRef, {
+        items:{ ...items, [materialId]:items[materialId] - allowed },
+        updatedAt:serverTimestamp(),
+      }, { merge:true });
+      transaction.update(memberRef, {
+        coins:Math.floor(member.coins || 0) + earned,
+        coinShopRecycle:{ ...(member.coinShopRecycle || {}), [dailyKey]:recycled + allowed },
+        updatedAt:serverTimestamp(),
+      });
+    });
+    return { ok:true, earned };
+  } catch (error) {
+    return { ok:false, reason:error?.message || "回收失敗，請稍後再試" };
   }
 }
 
@@ -2850,8 +2921,19 @@ export async function equipItem(memberId, slotId, itemId) {
 export async function changeEquipBrand(memberId, slotId, itemId) {
   if (!memberId || !slotId || !itemId) return { ok: false, reason: "參數錯誤" };
   try {
+    const memberSnap = await getDoc(doc(db, C.members, memberId));
+    const member = memberSnap.data() || {};
+    const currentItemId = member.rpgEquip?.[slotId]?.itemId;
+    if (currentItemId !== itemId && !member.unlockedEquipItems?.[itemId]) {
+      return { ok:false, reason:"請先到金幣商店永久解鎖這個外觀" };
+    }
     await updateDoc(doc(db, C.members, memberId), {
       [`rpgEquip.${slotId}.itemId`]: itemId,
+      unlockedEquipItems:{
+        ...(member.unlockedEquipItems || {}),
+        ...(currentItemId ? { [currentItemId]:true } : {}),
+        [itemId]:true,
+      },
       updatedAt: serverTimestamp(),
     });
     return { ok: true };
@@ -2862,8 +2944,15 @@ export async function changeEquipBrand(memberId, slotId, itemId) {
 export async function unequipSlot(memberId, slotId) {
   if (!memberId || !slotId) return { ok: false, reason: "參數錯誤" };
   try {
+    const memberRef = doc(db, C.members, memberId);
+    const memberSnap = await getDoc(memberRef);
+    const member = memberSnap.data() || {};
+    const currentItemId = member.rpgEquip?.[slotId]?.itemId;
     await updateDoc(doc(db, C.members, memberId), {
       [`rpgEquip.${slotId}`]: deleteField(),
+      ...(currentItemId ? {
+        unlockedEquipItems:{ ...(member.unlockedEquipItems || {}), [currentItemId]:true },
+      } : {}),
       updatedAt: serverTimestamp(),
     });
     return { ok: true };

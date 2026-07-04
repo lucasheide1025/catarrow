@@ -19,6 +19,8 @@
 - Coin deduction, item delivery, and per-period purchase count must run in one Firestore transaction.
 - Check the member balance and purchase limit inside the transaction.
 - Basic equipment purchases must use the same atomic deduction rule.
+- Existing equipped brands count as unlocked. Switching or unequipping must persist that legacy brand before it leaves the active slot.
+- Material recycling accepts T1–T3 only, uses an atomic inventory/coin transaction, and is capped at 20 items per Taipei calendar day.
 - UI disables repeated purchase attempts while a transaction is pending, but correctness must not depend on the disabled button.
 
 ## Interface

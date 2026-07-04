@@ -31,6 +31,15 @@ export default function MemberInventoryHub({ onPageChange, badges = {} }) {
             onClick={() => openCategory(item.tab)} />
         ))}
       </div>
+      <div className="mt-2 border-t border-white/10 pt-4">
+        <div className="mb-2 text-xs font-black text-slate-500">相關功能</div>
+        <div className="grid grid-cols-2 gap-3">
+          <HubTile icon="🛡️" title="我的裝備" desc="穿戴・強化・更換外觀"
+            accent="#64748b" onClick={() => onPageChange("equipment")} />
+          <HubTile icon="🪙" title="金幣商店" desc="每日精選・每週珍寶"
+            accent="#f59e0b" onClick={() => onPageChange("coinshop")} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -453,14 +453,18 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true }) {
     return subscribeMaterials(profile.id, setMatInv);
   }, [profile?.id]); // eslint-disable-line
 
-  // 轉成 { slotId: [...items] } 的 map，方便子元件查找
+  const equipment = profile?.rpgEquip || {};
+  const unlockedItems = profile?.unlockedEquipItems || {};
+
+  // 已穿戴品項視為既有解鎖；其他品牌需先在商店永久解鎖。
   const itemsMap = useMemo(() => rawItems.reduce((acc, item) => {
+    const isEquipped = equipment[item.slotId]?.itemId === item.id;
+    if (!isEquipped && !unlockedItems[item.id]) return acc;
     if (!acc[item.slotId]) acc[item.slotId] = [];
     acc[item.slotId].push(item);
     return acc;
-  }, {}), [rawItems]);
+  }, {}), [rawItems, equipment, unlockedItems]);
 
-  const equipment = profile?.rpgEquip || {};
   const bonus     = calcEquipBonus(equipment);
 
   function showMsg(text) {

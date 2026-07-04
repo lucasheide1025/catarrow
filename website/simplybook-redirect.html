@@ -1,8 +1,9 @@
 <!-- ============================================================
-  貓小隊射箭場 · SimplyBook 首頁「防迴圈轉址」語法
+  貓小隊射箭場 · SimplyBook 公開頁強制轉址語法
   用途：貼到 SimplyBook 後台「首頁內容（HTML）」欄位，
-        讓首頁自動無縫轉到新官網，但放過預約頁（#book），
-        避免新官網內嵌的預約 iframe 被一起轉走造成無限迴圈。
+        所有公開的 SimplyBook 頂層頁面一律轉到新官網。
+        唯一後台白名單：
+        https://catarcherycom.secure.simplybook.asia/v2/design#homepage-tab
   目標網址：https://archery.catgroup.com.tw
   ⚠ 未來換自訂網域時，把下面兩處網址一起改掉。
   ============================================================ -->
@@ -11,28 +12,23 @@
 <script>
 (function () {
   try {
-    // 防呆①：只在「正式公開的預約網域」才轉址。
-    //   後台編輯器 / 預覽在別的網域，hostname 不符 → 不轉，
-    //   所以貼進內容欄位時不會把你的編輯頁跳走（你才點得到「套用」）。
-    var ON_LIVE = window.location.hostname === 'catarcherycom.simplybook.asia';
-    // 防呆②：不在預約流程（網址沒有 book）才轉，
-    //   這樣被嵌入的預約 iframe（網址帶 #book）不會被轉 → 不會迴圈。
-    var h = (window.location.hash || '').toLowerCase();
-    var s = (window.location.search || '').toLowerCase();
-    var inBooking = h.indexOf('book') !== -1 || s.indexOf('book') !== -1;
-    // 防呆③：不在 iframe 內才轉（若本頁被別人嵌入就不轉）。
+    // 唯一人工操作白名單：SimplyBook 設計後台。
+    var isAdminEditor =
+      window.location.hostname === 'catarcherycom.secure.simplybook.asia' &&
+      window.location.pathname.indexOf('/v2/design') === 0;
+
+    // 官網預約區會以 iframe 載入 SimplyBook；iframe 必須放行，
+    // 否則 iframe 會載入官網，而官網又建立 iframe，形成無限巢狀。
     var isFramed = window.top !== window.self;
-    if (ON_LIVE && !inBooking && !isFramed) {
+
+    // 除後台與內嵌預約外，所有頂層 SimplyBook 頁面都強制回官網。
+    // 不再放行 #book；直接開啟 /v2/#book 也必須回官網。
+    if (!isAdminEditor && !isFramed) {
       window.location.replace('https://archery.catgroup.com.tw');
     }
   } catch (e) {}
 })();
 </script>
-
-<!-- 後備手段：若上面 <script> 被後台過濾掉，這行 meta 會在 3 秒後轉址。
-     （meta 無法判斷是否預約頁，故延遲 3 秒，讓預約 iframe 有時間自行載入；
-      若你確定 script 有生效，可整行刪除。）-->
-<noscript><meta http-equiv="refresh" content="0; url=https://archery.catgroup.com.tw"></noscript>
 
 <!-- 轉址中的過場畫面（幾乎瞬間，使用者通常看不到）-->
 <div style="min-height:60vh;display:flex;align-items:center;justify-content:center;background:#faf6ef;font-family:'Noto Sans TC',sans-serif;color:#5c5750;">

@@ -36,7 +36,7 @@ const QUICK_LINKS = [
   { page:"monster",     icon:"⚔️", label:"打怪" },
   { page:"practice",    icon:"🎯", label:"自主練習" },
   { page:"coinshop",    icon:"🛒", label:"商店" },
-  { page:"leaderboard", icon:"🏅", label:"排行榜" },
+  { page:"equipment",   icon:"🛡️", label:"我的裝備" },
 ];
 
 // Firestore Timestamp / Date / string → ms

@@ -1,0 +1,34 @@
+{
+  "id": "professional-practice-simulator",
+  "name": "professional-practice-simulator",
+  "title": "自主練習專業賽事模擬",
+  "description": "以真實 World Archery 規格重建自主練習設定，加入資格賽聲響、燈號、倒數、逾時處理與詳細逐箭紀錄。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "member-practice",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-07-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [
+    "Phase A: 真實資格賽預設與靶面規格",
+    "Phase B: 發射線聲響、燈號與可靠倒數",
+    "Phase C: 逾時強制結束與逐箭時間資料",
+    "Phase D: 專業結算與歷史紀錄"
+  ],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/components/member/MemberPractice.jsx",
+    "src/lib/db.js"
+  ],
+  "notes": "依 World Archery Book 3 2026-01-27；第一階段只做資格賽模擬。",
+  "meta": {}
+}

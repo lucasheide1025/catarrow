@@ -1,5 +1,5 @@
 // src/components/member/MemberPractice.jsx
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
@@ -18,10 +18,12 @@ const CS2 = { background:"rgba(15,23,42,0.38)", backdropFilter:"blur(8px)",  bor
 
 // ── 常數 ─────────────────────────────────────────────────────
 const TARGET_FORMATS = [
-  { id:"full_110", label:"全靶 1-10",  min:1, max:10, isTriple:false },
-  { id:"field_16", label:"原野 1-6",   min:1, max:6,  isTriple:false },
-  { id:"half_610", label:"半靶 6-10",  min:6, max:10, isTriple:false },
-  { id:"triple",   label:"三連靶",     min:1, max:10, isTriple:true  },
+  { id:"full_110",    label:"122cm 十環全靶", min:1, max:10, faceSizeCm:122, layout:"single", isTriple:false },
+  { id:"compound_510",label:"80cm 六環靶",    min:5, max:10, faceSizeCm:80,  layout:"single", isTriple:false },
+  { id:"indoor_40",   label:"40cm 十環單靶",  min:1, max:10, faceSizeCm:40,  layout:"single", isTriple:false },
+  { id:"half_610",    label:"40cm 五環單靶",  min:6, max:10, faceSizeCm:40,  layout:"single", isTriple:false },
+  { id:"triple",      label:"40cm 直式三連靶",min:6, max:10, faceSizeCm:40,  layout:"vertical_triple", isTriple:true },
+  { id:"field_16",    label:"原野靶 1-6",     min:1, max:6,  faceSizeCm:null,layout:"single", isTriple:false },
 ];
 const BOW_OPTIONS = [
   { value:"recurve_bare", label:"裸弓" },
@@ -30,6 +32,56 @@ const BOW_OPTIONS = [
   { value:"traditional",  label:"傳統弓" },
 ];
 const DISTANCES = [5, 10, 13.5, 15, 18, 20, 30, 50, 70];
+const PRACTICE_PRESETS = [
+  { id:"outdoor_recurve", label:"70m 反曲資格賽", desc:"122cm・6 箭 × 12 回", values:{ bowType:"recurve_full", distance:70, targetFormat:"full_110", arrowCount:6, roundCount:12, competitionMode:"wa30", matchType:"qualification" } },
+  { id:"outdoor_compound",label:"50m 複合資格賽", desc:"80cm 六環・6 箭 × 12 回", values:{ bowType:"compound", distance:50, targetFormat:"compound_510", arrowCount:6, roundCount:12, competitionMode:"wa30", matchType:"qualification" } },
+  { id:"recurve_match",   label:"反曲／裸弓局制", desc:"70m・3 箭・先得 6 局點", values:{ bowType:"recurve_full", distance:70, targetFormat:"full_110", arrowCount:3, roundCount:5, competitionMode:"wa30", matchType:"recurve_set" } },
+  { id:"compound_match",  label:"複合弓累計賽",   desc:"50m・3 箭 × 5 回", values:{ bowType:"compound", distance:50, targetFormat:"compound_510", arrowCount:3, roundCount:5, competitionMode:"wa30", matchType:"compound_total" } },
+  { id:"indoor_single",   label:"18m 室內單靶",   desc:"40cm・3 箭 × 20 回", values:{ distance:18, targetFormat:"indoor_40", arrowCount:3, roundCount:20, competitionMode:"wa30", matchType:"qualification" } },
+  { id:"indoor_triple",   label:"18m 室內三連靶", desc:"40cm 三連・3 箭 × 20 回", values:{ distance:18, targetFormat:"triple", arrowCount:3, roundCount:20, competitionMode:"wa30", matchType:"qualification" } },
+  { id:"custom",          label:"完全自訂",       desc:"自行設定距離、靶面與時限", values:{ matchType:"qualification" } },
+];
+
+let practiceAudioContext = null;
+function playRangeSignal(count = 1, frequency = 880) {
+  try {
+    practiceAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (practiceAudioContext.state === "suspended") practiceAudioContext.resume();
+    const start = practiceAudioContext.currentTime;
+    for (let i = 0; i < count; i += 1) {
+      const oscillator = practiceAudioContext.createOscillator();
+      const gain = practiceAudioContext.createGain();
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, start + i * 0.42);
+      gain.gain.exponentialRampToValueAtTime(0.28, start + i * 0.42 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + i * 0.42 + 0.24);
+      oscillator.connect(gain).connect(practiceAudioContext.destination);
+      oscillator.start(start + i * 0.42);
+      oscillator.stop(start + i * 0.42 + 0.25);
+    }
+  } catch {}
+}
+
+function announcePractice(text, enabled) {
+  if (!enabled || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "zh-TW";
+  utterance.rate = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+function scoreValue(score) {
+  return score === "X" ? 10 : typeof score === "number" ? score : 0;
+}
+
+function generateOpponentArrows(count, average, fmt) {
+  return Array.from({ length:count }, () => {
+    const variation = (Math.random() + Math.random() + Math.random() - 1.5) * 2.4;
+    const value = Math.max(fmt.min, Math.min(10, Math.round(Number(average) + variation)));
+    return value === 10 && Math.random() < 0.28 ? "X" : value;
+  });
+}
 
 // ── 工具函式 ─────────────────────────────────────────────────
 function shortDate(s) {
@@ -46,16 +98,18 @@ function getFormat(log) {
 }
 
 function numericArr(rounds) {
-  return rounds.flat().filter(s => typeof s === "number");
+  return rounds.flat().flatMap(score => score === "X" ? [10] : typeof score === "number" ? [score] : []);
 }
 
 function calcStats(rounds) {
   const all    = rounds.flat();
-  const nums   = all.filter(s => typeof s === "number");
+  const nums   = numericArr(rounds);
   const total  = nums.reduce((a,b) => a+b, 0);
   const misses = all.filter(s => s === "M").length;
+  const xCount = all.filter(s => s === "X").length;
+  const tenCount = all.filter(s => s === 10).length;
   return {
-    total, misses,
+    total, misses, xCount, tenCount,
     arrows:      all.length,
     hitRate:     all.length ? Math.round((all.length-misses)/all.length*100) : 0,
     avgPerArrow: nums.length ? +(total/nums.length).toFixed(2) : 0,
@@ -64,6 +118,7 @@ function calcStats(rounds) {
 
 function scoreColor(s, fmt) {
   if (s === "M") return { bg:"#fef2f2", text:"#ef4444", border:"#fecaca" };
+  if (s === "X") return { bg:"#fef08a", text:"#713f12", border:"#facc15" };
   const ratio = (s - fmt.min + 1) / (fmt.max - fmt.min + 1);
   if (ratio >= 0.9) return { bg:"#fef9c3", text:"#92400e", border:"#fde68a" };
   if (ratio >= 0.7) return { bg:"#dcfce7", text:"#166534", border:"#86efac" };
@@ -82,6 +137,7 @@ function battleScoreColor(v) {
 function genButtons(fmt) {
   const arr = [];
   for (let i = fmt.max; i >= fmt.min; i--) arr.push(i);
+  if (fmt.max === 10) arr.unshift("X");
   arr.push("M");
   return arr;
 }
@@ -116,6 +172,14 @@ const RING_DEFS = {
     { r:0.40, fill:"#e67700", stroke:"#f59f00" },
     { r:0.20, fill:"#e67700", stroke:"#f59f00" },
   ],
+  compound_510: [
+    { r:1.00, fill:"#1864ab", stroke:"#4a90d9" },
+    { r:5/6,  fill:"#1864ab", stroke:"#4a90d9" },
+    { r:4/6,  fill:"#c92a2a", stroke:"#e03131" },
+    { r:3/6,  fill:"#c92a2a", stroke:"#e03131" },
+    { r:2/6,  fill:"#e67700", stroke:"#f59f00" },
+    { r:1/6,  fill:"#e67700", stroke:"#f59f00" },
+  ],
   field_16: [
     { r:1.00, fill:"#1c1c1c", stroke:"#555" },
     { r:5/6,  fill:"#1c1c1c", stroke:"#555" },
@@ -128,9 +192,14 @@ const RING_DEFS = {
 
 function calcTapScore(ratio, fmtId) {
   if (ratio > 1) return "M";
+  if (fmtId !== "field_16" && ratio <= 0.05) return "X";
   if (fmtId === "half_610") {
     const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 5);
     return ring === 0 ? 10 : Math.max(6, 11 - ring);
+  }
+  if (fmtId === "compound_510") {
+    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
+    return ring === 0 ? 10 : Math.max(5, 11 - ring);
   }
   if (fmtId === "field_16") {
     const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
@@ -199,7 +268,7 @@ function TargetFaceView({ fmt, arrowCount, arrows, onTap }) {
           return (
             <div key={spotIdx} className="flex flex-col items-center gap-1">
               <span className={`text-xs font-bold ${isActive ? "text-green-300" : "text-white/30"}`}>{label}</span>
-              <SingleTargetSVG fmtId="full_110" R={R} arrows={spotArrows} active={isActive}
+              <SingleTargetSVG fmtId="half_610" R={R} arrows={spotArrows} active={isActive}
                 onTap={({ score, nx, ny }) => onTap({ score, nx, ny, spotIdx })} />
             </div>
           );
@@ -424,6 +493,9 @@ function SetupPhase({ initial, equipSets, onStart }) {
     const f = TARGET_FORMATS.find(x=>x.id===id);
     if (f?.isTriple) up("arrowCount", 3);
   }
+  function applyPreset(preset) {
+    setForm(current => ({ ...current, ...preset.values, presetId:preset.id, equipSetId:null }));
+  }
 
   const btnSel  = "bg-blue-500 text-white border-blue-400";
   const btnIdle = "bg-white/10 text-white/70 border-white/20";
@@ -431,6 +503,45 @@ function SetupPhase({ initial, equipSets, onStart }) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <Card className="p-4" style={CS}>
+        <div className="mb-2 text-xs font-bold text-white/70">資格賽預設</div>
+        <div className="grid grid-cols-2 gap-2">
+          {PRACTICE_PRESETS.map(preset => (
+            <button type="button" key={preset.id} onClick={() => applyPreset(preset)}
+              className={`min-h-16 touch-manipulation rounded-xl border p-2 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                form.presetId === preset.id ? "border-blue-400 bg-blue-500/25" : "border-white/15 bg-white/5 hover:bg-white/10"
+              }`}>
+              <div className="text-xs font-black text-white">{preset.label}</div>
+              <div className="mt-1 text-[10px] leading-relaxed text-white/45">{preset.desc}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {form.matchType && form.matchType !== "qualification" ? (
+        <Card className="p-4" style={CS}>
+          <div className="mb-2 text-xs font-bold text-white/70">虛擬對手強度</div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              [7.5, "俱樂部"], [8.5, "競技"], [9.3, "菁英"],
+            ].map(([average, label]) => (
+              <button type="button" key={average}
+                onClick={() => up("opponentAverage", average)}
+                className={`min-h-14 rounded-xl border text-xs font-black transition-colors ${
+                  Number(form.opponentAverage || 8.5) === average
+                    ? "border-rose-400 bg-rose-500/20 text-rose-200"
+                    : "border-white/15 bg-white/5 text-white/60"
+                }`}>
+                {label}<span className="mt-0.5 block text-[9px] font-normal">均箭約 {average}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+            對手每箭會依強度產生合理波動，完整箭值會寫入歷史紀錄。
+          </p>
+        </Card>
+      ) : null}
+
       {/* 弓種 */}
       <Card className="p-4" style={CS}>
         <div className="text-xs font-bold text-white/70 mb-2">弓種</div>
@@ -452,6 +563,33 @@ function SetupPhase({ initial, equipSets, onStart }) {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card className="p-4" style={CS}>
+        <div className="mb-2 text-xs font-bold text-white/70">賽事計時</div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ["off", "一般練習", "不限制時間"],
+            ["wa30", "30 秒／箭", "排名賽規格"],
+            ["wa40", "40 秒／箭", "一般賽事"],
+          ].map(([id, label, desc]) => (
+            <button type="button" key={id} onClick={() => up("competitionMode", id)}
+              className={`min-h-16 rounded-xl border p-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                (form.competitionMode || "off") === id ? "border-amber-400 bg-amber-500/20" : "border-white/15 bg-white/5"
+              }`}>
+              <div className="text-xs font-black text-white">{label}</div>
+              <div className="mt-1 text-[9px] text-white/45">{desc}</div>
+            </button>
+          ))}
+        </div>
+        {(form.competitionMode || "off") !== "off" ? (
+          <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl bg-white/5 px-3">
+            <input type="checkbox" checked={form.assistedCues !== false}
+              onChange={event => up("assistedCues", event.target.checked)}
+              className="size-4 accent-blue-500" />
+            <span className="text-xs text-white/70">教練語音與每分鐘提示音</span>
+          </label>
+        ) : null}
       </Card>
 
       {/* 距離 */}
@@ -545,7 +683,7 @@ function SetupPhase({ initial, equipSets, onStart }) {
           <div>
             <div className="text-xs font-bold text-white/70 mb-2">組數</div>
             <div className="flex gap-1.5">
-              {[3,6,10,12].map(n => (
+              {[3,6,10,12,20].map(n => (
                 <button key={n} onClick={() => up("roundCount", n)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all
                     ${form.roundCount===n ? "bg-blue-500 text-white border-blue-400" : "bg-white/10 text-white/70 border-white/20"}`}>{n}</button>
@@ -577,6 +715,7 @@ function SetupPhase({ initial, equipSets, onStart }) {
         &nbsp;·&nbsp;{form.distance}m&nbsp;·&nbsp;{fmt.label}
         &nbsp;·&nbsp;{fmt.isTriple ? `每靶${arrowsPerSpot}箭` : `${form.arrowCount}箭`}×{form.roundCount}組
         &nbsp;（共 {form.arrowCount * form.roundCount} 箭）
+        {(form.competitionMode || "off") !== "off" ? ` · 每組 ${form.arrowCount * (form.competitionMode === "wa40" ? 40 : 30)} 秒` : ""}
       </div>
       <button onClick={() => onStart(form)} className="w-full py-4 bg-blue-600 text-white font-black text-lg rounded-xl">
         🎯 開始練習
@@ -590,49 +729,322 @@ function ScoringPhase({ form, onDone, onCancel }) {
   const fmt  = TARGET_FORMATS.find(f=>f.id===form.targetFormat) || TARGET_FORMATS[0];
   const btns = genButtons(fmt);
   const cols = btns.length <= 6 ? 3 : 4;
+  const timed = (form.competitionMode || "off") !== "off";
+  const secondsPerArrow = form.competitionMode === "wa40" ? 40 : 30;
+  const matchType = form.matchType || "qualification";
+  const isMatch = matchType !== "qualification";
+  const [shootOff, setShootOff] = useState(false);
+  const effectiveArrowCount = shootOff ? 1 : form.arrowCount;
+  const allowedSeconds = shootOff ? 20 : effectiveArrowCount * secondsPerArrow;
   const [round, setRound] = useState(0);
   const [allR,  setAllR]  = useState([]);
   const [cur,   setCur]   = useState([]);
   const [positions, setPositions] = useState([]);
   const [allPositions, setAllPositions] = useState([]);
+  const [stage, setStage] = useState(timed ? "idle" : "shooting");
+  const [remaining, setRemaining] = useState(timed ? allowedSeconds : null);
+  const [roundTiming, setRoundTiming] = useState([]);
+  const [arrowEntries, setArrowEntries] = useState([]);
+  const [match, setMatch] = useState({
+    type:matchType,
+    playerSetPoints:0,
+    opponentSetPoints:0,
+    playerTotal:0,
+    opponentTotal:0,
+    opponentEnds:[],
+    shootOff:null,
+    result:null,
+  });
+  const deadlineRef = useRef(0);
+  const startedAtRef = useRef(timed ? 0 : Date.now());
+  const announcedRef = useRef(new Set());
+  const finishingRef = useRef(false);
   const isTargetMode = (form.inputMode || "button") === "target";
 
   function addArrow(s, pos) {
-    if (cur.length >= form.arrowCount) return;
+    if (timed && stage !== "shooting") return;
+    if (cur.length >= effectiveArrowCount) return;
+    const now = Date.now();
     setCur(p => [...p, s]);
-    if (pos) setPositions(p => [...p, { score: s, ...pos }]);
+    if (pos) setPositions(p => [...p, { score: s, ...pos, round, arrow:cur.length + 1 }]);
+    setArrowEntries(entries => [...entries, {
+      round:round + 1,
+      arrow:cur.length + 1,
+      score:s,
+      enteredAtMs:now,
+      elapsedMs:Math.max(0, now - startedAtRef.current),
+      timedOut:false,
+    }]);
   }
-  function nextRound() {
-    const newAll = [...allR, cur];
+
+  const finishRound = useCallback((timedOut = false) => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    const now = Date.now();
+    const missing = timedOut ? Math.max(0, effectiveArrowCount - cur.length) : 0;
+    const completed = missing ? [...cur, ...Array.from({ length:missing }, () => "M")] : cur;
+    const timeoutEntries = Array.from({ length:missing }, (_, index) => ({
+      round:round + 1,
+      arrow:cur.length + index + 1,
+      score:"M",
+      enteredAtMs:now,
+      elapsedMs:allowedSeconds * 1000,
+      timedOut:true,
+    }));
+    const finalEntries = [...arrowEntries, ...timeoutEntries];
+    const newAll = [...allR, completed];
     const newAllPos = [...allPositions, ...positions];
-    if (newAll.length >= form.roundCount) { onDone(newAll, newAllPos); return; }
+    const playerEndTotal = numericArr([completed]).reduce((sum, value) => sum + value, 0);
+    const opponentArrows = isMatch
+      ? generateOpponentArrows(effectiveArrowCount, form.opponentAverage || 8.5, fmt)
+      : [];
+    const opponentEndTotal = numericArr([opponentArrows]).reduce((sum, value) => sum + value, 0);
+    let nextMatch = isMatch ? {
+      ...match,
+      playerTotal:match.playerTotal + (shootOff ? 0 : playerEndTotal),
+      opponentTotal:match.opponentTotal + (shootOff ? 0 : opponentEndTotal),
+      opponentEnds:shootOff ? match.opponentEnds : [...match.opponentEnds, opponentArrows],
+    } : match;
+    let matchComplete = false;
+    let enterShootOff = false;
+
+    if (shootOff) {
+      const playerScore = scoreValue(completed[0]);
+      const opponentScore = scoreValue(opponentArrows[0]);
+      const playerPosition = positions[positions.length - 1];
+      const playerDistance = playerPosition
+        ? Math.sqrt((playerPosition.nx || 0) ** 2 + (playerPosition.ny || 0) ** 2)
+        : Math.max(0.01, (10 - playerScore) / 10 + Math.random() * 0.08);
+      const opponentDistance = Math.max(0.01, (10 - opponentScore) / 10 + Math.random() * 0.08);
+      const winner = playerScore !== opponentScore
+        ? (playerScore > opponentScore ? "player" : "opponent")
+        : (playerDistance <= opponentDistance ? "player" : "opponent");
+      nextMatch = {
+        ...nextMatch,
+        shootOff:{ playerScore:completed[0], opponentScore:opponentArrows[0], playerDistance, opponentDistance, winner },
+        result:winner === "player" ? "win" : "loss",
+      };
+      matchComplete = true;
+    } else if (matchType === "recurve_set") {
+      const playerSetGain = playerEndTotal > opponentEndTotal ? 2 : playerEndTotal === opponentEndTotal ? 1 : 0;
+      const opponentSetGain = opponentEndTotal > playerEndTotal ? 2 : playerEndTotal === opponentEndTotal ? 1 : 0;
+      const playerSetPoints = match.playerSetPoints + playerSetGain;
+      const opponentSetPoints = match.opponentSetPoints + opponentSetGain;
+      nextMatch = { ...nextMatch, playerSetPoints, opponentSetPoints };
+      if (playerSetPoints >= 6 || opponentSetPoints >= 6) {
+        nextMatch.result = playerSetPoints > opponentSetPoints ? "win" : "loss";
+        matchComplete = true;
+      } else if (newAll.length >= 5 && playerSetPoints === 5 && opponentSetPoints === 5) {
+        enterShootOff = true;
+      }
+    } else if (matchType === "compound_total" && newAll.length >= 5) {
+      if (nextMatch.playerTotal === nextMatch.opponentTotal) {
+        enterShootOff = true;
+      } else {
+        nextMatch.result = nextMatch.playerTotal > nextMatch.opponentTotal ? "win" : "loss";
+        matchComplete = true;
+      }
+    }
+    const nextTiming = timed ? [...roundTiming, {
+      round:round + 1,
+      startedAtMs:startedAtRef.current,
+      endedAtMs:now,
+      allowedSeconds,
+      usedSeconds:Math.min(allowedSeconds, Math.max(0, Math.round((now - startedAtRef.current) / 1000))),
+      remainingSeconds:timedOut ? 0 : Math.max(0, Math.ceil((deadlineRef.current - now) / 1000)),
+      timedOut,
+      timeoutArrows:missing,
+    }] : roundTiming;
+    if (timed && !timedOut) playRangeSignal(3, 990);
+    const qualificationComplete = !isMatch && newAll.length >= form.roundCount;
+    if (qualificationComplete || matchComplete) {
+      announcePractice(nextMatch.result === "win" ? "比賽結束，你獲勝" : nextMatch.result === "loss" ? "比賽結束" : "練習完成", form.assistedCues !== false);
+      onDone(newAll, newAllPos, {
+        roundTiming:nextTiming,
+        arrowEntries:finalEntries,
+        ...(isMatch ? { match:nextMatch } : {}),
+      });
+      return;
+    }
     setAllR(newAll); setCur([]); setRound(r=>r+1);
     setAllPositions(newAllPos); setPositions([]);
+    setRoundTiming(nextTiming);
+    setArrowEntries(finalEntries);
+    setMatch(nextMatch);
+    setShootOff(enterShootOff || shootOff);
+    const nextAllowedSeconds = enterShootOff ? 20 : (shootOff ? 20 : form.arrowCount * secondsPerArrow);
+    setRemaining(timed ? nextAllowedSeconds : null);
+    setStage(timed ? "idle" : "shooting");
+    startedAtRef.current = timed ? 0 : Date.now();
+    deadlineRef.current = 0;
+    announcedRef.current = new Set();
+    finishingRef.current = false;
+  }, [allPositions, allR, allowedSeconds, arrowEntries, cur, effectiveArrowCount, fmt, form.arrowCount, form.assistedCues, form.opponentAverage, form.roundCount, isMatch, match, matchType, onDone, positions, round, roundTiming, secondsPerArrow, shootOff, timed]);
+
+  function startTimedEnd() {
+    if (!timed || stage !== "idle") return;
+    finishingRef.current = false;
+    playRangeSignal(2, 880);
+    announcePractice("射手進入發射線，預備", form.assistedCues !== false);
+    deadlineRef.current = Date.now() + 10000;
+    setRemaining(10);
+    setStage("preparation");
+  }
+
+  useEffect(() => {
+    if (!timed || (stage !== "preparation" && stage !== "shooting")) return undefined;
+    const tick = () => {
+      const now = Date.now();
+      const nextRemaining = Math.max(0, Math.ceil((deadlineRef.current - now) / 1000));
+      setRemaining(nextRemaining);
+      if (stage === "preparation" && nextRemaining <= 0) {
+        playRangeSignal(1, 980);
+        announcePractice("開始射擊", form.assistedCues !== false);
+        startedAtRef.current = now;
+        deadlineRef.current = now + allowedSeconds * 1000;
+        announcedRef.current = new Set();
+        setRemaining(allowedSeconds);
+        setStage("shooting");
+        return;
+      }
+      if (stage === "shooting") {
+        const minuteThresholds = Array.from(
+          { length:Math.max(0, Math.floor((allowedSeconds - 1) / 60)) },
+          (_, index) => (index + 1) * 60
+        );
+        for (const threshold of minuteThresholds) {
+          if (nextRemaining <= threshold && !announcedRef.current.has(threshold)) {
+            announcedRef.current.add(threshold);
+            if (form.assistedCues !== false) {
+              playRangeSignal(1, 740);
+              announcePractice(`剩餘 ${threshold} 秒`, true);
+            }
+          }
+        }
+        if (nextRemaining <= 0) {
+          setStage("ended");
+          playRangeSignal(2, 660);
+          announcePractice("時間結束，停止射擊", form.assistedCues !== false);
+          finishRound(true);
+        }
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 200);
+    return () => window.clearInterval(timer);
+  }, [allowedSeconds, finishRound, form.assistedCues, stage, timed]);
+
+  useEffect(() => () => {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }, []);
+
+  useEffect(() => {
+    if (stage !== "preparation" && stage !== "shooting") return undefined;
+    const warn = event => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [stage]);
+
+  function nextRound() {
+    finishRound(false);
   }
   const prevTotal  = numericArr(allR).reduce((a,b)=>a+b,0);
-  const curNumeric = cur.filter(s=>s!=="M").reduce((a,b)=>a+b,0);
+  const curNumeric = numericArr([cur]).reduce((a,b)=>a+b,0);
+  const inputLocked = timed && stage !== "shooting";
+  const timerColor = stage === "preparation" || stage === "ended"
+    ? "#ef4444"
+    : remaining <= 30 ? "#facc15" : "#22c55e";
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {timed ? (
+        <Card className="p-4" style={{ ...CS, border:`2px solid ${timerColor}` }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-black uppercase tracking-widest" style={{ color:timerColor }}>
+                {stage === "idle" ? "等待進線" : stage === "preparation" ? "紅燈・預備" : stage === "shooting" ? (remaining <= 30 ? "黃燈・最後 30 秒" : "綠燈・射擊") : "紅燈・停止"}
+              </div>
+              <div className="mt-1 text-xs text-white/50">
+                {secondsPerArrow} 秒／箭・本回 {allowedSeconds} 秒
+              </div>
+            </div>
+            <div className="font-mono text-5xl font-black tabular-nums" style={{ color:timerColor }}>
+              {String(Math.floor((remaining || 0) / 60)).padStart(2, "0")}:{String((remaining || 0) % 60).padStart(2, "0")}
+            </div>
+          </div>
+          {stage === "idle" ? (
+            <button type="button" onClick={startTimedEnd}
+              className="mt-4 min-h-12 w-full touch-manipulation rounded-xl bg-red-600 text-sm font-black text-white transition-colors hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+              啟動本回正式信號
+            </button>
+          ) : null}
+          <div aria-live="polite" className="mt-2 text-center text-xs text-white/55">
+            {stage === "preparation" ? "10 秒後一聲開始" : stage === "shooting" ? "時間到將鎖定輸入，空白箭記為逾時" : stage === "idle" ? "按下後播放兩聲進線信號" : "本回已強制結束"}
+          </div>
+        </Card>
+      ) : null}
+
+      {isMatch ? (
+        <Card className="p-4" style={{ ...CS, border:"1px solid rgba(244,63,94,.35)" }}>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-xs font-black text-rose-300">
+                {matchType === "recurve_set" ? "反曲／裸弓局制" : "複合弓累計制"}
+              </div>
+              <div className="text-[10px] text-white/40">虛擬對手・均箭約 {form.opponentAverage || 8.5}</div>
+            </div>
+            {shootOff ? <span className="rounded-full bg-amber-400/20 px-2 py-1 text-xs font-black text-amber-300">加射</span> : null}
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
+            <div className="rounded-xl bg-blue-500/10 p-2">
+              <div className="text-[10px] text-white/45">我的{matchType === "recurve_set" ? "局點" : "累計"}</div>
+              <div className="text-3xl font-black text-blue-300">
+                {matchType === "recurve_set" ? match.playerSetPoints : match.playerTotal}
+              </div>
+            </div>
+            <span className="font-black text-white/30">VS</span>
+            <div className="rounded-xl bg-rose-500/10 p-2">
+              <div className="text-[10px] text-white/45">對手{matchType === "recurve_set" ? "局點" : "累計"}</div>
+              <div className="text-3xl font-black text-rose-300">
+                {matchType === "recurve_set" ? match.opponentSetPoints : match.opponentTotal}
+              </div>
+            </div>
+          </div>
+          {match.opponentEnds.length ? (
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-xs">
+              <span className="text-white/45">對手上一局</span>
+              <span className="font-black text-rose-200">
+                {match.opponentEnds[match.opponentEnds.length - 1].join("・")}
+                {" = "}
+                {numericArr([match.opponentEnds[match.opponentEnds.length - 1]]).reduce((sum, value) => sum + value, 0)}
+              </span>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       <Card className="p-4" style={CS}>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-white/70">第 {round+1} / {form.roundCount} 組</span>
+          <span className="text-xs text-white/70">{shootOff ? "加射決勝" : `第 ${round+1} / ${form.roundCount} ${isMatch ? "局" : "組"}`}</span>
           <span className="text-xs text-white/50">{bowLabel(form.bowType)} · {form.distance}m · {fmt.label}</span>
         </div>
         <div className="w-full bg-white/10 rounded-full h-1.5 mb-3">
           <div className="bg-blue-400 h-1.5 rounded-full transition-all" style={{ width:`${(round/form.roundCount)*100}%` }} />
         </div>
-        {fmt.isTriple && form.arrowCount >= 3 && (
+        {fmt.isTriple && effectiveArrowCount >= 3 && (
           <div className="flex gap-2 mb-2 text-xs justify-center">
             {["上","中","下"].map((s,i) => (
-              <span key={i} className={`px-2 py-0.5 rounded-full ${Math.floor(cur.length/(form.arrowCount/3))===i ? "bg-blue-500/40 text-blue-200 font-bold" : "bg-white/10 text-white/40"}`}>
+              <span key={i} className={`px-2 py-0.5 rounded-full ${Math.floor(cur.length/(effectiveArrowCount/3))===i ? "bg-blue-500/40 text-blue-200 font-bold" : "bg-white/10 text-white/40"}`}>
                 {s}靶
               </span>
             ))}
           </div>
         )}
         <div className="flex gap-2 justify-center flex-wrap mb-3">
-          {Array.from({length:form.arrowCount},(_,i)=>{
+          {Array.from({length:effectiveArrowCount},(_,i)=>{
             const s = cur[i];
             if (s===undefined) return (
               <div key={i} className="w-10 h-10 rounded-full border-2 border-dashed border-white/20 flex items-center justify-center text-white/20 text-xs">●</div>
@@ -652,13 +1064,13 @@ function ScoringPhase({ form, onDone, onCancel }) {
 
       {isTargetMode ? (
         <Card className="p-3" style={CS}>
-          <TargetFaceView fmt={fmt} arrowCount={form.arrowCount} arrows={positions}
+          <TargetFaceView fmt={fmt} arrowCount={effectiveArrowCount} arrows={positions}
             onTap={({ score, nx, ny, spotIdx }) => addArrow(score, { nx, ny, ...(spotIdx !== undefined ? { spotIdx } : {}) })} />
           <div className="flex items-center justify-between mt-2 gap-2">
             <div className="text-white/40 text-xs flex-1">
-              {cur.length < form.arrowCount ? `點擊靶面計分（${cur.length}/${form.arrowCount} 箭）` : "本組完成 →"}
+              {cur.length < effectiveArrowCount ? `點擊靶面計分（${cur.length}/${effectiveArrowCount} 箭）` : "本組完成 →"}
             </div>
-            <button onClick={() => addArrow("M", null)} disabled={cur.length >= form.arrowCount}
+            <button onClick={() => addArrow("M", null)} disabled={inputLocked || cur.length >= effectiveArrowCount}
               className="px-4 py-1.5 rounded-xl border border-red-500/50 text-red-400 text-sm font-black disabled:opacity-30 bg-red-900/20 active:scale-95 transition-transform">
               脫靶 M
             </button>
@@ -670,7 +1082,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
             {btns.map(s => {
               const c = scoreColor(s, fmt);
               return (
-                <button key={s} onClick={()=>addArrow(s)} disabled={cur.length>=form.arrowCount}
+                <button key={s} onClick={()=>addArrow(s)} disabled={inputLocked || cur.length>=effectiveArrowCount}
                   className="py-4 rounded-xl font-black text-xl border-2 disabled:opacity-30 transition-all active:scale-95"
                   style={{ background:c.bg, color:c.text, borderColor:c.border }}>{s}
                 </button>
@@ -681,14 +1093,14 @@ function ScoringPhase({ form, onDone, onCancel }) {
       )}
 
       <div className="flex gap-3">
-        <button onClick={()=>{ setCur(p=>p.slice(0,-1)); if(isTargetMode) setPositions(p=>p.slice(0,-1)); }} disabled={cur.length===0}
+        <button onClick={()=>{ setCur(p=>p.slice(0,-1)); setArrowEntries(p=>p.slice(0,-1)); if(isTargetMode) setPositions(p=>p.slice(0,-1)); }} disabled={inputLocked || cur.length===0}
           className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm disabled:opacity-30 bg-white/10">
           ← 刪除
         </button>
-        <button onClick={nextRound} disabled={cur.length<form.arrowCount}
+        <button onClick={nextRound} disabled={inputLocked || cur.length<effectiveArrowCount}
           style={{ flex:2 }}
           className="py-3 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40">
-          {round+1>=form.roundCount ? "完成練習 ✓" : "下一組 →"}
+          {shootOff ? "完成加射" : isMatch ? "確認本局 →" : round+1>=form.roundCount ? "完成練習 ✓" : "下一組 →"}
         </button>
       </div>
 
@@ -709,7 +1121,9 @@ function ScoringPhase({ form, onDone, onCancel }) {
           ))}
         </Card>
       )}
-      <button onClick={onCancel} className="text-center text-white/40 text-xs py-2">取消練習</button>
+      <button onClick={() => {
+        if (window.confirm("確定取消本次練習？尚未儲存的成績與計時紀錄會消失。")) onCancel();
+      }} className="min-h-11 text-center text-xs text-white/40">取消練習</button>
     </div>
   );
 }
@@ -720,6 +1134,12 @@ function ResultPhase({ form, rounds, arrowPositions, onSave, onRetry, saving }) 
   const stats     = calcStats(rounds);
   const roundSubs = rounds.map(r=>numericArr([r]).reduce((a,b)=>a+b,0));
   const maxSub    = Math.max(...roundSubs, 1);
+  const timing = form.sessionDetails?.roundTiming || [];
+  const matchResult = form.sessionDetails?.match || null;
+  const timedOutArrows = timing.reduce((sum, entry) => sum + (entry.timeoutArrows || 0), 0);
+  const avgUsedSeconds = timing.length
+    ? Math.round(timing.reduce((sum, entry) => sum + (entry.usedSeconds || 0), 0) / timing.length)
+    : 0;
   return (
     <div className="flex flex-col gap-4 p-4">
       <Card className="p-5" style={CS}>
@@ -728,8 +1148,8 @@ function ResultPhase({ form, rounds, arrowPositions, onSave, onRetry, saving }) 
           <div className="font-black text-5xl text-white">{stats.total}</div>
           <div className="text-white/50 text-sm mt-1">總環數 / {stats.arrows} 箭</div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {[["均分/箭",stats.avgPerArrow.toFixed(1)],["命中率",`${stats.hitRate}%`],["失誤",stats.misses]].map(([k,v])=>(
+        <div className="grid grid-cols-4 gap-2">
+          {[["均分",stats.avgPerArrow.toFixed(1)],["10+X",stats.tenCount+stats.xCount],["X",stats.xCount],["失誤",stats.misses]].map(([k,v])=>(
             <div key={k} className="bg-white/10 rounded-xl p-2.5 text-center">
               <div className="text-white/50 text-xs">{k}</div>
               <div className="font-black text-lg text-white">{v}</div>
@@ -750,6 +1170,44 @@ function ResultPhase({ form, rounds, arrowPositions, onSave, onRetry, saving }) 
         </div>
       </Card>
       <ScoreCardTable rounds={rounds} />
+      {matchResult ? (
+        <Card className="p-5 text-center" style={{ ...CS, border:`2px solid ${matchResult.result === "win" ? "#22c55e" : "#f43f5e"}` }}>
+          <div className={`text-3xl font-black ${matchResult.result === "win" ? "text-green-300" : "text-rose-300"}`}>
+            {matchResult.result === "win" ? "比賽獲勝" : "比賽落敗"}
+          </div>
+          <div className="mt-2 text-sm font-bold text-white/70">
+            {matchResult.type === "recurve_set"
+              ? `局點 ${matchResult.playerSetPoints}：${matchResult.opponentSetPoints}`
+              : `累計 ${matchResult.playerTotal}：${matchResult.opponentTotal}`}
+          </div>
+          {matchResult.shootOff ? (
+            <div className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              加射 {String(matchResult.shootOff.playerScore)}：{String(matchResult.shootOff.opponentScore)}
+              ・距心 {(matchResult.shootOff.playerDistance * 100).toFixed(1)}%：
+              {(matchResult.shootOff.opponentDistance * 100).toFixed(1)}%
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+      {timing.length ? (
+        <Card className="p-4" style={CS}>
+          <div className="mb-3 text-xs font-black text-white/60">⏱️ 賽事節奏報告</div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-green-500/10 p-2">
+              <div className="text-[10px] text-white/45">平均用時</div>
+              <div className="font-black text-green-300">{avgUsedSeconds} 秒</div>
+            </div>
+            <div className="rounded-xl bg-yellow-500/10 p-2">
+              <div className="text-[10px] text-white/45">逾時回合</div>
+              <div className="font-black text-yellow-300">{timing.filter(entry => entry.timedOut).length}</div>
+            </div>
+            <div className="rounded-xl bg-red-500/10 p-2">
+              <div className="text-[10px] text-white/45">逾時箭</div>
+              <div className="font-black text-red-300">{timedOutArrows}</div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       {!fmt.isTriple && <LandingAnalysis arrowPositions={arrowPositions} />}
       <div className="flex gap-3">
         <button onClick={onRetry} className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm bg-white/10">重新練習</button>
@@ -951,6 +1409,18 @@ function HistoryTab({ logs, monsterLogs }) {
                 {log.arrowPositions?.length > 0 && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold">🎯 靶面</span>
                 )}
+                {log.competition && (
+                  <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-300">
+                    ⏱️ {log.competition.secondsPerArrow} 秒／箭
+                  </span>
+                )}
+                {log.match && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                    log.match.result === "win" ? "bg-green-500/20 text-green-300" : "bg-rose-500/20 text-rose-300"
+                  }`}>
+                    {log.match.result === "win" ? "對戰勝利" : "對戰落敗"}
+                  </span>
+                )}
               </div>
               <div className="flex gap-2 text-xs text-white/50 flex-wrap">
                 <span>命中 {st.hitRate}%</span>
@@ -984,6 +1454,37 @@ function HistoryTab({ logs, monsterLogs }) {
                 <span className="font-bold text-white/70 text-sm">{numericArr([r]).reduce((a,b)=>a+b,0)}</span>
               </div>
             ))}
+            {log.roundTiming?.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {log.roundTiming.map(entry => (
+                  <div key={entry.round} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10px] text-white/55">
+                    第 {entry.round} 回・用時 {entry.usedSeconds} 秒
+                    <span className={entry.timedOut ? "ml-1 font-black text-red-300" : "ml-1 text-green-300"}>
+                      {entry.timedOut ? `逾時 ${entry.timeoutArrows} 箭` : `剩 ${entry.remainingSeconds} 秒`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {log.match ? (
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs">
+                <div className="flex items-center justify-between font-black">
+                  <span className="text-white/60">{log.match.type === "recurve_set" ? "局制結果" : "累計制結果"}</span>
+                  <span className={log.match.result === "win" ? "text-green-300" : "text-rose-300"}>
+                    {log.match.type === "recurve_set"
+                      ? `${log.match.playerSetPoints}：${log.match.opponentSetPoints}`
+                      : `${log.match.playerTotal}：${log.match.opponentTotal}`}
+                  </span>
+                </div>
+                {log.match.shootOff ? (
+                  <div className="mt-1 text-amber-300">
+                    加射 {String(log.match.shootOff.playerScore)}：{String(log.match.shootOff.opponentScore)}
+                    ・距心 {(log.match.shootOff.playerDistance * 100).toFixed(1)}%：
+                    {(log.match.shootOff.opponentDistance * 100).toFixed(1)}%
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {log.arrowPositions?.length>0 && !fmt.isTriple && (
               <div className="mt-3">
                 <LandingAnalysis arrowPositions={log.arrowPositions} />
@@ -1669,6 +2170,7 @@ export default function MemberPractice() {
   const [saving, setSaving]=useState(false);
   const [finishedRounds, setFinishedRounds]=useState([]);
   const [arrowPositions, setArrowPositions]=useState([]);
+  const [sessionDetails, setSessionDetails]=useState(null);
   const [milestoneQueue, setMilestoneQueue]=useState([]);  // [{ms, rewards}]
   const classEndedRef = useRef(false); // 下課後不再觸發里程碑
 
@@ -1685,7 +2187,9 @@ export default function MemberPractice() {
   const [form, setForm]=useState(()=>({
     date:today(), bowType:getDefaultBowType(profile?.equipment),
     equipSetId:getDefaultEquipSetId(profile?.equipment),
-    distance:18, targetFormat:"full_110", arrowCount:6, roundCount:6, note:"", inputMode:"button",
+    distance:18, targetFormat:"indoor_40", arrowCount:3, roundCount:20, note:"", inputMode:"button",
+    presetId:"indoor_single", competitionMode:"wa30", assistedCues:true,
+    matchType:"qualification", opponentAverage:8.5,
   }));
 
   useEffect(()=>{
@@ -1717,11 +2221,26 @@ export default function MemberPractice() {
       avgPerArrow:stats.avgPerArrow,
       avgPerRound:finishedRounds.length?+(stats.total/finishedRounds.length).toFixed(2):0,
       note:form.note,
+      targetSpec:{
+        faceSizeCm:fmt.faceSizeCm || null,
+        scoring:`${fmt.min}-${fmt.max}`,
+        layout:fmt.layout || "single",
+      },
+      competition:(form.competitionMode || "off") === "off" ? null : {
+        ruleset:form.competitionMode,
+        secondsPerArrow:form.competitionMode === "wa40" ? 40 : 30,
+        preparationSeconds:10,
+        assistedCues:form.assistedCues !== false,
+      },
+      ...(sessionDetails?.roundTiming?.length ? { roundTiming:sessionDetails.roundTiming } : {}),
+      ...(sessionDetails?.arrowEntries?.length ? { arrowEntries:sessionDetails.arrowEntries } : {}),
+      ...(sessionDetails?.match ? { match:sessionDetails.match } : {}),
       ...(arrowPositions.length>0 ? { arrowPositions } : {}),
     },profile.id);
 
     toast("練習紀錄已儲存 ✓");
-    setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]);
+    setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null);
+    setForm(current => ({ ...current, sessionDetails:null }));
 
     // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
     const arrowCount = stats.arrows || 0;
@@ -1767,13 +2286,13 @@ export default function MemberPractice() {
         </div>
       )}
       {tab==="practice"&&phase==="setup"&&(
-        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{ setForm(f); setPhase("scoring"); setFinishedRounds([]); setArrowPositions([]); }} />
+        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{ setForm({...f,sessionDetails:null}); setPhase("scoring"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null); }} />
       )}
       {tab==="practice"&&phase==="scoring"&&(
-        <ScoringPhase form={form} onDone={(rounds,pos)=>{ setFinishedRounds(rounds); setArrowPositions(pos||[]); setPhase("result"); }} onCancel={()=>setPhase("setup")} />
+        <ScoringPhase form={form} onDone={(rounds,pos,details)=>{ setFinishedRounds(rounds); setArrowPositions(pos||[]); setSessionDetails(details||null); setForm(current=>({...current,sessionDetails:details||null})); setPhase("result"); }} onCancel={()=>setPhase("setup")} />
       )}
       {tab==="practice"&&phase==="result"&&(
-        <ResultPhase form={form} rounds={finishedRounds} arrowPositions={arrowPositions} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setArrowPositions([]); setPhase("scoring"); }} saving={saving} />
+        <ResultPhase form={form} rounds={finishedRounds} arrowPositions={arrowPositions} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null); setPhase("scoring"); }} saving={saving} />
       )}
       {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
       {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}

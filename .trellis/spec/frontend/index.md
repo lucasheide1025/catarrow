@@ -24,6 +24,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Cat Companion](./cat-companion.md) | Cat roles, individual stat allocation, skill traits, shared combat calculation | ✅ Active |
 | [RPG Equipment](./equipment-system.md) | Equipment bonus formula, upgrade display, and equipment-page contracts | ✅ Active |
 | [Inventory and Coin Shop](./inventory-shop-system.md) | Backpack boundaries, shop rotation, catalog safety, and atomic purchases | ✅ Active |
+| [Practice Simulator](./practice-simulator.md) | Real target formats, qualification timing signals, timeout behavior, and detailed records | ✅ Active |
 
 ---
 
