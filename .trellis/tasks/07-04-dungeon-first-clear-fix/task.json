@@ -1,9 +1,9 @@
 {
-  "id": "battle-shot-analysis",
-  "name": "battle-shot-analysis",
-  "title": "戰鬥射箭分析",
+  "id": "dungeon-first-clear-fix",
+  "name": "dungeon-first-clear-fix",
+  "title": "首殺通知修復（持久化+新地下城系統接軌）",
   "description": "",
-  "status": "in_progress",
+  "status": "planning",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "07-04-battle-archery-analytics",
+  "parent": null,
   "relatedFiles": [],
   "notes": "",
   "meta": {}

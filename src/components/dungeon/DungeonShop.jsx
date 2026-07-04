@@ -66,7 +66,7 @@ function BuyFloat({ item, onDone }) {
 // 購買透過 onLocalBuy 交給父層套用效果與扣款，離開時呼叫 onLocalDone
 export default function DungeonShop({
   roomId, room, memberId, memberData, isHost,
-  localMode = false, onLocalBuy, onLocalDone,
+  localMode = false, onLocalBuy, onLocalDone, onSharedDone,
 }) {
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -159,6 +159,10 @@ export default function DungeonShop({
           [`members.${targetId}.hp`]: Math.round((targetM.maxHP || 100) * 0.5),
         });
       }
+    }
+    if (onSharedDone) {
+      await onSharedDone();
+      return;
     }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
   }

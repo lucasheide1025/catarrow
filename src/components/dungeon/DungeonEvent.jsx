@@ -16,7 +16,7 @@ const TYPE_LABEL = { buff:"增益", debuff:"負面", neutral:"中立" };
 // 結束呼叫 onLocalDone，不寫 Firestore
 export default function DungeonEvent({
   roomId, room, isHost, memberId,
-  localMode = false, onLocalEffect, onLocalDone,
+  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [loading, setLoading] = useState(false);
   const [localConfirms, setLocalConfirms] = useState({});
@@ -57,7 +57,8 @@ export default function DungeonEvent({
     setLoading(true);
     // 先套用事件效果，再返回地圖
     await confirmDungeonEvent(roomId, room);
-    await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
+    if (onSharedDone) await onSharedDone();
+    else await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
     setLoading(false);
   }
 

@@ -107,12 +107,18 @@ function PanoramaView({ villageLevel }) {
   const src = `/ui/village/panorama-lv${pad}.webp`;
 
   return (
-    <div className="overflow-x-auto no-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
-      <div style={{ width: "750px", height: "370px", position: "relative", flexShrink: 0 }}>
+    <div className="px-4 pt-4">
+      <div style={{
+        width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
+        borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
+      }}>
         <img
           src={src}
           alt={`村莊 Lv${lv}`}
-          style={{ width: "750px", height: "370px", objectFit: "cover", display: "block" }}
+          width="750"
+          height="370"
+          fetchPriority="high"
+          style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
           onError={e => { e.target.style.display = "none"; }}
         />
         <div style={{
@@ -226,7 +232,7 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
   if (!hasTier) {
     // 非分層資源（煉金室/扭蛋亭）：只顯示總產率
     const rate = getProductionRate(buildingId, level);
-    return <span className="text-[10px]" style={{ color: C.mid }}>{rate}/hr</span>;
+    return <span className="text-xs" style={{ color: C.mid }}>{rate}/hr</span>;
   }
   const stageMult = getStageMultiplier(level);
   const maxTier   = getBuildingStage(level);
@@ -241,13 +247,13 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
     tiers.push({ tier: t, rate: tierRate });
   }
   if (tiers.length === 0) {
-    return <span className="text-[10px]" style={{ color: C.mid }}>{baseRate}/hr</span>;
+    return <span className="text-xs" style={{ color: C.mid }}>{baseRate}/hr</span>;
   }
   return (
     <div className="flex flex-wrap gap-1 mt-1">
       {tiers.map(({ tier, rate }) => (
         <span key={tier} style={{
-          fontSize: 9, fontWeight: 700,
+          fontSize: 11, fontWeight: 700,
           background: "rgba(107,142,94,0.10)", borderRadius: 4,
           padding: "1px 5px", color: C.sage,
         }}>
@@ -272,11 +278,12 @@ function BuildingCard({ buildingId, level, resources, onClick, village }) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col rounded-2xl overflow-hidden active:scale-95 transition-transform text-left"
+      className="flex min-h-0 flex-col overflow-hidden rounded-2xl text-left transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-700"
       style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
       <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "#F5EBD8" }}>
         <img
           src={imgSrc} alt={b.name}
+          width="320" height="240" loading="lazy"
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           onError={e => {
             e.target.style.display = "none";
@@ -294,10 +301,10 @@ function BuildingCard({ buildingId, level, resources, onClick, village }) {
         }}>Lv.{level}</div>
       </div>
       <div className="p-2.5">
-        <div className="font-black text-xs leading-tight" style={{ color: C.brown }}>{b.name}</div>
-        <div className="text-[10px] mt-0.5" style={{ color: C.mid }}>{b.resourceName}</div>
+        <div className="text-sm font-black leading-tight" style={{ color: C.brown }}>{b.name}</div>
+        <div className="mt-1 text-xs" style={{ color: C.mid }}>{b.resourceName}</div>
         <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} />
-        <div className="mt-1.5 text-[10px] font-bold" style={{ color: statusColor }}>● {statusText}</div>
+        <div className="mt-2 text-xs font-bold" style={{ color: statusColor }}>● {statusText}</div>
       </div>
     </button>
   );
@@ -325,7 +332,7 @@ function LockedBuildingCard({ buildingId }) {
       style={{ border: `1px solid ${C.lockBd}`, background: "#EDE0CE" }}>
       <div style={{ position: "relative", width: "100%", aspectRatio: "4/3" }}>
         {/* stage1 圖片：灰階 + 半透明暗罩 */}
-        <img src={imgSrc} alt={b.name}
+        <img src={imgSrc} alt={b.name} width="320" height="240" loading="lazy"
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
             filter: "grayscale(1) brightness(0.55)" }}
           onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }} />
@@ -347,8 +354,8 @@ function LockedBuildingCard({ buildingId }) {
         </div>
       </div>
       <div className="p-2.5" style={{ background: C.lock }}>
-        <div className="font-black text-xs leading-tight" style={{ color: C.muted }}>{b.name}</div>
-        <div className="text-[9px] mt-0.5" style={{ color: C.lockBd }}>🔒 尚未解鎖</div>
+        <div className="text-sm font-black leading-tight" style={{ color: C.muted }}>{b.name}</div>
+        <div className="mt-1 text-xs" style={{ color: C.lockBd }}>🔒 尚未解鎖</div>
       </div>
     </div>
   );
@@ -936,12 +943,22 @@ const ALWAYS_SHOW = new Set(['potion','fur']);
 const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', driedfish:'🐠', can:'🥫', potion:'🍵', fur:'🐾', archer:'🏹' };
 
 function ResourceRow({ resources, gachaCoins }) {
+  const [showAll, setShowAll] = useState(false);
   const hasTiered = TIERED_LIST.some(res =>
     [1,2,3,4,5].some(t => (resources?.[`${res}_t${t}`] || 0) > 0)
   );
   return (
-    <div className="px-4 py-2.5" style={{ borderBottom: `1px solid ${C.border}` }}>
-      <div className="text-[10px] font-bold mb-2" style={{ color: C.mid }}>村莊資源</div>
+    <section className="mx-4 mb-3 rounded-2xl px-4 py-3"
+      style={{ background:C.card, border:`1px solid ${C.border}`, boxShadow:C.shadow }}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-black" style={{ color:C.brown }}>村莊資源</h2>
+        <button type="button" onClick={() => setShowAll(value => !value)}
+          aria-expanded={showAll}
+          className="min-h-10 rounded-xl px-3 text-xs font-black focus-visible:ring-2 focus-visible:ring-emerald-600"
+          style={{ background:"rgba(107,142,94,0.12)", color:C.sage }}>
+          {showAll ? "收合資源" : "查看全部"}
+        </button>
+      </div>
       {/* 特殊資源（扭蛋幣 + 貓草藥水 + 貓毛） */}
       <div className="flex gap-3 mb-2 flex-wrap">
         {/* 扭蛋幣 */}
@@ -984,7 +1001,7 @@ function ResourceRow({ resources, gachaCoins }) {
         )}
       </div>
       {/* 分 tier 一般材料 */}
-      {hasTiered ? (
+      {showAll && (hasTiered ? (
         <div className="flex flex-col gap-1.5">
           {TIERED_LIST.filter(r => !ALWAYS_SHOW.has(r)).map(res => {
             const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) })).filter(x => x.count > 0);
@@ -1009,8 +1026,8 @@ function ResourceRow({ resources, gachaCoins }) {
         </div>
       ) : (
         <div className="text-[10px]" style={{ color: C.muted }}>採集後村莊材料將在此顯示</div>
-      )}
-    </div>
+      ))}
+    </section>
   );
 }
 
@@ -1529,6 +1546,31 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
   );
 }
 
+const VILLAGE_PRIMARY_NAV = [
+  { id:"village", label:"村莊", icon:"🏡", defaultTab:"village" },
+  { id:"tasks", label:"任務", icon:"📋", defaultTab:"council" },
+  { id:"workshop", label:"工坊", icon:"🔨", defaultTab:"forge" },
+  { id:"trade", label:"交易", icon:"🛍️", defaultTab:"gacha" },
+];
+
+const VILLAGE_SECONDARY_NAV = {
+  workshop: [
+    { id:"forge", label:"裝備鍛造" },
+    { id:"potioncraft", label:"藥水製作" },
+  ],
+  trade: [
+    { id:"gacha", label:"貓咪扭蛋" },
+    { id:"cardmarket", label:"卡片市集" },
+  ],
+};
+
+function getVillagePrimaryTab(tab) {
+  if (tab === "council") return "tasks";
+  if (tab === "forge" || tab === "potioncraft") return "workshop";
+  if (tab === "gacha" || tab === "cardmarket") return "trade";
+  return "village";
+}
+
 // ── 主元件 ───────────────────────────────────────────────────
 export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
   const { profile } = useAuth();
@@ -1544,6 +1586,8 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   const buildings  = village.buildings || DEFAULT_VILLAGE.buildings;
   const resources  = village.resources || DEFAULT_VILLAGE.resources;
   const villageLevel = getVillageLevel(buildings);
+  const primaryTab = getVillagePrimaryTab(tab);
+  const secondaryNav = VILLAGE_SECONDARY_NAV[primaryTab] || [];
 
   const [marketConfig, setMarketConfig] = useState(null);
   const [myCats, setMyCats] = useState({});
@@ -1646,21 +1690,42 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   }
 
   return (
-    <div className="flex flex-col min-h-dvh" style={{ background: C.bg }}>
+    <div className="flex min-h-dvh flex-col overflow-x-hidden" style={{ background: C.bg }}>
 
       {/* 頁籤 */}
-      <div className="flex shrink-0" style={{ background: "#FDF6EC", borderBottom: `1px solid ${C.border}` }}>
-        {[["village","🏡 村莊"],["gacha","🎰 扭蛋"],["council","🏛️ 議會廳"],["forge","🔨 鍛造"],["potioncraft","🧪 藥水"],["cardmarket","🛒 市集"]].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className="flex-1 py-3 text-sm font-black transition-colors"
+      <nav aria-label="貓貓村主要功能"
+        className="sticky top-0 z-30 grid shrink-0 grid-cols-4"
+        style={{ background:"rgba(253,246,236,0.96)", borderBottom:`1px solid ${C.border}`, backdropFilter:"blur(10px)" }}>
+        {VILLAGE_PRIMARY_NAV.map(item => (
+          <button key={item.id} type="button" onClick={() => setTab(item.defaultTab)}
+            aria-pressed={primaryTab === item.id}
+            className="min-h-14 px-1 py-2 text-sm font-black transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-700"
             style={{
-              color: tab === id ? C.brown : C.muted,
-              borderBottom: tab === id ? `2.5px solid ${C.sage}` : "2.5px solid transparent",
+              color: primaryTab === item.id ? C.brown : C.muted,
+              borderBottom: primaryTab === item.id ? `3px solid ${C.sage}` : "3px solid transparent",
             }}>
-            {label}
+            <span aria-hidden="true" className="mr-1">{item.icon}</span>{item.label}
           </button>
         ))}
-      </div>
+      </nav>
+
+      {secondaryNav.length > 0 && (
+        <nav aria-label={`${VILLAGE_PRIMARY_NAV.find(item => item.id === primaryTab)?.label || ""}子功能`}
+          className="mx-4 mt-3 grid grid-cols-2 gap-2 rounded-2xl p-1.5"
+          style={{ background:"rgba(255,255,255,0.62)", border:`1px solid ${C.border}` }}>
+          {secondaryNav.map(item => (
+            <button key={item.id} type="button" onClick={() => setTab(item.id)}
+              aria-pressed={tab === item.id}
+              className="min-h-11 rounded-xl px-3 text-sm font-black focus-visible:ring-2 focus-visible:ring-emerald-700"
+              style={{
+                background:tab === item.id ? C.brown : "transparent",
+                color:tab === item.id ? "#FFF8F0" : C.mid,
+              }}>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {tab === "gacha" && (
         <GachaMachine catCards={catCards} gachaCoins={gachaCoins} onCoinsUpdated={() => {}} />
@@ -1682,7 +1747,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
       )}
 
       {tab === "potioncraft" && (
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="px-4 py-3">
           <PotionCraftingPanel
             resources={resources}
             potionInventory={potionInventory}
@@ -1697,7 +1762,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
       )}
 
       {tab === "cardmarket" && (
-        <div className="flex-1 overflow-y-auto">
+        <div>
           <CardMarketPanel
             catCards={catCards}
             memberId={profile?.id}
@@ -1710,26 +1775,27 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
         <>
           <PanoramaView villageLevel={villageLevel} />
 
-          <SecretaryCat cat={secretaryCat} />
-
-          <ResourceBar
-            resources={resources}
-            pending={pending}
-            onCollect={handleCollect}
-            collecting={collecting}
-            nextCollectSec={nextCollectSec}
-            collectedResult={collectedResult}
-          />
-
-          {/* 採集計時器 */}
-          <div className="px-4 py-1.5 text-[10px]" style={{ color: C.muted, borderBottom: `1px solid ${C.border}`, textAlign:"center" }}>
-            ⏱ 每 {MAX_COLLECT_HOURS} 小時可採集一次{nextCollectSec > 0 && `（下次：${Math.floor(nextCollectSec/3600)}h${Math.floor((nextCollectSec%3600)/60)}m）`}
-            {nextCollectSec <= 0 && "（可採集！）"}
+          <div className="mx-4 my-3 overflow-hidden rounded-2xl"
+            style={{ background:C.card, border:`1px solid ${C.border}`, boxShadow:C.shadow }}>
+            <div className="px-4 pt-3 text-sm font-black" style={{ color:C.brown }}>今日村務</div>
+            <SecretaryCat cat={secretaryCat} />
+            <ResourceBar
+              resources={resources}
+              pending={pending}
+              onCollect={handleCollect}
+              collecting={collecting}
+              nextCollectSec={nextCollectSec}
+              collectedResult={collectedResult}
+            />
+            <div className="px-4 py-2 text-center text-xs"
+              style={{ color:C.mid, fontVariantNumeric:"tabular-nums" }}>
+              每 {MAX_COLLECT_HOURS} 小時可領取一次
+            </div>
           </div>
 
-          <ResourceRow resources={resources} gachaCoins={gachaCoins} />
-
           <VillageGoalBanner />
+
+          <ResourceRow resources={resources} gachaCoins={gachaCoins} />
 
           {/* 建築網格 */}
           <div className="px-4 py-3 flex-1">
@@ -1737,10 +1803,10 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
               const unlockedIds = BUILDING_LIST.filter(id => isBuildingUnlocked(id, buildings));
               return (
                 <>
-                  <div className="text-[10px] font-bold mb-2" style={{ color: C.mid }}>
+                  <div className="mb-3 text-sm font-black" style={{ color: C.brown }}>
                     已解鎖 {unlockedIds.length} / 9 棟建築
                   </div>
-                  <div className="grid grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {BUILDING_LIST.map(id =>
                       isBuildingUnlocked(id, buildings) ? (
                         <BuildingCard

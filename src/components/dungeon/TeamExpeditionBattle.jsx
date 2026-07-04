@@ -5,7 +5,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { drawFloorMonsters, drawMixedMonsterPool } from "../../lib/monsterData";
-import { getExcavationDifficulty } from "../../lib/dungeonData";
+import {
+  DUNGEON_SHOP_ITEMS,
+  drawDungeonEvent,
+  getExcavationDifficulty,
+} from "../../lib/dungeonData";
 import {
   generateGridFloor,
   generateBranchFloor,
@@ -34,6 +38,11 @@ import {
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
 import DungeonTreasureRoom from "./DungeonTreasureRoom";
+import DungeonShop from "./DungeonShop";
+import DungeonEvent from "./DungeonEvent";
+import DungeonTrap from "./DungeonTrap";
+import DungeonChest from "./DungeonChest";
+import DungeonRest from "./DungeonRest";
 import { GridMapStage, BranchStage } from "./DungeonExpedition";
 
 function attachGridMonsters(gridFloor, floorIndex, difficulty, plan) {
@@ -498,14 +507,31 @@ export default function TeamExpeditionBattle({
       await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
       return;
     }
+    const preparedRoom = { ...room };
+    const sharedRoomFields = {
+      activeRoomId: room.id,
+      mapDungeonId: `${dungeonFamily}_expedition`,
+      roomConfirms: {},
+      roomChoices: {},
+    };
+    if (room.type === "shop") {
+      const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
+      preparedRoom.shopItems = shuffled.slice(0, 5).map(item => item.id);
+      sharedRoomFields.shopItems = preparedRoom.shopItems;
+    }
+    if (room.type === "event") {
+      preparedRoom.event = drawDungeonEvent();
+      sharedRoomFields.currentEvent = preparedRoom.event;
+    }
     await updateTeamExpeditionRoom(teamRoomId, {
+      ...sharedRoomFields,
       expeditionMapState: stripMapStateGrid({
         ...positionedState,
         phase: room.type === "treasure" ? "treasure" : "func_room",
-        pendingRoom: room,
+        pendingRoom: preparedRoom,
       }),
     });
-  }, [isHost, startRoomBattle, teamRoomId]);
+  }, [isHost, startRoomBattle, teamRoomId, dungeonFamily]);
 
   const handleCellClick = useCallback(async room => {
     if (!isHost || !mapState?.playerPos || !isAdjacent(room.pos, mapState.playerPos)) return;
@@ -542,25 +568,8 @@ export default function TeamExpeditionBattle({
     await enterExplorationRoom(room, mapState);
   }, [isHost, branchSeq, mapState, enterExplorationRoom]);
 
-  const resolveFunctionRoom = useCallback(async () => {
+  const finishFunctionRoom = useCallback(async () => {
     if (!isHost || !mapState?.pendingRoom) return;
-    const roomType = mapState.pendingRoom.type;
-    const members = Object.fromEntries(Object.entries(teamRoom?.members || {}).map(([id, member]) => {
-      if (!member) return [id, member];
-      if (roomType === "rest") {
-        return [id, { ...member, hp: Math.min(member.maxHP || 1, (member.hp || 0) + Math.round((member.maxHP || 1) * 0.35)) }];
-      }
-      if (roomType === "trap") {
-        return [id, { ...member, hp: Math.max(1, (member.hp || 1) - Math.round((member.maxHP || 1) * 0.1)) }];
-      }
-      if (roomType === "event") {
-        return [id, {
-          ...member,
-          buffs: { ...(member.buffs || {}), atkMult: Math.round(((member.buffs?.atkMult || 1) * 1.05) * 100) / 100 },
-        }];
-      }
-      return [id, member];
-    }));
     let nextMapState;
     if (floorIndex < 2) {
       nextMapState = {
@@ -583,10 +592,13 @@ export default function TeamExpeditionBattle({
       };
     }
     await updateTeamExpeditionRoom(teamRoomId, {
-      members,
+      activeRoomId: null,
+      roomConfirms: {},
+      roomChoices: {},
+      currentEvent: null,
       expeditionMapState: stripMapStateGrid(nextMapState),
     });
-  }, [isHost, mapState, teamRoom, floorIndex, teamRoomId]);
+  }, [isHost, mapState, floorIndex, teamRoomId]);
 
   // ── 領取獎勵 + 儲存紀錄 ──────────────────────────────────
   const handleFinish = useCallback(async () => {
@@ -731,33 +743,27 @@ export default function TeamExpeditionBattle({
   }
 
   if (mapState?.phase === "func_room" && mapState.pendingRoom) {
-    const roomLabels = {
-      shop: ["🛒", "行腳商店", "隊伍整備後繼續前進。"],
-      event: ["✨", "神秘事件", "全隊獲得小幅攻擊增益。"],
-      trap: ["🪤", "陷阱房", "全隊受到少量傷害。"],
-      chest: ["📦", "寶箱房", "隊伍找到額外戰利品。"],
-      rest: ["💤", "休息區", "全隊恢復 35% HP。"],
+    const common = {
+      roomId: teamRoomId,
+      room: teamRoom,
+      memberId: myId,
+      isHost,
+      onSharedDone: finishFunctionRoom,
     };
-    const [icon, title, desc] = roomLabels[mapState.pendingRoom.type] || ["🚪", "未知房間", "確認後繼續前進。"];
-    return (
-      <div className="h-[100dvh] flex flex-col items-center justify-center gap-5 px-6 text-center bg-[#0a0a0f] text-white">
-        <div className="text-7xl">{icon}</div>
-        <div className="text-2xl font-black">{title}</div>
-        <div className="text-sm text-slate-300">{desc}</div>
-        <div className="text-xs text-slate-500">前衛／後衛狀態與剩餘 HP 會帶入下一場戰鬥</div>
-        {isHost ? (
-          <button
-            type="button"
-            onClick={resolveFunctionRoom}
-            className="min-h-12 w-full max-w-sm rounded-2xl bg-indigo-500 px-5 py-3 font-black"
-          >
-            完成房間並繼續
-          </button>
-        ) : (
-          <div className="text-sm text-slate-400">等待隊長處理房間…</div>
-        )}
-      </div>
-    );
+    switch (mapState.pendingRoom.type) {
+      case "shop":
+        return <DungeonShop {...common} memberData={{ ...myMember, id: myId, coins: profile?.coins || 0 }} />;
+      case "event":
+        return <DungeonEvent {...common} />;
+      case "trap":
+        return <DungeonTrap {...common} />;
+      case "chest":
+        return <DungeonChest {...common} />;
+      case "rest":
+        return <DungeonRest {...common} />;
+      default:
+        return null;
+    }
   }
 
   if (mapState?.phase === "treasure") {

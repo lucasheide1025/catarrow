@@ -65,7 +65,7 @@ function HealEffect({ optionId, memberPositions = {} }) {
 // 結束呼叫 onLocalDone，不寫 Firestore
 export default function DungeonRest({
   roomId, room, memberId, isHost,
-  localMode = false, onLocalEffect, onLocalDone,
+  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [animPhase, setAnimPhase] = useState("entering"); // entering | open | voting | effect | done
   const [showHealEffect, setShowHealEffect] = useState(false);
@@ -210,6 +210,10 @@ export default function DungeonRest({
       }
     }
     if (Object.keys(upd).length > 0) await updateDoc(doc(db, "dungeonRooms", roomId), upd);
+    if (onSharedDone) {
+      await onSharedDone();
+      return;
+    }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
   }
 

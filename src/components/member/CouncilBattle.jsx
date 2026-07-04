@@ -1,5 +1,5 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { calcStandardArrowDmg, calcStandardCounter, getCouncilPartMult } from "../../lib/damage";
 import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP, addRoundArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
@@ -9,7 +9,7 @@ import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMil
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import {
-  COUNCIL_MONSTERS, TIER_META, LIFE_TIER_STATS, TIER_ORDER,
+  TIER_META,
   getRaceMaterialId, BUILDING_PAIN_MSGS,
 } from "../../lib/councilMonsters";
 import {
@@ -17,10 +17,14 @@ import {
   sfxSuccess, sfxEpic, sfxRoundEnd, sfxMonsterDead,
   sfxCouncilWork,
 } from "../../lib/sound";
-import { useCatCompanion, CAT_COMBAT_BASE } from "../../hooks/useCatCompanion";
+import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { labelToValue } from "../../lib/score";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
+import {
+  buildGatheringContract,
+  getGatheringRewardMultiplier,
+} from "../../lib/gatheringContracts";
 
 // ── CouncilBattle 事件型別 ────────────────────────────────────
 const CB_EVT = {
@@ -45,12 +49,12 @@ const TARGET_OPTIONS = [
 
 // 建築動作詞（取代「射箭」）
 const BUILDING_ACTIONS = {
-  mine:      { verb:"鑿擊", dmgWord:"挖掘傷害", unit:"下" },
-  farm:      { verb:"揮鋤", dmgWord:"耕作效果", unit:"下" },
-  harbor:    { verb:"撒網", dmgWord:"捕撈效果", unit:"投" },
-  hunting:   { verb:"射擊", dmgWord:"命中傷害", unit:"箭" },
-  market:    { verb:"推銷", dmgWord:"說服效果", unit:"次" },
-  warehouse: { verb:"搬運", dmgWord:"整理效果", unit:"次" },
+  mine:      { verb:"鑿擊", dmgWord:"工作進度", unit:"下" },
+  farm:      { verb:"揮鋤", dmgWord:"工作進度", unit:"下" },
+  harbor:    { verb:"撒網", dmgWord:"工作進度", unit:"投" },
+  hunting:   { verb:"射擊", dmgWord:"工作進度", unit:"箭" },
+  market:    { verb:"推銷", dmgWord:"工作進度", unit:"次" },
+  warehouse: { verb:"搬運", dmgWord:"工作進度", unit:"次" },
 };
 
 // ── 六大場景主題 ──────────────────────────────────────────────
@@ -294,7 +298,18 @@ function getMappedScore(label, targetFmt) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-export default function CouncilBattle({ building, availableTiers, archerStats, village, memberId, catId = null, checkinActive, onFinish, onBack }) {
+export default function CouncilBattle({
+  building,
+  availableTiers,
+  selectedTier,
+  archerStats,
+  memberId,
+  catId = null,
+  checkinActive,
+  onStart,
+  onFinish,
+  onBack,
+}) {
   const { id:bId, name:bName, emoji:bEmoji, race, raceLabel } = building;
   const theme = BUILDING_THEMES[bId] || BUILDING_THEMES.mine;
 
@@ -302,20 +317,33 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   const {
     hasCat, catName, catHP: catMaxHP, catATK, catDEF,
     catId: hookCatId, saveXP: saveCatXP,
-    calcCatRoundDamage, triggerCatSkill,
   } = useCatCompanion();
   const activeCatId = hookCatId || catId;
-
-  const monsters = availableTiers.map(tier => ({
-    tier,
-    ...COUNCIL_MONSTERS[bId][tier],
-    ...LIFE_TIER_STATS[tier],
-    maxHp: LIFE_TIER_STATS[tier].hp,
-  }));
 
   const [phase,        setPhase]        = useState("setup");
   const [distance,     setDistance]     = useState(18);
   const [targetFmt,    setTargetFmt]    = useState("standard");
+  const contractSeedRef = useRef(Date.now());
+  const chosenTier = selectedTier || availableTiers[availableTiers.length - 1];
+  const contract = useMemo(() => buildGatheringContract({
+    buildingId: bId,
+    tier: chosenTier,
+    distance,
+    targetFmt,
+    seed: contractSeedRef.current,
+  }), [bId, chosenTier, distance, targetFmt]);
+  const monsters = contract.checkpoints.map(checkpoint => ({
+    tier: chosenTier,
+    name: checkpoint.name,
+    action: checkpoint.action,
+    emoji: checkpoint.emoji,
+    hp: checkpoint.progressRequired,
+    maxHp: checkpoint.progressRequired,
+    atk: checkpoint.fatigue,
+    def: checkpoint.resistance,
+    checkpoint,
+  }));
+
   const [mIdx,         setMIdx]         = useState(0);
   const [monsterHp,    setMonsterHp]    = useState(monsters[0]?.hp);
   const [archerHp,     setArcherHp]     = useState(archerStats.hp);
@@ -328,9 +356,12 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   const [shaking,      setShaking]      = useState(false);
   const [painEvent,    setPainEvent]    = useState(null);
   const [failedTier,   setFailedTier]   = useState(null);
+  const [startLoading, setStartLoading] = useState(false);
+  const [startError,   setStartError]   = useState("");
   const [milestoneQueue, setMilestoneQueue] = useState([]);
   const logRef = useRef(null);
   const catHpRef = useRef(hasCat ? catMaxHP : 0);
+  const allArrowsRef = useRef([]);
 
   const currentMonster = monsters[mIdx];
   const tierMeta       = TIER_META[currentMonster?.tier] || {};
@@ -375,15 +406,22 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
   }
   function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  function logCouncilArrows(completedRound) {
+  function logCouncilArrows(clearedCount = defeated.length) {
     if (!memberId || !checkinActive) return;
-    const totalArrows = completedRound * ARROWS_PER_ROUND;
+    const arrowLabels = allArrowsRef.current;
+    const totalArrows = arrowLabels.length;
     if (totalArrows > 0) addRoundArrows(memberId, totalArrows).catch(() => {});
     const todayStr = new Date().toISOString().slice(0, 10);
     addPracticeLog(memberId, {
       date: todayStr, source: "council",
       building: bId, race,
       totalArrows,
+      scores: arrowLabels,
+      distance,
+      targetFmt,
+      tier: chosenTier,
+      checkpointsCleared: clearedCount,
+      contractId: contract.id,
     }, memberId).catch(() => {});
     const milestones = getMilestonesReached(0, totalArrows);
     if (milestones.length > 0) {
@@ -404,6 +442,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     if (arrows.length < ARROWS_PER_ROUND || processing) return;
     setProcessing(true);
     setPhase("resolving");
+    allArrowsRef.current = [...allArrowsRef.current, ...arrows];
 
     const act = BUILDING_ACTIONS[bId] || { verb:"攻擊", dmgWord:"傷害", unit:"次" };
     const actDesc = TARGET_OPTIONS.find(t=>t.id===targetFmt)?.label;
@@ -493,7 +532,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       },
       [CB_EVT.COUNTER]: (p) => {
         setArcherHp(p.newArchHp);
-        councilDispatch.log(`⚡ ${currentMonster.name} 反擊！${p.msg} 射手 -${p.dmg} HP`, 'counter');
+        councilDispatch.log(`⚡ 作業風險發生！${p.msg} 體力 -${p.dmg}`, 'counter');
         setPainEvent({ msg: p.msg, dmg: p.dmg });
         setTimeout(() => setPainEvent(null), 1800);
       },
@@ -507,13 +546,13 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       [CB_EVT.MONSTER_KILLED]: () => {
         councilDispatch.sfx.monsterDead();
         setTimeout(() => sfxSuccess(), 500);
-        councilDispatch.log(`✅ ${currentMonster.name} 解決了！任務完成！`, 'win');
+        councilDispatch.log(`✅ ${currentMonster.name} 處理完成！`, 'win');
       },
       [CB_EVT.ROUND_END]: (p) => {
         councilDispatch.sfx.roundEnd();
         const hpPct     = Math.round(curMonHp / currentMonster.maxHp * 100);
         const statusTag = hpPct <= 15 ? '⚠️ 快解決了！' : hpPct <= 35 ? '💪 繼續！' : '';
-        councilDispatch.log(`第 ${round} 回合結算：${p.roundTotal}分　抵抗值剩 ${curMonHp} ${statusTag}`, 'total');
+        councilDispatch.log(`第 ${round} 回合結算：${p.roundTotal} 分　剩餘進度 ${curMonHp} ${statusTag}`, 'total');
       },
     });
 
@@ -530,7 +569,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       setDefeated(prev => [...prev, { tier: currentMonster.tier, materialId: matId }]);
       await delay(700);
       setProcessing(false);
-      if (isLastMonster) { logCouncilArrows(round); sfxEpic(); setPhase('result'); }
+      if (isLastMonster) { logCouncilArrows(mIdx + 1); sfxEpic(); setPhase('result'); }
       else setPhase('obstacle_clear');
       return;
     }
@@ -539,7 +578,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       await delay(600);
       setProcessing(false);
       setFailedTier(currentMonster.tier);
-      logCouncilArrows(round);
+      logCouncilArrows();
       setPhase('result');
       return;
     }
@@ -560,6 +599,26 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
     setArrows([]);
     setPhase("input");
     addLog(`--- 下一個任務：${monsters[next].name} ---`, "system");
+  }
+
+  function bankContract() {
+    logCouncilArrows();
+    setPhase("result");
+  }
+
+  async function startContract() {
+    if (startLoading) return;
+    setStartLoading(true);
+    setStartError("");
+    const started = await onStart?.();
+    if (started === false) {
+      setStartError("委託未能開始，今日次數尚未扣除，請稍後再試。");
+      setStartLoading(false);
+      return;
+    }
+    setStartLoading(false);
+    setPhase("input");
+    addLog(`🌟 委託開始！第一階段：${currentMonster.name}`, "system");
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -585,9 +644,9 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           boxShadow:`0 0 24px ${theme.accent}18`,
         }}>
           <div style={{ fontSize:60, marginBottom:8, animation:"cb-bounce 2s ease infinite" }}>{bEmoji}</div>
-          <div style={{ fontWeight:900, fontSize:20, color:theme.accent, marginBottom:3 }}>{bName} 採集任務</div>
+          <div style={{ fontWeight:900, fontSize:20, color:theme.accent, marginBottom:3 }}>{bName} 採集委託</div>
           <div style={{ fontSize:12, color:theme.accentDim }}>
-            {raceLabel} · {monsters.length} 個障礙　·　{distance}m
+            {raceLabel} · {TIER_META[chosenTier]?.label} · 3 個工作階段 · {distance}m
           </div>
           <div style={{ display:"flex", justifyContent:"center", gap:18, marginTop:10, fontSize:13, color:"rgba(255,255,255,0.65)" }}>
             <span>❤️ <b>{archerStats.hp}</b></span>
@@ -614,7 +673,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                 background: targetFmt===t.id ? `linear-gradient(135deg,${theme.accent},${theme.accentDim})` : `${theme.accent}0d`,
                 border:`2px solid ${targetFmt===t.id ? theme.accent : `${theme.accent}25`}`,
                 color: targetFmt===t.id ? "#1c1008" : theme.accent,
-                transition:"all 0.15s",
+                transition:"background-color 0.15s, border-color 0.15s, color 0.15s",
               }}>{t.icon} {t.label}</button>
             ))}
           </div>
@@ -630,7 +689,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                 background: distance===d ? `linear-gradient(135deg,${theme.accent},${theme.accentDim})` : `${theme.accent}0d`,
                 border:`2px solid ${distance===d ? theme.accent : `${theme.accent}25`}`,
                 color: distance===d ? "#1c1008" : theme.accent,
-                transition:"all 0.15s",
+                transition:"background-color 0.15s, border-color 0.15s, color 0.15s",
               }}>{d}m</button>
             ))}
           </div>
@@ -638,7 +697,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
 
         {/* 障礙清單 */}
         <div style={{ marginBottom:20 }}>
-          <div style={{ fontWeight:900, fontSize:12, color:theme.accentDim, marginBottom:10 }}>本次任務清單</div>
+          <div style={{ fontWeight:900, fontSize:12, color:theme.accentDim, marginBottom:10 }}>本次委託流程</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
             {monsters.map((m, i) => {
               const tm = TIER_META[m.tier];
@@ -662,7 +721,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                     <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{m.action}</div>
                   </div>
                   <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", textAlign:"right", flexShrink:0 }}>
-                    <div>❤️{m.hp}</div><div>🛡️{m.def}</div>
+                    <div>進度 {m.hp}</div><div>風險 {m.atk}</div>
                   </div>
                 </div>
               );
@@ -670,12 +729,20 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           </div>
         </div>
 
-        <button onClick={() => { setPhase("input"); addLog(`🌟 任務開始！目標：${currentMonster.name}`, "system"); }} style={{
+        {startError && (
+          <div role="alert" style={{ color:"#fca5a5", fontSize:12, marginBottom:10, textAlign:"center" }}>
+            {startError}
+          </div>
+        )}
+        <button onClick={startContract} disabled={startLoading} style={{
           width:"100%", padding:"16px 0", borderRadius:18, fontWeight:900, fontSize:17, cursor:"pointer",
           background:`linear-gradient(90deg,${theme.accent},${theme.accentDim})`,
-          color:"#1c1008", border:"none",
+          color:"#1c1008", border:"none", opacity:startLoading ? 0.6 : 1,
           boxShadow:`0 4px 16px ${theme.accent}55`,
-        }}>🌟 開始採集任務！</button>
+        }}>{startLoading ? "建立委託中…" : "🌟 開始採集委託"}</button>
+        <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", textAlign:"center", marginTop:8 }}>
+          按下開始後才會扣除 1 次今日額度
+        </div>
       </div>
     );
   }
@@ -690,9 +757,9 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
       <div style={{ minHeight:"100vh", background:theme.bg, color:"white", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, gap:20 }}>
         <style>{CSS}</style>
         <div style={{ fontSize:80, animation:"cb-pop 0.4s ease" }}>✅</div>
-        <div style={{ fontWeight:900, fontSize:22, color:theme.accent }}>{currentMonster.name} 解決了！</div>
+        <div style={{ fontWeight:900, fontSize:22, color:theme.accent }}>第 {defeated.length} 階段完成！</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)" }}>
-          獲得 {raceLabel}·{TIER_META[justDefeated?.tier]?.label} 素材 ×1
+          目前獎勵倍率 ×{getGatheringRewardMultiplier(defeated.length)}
         </div>
         <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)" }}>體力：{archerHp} / {archerStats.hp}</div>
         {next && (
@@ -700,17 +767,24 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
             width:"100%", maxWidth:320, borderRadius:18, padding:16, textAlign:"center",
             background:`${theme.accent}0d`, border:`1.5px solid ${theme.accent}25`,
           }}>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginBottom:8 }}>下一個任務</div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginBottom:8 }}>繼續深入</div>
             <div style={{ fontSize:44 }}>{next.emoji}</div>
             <div style={{ fontWeight:900, fontSize:14, color:"white", marginTop:4 }}>{next.name}</div>
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginTop:2 }}>{next.action}</div>
           </div>
         )}
-        <button onClick={nextObstacle} style={{
-          width:"100%", maxWidth:320, padding:"15px 0", borderRadius:18, fontWeight:900, fontSize:16, cursor:"pointer",
-          background:`linear-gradient(90deg,${theme.accent},${theme.accentDim})`,
-          color:"#1c1008", border:"none", boxShadow:`0 4px 16px ${theme.accent}55`,
-        }}>繼續任務！</button>
+        <div style={{ width:"100%", maxWidth:320, display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          <button onClick={bankContract} style={{
+            padding:"14px 8px", borderRadius:18, fontWeight:900, fontSize:14, cursor:"pointer",
+            background:"rgba(255,255,255,0.08)", color:"white",
+            border:"1px solid rgba(255,255,255,0.18)",
+          }}>安全收工</button>
+          <button onClick={nextObstacle} style={{
+            padding:"14px 8px", borderRadius:18, fontWeight:900, fontSize:14, cursor:"pointer",
+            background:`linear-gradient(90deg,${theme.accent},${theme.accentDim})`,
+            color:"#1c1008", border:"none", boxShadow:`0 4px 16px ${theme.accent}55`,
+          }}>繼續深入 ×{getGatheringRewardMultiplier(defeated.length + 1)}</button>
+        </div>
       </div>
     );
   }
@@ -737,9 +811,9 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           border:`1.5px solid ${isFullClear ? "#4ade80" : theme.accent}44`,
         }}>
           <div style={{ fontSize:60, marginBottom:8 }}>{isFullClear ? "🏆" : "💪"}</div>
-          <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>{isFullClear ? "任務全部完成！" : "本次到此為止"}</div>
+          <div style={{ fontWeight:900, fontSize:20, marginBottom:4 }}>{isFullClear ? "委託全部完成！" : "本次安全收工"}</div>
           <div style={{ fontSize:13, opacity:0.75 }}>
-            {isFullClear ? "所有採集障礙都解決了！" : `完成了 ${defeated.length} / ${monsters.length} 個任務`}
+            完成 {defeated.length} / {monsters.length} 個工作階段 · 獎勵倍率 ×{getGatheringRewardMultiplier(defeated.length)}
           </div>
         </div>
 
@@ -747,7 +821,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
           borderRadius:18, padding:16, background:`${theme.accent}07`,
           border:`1px solid ${theme.accent}18`, marginBottom:14,
         }}>
-          <div style={{ fontSize:12, fontWeight:900, color:theme.accent, marginBottom:10 }}>獲得素材</div>
+          <div style={{ fontSize:12, fontWeight:900, color:theme.accent, marginBottom:10 }}>階段成果</div>
           {defeated.length === 0
             ? <div style={{ color:"rgba(255,255,255,0.35)", fontSize:13 }}>未獲得素材</div>
             : defeated.map((d, i) => {
@@ -760,13 +834,13 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                   }}>
                     <span style={{ fontSize:24 }}>{mat?.icon ?? "📦"}</span>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontWeight:900, fontSize:13, color:"white" }}>{mat?.name ?? d.materialId}</div>
-                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{mat?.desc}</div>
+                      <div style={{ fontWeight:900, fontSize:13, color:"white" }}>第 {i + 1} 階段完成</div>
+                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.45)" }}>{currentMonster?.action}</div>
                     </div>
                     <span style={{
                       fontSize:9, fontWeight:900, padding:"2px 8px", borderRadius:99,
                       background:tm.color+"33", color:tm.color, border:`1px solid ${tm.color}66`,
-                    }}>{tm.label} ×1</span>
+                    }}>{tm.label}</span>
                   </div>
                 );
               })
@@ -777,23 +851,23 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
               <div style={{ height:1, background:`${theme.accent}20`, margin:"12px 0" }} />
               <div style={{ fontSize:12, fontWeight:900, color:theme.accent, marginBottom:8 }}>獎勵預覽</div>
               {clearedTier && (() => {
-                const n     = TIER_ORDER.indexOf(clearedTier) + 1;
-                const tiers = TIER_ORDER.slice(0, n);
+                const cleared = defeated.length;
+                const multiplier = getGatheringRewardMultiplier(cleared);
+                const materialCount = Math.max(1, Math.round(4 * cleared * multiplier));
                 return (
                   <div style={{ fontSize:12, color:"white", lineHeight:2.1 }}>
-                    <div>🌿 {raceLabel} T1素材 ×{5 + n * 5}</div>
-                    {tiers.map(t => <div key={t}>📦 {TIER_META[t].label}種族寶箱 ×1</div>)}
-                    {tiers.map(t => <div key={`c${t}`}>💰 {TIER_META[t].label}金幣寶箱 ×1</div>)}
+                    <div>🌿 {raceLabel} {TIER_META[clearedTier].label}素材 ×{materialCount}</div>
+                    <div>📦 {TIER_META[clearedTier].label}種族寶箱 ×{cleared}</div>
+                    <div>💰 {TIER_META[clearedTier].label}金幣寶箱 ×{cleared}</div>
+                    <div style={{ color:theme.accent }}>委託倍率 ×{multiplier}</div>
                   </div>
                 );
               })()}
-              {failedTier && (() => {
-                const n = TIER_ORDER.indexOf(failedTier) + 1;
+              {failedTier && defeated.length === 0 && (() => {
                 return (
                   <div style={{ fontSize:12, color:"rgba(255,255,255,0.65)", lineHeight:2.1, marginTop:clearedTier?8:0 }}>
                     <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginBottom:2 }}>撤退補償</div>
-                    <div>🌿 {raceLabel} T1素材 ×5</div>
-                    <div>🎲 {Math.round((0.10 + n * 0.05)*100)}% 機率 +1~{n} 扭蛋幣</div>
+                    <div>🌿 {raceLabel} T1素材 ×3</div>
                   </div>
                 );
               })()}
@@ -821,7 +895,18 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
             </div>
           );
         })()}
-        <button onClick={() => onFinish({ race, clearedTier, failedTier })} style={{
+        <button onClick={() => onFinish({
+          race,
+          clearedTier,
+          failedTier,
+          contractVersion: contract.version,
+          contractId: contract.id,
+          checkpointsCleared: defeated.length,
+          rewardMultiplier: getGatheringRewardMultiplier(defeated.length),
+          distance,
+          targetFmt,
+          totalArrows: allArrowsRef.current.length,
+        })} style={{
           width:"100%", padding:"16px 0", borderRadius:18, fontWeight:900, fontSize:17, cursor:"pointer",
           background:"linear-gradient(90deg,#16a34a,#15803d)", color:"white", border:"none",
           boxShadow:"0 4px 16px rgba(22,163,74,0.5)",
@@ -1051,7 +1136,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
                 border:`2px solid ${filled ? "transparent" : "rgba(255,255,255,0.07)"}`,
                 color: filled ? "#1c1008" : "rgba(255,255,255,0.15)",
                 boxShadow: filled && gold ? `0 0 10px ${theme.accent}88` : "none",
-                transition:"all 0.1s",
+                transition:"background-color 0.1s, opacity 0.1s",
               }}>{label ?? "·"}</div>
             );
           })}
@@ -1116,7 +1201,7 @@ export default function CouncilBattle({ building, availableTiers, archerStats, v
             color: arrows.length >= ARROWS_PER_ROUND ? "#1c1008" : "rgba(255,255,255,0.18)",
             opacity: isResolving ? 0.5 : 1,
             boxShadow: arrows.length >= ARROWS_PER_ROUND ? `0 0 16px ${theme.accent}55` : "none",
-            transition:"all 0.15s",
+            transition:"background-color 0.15s, color 0.15s, box-shadow 0.15s",
           }}>
             {isResolving ? "結算中…" : `送出！(${arrows.length}/${ARROWS_PER_ROUND})`}
           </button>

@@ -1,7 +1,7 @@
 {
-  "id": "battle-shot-analysis",
-  "name": "battle-shot-analysis",
-  "title": "戰鬥射箭分析",
+  "id": "arrow-milestone-fix",
+  "name": "arrow-milestone-fix",
+  "title": "箭數里程碑跨模式重複觸發修復",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "07-04-battle-archery-analytics",
+  "parent": null,
   "relatedFiles": [],
   "notes": "",
   "meta": {}

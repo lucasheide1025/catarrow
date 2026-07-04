@@ -35,6 +35,8 @@ export default function MemberInventoryHub({ onPageChange, badges = {} }) {
         <div className="grid grid-cols-2 gap-3">
           <HubTile icon="🛡️" title="我的裝備" desc="穿戴・強化・更換外觀"
             accent="#64748b" onClick={() => onPageChange("equipment")} />
+          <HubTile icon="🃏" title="怪物卡片" desc="收藏・升星・裝備加成"
+            accent="#8b5cf6" onClick={() => onPageChange("cards")} />
           <HubTile icon="🪙" title="金幣商店" desc="每日精選・每週珍寶"
             accent="#f59e0b" onClick={() => onPageChange("coinshop")} />
           <HubTile icon="🐱" title="貓貓陪練" desc="九隻貓咪夥伴"

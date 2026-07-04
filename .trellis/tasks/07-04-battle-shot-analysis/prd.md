@@ -9,6 +9,8 @@ after the shared target contract is complete.
 
 - Depends on `07-04-shared-target-face`.
 - Present archery performance and combat outcome as two views of one session.
+- Add a persistent personal bow-type and physical-distance picker to battle
+  modes that currently lack this context.
 - Support source filters for solo, party, dungeon, world boss, duel, and
   autonomous practice.
 - Treat raw arrow score as practice data and never combat damage.
@@ -19,6 +21,8 @@ after the shared target contract is complete.
 - [ ] The shared-target task is completed and its record contract is used.
 - [ ] Battle sessions show score, true per-arrow average including misses,
   distribution, stability, end progression, and landing analysis when present.
+- [ ] Solo, party, dungeon, world-boss, and duel saves snapshot the player's
+  selected bow type and physical distance.
 - [ ] Battle details show encounter, party, role, MVP, and rewards when the
   source record supplies them.
 

@@ -35,7 +35,9 @@ export default function CouncilHall({ profile, village, onBack }) {
   const checkinActive = useCheckinActive(profile?.id);
   const [tab,          setTab]          = useState("collect"); // "collect" | "expedition"
   const [activeBld,    setActiveBld]    = useState(null);
+  const [activeTier,   setActiveTier]   = useState(null);
   const [expandedId,   setExpandedId]   = useState(null);
+  const [selectedTiers, setSelectedTiers] = useState({});
   const [dailyLeft,    setDailyLeft]    = useState(null);
   const [archerStats,  setArcherStats]  = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
@@ -86,12 +88,26 @@ export default function CouncilHall({ profile, village, onBack }) {
     return () => { cancelled = true; unsub?.(); };
   }, [profile?.id]); // eslint-disable-line
 
-  async function handleEnter(bld) {
+  function handleEnter(bld, tier) {
     if (dailyLeft <= 0 || !archerStats || saving) return;
-    await recordCouncilSession(profile.id).catch(() => {});
-    setDailyLeft(l => Math.max(0, (l ?? 1) - 1));
     setExpandedId(null);
+    setActiveTier(tier);
     setActiveBld(bld);
+  }
+
+  async function handleContractStart() {
+    if (dailyLeft <= 0 || saving) return false;
+    setSaving(true);
+    try {
+      await recordCouncilSession(profile.id);
+      setDailyLeft(left => Math.max(0, (left ?? 1) - 1));
+      return true;
+    } catch (error) {
+      setDoneMsg(`無法開始委託：${error.message || "請稍後再試"}`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleFinish(result) {
@@ -101,13 +117,17 @@ export default function CouncilHall({ profile, village, onBack }) {
     try {
       await completeCouncilSession(profile.id, result);
       const msg = result.clearedTier
-        ? `✓ ${TIER_META[result.clearedTier].label}關通關　獎勵已存入背包`
+        ? `✓ 完成 ${result.checkpointsCleared || 1}/3 階段（×${result.rewardMultiplier || 1}），獎勵已存入背包`
         : `✓ 撤退補償　獎勵已存入背包`;
       setDoneMsg(msg);
       setTimeout(() => setDoneMsg(""), 4000);
     } catch (e) { console.warn(e.message); }
     setSaving(false);
   }
+
+  const powerTiers = archerStats
+    ? getAvailableTiersByPower(calcArcherPower(archerStats))
+    : [];
 
   // ── 進入戰鬥 ─────────────────────────────────────────────
   if (activeBld && archerStats) {
@@ -117,13 +137,15 @@ export default function CouncilHall({ profile, village, onBack }) {
       <CouncilBattle
         building={activeBld}
         availableTiers={availTiers}
+        selectedTier={activeTier || availTiers[availTiers.length - 1]}
         archerStats={archerStats}
         village={village}
         memberId={profile.id}
         catId={profile?.equippedCat?.catId || null}
         checkinActive={checkinActive}
+        onStart={handleContractStart}
         onFinish={handleFinish}
-        onBack={() => { setActiveBld(null); setDailyLeft(l => Math.min(5, (l ?? 0) + 1)); }}
+        onBack={() => { setActiveBld(null); setActiveTier(null); }}
       />
     );
   }
@@ -136,10 +158,11 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {/* 標頭 */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-        <button onClick={onBack} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#92400e" }}>←</button>
+        <button onClick={onBack} aria-label="返回貓貓村"
+          style={{ background:"none", border:"none", fontSize:24, cursor:"pointer", color:"#fbbf24", minWidth:44, minHeight:44 }}>←</button>
         <div>
           <div style={{ fontWeight:900, fontSize:17, color:"#fbbf24" }}>🏛️ 議會廳</div>
-          <div style={{ fontSize:11, color:"#78350f" }}>採集任務 · 遠征派遣 · 獲取貓毛與藥水</div>
+          <div style={{ fontSize:12, color:"#d6a46b" }}>採集委託 · 遠征派遣 · 獲取貓毛與藥水</div>
         </div>
       </div>
 
@@ -149,7 +172,7 @@ export default function CouncilHall({ profile, village, onBack }) {
           <button key={key} onClick={() => setTab(key)}
             style={{
               flex:1, padding:"9px 0", borderRadius:12, fontWeight:800, fontSize:13,
-              border:"none", cursor:"pointer", transition:"all 0.15s",
+              border:"none", cursor:"pointer", transition:"background-color 0.15s, color 0.15s",
               background: tab === key ? "linear-gradient(90deg,#d97706,#f59e0b)" : "rgba(255,255,255,0.06)",
               color: tab === key ? "#1c1008" : "rgba(255,255,255,0.45)",
             }}>
@@ -166,7 +189,7 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {/* 提示訊息 */}
       {doneMsg && (
-        <div style={{ background: doneMsg.startsWith("✓") ? "#14532d" : "#7f1d1d", borderRadius:10, padding:"10px 14px", marginBottom:12, fontWeight:800, fontSize:13, animation:"ch-fade 0.3s ease" }}>
+        <div aria-live="polite" style={{ background: doneMsg.startsWith("✓") ? "#14532d" : "#7f1d1d", borderRadius:10, padding:"10px 14px", marginBottom:12, fontWeight:800, fontSize:13, animation:"ch-fade 0.3s ease" }}>
           {doneMsg}
         </div>
       )}
@@ -184,9 +207,9 @@ export default function CouncilHall({ profile, village, onBack }) {
               </div>
               <div style={{ flex:1 }} />
               <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:10, color:"#78350f" }}>今日剩餘</div>
+                <div style={{ fontSize:11, color:"#d6a46b" }}>今日剩餘</div>
                 <div style={{ fontWeight:900, fontSize:20, color: dailyLeft > 0 ? "#fbbf24" : "#ef4444", lineHeight:1 }}>
-                  {dailyLeft ?? "…"}<span style={{ fontSize:12, color:"#92400e" }}>/5</span>
+                  {dailyLeft ?? "…"}<span style={{ fontSize:12, color:"#d6a46b" }}>/5</span>
                 </div>
               </div>
             </>
@@ -195,15 +218,16 @@ export default function CouncilHall({ profile, village, onBack }) {
       </div>
 
       {/* 怎麼玩 */}
-      <div style={{ background:"rgba(245,158,11,0.05)", borderRadius:12, padding:"9px 13px", marginBottom:16, fontSize:11, color:"#92400e", lineHeight:1.9, border:"1px solid rgba(245,158,11,0.1)" }}>
-        <b style={{ color:"#b45309" }}>怎麼玩？</b>　點擊建築查看任務清單，射箭解決障礙。每關勝利 → T1素材＋種族/金幣寶箱　失敗撤退 → 少量素材＋扭蛋幣機率　·　每日 5 次
+      <div style={{ background:"rgba(245,158,11,0.08)", borderRadius:12, padding:"11px 13px", marginBottom:16, fontSize:12, color:"#e7c38d", lineHeight:1.75, border:"1px solid rgba(245,158,11,0.18)" }}>
+        <b style={{ color:"#fbbf24" }}>委託流程：</b>選擇建築與難度，完成 3 個工作階段。每階段後可安全收工，或繼續提高獎勵倍率。按下正式開始才會使用今日次數。
       </div>
 
       {/* 建築卡片網格 */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
         {COUNCIL_BUILDINGS.map(bld => {
           const bldLevel   = buildings[bld.id] || 1;
-          const availTiers = getAvailableTiers(bldLevel);
+          const availTiers = powerTiers.length > 0 ? powerTiers : getAvailableTiers(bldLevel);
+          const selectedTier = selectedTiers[bld.id] || availTiers[availTiers.length - 1];
           const isLocked   = !buildings[bld.id];
           const isExpanded = expandedId === bld.id;
           const canEnter   = !isLocked && dailyLeft > 0 && archerStats && !saving;
@@ -258,52 +282,75 @@ export default function CouncilHall({ profile, village, onBack }) {
               {isExpanded && (
                 <div style={{ padding:"0 12px 14px", animation:"ch-fade 0.25s ease" }}>
                   <div style={{ height:1, background:"rgba(255,255,255,0.1)", marginBottom:10 }} />
-                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginBottom:8 }}>本次任務清單（共 {availTiers.length} 個障礙）</div>
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.65)", marginBottom:8 }}>
+                    選擇本次委託難度
+                  </div>
 
-                  {/* 障礙小卡 2欄 */}
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:12 }}>
+                  <div style={{ display:"flex", gap:7, overflowX:"auto", paddingBottom:8, marginBottom:8 }}>
                     {availTiers.map(t => {
-                      const m  = COUNCIL_MONSTERS[bld.id][t];
                       const tm = TIER_META[t];
-                      const st = LIFE_TIER_STATS[t];
+                      const selected = selectedTier === t;
                       return (
-                        <div key={t} style={{
-                          borderRadius:12, padding:"10px 10px",
-                          background: m.bgColor,
-                          border:`1.5px solid ${tm.color}44`,
-                        }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                            <span style={{ fontSize:22 }}>{m.emoji}</span>
-                            <div>
-                              <div style={{ fontSize:9, fontWeight:800, color:tm.color }}>{tm.label}</div>
-                              <div style={{ fontSize:12, fontWeight:900, color:"#1c1008" }}>{m.name}</div>
-                            </div>
-                          </div>
-                          <div style={{ fontSize:10, color:"#78350f", marginBottom:4 }}>{m.action}</div>
-                          <div style={{ fontSize:9, color:"#92400e", display:"flex", gap:6 }}>
-                            <span>❤️{st.hp}</span>
-                            <span>⚔️{st.atk}</span>
-                            <span>🛡️{st.def}</span>
-                          </div>
-                        </div>
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setSelectedTiers(previous => ({ ...previous, [bld.id]: t }))}
+                          aria-pressed={selected}
+                          style={{
+                            flexShrink:0, minHeight:42, padding:"8px 12px", borderRadius:12,
+                            border:`1.5px solid ${tm.color}`,
+                            background:selected ? tm.color : "rgba(255,255,255,0.06)",
+                            color:selected ? "white" : tm.color,
+                            fontWeight:900, fontSize:12, cursor:"pointer",
+                          }}
+                        >
+                          {tm.label}
+                        </button>
                       );
                     })}
                   </div>
 
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginBottom:8 }}>
+                    3 個工作階段，可在每階段完成後安全收工
+                  </div>
+
+                  {selectedTier && (() => {
+                    const m = COUNCIL_MONSTERS[bld.id][selectedTier];
+                    const tm = TIER_META[selectedTier];
+                    const st = LIFE_TIER_STATS[selectedTier];
+                    return (
+                      <div style={{
+                        borderRadius:14, padding:"12px", marginBottom:12,
+                        background:m.bgColor, border:`1.5px solid ${tm.color}55`,
+                      }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span style={{ fontSize:30 }}>{m.emoji}</span>
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div style={{ fontSize:13, fontWeight:900, color:"#1c1008" }}>{m.name}</div>
+                            <div style={{ fontSize:11, color:"#78350f" }}>{m.action}</div>
+                          </div>
+                          <div style={{ fontSize:10, color:"#92400e", textAlign:"right" }}>
+                            <div>進度 {st.hp}</div><div>疲勞 {st.atk}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* 全通關獎勵提示 */}
                   <div style={{ background:"rgba(245,158,11,0.12)", borderRadius:10, padding:"7px 10px", marginBottom:10, fontSize:11, color:"#fbbf24" }}>
-                    🏆 每關勝利都有獎勵：T1素材＋種族寶箱＋金幣寶箱
+                    🏆 完成越多階段，獎勵倍率越高：×1.0 → ×1.35 → ×1.8
                   </div>
 
                   <button
-                    onClick={() => canEnter && handleEnter(bld)}
+                    onClick={() => canEnter && handleEnter(bld, selectedTier)}
                     disabled={!canEnter}
                     style={{
                       width:"100%", padding:"12px 0", borderRadius:14, fontWeight:900, fontSize:15, cursor: canEnter ? "pointer" : "default", border:"none",
                       background: canEnter ? "linear-gradient(90deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.1)",
                       color: canEnter ? "#1c1008" : "rgba(255,255,255,0.3)",
                     }}>
-                    {dailyLeft <= 0 ? "❌ 今日次數已用盡" : saving ? "存檔中…" : "🌟 開始採集任務"}
+                    {dailyLeft <= 0 ? "❌ 今日次數已用盡" : saving ? "準備中…" : `查看${TIER_META[selectedTier]?.label || ""}委託`}
                   </button>
                 </div>
               )}

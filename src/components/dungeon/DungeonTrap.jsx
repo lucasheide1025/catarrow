@@ -19,7 +19,7 @@ function rollDice() {
 // 結束呼叫 onLocalDone，不寫 Firestore
 export default function DungeonTrap({
   roomId, room, memberId, isHost,
-  localMode = false, onLocalEffect, onLocalDone,
+  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [trapType,  setTrapType]  = useState(null);
   const [animPhase, setAnimPhase] = useState("entering"); // entering | trap_reveal | dice_bet | dice_result | done
@@ -145,6 +145,10 @@ export default function DungeonTrap({
     if (!isHost) return;
     if (localMode) {
       onLocalDone?.();
+      return;
+    }
+    if (onSharedDone) {
+      await onSharedDone();
       return;
     }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);

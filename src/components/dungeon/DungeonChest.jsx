@@ -126,7 +126,7 @@ function ItemReveal({ item, delay = 0, isHidden = false }) {
 // 收藏品照常寫入 member 文件；結束呼叫 onLocalDone，不寫房間文件
 export default function DungeonChest({
   roomId, room, memberId, isHost,
-  localMode = false, onLocalEffect, onLocalDone,
+  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [animPhase, setAnimPhase] = useState("entering"); // entering | opening | reveal | done
   const [confirmed, setConfirmed] = useState(false);
@@ -199,6 +199,10 @@ export default function DungeonChest({
     if (!isHost) return;
     if (localMode) {
       onLocalDone?.();
+      return;
+    }
+    if (onSharedDone) {
+      await onSharedDone();
       return;
     }
     await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
