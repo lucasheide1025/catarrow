@@ -766,14 +766,17 @@ adminSetSavedDungeon(memberId, entry)    // 後台直接寫入（支援取代特
 createTeamExpeditionRoom({ hostId, hostName, dungeon, memberData })
   // → { ok:true, roomId, code }
 joinTeamExpeditionRoom(code, memberId, memberName, memberData)
-  // transaction 檢查 max 4 與 waiting；→ { ok:true, roomId, dungeon, hostId }
+  // transaction 檢查 max 8（2026-07-04 前誤寫 4，已修正）與 waiting；→ { ok:true, roomId, dungeon, hostId }
 subscribeTeamExpeditionRoom(roomId, cb)
 leaveTeamExpeditionRoom(roomId, memberId) // deleteField，不能寫 null
 startTeamExpeditionRoom(roomId, hostId)   // 原子鎖定 active
+setTeamExpeditionMemberRole(roomId, memberId, role) // 2026-07-04 新增：等待室選前衛/後衛，各上限4，transaction 防超額
 disbandTeamExpeditionRoom(roomId)     // status="completed"
 cleanupTeamExpeditionRoom(roomId)     // deleteDoc
 subscribeOpenTeamExpeditionRooms(cb)  // 開放房間列表（供加入面板）
 ```
+
+**2026-07-04 崩潰修正**：`expeditionGrid.js::generateGridFloor()` 回傳的 `gridFloor.grid` 是 2D 陣列（Firestore 不支援巢狀陣列）。`TeamExpeditionBattle.jsx` 每次把 `expeditionMapState` 寫入 Firestore 前，一律先呼叫本地 helper `stripMapStateGrid()`（內部呼叫 `expeditionGrid.js::stripGridForSync(gridFloor)` 剔除 `grid` 欄位）。`grid` 只是本地渲染輔助，`GridMapStage` 只用 `rooms` 重建查找表，讀取端不需還原。單人模式 `expeditionGrid.js` 本身格式不動（仍含 `grid`，因為單人模式從不寫入 Firestore）。
 
 ### 遠征獎勵結算（expeditionDb.js Phase E）
 ```js

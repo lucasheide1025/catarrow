@@ -555,6 +555,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }
 
   function handleTargetSubmit() {
+    if (targetPending) return; // 防止重複觸發疊加多個 timeout
     setTargetPending(true);
     setTimeout(() => {
       setTargetPending(false);
@@ -1667,11 +1668,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=(room.arrowsPerRound||6)?0.3:1 }}>
                   M
                 </button>
-                <button onClick={() => { setTargetMode(true); setBattleInputMode("target"); }}
-                  className="col-span-2 rounded-xl font-black active:scale-95 bg-blue-500/20 text-blue-200 border border-blue-400/40"
-                  style={{ fontSize:13, padding:"10px 0" }}>
-                  🎯 改用靶面點擊
-                </button>
+                {arrows.length === 0 && !targetMode && (
+                  <button onClick={() => { setTargetMode(true); setBattleInputMode("target"); }}
+                    className="col-span-2 rounded-xl font-black active:scale-95 bg-blue-500/20 text-blue-200 border border-blue-400/40"
+                    style={{ fontSize:13, padding:"10px 0" }}>
+                    🎯 改用靶面點擊
+                  </button>
+                )}
               </div>
             ) : (
               <BattleBottomBar
@@ -1700,7 +1703,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               onArrow={addArrow}
               onUndo={undoArrow}
               onSubmit={handleTargetSubmit}
-              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
             />
             {/* 送出 */}
             {controlsStarted && (

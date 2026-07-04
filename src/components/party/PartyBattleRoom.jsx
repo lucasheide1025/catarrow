@@ -540,6 +540,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setArrows(prev => prev.slice(0, -1));
   }
   function handleTargetSubmit() {
+    if (targetPending) return; // 防止重複觸發疊加多個 timeout
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
@@ -1802,12 +1803,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 onUndo={removeLastArrow}
                 showUndo={arrows.length>0}
                 extraContent={
-                  <button onClick={() => setTargetMode(m => !m)} style={{
-                    marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                    background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                    border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                    color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-                  }}>🎯</button>
+                  !scoringModeChosen ? (
+                    <button onClick={() => setTargetMode(m => !m)} style={{
+                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                    }}>🎯</button>
+                  ) : null
                 }
               />
             {targetPending && (
@@ -1853,7 +1856,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               onArrow={addArrow}
               onUndo={removeLastArrow}
               onSubmit={handleTargetSubmit}
-              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
             />
             {/* 送出 */}
             {(() => {

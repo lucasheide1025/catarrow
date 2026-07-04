@@ -1,5 +1,5 @@
 // src/lib/catCardData.js
-// 100張貓貓卡片資料。image欄位待GEMINI生成後填入URL。
+// 200張貓貓卡片資料（001-100 初版十分類 + 101-200 擴充十分類）。image欄位待GEMINI生成後填入URL。
 export const CAT_CARDS = [
   // ── 1. 射箭貓 Archery ──────────────────────────────────────
   { id:"001", name:"初心射手",   cat:"archery", emoji:"🏹", bg:"#e8f5e9" },
@@ -111,6 +111,116 @@ export const CAT_CARDS = [
   { id:"098", name:"睡美人貓",   cat:"fairy", emoji:"🌹", bg:"#fce4ec" },
   { id:"099", name:"千尋貓",     cat:"fairy", emoji:"🏮", bg:"#fff8e1" },
   { id:"100", name:"傳說第100貓",cat:"fairy", emoji:"🌟", bg:"#212121", color:"#ffd700", special:true },
+  // ── 11. 台灣早餐貓 Breakfast ───────────────────────────────
+  { id:"101", name:"飯糰貓",     cat:"breakfast", emoji:"🍙", bg:"#fff3e0" },
+  { id:"102", name:"蛋餅貓",     cat:"breakfast", emoji:"🍳", bg:"#fff8e1" },
+  { id:"103", name:"蘿蔔糕貓",   cat:"breakfast", emoji:"🍘", bg:"#f5f5dc" },
+  { id:"104", name:"燒餅貓",     cat:"breakfast", emoji:"🥯", bg:"#fff3e0" },
+  { id:"105", name:"油條貓",     cat:"breakfast", emoji:"🥖", bg:"#fff8e1" },
+  { id:"106", name:"豆漿貓",     cat:"breakfast", emoji:"🥛", bg:"#f0f4f8" },
+  { id:"107", name:"奶茶早餐貓", cat:"breakfast", emoji:"🥤", bg:"#ede7f6" },
+  { id:"108", name:"火腿蛋吐司貓", cat:"breakfast", emoji:"🍞", bg:"#fff3e0" },
+  { id:"109", name:"漢堡排早餐貓", cat:"breakfast", emoji:"🍔", bg:"#ffebee" },
+  { id:"110", name:"鐵板麵貓",   cat:"breakfast", emoji:"🍝", bg:"#fff8e1" },
+  // ── 12. 便利商店貓 Convenience Store ──────────────────────
+  { id:"111", name:"茶葉蛋貓",   cat:"cvs", emoji:"🥚", bg:"#fff3e0" },
+  { id:"112", name:"關東煮貓",   cat:"cvs", emoji:"🍢", bg:"#fff8e1" },
+  { id:"113", name:"御飯糰貓",   cat:"cvs", emoji:"🍙", bg:"#e8f5e9" },
+  { id:"114", name:"咖啡拿鐵貓", cat:"cvs", emoji:"☕", bg:"#efebe9" },
+  { id:"115", name:"微波便當貓", cat:"cvs", emoji:"🍱", bg:"#e3f2fd" },
+  { id:"116", name:"思樂冰貓",   cat:"cvs", emoji:"🧊", bg:"#e3f2fd" },
+  { id:"117", name:"霜淇淋貓",   cat:"cvs", emoji:"🍦", bg:"#fce4ec" },
+  { id:"118", name:"飯後布丁貓", cat:"cvs", emoji:"🍮", bg:"#fff8e1" },
+  { id:"119", name:"零食洋芋片貓", cat:"cvs", emoji:"🍟", bg:"#fff3e0" },
+  { id:"120", name:"店員貓",     cat:"cvs", emoji:"🏪", bg:"#e8eaf6" },
+  // ── 13. 甜點烘焙貓 Dessert ────────────────────────────────
+  { id:"121", name:"草莓蛋糕貓", cat:"dessert", emoji:"🍰", bg:"#fce4ec" },
+  { id:"122", name:"馬卡龍貓",   cat:"dessert", emoji:"🍬", bg:"#f3e5f5" },
+  { id:"123", name:"泡芙貓",     cat:"dessert", emoji:"🧁", bg:"#fff8e1" },
+  { id:"124", name:"布丁貓",     cat:"dessert", emoji:"🍮", bg:"#fff3e0" },
+  { id:"125", name:"提拉米蘇貓", cat:"dessert", emoji:"🍫", bg:"#efebe9" },
+  { id:"126", name:"可頌貓",     cat:"dessert", emoji:"🥐", bg:"#fff8e1" },
+  { id:"127", name:"甜甜圈貓",   cat:"dessert", emoji:"🍩", bg:"#fce4ec" },
+  { id:"128", name:"鬆餅貓",     cat:"dessert", emoji:"🧇", bg:"#fff3e0" },
+  { id:"129", name:"起司蛋糕貓", cat:"dessert", emoji:"🍰", bg:"#fffde7" },
+  { id:"130", name:"烘焙師貓",   cat:"dessert", emoji:"👩‍🍳", bg:"#fff8e1" },
+  // ── 14. 水果樂園貓 Fruit ──────────────────────────────────
+  { id:"131", name:"草莓貓",     cat:"fruit", emoji:"🍓", bg:"#fce4ec" },
+  { id:"132", name:"西瓜貓",     cat:"fruit", emoji:"🍉", bg:"#e8f5e9" },
+  { id:"133", name:"鳳梨貓",     cat:"fruit", emoji:"🍍", bg:"#fff8e1" },
+  { id:"134", name:"葡萄貓",     cat:"fruit", emoji:"🍇", bg:"#ede7f6" },
+  { id:"135", name:"香蕉貓",     cat:"fruit", emoji:"🍌", bg:"#fffde7" },
+  { id:"136", name:"蘋果貓",     cat:"fruit", emoji:"🍎", bg:"#ffebee" },
+  { id:"137", name:"柚子貓",     cat:"fruit", emoji:"🍊", bg:"#fff3e0" },
+  { id:"138", name:"荔枝貓",     cat:"fruit", emoji:"🍑", bg:"#fce4ec" },
+  { id:"139", name:"藍莓貓",     cat:"fruit", emoji:"🫐", bg:"#e3f2fd" },
+  { id:"140", name:"綜合水果貓", cat:"fruit", emoji:"🧺", bg:"#e8f5e9" },
+  // ── 15. 飲料派對貓 Drink ──────────────────────────────────
+  { id:"141", name:"紅茶貓",     cat:"drink", emoji:"🍵", bg:"#efebe9" },
+  { id:"142", name:"綠茶貓",     cat:"drink", emoji:"🍵", bg:"#e8f5e9" },
+  { id:"143", name:"烏龍茶貓",   cat:"drink", emoji:"🍵", bg:"#fff8e1" },
+  { id:"144", name:"冬瓜茶貓",   cat:"drink", emoji:"🥤", bg:"#fff3e0" },
+  { id:"145", name:"楊枝甘露貓", cat:"drink", emoji:"🥭", bg:"#fff8e1" },
+  { id:"146", name:"檸檬愛玉貓", cat:"drink", emoji:"🍋", bg:"#fffde7" },
+  { id:"147", name:"多多貓",     cat:"drink", emoji:"🥛", bg:"#f0f4f8" },
+  { id:"148", name:"可可貓",     cat:"drink", emoji:"🍫", bg:"#efebe9" },
+  { id:"149", name:"奶蓋貓",     cat:"drink", emoji:"🧋", bg:"#ede7f6" },
+  { id:"150", name:"飲料店長貓", cat:"drink", emoji:"🧃", bg:"#e3f2fd" },
+  // ── 16. 節慶喜氣貓 Festival ───────────────────────────────
+  { id:"151", name:"新年招財貓", cat:"festival", emoji:"💰", bg:"#ffebee" },
+  { id:"152", name:"燈籠貓",     cat:"festival", emoji:"🏮", bg:"#ffebee" },
+  { id:"153", name:"紅包貓",     cat:"festival", emoji:"🧧", bg:"#fff3e0" },
+  { id:"154", name:"月餅貓",     cat:"festival", emoji:"🥮", bg:"#fff8e1" },
+  { id:"155", name:"湯圓貓",     cat:"festival", emoji:"🍡", bg:"#fce4ec" },
+  { id:"156", name:"粽子貓",     cat:"festival", emoji:"🎋", bg:"#e8f5e9" },
+  { id:"157", name:"花火貓",     cat:"festival", emoji:"🎆", bg:"#0d1b2a", color:"#fff" },
+  { id:"158", name:"聖誕貓",     cat:"festival", emoji:"🎄", bg:"#e8f5e9" },
+  { id:"159", name:"萬聖貓",     cat:"festival", emoji:"🎃", bg:"#fff3e0" },
+  { id:"160", name:"慶典大王貓", cat:"festival", emoji:"🎉", bg:"#f3e5f5" },
+  // ── 17. 職業變身貓 Job ────────────────────────────────────
+  { id:"161", name:"廚師貓",     cat:"job", emoji:"👨‍🍳", bg:"#fff3e0" },
+  { id:"162", name:"店長貓",     cat:"job", emoji:"🔑", bg:"#e8eaf6" },
+  { id:"163", name:"花店貓",     cat:"job", emoji:"💐", bg:"#fce4ec" },
+  { id:"164", name:"圖書館貓",   cat:"job", emoji:"📚", bg:"#ede7f6" },
+  { id:"165", name:"醫生貓",     cat:"job", emoji:"🩺", bg:"#e3f2fd" },
+  { id:"166", name:"畫家貓",     cat:"job", emoji:"🎨", bg:"#f3e5f5" },
+  { id:"167", name:"音樂家貓",   cat:"job", emoji:"🎻", bg:"#ede7f6" },
+  { id:"168", name:"攝影師貓",   cat:"job", emoji:"📷", bg:"#e8eaf6" },
+  { id:"169", name:"麵包師貓",   cat:"job", emoji:"🥖", bg:"#fff8e1" },
+  { id:"170", name:"郵差貓",     cat:"job", emoji:"📮", bg:"#ffebee" },
+  // ── 18. 四季天氣貓 Weather ────────────────────────────────
+  { id:"171", name:"春櫻貓",     cat:"weather", emoji:"🌸", bg:"#fce4ec" },
+  { id:"172", name:"初夏貓",     cat:"weather", emoji:"🌿", bg:"#e8f5e9" },
+  { id:"173", name:"盛夏貓",     cat:"weather", emoji:"☀️", bg:"#fff8e1" },
+  { id:"174", name:"秋葉貓",     cat:"weather", emoji:"🍂", bg:"#fff3e0" },
+  { id:"175", name:"冬雪貓",     cat:"weather", emoji:"❄️", bg:"#e3f2fd" },
+  { id:"176", name:"雨天貓",     cat:"weather", emoji:"🌧️", bg:"#e8eaf6" },
+  { id:"177", name:"晴空貓",     cat:"weather", emoji:"🌤️", bg:"#e3f2fd" },
+  { id:"178", name:"彩虹貓",     cat:"weather", emoji:"🌈", bg:"#f3e5f5" },
+  { id:"179", name:"星夜貓",     cat:"weather", emoji:"🌌", bg:"#0d1b2a", color:"#fff" },
+  { id:"180", name:"月光貓",     cat:"weather", emoji:"🌙", bg:"#ede7f6" },
+  // ── 19. 冒險旅人貓 Quest ──────────────────────────────────
+  { id:"181", name:"劍士貓",     cat:"quest", emoji:"⚔️", bg:"#ffebee" },
+  { id:"182", name:"弓箭手貓",   cat:"quest", emoji:"🏹", bg:"#e8f5e9" },
+  { id:"183", name:"法師貓",     cat:"quest", emoji:"🪄", bg:"#ede7f6" },
+  { id:"184", name:"盜賊貓",     cat:"quest", emoji:"🗡️", bg:"#263238", color:"#fff" },
+  { id:"185", name:"吟遊詩人貓", cat:"quest", emoji:"🎼", bg:"#fff8e1" },
+  { id:"186", name:"森林旅人貓", cat:"quest", emoji:"🌲", bg:"#e8f5e9" },
+  { id:"187", name:"沙漠旅人貓", cat:"quest", emoji:"🏜️", bg:"#fff3e0" },
+  { id:"188", name:"海盜貓",     cat:"quest", emoji:"🏴‍☠️", bg:"#263238", color:"#fff" },
+  { id:"189", name:"寶藏獵人貓", cat:"quest", emoji:"💎", bg:"#e3f2fd" },
+  { id:"190", name:"冒險隊長貓", cat:"quest", emoji:"🧭", bg:"#fff8e1" },
+  // ── 20. 傳說稀有貓 Legend（高稀有／閃卡感）───────────────
+  { id:"191", name:"精靈貓",     cat:"legend", emoji:"🧝", bg:"#1a1a2e", color:"#a5f3fc" },
+  { id:"192", name:"龍息貓",     cat:"legend", emoji:"🐲", bg:"#1a1a2e", color:"#fca5a5" },
+  { id:"193", name:"麒麟貓",     cat:"legend", emoji:"🦁", bg:"#1a1a2e", color:"#fde68a" },
+  { id:"194", name:"九尾貓",     cat:"legend", emoji:"🦊", bg:"#1a1a2e", color:"#fdba74" },
+  { id:"195", name:"星辰貓",     cat:"legend", emoji:"⭐", bg:"#0d1b2a", color:"#ffd700" },
+  { id:"196", name:"月神貓",     cat:"legend", emoji:"🌕", bg:"#0d1b2a", color:"#e2e8f0" },
+  { id:"197", name:"太陽貓",     cat:"legend", emoji:"☀️", bg:"#1a1a2e", color:"#fbbf24" },
+  { id:"198", name:"王冠貓",     cat:"legend", emoji:"👑", bg:"#212121", color:"#ffd700" },
+  { id:"199", name:"傳說聖貓",   cat:"legend", emoji:"✨", bg:"#212121", color:"#e2e8f0" },
+  { id:"200", name:"終極收藏貓", cat:"legend", emoji:"🌟", bg:"#212121", color:"#ffd700", special:true },
 ];
 
 export const CAT_CARD_MAP = Object.fromEntries(CAT_CARDS.map(c => [c.id, c]));
@@ -126,13 +236,25 @@ export const CAT_CARD_CATEGORIES = {
   hero:    { label:"職業英雄貓", emoji:"🏆" },
   nature:  { label:"自然元素貓", emoji:"🌊" },
   fairy:   { label:"夢幻童話貓", emoji:"🎭" },
+  breakfast:{ label:"台灣早餐貓", emoji:"🍙" },
+  cvs:      { label:"便利商店貓", emoji:"🏪" },
+  dessert:  { label:"甜點烘焙貓", emoji:"🍰" },
+  fruit:    { label:"水果樂園貓", emoji:"🍓" },
+  drink:    { label:"飲料派對貓", emoji:"🧋" },
+  festival: { label:"節慶喜氣貓", emoji:"🏮" },
+  job:      { label:"職業變身貓", emoji:"🧑‍🍳" },
+  weather:  { label:"四季天氣貓", emoji:"🌤️" },
+  quest:    { label:"冒險旅人貓", emoji:"🧭" },
+  legend:   { label:"傳說稀有貓", emoji:"👑" },
 };
 
 // 隨機抽卡（回傳 cardId 字串）
+// #100、#200 兩張傳說貓各 0.3% 機率保底；其餘 198 張平均分配
 export function rollGacha() {
-  // #100 傳說貓機率 0.3%；其餘平均分配
   const r = Math.random();
   if (r < 0.003) return "100";
-  const idx = Math.floor(Math.random() * 99) + 1;
-  return String(idx).padStart(3, "0");
+  if (r < 0.006) return "200";
+  const idx = Math.floor(Math.random() * 198); // 0~197 → 198 張一般卡
+  const num = idx < 99 ? idx + 1 : idx + 2;     // 跳過 100：1-99, 101-199
+  return String(num).padStart(3, "0");
 }

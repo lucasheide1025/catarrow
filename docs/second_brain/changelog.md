@@ -3,6 +3,27 @@
 
 ---
 
+## 2026-07-04（組隊地下城修復：地圖崩潰＋人數上限＋前後衛選擇）
+
+### 改了什麼
+- `src/lib/expeditionGrid.js` 新增 `stripGridForSync(gridFloor)`：淺拷貝剔除 `grid`（2D 陣列，Firestore 不支援巢狀陣列）。`generateGridFloor()` 本身格式不動（單人模式仍依賴）。
+- `src/components/dungeon/TeamExpeditionBattle.jsx` 新增本地 helper `stripMapStateGrid(state)`，所有 9 處把 `expeditionMapState` 寫入 `updateTeamExpeditionRoom()` 的地方一律先過這個 helper，徹底解決組隊地下城「建立→進入」時的 Firestore「Nested arrays are not supported」崩潰。
+- `src/lib/expeditionTeamDb.js`：`joinTeamExpeditionRoom` 人數上限從 `>= 4` 改為 `>= 8`；新增 `setTeamExpeditionMemberRole(roomId, memberId, role)`（transaction，各角色上限 4 人，只決定進場初始 role）。
+- `src/components/dungeon/DungeonTeamLobby.jsx`：人數顯示與空位佔位符改「/8」；隊員清單新增前衛/後衛選擇按鈕（僅本人可選）+ 即時「前衛 X/4 · 後衛 Y/4」提示；`handleStart()` 組出的 `memberList` 帶上 `role`。
+- `src/lib/partyDb.js` 新增 `setPartyMemberRole(roomId, memberId, role)`（同上 transaction 邏輯，各上限 4）。
+- `src/components/party/PartyBattleRoom.jsx` 等待室（`room.status==="waiting"`）隊員列表新增角色徽章 + 本人前衛/後衛選擇按鈕 + 計數提示。
+
+### 為什麼
+- Bug 根因：組隊遠征的 `gridFloor.grid` 從未被下游渲染用到（`GridMapStage` 只用 `rooms` 陣列自建查找表），純屬多餘且直接炸 Firestore 寫入。
+- 組隊地下城人數上限寫死 4，UI 也寫死 4，與舊版「地下城經典模式」（`dungeonDb.js`，8 人）不一致。
+- 前後衛過去完全沒有進場前選擇：`createTeamExpeditionBattleRoom()` 的 `role: m.role || "front"` 因為 `members` 從未帶 `role` 欄位，導致每個人都變前衛，後衛沒人。Party 模式同樣沒有初始選擇（`role` 只在 `submitArrows` 時透過本地 `myRole` state 決定，預設一律 front）。
+
+### 踩坑提醒
+- 只需在**寫入 Firestore 前**剔除 `grid`，不需要在讀取端做任何還原——因為沒有任何下游邏輯依賴它。一旦第一次寫入時就剔除乾淨，後續所有 `...mapState.gridFloor` 的 spread 都不會再帶出 `grid`。
+- 前衛倒下自動轉後衛復活的既有機制（`partyDb.js::processPartyRound` 內，約行 508-518，`isCurrentlyFront` 判斷處）完全沒動；新增的角色選擇只影響**開戰當下**的初始 `role`，戰鬥中動態切換邏輯不受影響。
+- Party 模式的 `role` 欄位在 `resetPartyRoom()`（下一場重置）不會被清除，所以玩家上一場結束時的角色（含自動轉後衛的結果）會帶到下一場等待室，可再自由重選。
+- 組隊地下城的 `DungeonTeamLobby.jsx::handleStart()` 傳出的 `memberList` 目前只有 `DungeonLobby.jsx::handleTeamStart` 接收但實際上該參數未被使用（見 `_memberList` 命名）——真正決定戰鬥房 `role` 的資料來源是 Firestore `dungeonRooms` 房間文件裡的 `members[id].role`（透過 `setTeamExpeditionMemberRole` 寫入），並在 `TeamExpeditionBattle.jsx::startRoomBattle` 直接讀取 `teamRoom.members` 建立戰鬥房成員列表。
+
 ## 2026-07-04（學生分級與系統鎖定）
 
 ### 改了什麼
