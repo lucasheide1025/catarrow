@@ -16,7 +16,8 @@ import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
-import { labelToValue, valueToLabel, getScoreColor } from "../../lib/score";
+import { labelToValue, getScoreColor } from "../../lib/score";
+import { getTargetScoreLabels } from "../../lib/targetFace";
 import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter } from "../../lib/damage";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
@@ -32,10 +33,8 @@ const WB_EVT = {
   SUPPORT: 'wb_support',
 };
 
-// SCORE_BTNS/scoreVal/scoreLabel/scoreColor 統一由 ../../lib/score 管理
-const SCORE_BTNS = ["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"];
+// scoreVal/scoreColor 統一由 ../../lib/score 管理
 function scoreVal(s) { return labelToValue(s); }
-function scoreLabel(s) { return valueToLabel(s); }
 function scoreColor(s) { return getScoreColor(s === 10 ? "X" : s === 0 ? "M" : String(s), "hex"); }
 
 // ── Boss 反擊台詞池 ──────────────────────────────────────────
@@ -429,14 +428,23 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   }
 
   // ── 輸入分數（只記錄，不計算傷害）──────────────────────
-  function handleScore(s) {
+  function handleScore(s, landing) {
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
     sfxTap(); vibrate(10);
     const rawScore = scoreVal(s);
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
       : rawScore;
-    setArrows(prev => [...prev, { label: scoreLabel(s), score }]);
+    setArrows(prev => [...prev, {
+      label:String(s),
+      score,
+      ...(landing ? {
+        nx:landing.nx,
+        ny:landing.ny,
+        faceIndex:landing.faceIndex || 0,
+        targetFormat:landing.targetFormat || targetFmt,
+      } : {}),
+    }]);
   }
   function handleTargetSubmit() {
     setTargetPending(true);
@@ -676,7 +684,24 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       }
       saveBond("worldboss");
       if (myId && rounds.length > 0) {
-        const practiceRounds = rounds.map(r => r.arrows);
+        const practiceRounds = rounds.map(r =>
+          (r.arrows || []).map(arrow => scoreVal(arrow?.label ?? arrow))
+        );
+        const arrowPositions = rounds.flatMap((battleRound, battleRoundIndex) =>
+          (battleRound.arrows || []).flatMap((arrow, arrowIndex) =>
+            Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
+              ? [{
+                  score:arrow.label,
+                  nx:arrow.nx,
+                  ny:arrow.ny,
+                  faceIndex:arrow.faceIndex || 0,
+                  targetFormat:arrow.targetFormat || targetFmt,
+                  round:battleRoundIndex,
+                  arrow:arrowIndex + 1,
+                }]
+              : []
+          )
+        );
         const totalArrowsSent = practiceRounds.flat().length;
         if (totalArrowsSent > 0) {
           addRoundArrows(myId, totalArrowsSent).catch(() => {});
@@ -693,6 +718,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           result: res.defeated ? "win" : "lose",
           rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+          totalArrows:practiceRounds.flat().length,
+          targetFormat:targetFmt,
+          inputMode:arrowPositions.length ? "target" : "button",
+          ...(arrowPositions.length ? { arrowPositions } : {}),
         }, myId).catch(() => {});
         // 射手 / 貓貓 XP：依貢獻傷害比例，min 50 max 300
         const _dmgPct = (res.dmg || 0) / (event.bossMaxHP || 1);
@@ -1072,6 +1101,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             open={targetMode && subPhase === "shooting" && !targetPending}
             fmtId={targetFmt}
             arrowLabels={arrows.map(a => a.label)}
+            arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
             arrowsPerRound={ARROWS_PER}
             onArrow={handleScore}
             onUndo={() => setArrows(prev => prev.slice(0,-1))}
@@ -1080,7 +1110,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           />
           {subPhase === "shooting" && (
             <BattleScoreButtons
-                labels={SCORE_BTNS.map(s => String(s))}
+                labels={getTargetScoreLabels(targetFmt)}
                 onScore={handleScore}
                 disabled={false}
                 variant="image"

@@ -32,6 +32,10 @@ import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import BattleBottomBar from "../member/BattleBottomBar";
+import TargetFaceOverlay, {
+  getBattleInputMode,
+  setBattleInputMode,
+} from "../shared/TargetFaceOverlay";
 import { getPotion } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
@@ -42,6 +46,32 @@ import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 
 function calcContractDmgFn(arrows, atk, monsterDef, contract, dmgMult = 1) {
   return calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolveHitPart, dmgMult);
+}
+
+function getDungeonPracticeData(log, memberId, targetFmt) {
+  const breakdownsByRound = (log || []).map(entry => {
+    const player = (entry.playerLog || []).find(item => item.id === memberId);
+    return player?.arrowBreakdown || [];
+  }).filter(arrows => arrows.length > 0);
+  const rounds = breakdownsByRound.map(arrows => arrows.map(arrow =>
+    arrow.label === "X" ? 10 : arrow.label === "M" ? 0 : (parseInt(arrow.label) || 0)
+  ));
+  const arrowPositions = breakdownsByRound.flatMap((arrows, roundIndex) =>
+    arrows.flatMap((arrow, arrowIndex) =>
+      Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
+        ? [{
+            score:arrow.label,
+            nx:arrow.nx,
+            ny:arrow.ny,
+            faceIndex:arrow.faceIndex || 0,
+            targetFormat:arrow.targetFormat || targetFmt,
+            round:roundIndex,
+            arrow:arrowIndex + 1,
+          }]
+        : []
+    )
+  );
+  return { rounds, arrowPositions };
 }
 
 function calcCtrFn(monsterAtk, archerDef) {
@@ -184,6 +214,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const room = fsRoom;
 
   const [arrows,        setArrows]        = useState([]);
+  const [targetMode,    setTargetMode]    = useState(() => getBattleInputMode() === "target");
+  const [targetPending, setTargetPending] = useState(false);
   const [rearChoice,    setRearChoice]    = useState(null); // "heal" | "dmg" | null（後衛選擇）
   const targetFmt = room?.targetFmt || "full_110";
   const [shopDone,      setShopDone]      = useState(false);
@@ -498,19 +530,36 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     }
   }
 
-  function addArrow(label) {
+  function addArrow(label, landing) {
     if (arrows.length >= (room?.arrowsPerRound || 6)) return;
     sfxTap();
     const rawScore = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
       : rawScore;
-    setArrows(prev => [...prev, { label, score }]);
+    setArrows(prev => [...prev, {
+      label,
+      score,
+      ...(landing ? {
+        nx:landing.nx,
+        ny:landing.ny,
+        faceIndex:landing.faceIndex || 0,
+        targetFormat:landing.targetFormat || targetFmt,
+      } : {}),
+    }]);
   }
 
   function undoArrow() {
     setArrows(prev => prev.slice(0, -1));
     if (submitted) setFsSubmitted(false);
+  }
+
+  function handleTargetSubmit() {
+    setTargetPending(true);
+    setTimeout(() => {
+      setTargetPending(false);
+      handleSubmit();
+    }, 2000);
   }
 
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
@@ -550,12 +599,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (room.monster?.id) await recordBattleDex(myId, room.monster.id).catch(() => {});
 
     // 練習紀錄 + 箭露 + XP
-    const practiceRounds = (room.log || []).map(entry => {
-      const pl = (entry.playerLog || []).find(p => p.id === myId);
-      return (pl?.arrowBreakdown || []).map(a =>
-        a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
-      );
-    }).filter(r => r.length > 0);
+    const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
     if (practiceRounds.length > 0) {
       const arrowCount = practiceRounds.flat().length;
       addPracticeLog(myId, {
@@ -564,6 +608,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         rounds: practiceRounds,
         total: practiceRounds.flat().reduce((s, v) => s + v, 0),
         totalArrows: arrowCount, totalFloors,
+        distance:room.distance || null,
+        targetFormat:targetFmt,
+        inputMode:arrowPositions.length ? "target" : "button",
+        ...(arrowPositions.length ? { arrowPositions } : {}),
       }, myId).catch(() => {});
       if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
     }
@@ -770,12 +818,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             <button onClick={async () => {
               // 儲存失敗紀錄
               if (myId && !myId.startsWith("guest")) {
-                const practiceRounds = (room.log || []).map(entry => {
-                  const pl = (entry.playerLog || []).find(p => p.id === myId);
-                  return (pl?.arrowBreakdown || []).map(a =>
-                    a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
-                  );
-                }).filter(r => r.length > 0);
+                const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
                 if (practiceRounds.length > 0) {
                   const arrowCount = practiceRounds.flat().length;
                   addPracticeLog(myId, {
@@ -784,6 +827,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                     rounds: practiceRounds,
                     total: practiceRounds.flat().reduce((s, v) => s + v, 0),
                     totalArrows: arrowCount, floorsCleared,
+                    distance:room.distance || null,
+                    targetFormat:targetFmt,
+                    inputMode:arrowPositions.length ? "target" : "button",
+                    ...(arrowPositions.length ? { arrowPositions } : {}),
                   }, myId).catch(() => {});
                   if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
                 }
@@ -1620,6 +1667,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   style={{ fontSize:18, padding:"14px 0", opacity:arrows.length>=(room.arrowsPerRound||6)?0.3:1 }}>
                   M
                 </button>
+                <button onClick={() => { setTargetMode(true); setBattleInputMode("target"); }}
+                  className="col-span-2 rounded-xl font-black active:scale-95 bg-blue-500/20 text-blue-200 border border-blue-400/40"
+                  style={{ fontSize:13, padding:"10px 0" }}>
+                  🎯 改用靶面點擊
+                </button>
               </div>
             ) : (
               <BattleBottomBar
@@ -1627,16 +1679,29 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
                 potionUsedThisRound={potionUsedThisRound}
                 scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
-                targetMode={false} setTargetMode={() => {}}
+                targetMode={targetMode} setTargetMode={setTargetMode}
                 arrows={arrows} onArrow={addArrow}
+                targetFmt={targetFmt}
+                arrowsPerRound={room.arrowsPerRound || 6}
                 potionInv={me.items || {}}
                 onCarryPotion={onCarryPotion}
                 onThrowPotion={onThrowPotion}
                 controlsLocked={!controlsStarted}
                 onStartScoring={() => { setControlsStarted(true); setBottomTab("score"); }}
-                showModeChooser={false}
+                showModeChooser={true}
               />
             )}
+            <TargetFaceOverlay
+              open={targetMode && controlsStarted && !submitted && !targetPending}
+              fmtId={targetFmt}
+              arrowLabels={arrows.map(arrow => arrow.label)}
+              arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
+              arrowsPerRound={room.arrowsPerRound || 6}
+              onArrow={addArrow}
+              onUndo={undoArrow}
+              onSubmit={handleTargetSubmit}
+              onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
+            />
             {/* 送出 */}
             {controlsStarted && (
               <button onClick={handleSubmit} disabled={arrows.length<(room.arrowsPerRound||6)}

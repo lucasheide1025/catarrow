@@ -13,6 +13,17 @@ import { BODY_PARTS } from "./monsterData";
 // ── Utility ─────────────────────────────────────────────────
 const ALL_PARTS = new Set(BODY_PARTS.map(p => p.id));
 
+function landingMeta(arrow) {
+  return Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
+    ? {
+        nx:arrow.nx,
+        ny:arrow.ny,
+        faceIndex:arrow.faceIndex || 0,
+        targetFormat:arrow.targetFormat || null,
+      }
+    : {};
+}
+
 // ════════════════════════════════════════════════════════════════
 //  1. STANDARD FORMULA
 //     Base: 8 + ATK*0.7 + score*1.2 - DEF*0.35
@@ -52,7 +63,7 @@ export function calcRoundDamage(arrows, atk, def) {
     const score = arrow.score ?? 0;
     const part  = resolveHitPart(score, unlocked, arrow.label === "X");
     if (!part) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false, ...landingMeta(arrow) });
       continue;
     }
     if (part.id === "chest") unlocked.add("chest");
@@ -61,7 +72,7 @@ export function calcRoundDamage(arrows, atk, def) {
 
     const pMult = part.mult;
     if (pMult === 0) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false, ...landingMeta(arrow) });
       continue;
     }
     // M 分（score=0）但有 pMult：50% base 傷害
@@ -72,6 +83,7 @@ export function calcRoundDamage(arrows, atk, def) {
         label: arrow.label || "M",
         partIcon: part.icon, partName: part.name,
         partMult: pMult, dmg: halfDmg, isCrit: false,
+        ...landingMeta(arrow),
       });
       dmg += halfDmg;
       continue;
@@ -87,6 +99,7 @@ export function calcRoundDamage(arrows, atk, def) {
     arrowBreakdown.push({
       label: arrow.label, partIcon: part.icon,
       partName: part.name, partMult: pMult, dmg: d, isCrit,
+      ...landingMeta(arrow),
     });
   }
 
@@ -159,7 +172,7 @@ export function calcDuelRoundDamage(arrows, atk, targetDef) {
     const pMult = part?.mult ?? 1.0;
 
     if (!score || pMult === 0) {
-      arrowBreakdown.push({ label: "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false });
+      arrowBreakdown.push({ label: "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false, ...landingMeta(arrow) });
       continue;
     }
 
@@ -174,6 +187,7 @@ export function calcDuelRoundDamage(arrows, atk, targetDef) {
       label: arrow.lucky ? `✨${score}` : (arrow.label || String(score)),
       partIcon: part?.icon || "❤️", partName: part?.name || "胸腔",
       partMult: pMult, dmg: d, isCrit, lucky: arrow.lucky || false,
+      ...landingMeta(arrow),
     });
   }
 

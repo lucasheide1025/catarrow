@@ -147,6 +147,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [battlePhase, setBattlePhase]   = useState("input");
   const [arrows, setArrows]             = useState([]);
   const [allArrows, setAllArrows]       = useState([]);
+  const [battleArrowPositions, setBattleArrowPositions] = useState([]);
   const [roundScores, setRoundScores]   = useState([]);
   const [unlockedParts, setUnlockedParts] = useState(new Set());
   const [revived, setRevived]           = useState(false);
@@ -468,14 +469,26 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     setPhase("event_select");
   }
 
-  function inputArrow(label) {
+  function inputArrow(label, landing) {
     if (arrows.length>=arrowsPerRound||processing) return;
     sfxTap();
     setArrows(prev=>[...prev,label]);
+    if (landing) {
+      setBattleArrowPositions(prev=>[...prev, {
+        ...landing,
+        score:landing.label,
+        round,
+        arrow:arrows.length + 1,
+      }]);
+    }
   }
   function undoArrow() {
     if (!arrows.length||processing) return;
+    const removedArrow = arrows.length;
     setArrows(prev=>prev.slice(0,-1));
+    setBattleArrowPositions(prev=>prev.filter(position =>
+      position.round !== round || position.arrow !== removedArrow
+    ));
   }
 
   function handleTargetSubmit() {
@@ -776,7 +789,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     if (hasCat) { catCurrentHPRef.current = catMaxHP; setCatCurrentHP(catMaxHP); }
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
-    setAllArrows([]); setRoundScores([]); sessionArrowsRef.current = 0;
+    setAllArrows([]); setRoundScores([]); setBattleArrowPositions([]); sessionArrowsRef.current = 0;
     setLog([
       { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
@@ -884,6 +897,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             total: practiceRounds.flat().reduce((s, v) => s + v, 0),
             totalArrows: practiceRounds.flat().length,
             distance: selectedDistance,
+            targetFormat:targetFmt,
+            inputMode:targetMode ? "target" : "button",
+            ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
           }, profile.id).catch(() => {});
 
           // 里程碑即時提示（跨回合累積，sessionArrowsRef 追蹤本 session 今日累計）
@@ -913,6 +929,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
             mode, battleMode, chestType:mainChest.type, roundScores:rs,
             distance: selectedDistance,
+            targetFmt,
+            ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
           }).catch(() => {});
           return rs;
         });
@@ -947,6 +965,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             monsterName:monster.name, monsterId:monster.id, result:"lose", rounds:round,
             mode, battleMode, materials:[], roundScores:rs,
             distance: selectedDistance,
+            targetFmt,
+            ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
           }).catch(() => {});
           return rs;
         });
@@ -1994,6 +2014,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
                 targetMode={targetMode} setTargetMode={setTargetMode}
                 arrows={arrows} onArrow={inputArrow}
+                targetFmt={targetFmt}
+                arrowsPerRound={arrowsPerRound}
                 potionInv={potionInv}
                 onCarryPotion={useCarryPotion}
                 onThrowPotion={useThrowPotion}
@@ -2002,6 +2024,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
                 open={targetMode && !targetPending && !processing}
                 fmtId={targetFmt}
                 arrowLabels={arrows}
+                arrowPositions={battleArrowPositions.filter(position => position.round === round)}
                 arrowsPerRound={arrowsPerRound}
                 onArrow={inputArrow}
                 onUndo={undoArrow}

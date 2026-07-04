@@ -513,14 +513,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myReady    = me.ready || false;
   const isGuestPlayer = myId?.startsWith("guest");
 
-  function addArrow(label) {
+  function addArrow(label, landing) {
     if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady) return;
     const rawScore = SCORE_MAP[label] ?? 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
       : rawScore;
     sfxTap(); vibrate(8);
-    setArrows(prev => [...prev, { score, label }]);
+    setArrows(prev => [...prev, {
+      score,
+      label,
+      ...(landing ? {
+        nx:landing.nx,
+        ny:landing.ny,
+        faceIndex:landing.faceIndex || 0,
+        targetFormat:landing.targetFormat || targetFmt,
+      } : {}),
+    }]);
   }
   function removeLastArrow() {
     if (myReady) return;
@@ -602,6 +611,22 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         }).filter(r => r.length > 0);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
+          const arrowPositions = (room.log || []).flatMap((entry, roundIndex) => {
+            const player = (entry.playerLog || []).find(item => item.id === myId);
+            return (player?.arrowBreakdown || []).flatMap((arrow, arrowIndex) =>
+              Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
+                ? [{
+                    score:arrow.label,
+                    nx:arrow.nx,
+                    ny:arrow.ny,
+                    faceIndex:arrow.faceIndex || 0,
+                    targetFormat:arrow.targetFormat || targetFmt,
+                    round:roundIndex,
+                    arrow:arrowIndex + 1,
+                  }]
+                : []
+            );
+          });
           addPracticeLog(myId, {
             date: new Date().toISOString().slice(0, 10), source: "party",
             monsterName: room.monster?.name || "怪物", result: "win",
@@ -609,6 +634,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             total: practiceRounds.flat().reduce((s, v) => s + v, 0),
             totalArrows: arrowCount,
             distance: room.distance || null,
+            targetFormat:targetFmt,
+            inputMode:arrowPositions.length ? "target" : "button",
+            ...(arrowPositions.length ? { arrowPositions } : {}),
           }, myId).catch(() => {});
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
@@ -1778,6 +1806,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               open={targetMode && !targetPending && !myReady}
               fmtId={targetFmt}
               arrowLabels={arrows.map(a => a.label)}
+              arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
               arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
               onArrow={addArrow}
               onUndo={removeLastArrow}

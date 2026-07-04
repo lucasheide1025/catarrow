@@ -8,7 +8,8 @@ import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { useDuelReveal } from "../../battle/useDuelReveal";
 import { calcDuelRoundDamage } from "../../lib/damage";
-import { SCORE_BTNS } from "../../lib/score";
+import { labelToValue } from "../../lib/score";
+import { getTargetScoreLabels } from "../../lib/targetFace";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
@@ -400,15 +401,44 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
 
     // 箭數累積 + 里程碑
     if (profile?.id) {
-      const myArrowCount = (room.log || []).flatMap(entry =>
-        (entry.attacks || []).filter(a => a.attackerId === myId)
-          .flatMap(a => a.arrowBreakdown || [])
-      ).length;
+      const myBreakdownsByRound = (room.log || []).map(entry =>
+        (entry.attacks || []).filter(attack => attack.attackerId === myId)
+          .flatMap(attack => attack.arrowBreakdown || [])
+      ).filter(roundArrows => roundArrows.length > 0);
+      const myArrowCount = myBreakdownsByRound.flat().length;
       if (myArrowCount > 0) {
         const todayStr = new Date().toISOString().slice(0, 10);
+        const practiceRounds = myBreakdownsByRound.map(roundArrows =>
+          roundArrows.map(arrow => {
+            if (arrow.label === "X") return 10;
+            if (arrow.label === "M") return 0;
+            return Number(String(arrow.label).match(/\d+/)?.[0]) || 0;
+          })
+        );
+        const arrowPositions = myBreakdownsByRound.flatMap((roundArrows, roundIndex) =>
+          roundArrows.flatMap((arrow, arrowIndex) =>
+            Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
+              ? [{
+                  score:arrow.label,
+                  nx:arrow.nx,
+                  ny:arrow.ny,
+                  faceIndex:arrow.faceIndex || 0,
+                  targetFormat:arrow.targetFormat || targetFmt,
+                  round:roundIndex,
+                  arrow:arrowIndex + 1,
+                }]
+              : []
+          )
+        );
         addPracticeLog(profile.id, {
           date: todayStr, source: "duel",
           totalArrows: myArrowCount,
+          result:outcome,
+          rounds:practiceRounds,
+          total:practiceRounds.flat().reduce((sum, score) => sum + score, 0),
+          targetFormat:targetFmt,
+          inputMode:arrowPositions.length ? "target" : "button",
+          ...(arrowPositions.length ? { arrowPositions } : {}),
         }, profile.id).catch(() => {});
         addArrowdew(profile.id, myArrowCount).catch(() => {});
         // 射手等級 XP（勝利 50、失敗/平局 20）
@@ -428,17 +458,26 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   }, [room?.status]);
 
   // ── 輸入箭分 ────────────────────────────────────────────
-  function addArrow(score, label) {
+  function addArrow(score, label, landing) {
     if (myArrows.length >= ARROWS || submitted) return;
     sfxArrowHit();
-    setMyArrows(prev => [...prev, { score, label }]);
+    setMyArrows(prev => [...prev, {
+      score,
+      label,
+      ...(landing ? {
+        nx:landing.nx,
+        ny:landing.ny,
+        faceIndex:landing.faceIndex || 0,
+        targetFormat:landing.targetFormat || targetFmt,
+      } : {}),
+    }]);
   }
-  function addArrowByLabel(label) {
+  function addArrowByLabel(label, landing) {
     const rawScore = label === "M" ? 0 : label === "X" ? 10 : parseInt(label) || 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
       : rawScore;
-    addArrow(score, label);
+    addArrow(score, label, landing);
   }
   function removeArrow() {
     setMyArrows(prev => prev.slice(0, -1));
@@ -1023,19 +1062,21 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           {targetPending && <div className="text-center text-xs text-purple-400 font-bold mb-2">計算中…⚔️</div>}
           {!targetMode && (
             <div className="grid grid-cols-6 gap-1.5 mb-2">
-              {SCORE_BTNS.map(({ label, score }) => (
-                <button key={label} onClick={() => addArrow(score, label)}
+              {getTargetScoreLabels(targetFmt).map(label => {
+                const score = labelToValue(label);
+                return <button key={label} onClick={() => addArrowByLabel(label)}
                   disabled={myArrows.length >= ARROWS}
                   className={`py-2.5 rounded-xl font-black text-sm border transition-all active:scale-90 disabled:opacity-30 ${score === 10 ? "bg-amber-600 border-amber-400 text-white" : score === 0 ? "bg-slate-700 border-slate-600 text-slate-400" : "bg-slate-700 border-slate-600 text-white"}`}>
                   {label}
-                </button>
-              ))}
+                </button>;
+              })}
             </div>
           )}
           <TargetFaceOverlay
             open={targetMode && !targetPending && !submitted}
             fmtId={targetFmt}
             arrowLabels={myArrows.map(a => a.label)}
+            arrowPositions={myArrows.filter(arrow => Number.isFinite(arrow.nx))}
             arrowsPerRound={ARROWS}
             onArrow={addArrowByLabel}
             onUndo={removeArrow}

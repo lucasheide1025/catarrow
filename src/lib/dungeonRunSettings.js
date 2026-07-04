@@ -1,8 +1,10 @@
-export const DUNGEON_TARGET_FORMATS = [
-  { id:"full_110", label:"全靶", sub:"1-10 環" },
-  { id:"half_610", label:"半靶", sub:"6-10 環" },
-  { id:"field_16", label:"原野", sub:"1-6 環" },
-];
+import { TARGET_FACE_FORMATS } from "./targetFace";
+
+export const DUNGEON_TARGET_FORMATS = TARGET_FACE_FORMATS.map(format => ({
+  id:format.id,
+  label:format.shortLabel,
+  sub:format.sub,
+}));
 
 export const DEFAULT_DUNGEON_ARROWS = 6;
 export const DEFAULT_DUNGEON_TARGET = "full_110";

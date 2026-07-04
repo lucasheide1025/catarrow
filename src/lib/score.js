@@ -1,5 +1,6 @@
 // src/lib/score.js — 統一 Score Engine
 // 所有戰鬥模式的計分常數、工具函數集中管理
+import { getTargetScoreLabels } from "./targetFace";
 
 // ─── 標籤 → 數值映射 ──────────────────────────────────────────
 export const SCORE_MAP = { X: 10, 10: 10, 9: 9, 8: 8, 7: 7, 6: 6, 5: 5, 4: 4, 3: 3, 2: 2, 1: 1, M: 0 };
@@ -141,7 +142,7 @@ export function isCritScore(score, targetFmt) {
  * 對應 targetFmt 回傳可用標籤列表
  */
 export function getScoreLabels(targetFmt) {
-  return SCORE_LABELS;
+  return getTargetScoreLabels(targetFmt);
 }
 
 /**

@@ -3,6 +3,7 @@
 
 import { BattleScoreButtons } from "../shared/SharedBattleComponents";
 import { setBattleInputMode } from "../shared/TargetFaceOverlay";
+import { getTargetScoreLabels } from "../../lib/targetFace";
 import { CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 
 function TabButton({ active, disabled, onClick, children }) {
@@ -57,16 +58,6 @@ function PotionGroupRow({ icon, label, potions, potionInv, potionUsedThisRound, 
   );
 }
 
-// 根據靶面格式決定計分按鈕標籤
-// full_110（全靶，預設）：X 10 9 8 7 6 5 4 3 2 1 M
-// half_610（半靶）     ：X 10 9 8 7 6 M
-// field_16（原野射箭） ：6 5 4 3 2 1 M
-function getLabelsForFmt(targetFmt) {
-  if (targetFmt === "half_610") return ["X","10","9","8","7","6","M"];
-  if (targetFmt === "field_16") return ["6","5","4","3","2","1","M"];
-  return ["X","10","9","8","7","6","5","4","3","2","1","M"]; // full_110 or default
-}
-
 function ScoreTabContent({
   scoringModeChosen,
   setScoringModeChosen,
@@ -106,7 +97,7 @@ function ScoreTabContent({
   if (!targetMode && arrows.length < arrowsPerRound) {
     return (
       <BattleScoreButtons
-        labels={getLabelsForFmt(targetFmt)}
+        labels={getTargetScoreLabels(targetFmt)}
         onScore={onArrow}
         disabled={false}
         variant="image"

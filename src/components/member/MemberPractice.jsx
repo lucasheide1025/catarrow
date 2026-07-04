@@ -11,20 +11,20 @@ import { today } from "../../lib/constants";
 import { normalizeEquipment, getDefaultBowType, getDefaultEquipSetId } from "../shared/Equipment";
 import { Card, Spinner, useToast } from "../shared/UI";
 import { LineChart, TrendBadge } from "../shared/GrowthChart";
+import { TargetFaceInput } from "../shared/TargetFaceOverlay";
+import { TARGET_FACE_FORMATS } from "../../lib/targetFace";
 
 // ── 深色半透明卡片樣式（與 MemberHome/Profile 相同風格）────────
 const CS  = { background:"rgba(15,23,42,0.55)", backdropFilter:"blur(10px)", border:"1px solid rgba(255,255,255,0.1)" };
 const CS2 = { background:"rgba(15,23,42,0.38)", backdropFilter:"blur(8px)",  border:"1px solid rgba(255,255,255,0.08)" };
 
 // ── 常數 ─────────────────────────────────────────────────────
-const TARGET_FORMATS = [
-  { id:"full_110",    label:"122cm 十環全靶", min:1, max:10, faceSizeCm:122, layout:"single", isTriple:false },
-  { id:"compound_510",label:"80cm 六環靶",    min:5, max:10, faceSizeCm:80,  layout:"single", isTriple:false },
-  { id:"indoor_40",   label:"40cm 十環單靶",  min:1, max:10, faceSizeCm:40,  layout:"single", isTriple:false },
-  { id:"half_610",    label:"40cm 五環單靶",  min:6, max:10, faceSizeCm:40,  layout:"single", isTriple:false },
-  { id:"triple",      label:"40cm 直式三連靶",min:6, max:10, faceSizeCm:40,  layout:"vertical_triple", isTriple:true },
-  { id:"field_16",    label:"原野靶 1-6",     min:1, max:6,  faceSizeCm:null,layout:"single", isTriple:false },
-];
+const TARGET_FORMATS = TARGET_FACE_FORMATS.map(format => ({
+  ...format,
+  min:format.minScore,
+  max:format.maxScore,
+  isTriple:format.layout === "vertical_triple",
+}));
 const BOW_OPTIONS = [
   { value:"recurve_bare", label:"裸弓" },
   { value:"recurve_full", label:"全配" },
@@ -41,6 +41,43 @@ const PRACTICE_PRESETS = [
   { id:"indoor_triple",   label:"18m 室內三連靶", desc:"40cm 三連・3 箭 × 20 回", values:{ distance:18, targetFormat:"triple", arrowCount:3, roundCount:20, competitionMode:"wa30", matchType:"qualification" } },
   { id:"custom",          label:"完全自訂",       desc:"自行設定距離、靶面與時限", values:{ matchType:"qualification" } },
 ];
+const PRACTICE_RECOVERY_VERSION = 1;
+
+function practiceRecoveryKey(memberId) {
+  return `catarchery:practice-session:v${PRACTICE_RECOVERY_VERSION}:${memberId}`;
+}
+
+function loadPracticeRecovery(memberId) {
+  if (!memberId || typeof window === "undefined") return null;
+  try {
+    const value = JSON.parse(window.localStorage.getItem(practiceRecoveryKey(memberId)));
+    return value?.version === PRACTICE_RECOVERY_VERSION && value?.memberId === memberId
+      ? value
+      : null;
+  } catch {
+    window.localStorage.removeItem(practiceRecoveryKey(memberId));
+    return null;
+  }
+}
+
+function savePracticeRecovery(memberId, data) {
+  if (!memberId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(practiceRecoveryKey(memberId), JSON.stringify({
+      version:PRACTICE_RECOVERY_VERSION,
+      memberId,
+      updatedAtMs:Date.now(),
+      ...data,
+    }));
+  } catch {}
+}
+
+function clearPracticeRecovery(memberId) {
+  if (!memberId || typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(practiceRecoveryKey(memberId));
+  } catch {}
+}
 
 let practiceAudioContext = null;
 function playRangeSignal(count = 1, frequency = 880) {
@@ -48,16 +85,19 @@ function playRangeSignal(count = 1, frequency = 880) {
     practiceAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
     if (practiceAudioContext.state === "suspended") practiceAudioContext.resume();
     const start = practiceAudioContext.currentTime;
+    const signalSpacing = 0.9;
+    const signalDuration = 0.68;
     for (let i = 0; i < count; i += 1) {
       const oscillator = practiceAudioContext.createOscillator();
       const gain = practiceAudioContext.createGain();
       oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(0.0001, start + i * 0.42);
-      gain.gain.exponentialRampToValueAtTime(0.28, start + i * 0.42 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + i * 0.42 + 0.24);
+      gain.gain.setValueAtTime(0.0001, start + i * signalSpacing);
+      gain.gain.exponentialRampToValueAtTime(0.72, start + i * signalSpacing + 0.02);
+      gain.gain.setValueAtTime(0.72, start + i * signalSpacing + signalDuration - 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + i * signalSpacing + signalDuration);
       oscillator.connect(gain).connect(practiceAudioContext.destination);
-      oscillator.start(start + i * 0.42);
-      oscillator.stop(start + i * 0.42 + 0.25);
+      oscillator.start(start + i * signalSpacing);
+      oscillator.stop(start + i * signalSpacing + signalDuration + 0.01);
     }
   } catch {}
 }
@@ -69,6 +109,13 @@ function announcePractice(text, enabled) {
   utterance.lang = "zh-TW";
   utterance.rate = 1;
   window.speechSynthesis.speak(utterance);
+}
+
+function getMinuteThresholds(allowedSeconds) {
+  return Array.from(
+    { length:Math.max(0, Math.floor((allowedSeconds - 1) / 60)) },
+    (_, index) => (index + 1) * 60
+  );
 }
 
 function scoreValue(score) {
@@ -151,137 +198,29 @@ function startOfWeek() {
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function bowLabel(b) { return BOW_OPTIONS.find(o=>o.value===b)?.label || b; }
 
-// ── 靶面計分元件 ─────────────────────────────────────────────
-const RING_DEFS = {
-  full_110: [
-    { r:1.00, fill:"#d0d0d0", stroke:"#aaa" },
-    { r:0.90, fill:"#d0d0d0", stroke:"#aaa" },
-    { r:0.80, fill:"#1c1c1c", stroke:"#555" },
-    { r:0.70, fill:"#1c1c1c", stroke:"#555" },
-    { r:0.60, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.50, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.40, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.30, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
-    { r:0.10, fill:"#e67700", stroke:"#f59f00" },
-  ],
-  half_610: [
-    { r:1.00, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.80, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.60, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.40, fill:"#e67700", stroke:"#f59f00" },
-    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
-  ],
-  compound_510: [
-    { r:1.00, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:5/6,  fill:"#1864ab", stroke:"#4a90d9" },
-    { r:4/6,  fill:"#c92a2a", stroke:"#e03131" },
-    { r:3/6,  fill:"#c92a2a", stroke:"#e03131" },
-    { r:2/6,  fill:"#e67700", stroke:"#f59f00" },
-    { r:1/6,  fill:"#e67700", stroke:"#f59f00" },
-  ],
-  field_16: [
-    { r:1.00, fill:"#1c1c1c", stroke:"#555" },
-    { r:5/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:4/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:3/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:2/6,  fill:"#e67700", stroke:"#f59f00" },
-    { r:1/6,  fill:"#e67700", stroke:"#f59f00" },
-  ],
-};
-
-function calcTapScore(ratio, fmtId) {
-  if (ratio > 1) return "M";
-  if (fmtId !== "field_16" && ratio <= 0.05) return "X";
-  if (fmtId === "half_610") {
-    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 5);
-    return ring === 0 ? 10 : Math.max(6, 11 - ring);
-  }
-  if (fmtId === "compound_510") {
-    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
-    return ring === 0 ? 10 : Math.max(5, 11 - ring);
-  }
-  if (fmtId === "field_16") {
-    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
-    return ring === 0 ? 6 : Math.max(1, 7 - ring);
-  }
-  const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 10);
-  return ring === 0 ? 10 : Math.max(1, 11 - ring);
-}
-
-function SingleTargetSVG({ fmtId, R, arrows, active, onTap }) {
-  const SIZE = R * 2 + 6, CX = R + 3, CY = R + 3;
-  const rings = RING_DEFS[fmtId] || RING_DEFS.full_110;
-
-  function handleTap(e) {
-    if (!active || !onTap) return;
-    e.preventDefault(); e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const touch = e.touches?.[0];
-    const px = (touch ? touch.clientX : e.clientX) - rect.left;
-    const py = (touch ? touch.clientY : e.clientY) - rect.top;
-    const ratio = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2) / R;
-    const nx = (px - CX) / R;
-    const ny = (py - CY) / R;
-    onTap({ score: calcTapScore(ratio, fmtId), nx, ny });
-  }
-
-  return (
-    <svg width={SIZE} height={SIZE}
-      style={{ touchAction:"none", display:"block", cursor: active ? "crosshair" : "default" }}
-      onMouseDown={handleTap} onTouchStart={handleTap}>
-      <circle cx={CX} cy={CY} r={R + 2} fill={active ? "#2a2a2a" : "#555"} />
-      {rings.map((ring, i) => (
-        <circle key={i} cx={CX} cy={CY} r={ring.r * R}
-          fill={ring.fill} stroke={ring.stroke} strokeWidth={0.6} />
-      ))}
-      <line x1={CX-5} y1={CY} x2={CX+5} y2={CY} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
-      <line x1={CX} y1={CY-5} x2={CX} y2={CY+5} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
-      {active && <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />}
-      {arrows.map((a, i) => {
-        const ax = CX + a.nx * R, ay = CY + a.ny * R;
-        return (
-          <g key={i}>
-            <circle cx={ax} cy={ay} r={7} fill="#15803d" stroke="white" strokeWidth={1.5} />
-            <text x={ax} y={ay + 0.5} textAnchor="middle" dominantBaseline="middle"
-              fill="white" fontSize={7.5} fontWeight="900">{a.score === "M" ? "M" : a.score}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 function TargetFaceView({ fmt, arrowCount, arrows, onTap }) {
-  const done = arrows.length >= arrowCount;
-  if (fmt.isTriple) {
-    const arrowsPerSpot = arrowCount <= 3 ? 1 : 2;
-    const activeSpot = done ? -1 : Math.min(2, Math.floor(arrows.length / arrowsPerSpot));
-    const R = 52;
-    return (
-      <div className="flex justify-around items-start py-2 px-1">
-        {["上", "中", "下"].map((label, spotIdx) => {
-          const spotArrows = arrows
-            .filter(a => a.spotIdx === spotIdx)
-            .map(a => ({ score: a.score, nx: a.nx, ny: a.ny }));
-          const isActive = spotIdx === activeSpot;
-          return (
-            <div key={spotIdx} className="flex flex-col items-center gap-1">
-              <span className={`text-xs font-bold ${isActive ? "text-green-300" : "text-white/30"}`}>{label}</span>
-              <SingleTargetSVG fmtId="half_610" R={R} arrows={spotArrows} active={isActive}
-                onTap={({ score, nx, ny }) => onTap({ score, nx, ny, spotIdx })} />
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-  const R = 126;
   return (
     <div className="flex justify-center py-1">
-      <SingleTargetSVG fmtId={fmt.id} R={R}
-        arrows={arrows.map(a => ({ score: a.score, nx: a.nx, ny: a.ny }))}
-        active={!done} onTap={onTap} />
+      <TargetFaceInput
+        fmtId={fmt.id}
+        radius={fmt.isTriple ? 52 : 126}
+        arrowLabels={arrows.map(arrow => arrow.score)}
+        arrowPositions={arrows.map(arrow => ({
+          ...arrow,
+          label:arrow.score,
+          faceIndex:arrow.faceIndex ?? arrow.spotIdx ?? 0,
+        }))}
+        arrowsPerRound={arrowCount}
+        onArrow={landing => onTap({
+          score:landing.label === "X" || landing.label === "M"
+            ? landing.label
+            : Number(landing.label),
+          nx:landing.nx,
+          ny:landing.ny,
+          spotIdx:landing.faceIndex,
+          faceIndex:landing.faceIndex,
+        })}
+      />
     </div>
   );
 }
@@ -725,7 +664,7 @@ function SetupPhase({ initial, equipSets, onStart }) {
 }
 
 // ── ScoringPhase ──────────────────────────────────────────────
-function ScoringPhase({ form, onDone, onCancel }) {
+function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel }) {
   const fmt  = TARGET_FORMATS.find(f=>f.id===form.targetFormat) || TARGET_FORMATS[0];
   const btns = genButtons(fmt);
   const cols = btns.length <= 6 ? 3 : 4;
@@ -733,19 +672,27 @@ function ScoringPhase({ form, onDone, onCancel }) {
   const secondsPerArrow = form.competitionMode === "wa40" ? 40 : 30;
   const matchType = form.matchType || "qualification";
   const isMatch = matchType !== "qualification";
-  const [shootOff, setShootOff] = useState(false);
+  const [shootOff, setShootOff] = useState(()=>!!initialSession?.shootOff);
   const effectiveArrowCount = shootOff ? 1 : form.arrowCount;
   const allowedSeconds = shootOff ? 20 : effectiveArrowCount * secondsPerArrow;
-  const [round, setRound] = useState(0);
-  const [allR,  setAllR]  = useState([]);
-  const [cur,   setCur]   = useState([]);
-  const [positions, setPositions] = useState([]);
-  const [allPositions, setAllPositions] = useState([]);
-  const [stage, setStage] = useState(timed ? "idle" : "shooting");
-  const [remaining, setRemaining] = useState(timed ? allowedSeconds : null);
-  const [roundTiming, setRoundTiming] = useState([]);
-  const [arrowEntries, setArrowEntries] = useState([]);
-  const [match, setMatch] = useState({
+  const [round, setRound] = useState(()=>initialSession?.round || 0);
+  const [allR,  setAllR]  = useState(()=>initialSession?.allR || []);
+  const [cur,   setCur]   = useState(()=>initialSession?.cur || []);
+  const [positions, setPositions] = useState(()=>initialSession?.positions || []);
+  const [allPositions, setAllPositions] = useState(()=>initialSession?.allPositions || []);
+  const [stage, setStage] = useState(()=>initialSession?.stage || (timed ? "idle" : "shooting"));
+  const restoredRemaining = initialSession?.deadlineMs
+    ? Math.max(0, Math.ceil((initialSession.deadlineMs - Date.now()) / 1000))
+    : allowedSeconds;
+  const [remaining, setRemaining] = useState(()=>{
+    if (!timed) return null;
+    if (initialSession?.deadlineMs && (initialSession.stage === "preparation" || initialSession.stage === "shooting")) {
+      return restoredRemaining;
+    }
+    return allowedSeconds;
+  });
+  const [roundTiming, setRoundTiming] = useState(()=>initialSession?.roundTiming || []);
+  const [match, setMatch] = useState(()=>initialSession?.match || {
     type:matchType,
     playerSetPoints:0,
     opponentSetPoints:0,
@@ -755,26 +702,21 @@ function ScoringPhase({ form, onDone, onCancel }) {
     shootOff:null,
     result:null,
   });
-  const deadlineRef = useRef(0);
-  const startedAtRef = useRef(timed ? 0 : Date.now());
-  const announcedRef = useRef(new Set());
+  const deadlineRef = useRef(Number(initialSession?.deadlineMs) || 0);
+  const startedAtRef = useRef(Number(initialSession?.startedAtMs) || (timed ? 0 : Date.now()));
+  const announcedRef = useRef(new Set(
+    initialSession?.stage === "shooting"
+      ? getMinuteThresholds(allowedSeconds).filter(threshold => restoredRemaining <= threshold)
+      : []
+  ));
   const finishingRef = useRef(false);
   const isTargetMode = (form.inputMode || "button") === "target";
 
   function addArrow(s, pos) {
     if (timed && stage !== "shooting") return;
     if (cur.length >= effectiveArrowCount) return;
-    const now = Date.now();
     setCur(p => [...p, s]);
     if (pos) setPositions(p => [...p, { score: s, ...pos, round, arrow:cur.length + 1 }]);
-    setArrowEntries(entries => [...entries, {
-      round:round + 1,
-      arrow:cur.length + 1,
-      score:s,
-      enteredAtMs:now,
-      elapsedMs:Math.max(0, now - startedAtRef.current),
-      timedOut:false,
-    }]);
   }
 
   const finishRound = useCallback((timedOut = false) => {
@@ -783,15 +725,6 @@ function ScoringPhase({ form, onDone, onCancel }) {
     const now = Date.now();
     const missing = timedOut ? Math.max(0, effectiveArrowCount - cur.length) : 0;
     const completed = missing ? [...cur, ...Array.from({ length:missing }, () => "M")] : cur;
-    const timeoutEntries = Array.from({ length:missing }, (_, index) => ({
-      round:round + 1,
-      arrow:cur.length + index + 1,
-      score:"M",
-      enteredAtMs:now,
-      elapsedMs:allowedSeconds * 1000,
-      timedOut:true,
-    }));
-    const finalEntries = [...arrowEntries, ...timeoutEntries];
     const newAll = [...allR, completed];
     const newAllPos = [...allPositions, ...positions];
     const playerEndTotal = numericArr([completed]).reduce((sum, value) => sum + value, 0);
@@ -861,7 +794,6 @@ function ScoringPhase({ form, onDone, onCancel }) {
       announcePractice(nextMatch.result === "win" ? "比賽結束，你獲勝" : nextMatch.result === "loss" ? "比賽結束" : "練習完成", form.assistedCues !== false);
       onDone(newAll, newAllPos, {
         roundTiming:nextTiming,
-        arrowEntries:finalEntries,
         ...(isMatch ? { match:nextMatch } : {}),
       });
       return;
@@ -869,7 +801,6 @@ function ScoringPhase({ form, onDone, onCancel }) {
     setAllR(newAll); setCur([]); setRound(r=>r+1);
     setAllPositions(newAllPos); setPositions([]);
     setRoundTiming(nextTiming);
-    setArrowEntries(finalEntries);
     setMatch(nextMatch);
     setShootOff(enterShootOff || shootOff);
     const nextAllowedSeconds = enterShootOff ? 20 : (shootOff ? 20 : form.arrowCount * secondsPerArrow);
@@ -879,7 +810,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
     deadlineRef.current = 0;
     announcedRef.current = new Set();
     finishingRef.current = false;
-  }, [allPositions, allR, allowedSeconds, arrowEntries, cur, effectiveArrowCount, fmt, form.arrowCount, form.assistedCues, form.opponentAverage, form.roundCount, isMatch, match, matchType, onDone, positions, round, roundTiming, secondsPerArrow, shootOff, timed]);
+  }, [allPositions, allR, allowedSeconds, cur, effectiveArrowCount, fmt, form.arrowCount, form.assistedCues, form.opponentAverage, form.roundCount, isMatch, match, matchType, onDone, positions, round, roundTiming, secondsPerArrow, shootOff, timed]);
 
   function startTimedEnd() {
     if (!timed || stage !== "idle") return;
@@ -898,21 +829,24 @@ function ScoringPhase({ form, onDone, onCancel }) {
       const nextRemaining = Math.max(0, Math.ceil((deadlineRef.current - now) / 1000));
       setRemaining(nextRemaining);
       if (stage === "preparation" && nextRemaining <= 0) {
-        playRangeSignal(1, 980);
-        announcePractice("開始射擊", form.assistedCues !== false);
-        startedAtRef.current = now;
-        deadlineRef.current = now + allowedSeconds * 1000;
-        announcedRef.current = new Set();
-        setRemaining(allowedSeconds);
+        const shootingStartedAt = deadlineRef.current || now;
+        const shootingDeadline = shootingStartedAt + allowedSeconds * 1000;
+        const shootingRemaining = Math.max(0, Math.ceil((shootingDeadline - now) / 1000));
+        startedAtRef.current = shootingStartedAt;
+        deadlineRef.current = shootingDeadline;
+        announcedRef.current = new Set(
+          getMinuteThresholds(allowedSeconds).filter(threshold => shootingRemaining <= threshold)
+        );
+        setRemaining(shootingRemaining);
+        if (shootingDeadline > now) {
+          playRangeSignal(1, 980);
+          announcePractice("開始射擊", form.assistedCues !== false);
+        }
         setStage("shooting");
         return;
       }
       if (stage === "shooting") {
-        const minuteThresholds = Array.from(
-          { length:Math.max(0, Math.floor((allowedSeconds - 1) / 60)) },
-          (_, index) => (index + 1) * 60
-        );
-        for (const threshold of minuteThresholds) {
+        for (const threshold of getMinuteThresholds(allowedSeconds)) {
           if (nextRemaining <= threshold && !announcedRef.current.has(threshold)) {
             announcedRef.current.add(threshold);
             if (form.assistedCues !== false) {
@@ -947,6 +881,22 @@ function ScoringPhase({ form, onDone, onCancel }) {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [stage]);
+
+  useEffect(() => {
+    onSessionChange?.({
+      round,
+      allR,
+      cur,
+      positions,
+      allPositions,
+      stage,
+      shootOff,
+      roundTiming,
+      match,
+      deadlineMs:deadlineRef.current,
+      startedAtMs:startedAtRef.current,
+    });
+  }, [allPositions, allR, cur, match, onSessionChange, positions, round, roundTiming, shootOff, stage]);
 
   function nextRound() {
     finishRound(false);
@@ -1093,7 +1043,7 @@ function ScoringPhase({ form, onDone, onCancel }) {
       )}
 
       <div className="flex gap-3">
-        <button onClick={()=>{ setCur(p=>p.slice(0,-1)); setArrowEntries(p=>p.slice(0,-1)); if(isTargetMode) setPositions(p=>p.slice(0,-1)); }} disabled={inputLocked || cur.length===0}
+        <button onClick={()=>{ setCur(p=>p.slice(0,-1)); if(isTargetMode) setPositions(p=>p.slice(0,-1)); }} disabled={inputLocked || cur.length===0}
           className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 font-bold text-sm disabled:opacity-30 bg-white/10">
           ← 刪除
         </button>
@@ -2171,8 +2121,10 @@ export default function MemberPractice() {
   const [finishedRounds, setFinishedRounds]=useState([]);
   const [arrowPositions, setArrowPositions]=useState([]);
   const [sessionDetails, setSessionDetails]=useState(null);
+  const [initialScoringSession, setInitialScoringSession]=useState(null);
   const [milestoneQueue, setMilestoneQueue]=useState([]);  // [{ms, rewards}]
   const classEndedRef = useRef(false); // 下課後不再觸發里程碑
+  const practiceRootRef = useRef(null);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -2191,6 +2143,69 @@ export default function MemberPractice() {
     presetId:"indoor_single", competitionMode:"wa30", assistedCues:true,
     matchType:"qualification", opponentAverage:8.5,
   }));
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const recovery = loadPracticeRecovery(profile.id);
+    if (!recovery?.form) return;
+    setForm(recovery.form);
+    if (recovery.phase === "scoring" && recovery.scoring) {
+      setInitialScoringSession(recovery.scoring);
+      setPhase("scoring");
+      setTab("practice");
+      return;
+    }
+    if (recovery.phase === "result" && Array.isArray(recovery.finishedRounds)) {
+      setFinishedRounds(recovery.finishedRounds);
+      setArrowPositions(recovery.arrowPositions || []);
+      setSessionDetails(recovery.sessionDetails || null);
+      setPhase("result");
+      setTab("practice");
+    }
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (phase !== "scoring" && phase !== "result") return undefined;
+    const guardInternalNavigation = event => {
+      if (practiceRootRef.current?.contains(event.target)) return;
+      const leave = window.confirm("本次練習尚未儲存。離開後可返回自主練習恢復進度，確定離開？");
+      if (leave) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    document.addEventListener("click", guardInternalNavigation, true);
+    return () => document.removeEventListener("click", guardInternalNavigation, true);
+  }, [phase]);
+
+  const handleScoringSnapshot = useCallback(snapshot => {
+    if (!profile?.id) return;
+    savePracticeRecovery(profile.id, {
+      phase:"scoring",
+      form,
+      scoring:snapshot,
+    });
+  }, [form, profile?.id]);
+
+  const handleScoringDone = useCallback((rounds, pos, details) => {
+    const nextDetails = details || null;
+    const nextForm = { ...form, sessionDetails:nextDetails };
+    setFinishedRounds(rounds);
+    setArrowPositions(pos || []);
+    setSessionDetails(nextDetails);
+    setForm(nextForm);
+    setInitialScoringSession(null);
+    setPhase("result");
+    if (profile?.id) {
+      savePracticeRecovery(profile.id, {
+        phase:"result",
+        form:nextForm,
+        finishedRounds:rounds,
+        arrowPositions:pos || [],
+        sessionDetails:nextDetails,
+      });
+    }
+  }, [form, profile?.id]);
 
   useEffect(()=>{
     if (!profile?.id) return;
@@ -2233,12 +2248,12 @@ export default function MemberPractice() {
         assistedCues:form.assistedCues !== false,
       },
       ...(sessionDetails?.roundTiming?.length ? { roundTiming:sessionDetails.roundTiming } : {}),
-      ...(sessionDetails?.arrowEntries?.length ? { arrowEntries:sessionDetails.arrowEntries } : {}),
       ...(sessionDetails?.match ? { match:sessionDetails.match } : {}),
       ...(arrowPositions.length>0 ? { arrowPositions } : {}),
     },profile.id);
 
     toast("練習紀錄已儲存 ✓");
+    clearPracticeRecovery(profile.id);
     setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null);
     setForm(current => ({ ...current, sessionDetails:null }));
 
@@ -2268,7 +2283,7 @@ export default function MemberPractice() {
   const tabBarStyle = { background:"rgba(15,23,42,0.7)", backdropFilter:"blur(8px)", borderBottom:"1px solid rgba(255,255,255,0.1)" };
 
   return (
-    <div style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
+    <div ref={practiceRootRef} style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
       <ToastContainer />
       {milestoneQueue.length>0 && (
         <ArrowMilestonePopup
@@ -2286,13 +2301,39 @@ export default function MemberPractice() {
         </div>
       )}
       {tab==="practice"&&phase==="setup"&&(
-        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{ setForm({...f,sessionDetails:null}); setPhase("scoring"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null); }} />
+        <SetupPhase initial={form} equipSets={equipSets} onStart={f=>{
+          clearPracticeRecovery(profile?.id);
+          setInitialScoringSession(null);
+          setForm({...f,sessionDetails:null});
+          setPhase("scoring");
+          setFinishedRounds([]);
+          setArrowPositions([]);
+          setSessionDetails(null);
+        }} />
       )}
       {tab==="practice"&&phase==="scoring"&&(
-        <ScoringPhase form={form} onDone={(rounds,pos,details)=>{ setFinishedRounds(rounds); setArrowPositions(pos||[]); setSessionDetails(details||null); setForm(current=>({...current,sessionDetails:details||null})); setPhase("result"); }} onCancel={()=>setPhase("setup")} />
+        <ScoringPhase
+          form={form}
+          initialSession={initialScoringSession}
+          onSessionChange={handleScoringSnapshot}
+          onDone={handleScoringDone}
+          onCancel={()=>{
+            clearPracticeRecovery(profile?.id);
+            setInitialScoringSession(null);
+            setPhase("setup");
+          }}
+        />
       )}
       {tab==="practice"&&phase==="result"&&(
-        <ResultPhase form={form} rounds={finishedRounds} arrowPositions={arrowPositions} onSave={handleSave} onRetry={()=>{ setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null); setPhase("scoring"); }} saving={saving} />
+        <ResultPhase form={form} rounds={finishedRounds} arrowPositions={arrowPositions} onSave={handleSave} onRetry={()=>{
+          clearPracticeRecovery(profile?.id);
+          setFinishedRounds([]);
+          setArrowPositions([]);
+          setSessionDetails(null);
+          setInitialScoringSession(null);
+          setForm(current=>({...current,sessionDetails:null}));
+          setPhase("scoring");
+        }} saving={saving} />
       )}
       {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
       {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}

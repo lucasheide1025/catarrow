@@ -1,39 +1,19 @@
 // src/components/shared/TargetFaceOverlay.jsx
 // 戰鬥模式通用靶面輸入層（fixed overlay）
 import { useState } from "react";
-import { DUNGEON_TARGET_FORMATS } from "../../lib/dungeonRunSettings";
+import {
+  TARGET_FACE_FORMATS,
+  getTargetFaceFormat,
+  getTargetRings,
+  makeLandingRecord,
+  normalizeTargetFormatId,
+} from "../../lib/targetFace";
 
-const RING_DEFS = {
-  full_110: [
-    { r:1.00, fill:"#d0d0d0", stroke:"#aaa" },
-    { r:0.90, fill:"#d0d0d0", stroke:"#aaa" },
-    { r:0.80, fill:"#1c1c1c", stroke:"#555" },
-    { r:0.70, fill:"#1c1c1c", stroke:"#555" },
-    { r:0.60, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.50, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.40, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.30, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
-    { r:0.10, fill:"#e67700", stroke:"#f59f00" },
-  ],
-  half_610: [
-    { r:1.00, fill:"#1864ab", stroke:"#4a90d9" },
-    { r:0.80, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.60, fill:"#c92a2a", stroke:"#e03131" },
-    { r:0.40, fill:"#e67700", stroke:"#f59f00" },
-    { r:0.20, fill:"#e67700", stroke:"#f59f00" },
-  ],
-  field_16: [
-    { r:1.00, fill:"#1c1c1c", stroke:"#555" },
-    { r:5/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:4/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:3/6,  fill:"#1c1c1c", stroke:"#555" },
-    { r:2/6,  fill:"#e67700", stroke:"#f59f00" },
-    { r:1/6,  fill:"#e67700", stroke:"#f59f00" },
-  ],
-};
-
-export const BATTLE_TARGET_FORMATS = DUNGEON_TARGET_FORMATS;
+export const BATTLE_TARGET_FORMATS = TARGET_FACE_FORMATS.map(format => ({
+  id:format.id,
+  label:format.shortLabel,
+  sub:format.sub,
+}));
 
 export const BATTLE_INPUT_MODES = [
   { id:"button", label:"點擊分數", icon:"⌨️" },
@@ -41,10 +21,10 @@ export const BATTLE_INPUT_MODES = [
 ];
 
 export function getBattleTargetFmt() {
-  return localStorage.getItem("battle_target_fmt") || "full_110";
+  return normalizeTargetFormatId(localStorage.getItem("battle_target_fmt") || "full_110");
 }
 export function setBattleTargetFmt(fmtId) {
-  localStorage.setItem("battle_target_fmt", fmtId);
+  localStorage.setItem("battle_target_fmt", normalizeTargetFormatId(fmtId));
 }
 export function getBattleInputMode() {
   return localStorage.getItem("battle_input_mode") || "button";
@@ -53,26 +33,10 @@ export function setBattleInputMode(mode) {
   localStorage.setItem("battle_input_mode", mode);
 }
 
-function calcTapScore(ratio, fmtId) {
-  if (ratio > 1) return "M";
-  if (fmtId === "field_16") {
-    const ring = ratio <= 0 ? 0 : Math.ceil(ratio * 6);
-    return ring === 0 ? 6 : Math.max(1, 7 - ring);
-  }
-  if (fmtId === "half_610") {
-    if (ratio < 0.20) return "X";  // 最內環 = X（10分）
-    const ring = Math.ceil(ratio * 5);
-    return Math.max(6, 11 - ring);
-  }
-  // full_110
-  if (ratio < 0.10) return "X";   // 最內環 = X（10分）
-  const ring = Math.ceil(ratio * 10);
-  return Math.max(1, 11 - ring);
-}
-
-function TargetSVG({ fmtId, R, onTap }) {
+export function TargetSVG({ fmtId, R, onTap, arrows = [], active = true }) {
   const SIZE = R * 2 + 6, CX = R + 3, CY = R + 3;
-  const rings = RING_DEFS[fmtId] || RING_DEFS.full_110;
+  const format = getTargetFaceFormat(fmtId);
+  const rings = getTargetRings(format.id);
   const [dragPos, setDragPos] = useState(null);
   const ZOOM = 26; // 放大鏡的 SVG 半徑（放大倍率 ≈ 80/ZOOM ≈ 3x）
 
@@ -82,7 +46,7 @@ function TargetSVG({ fmtId, R, onTap }) {
   }
 
   function handleDown(e) {
-    if (!onTap) return;
+    if (!active || !onTap) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragPos(svgPos(e));
@@ -95,17 +59,15 @@ function TargetSVG({ fmtId, R, onTap }) {
   }
 
   function handleUp(e) {
-    if (!dragPos || !onTap) return;
+    if (!dragPos || !active || !onTap) return;
     e.preventDefault();
-    const { px, py } = dragPos;
+    const { px, py } = svgPos(e);
     setDragPos(null);
-    const dist = Math.sqrt((px - CX) ** 2 + (py - CY) ** 2);
-    const score = calcTapScore(dist / R, fmtId);
-    onTap({ score, nx: (px - CX) / R, ny: (py - CY) / R });
+    onTap(makeLandingRecord(format.id, (px - CX) / R, (py - CY) / R));
   }
 
   const dragScore = dragPos
-    ? calcTapScore(Math.sqrt((dragPos.px - CX) ** 2 + (dragPos.py - CY) ** 2) / R, fmtId)
+    ? makeLandingRecord(format.id, (dragPos.px - CX) / R, (dragPos.py - CY) / R).label
     : null;
 
   return (
@@ -130,9 +92,13 @@ function TargetSVG({ fmtId, R, onTap }) {
                 viewBox={`${dragPos.px - ZOOM} ${dragPos.py - ZOOM} ${ZOOM * 2} ${ZOOM * 2}`}>
                 <rect x={dragPos.px - ZOOM} y={dragPos.py - ZOOM} width={ZOOM*2} height={ZOOM*2} fill="#2a2a2a" />
                 {rings.map((ring, i) => (
-                  <circle key={i} cx={CX} cy={CY} r={ring.r * R}
+                  <circle key={ring.score} cx={CX} cy={CY} r={ring.radius * R}
                     fill={ring.fill} stroke={ring.stroke} strokeWidth={0.7} />
                 ))}
+                {format.innerTenRatio != null && (
+                  <circle cx={CX} cy={CY} r={format.innerTenRatio * R}
+                    fill="none" stroke="rgba(30,30,30,.7)" strokeWidth={0.7} />
+                )}
                 <line x1={dragPos.px-3} y1={dragPos.py} x2={dragPos.px+3} y2={dragPos.py}
                   stroke="white" strokeWidth={0.6} />
                 <line x1={dragPos.px} y1={dragPos.py-3} x2={dragPos.px} y2={dragPos.py+3}
@@ -154,19 +120,34 @@ function TargetSVG({ fmtId, R, onTap }) {
 
       {/* 靶面 SVG */}
       <svg width={SIZE} height={SIZE}
-        style={{ touchAction:"none", display:"block", cursor:"crosshair" }}
+        style={{ touchAction:"none", display:"block", cursor:active ? "crosshair" : "default", opacity:active ? 1 : 0.72 }}
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
         onPointerCancel={() => setDragPos(null)}>
         <circle cx={CX} cy={CY} r={R + 2} fill="#2a2a2a" />
-        {rings.map((ring, i) => (
-          <circle key={i} cx={CX} cy={CY} r={ring.r * R}
+        {rings.map(ring => (
+          <circle key={ring.score} cx={CX} cy={CY} r={ring.radius * R}
             fill={ring.fill} stroke={ring.stroke} strokeWidth={0.7} />
         ))}
+        {format.innerTenRatio != null && (
+          <circle cx={CX} cy={CY} r={format.innerTenRatio * R}
+            fill="none" stroke="rgba(30,30,30,.7)" strokeWidth={0.7} />
+        )}
         <line x1={CX-6} y1={CY} x2={CX+6} y2={CY} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
         <line x1={CX} y1={CY-6} x2={CX} y2={CY+6} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
-        <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />
+        {active && <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />}
+        {arrows.map((arrow, index) => (
+          <g key={`${arrow.arrow ?? index}-${arrow.nx}-${arrow.ny}`}>
+            <circle cx={CX + arrow.nx * R} cy={CY + arrow.ny * R} r={Math.max(5, R * 0.045)}
+              fill="#15803d" stroke="white" strokeWidth={1.3} />
+            <text x={CX + arrow.nx * R} y={CY + arrow.ny * R + 0.5}
+              textAnchor="middle" dominantBaseline="middle" fill="white"
+              fontSize={Math.max(6, R * 0.055)} fontWeight="900">
+              {arrow.label || arrow.score}
+            </text>
+          </g>
+        ))}
         {dragPos && (
           <>
             <circle cx={dragPos.px} cy={dragPos.py} r={9}
@@ -181,8 +162,46 @@ function TargetSVG({ fmtId, R, onTap }) {
   );
 }
 
+export function TargetFaceInput({
+  fmtId = "full_110",
+  arrowLabels = [],
+  arrowPositions = [],
+  arrowsPerRound = 6,
+  onArrow,
+  radius = 130,
+}) {
+  const format = getTargetFaceFormat(fmtId);
+  if (format.layout !== "vertical_triple") {
+    return (
+      <TargetSVG fmtId={format.id} R={radius} arrows={arrowPositions}
+        active={arrowLabels.length < arrowsPerRound} onTap={onArrow} />
+    );
+  }
+
+  const arrowsPerFace = Math.max(1, Math.ceil(arrowsPerRound / 3));
+  const activeFace = arrowLabels.length >= arrowsPerRound
+    ? -1
+    : Math.min(2, Math.floor(arrowLabels.length / arrowsPerFace));
+  const faceRadius = Math.min(58, radius);
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+      {[0, 1, 2].map(faceIndex => (
+        <TargetSVG
+          key={faceIndex}
+          fmtId={format.id}
+          R={faceRadius}
+          arrows={arrowPositions.filter(position => (position.faceIndex || 0) === faceIndex)}
+          active={faceIndex === activeFace}
+          onTap={landing => onArrow?.({ ...landing, faceIndex })}
+        />
+      ))}
+    </div>
+  );
+}
+
 function labelColor(label) {
   if (label === "M") return "#ef4444";
+  if (label === "X") return "#f59f00";
   const n = parseInt(label);
   if (n >= 9) return "#f59f00";
   if (n >= 7) return "#ef4444";
@@ -198,7 +217,7 @@ export function TargetFmtPicker({ value, onChange }) {
       <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.45)", letterSpacing:1 }}>
         🎯 靶面計分格式
       </div>
-      <div style={{ display:"flex", gap:8 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:8 }}>
         {BATTLE_TARGET_FORMATS.map(fmt => {
           const active = value === fmt.id;
           return (
@@ -254,8 +273,10 @@ export default function TargetFaceOverlay({
   open,
   fmtId = "full_110",
   arrowLabels = [],
+  arrowPositions = [],
   arrowsPerRound = 6,
   onArrow,
+  onTargetArrow,
   onUndo,
   onSubmit,
   onClose,
@@ -264,11 +285,12 @@ export default function TargetFaceOverlay({
 
   const done = arrowLabels.length >= arrowsPerRound;
   const fmtInfo = BATTLE_TARGET_FORMATS.find(f => f.id === fmtId) || BATTLE_TARGET_FORMATS[0];
+  const format = getTargetFaceFormat(fmtId);
 
-  function handleTap({ score }) {
+  function handleTap(landing) {
     if (done) return;
-    const label = score === "M" ? "M" : String(score);
-    onArrow?.(label);
+    if (onTargetArrow) onTargetArrow(landing);
+    else onArrow?.(landing.label, landing);
   }
 
   return (
@@ -279,7 +301,8 @@ export default function TargetFaceOverlay({
       display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"flex-start",
       gap:14, padding:"16px 16px 20px",
-      paddingTop:"20dvh",
+      paddingTop:format.layout === "vertical_triple" ? "2dvh" : "12dvh",
+      overflowY:"auto",
     }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", maxWidth:320 }}>
         <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, fontWeight:700, letterSpacing:1 }}>
@@ -319,7 +342,9 @@ export default function TargetFaceOverlay({
       </div>
 
       {/* 靶面 */}
-      <TargetSVG fmtId={fmtId} R={130} onTap={!done ? handleTap : null} />
+      <TargetFaceInput fmtId={fmtId} radius={130}
+        arrowLabels={arrowLabels} arrowPositions={arrowPositions}
+        arrowsPerRound={arrowsPerRound} onArrow={!done ? handleTap : null} />
 
       {/* 操作按鈕 */}
       <div style={{ display:"flex", gap:10, alignItems:"center" }}>

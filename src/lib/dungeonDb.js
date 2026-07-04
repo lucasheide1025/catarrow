@@ -258,13 +258,27 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * rearDmgMul;
       const contract     = m.contract || { type:"standard", param:null };
       const raw = rearHeal
-        ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(l=>({ dmg:0, partIcon:"💚", partName:"治癒", label:l })) }
+        ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(arrow=>({
+            dmg:0, partIcon:"💚", partName:"治癒", label:arrow?.label || arrow,
+          })) }
         : calcDmgFn(m.arrows || [], effectiveAtk, room.monster.def, contract, dmgMult);
+      const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
+        const arrow = (m.arrows || [])[index];
+        return Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
+          ? {
+              ...entry,
+              nx:arrow.nx,
+              ny:arrow.ny,
+              faceIndex:arrow.faceIndex || 0,
+              targetFormat:arrow.targetFormat || room.targetFmt || "full_110",
+            }
+          : entry;
+      });
       allData[id] = {
         name: m.name || "射手",
         totalDmg: raw.dmg || 0,
         crits:    raw.crits || 0,
-        arrowBreakdown: raw.arrowBreakdown || [],
+        arrowBreakdown,
         contract,
         rearHeal,
       };

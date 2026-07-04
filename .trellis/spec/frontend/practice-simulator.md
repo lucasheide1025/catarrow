@@ -3,6 +3,8 @@
 ## Target specification
 
 - A target format owns scoring range, face diameter, and layout.
+- Read target geometry and tap scoring from `src/lib/targetFace.js`; practice
+  must not maintain a second ring implementation.
 - Keep legacy target IDs readable; new records additionally persist `targetSpec`.
 - Vertical triple faces score 6–10 and use one arrow per face for a three-arrow end by default.
 - Qualification presets may set bow division, distance, face, arrows per end, ends, and timing, but every field remains editable.
@@ -19,8 +21,9 @@
 ## Record compatibility
 
 - Preserve `rounds` and `arrowPositions` for existing history and analytics.
-- Add `targetSpec`, `competition`, `roundTiming`, and `arrowEntries` without rewriting old logs.
-- `arrowEntries.elapsedMs` represents score-entry timing, not a certified arrow-release sensor reading.
+- Add `targetSpec`, `competition`, and `roundTiming` without rewriting old logs.
+- Do not collect or write per-arrow score-entry timing. Historical
+  `arrowEntries` fields may remain on old records and must stay readable.
 - Store X as `"X"` while calculating it as 10 points.
 
 ## Individual match simulation
@@ -36,4 +39,11 @@
 
 - Clear refresh intervals and speech on unmount.
 - Warn before page unload during preparation or shooting.
+- Guard internal app navigation while scoring or an unsaved result is active;
+  confirmed navigation keeps recovery state intact.
 - Cancelling an active session requires confirmation.
+- Persist unfinished scoring and unsaved result state in versioned,
+  member-scoped browser storage.
+- Persist absolute preparation/shooting deadlines rather than countdown
+  display values. Time away from the page still consumes the active limit.
+- Clear recovery state after a successful save or explicit cancellation.
