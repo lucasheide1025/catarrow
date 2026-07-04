@@ -26,7 +26,10 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Inventory and Coin Shop](./inventory-shop-system.md) | Backpack boundaries, shop rotation, catalog safety, and atomic purchases | ✅ Active |
 | [Practice Simulator](./practice-simulator.md) | Real target formats, qualification timing signals, timeout behavior, and detailed records | ✅ Active |
 | [Shared Target Face](./target-face.md) | Canonical target geometry, scoring, landing coordinates, and battle integration | ✅ Active |
+| [Battle Practice Analysis](./battle-practice-analysis.md) | Personal shooting context, raw battle-arrow analysis, history sources, and true averages | ✅ Active |
+| [Cat Village and Gathering](./cat-village-gathering.md) | Mobile village information architecture, gathering contracts, attempts, rewards, and future co-op boundary | ✅ Active |
 | [Access Control Tiers](./access-control-tiers.md) | Student tier gating, adjustable permission matrix, frozen/maintenance locks, and the Firestore security boundary | ✅ Active |
+| [Guild Quest System](./guild-quest-system.md) | Three quest generators sharing `guildQuests`, the `questSubtype` validation gotcha, and the client-triggered daily-refresh pattern | ✅ Active |
 
 ---
 

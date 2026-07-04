@@ -11,7 +11,7 @@ import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
-import { levelFromXP, xpToReachLevel } from "./adventurerSystem";
+import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
 
 // ─── Collections ───────────────────────────────────────────
@@ -1295,6 +1295,9 @@ export async function publishGuildQuest(data, adminId) {
     requirement:   data.requirement   || {},
     deadline:      data.deadline      || null,
     periodTag:     data.periodTag     || null,
+    bountyDifficulty: data.bountyDifficulty ?? null,
+    bountySource:     data.bountySource     || null,
+    bountyDateKey:    data.bountyDateKey    || null,
     status: data.status || "active",
     publishedAt: serverTimestamp(),
     createdBy: adminId,
@@ -1358,6 +1361,151 @@ export async function autoPublishBountyQuests(monsters) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+/* ════════════════════════════════════════════════════════════
+   一般懸賞任務（每日刷新，教練可調整範本池與難度獎勵）
+   ════════════════════════════════════════════════════════════ */
+
+const C_BOUNTY_TEMPLATES = "guildBountyTemplates";
+const C_BOUNTY_REWARDS   = "guildBountyRewards";
+
+// 4 個難度的預設獎勵（教練後台尚未設定 guildBountyRewards/config 時的 fallback）
+// chestType 對應既有 CHEST_TYPES（wood/iron/gold/epic）
+export const DEFAULT_BOUNTY_REWARDS = {
+  1: { xp: 60,  coins: 100, arrowDew: 20,  gachaCoins: 1, chestType: "wood" },
+  2: { xp: 150, coins: 250, arrowDew: 50,  gachaCoins: 2, chestType: "iron" },
+  3: { xp: 300, coins: 450, arrowDew: 90,  gachaCoins: 3, chestType: "gold" },
+  4: { xp: 500, coins: 700, arrowDew: 150, gachaCoins: 5, chestType: "epic" },
+};
+
+// ── 範本 CRUD（後台管理）───────────────────────────────────
+export async function getGuildBountyTemplates() {
+  const snap = await getDocs(collection(db, C_BOUNTY_TEMPLATES));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function subscribeGuildBountyTemplates(cb) {
+  return onSnapshot(collection(db, C_BOUNTY_TEMPLATES),
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => { console.warn("subscribeGuildBountyTemplates:", err.message); cb([]); }
+  );
+}
+
+export async function createGuildBountyTemplate(data, adminId) {
+  const ref = await addDoc(collection(db, C_BOUNTY_TEMPLATES), {
+    title: data.title || "",
+    desc:  data.desc  || "",
+    difficulty: Number(data.difficulty) || 1,
+    requirement: {
+      type: "kill_monster",
+      monsterId: data.requirement?.monsterId || "",
+      killCount: Number(data.requirement?.killCount) || 1,
+    },
+    active: data.active !== false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: adminId,
+  });
+  return ref.id;
+}
+
+export async function updateGuildBountyTemplate(id, data, adminId) {
+  await updateDoc(doc(db, C_BOUNTY_TEMPLATES, id), {
+    title: data.title || "",
+    desc:  data.desc  || "",
+    difficulty: Number(data.difficulty) || 1,
+    requirement: {
+      type: "kill_monster",
+      monsterId: data.requirement?.monsterId || "",
+      killCount: Number(data.requirement?.killCount) || 1,
+    },
+    active: data.active !== false,
+    updatedAt: serverTimestamp(),
+    updatedBy: adminId,
+  });
+}
+
+export async function toggleGuildBountyTemplateActive(id, active, adminId) {
+  await updateDoc(doc(db, C_BOUNTY_TEMPLATES, id), {
+    active: !!active, updatedAt: serverTimestamp(), updatedBy: adminId,
+  });
+}
+
+export async function deleteGuildBountyTemplate(id) {
+  await deleteDoc(doc(db, C_BOUNTY_TEMPLATES, id));
+}
+
+// ── 難度獎勵表（後台管理，單一文件 config）─────────────────
+export async function getGuildBountyRewards() {
+  try {
+    const snap = await getDoc(doc(db, C_BOUNTY_REWARDS, "config"));
+    if (snap.exists()) return { ...DEFAULT_BOUNTY_REWARDS, ...snap.data() };
+  } catch (e) { console.warn("getGuildBountyRewards:", e?.message); }
+  return DEFAULT_BOUNTY_REWARDS;
+}
+
+export function subscribeGuildBountyRewards(cb) {
+  return onSnapshot(doc(db, C_BOUNTY_REWARDS, "config"),
+    snap => cb(snap.exists() ? { ...DEFAULT_BOUNTY_REWARDS, ...snap.data() } : { ...DEFAULT_BOUNTY_REWARDS }),
+    () => cb({ ...DEFAULT_BOUNTY_REWARDS })
+  );
+}
+
+export async function setGuildBountyRewards(rewardsObj, adminId) {
+  await setDoc(doc(db, C_BOUNTY_REWARDS, "config"),
+    { ...rewardsObj, updatedAt: serverTimestamp(), updatedBy: adminId }, { merge: true });
+}
+
+// ── 每日自動刷新一般懸賞（前台進公會頁時呼叫，內部防重複）──────
+// 注意：實際發佈的 guildQuests 文件 questSubtype 沿用既有 "kill_monster"
+// （前端擊殺判定/接任/狩獵流程皆以 questSubtype === "kill_monster" 為準，
+//  沿用 design.md 原字面值 "general" 會導致無法正確判定擊殺進度）。
+// 用 bountySource:"daily_general" + bountyDifficulty 區分於雙週懸賞。
+export async function autoPublishDailyGeneralBounties() {
+  try {
+    const dateKey = todayStr();
+    const metaRef = doc(db, "guildMeta", "dailyGeneralBounty");
+    const metaSnap = await getDoc(metaRef);
+    if (metaSnap.exists() && metaSnap.data().dateKey === dateKey) {
+      return { ok: true, reason: "already_exists" };
+    }
+
+    // 1. 下架昨天的舊一般懸賞任務
+    const oldSnap = await getDocs(query(collection(db, C_GUILD_Q),
+      where("bountySource", "==", "daily_general"), where("status", "==", "active")));
+    await Promise.all(oldSnap.docs.map(d => updateDoc(d.ref, { status: "expired" }).catch(() => {})));
+
+    // 2. 讀範本池（僅啟用中）+ 獎勵表
+    const templatesSnap = await getDocs(query(collection(db, C_BOUNTY_TEMPLATES), where("active", "==", true)));
+    const templates = templatesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const rewards = await getGuildBountyRewards();
+
+    // 3. 用日期當 seed，每個難度固定抽 1 個範本（允許重複抽同一範本）
+    const seed = parseInt(dateKey.replace(/-/g, ""), 10);
+    const rand = makeSeedRand(seed);
+    const picks = [1, 2, 3, 4].map(diff => {
+      const pool = templates.filter(t => t.difficulty === diff);
+      if (!pool.length) return null;
+      return pool[Math.floor(rand() * pool.length)];
+    }).filter(Boolean);
+
+    // 4. 依範本 + 獎勵表組成 guildQuests 文件並發佈
+    for (const tpl of picks) {
+      const r = rewards[tpl.difficulty] || DEFAULT_BOUNTY_REWARDS[tpl.difficulty];
+      await publishGuildQuest({
+        title: tpl.title, desc: tpl.desc, type: "normal", questSubtype: "kill_monster",
+        requirement: { monsterId: tpl.requirement?.monsterId, killCount: tpl.requirement?.killCount || 1 },
+        reward: { xp: r.xp, coins: r.coins, arrowDew: r.arrowDew, gachaCoins: r.gachaCoins },
+        bountyDifficulty: tpl.difficulty,
+        bountySource: "daily_general",
+        bountyDateKey: dateKey,
+      }, "system").catch(() => {});
+    }
+
+    await setDoc(metaRef, { dateKey, generatedAt: serverTimestamp() });
+    return { ok: true, count: picks.length };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // 前台：接受任務（標記進行中；kill_monster 任務記錄接任時的擊殺基準值）
 export async function acceptGuildQuest(memberId, questId, baselineKills = null) {
   if (!memberId || !questId) return;
@@ -1382,6 +1530,23 @@ export async function submitGuildQuestCompletion(memberId, memberName, quest, no
   if ((quest.reward?.coins || 0) > 0)       addCoins(memberId, Math.round(quest.reward.coins * (rankMult || 1))).catch(() => {});
   if ((quest.reward?.arrowDew || 0) > 0)    addArrowdew(memberId, quest.reward.arrowDew).catch(() => {});
   if ((quest.reward?.gachaCoins || 0) > 0)  addGachaCoins(memberId, quest.reward.gachaCoins).catch(() => {});
+  // 一般懸賞任務（依當前難度獎勵表固定寶箱）→ 額外發放對應寶箱
+  if (quest.bountyDifficulty) {
+    (async () => {
+      try {
+        const rewards = await getGuildBountyRewards();
+        const chestType = rewards[quest.bountyDifficulty]?.chestType
+          || DEFAULT_BOUNTY_REWARDS[quest.bountyDifficulty]?.chestType;
+        if (chestType) {
+          await addChests(memberId, [{
+            id: `bounty_${quest.id}_${Date.now()}`,
+            type: chestType, family: "guild", tier: quest.bountyDifficulty,
+            from: "公會懸賞", ts: Date.now(),
+          }]);
+        }
+      } catch (e) { console.warn("bounty chest:", e?.message); }
+    })();
+  }
   // 徽章任務 → 建立待審記錄；非徽章任務 → 直接記錄完成
   if (quest.badgeReward) {
     await addDoc(collection(db, C_GUILD_SUBS), {
@@ -3574,11 +3739,46 @@ export async function resetAllCouncilDailyLimits(memberIds) {
 }
 
 // 議會廳戰鬥結算：依過關/失敗 tier 分層給予獎勵
-export async function completeCouncilSession(memberId, { race, clearedTier, failedTier }) {
+export async function completeCouncilSession(memberId, {
+  race,
+  clearedTier,
+  failedTier,
+  contractVersion,
+  checkpointsCleared = 0,
+  rewardMultiplier = 0,
+}) {
   const TIER_ORDER = ['common','rare','elite','fierce','boss','mythic'];
   const TO_CHEST   = { common:'wood', rare:'iron', elite:'gold', fierce:'epic', boss:'mythic', mythic:'mythic' };
+  const MAT_SUFFIX = { common:'m1', rare:'m2', elite:'m3', fierce:'m4', boss:'m5', mythic:'m6' };
   const mat1Id     = `${race}_m1`;
   const promises   = [];
+
+  if (contractVersion >= 1) {
+    const cleared = Math.max(0, Math.min(3, Number(checkpointsCleared) || 0));
+    if (cleared > 0 && clearedTier) {
+      const mult = Math.max(1, Number(rewardMultiplier) || 1);
+      const materialId = `${race}_${MAT_SUFFIX[clearedTier] || 'm1'}`;
+      const materialCount = Math.max(1, Math.round(4 * cleared * mult));
+      promises.push(addMaterials(memberId, Array(materialCount).fill({ id: materialId })));
+      const raceChests = Array.from({ length: cleared }, (_, index) => ({
+        id: `chest_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_g${index}`,
+        type: TO_CHEST[clearedTier],
+        family: race,
+        tier: clearedTier,
+        from: '貓貓村採集委託',
+        ts: Date.now() + index,
+      }));
+      promises.push(addChests(memberId, raceChests));
+      promises.push(addChests(
+        memberId,
+        Array.from({ length: cleared }, () => makeCoinChest(clearedTier, '貓貓村採集委託')),
+      ));
+    } else if (failedTier) {
+      promises.push(addMaterials(memberId, Array(3).fill({ id: mat1Id })));
+    }
+    await Promise.all(promises);
+    return;
+  }
 
   if (clearedTier) {
     const n = TIER_ORDER.indexOf(clearedTier) + 1;

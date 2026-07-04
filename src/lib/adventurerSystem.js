@@ -156,7 +156,7 @@ function pickQuestName(target, type, rand) {
 }
 
 // ── 每日任務生成（依日期 seed，全員同一批）──────────────────────
-function makeSeedRand(seed) {
+export function makeSeedRand(seed) {
   let s = ((seed * 1664525) + 1013904223) >>> 0;
   return () => {
     s = ((s * 1664525) + 1013904223) >>> 0;

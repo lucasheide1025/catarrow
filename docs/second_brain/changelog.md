@@ -3,11 +3,45 @@
 
 ---
 
+## 2026-07-04（冒險者公會「一般懸賞任務」自動化 — 交接項目①已完成）
+
+Trellis 任務 `07-04-guild-general-bounty`，PRD/design/implement 見 `.trellis/tasks/07-04-guild-general-bounty/`。
+
+### 改了什麼
+- `src/lib/adventurerSystem.js`：`makeSeedRand` 加 `export`（供 db.js 複用同一套日期 seed 亂數，與 `getDailyGuildTasks` 同源）。
+- `src/lib/db.js` 新增：
+  - `DEFAULT_BOUNTY_REWARDS`（4 難度預設獎勵 fallback）
+  - 範本 CRUD：`getGuildBountyTemplates`/`subscribeGuildBountyTemplates`/`createGuildBountyTemplate`/`updateGuildBountyTemplate`/`toggleGuildBountyTemplateActive`/`deleteGuildBountyTemplate`（collection `guildBountyTemplates`）
+  - 獎勵表讀寫：`getGuildBountyRewards`/`subscribeGuildBountyRewards`/`setGuildBountyRewards`（collection `guildBountyRewards`，單一文件 `config`）
+  - `autoPublishDailyGeneralBounties()`：每日刷新主邏輯（下架昨天舊任務 → 讀 active 範本池+獎勵表 → 日期 seed 每難度抽 1 個 → `publishGuildQuest` 發佈 → 寫 `guildMeta/dailyGeneralBounty` 防重複）
+  - `publishGuildQuest` 擴充寫入 `bountyDifficulty`/`bountySource`/`bountyDateKey` 三個新欄位（原本只有 periodTag 等）
+  - `submitGuildQuestCompletion` 擴充：`quest.bountyDifficulty` 存在時，額外讀取當前 `guildBountyRewards` 取得 `chestType`，呼叫既有 `addChests` 發放對應難度寶箱
+- `src/components/member/AdventurerGuild.jsx`：掛載時新增呼叫 `autoPublishDailyGeneralBounties()`（與既有 `autoPublishBountyQuests` 並列，client-triggered 模式）；懸賞卡片與確認接取頁新增 `BOUNTY_DIFF_LABEL` 難度徽章（僅 `bountySource==="daily_general"` 顯示）。
+- `src/components/admin/AdminGuildQuests.jsx`：新增 tab `"bounty"`，渲染新元件。
+- **新增** `src/components/admin/AdminGuildBountyTemplates.jsx`：範本池 CRUD（4 難度分組）+ 難度獎勵表編輯（xp/coins/arrowDew/gachaCoins + chestType 下拉）+「立即重新產生今日任務」測試按鈕。
+- `firestore.rules`：新增 `guildBountyTemplates`/`guildBountyRewards` 兩個 collection（read: isLoggedIn，write: isAdmin）— **需手動貼到 Firebase Console**。
+
+### 為什麼
+- 與現有兩套系統（每日靶紙任務三階、雙週怪物討伐懸賞六階）明確區分，教練需要能自訂「任務範本」與「難度獎勵」而不是寫死常數，同時不修改既有兩套系統任何一行。
+- 沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑、既有 `autoPublishBountyQuests` 的 client-triggered + `guildMeta` 防重複模式，是專案既有慣例（無 Cloud Functions/cron）。
+
+### 踩坑提醒 / 與 design.md 的關鍵出入
+- **design.md 原文寫 `questSubtype: "general"`，實作改成 `questSubtype: "kill_monster"`**：交叉檢查 `AdventurerGuild.jsx` 實際渲染邏輯後發現，「接取任務→開始狩獵→擊殺進度比對→提交完成」整套按鈕流程完全以 `questSubtype==="kill_monster"` 判斷式為準（`sub===` 系列 if-else），若照 design.md 字面寫 `"general"`，前端會直接落到 `lock.ok` 最後一個 fallback 分支（手動填說明送出，不驗證擊殺數），等於玩家不用真的打怪就能領獎，違反 PRD 決策③「比照現有雙週懸賞的判定邏輯」。改用 `bountySource==="daily_general"` + `bountyDifficulty` 兩個新欄位區分「這是每日一般懸賞」，不依賴 `questSubtype`。**日後如果要修 kill_monster 判定邏輯，記得雙週懸賞和每日一般懸賞現在共用同一段前端判斷式。**
+- `publishGuildQuest` 原本白名單只寫入固定欄位（不是全量 spread `...data`），新增 `bountyDifficulty`/`bountySource`/`bountyDateKey` 三個欄位必須顯式加進該函式的 `setDoc` 內，否則會被靜默丟棄。
+- `guildMeta`/`guildQuests` 這兩個 collection 在 `firestore.rules` 目前**完全沒有對應規則**（`guildQuests` write 限 `isAdmin()`，`guildMeta` 甚至整個沒出現在規則檔）——這是雙週懸賞既有的已知行為：一般會員觸發 `autoPublish*` 會 permission-denied 靜默失敗（都包了 `.catch(()=>{})`），只有「教練切換射手模式」瀏覽公會頁時（仍是 admin 身份）才會真的寫入成功。本次沿用同一機制，未新增/修改這兩個 collection 的規則（design.md 也明確指示不需要）。
+- `submitGuildQuestCompletion` 內對寶箱的 `getGuildBountyRewards()` 是即時讀最新設定（不是用發佈當下 snapshot 的獎勵值），代表教練事後調整難度獎勵的 `chestType`，會影響「已上架但尚未提交」任務的寶箱結算結果——這是刻意跟隨 design.md 的行為，如果需要「發佈當下鎖定」語意需另外討論。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後手動驗證：同一天重複呼叫 `autoPublishDailyGeneralBounties()` 回傳 `already_exists`、範本池某難度為空時不影響其他難度正常上架、結算後 `chestInventory` 確實新增對應寶箱。
+
+---
+
 ## 🔴 2026-07-04 交接筆記 — 三項未完成工作（前一位 Claude 因限流中斷，交給接手的 AI）
 
 以下三項是同一次對話裡使用者提出、**已完整診斷根因/確認需求，但尚未建立完整任務或尚未動手實作**的項目。已完成並 commit 的工作（組隊地下城修復、鎖定計分模式切換、貓咪圖鑑101-200、archery.catgroup.com.tw重新部署）不在此列，見上方/下方其他 changelog 條目。
 
-### 項目 1：冒險者公會「一般懸賞任務」自動化（規劃已定案，尚未寫 design/implement，未開工）
+### 項目 1：冒險者公會「一般懸賞任務」自動化 — ✅ 已完成（2026-07-04，見上方新條目）
 
 **現況**：Trellis 任務已建立於 `.trellis/tasks/07-04-guild-general-bounty/prd.md`，PRD 內的「已確認的需求決策」章節記錄了使用者透過 AskUserQuestion 確認的所有決策，**直接照 PRD 內容執行即可，不需要重新問使用者**：
 - 4 個全新獨立難度等級（不沿用現有 6 階或 3 階系統）

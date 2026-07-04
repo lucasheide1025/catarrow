@@ -18,6 +18,8 @@
 
 ## ✅ 已實作
 
+**冒險者公會一般懸賞任務自動化（2026-07-04 新增）**：4 個全新獨立難度（1~4，獨立於六階雙週懸賞與三階每日靶紙任務），教練後台管理任務範本池（`guildBountyTemplates`）+ 難度獎勵表（`guildBountyRewards`），每日全員同一批自動刷新（每難度固定抽 1 個範本，日期當 seed），沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑；結算時依難度額外發放固定寶箱（wood/iron/gold/epic）
+
 **官網（2026-07-04 新增）**：`website/` 靜態 SEO 單頁官網（與 App 獨立），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；⚠ 網域 placeholder `catarchery.tw` 待部署後替換、地址 12/14 號待確認
 **核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
 **報到**：pending→教練審核→active/rejected、下課結算箭露、浮動視窗
@@ -59,7 +61,7 @@
 ## 🚧 待辦
 
 - [ ] **🔴 2026-07-04 交接三項（見 changelog.md 頂部「交接筆記」章節，有完整檔案/行號診斷，直接接手不用重查）**：
-  ① 冒險者公會一般懸賞任務自動化（PRD 已定案於 `.trellis/tasks/07-04-guild-general-bounty/prd.md`，缺 design/implement）
+  ① ~~冒險者公會一般懸賞任務自動化~~ **已完成（2026-07-04，見下方「已實作」與 changelog）**
   ② 箭數里程碑跨模式重複觸發 bug（5檔案根因已查清：AdventurerGuild/CouncilBattle/DuelRoom/DailyQuest 都寫死`getMilestonesReached(0,...)`，MonsterBattle的`sessionArrowsRef`每場重置）
   ③ 首殺通知 bug（A:橫幅已讀狀態未持久化，純前端好修；B:新地下城系統首殺完全沒接上，需改用family+tier當key，設計已定案）
 - [x] 地下城組隊失敗路由與全區廣播（2026-07-03 接手收尾）

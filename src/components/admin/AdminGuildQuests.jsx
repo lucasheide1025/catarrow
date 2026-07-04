@@ -10,6 +10,7 @@ import {
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
+import AdminGuildBountyTemplates from "./AdminGuildBountyTemplates";
 
 const BADGE_LABEL = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
 const BADGE_COLOR = { silver: "#94a3b8", gold: "#fbbf24", black: "#1e293b" };
@@ -141,6 +142,7 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
     { id: "review",     label: "🎖️ 待審徽章",   badge: subs.length },
     { id: "challenges", label: "🥊 挑戰申請",   badge: challenges.length },
     { id: "promo",      label: "⚔️ 晉階設定",   badge: 0 },
+    { id: "bounty",     label: "🗡️ 每日懸賞",   badge: 0 },
     { id: "ranks",      label: "🏆 排行",        badge: 0 },
   ];
 
@@ -574,6 +576,9 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
           </div>
         </div>
       )}
+
+      {/* ── 每日一般懸賞 tab ── */}
+      {tab === "bounty" && <AdminGuildBountyTemplates />}
 
       {/* ── 冒險者排行 tab ── */}
       {tab === "ranks" && (

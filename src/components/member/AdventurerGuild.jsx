@@ -9,7 +9,7 @@ import {
   provisionalUnlockQuest, resubmitGuildBadge, retryGuildQuest,
   subscribePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
   addPracticeLog, grantArrowMilestoneRewards,
-  autoPublishBountyQuests,
+  autoPublishBountyQuests, autoPublishDailyGeneralBounties,
 } from "../../lib/db";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
@@ -40,6 +40,8 @@ function getNPCLine() {
 const BADGE_LABEL  = { silver: "🥈 銀章", gold: "🥇 金章", black: "⬛ 黑章" };
 const BADGE_BORDER = { silver: "#94a3b8", gold: "#fbbf24", black: "#475569" };
 const DIFF_LABEL   = { 1: "🟢 一般", 2: "🟡 挑戰", 3: "🔴 精英" };
+// 每日一般懸賞任務的難度徽章（1~4，獨立於上面每日靶紙任務的三階難度）
+const BOUNTY_DIFF_LABEL = { 1: "難度 ★☆☆☆", 2: "難度 ★★☆☆", 3: "難度 ★★★☆", 4: "難度 ★★★★" };
 
 // ── 串聯任務先決條件檢查 ──────────────────────────────────────
 function canAcceptQuest(quest, profile, guildQuests) {
@@ -91,6 +93,8 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
     const u4 = subscribePromotionQuestConfig(setPromoConfig);
     // 雙週懸賞自動生成（內部防重複）
     autoPublishBountyQuests(MONSTERS).catch(() => {});
+    // 每日一般懸賞自動刷新（內部防重複）
+    autoPublishDailyGeneralBounties().catch(() => {});
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
   }, [profile?.id]);
 
@@ -437,6 +441,9 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
             <div className="flex flex-wrap gap-2">
               {activeQuest.type === "special" && <span className="text-amber-300 text-xs font-black">⚡ 緊急懸賞</span>}
               {activeQuest.badgeReward && <span className="text-xs font-black" style={{ color: BADGE_BORDER[activeQuest.badgeReward] }}>{BADGE_LABEL[activeQuest.badgeReward]} 任務</span>}
+              {activeQuest.bountySource === "daily_general" && (
+                <span className="text-xs font-black text-amber-300">📋 每日懸賞・{BOUNTY_DIFF_LABEL[activeQuest.bountyDifficulty] || ""}</span>
+              )}
             </div>
             <div className="text-white font-black text-2xl">{activeQuest.title}</div>
             {activeQuest.desc && <div className="text-white/70 text-sm leading-relaxed">{activeQuest.desc}</div>}
@@ -918,6 +925,11 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
                     }}>
                     <div style={{ height: 2, background: "linear-gradient(90deg,rgba(180,120,40,0.85),rgba(180,120,40,0.4),transparent)", boxShadow: "0 0 6px rgba(180,120,40,0.4)" }} />
                     <div className="p-3 flex flex-col gap-1.5">
+                      {q.bountySource === "daily_general" && (
+                        <div className="self-start text-[10px] font-black px-1.5 py-0.5 rounded-md" style={{ background:"rgba(180,120,40,0.25)", color:"#fbbf24", border:"1px solid rgba(180,120,40,0.4)" }}>
+                          {BOUNTY_DIFF_LABEL[q.bountyDifficulty] || "每日懸賞"}
+                        </div>
+                      )}
                       {(() => { const chip = questRequirementChip(q); return chip ? (
                         <div className="self-start text-[10px] font-black px-1.5 py-0.5 rounded-md" style={{ background:"rgba(124,58,237,0.25)", color:"#c4b5fd", border:"1px solid rgba(124,58,237,0.35)" }}>
                           {chip}

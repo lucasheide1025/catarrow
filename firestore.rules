@@ -369,5 +369,17 @@ service cloud.firestore {
       allow read:  if isLoggedIn();
       allow write: if isAdmin();
     }
+
+    // guildBountyTemplates：一般懸賞任務範本池，admin 管理，登入者可讀
+    match /guildBountyTemplates/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guildBountyRewards：一般懸賞難度獎勵表，admin 管理，登入者可讀
+    match /guildBountyRewards/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
   }
 }
