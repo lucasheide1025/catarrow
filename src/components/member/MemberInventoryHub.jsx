@@ -7,6 +7,7 @@ const CATEGORIES = [
   { tab:"materials", icon:"🪨", title:"怪物素材", desc:"裝備強化・素材升級",     accent:"#a855f7" },
   { tab:"fragments", icon:"✨", title:"徽章碎片", desc:"收集進度・合成徽章",     accent:"#ec4899" },
   { tab:"special",   icon:"🎟️", title:"特殊道具", desc:"活動券・任務道具",       accent:"#6366f1" },
+  { tab:"EquipmentPage",   icon:"⚔️", title:"我的裝備", desc:"虛擬裝備強化",       accent:"#6366f1" },
 ];
 
 export default function MemberInventoryHub({ onPageChange, badges = {} }) {
