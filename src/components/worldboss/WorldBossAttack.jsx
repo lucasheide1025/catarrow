@@ -15,6 +15,8 @@ import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
 import { sfxTap, sfxArrowHit, sfxCritBoom, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxRoundEnd, sfxVictory, sfxSuccess, sfxCast, sfxPotionDrink, vibrate } from "../../lib/sound";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { labelToValue, getScoreColor } from "../../lib/score";
 import { getTargetScoreLabels } from "../../lib/targetFace";
@@ -286,6 +288,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [targetFmt,    setTargetFmt]    = useState(getBattleTargetFmt);
   const [allRounds,    setAllRounds]    = useState(_hasSave ? _saved.allRounds   : []);
   const [roundSummary, setRoundSummary] = useState(null);
+  const shootingProfileRef = useRef(null);
 
   const [myHP,       setMyHP]       = useState(_hasSave ? _saved.myHP       : baseHP);
   const [bossHP,     setBossHP]     = useState(_hasSave ? _saved.localBossHP : event.bossCurrentHP);
@@ -430,6 +433,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // ── 輸入分數（只記錄，不計算傷害）──────────────────────
   function handleScore(s, landing) {
     if (arrows.length >= ARROWS_PER || subPhase !== "shooting") return;
+    shootingProfileRef.current ||= loadBattleShootingProfile(myId);
     sfxTap(); vibrate(10);
     const rawScore = scoreVal(s);
     const score = (targetFmt === "field_16" && rawScore > 0)
@@ -447,6 +451,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     }]);
   }
   function handleTargetSubmit() {
+    if (targetPending) return; // 防止重複觸發疊加多個 timeout
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); finishRound(arrows); }, 2000);
   }
@@ -702,6 +707,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               : []
           )
         );
+        const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
         const totalArrowsSent = practiceRounds.flat().length;
         if (totalArrowsSent > 0) {
           addRoundArrows(myId, totalArrowsSent).catch(() => {});
@@ -716,9 +722,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           date: todayStr, source: "worldboss",
           bossName: event.bossData?.name || "世界王",
           result: res.defeated ? "win" : "lose",
+          damage:res.dmg || 0,
           rounds: practiceRounds,
           total: practiceRounds.flat().reduce((s, v) => s + v, 0),
           totalArrows:practiceRounds.flat().length,
+          bowType:shootingProfile.bowType,
+          distance:shootingProfile.distance,
           targetFormat:targetFmt,
           inputMode:arrowPositions.length ? "target" : "button",
           ...(arrowPositions.length ? { arrowPositions } : {}),
@@ -850,6 +859,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
             <div className="text-xs text-slate-400 font-bold mb-3">🎯 計分方式</div>
             <div className="flex flex-col gap-3">
+              <BattleShootingProfile memberId={myId} />
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
@@ -1082,7 +1092,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 processing={subPhase !== "shooting"}
                 processingIdx={processingIdx}
                 extraContent={
-                  subPhase === "shooting" && (
+                  subPhase === "shooting" && arrows.length === 0 && (
                     <button onClick={() => setTargetMode(m => !m)} style={{
                       marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
                       background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
@@ -1106,7 +1116,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             onArrow={handleScore}
             onUndo={() => setArrows(prev => prev.slice(0,-1))}
             onSubmit={handleTargetSubmit}
-            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
           />
           {subPhase === "shooting" && (
             <BattleScoreButtons

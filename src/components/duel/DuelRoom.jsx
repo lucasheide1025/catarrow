@@ -11,6 +11,8 @@ import { calcDuelRoundDamage } from "../../lib/damage";
 import { labelToValue } from "../../lib/score";
 import { getTargetScoreLabels } from "../../lib/targetFace";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
@@ -284,6 +286,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [showEndAnim, setShowEndAnim]  = useState(false); // 結束動畫（kill feed + MVP）
   const battleAreaRef = useRef(null);
+  const shootingProfileRef = useRef(null);
   const lastCheerTs     = useRef(0);
   const heartbeatRef    = useRef(null);
   const catAppliedRef   = useRef(false);
@@ -430,12 +433,18 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
               : []
           )
         );
+        const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(profile.id);
+        const opposingTeam = myTeam === "A" ? room.teamB : room.teamA;
         addPracticeLog(profile.id, {
           date: todayStr, source: "duel",
           totalArrows: myArrowCount,
           result:outcome,
+          opponentName:Object.values(opposingTeam || {}).map(member => member.name || "射手").join("、"),
+          damage:myDmg,
           rounds:practiceRounds,
           total:practiceRounds.flat().reduce((sum, score) => sum + score, 0),
+          bowType:shootingProfile.bowType,
+          distance:shootingProfile.distance,
           targetFormat:targetFmt,
           inputMode:arrowPositions.length ? "target" : "button",
           ...(arrowPositions.length ? { arrowPositions } : {}),
@@ -460,6 +469,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // ── 輸入箭分 ────────────────────────────────────────────
   function addArrow(score, label, landing) {
     if (myArrows.length >= ARROWS || submitted) return;
+    shootingProfileRef.current ||= loadBattleShootingProfile(profile?.id || myId);
     sfxArrowHit();
     setMyArrows(prev => [...prev, {
       score,
@@ -483,6 +493,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     setMyArrows(prev => prev.slice(0, -1));
   }
   function handleTargetSubmit() {
+    if (targetPending) return; // 防止重複觸發疊加多個 timeout
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
@@ -496,6 +507,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     await sendDuelCheer(roomId, myName);
   }
   function resetLocalState() {
+    shootingProfileRef.current = null;
     setResultShown(false);
     setShowResult(false);
     setShowEndAnim(false);
@@ -1046,19 +1058,22 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             );
           })()}
 
-          {myArrows.length === 0 && !targetPending && (
+          {myArrows.length === 0 && !targetPending && (room.round || 1) === 1 && (
             <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 mb-2 flex flex-col gap-3">
+              <BattleShootingProfile memberId={profile?.id || myId} />
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
           )}
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] text-slate-500 font-bold">輸入方式</span>
-            <button onClick={() => setTargetMode(m => !m)}
-              className={`px-3 py-1 rounded-lg text-xs font-black border transition-all ${targetMode ? "bg-green-600/20 border-green-500 text-green-400" : "bg-slate-700/60 border-slate-600 text-slate-400"}`}>
-              {targetMode ? "🎯 靶面" : "⌨️ 按鈕"}
-            </button>
-          </div>
+          {myArrows.length === 0 && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] text-slate-500 font-bold">輸入方式</span>
+              <button onClick={() => setTargetMode(m => !m)}
+                className={`px-3 py-1 rounded-lg text-xs font-black border transition-all ${targetMode ? "bg-green-600/20 border-green-500 text-green-400" : "bg-slate-700/60 border-slate-600 text-slate-400"}`}>
+                {targetMode ? "🎯 靶面" : "⌨️ 按鈕"}
+              </button>
+            </div>
+          )}
           {targetPending && <div className="text-center text-xs text-purple-400 font-bold mb-2">計算中…⚔️</div>}
           {!targetMode && (
             <div className="grid grid-cols-6 gap-1.5 mb-2">
@@ -1081,7 +1096,6 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             onArrow={addArrowByLabel}
             onUndo={removeArrow}
             onSubmit={handleTargetSubmit}
-            onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
           />
           <button onClick={handleSubmit} disabled={!canSubmit}
             className={`w-full py-3 rounded-2xl font-black text-sm transition-all ${canSubmit ? "text-white border border-amber-400/50 active:scale-95" : "bg-slate-700 text-slate-500 border border-slate-600"}`}

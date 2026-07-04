@@ -443,6 +443,7 @@ const { room, submitted, submitting, handleSubmit, setFsSubmitted } = useFiresto
 - **擊殺 overlay 與 pending_confirm 衝突**：`liveEntry !== null` 時不會跳出結算畫面（pending_confirm 判斷需 `!liveEntry`），3.5s entryEndExtra 期間兩者安全共存
 - **`useDuelReveal` 只服務 DuelRoom**：無跨模式複用價值，抽取是為了隔離程式碼（−165 行 inline logic）
 - **DuelRoom 的 `skipEvent`**：取代舊的 `startReveal()` 手動設定 eventPhase+revealIdx
+- **`TargetFaceOverlay`（`src/components/shared/TargetFaceOverlay.jsx`）共用元件（2026-07-04 鎖定計分模式修正）**：目前 5 個呼叫端 Party/Dungeon/MonsterBattle/WorldBoss/Duel，「回合中不能切換按鈕↔靶面計分」的鎖定邏輯**是各呼叫端自己維護**，元件本身不強制。改任何一處鎖定條件時務必 `grep "TargetFaceOverlay"` 檢查全部 5 處是否同步。`onClose` prop 全部呼叫端已移除（該 prop 只用來「關閉覆蓋層」，舊寫法誤把它跟 `setTargetMode(false)` 綁在一起，變成中途切換模式的漏洞）；Party/Dungeon/MonsterBattle 用 `scoringModeChosen` state（整場只選一次，不逐回合重置）鎖定，WorldBoss/Duel 沒有這個 state，改用「本回合箭數是否為 0」（`arrows.length===0`）當鎖定條件。
 
 ---
 

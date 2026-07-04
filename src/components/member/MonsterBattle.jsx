@@ -37,6 +37,8 @@ import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
 import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard, BattleLogPanel } from "../shared/SharedBattleComponents";
 import BattleBottomBar from "./BattleBottomBar";
 import { labelToValue, HALF_SCORES, calcArrowStats } from "../../lib/score";
@@ -170,6 +172,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   const [catCurrentHP,  setCatCurrentHP]  = useState(0);
   const catCurrentHPRef = useRef(0);
   const pendingPotionRef = useRef([]); // 擱置的藥水消耗，submitRound 時批次寫入
+  const shootingProfileRef = useRef(null);
   const [processing, setProcessing]     = useState(false);
   const [targetMode, setTargetMode]     = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
@@ -471,6 +474,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   function inputArrow(label, landing) {
     if (arrows.length>=arrowsPerRound||processing) return;
+    shootingProfileRef.current ||= loadBattleShootingProfile(profile?.id || "guest");
     sfxTap();
     setArrows(prev=>[...prev,label]);
     if (landing) {
@@ -791,6 +795,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]); setBattleArrowPositions([]); sessionArrowsRef.current = 0;
+    shootingProfileRef.current = null;
     setLog([
       { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
       { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
@@ -815,6 +820,12 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
   async function endBattle(result, finalArchHP, finalMonHP, lastRoundArr = null) {
     try {
+    const shootingProfile = shootingProfileRef.current
+      || loadBattleShootingProfile(profile?.id || "guest");
+    const completedRoundScores = lastRoundArr
+      ? [...roundScores, { scores:lastRoundArr }]
+      : roundScores;
+    const completedPracticeRounds = completedRoundScores.map(entry => entry.scores || []);
     if (result==="win") {
       sfxMonsterDead();
       setTimeout(() => sfxSuccess(), 600);
@@ -885,19 +896,18 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
         const equipment  = profile?.equipment || [];
         const bowLabel   = Array.isArray(equipment) && equipment[0]?.label
           ? equipment[0].label : (typeof equipment === "string" ? equipment : "打怪練習");
-        const allRoundScores = lastRoundArr
-          ? [...roundScores, { scores: lastRoundArr }]
-          : roundScores;
-        const practiceRounds = allRoundScores.map(rs => rs.scores || []);
+        const practiceRounds = completedPracticeRounds;
         if (profile?.id) {
           const todayStr = new Date().toISOString().slice(0, 10);
           addPracticeLog(profile.id, {
             date: todayStr, source: "monster",
-            monsterName: monster.name, mode, battleMode, result,
+            monsterName: monster.name, monsterTier:monster.tier, mode, battleMode, result,
             equipment: bowLabel, rounds: practiceRounds,
             total: practiceRounds.flat().reduce((s, v) => s + v, 0),
             totalArrows: practiceRounds.flat().length,
-            distance: selectedDistance,
+            bowType:shootingProfile.bowType,
+            distance:shootingProfile.distance,
+            battleDistance:selectedDistance,
             targetFormat:targetFmt,
             inputMode:targetMode ? "target" : "button",
             ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
@@ -925,16 +935,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       }
 
       if (profile?.id) {
-        setRoundScores(rs => {
-          saveMonsterLog(profile.id, {
-            monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
-            mode, battleMode, chestType:mainChest.type, roundScores:rs,
-            distance: selectedDistance,
-            targetFmt,
-            ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
-          }).catch(() => {});
-          return rs;
-        });
+        saveMonsterLog(profile.id, {
+          monsterName:monster.name, monsterId:monster.id, result:"win", rounds:round,
+          mode, battleMode, chestType:mainChest.type, roundScores:completedRoundScores,
+          bowType:shootingProfile.bowType,
+          distance:shootingProfile.distance,
+          battleDistance:selectedDistance,
+          targetFmt,
+          ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
+        }).catch(() => {});
       }
 
       if (!isGuest) {
@@ -961,16 +970,35 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
       sfxSoftFail();
       addLog({ type:"lose", text:`💀 不…被 ${monster.name} 擊倒了！世界漸漸變黑…下次一定要贏…！` });
       if (profile?.id) {
-        setRoundScores(rs => {
-          saveMonsterLog(profile.id, {
-            monsterName:monster.name, monsterId:monster.id, result:"lose", rounds:round,
-            mode, battleMode, materials:[], roundScores:rs,
-            distance: selectedDistance,
-            targetFmt,
+        if (!isGuest && completedPracticeRounds.length > 0) {
+          addPracticeLog(profile.id, {
+            date:new Date().toISOString().slice(0, 10),
+            source:"monster",
+            monsterName:monster.name,
+            monsterTier:monster.tier,
+            mode,
+            battleMode,
+            result:"lose",
+            bowType:shootingProfile.bowType,
+            distance:shootingProfile.distance,
+            battleDistance:selectedDistance,
+            rounds:completedPracticeRounds,
+            total:completedPracticeRounds.flat().reduce((sum, score) => sum + score, 0),
+            totalArrows:completedPracticeRounds.flat().length,
+            targetFormat:targetFmt,
+            inputMode:battleArrowPositions.length ? "target" : "button",
             ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
-          }).catch(() => {});
-          return rs;
-        });
+          }, profile.id).catch(() => {});
+        }
+        saveMonsterLog(profile.id, {
+          monsterName:monster.name, monsterId:monster.id, result:"lose", rounds:round,
+          mode, battleMode, materials:[], roundScores:completedRoundScores,
+          bowType:shootingProfile.bowType,
+          distance:shootingProfile.distance,
+          battleDistance:selectedDistance,
+          targetFmt,
+          ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
+        }).catch(() => {});
       }
       await delay(1000); setPhase("result");
     }
@@ -1134,6 +1162,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
 
         {/* 計分設定 */}
         <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 14px", display:"flex", flexDirection:"column", gap:12 }}>
+          <BattleShootingProfile memberId={profile?.id || "guest"} />
           <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
           <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
         </div>

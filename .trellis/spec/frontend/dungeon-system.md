@@ -168,6 +168,35 @@ const SCORE_ROW_B = ["6","5","4","3","2","1","M"];   // page 1
 
 ---
 
+## Scoring Input Mode (`targetMode`) Must Be Locked Once a Round Starts
+
+`TargetFaceOverlay` (`src/components/shared/TargetFaceOverlay.jsx`) is the shared target-face tap-to-score UI. It is wired into **5** call sites across the battle system: `PartyBattleRoom.jsx`, `DungeonBattleRoom.jsx`, `MonsterBattle.jsx`, `WorldBossAttack.jsx`, `DuelRoom.jsx`. Each of these also has a local `targetMode` boolean toggling between button-scoring and target-face-scoring for the current round.
+
+**Never let `targetMode` change after the player has started entering arrows for the round.** Every one of the 5 call sites originally shipped with an always-clickable 🎯 toggle button (no lock condition) and a `TargetFaceOverlay onClose` handler that silently flipped `targetMode` back to button mode. Switching mode mid-round while arrows are partially entered leaves the round in an inconsistent state and can permanently disable the submit button (`targetPending`/completion-state gets stuck). `DuelRoom.jsx` and `WorldBossAttack.jsx` had this exact bug and were not caught until a follow-up `trellis-check` pass grepped **all** `setTargetMode(` call sites project-wide — the original fix only covered 3 of the 5 files because the task description didn't know the other two existed.
+
+Correct pattern (applied to all 5 files):
+
+```js
+// Toggle button: only rendered before any arrow has been entered this round
+{arrows.length === 0 && (
+  <button onClick={() => setTargetMode(m => !m)}>🎯</button>
+)}
+
+// TargetFaceOverlay: onClose must NOT change targetMode/input mode.
+// Closing the overlay just hides it — it does not revert the player's choice.
+<TargetFaceOverlay ... onClose={() => setShowOverlay(false)} />
+// NOT: onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}
+
+// handleTargetSubmit: guard against re-entrant calls
+function handleTargetSubmit() {
+  if (targetPending) return;
+  setTargetPending(true);
+  setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
+}
+```
+
+**If you touch `TargetFaceOverlay` or add a 6th call site**, grep `setTargetMode(` and `onClose=.*setTargetMode` across the whole `src/` tree before considering the change complete — a partial fix that covers only the files named in a task description is not sufficient.
+
 ## Admin Theme — Dark Mode Convention
 
 All admin components use a **dark background** (slate-900 / slate-800 range). Any card, modal, or panel must use dark backgrounds:

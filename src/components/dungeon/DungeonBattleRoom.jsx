@@ -36,6 +36,8 @@ import TargetFaceOverlay, {
   getBattleInputMode,
   setBattleInputMode,
 } from "../shared/TargetFaceOverlay";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { getPotion } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
@@ -180,6 +182,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const claimLootRef         = useRef(null);  // loot preview locked on first render
   const firstClearCheckedRef = useRef(false);
   const roomRef              = useRef(null); // sync with hook's room for timeout closures
+  const shootingProfileRef   = useRef(null);
 
   // ── 統一 Firestore 回合生命週期 ────────────────────────────
   const {
@@ -532,6 +535,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   function addArrow(label, landing) {
     if (arrows.length >= (room?.arrowsPerRound || 6)) return;
+    shootingProfileRef.current ||= loadBattleShootingProfile(myId);
     sfxTap();
     const rawScore = label === "命中" ? 10 : (SCORE_MAP[label] ?? 0);
     const score = (targetFmt === "field_16" && rawScore > 0)
@@ -603,15 +607,29 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
     if (practiceRounds.length > 0) {
       const arrowCount = practiceRounds.flat().length;
+      const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
       addPracticeLog(myId, {
         date: new Date().toISOString().slice(0, 10), source: "dungeon",
         monsterName: room.monster?.name || "地下城", result: "win",
         rounds: practiceRounds,
         total: practiceRounds.flat().reduce((s, v) => s + v, 0),
         totalArrows: arrowCount, totalFloors,
-        distance:room.distance || null,
+        bowType:shootingProfile.bowType,
+        distance:shootingProfile.distance,
+        battleDistance:room.distance || null,
         targetFormat:targetFmt,
         inputMode:arrowPositions.length ? "target" : "button",
+        role:room.members?.[myId]?.role || "front",
+        teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
+          id, name:member.name || "射手", role:member.role || "front",
+        })),
+        rewards:{
+          coins:baseCoins,
+          materials:baseMaterials.map(material => ({
+            id:material.id, name:material.name || material.id,
+          })),
+          chests:memberChests.map(chest => ({ type:chest.type, name:chest.name })),
+        },
         ...(arrowPositions.length ? { arrowPositions } : {}),
       }, myId).catch(() => {});
       if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
@@ -822,15 +840,22 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
                 if (practiceRounds.length > 0) {
                   const arrowCount = practiceRounds.flat().length;
+                  const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
                   addPracticeLog(myId, {
                     date: new Date().toISOString().slice(0, 10), source: "dungeon",
                     monsterName: room.monster?.name || "地下城", result: "lose",
                     rounds: practiceRounds,
                     total: practiceRounds.flat().reduce((s, v) => s + v, 0),
                     totalArrows: arrowCount, floorsCleared,
-                    distance:room.distance || null,
+                    bowType:shootingProfile.bowType,
+                    distance:shootingProfile.distance,
+                    battleDistance:room.distance || null,
                     targetFormat:targetFmt,
                     inputMode:arrowPositions.length ? "target" : "button",
+                    role:room.members?.[myId]?.role || "front",
+                    teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
+                      id, name:member.name || "射手", role:member.role || "front",
+                    })),
                     ...(arrowPositions.length ? { arrowPositions } : {}),
                   }, myId).catch(() => {});
                   if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
@@ -1196,6 +1221,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         <div style={{ fontSize:12, color:"#94a3b8" }}>
           本場規則：{room?.arrowsPerRound || 6} 箭／回合 · {getDungeonTargetLabel(targetFmt)}
         </div>
+        <BattleShootingProfile memberId={myId} />
         <div style={{ color:"#64748b", fontSize:13 }}>等待房主開始戰鬥…</div>
       </div>
     );

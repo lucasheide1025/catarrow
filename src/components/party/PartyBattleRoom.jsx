@@ -24,6 +24,8 @@ import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs } from "../../lib/i
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
@@ -101,6 +103,42 @@ function PartyMonsterImg({ id, icon, charge, size, variant }) {
 function pickBg(family) {
   const idx = Math.ceil(Math.random() * 6);
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+}
+
+function getPartyPracticeData(log, memberId, targetFmt) {
+  const breakdownsByRound = (log || []).map(entry => {
+    const player = (entry.playerLog || []).find(item => item.id === memberId);
+    return player?.arrowBreakdown || [];
+  }).filter(arrows => arrows.length > 0);
+  const rounds = breakdownsByRound.map(arrows => arrows.map(arrow =>
+    arrow.label === "X" ? 10 : arrow.label === "M" ? 0 : (parseInt(arrow.label) || 0)
+  ));
+  const arrowPositions = breakdownsByRound.flatMap((arrows, roundIndex) =>
+    arrows.flatMap((arrow, arrowIndex) =>
+      Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
+        ? [{
+            score:arrow.label,
+            nx:arrow.nx,
+            ny:arrow.ny,
+            faceIndex:arrow.faceIndex || 0,
+            targetFormat:arrow.targetFormat || targetFmt,
+            round:roundIndex,
+            arrow:arrowIndex + 1,
+          }]
+        : []
+    )
+  );
+  return { rounds, arrowPositions };
+}
+
+function getPartyMvpId(log) {
+  const damageByMember = {};
+  for (const entry of log || []) {
+    for (const player of entry.playerLog || []) {
+      damageByMember[player.id] = (damageByMember[player.id] || 0) + (player.dmg || 0);
+    }
+  }
+  return Object.entries(damageByMember).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
 // guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile.id
@@ -192,11 +230,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
+  const lossPracticeRecordedRef = useRef(false);
   const autoClaimFiredRef = useRef(false); // 自動領取寶箱（每場只觸發一次）
   const prevLogLenRef     = useRef(0);     // 動畫觸發用
   const logInitializedRef = useRef(false); // 首次載入時跳過已存在的 log（F5 防重播）
   const logEndRef         = useRef(null);
   const pendingRevealRef  = useRef(null);  // 有事件時暫存 entry，等玩家確認彈窗後再啟動動畫
+  const shootingProfileRef = useRef(null);
 
   // 背景圖：room 更新時設定一次
   useEffect(() => {
@@ -219,6 +259,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     rewardStoredRef.current  = false;
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
+    lossPracticeRecordedRef.current = false;
     autoClaimFiredRef.current = false;
     prevLogLenRef.current    = 0;
     logInitializedRef.current = false;
@@ -235,6 +276,38 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStartError("");
     setLogInited(false);
     setScoringReady(false);
+    shootingProfileRef.current = null;
+  }, [room?.status]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!room || !myId || myId.startsWith("guest") || lossPracticeRecordedRef.current) return;
+    if (room.status !== "completed" || room.result !== "lose") return;
+    const { rounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
+    if (!rounds.length) return;
+    lossPracticeRecordedRef.current = true;
+    const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
+    addPracticeLog(myId, {
+      date:new Date().toISOString().slice(0, 10),
+      source:"party",
+      monsterName:room.monster?.name || "怪物",
+      result:"lose",
+      rounds,
+      total:rounds.flat().reduce((sum, score) => sum + score, 0),
+      totalArrows:rounds.flat().length,
+      bowType:shootingProfile.bowType,
+      distance:shootingProfile.distance,
+      battleDistance:room.distance || null,
+      targetFormat:targetFmt,
+      inputMode:arrowPositions.length ? "target" : "button",
+      role:room.members?.[myId]?.role || "front",
+      teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
+        id, name:member.name || "射手", role:member.role || "front",
+      })),
+      mvpId:getPartyMvpId(room.log),
+      ...(arrowPositions.length ? { arrowPositions } : {}),
+    }, myId).catch(() => {
+      lossPracticeRecordedRef.current = false;
+    });
   }, [room?.status]); // eslint-disable-line
 
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
@@ -519,6 +592,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   function addArrow(label, landing) {
     if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady) return;
+    shootingProfileRef.current ||= loadBattleShootingProfile(myId);
     const rawScore = SCORE_MAP[label] ?? 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
@@ -616,39 +690,35 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
       if (myId && !myId.startsWith("guest")) {
-        const practiceRounds = (room.log || []).map(entry => {
-          const pl = (entry.playerLog || []).find(p => p.id === myId);
-          return (pl?.arrowBreakdown || []).map(a =>
-            a.label === "X" ? 10 : a.label === "M" ? 0 : (parseInt(a.label) || 0)
-          );
-        }).filter(r => r.length > 0);
+        const { rounds:practiceRounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
-          const arrowPositions = (room.log || []).flatMap((entry, roundIndex) => {
-            const player = (entry.playerLog || []).find(item => item.id === myId);
-            return (player?.arrowBreakdown || []).flatMap((arrow, arrowIndex) =>
-              Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
-                ? [{
-                    score:arrow.label,
-                    nx:arrow.nx,
-                    ny:arrow.ny,
-                    faceIndex:arrow.faceIndex || 0,
-                    targetFormat:arrow.targetFormat || targetFmt,
-                    round:roundIndex,
-                    arrow:arrowIndex + 1,
-                  }]
-                : []
-            );
-          });
+          const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
           addPracticeLog(myId, {
             date: new Date().toISOString().slice(0, 10), source: "party",
             monsterName: room.monster?.name || "怪物", result: "win",
             rounds: practiceRounds,
             total: practiceRounds.flat().reduce((s, v) => s + v, 0),
             totalArrows: arrowCount,
-            distance: room.distance || null,
+            bowType:shootingProfile.bowType,
+            distance:shootingProfile.distance,
+            battleDistance:room.distance || null,
             targetFormat:targetFmt,
             inputMode:arrowPositions.length ? "target" : "button",
+            role:room.members?.[myId]?.role || "front",
+            teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
+              id, name:member.name || "射手", role:member.role || "front",
+            })),
+            mvpId:getPartyMvpId(room.log),
+            damage:myDmg,
+            rewards:{
+              coins,
+              materials:material ? [{ id:material.id, name:material.name || material.id }] : [],
+              card:card ? { id:card.id, name:card.name || card.id } : null,
+              chests:[coinChest, ...(bonusChest ? [bonusChest] : [])].map(chest => ({
+                type:chest.type, name:chest.name,
+              })),
+            },
             ...(arrowPositions.length ? { arrowPositions } : {}),
           }, myId).catch(() => {});
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
@@ -893,6 +963,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               </div>
             </div>
             <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 flex flex-col gap-3">
+              <BattleShootingProfile memberId={myId} />
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>

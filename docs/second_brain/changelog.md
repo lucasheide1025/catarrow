@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-07-04（鎖定戰鬥中計分模式切換：Party/Dungeon/MonsterBattle + WorldBoss/Duel 補漏）
+
+### 改了什麼
+- `PartyBattleRoom.jsx`、`DungeonBattleRoom.jsx`、`MonsterBattle.jsx`（implement agent 已完成，見 commit 訊息誤植為「subscribeNotifications 加 limit(50)」的那次）：
+  - 回合中永遠可點的 🎯 切換鈕改為只在 `!scoringModeChosen`（或 Dungeon hit_count 合約的 `arrows.length===0 && !targetMode`）時才顯示。
+  - `TargetFaceOverlay` 的 `onClose={() => { setTargetMode(false); setBattleInputMode("button"); }}` 整個移除（三處呼叫都不再傳 `onClose`），避免關閉靶面覆蓋層時偷偷切回按鈕模式。
+  - `handleTargetSubmit()` 開頭加 `if (targetPending) return;`，防止 2 秒 timeout 期間重複觸發疊加。
+- **本次 check agent 額外發現並修復**：同一個 `TargetFaceOverlay` 共用元件在 `WorldBossAttack.jsx`（世界王）與 `DuelRoom.jsx`（決鬥）也有完全相同的漏洞，PRD 原始範圍只列了 Party/Dungeon/MonsterBattle 三個檔案，這兩個是漏網之魚：
+  - `WorldBossAttack.jsx`：🎯 切換鈕加上 `arrows.length===0` 條件（該檔沒有 `scoringModeChosen` 機制，改用「本回合尚未輸入任何箭」為鎖定條件，比照 Dungeon hit_count 分支的既有寫法）；移除 `onClose` 副作用；`handleTargetSubmit` 補 `if (targetPending) return;`。
+  - `DuelRoom.jsx`：🎯 切換鈕（原本完全無鎖定，任何時候都能點）同樣加上 `myArrows.length===0` 條件，並包進條件式 render；移除 `onClose` 副作用；`handleTargetSubmit` 補 `if (targetPending) return;`。
+
+### 為什麼
+- 根因：`TargetFaceOverlay` 是 5 個戰鬥模式（Party/Dungeon/MonsterBattle/WorldBoss/Duel）共用的元件，但「回合中鎖定計分模式」這件事是各檔案自己在呼叫端手動維護（`scoringModeChosen` 或 `arrows.length===0` 條件），不是元件本身強制的。這次修 3 個檔案時，另外 2 個共用同一元件、同一模式的檔案很容易被漏掉——這正是 PRD 提到「先前 RPG 打怪送出後被踢回首頁」bug 反覆出現的同一類根因。
+- `DuelRoom.jsx` 的切換鈕原本是本次調查範圍外發現最嚴重的一個：完全沒有任何鎖定條件（連 `arrows.length===0` 都沒有），回合打到一半也能自由切換。
+
+### 踩坑提醒
+- 以後任何在 `TargetFaceOverlay` 呼叫端新增/修改鎖定邏輯時，務必 `grep "TargetFaceOverlay"` 找出**所有**呼叫端（目前共 5 處：Party/Dungeon/MonsterBattle/WorldBoss/Duel），逐一確認同一套鎖定條件都有套用，不要只改 PRD 列出的那幾個檔案。
+- `WorldBossAttack.jsx`／`DuelRoom.jsx` 沒有 `scoringModeChosen` 這個 state，用的是「本回合箭數是否為 0」當鎖定條件（`arrows.length===0` / `myArrows.length===0`）；這與 Party/Dungeon/MonsterBattle 用的 `scoringModeChosen`（整場戰鬥只選一次，不會逐回合重置）語意不完全一樣，但都能滿足「回合中不能切換」的驗收標準，故未強行統一寫法，避免額外風險。
+- `onClose` prop 在 `TargetFaceOverlay.jsx` 本身是 optional（`{onClose && (...)}`），5 個呼叫端全部移除該 prop 後，靶面覆蓋層内建的「⌨️ 換按鈕」關閉鈕就不會渲染——這是刻意的：目前沒有其他方式關閉靶面覆蓋層直到本回合送出/結束，如果之後要加「暫時關閉看其他資訊」的需求，必須新增一個不影響 `targetMode` 的獨立關閉按鈕，不能複用 `onClose` 這個名字（避免未來又被誤用去切模式）。
+
 ## 2026-07-04（組隊地下城修復：地圖崩潰＋人數上限＋前後衛選擇）
 
 ### 改了什麼
