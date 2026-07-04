@@ -58,6 +58,10 @@
 
 ## 🚧 待辦
 
+- [ ] **🔴 2026-07-04 交接三項（見 changelog.md 頂部「交接筆記」章節，有完整檔案/行號診斷，直接接手不用重查）**：
+  ① 冒險者公會一般懸賞任務自動化（PRD 已定案於 `.trellis/tasks/07-04-guild-general-bounty/prd.md`，缺 design/implement）
+  ② 箭數里程碑跨模式重複觸發 bug（5檔案根因已查清：AdventurerGuild/CouncilBattle/DuelRoom/DailyQuest 都寫死`getMilestonesReached(0,...)`，MonsterBattle的`sessionArrowsRef`每場重置）
+  ③ 首殺通知 bug（A:橫幅已讀狀態未持久化，純前端好修；B:新地下城系統首殺完全沒接上，需改用family+tier當key，設計已定案）
 - [x] 地下城組隊失敗路由與全區廣播（2026-07-03 接手收尾）
 - [ ] 使用兩個真實帳號完成組隊遠征 Firestore 多客戶端實測
 - [ ] 藥水系統大改版——三層藥水架構 + 底部 tab 列 UI（see `potion-system-redesign.md`）

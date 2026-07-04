@@ -3,6 +3,75 @@
 
 ---
 
+## 🔴 2026-07-04 交接筆記 — 三項未完成工作（前一位 Claude 因限流中斷，交給接手的 AI）
+
+以下三項是同一次對話裡使用者提出、**已完整診斷根因/確認需求，但尚未建立完整任務或尚未動手實作**的項目。已完成並 commit 的工作（組隊地下城修復、鎖定計分模式切換、貓咪圖鑑101-200、archery.catgroup.com.tw重新部署）不在此列，見上方/下方其他 changelog 條目。
+
+### 項目 1：冒險者公會「一般懸賞任務」自動化（規劃已定案，尚未寫 design/implement，未開工）
+
+**現況**：Trellis 任務已建立於 `.trellis/tasks/07-04-guild-general-bounty/prd.md`，PRD 內的「已確認的需求決策」章節記錄了使用者透過 AskUserQuestion 確認的所有決策，**直接照 PRD 內容執行即可，不需要重新問使用者**：
+- 4 個全新獨立難度等級（不沿用現有 6 階或 3 階系統）
+- 教練後台新增的是「任務範本」，系統每天自動從範本池抽選發佈（不是教練手動逐一發佈單一任務）
+- 任務達成條件先只做「擊殺指定怪物數」（`kill_monster` 型）
+- 全員同一批（比照 `getDailyGuildTasks` 用日期當 seed）
+- 每難度固定抽 1 個範本上架，共 4 個；範本池不夠時允許重複抽取
+- 舊任務隔天直接下架失效（不给補做寬限期）
+- 各難度實際獎勵數字（金幣/經驗/箭露/轉蛋幣/寶箱）**先用合理預設值上線**，之後教練再進後台調整
+
+**現有系統參考**（PRD 裡已寫的探索結果，不用重查）：
+- 保留不動：`src/lib/adventurerSystem.js::getDailyGuildTasks(date)`（克蘇魯/人質/殭屍靶每日任務）
+- 可參考生成邏輯：`generateBiWeeklyBounties(periodKey, monsters)` + `BOUNTY_TIER_CONFIG`（雙週怪物討伐懸賞，6階，可作為「範本池抽選+依難度套用獎勵」寫法的參考範本，但這次要做的是全新獨立4階系統，不是複用這6階）
+- 既有 CRUD 全部沿用：`publishGuildQuest`/`updateGuildQuest`/`deleteGuildQuest`/`updateGuildQuestStatus`（`src/lib/db.js`），`AdminGuildQuests.jsx` 已有 `questSubtype:"general"` 選項
+- 自動刷新沿用既有 client-triggered 模式（`autoPublishBountyQuests` 用 `guildMeta/{key}` 文件防重複發佈，専案無 Cloud Functions/cron）
+
+**下一步**：讀完 PRD 後直接寫 `design.md`（資料模型：新的範本池 collection 設計、每難度獎勵表 collection、每日抽選+發佈邏輯、教練後台新增範本管理 UI + 獎勵表調整 UI）+ `implement.md`，然後 `task.py start` 進入實作。
+
+---
+
+### 項目 2：箭數里程碑 bug（跨模式系統性錯誤，根因已 100% 確認，尚未建任務/尚未修）
+
+**症狀**：不管哪個模式，每打完一次都會重複跳出「已完成6箭里程碑」的提示，即使今天早就已經領過。
+
+**根因（已用 Grep 逐一確認，非推測）**：`src/lib/arrowMilestone.js::getMilestonesReached(oldTotal, newTotal)` 本身沒問題（純函式，正確計算門檻跨越），問題在呼叫端傳入的 `oldTotal`/`newTotal` 各模式算法不一致：
+
+| 檔案 | 目前寫法 | 問題 |
+|---|---|---|
+| `src/components/member/AdventurerGuild.jsx`（約216行） | `getMilestonesReached(0, arrowCount)` | 寫死從0算，每場只要超過6箭就跳 |
+| `src/components/member/CouncilBattle.jsx`（約388行） | `getMilestonesReached(0, totalArrows)` | 同上 |
+| `src/components/duel/DuelRoom.jsx`（約450行） | `getMilestonesReached(0, myArrowCount)` | 同上 |
+| `src/components/member/DailyQuest.jsx`（約139行） | `getMilestonesReached(0, todayArrows)` | 同上（下課結算時） |
+| `src/components/member/MonsterBattle.jsx`（約905-910行） | 用 `sessionArrowsRef`（`useRef(0)`），但 `startBattle()`（約792行）會把它重設為0 | 同一天打第二場新戰鬥，ref歸零，一樣會重複跳 |
+
+**唯二正確的參考範本**：
+- `src/components/member/MemberPractice.jsx`（約2269-2272行）：`oldTodayArrows`/`newTodayArrows` 是真正累計「今天」的箭數，正確
+- `src/components/worldboss/WorldBossAttack.jsx`（約705-708行）：用真實 `todayArrows` 變數，正確
+
+**建議修法**：不要在每個檔案各自修正各自的計算方式（容易再次不一致），應該做一個**共用的單一入口函式**（例如在 `db.js` 或 `arrowMilestone.js` 新增 `checkAndGrantArrowMilestones(memberId, arrowCount)`），內部統一用同一種方式取得「今天真正累計箭數」（可能需要新增一個持久化的 `todayArrows` 欄位，比照 `dailyQuestCount` 的模式，在每次箭數送出時 increment，並在換日時重置——需要設計換日重置的判斷方式），取代掉上面 5 個檔案裡各自不一致的寫法。
+
+**下一步**：建 Trellis 任務（例如 slug `arrow-milestone-fix`），寫 PRD（可直接引用上表）+ design（設計共用函式的資料結構與換日重置邏輯）+ implement，分派 trellis-implement 執行，範圍橫跨 5 個檔案 + 可能新增 1 個共用函式。
+
+---
+
+### 項目 3：首殺通知 bug（兩個獨立問題，根因已查清，尚未建任務/尚未修）
+
+**症狀**：使用者回報「首殺通知都沒有消掉，會一直重複出現」，並指出「現在是新的地下城系統，首殺的部分應該要處理」。
+
+**問題 A：橫幅已讀狀態沒有持久化（純前端 bug，容易修，跟新舊地下城系統無關）**
+- `MemberApp.jsx` 用 `dismissedBroadcastRef`/`lastBroadcastIdRef`（約136-137行，都是 `useRef(null)`）追蹤「使用者是否已讀最新一筆首殺廣播」，純記憶體狀態，**沒有寫入 localStorage 或 Firestore**。
+- 只要使用者重新整理頁面或 `MemberApp` 重新掛載，這兩個 ref 就歸零，`subscribeLatestBroadcast()`（`dungeonDb.js:1193`）立刻拿到同一筆「最新廣播」（因為在下一次首殺發生前它本來就一直是同一筆），比對失敗，橫幅重新彈出。
+- **修法**：把已讀狀態換成持久化（例如 `localStorage` 存最後已讀的 broadcast id），取代純 `useRef`。這部分可以直接修，不需要額外設計決策。
+
+**問題 B：新版地下城系統完全沒有接上首殺判斷（不是bug是功能缺口，需要的設計決策使用者已經確認）**
+- 首殺判斷邏輯 `trySetDungeonFirstClear`（`dungeonDb.js`，約1094行起註解寫 `dungeonId 格式："ghost_normal", "temple_hell"`）完全綁定**舊版固定地下城目錄查表**（`DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId)`）。
+- 新版地下城系統（2026-07-14起的「三大來源」excavation系統）的地下城是隨機生成的 `family` + `difficultyTier`（T1~T6）組合，不是固定目錄裡的 `mapDungeonId`，所以 `DUNGEON_MAPS.find(...)` 永遠找不到、`dungeonInfo` 是 `undefined`，整段首殺判斷直接安靜跳過（`setFirstClearBonus(false)` 後 return），**新系統的地下城完全沒有首殺獎勵或廣播**——不是壞掉，是從一開始就沒接上。
+- 觸發點確認在 `DungeonBattleRoom.jsx`（約470-486行，`isBossRoom && isMapMode && isHost` 時呼叫首殺檢查），`TeamExpeditionBattle.jsx`（約173-176行）呼叫 `<DungeonBattleRoom isMapMode={true} expeditionMode={true} .../>`，兩個旗標都是 true，所以確實有進到檢查區塊，只是查表查不到。
+- **使用者已確認的設計決策**：新系統的「首殺」改用 **`family + tier` 當 key**（例如「第一次打過 ghost 族 T3」就算首殺，不管是哪次隨機生成的具體地下城）。
+- **下一步**：需要重新設計 `dungeonId`/首殺紀錄的 key 格式（從 `"ghost_normal"` 這種固定目錄格式，改成能表示 `family+tier` 的格式，例如 `"ghost_t3"`），在 `TeamExpeditionBattle.jsx`／單人 `DungeonExpedition.jsx` 對應的 Boss 通關處接上新的判斷邏輯，不能直接沿用 `DUNGEON_MAPS` 查表。舊系統（`DungeonBattleRoom.jsx` 原本走 `mapDungeonId` 那條路徑，非 expedition 模式）應保持不動，只新增新系統的判斷路徑。
+
+**下一步**：建 Trellis 任務（例如 slug `dungeon-first-clear-fix`），問題A可以直接修不用問使用者；問題B已有設計決策（family+tier當key），寫 PRD+design 後直接分派實作即可，不需要再問使用者。
+
+---
+
 ## 2026-07-04（鎖定戰鬥中計分模式切換：Party/Dungeon/MonsterBattle + WorldBoss/Duel 補漏）
 
 ### 改了什麼
