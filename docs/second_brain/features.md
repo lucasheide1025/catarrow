@@ -1,6 +1,17 @@
 # 📋 features — 功能清單
 > 最後更新：2026-07-14
 
+## 🎓 學生分級與系統鎖定（2026-07-04）
+
+- `members.studentTier`: `"restricted"|"official"|"retired"`（缺欄位→視為 restricted）；`accountFrozen: boolean`；`lastCheckinDate` 快取（submitCheckin 當下 + approveCheckin 補寫）
+- 與 `CERT_LEVELS`（技術檢定）、`monthlyCard`（付費方案）是**不同軸線**，不合併
+- 核心純函式 `src/lib/accessControl.js`：`getAllowedPages/isPageAllowed/isAutoLocked`；`official` 超過 14 天未報到自動鎖定（`lastCheckinDate` 缺欄位時不誤鎖，見遷移策略）
+- 權限矩陣可由教練後台調整：`systemConfig/tierPermissions`（`onSnapshot` 即時生效），文件不存在時 fallback `DEFAULT_TIER_PERMISSIONS`
+- 系統維護鎖：`systemConfig/maintenance`，啟用時一般會員前台全被擋，AdminApp／教練射手模式不受影響
+- 優先權：維護鎖 > `accountFrozen` > `studentTier`；`role==="admin"` 完全豁免（`MemberApp` 只服務 role==="member"，天然豁免）
+- `MemberApp.jsx`：全站關卡（維護/凍結全螢幕）+ 單一 `pageLocked` 判斷（依目前 `page` 是否在允許清單內），鎖定顯示 `LockedFeatureCard`（不強制跳轉），導覽列不隱藏項目
+- 教練後台：`AdminMembers.jsx` 每列會員可設 `studentTier`/`accountFrozen`（`TierModal`）+ 批次勾選一鍵設為 `official` + 維護鎖開關卡片；新頁 `AdminTierPermissions.jsx`（打勾矩陣，`hub-member` → 「權限設定」）
+
 ## 🎨 2026-07-03 UI 全面改版 Phase 0-2（同左）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`

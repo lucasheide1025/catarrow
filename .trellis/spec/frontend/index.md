@@ -25,6 +25,8 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [RPG Equipment](./equipment-system.md) | Equipment bonus formula, upgrade display, and equipment-page contracts | ✅ Active |
 | [Inventory and Coin Shop](./inventory-shop-system.md) | Backpack boundaries, shop rotation, catalog safety, and atomic purchases | ✅ Active |
 | [Practice Simulator](./practice-simulator.md) | Real target formats, qualification timing signals, timeout behavior, and detailed records | ✅ Active |
+| [Shared Target Face](./target-face.md) | Canonical target geometry, scoring, landing coordinates, and battle integration | ✅ Active |
+| [Access Control Tiers](./access-control-tiers.md) | Student tier gating, adjustable permission matrix, frozen/maintenance locks, and the Firestore security boundary | ✅ Active |
 
 ---
 

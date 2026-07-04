@@ -3,6 +3,28 @@
 
 ---
 
+## 2026-07-04（學生分級與系統鎖定）
+
+### 改了什麼
+- `members` 新欄位：`studentTier`（restricted/official/retired，缺欄位→restricted）、`accountFrozen`（獨立凍結機制）、`lastCheckinDate`（報到快取，submitCheckin 即寫、approveCheckin 補寫）
+- 新檔 `src/lib/accessControl.js`：純函式 `getAllowedPages/isPageAllowed/isAutoLocked` + `DEFAULT_TIER_PERMISSIONS`/`PAGE_REGISTRY`
+- 新 collection `systemConfig/maintenance`（全站維護鎖）與 `systemConfig/tierPermissions`（可調權限矩陣，教練後台打勾即時生效）
+- `MemberApp.jsx`：維護鎖/帳號凍結全螢幕擋下 + 單一 `pageLocked` 判斷擋下未授權頁面（`LockedFeatureCard`，不強制跳轉，導覽列不隱藏）；retired 首次登入自動導向「我的」
+- `AdminMembers.jsx`：新增 `TierModal`（分級下拉 + 凍結勾選）、批次勾選一鍵設 `official`、維護鎖開關卡片
+- 新頁 `AdminTierPermissions.jsx`：頁面 × 分級打勾矩陣，掛在 `hub-member` →「權限設定」
+- `firestore.rules`：`members` 自寫白名單加入 `lastCheckinDate`；新增 `systemConfig/{docId}`（read: isLoggedIn，write: isAdmin）— **需手動貼到 Firebase Console**
+
+### 為什麼
+- 出席/使用規範（分級）要與技術檢定（CERT_LEVELS）、付費方案（monthlyCard）分開治理，讓教練能獨立管控誰能用系統哪些部分
+- 上線初期大量既有會員需要教練手動從 restricted 升到 official，批次工具避免逐一點擊
+- 權限矩陣不寫死常數，改教練後台可調，因應未來規則微調不需重新部署
+
+### 踩坑提醒
+- `lastCheckinDate` 缺欄位時 `isAutoLocked` 必須直接回傳 `false`，否則所有舊會員一上線就被誤判「14 天未報到」鎖死
+- `systemConfig` 是全新 collection，與既有 `sysConfig`（版本號）不同名不共用，勿混淆
+- `MemberApp.jsx` 只服務 `role==="member"`（`App.jsx` 已分流 admin 進 `AdminApp`），所以組件內完全不需要額外判斷 `role==="admin"` 豁免——教練本體永遠走 `AdminApp` 的射手模式，不受這裡任何鎖定影響
+- 頁面級鎖定用「目前 `page` 是否在允許清單內」單一判斷取代逐一包裹每個 `{page==="xxx" && ...}`，效果等價（同一時間只有一個 page 生效）且大幅減少改動面
+
 ## 2026-07-04（我的裝備顯示與加成修正）
 
 - 修正品級說明與裝備詳情漏算每品 +5 及強化值；所有單槽與總加成統一使用同一計算函式。

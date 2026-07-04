@@ -31,6 +31,49 @@
 
 ---
 
+## 🎓 學生分級與系統鎖定（2026-07-04）
+
+```js
+// src/lib/accessControl.js（純函式，無 UI 依賴）
+DEFAULT_TIER_PERMISSIONS = { restricted:[...], autoLocked:[...], retired:[...] }
+PAGE_REGISTRY            // 分組頁面清單，供權限設定頁打勾矩陣用
+isAutoLocked(member)                              // official 且 lastCheckinDate 存在且 >14 天
+getAllowedPages(member, role, tierPermissions)    // null=全開；[]=凍結全鎖；否則允許頁面 id 陣列
+isPageAllowed(member, role, pageId, tierPermissions)
+
+// db.js 新函式
+setStudentTier(memberId, tier, operatorId)
+setAccountFrozen(memberId, frozen, operatorId)
+bulkSetStudentTier(memberIds[], tier, operatorId)   // batch write，上線初期教練批次工具用
+setMaintenanceMode(enabled, message, operatorId)    // systemConfig/maintenance
+subscribeMaintenanceConfig(cb)
+setTierPermissions(permissions, operatorId)         // systemConfig/tierPermissions（整份覆寫）
+subscribeTierPermissions(cb)                        // cb(null) 時前端 fallback 用 DEFAULT_TIER_PERMISSIONS
+
+// members 新欄位（缺欄位時的預設行為）
+studentTier     // 缺欄位 → 視為 "restricted"
+accountFrozen   // 缺欄位 → 視為 false
+lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫；缺欄位 → isAutoLocked 直接 false（不誤鎖）
+
+// MemberApp.jsx 掛載點（role==="admin" 天然豁免，因為 MemberApp 只服務 member）
+// 優先權：maintenanceConfig.enabled → 全螢幕 MaintenanceScreen
+//        → profile.accountFrozen   → 全螢幕 FrozenScreen
+//        → pageLocked（目前 page 不在 getAllowedPages 清單內）→ LockedFeatureCard（不強制跳轉）
+// retired 狀態：page state 初次載入時若為 "home" 自動轉 "profile"（一次性 ref 守門，不重複跳轉）
+
+// 教練後台
+// AdminMembers.jsx：每列 TierModal（studentTier 下拉 + accountFrozen 勾選）
+//   + 批次勾選 checkbox → bulkSetStudentTier(...,"official") + 維護鎖開關卡片
+// AdminTierPermissions.jsx（新頁，hub-member →「權限設定」）：PAGE_REGISTRY 打勾矩陣，儲存整份覆寫 tierPermissions
+```
+
+⚠️ 踩坑提醒：
+- `systemConfig` 是全新 collection，與既有 `sysConfig`（版本號用）**不同名、不共用**，design.md 明確指定新名稱
+- `lastCheckinDate` 缺欄位時 `isAutoLocked` 必須直接回傳 false，否則所有舊會員一上線就被誤判「很久沒報到」而鎖死
+- `getAllowedPages` 對 `!member`（profile 尚未載入）回傳 `null`（全開），避免登入瞬間畫面被誤鎖一下
+
+---
+
 ## 📦 Firestore Collections
 
 ```js

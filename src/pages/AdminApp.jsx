@@ -34,6 +34,7 @@ const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryMana
 const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
 const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
+const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const MemberComps        = lazy(() => import("../components/member/MemberComps"));
@@ -84,6 +85,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminReviewCenter");
     import("../components/admin/AdminMessages");
     import("../components/admin/AdminLearn");
+    import("../components/admin/AdminTierPermissions");
   },
   "hub-events": () => {
     import("../components/admin/AdminCompetitions");
@@ -767,6 +769,7 @@ const adminNav = [
           />
         )}
         {page==="hub-member" && memberSub==="members"     && <><HubBack onClick={()=>setMemberSub(null)}/><AdminMembers/></>}
+        {page==="hub-member" && memberSub==="tierperms"   && <><HubBack onClick={()=>setMemberSub(null)}/><AdminTierPermissions/></>}
         {page==="hub-member" && memberSub==="monthlycard" && <><HubBack onClick={()=>setMemberSub(null)}/><AdminFinance adminProfile={profile}/></>}
         {page==="hub-member" && memberSub==="review"      && (
           <><HubBack onClick={()=>setMemberSub(null)}/>
@@ -859,6 +862,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
       <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
         <HubCard icon="👤" label="會員管理" desc="帳號、積分、裝備" onClick={() => onSelect("members")} />
+        <HubCard icon="🎓" label="權限設定" desc="分級鎖定頁面矩陣" onClick={() => onSelect("tierperms")} />
         <HubCard icon="🎫" label="財務" badge={pendingMonthlyN} desc="月費卡、收費記錄" onClick={() => onSelect("monthlycard")} />
         <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="檢定、報到、外賽審核" onClick={() => onSelect("review")} />
         <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />

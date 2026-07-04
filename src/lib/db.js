@@ -73,6 +73,8 @@ export async function createMember(data, operatorId) {
     score: { gold: 0, silver: 0, bronze: 0 },
     achievement: { black: 0, gold: 0, silver: 0 },
     eventPoints: 0,
+    studentTier: "restricted",   // 學生分級：新建會員一律受限，教練後台再手動升級
+    accountFrozen: false,
     createdAt: now,
     lastLoginAt: now,
     updatedAt: now,
@@ -951,6 +953,8 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
     classEnded: false,
     createdAt: serverTimestamp(),
   }, { merge: false });
+  // 學生分級：報到當下立即更新最後報到日期（不等教練審核），確保 14 天自動鎖定能即時解鎖
+  try { await updateDoc(doc(db, C.members, memberId), { lastCheckinDate: date }); } catch (e) { /* ignore */ }
   // 地下城發掘進度 +10
   try {
     const { addExcavationByCheckin } = await import("./dungeonExcavation");
@@ -966,13 +970,14 @@ export async function approveCheckin(checkinDocId, operatorId) {
     approvedAt: serverTimestamp(),
     approvedBy: operatorId,
   });
-  // 地下城發掘進度 +10
+  // 地下城發掘進度 +10 + 學生分級最後報到日期（保險：即使 submitCheckin 當下寫入失敗，審核通過時再補寫一次）
   try {
     const snap = await getDoc(doc(db, C_CHECKIN, checkinDocId));
     const memberId = snap.data()?.memberId;
     if (memberId) {
       const { addExcavationByCheckin } = await import("./dungeonExcavation");
       addExcavationByCheckin(memberId);
+      await updateDoc(doc(db, C.members, memberId), { lastCheckinDate: todayStr() });
     }
   } catch (e) { /* ignore */ }
 }
@@ -3602,4 +3607,64 @@ export async function completeCouncilSession(memberId, { race, clearedTier, fail
   }
 
   await Promise.all(promises);
+}
+
+/* ════════════════════════════════════════════════════════════
+   學生分級與系統鎖定（2026-07-04）
+   詳見 .trellis/tasks/07-04-student-tier-lock/design.md
+   ════════════════════════════════════════════════════════════ */
+
+const C_SYSTEM_CONFIG = "systemConfig";
+
+// ── 教練工具：分級 / 帳號凍結（只能經 admin 寫入，見 firestore.rules）──
+export async function setStudentTier(memberId, tier, operatorId) {
+  const before = await getMember(memberId);
+  await updateDoc(doc(db, C.members, memberId), { studentTier: tier, updatedAt: serverTimestamp() });
+  await writeAuditLog("SET_STUDENT_TIER", memberId, "member", { studentTier: before?.studentTier }, { studentTier: tier }, operatorId);
+}
+
+export async function setAccountFrozen(memberId, frozen, operatorId) {
+  const before = await getMember(memberId);
+  await updateDoc(doc(db, C.members, memberId), { accountFrozen: !!frozen, updatedAt: serverTimestamp() });
+  await writeAuditLog("SET_ACCOUNT_FROZEN", memberId, "member", { accountFrozen: before?.accountFrozen }, { accountFrozen: !!frozen }, operatorId);
+}
+
+// 批次設定分級（上線初期教練逐一手動處理大量既有會員用）
+export async function bulkSetStudentTier(memberIds, tier, operatorId) {
+  const ids = Array.isArray(memberIds) ? memberIds : [];
+  if (ids.length === 0) return;
+  const batch = writeBatch(db);
+  ids.forEach(id => batch.update(doc(db, C.members, id), { studentTier: tier, updatedAt: serverTimestamp() }));
+  await batch.commit();
+  await writeAuditLog("BULK_SET_STUDENT_TIER", ids.join(","), "member", null, { studentTier: tier, count: ids.length }, operatorId);
+}
+
+// ── 系統維護鎖 ──────────────────────────────────────────────
+export async function setMaintenanceMode(enabled, message, operatorId) {
+  await setDoc(doc(db, C_SYSTEM_CONFIG, "maintenance"), {
+    enabled: !!enabled, message: message || "", updatedAt: serverTimestamp(), operatorId,
+  }, { merge: true });
+}
+
+export function subscribeMaintenanceConfig(callback) {
+  return onSnapshot(
+    doc(db, C_SYSTEM_CONFIG, "maintenance"),
+    snap => callback(snap.exists() ? snap.data() : { enabled: false, message: "" }),
+    () => callback({ enabled: false, message: "" })
+  );
+}
+
+// ── 權限矩陣（可調整設定，教練後台勾選）──────────────────────
+export async function setTierPermissions(permissions, operatorId) {
+  await setDoc(doc(db, C_SYSTEM_CONFIG, "tierPermissions"), {
+    ...permissions, updatedAt: serverTimestamp(), operatorId,
+  }, { merge: false });
+}
+
+export function subscribeTierPermissions(callback) {
+  return onSnapshot(
+    doc(db, C_SYSTEM_CONFIG, "tierPermissions"),
+    snap => callback(snap.exists() ? snap.data() : null),
+    () => callback(null)
+  );
 }

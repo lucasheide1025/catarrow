@@ -6,6 +6,8 @@ import {
   getAuditLogs, addBadge, getCertRecords, upsertCertRecord,
   resolveBadgeDispute, subscribeAllDisputes, deleteCertRecord,
   resetMonsterSession,
+  setStudentTier, setAccountFrozen, bulkSetStudentTier,
+  setMaintenanceMode, subscribeMaintenanceConfig,
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, today, thisYear, BOW_TYPES, getCertLevel, calcBadgePoints } from "../../lib/constants";
@@ -30,6 +32,14 @@ const BADGE_DEF = {
   achievement: { label:"🏆 成就章", keys:["black","gold","silver"],  names:["黑","金","銀"] },
 };
 
+// 學生分級（2026-07-04）：與 CERT_LEVELS / monthlyCard 是不同軸線，見 prd.md
+const STUDENT_TIER_OPTIONS = [
+  { value:"restricted", label:"🔒 受限" },
+  { value:"official",   label:"✅ 正式學生" },
+  { value:"retired",    label:"🌙 退休中" },
+];
+const studentTierOf = (m) => m.studentTier || "restricted"; // 缺欄位 → 視為受限
+
 export default function AdminMembers() {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
@@ -49,12 +59,58 @@ export default function AdminMembers() {
   const [dispModal,   setDispModal]   = useState(null);
   const [delConfirm,  setDelConfirm]  = useState(null);
   const [guestModal,  setGuestModal]  = useState(false);
+  const [tierModal,   setTierModal]   = useState(null); // 學生分級 / 帳號凍結編輯
+
+  // 學生分級批次工具（上線初期教練逐一手動處理大量既有會員用）
+  const [selMembers, setSelMembers]   = useState(new Set());
+  const [bulkSaving, setBulkSaving]   = useState(false);
+  // 系統維護鎖
+  const [maintCfg,   setMaintCfg]     = useState({ enabled:false, message:"" });
+  const [maintMsg,   setMaintMsg]     = useState("");
+  const [maintSaving, setMaintSaving] = useState(false);
 
   useEffect(() => {
     loadMembers();
     const unsub = subscribeAllDisputes(setDisputes);
-    return unsub;
+    const unsubMaint = subscribeMaintenanceConfig(cfg => { setMaintCfg(cfg); setMaintMsg(cfg?.message || ""); });
+    return () => { unsub?.(); unsubMaint?.(); };
   }, []);
+
+  function toggleSelMember(id) {
+    setSelMembers(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkOfficial() {
+    if (selMembers.size === 0) return;
+    setBulkSaving(true);
+    try {
+      await bulkSetStudentTier([...selMembers], "official", profile.id);
+      toast(`已將 ${selMembers.size} 位會員設為正式學生 ✓`);
+      setSelMembers(new Set());
+      await loadMembers();
+    } catch (e) { toast("批次設定失敗：" + (e?.message || "")); }
+    setBulkSaving(false);
+  }
+
+  async function handleToggleMaintenance() {
+    setMaintSaving(true);
+    try {
+      await setMaintenanceMode(!maintCfg.enabled, maintMsg, profile.id);
+      toast(!maintCfg.enabled ? "已啟用系統維護鎖 🛠️" : "已關閉系統維護鎖 ✓");
+    } catch (e) { toast("設定失敗：" + (e?.message || "")); }
+    setMaintSaving(false);
+  }
+
+  async function handleSaveMaintMsg() {
+    setMaintSaving(true);
+    try { await setMaintenanceMode(maintCfg.enabled, maintMsg, profile.id); toast("訊息已更新 ✓"); }
+    catch (e) { toast("更新失敗：" + (e?.message || "")); }
+    setMaintSaving(false);
+  }
 
   async function loadMembers() {
     setLoading(true);
@@ -122,6 +178,40 @@ export default function AdminMembers() {
         </div>
       )}
 
+      {/* 🛠️ 系統維護鎖：啟用後一般會員前台全被擋下，AdminApp / 教練射手模式不受影響 */}
+      <Card className={`p-4 flex flex-col gap-2 ${maintCfg.enabled ? "border-amber-400/50" : ""}`}>
+        <div className="flex items-center justify-between">
+          <div className="text-white font-black text-sm">🛠️ 系統維護鎖</div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className={`text-xs font-bold ${maintCfg.enabled ? "text-amber-400" : "text-gray-400"}`}>
+              {maintCfg.enabled ? "已啟用" : "未啟用"}
+            </span>
+            <input type="checkbox" checked={!!maintCfg.enabled} disabled={maintSaving}
+              onChange={handleToggleMaintenance} className="accent-amber-500 w-4 h-4" />
+          </label>
+        </div>
+        <Inp label="維護提示訊息（選填）" value={maintMsg} placeholder="例如：系統升級中，預計 30 分鐘後恢復"
+          onChange={e => setMaintMsg(e.target.value)} />
+        {maintMsg !== (maintCfg.message || "") && (
+          <Btn v="secondary" size="sm" onClick={handleSaveMaintMsg} disabled={maintSaving}>
+            💾 儲存訊息
+          </Btn>
+        )}
+      </Card>
+
+      {/* 🎓 學生分級批次工具：上線初期教練逐一手動處理大量既有會員用 */}
+      {selMembers.size > 0 && (
+        <div className="bg-blue-900/20 border border-blue-400/30 rounded-xl px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
+          <span className="text-blue-300 text-sm font-bold">已勾選 {selMembers.size} 位會員</span>
+          <div className="flex gap-2">
+            <Btn v="secondary" size="sm" onClick={() => setSelMembers(new Set())}>清除勾選</Btn>
+            <Btn v="primary" size="sm" onClick={handleBulkOfficial} disabled={bulkSaving}>
+              {bulkSaving ? "設定中…" : "✅ 一鍵設為正式學生"}
+            </Btn>
+          </div>
+        </div>
+      )}
+
       <Card className="p-4 flex flex-col gap-3">
         <SearchBar value={search} onChange={setSearch} placeholder="搜尋姓名、暱稱、帳號、射手證號…" />
         <div className="grid grid-cols-2 gap-2">
@@ -140,6 +230,8 @@ export default function AdminMembers() {
         {displayed.map(m => (
           <MemberCard key={m.id} member={m}
             disputeList={disputes[m.id] || []}
+            selected={selMembers.has(m.id)}
+            onToggleSelect={() => toggleSelMember(m.id)}
             onEdit={() => setEditModal(m)}
             onBadge={() => setBdgModal(m)}
             onHistory={() => setHistModal(m)}
@@ -148,6 +240,7 @@ export default function AdminMembers() {
             onDispute={() => setDispModal(m)}
             onDelete={() => setDelConfirm(m.id)}
             onResetMonster={() => handleResetMonster(m.id, m.nickname || m.name)}
+            onTier={() => setTierModal(m)}
           />
         ))}
       </div>
@@ -161,6 +254,7 @@ export default function AdminMembers() {
       {dispModal   && <DisputeModal    member={dispModal} disputeList={disputes[dispModal.id] || []}
                          onClose={() => setDispModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
       {guestModal  && <GuestQRModal onClose={() => setGuestModal(false)} toast={toast} />}
+      {tierModal   && <TierModal member={tierModal} onClose={() => setTierModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
 
       <ConfirmModal open={!!delConfirm} title="確認刪除" message="確定要刪除此會員？此操作無法復原。"
         onConfirm={() => handleDelete(delConfirm)} onCancel={() => setDelConfirm(null)} />
@@ -255,18 +349,66 @@ function GuestQRModal({ onClose, toast }) {
   );
 }
 
+// ── 學生分級 / 帳號凍結 Modal ─────────────────────────────
+function TierModal({ member, onClose, onDone, operatorId, toast }) {
+  const [tier,   setTier]   = useState(studentTierOf(member));
+  const [frozen, setFrozen] = useState(!!member.accountFrozen);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      if (tier !== studentTierOf(member)) await setStudentTier(member.id, tier, operatorId);
+      if (frozen !== !!member.accountFrozen) await setAccountFrozen(member.id, frozen, operatorId);
+      toast("已更新分級 / 凍結狀態 ✓");
+      onDone(); onClose();
+    } catch (e) { toast("儲存失敗：" + (e?.message || "")); }
+    setSaving(false);
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`學生分級 — ${member.name}`}>
+      <div className="flex flex-col gap-4">
+        <Sel label="學生分級" value={tier} onChange={e => setTier(e.target.value)} options={STUDENT_TIER_OPTIONS} />
+        <div className="text-gray-400 text-xs -mt-2">
+          受限：僅開放首頁/練箭/我的　正式學生：全部功能　退休中：僅開放我的
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer bg-red-900/10 border border-red-400/20 rounded-xl px-3 py-2.5">
+          <input type="checkbox" checked={frozen} onChange={e => setFrozen(e.target.checked)} className="accent-red-500 w-4 h-4" />
+          <span className="text-red-300 text-sm font-bold">🧊 帳號凍結（停權/違規/欠費，優先權高於分級，連報到都不行）</span>
+        </label>
+        <div className="flex gap-2">
+          <Btn v="secondary" className="flex-1" onClick={onClose}>取消</Btn>
+          <Btn v="primary" className="flex-1" onClick={save} disabled={saving}>{saving?"儲存中…":"儲存"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── 會員卡 ────────────────────────────────────────────────
-function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert, onCertExam, onDispute, onDelete, onResetMonster }) {
+const TIER_BADGE_STYLE = {
+  restricted: "bg-slate-600/40 text-slate-300",
+  official:   "bg-green-600/30 text-green-300",
+  retired:    "bg-purple-600/30 text-purple-300",
+};
+const TIER_BADGE_LABEL = { restricted:"🔒 受限", official:"✅ 正式", retired:"🌙 退休" };
+
+function MemberCard({ member: m, disputeList, selected, onToggleSelect, onEdit, onBadge, onHistory, onCert, onCertExam, onDispute, onDelete, onResetMonster, onTier }) {
   const [expanded, setExpanded] = useState(false);
   const lastLogin  = m.lastLoginAt?.toDate?.() ? fmtDT(m.lastLoginAt) : "未登入";
   const equipSets  = normalizeEquipment(m.equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
   const armorSets  = m.armorSets || [];
   const accSets    = m.accessorySets || [];
   const hasDispute = disputeList.length > 0;
+  const tier       = studentTierOf(m);
 
   return (
     <div className={`rounded-2xl border overflow-hidden ${hasDispute ? "border-red-400/50 ring-2 ring-red-400/20" : "border-white/10"}`} style={{ background:"rgba(255,255,255,0.04)" }}>
-      <button className="w-full text-left p-3 transition-colors hover:bg-white/5" onClick={() => setExpanded(v => !v)}>
+      <div className="flex items-start gap-1 p-3 pb-0">
+        <input type="checkbox" checked={!!selected} onChange={onToggleSelect}
+          onClick={e => e.stopPropagation()} className="accent-blue-500 w-4 h-4 mt-1 flex-shrink-0" />
+        <button className="flex-1 text-left transition-colors hover:bg-white/5 -mt-0 -mx-1 px-1 rounded" onClick={() => setExpanded(v => !v)}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -278,6 +420,12 @@ function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert
               <span className="text-xs bg-blue-50 text-blue-600 font-bold px-1.5 py-0.5 rounded-full">
                 {formatArcherNo(m.archerNo)}
               </span>
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${TIER_BADGE_STYLE[tier]}`}>
+                {TIER_BADGE_LABEL[tier]}
+              </span>
+              {m.accountFrozen && (
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-red-600/30 text-red-300">🧊 已凍結</span>
+              )}
             </div>
             <div className="text-gray-400 text-xs mt-0.5">
               射齡 {calcAge(m.joinDate)}　最近登入：{lastLogin}
@@ -304,6 +452,7 @@ function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert
           <span className="text-gray-300 text-xs mt-1 flex-shrink-0">{expanded ? "▲" : "▼"}</span>
         </div>
       </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-gray-100 p-3 flex flex-col gap-2">
@@ -313,6 +462,7 @@ function MemberCard({ member: m, disputeList, onEdit, onBadge, onHistory, onCert
             <Btn v="secondary" size="sm" onClick={onCert}>📋 檢定</Btn>
             <Btn v="secondary" size="sm" onClick={onCertExam}>🎖️ 射手證</Btn>
             <Btn v="secondary" size="sm" onClick={onHistory}>📊 歷程</Btn>
+            <Btn v="secondary" size="sm" onClick={onTier}>🎓 分級/凍結</Btn>
             <Btn v="secondary" size="sm" onClick={onResetMonster}>⚔️ 重置打怪</Btn>
             {hasDispute && (
               <Btn v="danger" size="sm" onClick={onDispute}>🔴 處理（{disputeList.length}）</Btn>

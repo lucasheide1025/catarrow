@@ -34,7 +34,7 @@ service cloud.firestore {
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
-                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords"]);
+                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
@@ -362,6 +362,12 @@ service cloud.firestore {
     // cardMarket：貓咪卡片市集，登入者可讀寫
     match /cardMarket/{docId} {
       allow read, write: if isLoggedIn();
+    }
+
+    // systemConfig：學生分級系統維護鎖／權限矩陣設定，登入者可讀，admin 可寫
+    match /systemConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
     }
   }
 }

@@ -6,7 +6,10 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
   subscribeActiveGuildQuests, subscribeTodayPracticeLogs,
-  subscribeMyCheckin, submitCheckin } from "../lib/db";
+  subscribeMyCheckin, submitCheckin,
+  subscribeMaintenanceConfig, subscribeTierPermissions } from "../lib/db";
+import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
+import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
@@ -100,9 +103,13 @@ const NAV_PRELOADS = {
 };
 
 export default function MemberApp() {
-  const { logout, profile } = useAuth();
+  const { logout, profile, role } = useAuth();
   const [page, setPageState]   = useState(()=>sessionStorage.getItem("member_page")||"home");
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
+  // 學生分級與系統鎖定（2026-07-04）
+  const [maintenanceConfig, setMaintenanceConfig] = useState({ enabled:false, message:"" });
+  const [tierPermissions,   setTierPermissions]   = useState(null);
+  const retiredRedirectedRef = useRef(false);
   const [gachaInitTab, setGachaInitTab] = useState("village");
   const [selComp, setSelComp] = useState(null);
   const [scoring, setScoring] = useState(false);
@@ -274,6 +281,22 @@ export default function MemberApp() {
     return subscribeAppVersion(setLatestVersion);
   }, []);
 
+  // 系統維護鎖 + 分級權限矩陣（教練後台調整後即時生效）
+  useEffect(() => {
+    const u1 = subscribeMaintenanceConfig(setMaintenanceConfig);
+    const u2 = subscribeTierPermissions(setTierPermissions);
+    return () => { u1?.(); u2?.(); };
+  }, []);
+
+  // retired 狀態：預設登入頁改導向「我的」（home 本身對 retired 是鎖住的），只在首次載入套用一次
+  // 注意：page 初始值來自 sessionStorage（可能殘留上次登入的任意頁面，不只 "home"），
+  // 因此只要不是 "profile" 就一律導向，而非只檢查 "home"，避免殘留頁面卡在鎖卡而非落在「我的」
+  useEffect(() => {
+    if (!profile || retiredRedirectedRef.current) return;
+    retiredRedirectedRef.current = true;
+    if (profile.studentTier === "retired" && page !== "profile") setPage("profile");
+  }, [profile?.studentTier]); // eslint-disable-line
+
   // 瀏覽器空閒時預載最常用的頁面 chunk（手機也適用）
   useEffect(() => {
     const idle = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb) => setTimeout(cb, 1000);
@@ -434,6 +457,24 @@ export default function MemberApp() {
     { icon:"💧", value:(profile?.village?.resources?.arrowdew || 0),          color:"var(--info-fg)",   page:"gacha",    label:"箭露" },
     { icon:"🎫", value:Math.floor(profile?.gachaCoins ?? 0),                  color:"#f9a8d4",          page:"gacha",    label:"轉蛋幣" },
   ];
+
+  // 學生分級與系統鎖定：維護鎖 → 帳號凍結 → 分級鎖定（優先權由高到低）
+  const maintenanceActive = !!maintenanceConfig?.enabled;
+  const accountFrozen     = !!profile?.accountFrozen;
+  const allowedPages      = getAllowedPages(profile, role, tierPermissions);
+  const pageLocked        = allowedPages !== null && !allowedPages.includes(page);
+  const lockReason = profile?.studentTier === "retired"
+    ? "此帳號為退休狀態，僅能查看「我的」頁面，如需恢復請洽詢教練。"
+    : isAutoLocked(profile)
+      ? "帳號因超過 14 天未報到已暫時鎖定部分功能，前往首頁完成報到即可立即恢復。"
+      : "此功能需正式學生身份，請洽詢教練開通。";
+
+  if (maintenanceActive) {
+    return <MaintenanceScreen message={maintenanceConfig?.message} onLogout={logout} />;
+  }
+  if (accountFrozen) {
+    return <FrozenScreen onLogout={logout} />;
+  }
 
   return (
     <div style={{ height:"100dvh", display:"flex", flexDirection:"column", fontFamily:"sans-serif", overflow:"hidden", background:"#0f172a" }}>
@@ -616,6 +657,9 @@ export default function MemberApp() {
 
       {/* 頁面內容（content-area 套用深藍覆寫；貓貓村跳過） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
+        {pageLocked ? (
+          <LockedFeatureCard reason={lockReason} onBack={() => setPage("profile")} />
+        ) : (
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
         {page==="home"        && <MemberHome onPageChange={setPage} onJoinParty={handleEnterPartyRoom} notifications={notifications}
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
@@ -699,6 +743,7 @@ export default function MemberApp() {
           <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}
         </Suspense>
+        )}
       </div>
 
       {/* 底部導覽（token 化，active 用 --accent 指示條）*/}
