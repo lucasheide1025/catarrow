@@ -6,6 +6,7 @@ import {
   toggleGuildBountyTemplateActive, deleteGuildBountyTemplate,
   subscribeGuildBountyRewards, setGuildBountyRewards, DEFAULT_BOUNTY_REWARDS,
   autoPublishDailyGeneralBounties,
+  getDailyGeneralSettings, saveDailyGeneralSettings,
 } from "../../lib/db";
 import { MONSTERS } from "../../lib/monsterData";
 
@@ -36,10 +37,13 @@ export default function AdminGuildBountyTemplates() {
 
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenMsg, setRegenMsg]   = useState("");
+  const [settings, setSettings]   = useState({ disabledDifficulties: [] });
+  const [settingsBusy, setSettingsBusy] = useState(false);
 
   useEffect(() => {
     const u1 = subscribeGuildBountyTemplates(setTemplates);
     const u2 = subscribeGuildBountyRewards(setRewards);
+    getDailyGeneralSettings().then(s => setSettings(s)).catch(() => {});
     return () => { u1?.(); u2?.(); };
   }, []);
 
@@ -89,6 +93,20 @@ export default function AdminGuildBountyTemplates() {
     setRewardsBusy(false);
   }
 
+  async function handleToggleDifficulty(diff) {
+    const disabled = settings.disabledDifficulties || [];
+    const newDisabled = disabled.includes(diff)
+      ? disabled.filter(d => d !== diff)
+      : [...disabled, diff];
+    const newSettings = { ...settings, disabledDifficulties: newDisabled };
+    setSettingsBusy(true);
+    try {
+      await saveDailyGeneralSettings(newSettings, profile?.id);
+      setSettings(newSettings);
+    } catch (e) { console.warn("toggle diff:", e?.message); }
+    setSettingsBusy(false);
+  }
+
   async function handleRegen() {
     setRegenBusy(true); setRegenMsg("");
     try {
@@ -107,9 +125,10 @@ export default function AdminGuildBountyTemplates() {
     <div style={{ padding: "12px" }}>
       {/* ── 立即重新產生今日任務 ── */}
       <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "12px", padding: "12px 14px", marginBottom: "16px" }}>
-        <div style={{ fontWeight: "900", fontSize: "13px", color: "#92400e", marginBottom: "6px" }}>🗡️ 每日一般懸賞（每難度固定抽 1 個範本上架）</div>
+        <div style={{ fontWeight: "900", fontSize: "13px", color: "#92400e", marginBottom: "6px" }}>🗡️ 每日一般懸賞（每難度固定抽 1 個任務上架）</div>
         <div style={{ fontSize: "11px", color: "#b45309", marginBottom: "8px" }}>
-          正常情況下會員進入公會頁時會自動刷新（內部防重複，同一天不會重複發佈）。此按鈕供測試/緊急重刷使用，不會造成重複發放。
+          會員進入公會頁時自動刷新，同一天不會重複發佈。
+          某難度若有啟用中範本 → 從範本抽選；若無範本 → 系統自動從怪物資料生成。
         </div>
         <button onClick={handleRegen} disabled={regenBusy}
           style={{ padding: "8px 14px", background: "#d97706", color: "white", border: "none", borderRadius: "8px", fontWeight: "700", fontSize: "13px", cursor: "pointer", opacity: regenBusy ? 0.6 : 1 }}>
@@ -246,10 +265,43 @@ export default function AdminGuildBountyTemplates() {
 
       {DIFF_LEVELS.map(diff => {
         const list = templates.filter(t => (t.difficulty || 1) === diff);
+        const activeCount = list.filter(t => t.active !== false).length;
+        const isAutoMode = activeCount === 0;
+        const isDisabled = (settings.disabledDifficulties || []).includes(diff);
         return (
           <div key={diff} style={{ marginBottom: "16px" }}>
-            <div style={{ fontSize: "12px", fontWeight: "900", color: "#7c3aed", marginBottom: "6px" }}>{DIFF_LABEL[diff]}（{list.length} 個範本）</div>
-            {list.length === 0 && <div style={{ color: "#94a3b8", fontSize: "12px", padding: "8px 0" }}>尚無範本</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", fontWeight: "900", color: isDisabled ? "#94a3b8" : "#7c3aed" }}>{DIFF_LABEL[diff]}</span>
+              {isDisabled ? (
+                <span style={{ fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px",
+                  background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>
+                  🔴 已關閉
+                </span>
+              ) : isAutoMode ? (
+                <span style={{ fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px",
+                  background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc" }}>
+                  🤖 自動生成
+                </span>
+              ) : (
+                <span style={{ fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px",
+                  background: "#dcfce7", color: "#16a34a", border: "1px solid #86efac" }}>
+                  📋 範本模式（{activeCount} 個啟用中）
+                </span>
+              )}
+              <button onClick={() => handleToggleDifficulty(diff)} disabled={settingsBusy}
+                style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: "8px", fontSize: "10px", fontWeight: "700", cursor: "pointer",
+                  background: isDisabled ? "#dcfce7" : "#fef2f2",
+                  color: isDisabled ? "#16a34a" : "#dc2626",
+                  border: isDisabled ? "1px solid #86efac" : "1px solid #fca5a5",
+                  opacity: settingsBusy ? 0.5 : 1 }}>
+                {isDisabled ? "開啟" : "關閉"}
+              </button>
+            </div>
+            {list.length === 0 && (
+              <div style={{ color: "#94a3b8", fontSize: "12px", padding: "8px 0", fontStyle: "italic" }}>
+                🤖 無範本，每日自動從怪物資料生成
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {list.map(t => {
                 const m = MONSTERS.find(x => x.id === t.requirement?.monsterId);
