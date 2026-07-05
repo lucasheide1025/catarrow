@@ -24,7 +24,7 @@ import {
 import { BattleResultHeader, BattleStatCard } from "../shared/SharedBattleComponents";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import { generateBotArrows } from "../../lib/botUtils";
-import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows, checkAndGrantArrowMilestones } from "../../lib/db";
 import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUEL_WIN_XP, CAT_DUEL_LOSE_XP } from "../../lib/catLevel";
@@ -456,11 +456,11 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         const _dlCatId = profile?.equippedCat?.catId;
         if (_dlCatId) addCatXP(profile.id, _dlCatId, outcome === "win" ? CAT_DUEL_WIN_XP : CAT_DUEL_LOSE_XP).catch(() => {});
         if (checkinActive) {
-          const milestones = getMilestonesReached(0, myArrowCount);
-          if (milestones.length > 0) {
-            grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-            setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-          }
+          checkAndGrantArrowMilestones(profile.id, myArrowCount).then(res => {
+            if (res.milestones.length > 0) {
+              setMilestoneQueue(res.milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+            }
+          }).catch(() => {});
         }
       }
     }

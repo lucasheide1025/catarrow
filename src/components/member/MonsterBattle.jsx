@@ -14,7 +14,7 @@ import {
 import { calcEquippedBonus } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { CAT_TIER_XP } from "../../lib/catLevel";
-import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
@@ -913,17 +913,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
           }, profile.id).catch(() => {});
 
-          // 里程碑即時提示（跨回合累積，sessionArrowsRef 追蹤本 session 今日累計）
+          // 里程碑即時提示（使用統一函式查詢今日實際累計箭數）
           const arrowCount = practiceRounds.flat().length;
           if (arrowCount > 0) {
-            const oldSessionTotal = sessionArrowsRef.current;
-            sessionArrowsRef.current += arrowCount;
-            const milestones = getMilestonesReached(oldSessionTotal, oldSessionTotal + arrowCount);
-            if (milestones.length > 0) {
-              const { grantArrowMilestoneRewards } = await import("../../lib/db");
-              grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-              setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-            }
+            const { checkAndGrantArrowMilestones } = await import("../../lib/db");
+            checkAndGrantArrowMilestones(profile.id, arrowCount).then(res => {
+              if (res.milestones.length > 0) {
+                setMilestoneQueue(res.milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+              }
+            }).catch(() => {});
           }
         }
       }

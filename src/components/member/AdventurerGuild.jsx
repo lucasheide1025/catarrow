@@ -8,10 +8,10 @@ import {
   subscribeMonsterDex, acceptGuildQuest,
   provisionalUnlockQuest, resubmitGuildBadge, retryGuildQuest,
   subscribePromotionQuestConfig, PROMO_QUEST_DEFAULTS,
-  addPracticeLog, grantArrowMilestoneRewards,
+  addPracticeLog, grantArrowMilestoneRewards, checkAndGrantArrowMilestones,
   autoPublishBountyQuests, autoPublishDailyGeneralBounties,
 } from "../../lib/db";
-import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { getRewardsForMilestone } from "../../lib/arrowMilestone";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { MONSTERS } from "../../lib/monsterData";
@@ -217,11 +217,11 @@ export default function AdventurerGuild({ onBack, onNavigate, questCtx = null })
         totalArrows: arrowCount,
       }, profile.id).catch(() => {});
       if (arrowCount > 0) {
-        const milestones = getMilestonesReached(0, arrowCount);
-        if (milestones.length > 0) {
-          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-        }
+        checkAndGrantArrowMilestones(profile.id, arrowCount).then(res => {
+          if (res.milestones.length > 0) {
+            setMilestoneQueue(res.milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
+        }).catch(() => {});
       }
     }
     setBusy(false);

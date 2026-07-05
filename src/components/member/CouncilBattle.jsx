@@ -1,7 +1,7 @@
 // src/components/member/CouncilBattle.jsx — 議會廳採集任務（貓村生活RPG）
 import { useState, useRef, useEffect, useMemo } from "react";
 import { calcStandardArrowDmg, calcStandardCounter, getCouncilPartMult } from "../../lib/damage";
-import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP, addRoundArrows } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArcherXP, addRoundArrows, checkAndGrantArrowMilestones } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -423,11 +423,11 @@ export default function CouncilBattle({
       checkpointsCleared: clearedCount,
       contractId: contract.id,
     }, memberId).catch(() => {});
-    const milestones = getMilestonesReached(0, totalArrows);
-    if (milestones.length > 0) {
-      grantArrowMilestoneRewards(memberId, milestones).catch(() => {});
-      setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-    }
+    checkAndGrantArrowMilestones(memberId, totalArrows).then(res => {
+      if (res.milestones.length > 0) {
+        setMilestoneQueue(res.milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+      }
+    }).catch(() => {});
   }
   function inputArrow(label) {
     if (arrows.length >= ARROWS_PER_ROUND || processing) return;

@@ -3,9 +3,9 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
-  grantArrowMilestoneRewards, subscribeTodayPracticeLogs,
+  grantArrowMilestoneRewards, subscribeTodayPracticeLogs, checkAndGrantArrowMilestones,
 } from "../../lib/db";
-import { ALL_MILESTONES, getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { ALL_MILESTONES, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 
@@ -136,11 +136,11 @@ export default function DailyQuest({ onJoinParty }) {
       await submitClassEnd(profile.id, checkin.id);
       if (todayArrows > 0) {
         addArrowdew(profile.id, todayArrows).catch(() => {});
-        const milestones = getMilestonesReached(0, todayArrows);
-        if (milestones.length > 0) {
-          grantArrowMilestoneRewards(profile.id, milestones).catch(() => {});
-          setMilestoneQueue(milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
-        }
+        checkAndGrantArrowMilestones(profile.id, todayArrows).then(res => {
+          if (res.milestones.length > 0) {
+            setMilestoneQueue(res.milestones.map(ms => ({ ms, rewards: getRewardsForMilestone(ms) })));
+          }
+        }).catch(() => {});
       }
     } catch (e) { console.warn("confirmClassEnd:", e?.message); }
     setClassBusy(false);

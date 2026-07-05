@@ -25,6 +25,7 @@ import {
   cleanupTeamExpeditionRoom,
   claimTeamExpeditionResult,
 } from "../../lib/expeditionTeamDb";
+import { trySetDungeonFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
 import {
   cleanupExpeditionRoom,
   broadcastExpeditionFailure,
@@ -614,14 +615,29 @@ export default function TeamExpeditionBattle({
     if (!claim.ok) {
       setFlowError(`領取失敗：${claim.reason}`);
       return false;
-    }
-    if (claim.ok && claim.allClaimed) {
-      cleanupTeamExpeditionRoom(teamRoomId).catch(() => {});
-    }
+    }      if (claim.ok && claim.allClaimed) {
+        cleanupTeamExpeditionRoom(teamRoomId).catch(() => {});
+      }
 
-    onComplete?.();
-    return true;
-  }, [result, myId, dungeonDifficulty, floorsCleared, wonLast, dungeonFamily, dungeonIsHidden, isHost, teamRoomId, onComplete]);
+      // ── 遠征首殺判定 ────────────────────────────────────────
+      if (wonLast) {
+        const expeditionKey = `expedition_${dungeonFamily}_${dungeonDifficulty}`;
+        const teamNames = Object.values(teamRoom?.members || {})
+          .filter(Boolean).map(m => m.name).filter(Boolean);
+        try {
+          const fcResult = await trySetDungeonFirstClear(expeditionKey, myId, myName, teamNames);
+          if (fcResult.isFirst) {
+            const diff = getExcavationDifficulty(dungeonDifficulty);
+            const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
+            const f = FAMILY_MAP[dungeonFamily] || {e:"🏰",l:"遠征"};
+            addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${dungeonDifficulty}`, f.e, teamNames).catch(() => {});
+          }
+        } catch (_) {}
+      }
+
+      onComplete?.();
+      return true;
+    }, [result, myId, dungeonDifficulty, floorsCleared, wonLast, dungeonFamily, dungeonIsHidden, isHost, teamRoomId, myName, onComplete]);
 
   // ── 放棄 ──────────────────────────────────────────────────
   const handleAbandon = useCallback(async () => {

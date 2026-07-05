@@ -28,6 +28,7 @@ import {
   saveExpeditionRecord,
   grantExpeditionRewards,
 } from "../../lib/expeditionDb";
+import { trySetDungeonFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
 import {
   completeExcavation,
   abandonExcavation,
@@ -1069,11 +1070,25 @@ export default function DungeonExpedition({
       arrowDew: rewards.arrowDew,
       archerXP: rewards.archerXP,
     }).catch(() => {});
+
+    // ── 遠征首殺判定 ────────────────────────────────────────
+    if (wonLast) {
+      const expeditionKey = `expedition_${family}_${difficultyTier}`;
+      const diff = getExcavationDifficulty(difficultyTier);
+      const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
+      const f = FAMILY_MAP[family] || {e:"🏰",l:"遠征"};
+      trySetDungeonFirstClear(expeditionKey, myId, profile?.name || "射手", []).then(fcResult => {
+        if (fcResult.isFirst) {
+          addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     // 重置挖掘進度
     if (!isFromStorage) completeExcavation(myId).catch(() => {});
     onComplete?.();
     return true;
-  }, [resultRewards, myId, isFromStorage, difficultyTier, floorsCleared, wonLast, family, isHidden, onComplete]);
+  }, [resultRewards, myId, isFromStorage, difficultyTier, floorsCleared, wonLast, family, isHidden, profile, onComplete]);
 
   // ── 本地房間文件（功能房共用，隨 playerState 即時更新）──
   const localRoomDoc = useMemo(() => {

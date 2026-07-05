@@ -133,7 +133,6 @@ export default function MemberApp() {
 
   const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
-  const dismissedBroadcastRef = useRef(null);
   const lastBroadcastIdRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
 
@@ -162,7 +161,8 @@ export default function MemberApp() {
   useEffect(() => {
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
-      if (dismissedBroadcastRef.current === data.id) return;
+      const dismissedId = localStorage.getItem("dismissedBroadcastId");
+      if (dismissedId === data.id) return;
       if (lastBroadcastIdRef.current === data.id) return;
       lastBroadcastIdRef.current = data.id;
       setDungeonKillAlert(data);
@@ -505,7 +505,7 @@ export default function MemberApp() {
       {/* 地下城首殺全系統公告 */}
       {dungeonKillAlert && (
         <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
-          onClick={() => { dismissedBroadcastRef.current = dungeonKillAlert.id; setDungeonKillAlert(null); }}>
+          onClick={() => { localStorage.setItem("dismissedBroadcastId", dungeonKillAlert.id); setDungeonKillAlert(null); }}>
           <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
