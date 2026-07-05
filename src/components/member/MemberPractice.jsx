@@ -712,6 +712,7 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
       : []
   ));
   const finishingRef = useRef(false);
+  const timeUpHandledRef = useRef(false);
   const isTargetMode = (form.inputMode || "button") === "target";
 
   function addArrow(s, pos) {
@@ -812,11 +813,13 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
     deadlineRef.current = 0;
     announcedRef.current = new Set();
     finishingRef.current = false;
+    timeUpHandledRef.current = false;
   }, [allPositions, allR, allowedSeconds, cur, effectiveArrowCount, fmt, form.arrowCount, form.assistedCues, form.opponentAverage, form.roundCount, isMatch, match, matchType, onDone, positions, round, roundTiming, secondsPerArrow, shootOff, timed]);
 
   function startTimedEnd() {
     if (!timed || stage !== "idle") return;
     finishingRef.current = false;
+    timeUpHandledRef.current = false;
     playRangeSignal(2, 880);
     announcePractice("射手進入發射線，預備", form.assistedCues !== false);
     deadlineRef.current = Date.now() + 10000;
@@ -858,10 +861,12 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
           }
         }
         if (nextRemaining <= 0) {
-          setStage("ended");
-          playRangeSignal(2, 660);
-          announcePractice("時間結束，停止射擊", form.assistedCues !== false);
-          finishRound(true);
+          if (!timeUpHandledRef.current) {
+            timeUpHandledRef.current = true;
+            playRangeSignal(2, 660);
+            announcePractice("時間結束，停止射擊", form.assistedCues !== false);
+          }
+          // 不鎖定輸入／不自動結束 — 射手自行按 M 補箭後按「下一組」
         }
       }
     };
@@ -906,7 +911,7 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
   const prevTotal  = numericArr(allR).reduce((a,b)=>a+b,0);
   const curNumeric = numericArr([cur]).reduce((a,b)=>a+b,0);
   const inputLocked = timed && stage !== "shooting";
-  const timerColor = stage === "preparation" || stage === "ended"
+  const timerColor = stage === "preparation" || (remaining !== null && remaining <= 0)
     ? "#ef4444"
     : remaining <= 30 ? "#facc15" : "#22c55e";
 
@@ -917,7 +922,7 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs font-black uppercase tracking-widest" style={{ color:timerColor }}>
-                {stage === "idle" ? "等待進線" : stage === "preparation" ? "紅燈・預備" : stage === "shooting" ? (remaining <= 30 ? "黃燈・最後 30 秒" : "綠燈・射擊") : "紅燈・停止"}
+                {stage === "idle" ? "等待進線" : stage === "preparation" ? "紅燈・預備" : remaining !== null && remaining <= 0 ? "紅燈・時間到" : remaining <= 30 ? "黃燈・最後 30 秒" : "綠燈・射擊"}
               </div>
               <div className="mt-1 text-xs text-white/50">
                 {secondsPerArrow} 秒／箭・本回 {allowedSeconds} 秒
@@ -934,7 +939,7 @@ function ScoringPhase({ form, initialSession, onSessionChange, onDone, onCancel 
             </button>
           ) : null}
           <div aria-live="polite" className="mt-2 text-center text-xs text-white/55">
-            {stage === "preparation" ? "10 秒後一聲開始" : stage === "shooting" ? "時間到將鎖定輸入，空白箭記為逾時" : stage === "idle" ? "按下後播放兩聲進線信號" : "本回已強制結束"}
+            {stage === "preparation" ? "10 秒後一聲開始" : remaining !== null && remaining <= 0 ? "時間到⏱ 請停止射擊，剩餘箭數請手動按 M，完成後點「下一組」" : stage === "idle" ? "按下後播放兩聲進線信號" : "時間到不鎖定計分，未射箭請自行按 M"}
           </div>
         </Card>
       ) : null}

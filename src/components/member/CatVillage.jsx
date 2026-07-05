@@ -1,11 +1,12 @@
 // src/components/member/CatVillage.jsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing,
   subscribeVillageMarketConfig, setBuildingAllocation,
+  setDisplayVillageLv,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
 import { subscribeMyCats, upgradeCatEquip, equipCat } from "../../lib/catDb";
@@ -100,130 +101,157 @@ function SecretaryCat({ cat }) {
   );
 }
 
-// ── 全景圖（多幀輪播 + 交叉淡出）─────────────────────────────
+// ── 全景圖（多幀瞬間切換，像 GIF）──────────────────────────────
 // 幀標籤：a, b, c, d, e → 產生 panorama-lv01-a.webp ~ panorama-lv01-e.webp
 // 若無多幀圖檔，自動降級為單張靜態圖
 const PANORAMA_FRAMES = ['a', 'b', 'c', 'd', 'e'];
-const FRAME_INTERVAL_MS = 2500;
-const FADE_DURATION_MS = 600;
+const FRAME_INTERVAL_MS = 2000;
 
-const PANORAMA_CSS = `
-@keyframes panoramaFadeIn {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
-}
-@keyframes panoramaFadeOut {
-  0%   { opacity: 1; }
-  100% { opacity: 0; }
-}
-`;
+function PanoramaView({ villageLevel, displayLv, memberId }) {
+  const actualLv = Math.max(1, Math.min(20, villageLevel || 1));
+  const showLv   = displayLv ? Math.max(1, Math.min(20, displayLv)) : actualLv;
+  const pad      = String(showLv).padStart(2, "0");
+  const baseSrc  = `/ui/village/panorama-lv${pad}`;
 
-function PanoramaView({ villageLevel }) {
-  const lv  = Math.max(1, Math.min(20, villageLevel || 1));
-  const pad = String(lv).padStart(2, "0");
-  const baseSrc = `/ui/village/panorama-lv${pad}`;
-
-  // 同一等級不變時，用一個 frameCounter 持續推進即可
-  const [frameCounter, setFrameCounter] = useState(0);
+  const [frameIdx, setFrameIdx] = useState(0);
   const [hasError, setHasError] = useState(false);
-  const frameCount = PANORAMA_FRAMES.length;
+  const [showPicker, setShowPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const pickerRef = useRef(null);
 
-  // 目前與前一刻的幀
-  const curIdx  = frameCounter % frameCount;
-  const prevIdx = (frameCounter - 1 + frameCount) % frameCount;
-  const showPrev = frameCounter > 0 && !hasError;
+  // 點擊外部關閉 picker
+  useEffect(() => {
+    if (!showPicker) return;
+    function handleClick(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showPicker]);
 
-  // 定時推進幀
+  // 定時切換幀
   useEffect(() => {
     if (hasError) return;
     const t = setInterval(() => {
-      setFrameCounter(c => c + 1);
+      setFrameIdx(i => (i + 1) % PANORAMA_FRAMES.length);
     }, FRAME_INTERVAL_MS);
     return () => clearInterval(t);
-  }, [hasError, lv]);
+  }, [hasError, showLv]);
 
-  // 等級改變時重置
+  // 顯示等級改變時重置
   useEffect(() => {
-    setFrameCounter(0);
+    setFrameIdx(0);
     setHasError(false);
-  }, [lv]);
+  }, [showLv]);
 
-  // 降級為原始單張
-  if (hasError) {
-    const fallbackSrc = `${baseSrc}.webp`;
-    return (
-      <div className="px-4 pt-4">
-        <style>{PANORAMA_CSS}</style>
-        <div style={{
-          width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
-          borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
-        }}>
-          <img src={fallbackSrc} alt={`村莊 Lv${lv}`}
-            width="750" height="370" fetchPriority="high"
-            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
-            onError={e => { e.target.style.display = "none"; }} />
-          <LevelBadge lv={lv} />
-        </div>
-      </div>
-    );
+  const curSrc = `${baseSrc}-${PANORAMA_FRAMES[frameIdx]}.webp`;
+  const imgSrc = hasError ? `${baseSrc}.webp` : curSrc;
+
+  async function handleSelectLevel(lv) {
+    if (!memberId) return;
+    setSaving(true);
+    await setDisplayVillageLv(memberId, lv);
+    setSaving(false);
+    setShowPicker(false);
   }
-
-  const curSrc = `${baseSrc}-${PANORAMA_FRAMES[curIdx]}.webp`;
-  const prevSrc = `${baseSrc}-${PANORAMA_FRAMES[prevIdx]}.webp`;
 
   return (
     <div className="px-4 pt-4">
-      <style>{PANORAMA_CSS}</style>
       <div style={{
         width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
         borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
         background:"#EDE0CE",
       }}>
-        {/* 前幀（淡出中） */}
-        {showPrev && (
-          <img
-            key={`prev-${frameCounter}`}
-            src={prevSrc}
-            alt=""
-            width="750" height="370"
-            style={{
-              position:"absolute", inset:0, width:"100%", height:"100%",
-              objectFit:"cover", display:"block",
-              animation:`panoramaFadeOut ${FADE_DURATION_MS}ms ease both`,
-            }}
-            onError={e => { e.target.style.display = "none"; }}
-          />
-        )}
-        {/* 當前幀（淡入） */}
         <img
-          key={`cur-${frameCounter}`}
-          src={curSrc}
-          alt={`村莊 Lv${lv}`}
+          src={imgSrc}
+          alt={`村莊 Lv${showLv}`}
           width="750" height="370" fetchPriority="high"
-          style={{
-            width:"100%", height:"100%", objectFit:"cover", display:"block",
-            animation:`panoramaFadeIn ${FADE_DURATION_MS}ms ease both`,
-          }}
+          style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
           onError={() => { setHasError(true); }}
         />
+        <LevelBadge lv={showLv} actualLv={actualLv} onClick={() => setShowPicker(p => !p)} />
 
-        <LevelBadge lv={lv} />
+        {/* 等級切換器 */}
+        {showPicker && (
+          <div ref={pickerRef} style={{
+            position: "absolute", top: 50, left: 12,
+            background: "rgba(60,35,15,0.93)", backdropFilter: "blur(10px)",
+            borderRadius: 14, padding: "8px 10px",
+            color: "#FFF8F0", zIndex: 100, minWidth: 180,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+          }}>
+            <div className="text-[10px] font-bold mb-2" style={{ color: "#D4C4A8", textAlign: "center" }}>
+              🎨 選擇村莊外觀
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4 }}>
+              {Array.from({ length: actualLv }, (_, i) => i + 1).map(lv => {
+                const isActive = lv === showLv;
+                return (
+                  <button key={lv} onClick={() => handleSelectLevel(lv)}
+                    disabled={saving}
+                    style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      background: isActive ? C.sage : "rgba(255,255,255,0.10)",
+                      color: isActive ? "#FFF" : "#D4C4A8",
+                      border: isActive ? "2px solid #A0D090" : "1px solid rgba(255,255,255,0.15)",
+                      fontSize: 12, fontWeight: 900,
+                      cursor: "pointer", display: "flex",
+                      alignItems: "center", justifyContent: "center",
+                      transition: "all .15s",
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.18)"; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.10)"; }}>
+                    {saving ? "…" : lv}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+              <button onClick={() => handleSelectLevel(null)}
+                disabled={saving}
+                style={{
+                  width: "100%", padding: "4px 0", borderRadius: 8,
+                  background: displayLv ? "rgba(255,255,255,0.08)" : C.sage,
+                  color: displayLv ? "#D4C4A8" : "#FFF",
+                  border: "none", fontSize: 11, fontWeight: 900,
+                  cursor: "pointer",
+                  transition: "all .15s",
+                }}
+                onMouseEnter={e => { if (displayLv) e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
+                onMouseLeave={e => { if (displayLv) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}>
+                {saving ? "…" : displayLv ? "🔄 自動（跟隨實際等級）" : "✓ 自動跟隨中"}
+              </button>
+            </div>
+            <div className="text-[9px] mt-1.5" style={{ color: "#A09080", textAlign: "center" }}>
+              解鎖至 Lv.{actualLv}，可選 1~{actualLv}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── 等級角標（復用） ─────────────────────────────────────────
-function LevelBadge({ lv }) {
+// ── 等級角標（可點擊） ──────────────────────────────────────
+function LevelBadge({ lv, actualLv, onClick }) {
+  const isDifferent = lv !== actualLv;
   return (
-    <div style={{
-      position: "absolute", top: 10, left: 12,
-      background: "rgba(60,35,15,0.62)", backdropFilter: "blur(6px)",
-      borderRadius: "20px", padding: "4px 14px",
-      color: "#FFF8F0", fontWeight: 900, fontSize: "13px",
-      pointerEvents: "none",
-    }}>
+    <div onClick={onClick}
+      style={{
+        position: "absolute", top: 10, left: 12,
+        background: "rgba(60,35,15,0.62)", backdropFilter: "blur(6px)",
+        borderRadius: "20px", padding: "4px 14px",
+        color: "#FFF8F0", fontWeight: 900, fontSize: "13px",
+        cursor: "pointer", userSelect: "none",
+        display: "flex", alignItems: "center", gap: 5,
+        transition: "background .15s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(60,35,15,0.80)"}
+      onMouseLeave={e => e.currentTarget.style.background = "rgba(60,35,15,0.62)"}>
       🏡 村莊 Lv.{lv}
+      {isDifferent && <span style={{ fontSize: 9, color: "#A0D090" }}>▼</span>}
     </div>
   );
 }
@@ -1867,7 +1895,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
 
       {tab === "village" && (
         <>
-          <PanoramaView villageLevel={villageLevel} />
+          <PanoramaView villageLevel={villageLevel} displayLv={profile?.displayVillageLv} memberId={profile?.id} />
 
           <div className="mx-4 my-3 overflow-hidden rounded-2xl"
             style={{ background:C.card, border:`1px solid ${C.border}`, boxShadow:C.shadow }}>

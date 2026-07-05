@@ -3868,3 +3868,17 @@ export function subscribeTierPermissions(callback) {
     () => callback(null)
   );
 }
+
+// ─── 村莊外觀顯示等級
+// 儲存玩家偏好的村莊全景圖顯示等級（只能選 <= 實際村莊等級）
+// level = null/undefined 清除偏好，改為跟隨實際等級
+export async function setDisplayVillageLv(memberId, level) {
+  if (!memberId) return;
+  try {
+    if (level == null) {
+      await updateDoc(doc(db, C.members, memberId), { displayVillageLv: deleteField() });
+    } else {
+      await updateDoc(doc(db, C.members, memberId), { displayVillageLv: Number(level) });
+    }
+  } catch (e) { console.warn("setDisplayVillageLv:", e?.message); }
+}
