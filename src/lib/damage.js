@@ -53,8 +53,9 @@ export function isStandardCrit(variance, partMult, score) {
 /**
  * Full round damage with part resolution (standard formula).
  * Replaces the inline calcDmgFn in PartyBattleRoom.
+ * dmgBonusPct: 世界王卡被動加成（0 = 無加成，來自 calcEquippedBonus().dmgBonusPct）
  */
-export function calcRoundDamage(arrows, atk, def) {
+export function calcRoundDamage(arrows, atk, def, dmgBonusPct = 0) {
   let dmg = 0, crits = 0;
   const arrowBreakdown = [];
   const unlocked = new Set();
@@ -78,7 +79,7 @@ export function calcRoundDamage(arrows, atk, def) {
     // M 分（score=0）但有 pMult：50% base 傷害
     if (!score) {
       const base = 8 + (atk || 10) * 0.7 - (def || 0) * 0.35;
-      const halfDmg = Math.max(1, Math.round(base * 0.5));
+      const halfDmg = Math.max(1, Math.round(base * 0.5 * (1 + dmgBonusPct)));
       arrowBreakdown.push({
         label: arrow.label || "M",
         partIcon: part.icon, partName: part.name,
@@ -92,7 +93,7 @@ export function calcRoundDamage(arrows, atk, def) {
     const base   = 8 + (atk || 10) * 0.7 + score * 1.2 - (def || 0) * 0.35;
     const mult   = 0.85 + Math.random() * 0.3;
     const isCrit = isStandardCrit(mult, pMult, score);
-    const d      = Math.max(1, Math.round(base * pMult * mult));
+    const d      = Math.max(1, Math.round(base * pMult * mult * (1 + dmgBonusPct)));
     dmg  += d;
     if (isCrit) crits++;
 
@@ -109,11 +110,13 @@ export function calcRoundDamage(arrows, atk, def) {
 /**
  * Standard counter attack (monsterData formula).
  * headStunned -> 50% dmg; isCrit -> 180% dmg.
+ * dmgReducePct: 世界王卡被動減傷（0 = 無加成）
  */
-export function calcStandardCounter(monsterATK, archerDEF, headStunned = false, isCrit = false) {
+export function calcStandardCounter(monsterATK, archerDEF, headStunned = false, isCrit = false, dmgReducePct = 0) {
   let base = (monsterATK || 0) * 0.6 - (archerDEF || 10) * 0.4 + 5;
   if (headStunned) base *= 0.5;
   if (isCrit)      base *= 1.8;
+  base *= (1 - dmgReducePct);
   return Math.max(1, Math.round(base * (0.8 + Math.random() * 0.4)));
 }
 
@@ -121,8 +124,8 @@ export function calcStandardCounter(monsterATK, archerDEF, headStunned = false, 
  * PartyBattle counter — wraps standard with random 10% crit.
  * Used by processPartyRound callback.
  */
-export function calcPartyCounter(monsterATK, archerDEF) {
-  return calcStandardCounter(monsterATK, archerDEF, false, Math.random() < 0.1);
+export function calcPartyCounter(monsterATK, archerDEF, dmgReducePct = 0) {
+  return calcStandardCounter(monsterATK, archerDEF, false, Math.random() < 0.1, dmgReducePct);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -202,20 +205,22 @@ export function calcDuelRoundDamage(arrows, atk, targetDef) {
 
 /**
  * Single arrow damage for world boss (no part system).
+ * dmgBonusPct: 世界王卡被動加成（0 = 無加成）
  */
-export function calcWorldBossArrowDmg(score, myATK, bossDef, participantBonus = 1) {
+export function calcWorldBossArrowDmg(score, myATK, bossDef, participantBonus = 1, dmgBonusPct = 0) {
   if (score === 0) return 0;
   const atkFinal = (myATK || 0) * participantBonus;
   const base     = 5 + atkFinal * 0.6 + score * 1.5 - (bossDef || 0) * 0.3;
   const mult     = 0.85 + Math.random() * 0.3;
-  return Math.max(1, Math.round(base * mult));
+  return Math.max(1, Math.round(base * mult * (1 + dmgBonusPct)));
 }
 
 /**
  * World boss counter attack.
+ * dmgReducePct: 世界王卡被動減傷（0 = 無加成）
  */
-export function calcWorldBossCounter(bossAtk, myDEF) {
-  const base = (bossAtk || 0) * 0.4 - (myDEF || 0) * 0.3;
+export function calcWorldBossCounter(bossAtk, myDEF, dmgReducePct = 0) {
+  const base = ((bossAtk || 0) * 0.4 - (myDEF || 0) * 0.3) * (1 - dmgReducePct);
   const mult = 0.8 + Math.random() * 0.4;
   return Math.max(5, Math.round(base * mult));
 }
@@ -229,9 +234,10 @@ export function calcWorldBossCounter(bossAtk, myDEF) {
 /**
  * Dungeon-specific counter attack.
  * Used by processDungeonRound callback.
+ * dmgReducePct: 世界王卡被動減傷（0 = 無加成）
  */
-export function calcDungeonCounter(monsterAtk, archerDef) {
-  const base = 4 + (monsterAtk || 10) * 0.6 - (archerDef || 10) * 0.3;
+export function calcDungeonCounter(monsterAtk, archerDef, dmgReducePct = 0) {
+  const base = (4 + (monsterAtk || 10) * 0.6 - (archerDef || 10) * 0.3) * (1 - dmgReducePct);
   const mult = 0.8 + Math.random() * 0.4;
   return Math.max(1, Math.round(base * mult));
 }

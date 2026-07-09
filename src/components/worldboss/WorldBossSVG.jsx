@@ -1,6 +1,7 @@
 // src/components/worldboss/WorldBossSVG.jsx — 世界王圖（先嘗試 webp，失敗回退像素 SVG）
 import { useState } from "react";
 import { getBossPhase } from "../../lib/worldBossData";
+import { CATS } from "../../lib/catData";
 
 // 像素格輔助：sz=格子大小，x/y=起始格
 function Px({ x, y, c, sz = 6 }) {
@@ -107,71 +108,35 @@ function YumiPixel({ phase }) {
   );
 }
 
-function CatOrangePixel({ phase }) {
-  const o = "#f97316"; const d = "#431407"; const w = "#fef3c7"; const bl = "#0f172a";
+// 通用貓貓王像素圖：依 catData.js 的 palette 上色（9隻真貓共用一套版型）
+function CatGenericPixel({ catId, phase }) {
+  const cat = CATS[catId];
+  const base  = cat?.palette?.base  || "#f97316";
+  const patch = cat?.palette?.patch || "#431407";
+  const light = cat?.palette?.light || "#fef3c7";
+  const bgDark = "#1c1917";
   return (
     <g>
-      <circle cx="48" cy="48" r="44" fill={d}/>
+      <circle cx="48" cy="48" r="44" fill={bgDark}/>
       {/* 頭部 */}
-      {[3,4,5,6,7,8,9].map(y=>[3,4,5,6,7,8,9,10,11,12].map(x=><Px key={`h${x}${y}`} x={x} y={y} c={o}/>))}
+      {[3,4,5,6,7,8,9].map(y=>[3,4,5,6,7,8,9,10,11,12].map(x=><Px key={`h${x}${y}`} x={x} y={y} c={base}/>))}
       {/* 耳朵 */}
-      <Px x={3} y={1} c={o}/><Px x={3} y={2} c={o}/><Px x={4} y={2} c={o}/>
-      <Px x={11} y={1} c={o}/><Px x={11} y={2} c={o}/><Px x={12} y={2} c={o}/>
-      <Px x={4} y={1} c="#fcd34d"/><Px x={12} y={1} c="#fcd34d"/>
+      <Px x={3} y={1} c={base}/><Px x={3} y={2} c={base}/><Px x={4} y={2} c={base}/>
+      <Px x={11} y={1} c={base}/><Px x={11} y={2} c={base}/><Px x={12} y={2} c={base}/>
+      <Px x={4} y={1} c={patch}/><Px x={12} y={1} c={patch}/>
       {/* 臉紋 */}
-      {[4,5,6].map(x=><Px key={`f1${x}`} x={x} y={5} c={w}/>)}
-      {[9,10,11].map(x=><Px key={`f2${x}`} x={x} y={5} c={w}/>)}
+      {[4,5,6].map(x=><Px key={`f1${x}`} x={x} y={5} c={light}/>)}
+      {[9,10,11].map(x=><Px key={`f2${x}`} x={x} y={5} c={light}/>)}
       {/* 眼睛 */}
-      <Px x={5} y={5} c={bl}/><Px x={10} y={5} c={bl}/>
+      <Px x={5} y={5} c={patch}/><Px x={10} y={5} c={patch}/>
       {/* 鼻子嘴巴 */}
       <Px x={7} y={7} c="#f43f5e"/><Px x={8} y={7} c="#f43f5e"/>
       {/* 鬍鬚 */}
-      <Px x={2} y={6} c={w}/><Px x={1} y={7} c={w}/>
-      <Px x={13} y={6} c={w}/><Px x={14} y={7} c={w}/>
-      {/* 皇冠 */}
+      <Px x={2} y={6} c={light}/><Px x={1} y={7} c={light}/>
+      <Px x={13} y={6} c={light}/><Px x={14} y={7} c={light}/>
+      {/* 王冠 */}
       <Px x={5} y={1} c="#fbbf24"/><Px x={6} y={0} c="#fbbf24"/>
       <Px x={7} y={1} c="#fbbf24"/><Px x={8} y={0} c="#fbbf24"/><Px x={9} y={1} c="#fbbf24"/>
-    </g>
-  );
-}
-
-function CatBlackPixel({ phase }) {
-  const bl = "#1c1917"; const gl = "#a8a29e"; const ey = "#7c3aed";
-  return (
-    <g>
-      <circle cx="48" cy="48" r="44" fill="#0c0a09"/>
-      <circle cx="48" cy="48" r="38" fill="#1c1917" opacity="0.8"/>
-      {[3,4,5,6,7,8,9].map(y=>[3,4,5,6,7,8,9,10,11,12].map(x=><Px key={`h${x}${y}`} x={x} y={y} c={bl}/>))}
-      <Px x={3} y={1} c={bl}/><Px x={4} y={2} c={bl}/><Px x={3} y={2} c={bl}/>
-      <Px x={11} y={1} c={bl}/><Px x={12} y={2} c={bl}/><Px x={11} y={2} c={bl}/>
-      {/* 發光眼睛 */}
-      <Px x={5} y={5} c={ey}/><Px x={6} y={5} c={ey}/>
-      <Px x={9} y={5} c={ey}/><Px x={10} y={5} c={ey}/>
-      <circle cx={33} cy={33} r={4} fill={ey} opacity="0.6"/>
-      <circle cx={63} cy={33} r={4} fill={ey} opacity="0.6"/>
-      {/* 輪廓高光 */}
-      {[3,4,5,6].map(y=><Px key={`gl${y}`} x={3} y={y} c={gl}/>)}
-      <Px x={5} y={7} c={gl}/><Px x={6} y={7} c={gl}/>
-    </g>
-  );
-}
-
-function CatWhitePixel({ phase }) {
-  const w = "#f1f5f9"; const b = "#bfdbfe"; const p = "#fda4af"; const gy = "#94a3b8";
-  return (
-    <g>
-      <circle cx="48" cy="48" r="44" fill="#1e3a5f"/>
-      {[3,4,5,6,7,8,9].map(y=>[3,4,5,6,7,8,9,10,11,12].map(x=><Px key={`h${x}${y}`} x={x} y={y} c={w}/>))}
-      <Px x={3} y={1} c={w}/><Px x={4} y={1} c={w}/><Px x={4} y={2} c={w}/>
-      <Px x={11} y={1} c={w}/><Px x={12} y={1} c={w}/><Px x={11} y={2} c={w}/>
-      <Px x={4} y={1} c={p}/><Px x={12} y={1} c={p}/>
-      <Px x={5} y={5} c={b}/><Px x={6} y={5} c={b}/>
-      <Px x={9} y={5} c={b}/><Px x={10} y={5} c={b}/>
-      <Px x={7} y={7} c={p}/><Px x={8} y={7} c={p}/>
-      <Px x={2} y={6} c={gy}/><Px x={1} y={6} c={gy}/>
-      <Px x={13} y={6} c={gy}/><Px x={14} y={6} c={gy}/>
-      {/* 光環 */}
-      <circle cx="48" cy="12" r="10" fill="none" stroke="#fbbf24" strokeWidth="2" opacity="0.7"/>
     </g>
   );
 }
@@ -320,13 +285,12 @@ function WesternBossPixel({ phase }) {
 }
 
 // ── 像素圖查表 ────────────────────────────────────────────────
+const CAT_IDS_FOR_PIXEL = ["daming","gege","meimei","niuniu","haji","baobao","youyou","xiaoan","diandian"];
+
 const PIXEL_MAP = {
   head_coach:   HeadCoachPixel,
   wife:         WifePixel,
   yumi:         YumiPixel,
-  cat_orange:   CatOrangePixel,
-  cat_black:    CatBlackPixel,
-  cat_white:    CatWhitePixel,
   ghost_boss:   GhostBossPixel,
   forest_boss:  ForestBossPixel,
   poison_boss:  PoisonBossPixel,
@@ -334,6 +298,9 @@ const PIXEL_MAP = {
   exam_boss:    ExamBossPixel,
   western_boss: WesternBossPixel,
 };
+for (const catId of CAT_IDS_FOR_PIXEL) {
+  PIXEL_MAP[`cat_${catId}`] = ({ phase }) => <CatGenericPixel catId={catId} phase={phase}/>;
+}
 
 // ── 主元件 ────────────────────────────────────────────────────
 export default function WorldBossSVG({ bossKey, currentHP, maxHP, size = 120 }) {

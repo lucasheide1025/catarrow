@@ -11,7 +11,7 @@ import {
 } from "../../lib/db";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 import { calcArcherStats } from "../../lib/monsterData";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { computeDexStats } from "../../lib/achievementDex";
 import CouncilBattle from "./CouncilBattle";
@@ -71,8 +71,7 @@ export default function CouncilHall({ profile, village, onBack }) {
     // 卡片加成 + 射手等級加成
     const unsub = subscribeCardCollection(profile.id, (cardData) => {
       if (cancelled) return;
-      const equipped   = cardData?.equipped || [];
-      const cardBonus  = calcEquippedBonus(equipped);
+      const cardBonus  = calcEquippedBonus(resolveEquippedCards(cardData));
       const archerXP   = profile?.archerXP || 0;
       const archerLv   = archerLevelFromXP(archerXP);
       const lvBonus    = archerLevelBonus(archerLv);

@@ -15,7 +15,7 @@ import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleS
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
 import { calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { calcRoundDamage, calcPartyCounter } from "../../lib/damage";
@@ -30,6 +30,7 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import BattleBottomBar from "../member/BattleBottomBar";
+import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
@@ -353,9 +354,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 計算自己當前裝備的怪物卡片加成（從 ref 取最新值，不觸發 re-render）
   function getMyCardBonus() {
-    const data = cardCollRef.current;
-    const equipped = (data.equipped || []).map(id => data.cards?.[id]).filter(Boolean);
-    return calcEquippedBonus(equipped);
+    return calcEquippedBonus(resolveEquippedCards(cardCollRef.current));
   }
 
   // 等待室就先寫入真實數值（讓所有人看到彼此的數值）
@@ -364,8 +363,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWaitingRef.current = true;
-    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "");
+    const cardBonus = getMyCardBonus();
+    const stats = getArcherStats(profile, [], cardBonus, 1.0);
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "",
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 });
   }, [room?.status, myId]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
@@ -376,8 +377,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     statsWrittenRef.current = true;
     // 若已有 HP（中途重連），不覆蓋——避免戰鬥中途重連時把 HP 重置回滿血
     if (me.hp > 0 && me.maxHP > 0 && (room.round || 1) > 1) return;
-    const stats = getArcherStats(profile, selectedPotions, getMyCardBonus(), 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "");
+    const cardBonus = getMyCardBonus();
+    const stats = getArcherStats(profile, selectedPotions, cardBonus, 1.0);
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "",
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 });
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -1759,6 +1762,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
                     {!m.alive&&"💀"}{m.role==="rear"?"🛡":"⚔️"}{(m.name||"").slice(0,5)}{m.id===room.hostId?" 👑":""}
                   </div>
+                  {isMe && (
+                    <div style={{ display:"flex", justifyContent:"center", marginBottom:1 }}>
+                      <WorldBossCardBadge equipped={cardCollRef.current?.equipped} />
+                    </div>
+                  )}
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
                     <div style={{ fontSize:9, color:"#f87171" }}>⚔️{m.atk}</div>
                     <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{m.def}</div>

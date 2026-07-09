@@ -13,6 +13,8 @@ import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
+import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCards";
+import { WB_CARDS } from "./worldBossCards";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -2146,9 +2148,10 @@ export async function openChest(memberId, chestId, contents) {
         await addMonsterCard(memberId, card, null);
       }
     }
+    if (contents?.coins) await addCoins(memberId, contents.coins);
 
     if (chest.type) await updateChestOpenStats(memberId, chest.type);
-    return { ok: true };
+    return { ok: true, coins: contents?.coins };
   } catch (e) {
     console.warn("openChest:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
@@ -2561,11 +2564,29 @@ export async function addCardPack(memberId, count = 1) {
 }
 
 // ─── 怪物卡片收藏 ──────────────────────────────────────────
-// cardCollections/{memberId} → { cards:{ [monsterId]: {...} }, equipped:[monsterId,...] }
+// cardCollections/{memberId} → {
+//   cards:{ [monsterId]: {...} },      // 怪物卡（含寶箱怪）
+//   wbCards:{ [bossKey]: {...} },      // 世界王卡（獨立卡池）
+//   equipped:[ {key,source} | monsterId(舊格式字串), ... ],
+// }
 
 const C_CARDS = "cardCollections";
 
 const STAR_UPGRADE_COST = [1, 2, 3, 4, 5];
+
+const EMPTY_COLLECTION = { cards: {}, wbCards: {}, equipped: [] };
+
+// 相容讀取：equipped 陣列元素可能是舊格式字串（monsterId）或新格式 {key,source}
+function normalizeEquipped(item) {
+  if (typeof item === "string") return { key: item, source: "monster" };
+  return item;
+}
+
+// 依 equipped 項目 + 卡池，解析出實際卡片物件（供計算屬性/被動時使用）
+function resolveEquippedCard(item, cards, wbCards) {
+  const { key, source } = normalizeEquipped(item);
+  return source === "wb" ? wbCards?.[key] : cards?.[key];
+}
 
 // cardData = { monsterId, name, icon, tier, family }
 export async function addMonsterCard(memberId, cardData, chosenStat) {
@@ -2573,7 +2594,7 @@ export async function addMonsterCard(memberId, cardData, chosenStat) {
   try {
     const ref  = doc(db, C_CARDS, memberId);
     const snap = await getDoc(ref);
-    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
+    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
     const cards = { ...(data.cards || {}) };
     const key   = cardData.monsterId;
     if (cards[key]) {
@@ -2585,8 +2606,31 @@ export async function addMonsterCard(memberId, cardData, chosenStat) {
         ts: Date.now(),
       };
     }
-    await setDoc(ref, { cards, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(ref, { cards, wbCards: data.wbCards || {}, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
   } catch (e) { console.warn("addMonsterCard:", e?.message); }
+}
+
+// 世界王卡：一隻王一張，沒有重複張數概念。已擁有則直接略過（呼叫端可另外轉換材料）。
+// statMode==="choose"（教練系列）時 chosenStat 必填；statMode==="fixed" 直接用 WB_CARDS 內建的 stat。
+export async function addWorldBossCard(memberId, bossKey, chosenStat) {
+  if (!memberId || !bossKey || memberId.startsWith("guest")) return { ok: false };
+  const cardDef = WB_CARDS[bossKey];
+  if (!cardDef) return { ok: false, reason: "找不到世界王卡定義" };
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
+    if (data.wbCards?.[bossKey]) return { ok: false, reason: "已擁有此王卡" };
+    const wbCards = { ...(data.wbCards || {}) };
+    wbCards[bossKey] = {
+      ...cardDef, tier: "worldboss", stars: 1,
+      stat: cardDef.statMode === "fixed" ? cardDef.stat : null,
+      chosenStat: cardDef.statMode === "choose" ? (chosenStat || null) : null,
+      ts: Date.now(),
+    };
+    await setDoc(ref, { cards: data.cards || {}, wbCards, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) { console.warn("addWorldBossCard:", e?.message); return { ok: false, reason: "系統忙碌" }; }
 }
 
 export async function upgradeCard(memberId, monsterId) {
@@ -2611,28 +2655,66 @@ export async function upgradeCard(memberId, monsterId) {
   }
 }
 
-export async function equipCard(memberId, monsterId) {
-  if (!memberId || !monsterId) return { ok: false };
+// key/source：source==="wb" 為世界王卡，否則為怪物卡（monsterId 即 key）
+export async function equipCard(memberId, key, source = "monster") {
+  if (!memberId || !key) return { ok: false };
   try {
     const ref  = doc(db, C_CARDS, memberId);
     const snap = await getDoc(ref);
-    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
-    const equipped = data.equipped || [];
-    if (equipped.includes(monsterId)) return { ok: true };
-    if (equipped.length >= 5) return { ok: false, reason: "已達最大裝備數（5張）" };
-    await setDoc(ref, { equipped: [...equipped, monsterId], updatedAt: serverTimestamp() }, { merge: true });
+    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
+    const cards   = data.cards   || {};
+    const wbCards = data.wbCards || {};
+    const equipped = (data.equipped || []).map(normalizeEquipped);
+
+    if (equipped.some(e => e.key === key && e.source === source)) return { ok: true };
+
+    const targetCard = source === "wb" ? wbCards[key] : cards[key];
+    if (!targetCard) return { ok: false, reason: "找不到卡片" };
+    if (targetCard.statMode === "choose" && !targetCard.chosenStat) {
+      return { ok: false, reason: "請先為這張王卡選擇屬性" };
+    }
+    if (targetCard.tier === "mythic" && !targetCard.chosenStat) {
+      return { ok: false, reason: "請先為這張神話卡選擇屬性" };
+    }
+
+    // 世界王卡：獨立欄位，最多 3 張，不分屬性
+    if (source === "wb") {
+      const wbCount = equipped.filter(e => e.source === "wb").length;
+      if (wbCount >= MAX_WB_EQUIPPED) {
+        return { ok: false, reason: `世界王卡欄位已達上限（${MAX_WB_EQUIPPED}張），請先卸下一張` };
+      }
+      await setDoc(ref, { equipped: [...equipped, { key, source }], updatedAt: serverTimestamp() }, { merge: true });
+      return { ok: true };
+    }
+
+    // 怪物卡：HP/ATK/DEF 各自最多 3 張
+    const stat = getCardStat(targetCard);
+    const sameStatCount = equipped.filter(e => {
+      if (e.source === "wb") return false;
+      const c = resolveEquippedCard(e, cards, wbCards);
+      return c && getCardStat(c) === stat;
+    }).length;
+    if (sameStatCount >= MAX_EQUIPPED_PER_STAT) {
+      return { ok: false, reason: `${stat.toUpperCase()} 分類已達上限（${MAX_EQUIPPED_PER_STAT}張），請先卸下同分類的卡` };
+    }
+
+    await setDoc(ref, { equipped: [...equipped, { key, source }], updatedAt: serverTimestamp() }, { merge: true });
     return { ok: true };
   } catch (e) { return { ok: false, reason: "系統忙碌" }; }
 }
 
-export async function unequipCard(memberId, monsterId) {
-  if (!memberId || !monsterId) return { ok: false };
+export async function unequipCard(memberId, key, source = "monster") {
+  if (!memberId || !key) return { ok: false };
   try {
     const ref  = doc(db, C_CARDS, memberId);
     const snap = await getDoc(ref);
-    const data = snap.exists() ? snap.data() : { cards: {}, equipped: [] };
-    const equipped = (data.equipped || []).filter(id => id !== monsterId);
-    await setDoc(ref, { equipped, updatedAt: serverTimestamp() }, { merge: true });
+    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
+    const equipped = (data.equipped || []).map(normalizeEquipped)
+      .filter(e => !(e.key === key && e.source === source));
+    const patch = { equipped, updatedAt: serverTimestamp() };
+    // 卸下的剛好是目前設定的稱號卡 → 一併清掉稱號
+    if (source === "wb" && data.activeTitleBossKey === key) patch.activeTitleBossKey = deleteField();
+    await setDoc(ref, patch, { merge: true });
     return { ok: true };
   } catch (e) { return { ok: false, reason: "系統忙碌" }; }
 }
@@ -2645,12 +2727,57 @@ export async function setMythicCardStat(memberId, monsterId, chosenStat) {
   } catch (e) { return { ok: false }; }
 }
 
+// 稱號：從「已裝備的世界王卡」中選一張的 title 當作對外顯示的稱號
+export async function setActiveTitle(memberId, bossKey) {
+  if (!memberId || !bossKey) return { ok: false };
+  try {
+    const ref  = doc(db, C_CARDS, memberId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
+    const equipped = (data.equipped || []).map(normalizeEquipped);
+    const isEquipped = equipped.some(e => e.source === "wb" && e.key === bossKey);
+    if (!isEquipped) return { ok: false, reason: "這張王卡尚未裝備，無法設為稱號" };
+    await updateDoc(ref, { activeTitleBossKey: bossKey, updatedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: "系統忙碌" }; }
+}
+
+export async function clearActiveTitle(memberId) {
+  if (!memberId) return { ok: false };
+  try {
+    await updateDoc(doc(db, C_CARDS, memberId), { activeTitleBossKey: deleteField() });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
+// 後台限定：手動發放世界王卡（不進任何玩家可觸發的掉落池，只能教練發）
+// statMode==="choose" 的教練王卡可由教練直接指定 chosenStat，也可以留空讓玩家自己選
+export async function adminGrantWorldBossCard(memberId, bossKey, chosenStat, operatorId) {
+  const res = await addWorldBossCard(memberId, bossKey, chosenStat);
+  if (res.ok) {
+    await createNotification({
+      type: "worldboss", targetMemberId: memberId,
+      title: "🎁 教練發放了世界王卡片！", content: "你獲得了世界王專屬卡片，快去卡片收藏查看吧！",
+      subjectInfo: { bossKey },
+    }, operatorId).catch(() => {});
+  }
+  return res;
+}
+
+export async function setWorldBossCardStat(memberId, bossKey, chosenStat) {
+  if (!memberId || !bossKey || !chosenStat) return { ok: false };
+  try {
+    await updateDoc(doc(db, C_CARDS, memberId), { [`wbCards.${bossKey}.chosenStat`]: chosenStat });
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
 export function subscribeCardCollection(memberId, callback) {
-  if (!memberId) { callback({ cards: {}, equipped: [] }); return () => {}; }
+  if (!memberId) { callback(EMPTY_COLLECTION); return () => {}; }
   return onSnapshot(
     doc(db, C_CARDS, memberId),
-    snap => callback(snap.exists() ? snap.data() : { cards: {}, equipped: [] }),
-    err  => { console.warn("subscribeCardCollection:", err?.message); callback({ cards: {}, equipped: [] }); }
+    snap => callback(snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION),
+    err  => { console.warn("subscribeCardCollection:", err?.message); callback(EMPTY_COLLECTION); }
   );
 }
 

@@ -47,6 +47,7 @@ export async function createExpeditionBattleRoom({
       catName: memberData?.catName || "",
       archerStyle: memberData?.archerStyle || "baobao",
       catAtk: memberData?.catAtk ?? 0,
+      wbBonus: memberData?.wbBonus || null,
     };
 
     const floorScale = [1.0, 1.05, 1.2][Math.min(floorIndex, 2)] || 1.0;

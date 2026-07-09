@@ -10,9 +10,11 @@ import {
   getWorldBossHistory,
 } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
-import { addCardPack, addCoins, addChests } from "../../lib/db";
+import { WB_CARDS } from "../../lib/worldBossCards";
+import { addCardPack, addCoins, addChests, getMembers, adminGrantWorldBossCard } from "../../lib/db";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
 import WorldBossLobby from "../worldboss/WorldBossLobby";
+import { Sel, Btn, useToast } from "../shared/UI";
 
 function HPBar({ current, max }) {
   const pct   = max > 0 ? Math.max(0, Math.min(1, current / max)) * 100 : 0;
@@ -85,6 +87,30 @@ export default function AdminWorldBoss() {
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
+
+  // 手動發放世界王卡
+  const { toast, ToastContainer } = useToast();
+  const [members, setMembers] = useState([]);
+  const [grantMemberId, setGrantMemberId] = useState("");
+  const [grantBossKey,  setGrantBossKey]  = useState(WORLD_BOSS_KEYS[0]);
+  const [grantStat,     setGrantStat]     = useState("hp");
+  const [granting,      setGranting]      = useState(false);
+
+  useEffect(() => { getMembers().then(setMembers).catch(() => {}); }, []);
+
+  async function handleGrantWbCard() {
+    if (!grantMemberId || !grantBossKey) return;
+    const cardDef = WB_CARDS[grantBossKey];
+    setGranting(true);
+    const res = await adminGrantWorldBossCard(
+      grantMemberId, grantBossKey,
+      cardDef?.statMode === "choose" ? grantStat : null,
+      profile?.id
+    );
+    setGranting(false);
+    if (res.ok) toast(`✅ 已發放《${cardDef?.name}》世界王卡`);
+    else toast(`❌ ${res.reason || "發放失敗"}`);
+  }
   const [extraReward, setExtraReward] = useState({ coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, mimiBoxes: 0, cardPacks: 0 });
   const [showExtraForm, setShowExtraForm] = useState(false);
 
@@ -232,6 +258,7 @@ export default function AdminWorldBoss() {
           { id: "active",  label: "目前活動" },
           { id: "create",  label: "建立活動" },
           { id: "history", label: "歷史紀錄" },
+          { id: "cards",   label: "發放王卡" },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab === t.id ? "bg-white/15 text-white" : "text-slate-400"}`}>
@@ -551,6 +578,47 @@ export default function AdminWorldBoss() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* ── 手動發放世界王卡（後台限定，不進任何玩家掉落池）── */}
+      {tab === "cards" && (
+        <div className="space-y-4">
+          <ToastContainer />
+          <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-3 text-xs text-amber-200">
+            🔒 這裡發出去的世界王卡不會出現在任何玩家可觸發的掉落池，只能教練手動發放（活動獎勵/特殊補償用）。
+          </div>
+
+          <Sel label="選擇會員" value={grantMemberId} onChange={e => setGrantMemberId(e.target.value)}
+            options={[{ value: "", label: "— 請選擇 —" }, ...members.map(m => ({ value: m.id, label: `${m.nickname || m.name}（${m.name}）` }))]} />
+
+          <div className="text-xs text-slate-400 font-bold">選擇世界王卡</div>
+          <div className="grid grid-cols-1 gap-1.5 max-h-64 overflow-y-auto pr-1">
+            {WORLD_BOSS_KEYS.map(k => {
+              const b = WORLD_BOSSES[k];
+              const card = WB_CARDS[k];
+              return (
+                <button key={k} onClick={() => setGrantBossKey(k)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${grantBossKey === k ? "border-amber-400 bg-amber-400/10" : "border-white/10 bg-white/5"}`}>
+                  <WorldBossSVG bossKey={k} currentHP={b.hp} maxHP={b.hp} size={32}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold truncate" style={{ color: grantBossKey === k ? b.accent : undefined }}>{card?.icon} {b.name}</div>
+                    <div className="text-xs text-slate-500">{b.title}｜{card?.statMode === "choose" ? "屬性可選" : `固定 ${card?.stat?.toUpperCase()}`}</div>
+                  </div>
+                  {grantBossKey === k && <span className="text-amber-400 text-xs">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {WB_CARDS[grantBossKey]?.statMode === "choose" && (
+            <Sel label="指定加成屬性" value={grantStat} onChange={e => setGrantStat(e.target.value)}
+              options={[{ value: "hp", label: "HP ❤️" }, { value: "atk", label: "ATK ⚔️" }, { value: "def", label: "DEF 🛡️" }]} />
+          )}
+
+          <Btn v="primary" onClick={handleGrantWbCard} disabled={!grantMemberId || granting}>
+            {granting ? "發放中…" : `🎴 發放《${WB_CARDS[grantBossKey]?.name || ""}》王卡`}
+          </Btn>
         </div>
       )}
     </div>

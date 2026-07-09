@@ -9,6 +9,8 @@ import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { drawFloorMonsters, drawMixedMonsterPool } from "../../lib/monsterData";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
+import { subscribeCardCollection } from "../../lib/db";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import {
   getExcavationDifficulty,
   DUNGEON_SHOP_ITEMS,
@@ -666,6 +668,13 @@ export default function DungeonExpedition({
   onAbandon: onAbandonProp,
 }) {
   const myId = profile?.id;
+  // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
+  const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  useEffect(() => {
+    if (!myId) return;
+    return subscribeCardCollection(myId, setCardColl);
+  }, [myId]);
+  const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
   const difficultyTier = excavation?.difficulty || 1;
   const isFromStorage = excavation?.fromStorage === true;
   const savedId = excavation?.savedId;
@@ -753,12 +762,13 @@ export default function DungeonExpedition({
   // 初始化玩家狀態 + 第一層
   useEffect(() => {
     if (phase === "intro") {
-      const base = buildExpeditionMemberData(profile);
+      const base = buildExpeditionMemberData(profile, cardBonus);
       setPlayerState({
         hp: base.hp,
         maxHP: base.maxHP,
         atk: base.atk,
         def: base.def,
+        wbBonus: base.wbBonus,
         buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
       });
       startFloor(0);
@@ -1263,12 +1273,13 @@ export default function DungeonExpedition({
       <ExpeditionBattleRoom
         key={pendingRoom.id}
         memberData={{
-          ...buildExpeditionMemberData(profile),
+          ...buildExpeditionMemberData(profile, cardBonus),
           id: myId,
           hp: playerState.hp,
           maxHP: playerState.maxHP,
           atk: playerState.atk,
           def: playerState.def,
+          wbBonus: playerState.wbBonus,
           buffs: playerState.buffs,
         }}
         memberName={profile?.name || "射手"}

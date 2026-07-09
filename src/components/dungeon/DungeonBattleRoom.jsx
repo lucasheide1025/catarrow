@@ -15,7 +15,7 @@ import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -43,6 +43,7 @@ import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from 
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
 import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
+import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
@@ -390,6 +391,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (!myId || myId.startsWith("guest")) return;
     const unsub = subscribePotions(myId, setPotionInv);
     return unsub;
+  }, [myId]);
+
+  // ── 訂閱卡片收藏（只用來顯示世界王卡徽章，純視覺）───────────
+  const [myCardColl, setMyCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  useEffect(() => {
+    if (!myId || myId.startsWith("guest")) return;
+    return subscribeCardCollection(myId, setMyCardColl);
   }, [myId]);
 
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
@@ -1574,6 +1582,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   <div style={{ fontSize:10, fontWeight:700, color:isMe?"#fbbf24":!m.alive?"#f87171":"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:1 }}>
                     {!m.alive?"💀":""}{(m.name||"").slice(0,6)}
                   </div>
+                  {isMe && (
+                    <div style={{ display:"flex", justifyContent:"center", marginBottom:1 }}>
+                      <WorldBossCardBadge equipped={myCardColl.equipped} />
+                    </div>
+                  )}
                   <div style={{ fontSize:8, fontWeight:900, marginBottom:1,
                     color: m.role==="rear"?"#a78bfa":"#34d399" }}>
                     {m.role==="rear"?"🛡後衛":"⚔️前衛"}

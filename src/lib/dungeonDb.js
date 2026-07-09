@@ -275,7 +275,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const effectiveAtk = isRear
         ? 0
         : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (1 + atkBuffPctForFront));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1);
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
       const contract     = m.contract || { type:"standard", param:null };
       const raw = isRear
         ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(arrow=>({
@@ -407,7 +407,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
         const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
-        const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef));
+        const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0));
         ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
         const prevHP       = memberHPNow[id];
         memberHPNow[id]    = Math.max(0, prevHP - ctr);
@@ -436,7 +436,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of aliveIds) {
       if (!allData[id]?.rearHeal) continue;
       const scorePct = allData[id]?.scorePct || 0;
-      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct);
+      const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct * (1 + healBonusPct));
       healGivenBy[id] = pool;
       if (pool <= 0) continue;
       const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);

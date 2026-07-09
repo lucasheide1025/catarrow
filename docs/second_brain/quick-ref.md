@@ -31,7 +31,9 @@
 | 前後衛不再直接輸出傷害（2026-07-09，`dungeonDb.js`+`partyDb.js` 都已同步） | 後衛 dmg 選項幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。兩套系統各自獨立實作，改任何一邊記得檢查另一邊要不要跟著改 |
 | `members` collection 白名單缺欄位會導致必現的 permission 錯誤（2026-07-09） | `expeditions` 欄位（貓咪遠征隊）曾經漏加進 `firestore.rules` hasOnly 清單，已補上。新增任何寫入 `members` 的欄位時記得同步檢查白名單 |
 | 市集交換卡片改自行請領（2026-07-09） | `buyCardListing` 不再直接寫賣家文件，改成 `cardMarket` listing 標記 `sellerClaimed:false`，賣家的 `CardMarketPanel`（`CatVillage.jsx`）偵測到自己有已售出未請領的掛賣會自動呼叫 `claimCardSaleProceeds` |
-| 世界王擊殺獎勵改自行請領+均等（2026-07-09，phase1） | `distributeWorldBossRewards` 只算 `top3Ids` 定案，`claimWorldBossKillReward(memberId,eventId)` 各自請領，共同獎勵統一用原 `rank1` 檔次，前三名/尾刀額外拿紀念品。`WorldBossLobby.jsx` 的 `KillScreen` 補了「你的獎勵」顯示。`expireWorldBossEvent`/`handleGiveCardPacks` 還是舊的跨帳號寫入模式，但只有 admin 後台會呼叫，目前沒壞，之後若改成 client-triggered 要一起修。R1-R6強度分級/專屬寶箱/專屬卡片是 phase2，還沒做 |
+| 世界王擊殺獎勵改自行請領+均等（2026-07-09，phase1） | `distributeWorldBossRewards` 只算 `top3Ids` 定案，`claimWorldBossKillReward(memberId,eventId)` 各自請領，共同獎勵統一用原 `rank1` 檔次，前三名/尾刀額外拿紀念品。`WorldBossLobby.jsx` 的 `KillScreen` 補了「你的獎勵」顯示。`expireWorldBossEvent`/`handleGiveCardPacks` 還是舊的跨帳號寫入模式，但只有 admin 後台會呼叫，目前沒壞，之後若改成 client-triggered 要一起修 |
+| 世界王 Phase2：18隻王 + 專屬寶箱/卡片 + 卡片裝備改版（2026-07-09） | 詳見下方「世界王 Phase 2」章節，含**地下城完全沒串接卡片系統**的重要缺口 |
+| `equipped` 欄位格式已改（2026-07-09） | 從字串陣列（monsterId）改成 `{key,source}` 物件陣列；用 `resolveEquippedCards()`（monsterCards.js）統一解析，不要再手刻 `.map(id=>cards[id])`，5 處舊寫法已修（見 changelog） |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |
@@ -355,6 +357,36 @@ subscribeCollectibles(memberId, cb)  // cb({[itemId]: qty})
 // Firestore: members/{id}.dungeonCollectibles = {[itemId]: qty}
 // 掉落率：chest 50%普+20%稀 / elite 35%稀+30%普 / monster 10%普 / boss 必掉1
 ```
+
+---
+
+## 👑 世界王 Phase 2 速查（2026-07-09）
+
+18隻王 = 教練3（`head_coach/wife/yumi`，隱藏王最強）+ 貓貓9（`cat_<catId>`，入門王最弱，`catId` 見 `catData.js::CAT_IDS`）+ 六大族6（`rTier:1~6`，R1最弱→R6最強）。
+
+```js
+// src/lib/worldBossData.js
+WORLD_BOSSES[key]              // .family="coach"|"cat"|六族key；貓有 .catId/.catGroup；六族有 .rTier
+getRewardTier(boss)            // → "entry"|"low"|"mid"|"high"|"top"（取代舊的 rewardByHP 三檔）
+WB_FAMILY_TO_DUNGEON_FAMILY    // 世界王family key → monsterData.js六族key 對照（名稱不完全同）
+
+// src/lib/worldBossCards.js（新檔）
+WB_CARDS[bossKey]  // { statMode:"fixed"|"choose", stat, flavor, title... } 18張世界王卡定義
+
+// src/lib/monsterCards.js
+resolveEquippedCards(cardCollectionDoc)  // 統一解析 equipped（相容新舊格式），calcEquippedBonus 前一定要先過這個
+calcEquippedBonus(cards) // 回傳多 dmgBonusPct/dmgReducePct/healBonusPct（僅worldboss卡才非0）
+MAX_EQUIPPED_PER_STAT=3  // 怪物卡 HP/ATK/DEF 各自上限
+MAX_WB_EQUIPPED=3        // 世界王卡獨立欄位上限（不分屬性）
+
+// src/lib/db.js
+equipCard(memberId, key, source)   // source: "monster"|"wb"，簽章跟舊版不同（舊版只有 monsterId）
+addWorldBossCard(memberId, bossKey, chosenStat)  // 一隻王一張，重複略過
+adminGrantWorldBossCard(...)       // 後台限定發放入口，AdminWorldBoss.jsx「發放王卡」分頁
+setActiveTitle/clearActiveTitle    // 稱號＝已裝備王卡選一張的 title 對外顯示
+```
+
+✅ **地下城卡片串接缺口已修復（同日追加）**：地下城真正的資料流是 `buildExpeditionMemberData(profile, cardBonus)`（`expeditionMemberData.js`）→ 各種 `create*ExpeditionRoom/BattleRoom` 把 `memberData.wbBonus` 寫進 `dungeonRooms/{id}.members.{id}.wbBonus` → `processDungeonRound` 讀取。`DungeonBattleRoom.jsx` 本身仍然不直接讀卡片（它只讀 room member 的 `atk/def/wbBonus`，這些值已經在建房間當下算好），`updateDungeonMemberStats()` 仍是死代碼（不用管，走的是別條路徑）。有 3 條平行建房間路徑（單人/組隊/舊版未用的 `dungeonDb.js::createDungeonRoom`），未來新增 room member 欄位務必 3 條都追過，`TeamExpeditionBattle.jsx` 有一處「重新組裝 members 陣列」最容易漏。
 
 ---
 

@@ -388,6 +388,7 @@ export default function TeamExpeditionBattle({
         role: m.role || "front",
         displayGroup: m.displayGroup || m.role || "front",
         buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+        wbBonus: m.wbBonus || null,
       }));
 
     floorStartingRef.current = true;

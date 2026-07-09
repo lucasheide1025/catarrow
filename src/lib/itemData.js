@@ -25,6 +25,8 @@ export const CHEST_TYPES = {
                desc:"開啟獲得 3 張怪物卡片！36 種怪物都有機率，越稀有越難抽！" },
   cat_box:   { id:"cat_box",   name:"貓貓箱", icon:"🎐", color:"#ec4899", potionChance:0,
                desc:"神秘貓貓箱！90% 機率隨機掉落一種章碎片×1。" },
+  wb_relic:  { id:"wb_relic",  name:"世界秘寶箱", icon:"🗝️", color:"#facc15", potionChance:0,
+               desc:"只有世界王才會掉落的稀世寶箱！開啟獲得大量金幣，並有機率開出這隻王的專屬卡片。" },
   mimi_box:  { id:"mimi_box",  name:"咪咪箱", icon:"😺", color:"#f43f5e", potionChance:0,
                desc:"神秘咪咪箱！開啟後隨機獲得一隻貓咪夥伴，已擁有全部時給羈絆經驗！" },
 };
@@ -357,12 +359,30 @@ function drawRandomCards(count = 3) {
   return drawn;
 }
 
+const WB_RELIC_COIN_RANGE = { min: 400, max: 800 };
+const WB_RELIC_MATERIAL_RANGE = { min: 3, max: 7 };
+
+// 世界秘寶箱：金幣 + 世界王專屬材料（卡片改為擊殺當下直接判定，見 worldBossDb.js，不再從這裡掉）
+function openWorldBossRelic() {
+  const { min, max } = WB_RELIC_COIN_RANGE;
+  const coins = min + Math.floor(Math.random() * (max - min + 1));
+  const matCount = WB_RELIC_MATERIAL_RANGE.min + Math.floor(Math.random() * (WB_RELIC_MATERIAL_RANGE.max - WB_RELIC_MATERIAL_RANGE.min + 1));
+  const wbMaterial = MATERIALS.find(m => m.id === "wb_relic_shard");
+  const materials = wbMaterial ? Array.from({ length: matCount }, () => wbMaterial) : [];
+  return { coins, materials };
+}
+
 // ── 開箱：抽出寶箱內容 ───────────────────────────────────
 // 回傳 { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件], cards:[卡片物件] }
 export function openChestContents(chest) {
   // 圖片收集卡包：抽 3 張怪物卡
   if (chest.type === "card_pack") {
     return { materials: [], potions: [], fragments: [], cards: drawRandomCards(3) };
+  }
+
+  // 世界秘寶箱：金幣 + 世界王專屬材料
+  if (chest.type === "wb_relic") {
+    return { potions: [], fragments: [], ...openWorldBossRelic() };
   }
 
   // 咪咪箱：由 db.js openChest 直接呼叫 openCatBox，這裡只標記類型

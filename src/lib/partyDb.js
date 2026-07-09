@@ -280,7 +280,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "") {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "", wbBonus = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.hp`]:      hp,
@@ -291,6 +291,7 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
       [`members.${memberId}.catATK`]:  catATK || 0,
       [`members.${memberId}.catName`]: catName || "",
       [`members.${memberId}.catId`]:   catId || "",
+      ...(wbBonus ? { [`members.${memberId}.wbBonus`]: wbBonus } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -400,7 +401,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         continue;
       }
       const buffedAtk = Math.round((m.atk || 10) * (1 + atkBuffPctForFront));
-      const raw = calcDmgFn(m.arrows || [], buffedAtk, room.monster.def);
+      const raw = calcDmgFn(m.arrows || [], buffedAtk, room.monster.def, m.wbBonus?.dmgBonusPct || 0);
       const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
       const rawBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
       allPlayerData[id] = {
@@ -498,7 +499,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       const ctrLog = [];
       for (const id of ctrTargets) {
         const mem = members[id];
-        const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10));
+        const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10, mem?.wbBonus?.dmgReducePct || 0));
         ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
         memberHPNow[id] = Math.max(0, memberHPNow[id] - ctr);
         ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr });
@@ -518,7 +519,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of rearIds) {
       if (members[id].rearChoice !== "heal") continue;
       const scorePct = rearScorePct[id] || 0;
-      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct);
+      const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct * (1 + healBonusPct));
       healGivenBy[id] = pool;
       if (pool <= 0) continue;
       const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);

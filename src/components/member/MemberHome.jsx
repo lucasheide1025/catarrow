@@ -10,7 +10,7 @@ import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
 import { COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { ALL_MILESTONES } from "../../lib/arrowMilestone";
@@ -544,8 +544,7 @@ export default function MemberHome({
         const xp = profile?.archerXP || 0;
         const { level, current, needed, pct } = archerXPProgress(xp);
         const lvBonus = archerLevelBonus(level);
-        const equipped = (cardData.equipped || []).map(id => cardData.cards?.[id]).filter(Boolean);
-        const cardBonus = calcEquippedBonus(equipped);
+        const cardBonus = calcEquippedBonus(resolveEquippedCards(cardData));
         const _ds = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
         const archerStats = calcArcherStats({ member: profile, certification, certRecords, dexStats: _ds });
         const totalHP  = archerStats.hp  + lvBonus.hp  + cardBonus.hp;

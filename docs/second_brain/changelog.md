@@ -3,6 +3,49 @@
 
 ---
 
+## 2026-07-09（世界王 Phase 2：18隻王重製 + 專屬寶箱/卡片 + 卡片系統裝備改版）
+
+Trellis 任務 `07-09-worldboss-phase2-cards`，PRD/design/implement 見 `.trellis/tasks/07-09-worldboss-phase2-cards/`。
+
+### 改了什麼
+- **世界王資料**（`worldBossData.js`）：貓貓系列從 3 隻通用貓改成 9 隻真貓（`cat_daming`~`cat_diandian`，讀 `catData.js::CATS`+`CAT_SKILL_GROUPS`），六大族新增 `rTier:1~6`（poison→forest→exam→ghost→office→western 難度遞增），教練系列數值上調成隱藏王定位。`rewardByHP()` 改成 `getRewardTier()`+5檔（entry/low/mid/high/top）取代原本3檔 HP 門檻寫死判斷。`WorldBossSVG.jsx` 新增 `CatGenericPixel`（讀 `catData.js` 的 `palette` 上色），取代原本寫死的 3 隻貓像素圖，9 隻貓共用一套版型。
+- **卡片系統核心**（`monsterCards.js`）：新增 `worldboss` 卡片階級（固定 25 點加成、無升星）、`resolveEquippedCards()`（相容新舊 `equipped` 格式的統一解析函式）、`calcEquippedBonus()` 回傳值擴充 `dmgBonusPct/dmgReducePct/healBonusPct`（僅 worldboss 卡才有，每張 +3%）。裝備上限從「總共5張任意」改成「怪物卡 HP/ATK/DEF 各3張（`MAX_EQUIPPED_PER_STAT`）+ 世界王卡獨立3張（`MAX_WB_EQUIPPED`，不分屬性）」。
+- **世界王卡定義**（新檔 `worldBossCards.js`）：18張，六族/貓貓卡固定屬性（沿用 `FAMILY_STAT`/分組），教練卡開卡時玩家自選屬性。
+- **Firestore 層**（`db.js`）：`cardCollections/{id}` 新增 `wbCards`（世界王卡池，跟 `cards` 怪物卡池分開）；`equipCard`/`unequipCard` 簽章改成 `(memberId, key, source)`，`source==="wb"` 走獨立3格上限、`source==="monster"` 走per-stat 3格上限；新增 `addWorldBossCard`（一隻王一張，重複略過）、`setWorldBossCardStat`、`setActiveTitle`/`clearActiveTitle`（稱號＝從已裝備王卡選一張的 `title` 對外顯示）、`adminGrantWorldBossCard`（後台限定發放，不進任何掉落池）。
+- **寶箱**（`itemData.js`）：新增 `wb_relic`（世界秘寶箱，教練/貓貓王掉落，開出金幣+`wb_relic_shard`世界王專屬材料，新增進 `monsterMaterials.js`）。六大族王沿用既有 `gold/epic/mythic` 家族寶箱，`chest.family` 用新的 `WB_FAMILY_TO_DUNGEON_FAMILY` 對照表轉成地城6族key（`poison→insect, forest→mountain, office→workplace, western→temple`，`ghost/exam`同名）。
+- **卡片掉落機制**（`worldBossDb.js::claimWorldBossKillReward`）：世界王專屬卡片改成**擊殺結算當下直接判定機率**（`WB_CARD_DROP_CHANCE=0.10`）直接呼叫 `addWorldBossCard`，不用開箱，符合「卡片只從世界王身上掉」的需求；寶箱另外照六族/教練貓貓分支發放。
+- **傷害公式**（`damage.js`）：`calcRoundDamage`/`calcWorldBossArrowDmg` 加可選 `dmgBonusPct` 參數；`calcStandardCounter`/`calcPartyCounter`/`calcWorldBossCounter`/`calcDungeonCounter` 加可選 `dmgReducePct` 參數，預設0（無加成，不影響既有呼叫點）。
+- **戰鬥端接線**：`WorldBossAttack.jsx` 完整串接（傷害/減傷都套用）；`partyDb.js::processPartyRound`／`PartyBattleRoom.jsx` 完整串接（含治療加成，`updateBattleMemberStats` 新增 `wbBonus` 參數寫入 `members.{id}.wbBonus`）；`dungeonDb.js::processDungeonRound` 也接了 `m.wbBonus` 讀取（傷害/減傷/治療），但**目前是死接線**——見下方踩坑提醒。
+- **UI**：`CardCollection.jsx` 全面重寫——已裝備區改三欄（HP/ATK/DEF各3格）+世界王卡獨立3格列、篩選籤改「全部/HP/ATK/DEF/世界王」、卡片列表改九宮格小卡片、世界王卡用全息動態邊框CSS+底部稱號小字、可從已裝備王卡設定「使用中稱號」。新增 `WorldBossCardBadge.jsx`（純視覺閃亮徽章），掛在 `WorldBossAttack.jsx`/`PartyBattleRoom.jsx`/`DungeonBattleRoom.jsx` 三處玩家名牌旁（裝備任一王卡才顯示）。`AdminWorldBoss.jsx` 新增「發放王卡」分頁（選會員+選王卡+可選屬性→發放，不進任何玩家掉落池）。
+
+### 為什麼
+- 貓貓系列改真貓：使用者要求世界王要對應道館真實養的九隻貓，不能沿用舊的3隻通用貓皮。
+- 卡片裝備改「per-stat 3張」+「世界王卡獨立3格」：使用者明確定案，怪物卡跟世界王卡是分開的收藏池，但裝備欄位只有世界王卡自己獨立（不佔怪物卡的 HP/ATK/DEF 格），這樣才問得出「那稱號?」——因為世界王卡欄位是獨立的，才會需要一個「從裝備中選一張當稱號」的機制。
+- 卡片只從世界王身上掉：使用者明確反對「打贏王→掉寶箱→開箱才可能出卡」這種間接掉落，要求擊殺當下直接判定，寶箱只保留金幣/材料用途。
+- 世界王卡被動效果（±3%/張封頂9%）：使用者說「要有功效才有意義」，不能只是換皮/换數字，所以額外接了 `dmgBonusPct/dmgReducePct/healBonusPct` 進三套戰鬥系統的傷害/減傷/治療計算。
+
+### 踩坑提醒（下次接手務必先看這段）
+- **（已補上，見下方「追加修正」）** 原本地下城系統完全沒有串接怪物卡片——已修好，見「追加修正（同日）」。
+- `equipped` 欄位資料格式從「字串陣列（monsterId）」改成「物件陣列（`{key,source}`）」是破壞性變更，採**漸進式相容讀取**（`resolveEquippedCards()`/`normalizeEquipped()` 兩處都判斷 `typeof item === "string"`），沒有寫遷移腳本。舊資料完全相容，新裝備一律寫新格式。
+- 這次順手修掉一個潛在regression：`equipped` 格式改變後，`CouncilHall.jsx`/`PartyBattleRoom.jsx`/`MemberHome.jsx`/`MonsterBattle.jsx`/`WorldBossAttack.jsx` 五處原本各自手刻 `equipped.map(id=>cards[id])` 的邏輯全部需要改用新的 `resolveEquippedCards()`，否則卡片加成會靜默歸零。**其中 `CouncilHall.jsx` 原本的寫法本來就是錯的**（直接把 `equipped` 陣列的字串傳進 `calcEquippedBonus`，沒有先轉成卡片物件），順手一併修正。
+- `AdminWorldBoss.jsx` 有個 pre-existing 的 React hooks 順序問題：`if (showBattle) return <WorldBossLobby/>` 這個提早 return 寫在一堆 `useState`/`useEffect` 宣告**之前**，理論上切換 `showBattle` 會觸發「Rendered fewer hooks than expected」。這次新增的手動發卡功能相關 hooks 也放在這個 return 之後（跟現有其他 hooks 位置一致），**沒有引入新問題但也沒有修**，因為這是完全獨立的既有問題，不在這次任務範圍內。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully，無編譯錯誤。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後實測：貓貓王正確顯示9隻＋像素圖上色正確、擊殺六族王掉對應族寶箱、擊殺教練/貓貓王掉世界秘寶箱、擊殺後有機率直接拿到王卡、卡片頁三欄裝備格運作正常、世界王卡全息邊框+稱號設定、組隊/世界王/地下城三套戰鬥系統裝備世界王卡都確實影響傷害數字。
+
+### 追加修正（同日）：補上地下城完全沒串接卡片系統的缺口
+使用者確認要修，順著地下城的實際資料流（`buildExpeditionMemberData` → `dungeonRooms/{id}.members.{id}` → `processDungeonRound` 讀 `m.atk/m.wbBonus`）一路補齊：
+- `expeditionMemberData.js::buildExpeditionMemberData(profile, cardBonus)`：新增 `cardBonus` 參數（`calcEquippedBonus(resolveEquippedCards(...))` 結果），把 HP/ATK/DEF 卡片加成併入基礎值，並把 `dmgBonusPct/dmgReducePct/healBonusPct` 包成 `wbBonus` 欄位一起回傳。
+- `expeditionDb.js::createExpeditionBattleRoom`／`expeditionTeamDb.js::createTeamExpeditionRoom`/`joinTeamExpeditionRoom`：member 物件都加上 `wbBonus: memberData?.wbBonus || null`。`syncTeamExpeditionMembers`（跨樓層同步）本來就是 `{...member, ...}` 展開舊物件在前，不用改就會自動帶著 `wbBonus` 走。
+- `TeamExpeditionBattle.jsx`：找到一處「從房間 `members` 重新組裝陣列丟給 `createTeamExpeditionBattleRoom`」的地方**漏掉了 `wbBonus` 欄位**（這是最容易漏、也最難發現的一環——組隊模式進戰鬥房間前會重新映射一次成員陣列，任何新增欄位都要記得在這個映射也加一次）。
+- `DungeonLobby.jsx`（組隊）／`DungeonExpedition.jsx`（單人）：各自新增 `subscribeCardCollection` 訂閱＋算 `cardBonus`，呼叫 `buildExpeditionMemberData` 時帶入。單人模式額外把 `wbBonus` 存進 `playerState`（跨樓層持續的本地狀態），每次建立戰鬥房間時用 `playerState.wbBonus` 覆蓋（因為裝備中途不會變，不用每層重算）。
+- `CI=true npm run build`：Compiled successfully。
+
+**教訓**：地下城/遠征系統有 3 條平行的「建立戰鬥房間」路徑（單人 `createExpeditionBattleRoom`、組隊建立 `createTeamExpeditionRoom`+`createTeamExpeditionBattleRoom`、舊版未使用的 `dungeonDb.js::createDungeonRoom`），任何要塞進 `room.members.{id}` 的新欄位都要**沿著全部路徑**一路追過去確認每個「重新組裝 member 物件」的地方都有帶到，漏一個環節就會在特定情境下（比如剛好走組隊模式）悄悄失效。
+
+---
+
 ## 2026-07-09（寶箱族擴充：14隻怪物 + 隱藏地下城改為專屬寶箱族農場）
 
 Trellis 任務 `07-09-07-09-treasure-family-expansion`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-treasure-family-expansion/`。

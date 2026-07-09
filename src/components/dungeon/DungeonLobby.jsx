@@ -9,6 +9,8 @@ import DungeonTeamLobby from "./DungeonTeamLobby";
 import DungeonExpedition from "./DungeonExpedition";
 import TeamExpeditionBattle from "./TeamExpeditionBattle";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
+import { subscribeCardCollection } from "../../lib/db";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import {
   createTeamExpeditionRoom,
   findReconnectableTeamExpedition,
@@ -49,6 +51,15 @@ export default function DungeonLobby({ onBack }) {
   const [reconnectRoom, setReconnectRoom] = useState(null);
   const [soloRecovery, setSoloRecovery] = useState(null); // profile.activeExpedition | null
   const [soloSettling, setSoloSettling] = useState(false);
+
+  // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
+  const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  useEffect(() => {
+    if (!myId) return;
+    return subscribeCardCollection(myId, setCardColl);
+  }, [myId]);
+  const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
+  function buildMemberData() { return buildExpeditionMemberData(profile, cardBonus); }
 
   // 登入地下城首頁時，找回仍包含自己的等待室、進行中遠征或未領取結算。
   useEffect(() => {
@@ -136,7 +147,7 @@ export default function DungeonLobby({ onBack }) {
     setJoinLoading(true);
     setJoinErr("");
     const res = await joinTeamExpeditionRoom(
-      joinCode.trim(), myId, myName, buildExpeditionMemberData(profile)
+      joinCode.trim(), myId, myName, buildMemberData()
     );
     if (res.ok) {
       setReconnectRoom(null);
@@ -412,7 +423,7 @@ export default function DungeonLobby({ onBack }) {
                             <button onClick={async () => {
                               setJoinLoading(true);
                               const res = await joinTeamExpeditionRoom(
-                                r.code, myId, myName, buildExpeditionMemberData(profile)
+                                r.code, myId, myName, buildMemberData()
                               );
                               if (res.ok) {
                                 setReconnectRoom(null);
@@ -458,7 +469,7 @@ export default function DungeonLobby({ onBack }) {
                 hostId: myId,
                 hostName: myName,
                 dungeon: d,
-                memberData: buildExpeditionMemberData(profile),
+                memberData: buildMemberData(),
               });
               if (res.ok) {
                 setReconnectRoom(null);

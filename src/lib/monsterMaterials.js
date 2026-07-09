@@ -66,6 +66,9 @@ export const MATERIALS = [
   { id:"frag_fatcat_bronze",  name:"肥貓銅章碎片", icon:"🐱", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成肥貓銅章。", upgradesTo:null, upgradeCount:0 },
   { id:"frag_score_bronze",   name:"積分銅章碎片", icon:"⭐", family:"all", tier:"all", rarity:"uncommon", desc:"集齊可以合成積分銅章。", upgradesTo:null, upgradeCount:0 },
   { id:"frag_achieve_silver", name:"成就銀章碎片", icon:"🏆", family:"all", tier:"all", rarity:"rare",     desc:"集齊可以合成成就銀章。", upgradesTo:null, upgradeCount:0 },
+
+  // ════ 世界王專屬材料（只從世界秘寶箱掉落，預留未來世界王裝備合成用）════
+  { id:"wb_relic_shard", name:"世界王遺晶", icon:"🔯", family:"worldboss", tier:"mythic", rarity:"legendary", desc:"從世界王身上凝聚出的稀有結晶，蘊含牠們的力量殘響。未來可用於世界王專屬裝備。", upgradesTo:null, upgradeCount:0 },
 ];
 
 // ── 依怪物取材料池 ────────────────────────────────────────

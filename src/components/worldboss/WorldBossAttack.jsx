@@ -8,7 +8,7 @@ import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcArcherStats } from "../../lib/monsterData";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
@@ -27,6 +27,7 @@ import { SmallMilestonePopup } from "../member/ArrowMilestonePopup";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
+import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 
 // ── WorldBoss 事件型別（客製，不經過 BattleAnimation） ──────
 const WB_EVT = {
@@ -219,14 +220,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     calcArcherStats({ member: profile, certification, certRecords, dexStats: null }),
   [profile, certification, certRecords]);
 
-  const cardEquip = useMemo(() => {
-    const equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
-    return calcEquippedBonus(equipped);
-  }, [cardColl]);
+  const cardEquip = useMemo(() => calcEquippedBonus(resolveEquippedCards(cardColl)), [cardColl]);
   const lvBon   = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
   const baseATK = (archerBase.atk || 0) + (cardEquip.atk || 0) + lvBon.atk;
   const baseDEF = (archerBase.def || 0) + (cardEquip.def || 0) + lvBon.def;
   const baseHP  = (archerBase.hp  || 0) + (cardEquip.hp  || 0) + lvBon.hp;
+  const wbDmgBonusPct  = cardEquip.dmgBonusPct  || 0;
+  const wbDmgReducePct = cardEquip.dmgReducePct || 0;
 
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
@@ -476,7 +476,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     for (let i = 0; i < fullArrows.length; i++) {
       const a   = fullArrows[i];
-      const dmg = Math.round(wbArrowDmg(a.score, baseATK, boss.def, participantBonus) * potionMult);
+      const dmg = Math.round(wbArrowDmg(a.score, baseATK, boss.def, participantBonus, wbDmgBonusPct) * potionMult);
       const isCrit = a.score >= 10;
       if (isCrit) crits++;
       totalDmg += dmg;
@@ -595,7 +595,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     addTimer(() => {
       setAnimBossCharge(false);
-      const cdmg   = wbCounter(boss.atk || 100, baseDEF);
+      const cdmg   = wbCounter(boss.atk || 100, baseDEF, wbDmgReducePct);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
       const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
@@ -1214,6 +1214,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                     background: myHP/baseHP>0.5?"linear-gradient(90deg,#16a34a,#4ade80)":myHP/baseHP>0.25?"linear-gradient(90deg,#d97706,#fbbf24)":"linear-gradient(90deg,#dc2626,#f87171)" }}/>
                 </div>
                 <div style={{ fontSize:9, fontWeight:700, color:"#fbbf24", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{myName?.slice(0,6)}</div>
+                <div style={{ display:"flex", justifyContent:"center", marginBottom:1 }}>
+                  <WorldBossCardBadge equipped={cardColl.equipped} />
+                </div>
                 <div style={{ display:"flex", justifyContent:"center", gap:3, marginBottom:1 }}>
                   <div style={{ fontSize:8, color:"#f87171" }}>⚔{baseATK}</div>
                   <div style={{ fontSize:8, color:"#60a5fa" }}>🛡{baseDEF}</div>

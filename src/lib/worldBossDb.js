@@ -7,13 +7,23 @@ import {
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
-import { addCoins, addMaterials, addChests, addCardPack, createNotification } from "./db";
+import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, createNotification } from "./db";
 import { openCoinChest } from "./lootTable";
 import {
   WORLD_BOSSES, WORLD_BOSS_KEYS, DEFAULT_REWARD, CONSOLATION_REWARD,
-  LAST_HIT_EXTRA, BOSS_DURATION_MAX_DAYS,
+  LAST_HIT_EXTRA, BOSS_DURATION_MAX_DAYS, WB_FAMILY_TO_DUNGEON_FAMILY,
   buildKillAnnouncement, drawRandomBot, simulateBotRound, getRewardByBossKey,
 } from "./worldBossData";
+
+// 擊殺結算時，參戰者直接判定是否掉落「這隻王」的專屬卡片（不用經過開箱）
+const WB_CARD_DROP_CHANCE = 0.10;
+
+// 六族王的寶箱等級：R1~R2 gold、R3~R4 epic、R5~R6 mythic
+function chestTierByRTier(rTier) {
+  if (rTier <= 2) return "gold";
+  if (rTier <= 4) return "epic";
+  return "mythic";
+}
 
 const WB  = "worldBossEvents";
 const WBH = "worldBossHistory";
@@ -318,7 +328,13 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const base    = isNewFormat ? (reward.base  || {}) : {};
     const unified = isNewFormat ? (reward.rank1 || reward.rankAll || {}) : reward;
 
-    const summary = { coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, cardPack: false };
+    const boss = WORLD_BOSSES[ev.bossKey] || {};
+    // 六大族 → 對應族寶箱（gold/epic/mythic 依 R 難度）；教練/貓貓 → 世界秘寶箱
+    const isFamilyBoss = !!boss.rTier;
+    const dungeonFamily = isFamilyBoss ? WB_FAMILY_TO_DUNGEON_FAMILY[boss.family] : null;
+    const relicChestType = isFamilyBoss ? chestTierByRTier(boss.rTier) : "wb_relic";
+
+    const summary = { coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, cardPack: false, wbCard: null };
 
     if (base.coins > 0) { await addCoins(memberId, base.coins).catch(() => {}); summary.coins += base.coins; }
     if (base.woodChests > 0) {
@@ -330,7 +346,13 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     if (unified.coins > 0) { await addCoins(memberId, unified.coins).catch(() => {}); summary.coins += unified.coins; }
 
     const chests = [];
-    for (let i = 0; i < (unified.goldChests || 0); i++) chests.push({ id: `wb_gold_${memberId}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: "世界王共同獎勵", ts: Date.now() });
+    for (let i = 0; i < (unified.goldChests || 0); i++) {
+      chests.push({
+        id: `wb_relic_${memberId}_${Date.now()}_${i}`, type: relicChestType,
+        family: isFamilyBoss ? dungeonFamily : "worldboss", tier: "boss",
+        bossKey: ev.bossKey, from: `世界王共同獎勵（${boss.name || "?"}）`, ts: Date.now(),
+      });
+    }
     for (let i = 0; i < (unified.catBoxes  || 0); i++) chests.push({ id: `wb_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box", family: "worldboss", tier: "boss", from: "世界王共同獎勵", ts: Date.now() });
     if (chests.length > 0) await addChests(memberId, chests).catch(() => {});
     summary.goldChests += unified.goldChests || 0;
@@ -339,6 +361,12 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     if ((unified.cardChance || 0) > 0 && Math.random() < unified.cardChance) {
       await addCardPack(memberId).catch(() => {});
       summary.cardPack = true;
+    }
+
+    // 世界王專屬卡片：擊殺結算當下直接判定，不用開箱（一隻王一張，重複開到會被略過）
+    if (ev.bossKey && Math.random() < WB_CARD_DROP_CHANCE) {
+      const res = await addWorldBossCard(memberId, ev.bossKey, null).catch(() => ({ ok: false }));
+      if (res?.ok) summary.wbCard = ev.bossKey;
     }
 
     // 世界王地下城：人人都有

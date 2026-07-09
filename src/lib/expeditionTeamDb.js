@@ -39,6 +39,7 @@ export async function createTeamExpeditionRoom({
       catName: memberData?.catName || "",
       archerStyle: memberData?.archerStyle || "baobao",
       catAtk: memberData?.catAtk ?? 0,
+      wbBonus: memberData?.wbBonus || null,
       joinedAt: serverTimestamp(),
     };
     const ref = await addDoc(collection(db, D), {
@@ -83,6 +84,7 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       catName: memberData?.catName || "",
       archerStyle: memberData?.archerStyle || "baobao",
       catAtk: memberData?.catAtk ?? 0,
+      wbBonus: memberData?.wbBonus || null,
       joinedAt: serverTimestamp(),
     };
     const roomRef = doc(db, D, roomDoc.id);
@@ -286,6 +288,7 @@ export async function createTeamExpeditionBattleRoom({
         catName: m.catName || "",
         archerStyle: m.archerStyle || "baobao",
         catAtk: m.catAtk || 0,
+        wbBonus: m.wbBonus || null,
       };
     }
 

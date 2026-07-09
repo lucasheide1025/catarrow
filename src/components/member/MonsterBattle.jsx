@@ -11,7 +11,7 @@ import {
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
   subscribeCardCollection, addArcherXP, addRoundArrows,
 } from "../../lib/db";
-import { calcEquippedBonus } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { CAT_TIER_XP } from "../../lib/catLevel";
 import { getRewardsForMilestone } from "../../lib/arrowMilestone";
@@ -747,11 +747,8 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
     // 怪物卡片裝備加成（優先用 ref 避免 closure stale 問題）
-    const cardData = cardCollRef.current;
-    const equippedIds = cardData.equipped || cardColl.equipped || [];
-    const cardMap = cardData.cards || cardColl.cards || {};
-    const equipped = equippedIds.map(id => cardMap[id]).filter(Boolean);
-    const cardBonus = calcEquippedBonus(equipped);
+    const cardData = cardCollRef.current?.equipped ? cardCollRef.current : cardColl;
+    const cardBonus = calcEquippedBonus(resolveEquippedCards(cardData));
     // 射手等級加成
     const lvBon = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
     const bStats = {
@@ -1135,8 +1132,7 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
             <div className="flex gap-2 text-xs flex-wrap">
               {(() => {
                 const lvBonus = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
-                const equipped = (cardColl.equipped || []).map(id => cardColl.cards?.[id]).filter(Boolean);
-                const cardBonus = isGuest ? { hp:0, atk:0, def:0 } : calcEquippedBonus(equipped);
+                const cardBonus = isGuest ? { hp:0, atk:0, def:0 } : calcEquippedBonus(resolveEquippedCards(cardColl));
                 return (
                   <>
                     <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp + lvBonus.hp + cardBonus.hp}</span>
