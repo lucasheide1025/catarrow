@@ -1286,7 +1286,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const hasRearMembers = rearDisplayMembers.length > 0;
   const displayedRowMembers = (!liveEntry && !submitted && viewRearInInput && hasRearMembers)
     ? rearDisplayMembers : myRowMembers;
-  const displayRowW = Math.min(120, Math.floor((528 - Math.max(0, displayedRowMembers.length - 1) * 3) / (displayedRowMembers.length || 1)));
+  // 卡片維持固定寬度，人數多時改橫向滑動，不再擠壓變窄（見前後衛重構任務）
+  const displayRowW = 100;
 
   function handleLeave() {
     onExit?.({ preserve: true });
@@ -1426,7 +1427,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 </div>
                 {(entry.playerLog || []).map((p, j) => (
                   <div key={j} style={{ paddingLeft:6, color:"#cbd5e1", marginBottom:1, lineHeight:1.5 }}>
-                    <span style={{ color:"#94a3b8" }}>🏹</span> {p.name}: <span style={{ color:"#f87171", fontWeight:700 }}>+{p.dmg}</span>
+                    <span style={{ color:"#94a3b8" }}>🏹</span> {p.name}:{" "}
+                    {p.heal > 0
+                      ? <span style={{ color:"#4ade80", fontWeight:700 }}>💚+{p.heal}</span>
+                      : p.buffPct > 0
+                        ? <span style={{ color:"#38bdf8", fontWeight:700 }}>🛡️+{p.buffPct}%</span>
+                        : <span style={{ color:"#f87171", fontWeight:700 }}>+{p.dmg}</span>}
                     {p.crits > 0 && <span style={{ color:"#fbbf24" }}> 💥{p.crits}</span>}
                     {p.ctr > 0 && <span style={{ color:"#fb923c" }}> ⚡-{p.ctr}</span>}
                     <span style={{ color:"#475569", fontSize:9, marginLeft:4 }}>{(p.arrowBreakdown || []).map(a => a.label).join(" ")}</span>
@@ -1511,8 +1517,10 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           </div>
         )}
 
-        {/* 主排（我的視角 / 切換後衛視角）完整卡片 */}
-        <div style={{ display:"flex", gap:3, padding:"2px 6px 4px", justifyContent:"center",
+        {/* 主排（我的視角 / 切換後衛視角）完整卡片：人數多時橫向滑動，不擠壓卡片寬度 */}
+        <div style={{ display:"flex", gap:3, padding:"2px 6px 4px",
+          justifyContent: displayedRowMembers.length > 4 ? "flex-start" : "center",
+          overflowX:"auto", WebkitOverflowScrolling:"touch",
           animation: animScreenShake ? "mb-screen-shake 0.55s ease" : undefined }}>
           {displayedRowMembers.map(m => {
             const displayHp = localHpOverride[m.id] !== undefined ? localHpOverride[m.id] : m.hp;
@@ -1661,13 +1669,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                     style={{ flex:1, padding:"8px 0", borderRadius:8, border:`2px solid ${rearChoice==="heal"?"#4ade80":"rgba(74,222,128,0.3)"}`,
                       background: rearChoice==="heal" ? "rgba(74,222,128,0.25)" : "rgba(0,0,0,0.4)",
                       color:"#4ade80", fontWeight:900, fontSize:12, cursor:"pointer" }}>
-                    💚 治癒 (25% HP)
+                    💚 治癒 (看命中%)
                   </button>
                   <button onClick={() => setRearChoice("dmg")}
-                    style={{ flex:1, padding:"8px 0", borderRadius:8, border:`2px solid ${rearChoice==="dmg"?"#f87171":"rgba(248,113,113,0.3)"}`,
-                      background: rearChoice==="dmg" ? "rgba(248,113,113,0.25)" : "rgba(0,0,0,0.4)",
-                      color:"#f87171", fontWeight:900, fontSize:12, cursor:"pointer" }}>
-                    ⚔️ 攻擊 (+50% 傷害)
+                    style={{ flex:1, padding:"8px 0", borderRadius:8, border:`2px solid ${rearChoice==="dmg"?"#38bdf8":"rgba(56,189,248,0.3)"}`,
+                      background: rearChoice==="dmg" ? "rgba(56,189,248,0.25)" : "rgba(0,0,0,0.4)",
+                      color:"#38bdf8", fontWeight:900, fontSize:12, cursor:"pointer" }}>
+                    🛡️ 助攻 (前衛加攻擊)
                   </button>
                 </div>
               </div>
@@ -1983,7 +1991,13 @@ function RoundResultOverlay({ entry, room, status, onContinue }) {
             <span className="text-[11px] text-slate-500 font-mono">
               {(p.arrowBreakdown || []).map(a => a.label).join(" ")}
             </span>
-            <span className="font-black text-amber-300 min-w-[36px] text-right">{p.dmg}</span>
+            {p.heal > 0 ? (
+              <span className="font-black text-emerald-400 min-w-[36px] text-right">💚{p.heal}</span>
+            ) : p.buffPct > 0 ? (
+              <span className="font-black text-sky-400 min-w-[36px] text-right">🛡️{p.buffPct}%</span>
+            ) : (
+              <span className="font-black text-amber-300 min-w-[36px] text-right">{p.dmg}</span>
+            )}
             {p.crits > 0 && <span className="text-yellow-400 text-xs">💥</span>}
             {p.ctr  > 0 && <span className="text-rose-400 text-xs">-{p.ctr}</span>}
           </div>

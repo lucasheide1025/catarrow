@@ -28,6 +28,7 @@
 | `members.activeExpedition`（2026-07-09 新增） | 單人遠征進度持久化，`expeditionDb.js::setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`；`DungeonLobby.jsx` 偵測並提供「結算並領取」banner，**不做**地圖位置復原 |
 | 寶箱族（第7族）已上線（2026-07-09） | 18隻怪物：`treasure_1~6`=假(有ATK)，`treasure_1_real~6_real`=真(ATK≈1)，`treasure_king_small/big_1~6`=王(`isKing:true`，各自T1-T6)。隱藏地下城=100%寶箱族（`dungeonExcavation.js::revealExcavation`），`calculateExpeditionRewards` 依 `family==="treasure"` 給×3金幣/箭露。`drawFloorMonsters` 三層樓都要看 `options.family`，不是只有王。DEF 已調降跟一般族系同量級 |
 | 藥水庫存要直接 `subscribePotions(myId,cb)`（2026-07-09 修正） | 玩家藥水存在獨立 `potionInventory/{memberId}` collection，不在 `members`/房間文件裡；`DungeonBattleRoom.jsx` 原本錯誤讀 `room.members.{id}.items`（死欄位，從沒被寫入過），已修正 |
+| 地下城前後衛：後衛不再直接輸出傷害（2026-07-09） | `dungeonDb.js::processDungeonRound` 後衛 dmg 選項改成幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。`partyDb.js`（組隊打怪）**還沒同步**，仍是舊公式（固定25%治癒/0.5倍傷害），兩套前後衛邏輯目前不一致 |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

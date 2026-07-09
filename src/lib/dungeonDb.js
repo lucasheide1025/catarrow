@@ -247,19 +247,42 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const round    = room.round || 1;
     const mods     = room.nextFloorModifiers || {};
 
-    // Step 1：計算每人 6 箭（帶任務 + buff 加成；後衛heal選擇→傷害歸零）
+    // Step 1：計算每人 6 箭（帶任務 + buff 加成）
+    // 後衛不再直接對怪物造成傷害：heal 選擇治癒隊友、dmg(預設) 選擇改為幫存活前衛加攻擊力
+    // 兩者的池子都用「後衛本回合命中分數%」換算（不看後衛自己的 ATK/DEF），均分給受益人數
     const allData = {};
+    const arrowsPerRoundForScore = room.arrowsPerRound || 6;
+    function calcScorePct(arrows) {
+      const sum = (arrows || []).reduce((s, a) => s + (a?.score || 0), 0);
+      return Math.max(0, Math.min(1, sum / (arrowsPerRoundForScore * 10)));
+    }
+    // 先算後衛的加攻池：每位選 dmg(助攻) 的後衛貢獻 (命中分數% × 25%) ÷ 存活前衛數，多名後衛可疊加
+    let atkBuffPctForFront = 0;
+    const rearScorePct = {};
+    for (const id of rearIds) {
+      const m = members[id];
+      const scorePct = calcScorePct(m.arrows);
+      rearScorePct[id] = scorePct;
+      if (m.rearChoice !== "heal" && frontIds.length > 0) {
+        atkBuffPctForFront += (scorePct * 0.25) / frontIds.length;
+      }
+    }
     for (const id of aliveIds) {
       const m          = members[id];
       const isRear     = members[id].role === "rear";
       const rearHeal   = isRear && m.rearChoice === "heal";
-      const rearDmgMul = isRear && m.rearChoice === "dmg" ? 0.5 : 1.0;
-      const effectiveAtk = rearHeal ? 0 : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * rearDmgMul;
+      const rearBuff   = isRear && !rearHeal;
+      const effectiveAtk = isRear
+        ? 0
+        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (1 + atkBuffPctForFront));
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1);
       const contract     = m.contract || { type:"standard", param:null };
-      const raw = rearHeal
+      const raw = isRear
         ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(arrow=>({
-            dmg:0, partIcon:"💚", partName:"治癒", label:arrow?.label || arrow,
+            dmg:0,
+            partIcon: rearHeal ? "💚" : "🛡️",
+            partName: rearHeal ? "治癒" : "助攻",
+            label:arrow?.label || arrow,
           })) }
         : calcDmgFn(m.arrows || [], effectiveAtk, room.monster.def, contract, dmgMult);
       const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
@@ -281,6 +304,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         arrowBreakdown,
         contract,
         rearHeal,
+        rearBuff,
+        scorePct: isRear ? (rearScorePct[id] ?? 0) : 0,
       };
     }
 
@@ -322,9 +347,12 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         const dmg   = entry.dmg || 0;
         miniDmg    += dmg;
         if (dmg > 0) { lastHitPlayer = id; lastHitLabel = entry.label; }
+        const isSupportArrow = entry.partName === "治癒" || entry.partName === "助攻";
         const msg   = dmg > 0
           ? `${m.name} 命中 ${entry.partIcon}${entry.partName}，造成 ${dmg} 傷害！`
-          : `${m.name} 脫靶了…`;
+          : isSupportArrow
+            ? `${m.name} ${entry.partIcon}${entry.partName}中…`
+            : `${m.name} 脫靶了…`;
         miniLog.push({ id, name:m.name, dmg, ctr:0, arrowBreakdown:[entry], message:msg });
       }
       monsterHP = Math.max(0, monsterHP - miniDmg);
@@ -401,11 +429,16 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     if (eff.extraDmg)  monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 
-    // Step 5：計算後衛治癒（治癒量均分給全體存活隊友，不包含自己）
+    // Step 5：計算後衛治癒（池子 = maxHP × 15% × 命中分數%，均分給全體存活隊友，不包含自己；
+    //         刻意比舊版固定 25%maxHP 更低、且看命中率，避免補血變成無腦選項）
     const receivedHeal = {};
+    const healGivenBy  = {};
     for (const id of aliveIds) {
       if (!allData[id]?.rearHeal) continue;
-      const pool    = Math.round((members[id].maxHP || 100) * 0.25);
+      const scorePct = allData[id]?.scorePct || 0;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct);
+      healGivenBy[id] = pool;
+      if (pool <= 0) continue;
       const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);
       if (!targets.length) continue;
       const perPerson = Math.round(pool / targets.length);
@@ -466,6 +499,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       crits: allData[id].crits,
       arrowBreakdown: allData[id].arrowBreakdown,
       contract: allData[id].contract,
+      heal:     healGivenBy[id] || 0,
+      buffPct:  allData[id]?.rearBuff ? Math.round((rearScorePct[id] || 0) * 25) : 0,
     }));
 
     const logEntry = {
