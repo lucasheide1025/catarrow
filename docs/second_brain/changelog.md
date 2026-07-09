@@ -3,6 +3,21 @@
 
 ---
 
+## 2026-07-09（訪客/兒童模式 Phase 4：兒童模式打怪難度修正 + UI簡化 + 跨帳號協戰確認）
+
+### 改了什麼
+- `MonsterBattle.jsx`：`kidMode` prop 原本設計是「拉高兒童模式的 archerStats（hp/atk/def）讓小朋友更好打贏」，**在寫完當下自我發現這是個會反效果的設計並改掉**：`archerStats` 會餵給 `calcArcherPower()`（`monsterData.js:523`，公式 `hp*0.4+atk*1.5+def*1.0`）決定 `getTierPoolByPower()` 能配對到哪些怪物階級。訪客基礎數值（100/10/10）戰力是65，落在 `<100` 只會配對 `common/rare`；原本規劃的兒童加成數值（180/22/16）戰力是121，會跨過 `>=100` 門檻多解鎖 `elite` 階怪物——而 elite 怪物血量/攻擊力約是 common 的2.6倍，遠超過數值加成帶來的優勢，等於兒童模式反而更難打。**最終改成訪客/兒童共用同一組基礎數值，完全不動戰鬥數值。**
+- 兒童模式的「更好打」改用 UI 簡化達成：出戰前「開始挑戰」按鈕在 `kidMode` 下放大（`py-6 text-2xl`）、文案改成「⚔️ 出發打怪！」。
+- `GuestApp.jsx`：`<MonsterBattle isGuest={true} kidMode={isKid} />`，正式把 `kidMode` 接上。
+- 確認「官方學生/家長協助兒童打地下城」需求**不需要新程式碼**：`PartyLobby.jsx`/`DungeonLobby.jsx` 的房號加入機制本來就跟 `accountType` 無關，`MemberApp.jsx` 已經掛了這兩個元件的入口，官方學生本來就能直接輸入房號加入兒童模式建立的房間。
+- `CI=true npm run build`：Compiled successfully。
+
+### 踩坑提醒
+- **千萬別為了「讓某模式更好打」直接拉高 `archerStats`**——這個數值同時是戰鬥力也是怪物配對難度輸入，兩者是耦合的。要做難度調整應該只動傷害計算或選怪池，不要動會被 `calcArcherPower` 讀到的數值。
+- `getTierPoolByPower` 門檻：`<50`→common only；`>=50`→+rare；`>=100`→+elite；`>=180`→+fierce；`>=280`→+boss；`>=400`→+mythic。日後任何「戰力相關」的加成都要先檢查會不會跨這些門檻。
+
+---
+
 ## 2026-07-09（訪客/兒童模式 Phase 3：簡化版地下城 + 體驗紀念卡）
 
 ### 改了什麼

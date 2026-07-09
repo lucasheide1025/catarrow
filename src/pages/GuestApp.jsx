@@ -155,7 +155,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
 
       <div style={{ paddingBottom: 90 }}>
         {tab === "home" && <GuestHome name={guestProfile.name} isKid={isKid} accent={themeAccent} onGo={setTab} onShareCard={() => setShowShareCard(true)} />}
-        {tab === "monster" && <MonsterBattle isGuest={true} />}
+        {tab === "monster" && <MonsterBattle isGuest={true} kidMode={isKid} />}
         {tab === "dungeon" && <GuestDungeonSimple guestOverride={guestOverride} onExit={() => setTab("home")} />}
         {tab === "worldboss" && (
           <WorldBossLobby guestOverride={guestOverride} onBattleComplete={result => setWbResult(result)} />

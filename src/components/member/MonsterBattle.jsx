@@ -113,7 +113,7 @@ function saveMbDefaults(obj) {
   localStorage.setItem("mb_defaults", JSON.stringify(obj));
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
+export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
   const { profile } = useAuth();
   const checkinActive = useCheckinActive(profile?.id);
   const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion();
@@ -316,7 +316,15 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
   }, [phase, monsterHP, archerHP, round]); // eslint-disable-line
 
   useEffect(() => {
-    if (isGuest) { setArcherStats({ hp:100, atk:10, def:10 }); setDailyLeft(null); return; }
+    if (isGuest) {
+      // 訪客/兒童共用同一組基礎數值——刻意不因 kidMode 拉高數值，
+      // 因為 archerStats 會餵給 calcArcherPower 決定配對怪物階級，
+      // 拉高數值反而會解鎖更強的 elite 怪物，讓兒童模式變得更難打（已驗證：65→121 戰力會跨過100門檻）。
+      // 兒童模式的「更好打」改用 UI 簡化（大按鈕/簡短文字）與家長協戰達成，不動戰鬥數值。
+      setArcherStats({ hp:100, atk:10, def:10 });
+      setDailyLeft(null);
+      return;
+    }
     if (!profile?.id) return;
 
     // ── sessionStorage 快取（同一 session 不重複讀）────────
@@ -1612,9 +1620,9 @@ export default function MonsterBattle({ onBack, isGuest = false, questContext = 
               🐱 {catName} 將在戰鬥中協助你！
             </div>
           )}
-          <button onClick={startBattle} className="w-full py-4 rounded-2xl font-black text-lg"
+          <button onClick={startBattle} className={`w-full rounded-2xl font-black ${kidMode ? "py-6 text-2xl" : "py-4 text-lg"}`}
             style={{ background:"linear-gradient(90deg,#fbbf24,#f59e0b)", color:"#7c2d12" }}>
-            ⚔️ 開始挑戰！
+            {kidMode ? "⚔️ 出發打怪！" : "⚔️ 開始挑戰！"}
           </button>
         </div>
       </div>
