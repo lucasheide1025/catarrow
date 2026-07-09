@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
-import { addCoins, addMaterials, addChests, addCardPack } from "./db";
+import { addCoins, addMaterials, addChests, addCardPack, createNotification } from "./db";
 import { openCoinChest } from "./lootTable";
 import {
   WORLD_BOSSES, WORLD_BOSS_KEYS, DEFAULT_REWARD, CONSOLATION_REWARD,
@@ -202,6 +202,12 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
         upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組", killerStyle: killerStyle || "baobao", finishingArrow: finishingArrow || null };
         upd.announcement = announcement;
         upd.defeatedAt   = serverTimestamp();
+        createNotification({
+          type: "worldboss",
+          title: `⚔️ 世界王擊殺！${ev.bossData?.name || "Boss"} 已倒下！`,
+          content: `${memberName || "英雄"} 給予最後一擊！全員功勛已發放 🎁`,
+          targetMemberId: null,
+        }).catch(() => {});
       }
     }
 

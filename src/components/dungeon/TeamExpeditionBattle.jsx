@@ -630,7 +630,7 @@ export default function TeamExpeditionBattle({
             const diff = getExcavationDifficulty(dungeonDifficulty);
             const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
             const f = FAMILY_MAP[dungeonFamily] || {e:"🏰",l:"遠征"};
-            addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${dungeonDifficulty}`, f.e, teamNames).catch(() => {});
+            addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${dungeonDifficulty}`, f.e, teamNames, myName).catch(() => {});
           }
         } catch (_) {}
       }

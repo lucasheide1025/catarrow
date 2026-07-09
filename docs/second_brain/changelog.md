@@ -3,6 +3,29 @@
 
 ---
 
+## 2026-07-09（首殺/世界王擊殺公告寫入訊息列 + 分類頁籤）
+
+Trellis 任務 `07-09-07-09-broadcast-to-notifications`，PRD 見 `.trellis/tasks/07-09-07-09-broadcast-to-notifications/`。
+
+### 改了什麼
+- `src/lib/dungeonDb.js::addDungeonBroadcast()`：新增 `memberName` 參數（順手修正原本從未傳入、單人首殺橫幅顯示「undefined 成為首殺英雄」的小 bug），成功寫入 `dungeonBroadcasts` 後額外呼叫 `createNotification({type:"dungeon", targetMemberId:null, ...})`，非同步 `.catch(()=>{})`，不影響原本回傳值。
+- `src/components/dungeon/DungeonExpedition.jsx`、`TeamExpeditionBattle.jsx`、`DungeonBattleRoom.jsx`：三個呼叫端補上 `memberName` 參數。
+- `src/lib/worldBossDb.js::attackWorldBoss()`：`defeated` 分支內額外呼叫 `createNotification({type:"worldboss", targetMemberId:null, ...})`。
+- `src/components/member/MemberNotifications.jsx`：`FILTERS` 新增「地下城」「世界王」兩個頁籤，`matchFilter()` 補對應條件。`TYPE_META` 本來就有 `dungeon`/`worldboss` 定義，沒改。
+
+### 為什麼
+- 首殺/世界王擊殺公告原本只是一次性頂部橫幅，消失後完全沒有紀錄可查；`MemberNotifications.jsx` 的分類系統早就預留好這兩種 type 的圖示/顏色，只是從沒有寫入端真的用過。使用者要求橫幅維持原樣（仍顯示一次），額外把同一事件寫進訊息列供事後回顧。
+
+### 踩坑提醒
+- `addDungeonBroadcast` 現在依賴上一個任務（`07-09-07-09-broadcast-race-a11y-fix`）修好的 `trySetDungeonFirstClear` transaction 保證只有一個呼叫者會真的建立廣播；如果之後又出現「一次首殺多筆通知」，先查 `trySetDungeonFirstClear` 有沒有被改回非 atomic 寫法，而不是懷疑這次新加的 `createNotification`。
+- `attackWorldBoss()` 本身**還沒有** transaction 保護（`getDoc`→本地算→`updateDoc`），本次只是在既有 `defeated` 分支上掛一個通知呼叫，沒有修這個潛在 race——跟使用者之後要討論的「世界王結算」項目重疊，留到那個任務一起處理。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- Firestore 規則：`notifications` collection 本來就 `allow create: if isLoggedIn()`，不需改規則。
+
+---
+
 ## 2026-07-09（首殺公告重複 race condition 修正 + MemberApp 兩處 a11y）
 
 Trellis 任務 `07-09-07-09-broadcast-race-a11y-fix`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-broadcast-race-a11y-fix/`。

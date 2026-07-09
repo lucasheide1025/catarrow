@@ -6,7 +6,7 @@ import {
   orderBy, limit, setDoc, increment, deleteField, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins, markDungeonUsed } from "./db";
+import { addCoins, markDungeonUsed, createNotification } from "./db";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import {
   assignContracts, rerollContract, generatePathOptions,
@@ -1109,13 +1109,20 @@ export async function trySetDungeonFirstClear(dungeonId, memberId, memberName, t
 }
 
 // 新增地下城首殺廣播（全域通知用）
-export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabel, emoji, teamNames = []) {
+export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabel, emoji, teamNames = [], memberName = "") {
   try {
     const ref = await addDoc(collection(db, "dungeonBroadcasts"), {
       dungeonId, dungeonName, difficultyLabel, emoji,
-      teamNames,
+      teamNames, memberName,
       createdAt: serverTimestamp(),
     });
+    const heroLabel = teamNames.length ? teamNames.join("、") : (memberName || "神秘射手");
+    createNotification({
+      type: "dungeon",
+      title: `⚡ 地下城首殺！`,
+      content: `${emoji} ${dungeonName}（${difficultyLabel}）— ${heroLabel} 成為首殺英雄！`,
+      targetMemberId: null,
+    }).catch(() => {});
     return { ok: true, id: ref.id };
   } catch (e) {
     return { ok: false, reason: e.message };

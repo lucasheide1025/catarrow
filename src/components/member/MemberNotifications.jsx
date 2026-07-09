@@ -31,6 +31,8 @@ const FILTERS = [
   { id:"achievement",label:"成就" },
   { id:"market",    label:"市集" },
   { id:"village",   label:"村莊" },
+  { id:"dungeon",   label:"地下城" },
+  { id:"worldboss", label:"世界王" },
 ];
 
 export default function MemberNotifications({ notifications = [] }) {
@@ -50,6 +52,8 @@ export default function MemberNotifications({ notifications = [] }) {
     if (filter === "achievement") return n.type === "achievement";
     if (filter === "market")     return n.type === "market_sale" || n.type === "card_pack";
     if (filter === "village")    return n.type === "village_goal" || n.type === "village_goal_complete";
+    if (filter === "dungeon")    return n.type === "dungeon";
+    if (filter === "worldboss")  return n.type === "worldboss";
     return true;
   }
   function monthOf(n) {

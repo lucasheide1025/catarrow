@@ -481,7 +481,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     trySetDungeonFirstClear(room.mapDungeonId, myId, me.name || "", teamNames).then(fcRes => {
       if (fcRes?.ok && fcRes?.isFirst) {
         setFirstClearBonus({ coins: 500, arrowdew: 50, gachaCoins: 5 });
-        addDungeonBroadcast(room.mapDungeonId, dungeonInfo.name, dungeonInfo.difficultyLabel, dungeonInfo.emoji, teamNames).catch(() => {});
+        addDungeonBroadcast(room.mapDungeonId, dungeonInfo.name, dungeonInfo.difficultyLabel, dungeonInfo.emoji, teamNames, me.name || "").catch(() => {});
       } else {
         setFirstClearBonus(false);
       }

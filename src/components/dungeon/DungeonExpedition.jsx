@@ -1079,7 +1079,7 @@ export default function DungeonExpedition({
       const f = FAMILY_MAP[family] || {e:"🏰",l:"遠征"};
       trySetDungeonFirstClear(expeditionKey, myId, profile?.name || "射手", []).then(fcResult => {
         if (fcResult.isFirst) {
-          addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e).catch(() => {});
+          addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e, [], profile?.nickname || profile?.name || "射手").catch(() => {});
         }
       }).catch(() => {});
     }
