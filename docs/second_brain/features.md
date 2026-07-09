@@ -20,7 +20,19 @@
 
 **冒險者公會一般懸賞任務自動化（2026-07-04 新增）**：4 個全新獨立難度（1~4，獨立於六階雙週懸賞與三階每日靶紙任務），教練後台管理任務範本池（`guildBountyTemplates`）+ 難度獎勵表（`guildBountyRewards`），每日全員同一批自動刷新（每難度固定抽 1 個範本，日期當 seed），沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑；結算時依難度額外發放固定寶箱（wood/iron/gold/epic）
 
-**官網（2026-07-04 新增）**：`website/` 靜態 SEO 單頁官網（與 App 獨立），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；⚠ 網域 placeholder `catarchery.tw` 待部署後替換、地址 12/14 號待確認
+**官網（2026-07-04 新增，2026-07-10 視覺互動改版）**：`website/` 靜態 SEO 單頁官網（與 App 完全獨立、無建置流程、單一 `index.html`），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；⚠ 網域 placeholder `catarchery.tw` 待部署後替換、地址 12/14 號待確認
+- **2026-07-10 視覺互動改版**（Trellis task `07-10-website-visual-interactive-refresh`，只動 `website/`，不連 Firestore／App）：全站沿用既有 `.rv` IntersectionObserver（同一實例、依 class 分流行為，不新增 observer），所有新效果皆有對應 `prefers-reduced-motion` 降級
+  - `#training`（R2 核心）：手機 mockup 從單張靜態圖改為可切換的 3 畫面預覽（`.phone-shots` + 分頁圓點 `.pdot` + 觸控滑動），目前 3 張暫用同一張 `assets/015.png` 佔位（切換機制已完成，之後補拍打怪戰鬥／勳章圖鑑截圖只需換 `src`）；`.badges` 加 scroll-triggered 依序解鎖動畫（stagger 110ms/個）
+  - `#group`（R2 核心）：新增第 5 張模式卡「地下城遠征 Dungeon Expedition」（對應 App 實際的組隊三層迷霧地下城遠征系統），5 張卡 hover 各有專屬圖示動態（攻擊震動／交錯閃現／靶紙 ping／箭矢推移／寶石微光）
+  - `#hero`：`.rings` 隨滑鼠做輕微視差（±5~8px）、`.hero-cat:hover` 時 `.target` 品牌橘閃光一次
+  - `#why`：`.wcard` hover 加爪痕刮過 SVG 描邊動畫（`stroke-dashoffset`，3 道錯開時間）
+  - `#price`：`.cnum` 數字滾動進場時從 0 計數到實際金額（`requestAnimationFrame` easing），完成時 `.hit` 箭矢圖示做一次命中回彈
+  - `#bows`：`.bcard` 新增箭矢圖示（`.arrow-ico`），hover／觸控 tap 時輕微擺動
+  - `#facility`：`.fac-photo img` 加極慢速 Ken Burns 縮放（純 CSS `animation`）
+  - `#faq`：`summary` 展開瞬間加箭矢畫過底線動畫（`.qline` scaleX）
+  - `#reviews` marquee hover 暫停：改版前已存在，未變動
+  - 明確不動：`#booking`/`#visit`/`#final`（轉換型區塊，維持現狀，design.md 定調）
+  - 驗證：Chrome headless 截圖走查全頁（hero/why/bows/price/training/group/facility/reviews/faq/booking），HTML tag 配對、JSON-LD 解析、JS 語法均通過腳本檢查
 **核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
 **報到**：pending→教練審核→active/rejected、下課結算箭露、浮動視窗
 **練習**：自主練習、歷史/總覽/分析、箭數里程碑（多回合+世界王已修 2026-07-02）、箭露累積

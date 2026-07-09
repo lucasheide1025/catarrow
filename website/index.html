@@ -165,6 +165,17 @@ h2{font-family:var(--serif);font-weight:900;font-size:clamp(30px,5vw,52px);line-
   .rv{opacity:1;transform:none;transition:none}
   .mq-track{animation:none!important}
   html{scroll-behavior:auto}
+  /* 07-10 視覺互動改版：新增效果降級 */
+  .hero .rings{transition:none!important;transform:none!important}
+  .hero-cat:hover .target{animation:none}
+  .badge{opacity:1;transform:none;transition:none}
+  .wcard .claw path{transition:none;stroke-dashoffset:0;opacity:.55}
+  .phone-shots img.shot{transition:none}
+  .mode:hover .ico{animation:none!important}
+  .hit{transition:none;opacity:1;transform:none}
+  .bcard:hover .arrow-ico,.bcard.tap-wiggle .arrow-ico{animation:none}
+  .fac-photo img{animation:none;transform:none}
+  .faq-list details summary .qline{transition:none}
 }
 
 /* ── Nav ── */
@@ -274,6 +285,7 @@ h1 .line2{display:block}
 /* ── 團康 ── */
 .group{background:var(--paper-deep)}
 .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-bottom:36px}
+.modes .mode:last-child{grid-column:2 / span 2}
 .mode{background:#fff;border:1.5px solid var(--line);border-radius:20px;padding:28px 24px;transition:transform .3s,box-shadow .3s}
 .mode:hover{transform:translateY(-6px);box-shadow:0 16px 36px rgba(43,41,38,.1)}
 .mode .ico{width:52px;height:52px;border-radius:50%;background:var(--orange-soft);color:var(--orange);display:flex;align-items:center;justify-content:center;font-size:23px;margin-bottom:16px}
@@ -284,6 +296,10 @@ h1 .line2{display:block}
 .group-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;background:var(--ink);color:var(--paper);border-radius:20px;padding:28px 34px}
 .group-cta p{font-size:15.5px}
 .group-cta .tel{font-family:var(--serif);font-weight:900;font-size:clamp(22px,3vw,30px);color:var(--orange);letter-spacing:.06em}
+.group-cta .contacts{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.group-cta .or{font-size:12.5px;color:rgba(250,246,239,.5);letter-spacing:.1em}
+.group-cta .line-btn{display:inline-flex;align-items:center;gap:8px;background:var(--paper);color:var(--ink);font-weight:700;font-size:14.5px;padding:11px 20px;border-radius:999px;letter-spacing:.04em;transition:background .25s,color .25s}
+.group-cta .line-btn:hover{background:var(--orange);color:#fff}
 
 /* ── 場地師資 ── */
 .fac-photo{border-radius:22px;overflow:hidden;border:1.5px solid var(--line);margin-bottom:36px}
@@ -370,6 +386,57 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .fab{display:none;position:fixed;right:18px;bottom:18px;z-index:60;background:var(--orange);color:#fff;
   border-radius:999px;padding:15px 26px;font-weight:700;font-size:15px;letter-spacing:.1em;box-shadow:0 10px 26px rgba(232,114,12,.45)}
 
+/* ── 07-10 視覺互動改版：生成式細節（品牌語彙：箭矢／靶紙／貓掌） ── */
+.hero .rings{transition:transform .2s ease-out}
+.hero-cat .target{transition:filter .3s ease}
+.hero-cat:hover .target{animation:targetFlash .7s ease}
+@keyframes targetFlash{0%,100%{filter:brightness(1)}40%{filter:brightness(1.4) drop-shadow(0 0 10px rgba(232,114,12,.55))}}
+
+.wcard .claw{position:absolute;top:16px;left:16px;width:38px;height:38px;pointer-events:none;overflow:visible}
+.wcard .claw path{fill:none;stroke:var(--orange);stroke-width:3;stroke-linecap:round;stroke-dasharray:36;stroke-dashoffset:36;transition:stroke-dashoffset .45s ease}
+.wcard .claw path:nth-child(2){transition-delay:.07s}
+.wcard .claw path:nth-child(3){transition-delay:.14s}
+.wcard:hover .claw path{stroke-dashoffset:0}
+
+.bcard .arrow-ico{position:absolute;top:18px;left:18px;width:22px;height:22px;font-size:16px;line-height:22px;text-align:center;color:var(--orange);opacity:.5;transition:opacity .3s}
+.bcard:hover .arrow-ico,.bcard.tap-wiggle .arrow-ico{opacity:1;animation:arrowWiggle .5s ease}
+@keyframes arrowWiggle{0%,100%{transform:rotate(0) translateX(0)}30%{transform:rotate(-12deg) translateX(-2px)}60%{transform:rotate(8deg) translateX(2px)}}
+
+.cnum{font-variant-numeric:tabular-nums}
+.hit{display:inline-block;margin-left:5px;font-size:12px;color:var(--orange);opacity:0;transform:scale(.5) translateX(-3px);transition:opacity .2s,transform .2s}
+.hit.pop{opacity:1;animation:hitPop .55s cubic-bezier(.34,1.56,.64,1)}
+@keyframes hitPop{0%{transform:scale(.5) translateX(-3px);opacity:0}55%{transform:scale(1.25) translateX(1px);opacity:1}100%{transform:scale(1) translateX(0);opacity:1}}
+
+.phone{display:flex;flex-direction:column;align-items:center;gap:14px}
+.phone-shots{position:relative;width:min(100%,380px);aspect-ratio:613/909}
+.phone-shots img.shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:22px;box-shadow:0 26px 60px rgba(43,41,38,.22);border:1.5px solid var(--line);opacity:0;transform:translateX(14px);transition:opacity .45s ease,transform .45s ease;pointer-events:none}
+.phone-shots img.shot.active{opacity:1;transform:translateX(0);pointer-events:auto}
+.phone-dots{display:flex;gap:8px}
+.pdot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--orange);background:transparent;padding:0;cursor:pointer;transition:background .25s,transform .25s}
+.pdot.active{background:var(--orange);transform:scale(1.15)}
+.phone-cap{font-size:13px;color:var(--ink-soft);letter-spacing:.04em;min-height:18px;text-align:center}
+
+.badge{opacity:0;transform:translateY(14px) scale(.92);transition:opacity .5s ease,transform .5s cubic-bezier(.34,1.56,.64,1)}
+.badge.show{opacity:1;transform:none}
+
+.mode:nth-child(1):hover .ico{animation:icoAttack .6s ease-in-out}
+.mode:nth-child(2):hover .ico{animation:icoClash .6s ease-in-out}
+.mode:nth-child(3):hover .ico{animation:icoPing .6s ease-in-out}
+.mode:nth-child(4):hover .ico{animation:icoNudge .6s ease-in-out}
+.mode:nth-child(5):hover .ico{animation:icoGleam .6s ease-in-out}
+@keyframes icoAttack{0%,100%{transform:translateX(0) rotate(0)}20%{transform:translateX(-3px) rotate(-8deg)}45%{transform:translateX(3px) rotate(6deg)}70%{transform:translateX(-2px) rotate(-3deg)}}
+@keyframes icoClash{0%,100%{transform:rotate(0) scale(1)}25%{transform:rotate(-14deg) scale(1.05)}50%{transform:rotate(10deg)}75%{transform:rotate(-6deg)}}
+@keyframes icoPing{0%{box-shadow:0 0 0 0 rgba(232,114,12,.5)}70%{box-shadow:0 0 0 10px rgba(232,114,12,0)}100%{box-shadow:0 0 0 0 rgba(232,114,12,0)}}
+@keyframes icoNudge{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+@keyframes icoGleam{0%,100%{filter:brightness(1)}50%{filter:brightness(1.5) drop-shadow(0 0 6px rgba(232,114,12,.6))}}
+
+.fac-photo img{animation:kenBurns 18s ease-in-out infinite alternate}
+@keyframes kenBurns{0%{transform:scale(1.02)}100%{transform:scale(1.09)}}
+
+.faq-list details summary{position:relative}
+.faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
+.faq-list details[open] summary .qline{transform:scaleX(1)}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .hero-grid{grid-template-columns:1fr;gap:36px}
@@ -377,6 +444,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .hero-cat .target{width:90px;height:90px}
   .hero{padding:130px 0 80px}
   .cards3,.bow-grid,.modes,.coaches,.info-grid{grid-template-columns:repeat(2,1fr)}
+  .modes .mode:last-child{grid-column:1 / span 2}
   .price-grid,.train-grid{grid-template-columns:1fr}
   .fac-grid{grid-template-columns:1fr}
   .nav-links,.nav .nav-book{display:none}
@@ -463,16 +531,19 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <p class="sec-lead rv">我們把複雜的事情變簡單。讓你學得會、玩得開心、來了還想再來。</p>
     <div class="cards3">
       <article class="wcard rv">
+        <svg class="claw" viewBox="0 0 44 44" aria-hidden="true" focusable="false"><path d="M6 6 L18 30"/><path d="M14 4 L24 32"/><path d="M22 6 L30 28"/></svg>
         <img src="assets/005.png" alt="舉著 $0 FREE 盾牌、劃掉合約的虎斑貓插畫" width="583" height="507" loading="lazy">
         <h3>不綁約 · 零壓力</h3>
         <p>射一次、付一次。不推銷課程，不收額外教練費。自由零負擔，說來就來。</p>
       </article>
       <article class="wcard rv">
+        <svg class="claw" viewBox="0 0 44 44" aria-hidden="true" focusable="false"><path d="M6 6 L18 30"/><path d="M14 4 L24 32"/><path d="M22 6 L30 28"/></svg>
         <img src="assets/006.png" alt="戴耳機專注拉弓的暹羅貓插畫" width="516" height="601" loading="lazy">
         <h3>I 人友善 · 靜心場域</h3>
         <p>無社交壓力的環境，讓你自在獨處。每一次拉弓，都是與自己的對話。</p>
       </article>
       <article class="wcard rv">
+        <svg class="claw" viewBox="0 0 44 44" aria-hidden="true" focusable="false"><path d="M6 6 L18 30"/><path d="M14 4 L24 32"/><path d="M22 6 L30 28"/></svg>
         <img src="assets/007.png" alt="在長凳上掛著休息中告示牌睡覺的玳瑁貓插畫" width="698" height="496" loading="lazy">
         <h3>貓店長 · 隨緣陪伴</h3>
         <p>貓咪是家人，非營業項目。遇見是緣分，請勿強迫互動。射箭時貓咪遠離射道，確保安全。</p>
@@ -489,22 +560,26 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <p class="sec-lead rv">從古典到現代，每種弓都有它的靈魂。找到最適合你的那一把。</p>
     <div class="bow-grid">
       <article class="bcard rv">
+        <span class="arrow-ico" aria-hidden="true">➤</span>
         <img src="assets/001.png" alt="手持競技反曲弓的虎斑貓插畫" width="622" height="1049" loading="lazy">
         <h3>競技反曲弓</h3><span class="en">Recurve Barebow</span>
         <p>原野射箭賽事正式競技弓種，拿掉所有輔助，純靠感知與穩定取勝。主力推薦，最適合長期練習。</p>
       </article>
       <article class="bcard rv">
+        <span class="arrow-ico" aria-hidden="true">➤</span>
         <img src="assets/002.png" alt="穿著傳統服飾手持長弓的玳瑁貓插畫" width="596" height="817" loading="lazy">
         <h3>現代傳統弓</h3><span class="en">Traditional Longbow</span>
         <p>古典一體成型木弓，無弓窗設計，回歸最原始的本能射擊。感受千年智慧在指尖流動。</p>
       </article>
       <article class="bcard rv">
+        <span class="arrow-ico" aria-hidden="true">➤</span>
         <img src="assets/003.png" alt="穿迷彩外套手持美式獵弓的暹羅貓插畫" width="545" height="869" loading="lazy">
         <h3>美式獵弓</h3><span class="en">American Hunting Bow</span>
         <p>短小精悍的現代複合材料獵弓，融合傳統外型與現代科技，操作輕快靈活，帥氣十足。</p>
       </article>
       <article class="bcard rv">
         <span class="soon">COMING SOON</span>
+        <span class="arrow-ico" aria-hidden="true">➤</span>
         <img src="assets/004.png" alt="手持彈弓的賓士貓小貓插畫" width="589" height="708" loading="lazy">
         <h3>育樂彈弓</h3><span class="en">Sport Slingbow</span>
         <p>即將推出！門檻最低、趣味最高的入門選擇，適合完全零基礎想體驗射箭樂趣的新朋友。</p>
@@ -516,7 +591,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
         <li>拿掉瞄準鏡與安定桿，只剩你與靶心的純粹對話</li>
         <li>SANLIDA X9 / X10 及 Krossen 專業弓身</li>
         <li>磅數 20 ～ 34 lbs，多段位可選</li>
-        <li>距離 5m ～ 18m，共九個靶位</li>
+        <li>距離 5m ～ 18m，共八個靶位</li>
         <li>多種指法與瞄準方式教學</li>
         <li>最適合入門體驗與長期進階</li>
       </ul>
@@ -539,31 +614,31 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
         <tbody>
           <tr>
             <td>單人單靶<span class="note">含器材、場地、教練指導、教學課程</span></td>
-            <td>1 小時</td><td class="p">NT$300</td>
+            <td>1 小時</td><td class="p">NT$<span class="cnum" data-target="300">300</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>單人單靶 · 2 送 1<span class="note">買 2 小時送 1 小時</span></td>
-            <td>3 小時</td><td class="p">NT$600</td>
+            <td>3 小時</td><td class="p">NT$<span class="cnum" data-target="600">600</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>兒童｜學生｜敬老<span class="note">滿 5 歲以上／學生持有效證明／滿 60 歲以上</span></td>
-            <td>1 小時</td><td class="p">NT$200</td>
+            <td>1 小時</td><td class="p">NT$<span class="cnum" data-target="200">200</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>兒童｜學生｜敬老 · 2 送 1<span class="note">同上資格，買 2 小時送 1 小時</span></td>
-            <td>3 小時</td><td class="p">NT$400</td>
+            <td>3 小時</td><td class="p">NT$<span class="cnum" data-target="400">400</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>自備器材<span class="note">限 50 磅內（複合弓、彈弓類禁止），僅場地租賃</span></td>
-            <td>1 小時</td><td class="p">NT$200</td>
+            <td>1 小時</td><td class="p">NT$<span class="cnum" data-target="200">200</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>自備器材 · 2 送 1<span class="note">同上限制，買 2 小時送 1 小時</span></td>
-            <td>3 小時</td><td class="p">NT$400</td>
+            <td>3 小時</td><td class="p">NT$<span class="cnum" data-target="400">400</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
           <tr>
             <td>團康活動 8 人<span class="note">每加 1 人：1hr +NT$200／3hr +NT$350，上限 16 人，請來電預約</span></td>
-            <td>1 hr / 3 hr</td><td class="p">NT$2,250 / 4,500</td>
+            <td>1 hr / 3 hr</td><td class="p">NT$<span class="cnum" data-target="2250">2,250</span> / <span class="cnum" data-target="4500">4,500</span><span class="hit" aria-hidden="true">➔</span></td>
           </tr>
         </tbody>
       </table>
@@ -590,7 +665,20 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <p class="sec-lead rv">我們自行開發了一套完整的射箭訓練 App——關卡、打怪、積分、勳章，讓每位學員都有清晰的成長路徑，就算不比賽也有目標。全部免費使用。</p>
     <div class="train-grid">
       <div class="phone rv">
-        <img src="assets/015.png" alt="貓小隊射箭場自製訓練系統 App 畫面：排行榜、射手證、每日報到與 RPG 打怪模式" width="613" height="909" loading="lazy">
+        <!-- 07-10 改版：從單張靜態截圖改為可切換的畫面預覽（分頁指示器 + fade/slide）。
+             目前三張皆先沿用現有 assets/015.png，待補拍打怪戰鬥／勳章圖鑑實際畫面後，
+             將對應 <img> 的 src 換成新截圖即可，切換機制不需改動。 -->
+        <div class="phone-shots" id="phoneShots">
+          <img src="assets/015.png" alt="貓小隊射箭場自製訓練系統 App 畫面預覽" width="613" height="909" loading="lazy" class="shot active" data-shot="0">
+          <img src="assets/015.png" alt="貓小隊射箭場自製訓練系統 App 畫面預覽" width="613" height="909" loading="lazy" class="shot" data-shot="1">
+          <img src="assets/015.png" alt="貓小隊射箭場自製訓練系統 App 畫面預覽" width="613" height="909" loading="lazy" class="shot" data-shot="2">
+        </div>
+        <div class="phone-dots" role="tablist" aria-label="切換 App 畫面預覽">
+          <button class="pdot active" type="button" role="tab" aria-selected="true" aria-label="排行榜畫面" data-idx="0"></button>
+          <button class="pdot" type="button" role="tab" aria-selected="false" aria-label="打怪戰鬥畫面" data-idx="1"></button>
+          <button class="pdot" type="button" role="tab" aria-selected="false" aria-label="勳章圖鑑畫面" data-idx="2"></button>
+        </div>
+        <p class="phone-cap" id="phoneCap">排行榜 · 肥貓積分即時排名</p>
       </div>
       <div>
         <div class="steps">
@@ -658,10 +746,19 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
         <h3>練習模式</h3><span class="en">Practice Mode</span>
         <p>自由練習，無時間壓力。專注動作修正與基礎鞏固，教練隨時提供技術指導。</p>
       </article>
+      <article class="mode rv">
+        <div class="ico" aria-hidden="true">◈</div>
+        <h3>地下城遠征</h3><span class="en">Dungeon Expedition</span>
+        <p>組隊挑戰多層迷霧地下城，分配前衛後衛、合力擊破最終王關，帶回材料與寶箱獎勵。最適合喜歡合作策略、分工解謎的團隊。</p>
+      </article>
     </div>
     <div class="group-cta rv">
-      <p>適合 8 ～ 16 人團體 · 公司團建 · 朋友聚會<br>歡迎來電洽詢專屬團康方案</p>
-      <a class="tel" href="tel:+886973770682">0973-770-682</a>
+      <p>適合 8 ～ 16 人團體 · 公司團建 · 朋友聚會<br>歡迎來電或加 LINE 洽詢專屬團康方案</p>
+      <div class="contacts">
+        <a class="tel" href="tel:+886973770682">0973-770-682</a>
+        <span class="or">或</span>
+        <a class="line-btn" href="https://line.me/ti/p/UJXIAt1s0O" target="_blank" rel="noopener noreferrer">💬 加 LINE 線上諮詢</a>
+      </div>
     </div>
   </div>
 </section>
@@ -671,7 +768,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">06</span><span class="sec-en">Facility &amp; Team · 場地與師資</span></div>
     <h2 class="rv">你的城市<span class="accent">靜心防空洞</span>。</h2>
-    <p class="sec-lead rv">室內冷氣場地，兩條射道、九個靶位，通過學籍考核還能解鎖 70 米戶外練習場。</p>
+    <p class="sec-lead rv">室內冷氣場地，兩條射道、八個靶位，通過學籍考核還能解鎖 70 米戶外練習場。</p>
     <div class="fac-photo rv">
       <img src="assets/008.png" alt="貓小隊室內射箭場射道實景：四位學員在 18 米射道上練習反曲弓" width="845" height="369" loading="lazy">
     </div>
@@ -736,35 +833,35 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <h2 class="rv">你想知道的，<span class="accent">都在這</span>。</h2>
     <div class="faq-list rv">
       <details>
-        <summary>在台南射箭體驗一次多少錢？</summary>
+        <summary>在台南射箭體驗一次多少錢？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">單人單靶 1 小時 NT$300，費用已包含器材租賃、場地、教練指導與教學課程，不另收教練費；買 2 小時送 1 小時共 NT$600。兒童（滿 5 歲）、學生、60 歲以上敬老價 1 小時 NT$200。</p>
       </details>
       <details>
-        <summary>完全沒射過箭的新手可以參加嗎？</summary>
+        <summary>完全沒射過箭的新手可以參加嗎？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">可以。貓小隊主打新手友善，教練會從安全規則、站姿、握弓到放箭逐步教學，並依每個人的狀況挑選合適磅數的弓。不綁約、不推銷課程，射一次付一次。</p>
       </details>
       <details>
-        <summary>需要預約嗎？怎麼預約？</summary>
+        <summary>需要預約嗎？怎麼預約？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">建議先線上預約，系統開放當日預約。個人可直接前往<a href="https://catarcherycom.simplybook.asia/v2/#book" target="_blank" rel="noopener noreferrer" style="color:var(--orange);font-weight:700"> 線上預約系統 </a>選時段即可完成；8 人以上團體活動請來電 0973-770-682 洽詢。</p>
       </details>
       <details>
-        <summary>需要自備弓箭或裝備嗎？</summary>
+        <summary>需要自備弓箭或裝備嗎？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">不用。弓、箭、護具全部免費借用，一應俱全。若想使用自己的器材（限 50 磅內，複合弓與彈弓類禁止），可選自備器材方案，1 小時 NT$200 僅收場地費。</p>
       </details>
       <details>
-        <summary>幾歲可以射箭？小孩可以參加嗎？</summary>
+        <summary>幾歲可以射箭？小孩可以參加嗎？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">滿 5 歲以上即可參加。兒童、持有效證明的學生與滿 60 歲以上長者享優惠價 1 小時 NT$200。</p>
       </details>
       <details>
-        <summary>附近有停車場嗎？</summary>
+        <summary>附近有停車場嗎？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">有。鄰近有「大豐里停車場」與「Times 台南中華西和緯停車場」，步行即達。</p>
       </details>
       <details>
-        <summary>真的有貓咪嗎？可以摸嗎？</summary>
+        <summary>真的有貓咪嗎？可以摸嗎？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">有貓店長隨緣陪伴。貓咪是家人、非營業項目，遇見是緣分，請勿強迫互動。射箭時貓咪會遠離射道，確保安全。</p>
       </details>
       <details>
-        <summary>營業時間是什麼時候？</summary>
+        <summary>營業時間是什麼時候？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">週一公休；週二 13:00–22:00；週三至週日 10:00–22:00。特殊時段請來電 0973-770-682 洽詢。</p>
       </details>
     </div>
@@ -869,9 +966,24 @@ burger.addEventListener('click', () => {
 });
 nav.querySelectorAll('.nav-links a').forEach(a => a.addEventListener('click', () => nav.classList.remove('open')));
 
-// 進場動畫
+// 是否偏好減少動態效果（07-10 新增效果一律尊重此設定）
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 進場動畫（沿用同一個 IntersectionObserver：依 class 分流不同行為，
+// 07-10 新增：.badges 依序解鎖 / .ptable 價格數字計數動畫）
 const io = new IntersectionObserver(es => es.forEach(e => {
-  if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  if (e.isIntersecting) {
+    e.target.classList.add('in');
+    if (e.target.classList.contains('badges')) {
+      e.target.querySelectorAll('.badge').forEach((b, i) => {
+        setTimeout(() => b.classList.add('show'), i * 110);
+      });
+    }
+    if (e.target.classList.contains('ptable') && !reduceMotion) {
+      e.target.querySelectorAll('.cnum').forEach(el => animateCount(el));
+    }
+    io.unobserve(e.target);
+  }
 }), {threshold:.12, rootMargin:'0px 0px -40px 0px'});
 document.querySelectorAll('.rv').forEach(el => io.observe(el));
 
@@ -880,6 +992,76 @@ const track = document.getElementById('mqTrack');
 track.innerHTML += track.innerHTML;
 track.querySelectorAll('.rev:nth-child(n+13)').forEach(el => el.setAttribute('aria-hidden','true'));
 
+// ── 07-10 新增：#price 數字計數動畫（滾動進場時從 0 跑到實際金額）──
+function animateCount(el, dur = 900) {
+  const target = parseFloat(el.dataset.target);
+  if (isNaN(target)) return;
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(target * eased).toLocaleString('en-US');
+    if (p < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      el.textContent = target.toLocaleString('en-US');
+      const hit = el.parentElement.querySelector('.hit');
+      if (hit) hit.classList.add('pop');
+    }
+  }
+  requestAnimationFrame(tick);
+}
+if (!reduceMotion) { document.querySelectorAll('.cnum').forEach(el => { el.textContent = '0'; }); }
+
+// ── 07-10 新增：#hero 靶紙裝飾圈隨滑鼠做極輕微視差 ──
+const heroSec = document.querySelector('.hero');
+const heroRings = heroSec ? heroSec.querySelectorAll('.rings') : [];
+if (heroSec && heroRings.length && !reduceMotion) {
+  heroSec.addEventListener('mousemove', e => {
+    const r = heroSec.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    heroRings.forEach((el, i) => {
+      const strength = i === 0 ? 8 : 5;
+      el.style.transform = `translate(${(-px * strength).toFixed(1)}px, ${(-py * strength).toFixed(1)}px)`;
+    });
+  }, {passive:true});
+  heroSec.addEventListener('mouseleave', () => { heroRings.forEach(el => { el.style.transform = ''; }); });
+}
+
+// ── 07-10 新增：#training 手機畫面預覽切換（分頁指示器 + 滑動）──
+const phoneShots = document.getElementById('phoneShots');
+if (phoneShots) {
+  const shots = phoneShots.querySelectorAll('.shot');
+  const dots = document.querySelectorAll('.pdot');
+  const capEl = document.getElementById('phoneCap');
+  const captions = ['排行榜 · 肥貓積分即時排名', '打怪戰鬥 · RPG 回合制對戰', '勳章圖鑑 · 收集成就總覽'];
+  let shotIdx = 0;
+  function showShot(i) {
+    shotIdx = (i + shots.length) % shots.length;
+    shots.forEach((s, si) => s.classList.toggle('active', si === shotIdx));
+    dots.forEach((d, di) => { d.classList.toggle('active', di === shotIdx); d.setAttribute('aria-selected', di === shotIdx); });
+    if (capEl) capEl.textContent = captions[shotIdx] || '';
+  }
+  dots.forEach(d => d.addEventListener('click', () => showShot(+d.dataset.idx)));
+  let touchX = null;
+  phoneShots.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, {passive:true});
+  phoneShots.addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 40) showShot(shotIdx + (dx < 0 ? 1 : -1));
+    touchX = null;
+  }, {passive:true});
+  showShot(0);
+}
+
+// ── 07-10 新增：#bows 卡片觸控裝置點按時觸發箭矢擺動（桌機用 CSS :hover 即可）──
+document.querySelectorAll('.bcard').forEach(card => {
+  card.addEventListener('touchstart', () => {
+    card.classList.add('tap-wiggle');
+    setTimeout(() => card.classList.remove('tap-wiggle'), 500);
+  }, {passive:true});
+});
 </script>
 </body>
 </html>
