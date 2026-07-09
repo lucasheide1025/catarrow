@@ -20,13 +20,23 @@ service cloud.firestore {
     }
 
     // members：admin 全權操作，會員可讀自己；list（集合查詢）任意登入者可用（排行榜需要）
+    // 2026-07-09 新增訪客/兒童帳號（accountType in ["guest","kid"]）：匿名登入即可讀寫自己建立的記錄，
+    // 且「不要求 uid 對應本人」——因為訪客每次匿名重新登入 uid 都會變，要能跨次造訪接續回同一筆記錄。
+    // 這是使用者已確認接受的安全取捨（訪客/兒童帳號沒有真實金流/隱私資料，安全等級刻意低於正式學籍）。
     match /members/{memberId} {
       allow get:    if isAdmin()
         || resource.data.uid   == request.auth.uid
-        || resource.data.email == request.auth.token.email;
+        || resource.data.email == request.auth.token.email
+        || (isLoggedIn() && resource.data.accountType in ["guest", "kid"]);
       allow list:   if isLoggedIn();
-      allow write:  if isAdmin();
-      allow update: if (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
+      allow create: if isAdmin() || (
+        isLoggedIn() &&
+        request.resource.data.accountType in ["guest", "kid"] &&
+        request.resource.data.uid == request.auth.uid
+      );
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
                     "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
@@ -35,7 +45,16 @@ service cloud.firestore {
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
                     "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
-                    "activeExpedition", "expeditions"]);
+                    "activeExpedition", "expeditions"])
+      ) || (
+        isLoggedIn() && resource.data.accountType in ["guest", "kid"]
+      );
+    }
+
+    // campSessions：夏令營場次管理，登入者可讀，admin 可寫
+    match /campSessions/{sessionId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）

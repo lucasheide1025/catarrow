@@ -263,25 +263,11 @@ export default function AdminMembers() {
 }
 
 // ── 訪客 QR Code Modal ────────────────────────────────────
+// 2026-07-09 改版：訪客帳號現在用信箱/電話跨次接續（見 guestAuth.js），
+// 不再需要每次教練手動產生單次有效token——固定連結貼一次QR就能長期使用。
 function GuestQRModal({ onClose, toast }) {
-  const [url,        setUrl]        = useState("");
-  const [expiresAt,  setExpiresAt]  = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [copied,     setCopied]     = useState(false);
-
-  async function generate() {
-    setGenerating(true);
-    setCopied(false);
-    try {
-      const { generateGuestToken } = await import("../../lib/db");
-      const { token, expiresAt: exp } = await generateGuestToken();
-      setUrl(`${window.location.origin}?guest=${token}`);
-      setExpiresAt(exp);
-    } catch (e) {
-      toast("產生失敗：" + (e?.message || "未知錯誤"));
-    }
-    setGenerating(false);
-  }
+  const url = `${window.location.origin}?guest=1`;
+  const [copied, setCopied] = useState(false);
 
   async function copyUrl() {
     try {
@@ -293,55 +279,29 @@ function GuestQRModal({ onClose, toast }) {
     }
   }
 
-  const expireStr = expiresAt
-    ? new Date(expiresAt).toLocaleString("zh-TW", { hour12:false, month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" })
-    : "";
-
   return (
     <Modal open onClose={onClose} title="📱 訪客體驗 QR Code">
       <div className="flex flex-col gap-4">
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-700 text-sm">
-          產生 QR Code 後讓客人掃描，即可進入 <strong>3 小時</strong>體驗模式，無需登入。
+          客人掃描後輸入信箱或電話即可開始體驗，無需登入。這組連結是固定的，可以印出來長期張貼在箭場，下次再來會自動接續上次的進度。
         </div>
 
-        <Btn v="primary" onClick={generate} disabled={generating}>
-          {generating ? "產生中…" : "🎲 產生新 QR Code"}
-        </Btn>
-
-        {url && (
-          <div className="flex flex-col items-center gap-3">
-            {/* QR Code 主體 */}
-            <div className="bg-white p-4 rounded-2xl shadow-inner border border-gray-200">
-              <QRCodeSVG
-                value={url}
-                size={220}
-                level="M"
-                includeMargin={false}
-                fgColor="#1e293b"
-              />
-            </div>
-
-            {/* 到期時間 */}
-            <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-              <span>⏰</span>
-              <span>有效至 <strong className="text-slate-200">{expireStr}</strong></span>
-            </div>
-
-            {/* 複製連結（備用）*/}
-            <button onClick={copyUrl}
-              className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-all ${copied ? "bg-green-900/40 border-green-400/40 text-green-300" : "border-white/10 text-slate-300 hover:border-white/20"}`}
-              style={!copied?{background:"rgba(255,255,255,0.06)"}:{}}>
-              {copied ? "✅ 已複製連結" : "📋 複製連結（備用）"}
-            </button>
-
-            {/* 測試連結 */}
-            <a href={url} target="_blank" rel="noreferrer"
-              className="text-blue-500 text-xs underline">
-              在新分頁測試
-            </a>
+        <div className="flex flex-col items-center gap-3">
+          <div className="bg-white p-4 rounded-2xl shadow-inner border border-gray-200">
+            <QRCodeSVG value={url} size={220} level="M" includeMargin={false} fgColor="#1e293b" />
           </div>
-        )}
+
+          <button onClick={copyUrl}
+            className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-all ${copied ? "bg-green-900/40 border-green-400/40 text-green-300" : "border-white/10 text-slate-300 hover:border-white/20"}`}
+            style={!copied?{background:"rgba(255,255,255,0.06)"}:{}}>
+            {copied ? "✅ 已複製連結" : "📋 複製連結（備用）"}
+          </button>
+
+          <a href={url} target="_blank" rel="noreferrer" className="text-blue-500 text-xs underline">
+            在新分頁測試
+          </a>
+        </div>
 
         <Btn v="secondary" onClick={onClose}>關閉</Btn>
       </div>

@@ -1,10 +1,11 @@
 // src/components/member/GuestShop.jsx — 訪客金幣商店
-import { useState } from "react";
+// 2026-07-09：金幣改接真正持久的 members/{memberId}.coins（訪客帳號現在跨次造訪會保留），
+// 世界王藥水/打怪加成護符這類單次消耗buff維持 sessionStorage（本來就是一次性、沒有跨次保留的必要）。
+import { useState, useEffect } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../../lib/firebase";
+import { addCoins } from "../../lib/db";
 import { sfxShopBuy, sfxSoftFail, sfxTap } from "../../lib/sound";
-
-function getCoins() {
-  return parseInt(sessionStorage.getItem("guest_coins") || "500", 10);
-}
 
 const WB_POTIONS = [
   { id: "small",  icon: "💚", name: "小強心針", desc: "世界王傷害 ×1.2（下次出戰自動套用）", cost: 50,  badge: "" },
@@ -31,10 +32,18 @@ const MISC_ITEMS = [
   },
 ];
 
-export default function GuestShop() {
-  const [coins,  setCoins]  = useState(getCoins);
+export default function GuestShop({ memberId }) {
+  const [coins,  setCoins]  = useState(0);
   const [msg,    setMsg]    = useState("");
   const [msgOk,  setMsgOk]  = useState(true);
+
+  useEffect(() => {
+    if (!memberId) return;
+    const unsub = onSnapshot(doc(db, "members", memberId), snap => {
+      setCoins(snap.exists() ? (snap.data().coins || 0) : 0);
+    });
+    return unsub;
+  }, [memberId]);
 
   function showMsg(text, ok = true) {
     setMsg(text); setMsgOk(ok);
@@ -45,12 +54,9 @@ export default function GuestShop() {
   function hasCoinBoost()  { return !!sessionStorage.getItem("guest_coin_boost"); }
 
   function buy(item) {
-    const c = getCoins();
-    if (c < item.cost) { sfxSoftFail(); showMsg("💸 金幣不足！", false); return; }
+    if (coins < item.cost) { sfxSoftFail(); showMsg("💸 金幣不足！", false); return; }
     sfxShopBuy();
-    const newC = c - item.cost;
-    sessionStorage.setItem("guest_coins", String(newC));
-    setCoins(newC);
+    if (memberId) addCoins(memberId, -item.cost).catch(() => {});
 
     if (["small", "medium", "large"].includes(item.id)) {
       sessionStorage.setItem("guest_wb_potion", item.id);
@@ -62,8 +68,6 @@ export default function GuestShop() {
       sessionStorage.setItem("guest_coin_boost", "15");
       showMsg("✅ 強化護符啟動！下次打怪金幣 ×3");
     }
-    // force re-render to reflect equipped state
-    setCoins(newC);
   }
 
   const activePot = currentPotion();

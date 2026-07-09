@@ -6,78 +6,18 @@ import { useState, useEffect } from "react";
 import LoginPage   from "./pages/LoginPage";
 import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
-import GuestBattle from "./components/member/GuestBattle";
-import { getGuestSession, deleteGuestSession } from "./lib/db";
+import GuestApp    from "./pages/GuestApp";
 import { initGoalTracker } from "./lib/villageGoalDb";
 
-// ── 訪客路由層：讀 ?guest=TOKEN，驗證後進 GuestBattle ──────
-function GuestRoute() {
-  const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState("loading"); // loading | valid | expired
-  const [guestId, setGuestId] = useState(null);
-
-  useEffect(() => {
-    const token = searchParams.get("guest");
-    if (!token) { setStatus("expired"); return; }
-
-    // token = btoa(guestId)，反解出 guestId
-    let id;
-    try {
-      // btoa 產生的 base64，補回 padding
-      const padded = token + "=".repeat((4 - (token.length % 4)) % 4);
-      id = atob(padded);
-    } catch {
-      setStatus("expired");
-      return;
-    }
-
-    getGuestSession(id)
-      .then(session => {
-        if (session) { setGuestId(id); setStatus("valid"); }
-        else setStatus("expired");
-      })
-      .catch(() => setStatus("expired"));
-  }, []); // eslint-disable-line
-
-  if (status === "loading") return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <Spinner />
-    </div>
-  );
-
-  if (status === "expired") return (
-    <div style={{
-      minHeight:"100vh", display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center",
-      gap:16, fontFamily:"sans-serif", padding:24,
-      background:"linear-gradient(135deg,#1e1b4b,#312e81)",
-    }}>
-      <div style={{ fontSize:72 }}>⏰</div>
-      <div style={{ fontSize:22, fontWeight:900, color:"white" }}>體驗連結已過期</div>
-      <div style={{ fontSize:14, color:"rgba(255,255,255,.6)", textAlign:"center", lineHeight:1.8 }}>
-        訪客連結有效期限為 3 小時。<br/>請向教練索取新的體驗連結。
-      </div>
-    </div>
-  );
-
-  return (
-    <GuestBattle
-      guestId={guestId}
-      onExpire={() => {
-        deleteGuestSession(guestId).catch(() => {});
-        setStatus("expired");
-      }}
-    />
-  );
-}
-
-// ── 主路由：有 guest 參數時跳訪客，否則走正常登入流程 ───────
+// ── 主路由：有 guest/kid 參數時跳訪客/兒童模式，否則走正常登入流程 ───────
+// 2026-07-09 改版：訪客/兒童帳號改用信箱/電話跨次接續（見 guestAuth.js），
+// 不再是 token+3小時過期的一次性連結，舊的 GuestRoute/GuestBattle 已整個淘汰。
 function AppRoutes() {
   const { role, loading } = useAuth();
   const [searchParams] = useSearchParams();
 
-  // 有 guest 參數 → 直接進訪客模式（不管是否已登入）
-  if (searchParams.get("guest")) return <GuestRoute />;
+  if (searchParams.get("kid"))   return <GuestApp accountType="kid"   sessionSourceId={searchParams.get("kid") === "1" ? null : searchParams.get("kid")} />;
+  if (searchParams.get("guest")) return <GuestApp accountType="guest" />;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">

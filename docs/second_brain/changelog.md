@@ -3,6 +3,70 @@
 
 ---
 
+## 2026-07-09（訪客/兒童模式 Phase 3：簡化版地下城 + 體驗紀念卡）
+
+### 改了什麼
+- 新檔 `src/components/dungeon/GuestDungeonSimple.jsx`：固定3層地下城，第1層抽 common 階、第2層抽 rare 階任意族怪物，第3層固定王「十八王公」（`ghost_5`），戰鬥核心重用既有 `DungeonBattleRoom.jsx` + `expeditionDb.js::createExpeditionBattleRoom`（跟正式遠征系統走同一套 `useFirestoreRound` 引擎，只是不掛接挖掘/地圖/事件/商店那些複雜系統），完全比照 `DungeonExpedition.jsx` 裡 `ExpeditionBattleRoom` 的既有驗證過模式（用 `dungeonRooms/{roomId}` 的 `status` 變化偵測樓層完成/失敗）。
+- 新檔 `src/components/member/GuestShareCard.jsx`：訪客/兒童的體驗紀念卡，視覺沿用 `ShareCard.jsx` 的漸層卡片美術（同一份 `SHARE_THEMES` 色票、同一套 `html2canvas` 存圖機制），內容改成暱稱/累積金幣（即時訂閱）/標語/日期——**範圍比 PRD 原訂的更精簡**（沒有做「今日擊敗的怪物清單/地下城通關層數」這些逐場戰績統計，因為目前沒有把每個子系統的戰鬥結果往上冒泡回 `GuestApp.jsx` 彙整，那需要另外設計一個 session 統計層）。
+- `GuestApp.jsx`：新增「地下城」跟「結算」分頁，首頁 bento grid 卡片同步補上。
+- `CI=true npm run build`：Compiled successfully。
+
+### 踩坑提醒
+- `GuestDungeonSimple.jsx` 用的怪物固定王 id 是 `ghost_5`（十八王公），如果之後 `monsterData.js` 改了這隻怪的定義或刪掉，這裡要記得跟著改，目前沒有做防呆 fallback 以外的處理（找不到會退到 `MONSTERS[0]`，體驗會變得很奇怪但不會壞掉）。
+- 體驗紀念卡目前只有「累積金幣」是真實動態數據，其餘（怪物擊殺清單、地下城戰績）是已知的簡化——如果之後要做完整版，需要在 `GuestApp.jsx` 層級加一個 session 統計 state，讓 `MonsterBattle`/`GuestDungeonSimple`/`WorldBossLobby` 等子元件在勝利時往上回報一個事件。
+
+---
+
+## 2026-07-09（訪客商店金幣改接持久帳號）
+
+- `GuestShop.jsx`：金幣餘額從 `sessionStorage.getItem("guest_coins")`（每次3小時就重置回500）改成訂閱真正的 `members/{memberId}.coins`，購買扣款也改用 `addCoins(memberId, -cost)`。新增 `memberId` prop，由 `GuestApp.jsx` 傳入 `guestProfile.id`。
+- 世界王藥水/打怪金幣護符這類**單次消耗buff維持原本的 sessionStorage**（本來就該是一次性效果，不需要跨次保留）。
+- `CI=true npm run build`：Compiled successfully。
+- **`MonsterBattle.jsx` 的 `isGuest` 模式持久化落差這次沒有動**——那個檔案體量太大、`isGuest` 邏輯散落在十幾個地方，牽動每天在用的正式打怪系統，這麼晚的時間點不適合冒險做大範圍重構，留給下一輪專門處理。
+
+---
+
+## 2026-07-09（訪客/兒童模式 Phase 2：全新訪客UI，舊版 GuestBattle 整個淘汰）
+
+### 改了什麼
+- 新檔 `src/pages/GuestApp.jsx`：取代舊的 `GuestBattle.jsx`。入口畫面改成輸入信箱/電話（呼叫 Phase 1 的 `resolveGuestSession`），不再是「輸入名稱即可、3小時後全部清空」。分頁：首頁（bento grid卡片導覽）/打怪/世界王/決鬥/組隊/商店，視覺全新設計（深色漸層入口頁+卡片式首頁，跟正式會員的 `MemberApp` 風格明顯區隔）。`accountType` prop 決定是訪客（紫藍配色）還是兒童模式（橘紅配色），兒童模式文案語氣也不同。
+- `App.jsx`：路由改成 `?guest=1` / `?kid=1`（或 `?kid=<sessionId>`）直接進 `GuestApp`，完全移除舊的 `GuestRoute`（token驗證+過期畫面）邏輯。
+- `AdminMembers.jsx::GuestQRModal`：訪客QR產生流程大幅簡化——舊版要教練每次點「產生新QR」拿一個3小時有效的一次性token；新版是固定連結（`?guest=1`），印一次就能長期張貼，因為身份持續性現在是靠訪客自己輸入的信箱/電話，不需要教練預先產生。
+- `db.js`：移除整組已淘汰的訪客 session 函式（`createGuestSession`/`getGuestSession`/`deleteGuestSession`/`generateGuestToken`，含 `guestSessions` collection 的使用）。
+- 刪除 `src/components/member/GuestBattle.jsx`。
+- `CI=true npm run build`：Compiled successfully（main bundle 因為刪掉舊檔還變小了 37KB）。
+
+### 為什麼
+- 使用者明確要求「全新設計，舊的整個遺棄」，且訪客身份要能跨次造訪追蹤——這跟舊版「用完即丟」的token模型在概念上互斥，必須整個換掉而不是並存。
+
+### 踩坑提醒
+- **這個階段還沒有做地下城分頁跟結算分享卡**（Phase 3 才做），現在的 `GuestApp.jsx` 分頁是「首頁/打怪/世界王/決鬥/組隊/商店」六個，PRD 定案的完整清單還少了「地下城」跟「結算分享」。
+- **`MonsterBattle.jsx` 的 `isGuest={true}` 模式目前仍是完全不持久化**（內部大量 `if (isGuest) return` 跳過所有寫入邏輯，且讀取的 `profile` 來自 `useAuth()` 而非傳入的 guest 身份）——這代表訪客帳號雖然現在會員文件是持久的，但「打怪」分頁本身的戰績/掉落目前還是不會存進那筆持久記錄。組隊/決鬥/世界王三個分頁因為原本就支援 `guestOverride` prop，這次改用真正持久的 `id`（不再是每次隨機產生的 `guest_xxx_隨機碼`），所以這三個模式的紀錄已經是跨次持續的。
+- `GuestShop.jsx` 的金幣餘額目前還是讀 `sessionStorage.getItem("guest_coins")`，沒有接到持久的 `members/{id}.coins`——這兩個是已知但這次沒做的落差，如果要讓「打怪」和「商店」也真正持久化，需要另外排一輪重構（`MonsterBattle` 要能吃一個 profile-like prop 而不是只認 `useAuth()`）。
+- **Phase 1 的 `firestore.rules` 如果還沒手動貼到 Firebase Console，這次的 `GuestApp` 完全無法運作**（`resolveGuestSession` 的 create/update 會被舊規則擋下）。
+
+---
+
+## 2026-07-09（訪客/兒童模式 Phase 1：accountType 資料模型 + Firestore 規則 + 掃碼接續帳號邏輯）
+
+Trellis 任務 `07-09-guest-kid-mode-overhaul`（大型多階段任務，這次只做 Phase 1），PRD/design/implement 見 `.trellis/tasks/07-09-guest-kid-mode-overhaul/`。
+
+### 改了什麼
+- `firestore.rules::members`：新增 `accountType in ["guest","kid"]` 的專屬分支——`create` 匿名登入即可建立（前提 `uid` 對得上自己這次的登入）；`update`/`get` 對 guest/kid 文件**不要求 uid 對應本人**（因為每次匿名重新登入 uid 都不同，要能跨次造訪接續回同一筆記錄）。既有 `official` 帳號的規則完全沒變動（uid/email對應+hasOnly白名單）。新增 `campSessions` 集合規則（夏令營場次管理，登入可讀、admin可寫）。
+- 新檔 `src/lib/guestAuth.js`：`resolveGuestSession(contact, accountType, sessionSourceId)`——匿名登入→用聯絡方式的 sha256 hash 查詢有沒有既有記錄→有就接續（改寫 uid）、沒有就新建。`normalizeContact()`（email轉小寫、電話去除非數字字元）、`sha256()`（用瀏覽器原生 `crypto.subtle`，不需要後端函式）。
+- `CI=true npm run build`：Compiled successfully。
+
+### 為什麼
+- 使用者要新增可跨次造訪追蹤的訪客模式＋新的兒童模式（夏令營用），且兩者都要能跟正式學籍一起組隊/打地下城，最後還要能轉正式——這需要一個新的帳號分類（`accountType`）疊加在既有 `members` 集合上，而不是另開一個平行的 collection，這樣才能讓「轉正式」變成單純改一個欄位、不用搬資料，也讓地下城/打怪/合成等現有系統完全不用改就能相容。
+- 匿名登入每次 uid 都不同，是這個功能最大的技術障礙——既有的「uid 必須對應本人」規則會擋掉「同一個信箱下次再來却是新uid」的情境，所以 guest/kid 分支刻意放寬，是跟使用者確認過的安全取捨（訪客/兒童帳號沒有真實金流/隱私資料）。
+
+### 踩坑提醒
+- **這次的 `firestore.rules` 修改必須手動貼到 Firebase Console 才會生效**，在貼上之前，`resolveGuestSession()` 呼叫會全部失敗（因為線上的規則還是舊版，不認得 guest/kid 分支）。CLI 部署一樣會 403（沿用專案既有已知限制）。
+- Phase 1 只做了地基（資料模型+規則+登入接續邏輯），**還沒有任何 UI 會呼叫 `resolveGuestSession()`**——舊的 `GuestBattle.jsx`／`App.jsx::GuestRoute` 完全沒有改動，現有訪客連結流程照常運作不受影響。Phase 2（訪客新UI）才會真正接上這個函式。
+- 之後任何新增寫入 `members` 頂層欄位的地方，要記得 guest/kid 分支是完全放行的（`isLoggedIn() && accountType in [guest,kid]`，沒有 hasOnly 限制），跟 official 分支的白名單邏輯不同，改規則時兩塊要分開看，不要誤植。
+
+---
+
 ## 2026-07-09（世界王六大族改版：12隻家族王＋三類完整掉落表＋排名獎勵＋48專屬獎盃）
 
 Trellis 任務 `07-09-worldboss-family-split-rewards`，PRD/design/implement 見 `.trellis/tasks/07-09-worldboss-family-split-rewards/`。

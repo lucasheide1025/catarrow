@@ -1945,44 +1945,11 @@ export async function recordPartyBattleSession(memberId) {
   } catch (e) { console.warn("recordPartyBattleSession:", e?.message); }
 }
 
-// ─── 訪客帳號管理 ──────────────────────────────────────────
-const C_GUESTS = "guestSessions";
- 
-export async function createGuestSession() {
-  const now = Date.now();
-  const expiresAt = now + 3 * 60 * 60 * 1000; // 3小時
-  const ref = await addDoc(collection(db, C_GUESTS), {
-    createdAt: serverTimestamp(),
-    expiresAt,
-    monsterLogs: [],
-  });
-  return { id: ref.id, expiresAt };
-}
- 
-export async function getGuestSession(guestId) {
-  try {
-    const snap = await getDoc(doc(db, C_GUESTS, guestId));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    if (Date.now() > data.expiresAt) {
-      await deleteDoc(doc(db, C_GUESTS, guestId));
-      return null;
-    }
-    return { id: snap.id, ...data };
-  } catch { return null; }
-}
- 
-export async function deleteGuestSession(guestId) {
-  try { await deleteDoc(doc(db, C_GUESTS, guestId)); } catch {}
-}
- 
-// 後台產生訪客連結（存 token → guestId 對應）
-export async function generateGuestToken() {
-  const session = await createGuestSession();
-  const token = btoa(session.id).replace(/=/g,'');
-  return { token, guestId: session.id, expiresAt: session.expiresAt };
-}
- 
+// ─── 訪客帳號管理已改版（2026-07-09）───────────────────────
+// 舊的 token+3小時過期 session 機制（createGuestSession/getGuestSession/
+// deleteGuestSession/generateGuestToken）已整個淘汰，改用 guestAuth.js::resolveGuestSession
+// （信箱/電話 hash 跨次接續 members 文件）。
+
 
 // ─── 材料庫存 ──────────────────────────────────────────────
 // 集合：materialInventory / 文件 ID = memberId
