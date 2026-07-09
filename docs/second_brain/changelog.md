@@ -3,6 +3,20 @@
 
 ---
 
+## 2026-07-09（新增 ai-guide.md：任何 AI 模型通用的接手手冊）
+
+### 改了什麼
+- 新檔 `docs/second_brain/ai-guide.md`：記錄「方法論」層級的知識——功能設計思路（先查再想/資料模型先行/分Phase切/重用戰鬥核心/數值交叉檢查）、UI/UX美術設計語言（深色卡片/漸層按鈕/emoji+SVG/Web Audio音效/手機優先/Hub模式）、除錯SOP（症狀→嫌疑犯對照表、資料流三段檢查）、完工定義 checklist、10條鐵律。
+- `CLAUDE.md`：筆記目錄加入 ai-guide.md，並註明「新 AI session 起手式 = ai-guide.md + quick-ref.md」。
+
+### 為什麼
+- quick-ref.md 記的是「事實」（哪個函式在哪、踩過哪些坑），但「怎麼想」（設計取捨的邏輯、UI語言、除錯順序）一直只存在於對話歷史裡，換一個 AI 模型或開新 session 就流失。ai-guide.md 把這層 meta 知識落地，讓任何模型讀完就能延續同一套思路。
+
+### 踩坑提醒
+- ai-guide.md 與 quick-ref.md 的分工要維持：**方法進 ai-guide、事實進 quick-ref**，不要在兩邊重複寫同一件事（會養出不同步的兩份真相）。新踩的坑照舊寫進 quick-ref/changelog，只有「上升為通用原則」的教訓才回寫 ai-guide。
+
+---
+
 ## 2026-07-09（訪客/兒童模式 Phase 5：後台管理——夏令營場次、帳號列表、轉正式、official-only 查詢稽核）
 
 ### 改了什麼

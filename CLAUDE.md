@@ -15,11 +15,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 筆記目錄
 ```
 docs/second_brain/
+├── ai-guide.md       ← 🤖 AI 接手手冊：方法論（功能設計/UI美術語言/除錯SOP/完工定義）
 ├── quick-ref.md      ← ⚡ 函式/路徑/變數/圖片速查（最常用）
 ├── features.md       ← 功能清單與狀態
 ├── game-systems.md   ← 遊戲化系統規格
 └── changelog.md      ← 變更日誌（每次改完就寫）
 ```
+
+> **新 AI session 起手式**：先讀 `ai-guide.md`（怎麼想）＋ `quick-ref.md`（事實速查），再開工。
 
 ### 筆記品質標準
 - 記錄「**為什麼這樣改**」而非只記「改了什麼」
