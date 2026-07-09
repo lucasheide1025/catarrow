@@ -117,6 +117,28 @@ Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks
 
 ---
 
+## 2026-07-09（組隊打怪 partyDb.js 前後衛公式同步地下城改版）
+
+### 改了什麼
+- `src/lib/partyDb.js::processPartyRound`：套用跟 `dungeonDb.js`（前後衛重構任務）一樣的公式：
+  - 後衛不再直接對怪物造成傷害（原本 dmg 選項 ×0.5 傷害直接打怪）。
+  - 後衛 `dmg`（助攻）改成命中分數% × 25% 當加攻池，均分給存活前衛，套用在前衛 `calcDmgFn` 的 ATK 參數上（多名後衛可疊加）。
+  - 後衛 `heal` 治癒池從固定 `maxHP×25%` 改成 `maxHP×15%×命中分數%`，均分給存活隊友。
+  - `playerLog` 新增 `heal`/`buffPct` 欄位。
+- `src/components/party/PartyBattleRoom.jsx`：戰鬥紀錄面板的玩家傷害顯示補上治癒/助攻%的分支（原本永遠顯示 `+0`）。按鈕文案本來就沒寫死數字（「💊 治癒隊友」「⚡ 協助攻擊」），不用改。
+
+### 為什麼
+- 上一個任務只改了地下城系統，組隊打怪（`partyDb.js`）是完全獨立的一份實作，維持舊公式會造成兩套前後衛數值不一致。使用者確認要同步。
+
+### 踩坑提醒
+- `arrowsPerRound`/`frontIds`/`rearIds` 原本宣告在函式中段，這次改成提前到函式開頭（因為要在 Step 1 算傷害之前，先算出後衛的加攻池），順手移除了原本重複的宣告。
+- 組隊打怪的戰鬥文字捲軸日誌（`PartyBattleRoom.jsx` 約1600行，`if((p.dmg||0)>0)` 那段）沒有一併補上治癒/助攻的文字行——後衛選 heal/助攻時 dmg 永遠是 0，會被那段邏輯跳過、不出現在捲軸文字日誌裡（但戰鬥紀錄面板本身已經正確顯示）。這是次要顯示位置，這次沒改，之後若要補齊可以參考這次戰鬥紀錄面板的寫法。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+
+---
+
 ## 2026-07-09（修正市集交換卡片 Missing or insufficient permissions）
 
 Trellis 任務 `07-09-07-09-card-market-permission-fix`。

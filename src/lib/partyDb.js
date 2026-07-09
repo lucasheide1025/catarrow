@@ -353,27 +353,64 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     const round    = room.round || 1;
-
-    // Step 1: 計算每人全部 6 箭（body part 在此決定，不可拆開分批算）
-    const allPlayerData = {};
-    for (const id of aliveIds) {
-      const m   = members[id];
-      const raw = calcDmgFn(m.arrows || [], m.atk || 10, room.monster.def);
-      const isRearDmg = (m.role || "front") === "rear" && m.rearChoice === "dmg";
-      const dmgMul = isRearDmg ? 0.5 : 1.0;
-      const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
-      const rawBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
-      allPlayerData[id] = {
-        name:           m.name || "射手",
-        totalDmg:       Math.round(rawDmg * dmgMul),
-        crits:          typeof raw === "number" ? 0 : (raw.crits || 0),
-        arrowBreakdown: rawBreakdown.map(a => ({ ...a, dmg: Math.round((a.dmg || 0) * dmgMul) })),
-      };
-    }
+    const arrowsPerRound = room.arrowsPerRound || 6;
 
     // 前後衛分類（undefined / "front" 都算前衛）
     const frontIds = aliveIds.filter(id => (members[id].role || "front") === "front");
     const rearIds  = aliveIds.filter(id => (members[id].role || "front") === "rear");
+
+    function calcScorePct(arrows) {
+      const sum = (arrows || []).reduce((s, a) => s + (a?.score || 0), 0);
+      return Math.max(0, Math.min(1, sum / (arrowsPerRound * 10)));
+    }
+
+    // 後衛不再直接對怪物造成傷害：heal 選擇治癒隊友、dmg(預設) 選擇改成幫存活前衛加攻擊力
+    // 兩者的池子都用「後衛本回合命中分數%」換算，均分給受益人數（比照地下城系統，見前後衛重構任務）
+    let atkBuffPctForFront = 0;
+    const rearScorePct = {};
+    for (const id of rearIds) {
+      const m = members[id];
+      const scorePct = calcScorePct(m.arrows);
+      rearScorePct[id] = scorePct;
+      if (m.rearChoice !== "heal" && frontIds.length > 0) {
+        atkBuffPctForFront += (scorePct * 0.25) / frontIds.length;
+      }
+    }
+
+    // Step 1: 計算每人全部 6 箭（body part 在此決定，不可拆開分批算）
+    const allPlayerData = {};
+    for (const id of aliveIds) {
+      const m      = members[id];
+      const isRear = (m.role || "front") === "rear";
+      const rearHeal = isRear && m.rearChoice === "heal";
+      const rearBuff = isRear && !rearHeal;
+      if (isRear) {
+        const scorePct = rearScorePct[id] || 0;
+        allPlayerData[id] = {
+          name: m.name || "射手",
+          totalDmg: 0,
+          crits: 0,
+          arrowBreakdown: (m.arrows || []).map(a => ({
+            label: a?.label || a, dmg: 0,
+            partIcon: rearHeal ? "💚" : "🛡️",
+            partName: rearHeal ? "治癒" : "助攻",
+          })),
+          rearHeal, rearBuff, scorePct,
+        };
+        continue;
+      }
+      const buffedAtk = Math.round((m.atk || 10) * (1 + atkBuffPctForFront));
+      const raw = calcDmgFn(m.arrows || [], buffedAtk, room.monster.def);
+      const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
+      const rawBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
+      allPlayerData[id] = {
+        name:           m.name || "射手",
+        totalDmg:       Math.round(rawDmg),
+        crits:          typeof raw === "number" ? 0 : (raw.crits || 0),
+        arrowBreakdown: rawBreakdown,
+        rearHeal: false, rearBuff: false, scorePct: 0,
+      };
+    }
 
     // Step 2: 隨機事件（大回合開始時決定）
     const eventRaw   = shouldTriggerEvent() ? drawRandomEvent() : null;
@@ -389,7 +426,6 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       ...frontIds.filter(id => aliveIds.includes(id)),
       ...rearIds.filter(id => aliveIds.includes(id)),
     ];
-    const arrowsPerRound = room.arrowsPerRound || 6;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
@@ -476,11 +512,15 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       });
     }
 
-    // 後衛治癒：每位選擇「heal」的後衛，將 25% maxHP 均分給存活隊友
+    // 後衛治癒：池子 = maxHP × 15% × 命中分數%，均分給存活隊友（比照地下城系統）
     const receivedHeal = {};
+    const healGivenBy  = {};
     for (const id of rearIds) {
       if (members[id].rearChoice !== "heal") continue;
-      const pool    = Math.round((members[id].maxHP || 100) * 0.25);
+      const scorePct = rearScorePct[id] || 0;
+      const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct);
+      healGivenBy[id] = pool;
+      if (pool <= 0) continue;
       const targets = aliveIds.filter(t => t !== id && memberHPNow[t] > 0);
       if (!targets.length) continue;
       const perPerson = Math.round(pool / targets.length);
@@ -530,6 +570,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       ctr:            ctrAccum[id] || 0,
       crits:          allPlayerData[id].crits,
       arrowBreakdown: allPlayerData[id].arrowBreakdown,
+      heal:           healGivenBy[id] || 0,
+      buffPct:        allPlayerData[id].rearBuff ? Math.round((rearScorePct[id] || 0) * 25) : 0,
     }));
 
     const logEntry = {

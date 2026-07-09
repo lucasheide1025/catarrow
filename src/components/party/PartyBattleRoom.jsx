@@ -1254,7 +1254,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     {(entry.playerLog || []).map((p, j) => (
                       <div key={j} className="flex items-center gap-2 text-[11px]">
                         <span className="text-indigo-300">🏹 {p.name}</span>
-                        <span className="text-rose-400 font-black">+{p.dmg}</span>
+                        {p.heal > 0
+                          ? <span className="text-emerald-400 font-black">💚+{p.heal}</span>
+                          : p.buffPct > 0
+                            ? <span className="text-sky-400 font-black">🛡️+{p.buffPct}%</span>
+                            : <span className="text-rose-400 font-black">+{p.dmg}</span>}
                         {p.crits > 0 && <span className="text-yellow-300">✨{p.crits}</span>}
                         {entry.counterRound && p.ctr > 0 && <span className="text-orange-400 ml-auto">-{p.ctr}</span>}
                       </div>

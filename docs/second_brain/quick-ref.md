@@ -28,7 +28,7 @@
 | `members.activeExpedition`（2026-07-09 新增） | 單人遠征進度持久化，`expeditionDb.js::setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`；`DungeonLobby.jsx` 偵測並提供「結算並領取」banner，**不做**地圖位置復原 |
 | 寶箱族（第7族）已上線（2026-07-09） | 18隻怪物：`treasure_1~6`=假(有ATK)，`treasure_1_real~6_real`=真(ATK≈1)，`treasure_king_small/big_1~6`=王(`isKing:true`，各自T1-T6)。隱藏地下城=100%寶箱族（`dungeonExcavation.js::revealExcavation`），`calculateExpeditionRewards` 依 `family==="treasure"` 給×3金幣/箭露。`drawFloorMonsters` 三層樓都要看 `options.family`，不是只有王。DEF 已調降跟一般族系同量級 |
 | 藥水庫存要直接 `subscribePotions(myId,cb)`（2026-07-09 修正） | 玩家藥水存在獨立 `potionInventory/{memberId}` collection，不在 `members`/房間文件裡；`DungeonBattleRoom.jsx` 原本錯誤讀 `room.members.{id}.items`（死欄位，從沒被寫入過），已修正 |
-| 地下城前後衛：後衛不再直接輸出傷害（2026-07-09） | `dungeonDb.js::processDungeonRound` 後衛 dmg 選項改成幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。`partyDb.js`（組隊打怪）**還沒同步**，仍是舊公式（固定25%治癒/0.5倍傷害），兩套前後衛邏輯目前不一致 |
+| 前後衛不再直接輸出傷害（2026-07-09，`dungeonDb.js`+`partyDb.js` 都已同步） | 後衛 dmg 選項幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。兩套系統各自獨立實作，改任何一邊記得檢查另一邊要不要跟著改 |
 | `members` collection 白名單缺欄位會導致必現的 permission 錯誤（2026-07-09） | `expeditions` 欄位（貓咪遠征隊）曾經漏加進 `firestore.rules` hasOnly 清單，已補上。新增任何寫入 `members` 的欄位時記得同步檢查白名單 |
 | 市集交換卡片改自行請領（2026-07-09） | `buyCardListing` 不再直接寫賣家文件，改成 `cardMarket` listing 標記 `sellerClaimed:false`，賣家的 `CardMarketPanel`（`CatVillage.jsx`）偵測到自己有已售出未請領的掛賣會自動呼叫 `claimCardSaleProceeds` |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
