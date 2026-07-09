@@ -3,6 +3,76 @@
 
 ---
 
+## 2026-07-09（世界王六大族改版：12隻家族王＋三類完整掉落表＋排名獎勵＋48專屬獎盃）
+
+Trellis 任務 `07-09-worldboss-family-split-rewards`，PRD/design/implement 見 `.trellis/tasks/07-09-worldboss-family-split-rewards/`。
+
+### 改了什麼
+- **六大族從6隻改成12隻**（`worldBossData.js::WORLD_BOSSES`）：既有6隻改當「大王」（`familyTier:"big"`，代表該族T4~T6，數值/外觀不動），新增6隻「小王」（`familyTier:"small"`，代表T1~T3，數值抓大王的35~45%）。**移除 `rTier` 全域排序**，六族之間不刻意比較強度。世界王總數 18→24（教練3+貓貓9+家族12）。
+- 新建 `docs/second_brain/worldboss-small-boss-prompts.md`：6隻新小王的完整 GPT/Midjourney 生圖提示詞（含通用風格前綴、各自配色/角色設計描述），小王外觀暫時 fallback 借用同族大王的像素圖（`WorldBossSVG.jsx::PIXEL_MAP`），生圖後存成 `public/worldboss/{bossKey}.webp` 會自動優先讀取。
+- **世界王卡自動擴充到24張**：`worldBossCards.js` 的 `WB_CARDS` 是動態依 `WORLD_BOSSES` key 產生，不用改程式碼，資料層補齊後自動生效。
+- **`claimWorldBossKillReward` 全面重寫**（`worldBossDb.js`）：新增 `DROP_TABLE_BY_CATEGORY`/`getDropCategory(boss)`，依「六族小王/六族大王/貓貓/教練」四分類決定完整掉落表——比例貨幣（金幣/箭露/射手經驗/貓咪經驗/羈絆值，依自己傷害佔全團總傷害%分配，下限1）、寶箱（六族=該族材料寶箱不掉金幣箱；貓貓/教練=T?~T6金幣寶箱×5+咪咪箱+貓貓箱機率+怪物卡包1~3；教練額外六族材料寶箱×10隨機族）、世界王卡機率（25%/25%/20%/10%，重複已擁有改發100金幣）、世界王地下城召喚卷。
+- **排名額外獎勵**（`RANK_BONUS`，疊加不取代均分獎勵）：第一/二/三名各自3000/2000/1000金幣+500/250/100箭露+10轉蛋幣+貓貓箱+咪咪箱各1；尾刀王+500箭露+咪咪箱1。
+- **48件世界王專屬收藏獎盃**（`WB_TROPHY_MAP`，24隻×尾刀+前三名2種）：比照 `dungeonCollectibles.js` 首通紀念章模式，存進同一個 `member.dungeonCollectibles` 欄位（id前綴不會撞名，不用另開欄位）。`achievementDex.js` 動態產生對應48個成就（`cat:"special"`，隱藏型，達成才顯示）。
+- **後台清理**（`AdminWorldBoss.jsx`）：移除完全沒被讀取的「🏆擊殺分層獎勵」區塊（含死掉的「前3名」分頁——這次重寫後其實連「第1名」「其餘」兩個分頁也一起變成死的，均分獎勵改由 `DROP_TABLE_BY_CATEGORY` 自動決定，不再是後台單場活動可編輯的東西），Boss 選單加上「🔹小王／🔸大王／👑教練／🐱貓貓」標籤。
+- **世界王登場動畫**：確認 `WorldBossIntro.jsx` 本來就是完全資料驅動（讀 `WORLD_BOSSES[bossKey]` 的 name/title/desc/accent/bg + `WorldBossSVG`），6隻新小王资料補齊後**自動**就有完整的震動→光環→登場→標題動畫，不用另外寫代碼。
+- **6隻小王專屬反擊語錄**（`BOSS_QUOTES`，網路迷因/生活梗）：`WorldBossAttack.jsx` 的反擊台詞選擇邏輯改成優先查有沒有這隻王的專屬語錄，有就用專屬的，沒有（其餘18隻王）沿用原本的通用台詞池。
+- `catDb.js::addCatBond` 新增第4參數 `customAmount`，可覆蓋原本 source 對應的固定值，供世界王比例分配羈絆值使用（小改動，向後相容）。
+- `CI=true npm run build`：Compiled successfully（分七次修改，每次都過）。
+
+### 為什麼
+- 使用者指出六大族「跨族統一排R1~R6」的設計理解錯了，正確需求是「一族2隻，各自代表該族前三階/後三階」，族與族之間不用比較。
+- 使用者要求把「均分獎勵」擴充成完整道具清單（含之前完全沒整合進世界王的箭露/轉蛋幣/各種經驗值/羈絆值），並依教練/貓貓/六族三大類分別訂出完整掉落表——這是本次最大的邏輯重寫，把「均分獎勵」從單純「金幣+固定寶箱」升級成「比例貨幣+分類寶箱+王卡機率+召喚卷」的完整系統。
+- 使用者確認「前三名/尾刀」除了數字獎勵，還要各自對應每隻王專屬的收藏獎盃+成就（不是通用的），所以新增48件獎盃而不是沿用原本的2個通用成就。
+
+### 踩坑提醒
+- **均分獎勵現在不是後台單場活動可編輯的東西**——`DROP_TABLE_BY_CATEGORY` 的池子大小/寶箱數量/王卡機率全部寫死在 `worldBossData.js`，後台只保留「保底」（`reward.base.coins`）可調。PRD 原本有寫「後台可調整這四分類的數值」，這次為了控制範圍**沒有做**，只在 `AdminWorldBoss.jsx` 留了說明文字告知教練要調整請直接改檔案。如果之後真的需要後台可調，要另外比照 `worldBossSpawn` 的 `sysConfig` 模式做一個 `worldBossDropTable` 設定。
+- `addCatBond` 的比例羈絆值目前是「有裝備貓咪才給，沒裝備改發等值金幣（1:1換算）」，這個換算率是初版猜測值，沒有精算平衡，之後如果玩家反應「不裝貓咪拿到的金幣補償感覺不划算/太划算」需要回來調 `WB_NO_CAT_COIN_RATE`。
+- `participants.{memberId}` 沒有記錄「打王當下裝備哪隻貓」，貓咪經驗/羈絆值是用**結算當下**（不是攻擊當下）的裝備貓咪去發放，如果玩家在打王期間中途換貓，獎勵會算到最後換上的那隻貓身上，不是每次攻擊當下那隻——這是刻意的簡化，避免動到 `attackWorldBoss` 主流程。
+- 六大族材料寶箱型別只有 wood/iron/gold/epic/mythic 5階（`itemData.js::CHEST_TYPES`），但怪物階級有6階（common~mythic），T5/T6 都對應到 `epic`/`mythic`（`MATERIAL_CHEST_TYPE_BY_TIER` 陣列），不是嚴格1:1對應，這是既有系統的限制沿用，不是這次引入的新問題。
+
+---
+
+## 2026-07-09（箭數里程碑統一修復 + 世界王 mimiBoxes 死欄位修復）
+
+### 改了什麼
+- **`db.js`：里程碑發獎統一成一套**。`checkAndGrantArrowMilestones`（下課/決鬥/議會/打怪/公會共用的較新函式）原本讀 `r?.rewards`，但 `getRewardsForMilestone()` 實際回傳的是扁平物件 `{gachaCoins, catBoxes}`，根本沒有 `.rewards` 欄位——導致這個函式**永遠不會真的發轉蛋幣/貓貓箱，卻還是會把里程碑標記成「今天已領過」**。改成內部呼叫本來就寫對的 `grantArrowMilestoneRewards()` 實際發獎，`checkAndGrantArrowMilestones` 現在只負責「重新查詢今日累計箭數＋算出穿越了哪些門檻」這件事。
+- **更深一層的臭蟲**：上面那個「重新查詢今日累計箭數」的邏輯，讀的欄位是 `arrowTotals`（巢狀物件），但**全專案沒有任何一個地方會寫入這個欄位**——所有 `addPracticeLog` 呼叫端寫的都是 `totalArrows`（單一數字）。也就是說這個查詢過去永遠算出「今天 0 箭」，只有靠呼叫端自己傳入的 `sessionArrowCount` 撐著，導致跨場次的里程碑（例如上午打了3場怪各6箭，理論上該跨過18箭門檻）永遠抓不到，只有下課時（`DailyQuest.jsx` 剛好是傳「今日總箭數」而非單場箭數，數學上意外地矇對）才會補上。已改成正確讀取 `totalArrows`。
+- 同時修正一個潛在的重複計算風險：修好欄位名稱後，若呼叫端在 `addPracticeLog` 沒 `await` 完成就緊接著呼叫 `checkAndGrantArrowMilestones`（打怪/決鬥/議會都是這樣寫的 fire-and-forget），查詢到的「今日累計」可能剛好已經包含本次剛寫入的那筆，再加一次 `sessionArrowCount` 會重複計算。改用「用查到的新總數反推舊總數」（`oldTotal = max(0, newTotal - sessionArrowCount)`）取代「查到舊總數再加」，避免這個 race condition 造成重複發獎。
+- **檢定/畢業考（`MemberCertExam.jsx`）補上箭數追蹤**：原本完全沒有呼叫任何箭數相關函式。任務一固定6箭、任務二固定10箭，送出時呼叫 `addRoundArrows`＋`addPracticeLog`（`source:"cert"`）＋`checkAndGrantArrowMilestones`，達成里程碑會直接顯示在送出成功的訊息裡。
+- **世界王 `mimiBoxes` 死欄位修復**：後台獎勵表單本來就有咪咪箱可以調，但 `claimWorldBossKillReward` 從沒讀過這個值，設定了也不會真的發。補上發放邏輯（產生 `mimi_box` 寶箱）＋`WorldBossLobby.jsx` 的「你的獎勵」顯示區塊補上這行。
+- `CI=true npm run build`：Compiled successfully（分四次修改，每次都過）。
+
+### 為什麼
+- 使用者回報「地下城可能記錄可能不記錄」「檢定畢業考沒紀錄」「累積箭數但下課沒拿到箭露/轉蛋幣」，追查後發現是同一套系統裡疊了兩層 bug（發獎讀錯欄位 + 查詢讀錯欄位），檢定則是完全沒接。
+- **澄清一個調查時的誤判**：一開始委派調查時，回報「地下城/組隊/單人遠征完全沒呼叫 `addRoundArrows`」，但實際追下去發現地下城/遠征三種模式（經典、單人遠征、組隊遠征）最終都是靠同一顆共用元件 `DungeonBattleRoom.jsx` 出箭，這顆元件本來就有呼叫 `addRoundArrows`＋`addPracticeLog`，所以**地下城/遠征的箭數本來就有在記錄**，不是真的漏接——用戶感受到的「有時候沒記錄」，根因其實是上面那個「跨場次查詢永遠算出0」的 bug，不是地下城特別漏接。這提醒之後调查「某功能是否被呼叫」時，光在最外層 wrapper 檔案 grep 函式名稱不夠，要追到實際渲染/送出箭矢的共用元件。
+
+### 踩坑提醒
+- `getRewardsForMilestone()`（`arrowMilestone.js`）回傳的是**扁平物件**（`{gachaCoins, catBoxes}`），不是 `{rewards:[...]}` 陣列——以後如果要改里程碑獎勵結構，要嘛保持這個扁平格式，要嘛同時改掉 `grantArrowMilestoneRewards()` 讀取的方式，不要只改一邊。
+- `checkAndGrantArrowMilestones` 的「今日累計」查詢跟 `DailyQuest.jsx`/`MemberHome.jsx` 前台顯示用的加總邏輯（`l.totalArrows ?? ...`）現在終於讀同一個欄位了，兩邊要保持一致，不要其中一邊又改成別的欄位名。
+- **已經被舊 bug「標記成已領但獎勵是0」的里程碑沒有做追溯補發**——沒辦法自動分辨誰是真的用舊函式正確領過、誰是被新函式吃掉。這次選擇不追溯（風險考量：追溯可能造成少數人重複領取），之後如果要補發，需要教練手動判斷或後台新增一個批次工具。
+- 世界王的「非擊殺獎勵」（每次出戰結算的金幣/箭露/轉蛋幣/經驗值）目前完全跟打哪隻王無關（寫死數字，跟18隻王的強度分級脫節）——這次只修了 `mimiBoxes` 死欄位，「非擊殺獎勵要不要照 R1~R6 強度分級」是使用者還沒定案的重新設計題目，留待下一輪討論。
+
+---
+
+## 2026-07-09（成就圖鑑：地下城死代碼清理 + 貓貓卡片數量顯示修正）
+
+### 改了什麼
+- `MemberHome.jsx` 首頁「收藏進度列」的貓貓卡片格：`catTotal` 從寫死的 `100` 改成 `CAT_CARDS.length`（動態抓 `catCardData.js` 實際張數，目前200），`catOwned` 從錯誤讀取怪物卡收藏（`cardData.cards`）改成正確讀 `profile.catCards`（比照 `GachaMachine.jsx::CardDex` 的正確寫法）。`GachaMachine.jsx` 裡另一處寫死的 `/200張` 也順手改成 `CAT_CARDS.length`。
+- `achievementDex.js`「地下城」成就類別整個重寫：舊版 10 個成就全部依賴 `dungeonClears`/`dungeonFamClear` 這兩個欄位，全專案沒有任何地方會寫入，是永遠不可能達成的死成就（推測是舊版「6族×4難度×24張地圖」地下城模型的遺留，現在的地下城系統早就不是那個模型）。改成基於真正會寫入的 `member.dungeonCollectibles`（地下城掉落收藏品，`dungeonCollectibles.js` 定義：6族×(20普通+10稀有+5頭目+1超稀有)=216件+24首通紀念章=240件），新增：拾獲總數里程碑（1/10/60/150/240）、六族踏查、每族拾荒者/收藏家/稀有獵人/稀有大師/王者遺物/至寶（6族×6檔=36個）、24張首通紀念章成就。**沒有動到任何資料寫入邏輯或 `computeDexStats` 的呼叫端**——`dungeonCollectibles` 本來就是 `member` 物件的欄位，已經在 ctx 裡，不需要额外接線。
+- `CI=true npm run build`：Compiled successfully。
+
+### 為什麼
+- 使用者指出前台貓貓卡片數量顯示錯誤（明明有200張卻顯示100），追出去發現不只是數字寫死，連讀取的資料來源都是錯的（讀成怪物卡收藏）。
+- 使用者要求先處理成就圖鑑裡的死代碼，並指定「地下城」類別要改成「地下城道具圖鑑」，之後要對應玩家技能——順著這個方向，剛好 `dungeonCollectibles.js` 本來就是一個完整、正在運作、資料量豐富（240件）的道具收藏系統，比重新設計一套全新的更合理，直接拿來用。
+
+### 踩坑提醒
+- `achievementDex.js` 的成就 `check` 函式讀 `c.member?.xxx` 時，`c.member` = `computeDexStats()` 呼叫端傳入的 `member: profile`，也就是完整的會員文件——**不是**額外接線進來的欄位。之後要用會員文件上任何既有欄位當成就依據，直接讀 `c.member?.欄位名` 即可，不用改 `computeDexStats` 的參數簽章或去改 7 個呼叫端。
+- 圖鑑 `card_all6fam`（怪物卡「六族全收」成就）目前仍寫死 `["ghost","mountain","insect","workplace","exam","temple"]`，跟寶箱族擴充後的 `FAMILY_STAT` 不同步（寶箱族怪物卡理論上可以掉，但這個成就抓不到）——這次沒有動，留給下一輪成就圖鑑擴充時一併處理。
+- 世界王/貓貓陪伴/貓貓卡200張/村莊/符文系統目前完全沒有對應的成就類別，是下一輪要討論設計的範圍（使用者已提出「三個收集元素未來對應HP/ATK/DEF技能」的方向，尚在討論階段，還沒定案）。
+
+---
+
 ## 2026-07-09（世界王自動刷新天數改為可設定，預設鎖定30天）
 
 - `worldBossDb.js`：新增 `getWorldBossSpawnConfig()`/`saveWorldBossSpawnConfig(days, operatorId)`，存在 `sysConfig/worldBossSpawn.durationDays`（沿用既有 `sysConfig` collection 規則，讀取任何登入者可，寫入僅 admin，不用改 `firestore.rules`）。`autoSpawnWorldBoss()` 原本寫死 `durationDays: 7`，改成讀這個設定，預設值 30（等於 `BOSS_DURATION_MAX_DAYS` 上限）。

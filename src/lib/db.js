@@ -15,6 +15,7 @@ import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
 import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
+import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -3425,76 +3426,11 @@ export async function collectExpedition(memberId, slotIdx, rewards) {
 }
 
 // ─── 練箭里程碑獎勵 ────────────────────────────────────────
-// ●● 使用者共用箭數里程碑檢查（取代各模式各自傳入 0 導致每日重複跳出的 bug）●●
-// 自動查詢今日練習紀錄的實際累計箭數，正確計算穿越了哪些門檻
-export async function checkAndGrantArrowMilestones(memberId, sessionArrowCount) {
-  if (!memberId || !sessionArrowCount || sessionArrowCount <= 0 || memberId.startsWith("guest")) {
-    return { milestones: [] };
-  }
-  const { getDocs, query, collection, where } = await import("firebase/firestore");
-  const { db, C } = await import("./firebase");
-  const d = new Date();
-  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  let todayTotal = 0;
-  try {
-    const snap = await getDocs(query(
-      collection(db, C.practiceLogs),
-      where("memberId", "==", memberId),
-      where("date", "==", today)
-    ));
-    for (const doc of snap.docs) {
-      const totals = doc.data()?.arrowTotals;
-      if (totals) {
-        for (const v of Object.values(totals)) {
-          if (typeof v === "number") todayTotal += v;
-        }
-      }
-    }
-  } catch (_) {}
-  const { getMilestonesReached, getRewardsForMilestone } = await import("./arrowMilestone");
-  const milestones = getMilestonesReached(todayTotal, todayTotal + sessionArrowCount);
-  if (milestones.length === 0) return { milestones: [] };
-  const ms = milestones;
-  const { getDoc, doc, updateDoc } = await import("firebase/firestore");
-  try {
-    const memberSnap = await getDoc(doc(db, C.members, memberId));
-    const done = memberSnap.data()?.arrowMilestoneDone || {};
-    const toGrant = ms.filter(m => done[String(m.arrows)] !== today);
-    if (toGrant.length === 0) return { milestones: [] };
-    for (const m of toGrant) {
-      const r = getRewardsForMilestone(m);
-      if (r?.rewards) {
-        for (const rew of r.rewards) {
-          if (rew.type === "arrowdew") {
-            import("./db").then(mod => mod.addArrowdew(memberId, rew.qty)).catch(() => {});
-          }
-          if (rew.type === "gachaCoin") {
-            // 累積在 grantArrowMilestoneRewards 處理
-          }
-        }
-      }
-    }
-    const upd = {};
-    for (const m of toGrant) upd[`arrowMilestoneDone.${m.arrows}`] = today;
-    const gachaToGrant = toGrant.filter(m => {
-      const r = getRewardsForMilestone(m);
-      return r?.rewards?.some(rw => rw.type === "gachaCoin");
-    });
-    if (gachaToGrant.length > 0) {
-      const totalCoins = gachaToGrant.reduce((s, m) => {
-        const r = getRewardsForMilestone(m);
-        return s + (r?.rewards?.find(rw => rw.type === "gachaCoin")?.qty || 0);
-      }, 0);
-      upd.gachaCoins = (memberSnap.data()?.gachaCoins || 0) + totalCoins;
-    }
-    await updateDoc(doc(db, C.members, memberId), upd);
-    return { milestones: ms };
-  } catch (_) {
-    return { milestones: [] };
-  }
-}
-
-// milestones: getMilestonesReached() 回傳的陣列
+// 唯一的實際發獎函式：milestones 是 getMilestonesReached() 回傳的陣列，
+// 內部會依 arrowMilestoneDone 自行去重，呼叫端不需要自己先過濾。
+// 2026-07-09：修掉 checkAndGrantArrowMilestones 曾經讀 r.rewards（該欄位根本不存在，
+// 恆為 undefined）導致轉蛋幣/貓貓箱永遠沒發、但又把門檻標記成已領的 bug——
+// 現在統一只有這一個函式真正發獎，checkAndGrantArrowMilestones 改成委派給它。
 export async function grantArrowMilestoneRewards(memberId, milestones) {
   if (!memberId || !milestones?.length) return;
 
@@ -3504,8 +3440,6 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
   const done = memberSnap.data()?.arrowMilestoneDone || {};
   const toGrant = milestones.filter(ms => done[String(ms.arrows)] !== today);
   if (!toGrant.length) return;
-
-  const { getRewardsForMilestone } = await import("./arrowMilestone");
 
   for (const ms of toGrant) {
     const r = getRewardsForMilestone(ms);
@@ -3524,6 +3458,49 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
     const updates = { [`arrowMilestoneDone.${ms.arrows}`]: today };
     if ((r.gachaCoins || 0) > 0) updates.gachaCoins = increment(r.gachaCoins);
     await updateDoc(doc(db, C.members, memberId), updates).catch(() => {});
+  }
+}
+
+// ●● 使用者共用箭數里程碑檢查（取代各模式各自傳入 0 導致每日重複跳出的 bug）●●
+// 自動查詢今日練習紀錄的實際累計箭數，正確計算穿越了哪些門檻，實際發獎交給 grantArrowMilestoneRewards。
+export async function checkAndGrantArrowMilestones(memberId, sessionArrowCount) {
+  if (!memberId || !sessionArrowCount || sessionArrowCount <= 0 || memberId.startsWith("guest")) {
+    return { milestones: [] };
+  }
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  let newTotal = 0;
+  try {
+    const snap = await getDocs(query(
+      collection(db, C.practiceLogs),
+      where("memberId", "==", memberId),
+      where("date", "==", today)
+    ));
+    for (const logDoc of snap.docs) {
+      const n = logDoc.data()?.totalArrows;
+      if (typeof n === "number") newTotal += n;
+    }
+  } catch (_) {}
+  // newTotal 是這次查詢當下 practiceLogs 加總的今日箭數。呼叫端通常在 addPracticeLog
+  // 沒等待完成（fire-and-forget）的情況下緊接著呼叫這裡，這筆查詢可能剛好還沒撈到
+  // 本次剛寫入的那筆紀錄——用「newTotal 反推 oldTotal」而不是「查到的 oldTotal 再加一次
+  // sessionArrowCount」，避免本次箭數被重複計算兩次。
+  const oldTotal = Math.max(0, newTotal - sessionArrowCount);
+  const effectiveNewTotal = Math.max(newTotal, sessionArrowCount);
+
+  const milestones = getMilestonesReached(oldTotal, effectiveNewTotal);
+  if (milestones.length === 0) return { milestones: [] };
+
+  try {
+    const memberSnap = await getDoc(doc(db, C.members, memberId));
+    const done = memberSnap.data()?.arrowMilestoneDone || {};
+    const toGrant = milestones.filter(m => done[String(m.arrows)] !== today);
+    if (toGrant.length === 0) return { milestones: [] };
+
+    await grantArrowMilestoneRewards(memberId, toGrant);
+    return { milestones: toGrant };
+  } catch (_) {
+    return { milestones: [] };
   }
 }
 

@@ -6,6 +6,8 @@ import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
 import { MONSTERS } from "./monsterData";
 import { POTIONS } from "./itemData";
 import { levelFromXP } from "./adventurerSystem";
+import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "./dungeonCollectibles";
+import { WB_TROPHY_MAP } from "./worldBossData";
 
 export const RARITY_STYLE = {
   common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
@@ -440,55 +442,31 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "冒險者等級達到最高境界 Lv.60",
     check: c => levelFromXP(c.member?.adventurerXP || 0) >= 60 },
 
-  // ══ 地下城 ══
-  { id: "dungeon_first_clear",   cat: "dungeon", icon: "🗡️", name: "初探地下城",   rarity: "common",
-    desc: "首次通關任意地下城（地圖模式）",
-    check: c => (c.dungeonClears || 0) >= 1 },
-  { id: "dungeon_clear_5",       cat: "dungeon", icon: "⚔️", name: "地下城獵手",   rarity: "uncommon",
-    desc: "累積通關地下城 5 次",
-    check: c => (c.dungeonClears || 0) >= 5 },
-  { id: "dungeon_clear_10",      cat: "dungeon", icon: "💀", name: "地下城老兵",   rarity: "rare",
-    desc: "累積通關地下城 10 次",
-    check: c => (c.dungeonClears || 0) >= 10 },
-  { id: "dungeon_clear_15",      cat: "dungeon", icon: "🔥", name: "深淵探索者",   rarity: "rare",
-    desc: "累積通關地下城 15 次",
-    check: c => (c.dungeonClears || 0) >= 15 },
-  { id: "dungeon_clear_30",      cat: "dungeon", icon: "💀", name: "地下城霸主",   rarity: "epic",
-    desc: "累積通關地下城 30 次",
-    check: c => (c.dungeonClears || 0) >= 30 },
-  { id: "dungeon_first_hard_or_hell", cat: "dungeon", icon: "💀", name: "深入險境",   rarity: "rare",
-    desc: "首次通關困難或地獄難度地下城", hidden: true,
-    riddle: "更高的挑戰在前方…",
-    check: c => (c.dungeonFamClear && Object.values(c.dungeonFamClear).some(
-      fam => fam?.hard || fam?.hell)) },
-  { id: "dungeon_all_normal",    cat: "dungeon", icon: "🌱", name: "普通全制霸",   rarity: "rare",
-    desc: "通關全部 6 族的普通難度地下城", hidden: true,
-    riddle: "六族普通，悉數踏破…",
-    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
-      fam => c.dungeonFamClear?.[fam]?.normal) },
-  { id: "dungeon_all_advanced",  cat: "dungeon", icon: "⚔️", name: "進階全制霸",   rarity: "epic",
-    desc: "通關全部 6 族的進階難度地下城", hidden: true,
-    riddle: "六族進階，悉數踏破…",
-    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
-      fam => c.dungeonFamClear?.[fam]?.advanced) },
-  { id: "dungeon_all_hard",      cat: "dungeon", icon: "🔥", name: "困難全制霸",   rarity: "legendary",
-    desc: "通關全部 6 族的困難難度地下城", hidden: true,
-    riddle: "六族困難，悉數踏破…",
-    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
-      fam => c.dungeonFamClear?.[fam]?.hard) },
-  { id: "dungeon_all_hell",      cat: "dungeon", icon: "💀", name: "地獄全制霸",   rarity: "mythic",
-    desc: "通關全部 6 族的地獄難度地下城", hidden: true,
-    riddle: "六族地獄，悉數踏破…不死不休…",
-    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
-      fam => c.dungeonFamClear?.[fam]?.hell) },
-  { id: "dungeon_all_24",        cat: "dungeon", icon: "👑", name: "24 地獄全通",   rarity: "mythic",
-    desc: "通關全部 24 張地下城地圖", hidden: true,
-    riddle: "二十四道大門，全數為你而開…",
-    check: c => {
-      const fams = ["ghost","mountain","insect","workplace","exam","temple"];
-      const diffs = ["normal","advanced","hard","hell"];
-      return fams.every(fam => diffs.every(diff => c.dungeonFamClear?.[fam]?.[diff]));
-    } },
+  // ══ 地下城道具圖鑑 ══（2026-07-09 重寫：舊版依賴 dungeonClears/dungeonFamClear，
+  // 全專案沒有任何地方會寫入這兩個欄位，是永遠不可能達成的死成就。改用真實會寫入的
+  // member.dungeonCollectibles（地下城掉落收藏品，見 dungeonCollectibles.js，
+  // 6族×(20普通+10稀有+5頭目+1超稀有)=216件+24首通紀念章=240件）。
+  { id: "collectible_first",    cat: "dungeon", icon: "🎒", name: "初次拾獲",     rarity: "common",
+    desc: "第一次在地下城拾獲收藏品",
+    check: c => Object.keys(c.member?.dungeonCollectibles || {}).length >= 1 },
+  { id: "collectible_10",       cat: "dungeon", icon: "🧳", name: "小有收穫",     rarity: "uncommon",
+    desc: "累積拾獲 10 種不同收藏品",
+    check: c => Object.keys(c.member?.dungeonCollectibles || {}).length >= 10 },
+  { id: "collectible_60",       cat: "dungeon", icon: "📦", name: "探險家的行囊", rarity: "rare",
+    desc: "累積拾獲 60 種不同收藏品",
+    check: c => Object.keys(c.member?.dungeonCollectibles || {}).length >= 60 },
+  { id: "collectible_150",      cat: "dungeon", icon: "🏺", name: "秘寶收藏家",   rarity: "epic",
+    desc: "累積拾獲 150 種不同收藏品",
+    check: c => Object.keys(c.member?.dungeonCollectibles || {}).length >= 150 },
+  { id: "collectible_all_fam",  cat: "dungeon", icon: "🗺️", name: "六族踏查",     rarity: "epic", hidden: true,
+    riddle: "六片土地，都留下了你的足跡…",
+    desc: "六大族地下城各拾獲至少一件收藏品",
+    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(fam =>
+      Object.keys(c.member?.dungeonCollectibles || {}).some(id => COLLECTIBLE_MAP[id]?.family === fam)) },
+  { id: "collectible_master",   cat: "dungeon", icon: "👑", name: "圖鑑大師",     rarity: "mythic", hidden: true,
+    riddle: `${Object.keys(COLLECTIBLE_MAP).length} 件秘寶，一件不缺…`,
+    desc: `收集全部地下城收藏品（${Object.keys(COLLECTIBLE_MAP).length} 件）`,
+    check: c => Object.keys(c.member?.dungeonCollectibles || {}).length >= Object.keys(COLLECTIBLE_MAP).length },
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
@@ -511,6 +489,79 @@ for (const fam of ["ghost","mountain","insect","workplace","exam","temple"]) {
       check:  c => (c.monsterDex?.[monsterId]?.wins || 0) > 0,
     });
   }
+}
+
+// ── 動態加入：地下城道具圖鑑（每族普通/稀有/頭目/超稀有 + 首通紀念章）──
+for (const fam of ["ghost","mountain","insect","workplace","exam","temple"]) {
+  const pool = FAMILY_COLLECTIBLES[fam];
+  const commonIds    = (pool?.common    || []).map(i => i.id);
+  const rareIds      = (pool?.rare      || []).map(i => i.id);
+  const bossIds      = (pool?.boss      || []).map(i => i.id);
+  const superRareId  = pool?.superRare?.[0]?.id;
+
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_${fam}_common10`, cat: "dungeon", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}拾荒者`, rarity: "uncommon",
+    desc: `${FAM_LABELS[fam]}地下城累積拾獲 10 種普通收藏品`,
+    check: c => commonIds.filter(id => (c.member?.dungeonCollectibles?.[id] || 0) > 0).length >= 10,
+  });
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_${fam}_common_all`, cat: "dungeon", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}收藏家`, rarity: "rare", hidden: true,
+    riddle: `${FAM_LABELS[fam]}的每一寸角落，都被翻找過…`,
+    desc: `${FAM_LABELS[fam]}地下城收集全部 20 種普通收藏品`,
+    check: c => commonIds.length > 0 && commonIds.every(id => (c.member?.dungeonCollectibles?.[id] || 0) > 0),
+  });
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_${fam}_rare1`, cat: "dungeon", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}稀有獵人`, rarity: "rare",
+    desc: `拾獲${FAM_LABELS[fam]}任一稀有收藏品`,
+    check: c => rareIds.some(id => (c.member?.dungeonCollectibles?.[id] || 0) > 0),
+  });
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_${fam}_rare_all`, cat: "dungeon", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}稀有大師`, rarity: "epic", hidden: true,
+    riddle: "十件稀世珍寶，缺一不可…",
+    desc: `${FAM_LABELS[fam]}地下城收集全部 10 種稀有收藏品`,
+    check: c => rareIds.length > 0 && rareIds.every(id => (c.member?.dungeonCollectibles?.[id] || 0) > 0),
+  });
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_${fam}_boss1`, cat: "dungeon", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}王者遺物`, rarity: "legendary",
+    desc: `拾獲${FAM_LABELS[fam]}任一頭目專屬收藏品`,
+    check: c => bossIds.some(id => (c.member?.dungeonCollectibles?.[id] || 0) > 0),
+  });
+  if (superRareId) {
+    AUTO_ACHIEVEMENTS.push({
+      id: `dungeon_${fam}_superrare`, cat: "dungeon", icon: FAM_ICONS[fam],
+      name: `${FAM_LABELS[fam]}至寶`, rarity: "mythic", hidden: true,
+      riddle: "傳說中的至寶，只有極少數人見過…",
+      desc: `拾獲${FAM_LABELS[fam]}的超稀有收藏品`,
+      check: c => (c.member?.dungeonCollectibles?.[superRareId] || 0) > 0,
+    });
+  }
+}
+
+// 首通紀念章（COLLECTIBLE_MAP 裡 rarity==="exclusive" 的項目，6族×4難度=24張）
+for (const item of Object.values(COLLECTIBLE_MAP)) {
+  if (item.rarity !== "exclusive") continue;
+  AUTO_ACHIEVEMENTS.push({
+    id: `dungeon_trophy_${item.dungeonId}`, cat: "dungeon", icon: item.icon,
+    name: item.name, rarity: "epic",
+    desc: `取得「${item.name}」——${FAM_LABELS[item.family] || item.family}地下城首通紀念`,
+    check: c => (c.member?.dungeonCollectibles?.[item.id] || 0) > 0,
+  });
+}
+
+// ── 動態加入：世界王專屬收藏獎盃成就（尾刀+前三名，24隻×2=48個）────
+for (const t of Object.values(WB_TROPHY_MAP)) {
+  AUTO_ACHIEVEMENTS.push({
+    id: `wb_trophy_${t.id}`, cat: "special", icon: t.icon,
+    name: t.name, rarity: t.kind === "lastHit" ? "mythic" : "legendary",
+    desc: t.desc, hidden: true,
+    riddle: t.kind === "lastHit" ? "終結牠的人，只有一個…" : "傷害的證明，刻在勳章上…",
+    check: c => (c.member?.dungeonCollectibles?.[t.id] || 0) > 0,
+  });
 }
 
 // ── 動態加入：單一怪物擊殺次數成就 ──────────────────────────────

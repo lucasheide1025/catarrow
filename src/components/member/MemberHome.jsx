@@ -13,6 +13,7 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
 import { COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
+import { CAT_CARDS } from "../../lib/catCardData";
 import { ALL_MILESTONES } from "../../lib/arrowMilestone";
 import { EXPEDITION_MISSIONS, fmtCountdown } from "../../lib/expeditionData";
 import { subscribeActiveGoal } from "../../lib/villageGoalDb";
@@ -716,8 +717,9 @@ export default function MemberHome({
               const dungeonTotal  = Object.keys(COLLECTIBLE_MAP).length;
               const achOwned      = _ds.totalUnlocked;
               const achTotal      = _ds.totalAll;
-              const catOwned      = Object.keys(cardData.cards || {}).length;
-              const catTotal      = 100;
+              const ownedCatCards = profile?.catCards || {};
+              const catOwned      = Object.keys(ownedCatCards).filter(id => (ownedCatCards[id] || 0) > 0).length;
+              const catTotal      = CAT_CARDS.length;
               const cells = [
                 { icon:"🗺️", label:"地下城圖鑑", owned:dungeonOwned, total:dungeonTotal, color:"#a78bfa" },
                 { icon:"🎖️", label:"成就圖鑑",   owned:achOwned,    total:achTotal,    color:"#fbbf24" },

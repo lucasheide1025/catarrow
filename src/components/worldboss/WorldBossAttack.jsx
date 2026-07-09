@@ -9,7 +9,7 @@ import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
-import { getParticipantBonus, simulateBotRound, drawRandomBot } from "../../lib/worldBossData";
+import { getParticipantBonus, simulateBotRound, drawRandomBot, BOSS_QUOTES } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
@@ -597,7 +597,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       setAnimBossCharge(false);
       const cdmg   = wbCounter(boss.atk || 100, baseDEF, wbDmgReducePct);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
-      const pool   = isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS;
+      // 有專屬語錄的王（目前是六族小王）優先用自己的梗，其餘沿用通用台詞池
+      const ownQuotes = BOSS_QUOTES[event?.bossKey];
+      const pool   = (ownQuotes && !isLast) ? ownQuotes : (isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS);
       const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
 
       setCounterDmg(cdmg);

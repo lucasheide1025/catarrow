@@ -100,7 +100,6 @@ export default function AdminWorldBoss() {
   const [useRandom, setUseRandom] = useState(false);
   const [duration,  setDuration]  = useState(3);
   const [reward,    setReward]    = useState(() => rewardFromBossKey("head_coach"));
-  const [rankTab,   setRankTab]   = useState("rank1"); // rank1 | rank3 | rankAll
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
@@ -518,12 +517,17 @@ export default function AdminWorldBoss() {
               <div className="grid grid-cols-1 gap-1.5 max-h-64 overflow-y-auto pr-1">
                 {WORLD_BOSS_KEYS.map(k => {
                   const b = WORLD_BOSSES[k];
+                  const tierLabel = b.family === "coach" ? "👑教練" : b.family === "cat" ? "🐱貓貓"
+                    : b.familyTier === "small" ? "🔹小王" : "🔸大王";
                   return (
                     <button key={k} onClick={() => setBossKey(k)}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${bossKey === k ? "border-amber-400 bg-amber-400/10" : "border-white/10 bg-white/5"}`}>
                       <WorldBossSVG bossKey={k} currentHP={b.hp} maxHP={b.hp} size={32}/>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold truncate" style={{ color: bossKey === k ? b.accent : undefined }}>{b.name}</div>
+                        <div className="text-sm font-bold truncate flex items-center gap-1.5" style={{ color: bossKey === k ? b.accent : undefined }}>
+                          {b.name}
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-slate-300">{tierLabel}</span>
+                        </div>
                         <div className="text-xs text-slate-500">HP {b.hp.toLocaleString()} ｜ ATK {b.atk} ｜ DEF {b.def}</div>
                       </div>
                       {bossKey === k && <span className="text-amber-400 text-xs">✓</span>}
@@ -581,38 +585,11 @@ export default function AdminWorldBoss() {
               </div>
             </div>
 
-            {/* 分層獎勵 */}
-            <div className="bg-white/5 rounded-xl p-3">
-              <div className="text-xs text-amber-400 font-bold mb-2">🏆 擊殺分層獎勵</div>
-              <div className="flex gap-1 mb-3">
-                {[
-                  { key: "rank1",   label: "🥇 第1名" },
-                  { key: "rank3",   label: "🥈 前3名" },
-                  { key: "rankAll", label: "👥 其餘" },
-                ].map(t => (
-                  <button key={t.key} onClick={() => setRankTab(t.key)}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${rankTab === t.key ? "bg-amber-400/25 text-amber-300 border border-amber-400/40" : "bg-white/5 text-slate-400"}`}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <StepCtrl label="💰 金幣" value={reward[rankTab].coins} step={100}
-                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], coins: v } }))}/>
-                <StepCtrl label="📦 金箱" value={reward[rankTab].goldChests}
-                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], goldChests: v } }))}/>
-                <StepCtrl label="🐱 貓貓箱" value={reward[rankTab].catBoxes}
-                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], catBoxes: v } }))}/>
-                <StepCtrl label="😺 咪咪箱" value={reward[rankTab].mimiBoxes}
-                  onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], mimiBoxes: v } }))}/>
-                <StepCtrl label="🃏 卡片%" value={reward[rankTab].cardChance} max={100}
-                  unit="%" onChange={v => setReward(r => ({ ...r, [rankTab]: { ...r[rankTab], cardChance: v } }))}/>
-              </div>
-            </div>
-
-            {/* 預覽 */}
-            <div className="text-xs text-slate-500 leading-relaxed">
-              ✨ 咪咪箱：直接解鎖貓貓陪練（重複→+50羈絆）・保底讓每位參戰者都有獎勵
+            {/* 均分獎勵說明（六大族改版後，這部分改由 worldBossData.js 的 DROP_TABLE_BY_CATEGORY 依王的分類自動決定，不再是這裡手動編輯） */}
+            <div className="bg-white/5 rounded-xl p-3 text-xs text-slate-400 leading-relaxed">
+              <div className="text-amber-400 font-bold mb-1.5">🎁 均分獎勵（比例貨幣/寶箱/王卡/召喚卷）</div>
+              依這隻王的分類（六族小王/六族大王/貓貓/教練）自動套用對應掉落表——比例金幣/箭露/射手經驗/貓咪經驗/羈絆值、寶箱、怪物卡包、世界王卡機率、召喚卷。數值定義在 <code className="text-amber-300">worldBossData.js::DROP_TABLE_BY_CATEGORY</code>，目前還沒做成後台可調，要調整請直接改該檔案。
+              <br/>排名額外獎勵（前三名/尾刀）＋專屬收藏獎盃另外自動疊加發放，不用在這裡設定。
             </div>
           </div>
 

@@ -1,9 +1,10 @@
 // src/components/member/MemberCertExam.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup, getMember } from "../../lib/db";
+import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup, getMember, addRoundArrows, addPracticeLog, checkAndGrantArrowMilestones } from "../../lib/db";
 import { Card, Btn, Inp, Sel, ST, Spinner } from "../shared/UI";
 import { normalizeEquipment } from "../shared/Equipment";
+import { getRewardsForMilestone } from "../../lib/arrowMilestone";
 
 const BOW_LABEL_MAP = {
   recurve_full: "競技反曲弓（全配）",
@@ -229,9 +230,30 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
     setBusy(true);
     try {
       await submitCertTask(memberId, tier, task, payload, bowType, equipLabels);
-      setMsg("✅ 已送出，等待教練審核");
       sessionStorage.removeItem(SS_KEY);
       setVal(""); setArrows(Array(10).fill(null));
+
+      // 檢定的箭也要算進終身箭數/今日練習紀錄/箭數里程碑（之前完全沒接，是漏掉的一塊）
+      const arrowCount = isTask1 ? 6 : 10;
+      let milestoneMsg = "";
+      if (memberId && !memberId.startsWith("guest")) {
+        addRoundArrows(memberId, arrowCount).catch(() => {});
+        addPracticeLog(memberId, {
+          date: new Date().toISOString().slice(0, 10), source: "cert",
+          monsterName: `${tier === "gold" ? "金證" : "藍證"}${isTask1 ? "任務一" : "任務二"}`,
+          result: "n/a", rounds: [], total: isTask1 ? 0 : task2Total,
+          totalArrows: arrowCount, bowType,
+        }, memberId).catch(() => {});
+        try {
+          const res = await checkAndGrantArrowMilestones(memberId, arrowCount);
+          if (res.milestones.length > 0) {
+            const last = res.milestones[res.milestones.length - 1];
+            const r = getRewardsForMilestone(last);
+            milestoneMsg = ` 🎉 達成${last.label}（+${r.gachaCoins}轉蛋幣${r.catBoxes ? `、+${r.catBoxes}貓貓箱` : ""}）`;
+          }
+        } catch (_) {}
+      }
+      setMsg(`✅ 已送出，等待教練審核${milestoneMsg}`);
     } catch (e) { setMsg(e?.message || "送出失敗"); }
     setBusy(false);
   }

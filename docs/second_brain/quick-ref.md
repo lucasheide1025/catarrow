@@ -360,15 +360,22 @@ subscribeCollectibles(memberId, cb)  // cb({[itemId]: qty})
 
 ---
 
-## 👑 世界王 Phase 2 速查（2026-07-09）
+## 👑 世界王速查（Phase 2 2026-07-09 → 六大族改版 2026-07-09 同日追加）
 
-18隻王 = 教練3（`head_coach/wife/yumi`，隱藏王最強）+ 貓貓9（`cat_<catId>`，入門王最弱，`catId` 見 `catData.js::CAT_IDS`）+ 六大族6（`rTier:1~6`，R1最弱→R6最強）。
+**⚠️ 六大族已改版**：不是「R1~R6跨族排序」了，是「一族2隻（小王=T1~T3、大王=T4~T6），族與族之間不比強度」。24隻王 = 教練3（`head_coach/wife/yumi`，隱藏王最強）+ 貓貓9（`cat_<catId>`，入門王最弱）+ 六大族12（`{family}_boss_small`／`{family}_boss`，`familyTier:"small"|"big"`）。
 
 ```js
 // src/lib/worldBossData.js
-WORLD_BOSSES[key]              // .family="coach"|"cat"|六族key；貓有 .catId/.catGroup；六族有 .rTier
-getRewardTier(boss)            // → "entry"|"low"|"mid"|"high"|"top"（取代舊的 rewardByHP 三檔）
+WORLD_BOSSES[key]              // .family="coach"|"cat"|六族key；貓有.catId/.catGroup；六族有.familyGroup/.familyTier
+getRewardTier(boss)            // → "entry"|"low"|"mid"|"high"|"top"（現在只管保底 base，均分主體看下面）
 WB_FAMILY_TO_DUNGEON_FAMILY    // 世界王family key → monsterData.js六族key 對照（名稱不完全同）
+
+// 均分獎勵主體（六大族改版新增，取代舊的 rank1/rank3/rankAll，那組現在是死資料）
+DROP_TABLE_BY_CATEGORY         // { family_small, family_big, cat, coach } 四分類完整掉落表，池子/機率全寫死在這裡，後台不可調
+getDropCategory(boss)          // boss → 上面四個 key 之一
+RANK_BONUS                     // { 1,2,3,lastHit } 排名額外獎勵，疊加在均分獎勵之上
+WB_TROPHY_MAP                  // 48件世界王專屬收藏獎盃（24隻×尾刀+前三名），存進 member.dungeonCollectibles
+BOSS_QUOTES                    // 目前只有6隻六族小王有專屬反擊語錄，其餘18隻沿用 WorldBossAttack.jsx 通用台詞池
 
 // src/lib/worldBossCards.js（新檔）
 WB_CARDS[bossKey]  // { statMode:"fixed"|"choose", stat, flavor, title... } 18張世界王卡定義

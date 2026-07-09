@@ -123,9 +123,10 @@ export async function unequipCat(memberId) {
 
 // ── 增加羈絆值（戰鬥結束後呼叫）────────────────────────────
 // source: "dungeon" +2 | "party" +2 | "worldboss" +3 | "monster" +1
-export async function addCatBond(memberId, catId, source = "monster") {
+// customAmount：有傳就直接用這個值（例如世界王依傷害比例動態分配），忽略 source 的固定值
+export async function addCatBond(memberId, catId, source = "monster", customAmount = null) {
   const bonusMap = { monster: 1, dungeon: 2, party: 2, worldboss: 3 };
-  const amount   = bonusMap[source] || 1;
+  const amount   = customAmount != null ? customAmount : (bonusMap[source] || 1);
   try {
     await updateDoc(catRef(memberId, catId), { bond: increment(amount) });
     // 若此貓正在裝備中，同步更新 equippedCat.bond

@@ -7,22 +7,26 @@ import {
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
-import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, createNotification } from "./db";
-import { openCoinChest } from "./lootTable";
+import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, addArrowdew, addArcherXP, createNotification } from "./db";
+import { addCatXP, addCatBond } from "./catDb";
+import { COIN_CHEST_TIERS } from "./lootTable";
 import {
   WORLD_BOSSES, WORLD_BOSS_KEYS, DEFAULT_REWARD, CONSOLATION_REWARD,
   LAST_HIT_EXTRA, BOSS_DURATION_MAX_DAYS, WB_FAMILY_TO_DUNGEON_FAMILY,
   buildKillAnnouncement, drawRandomBot, simulateBotRound, getRewardByBossKey,
+  DROP_TABLE_BY_CATEGORY, getDropCategory, WB_CARD_DUPLICATE_COINS, WB_NO_CAT_COIN_RATE,
+  RANK_BONUS, WB_TROPHY_MAP,
 } from "./worldBossData";
 
-// 擊殺結算時，參戰者直接判定是否掉落「這隻王」的專屬卡片（不用經過開箱）
-const WB_CARD_DROP_CHANCE = 0.10;
+// 怪物階級順序，對照 T1~T6（index 0 = T1）
+const MONSTER_TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
+// 材料寶箱型別對照（itemData.js CHEST_TYPES 只有5階，T5/T6 都對到 mythic）
+const MATERIAL_CHEST_TYPE_BY_TIER = ["wood", "iron", "gold", "epic", "mythic", "mythic"];
+const ALL_DUNGEON_FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
 
-// 六族王的寶箱等級：R1~R2 gold、R3~R4 epic、R5~R6 mythic
-function chestTierByRTier(rTier) {
-  if (rTier <= 2) return "gold";
-  if (rTier <= 4) return "epic";
-  return "mythic";
+function randTierNameInRange([min, max]) {
+  const idx = (min - 1) + Math.floor(Math.random() * (max - min + 1));
+  return MONSTER_TIER_ORDER[idx];
 }
 
 const WB  = "worldBossEvents";
@@ -331,8 +335,8 @@ export async function distributeWorldBossRewards(eventId) {
 }
 
 // ── 參戰者自行請領世界王擊殺獎勵（每人各自寫自己的 members 文件，避免權限問題）──
-// 共同獎勵：所有真實參戰者一律領取原本「rank1」（最高檔）的份量，不再依傷害排名分層。
-// 紀念品：最後一擊 / 貢獻前三名額外拿收藏品，跟共同獎勵分開發放。
+// 均分獎勵 = 保底（既有5檔 base）+ 比例貨幣/寶箱/卡片/召喚卷（依 DROP_TABLE_BY_CATEGORY 四分類）。
+// 排名加成（1st/2nd/3rd/尾刀）+ 專屬收藏獎盃，跟均分獎勵分開、疊加發放。
 export async function claimWorldBossKillReward(memberId, eventId) {
   if (!memberId || !eventId) return { ok: false, reason: "參數錯誤" };
   try {
@@ -344,71 +348,162 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     if (!mine || mine.isGuest) return { ok: false, reason: "非參戰者" };
     if (mine.claimed) return { ok: false, reason: "already_claimed" };
 
-    const reward = ev.reward || DEFAULT_REWARD;
-    const isNewFormat = !!(reward.base || reward.rank1 || reward.rank3 || reward.rankAll);
-    const base    = isNewFormat ? (reward.base  || {}) : {};
-    const unified = isNewFormat ? (reward.rank1 || reward.rankAll || {}) : reward;
-
     const boss = WORLD_BOSSES[ev.bossKey] || {};
-    // 六大族 → 對應族寶箱（gold/epic/mythic 依 R 難度）；教練/貓貓 → 世界秘寶箱
-    const isFamilyBoss = !!boss.rTier;
+    const category = getDropCategory(boss);
+    const dropCfg = DROP_TABLE_BY_CATEGORY[category] || DROP_TABLE_BY_CATEGORY.family_big;
+    const isFamilyBoss = category === "family_small" || category === "family_big";
     const dungeonFamily = isFamilyBoss ? WB_FAMILY_TO_DUNGEON_FAMILY[boss.family] : null;
-    const relicChestType = isFamilyBoss ? chestTierByRTier(boss.rTier) : "wb_relic";
 
-    const summary = { coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, cardPack: false, wbCard: null };
+    const reward = ev.reward || DEFAULT_REWARD;
+    const base = reward.base || {};
 
+    const summary = {
+      coins: 0, arrowDew: 0, archerXP: 0, catXP: 0, bond: 0,
+      coinChests: 0, materialChests: 0, catBoxes: 0, mimiBoxes: 0, cardPacks: 0,
+      scrolls: 0, wbCard: null, wbCardDuplicateCoins: 0, trophy: null, rank: null,
+    };
+
+    // ── 保底（沿用既有5檔系統 base 部分）─────────────────────
     if (base.coins > 0) { await addCoins(memberId, base.coins).catch(() => {}); summary.coins += base.coins; }
-    if (base.woodChests > 0) {
-      await addChests(memberId, Array.from({ length: base.woodChests }, (_, i) => ({
-        id: `wb_base_${memberId}_${Date.now()}_${i}`, type: "wood", family: "worldboss", tier: "common", from: "世界王共同獎勵", ts: Date.now(),
-      }))).catch(() => {});
-      summary.woodChests += base.woodChests;
-    }
-    if (unified.coins > 0) { await addCoins(memberId, unified.coins).catch(() => {}); summary.coins += unified.coins; }
 
+    // ── 比例貨幣（依自己傷害佔全團總傷害% 分配，下限1）────────
+    const totalDamage = Object.values(ev.participants || {}).reduce((s, p) => s + (p.totalDmg || 0), 0) || 1;
+    const myDmgPct = (mine.totalDmg || 0) / totalDamage;
+    const shareOf = pool => Math.max(1, Math.round((pool || 0) * myDmgPct));
+
+    const coinsShare    = shareOf(dropCfg.coinsPool);
+    const arrowDewShare = shareOf(dropCfg.arrowDewPool);
+    const archerXPShare = shareOf(dropCfg.archerXPPool);
+    await addCoins(memberId, coinsShare).catch(() => {});     summary.coins    += coinsShare;
+    await addArrowdew(memberId, arrowDewShare).catch(() => {}); summary.arrowDew += arrowDewShare;
+    await addArcherXP(memberId, archerXPShare).catch(() => {}); summary.archerXP += archerXPShare;
+
+    // 貓咪經驗/羈絆值：讀取結算當下裝備哪隻貓，有裝備才給，沒裝備改發等值金幣
+    const memberSnap    = await getDoc(doc(db, "members", memberId));
+    const equippedCatId = memberSnap.data()?.equippedCat?.catId || null;
+    const catXPShare  = shareOf(dropCfg.catXPPool);
+    const bondShare   = shareOf(dropCfg.bondPool);
+    if (equippedCatId) {
+      await addCatXP(memberId, equippedCatId, catXPShare).catch(() => {});      summary.catXP += catXPShare;
+      await addCatBond(memberId, equippedCatId, "worldboss", bondShare).catch(() => {}); summary.bond += bondShare;
+    } else {
+      const noCatCoins = (catXPShare + bondShare) * WB_NO_CAT_COIN_RATE;
+      await addCoins(memberId, noCatCoins).catch(() => {}); summary.coins += noCatCoins;
+    }
+
+    // ── 寶箱組裝 ─────────────────────────────────────────────
     const chests = [];
-    for (let i = 0; i < (unified.goldChests || 0); i++) {
+    if (isFamilyBoss) {
+      // 六族小王/大王：該族 T1~T3 或 T4~T6 材料寶箱，不掉金幣寶箱（比例貨幣已含金幣）
+      const tierName = randTierNameInRange(dropCfg.chestTierRange);
+      const chestType = MATERIAL_CHEST_TYPE_BY_TIER[MONSTER_TIER_ORDER.indexOf(tierName)];
       chests.push({
-        id: `wb_relic_${memberId}_${Date.now()}_${i}`, type: relicChestType,
-        family: isFamilyBoss ? dungeonFamily : "worldboss", tier: "boss",
-        bossKey: ev.bossKey, from: `世界王共同獎勵（${boss.name || "?"}）`, ts: Date.now(),
+        id: `wb_mat_${memberId}_${Date.now()}`, type: chestType, family: dungeonFamily, tier: tierName,
+        from: `世界王均分獎勵（${boss.name || "?"}）`, ts: Date.now(),
       });
+      summary.materialChests += 1;
+    } else {
+      // 貓貓/教練：T?~T6 金幣寶箱 × count（隨機階級）
+      const { count, tierRange } = dropCfg.coinChests;
+      for (let i = 0; i < count; i++) {
+        const tierName = randTierNameInRange(tierRange);
+        const info = COIN_CHEST_TIERS[tierName] || COIN_CHEST_TIERS.common;
+        chests.push({
+          id: `wb_coin_${memberId}_${Date.now()}_${i}`, type: "coin", family: "worldboss", tier: tierName,
+          min: info.min, max: info.max, from: `世界王均分獎勵（${boss.name || "?"}）`, ts: Date.now(),
+        });
+      }
+      summary.coinChests += count;
+      if (category === "coach") {
+        // 教練限定：六族材料寶箱 T1~T6 隨機10個，族別隨機
+        const { count: matCount, tierRange: matRange } = dropCfg.materialChests;
+        for (let i = 0; i < matCount; i++) {
+          const tierName = randTierNameInRange(matRange);
+          const chestType = MATERIAL_CHEST_TYPE_BY_TIER[MONSTER_TIER_ORDER.indexOf(tierName)];
+          const randFam = ALL_DUNGEON_FAMILIES[Math.floor(Math.random() * ALL_DUNGEON_FAMILIES.length)];
+          chests.push({
+            id: `wb_coachmat_${memberId}_${Date.now()}_${i}`, type: chestType, family: randFam, tier: tierName,
+            from: `世界王均分獎勵（${boss.name || "?"}）`, ts: Date.now(),
+          });
+        }
+        summary.materialChests += matCount;
+      }
     }
-    for (let i = 0; i < (unified.catBoxes  || 0); i++) chests.push({ id: `wb_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box", family: "worldboss", tier: "boss", from: "世界王共同獎勵", ts: Date.now() });
+    if (dropCfg.mimiBoxes > 0) {
+      for (let i = 0; i < dropCfg.mimiBoxes; i++) {
+        chests.push({ id: `wb_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "worldboss", tier: "boss", from: "世界王均分獎勵", ts: Date.now() });
+      }
+      summary.mimiBoxes += dropCfg.mimiBoxes;
+    }
+    if ((dropCfg.catBoxChance || 0) > 0 && Math.random() < dropCfg.catBoxChance) {
+      chests.push({ id: `wb_cat_${memberId}_${Date.now()}`, type: "cat_box", family: "worldboss", tier: "boss", from: "世界王均分獎勵", ts: Date.now() });
+      summary.catBoxes += 1;
+    }
     if (chests.length > 0) await addChests(memberId, chests).catch(() => {});
-    summary.goldChests += unified.goldChests || 0;
-    summary.catBoxes   += unified.catBoxes || 0;
 
-    if ((unified.cardChance || 0) > 0 && Math.random() < unified.cardChance) {
-      await addCardPack(memberId).catch(() => {});
-      summary.cardPack = true;
+    // 一般怪物卡包（貓貓/教練限定，1~3隨機）
+    if (dropCfg.cardPacksRange) {
+      const [min, max] = dropCfg.cardPacksRange;
+      const n = min + Math.floor(Math.random() * (max - min + 1));
+      await addCardPack(memberId, n).catch(() => {});
+      summary.cardPacks += n;
     }
 
-    // 世界王專屬卡片：擊殺結算當下直接判定，不用開箱（一隻王一張，重複開到會被略過）
-    if (ev.bossKey && Math.random() < WB_CARD_DROP_CHANCE) {
+    // ── 世界王卡：擊殺結算當下直接判定，重複已擁有則改發金幣 ──
+    if (ev.bossKey && Math.random() < (dropCfg.wbCardChance || 0)) {
       const res = await addWorldBossCard(memberId, ev.bossKey, null).catch(() => ({ ok: false }));
       if (res?.ok) summary.wbCard = ev.bossKey;
+      else if (res?.reason === "已擁有此王卡") {
+        await addCoins(memberId, WB_CARD_DUPLICATE_COINS).catch(() => {});
+        summary.coins += WB_CARD_DUPLICATE_COINS;
+        summary.wbCardDuplicateCoins += WB_CARD_DUPLICATE_COINS;
+      }
     }
 
-    // 世界王地下城：人人都有
-    await grantWorldBossDungeon(memberId).catch(() => {});
+    // 世界王地下城召喚卷：人人都有
+    for (let i = 0; i < (dropCfg.scrolls || 0); i++) await grantWorldBossDungeon(memberId).catch(() => {});
+    summary.scrolls += dropCfg.scrolls || 0;
 
-    // 紀念品（跟共同獎勵分開）
+    // ── 排名加成（疊加，不取代均分獎勵）──────────────────────
     const isLastHit = ev.lastHitBy?.memberId === memberId;
     const isTop3    = (ev.top3Ids || []).includes(memberId);
+    const rank      = (ev.top3Ids || []).indexOf(memberId) + 1; // 1/2/3，找不到是0
     let trophy = null;
-    if (isLastHit) {
-      const lastHitChests = [];
-      for (let i = 0; i < (LAST_HIT_EXTRA.catBoxes || 0); i++) {
-        lastHitChests.push({ id: `wb_lasthit_${memberId}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: "世界王尾刀紀念", ts: Date.now() });
-      }
-      if (lastHitChests.length > 0) await addChests(memberId, lastHitChests).catch(() => {});
-      for (let i = 0; i < (LAST_HIT_EXTRA.cardPacks || 0); i++) await addCardPack(memberId).catch(() => {});
-      trophy = "lastHit";
-    } else if (isTop3) {
-      await addCardPack(memberId).catch(() => {});
+
+    if (rank >= 1 && rank <= 3) {
+      const rb = RANK_BONUS[rank];
+      if (rb.coins)      { await addCoins(memberId, rb.coins).catch(() => {});         summary.coins    += rb.coins; }
+      if (rb.arrowDew)   { await addArrowdew(memberId, rb.arrowDew).catch(() => {});    summary.arrowDew += rb.arrowDew; }
+      if (rb.gachaCoins) { const { addGachaCoins } = await import("./db"); await addGachaCoins(memberId, rb.gachaCoins).catch(() => {}); }
+      const rankChests = [];
+      for (let i = 0; i < (rb.catBoxes  || 0); i++) rankChests.push({ id: `wb_rank_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box",  family: "worldboss", tier: "boss", from: `世界王第${rank}名獎勵`, ts: Date.now() });
+      for (let i = 0; i < (rb.mimiBoxes || 0); i++) rankChests.push({ id: `wb_rank_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "worldboss", tier: "boss", from: `世界王第${rank}名獎勵`, ts: Date.now() });
+      if (rankChests.length > 0) await addChests(memberId, rankChests).catch(() => {});
+      summary.catBoxes  += rb.catBoxes  || 0;
+      summary.mimiBoxes += rb.mimiBoxes || 0;
+      summary.rank = rank;
       trophy = "top3";
     }
+    if (isLastHit) {
+      const rb = RANK_BONUS.lastHit;
+      if (rb.arrowDew) { await addArrowdew(memberId, rb.arrowDew).catch(() => {}); summary.arrowDew += rb.arrowDew; }
+      if (rb.mimiBoxes > 0) {
+        await addChests(memberId, [{ id: `wb_lasthit_mimi_${memberId}_${Date.now()}`, type: "mimi_box", family: "worldboss", tier: "boss", from: "世界王尾刀獎勵", ts: Date.now() }]).catch(() => {});
+        summary.mimiBoxes += rb.mimiBoxes;
+      }
+      trophy = "lastHit";
+    }
+
+    // ── 專屬收藏獎盃（跟排名加成疊加，純收藏+成就用）───────────
+    if (isLastHit) {
+      const t = WB_TROPHY_MAP[`${ev.bossKey}_lasthit_trophy`];
+      if (t) await updateDoc(doc(db, "members", memberId), { [`dungeonCollectibles.${t.id}`]: increment(1) }).catch(() => {});
+    }
+    if (rank >= 1 && rank <= 3) {
+      const t = WB_TROPHY_MAP[`${ev.bossKey}_top3_trophy`];
+      if (t) await updateDoc(doc(db, "members", memberId), { [`dungeonCollectibles.${t.id}`]: increment(1) }).catch(() => {});
+    }
+    summary.trophy = trophy;
 
     await updateDoc(doc(db, WB, eventId), { [`participants.${memberId}.claimed`]: true });
     return { ok: true, reward: summary, trophy };

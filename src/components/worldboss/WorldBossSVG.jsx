@@ -297,6 +297,13 @@ const PIXEL_MAP = {
   office_boss:  OfficeBossPixel,
   exam_boss:    ExamBossPixel,
   western_boss: WesternBossPixel,
+  // 六族小王（T1~T3代表）先沿用同族大王的像素圖，等使用者用 GPT 生圖後再換成專屬 webp
+  ghost_boss_small:   GhostBossPixel,
+  forest_boss_small:  ForestBossPixel,
+  poison_boss_small:  PoisonBossPixel,
+  office_boss_small:  OfficeBossPixel,
+  exam_boss_small:    ExamBossPixel,
+  western_boss_small: WesternBossPixel,
 };
 for (const catId of CAT_IDS_FOR_PIXEL) {
   PIXEL_MAP[`cat_${catId}`] = ({ phase }) => <CatGenericPixel catId={catId} phase={phase}/>;

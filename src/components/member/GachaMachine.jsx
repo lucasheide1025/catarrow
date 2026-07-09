@@ -372,7 +372,7 @@ function CardDex({ catCards }) {
   return (
     <div>
       {lightbox && <CardLightbox card={lightbox} cnt={owned[lightbox.id]||0} onClose={()=>setLightbox(null)} />}
-      <div className="text-xs mb-2 font-bold" style={{color:C.mid}}>已收集 {ownedCount} / 200 張</div>
+      <div className="text-xs mb-2 font-bold" style={{color:C.mid}}>已收集 {ownedCount} / {CAT_CARDS.length} 張</div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3 no-scrollbar">
         <button onClick={()=>setSelCat(null)}

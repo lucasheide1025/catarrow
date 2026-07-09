@@ -111,15 +111,24 @@ function KillScreen({ event, myReward, onClose }) {
           <div style={{ fontSize:"0.65rem", color:"#86efac", fontWeight:700, letterSpacing:2, marginBottom:8 }}>🎁 你的獎勵</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 14px", fontSize:"0.8rem", color:"#e2e8f0" }}>
             {myReward.reward?.coins > 0 && <span>🪙 金幣 +{myReward.reward.coins}</span>}
-            {myReward.reward?.goldChests > 0 && <span>🏆 黃金寶箱 ×{myReward.reward.goldChests}</span>}
-            {myReward.reward?.woodChests > 0 && <span>📦 木寶箱 ×{myReward.reward.woodChests}</span>}
+            {myReward.reward?.arrowDew > 0 && <span>💧 箭露 +{myReward.reward.arrowDew}</span>}
+            {myReward.reward?.archerXP > 0 && <span>🏹 射手經驗 +{myReward.reward.archerXP}</span>}
+            {myReward.reward?.catXP > 0 && <span>😻 貓咪經驗 +{myReward.reward.catXP}</span>}
+            {myReward.reward?.bond > 0 && <span>💞 羈絆值 +{myReward.reward.bond}</span>}
+            {myReward.reward?.coinChests > 0 && <span>💰 金幣寶箱 ×{myReward.reward.coinChests}</span>}
+            {myReward.reward?.materialChests > 0 && <span>📦 材料寶箱 ×{myReward.reward.materialChests}</span>}
             {myReward.reward?.catBoxes > 0 && <span>🐱 貓貓箱 ×{myReward.reward.catBoxes}</span>}
-            {myReward.reward?.cardPack && <span>🃏 卡包 ×1</span>}
-            <span>🗺️ 世界王地下城 ×1</span>
+            {myReward.reward?.mimiBoxes > 0 && <span>😺 咪咪箱 ×{myReward.reward.mimiBoxes}</span>}
+            {myReward.reward?.cardPacks > 0 && <span>🃏 怪物卡包 ×{myReward.reward.cardPacks}</span>}
+            {myReward.reward?.wbCard && <span>👑 世界王卡 ×1</span>}
+            {myReward.reward?.wbCardDuplicateCoins > 0 && <span>🪙 王卡重複補償 +{myReward.reward.wbCardDuplicateCoins}</span>}
+            {myReward.reward?.scrolls > 0 && <span>🗺️ 世界王地下城召喚卷 ×{myReward.reward.scrolls}</span>}
           </div>
           {myReward.trophy && (
             <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed rgba(255,255,255,0.12)", fontSize:"0.8rem", color:"#fbbf24", fontWeight:700 }}>
-              {myReward.trophy === "lastHit" ? "🏅 世界王尾刀紀念（額外貓貓箱+卡包）" : "🏅 世界王貢獻紀念（額外卡包）"}
+              {myReward.trophy === "lastHit"
+                ? "🏅 尾刀紀念獎盃＋額外獎勵"
+                : `🏅 前${myReward.reward?.rank || ""}名紀念獎盃＋額外獎勵`}
             </div>
           )}
         </div>
