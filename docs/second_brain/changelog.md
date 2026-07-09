@@ -3,6 +3,40 @@
 
 ---
 
+## 2026-07-09（寶箱族擴充：14隻怪物 + 隱藏地下城改為專屬寶箱族農場）
+
+Trellis 任務 `07-09-07-09-treasure-family-expansion`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-treasure-family-expansion/`。
+
+### 改了什麼
+- `src/lib/monsterData.js`：
+  - 新增 6 隻「真」寶箱怪（`treasure_1_real`~`treasure_6_real`，ATK=1 幾乎不會反擊，DEF 比同階「假」的更高）；既有 `treasure_1~6` 維持不變，視為「假」（有正常 ATK，需要正常應戰）。
+  - 新增寶箱王 2 隻（`treasure_king_small`/`treasure_king_big`，`isKing:true`）。
+  - 新增 `drawTreasureMonsterPool(count, tier)`（純寶箱族抽池，真假隨機混，排除王）、`drawTreasureKing(difficultyTier)`（≤3出小王，≥4出大王）。
+  - `drawMixedMonsterPool`（一般 6 族混池）加 5% 機率把其中一個抽選結果換成同階寶箱族怪物，當一般地城的驚喜彩蛋。
+  - `drawFloorMonsters` 支援 `options.family==="treasure"`：三層樓全部走寶箱族抽池+寶箱王，不再混一般 6 族。
+- `src/lib/dungeonExcavation.js::revealExcavation`：`isHidden` 擲出 true 時，`family` 直接指定 `"treasure"`（不再隨機 6 族），`boss` 改用 `drawTreasureKing`。`claimAutoDig`/`useDungeonScroll` 本來就不會產生隱藏地城，沒有改。
+- `src/lib/expeditionDb.js::calculateExpeditionRewards`：加 `family` 參數，`family==="treasure"` 時金幣/箭露 ×3、經驗值 ×1.3（經驗值加幅刻意較小，避免打寶箱地城變成練等最佳解）。`settleAbandonedExpedition` 也一併補上 `family`。
+- `DungeonExpedition.jsx`/`TeamExpeditionBattle.jsx`：呼叫 `calculateExpeditionRewards` 補 `family`；王房通關（`won && family==="treasure"`）額外加碼金幣（300+難度×100）、3 個傳說級材料（借用既有 6 族材料池的 legendary 稀有度池，沒有另外新建寶箱族專屬材料鏈）、一個對應難度的金幣寶箱、一份符文掉落（`rollRuneDrop`/`addRune`，符文物品本身可以拿到，但符文的「使用」介面目前仍是隱藏的，那是另一個獨立項目）。組隊模式的王獎勵掛在 `handleFinish()`（每人各自呼叫自己的份，避免上一個任務才修好的「幫別人寫入」權限問題重演）。
+- `DungeonBattleRoom.jsx::handleClaimSelf`（非遠征模式路徑）：`monster.family==="treasure"` 時金幣 ×3，讓一般地城 5% 彩蛋也有對應的加成獎勵。
+
+### 為什麼
+- 使用者明確定調：「隱藏地下城本身的用意並不是擊倒而是獲得大量獎勵的地方」——這不是戰鬥挑戰內容，是獎勵農場，所以核心改動集中在「讓隱藏地城 100% 是寶箱族」+「寶箱族的獎勵明顯高於一般族系」，而不是設計新的戰鬥機制。
+- 真假定義（使用者原話）：「真的沒有攻擊力好打倒，假的定義是他就真的是怪物，所以會反擊有傷害」——用既有的 `applyVariant`/ATK 數值機制就能表達，不需要新的戰鬥引擎特判邏輯（ATK 接近 0 的怪物在既有傷害公式下自然幾乎不會反擊）。
+- **遠征模式完全略過逐怪物掉落**（`handleClaimSelf` 的 `expeditionMode` 分支整段跳過，見上一個「組隊遠征穩定性」任務的調查），而隱藏地城 100% 走遠征系統，所以「寶箱族獎勵更豐厚」必須讓 `calculateExpeditionRewards`（run 結算層）依 family 加成，改 `rollCoins`/`rollMaterialDrops`（怪物掉落層）對隱藏地城完全沒有作用——這兩層要分開處理，是本次最容易搞混的地方。
+
+### 踩坑提醒
+- **樓層 1、2 的一般怪物池本來完全不看「整趟遠征主題 family」**，永遠是 6 族隨機混池（只有王/Boss 才看 family）——這是隱藏地下城要做到「全部都是寶箱族」時最容易漏掉的地方，`drawFloorMonsters` 現在三層樓都要判斷 `options.family==="treasure"`。
+- 寶箱王材料獎勵**沒有**建立寶箱族專屬的材料鏈（`monsterMaterials.js` 的材料是依 6 族 `family` 建的，寶箱族沒有對應的 `treasure_m2~m6`），改成從既有材料池篩 `rarity==="legendary"` 隨機發 3 個，避免發出不存在的材料 id 造成庫存出現垃圾欄位。若之後想要寶箱族專屬材料外觀，需要另外設計。
+- `treasure_king_small`/`treasure_king_big` 用既有 `tier:"boss"`/`tier:"mythic"` 掛欄位，靠新增的 `isKing:true` 排除在一般寶箱怪抽池外——**如果之後要再新增寶箱族怪物，記得排除條件要一起檢查 `isKing`**，否則王可能意外被抽進一般樓層。
+- 一般地城 5% 彩蛋**刻意不套用**寶箱族的豐厚倍率（只是視覺驚喜換皮，非遠征模式走 `rollCoins`×3 已經有一點加成），避免一般地城的期望報酬意外暴增。
+- 符文「使用」介面解鎖跟「新系統藥水無法使用」都是**獨立項目**，本次沒有處理，王掉落的符文物品本身能正常拿到、進背包，只是還不能用。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後實測：練箭挖掘刷出隱藏地城時三層樓都是寶箱族、王房正確依難度出小王/大王、結算畫面金幣數字明顯高於一般地城同難度、一般地城偶爾（不用刻意驗證機率）能遇到寶箱族怪物彩蛋。
+
+---
+
 ## 2026-07-09（組隊/單人遠征穩定性：斷線回房+畫面卡死+進度不遺失）
 
 Trellis 任務 `07-09-07-09-expedition-stability`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-expedition-stability/`。

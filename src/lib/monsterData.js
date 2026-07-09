@@ -292,6 +292,58 @@ export const MONSTERS = [
     hp:1000, atk:35, def:300,
     desc:"傳說中的終極寶箱巨像，擊破它將獲得無法想像的財富與寶物。",
   },
+
+  // ════ 寶箱族·真（不會反擊，只是打起來比較久）════
+  {
+    id:"treasure_1_real", family:"treasure", tier:"common",
+    name:"安分寶箱怪", icon:"📦",
+    hp:80, atk:1, def:70,
+    desc:"貨真價實的寶箱，完全不會反擊，輕鬆打開就有金幣。",
+  },
+  {
+    id:"treasure_2_real", family:"treasure", tier:"rare",
+    name:"安分黃金寶箱怪", icon:"📦",
+    hp:140, atk:1, def:110,
+    desc:"鍍金但性情溫和的寶箱怪，不會反擊，防禦力較高。",
+  },
+  {
+    id:"treasure_3_real", family:"treasure", tier:"elite",
+    name:"安分鑽石寶箱怪", icon:"💎",
+    hp:220, atk:1, def:160,
+    desc:"鑲滿鑽石卻毫無敵意的寶箱怪，堅硬但不會還手。",
+  },
+  {
+    id:"treasure_4_real", family:"treasure", tier:"fierce",
+    name:"安分祕銀寶箱怪", icon:"📦",
+    hp:340, atk:1, def:220,
+    desc:"祕銀打造、性情溫馴的寶箱怪，慢慢打就能擊破。",
+  },
+  {
+    id:"treasure_5_real", family:"treasure", tier:"boss",
+    name:"安分遠古寶箱怪", icon:"🗡️",
+    hp:500, atk:1, def:300,
+    desc:"存在千年卻毫無攻擊性的遠古寶箱怪，防禦極高但完全不會反擊。",
+  },
+  {
+    id:"treasure_6_real", family:"treasure", tier:"mythic",
+    name:"安分神話寶箱巨像", icon:"👑",
+    hp:800, atk:1, def:400,
+    desc:"傳說中溫馴的終極寶箱巨像，堅不可摧但從不主動攻擊。",
+  },
+
+  // ════ 寶箱族·王（隱藏地下城王房專屬，不進入一般寶箱怪抽池）════
+  {
+    id:"treasure_king_small", family:"treasure", tier:"boss", isKing:true,
+    name:"寶箱小王", icon:"👑",
+    hp:900, atk:20, def:200,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。",
+  },
+  {
+    id:"treasure_king_big", family:"treasure", tier:"mythic", isKing:true,
+    name:"寶箱大王", icon:"👑",
+    hp:1800, atk:35, def:350,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。",
+  },
 ];
 
 // ── 身體部位（殭屍靶紙模式）────────────────────────────
@@ -540,6 +592,12 @@ export function drawMixedMonsterPool(count, variant, tier) {
   const selectedFamilies = shuffled.slice(0, Math.min(count, 6));
 
   return selectedFamilies.map(family => {
+    // 5% 低機率彩蛋：換成寶箱族（真假隨機）
+    if (Math.random() < 0.05) {
+      const treasurePool = MONSTERS.filter(m => m.family === "treasure" && m.tier === tierKey && !m.isKing);
+      const treasureMonster = treasurePool[Math.floor(Math.random() * treasurePool.length)];
+      if (treasureMonster) return applyVariant(treasureMonster, variant);
+    }
     const candidates = MONSTERS.filter(m =>
       m.family === family && m.tier === tierKey
     );
@@ -554,6 +612,26 @@ export function drawMixedMonsterPool(count, variant, tier) {
     if (!monster) return null;
     return applyVariant(monster, variant);
   }).filter(Boolean);
+}
+
+// 從寶箱族抽指定數量（真假隨機混，不含王）；隱藏地下城樓層1/2/一般房用
+export function drawTreasureMonsterPool(count, tier) {
+  const tierKey = TIER_ORDER[Math.max(0, Math.min(5, (tier || 1) - 1))];
+  const candidates = MONSTERS.filter(m => m.family === "treasure" && m.tier === tierKey && !m.isKing);
+  const picks = [];
+  for (let i = 0; i < count; i++) {
+    const monster = candidates[Math.floor(Math.random() * candidates.length)];
+    if (monster) picks.push(applyVariant(monster, "normal"));
+  }
+  return picks;
+}
+
+// 寶箱王：低階地城(T1-T3)出小王，高階(T4-T6)出大王
+export function drawTreasureKing(difficultyTier) {
+  const king = (difficultyTier || 1) <= 3
+    ? MONSTERS.find(m => m.id === "treasure_king_small")
+    : MONSTERS.find(m => m.id === "treasure_king_big");
+  return applyVariant(king, "boss");
 }
 
 export function drawExpeditionBoss(difficultyTier, family = null) {
@@ -574,32 +652,43 @@ export function drawExpeditionBoss(difficultyTier, family = null) {
  * @returns {{ monsters: Array, elite: Object|null, boss: Object|null }}
  */
 export function drawFloorMonsters(floorIndex, difficultyTier, options = {}) {
+  const isTreasureRun = options.family === "treasure";
   if (floorIndex === 0) {
     // 第1層：探索層，2-3 隻弱化怪
     const count = 2 + Math.floor(Math.random() * 2);
     return {
-      monsters: drawMixedMonsterPool(count, "weak", difficultyTier),
+      monsters: isTreasureRun
+        ? drawTreasureMonsterPool(count, difficultyTier)
+        : drawMixedMonsterPool(count, "weak", difficultyTier),
       elite: null, boss: null,
     };
   }
   if (floorIndex === 1) {
     // 第2層：一般房固定普通，精英房固定強悍
     const count = 3 + Math.floor(Math.random() * 2);
-    const [elite] = drawMixedMonsterPool(1, "strong", difficultyTier);
+    const elite = isTreasureRun
+      ? drawTreasureMonsterPool(1, difficultyTier)[0]
+      : drawMixedMonsterPool(1, "strong", difficultyTier)[0];
     return {
-      monsters: drawMixedMonsterPool(count, "normal", difficultyTier),
+      monsters: isTreasureRun
+        ? drawTreasureMonsterPool(count, difficultyTier)
+        : drawMixedMonsterPool(count, "normal", difficultyTier),
       elite: elite || null, boss: null,
     };
   }
   // 第3層：分支遭遇固定強悍，王房使用地下城建立時已固定的 Boss
-  const [elite] = drawMixedMonsterPool(1, "strong", difficultyTier);
+  const elite = isTreasureRun
+    ? drawTreasureMonsterPool(1, difficultyTier)[0]
+    : drawMixedMonsterPool(1, "strong", difficultyTier)[0];
   const fixedBoss = options.fixedBoss
     ? (options.fixedBoss.variant === "boss"
       ? { ...options.fixedBoss }
       : applyVariant(options.fixedBoss, "boss"))
-    : drawExpeditionBoss(difficultyTier, options.family);
+    : (isTreasureRun ? drawTreasureKing(difficultyTier) : drawExpeditionBoss(difficultyTier, options.family));
   return {
-    monsters: drawMixedMonsterPool(3, "strong", difficultyTier),
+    monsters: isTreasureRun
+      ? drawTreasureMonsterPool(3, difficultyTier)
+      : drawMixedMonsterPool(3, "strong", difficultyTier),
     elite: elite || null,
     boss: fixedBoss || null,
   };

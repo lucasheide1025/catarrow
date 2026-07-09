@@ -51,6 +51,10 @@ import {
   mergeExpeditionLoot,
   mergeExpeditionStats,
 } from "../../lib/expeditionRewards";
+import { rollRuneDrop } from "../../lib/runeData";
+import { addRune } from "../../lib/runeDb";
+import { makeCoinChest, floorToMonsterTier } from "../../lib/lootTable";
+import { MATERIALS } from "../../lib/monsterMaterials";
 import {
   sfxTap, sfxDoorOpen, sfxPathSelect, sfxBuff, sfxDebuff,
   sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter,
@@ -768,9 +772,22 @@ export default function DungeonExpedition({
       difficultyTier,
       floorsCleared: cleared,
       won,
+      family,
     }));
+    // 寶箱王擊殺加碼：大量金幣+材料+寶箱+符文（隱藏地下城才會走到這裡，family 一定是 treasure）
+    if (won && family === "treasure" && myId) {
+      addCoins(myId, 300 + difficultyTier * 100).catch(() => {});
+      const legendaryPool = MATERIALS.filter(m => m.rarity === "legendary");
+      const kingMaterials = Array.from({ length: 3 }, () =>
+        legendaryPool[Math.floor(Math.random() * legendaryPool.length)]
+      ).filter(Boolean);
+      if (kingMaterials.length > 0) addMaterials(myId, kingMaterials).catch(() => {});
+      addChests(myId, [makeCoinChest(floorToMonsterTier(difficultyTier), "寶箱王掉落")]).catch(() => {});
+      const droppedRune = rollRuneDrop(difficultyTier);
+      if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
+    }
     setPhase("result");
-  }, [difficultyTier]);
+  }, [difficultyTier, family, myId]); // eslint-disable-line
 
   // ── 分支序列（第 3 層）──────────────────────────────────
   const branchSeq = useMemo(() => {

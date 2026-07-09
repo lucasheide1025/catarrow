@@ -36,6 +36,11 @@ import {
   collectBattleStats,
   createExpeditionKillLoot,
 } from "../../lib/expeditionRewards";
+import { addCoins, addMaterials, addChests } from "../../lib/db";
+import { makeCoinChest, floorToMonsterTier } from "../../lib/lootTable";
+import { MATERIALS } from "../../lib/monsterMaterials";
+import { rollRuneDrop } from "../../lib/runeData";
+import { addRune } from "../../lib/runeDb";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
 import DungeonTreasureRoom from "./DungeonTreasureRoom";
@@ -306,6 +311,7 @@ export default function TeamExpeditionBattle({
       difficultyTier: dungeonDifficulty,
       floorsCleared: cleared,
       won,
+      family: dungeonFamily,
     });
     const treasureLoot = teamRoom?.expeditionTreasureLoot;
     const finalLoot = {
@@ -638,6 +644,19 @@ export default function TeamExpeditionBattle({
       return false;
     }      if (claim.ok && claim.allClaimed) {
         cleanupTeamExpeditionRoom(teamRoomId).catch(() => {});
+      }
+
+      // ── 寶箱王擊殺加碼：每人各自領取（見寶箱族擴充任務，避免跨人寫入權限問題）──
+      if (wonLast && dungeonFamily === "treasure" && myId) {
+        addCoins(myId, 300 + dungeonDifficulty * 100).catch(() => {});
+        const legendaryPool = MATERIALS.filter(m => m.rarity === "legendary");
+        const kingMaterials = Array.from({ length: 3 }, () =>
+          legendaryPool[Math.floor(Math.random() * legendaryPool.length)]
+        ).filter(Boolean);
+        if (kingMaterials.length > 0) addMaterials(myId, kingMaterials).catch(() => {});
+        addChests(myId, [makeCoinChest(floorToMonsterTier(dungeonDifficulty), "寶箱王掉落")]).catch(() => {});
+        const droppedRune = rollRuneDrop(dungeonDifficulty);
+        if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
       }
 
       // ── 遠征首殺判定 ────────────────────────────────────────

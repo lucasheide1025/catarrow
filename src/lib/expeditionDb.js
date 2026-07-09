@@ -139,19 +139,25 @@ const EXPEDITION_REWARD_TABLE = {
  * @param {boolean} options.won - 是否通關
  * @returns {{ coins: number, arrowDew: number, archerXP: number, breakdown: object }}
  */
-export function calculateExpeditionRewards({ difficultyTier, floorsCleared, won }) {
+// 寶箱族地下城（隱藏地下城）是獎勵農場，不是戰鬥挑戰，金幣/箭露給大幅加成
+// 經驗值刻意加幅較小，避免打寶箱地城變成練等最佳解
+const TREASURE_REWARD_MULT = { coins: 3, arrowDew: 3, archerXP: 1.3 };
+
+export function calculateExpeditionRewards({ difficultyTier, floorsCleared, won, family }) {
   const tier = Math.max(1, Math.min(6, difficultyTier || 1));
   const table = EXPEDITION_REWARD_TABLE[tier];
   const floorMult = won ? 1.0 : Math.max(0.1, floorsCleared / 3);
+  const isTreasure = family === "treasure";
+  const bonusMult = isTreasure ? TREASURE_REWARD_MULT : { coins: 1, arrowDew: 1, archerXP: 1 };
 
   const coinsBase = table.coinBase + Math.floor(Math.random() * table.coinRange);
-  const coins = Math.round(coinsBase * floorMult);
+  const coins = Math.round(coinsBase * floorMult * bonusMult.coins);
 
   const dewBase = table.dewBase + Math.floor(Math.random() * table.dewBase);
-  const arrowDew = Math.max(1, Math.round(dewBase * floorMult));
+  const arrowDew = Math.max(1, Math.round(dewBase * floorMult * bonusMult.arrowDew));
 
   const xpBase = table.xpBase + Math.floor(Math.random() * table.xpRange);
-  const archerXP = Math.round(xpBase * floorMult);
+  const archerXP = Math.round(xpBase * floorMult * bonusMult.archerXP);
 
   return {
     coins,
@@ -162,7 +168,7 @@ export function calculateExpeditionRewards({ difficultyTier, floorsCleared, won 
     floorsCleared,
     totalFloors: 3,
     breakdown: {
-      coinBase: coinsBase, floorMult, dewBase, xpBase,
+      coinBase: coinsBase, floorMult, dewBase, xpBase, isTreasure,
     },
   };
 }
@@ -241,7 +247,7 @@ export async function clearActiveExpeditionProgress(memberId) {
  * 用已記錄的 floorsCleared 比照「沒破關」的既有公式給部分獎勵。
  */
 export async function settleAbandonedExpedition(memberId, { family, difficultyTier, isHidden, floorsCleared }) {
-  const rewards = calculateExpeditionRewards({ difficultyTier, floorsCleared, won: false });
+  const rewards = calculateExpeditionRewards({ difficultyTier, floorsCleared, won: false, family });
   await grantExpeditionRewards(memberId, rewards).catch(() => {});
   await saveExpeditionRecord(memberId, {
     family, difficulty: difficultyTier, isHidden, floorsCleared, won: false,

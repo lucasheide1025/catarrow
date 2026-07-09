@@ -593,8 +593,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       ? (isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1)
       : (room.totalFloors || 7);
 
-    // 自己的金幣/寶箱/素材/圖鑑
-    const baseCoins = rollCoins(room?.monster?.tier || "common", 1);
+    // 自己的金幣/寶箱/素材/圖鑑（寶箱族彩蛋：金幣加成，見寶箱族擴充任務）
+    const baseCoins = rollCoins(room?.monster?.tier || "common", 1) * (room?.monster?.family === "treasure" ? 3 : 1);
     await claimDungeonReward(myId, baseCoins, goldMult);
     const memberChests = Array.from({ length: totalFloors }, (_, i) =>
       makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)

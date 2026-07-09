@@ -26,6 +26,7 @@
 | client-triggered「幫別人寫入」模式一律會靜默失敗（2026-07-09 村目標修正時再次確認） | `members` collection 規則只准會員改自己的文件；任何「一人瀏覽器迴圈幫全部參與者發獎勵」的寫法都要改成自行請領（`claimVillageGoalReward` 是範本），不要再新增這種模式 |
 | 遠征 `onExit({preserve:true})` 語意（2026-07-09 修正） | `DungeonBattleRoom.jsx` 戰鬥畫面的「離開」已在 expeditionMode 隱藏；`TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx` 的 `onExit`/`onAbandon` 鏈路現在才是唯一離開途徑（地圖層「撤退」二次確認），改動這塊要小心別又把 preserve 訊號接回全隊解散邏輯 |
 | `members.activeExpedition`（2026-07-09 新增） | 單人遠征進度持久化，`expeditionDb.js::setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`；`DungeonLobby.jsx` 偵測並提供「結算並領取」banner，**不做**地圖位置復原 |
+| 寶箱族（第7族）已上線（2026-07-09） | 14隻怪物：`treasure_1~6`=假(有ATK)，`treasure_1_real~6_real`=真(ATK≈1)，`treasure_king_small/big`=王(`isKing:true`)。隱藏地下城=100%寶箱族（`dungeonExcavation.js::revealExcavation`），`calculateExpeditionRewards` 依 `family==="treasure"` 給×3金幣/箭露。`drawFloorMonsters` 三層樓都要看 `options.family`，不是只有王 |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

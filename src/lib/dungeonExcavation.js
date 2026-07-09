@@ -4,7 +4,7 @@
 
 import { doc, updateDoc, getDoc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
-import { drawExpeditionBoss } from "./monsterData";
+import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
 
 /**
  * 今日日期字串 YYYY-MM-DD
@@ -284,15 +284,15 @@ export async function revealExcavation(memberId) {
     }
 
     const FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
-    const family = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
-
     const isHidden = Math.random() < 0.05; // 5% 隱藏
+    // 隱藏地下城一律是寶箱族專屬（不再有「隱藏幽冥系」這種組合）
+    const family = isHidden ? "treasure" : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
 
     const result = {
       family,
       difficulty,
       isHidden,
-      boss: drawExpeditionBoss(difficulty, family),
+      boss: isHidden ? drawTreasureKing(difficulty) : drawExpeditionBoss(difficulty, family),
       revealedAt: Date.now(),
     };
 
