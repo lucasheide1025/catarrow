@@ -259,37 +259,37 @@ export const MONSTERS = [
   {
     id:"treasure_1", family:"treasure", tier:"common",
     name:"寶箱怪", icon:"📦",
-    hp:100, atk:5, def:50,
+    hp:100, atk:5, def:15,
     desc:"偽裝成寶箱的怪物，不會攻擊只會防禦，打開它會噴出金幣。",
   },
   {
     id:"treasure_2", family:"treasure", tier:"rare",
     name:"黃金寶箱怪", icon:"📦",
-    hp:180, atk:8, def:80,
+    hp:180, atk:8, def:30,
     desc:"鍍金的寶箱怪，防禦力更高，擊破後獲得大量金幣。",
   },
   {
     id:"treasure_3", family:"treasure", tier:"elite",
     name:"鑽石寶箱怪", icon:"💎",
-    hp:280, atk:12, def:120,
+    hp:280, atk:12, def:50,
     desc:"鑲滿鑽石的寶箱怪，堅硬無比，擊破獎勵豐厚。",
   },
   {
     id:"treasure_4", family:"treasure", tier:"fierce",
     name:"祕銀寶箱怪", icon:"📦",
-    hp:420, atk:18, def:170,
+    hp:420, atk:18, def:85,
     desc:"祕銀打造的寶箱怪，傳說擊破它能獲得稀有收藏品。",
   },
   {
     id:"treasure_5", family:"treasure", tier:"boss",
     name:"遠古寶箱怪", icon:"🗡️",
-    hp:650, atk:25, def:230,
+    hp:650, atk:25, def:130,
     desc:"存在千年的遠古寶箱怪，守護著無數珍寶，攻擊力不高但極難擊破。",
   },
   {
     id:"treasure_6", family:"treasure", tier:"mythic",
     name:"神話寶箱巨像", icon:"👑",
-    hp:1000, atk:35, def:300,
+    hp:1000, atk:35, def:190,
     desc:"傳說中的終極寶箱巨像，擊破它將獲得無法想像的財富與寶物。",
   },
 
@@ -297,37 +297,37 @@ export const MONSTERS = [
   {
     id:"treasure_1_real", family:"treasure", tier:"common",
     name:"安分寶箱怪", icon:"📦",
-    hp:80, atk:1, def:70,
+    hp:80, atk:1, def:20,
     desc:"貨真價實的寶箱，完全不會反擊，輕鬆打開就有金幣。",
   },
   {
     id:"treasure_2_real", family:"treasure", tier:"rare",
     name:"安分黃金寶箱怪", icon:"📦",
-    hp:140, atk:1, def:110,
+    hp:140, atk:1, def:35,
     desc:"鍍金但性情溫和的寶箱怪，不會反擊，防禦力較高。",
   },
   {
     id:"treasure_3_real", family:"treasure", tier:"elite",
     name:"安分鑽石寶箱怪", icon:"💎",
-    hp:220, atk:1, def:160,
+    hp:220, atk:1, def:60,
     desc:"鑲滿鑽石卻毫無敵意的寶箱怪，堅硬但不會還手。",
   },
   {
     id:"treasure_4_real", family:"treasure", tier:"fierce",
     name:"安分祕銀寶箱怪", icon:"📦",
-    hp:340, atk:1, def:220,
+    hp:340, atk:1, def:95,
     desc:"祕銀打造、性情溫馴的寶箱怪，慢慢打就能擊破。",
   },
   {
     id:"treasure_5_real", family:"treasure", tier:"boss",
     name:"安分遠古寶箱怪", icon:"🗡️",
-    hp:500, atk:1, def:300,
+    hp:500, atk:1, def:150,
     desc:"存在千年卻毫無攻擊性的遠古寶箱怪，防禦極高但完全不會反擊。",
   },
   {
     id:"treasure_6_real", family:"treasure", tier:"mythic",
     name:"安分神話寶箱巨像", icon:"👑",
-    hp:800, atk:1, def:400,
+    hp:800, atk:1, def:220,
     desc:"傳說中溫馴的終極寶箱巨像，堅不可摧但從不主動攻擊。",
   },
 
@@ -335,13 +335,13 @@ export const MONSTERS = [
   {
     id:"treasure_king_small", family:"treasure", tier:"boss", isKing:true,
     name:"寶箱小王", icon:"👑",
-    hp:900, atk:20, def:200,
+    hp:900, atk:20, def:150,
     desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。",
   },
   {
     id:"treasure_king_big", family:"treasure", tier:"mythic", isKing:true,
     name:"寶箱大王", icon:"👑",
-    hp:1800, atk:35, def:350,
+    hp:1800, atk:35, def:250,
     desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。",
   },
 ];
