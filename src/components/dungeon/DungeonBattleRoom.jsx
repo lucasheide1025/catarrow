@@ -15,7 +15,7 @@ import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -384,11 +384,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     return () => clearTimeout(t);
   }, [room?.processing, isHost, roomId, myId]); // eslint-disable-line
 
-  // ── 同步 potionInv（room 更新時從 me.items 刷新）──────────────────
+  // ── 訂閱玩家真正的藥水庫存（room.members.{id}.items 從來沒有被寫入過，是死欄位，
+  //    比照 PartyBattleRoom.jsx 的正確寫法直接訂閱 potionInventory）─────────────
   useEffect(() => {
-    const items = room?.members?.[myId]?.items;
-    if (items) setPotionInv(items);
-  }, [room?.members?.[myId]?.items]); // eslint-disable-line
+    if (!myId || myId.startsWith("guest")) return;
+    const unsub = subscribePotions(myId, setPotionInv);
+    return unsub;
+  }, [myId]);
 
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
@@ -1714,7 +1716,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 arrows={arrows} onArrow={addArrow}
                 targetFmt={targetFmt}
                 arrowsPerRound={room.arrowsPerRound || 6}
-                potionInv={me.items || {}}
+                potionInv={potionInv}
                 onCarryPotion={onCarryPotion}
                 onThrowPotion={onThrowPotion}
                 controlsLocked={!controlsStarted}

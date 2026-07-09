@@ -117,6 +117,26 @@ Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks
 
 ---
 
+## 2026-07-09（修正地下城藥水無法使用——用錯資料來源的死欄位）
+
+### 改了什麼
+- `src/components/dungeon/DungeonBattleRoom.jsx`：
+  - 藥水庫存訂閱改成直接 `subscribePotions(myId, setPotionInv)`（比照 `PartyBattleRoom.jsx` 的正確寫法），取代原本讀 `room?.members?.[myId]?.items` 的方式。
+  - `BattleBottomBar` 的 `potionInv` prop 改傳 `potionInv`（state），原本傳的是 `me.items || {}`。
+
+### 為什麼
+- 使用者回報「新系統藥水無法使用」，查證後發現這不是新系統特有的問題，而是 `DungeonBattleRoom.jsx`（新舊地下城系統共用同一個元件）本身的 bug：藥水庫存試圖從 `room.members.{id}.items` 讀取，但 `dungeonDb.js`/`expeditionDb.js`/`expeditionTeamDb.js` 建立房間/加入房間的邏輯**從來沒有任何地方寫入過這個欄位**，是個死欄位，永遠是 `undefined`。更嚴重的是即使訂閱邏輯本身修對了，UI 元件的 prop 仍然讀著 `me.items`（同一個死欄位），畫面上永遠不會顯示任何藥水可選。
+
+### 踩坑提醒
+- 玩家真正的藥水庫存存在獨立的 `potionInventory/{memberId}` collection（`items:{potionId:count}`），**不是**存在 `members`/房間文件裡，任何戰鬥模式要正確顯示藥水都要直接 `subscribePotions(myId, cb)`，不要嘗試從房間的 member 物件讀。
+- 這個死欄位 bug 影響**所有**經過 `DungeonBattleRoom.jsx` 的戰鬥（舊地下城系統 + 新遠征系統），不只是使用者一開始以為的「新系統」。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後實測：帳號有藥水庫存時，進入任何地下城戰鬥（一般/遠征都測）能在藥水頁籤看到並成功使用。
+
+---
+
 ## 2026-07-09（BattleShootingProfile 弓種下拉帶入自建裝備名稱）
 
 ### 改了什麼
