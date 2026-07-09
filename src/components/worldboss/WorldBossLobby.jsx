@@ -64,7 +64,7 @@ function CountdownTimer({ endAt }) {
   return <span className="font-mono text-amber-300 font-bold">{left || "–"}</span>;
 }
 
-function KillScreen({ event, onClose }) {
+function KillScreen({ event, myReward, onClose }) {
   const boss  = event.bossData || {};
   const killer = event.lastHitBy;
   const parts  = Object.entries(event.participants || {})
@@ -106,6 +106,24 @@ function KillScreen({ event, onClose }) {
           ))}
         </div>
       )}
+      {myReward && (
+        <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:360, marginTop:14, background:"rgba(74,222,128,0.08)", border:"1.5px solid rgba(74,222,128,0.35)", borderRadius:16, padding:"14px 16px", animation:"wb-death-killer 0.5s ease 1.4s both" }}>
+          <div style={{ fontSize:"0.65rem", color:"#86efac", fontWeight:700, letterSpacing:2, marginBottom:8 }}>🎁 你的獎勵</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 14px", fontSize:"0.8rem", color:"#e2e8f0" }}>
+            {myReward.reward?.coins > 0 && <span>🪙 金幣 +{myReward.reward.coins}</span>}
+            {myReward.reward?.goldChests > 0 && <span>🏆 黃金寶箱 ×{myReward.reward.goldChests}</span>}
+            {myReward.reward?.woodChests > 0 && <span>📦 木寶箱 ×{myReward.reward.woodChests}</span>}
+            {myReward.reward?.catBoxes > 0 && <span>🐱 貓貓箱 ×{myReward.reward.catBoxes}</span>}
+            {myReward.reward?.cardPack && <span>🃏 卡包 ×1</span>}
+            <span>🗺️ 世界王地下城 ×1</span>
+          </div>
+          {myReward.trophy && (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed rgba(255,255,255,0.12)", fontSize:"0.8rem", color:"#fbbf24", fontWeight:700 }}>
+              {myReward.trophy === "lastHit" ? "🏅 世界王尾刀紀念（額外貓貓箱+卡包）" : "🏅 世界王貢獻紀念（額外卡包）"}
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ marginTop:28, fontSize:"0.7rem", color:"rgba(255,255,255,0.25)", animation:"wb-death-killer 0.4s ease 1.8s both" }}>
         點擊繼續
       </div>
@@ -141,6 +159,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const _wd = new Date();
   const today = `${_wd.getFullYear()}-${String(_wd.getMonth()+1).padStart(2,"0")}-${String(_wd.getDate()).padStart(2,"0")}`;
 
+  const [myReward, setMyReward] = useState(null); // claimWorldBossKillReward 回傳結果
+
   useEffect(() => {
     // 載入時嘗試自動刷新（被擊殺隔天產生新 Boss）
     autoSpawnWorldBoss().catch(() => {});
@@ -155,9 +175,18 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           setKillEvent(ev);       // 保存正確的 defeated boss
           setShowKillScreen(true);
         }
+        // 自行請領擊殺獎勵：不受上面的 sessionStorage 限制，靠 participants.{id}.claimed 防重複
+        if (myId && !myId.startsWith("guest") && ev.participants?.[myId] && !ev.participants[myId].claimed) {
+          import("../../lib/worldBossDb").then(({ claimWorldBossKillReward }) => {
+            claimWorldBossKillReward(myId, ev.id).then(res => {
+              if (res.ok) setMyReward(res);
+            });
+          });
+        }
       } else {
         // 新的 active boss 到來，或無 boss → 關掉 kill screen
         setShowKillScreen(false);
+        setMyReward(null);
       }
     });
     const unsubLogs = myId
@@ -222,7 +251,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {showKillScreen && killEvent && (
-        <KillScreen event={killEvent} onClose={() => setShowKillScreen(false)}/>
+        <KillScreen event={killEvent} myReward={myReward} onClose={() => setShowKillScreen(false)}/>
       )}
       {replayIntro && event && (
         <WorldBossIntro event={event} onClose={() => setReplayIntro(false)}/>

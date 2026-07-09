@@ -117,6 +117,32 @@ Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks
 
 ---
 
+## 2026-07-09（世界王結算系統第一階段：修權限bug+結算畫面顯示獎勵+獎勵均等+紀念品）
+
+Trellis 任務 `07-09-07-09-worldboss-settlement-phase1`。第二階段（R1-R6強度分級、專屬寶箱、六族對應寶箱、專屬卡片）使用者已確認另外排期，不在本次範圍。
+
+### 改了什麼
+- `src/lib/worldBossDb.js::distributeWorldBossRewards`：不再迴圈幫全部參戰者寫入獎勵，改成只計算 `top3Ids`（傷害排序前三，訪客排除）寫回事件文件，`rewardDistributed` 語意改為「已定案可請領」。
+- 新增 `claimWorldBossKillReward(memberId, eventId)`：參戰者自己呼叫，共同獎勵**統一改用原本 `rank1`（最高檔）**發給每一位真實參戰者（不再依傷害排名分層），另外貢獻前三名/最後一擊拿**紀念品**（卡包/貓貓箱，跟共同獎勵分開發），世界王地下城维持人人都有。標記 `participants.{id}.claimed` 防重複。
+- `src/components/worldboss/WorldBossLobby.jsx`：偵測到 Boss 死亡時，除了既有的 `KillScreen`（sessionStorage 防重複顯示）外，同時呼叫 `claimWorldBossKillReward` 領取（用 `claimed` 欄位防重複，不受 sessionStorage 限制）。`KillScreen` 新增「🎁 你的獎勵」區塊，顯示實際拿到的金幣/寶箱/卡包，以及紀念品標示。
+- `src/components/admin/AdminWorldBoss.jsx`：「手動發放擊殺獎勵」按鈕文案改成「手動結算定案（供參戰者自行領取）」，反映新的非即時發放行為。
+
+### 為什麼
+- 使用者回報「世界王沒有戰鬥結算畫面，玩家沒看到就退出去了」。查證發現：`distributeWorldBossRewards` 由**打出最後一擊的玩家瀏覽器**觸發，內部迴圈幫全部參戰者寫入 `members` 文件，除非最後一擊剛好是教練，否則其他人的獎勵必定被規則擋掉（`.catch(()=>{})` 靜默吞掉）——跟今天稍早修過的村目標/市集是同一種架構問題。`WorldBossLobby.jsx` 其實**已經有** `KillScreen` 顯示給所有人看（排行榜+擊殺者），只是沒有「你自己拿到什麼」這塊——這正是使用者感受到「沒結算」的地方，本質是同一個 bug 的兩面，不是 UI 沒做，是獎勵發放本身在默默失敗。
+- 獎勵均等+紀念品是使用者主動確認的重新設計方向：拿掉依傷害排名分層（原本第1名/2-3名/其餘），改成全員一致的豐富共同獎勵，貢獻前三名/尾刀改發專屬紀念品而非更多資源。
+
+### 踩坑提醒
+- `expireWorldBossEvent`（時間到未擊殺的安慰獎路徑）**有一模一樣的跨帳號寫入模式**，但目前**只有 `AdminWorldBoss.jsx` 後台會呼叫它**（教練觸發，`isAdmin()` 豁免），所以現況沒有壞掉，這次**沒有動它**。如果之後有人想把它改成 client-triggered 自動過期，要記得一起改成自行請領，不要重蹈覆轍。
+- `AdminWorldBoss.jsx` 的「額外發放卡包給所有參戰者」（`handleGiveCardPacks`）同理，只在教練後台觸發，這次沒動。
+- 舊資料（已經 `rewardDistributed:true` 但沒有 `top3Ids` 的歷史世界王事件）不會回溯處理，只影響新產生的事件。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 不需要新增/修改 firestore.rules（`worldBossEvents` 本來就 `allow read,write: if isLoggedIn()`，新函式只寫呼叫者自己的 `members` 文件）。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後找非教練帳號實測擊殺世界王，確認自己跟隊友都能在 `KillScreen` 看到「你的獎勵」且金幣/寶箱有真的入帳。
+
+---
+
 ## 2026-07-09（組隊打怪 partyDb.js 前後衛公式同步地下城改版）
 
 ### 改了什麼

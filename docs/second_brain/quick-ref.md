@@ -31,6 +31,7 @@
 | 前後衛不再直接輸出傷害（2026-07-09，`dungeonDb.js`+`partyDb.js` 都已同步） | 後衛 dmg 選項幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。兩套系統各自獨立實作，改任何一邊記得檢查另一邊要不要跟著改 |
 | `members` collection 白名單缺欄位會導致必現的 permission 錯誤（2026-07-09） | `expeditions` 欄位（貓咪遠征隊）曾經漏加進 `firestore.rules` hasOnly 清單，已補上。新增任何寫入 `members` 的欄位時記得同步檢查白名單 |
 | 市集交換卡片改自行請領（2026-07-09） | `buyCardListing` 不再直接寫賣家文件，改成 `cardMarket` listing 標記 `sellerClaimed:false`，賣家的 `CardMarketPanel`（`CatVillage.jsx`）偵測到自己有已售出未請領的掛賣會自動呼叫 `claimCardSaleProceeds` |
+| 世界王擊殺獎勵改自行請領+均等（2026-07-09，phase1） | `distributeWorldBossRewards` 只算 `top3Ids` 定案，`claimWorldBossKillReward(memberId,eventId)` 各自請領，共同獎勵統一用原 `rank1` 檔次，前三名/尾刀額外拿紀念品。`WorldBossLobby.jsx` 的 `KillScreen` 補了「你的獎勵」顯示。`expireWorldBossEvent`/`handleGiveCardPacks` 還是舊的跨帳號寫入模式，但只有 admin 後台會呼叫，目前沒壞，之後若改成 client-triggered 要一起修。R1-R6強度分級/專屬寶箱/專屬卡片是 phase2，還沒做 |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

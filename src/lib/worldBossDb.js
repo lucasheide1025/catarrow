@@ -259,7 +259,8 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-// ── 發放獎勵（defeated 後房主/系統呼叫）─────────────────────
+// ── 結算定案（defeated 後任何參戰者的瀏覽器都可能呼叫，只寫事件本身+寫入歷史，
+//    不再幫別人寫入 members 文件——實際發放改由每個人自己呼叫 claimWorldBossKillReward）──
 export async function distributeWorldBossRewards(eventId) {
   try {
     const snap = await getDoc(doc(db, WB, eventId));
@@ -267,83 +268,17 @@ export async function distributeWorldBossRewards(eventId) {
     const ev = snap.data();
     if (ev.rewardDistributed) return { ok: true }; // 防重複
 
-    const reward       = ev.reward || DEFAULT_REWARD;
     const participants = ev.participants || {};
-    const lastHitId    = ev.lastHitBy?.memberId;
 
-    // 判斷新/舊獎勵格式
-    const isNewFormat = !!(reward.base || reward.rank1 || reward.rank3 || reward.rankAll);
-    const base    = isNewFormat ? (reward.base    || {}) : {};
-    const rank1   = isNewFormat ? (reward.rank1   || {}) : reward; // 舊格式：全員同一份
-    const rank3   = isNewFormat ? (reward.rank3   || {}) : reward;
-    const rankAll = isNewFormat ? (reward.rankAll || {}) : reward;
-
-    // 依傷害排行排序（訪客排除）
-    const sorted = Object.entries(participants)
+    // 依傷害排行取前三名（訪客排除），存到事件文件供各自請領時查詢
+    const top3Ids = Object.entries(participants)
       .filter(([, p]) => !p.isGuest)
-      .map(([mid, p]) => ({ mid, ...p }))
-      .sort((a, b) => (b.totalDmg || 0) - (a.totalDmg || 0));
+      .map(([mid, p]) => ({ mid, dmg: p.totalDmg || 0 }))
+      .sort((a, b) => b.dmg - a.dmg)
+      .slice(0, 3)
+      .map(p => p.mid);
 
-    for (let idx = 0; idx < sorted.length; idx++) {
-      const { mid } = sorted[idx];
-      const rankLabel = idx === 0 ? "第1名" : idx <= 2 ? `第${idx+1}名` : "參戰者";
-      const tier = idx === 0 ? rank1 : idx <= 2 ? rank3 : rankAll;
-
-      // 1. 保底獎勵（新格式才發）
-      if (isNewFormat) {
-        if (base.coins > 0) await addCoins(mid, base.coins).catch(() => {});
-        if (base.woodChests > 0) {
-          const woodList = Array.from({ length: base.woodChests }, (_, i) => ({
-            id: `wb_base_${mid}_${Date.now()}_${i}`,
-            type: "wood", family: "worldboss", tier: "common", from: "世界王保底獎勵", ts: Date.now(),
-          }));
-          await addChests(mid, woodList).catch(() => {});
-        }
-      }
-
-      // 2. 分層獎勵：金幣
-      if (tier.coins > 0) await addCoins(mid, tier.coins).catch(() => {});
-
-      // 3. 黃金寶箱 + 貓貓箱
-      const chests = [];
-      for (let i = 0; i < (tier.goldChests || 0); i++) {
-        chests.push({ id: `wb_gold_${mid}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: `世界王擊殺獎勵（${rankLabel}）`, ts: Date.now() });
-      }
-      for (let i = 0; i < (tier.catBoxes || 0); i++) {
-        chests.push({ id: `wb_cat_${mid}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: `世界王擊殺獎勵（${rankLabel}）`, ts: Date.now() });
-      }
-      if (chests.length > 0) await addChests(mid, chests).catch(() => {});
-
-      // 4. 咪咪箱：立即解鎖貓咪（重複時 +50 羈絆）
-      if ((tier.mimiBoxes || 0) > 0) {
-        const { openCatBox } = await import("./catDb");
-        for (let i = 0; i < tier.mimiBoxes; i++) {
-          await openCatBox(mid, { bondOnDuplicate: 50 }).catch(() => {});
-        }
-      }
-
-      // 5. 卡片掉落
-      if ((tier.cardChance || 0) > 0 && Math.random() < tier.cardChance) {
-        await addCardPack(mid).catch(() => {});
-      }
-    }
-
-    // 最後一擊額外獎勵（疊加）
-    if (lastHitId && !participants[lastHitId]?.isGuest) {
-      await addChests(lastHitId, [{
-        id: `wb_lasthit_${lastHitId}_${Date.now()}`,
-        type: "cat_box", family: "worldboss", tier: "boss", from: "世界王最後一擊", ts: Date.now(),
-      }]).catch(() => {});
-      await addCardPack(lastHitId).catch(() => {});
-    }
-
-    // 🌍 世界王噴地下城：所有真實參與者獲得一個隨機地下城
-    for (const [mid, p] of Object.entries(participants)) {
-      if (p?.isGuest) continue;
-      await grantWorldBossDungeon(mid).catch(() => {});
-    }
-
-    await updateDoc(doc(db, WB, eventId), { rewardDistributed: true });
+    await updateDoc(doc(db, WB, eventId), { rewardDistributed: true, top3Ids });
 
     // 寫入歷史
     await addDoc(collection(db, WBH), {
@@ -357,10 +292,80 @@ export async function distributeWorldBossRewards(eventId) {
       announcement: ev.announcement,
       participants: ev.participants,
       totalParticipants: ev.totalParticipants,
+      top3Ids,
     });
 
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// ── 參戰者自行請領世界王擊殺獎勵（每人各自寫自己的 members 文件，避免權限問題）──
+// 共同獎勵：所有真實參戰者一律領取原本「rank1」（最高檔）的份量，不再依傷害排名分層。
+// 紀念品：最後一擊 / 貢獻前三名額外拿收藏品，跟共同獎勵分開發放。
+export async function claimWorldBossKillReward(memberId, eventId) {
+  if (!memberId || !eventId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const snap = await getDoc(doc(db, WB, eventId));
+    if (!snap.exists()) return { ok: false, reason: "活動不存在" };
+    const ev = snap.data();
+    if (!ev.rewardDistributed) return { ok: false, reason: "尚未結算" };
+    const mine = ev.participants?.[memberId];
+    if (!mine || mine.isGuest) return { ok: false, reason: "非參戰者" };
+    if (mine.claimed) return { ok: false, reason: "already_claimed" };
+
+    const reward = ev.reward || DEFAULT_REWARD;
+    const isNewFormat = !!(reward.base || reward.rank1 || reward.rank3 || reward.rankAll);
+    const base    = isNewFormat ? (reward.base  || {}) : {};
+    const unified = isNewFormat ? (reward.rank1 || reward.rankAll || {}) : reward;
+
+    const summary = { coins: 0, woodChests: 0, goldChests: 0, catBoxes: 0, cardPack: false };
+
+    if (base.coins > 0) { await addCoins(memberId, base.coins).catch(() => {}); summary.coins += base.coins; }
+    if (base.woodChests > 0) {
+      await addChests(memberId, Array.from({ length: base.woodChests }, (_, i) => ({
+        id: `wb_base_${memberId}_${Date.now()}_${i}`, type: "wood", family: "worldboss", tier: "common", from: "世界王共同獎勵", ts: Date.now(),
+      }))).catch(() => {});
+      summary.woodChests += base.woodChests;
+    }
+    if (unified.coins > 0) { await addCoins(memberId, unified.coins).catch(() => {}); summary.coins += unified.coins; }
+
+    const chests = [];
+    for (let i = 0; i < (unified.goldChests || 0); i++) chests.push({ id: `wb_gold_${memberId}_${Date.now()}_${i}`, type: "gold", family: "worldboss", tier: "boss", from: "世界王共同獎勵", ts: Date.now() });
+    for (let i = 0; i < (unified.catBoxes  || 0); i++) chests.push({ id: `wb_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box", family: "worldboss", tier: "boss", from: "世界王共同獎勵", ts: Date.now() });
+    if (chests.length > 0) await addChests(memberId, chests).catch(() => {});
+    summary.goldChests += unified.goldChests || 0;
+    summary.catBoxes   += unified.catBoxes || 0;
+
+    if ((unified.cardChance || 0) > 0 && Math.random() < unified.cardChance) {
+      await addCardPack(memberId).catch(() => {});
+      summary.cardPack = true;
+    }
+
+    // 世界王地下城：人人都有
+    await grantWorldBossDungeon(memberId).catch(() => {});
+
+    // 紀念品（跟共同獎勵分開）
+    const isLastHit = ev.lastHitBy?.memberId === memberId;
+    const isTop3    = (ev.top3Ids || []).includes(memberId);
+    let trophy = null;
+    if (isLastHit) {
+      const lastHitChests = [];
+      for (let i = 0; i < (LAST_HIT_EXTRA.catBoxes || 0); i++) {
+        lastHitChests.push({ id: `wb_lasthit_${memberId}_${Date.now()}_${i}`, type: "cat_box", family: "worldboss", tier: "boss", from: "世界王尾刀紀念", ts: Date.now() });
+      }
+      if (lastHitChests.length > 0) await addChests(memberId, lastHitChests).catch(() => {});
+      for (let i = 0; i < (LAST_HIT_EXTRA.cardPacks || 0); i++) await addCardPack(memberId).catch(() => {});
+      trophy = "lastHit";
+    } else if (isTop3) {
+      await addCardPack(memberId).catch(() => {});
+      trophy = "top3";
+    }
+
+    await updateDoc(doc(db, WB, eventId), { [`participants.${memberId}.claimed`]: true });
+    return { ok: true, reward: summary, trophy };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
 }
 
 // ── 時間到未擊殺 → 安慰獎 ────────────────────────────────────

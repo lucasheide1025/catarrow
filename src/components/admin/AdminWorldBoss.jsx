@@ -137,12 +137,12 @@ export default function AdminWorldBoss() {
     setActionMsg("✅ 已結束活動並發放安慰獎");
   }
 
-  // ── 手動發放獎勵（Boss 已 defeated 但未發放）──────────────
+  // ── 手動結算定案（Boss 已 defeated 但未定案；定案後各參戰者自己開世界王頁面領取）──
   async function handleDistribute() {
     if (!event) return;
-    setActionMsg("發放中…");
+    setActionMsg("結算中…");
     const res = await distributeWorldBossRewards(event.id);
-    setActionMsg(res.ok ? "✅ 獎勵發放完成" : `❌ ${res.reason}`);
+    setActionMsg(res.ok ? "✅ 已定案，參戰者可自行領取獎勵" : `❌ ${res.reason}`);
   }
 
   // ── 額外發放卡包給所有參戰者 ──────────────────────────────
@@ -340,7 +340,7 @@ export default function AdminWorldBoss() {
                 {event.status === "defeated" && !event.rewardDistributed && (
                   <button onClick={handleDistribute}
                     className="w-full py-3 rounded-2xl font-bold text-sm bg-amber-500/20 border border-amber-400/40 text-amber-300 active:scale-95 transition-all">
-                    🎁 手動發放擊殺獎勵
+                    🎁 手動結算定案（供參戰者自行領取）
                   </button>
                 )}
                 {(event.status === "defeated" || event.status === "expired") && Object.keys(event.participants || {}).length > 0 && (
