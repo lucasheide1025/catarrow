@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-07-09（村目標歷史獎勵補發工具）
+
+### 改了什麼
+- `src/lib/villageGoalDb.js` 新增 `adminBackfillVillageGoalRewards()`：掃描所有 `status in [completed, expired]` 的村目標，幫尚未 `claimed` 的參與者補發獎勵（`completed` 用 `goal.rewards`，`expired` 用 `CONSOLATION_REWARD`），發完標記 `claimed:true` + `claimedByBackfill:true`。**僅限教練後台觸發**（靠 `isAdmin()` 才能寫入任意會員文件）。
+- `src/components/admin/AdminVillageManager.jsx`：「🎯 村目標設定」面板內新增「🎁 補發歷史村目標獎勵」按鈕（不依賴 `activeGoal`，一直可見），點擊後跑一次補發並回報掃描了幾個目標、補發給幾人次。
+
+### 為什麼
+- 上一個任務（村目標改自行請領）修好了「以後」的發放，但舊資料的 `villageGoals` 文件從來沒有 `claimed` 欄位，代表過去很可能有玩家沒真的拿到獎勵，需要補發。
+
+### 踩坑提醒
+- **已跟使用者明確確認接受的風險**：Firestore 資料完全無法分辨「當初那次是不是剛好教練觸發、已經成功發過」，所以補發是「全部沒 `claimed` 標記的都補發」，可能讓極少數已經領過的人重複拿到一次獎勵。使用者判斷金額小（遊戲內金幣/箭露/扭蛋幣），寧可多發不要漏發，**不要**未來又改成「更精確判斷」而漏掉真正沒領到的人，除非使用者主動要求。
+- 函式本身可安全重複執行（已標記 `claimed` 的會被跳過），教練可以隨時多按幾次確認沒漏網之魚。
+- `where("status","in",[...])` 是單欄位 `in` 查詢，不需要額外的 Firestore 複合索引。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未實測（無瀏覽器環境）；建議教練登入後台親自按一次「掃描並補發」，確認回報的人次數字合理。
+
+---
+
 ## 2026-07-09（村目標獎勵改自行請領，修正一般會員無法收到獎勵）
 
 Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks/07-09-07-09-village-goal-reward-claim/`。

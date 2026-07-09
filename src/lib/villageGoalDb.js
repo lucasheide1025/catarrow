@@ -217,6 +217,41 @@ export async function expireGoal(goalId) {
   }
 }
 
+// ── 後台：補發歷史遺漏的村目標獎勵（僅限教練觸發，isAdmin() 才能寫入任意會員文件）──
+// 掃描所有 completed/expired 目標，幫尚未 claimed 的參與者補發。
+// 舊資料無法分辨「當初到底有沒有真的發成功」，可能讓少數已領過的人重複拿到一次
+// （已跟使用者確認接受這個風險：獎勵金額小，寧可多發不要漏發）。
+// 可重複執行：已標記 claimed 的參與者會被跳過，不會重複發放。
+export async function adminBackfillVillageGoalRewards() {
+  try {
+    const snap = await getDocs(
+      query(collection(db, COLLECTION), where("status", "in", ["completed", "expired"]))
+    );
+    let goalsScanned = 0;
+    let membersGranted = 0;
+    for (const docSnap of snap.docs) {
+      goalsScanned++;
+      const goal = docSnap.data();
+      const participants = goal.participants || {};
+      const reward = goal.status === "completed" ? (goal.rewards || {}) : CONSOLATION_REWARD;
+      for (const [mid, p] of Object.entries(participants)) {
+        if (!(p.contributed > 0) || p.claimed) continue;
+        if (reward.arrowdew > 0)   await addArrowdew(mid, reward.arrowdew).catch(() => {});
+        if (reward.coins > 0)      await addCoins(mid, reward.coins).catch(() => {});
+        if (reward.gachaToken > 0) await addGachaCoins(mid, reward.gachaToken).catch(() => {});
+        await updateDoc(doc(db, COLLECTION, docSnap.id), {
+          [`participants.${mid}.claimed`]: true,
+          [`participants.${mid}.claimedByBackfill`]: true,
+        }).catch(() => {});
+        membersGranted++;
+      }
+    }
+    return { ok: true, goalsScanned, membersGranted };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // ── 後台取消當前 active 目標 ──────────────────────────────
 export async function adminCancelGoal(goalId) {
   try {

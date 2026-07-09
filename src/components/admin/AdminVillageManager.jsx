@@ -1,7 +1,7 @@
 // src/components/admin/AdminVillageManager.jsx — 後台村莊調試工具
 import { useState, useEffect } from "react";
 import { getMembers, adminSetVillageBuilding, adminAdjustVillageResource, adminResetVillage, subscribeVillageMarketConfig, saveVillageMarketConfig } from "../../lib/db";
-import { adminCreateCustomGoal, adminCancelGoal, adminForceCompleteGoal, adminUpdateGoal, subscribeActiveGoal } from "../../lib/villageGoalDb";
+import { adminCreateCustomGoal, adminCancelGoal, adminForceCompleteGoal, adminUpdateGoal, adminBackfillVillageGoalRewards, subscribeActiveGoal } from "../../lib/villageGoalDb";
 import { GOAL_TYPES, GOAL_TYPE_MAP } from "../../lib/villageGoalData";
 import {
   BUILDING_LIST, BUILDINGS, TIERED_RESOURCES, RESOURCE_NAMES, DEFAULT_VILLAGE,
@@ -146,7 +146,29 @@ export default function AdminVillageManager() {
         {showGoal && (
           <div style={{ border: "1px solid #fde68a", borderTop: "none", borderRadius: "0 0 10px 10px",
             padding: "12px", background: "#fffcf2", display: "flex", flexDirection: "column", gap: 10 }}>
-            
+
+            {/* 補發歷史遺漏獎勵（2026-07-09 村目標改自行請領後新增，可重複執行不會重複發放） */}
+            <div style={{ border: "1px dashed #d4a373", borderRadius: 10, padding: 10, background: "#fff" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>
+                🎁 補發歷史村目標獎勵
+              </div>
+              <div style={{ fontSize: 11, color: "#92400e", opacity: 0.75, marginBottom: 8, lineHeight: 1.5 }}>
+                掃描所有已完成/過期的村目標，幫尚未領取的參與者補發獎勵。已領取過的會自動跳過，可放心重複執行。
+              </div>
+              <ActionBtn onClick={async () => {
+                if (!window.confirm("確定要掃描所有歷史村目標並補發尚未領取的獎勵嗎？")) return;
+                setBusy(true);
+                try {
+                  const r = await adminBackfillVillageGoalRewards();
+                  if (r.ok) flash(`✓ 掃描了 ${r.goalsScanned} 個目標，補發給 ${r.membersGranted} 人次`);
+                  else flash("❌ " + (r.reason || "失敗"));
+                } catch (e) { flash("❌ " + e.message); }
+                setBusy(false);
+              }} disabled={busy}>
+                🎁 掃描並補發
+              </ActionBtn>
+            </div>
+
             {/* 目標類型 */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>目標類型</div>
