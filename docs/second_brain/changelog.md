@@ -3,6 +3,22 @@
 
 ---
 
+## 2026-07-09（BattleShootingProfile 弓種下拉帶入自建裝備名稱）
+
+### 改了什麼
+- `src/components/shared/BattleShootingProfile.jsx`：改用 `useAuth()` 讀 `profile.equipment`（`normalizeEquipment`），弓種下拉選單的**顯示文字**若玩家在「我的弓具設定」建過對應分類的裝備，改顯示「{通用分類} - {自建裝備名稱}」，沒有則維持原本通用分類名稱。
+
+### 為什麼
+- 這個共用元件被 5 種戰鬥模式（打怪/組隊/決鬥/地下城/世界王）用來標記每場戰鬥用的弓種，但一直是寫死 4 個通用分類，完全沒接到玩家自己在 `MemberBowSettings.jsx` 建立的裝備清單。
+
+### 踩坑提醒
+- **底層存值（`bowType`）刻意沒有換成自訂裝備 id**，只換了下拉選單的顯示文字。原因：`bowType` 會被寫進 `MonsterBattle`/`DungeonBattleRoom`/`PartyBattleRoom`/`DuelRoom`/`WorldBossAttack` 的戰鬥紀錄，`MemberPractice.jsx` 的箭數分析、`bowsUsed`/`combos` 分組、目標比對全部依賴這 4 個固定值（`recurve_bare/recurve_full/compound/traditional`）做 key，換成自訂 id 會整套分析壞掉。以後如果要真的儲存「用了哪一組自訂裝備」，要另外加欄位，不要動 `bowType` 本身。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+
+---
+
 ## 2026-07-09（首殺/世界王擊殺公告寫入訊息列 + 分類頁籤）
 
 Trellis 任務 `07-09-07-09-broadcast-to-notifications`，PRD 見 `.trellis/tasks/07-09-07-09-broadcast-to-notifications/`。
