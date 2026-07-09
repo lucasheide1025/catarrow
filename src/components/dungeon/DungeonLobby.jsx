@@ -47,6 +47,8 @@ export default function DungeonLobby({ onBack }) {
   const [openTeamRooms, setOpenTeamRooms] = useState([]);
   const [showJoinPanel, setShowJoinPanel] = useState(false);
   const [reconnectRoom, setReconnectRoom] = useState(null);
+  const [soloRecovery, setSoloRecovery] = useState(null); // profile.activeExpedition | null
+  const [soloSettling, setSoloSettling] = useState(false);
 
   // 登入地下城首頁時，找回仍包含自己的等待室、進行中遠征或未領取結算。
   useEffect(() => {
@@ -59,6 +61,11 @@ export default function DungeonLobby({ onBack }) {
       cancelled = true;
     };
   }, [myId]);
+
+  // 偵測單人遠征中斷進度（見 dungeon 穩定性任務：不做地圖復原，只提供結算）
+  useEffect(() => {
+    setSoloRecovery(profile?.activeExpedition || null);
+  }, [profile?.activeExpedition]);
 
   // 訂閱開放的組隊房間
   useEffect(() => {
@@ -163,6 +170,15 @@ export default function DungeonLobby({ onBack }) {
         hostId: reconnectRoom.hostId,
       });
     }
+  }
+
+  async function handleSettleSolo() {
+    if (!soloRecovery || soloSettling) return;
+    setSoloSettling(true);
+    const { settleAbandonedExpedition } = await import("../../lib/expeditionDb");
+    await settleAbandonedExpedition(myId, soloRecovery).catch(() => {});
+    setSoloRecovery(null);
+    setSoloSettling(false);
   }
 
   // ── 遠征模式 ─────────────────────────────────────────────
@@ -277,6 +293,35 @@ export default function DungeonLobby({ onBack }) {
                     style={{ touchAction:"manipulation" }}
                   >
                     稍後
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+        {soloRecovery && (
+          <section
+            aria-labelledby="dungeon-solo-recovery-title"
+            className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-950/80 p-4 shadow-lg"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl" aria-hidden="true">🎁</span>
+              <div className="min-w-0 flex-1">
+                <h2 id="dungeon-solo-recovery-title" className="text-base font-black text-amber-100">
+                  偵測到中斷的單人遠征
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-amber-100/80">
+                  已完成 {soloRecovery.floorsCleared || 0} 層，點擊結算領取這部分的獎勵。
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSettleSolo}
+                    disabled={soloSettling}
+                    className="min-h-11 flex-1 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-black text-slate-950 transition-colors hover:bg-amber-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ touchAction:"manipulation" }}
+                  >
+                    {soloSettling ? "結算中…" : "結算並領取"}
                   </button>
                 </div>
               </div>

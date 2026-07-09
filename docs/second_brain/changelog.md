@@ -3,6 +3,35 @@
 
 ---
 
+## 2026-07-09（組隊/單人遠征穩定性：斷線回房+畫面卡死+進度不遺失）
+
+Trellis 任務 `07-09-07-09-expedition-stability`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-expedition-stability/`。
+
+### 改了什麼
+- `src/components/dungeon/DungeonBattleRoom.jsx`：`expeditionMode===true` 時隱藏戰鬥畫面內的「離開」快速按鈕（原本無確認對話框，且被 `TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx` 直接接到全隊解散/移出房間的邏輯，完全無視 `{preserve:true}` 訊號）。
+- `src/lib/expeditionDb.js` 新增 `setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`：把單人遠征進度（`family`/`difficultyTier`/`isHidden`/`floorsCleared`）持久化到 `members/{id}.activeExpedition`，中斷結算沿用既有 `calculateExpeditionRewards(...,won:false)` 公式，**沒有改任何獎勵數值**。
+- `src/components/dungeon/DungeonExpedition.jsx`：進入/樓層推進時同步 `activeExpedition`；正常結算 (`handleFinish`) 與確認放棄 (`handleAbandon`) 都會清除它。
+- `src/components/dungeon/DungeonLobby.jsx`：新增單人遠征復原 banner（偵測 `profile.activeExpedition`，只有「結算並領取」一個按鈕，**不做**地圖位置復原，只做部分獎勵結算），跟既有的組隊 `reconnectRoom` banner 並列。
+- `src/components/dungeon/TeamExpeditionBattle.jsx`：新增卡死保護——房主端 `activeRoomId` 卡住 20 秒自動清除協調欄位；非房主端等待 20 秒無變化顯示提示+「暫時返回大廳」按鈕（呼叫 `onComplete`，**不**呼叫 `leaveTeamExpeditionRoom`，不影響隊伍成員資格，之後仍可用既有復原機制連回來）。
+- `firestore.rules`：`members` update 白名單新增 `"activeExpedition"`（**需手動貼到 Firebase Console**）。
+
+### 為什麼
+- **根因（已讀 code 逐一確認）**：組隊模式其實**本來就有**斷線復原機制（`DungeonLobby.jsx::findReconnectableTeamExpedition`），但被 `DungeonBattleRoom.jsx` 戰鬥畫面裡一個無確認的「離開」按鈕直接打穿——按下去呼叫 `onExit({preserve:true})`，但 `TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx` 把 `onExit` 直接接到 `handleAbandon`，完全無視 `preserve` 訊號：房主誤點=全隊解散，隊員誤點=被移出 `room.members`（一旦被移出，連復原機制都救不回來，因為復原邏輯要求你還在 `members` 裡）。地圖層級的「撤退」按鈕（`GridMapStage`/`BranchStage`）本來就有正確的二次確認，這條路徑完全沒動。
+- 獎勵公式 `calculateExpeditionRewards` 本來就支援「沒破關」的部分樓層結算（`floorMult=floorsCleared/3`），**不需要重新設計經濟數值**——真正缺的只是「玩家連不回去結算畫面時，怎麼讓這筆部分獎勵不要憑空消失」，所以整個修法都是持久化+復原，沒有動任何獎勵數字。
+- `TeamExpeditionBattle.jsx` 的樓層/事件協調（`activeRoomId`/`roomConfirms`）全部是 `if (!isHost) return`，只有房主能推進，房主卡住時其他隊員點什麼都沒反應——這是「偶爾畫面無法點擊」的成因。單場戰鬥本身（`DungeonBattleRoom.jsx`）已經有 15 秒逾時保護，這次補的是「樓層之間」這一層。
+
+### 踩坑提醒
+- **單人遠征刻意不做地圖位置復原**：5×5 迷霧格地圖要精確還原「走到哪一格、開過哪些房間」風險高、範圍大，這次只保證「不會白打」（用既有部分結算公式），不保證能接著原本的探索進度打下去。若之後要做完整地圖復原，是全新的一塊工作。
+- **房主永久失聯（host failover）沒有解**：如果組隊遠征房主整個消失不會再回來，地圖推進機制依然會卡住（所有推進都是房主專屬）。這次只做到「非房主可以安全離開畫面、之後能重連」，沒有做「房主轉移」，如果這個情境常發生，需要另開任務設計。
+- `activeExpedition` 用 `updateDoc` 整包覆寫（不是 merge），每次樓層推進都是「取代」語意，不是累加。
+- 20 秒逾時數字是沿用舊系統 `DungeonBattleRoom.jsx` 既有的慣例值，沒有特別跟使用者確認精確秒數。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做多裝置斷線實測（無瀏覽器環境）；建議上線後找兩個帳號實際跑一次組隊遠征，中途讓非房主裝置斷網確認能重連、讓房主裝置卡住確認 20 秒後其他人畫面恢復可操作。
+
+---
+
 ## 2026-07-09（村目標歷史獎勵補發工具）
 
 ### 改了什麼

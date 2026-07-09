@@ -3,7 +3,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  serverTimestamp, getDoc, increment,
+  serverTimestamp, getDoc, increment, deleteField,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { normalizeDungeonRunSettings } from "./dungeonRunSettings";
@@ -208,4 +208,46 @@ export async function grantExpeditionRewards(memberId, rewards) {
   } catch (e) {
     console.warn("grantExpeditionRewards:", e?.message);
   }
+}
+
+/**
+ * 單人遠征進度持久化（斷線/重整後可復原或結算，見 dungeon 穩定性任務）
+ * members/{memberId}.activeExpedition = { family, difficultyTier, isHidden, floorsCleared, startedAt } | 不存在
+ */
+export async function setActiveExpeditionProgress(memberId, { family, difficultyTier, isHidden, floorsCleared }) {
+  if (!memberId) return { ok: false, reason: "缺少會員 id" };
+  try {
+    await updateDoc(doc(db, "members", memberId), {
+      activeExpedition: { family, difficultyTier, isHidden: !!isHidden, floorsCleared, startedAt: serverTimestamp() },
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+export async function clearActiveExpeditionProgress(memberId) {
+  if (!memberId) return { ok: false, reason: "缺少會員 id" };
+  try {
+    await updateDoc(doc(db, "members", memberId), { activeExpedition: deleteField() });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+/**
+ * 中斷結算：玩家因斷線/關閉瀏覽器而沒有機會走到正常結算畫面時，
+ * 用已記錄的 floorsCleared 比照「沒破關」的既有公式給部分獎勵。
+ */
+export async function settleAbandonedExpedition(memberId, { family, difficultyTier, isHidden, floorsCleared }) {
+  const rewards = calculateExpeditionRewards({ difficultyTier, floorsCleared, won: false });
+  await grantExpeditionRewards(memberId, rewards).catch(() => {});
+  await saveExpeditionRecord(memberId, {
+    family, difficulty: difficultyTier, isHidden, floorsCleared, won: false,
+    coins: rewards.coins, arrowDew: rewards.arrowDew, archerXP: rewards.archerXP,
+    settledFromDisconnect: true,
+  }).catch(() => {});
+  await clearActiveExpeditionProgress(memberId);
+  return { ok: true, rewards };
 }

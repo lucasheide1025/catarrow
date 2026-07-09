@@ -34,7 +34,8 @@ service cloud.firestore {
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
-                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate"]);
+                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
+                    "activeExpedition"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）

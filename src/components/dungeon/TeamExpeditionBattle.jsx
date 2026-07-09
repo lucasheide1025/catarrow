@@ -274,6 +274,27 @@ export default function TeamExpeditionBattle({
 
   }, [teamRoom?.currentBattleRoomId, teamRoom?.expeditionPhase, teamRoom?.status, teamRoom?.result, onAbandon]);
 
+  // ── 卡死保護（見 dungeon 穩定性任務）───────────────────────
+  // 房主：房間/事件協調狀態卡住 20 秒 → 自動清除，讓房主能重新操作
+  useEffect(() => {
+    if (!isHost || !teamRoom?.activeRoomId) return;
+    const t = setTimeout(() => {
+      updateTeamExpeditionRoom(teamRoomId, {
+        activeRoomId: null, roomConfirms: {}, roomChoices: {}, currentEvent: null,
+      }).catch(() => {});
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [teamRoom?.activeRoomId, isHost, teamRoomId]);
+
+  // 非房主：等待房主超過 20 秒沒有變化 → 顯示提示 + 安全返回大廳（不影響隊伍成員資格）
+  const [showStuckHint, setShowStuckHint] = useState(false);
+  useEffect(() => {
+    setShowStuckHint(false);
+    if (isHost) return;
+    const t = setTimeout(() => setShowStuckHint(true), 20000);
+    return () => clearTimeout(t);
+  }, [teamRoom?.activeRoomId, teamRoom?.currentBattleRoomId, teamRoom?.expeditionMapState?.phase, isHost]);
+
   const publishResult = useCallback(async (
     won,
     cleared,
@@ -663,6 +684,23 @@ export default function TeamExpeditionBattle({
     return (
       <div className="h-[100dvh] flex items-center justify-center text-white/40 bg-[#0a0a0f]">
         載入遠征資料…
+      </div>
+    );
+  }
+
+  // ── 卡死保護：非房主等待逾時，提供安全退出（不影響隊伍成員資格）──
+  if (showStuckHint && phase !== "result" && !currentRoomId) {
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center gap-4 px-6 text-center bg-[#0a0a0f] text-white">
+        <div className="text-4xl" aria-hidden="true">⏳</div>
+        <div className="text-sm text-white/70 leading-6">
+          等待房主動作中，若長時間沒反應可能是連線問題。<br />可以先暫時返回大廳，稍後再回來繼續。
+        </div>
+        <button onClick={() => onComplete?.()}
+          className="min-h-11 rounded-xl bg-white/10 border border-white/15 px-5 py-2.5 text-sm font-bold text-white/80"
+          style={{ touchAction:"manipulation" }}>
+          暫時返回大廳
+        </button>
       </div>
     );
   }

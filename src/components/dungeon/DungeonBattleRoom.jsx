@@ -1349,10 +1349,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               style={{ background: showBattleLog?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color: showBattleLog?"#fbbf24":"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
               📜
             </button>
-            <button onClick={handleLeave}
-              style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
-              離開
-            </button>
+            {!expeditionMode && (
+              <button onClick={handleLeave}
+                style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
+                離開
+              </button>
+            )}
           </div>
         </div>
         <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />            {/* 樓層強度 & 獎勵指示器 */}

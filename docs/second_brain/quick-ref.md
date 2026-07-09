@@ -24,6 +24,8 @@
 | `trySetDungeonFirstClear` 已改 transaction（2026-07-09） | 組隊多人同時領獎會併發呼叫，非 atomic 的「先查後寫」會產生重複首殺廣播；判斷依據是 `dungeonFirstClear/{dungeonId}` 是否存在，不要查 `dungeonBroadcasts` |
 | 首殺/世界王擊殺已同步寫入 `notifications`（2026-07-09） | `addDungeonBroadcast`/`attackWorldBoss` defeated 分支都會呼叫 `createNotification`；`MemberNotifications.jsx` FILTERS 有「地下城」「世界王」頁籤。`attackWorldBoss` 本身仍非 transaction，未來若要修世界王結算 race condition 要留意 |
 | client-triggered「幫別人寫入」模式一律會靜默失敗（2026-07-09 村目標修正時再次確認） | `members` collection 規則只准會員改自己的文件；任何「一人瀏覽器迴圈幫全部參與者發獎勵」的寫法都要改成自行請領（`claimVillageGoalReward` 是範本），不要再新增這種模式 |
+| 遠征 `onExit({preserve:true})` 語意（2026-07-09 修正） | `DungeonBattleRoom.jsx` 戰鬥畫面的「離開」已在 expeditionMode 隱藏；`TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx` 的 `onExit`/`onAbandon` 鏈路現在才是唯一離開途徑（地圖層「撤退」二次確認），改動這塊要小心別又把 preserve 訊號接回全隊解散邏輯 |
+| `members.activeExpedition`（2026-07-09 新增） | 單人遠征進度持久化，`expeditionDb.js::setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`；`DungeonLobby.jsx` 偵測並提供「結算並領取」banner，**不做**地圖位置復原 |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

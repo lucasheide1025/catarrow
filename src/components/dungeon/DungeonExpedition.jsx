@@ -27,6 +27,8 @@ import {
   calculateExpeditionRewards,
   saveExpeditionRecord,
   grantExpeditionRewards,
+  setActiveExpeditionProgress,
+  clearActiveExpeditionProgress,
 } from "../../lib/expeditionDb";
 import { trySetDungeonFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
 import {
@@ -700,6 +702,12 @@ export default function DungeonExpedition({
   const [floorsCleared, setFloorsCleared] = useState(0);
   const [wonLast, setWonLast] = useState(false);
   const [resultRewards, setResultRewards] = useState(null);
+
+  // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測並結算部分獎勵（見 dungeon 穩定性任務）
+  useEffect(() => {
+    if (!myId) return;
+    setActiveExpeditionProgress(myId, { family, difficultyTier, isHidden, floorsCleared }).catch(() => {});
+  }, [myId, family, difficultyTier, isHidden, floorsCleared]);
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
@@ -1012,6 +1020,7 @@ export default function DungeonExpedition({
 
   const handleAbandon = useCallback(() => {
     if (!isFromStorage) abandonExcavation(myId).catch(() => {});
+    clearActiveExpeditionProgress(myId).catch(() => {});
     onAbandonProp?.();
   }, [myId, isFromStorage, onAbandonProp]);
 
@@ -1059,6 +1068,7 @@ export default function DungeonExpedition({
     if (!rewards) return;
     // 發放獎勵
     grantExpeditionRewards(myId, rewards).catch(() => {});
+    clearActiveExpeditionProgress(myId).catch(() => {});
     // 儲存紀錄
     saveExpeditionRecord(myId, {
       family,
