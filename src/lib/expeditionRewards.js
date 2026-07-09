@@ -1,7 +1,12 @@
 import { CHEST_TYPES } from "./itemData";
 import { COIN_CHEST_TIERS } from "./lootTable";
 
-export const EXPEDITION_DROP_MULTIPLIER = 2;
+// 原本固定 ×2，改成每次挖出寶箱時隨機 1~3 倍（金幣寶箱/材料寶箱用同一次擲骰，維持同步）
+export const EXPEDITION_DROP_MULTIPLIER_MIN = 1;
+export const EXPEDITION_DROP_MULTIPLIER_MAX = 3;
+function rollExpeditionDropMultiplier() {
+  return EXPEDITION_DROP_MULTIPLIER_MIN + Math.floor(Math.random() * (EXPEDITION_DROP_MULTIPLIER_MAX - EXPEDITION_DROP_MULTIPLIER_MIN + 1));
+}
 
 const MATERIAL_CHEST_BY_TIER = {
   common: "wood",
@@ -47,15 +52,16 @@ function makeExpeditionCoinChest(monster, index) {
 
 export function createExpeditionKillLoot(monster) {
   if (!monster) return emptyExpeditionLoot();
+  const dropCount = rollExpeditionDropMultiplier();
   const materialChests = Array.from(
-    { length: EXPEDITION_DROP_MULTIPLIER },
+    { length: dropCount },
     (_, index) => makeMaterialChest(monster, index),
   );
   const coinChests = Array.from(
-    { length: EXPEDITION_DROP_MULTIPLIER },
+    { length: dropCount },
     (_, index) => makeExpeditionCoinChest(
       monster,
-      EXPEDITION_DROP_MULTIPLIER + index,
+      dropCount + index,
     ),
   );
   return {
@@ -132,7 +138,8 @@ export function getExpeditionRewardPreview(boss) {
   const materialChest = CHEST_TYPES[materialType] || CHEST_TYPES.wood;
   const coinChest = COIN_CHEST_TIERS[boss.tier] || COIN_CHEST_TIERS.common;
   return {
-    multiplier: EXPEDITION_DROP_MULTIPLIER,
+    multiplierMin: EXPEDITION_DROP_MULTIPLIER_MIN,
+    multiplierMax: EXPEDITION_DROP_MULTIPLIER_MAX,
     materialChest: { ...materialChest, family: boss.family },
     coinChest,
   };

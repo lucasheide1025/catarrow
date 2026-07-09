@@ -112,12 +112,12 @@ export default function DungeonSelectionPanel({
             </div>
             <div className="rounded-xl px-4 py-4"
               style={{ background:"rgba(245,158,11,0.09)", border:"1px solid rgba(245,158,11,0.22)" }}>
-              <div className="text-sm font-black text-amber-300">🎁 保證掉落 ×{rewardPreview?.multiplier || 2}</div>
+              <div className="text-sm font-black text-amber-300">🎁 保證掉落 ×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}（隨機）</div>
               <div className="text-sm text-white mt-2">
-                {rewardPreview?.materialChest.icon || "📦"} {rewardPreview?.materialChest.name || "材料寶箱"} ×2
+                {rewardPreview?.materialChest.icon || "📦"} {rewardPreview?.materialChest.name || "材料寶箱"} ×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}
               </div>
               <div className="text-sm text-white mt-1">
-                {rewardPreview?.coinChest.icon || "🪙"} {rewardPreview?.coinChest.name || "金幣寶箱"} ×2
+                {rewardPreview?.coinChest.icon || "🪙"} {rewardPreview?.coinChest.name || "金幣寶箱"} ×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}
               </div>
             </div>
             <DungeonRunSettings
@@ -210,14 +210,14 @@ export default function DungeonSelectionPanel({
           <div className="rounded-xl p-3" style={{ background:"rgba(245,158,11,0.09)" }}>
             <div className="text-2xl">{rewardPreview?.materialChest.icon || "📦"}</div>
             <div className="text-sm font-black text-white mt-1">
-              {rewardPreview?.materialChest.name || "材料寶箱"} ×2
+              {rewardPreview?.materialChest.name || "材料寶箱"} ×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}
             </div>
             <div className="text-xs text-slate-400 mt-1">{family.label}材料</div>
           </div>
           <div className="rounded-xl p-3" style={{ background:"rgba(250,204,21,0.09)" }}>
             <div className="text-2xl">{rewardPreview?.coinChest.icon || "🪙"}</div>
             <div className="text-sm font-black text-white mt-1">
-              {rewardPreview?.coinChest.name || "金幣寶箱"} ×2
+              {rewardPreview?.coinChest.name || "金幣寶箱"} ×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}
             </div>
             <div className="text-xs text-slate-400 mt-1">每隻怪物均會掉落</div>
           </div>
@@ -226,7 +226,7 @@ export default function DungeonSelectionPanel({
         <div className="rounded-xl px-4 py-3 flex items-center justify-between"
           style={{ background:"linear-gradient(90deg,rgba(139,92,246,0.18),rgba(245,158,11,0.15))" }}>
           <span className="text-sm font-bold text-slate-200">地下城掉落倍率</span>
-          <span className="text-xl font-black text-amber-300">×{rewardPreview?.multiplier || 2}</span>
+          <span className="text-xl font-black text-amber-300">×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}（隨機）</span>
         </div>
       </div>
 

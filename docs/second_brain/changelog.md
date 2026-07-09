@@ -117,6 +117,20 @@ Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks
 
 ---
 
+## 2026-07-09（地下城掉落倍率改為隨機 1~3，取代原本固定 ×2）
+
+### 改了什麼
+- `src/lib/expeditionRewards.js`：`EXPEDITION_DROP_MULTIPLIER`（固定值 2）拆成 `EXPEDITION_DROP_MULTIPLIER_MIN=1`/`_MAX=3`，新增 `rollExpeditionDropMultiplier()` 內部函式，`createExpeditionKillLoot()` 每次擊殺都重新擲骰（材料寶箱跟金幣寶箱用同一次擲骰結果，維持同步，不是各自獨立隨機）。`getExpeditionRewardPreview()` 回傳的欄位也從單一 `multiplier` 改成 `multiplierMin`/`multiplierMax` 範圍。
+- `src/components/dungeon/DungeonSelectionPanel.jsx`：三處寫死的「×2」文字（含一處連數字都沒接變數、直接硬寫 `×2` 字面值）全部改成 `×{min}~{max}（隨機）`。
+
+### 為什麼
+- 使用者回報「地下城掉落的金幣、寶箱、箭露都是固定 2 倍」，希望改成每次隨機 1~3 倍，增加驚喜感。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+
+---
+
 ## 2026-07-09（修正地下城藥水無法使用——用錯資料來源的死欄位）
 
 ### 改了什麼
