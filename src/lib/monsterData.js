@@ -332,18 +332,44 @@ export const MONSTERS = [
   },
 
   // ════ 寶箱族·王（隱藏地下城王房專屬，不進入一般寶箱怪抽池）════
-  {
-    id:"treasure_king_small", family:"treasure", tier:"boss", isKing:true,
-    name:"寶箱小王", icon:"👑",
-    hp:900, atk:20, def:150,
-    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。",
-  },
-  {
-    id:"treasure_king_big", family:"treasure", tier:"mythic", isKing:true,
-    name:"寶箱大王", icon:"👑",
-    hp:1800, atk:35, def:250,
-    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。",
-  },
+  // 小王、大王各自都有 T1~T6 完整強度曲線，避免低難度地城遇到過強的固定版本
+  { id:"treasure_king_small_1", family:"treasure", tier:"common", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:120, atk:6, def:18,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+  { id:"treasure_king_small_2", family:"treasure", tier:"rare", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:215, atk:10, def:35,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+  { id:"treasure_king_small_3", family:"treasure", tier:"elite", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:335, atk:14, def:60,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+  { id:"treasure_king_small_4", family:"treasure", tier:"fierce", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:505, atk:22, def:100,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+  { id:"treasure_king_small_5", family:"treasure", tier:"boss", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:780, atk:30, def:155,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+  { id:"treasure_king_small_6", family:"treasure", tier:"mythic", isKing:true,
+    name:"寶箱小王", icon:"👑", hp:1200, atk:42, def:230,
+    desc:"低階隱藏地下城的守護者，擊敗後獲得大量金幣、材料與寶物。" },
+
+  { id:"treasure_king_big_1", family:"treasure", tier:"common", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:160, atk:8, def:25,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
+  { id:"treasure_king_big_2", family:"treasure", tier:"rare", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:290, atk:13, def:48,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
+  { id:"treasure_king_big_3", family:"treasure", tier:"elite", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:450, atk:19, def:80,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
+  { id:"treasure_king_big_4", family:"treasure", tier:"fierce", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:670, atk:29, def:135,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
+  { id:"treasure_king_big_5", family:"treasure", tier:"boss", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:1040, atk:40, def:210,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
+  { id:"treasure_king_big_6", family:"treasure", tier:"mythic", isKing:true,
+    name:"寶箱大王", icon:"👑", hp:1600, atk:56, def:305,
+    desc:"高階隱藏地下城的終極守護者，擊敗後獲得海量獎勵與稀有符文。" },
 ];
 
 // ── 身體部位（殭屍靶紙模式）────────────────────────────
@@ -627,11 +653,11 @@ export function drawTreasureMonsterPool(count, variant, tier) {
   return picks;
 }
 
-// 寶箱王：低階地城(T1-T3)出小王，高階(T4-T6)出大王
+// 寶箱王：小王/大王各自都有 T1~T6 強度曲線，先照地城難度定階級，再隨機選小王或大王（50/50）
 export function drawTreasureKing(difficultyTier) {
-  const king = (difficultyTier || 1) <= 3
-    ? MONSTERS.find(m => m.id === "treasure_king_small")
-    : MONSTERS.find(m => m.id === "treasure_king_big");
+  const tierKey = TIER_ORDER[Math.max(0, Math.min(5, (difficultyTier || 1) - 1))];
+  const line = Math.random() < 0.5 ? "treasure_king_small" : "treasure_king_big";
+  const king = MONSTERS.find(m => m.isKing && m.tier === tierKey && m.id.startsWith(line));
   return applyVariant(king, "boss");
 }
 
