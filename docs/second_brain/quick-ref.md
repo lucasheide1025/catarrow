@@ -21,6 +21,7 @@
 | Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
 | **`totalArrowsAllTime` 要在 hasOnly 列表** | `addRoundArrows` 用 `increment("totalArrowsAllTime")` 但規則沒放行 → Firestore 靜默擋掉，終身箭數永遠不增加；**所有會員自己更新的新欄位都要加進 hasOnly** |
 | 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
+| `trySetDungeonFirstClear` 已改 transaction（2026-07-09） | 組隊多人同時領獎會併發呼叫，非 atomic 的「先查後寫」會產生重複首殺廣播；判斷依據是 `dungeonFirstClear/{dungeonId}` 是否存在，不要查 `dungeonBroadcasts` |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

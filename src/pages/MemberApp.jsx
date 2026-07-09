@@ -504,8 +504,10 @@ export default function MemberApp() {
 
       {/* 地下城首殺全系統公告 */}
       {dungeonKillAlert && (
-        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
-          onClick={() => { localStorage.setItem("dismissedBroadcastId", dungeonKillAlert.id); setDungeonKillAlert(null); }}>
+        <div role="button" tabIndex={0} aria-live="polite"
+          style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
+          onClick={() => { localStorage.setItem("dismissedBroadcastId", dungeonKillAlert.id); setDungeonKillAlert(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); localStorage.setItem("dismissedBroadcastId", dungeonKillAlert.id); setDungeonKillAlert(null); } }}>
           <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
@@ -520,8 +522,10 @@ export default function MemberApp() {
       )}
       {/* 🌍 世界王擊殺全系統公告 */}
       {wbKillAlert && (
-        <div style={{ position:"fixed", top: dungeonKillAlert ? 52 : 0, left:0, right:0, zIndex:998, padding:"10px 16px", background:"linear-gradient(90deg,#1c0a00,#7f1d1d,#1c0a00)", boxShadow:"0 4px 24px rgba(0,0,0,0.6)", display:"flex", alignItems:"center", gap:12, cursor:"pointer", borderBottom:"2px solid #ef4444" }}
-          onClick={() => setWbKillAlert(null)}>
+        <div role="button" tabIndex={0} aria-live="polite"
+          style={{ position:"fixed", top: dungeonKillAlert ? 52 : 0, left:0, right:0, zIndex:998, padding:"10px 16px", background:"linear-gradient(90deg,#1c0a00,#7f1d1d,#1c0a00)", boxShadow:"0 4px 24px rgba(0,0,0,0.6)", display:"flex", alignItems:"center", gap:12, cursor:"pointer", borderBottom:"2px solid #ef4444" }}
+          onClick={() => setWbKillAlert(null)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setWbKillAlert(null); } }}>
           <div style={{ fontSize:28, flexShrink:0 }}>🌍</div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:900, fontSize:13, color:"#fca5a5", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
@@ -558,7 +562,7 @@ export default function MemberApp() {
 
       {/* ⚡ 緊急任務浮動通知 */}
       <OverlayModal open={!!specialAlert} onClose={() => setSpecialAlert(null)} zIndex={99998} bg="rgba(0,0,0,0.72)">
-        <div style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}>
+        <div aria-live="polite" style={{ background:"linear-gradient(135deg,#7f1d1d,#1e1b4b)", borderRadius:"24px", padding:"32px 24px", width:"100%", textAlign:"center", boxShadow:"0 0 60px rgba(251,191,36,0.3)", border:"2px solid rgba(251,191,36,0.5)" }}>
           <div style={{ fontSize:"52px", marginBottom:"8px", animation:"pulse 1s infinite" }}>⚡</div>
           <div style={{ color:"#fbbf24", fontWeight:"900", fontSize:"13px", letterSpacing:"0.08em", marginBottom:"8px" }}>緊急懸賞任務登場！</div>
           <div style={{ color:"white", fontWeight:"900", fontSize:"22px", lineHeight:"1.3", marginBottom:"12px" }}>{specialAlert?.title}</div>

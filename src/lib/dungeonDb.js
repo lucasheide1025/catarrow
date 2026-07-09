@@ -3,7 +3,7 @@
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc,
   serverTimestamp, arrayUnion, getDoc, getDocs, query, where,
-  orderBy, limit, setDoc, increment, deleteField,
+  orderBy, limit, setDoc, increment, deleteField, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed } from "./db";
@@ -1094,15 +1094,15 @@ export async function addMapLoot(roomId, prevLoot, newItems) {
 // dungeonId 格式："ghost_normal", "temple_hell" 等
 export async function trySetDungeonFirstClear(dungeonId, memberId, memberName, teamNames = []) {
   try {
-    // 先確認尚未有首殺廣播
-    const snap = await getDocs(query(collection(db, "dungeonBroadcasts"), where("dungeonId", "==", dungeonId)));
-    if (!snap.empty) return { ok: true, isFirst: false };
-    // 直接 setDoc（不存在才建立）
-    await setDoc(doc(db, "dungeonFirstClear", dungeonId), {
-      dungeonId, memberId, memberName, teamNames,
-      clearedAt: serverTimestamp(),
+    const ref = doc(db, "dungeonFirstClear", dungeonId);
+    // transaction：讀取+判斷+寫入在同一原子操作內，組隊多人同時領獎時只有一人能拿到 isFirst:true
+    const isFirst = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, { dungeonId, memberId, memberName, teamNames, clearedAt: serverTimestamp() });
+      return true;
     });
-    return { ok: true, isFirst: true };
+    return { ok: true, isFirst };
   } catch (e) {
     return { ok: false, reason: e.message };
   }

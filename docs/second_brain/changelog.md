@@ -3,6 +3,31 @@
 
 ---
 
+## 2026-07-09（首殺公告重複 race condition 修正 + MemberApp 兩處 a11y）
+
+Trellis 任務 `07-09-07-09-broadcast-race-a11y-fix`，PRD/design/implement 見 `.trellis/tasks/07-09-07-09-broadcast-race-a11y-fix/`。
+
+### 改了什麼
+- `src/lib/dungeonDb.js::trySetDungeonFirstClear`：改用 `runTransaction` 包住「讀取 `dungeonFirstClear/{dungeonId}` 是否存在 → 不存在才寫入」，移除原本查詢 `dungeonBroadcasts` 判斷已廣播的錯誤邏輯。
+- `src/pages/MemberApp.jsx`：`dungeonKillAlert`（507行附近）、`wbKillAlert`（523行附近）兩個 `<div onClick>` 公告補上 `role="button" tabIndex={0} onKeyDown`（Enter/Space 可關閉）；這兩個 + `specialAlert` 三個全域公告容器補 `aria-live="polite"`。
+
+### 為什麼
+- **根因（已用 code 讀取確認，非推測）**：`trySetDungeonFirstClear` 原本是「先 `getDocs` 查 `dungeonBroadcasts` 有沒有該 `dungeonId` → 空的話才 `setDoc`」，兩步之間沒有鎖。`TeamExpeditionBattle.jsx::handleFinish()`（隊伍領獎）**每個隊員各自呼叫**，不是只有房主。多名隊員幾乎同時領獎時，大家都在別人寫入完成前查到「還沒有」，導致每個人都各自建立一筆 `dungeonBroadcasts` 文件（`addDoc` 產生不同 doc id）——同一次首殺產生多筆廣播，`MemberApp.jsx` 的 localStorage 去重機制只認「單一已讀 id」，對這些「各自不同」的新 id 完全無效，因此使用者看到公告一次次跳出來。
+- `firestore.rules` 裡 `dungeonFirstClear` 的規則註解本來就寫「由 trySetDungeonFirstClear **原子**寫入」，代表這是設計時就打算做成 atomic、只是實作沒做到，這次修正是把實作補齊成符合原始設計意圖。
+- a11y 兩點是 `web-design-guidelines` skill 審查 `MemberApp.jsx` 時發現的可行動項目。
+
+### 踩坑提醒
+- `trySetDungeonFirstClear` 呼叫端（`DungeonExpedition.jsx:1080`、`TeamExpeditionBattle.jsx:628`、`DungeonBattleRoom.jsx:481`）**完全沒改**，因為回傳形狀 `{ok,isFirst}` 沒變，這是刻意設計成呼叫端無感知的修法。
+- 判斷「是否已首殺」的唯一鍵是 `dungeonFirstClear/{dungeonId}` 這個 deterministic doc id 本身是否存在，**不要**再查 `dungeonBroadcasts` collection（那是廣播記錄，不是首殺判斷的正確依據，兩者曾經對不上）。
+- 舊系統路徑（`DungeonBattleRoom.jsx`，`mapDungeonId` 查表）跟新系統（`TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx`，`family+tier` key）共用同一個 `trySetDungeonFirstClear`，這次修法對兩邊都生效，不用分開處理。
+- 本次**沒有**動到：訊息列 (`MemberNotifications.jsx`) 分類路由、地下城其餘 6 項已知 bug（結算時機/畫面卡死/斷線回不去房間/T1-T6獎勵沒差異/寶箱族第七族未實裝+村目標獎勵未發放）、世界王結算+玩法重新設計——這些使用者已確認排在後面，個別另開 Trellis 任務。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後手動驗證：組隊多人同時點「領取」時只出現一次首殺公告、鍵盤 Tab 可以聚焦到公告並用 Enter/Space 關閉。
+
+---
+
 ## 2026-07-04（冒險者公會「一般懸賞任務」自動化 — 交接項目①已完成）
 
 Trellis 任務 `07-04-guild-general-bounty`，PRD/design/implement 見 `.trellis/tasks/07-04-guild-general-bounty/`。
