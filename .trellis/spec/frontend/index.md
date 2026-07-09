@@ -30,7 +30,8 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Cat Village and Gathering](./cat-village-gathering.md) | Mobile village information architecture, gathering contracts, attempts, rewards, and future co-op boundary | ✅ Active |
 | [Access Control Tiers](./access-control-tiers.md) | Student tier gating, adjustable permission matrix, frozen/maintenance locks, and the Firestore security boundary | ✅ Active |
 | [Guild Quest System](./guild-quest-system.md) | Three quest generators sharing `guildQuests`, the `questSubtype` validation gotcha, and the client-triggered daily-refresh pattern | ✅ Active |
-| [Guest / Kid Mode](./guest-kid-mode.md) | `accountType` account model, doc-ID-agnostic login lookup, in-place official conversion, official-only query filtering, `deleteField()` sentinel gotcha | ✅ Active |
+| [Guest / Kid Mode](./guest-kid-mode.md) | `accountType` account model, doc-ID-agnostic login lookup, in-place official conversion, official-only query filtering, `deleteField()` sentinel gotcha, anonymous-auth-reuse production incident | ✅ Active |
+| [Firestore Cost Optimization](./firestore-cost-optimization.md) | Session-cache pattern for the hottest write path (`computeExcavationPatch`), one-off-fetch vs live-listener convention, `limit()` over new-index tradeoffs | ✅ Active |
 
 ---
 

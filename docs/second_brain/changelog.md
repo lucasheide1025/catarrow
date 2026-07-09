@@ -3,6 +3,37 @@
 
 ---
 
+## 2026-07-10（資料庫讀寫次數優化與死代碼清除：R1-R5，純效能優化不動玩家行為）
+
+### 改了什麼
+- **R1 刪除 5 個確定死代碼函式**（研究階段 grep 確認全專案零呼叫點，實作時再複查一次）：`db.js::debugGetAllGuildSubs()`、`db.js::getApprovedResults()`、`db.js::subscribeAllMonthlyRequests()`（注意跟活著的 `subscribePendingMonthlyRequests`/`subscribeMyMonthlyRequests` 不是同一個）、`dungeonDb.js::updateDungeonMemberStats()`、`dungeonDb.js::subscribeAllDungeonBroadcasts()`。
+- **R4 `DungeonDex.jsx`**：移除自己的 `subscribeCollectibles(myId, setCollectibles)` 即時監聽，改直接讀 `profile.dungeonCollectibles`（`useAuth.js` 本來就對 `members/{id}` 開著監聽，`profile` 內容本來就是即時的），少開一個重複的 `members/{id}` 監聽。確認 `subscribeCollectibles`（`dungeonDb.js`）全專案零其他呼叫點後一併刪除該函式定義。
+- **R5 `db.js::subscribePracticeLogs(memberId, callback)`**：加上第三個參數 `maxCount=300` 並在查詢加 `limit(maxCount)`，向後相容（不傳走預設值）。`WorldBossLobby.jsx`／`PartyLobby.jsx`（只需要「我的」worldboss/party 子集，本來是訂閱整個生涯練習紀錄再前端 filter）改傳 `maxCount=60`；`MemberPractice.jsx`（完整練習歷史頁）維持不傳，走預設 300 當防禦性天花板。**沒有加 `where("source",...)` 伺服器端過濾**——那需要新複合索引，索引/規則變更都要老闆手動到 Firebase Console 建，忘記建索引會直接讓正式環境噴 `FirebaseError: The query requires an index`，這個風險大於要省的讀取量，選擇不做。
+- **R3 `MonsterBattle.jsx`**：拿掉 mount 時 `subscribeMonsterLogs(profile.id, ..., 100)` 這個常駐 100 筆即時監聽，改成 mount 時呼叫一次性 `getMonsterLogs(profile.id, 30)`。勝利/落敗結算的 `saveMonsterLog(...)` 之後各自串一個新增的 `refreshHistory()` helper（`.catch(()=>{}).then(() => refreshHistory())`）重新抓一次歷史，維持「打完一場預覽清單立刻看得到新紀錄」的既有體驗。「歷史」分頁的一次性抓取筆數也從 20 統一調成 30，跟 mount 時一致。
+- **R2（風險最高，全站呼叫頻率最高的路徑）`addRoundArrows`（`db.js`）+ `dungeonExcavation.js`**：
+  - 原本每發一箭記分都會對同一份 `members/{id}` 文件做「1 次 `getDoc` + 2 次獨立 `updateDoc`」（一次寫 `totalArrowsAllTime`，一次寫 `dungeonExcavation` 進度，寫入在 `dungeonExcavation.js::addExcavationByArrows` 內部）。
+  - `addExcavationByArrows` 改名為 `computeExcavationPatch(memberId, arrowCount)`——**不再自己呼叫 `updateDoc`/`setDoc`**，只回傳 `{ patch }`（要 merge 進 `members/{id}` 的欄位物件），由 `addRoundArrows` 統一組成 `{ totalArrowsAllTime: increment(count), ...excav.patch }` 後只呼叫一次 `updateDoc`，兩次寫入合併成一次。
+  - `dungeonExcavation.js` 新增模組級記憶體快取 `_excavCache`（`Map<memberId, {...dungeonExcavation欄位, ts}>`，`readExcavationCached()` 5 分鐘 TTL）：`computeExcavationPatch` 改用快取讀當前 `progress`/`lastActiveDate`/`dailyArrowsUsed`，同一場戰鬥（連續好幾箭）只有第一發箭觸發真正的 `getDoc`，後面每一發都只讀記憶體、算完立刻寫回快取（不是清空逼重讀）。快取是**單一分頁記憶體內**，重新整理/切分頁就清空重讀，不會跨裝置資料錯亂。
+  - `addExcavationByCheckin`（每人每天最多 1-2 次，優先度低）維持原本自己 `getDoc` 的寫法，只補了寫入成功後清快取，沒有套用 `readExcavationCached`（PRD 允許做不做都不影響驗收）。
+
+### 為什麼
+- catarrow 是純前端 + Firestore 計費架構，沒有後端擋讀寫，`addRoundArrows` 是全站呼叫頻率最高的路徑（打怪/決鬥/組隊/地下城/議會/檢定/世界王 7 種模式的每一發箭都會觸發），任何節省會被「會員總數 × 每日發箭數」放大，投報率最高。其餘 R1/R3/R4/R5 都是「明確浪費」（死代碼、重複監聽同一份文件、無界查詢）的低風險小修。
+
+### 踩坑提醒（尤其重要：R2 的快取失效）
+- **`dungeonExcavation.js` 只要是新增/修改「會寫入 `dungeonExcavation` 欄位」的函式，寫入成功後一定要呼叫 `_excavCache.delete(memberId)`！** 這次已經把檔案裡所有既有的寫入函式（`resetAutoDigTimer`/`claimAutoDig`/`initDailyExcavation`/`addExcavationByCheckin`/`revealExcavation`/`upgradeExcavationDifficulty`/`downgradeExcavationDifficulty`/`completeExcavation`/`abandonExcavation`/`saveExcavation`/`removeSavedDungeon`/`grantDungeonScroll`/`useDungeonScroll`/`adminSetSavedDungeon`）都補上了這行，但**未來如果在這個檔案新增任何一個會 `updateDoc`/`setDoc` 寫 `dungeonExcavation.*` 欄位的函式，忘記補 `_excavCache.delete(memberId)` 就會讓 `computeExcavationPatch` 用到舊快取覆蓋掉這次寫入，玩家的地下城發掘進度會靜默算錯**——這是最容易在往後維護時忘記的細節，比對 `computeExcavationPatch` 的實作與快取讀寫邏輯一起看。
+- `computeExcavationPatch` 換日（`lastActiveDate !== today`）分支的 `progress` 有 `Math.min(100, ...)` 封頂，但同一天內累加分支**刻意沒有**封頂在 100（沿用舊版 `increment()` 的原始行為，只是把「每次呼叫最多加 100」的封頂保留，最終總和理論上可能超過 100）——這是舊代碼本來就有的不一致，這次是「原樣遷移邏輯」不是新 bug，沒有一併修正（超出本次「不改變玩家可見行為」的範圍）。
+- `MonsterBattle.jsx` 拿掉即時監聽後，`saveMonsterLog` 是 fire-and-forget，如果忘記在勝/敗結算後串 `refreshHistory()`，「近期戰鬥紀錄」預覽會卡在打這場之前的舊資料（因為不再有即時推送）。
+- `subscribePracticeLogs` 的 `maxCount` 是加在函式簽名最後一個參數（向後相容），呼叫端沒傳就是走預設 300，不會是 undefined 導致 `limit(undefined)` 噴錯。
+
+### 不在本次範圍（PRD 已列出原因，供未來接手參考）
+- `db.js::subscribePendingCertTasks`（`onSnapshot(collection(db,"certifications"))` 無 `where`/`limit`，AdminApp 每個教練 session 都常駐）——需要新增反正規化欄位（如 `hasPendingCertTask`）才能改 `where` 查詢，屬於資料模型變更，本次先不動。
+- AdminApp/MemberApp 頂層 ~13 個常駐 `onSnapshot`——個別都合理範圍，只有「總數偏多」值得未來考慮合併成聚合文件。
+- `DuelRoom`/`DuelLobby` 30 秒心跳寫入——設計上就是有界，優先度低。
+- `subscribeEquipItems`/`subscribeAllGuildQuests` 全集合監聽——後台/商店用途、集合成長慢，暫不處理。
+- `db.js` 剩餘 ~250 個 exported 函式的死代碼全面稽核——本次只涵蓋 research 階段 spot-check 出的高信心候選，之後如需要可再開一輪 symbol-by-symbol 掃描。
+
+---
+
 ## 2026-07-09（新增 ai-guide.md：任何 AI 模型通用的接手手冊）
 
 ### 改了什麼

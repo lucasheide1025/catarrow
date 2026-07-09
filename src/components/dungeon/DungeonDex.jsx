@@ -1,7 +1,6 @@
 // src/components/dungeon/DungeonDex.jsx — 地下城收藏品圖鑑
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeCollectibles } from "../../lib/dungeonDb";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { DUNGEON_MAPS, FAMILY_CONFIGS } from "../../lib/dungeonData";
 
@@ -16,15 +15,9 @@ const RARITY_COLOR = {
 
 export default function DungeonDex() {
   const { profile } = useAuth();
-  const myId = profile?.id;
-  const [collectibles, setCollectibles] = useState({});
+  const collectibles = profile?.dungeonCollectibles || {};
   const [selFamily, setSelFamily] = useState("all");
   const [showExclusive, setShowExclusive] = useState(false);
-
-  useEffect(() => {
-    if (!myId) return;
-    return subscribeCollectibles(myId, setCollectibles);
-  }, [myId]);
 
   // 統計
   const allItems = Object.values(COLLECTIBLE_MAP);

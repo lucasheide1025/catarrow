@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-07-03
+> 最後更新：2026-07-10
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -41,6 +41,7 @@
 | Tailwind 是 CDN 版 | 偽類（focus/placeholder）樣式寫 index.css 純 CSS 類（`.ui-card`/`.ui-input`），不能靠任意 Tailwind class |
 | HubTile `accent` 只吃 hex | 內部 `${accent}26` 疊透明層，傳 `var(--xxx)` 產生非法 CSS |
 | 主題已收斂單一 navy | `theme.js` 只剩 1 組；要加主題就往 `APP_THEMES` 加元素，MemberProfile 選擇器自動出現（`length > 1` 守門） |
+| Firestore 讀寫優化未做完的項目（2026-07-10） | `subscribePendingCertTasks` unscoped 監聽、AdminApp/MemberApp ~13 個常駐 onSnapshot、DuelRoom 心跳寫入、`subscribeEquipItems`/`subscribeAllGuildQuests` 全集合監聽、db.js 剩餘死代碼全量稽核——原因與細節見 `.trellis/tasks/07-09-db-cost-and-deadcode-cleanup/prd.md` 的「不在本次範圍」章節，不要重新花時間調查一次 |
 
 ---
 
@@ -151,7 +152,9 @@ checkinId(memberId, date)                // 產生 docId
 ### 練習紀錄
 ```js
 subscribeTodayPracticeLogs(memberId, todayStr, cb)  // ← 用這個（只讀今日）
-subscribePracticeLogs(memberId, cb)                 // 全部歷史（大量，慎用）
+subscribePracticeLogs(memberId, cb, maxCount=300)   // 全部歷史，2026-07-10 加 limit() 防無界讀取，慎用
+// WorldBossLobby/PartyLobby 只需要「我的」子集，改傳 maxCount=60 再前端 filter source；
+// MemberPractice.jsx（完整歷史頁）不傳，走預設 300 當防禦性天花板
 addPracticeLog(memberId, data, operatorId)
 ```
 
@@ -247,6 +250,12 @@ drawGachaCards(memberId, type)  // "single" | "ten"
 
 // villageGoalDb.js（村目標）
 contributeArrowsToGoal(memberId, count)   // 由 addRoundArrows 自動 hook 呼叫
+// ⚡ 2026-07-10：addRoundArrows 已把 totalArrowsAllTime + dungeonExcavation 進度合併成同一次 updateDoc
+//   （原本每箭 1 次 getDoc + 2 次 updateDoc，全站呼叫頻率最高路徑）。
+//   dungeonExcavation.js::addExcavationByArrows 已改名 computeExcavationPatch()，只回傳 patch 不自己寫入，
+//   內部用模組級 _excavCache（單分頁記憶體，5分鐘TTL）避免每箭重讀整份 member 文件。
+//   ⚠️ 該檔案任何新增/修改「會寫入 dungeonExcavation 欄位」的函式，寫入成功後必須 _excavCache.delete(memberId)，
+//   否則會被快取的舊值蓋掉，詳見 changelog.md 2026-07-10 條目。
 adminCreateCustomGoal({goalType, targetValue, rewards, ...})  // 後台發布村目標
 autoSpawnVillageGoal(villageLevel)        // 前端自動觸發（24h 冷卻）
 checkGoalStatus(goal)                     // 前端每分鐘輪詢（完成或過期）
@@ -393,7 +402,7 @@ adminGrantWorldBossCard(...)       // 後台限定發放入口，AdminWorldBoss.
 setActiveTitle/clearActiveTitle    // 稱號＝已裝備王卡選一張的 title 對外顯示
 ```
 
-✅ **地下城卡片串接缺口已修復（同日追加）**：地下城真正的資料流是 `buildExpeditionMemberData(profile, cardBonus)`（`expeditionMemberData.js`）→ 各種 `create*ExpeditionRoom/BattleRoom` 把 `memberData.wbBonus` 寫進 `dungeonRooms/{id}.members.{id}.wbBonus` → `processDungeonRound` 讀取。`DungeonBattleRoom.jsx` 本身仍然不直接讀卡片（它只讀 room member 的 `atk/def/wbBonus`，這些值已經在建房間當下算好），`updateDungeonMemberStats()` 仍是死代碼（不用管，走的是別條路徑）。有 3 條平行建房間路徑（單人/組隊/舊版未用的 `dungeonDb.js::createDungeonRoom`），未來新增 room member 欄位務必 3 條都追過，`TeamExpeditionBattle.jsx` 有一處「重新組裝 members 陣列」最容易漏。
+✅ **地下城卡片串接缺口已修復（同日追加）**：地下城真正的資料流是 `buildExpeditionMemberData(profile, cardBonus)`（`expeditionMemberData.js`）→ 各種 `create*ExpeditionRoom/BattleRoom` 把 `memberData.wbBonus` 寫進 `dungeonRooms/{id}.members.{id}.wbBonus` → `processDungeonRound` 讀取。`DungeonBattleRoom.jsx` 本身仍然不直接讀卡片（它只讀 room member 的 `atk/def/wbBonus`，這些值已經在建房間當下算好），~~`updateDungeonMemberStats()` 仍是死代碼~~（2026-07-10 已刪除，走的是別條路徑）。有 3 條平行建房間路徑（單人/組隊/舊版未用的 `dungeonDb.js::createDungeonRoom`），未來新增 room member 欄位務必 3 條都追過，`TeamExpeditionBattle.jsx` 有一處「重新組裝 members 陣列」最容易漏。
 
 ---
 

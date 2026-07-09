@@ -35,7 +35,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   useEffect(() => {
     if (!myId || myId.startsWith("guest")) return;
     const unsub = subscribePracticeLogs(myId, logs =>
-      setPartyLogs(logs.filter(l => l.source === "party"))
+      setPartyLogs(logs.filter(l => l.source === "party")), 60
     );
     return unsub;
   }, [myId]);

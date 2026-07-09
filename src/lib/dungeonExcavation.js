@@ -14,6 +14,23 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// ── session 級記憶體快取：避免 addExcavationByArrows（每箭觸發一次）每次都重讀整份 member 文件 ──
+// memberId -> { ...dungeonExcavation 欄位, ts }
+// 注意：本檔案任何「其他」會寫入 dungeonExcavation 欄位的函式，寫入成功後都必須呼叫
+// _excavCache.delete(memberId) 讓快取失效，否則後續射箭會用到舊資料覆蓋掉這些函式剛寫入的新值。
+const _excavCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5分鐘安全網，正確性主要靠 lastActiveDate 換日比對，不是靠 TTL 撐
+
+async function readExcavationCached(memberId) {
+  const cached = _excavCache.get(memberId);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached;
+  const snap = await getDoc(doc(db, "members", memberId));
+  if (!snap.exists()) return null;
+  const fresh = { ...(snap.data().dungeonExcavation || {}), ts: Date.now() };
+  _excavCache.set(memberId, fresh);
+  return fresh;
+}
+
 /**
  * 取得會員目前的發掘進度資料
  */
@@ -45,6 +62,7 @@ export async function resetAutoDigTimer(memberId) {
     await updateDoc(doc(db, "members", memberId), {
       "dungeonExcavation.autoDigNextAt": nextAt,
     }).catch(() => {});
+    _excavCache.delete(memberId);
   } catch (e) {
     console.warn("resetAutoDigTimer:", e?.message);
   }
@@ -103,6 +121,7 @@ export async function claimAutoDig(memberId) {
       "dungeonExcavation.revealedAt": serverTimestamp(),
       "dungeonExcavation.autoDigNextAt": null,
     }).catch(() => {});
+    _excavCache.delete(memberId);
 
     return { ok: true, dungeon: result };
   } catch (e) {
@@ -154,6 +173,7 @@ export async function initDailyExcavation(memberId) {
         delete updates["dungeonExcavation.progress"];
       }
       await updateDoc(doc(db, "members", memberId), updates).catch(() => {});
+      _excavCache.delete(memberId);
     }
   } catch (e) {
     console.warn("initDailyExcavation:", e?.message);
@@ -185,6 +205,7 @@ export async function addExcavationByCheckin(memberId) {
     }
 
     await updateDoc(doc(db, "members", memberId), baseUpdates).catch(() => {});
+    _excavCache.delete(memberId);
   } catch (e) {
     console.warn("addExcavationByCheckin:", e?.message);
   }
@@ -192,40 +213,52 @@ export async function addExcavationByCheckin(memberId) {
 
 /**
  * 射箭時增加發掘進度（每箭 +1）
- * 由 addRoundArrows 內部呼叫（動態 import）
+ * 由 addRoundArrows 內部呼叫（動態 import）。
+ *
+ * 舊版 addExcavationByArrows 自己 getDoc+updateDoc/setDoc；新版改為「只計算 patch，不自己寫入」，
+ * 由呼叫端（db.js::addRoundArrows）把 patch 併進同一次 updateDoc，同時用 _excavCache 避免每箭都重讀整份文件。
+ * 回傳 { patch } 給呼叫端 merge 進 members/{id} 的 updateDoc；沒有需要更新時回傳 null。
  */
-export async function addExcavationByArrows(memberId, arrowCount) {
-  if (!memberId || !arrowCount || arrowCount <= 0) return;
+export async function computeExcavationPatch(memberId, arrowCount) {
+  if (!memberId || !arrowCount || arrowCount <= 0) return null;
   try {
-    const snap = await getDoc(doc(db, "members", memberId));
-    if (!snap.exists()) return;
-    const data = snap.data();
-    const excavation = data.dungeonExcavation || {};
-    if ((excavation.progress || 0) >= 100) return;
+    const excavation = await readExcavationCached(memberId);
+    if (!excavation) return null;
+    if ((excavation.progress || 0) >= 100) return null;
 
     const today = todayStr();
     const lastActive = excavation.lastActiveDate || "";
 
+    let newProgress, newDailyArrowsUsed;
     if (lastActive !== today) {
-      const current = data.dungeonExcavation || {};
-      await setDoc(doc(db, "members", memberId), {
-        dungeonExcavation: {
-          ...current,
-          lastActiveDate: today,
-          progress: Math.min(100, (current.progress || 0) + Math.min(arrowCount, 100)),
-          dailyArrowsUsed: arrowCount,
-        },
-      }, { merge: true }).catch(() => {});
-      return;
+      // 換日：沿用舊版 setDoc 分支的算法（progress 封頂在 100，dailyArrowsUsed 重置為這次的箭數）
+      newProgress = Math.min(100, (excavation.progress || 0) + Math.min(arrowCount, 100));
+      newDailyArrowsUsed = arrowCount;
+    } else {
+      // 同一天：沿用舊版 updateDoc(increment(...)) 分支的算法（不額外封頂在 100，跟原本行為一致）
+      newProgress = (excavation.progress || 0) + Math.min(arrowCount, 100);
+      newDailyArrowsUsed = (excavation.dailyArrowsUsed || 0) + arrowCount;
     }
 
-    await updateDoc(doc(db, "members", memberId), {
+    const patch = {
       "dungeonExcavation.lastActiveDate": today,
-      "dungeonExcavation.progress": increment(Math.min(arrowCount, 100)),
-      "dungeonExcavation.dailyArrowsUsed": increment(arrowCount),
-    }).catch(() => {});
+      "dungeonExcavation.progress": newProgress,
+      "dungeonExcavation.dailyArrowsUsed": newDailyArrowsUsed,
+    };
+
+    // 算完立刻寫回快取（不是刪除逼下次重讀），讓同一場戰鬥後續每一發箭都只讀記憶體
+    _excavCache.set(memberId, {
+      ...excavation,
+      lastActiveDate: today,
+      progress: newProgress,
+      dailyArrowsUsed: newDailyArrowsUsed,
+      ts: Date.now(),
+    });
+
+    return { patch };
   } catch (e) {
-    console.warn("addExcavationByArrows:", e?.message);
+    console.warn("computeExcavationPatch:", e?.message);
+    return null;
   }
 }
 
@@ -300,6 +333,7 @@ export async function revealExcavation(memberId) {
       "dungeonExcavation.pendingReveal": result,
       "dungeonExcavation.revealedAt": serverTimestamp(),
     }).catch(() => {});
+    _excavCache.delete(memberId);
 
     return result;
   } catch (e) {
@@ -336,6 +370,7 @@ export async function upgradeExcavationDifficulty(memberId) {
         boss: drawExpeditionBoss(newDifficulty, pending.family),
       },
     });
+    _excavCache.delete(memberId);
 
     return { ok: true, newDifficulty, cost };
   } catch (e) {
@@ -367,6 +402,7 @@ export async function downgradeExcavationDifficulty(memberId) {
         boss: drawExpeditionBoss(newDifficulty, pending.family),
       },
     });
+    _excavCache.delete(memberId);
 
     return { ok: true, newDifficulty };
   } catch (e) {
@@ -387,6 +423,7 @@ export async function completeExcavation(memberId) {
       "dungeonExcavation.revealedAt": null,
       "dungeonExcavation.completed": true,
     }).catch(() => {});
+    _excavCache.delete(memberId);
   } catch (e) {
     console.warn("completeExcavation:", e?.message);
   }
@@ -408,6 +445,7 @@ export async function abandonExcavation(memberId) {
       "dungeonExcavation.pendingReveal": null,
       "dungeonExcavation.revealedAt": null,
     }).catch(() => {});
+    _excavCache.delete(memberId);
 
     // 若放棄的是自動挖掘的地下城，重設計時器
     if (wasAutoDig) {
@@ -462,6 +500,7 @@ export async function saveExcavation(memberId) {
     };
 
     await updateDoc(doc(db, "members", memberId), updates).catch(() => {});
+    _excavCache.delete(memberId);
 
     // 若保存的是自動挖掘的地下城，重設計時器
     if (wasAutoDig) {
@@ -492,6 +531,7 @@ export async function removeSavedDungeon(memberId, dungeonId) {
     await updateDoc(doc(db, "members", memberId), {
       "dungeonExcavation.savedDungeons": saved,
     });
+    _excavCache.delete(memberId);
     return { ok: true, savedDungeons: saved };
   } catch (e) {
     console.warn("removeSavedDungeon:", e?.message);
@@ -543,6 +583,7 @@ export async function grantDungeonScroll(memberId) {
         "dungeonExcavation.scrolls": increment(1),
       }).catch(() => {});
     }
+    _excavCache.delete(memberId);
 
     return { ok: true, scrolls };
   } catch (e) {
@@ -600,6 +641,7 @@ export async function useDungeonScroll(memberId) {
         "dungeonExcavation.scrolls": newScrolls,
       }).catch(() => {});
     }
+    _excavCache.delete(memberId);
 
     return { ok: true, dungeon: newDungeon, savedDungeons: updatedSaved, scrolls: newScrolls };
   } catch (e) {
@@ -674,6 +716,7 @@ export async function adminSetSavedDungeon(memberId, dungeonEntry, index = null)
         "dungeonExcavation.savedDungeons": updated,
       }).catch(() => {});
     }
+    _excavCache.delete(memberId);
 
     return { ok: true, savedDungeons: updated };
   } catch (e) {

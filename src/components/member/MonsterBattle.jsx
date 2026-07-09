@@ -5,7 +5,7 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
-  createNotification, saveMonsterLog, getMonsterLogs, subscribeMonsterLogs,
+  createNotification, saveMonsterLog, getMonsterLogs,
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
@@ -360,8 +360,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     }
 
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
-    const unsubLogs  = subscribeMonsterLogs(profile.id, v => setHistory(v), 100);
-    return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); unsubLogs(); };
+    getMonsterLogs(profile.id, 30).then(v => setHistory(v)).catch(()=>{});
+    return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
   }, [profile?.id, isGuest]); // eslint-disable-line
 
   useEffect(() => {
@@ -400,6 +400,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }, [log]);
 
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
+  function refreshHistory() {
+    if (!profile?.id) return;
+    getMonsterLogs(profile.id, 30).then(v => setHistory(v)).catch(() => {});
+  }
   function addLog(type, text) {
     // 支援兩種呼叫格式：addLog({type, text}) 或 addLog(type, text)
     const entry = typeof type === 'object' ? type : { type, text };
@@ -946,7 +950,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           battleDistance:selectedDistance,
           targetFmt,
           ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
-        }).catch(() => {});
+        }).catch(() => {}).then(() => refreshHistory());
       }
 
       if (!isGuest) {
@@ -1001,7 +1005,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           battleDistance:selectedDistance,
           targetFmt,
           ...(battleArrowPositions.length ? { arrowPositions:battleArrowPositions } : {}),
-        }).catch(() => {});
+        }).catch(() => {}).then(() => refreshHistory());
       }
       await delay(1000); setPhase("result");
     }
@@ -1121,7 +1125,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               🎨 外觀
             </button>
             {!isGuest && (
-              <button onClick={()=>{ getMonsterLogs(profile.id, 20).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
+              <button onClick={()=>{ getMonsterLogs(profile.id, 30).then(v => { setHistory(v); setHistoryExpanded(false); }); setPhase("history"); }}
                 className="text-xs text-blue-400 font-bold">📊 戰績記錄</button>
             )}
           </div>

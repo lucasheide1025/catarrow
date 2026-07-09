@@ -221,8 +221,8 @@ function reviveResult(d) {
 }
 
 // ─── Practice & Competitions ───────────────────────────────
-export function subscribePracticeLogs(memberId, callback) {
-  return onSnapshot(query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc")), snap => {
+export function subscribePracticeLogs(memberId, callback, maxCount = 300) {
+  return onSnapshot(query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)), snap => {
     const logs = snap.docs.map(d => {
       const res = { id: d.id, ...d.data() };
       if (res.roundsString && typeof res.roundsString === "string") { try { res.rounds = JSON.parse(res.roundsString); } catch (e) { res.rounds = []; } }
@@ -284,18 +284,19 @@ export async function addPracticeLog(memberId, data, operatorId) {
 // 統一由各模式的 submit handler 呼叫，取代 addPracticeLog 的批次更新。
 export async function addRoundArrows(memberId, count) {
   if (!memberId || !count || count <= 0 || memberId.startsWith("guest")) return;
-  await updateDoc(doc(db, C.members, memberId), {
-    totalArrowsAllTime: increment(count),
-  }).catch(() => {});
+  // 把 totalArrowsAllTime 與地下城發掘進度（dungeonExcavation）合併成同一次 updateDoc，
+  // 避免每回合對同一份 members/{id} 文件寫兩次。
+  const patch = { totalArrowsAllTime: increment(count) };
+  try {
+    const { computeExcavationPatch } = await import("./dungeonExcavation");
+    const excav = await computeExcavationPatch(memberId, count);
+    if (excav) Object.assign(patch, excav.patch);
+  } catch (e) { /* ignore，退回只寫 totalArrowsAllTime */ }
+  await updateDoc(doc(db, C.members, memberId), patch).catch(() => {});
   // 村目标贡献 hook（非同步，不阻塞）
   try {
     const { contributeArrowsToGoal } = await import("./villageGoalDb");
     await contributeArrowsToGoal(memberId, count);
-  } catch (e) { /* ignore */ }
-  // 地下城發掘進度 hook（非同步，不阻塞）
-  try {
-    const { addExcavationByArrows } = await import("./dungeonExcavation");
-    await addExcavationByArrows(memberId, count);
   } catch (e) { /* ignore */ }
 }
 
@@ -615,11 +616,6 @@ export async function getMyCompResult(compId, memberId) {
   const snap = await getDocs(query(collection(db, C.results), where("compId", "==", compId), where("memberId", "==", memberId)));
   if (snap.empty) return null;
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
-}
-
-export async function getApprovedResults() {
-  const snap = await getDocs(query(collection(db, C.results), where("reviewStatus", "==", "approved")));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export async function getAllCertRecords() {
@@ -1772,12 +1768,6 @@ export async function retryGuildQuest(memberId, questId) {
   await updateDoc(doc(db, C.members, memberId), {
     [`completedGuildQuestsMap.${questId}`]: deleteField(),
   }).catch(() => {});
-}
-
-// 診斷：取得 guildQuestSubs 全部文件（不過濾）
-export async function debugGetAllGuildSubs() {
-  const snap = await getDocs(collection(db, C_GUILD_SUBS));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 // ─── 教練挑戰賽 ─────────────────────────────────────────────
@@ -2986,12 +2976,6 @@ export function subscribePendingMonthlyRequests(callback) {
     docs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
     callback(docs);
   }, () => callback([]));
-}
-
-// 訂閱全部月卡申請（後台，含歷史最近100筆）
-export function subscribeAllMonthlyRequests(callback) {
-  const q = query(collection(db, C_MONTHLY), orderBy("createdAt", "desc"), limit(100));
-  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => callback([]));
 }
 
 // 訂閱自己的月卡申請（前台）

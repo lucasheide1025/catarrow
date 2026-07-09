@@ -200,7 +200,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     });
     const unsubLogs = myId
       ? subscribePracticeLogs(myId, logs =>
-          setWbLogs(logs.filter(l => l.source === "worldboss"))
+          setWbLogs(logs.filter(l => l.source === "worldboss")), 60
         )
       : null;
     return () => { unsub(); unsubLogs?.(); };

@@ -109,22 +109,6 @@ export function subscribeDungeonRoom(roomId, cb) {
   });
 }
 
-// ── 各玩家寫入自己的 HP/ATK/DEF ─────────────────────────────
-export async function updateDungeonMemberStats(roomId, memberId, hp, maxHP, atk, def, catName = "", archerStyle = "", catAtk = 0) {
-  try {
-    await updateDoc(doc(db, D, roomId), {
-      [`members.${memberId}.hp`]:          hp,
-      [`members.${memberId}.maxHP`]:       maxHP,
-      [`members.${memberId}.atk`]:         atk,
-      [`members.${memberId}.def`]:         def,
-      [`members.${memberId}.catName`]:     catName,
-      [`members.${memberId}.archerStyle`]: archerStyle,
-      [`members.${memberId}.catAtk`]:      catAtk,
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
 // ── 房主開啟第一層 ────────────────────────────────────────────
 export async function startDungeonFloor(roomId, room, monster, mode, length, totalFloors) {
   try {
@@ -1242,15 +1226,6 @@ export function subscribeLatestBroadcast(callback) {
   }, () => callback(null));
 }
 
-// 訂閱全部廣播（用於首殺歷史紀錄頁面）
-export function subscribeAllDungeonBroadcasts(callback) {
-  const q = query(collection(db, "dungeonBroadcasts"), orderBy("createdAt", "desc"));
-  return onSnapshot(q, snap => {
-    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(list);
-  }, () => callback([]));
-}
-
 // 取得全部首殺統計（用於成就判定 / 統計頁面）
 export async function getDungeonFirstClearStats() {
   try {
@@ -1302,14 +1277,6 @@ export async function addCollectible(memberId, itemId, qty = 1) {
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
-}
-
-// 訂閱收藏品（即時同步，用於圖鑑頁）
-// cb 接收：{ [itemId]: qty }
-export function subscribeCollectibles(memberId, cb) {
-  return onSnapshot(doc(db, "members", memberId), snap => {
-    cb(snap.data()?.dungeonCollectibles || {});
-  }, () => cb({}));
 }
 
 // 一次加多個收藏品（批次）
