@@ -8,8 +8,10 @@ import {
   distributeWorldBossRewards,
   expireWorldBossEvent,
   getWorldBossHistory,
+  getWorldBossSpawnConfig,
+  saveWorldBossSpawnConfig,
 } from "../../lib/worldBossDb";
-import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS } from "../../lib/worldBossData";
+import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS, getRewardByBossKey, getRewardTier, BOSS_DURATION_MAX_DAYS } from "../../lib/worldBossData";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { addCardPack, addCoins, addChests, getMembers, adminGrantWorldBossCard } from "../../lib/db";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
@@ -34,6 +36,8 @@ function HPBar({ current, max }) {
   );
 }
 
+const TIER_LABEL_ZH = { entry: "入門（貓貓）", low: "低（R1~R2）", mid: "中（R3~R4）", high: "高（R5~R6）", top: "頂級（教練）" };
+
 const DEFAULT_REWARD = {
   base:    { coins: 100, woodChests: 1 },
   rank1:   { coins: 800, goldChests: 3, catBoxes: 1, mimiBoxes: 1, cardChance: 30 },
@@ -48,6 +52,19 @@ function rewardToStore(r) {
     rank1:   { ...r.rank1,   cardChance: (r.rank1.cardChance   || 0) / 100 },
     rank3:   { ...r.rank3,   cardChance: (r.rank3.cardChance   || 0) / 100 },
     rankAll: { ...r.rankAll, cardChance: (r.rankAll.cardChance || 0) / 100 },
+  };
+}
+
+// 依選中的 Boss 帶出 worldBossData.js 的分級建議值（entry/low/mid/high/top），轉成表單格式（cardChance 用 0~100 整數）
+function rewardFromBossKey(key) {
+  const suggested = getRewardByBossKey(key);
+  if (!suggested) return JSON.parse(JSON.stringify(DEFAULT_REWARD));
+  const toPct = (r) => ({ ...r, mimiBoxes: 0, cardChance: Math.round((r.cardChance || 0) * 100) });
+  return {
+    base:    { ...suggested.base },
+    rank1:   toPct(suggested.rank1),
+    rank3:   toPct(suggested.rank3),
+    rankAll: toPct(suggested.rankAll),
   };
 }
 
@@ -82,11 +99,31 @@ export default function AdminWorldBoss() {
   const [bossKey,   setBossKey]   = useState("head_coach");
   const [useRandom, setUseRandom] = useState(false);
   const [duration,  setDuration]  = useState(3);
-  const [reward,    setReward]    = useState(() => JSON.parse(JSON.stringify(DEFAULT_REWARD)));
+  const [reward,    setReward]    = useState(() => rewardFromBossKey("head_coach"));
   const [rankTab,   setRankTab]   = useState("rank1"); // rank1 | rank3 | rankAll
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
+
+  // 選王時自動帶出該王的分級建議獎勵（entry/low/mid/high/top，見 worldBossData.js）；
+  // 教練後續仍可手動調整表單覆蓋掉建議值，勾選隨機時保留目前設定不自動變動
+  useEffect(() => {
+    if (useRandom) return;
+    setReward(rewardFromBossKey(bossKey));
+  }, [bossKey, useRandom]);
+
+  // 自動刷新設定（活動天數，固定預設30天，後台可調）
+  const [spawnDays, setSpawnDays] = useState(30);
+  const [spawnDaysSaving, setSpawnDaysSaving] = useState(false);
+  const [spawnDaysMsg, setSpawnDaysMsg] = useState("");
+  useEffect(() => { getWorldBossSpawnConfig().then(setSpawnDays).catch(() => {}); }, []);
+  async function handleSaveSpawnDays() {
+    setSpawnDaysSaving(true);
+    const res = await saveWorldBossSpawnConfig(spawnDays, profile?.id);
+    setSpawnDaysSaving(false);
+    setSpawnDaysMsg(res.ok ? "✅ 已儲存" : `❌ ${res.reason}`);
+    setTimeout(() => setSpawnDaysMsg(""), 2000);
+  }
 
   // 手動發放世界王卡
   const { toast, ToastContainer } = useToast();
@@ -154,13 +191,22 @@ export default function AdminWorldBoss() {
     setCreating(false);
   }
 
-  // ── 強制結束 ───────────────────────────────────────────────
+  // ── 強制結束（發安慰獎）───────────────────────────────────
   async function handleForceEnd() {
     if (!event) return;
     if (!window.confirm(`確定要強制結束《${event.bossData?.name}》？\n將發放安慰獎給所有參戰者。`)) return;
     setActionMsg("處理中…");
     await expireWorldBossEvent(event.id);
     setActionMsg("✅ 已結束活動並發放安慰獎");
+  }
+
+  // ── 直接移除（不發任何獎勵，建錯王/測試用王時用）─────────
+  async function handleRemoveNow() {
+    if (!event) return;
+    if (!window.confirm(`確定要直接移除《${event.bossData?.name}》？\n不會發任何獎勵給參戰者，也不會記錄到歷史。此動作無法復原。`)) return;
+    setActionMsg("移除中…");
+    const res = await forceEndWorldBossEvent(event.id);
+    setActionMsg(res.ok ? "✅ 已直接移除" : `❌ ${res.reason}`);
   }
 
   // ── 手動結算定案（Boss 已 defeated 但未定案；定案後各參戰者自己開世界王頁面領取）──
@@ -416,10 +462,16 @@ export default function AdminWorldBoss() {
                 )}
 
                 {event.status === "active" && (
-                  <button onClick={handleForceEnd}
-                    className="w-full py-3 rounded-2xl font-bold text-sm bg-rose-500/20 border border-rose-400/40 text-rose-300 active:scale-95 transition-all">
-                    ⏹ 強制結束活動（發安慰獎）
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button onClick={handleForceEnd}
+                      className="w-full py-3 rounded-2xl font-bold text-sm bg-rose-500/20 border border-rose-400/40 text-rose-300 active:scale-95 transition-all">
+                      ⏹ 強制結束活動（發安慰獎）
+                    </button>
+                    <button onClick={handleRemoveNow}
+                      className="w-full py-2.5 rounded-2xl font-bold text-xs bg-white/5 border border-white/15 text-slate-400 active:scale-95 transition-all">
+                      🗑️ 直接移除（不發獎勵，建錯/測試用）
+                    </button>
+                  </div>
                 )}
               </div>
             </>
@@ -435,6 +487,23 @@ export default function AdminWorldBoss() {
               ⚠️ 目前已有活躍的《{event.bossData?.name}》，請先結束再建立新的
             </div>
           )}
+
+          {/* 自動刷新設定 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+            <div className="text-xs text-slate-400 font-bold">⏱️ 系統自動刷新的活動天數</div>
+            <div className="text-[10px] text-slate-500">玩家進世界王頁面時，若目前沒有活躍中的王，系統會自動隨機開一隻新王，此設定決定那隻王會持續幾天（此區跟下面手動建立活動的「持續天數」是分開的）。</div>
+            <div className="flex items-center gap-3">
+              <input type="number" min="1" max={BOSS_DURATION_MAX_DAYS} value={spawnDays}
+                onChange={e => setSpawnDays(Math.max(1, Math.min(BOSS_DURATION_MAX_DAYS, parseInt(e.target.value) || 1)))}
+                className="w-24 rounded-xl border border-amber-400/50 bg-amber-400/10 text-amber-300 font-bold text-center text-lg px-3 py-2 focus:outline-none focus:border-amber-400"/>
+              <span className="text-slate-400 text-sm">天</span>
+              <button onClick={handleSaveSpawnDays} disabled={spawnDaysSaving}
+                className="ml-auto px-4 py-2 rounded-xl font-bold text-xs bg-amber-500/20 border border-amber-400/40 text-amber-300 disabled:opacity-40">
+                {spawnDaysSaving ? "儲存中…" : "儲存"}
+              </button>
+              {spawnDaysMsg && <span className="text-xs text-emerald-300">{spawnDaysMsg}</span>}
+            </div>
+          </div>
 
           {/* Boss 選擇 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
@@ -488,7 +557,18 @@ export default function AdminWorldBoss() {
 
           {/* 獎勵設定 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
-            <div className="text-xs text-slate-400 font-bold">🎁 獎勵設定</div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-400 font-bold">🎁 獎勵設定</div>
+              {!useRandom && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-amber-300 font-bold bg-amber-400/10 border border-amber-400/30 rounded-full px-2 py-0.5">
+                    建議檔次：{TIER_LABEL_ZH[getRewardTier(WORLD_BOSSES[bossKey])]}
+                  </span>
+                  <button onClick={() => setReward(rewardFromBossKey(bossKey))}
+                    className="text-[10px] font-bold text-slate-400 underline underline-offset-2">套用建議值</button>
+                </div>
+              )}
+            </div>
 
             {/* 保底獎勵 */}
             <div className="bg-white/5 rounded-xl p-3">

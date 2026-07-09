@@ -1,7 +1,7 @@
 // src/lib/worldBossDb.js — 世界大 Boss Firestore 操作
 
 import {
-  collection, doc, addDoc, updateDoc, onSnapshot,
+  collection, doc, addDoc, updateDoc, setDoc, onSnapshot,
   serverTimestamp, increment, getDoc, getDocs, query,
   where, orderBy, limit, arrayUnion,
 } from "firebase/firestore";
@@ -45,7 +45,7 @@ export function subscribeLatestWorldBoss(cb) {
     if (snap.empty) { cb(null); return; }
     const d = snap.docs[0];
     const data = { id: d.id, ...d.data() };
-    if (data.status === "expired") { cb(null); return; }
+    if (data.status === "expired" || data.status === "cancelled") { cb(null); return; }
     cb(data);
   });
 }
@@ -94,6 +94,26 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+// ── 世界王自動刷新設定（活動天數，後台可調，預設固定 30 天）───
+const WB_SPAWN_CONFIG_DEFAULT = 30;
+
+export async function getWorldBossSpawnConfig() {
+  try {
+    const snap = await getDoc(doc(db, "sysConfig", "worldBossSpawn"));
+    return snap.exists() ? (snap.data().durationDays || WB_SPAWN_CONFIG_DEFAULT) : WB_SPAWN_CONFIG_DEFAULT;
+  } catch { return WB_SPAWN_CONFIG_DEFAULT; }
+}
+
+export async function saveWorldBossSpawnConfig(durationDays, operatorId) {
+  try {
+    await setDoc(doc(db, "sysConfig", "worldBossSpawn"), {
+      durationDays: Math.max(1, Math.min(BOSS_DURATION_MAX_DAYS, durationDays || WB_SPAWN_CONFIG_DEFAULT)),
+      updatedAt: serverTimestamp(), updatedBy: operatorId || null,
+    }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 自動刷新世界王（被擊殺隔天自動隨機產生新 Boss）────────────
 // 呼叫時機：前端載入世界王頁面時（任何人皆可呼叫，內部防重複）
 export async function autoSpawnWorldBoss() {
@@ -127,7 +147,8 @@ export async function autoSpawnWorldBoss() {
     const pool = WORLD_BOSS_KEYS.filter(k => k !== lastKey);
     const nextKey = pool[Math.floor(Math.random() * pool.length)];
 
-    return await createWorldBossEvent({ adminId: "system", bossKey: nextKey, durationDays: 7 });
+    const durationDays = await getWorldBossSpawnConfig();
+    return await createWorldBossEvent({ adminId: "system", bossKey: nextKey, durationDays });
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
@@ -422,10 +443,11 @@ export async function expireWorldBossEvent(eventId) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-// ── 後台強制結束 ──────────────────────────────────────────────
+// ── 後台直接移除（不發任何獎勵、不記錄到歷史，用於建錯王/測試用王要立刻撤掉）──
+// 跟 expireWorldBossEvent（時間到→安慰獎）不同：這個是教練主動取消，參戰者什麼都不會拿到
 export async function forceEndWorldBossEvent(eventId) {
   try {
-    await updateDoc(doc(db, WB, eventId), { status: "expired", expiredAt: serverTimestamp() });
+    await updateDoc(doc(db, WB, eventId), { status: "cancelled", cancelledAt: serverTimestamp() });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }

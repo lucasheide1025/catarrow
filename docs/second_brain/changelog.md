@@ -3,6 +3,36 @@
 
 ---
 
+## 2026-07-09（世界王自動刷新天數改為可設定，預設鎖定30天）
+
+- `worldBossDb.js`：新增 `getWorldBossSpawnConfig()`/`saveWorldBossSpawnConfig(days, operatorId)`，存在 `sysConfig/worldBossSpawn.durationDays`（沿用既有 `sysConfig` collection 規則，讀取任何登入者可，寫入僅 admin，不用改 `firestore.rules`）。`autoSpawnWorldBoss()` 原本寫死 `durationDays: 7`，改成讀這個設定，預設值 30（等於 `BOSS_DURATION_MAX_DAYS` 上限）。
+- `AdminWorldBoss.jsx`「建立活動」分頁新增一張獨立卡片可以調整這個天數（跟下面手動建立活動用的「持續天數」欄位是分開的兩件事，不要混淆——一個是系統自動開王用，一個是教練手動開王時單次用）。
+- `CI=true npm run build`：Compiled successfully。
+
+---
+
+## 2026-07-09（世界王後台補完：獎勵表單接上分級建議 + 直接移除功能 + 自動刷新機制確認）
+
+延續世界王 Phase 2 的部署前確認，發現後台「建立活動」表單完全沒用到 Phase 2 新寫的 5 檔獎勵分級系統。
+
+### 改了什麼
+- `AdminWorldBoss.jsx`：新增 `rewardFromBossKey(key)`，選王時（非隨機模式）用 `useEffect` 自動把 `getRewardByBossKey(bossKey)` 的建議值帶進表單（教練仍可手動覆蓋，另外加了「套用建議值」按鈕可以隨時重置），並在獎勵區塊標題旁顯示目前選中的王屬於哪個建議檔次（入門/低/中/高/頂級）。
+- 新增「🗑️ 直接移除」動作：`forceEndWorldBossEvent(eventId)` 原本是完全沒有呼叫點的死函式，改成真正用途——狀態改成 `"cancelled"`（不同於「強制結束」用的 `expireWorldBossEvent`／`"expired"`，不發任何獎勵、不寫入 `worldBossHistory`），給教練在建錯王/測試用王時可以直接撤掉。`subscribeLatestWorldBoss` 補上排除 `"cancelled"` 狀態。
+- 確認 `autoSpawnWorldBoss()`（玩家進世界王頁面時觸發的每日自動刷新）：`WORLD_BOSS_KEYS` 是動態算的，自動涵蓋新的 18 隻王，沒呼叫點需要改；未傳 `reward` 給 `createWorldBossEvent` 時會 fallback 到 `getRewardByBossKey`，所以自動刷新本來就吃得到新的 5 檔分級系統。**但選王邏輯本身是均勻隨機**（排除上一隻，其餘 17 隻等機率），完全沒有利用 R1~R6 的難度排序做漸進式出王——這是沿用舊有邏輯，不是這次改壞的，但如果之後想要「由弱到強」的世界王節奏，需要另外設計選王權重，目前沒做。
+
+### 為什麼
+- 使用者部署前主動確認後台是否跟上新設計，抓到「手動建立活動」這條路徑完全繞過新的分級系統——教練手動開王時獎勵永遠是同一組寫死的值，跟選哪隻王無關，等於 Phase 2 的分級設計在最常用的建立方式裡形同虛設。
+
+### 踩坑提醒
+- 世界王事件現在有 4 種終止狀態：`defeated`（擊殺）、`expired`（超時，發安慰獎）、`cancelled`（教練直接移除，不發獎勵，新增）、以及理論上還沒被排除的其他未來狀態——任何新增「排除非活躍事件」的查詢（比照 `subscribeLatestWorldBoss`）都要記得把 `cancelled` 也排除掉，不能只排 `expired`。
+- `mimiBoxes` 欄位（後台表單有，但 `claimWorldBossKillReward` 從沒讀過）仍然是死欄位，這次沒有動，發現只是順便記錄。
+- 世界王卡的擊殺掉落機率（`WB_CARD_DROP_CHANCE=0.10`）跟世界秘寶箱內容數值都還是寫死在 `worldBossDb.js`/`itemData.js`，後台目前看不到也調不了，這次也沒動，只是一併記錄成已知現況。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+
+---
+
 ## 2026-07-09（世界王 Phase 2：18隻王重製 + 專屬寶箱/卡片 + 卡片系統裝備改版）
 
 Trellis 任務 `07-09-worldboss-phase2-cards`，PRD/design/implement 見 `.trellis/tasks/07-09-worldboss-phase2-cards/`。
