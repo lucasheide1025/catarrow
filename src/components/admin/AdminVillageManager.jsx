@@ -335,11 +335,11 @@ export default function AdminVillageManager() {
                       setGoalEditMode(true);
                     }} disabled={busy}>✏️ 編輯</ActionBtn>
                     <ActionBtn onClick={async () => {
-                      if (!window.confirm("確定強制完成此目標並發放獎勵給所有貢獻者？")) return;
+                      if (!window.confirm("確定強制完成此目標？貢獻者下次登入時會自動領取獎勵。")) return;
                       setBusy(true);
                       try {
                         const r = await adminForceCompleteGoal(activeGoal.id);
-                        if (r.ok) flash("✓ 目標已強制完成，獎勵已發放！");
+                        if (r.ok) flash("✓ 目標已強制完成，貢獻者下次登入會自動領取獎勵！");
                         else flash("❌ " + (r.reason || "失敗"));
                       } catch(e) { flash("❌ " + e.message); }
                       setBusy(false);

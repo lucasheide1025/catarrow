@@ -1,8 +1,9 @@
 // src/components/member/VillageGoalBanner.jsx — 村目標進度條
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeActiveGoal, checkGoalStatus } from "../../lib/villageGoalDb";
+import { subscribeLatestGoal, checkGoalStatus, claimVillageGoalReward } from "../../lib/villageGoalDb";
 import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
+import { useToast } from "../shared/UI";
 
 const C = {
   bg: "linear-gradient(135deg,#2d1a08,#451a03,#1a0f05)",
@@ -17,18 +18,34 @@ const C = {
 
 export default function VillageGoalBanner() {
   const { profile } = useAuth();
+  const { toast, ToastContainer } = useToast();
   const [goal, setGoal] = useState(null);
   const [timeLeft, setTimeLeft] = useState("");
   const [showRewards, setShowRewards] = useState(false);
   const [myContribution, setMyContribution] = useState(0);
 
+  // 訂閱最新一筆目標（不限 active）：active 時顯示 banner，completed/expired 時觸發自行請領
   useEffect(() => {
-    const unsub = subscribeActiveGoal(g => {
-      setGoal(g);
-      if (g) {
+    const unsub = subscribeLatestGoal(g => {
+      setGoal(g?.status === "active" ? g : null);
+      if (g?.status === "active") {
         setMyContribution(g.participants?.[profile?.id]?.contributed || 0);
         // 在 snapshot 回呼外部檢查狀態（避免在 listener 內寫入）
         setTimeout(() => checkGoalStatus(g), 0);
+        return;
+      }
+      const mine = g?.participants?.[profile?.id];
+      if (profile?.id && mine?.contributed > 0 && !mine?.claimed
+        && (g.status === "completed" || g.status === "expired")) {
+        claimVillageGoalReward(g.id, profile.id).then(res => {
+          if (res?.ok && res?.reward) {
+            const parts = [];
+            if (res.reward.coins > 0)      parts.push(`+${res.reward.coins} 金幣`);
+            if (res.reward.arrowdew > 0)   parts.push(`+${res.reward.arrowdew} 箭露`);
+            if (res.reward.gachaToken > 0) parts.push(`+${res.reward.gachaToken} 扭蛋幣`);
+            if (parts.length) toast(`🎁 村目標獎勵已入帳：${parts.join(" ")}`);
+          }
+        }).catch(() => {});
       }
     });
     return unsub;
@@ -52,7 +69,7 @@ export default function VillageGoalBanner() {
     return () => clearInterval(t);
   }, [goal]);
 
-  if (!goal) return null;
+  if (!goal) return <ToastContainer />;
 
   // 有貢獻的參與者人數（不含自己）
   const participantEntries = Object.entries(goal.participants || {});

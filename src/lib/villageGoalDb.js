@@ -141,26 +141,16 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
   }
 }
 
-// ── 完成目標 & 發放獎勵 ──────────────────────────────────────
-export async function completeGoal(goalId, reward) {
+// ── 完成目標（只標記狀態+公告，獎勵改由各參與者自行請領 claimVillageGoalReward）──
+export async function completeGoal(goalId) {
   try {
     const snap = await getDoc(doc(db, COLLECTION, goalId));
     if (!snap.exists()) return { ok: false };
     const goal = snap.data();
-    if (goal.rewardDistributed) return { ok: true };
-
-    const participants = goal.participants || {};
-    for (const [mid, p] of Object.entries(participants)) {
-      if (p.contributed > 0) {
-        if (reward.arrowdew > 0)  await addArrowdew(mid, reward.arrowdew).catch(() => {});
-        if (reward.coins > 0)     await addCoins(mid, reward.coins).catch(() => {});
-        if (reward.gachaToken > 0) await addGachaCoins(mid, reward.gachaToken).catch(() => {});
-      }
-    }
+    if (goal.status === "completed") return { ok: true };
 
     await updateDoc(doc(db, COLLECTION, goalId), {
       status: "completed",
-      rewardDistributed: true,
       completedAt: serverTimestamp(),
     });
 
@@ -180,27 +170,45 @@ export async function completeGoal(goalId, reward) {
   }
 }
 
-// ── 過期目標 & 安慰獎 ────────────────────────────────────────
+// ── 自行請領村目標獎勵（每個參與者用自己的帳號寫自己的 members 文件，避免權限問題）──
+// 適用 status: completed（正式獎勵 goal.rewards）| expired（安慰獎 CONSOLATION_REWARD）
+export async function claimVillageGoalReward(goalId, memberId) {
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, goalId));
+    if (!snap.exists()) return { ok: false, reason: "找不到目標" };
+    const goal = snap.data();
+    if (goal.status !== "completed" && goal.status !== "expired") {
+      return { ok: false, reason: "目標尚未結束" };
+    }
+    const mine = goal.participants?.[memberId];
+    if (!mine || !(mine.contributed > 0)) return { ok: false, reason: "沒有貢獻紀錄" };
+    if (mine.claimed) return { ok: false, reason: "already_claimed" };
+
+    const reward = goal.status === "completed" ? (goal.rewards || {}) : CONSOLATION_REWARD;
+    if (reward.arrowdew > 0)   await addArrowdew(memberId, reward.arrowdew).catch(() => {});
+    if (reward.coins > 0)      await addCoins(memberId, reward.coins).catch(() => {});
+    if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
+
+    await updateDoc(doc(db, COLLECTION, goalId), {
+      [`participants.${memberId}.claimed`]: true,
+    });
+
+    return { ok: true, reward };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ── 過期目標（只標記狀態，安慰獎改由各參與者自行請領 claimVillageGoalReward）──
 export async function expireGoal(goalId) {
   try {
     const snap = await getDoc(doc(db, COLLECTION, goalId));
     if (!snap.exists()) return { ok: false };
     const goal = snap.data();
-    if (goal.rewardDistributed) return { ok: true };
+    if (goal.status === "expired") return { ok: true };
 
-    const participants = goal.participants || {};
-    for (const [mid, p] of Object.entries(participants)) {
-      if (p.contributed > 0) {
-        await addArrowdew(mid, CONSOLATION_REWARD.arrowdew).catch(() => {});
-        await addCoins(mid, CONSOLATION_REWARD.coins).catch(() => {});
-        if (CONSOLATION_REWARD.gachaToken > 0) {
-          await addGachaCoins(mid, CONSOLATION_REWARD.gachaToken).catch(() => {});
-        }
-      }
-    }
     await updateDoc(doc(db, COLLECTION, goalId), {
       status: "expired",
-      rewardDistributed: true,
       expiredAt: serverTimestamp(),
     });
     return { ok: true };
@@ -222,32 +230,24 @@ export async function adminCancelGoal(goalId) {
   }
 }
 
-// ── 後台強制完成目標 & 發放獎勵 ───────────────────────────
+// ── 後台強制完成目標（只標記狀態，獎勵一律走自行請領 claimVillageGoalReward，避免跟一般完成流程分岔）──
 export async function adminForceCompleteGoal(goalId, rewardOverride) {
   try {
     const snap = await getDoc(doc(db, COLLECTION, goalId));
     if (!snap.exists()) return { ok: false, reason: "找不到目標" };
     const goal = snap.data();
-    if (goal.rewardDistributed) return { ok: true, reason: "already_distributed" };
+    if (goal.status === "completed") return { ok: true, reason: "already_completed" };
 
     const reward = rewardOverride || goal.rewards;
     if (!reward) return { ok: false, reason: "無獎勵設定" };
 
-    const participants = goal.participants || {};
-    for (const [mid, p] of Object.entries(participants)) {
-      if (p.contributed > 0) {
-        if (reward.arrowdew > 0)  await addArrowdew(mid, reward.arrowdew).catch(() => {});
-        if (reward.coins > 0)     await addCoins(mid, reward.coins).catch(() => {});
-        if (reward.gachaToken > 0) await addGachaCoins(mid, reward.gachaToken).catch(() => {});
-      }
-    }
-
-    await updateDoc(doc(db, COLLECTION, goalId), {
+    const updates = {
       status: "completed",
-      rewardDistributed: true,
       completedAt: serverTimestamp(),
       completedByAdmin: true,
-    });
+    };
+    if (rewardOverride) updates.rewards = rewardOverride;
+    await updateDoc(doc(db, COLLECTION, goalId), updates);
 
     return { ok: true };
   } catch (e) {
@@ -348,7 +348,7 @@ export async function checkGoalStatus(goal) {
   const now = Date.now();
   const endMs = goal.endAt?.toMillis?.();
   if (goal.currentValue >= goal.targetValue) {
-    await completeGoal(goal.id, goal.rewards);
+    await completeGoal(goal.id);
   } else if (endMs && now >= endMs) {
     await expireGoal(goal.id);
   }

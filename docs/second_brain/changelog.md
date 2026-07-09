@@ -3,6 +3,32 @@
 
 ---
 
+## 2026-07-09（村目標獎勵改自行請領，修正一般會員無法收到獎勵）
+
+Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks/07-09-07-09-village-goal-reward-claim/`。
+
+### 改了什麼
+- `src/lib/villageGoalDb.js`：
+  - `completeGoal`/`expireGoal`：移除「觸發者瀏覽器幫全部參與者寫入獎勵」的 for-loop，只標記 `status`+`completedAt`/`expiredAt`，`completeGoal` 保留完成公告。
+  - `adminForceCompleteGoal`：同樣移除發獎迴圈，只標記狀態（+`completedByAdmin`），不再跟一般完成流程走不同的發獎路徑。
+  - 新增 `claimVillageGoalReward(goalId, memberId)`：參與者用自己的帳號讀目標、驗證資格（有貢獻、狀態已結束、`participants.{memberId}.claimed` 尚未為 true）、寫自己的 `members` 文件（`addCoins`/`addArrowdew`/`addGachaCoins`），再標記 `claimed:true`。
+- `src/components/member/VillageGoalBanner.jsx`：訂閱改用 `subscribeLatestGoal`（原本 `subscribeActiveGoal` 只認 active，目標一完成就訂閱不到、banner 消失，永遠沒機會觸發請領）。`status==="active"` 時維持原本 banner 顯示；`completed`/`expired` 時若偵測到自己有未請領的貢獻，自動呼叫 `claimVillageGoalReward`，成功用 `useToast` 跳提示。
+- `src/components/admin/AdminVillageManager.jsx`：「強制完成並發獎勵」按鈕文案改成「貢獻者下次登入時會自動領取獎勵」，反映新的非即時發放行為。
+
+### 為什麼
+- **根因（已對照 firestore.rules 驗證，非推測）**：`checkGoalStatus()` 由 `VillageGoalBanner.jsx` 每分鐘輪詢、任何會員瀏覽器都可能觸發，觸發後舊版 `completeGoal`/`expireGoal` 在該瀏覽器內迴圈幫「所有參與者」寫入獎勵。但 `firestore.rules:23-38` 的 `members` collection `allow update` 限制「只能改自己的文件（`resource.data.uid==request.auth.uid`）」，寫入別人的 `members` 文件會被拒絕，整段包在 `.catch(()=>{})` 靜默吞掉——只有恰好是教練切學生模式瀏覽（有 `isAdmin()`）時才會真的成功。跟公會懸賞系統已知的坑（見 2026-07-04 交接筆記）是同一種架構限制：專案無 Cloud Functions/cron，所有結算都是 client-triggered，凡是「一人幫多人寫入」的模式都會有這個問題。
+
+### 踩坑提醒
+- **這類「client-triggered 幫別人寫入」模式是本專案的系統性風險**，目前已知至少 3 處用過（公會懸賞自動刷新、村目標舊版發獎、地下城 team 領獎前也曾有類似疑慮）。之後若再看到「for...of participants { await addXxx(otherMemberId, ...) }」這種寫法，先假設它在非 admin 觸發時會靜默失敗，優先改成自行請領模式。
+- `villageGoals` collection 的 `allow update: if isLoggedIn()` 本來就沒有欄位限制，`claimVillageGoalReward` 寫 `participants.{memberId}.claimed` 不需要改規則。
+- 歷史已完成/過期的 `villageGoals` 文件（舊資料沒有 `claimed` 欄位）**沒有補發**，過去很可能有玩家沒真的拿到獎勵；是否要做後台補發工具，待使用者決定。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做多帳號實測（無瀏覽器環境）；建議上線後用兩個不同會員帳號（都非 admin）貢獻同一目標達標，確認兩人都各自拿到獎勵，且重整頁面不會重複入帳。
+
+---
+
 ## 2026-07-09（BattleShootingProfile 弓種下拉帶入自建裝備名稱）
 
 ### 改了什麼
