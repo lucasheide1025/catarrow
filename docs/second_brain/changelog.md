@@ -3,6 +3,27 @@
 
 ---
 
+## 2026-07-09（訪客/兒童模式 Phase 5：後台管理——夏令營場次、帳號列表、轉正式、official-only 查詢稽核）
+
+### 改了什麼
+- `db.js`：`C` collection 常數新增 `campSessions: "campSessions"`。新增 `getCampSessions()`/`subscribeCampSessions()`/`createCampSession()`/`updateCampSession()`/`deleteCampSession()` 這組場次CRUD（欄位 `{name, startDate, endDate, active, createdBy, createdAt}`，沒有另外存 `qrCode` 欄位——QR的URL是前端用 `?kid=<sessionDocId>` 現算，不需要落地存）。
+- `db.js`：新增 `subscribeKidAccounts(callback)`，訂閱整個 `members` collection 再用 JS filter 挑出 `accountType==="guest"||"kid"` 的文件（Firestore 沒有對「有些舊文件完全沒有這個欄位」友善的 `not-in` 查詢，用 `where` 會漏掉，所以维持跟 `getMembers()` 一樣的「client-side filter」模式）。
+- `db.js`：新增 `convertGuestToOfficial(memberId, officialFields, newUid, operatorId)`——**原地改寫同一份 `members/{memberId}` 文件**：`uid` 換成新建立的正式帳號 uid、`accountType` 改成 `"official"`、`contactHash`/`createdViaQR` 用 `deleteField()` 清掉，`contactRaw`/`sessionSourceId` 刻意保留當歷史紀錄。**沒有新建文件、沒有搬資料**——遊戲資料（金幣/材料/地下城進度/貓咪等）全部原封不動留在同一份文件裡。
+- **為什麼「原地轉換」是安全的**：`createMember()`（給教練後台「新增會員」用）是用 `setDoc(doc(db,"members",uid))`，所以正式會員的 doc ID 剛好等於 auth uid——但這只是建立當下的巧合，`useAuth.js` 的登入查詢是 `query(collection(db,"members"), where("uid","==",fbUser.uid))`，**完全不靠 doc ID 對應 uid**。所以 guest/kid 帳號那份 doc ID 其實是 `addDoc()` 隨機產生的、天生就跟 uid 對不上，轉正式後即使 doc ID 依然對不上新 uid，登入查詢照樣抓得到——不需要為了轉正式另外搬文件或做特殊處理。
+- `db.js::getMembers()`／`getMembersForBilling()`：都加上 `isOfficial` filter（`accountType !== "guest" && accountType !== "kid"`，欄位缺省視為 official）。這一改動連帶讓 `AdminMembers.jsx` 會員列表、`MemberLeaderboard.jsx` 排行榜自動排除訪客/兒童帳號（兩者都是呼叫 `getMembers()`）。
+- **`resetAllDungeonUsed`/`resetAllMonsterSessions` 刻意沒有加過濾**——design.md 明確說每日重置本來就該對所有帳號類型生效。
+- **檢定/競賽報名查詢（`getRegistrations`/`getAllCertRecords`/`isMemberRegistered`）刻意沒有加過濾**——`GuestApp.jsx`/`KidApp` 完全沒有任何UI入口能走到報名/檢定流程，這是結構性不可達，不是真的資料外洩風險，加防禦性 filter 只是死代碼。
+- 新檔 `src/components/admin/AdminKidMode.jsx`：場次CRUD卡片列表（含啟用/停用切換、QR彈窗、編輯、刪除）＋帳號列表（可依場次篩選，顯示名稱/帳號類型徽章/聯絡方式/金幣/最近登入）＋「轉正式」彈窗（沿用 `AddMemberModal` 的欄位子集：email/password/name/nickname/archerNo/archerNoDate/joinDate/phone/note，一樣用「臨時第二個 Firebase App」模式建立 email/password 帳號，避免切換教練自己的登入身份）。含一則警語 banner（訪客/兒童帳號安全等級較低，轉正式前勿輸入信用卡等機密資料）。
+- `AdminApp.jsx`：`AdminKidMode` 併入 lazy import、`ADMIN_NAV_PRELOADS["hub-member"]`、`AdminMemberHub` 新增「🎈 兒童模式」HubCard、`memberSub==="kidmode"` render 分支。
+- `CI=true npx react-scripts build`：Compiled successfully。
+
+### 踩坑提醒
+- `campSessions` 的 Firestore 規則（`allow read: if isLoggedIn(); allow write: if isAdmin();`）**在 Phase 1 就已經寫進 `firestore.rules` 並部署過了**，這次沒有再碰 `firestore.rules`。
+- `convertGuestToOfficial` 這次刻意設計成「呼叫端自己去建立 Firebase Auth 帳號、拿到 `newUid` 再傳進來」，函式本身不碰 `firebase/app`/`firebase/auth` 的 init 邏輯——維持跟 `AddMemberModal::save()` 一致的「臨時 App 建帳號」慣例，不要在 `db.js` 裡另外發明一套。
+- `subscribeKidAccounts`/`getMembers`/`getMembersForBilling` 都是整包 collection 訂閱/抓取後在 JS 端 filter，會員數量大時要注意效能，但目前跟既有 `subscribeMembers()` 的模式一致，沒有引入新的效能落差。
+
+---
+
 ## 2026-07-09（訪客/兒童模式 Phase 4：兒童模式打怪難度修正 + UI簡化 + 跨帳號協戰確認）
 
 ### 改了什麼

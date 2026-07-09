@@ -32,6 +32,7 @@ const C = {
   externalComps:"externalComps",
   registrations:"registrations",
   billingRecords:"billingRecords",
+  campSessions: "campSessions",
 };
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
@@ -49,9 +50,13 @@ export async function writeAuditLog(action, targetId, targetType, before, after,
 const sortByLastLogin = docs =>
   docs.sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
 
+// 訪客/兒童帳號排除（design.md §6 稽核）：field 缺省一律視為 official，
+// 所以用 JS filter 而非 Firestore where（避免漏掉沒有 accountType 欄位的舊資料）
+const isOfficial = m => m.accountType !== "guest" && m.accountType !== "kid";
+
 export async function getMembers() {
   const snap = await getDocs(collection(db, C.members));
-  return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOfficial));
 }
 
 export function subscribeMembers(callback) {
@@ -107,6 +112,81 @@ export async function updateLastLogin(id) {
     const snap = await getDoc(doc(db, C.members, id));
     if (snap.exists()) await updateDoc(doc(db, C.members, id), { lastLoginAt: serverTimestamp() });
   } catch (e) { console.warn("updateLastLogin failed:", e.message); }
+}
+
+// ─── 訪客/兒童帳號（兒童模式後台，2026-07-09）─────────────────
+export function subscribeKidAccounts(callback) {
+  return onSnapshot(
+    collection(db, C.members),
+    snap => {
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(m => m.accountType === "guest" || m.accountType === "kid");
+      callback(sortByLastLogin(list));
+    }
+  );
+}
+
+// 轉正式：同一份文件原地改寫（不建立新文件）。docId 不需要等於 uid——
+// useAuth.js 用 where("uid","==",...) 查會員，不是靠 doc ID 對應，所以安全。
+export async function convertGuestToOfficial(memberId, officialFields, newUid, operatorId) {
+  const before = await getMember(memberId);
+  if (!before) throw new Error("找不到該訪客/兒童記錄");
+  const patch = {
+    ...officialFields,
+    uid: newUid,
+    accountType: "official",
+    contactHash: deleteField(),
+    createdViaQR: deleteField(),
+    fatCat: before.fatCat || { gold: 0, silver: 0, bronze: 0 },
+    score: before.score || { gold: 0, silver: 0, bronze: 0 },
+    achievement: before.achievement || { black: 0, gold: 0, silver: 0 },
+    eventPoints: before.eventPoints || 0,
+    studentTier: before.studentTier || "restricted",
+    accountFrozen: !!before.accountFrozen,
+    updatedAt: serverTimestamp(),
+  };
+  await updateDoc(doc(db, C.members, memberId), patch);
+  // deleteField() 是 update() 專用 sentinel，不能出現在 addDoc()/新文件裡（會丟例外）——
+  // 稽核紀錄跟回傳值都要用「已清掉的值」取代，不能直接沿用 patch 本體
+  const logged = { ...patch, contactHash: null, createdViaQR: null };
+  await writeAuditLog("CONVERT_TO_OFFICIAL", memberId, "member", before, logged, operatorId);
+  return { id: memberId, ...before, ...logged };
+}
+
+// ─── 夏令營場次（campSessions）─────────────────────────────
+export async function getCampSessions() {
+  const snap = await getDocs(collection(db, C.campSessions));
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+}
+
+export function subscribeCampSessions(callback) {
+  return onSnapshot(collection(db, C.campSessions), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+    callback(list);
+  });
+}
+
+export async function createCampSession(data, operatorId) {
+  const ref = await addDoc(collection(db, C.campSessions), {
+    name: data.name || "",
+    startDate: data.startDate || "",
+    endDate: data.endDate || "",
+    active: data.active !== undefined ? data.active : true,
+    createdBy: operatorId || null,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateCampSession(id, patch) {
+  await updateDoc(doc(db, C.campSessions, id), patch);
+}
+
+export async function deleteCampSession(id) {
+  await deleteDoc(doc(db, C.campSessions, id));
 }
 
 // ─── Badge Logic ───────────────────────────────────────────
@@ -2961,6 +3041,7 @@ export async function getMembersForBilling() {
   const snap = await getDocs(collection(db, C.members));
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
+    .filter(isOfficial)
     .sort((a, b) => (b.lastLoginAt?.toMillis?.() ?? 0) - (a.lastLoginAt?.toMillis?.() ?? 0));
 }
 

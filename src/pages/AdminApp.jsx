@@ -34,6 +34,7 @@ const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryMana
 const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
 const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
+const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
@@ -86,6 +87,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminMessages");
     import("../components/admin/AdminLearn");
     import("../components/admin/AdminTierPermissions");
+    import("../components/admin/AdminKidMode");
   },
   "hub-events": () => {
     import("../components/admin/AdminCompetitions");
@@ -785,6 +787,9 @@ const adminNav = [
         {page==="hub-member" && memberSub==="dungeon-test" && (
           <><HubBack onClick={()=>setMemberSub(null)}/><AdminDungeon/></>
         )}
+        {page==="hub-member" && memberSub==="kidmode" && (
+          <><HubBack onClick={()=>setMemberSub(null)}/><AdminKidMode/></>
+        )}
 
         {/* ── 賽事中心 Hub ── */}
         {page==="hub-events" && eventsSub===null              && <AdminEventsHub onSelect={setEventsSub}/>}
@@ -868,6 +873,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
         <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />
         <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
         <HubCard icon="🏰" label="地下城測試" desc="設定玩家地下城類型" onClick={() => onSelect("dungeon-test")} />
+        <HubCard icon="🎈" label="兒童模式" desc="夏令營場次、帳號轉正式" onClick={() => onSelect("kidmode")} />
       </div>
     </div>
   );
