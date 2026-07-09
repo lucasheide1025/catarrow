@@ -3,6 +3,24 @@
 
 ---
 
+## 2026-07-10（官網 SEO/GEO 泛用關鍵字內容上線：首頁情境區塊 + 10題FAQ + 8支獨立頁面）
+
+### 改了什麼
+- `website/index.html`：新增「什麼時候適合來貓小隊射箭？」情境區塊（`#scenarios`，8張卡片，放在 `#training`/`#group` 之間），首頁 FAQPage schema 從 8 題擴到 18 題（新增10題情境式問答，同步進 `.faq-list` 手風琴）。
+- 新增 8 支獨立 SEO/GEO 頁面（`website/<slug>/index.html`）：`rainy-day`／`sunny-day`／`beginner-guide`／`family`／`couple`／`friends-group`／`corporate-team-building`／`solo-friendly`。每頁各自帶專屬的 FAQPage schema（3題，不跟首頁重複文字），LocalBusiness/SportsActivityLocation schema 刻意只留首頁一份。
+- **PRD 標題誤寫「7支獨立頁面」但內容規格實際列了8支**——已依實際內容做滿8支，PRD/design標題後續要記得改正避免誤導下一個人。
+- 8 支頁面用同一套模板生成（複製首頁 `<head>`/`<style>`/header/footer，asset路徑補 `../`，nav錨點補 `/` 前綴），確保跟首頁 CSS 完全一致。
+
+### 為什麼
+- 讓 Google/AI 搜尋在「台南下雨天去哪」「台南親子活動」這類非品牌情境下也能主動推薦，不是只有搜品牌詞才出現。完整策略邏輯（關鍵字分組、優先序判斷、schema取捨）記錄在 `.trellis/tasks/archive/2026-07/07-10-website-seo-geo-content-rollout/`。
+
+### 踩坑提醒
+- **子頁面沒有 `#mqTrack`（跑馬燈）元素，共用的 script block 裡跑馬燈初始化如果沒包 `if(track){...}` 會直接噴錯，導致同一個 script block 後面的所有互動（價格計數、hero視差、手機截圖切換、弓卡片wiggle）全部跟著壞掉**——這個站台所有互動都擠在同一個 script block 裡，任何一個元素找不到都可能拖垮後面所有效果，之後新增頁面要記得比照這個 guard 寫法。
+- **「新手體驗指南」被設計成所有情境頁的共同導流終點**，每支情境頁都該連回去——這次驗收就抓到3支頁面（sunny-day/friends-group/corporate-team-building）漏了這條連結，已補上。以後新增情境頁記得檢查這條。
+- 新增頁面務必用同一套 `<style>`（直接複製，不要手動重寫），否則 8 支頁面的視覺會慢慢跟首頁走鐘。
+
+---
+
 ## 2026-07-10（官網視覺互動改版 + 靶位數/LINE聯絡修正）
 
 ### 改了什麼

@@ -33,6 +33,16 @@
   - `#reviews` marquee hover 暫停：改版前已存在，未變動
   - 明確不動：`#booking`/`#visit`/`#final`（轉換型區塊，維持現狀，design.md 定調）
   - 驗證：Chrome headless 截圖走查全頁（hero/why/bows/price/training/group/facility/reviews/faq/booking），HTML tag 配對、JSON-LD 解析、JS 語法均通過腳本檢查
+- **2026-07-10 SEO/GEO 泛用關鍵字內容上線**（Trellis task `07-10-website-seo-geo-content-rollout`，只動 `website/`，仍無建置流程）：目標讓 Google/AI 搜尋在「台南下雨天去哪」「台南親子活動」等非品牌情境下主動推薦，不只靠品牌詞搜尋
+  - 首頁新增 `#scenarios`（05，原 05~10 全部順移 +1 → 現為 06~11）：「什麼時候適合來貓小隊射箭？」8 張情境卡片（`.scen-grid`/`.scard`，`repeat(4,1fr)`→960px `repeat(2,1fr)`→560px `1fr`，8 剛好整除各斷點，不會重蹈上次 5 卡塞 4 欄的孤兒列問題），每張連到對應獨立頁
+  - 首頁 FAQPage JSON-LD `mainEntity` 由 8 題追加到 18 題（新 10 題疊加在後，同一陣列），`.faq-list` 視覺同步新增 10 個 `<details>`
+  - 新增 **8 支**獨立頁面（PRD/design 文件標題誤寫「7 支」，實際逐頁規格與 implement.md 都是 8 支）：`website/rainy-day/`、`website/sunny-day/`、`website/beginner-guide/`、`website/family/`、`website/couple/`、`website/friends-group/`、`website/corporate-team-building/`、`website/solo-friendly/`，各自 `<slug>/index.html`（乾淨網址、不依賴 rewrite）
+  - 每頁 `<head>`/`<style>`/header/footer 從 `index.html` 整份複製再微調：**不**重複 LocalBusiness/SportsActivityLocation schema（只留首頁），改帶各頁專屬 FAQPage schema（3 題，跟首頁與彼此不重複文字）；header 錨點加 `/` 前綴（`/#why` 等）；圖片路徑加 `../`
+  - 子頁沿用同一份 `<script>`，但把行銷 marquee 區塊 `document.getElementById('mqTrack')` 的操作加 `if (track) {...}` guard——子頁沒有 `#mqTrack` 元素，若不加 guard 會拋錯中斷同一支 script 後續所有邏輯（此為本任務發現並修正的坑，其餘 DOM 查找皆已有原生 guard 或空陣列安全）
+  - 企業團康頁 CTA 沿用 `#group` 的 `.group-cta`／`.line-btn` 樣式與既有 LINE 連結 `https://line.me/ti/p/UJXIAt1s0O`
+  - I 人頁紓壓段落刻意避開療效宣稱，只寫「休閒用途、轉換心情」，非醫療用途
+  - 驗證：`JSON.parse` 過全部 9 個 JSON-LD block（首頁 2 個 + 8 子頁各 1 個）、`node --check` 過首頁與 8 子頁共 9 個 `<script>` block、grep 確認全站無殘留 `href="#"` 佔位連結
+  - 不在本任務範圍：sitemap.xml/robots.txt/BreadcrumbList schema 更新（留給下一個任務，等內容確認後再排）、正式部署（`website/` 整包複製到獨立 Vercel 專案，需使用者確認內容後手動執行）
 **核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
 **報到**：pending→教練審核→active/rejected、下課結算箭露、浮動視窗
 **練習**：自主練習、歷史/總覽/分析、箭數里程碑（多回合+世界王已修 2026-07-02）、箭露累積

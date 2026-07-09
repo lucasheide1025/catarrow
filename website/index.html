@@ -107,6 +107,56 @@
       "@type": "Question",
       "name": "營業時間是什麼時候？",
       "acceptedAnswer": { "@type": "Answer", "text": "週一公休；週二 13:00–22:00；週三至週日 10:00–22:00。特殊時段請來電 0973-770-682 洽詢。" }
+    },
+    {
+      "@type": "Question",
+      "name": "台南下雨天可以來射箭嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "可以，而且很適合。貓小隊是室內射箭場，不受下雨或午後雷陣雨影響，一樣正常開放，是雨天很實用的活動備案。" }
+    },
+    {
+      "@type": "Question",
+      "name": "台南颱風天可以預約嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "若遇颱風警報、停班停課或交通狀況不佳，請以安全為優先，不建議冒險出門；一般天氣不穩、午後陣雨或炎熱天氣時，室內射箭才是合適的活動備案。實際營運狀況請以現場公告為準。" }
+    },
+    {
+      "@type": "Question",
+      "name": "台南大太陽的天氣適合室內射箭嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "很適合。場地全程室內有空調，不用擔心曬傷或流汗狼狽，是夏天午後想找地方避暑的好選擇。" }
+    },
+    {
+      "@type": "Question",
+      "name": "小朋友可以射箭嗎？幾歲開始比較適合？",
+      "acceptedAnswer": { "@type": "Answer", "text": "滿 5 歲以上即可參加，現場會依年齡、身高與臂力安排適合磅數的器材。並非所有年齡都適合同一種弓，實際狀況以現場教練評估為主。" }
+    },
+    {
+      "@type": "Question",
+      "name": "情侶約會適合來射箭嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "適合。比起單純吃飯看電影，射箭多了互動與挑戰——可以互相比成績、一起拍照，是個有記憶點的約會行程。" }
+    },
+    {
+      "@type": "Question",
+      "name": "一個人來射箭會不會很尷尬？",
+      "acceptedAnswer": { "@type": "Answer", "text": "不會。單人體驗完全不需要組隊或社交，教練會協助安排，很多客人都是自己一個人來，安靜地專注在每一次放箭上。" }
+    },
+    {
+      "@type": "Question",
+      "name": "完全沒射過箭，第一次可以直接參加嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "可以。貓小隊主打新手友善，教練會從安全規則、持弓、站姿、開弓到瞄準逐步引導，不綁約、不推銷課程。" }
+    },
+    {
+      "@type": "Question",
+      "name": "朋友聚會或慶生活動適合安排射箭嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "適合，小團體也能參與，不需要運動背景。可以安排彼此比分數、挑戰靶心，很適合當作慶生或聚會的活動之一。" }
+    },
+    {
+      "@type": "Question",
+      "name": "射箭適合安排公司團康或部門活動嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "適合。射箭不要求體能或運動背景，可以安排個人挑戰或分組競賽，適合想找有互動、但不過度激烈的室內團康活動。" }
+    },
+    {
+      "@type": "Question",
+      "name": "下班後想放鬆一下，射箭適合嗎？",
+      "acceptedAnswer": { "@type": "Answer", "text": "很適合。射箭的節奏偏安靜，重點在專注呼吸、站姿與每一次放箭，很多人拿來當作下班後轉換心情的活動，但並非醫療用途，僅供休閒參考。" }
     }
   ]
 }
@@ -282,6 +332,21 @@ h1 .line2{display:block}
 .badge b{display:block;font-family:var(--serif);font-size:14.5px}
 .badge span{color:var(--ink-soft);font-size:11.5px}
 
+/* ── 情境導購（B 段） ── */
+.scen-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.scard{display:block;background:#fff;border:1.5px solid var(--line);border-radius:20px;padding:26px 22px;text-align:center;transition:transform .3s,box-shadow .3s}
+.scard:hover{transform:translateY(-6px);box-shadow:0 16px 36px rgba(43,41,38,.1)}
+.scard .sico{display:block;font-size:32px;margin-bottom:14px}
+.scard h3{font-family:var(--serif);font-weight:900;font-size:16.5px;margin-bottom:8px}
+.scard p{font-size:13px;color:var(--ink-soft);line-height:1.6}
+
+/* ── SEO/GEO 子頁面共用（首頁本身未使用，供獨立頁面共用同一份樣式表） ── */
+.page-hero{padding:168px 0 60px}
+.page-sec p{color:var(--ink-soft);font-size:15.5px;margin-bottom:16px}
+.page-sec p:last-child{margin-bottom:0}
+.link-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+.link-row a{font-size:13.5px;font-weight:700;color:var(--orange);border-bottom:1.5px solid var(--orange);padding-bottom:1px}
+
 /* ── 團康 ── */
 .group{background:var(--paper-deep)}
 .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-bottom:36px}
@@ -443,7 +508,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .hero-cat img{width:min(62%,300px)}
   .hero-cat .target{width:90px;height:90px}
   .hero{padding:130px 0 80px}
-  .cards3,.bow-grid,.modes,.coaches,.info-grid{grid-template-columns:repeat(2,1fr)}
+  .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:repeat(2,1fr)}
   .modes .mode:last-child{grid-column:1 / span 2}
   .price-grid,.train-grid{grid-template-columns:1fr}
   .fac-grid{grid-template-columns:1fr}
@@ -453,9 +518,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     background:var(--paper);border-bottom:1.5px solid var(--line);padding:20px 24px;gap:16px;box-shadow:0 20px 40px rgba(43,41,38,.12)}
   .fab{display:inline-flex}
   section{padding:72px 0}
+  .page-hero{padding:128px 0 48px}
 }
 @media (max-width:560px){
-  .cards3,.bow-grid,.modes,.coaches,.info-grid{grid-template-columns:1fr}
+  .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:1fr}
   .bcard img{height:170px}
   .group-cta{justify-content:center;text-align:center}
 }
@@ -716,10 +782,61 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 05 團康 -->
+<!-- 05 情境導購（B 段：什麼時候適合來） -->
+<section id="scenarios">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">05</span><span class="sec-en">Scenarios · 什麼時候適合來</span></div>
+    <h2 class="rv">什麼時候適合來<span class="accent">貓小隊射箭</span>？</h2>
+    <p class="sec-lead rv">不管是雨天、大太陽，還是臨時想找點新鮮事，總有一個理由適合走進來拉一次弓。點卡片看該情境的完整介紹。</p>
+    <div class="scen-grid">
+      <a class="scard rv" href="/rainy-day/">
+        <span class="sico" aria-hidden="true">🌧️</span>
+        <h3>雨天備案</h3>
+        <p>午後雷陣雨說來就來，室內不受天氣影響，照樣能開弓。</p>
+      </a>
+      <a class="scard rv" href="/sunny-day/">
+        <span class="sico" aria-hidden="true">☀️</span>
+        <h3>大太陽避暑</h3>
+        <p>不想曬、不想流汗一身，吹冷氣也能玩得盡興。</p>
+      </a>
+      <a class="scard rv" href="/family/">
+        <span class="sico" aria-hidden="true">👨‍👩‍👧</span>
+        <h3>親子時光</h3>
+        <p>依年齡身高安排合適器材，陪孩子練專注、練等待。</p>
+      </a>
+      <a class="scard rv" href="/couple/">
+        <span class="sico" aria-hidden="true">💕</span>
+        <h3>情侶約會</h3>
+        <p>比吃飯看電影多一點記憶點，一起比賽、一起拍照。</p>
+      </a>
+      <a class="scard rv" href="/friends-group/">
+        <span class="sico" aria-hidden="true">🎉</span>
+        <h3>朋友聚會</h3>
+        <p>臨時起意、慶生聚餐後續攤，小團體也能玩得盡興。</p>
+      </a>
+      <a class="scard rv" href="/solo-friendly/">
+        <span class="sico" aria-hidden="true">🧘</span>
+        <h3>一個人也可以</h3>
+        <p>不用組隊、不用社交，安靜地把每一箭射好就夠了。</p>
+      </a>
+      <a class="scard rv" href="/corporate-team-building/">
+        <span class="sico" aria-hidden="true">🏢</span>
+        <h3>小型團康</h3>
+        <p>不需要運動背景也能玩，適合部門聚會、公司活動。</p>
+      </a>
+      <a class="scard rv" href="/beginner-guide/">
+        <span class="sico" aria-hidden="true">🎯</span>
+        <h3>第一次射箭</h3>
+        <p>完全沒經驗也沒關係，從安全規則開始一步步教。</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- 06 團康 -->
 <section class="group" id="group">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">05</span><span class="sec-en">Group &amp; Games · 團康與遊戲模式</span></div>
+    <div class="sec-head rv"><span class="sec-num">06</span><span class="sec-en">Group &amp; Games · 團康與遊戲模式</span></div>
     <h2 class="rv">刺激精彩，<span class="accent">交給我們</span>。</h2>
     <p class="sec-lead rv">適合 8 ～ 16 人團體，公司團建或朋友聚會的最佳選擇。專業教練協助規劃，帶領分組對抗活動。</p>
     <div class="group-photo rv">
@@ -763,10 +880,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 06 場地師資 -->
+<!-- 07 場地師資 -->
 <section id="facility">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">06</span><span class="sec-en">Facility &amp; Team · 場地與師資</span></div>
+    <div class="sec-head rv"><span class="sec-num">07</span><span class="sec-en">Facility &amp; Team · 場地與師資</span></div>
     <h2 class="rv">你的城市<span class="accent">靜心防空洞</span>。</h2>
     <p class="sec-lead rv">室內冷氣場地，兩條射道、八個靶位，通過學籍考核還能解鎖 70 米戶外練習場。</p>
     <div class="fac-photo rv">
@@ -802,10 +919,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 07 評論 -->
+<!-- 08 評論 -->
 <section class="reviews" id="reviews">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">07</span><span class="sec-en">Reviews · 學員真實評論</span></div>
+    <div class="sec-head rv"><span class="sec-num">08</span><span class="sec-en">Reviews · 學員真實評論</span></div>
     <h2 class="rv">他們都說，<span class="accent">還會再來</span>。</h2>
   </div>
   <div class="mq" aria-label="學員評論輪播">
@@ -826,10 +943,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 08 FAQ -->
+<!-- 09 FAQ -->
 <section id="faq">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">08</span><span class="sec-en">FAQ · 常見問題</span></div>
+    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">FAQ · 常見問題</span></div>
     <h2 class="rv">你想知道的，<span class="accent">都在這</span>。</h2>
     <div class="faq-list rv">
       <details>
@@ -864,14 +981,54 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
         <summary>營業時間是什麼時候？<span class="qline" aria-hidden="true"></span></summary>
         <p class="a">週一公休；週二 13:00–22:00；週三至週日 10:00–22:00。特殊時段請來電 0973-770-682 洽詢。</p>
       </details>
+      <details>
+        <summary>台南下雨天可以來射箭嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">可以，而且很適合。貓小隊是室內射箭場，不受下雨或午後雷陣雨影響，一樣正常開放，是雨天很實用的活動備案。</p>
+      </details>
+      <details>
+        <summary>台南颱風天可以預約嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">若遇颱風警報、停班停課或交通狀況不佳，請以安全為優先，不建議冒險出門；一般天氣不穩、午後陣雨或炎熱天氣時，室內射箭才是合適的活動備案。實際營運狀況請以現場公告為準。</p>
+      </details>
+      <details>
+        <summary>台南大太陽的天氣適合室內射箭嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">很適合。場地全程室內有空調，不用擔心曬傷或流汗狼狽，是夏天午後想找地方避暑的好選擇。</p>
+      </details>
+      <details>
+        <summary>小朋友可以射箭嗎？幾歲開始比較適合？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">滿 5 歲以上即可參加，現場會依年齡、身高與臂力安排適合磅數的器材。並非所有年齡都適合同一種弓，實際狀況以現場教練評估為主。</p>
+      </details>
+      <details>
+        <summary>情侶約會適合來射箭嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">適合。比起單純吃飯看電影，射箭多了互動與挑戰——可以互相比成績、一起拍照，是個有記憶點的約會行程。</p>
+      </details>
+      <details>
+        <summary>一個人來射箭會不會很尷尬？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">不會。單人體驗完全不需要組隊或社交，教練會協助安排，很多客人都是自己一個人來，安靜地專注在每一次放箭上。</p>
+      </details>
+      <details>
+        <summary>完全沒射過箭，第一次可以直接參加嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">可以。貓小隊主打新手友善，教練會從安全規則、持弓、站姿、開弓到瞄準逐步引導，不綁約、不推銷課程。</p>
+      </details>
+      <details>
+        <summary>朋友聚會或慶生活動適合安排射箭嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">適合，小團體也能參與，不需要運動背景。可以安排彼此比分數、挑戰靶心，很適合當作慶生或聚會的活動之一。</p>
+      </details>
+      <details>
+        <summary>射箭適合安排公司團康或部門活動嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">適合。射箭不要求體能或運動背景，可以安排個人挑戰或分組競賽，適合想找有互動、但不過度激烈的室內團康活動。</p>
+      </details>
+      <details>
+        <summary>下班後想放鬆一下，射箭適合嗎？<span class="qline" aria-hidden="true"></span></summary>
+        <p class="a">很適合。射箭的節奏偏安靜，重點在專注呼吸、站姿與每一次放箭，很多人拿來當作下班後轉換心情的活動，但並非醫療用途，僅供休閒參考。</p>
+      </details>
     </div>
   </div>
 </section>
 
-<!-- 09 線上預約 -->
+<!-- 10 線上預約 -->
 <section id="booking">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">Booking · 線上預約</span></div>
+    <div class="sec-head rv"><span class="sec-num">10</span><span class="sec-en">Booking · 線上預約</span></div>
     <h2 class="rv">選好時段，<span class="accent">直接預約</span>。</h2>
     <p class="sec-lead rv">點選下方按鈕後，會開啟貓小隊的線上預約系統。請選擇日期、時段與人數完成預約。8 人以上團體活動請來電 0973-770-682。</p>
     <div class="book-box rv">
@@ -895,7 +1052,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <!-- 交通資訊 -->
 <section class="info" id="visit">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">10</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
+    <div class="sec-head rv"><span class="sec-num">11</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
     <h2 class="rv">找到<span class="accent">我們</span>。</h2>
     <div class="info-grid">
       <div class="icard rv">
