@@ -35,7 +35,7 @@ service cloud.firestore {
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
                     "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
-                    "activeExpedition"]);
+                    "activeExpedition", "expeditions"]);
     }
 
     // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）

@@ -3654,6 +3654,8 @@ export async function listCardForSale(memberId, memberName, cardId, cardData, pr
 }
 
 // offeredCardId：priceType==="card" 時，買家選擇要提供的重複卡片 ID
+// 買家只寫自己的文件（扣款+拿到卡片），賣家的款項改成事後自行請領（見 claimCardSaleProceeds），
+// 避免買家瀏覽器直接寫入賣家文件被 firestore.rules 擋掉（members 只能改自己的文件）
 export async function buyCardListing(buyerId, buyerName, listing, offeredCardId = null) {
   if (!buyerId || !listing?.id) throw new Error('參數錯誤');
   if (listing.sellerId === buyerId) throw new Error('不能購買自己的掛賣');
@@ -3666,28 +3668,25 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
   if (listing.priceType === "arrowdew") {
     const have = bData?.village?.resources?.arrowdew || 0;
     if (have < listing.priceAmount) throw new Error(`箭露不足（需要 ${listing.priceAmount}）`);
-    batch.update(doc(db, C.members, buyerId),          { "village.resources.arrowdew": increment(-listing.priceAmount) });
-    batch.update(doc(db, C.members, listing.sellerId), { "village.resources.arrowdew": increment(listing.priceAmount) });
+    batch.update(doc(db, C.members, buyerId), { "village.resources.arrowdew": increment(-listing.priceAmount) });
   } else if (listing.priceType === "gachaToken") {
     const have = bData?.gachaCoins || 0;
     if (have < listing.priceAmount) throw new Error(`扭蛋幣不足（需要 ${listing.priceAmount}）`);
-    batch.update(doc(db, C.members, buyerId),          { gachaCoins: increment(-listing.priceAmount) });
-    batch.update(doc(db, C.members, listing.sellerId), { gachaCoins: increment(listing.priceAmount) });
+    batch.update(doc(db, C.members, buyerId), { gachaCoins: increment(-listing.priceAmount) });
   } else if (listing.priceType === "card") {
     if (!offeredCardId) throw new Error('請選擇要提供的交換卡片');
-    // 取得賣家的卡片資料
-    const sSnap = await getDoc(doc(db, C.members, listing.sellerId));
-    const sData = sSnap.data() || {};
-    const buyerCnt  = bData?.catCards?.[offeredCardId]  || 0;
-    const sellerCnt = sData?.catCards?.[offeredCardId]  || 0;
-    if (buyerCnt < 2)    throw new Error('你需要擁有 2 張以上此卡片才能用於交換');
-    if (sellerCnt > 0)   throw new Error('賣家已擁有這張卡片，不符合交換條件');
-    batch.update(doc(db, C.members, buyerId),          { [`catCards.${offeredCardId}`]: increment(-1) });
-    batch.update(doc(db, C.members, listing.sellerId), { [`catCards.${offeredCardId}`]: increment(1) });
+    const buyerCnt = bData?.catCards?.[offeredCardId] || 0;
+    if (buyerCnt < 2) throw new Error('你需要擁有 2 張以上此卡片才能用於交換');
+    // 賣家是否已擁有這張卡片，留給賣家請領時（claimCardSaleProceeds）再次確認，避免這裡多讀一次賣家文件
+    batch.update(doc(db, C.members, buyerId), { [`catCards.${offeredCardId}`]: increment(-1) });
   }
 
   batch.update(doc(db, C.members, buyerId), { [`catCards.${listing.cardId}`]: increment(1) });
-  batch.update(listingRef, { status: "sold", buyerId, buyerName, soldAt: serverTimestamp() });
+  batch.update(listingRef, {
+    status: "sold", buyerId, buyerName, soldAt: serverTimestamp(),
+    sellerClaimed: false,
+    offeredCardId: listing.priceType === "card" ? offeredCardId : null,
+  });
   await batch.commit();
 
   // 查詢交換卡片名稱（card 交換時）
@@ -3697,7 +3696,7 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
     offeredCardName = CAT_CARDS.find(c => c.id === offeredCardId)?.name || offeredCardId;
   }
 
-  // 通知賣家
+  // 通知賣家（款項待開啟市集頁自動請領，不是已經到帳）
   const priceText = listing.priceType === "arrowdew"
     ? `箭露 ×${listing.priceAmount}`
     : listing.priceType === "gachaToken"
@@ -3706,7 +3705,7 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
   await createNotification({
     type: "market_sale",
     title: `🎉 卡片已售出！`,
-    content: `${buyerName} 購買了你的「${listing.cardName}」，已收到 ${priceText}`,
+    content: `${buyerName} 購買了你的「${listing.cardName}」，開啟市集頁即可領取 ${priceText}`,
     targetMemberId: listing.sellerId,
     subjectMemberId: buyerId,
     subjectInfo: { cardName: listing.cardName, priceType: listing.priceType, priceAmount: listing.priceAmount, offeredCardName },
@@ -3724,6 +3723,37 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
     subjectMemberId: listing.sellerId,
     subjectInfo: { cardName: listing.cardName },
   }, buyerId);
+}
+
+// 賣家自行請領已售出的款項/交換卡片（見 buyCardListing 的權限修正說明）
+export async function claimCardSaleProceeds(sellerId, listingId) {
+  if (!sellerId || !listingId) return { ok: false, reason: '參數錯誤' };
+  try {
+    const listingRef = doc(db, C_CARD_MARKET, listingId);
+    const snap = await getDoc(listingRef);
+    if (!snap.exists()) return { ok: false, reason: '掛賣紀錄不存在' };
+    const listing = snap.data();
+    if (listing.sellerId !== sellerId) return { ok: false, reason: '這不是你的掛賣' };
+    if (listing.status !== 'sold') return { ok: false, reason: '尚未售出' };
+    if (listing.sellerClaimed) return { ok: false, reason: 'already_claimed' };
+
+    const updates = {};
+    let proceeds = { type: listing.priceType, amount: listing.priceAmount, cardId: listing.offeredCardId };
+    if (listing.priceType === 'arrowdew') {
+      updates['village.resources.arrowdew'] = increment(listing.priceAmount);
+    } else if (listing.priceType === 'gachaToken') {
+      updates.gachaCoins = increment(listing.priceAmount);
+    } else if (listing.priceType === 'card' && listing.offeredCardId) {
+      updates[`catCards.${listing.offeredCardId}`] = increment(1);
+    }
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(doc(db, C.members, sellerId), updates);
+    }
+    await updateDoc(listingRef, { sellerClaimed: true, sellerClaimedAt: serverTimestamp() });
+    return { ok: true, proceeds };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
 }
 
 export async function cancelCardListing(memberId, listingId, cardId) {

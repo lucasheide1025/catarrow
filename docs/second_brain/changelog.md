@@ -117,6 +117,43 @@ Trellis 任務 `07-09-07-09-village-goal-reward-claim`，PRD 見 `.trellis/tasks
 
 ---
 
+## 2026-07-09（修正市集交換卡片 Missing or insufficient permissions）
+
+Trellis 任務 `07-09-07-09-card-market-permission-fix`。
+
+### 改了什麼
+- `src/lib/db.js::buyCardListing`：買家端的 `writeBatch` 移除對賣家 `members` 文件的寫入，只保留買家自己的扣款/拿卡。`cardMarket` listing 更新新增 `sellerClaimed:false`（+ `offeredCardId` 供交換類型使用）。
+- 新增 `claimCardSaleProceeds(sellerId, listingId)`：賣家自己呼叫，驗證後把箭露/扭蛋幣/交換卡片加到自己的文件，標記 `sellerClaimed:true`。
+- `src/components/member/CatVillage.jsx::CardMarketPanel`：既有的 `myListings` 訂閱裡新增自動偵測「賣出但未請領」的掛賣，自動呼叫 `claimCardSaleProceeds`，成功後跳一個簡短提示（此檔案沒有共用 toast，做了一個本地小 banner）。
+
+### 為什麼
+- 使用者回報射手帳號市集交換卡片出現 `Missing or insufficient permissions`。根因：`buyCardListing` 原本在買家瀏覽器裡直接寫入賣家的 `members` 文件給錢/卡片，違反 `firestore.rules`「只能改自己文件」的規則，整個 `writeBatch` 被拒絕——**這是必現 bug，不是偶發**，市集交易原本完全跑不通。跟村目標獎勵（見同日稍早的變更）是同一種架構問題，改用同一套「自行請領」模式解決。
+
+### 踩坑提醒
+- 通知賣家的文案已從「已收到」改成「開啟市集頁即可領取」，因為現在是非即時到帳。
+- `cancelCardListing` 本來就有 `status!=="active"` 的檢查，賣出後的掛賣如果被誤點「下架」只會跳錯誤訊息，不會出資料問題，這次沒有特別隱藏該按鈕（UI 小瑕疵，非必要範圍）。
+- 不需要改 `cardMarket`/`notifications` 的 firestore.rules，兩者本來就是 `allow read, write: if isLoggedIn()`。
+
+### 驗證
+- `CI=true npm run build`：Compiled successfully。
+- 尚未做瀏覽器實測（無瀏覽器環境）；建議上線後用兩個帳號實測一次完整交易（掛賣→購買→賣家開市集頁確認自動收到款項）。
+
+---
+
+## 2026-07-09（修正貓咪遠征隊 Missing or insufficient permissions）
+
+### 改了什麼
+- `firestore.rules`：`members` collection 的 update hasOnly 白名單加入 `"expeditions"`（**需手動貼到 Firebase Console**）。
+
+### 為什麼
+- 使用者回報射手帳號「遠征隊」操作出現 `Missing or insufficient permissions`。查證：`db.js::startExpedition`/`collectExpedition`（貓咪遠征隊，2026-06-27 改版新增）寫入 `expeditions.{slotIdx}` 欄位，但 `expeditions` 這個頂層欄位名稱從改版當時就沒被加進 `members` 的 hasOnly 白名單，導致任何會員開始遠征/領取遠征獎勵都會被規則拒絕——這不是偶發，是每次都會發生的必現 bug。
+- 同一次回報還有「市集交換卡片」也是同一個錯誤訊息，但根因不同（見下一則變更）。
+
+### 驗證
+- 規則語法正確（純新增陣列元素），需使用者手動部署到 Firebase Console 後才會生效，此環境無法直接驗證實際行為。
+
+---
+
 ## 2026-07-09（地下城前後衛重構：橫向滑動 UI + 後衛加攻/治療改用命中分數）
 
 Trellis 任務 `07-09-07-09-front-rear-guard-rework`。

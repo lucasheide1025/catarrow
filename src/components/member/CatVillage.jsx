@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
-  subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing,
+  subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing, claimCardSaleProceeds,
   subscribeVillageMarketConfig, setBuildingAllocation,
   setDisplayVillageLv,
 } from "../../lib/db";
@@ -503,10 +503,28 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
   const [buyTarget, setBuyTarget]     = useState(null);
   const [offeredCardId, setOfferedCardId] = useState(null);
 
+  const [claimToast, setClaimToast] = useState("");
+  const claimingRef = useRef(new Set());
+
   useEffect(() => {
     const unsub = subscribeCardMarket(all => {
       setListings(all.filter(l => l.sellerId !== memberId));
-      setMyListings(all.filter(l => l.sellerId === memberId));
+      const mine = all.filter(l => l.sellerId === memberId);
+      setMyListings(mine);
+      // 賣出但尚未請領的掛賣：自動幫賣家請領款項/交換卡片（見市集權限修正任務）
+      mine.filter(l => l.status === "sold" && !l.sellerClaimed && !claimingRef.current.has(l.id))
+        .forEach(l => {
+          claimingRef.current.add(l.id);
+          claimCardSaleProceeds(memberId, l.id).then(res => {
+            if (res.ok) {
+              const text = res.proceeds.type === "arrowdew" ? `箭露 ×${res.proceeds.amount}`
+                : res.proceeds.type === "gachaToken" ? `扭蛋幣 ×${res.proceeds.amount}`
+                : "交換卡片";
+              setClaimToast(`🎉「${l.cardName}」已售出，收到 ${text}`);
+              setTimeout(() => setClaimToast(""), 4000);
+            }
+          }).finally(() => claimingRef.current.delete(l.id));
+        });
     });
     return unsub;
   }, [memberId]); // eslint-disable-line
@@ -551,6 +569,12 @@ function CardMarketPanel({ catCards, memberId, memberName }) {
 
   return (
     <div className="px-5 pb-4">
+      {claimToast && (
+        <div className="mb-2 rounded-xl px-3 py-2 text-xs font-bold text-center"
+          style={{ background: "rgba(74,222,128,0.15)", color: "#16a34a", border: "1px solid rgba(74,222,128,0.35)" }}>
+          {claimToast}
+        </div>
+      )}
       <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>🃏 卡片掛賣市集</div>
       <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
         {[["browse","🛍️ 瀏覽"],["mine","📋 我的"]].map(([id,lb]) => (
