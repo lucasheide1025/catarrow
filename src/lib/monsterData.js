@@ -615,13 +615,14 @@ export function drawMixedMonsterPool(count, variant, tier) {
 }
 
 // 從寶箱族抽指定數量（真假隨機混，不含王）；隱藏地下城樓層1/2/一般房用
-export function drawTreasureMonsterPool(count, tier) {
+// variant 比照一般族系用法：weak/normal/strong，跟樓層強弱分層一致
+export function drawTreasureMonsterPool(count, variant, tier) {
   const tierKey = TIER_ORDER[Math.max(0, Math.min(5, (tier || 1) - 1))];
   const candidates = MONSTERS.filter(m => m.family === "treasure" && m.tier === tierKey && !m.isKing);
   const picks = [];
   for (let i = 0; i < count; i++) {
     const monster = candidates[Math.floor(Math.random() * candidates.length)];
-    if (monster) picks.push(applyVariant(monster, "normal"));
+    if (monster) picks.push(applyVariant(monster, variant));
   }
   return picks;
 }
@@ -658,7 +659,7 @@ export function drawFloorMonsters(floorIndex, difficultyTier, options = {}) {
     const count = 2 + Math.floor(Math.random() * 2);
     return {
       monsters: isTreasureRun
-        ? drawTreasureMonsterPool(count, difficultyTier)
+        ? drawTreasureMonsterPool(count, "weak", difficultyTier)
         : drawMixedMonsterPool(count, "weak", difficultyTier),
       elite: null, boss: null,
     };
@@ -667,18 +668,18 @@ export function drawFloorMonsters(floorIndex, difficultyTier, options = {}) {
     // 第2層：一般房固定普通，精英房固定強悍
     const count = 3 + Math.floor(Math.random() * 2);
     const elite = isTreasureRun
-      ? drawTreasureMonsterPool(1, difficultyTier)[0]
+      ? drawTreasureMonsterPool(1, "strong", difficultyTier)[0]
       : drawMixedMonsterPool(1, "strong", difficultyTier)[0];
     return {
       monsters: isTreasureRun
-        ? drawTreasureMonsterPool(count, difficultyTier)
+        ? drawTreasureMonsterPool(count, "normal", difficultyTier)
         : drawMixedMonsterPool(count, "normal", difficultyTier),
       elite: elite || null, boss: null,
     };
   }
   // 第3層：分支遭遇固定強悍，王房使用地下城建立時已固定的 Boss
   const elite = isTreasureRun
-    ? drawTreasureMonsterPool(1, difficultyTier)[0]
+    ? drawTreasureMonsterPool(1, "strong", difficultyTier)[0]
     : drawMixedMonsterPool(1, "strong", difficultyTier)[0];
   const fixedBoss = options.fixedBoss
     ? (options.fixedBoss.variant === "boss"
@@ -687,7 +688,7 @@ export function drawFloorMonsters(floorIndex, difficultyTier, options = {}) {
     : (isTreasureRun ? drawTreasureKing(difficultyTier) : drawExpeditionBoss(difficultyTier, options.family));
   return {
     monsters: isTreasureRun
-      ? drawTreasureMonsterPool(3, difficultyTier)
+      ? drawTreasureMonsterPool(3, "strong", difficultyTier)
       : drawMixedMonsterPool(3, "strong", difficultyTier),
     elite: elite || null,
     boss: fixedBoss || null,
