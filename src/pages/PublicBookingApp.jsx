@@ -15,7 +15,7 @@
 // 這個檔案不需要、也不應該自己碰 Firebase Auth。
 import { useState, useEffect } from "react";
 import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial, getGuestProfile, updateGuestProfile, changeGuestPassword } from "../lib/guestAuth";
-import { createBooking, getBookingsForMember, cancelBooking } from "../lib/bookingDb";
+import { createBooking, getBookingsForMember, cancelBooking, rescheduleBooking } from "../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
@@ -74,10 +74,15 @@ export default function PublicBookingApp() {
   const [done, setDone] = useState(false);
   const [pendingAuthSubmit, setPendingAuthSubmit] = useState(false); // 未登入時按送出 → 先登入，登入後自動送出
 
-  // ⑤ 會員中心（登入後：預約查詢/取消、個資、改密碼、學籍、進遊戲）
-  const [showMine, setShowMine]       = useState(false);
-  const [myBookings, setMyBookings]   = useState([]);
-  const [loadingMine, setLoadingMine] = useState(false);
+  // ⑤ 會員中心（登入後：預約查詢/取消/改期、個資、改密碼、學籍、進遊戲）
+  const [showMine, setShowMine]             = useState(false);
+  const [myBookings, setMyBookings]         = useState([]);
+  const [allBookings, setAllBookings]       = useState([]); // 含已取消的全部預約
+  const [loadingMine, setLoadingMine]       = useState(false);
+  const [memberTab, setMemberTab]           = useState("active"); // "active" | "history"
+  const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [cancelTarget, setCancelTarget]     = useState(null);
+  const [rescheduleErr, setRescheduleErr]   = useState("");
   const [memberDoc, setMemberDoc]     = useState(null); // 完整會員資料（accountType/hasPassword/socialProvider…）
   const [editName, setEditName]       = useState("");
   const [editPhone, setEditPhone]     = useState("");
@@ -160,6 +165,7 @@ export default function PublicBookingApp() {
       getBookingsForMember(profile.id),
       getGuestProfile(profile.id),
     ]);
+    setAllBookings(res.ok ? res.bookings : []);
     setMyBookings(res.ok ? res.bookings.filter(b => b.status === "confirmed") : []);
     setMemberDoc(mDoc);
     setEditName(mDoc?.name || profile.name || "");
@@ -170,7 +176,18 @@ export default function PublicBookingApp() {
 
   async function handleCancelBooking(id) {
     const res = await cancelBooking(id);
+    setCancelTarget(null);
     if (res.ok) loadMemberCenter();
+  }
+
+  async function handleReschedule(newSlot) {
+    if (!rescheduleTarget) return;
+    setRescheduleErr("");
+    const res = await rescheduleBooking(rescheduleTarget.id, newSlot.date, newSlot.startTime, newSlot.endTime);
+    if (!res.ok) { setRescheduleErr(res.reason || "改期失敗"); return; }
+    setRescheduleTarget(null);
+    setRescheduleErr("");
+    await loadMemberCenter();
   }
 
   async function handleSaveProfile() {
@@ -206,6 +223,7 @@ export default function PublicBookingApp() {
     setProfile(null); setShowMine(false);
     setSelectedSlot(null); setSlotConfirmed(false); setDone(false);
     setGoogleInfo(null);
+    setCancelTarget(null); setRescheduleTarget(null);
     setName(""); setEmail(""); setPhone(""); setPassword(""); setGooglePhone("");
   }
 
@@ -300,49 +318,87 @@ export default function PublicBookingApp() {
   // ── ⑥ 會員中心（登入後：學籍/預約/個資/改密碼/進遊戲）──────────
   if (profile && showMine) {
     const acct = memberDoc?.accountType;
-    const isEnrolled = !!acct && acct !== "guest" && acct !== "kid"; // 正式生
-    const canChangePw = !!memberDoc?.hasPassword; // email＋密碼註冊的才有密碼
+    const isEnrolled = !!acct && acct !== "guest" && acct !== "kid";
+    const canChangePw = !!memberDoc?.hasPassword;
+    const historyBookings = allBookings.filter(b => b.status !== "confirmed");
+    const activeBookings = myBookings; // confirmed
+
     return (
       <div style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 14, marginTop: 24 }}>
+          {/* ── 頂欄 ── */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <button onClick={() => setShowMine(false)} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回預約</button>
             <span style={{ color: "white", fontSize: 16, fontWeight: 900 }}>會員中心</span>
             <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>登出</button>
           </div>
 
-          {/* 帳號 / 學籍狀態 */}
+          {/* ── 帳號 / 學籍狀態 ── */}
           <div style={cardStyle}>
-            <div style={{ color: "white", fontWeight: 900, fontSize: 16 }}>{memberDoc?.name || profile.name}</div>
-            <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginTop: 2 }}>{profile.email}</div>
-            <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, background: isEnrolled ? "rgba(34,197,94,.15)" : "rgba(251,191,36,.12)", border: `1px solid ${isEnrolled ? "rgba(34,197,94,.4)" : "rgba(251,191,36,.35)"}`, color: isEnrolled ? "#86efac" : "#fde68a", borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#2563eb)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: "white", flexShrink: 0 }}>
+                {(memberDoc?.name || profile.name || "?").charAt(0)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "white", fontWeight: 900, fontSize: 16 }}>{memberDoc?.name || profile.name}</div>
+                <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12, marginTop: 1 }}>{profile.email}</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, background: isEnrolled ? "rgba(34,197,94,.15)" : "rgba(251,191,36,.12)", border: `1px solid ${isEnrolled ? "rgba(34,197,94,.4)" : "rgba(251,191,36,.35)"}`, color: isEnrolled ? "#86efac" : "#fde68a", borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
               {isEnrolled ? "🎓 正式生" : "🆕 尚未入籍（訪客）"}
             </div>
+            {allBookings.length > 0 && (
+              <div style={{ display: "flex", gap: 12, marginTop: 10, fontSize: 12, color: "rgba(255,255,255,.5)" }}>
+                <span>📅 共 {allBookings.length} 筆預約</span>
+                <span>✅ {activeBookings.length} 筆進行中</span>
+              </div>
+            )}
           </div>
 
-          {/* 進入訪客學籍系統（遊戲）*/}
+          {/* ── 進入訪客學籍系統（遊戲）── */}
           <button onClick={enterGuestGame}
             style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: "linear-gradient(90deg,#7c3aed,#4f46e5)", color: "white", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
             🎮 進入訪客學籍系統（打怪／學籍）
           </button>
 
-          {/* 我的預約 */}
-          <div style={cardStyle}>
-            <div style={sectionTitle}>📋 我的預約</div>
-            {loadingMine ? <div style={hintStyle}>載入中…</div>
-              : myBookings.length === 0 ? <div style={hintStyle}>目前沒有預約</div>
-              : myBookings.slice().sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`)).map(b => (
-                <div key={b.id} style={{ background: "rgba(255,255,255,.05)", borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 8 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: "white", fontWeight: 700, fontSize: 13 }}>{b.date}　{b.startTime}-{b.endTime}</div>
-                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 2 }}>{PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}</div>
-                  </div>
-                  <button onClick={() => handleCancelBooking(b.id)} style={{ flexShrink: 0, background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", color: "#f87171", borderRadius: 10, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>取消</button>
-                </div>
-              ))}
+          {/* ── 預約 tabs ── */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setMemberTab("active")}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: memberTab === "active" ? "2px solid #7c3aed" : "2px solid rgba(255,255,255,.15)", background: memberTab === "active" ? "rgba(124,58,237,.2)" : "rgba(255,255,255,.05)", color: memberTab === "active" ? "#c4b5fd" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: 900, cursor: "pointer" }}>
+              📋 進行中{activeBookings.length ? `（${activeBookings.length}）` : ""}
+            </button>
+            <button onClick={() => setMemberTab("history")}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: memberTab === "history" ? "2px solid #7c3aed" : "2px solid rgba(255,255,255,.15)", background: memberTab === "history" ? "rgba(124,58,237,.2)" : "rgba(255,255,255,.05)", color: memberTab === "history" ? "#c4b5fd" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: 900, cursor: "pointer" }}>
+              🕐 歷史記錄{historyBookings.length ? `（${historyBookings.length}）` : ""}
+            </button>
           </div>
 
-          {/* 個人資料 */}
+          {/* ── 預約列表 ── */}
+          <div style={cardStyle}>
+            <div style={sectionTitle}>{memberTab === "active" ? "📋 進行中的預約" : "🕐 歷史記錄"}</div>
+            {loadingMine ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "20px 0" }}>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", border: "3px solid rgba(255,255,255,.1)", borderTopColor: "#7c3aed", animation: "spin 1s linear infinite" }} />
+              </div>
+            ) : memberTab === "active" ? (
+              activeBookings.length === 0 ? (
+                <div style={{ color: "rgba(255,255,255,.4)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>目前沒有進行中的預約</div>
+              ) : (
+                activeBookings.slice().sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`)).map(b => (
+                  renderBookingCard(b, true, { onReschedule: setRescheduleTarget, onCancel: setCancelTarget })
+                ))
+              )
+            ) : (
+              historyBookings.length === 0 ? (
+                <div style={{ color: "rgba(255,255,255,.4)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>尚無歷史記錄</div>
+              ) : (
+                historyBookings.slice().sort((a, b) => `${b.date}_${b.startTime}`.localeCompare(`${a.date}_${a.startTime}`)).map(b => (
+                  renderBookingCard(b, false, { onReschedule: setRescheduleTarget, onCancel: setCancelTarget })
+              )
+            )}
+          </div>
+
+          {/* ── 個人資料 ── */}
           <div style={cardStyle}>
             <div style={sectionTitle}>👤 個人資料</div>
             <label style={{ ...labelStyle, marginTop: 8 }}>姓名
@@ -355,7 +411,7 @@ export default function PublicBookingApp() {
             <button onClick={handleSaveProfile} disabled={savingProfile} style={{ ...smallBtn, marginTop: 10 }}>{savingProfile ? "儲存中…" : "儲存個人資料"}</button>
           </div>
 
-          {/* 修改密碼 */}
+          {/* ── 修改密碼 ── */}
           <div style={cardStyle}>
             <div style={sectionTitle}>🔒 修改密碼</div>
             {canChangePw ? (
@@ -370,6 +426,37 @@ export default function PublicBookingApp() {
             )}
           </div>
         </div>
+
+        {/* ── 取消確認 Modal ── */}
+        {cancelTarget && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setCancelTarget(null)}>
+            <div style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 360, width: "100%" }} onClick={e => e.stopPropagation()}>
+              <div style={{ color: "white", fontWeight: 900, fontSize: 16, marginBottom: 8 }}>確認取消預約</div>
+              <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, lineHeight: 1.7 }}>確定要取消 {cancelTarget.date} {cancelTarget.startTime} 的預約嗎？</div>
+              <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                <button onClick={() => setCancelTarget(null)} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "rgba(255,255,255,.6)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>返回</button>
+                <button onClick={() => handleCancelBooking(cancelTarget.id)} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#ef4444,#dc2626)", color: "white", fontSize: 14, fontWeight: 900, cursor: "pointer" }}>確認取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── 改期 Modal ── */}
+        {rescheduleTarget && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflowY: "auto" }} onClick={() => { setRescheduleTarget(null); setRescheduleErr(""); }}>
+            <div style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 420, width: "100%", margin: "auto" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <span style={{ color: "white", fontWeight: 900, fontSize: 16 }}>改期</span>
+                <button onClick={() => setRescheduleTarget(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 22, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginBottom: 16 }}>
+                原時段：{rescheduleTarget.date} {rescheduleTarget.startTime}-{rescheduleTarget.endTime}（{durationLabel(rescheduleTarget.durationHours || 1)}・{rescheduleTarget.participantCount || 1}人）
+              </div>
+              {rescheduleErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{rescheduleErr}</div>}
+              <ReschedulePicker booking={rescheduleTarget} onConfirm={handleReschedule} onCancel={() => { setRescheduleTarget(null); setRescheduleErr(""); }} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -599,6 +686,54 @@ const cardStyle    = { background: "rgba(255,255,255,.06)", borderRadius: 16, pa
 const sectionTitle = { color: "white", fontWeight: 900, fontSize: 15 };
 const hintStyle    = { color: "rgba(255,255,255,.5)", fontSize: 13, textAlign: "center", padding: "12px 0" };
 const smallBtn     = { width: "100%", padding: "11px 0", borderRadius: 12, border: "none", background: "linear-gradient(90deg,#fbbf24,#f59e0b)", color: "#7c2d12", fontWeight: 800, fontSize: 14, cursor: "pointer" };
+
+// ── 預約卡片渲染函式（模組層級，避免每次 render 重建元件）──
+function renderBookingCard(b, showActions, callbacks) {
+  const { onReschedule, onCancel } = callbacks;
+  const statusLabel = b.status === "cancelled" ? "已取消" : b.status === "confirmed" ? "已確認" : b.status;
+  return (
+    <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 12, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 8 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "white", fontWeight: 700, fontSize: 13 }}>{b.date}　{b.startTime}-{b.endTime}</span>
+          {b.status !== "confirmed" && (
+            <span style={{ fontSize: 11, color: "#f87171", fontWeight: 600, background: "rgba(239,68,68,.12)", borderRadius: 999, padding: "1px 8px" }}>{statusLabel}</span>
+          )}
+        </div>
+        <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 2 }}>
+          {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
+        </div>
+      </div>
+      {showActions && b.status === "confirmed" && (
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={() => onReschedule(b)}
+            style={{ background: "rgba(96,165,250,.15)", border: "1px solid rgba(96,165,250,.35)", color: "#93c5fd", borderRadius: 10, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>改期</button>
+          <button onClick={() => onCancel(b)}
+            style={{ background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", color: "#f87171", borderRadius: 10, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>取消</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 改期時段選擇器（模組層級元件）──
+function ReschedulePicker({ booking, onConfirm, onCancel }) {
+  const [slot, setSlot] = useState(null);
+  const durationHours = booking.durationHours || 1;
+  const participantCount = booking.participantCount || 1;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onCancel} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "rgba(255,255,255,.6)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>取消</button>
+        <button disabled={!slot} onClick={() => onConfirm(slot)}
+          style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "none", background: slot ? "linear-gradient(135deg,#7c3aed,#2563eb)" : "rgba(255,255,255,.1)", color: slot ? "white" : "rgba(255,255,255,.3)", fontSize: 14, fontWeight: 900, cursor: slot ? "pointer" : "default" }}>
+          確認改期
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function tabButtonStyle(active) {
   return {
