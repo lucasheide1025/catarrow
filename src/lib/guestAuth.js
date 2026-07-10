@@ -109,10 +109,21 @@ export async function registerGuestWithPassword(name, email, phone, password) {
   const trimmedEmail = (email || "").trim();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
-  const tmpApp = initializeApp(firebaseConfig, "pubbook_reg_" + Date.now());
-  const tmpAuth = getAuth(tmpApp);
+  // ⚠️ 2026-07-11 修復 Missing or insufficient permissions（見下方重大 bug 說明）
+  // 根因：舊版一律建立隔離臨時 App 做 Email/密碼認證，但 Firestore 查詢（getDocs/addDoc/updateDoc）
+  // 仍透過主 `db` 實例進行——主 Firebase App 上沒有任何已認證使用者，request.auth == null →
+  // 所有 Firestore 規則的 `isLoggedIn()` 全部失敗，導致「Missing or insufficient permissions」。
+  // 修法：只有當主 App「已有人登入」時才開隔離臨時 App（避免覆蓋教練/會員的登入狀態）；
+  // 當主 App 無人登入時（一般訪客第一次使用），直接在 main auth 上操作，讓 Firestore 查詢
+  // 能帶入正確的 auth context。與 resolveGuestSession 的匿名登入模式一致。
+  let tmpApp = null;
+  let workingAuth = auth;
+  if (auth.currentUser) {
+    tmpApp = initializeApp(firebaseConfig, "pubbook_reg_" + Date.now());
+    workingAuth = getAuth(tmpApp);
+  }
   try {
-    const cred = await createUserWithEmailAndPassword(tmpAuth, trimmedEmail, password);
+    const cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
     const uid = cred.user.uid;
     const contactHash = await sha256(normalizeContact(trimmedEmail));
 
@@ -145,7 +156,7 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     if (e?.code === "auth/invalid-email")        return { ok: false, reason: "Email 格式不正確" };
     return { ok: false, reason: e?.message || "註冊失敗，請稍後再試" };
   } finally {
-    deleteApp(tmpApp).catch(() => {});
+    if (tmpApp) deleteApp(tmpApp).catch(() => {});
   }
 }
 
@@ -153,10 +164,16 @@ export async function loginGuestWithPassword(email, password) {
   const trimmedEmail = (email || "").trim();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
-  const tmpApp = initializeApp(firebaseConfig, "pubbook_login_" + Date.now());
-  const tmpAuth = getAuth(tmpApp);
+  // ⚠️ 2026-07-11 修復 Missing or insufficient permissions：跟 registerGuestWithPassword
+  // 同一套根因與修法——只有當主 App 已有人登入時才開隔離臨時 App。
+  let tmpApp = null;
+  let workingAuth = auth;
+  if (auth.currentUser) {
+    tmpApp = initializeApp(firebaseConfig, "pubbook_login_" + Date.now());
+    workingAuth = getAuth(tmpApp);
+  }
   try {
-    const cred = await signInWithEmailAndPassword(tmpAuth, trimmedEmail, password);
+    const cred = await signInWithEmailAndPassword(workingAuth, trimmedEmail, password);
     // 密碼驗證通過後改用 contactHash 找回會員文件（不是靠這次登入拿到的 uid 反查）——
     // 理由同註冊那邊：這樣才能正確接續舊的匿名QR碼記錄，身份認定統一以 email 為準。
     const contactHash = await sha256(normalizeContact(trimmedEmail));
@@ -178,7 +195,7 @@ export async function loginGuestWithPassword(email, password) {
     }
     return { ok: false, reason: e?.message || "登入失敗，請稍後再試" };
   } finally {
-    deleteApp(tmpApp).catch(() => {});
+    if (tmpApp) deleteApp(tmpApp).catch(() => {});
   }
 }
 // ── Google 登入（訪客預約用）─────────────────────────────
@@ -186,13 +203,22 @@ export async function loginGuestWithPassword(email, password) {
 // 為什麼不順便存檔？因為預約還需要「電話」，Google 不會給電話，
 // 電話要留到 UI 那格讓客人自己填，所以存檔（含電話）放到步驟 3。
 export async function signInWithGoogle() {
-  // 一律開隔離的臨時 App：預約頁可能開在「教練已登入」的裝置上，
-  // 客人用自己的 Google 登入絕不能蓋掉教練的登入狀態（比照你密碼登入的做法）。
-  const tmpApp = initializeApp(firebaseConfig, "pubbook_google_" + Date.now());
-  const tmpAuth = getAuth(tmpApp);
+  // ⚠️ 2026-07-11 修復 Missing or insufficient permissions：跟 registerGuestWithPassword
+  // 同一套根因與修法——只有當主 App 已有人登入時才開隔離臨時 App。
+  // 舊版一律開臨時 App，但 Firestore 查詢（防呆的 getDocs、以及後續 saveGuestFromSocial）
+  // 全走主 `db` → request.auth == null → Missing or insufficient permissions。
+  // 使用 main auth 時，主 App 上不會覆蓋其他人的登入狀態（因為本來就沒人登入），
+  // 且後續 Firestore 查詢能帶入正確的 auth context。
+  const usedTempApp = !!auth.currentUser;
+  let tmpApp = null;
+  let workingAuth = auth;
+  if (usedTempApp) {
+    tmpApp = initializeApp(firebaseConfig, "pubbook_google_" + Date.now());
+    workingAuth = getAuth(tmpApp);
+  }
   try {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(tmpAuth, provider);
+    const result = await signInWithPopup(workingAuth, provider);
     const email = (result.user.email || "").trim();
     const name  = result.user.displayName || "";
     const uid   = result.user.uid;
@@ -213,13 +239,13 @@ export async function signInWithGoogle() {
       }
     } catch { /* 查詢失敗（如未登入無 list 權限）就放行，不擋一般新客 */ }
 
-    return { ok: true, email, name, uid };
+    return { ok: true, email, name, uid, usedTempApp };
   } catch (e) {
     if (e?.code === "auth/popup-closed-by-user") return { ok: false, reason: "已取消 Google 登入" };
     if (e?.code === "auth/popup-blocked")        return { ok: false, reason: "瀏覽器擋了登入視窗，請允許彈出視窗後再試" };
     return { ok: false, reason: e?.message || "Google 登入失敗，請稍後再試" };
   } finally {
-    deleteApp(tmpApp).catch(() => {});
+    if (tmpApp) deleteApp(tmpApp).catch(() => {});
   }
 }
 
@@ -228,7 +254,14 @@ export async function signInWithGoogle() {
 // 身份一律以 email 為準（算 contactHash 找回舊記錄），跟密碼註冊/登入同一套邏輯，
 // 所以同一個 email 不管用密碼還是 Google 進來，都會接到「同一筆」members 文件。
 // 這支只碰 Firestore、不碰 Auth，所以不用像 signInWithGoogle 那樣開隔離臨時 App。
-export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google" }) {
+//
+// ⚠️ 2026-07-11 修復 Missing or insufficient permissions：
+//   usedTempApp 由 signInWithGoogle() 回傳，表示這次 Google 登入是否走了隔離臨時 App。
+//   • usedTempApp=true（有人登入中）：不寫 uid 到 Firestore（同舊版 socialUid 邏輯，避免
+//     教練的 Google UID 被寫進訪客文件造成 useAuth 混淆，2026-07-11 事件）。
+//   • usedTempApp=false（主 App 無人登入）：會寫 uid，因為這時 uid 是真正的訪客 Google UID，
+//     而且 Firestore 規則的 guest/kid create 分支需要 uid == request.auth.uid 才會放行。
+export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google", usedTempApp = true }) {
   const trimmedEmail = (email || "").trim();
   if (!trimmedEmail)           return { ok: false, reason: "缺少 Email" };
   if (!phone || !phone.trim()) return { ok: false, reason: "請留下電話，方便有狀況時聯絡你" };
@@ -247,21 +280,29 @@ export async function saveGuestFromSocial({ name, email, phone, uid, provider = 
     //   Google 帳號測預約登入，signInWithGoogle 拿到的就是教練的 uid；一旦寫進訪客文件，
     //   useAuth 會同時撈到教練文件與這筆訪客文件 → 教練帳號讀不到（2026-07-11 踩過）。
     //   訪客身份本來就靠 contactHash + sessionStorage，不需要這個 uid；改存 socialUid 當純參考。
+    //   2026-07-11 補充：這條規則只適用 usedTempApp=true（有人登入中避免混淆）；
+    //   usedTempApp=false 時（主 App 無人，uid 是真的訪客 Google UID），
+    //   必須寫 uid 才能通過 firestore.rules 的 guest/kid create 分支。
     if (!snap.empty) {
       const existing = snap.docs[0];
-      await updateDoc(existing.ref, {
+      const patch = {
         socialUid: uid || null, phone: phone.trim(), socialProvider: provider, lastLoginAt: serverTimestamp(),
-      });
+      };
+      if (!usedTempApp) patch.uid = uid;
+      await updateDoc(existing.ref, patch);
       return { ok: true, id: existing.id, ...existing.data(), phone: phone.trim(), isNew: false };
     }
 
-    const ref = await addDoc(collection(db, C_MEMBERS), {
+    const docData = {
       accountType: "guest", contactHash, contactRaw: trimmedEmail,
       sessionSourceId: null, socialUid: uid || null, socialProvider: provider,
       name: (name || "").trim() || "訪客射手",
       email: trimmedEmail, phone: phone.trim(),
       coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
-    });
+    };
+    // 無臨時 App 時（主 App 無人），寫入真實 uid 以通過 firestore.rules 的 guest/kid create 檢查
+    if (!usedTempApp) docData.uid = uid;
+    const ref = await addDoc(collection(db, C_MEMBERS), docData);
     return { ok: true, id: ref.id, accountType: "guest",
       name: (name || "").trim() || "訪客射手", email: trimmedEmail, phone: phone.trim(),
       coins: 0, isNew: true };

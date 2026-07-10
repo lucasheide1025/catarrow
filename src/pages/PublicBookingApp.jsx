@@ -20,7 +20,7 @@ import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
 import ParticipantCountPicker from "../components/booking/ParticipantCountPicker";
-import ConfirmBookingModal from "../components/booking/ConfirmBookingModal";
+
 
 const SESSION_KEY = "public_booking_profile";
 
@@ -72,6 +72,7 @@ export default function PublicBookingApp() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
+  const [pendingAuthSubmit, setPendingAuthSubmit] = useState(false); // 未登入時按送出 → 先登入，登入後自動送出
 
   // ⑤ 會員中心（登入後：預約查詢/取消、個資、改密碼、學籍、進遊戲）
   const [showMine, setShowMine]       = useState(false);
@@ -120,7 +121,7 @@ export default function PublicBookingApp() {
     const profileObj = { id: res.id, name: res.name || name.trim() || "訪客射手", email: res.email || email.trim(), phone: res.phone || phone.trim() };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(profileObj));
     setProfile(profileObj);
-    setShowLogin(false); // 前台登入入口用完關掉
+    setShowLogin(false);
     // 找回舊記錄且已經有預約紀錄 → 預設取消勾選「第一次來體驗」，仍可自己改
     setIsNewStudent(!(res.bookingStats?.totalBookings > 0));
   }
@@ -132,7 +133,7 @@ export default function PublicBookingApp() {
     const res = await signInWithGoogle();
     setAuthBusy(false);
     if (!res.ok) { setAuthErr(res.reason || "Google 登入失敗"); return; }
-    setGoogleInfo({ email: res.email, name: res.name, uid: res.uid });
+    setGoogleInfo({ email: res.email, name: res.name, uid: res.uid, usedTempApp: res.usedTempApp });
     setGooglePhone("");
   }
 
@@ -143,6 +144,7 @@ export default function PublicBookingApp() {
     const res = await saveGuestFromSocial({
       name: googleInfo.name, email: googleInfo.email,
       phone: googlePhone, uid: googleInfo.uid,
+      usedTempApp: googleInfo.usedTempApp,
     });
     setAuthBusy(false);
     if (!res.ok) { setAuthErr(res.reason || "登入失敗"); return; }
@@ -207,6 +209,16 @@ export default function PublicBookingApp() {
     setName(""); setEmail(""); setPhone(""); setPassword(""); setGooglePhone("");
   }
 
+  async function handleSubmitOrAuth() {
+    if (!selectedSlot) return;
+    if (!profile) {
+      setPendingAuthSubmit(true);
+      setShowLogin(true);
+      return;
+    }
+    await handleSubmitBooking();
+  }
+
   async function handleSubmitBooking() {
     if (!selectedSlot || !profile) return;
     setSubmitErr("");
@@ -230,12 +242,12 @@ export default function PublicBookingApp() {
     setDone(true);
   }
 
-  // 登入/註冊成功（profile 剛被設定）且時段已經確認過 → 直接送出，不用使用者再多按一次
+  // 登入/註冊成功（profile 剛被設定）且 pendingAuthSubmit == true → 直接送出，不用使用者再多按一次
   useEffect(() => {
-    if (profile && slotConfirmed && selectedSlot && !submitting && !done) {
+    if (profile && pendingAuthSubmit && selectedSlot && !submitting && !done) {
       handleSubmitBooking();
     }
-  }, [profile]); // eslint-disable-line
+  }, [profile, pendingAuthSubmit, selectedSlot, submitting, done]);
 
   const wrapStyle = { minHeight: "100vh", background: "#0f0a1e", fontFamily: "sans-serif", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 16px" };
 
@@ -266,7 +278,26 @@ export default function PublicBookingApp() {
     );
   }
 
-  // ── ⑤ 會員中心（登入後：學籍/預約/個資/改密碼/進遊戲）──────────
+  // ── ⑤ 送出中或錯誤（蓋在 main section 上方，由 slotConfirmed 或 pendingAuthSubmit 觸發）──
+  if (profile && (submitting || submitErr)) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 60 }}>
+          {submitErr ? (
+            <>
+              <div style={{ color: "#f87171", fontSize: 14, fontWeight: 700, textAlign: "center" }}>{submitErr}</div>
+              <button onClick={() => { setSubmitErr(""); handleSubmitOrAuth(); }} style={submitButtonStyle(false)}>重試</button>
+              <button onClick={() => { setSelectedSlot(null); setSubmitErr(""); setPendingAuthSubmit(false); }} style={submitButtonStyle(false)}>重新選時段</button>
+            </>
+          ) : (
+            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14 }}>送出中…</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── ⑥ 會員中心（登入後：學籍/預約/個資/改密碼/進遊戲）──────────
   if (profile && showMine) {
     const acct = memberDoc?.accountType;
     const isEnrolled = !!acct && acct !== "guest" && acct !== "kid"; // 正式生
@@ -343,21 +374,21 @@ export default function PublicBookingApp() {
     );
   }
 
-  // ── ③ 時段已確認、或按了前台「登入」→ 顯示身份表單 ─────────────
-  if ((slotConfirmed || showLogin) && !profile) {
+  // ── ③ showLogin（含前台登入入口 或是 按了送出但未登入）→ 顯示身份表單 ─────────────
+  if (showLogin && !profile) {
     return (
       <div style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
-          {slotConfirmed && selectedSlot ? (
+          {selectedSlot ? (
             <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
               已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}・{participantCount}人
-              <button onClick={() => { setSlotConfirmed(false); setSelectedSlot(null); }} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
+              <button onClick={() => { setPendingAuthSubmit(false); setSelectedSlot(null); }} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
                 重新選時段
               </button>
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <button onClick={() => { setShowLogin(false); setAuthErr(""); setGoogleInfo(null); }} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回</button>
+              <button onClick={() => { setShowLogin(false); setPendingAuthSubmit(false); setAuthErr(""); setGoogleInfo(null); }} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回</button>
               <span style={{ color: "white", fontSize: 16, fontWeight: 900 }}>登入</span>
               <span style={{ width: 40 }} />
             </div>
@@ -425,23 +456,7 @@ export default function PublicBookingApp() {
     );
   }
 
-  // ── 已登入但還在等自動送出（正常情況下這個畫面只會閃現一下）──
-  if (profile && slotConfirmed && (submitting || submitErr)) {
-    return (
-      <div style={wrapStyle}>
-        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 60 }}>
-          {submitErr ? (
-            <>
-              <div style={{ color: "#f87171", fontSize: 14, fontWeight: 700, textAlign: "center" }}>{submitErr}</div>
-              <button onClick={() => { setSlotConfirmed(false); setSelectedSlot(null); setSubmitErr(""); }} style={submitButtonStyle(false)}>重新選時段</button>
-            </>
-          ) : (
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14 }}>送出中…</div>
-          )}
-        </div>
-      </div>
-    );
-  }
+
 
   // ── ① 選方案+人數+時段（尚未選好時段的畫面）──
   return (
@@ -541,14 +556,26 @@ export default function PublicBookingApp() {
           <textarea value={intakeRemark} onChange={e => setIntakeRemark(e.target.value)} rows={2}
             placeholder="有任何特殊需求可以在這裡告訴我們" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
         </label>
-      </div>
 
-      {selectedSlot && !slotConfirmed && (
-        <ConfirmBookingModal slot={selectedSlot} planType={planType} durationHours={durationHours}
-          participantCount={participantCount} confirmLabel="確認，下一步"
-          onConfirm={() => setSlotConfirmed(true)}
-          onCancel={() => setSelectedSlot(null)} />
-      )}
+        {/* ── 已選時段 + 送出預約按鈕 ── */}
+        {selectedSlot && (
+          <>
+            <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ color: "#93c5fd", fontWeight: 700, fontSize: 14 }}>
+                🗓️ {selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
+              </div>
+              <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12.5, marginTop: 5, lineHeight: 1.6 }}>
+                {PLAN_TYPES.find(p => p.id === planType)?.label || planType}・{participantCount}人
+                <br />NT$ {totalPrice(planType, durationHours, participantCount)}
+              </div>
+            </div>
+
+            <button onClick={handleSubmitOrAuth} disabled={submitting} style={submitButtonStyle(submitting)}>
+              {submitting ? "送出中…" : profile ? "🚀 送出預約" : "繼續 → 登入後送出預約"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
