@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -15,6 +15,19 @@ export default function LoginPage() {
       await login(email, password);
     } catch (e) {
       setErr("帳號或密碼錯誤");
+    }
+    setLoading(false);
+  }
+
+  async function handleGoogleLogin() {
+    setErr("");
+    setLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (e) {
+      if (e?.code === "auth/popup-closed-by-user") setErr("已取消 Google 登入");
+      else if (e?.code === "auth/popup-blocked")   setErr("瀏覽器擋了登入視窗，請允許彈出視窗後再試");
+      else setErr("Google 登入失敗，請稍後再試");
     }
     setLoading(false);
   }
@@ -78,6 +91,20 @@ export default function LoginPage() {
             }}
           >
             {loading ? "登入中…" : "⚔️ 進入射箭場"}
+          </button>
+
+          <div style={{ textAlign:"center", color:"rgba(148,163,184,0.6)", fontSize:"12px", margin:"2px 0" }}>或</div>
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            style={{
+              padding:"12px", borderRadius:"12px", border:"1px solid rgba(255,255,255,0.25)",
+              fontSize:"14px", fontWeight:"800", cursor: loading ? "default" : "pointer",
+              background:"#fff", color:"#1f2937",
+              display:"flex", alignItems:"center", justifyContent:"center", gap:"8px",
+            }}
+          >
+            <span style={{ fontWeight:900, color:"#4285F4" }}>G</span> 使用 Google 登入
           </button>
         </div>
       </div>

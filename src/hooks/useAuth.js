@@ -1,6 +1,6 @@
 // src/hooks/useAuth.js
 import { useState, useEffect, createContext, useContext } from "react";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -102,12 +102,20 @@ export function AuthProvider({ children }) {
     return cred.user;
   }
 
+  // 用 Google 登入主 App（教練/會員帳號若是 Google 帳號用這個）。登入後 onAuthStateChanged
+  // 會照常用 uid 去 members 找對應文件，找不到就等於沒有這個帳號。
+  async function loginWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
+  }
+
   async function logout() {
     await signOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, logout }}>
+    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );
