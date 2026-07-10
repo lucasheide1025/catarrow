@@ -29,6 +29,7 @@ export async function createTeamExpeditionRoom({
     const settings = normalizeDungeonRunSettings(dungeon);
     const member = {
       name: hostName,
+      accountType: memberData?.accountType || "official",
       hp: memberData?.hp ?? 500,
       maxHP: memberData?.maxHP ?? 500,
       atk: memberData?.atk ?? 10,
@@ -74,6 +75,7 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
     const roomDoc = snap.docs[0];
     const member = {
       name: memberName,
+      accountType: memberData?.accountType || "official",
       hp: memberData?.hp ?? 500,
       maxHP: memberData?.maxHP ?? 500,
       atk: memberData?.atk ?? 10,
@@ -403,12 +405,17 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
       const chestSnap = await tx.get(chestRef);
       if (!memberSnap.exists()) throw new Error("找不到會員資料");
 
+      const memberData = data.members?.[memberId] || {};
+      const isGuestMember = ["guest", "kid"].includes(memberData.accountType);
       const rewards = data.expeditionResult.rewards;
-      const totalCoins = (rewards.coins || 0)
+      const rawCoins = (rewards.coins || 0)
         + (data.expeditionResult.loot?.bonusCoins || 0);
-      const totalArrowDew = (rewards.arrowDew || 0)
-        + (data.expeditionResult.loot?.bonusArrowDew || 0);
-      const chests = cloneExpeditionChests(
+      const totalCoins = isGuestMember
+        ? Math.min(rawCoins, Math.max(20, (data.dungeonDifficulty || 1) * 50))
+        : rawCoins;
+      const totalArrowDew = isGuestMember ? 0 : ((rewards.arrowDew || 0)
+        + (data.expeditionResult.loot?.bonusArrowDew || 0));
+      const chests = isGuestMember ? [] : cloneExpeditionChests(
         data.expeditionResult.loot?.chests || [],
         memberId,
       );
@@ -419,7 +426,7 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
         ...record,
         coins: totalCoins,
         arrowDew: totalArrowDew,
-        archerXP: rewards.archerXP || 0,
+        archerXP: isGuestMember ? 0 : (rewards.archerXP || 0),
       };
       const nextClaims = { ...claims, [memberId]: true };
       const activeIds = Object.entries(data.members || {})
@@ -431,7 +438,7 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
         ...(totalArrowDew > 0
           ? { "village.resources.arrowdew": increment(totalArrowDew) }
           : {}),
-        ...(rewards.archerXP > 0 ? { archerXP: increment(rewards.archerXP) } : {}),
+        ...(!isGuestMember && rewards.archerXP > 0 ? { archerXP: increment(rewards.archerXP) } : {}),
         expeditionRecords: [newRecord, ...previousRecords].slice(0, 20),
       });
       if (chests.length > 0) {

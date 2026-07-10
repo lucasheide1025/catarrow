@@ -126,7 +126,7 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
 }
 
 // ── 戰鬥房間包裝元件（監聽戰況 + 清理房間）───────────────
-function TeamBattleRoom({ roomId, isHost, onDone, onAbandon }) {
+function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile }) {
   const [loading, setLoading] = useState(true);
   const [battleDone, setBattleDone] = useState(false);
   const terminalHandledRef = useRef(false);
@@ -196,6 +196,7 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon }) {
       roomId={roomId}
       isMapMode={true}
       expeditionMode={true}
+      guestProfile={guestProfile}
       onReturnToMap={() => {}}
       onExit={onAbandon}
     />
@@ -215,6 +216,7 @@ export default function TeamExpeditionBattle({
 }) {
   const myId = profile?.id;
   const myName = profile?.name || "射手";
+  const isGuestMode = ["guest", "kid"].includes(profile?.accountType);
 
   // ── 訂閱組隊房間 ──────────────────────────────────────────
   const [teamRoom, setTeamRoom] = useState(null);
@@ -648,7 +650,7 @@ export default function TeamExpeditionBattle({
       }
 
       // ── 寶箱王擊殺加碼：每人各自領取（見寶箱族擴充任務，避免跨人寫入權限問題）──
-      if (wonLast && dungeonFamily === "treasure" && myId) {
+      if (!isGuestMode && wonLast && dungeonFamily === "treasure" && myId) {
         addCoins(myId, 300 + dungeonDifficulty * 100).catch(() => {});
         const legendaryPool = MATERIALS.filter(m => m.rarity === "legendary");
         const kingMaterials = Array.from({ length: 3 }, () =>
@@ -661,7 +663,7 @@ export default function TeamExpeditionBattle({
       }
 
       // ── 遠征首殺判定 ────────────────────────────────────────
-      if (wonLast) {
+      if (!isGuestMode && wonLast) {
         const expeditionKey = `expedition_${dungeonFamily}_${dungeonDifficulty}`;
         const teamNames = Object.values(teamRoom?.members || {})
           .filter(Boolean).map(m => m.name).filter(Boolean);
@@ -678,7 +680,7 @@ export default function TeamExpeditionBattle({
 
       onComplete?.();
       return true;
-    }, [result, myId, dungeonDifficulty, floorsCleared, wonLast, dungeonFamily, dungeonIsHidden, isHost, teamRoomId, myName, onComplete]);
+    }, [result, myId, dungeonDifficulty, floorsCleared, wonLast, dungeonFamily, dungeonIsHidden, isHost, teamRoomId, myName, onComplete, isGuestMode]);
 
   // ── 放棄 ──────────────────────────────────────────────────
   const handleAbandon = useCallback(async () => {
@@ -877,6 +879,7 @@ export default function TeamExpeditionBattle({
         isHost={isHost}
         onDone={isHost ? handleFloorDone : undefined}
         onAbandon={handleAbandon}
+        guestProfile={isGuestMode ? profile : undefined}
       />
     );
   }

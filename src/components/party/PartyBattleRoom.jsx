@@ -11,7 +11,7 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing, setPartyMemberRole,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed, addRoundArrows } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -145,9 +145,10 @@ function getPartyMvpId(log) {
 // guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile.id
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
-  const profile = guestOverride ? null : authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catATK } = useCatCompanion();
+  const profile = guestOverride || authProfile;
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catATK } = useCatCompanion(guestOverride || null);
   const myId = guestOverride?.id || authProfile?.id;
+  const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
   const [targetMode,      setTargetMode]      = useState(() => getBattleInputMode() === "target");
@@ -202,6 +203,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [showShareCard,   setShowShareCard]   = useState(false);
   const [guestLoot,       setGuestLoot]       = useState(null);
   const [guestAlreadyWon, setGuestAlreadyWon] = useState(false);
+  const [guestPartyReward, setGuestPartyReward] = useState(null);
   const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
   const [previewReward,   setPreviewReward]   = useState(null); // 領取前預覽
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
@@ -248,9 +250,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
   useEffect(() => {
-    if (!myId || myId.startsWith("guest")) return;
+    if (!myId || isGuestMode) return;
     return subscribeCardCollection(myId, data => { cardCollRef.current = data; });
-  }, [myId]); // eslint-disable-line
+  }, [myId, isGuestMode]); // eslint-disable-line
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
@@ -270,6 +272,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setSelectedPotions([]);
     setGuestLoot(null);
     setGuestAlreadyWon(false);
+    setGuestPartyReward(null);
     stopReveal();
     setShowFullLog(false);
     setClaimResult(null);
@@ -281,7 +284,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }, [room?.status]); // eslint-disable-line
 
   useEffect(() => {
-    if (!room || !myId || myId.startsWith("guest") || lossPracticeRecordedRef.current) return;
+    if (!room || !myId || isGuestMode || lossPracticeRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
     const { rounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
     if (!rounds.length) return;
@@ -309,7 +312,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }, myId).catch(() => {
       lossPracticeRecordedRef.current = false;
     });
-  }, [room?.status]); // eslint-disable-line
+  }, [room?.status, isGuestMode]); // eslint-disable-line
 
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
   useEffect(() => {
@@ -323,9 +326,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
   useEffect(() => {
-    if (!myId || !isHost || myId.startsWith("guest")) return;
+    if (!myId || !isHost || isGuestMode) return;
     checkPartyBattleLimit(myId).then(setPartyBattleLeft);
-  }, [myId, isHost]); // eslint-disable-line
+  }, [myId, isHost, isGuestMode]); // eslint-disable-line
 
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
@@ -339,11 +342,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
     partyRecordedRef.current = true;
-    if (!myId.startsWith("guest") && isHost) {
+    if (!isGuestMode && isHost) {
       recordPartyBattleSession(myId).catch(() => {});
       setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
     }
-  }, [room?.status]); // eslint-disable-line
+  }, [room?.status, isGuestMode]); // eslint-disable-line
 
   // 訂閱藥水庫存
   useEffect(() => {
@@ -389,7 +392,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!room || !isHost || room.result !== "win" || rewardStoredRef.current) return;
     if (room.rewardPending) return; // 已存過
     rewardStoredRef.current = true;
-    const memberIds = Object.keys(room.members || {});
+    const memberIds = Object.entries(room.members || {}).map(([id, member]) => ({
+      id,
+      accountType: member.accountType || "official",
+    }));
     storeBattleRewards(roomId, memberIds, room.monster, room.mode || "student")
       .then(res => { if (!res?.ok) rewardStoredRef.current = false; })
       .catch(()  => { rewardStoredRef.current = false; });
@@ -501,7 +507,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 組隊敗場 → 記錄怪物圖鑑（勝場由 handleClaim 負責）
   useEffect(() => {
-    if (!room || !myId || myId.startsWith("guest") || dexRecordedRef.current) return;
+    if (!room || !myId || isGuestMode || dexRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
     if (!room.monster?.id) return;
     dexRecordedRef.current = true;
@@ -510,12 +516,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return s + (p?.dmg || 0);
     }, 0);
     recordBattleDex(myId, room.monster.id, "lose", myDmg).catch(() => {});
-  }, [room?.status]); // eslint-disable-line
+  }, [room?.status, isGuestMode]); // eslint-disable-line
 
-  // 訪客組隊勝利：抽取紀念獎勵（sessionStorage 確保每位訪客只領一次）
+  // 訪客/兒童組隊勝利：給低階持久獎勵，正式寶箱/排行/XP 仍不開放。
   useEffect(() => {
     if (!room || room.status !== "completed" || room.result !== "win") return;
-    if (!myId?.startsWith("guest")) return;
+    if (!isGuestMode || !myId || guestPartyReward) return;
     const already = sessionStorage.getItem("guest_won_once");
     if (already) {
       setGuestAlreadyWon(true);
@@ -524,7 +530,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       setGuestLoot(loot);
       sessionStorage.setItem("guest_won_once", "1");
     }
-  }, [room?.status, room?.result]); // eslint-disable-line
+    const coins = rollCoins(room.monster?.tier || "common", "novice");
+    const material = rollMaterialDrop(room.monster);
+    const myDmg = (room.log || []).reduce((s, entry) => {
+      const p = (entry.playerLog || []).find(p => p.id === myId);
+      return s + (p?.dmg || 0);
+    }, 0);
+    const { rounds } = getPartyPracticeData(room.log, myId, targetFmt);
+    const scoreList = rounds.flat();
+    setGuestPartyReward({ coins, material });
+    addCoins(myId, coins).catch(() => {});
+    if (material) addMaterials(myId, [{ id: material.id, name: material.name || material.id }]).catch(() => {});
+    recordGuestBattleStats(myId, {
+      mode: "party",
+      result: "win",
+      arrows: scoreList.length,
+      score: scoreList.reduce((sum, score) => sum + Number(score || 0), 0),
+      damage: myDmg,
+      target: room.monster?.name || "組隊怪物",
+    }).catch(() => {});
+  }, [room?.status, room?.result, isGuestMode, myId, guestPartyReward]); // eslint-disable-line
 
   // 提早計算（room 可能為 null，用 ?. 保安全，讓 useEffect 位於 early return 之前）
   const myChests  = room?.rewardPending?.[myId] || [];
@@ -591,7 +616,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const rearCount  = memberList.length - frontCount;
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
-  const isGuestPlayer = myId?.startsWith("guest");
+  const isGuestPlayer = isGuestMode || ["guest", "kid"].includes(me.accountType);
 
   function addArrow(label, landing) {
     if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady) return;
@@ -682,17 +707,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const monsterTier = room.monster?.tier || "common";
       const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
       const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
-      const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg);
+      const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg, { isGuest: isGuestPlayer });
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
-      addCoins(myId, coins).catch(() => {});
-      addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
-      if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
-      if (card)     addMonsterCard(myId, card).catch(() => {});
-      if (!dexRecordedRef.current && room.monster?.id) {
+      if (!isGuestPlayer) {
+        addCoins(myId, coins).catch(() => {});
+        addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
+        if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
+        if (card)     addMonsterCard(myId, card).catch(() => {});
+      }
+      if (!isGuestPlayer && !dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
-      if (myId && !myId.startsWith("guest")) {
+      if (myId && !isGuestPlayer) {
         const { rounds:practiceRounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
@@ -1278,28 +1305,51 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {won && (
           <div className="flex flex-col gap-3">
             {isGuestPlayer ? (
-              /* 訪客：無背包，直接顯示紀念獎勵 */
-              guestAlreadyWon ? (
-                <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-4 text-center">
-                  <div className="text-2xl mb-2">🎮</div>
-                  <div className="text-slate-300 font-black text-sm">感謝體驗組隊打怪！</div>
-                  <div className="text-slate-500 text-xs mt-1">此次不提供額外獎勵（每位訪客限領一次）</div>
-                </div>
-              ) : guestLoot ? (
-                <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
-                  <div className="text-yellow-200 font-black text-sm text-center">🎁 體驗獎勵</div>
-                  <div className="flex flex-col items-center gap-2 py-2">
-                    <span className="text-5xl">{guestLoot.icon}</span>
-                    <span className="text-white font-black text-base">{guestLoot.name}</span>
-                    <span className="text-slate-300 text-xs text-center px-4">{guestLoot.desc}</span>
+              <div className="flex flex-col gap-3">
+                {guestPartyReward ? (
+                  <div className="bg-slate-800/70 border border-slate-600 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="text-slate-100 font-black text-sm text-center">🎒 本場獎勵已存入體驗角色</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl px-3 py-2 bg-amber-500/15 border border-amber-400/30 text-center">
+                        <div className="text-[10px] text-amber-200 font-bold">金幣</div>
+                        <div className="text-amber-300 font-black text-lg">+{guestPartyReward.coins}</div>
+                      </div>
+                      {guestPartyReward.material ? (
+                        <div className="rounded-xl px-3 py-2 bg-emerald-500/10 border border-emerald-400/25 text-center">
+                          <div className="text-[10px] text-emerald-200 font-bold">材料</div>
+                          <div className="text-emerald-100 font-black text-sm truncate">+1 {guestPartyReward.material.name || guestPartyReward.material.id}</div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-center">
+                          <div className="text-[10px] text-slate-400 font-bold">材料</div>
+                          <div className="text-slate-300 font-black text-sm">未掉落</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="bg-yellow-500/20 rounded-xl p-2 text-center text-yellow-300 text-xs font-bold">
-                    📸 請截圖後出示給教練領取！
+                ) : (
+                  <div className="text-slate-400 text-xs text-center animate-pulse">計算獎勵中…</div>
+                )}
+                {guestAlreadyWon ? (
+                  <div className="bg-slate-700/50 border border-slate-600 rounded-2xl p-4 text-center">
+                    <div className="text-2xl mb-2">🎮</div>
+                    <div className="text-slate-300 font-black text-sm">感謝體驗組隊打怪！</div>
+                    <div className="text-slate-500 text-xs mt-1">實體紀念獎勵每位訪客限領一次</div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-slate-400 text-xs text-center animate-pulse">計算獎勵中…</div>
-              )
+                ) : guestLoot ? (
+                  <div className="bg-yellow-900/50 border-2 border-yellow-500 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="text-yellow-200 font-black text-sm text-center">🎁 體驗紀念獎勵</div>
+                    <div className="flex flex-col items-center gap-2 py-2">
+                      <span className="text-5xl">{guestLoot.icon}</span>
+                      <span className="text-white font-black text-base">{guestLoot.name}</span>
+                      <span className="text-slate-300 text-xs text-center px-4">{guestLoot.desc}</span>
+                    </div>
+                    <div className="bg-yellow-500/20 rounded-xl p-2 text-center text-yellow-300 text-xs font-bold">
+                      📸 請截圖後出示給教練領取！
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
               /* 一般會員：正常寶箱領取流程 */
               <>
@@ -1406,7 +1456,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   isHost ? (
                     <button onClick={() => {
                       rewardStoredRef.current = false;
-                      const memberIds = Object.keys(room.members || {});
+                      const memberIds = Object.entries(room.members || {}).map(([id, member]) => ({
+                        id,
+                        accountType: member.accountType || "official",
+                      }));
                       storeBattleRewards(roomId, memberIds, room.monster, room.mode || "student").catch(() => {});
                     }} className="w-full py-2 bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-xs font-black rounded-xl active:opacity-70">
                       🔄 發放獎勵（點此重試）

@@ -15,7 +15,7 @@ import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -182,7 +182,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §2（isGuest/guestProfile 明確傳遞慣例）
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName } = useCatCompanion();
+  const isGuestMode = !!guestProfile || ["guest", "kid"].includes(profile?.accountType);
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName } = useCatCompanion(isGuestMode ? profile : null);
   const myId        = profile?.id;
   const bondSavedRef         = useRef(false);
   const battleBgRef          = useRef(null);
@@ -216,7 +217,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
     onSubmitSuccess: (submittedArrows) => {
-      if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
+      if (!isGuestMode && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
         addRoundArrows(myId, submittedArrows.length).catch(() => {});
       }
     },
@@ -394,23 +395,23 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // ── 訂閱玩家真正的藥水庫存（room.members.{id}.items 從來沒有被寫入過，是死欄位，
   //    比照 PartyBattleRoom.jsx 的正確寫法直接訂閱 potionInventory）─────────────
   useEffect(() => {
-    if (!myId || myId.startsWith("guest")) return;
+    if (!myId || isGuestMode) return;
     const unsub = subscribePotions(myId, setPotionInv);
     return unsub;
-  }, [myId]);
+  }, [myId, isGuestMode]);
 
   // ── 訂閱卡片收藏（只用來顯示世界王卡徽章，純視覺）───────────
   const [myCardColl, setMyCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
   useEffect(() => {
-    if (!myId || myId.startsWith("guest")) return;
+    if (!myId || isGuestMode) return;
     return subscribeCardCollection(myId, setMyCardColl);
-  }, [myId]);
+  }, [myId, isGuestMode]);
 
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
   // ── 重整後同步：如果 Firestore 顯示已送出但本地未送出，重置 ready 讓玩家重來 ─
   useEffect(() => {
-    if (!room || !myId || myId.startsWith("guest")) return;
+    if (!room || !myId || isGuestMode) return;
     if (submitted) return;
     if (readySyncedRef.current) return;
     if (me.ready && room.status === "active") {
@@ -424,7 +425,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         )
       );
     }
-  }, [room?.status, submitted]); // eslint-disable-line
+  }, [room?.status, submitted, isGuestMode]); // eslint-disable-line
 
   // ── 進入新回合時觸發貓貓補助提示（整個回合只一次）────────────
   useEffect(() => {
@@ -517,7 +518,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
     setPotionUsedThisRound(true);
     const pot = getPotion(lv.id);
-    if (pot && myId && !myId.startsWith("guest")) {
+    if (pot && myId && !isGuestMode) {
       usePotions(myId, [lv.id]).catch(() => {});
     }
     setBottomTab("score");
@@ -531,7 +532,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     sfxCast();
     setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
     setPotionUsedThisRound(true);
-    if (myId && !myId.startsWith("guest")) {
+    if (myId && !isGuestMode) {
       usePotions(myId, [p.id]).catch(() => {});
     }
     addArrow(p.id);
@@ -595,7 +596,21 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       return;
     }
 
-    if (myId?.startsWith("guest")) {
+    if (isGuestMode) {
+      const { rounds:guestRounds } = getDungeonPracticeData(room.log, myId, targetFmt);
+      const guestScores = guestRounds.flat();
+      const guestDmg = (room.log || []).reduce((sum, entry) => {
+        const p = (entry.playerLog || []).find(player => player.id === myId);
+        return sum + (p?.dmg || 0);
+      }, 0);
+      recordGuestBattleStats(myId, {
+        mode: "dungeon",
+        result: room?.result || "done",
+        arrows: guestScores.length,
+        score: guestScores.reduce((sum, score) => sum + Number(score || 0), 0),
+        damage: guestDmg,
+        target: room.monster?.name || "地下城",
+      }).catch(() => {});
       // 訪客直接跳導航（訪客視為房主行為，不顯示等待畫面）
       if (isMapMode) {
         if (isBossRoom) { onReturnToMap?.(); }
@@ -611,7 +626,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
     // 自己的金幣/寶箱/素材/圖鑑（寶箱族彩蛋：金幣加成，見寶箱族擴充任務）
     const baseCoins = rollCoins(room?.monster?.tier || "common", 1) * (room?.monster?.family === "treasure" ? 3 : 1);
-    await claimDungeonReward(myId, baseCoins, goldMult);
+    await claimDungeonReward(myId, baseCoins, goldMult, { accountType: profile?.accountType || "official" });
     const memberChests = Array.from({ length: totalFloors }, (_, i) =>
       makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
     );
@@ -852,7 +867,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
             <button onClick={async () => {
               // 儲存失敗紀錄
-              if (myId && !myId.startsWith("guest")) {
+              if (myId && !isGuestMode) {
                 const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
                 if (practiceRounds.length > 0) {
                   const arrowCount = practiceRounds.flat().length;

@@ -263,29 +263,29 @@ export default function DungeonSelectionPanel({
         </button>
 
         {/* 組隊探索 */}
-        {!isGuest && (
-          <button onClick={() => onStartTeam({
-            ...dungeon,
-            boss,
-            arrowsPerRound,
-            targetFmt,
-          })}
-            className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
-            style={{
-              background:"rgba(139,92,246,0.10)",
-              borderColor:"rgba(139,92,246,0.25)",
-            }}>
-            <div className="flex items-center gap-4">
-              <div className="text-3xl">👥</div>
-              <div>
-                <div className="text-base font-black text-white">組隊探索</div>
-                <div className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
-                  建立房間邀請夥伴一起挑戰（最多 4 人）
-                </div>
+        <button onClick={() => onStartTeam({
+          ...dungeon,
+          boss,
+          arrowsPerRound,
+          targetFmt,
+        })}
+          className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
+          style={{
+            background:"rgba(139,92,246,0.10)",
+            borderColor:"rgba(139,92,246,0.25)",
+          }}>
+          <div className="flex items-center gap-4">
+            <div className="text-3xl">👥</div>
+            <div>
+              <div className="text-base font-black text-white">{isGuest ? "團康組隊探索" : "組隊探索"}</div>
+              <div className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
+                {isGuest
+                  ? "建立邀請碼，讓大家一起挑戰低階探索地下城"
+                  : "建立房間邀請夥伴一起挑戰（最多 8 人）"}
               </div>
             </div>
-          </button>
-        )}
+          </div>
+        </button>
       </div>
     </div>
   );

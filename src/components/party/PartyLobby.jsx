@@ -30,15 +30,16 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
+  const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
   const [partyLogs, setPartyLogs] = useState([]);
 
   useEffect(() => {
-    if (!myId || myId.startsWith("guest")) return;
+    if (!myId || isGuestMode) return;
     const unsub = subscribePracticeLogs(myId, logs =>
       setPartyLogs(logs.filter(l => l.source === "party")), 60
     );
     return unsub;
-  }, [myId]);
+  }, [myId, isGuestMode]);
 
   useEffect(() => {
     if (tab !== "join") return;
@@ -49,7 +50,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
   async function handleCreate() {
     setLoading(true); setErr("");
-    const res = await createPartyRoom(myId, myName, selType);
+    const res = await createPartyRoom(myId, myName, selType, { accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official") });
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, selType, true);
     else setErr(res.reason);
@@ -58,7 +59,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   async function handleJoinRoom(openRoom) {
     if (loading) return;
     setLoading(true); setErr("");
-    const res = await joinPartyRoom(openRoom.code, myId, myName);
+    const res = await joinPartyRoom(openRoom.code, myId, myName, { accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official") });
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, openRoom.type, false);
     else setErr(res.reason);

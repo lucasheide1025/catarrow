@@ -33,8 +33,9 @@ const CAT_MESSAGES = {
   ],
 };
 
-export function useCatCompanion() {
-  const { profile } = useAuth();
+export function useCatCompanion(profileOverride = null) {
+  const { profile: authProfile } = useAuth();
+  const profile = profileOverride || authProfile;
   const [catMsg, setCatMsg] = useState(null);
 
   const equippedCat = profile?.equippedCat;

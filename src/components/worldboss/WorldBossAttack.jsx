@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -191,10 +191,11 @@ const TOTAL_ROUNDS = 5;
 const ARROWS_PER   = 6;
 
 export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
-  const { profile } = useAuth();
-  const { saveBond, hasCat, catName, catATK, triggerCatSkill } = useCatCompanion();
+  const { profile: authProfile } = useAuth();
+  const profile = guestOverride || authProfile;
+  const isGuest  = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
+  const { saveBond, hasCat, catName, catATK, triggerCatSkill } = useCatCompanion(isGuest ? profile : null);
   const todayStr = new Date().toISOString().slice(0, 10);
-  const isGuest  = !!guestOverride;
 
   // ── 正確載入檢定資料，確保 ATK 包含檢定加成 ─────────────
   const [certRecords,   setCertRecords]   = useState([]);
@@ -231,13 +232,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
 
-  // ── 中途記憶：從 sessionStorage 恢復進行中的戰鬥 ──────────
+  // ── 中途記憶：同裝置可能輪流給多位孩子使用，暫存 key 必須綁玩家 ──────────
   // 必須在 baseHP 之後宣告，否則 TDZ ReferenceError
-  const _saveKey = `wb_battle_${event.id}`;
+  const _storageOwnerId = guestOverride?.id || profile?.id || "unknown";
+  const _saveKey = `wb_battle_${event.id}_${_storageOwnerId}`;
+  const _guestPotionKey = `guest_wb_potion_${event.id}_${_storageOwnerId}`;
+  const _guestPotionMemberKey = `guest_wb_potion_${_storageOwnerId}`;
+  const _guestCoinsKey = `guest_wb_coins_${_storageOwnerId}`;
   const _saved = (() => {
     try { return JSON.parse(localStorage.getItem(_saveKey) || "null"); } catch { return null; }
   })();
-  const _hasSave = _saved && _saved.eventId === event.id && (_saved.roundIdx || 0) > 0;
+  const _hasSave = _saved && _saved.eventId === event.id && _saved.memberId === _storageOwnerId && (_saved.roundIdx || 0) > 0;
 
   // ── 狀態 ───────────────────────────────────────────────────
   const [showFullLog, setShowFullLog] = useState(true);
@@ -268,7 +273,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [processingIdx, setProcessingIdx] = useState(-1);
 
   const [potion,   setPotion]   = useState(() =>
-    guestOverride ? (sessionStorage.getItem("guest_wb_potion") || "none") : "none"
+    guestOverride ? (sessionStorage.getItem(_guestPotionKey) || sessionStorage.getItem(_guestPotionMemberKey) || "none") : "none"
   );
   const [bots,     setBots]     = useState(() => {
     const _selfId = guestOverride?.id || profile?.id;
@@ -277,7 +282,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [hiring,   setHiring]   = useState(false);
   const [coins,    setCoins]    = useState(() =>
     guestOverride
-      ? parseInt(sessionStorage.getItem("guest_coins") || "500", 10)
+      ? (profile?.coins ?? parseInt(sessionStorage.getItem(_guestCoinsKey) || "500", 10))
       : (profile?.coins || 0)
   );
 
@@ -302,6 +307,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [catMsg,    setCatMsg]    = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [result,     setResult]    = useState(null);
+  const [guestActivityReward, setGuestActivityReward] = useState(null);
   const [showCard,   setShowCard]  = useState(false);
   const [animBossHit,   setAnimBossHit]   = useState(false);
   const [animCrit,      setAnimCrit]      = useState(false);
@@ -418,8 +424,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       const bot = drawRandomBot();
       setBots(prev => [...prev, bot]);
       const newC = Math.max(0, coins - 100);
-      sessionStorage.setItem("guest_coins", String(newC));
+      sessionStorage.setItem(_guestCoinsKey, String(newC));
       setCoins(newC);
+      if (myId) addCoins(myId, -100).catch(() => {});
     } else {
       const res = await hireWorldBossBot(event.id, myId);
       if (res.ok) {
@@ -630,7 +637,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             // 中途記憶：反擊結算後，下一回合開始前儲存
             try {
               localStorage.setItem(_saveKey, JSON.stringify({
-                eventId: event.id, roundIdx: nextRounds.length,
+                eventId: event.id, memberId: _storageOwnerId, roundIdx: nextRounds.length,
                 allRounds: nextRounds, myHP: nextMyHP,
                 localBossHP, companionHPs: nextCompHPs,
               }));
@@ -666,6 +673,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       weapon,
       roundResults:  rounds,
       isGuest,
+      accountType:    profile?.accountType || (isGuest ? "guest" : "official"),
+      sessionSourceId: guestOverride?.currentSessionSourceId || profile?.lastSessionSourceId || profile?.sessionSourceId || null,
       potionDmgMult: 1,
       bots,
       memberAtk:     baseATK,
@@ -690,7 +699,27 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         sfxSuccess();
       }
       saveBond("worldboss");
-      if (myId && rounds.length > 0) {
+      if (isGuest && myId) {
+        const dmgPct = (res.dmg || 0) / (event.bossMaxHP || 1);
+        const coinsGain = Math.min(30, Math.max(10, Math.round(dmgPct * 300)));
+        const catId = profile?.equippedCat?.catId;
+        const catXpGain = catId ? Math.min(35, Math.max(15, Math.round(dmgPct * 350))) : 0;
+        const arrowList = rounds.flatMap(round => round.arrows || []);
+        const scoreTotal = arrowList.reduce((sum, arrow) => sum + (Number.isFinite(arrow?.score) ? arrow.score : scoreVal(arrow?.label ?? arrow)), 0);
+        await addCoins(myId, coinsGain).catch(() => {});
+        if (catId && catXpGain > 0) await addCatXP(myId, catId, catXpGain).catch(() => {});
+        recordGuestBattleStats(myId, {
+          mode: "worldboss",
+          result: res.defeated ? "win" : "done",
+          arrows: arrowList.length,
+          score: scoreTotal,
+          damage: res.dmg || 0,
+          target: event.bossData?.name || "世界王",
+        }).catch(() => {});
+        setCoins(c => c + coinsGain);
+        setGuestActivityReward({ coins: coinsGain, catXP: catXpGain });
+      }
+      if (!isGuest && myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r =>
           (r.arrows || []).map(arrow => scoreVal(arrow?.label ?? arrow))
         );
@@ -879,15 +908,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               if (potionDef?.cost > 0) {
                 if (isGuest) {
                   const newC = Math.max(0, coins - potionDef.cost);
-                  sessionStorage.setItem("guest_coins", String(newC));
+                  sessionStorage.setItem(_guestCoinsKey, String(newC));
                   setCoins(newC);
+                  if (myId) addCoins(myId, -potionDef.cost).catch(() => {});
                 } else {
                   const { addCoins } = await import("../../lib/db");
                   await addCoins(myId, -potionDef.cost).catch(() => {});
                   setCoins(c => c - potionDef.cost);
                 }
               }
-              sessionStorage.removeItem("guest_wb_potion");
+              sessionStorage.removeItem(_guestPotionKey);
+              sessionStorage.removeItem(_guestPotionMemberKey);
               setPhase("battle");
             }}
             disabled={potionCost > 0 && !canAfford}
@@ -1384,16 +1415,27 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 </div>
               )}
 
+              {guestActivityReward && (
+                <div className="w-full bg-sky-500/10 border border-sky-400/30 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs text-sky-300 font-bold mb-2">🎁 體驗參戰回饋（已發放）</div>
+                  <BattleStatRow icon="💰" label="體驗金幣" value={`+${guestActivityReward.coins}`} valueColor="#fbbf24" />
+                  {guestActivityReward.catXP > 0 && (
+                    <BattleStatRow icon="🐱" label="貓貓經驗" value={`+${guestActivityReward.catXP}`} valueColor="#f9a8d4" />
+                  )}
+                  <div className="text-xs text-slate-500">正式世界王擊殺箱、王卡、排名獎與箭露僅正式角色可領取。</div>
+                </div>
+              )}
+
               {result.defeated && (
                 <div className="w-full bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-amber-200 leading-relaxed">
-                  🎁 擊殺大獎已自動發放給所有參戰者！
+                  {isGuest ? "世界王已被擊倒！體驗角色會保留參戰紀錄，但不領取正式擊殺大獎。" : "🎁 擊殺大獎已自動發放給所有參戰者！"}
                 </div>
               )}
               {result.bossAlreadyDefeated && !result.defeated && (
                 <div className="w-full bg-indigo-500/10 border border-indigo-400/30 rounded-2xl p-4">
                   <div className="text-xs text-indigo-300 font-bold mb-1">⚔️ 尾刀遺憾</div>
                   <div className="text-xs text-slate-400 leading-relaxed">
-                    Boss 在你出戰期間被隊友擊倒！你的傷害仍已計入排行，每日出戰獎勵已正常發放。
+                    {isGuest ? "Boss 在你出戰期間被隊友擊倒！你的傷害仍已計入活動排行，體驗回饋已正常發放。" : "Boss 在你出戰期間被隊友擊倒！你的傷害仍已計入排行，每日出戰獎勵已正常發放。"}
                   </div>
                 </div>
               )}

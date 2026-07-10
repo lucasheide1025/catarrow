@@ -36,12 +36,19 @@ export default function GuestDungeonEntry({ tierCap = 2, onSelect }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl p-5 text-center"
-        style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
-        <div className="text-4xl mb-2">🗺️</div>
-        <div className="text-lg font-black text-white mb-1">選擇挑戰難度</div>
-        <div className="text-xs" style={{ color:"var(--text-secondary)" }}>
-          闖過三層地下城，最後迎戰守關首領
+      <div className="rounded-2xl p-5"
+        style={{
+          background:"linear-gradient(135deg,rgba(124,58,237,0.28),rgba(15,23,42,0.92))",
+          border:"1px solid rgba(196,181,253,0.28)",
+        }}>
+        <div className="flex items-start gap-4">
+          <div className="text-4xl">🗺️</div>
+          <div className="min-w-0">
+            <div className="text-lg font-black text-white mb-1">地下城探索活動</div>
+            <div className="text-xs leading-5" style={{ color:"var(--text-secondary)" }}>
+              使用正式迷霧探索版本，限制 T1-T2 弱小怪物。可單人出發，也可建立邀請碼讓團康隊伍一起探索。
+            </div>
+          </div>
         </div>
       </div>
 
@@ -55,16 +62,29 @@ export default function GuestDungeonEntry({ tierCap = 2, onSelect }) {
               disabled={picking}
               className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98] disabled:opacity-50"
               style={{
-                background:`${diff?.color || "#94a3b8"}14`,
+                background:`linear-gradient(135deg,${diff?.color || "#94a3b8"}1f,rgba(15,23,42,0.82))`,
                 borderColor:`${diff?.color || "#94a3b8"}40`,
               }}
             >
               <div className="flex items-center gap-4">
-                <div className="text-3xl">{diff?.icon || "🗡️"}</div>
-                <div>
-                  <div className="text-base font-black text-white">{diff?.label || `Lv.${tier}`}</div>
+                <div className="grid h-14 w-14 place-items-center rounded-2xl text-3xl"
+                  style={{ background:`${diff?.color || "#94a3b8"}20` }}>
+                  {tier === 1 ? "🌱" : "🔥"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-black text-white">
+                    {tier === 1 ? "T1 新手探索" : "T2 團康挑戰"}
+                  </div>
                   <div className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
-                    {tier === 1 ? "適合新手，難度最低" : "稍具挑戰性的下一階段"}
+                    {tier === 1 ? "適合第一次體驗，怪物最弱、流程最短" : "稍具挑戰，適合多人活動一起推進"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-black" style={{ color: diff?.color || "#cbd5e1" }}>
+                    {diff?.icon} {diff?.label || `Lv.${tier}`}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color:"var(--text-muted)" }}>
+                    單人 / 組隊
                   </div>
                 </div>
               </div>

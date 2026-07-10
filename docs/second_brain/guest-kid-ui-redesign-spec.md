@@ -1,7 +1,18 @@
 # 訪客 / 兒童模式 UI 重製規格
 > 日期：2026-07-10  
 > 目的：讓訪客 / 兒童模式接近正式會員版的遊戲質感，並支援團康活動。  
-> 狀態：規格文件，尚未實作。供 Claude / Codex 後續協作接手。
+> 狀態：Phase 1-6 已完成：首頁 / 單人打怪 / 組隊打怪 / 地下城組隊 / 世界王體驗入口與低價結算 / 角色與獎勵總覽。
+> 補充：2026-07-10 已完成地下城舊式 `startsWith("guest")` 判斷清理，改用 `accountType` / `guestProfile`。
+> 補充：2026-07-10 已完成訪客/兒童 sessionStorage 隔離，避免同裝置切換 QR 模式時讀到上一個角色。
+> 補充：2026-07-10 已完成轉正式防呆，避免 official 帳號被重複轉換。
+> 補充：2026-07-10 已完成 `db.js` 正式資料寫入防線，改查 `accountType` 排除 guest/kid。
+> 補充：2026-07-10 已完成兒童場次回訪歸屬，後台可用原始場次或最近場次找到孩子。
+> 補充：2026-07-10 已完成紀念卡強化，卡面會顯示金幣、裝備、材料、貓咪與最近世界王傷害。
+> 補充：2026-07-10 已完成低階體驗轉蛋，僅產出低風險金幣回饋，不接正式貓村轉蛋池。
+> 補充：2026-07-10 已完成世界王參戰場次打點，participants 會保存 accountType/sessionSourceId。
+> 補充：2026-07-10 已完成世界王本場活動榜與後台場次彙整。
+> 補充：2026-07-10 已完成訪客 / 兒童主視覺大改，登入頁、頂部狀態列、首頁、底部導覽與角色頁改成活動式深色遊戲介面。
+> 補充：2026-07-10 已完成體驗商店深色化、初始 500 金幣、新手裝備包與體驗戰績紀念卡。
 
 ---
 
@@ -208,8 +219,8 @@
 ### 5.4 世界王活動
 
 共用元件候選：
-- `src/components/member/WorldBossLobby.jsx`
-- `src/components/member/WorldBossAttack.jsx`
+- `src/components/worldboss/WorldBossLobby.jsx`
+- `src/components/worldboss/WorldBossAttack.jsx`
 - `src/lib/worldBossDb.js`
 - `src/lib/worldBossData.js`
 
@@ -233,12 +244,19 @@
 - `worldBossDb.js::attackWorldBoss` 已有 `isGuest` 參數。
 - 目前 `claimWorldBossKillReward` 對 `mine.isGuest` 直接拒絕，正式擊殺獎勵不給訪客。
 - 這符合「訪客可參與但不領正式高價擊殺獎勵」的方向。
+- 2026-07-10 已完成第一版訪客 / 兒童世界王整合：
+  - `WorldBossLobby.jsx` 改用 `accountType` / `guestOverride` 判斷，不再用 `memberId.startsWith("guest")`。
+  - 訪客 / 兒童可進入正式世界王大廳與戰鬥室，會出現在參戰者與傷害排行。
+  - 大廳的獎勵卡在體驗模式顯示「體驗版獎勵」，明確說明不領正式擊殺箱、王卡、排名獎、箭露。
+  - `WorldBossAttack.jsx` 使用 `guestOverride` 作為 active profile，避免教練裝置登入狀態污染訪客數值 / 貓咪。
+  - 訪客 / 兒童出戰完成後只給少量體驗金幣與貓貓 XP；不寫正式 practice log、不給射手 XP、箭露、扭蛋幣與正式擊殺獎。
+  - 訪客 / 兒童使用世界王藥水或雇用機器人時，金幣會同步扣到體驗角色 `members` 文件。
 
-需要補的設計：
-- 訪客 / 兒童專用世界王入口。
-- 活動王資料模型。
-- 活動榜 / 本場榜。
-- 訪客參與後的低階獎勵結算方式。
+已完成 / 後續方向：
+- 目前先共用正式世界王事件，訪客 / 兒童以低價結算參與。
+- 本場活動榜已用 `participants.{memberId}.sessionSourceId` 分組。
+- 後台場次卡已可依 `sessionSourceId` 彙整最新世界王參戰人數、總傷害與最高傷害者。
+- 後續若要做獨立活動王，可以再新增 `guestEventId` / `campSessionId` 到世界王事件本體，讓活動王血量與正式世界王完全分流。
 
 ### 5.5 我的角色
 
@@ -258,6 +276,13 @@
 - 高階裝備強化鎖定。
 - 高階資源展示可以出現，但不要可操作。
 - 兒童版可把裝備細節收進「獎勵」頁，不必讓小朋友直接管理複雜強化。
+
+已完成：
+- 2026-07-10 `GuestProfileHub` 已改成角色與獎勵總覽。
+- 會顯示金幣、T1-T2 體驗狀態、裝備完成度、材料數、轉蛋幣、貓咪數。
+- 裝備入口接 `EquipmentPage guestProfile`，避免讀到教練登入中的正式 profile。
+- 商店入口接 `GuestShop`，金幣讀寫 `members/{memberId}.coins`。
+- `GuestShop` 的金幣護符倍率已統一為 `2` / `3`；已啟動 UI 判斷也同步更新。
 
 ---
 
@@ -326,6 +351,8 @@
 ## 8. 建議實作階段
 
 ### Phase 1：UI 首頁與路由整理
+狀態：已完成（2026-07-10，`src/pages/GuestApp.jsx`）。
+
 目標：
 - 重製 `GuestApp.jsx` 首頁資訊架構。
 - 把訪客 / 兒童入口改成「單人、組隊、地下城、世界王、角色」。
@@ -335,11 +362,19 @@
 - 訪客與兒童進入後不再看到陽春 Demo 感首頁。
 - 所有入口文案與狀態清楚。
 
+完成內容：
+- 底部導覽已改為「首頁 / 打怪 / 組隊 / 地城 / 大王 / 角色」。
+- 首頁主入口已改成單人冒險、一起打怪、地下城探索、世界王活動、我的角色。
+- 決鬥主入口已移除；決鬥仍不屬於訪客 / 兒童新版核心流程。
+- 新增角色 Hub，集中裝備、體驗商店、紀念卡、金幣與進度保留提示。
+- `npm run build` 已通過。
+
 ### Phase 2：單人打怪一致化
 目標：
 - 訪客 / 兒童使用正式 `MonsterBattle` 視覺。
 - 整理訪客持久獎勵語意。
 - T1~T2 限制明確。
+- 補 `MonsterBattle` 的 `guestProfile` / profile override，避免教練裝置共用時讀到教練 `useAuth()` 資料。
 
 驗收：
 - 訪客打一場怪可正常結算。
@@ -445,3 +480,201 @@
 - MVP 只顯示在活動結算，不寫正式成就。
 - 低階獎勵可以持久化。
 - 高價經濟功能先關閉。
+
+---
+
+## 11. 實作進度
+
+### 2026-07-10 Phase 1
+- `src/pages/GuestApp.jsx` 已重排首頁與底部導覽。
+- 新導覽：首頁 / 打怪 / 組隊 / 地城 / 大王 / 角色。
+- 角色 Hub 已集中裝備、體驗商店、紀念卡與進度保留提示。
+- `npm run build` 通過。
+
+### 2026-07-10 Phase 2 單人打怪資料來源
+- `src/pages/GuestApp.jsx` 的打怪入口已等待 `guestFullProfile` 載入後才渲染 `MonsterBattle`。
+- `src/components/member/MonsterBattle.jsx` 新增 `guestProfile` prop：
+  - 訪客 / 兒童使用 `guestProfile || authProfile`。
+  - `useCheckinActive` 在 `isGuest` 時不訂閱正式報到狀態。
+  - 呼叫 `useCatCompanion(isGuest ? profile : null)`，避免貓咪資料讀到教練登入中的帳號。
+- `src/hooks/useCatCompanion.js` 新增可選 `profileOverride`，正式會員不傳時行為不變。
+- 訪客 / 兒童打怪勝利現在會把低階金幣與最多 1 個材料寫入自己的持久帳號，結算畫面會顯示「已存入體驗角色」。
+- `src/components/member/GuestShop.jsx` 修正金幣護符倍率：原本 UI 寫 ×2 / ×3，但實際存 10 / 15；已改為真正的 2 / 3，避免新版持久金幣膨脹。
+- `npm run build` 通過。
+
+### 2026-07-10 Phase 3 組隊打怪接線
+- `src/components/party/PartyLobby.jsx`
+  - 建立 / 加入房間時會把 `accountType` 寫入成員資料。
+  - 訪客 / 兒童不訂閱正式組隊歷史紀錄。
+- `src/components/party/PartyBattleRoom.jsx`
+  - 改用 `guestOverride` / `accountType` 判斷訪客，不再用 `memberId.startsWith("guest")`。
+  - 訪客 / 兒童使用 `useCatCompanion(guestOverride)`，避免讀到教練登入中的貓咪。
+  - 訪客 / 兒童勝利後給低階持久金幣與低機率材料，顯示「已存入體驗角色」。
+  - 訪客 / 兒童不拿正式寶箱、怪物卡片、射手 XP、冒險者 XP，也不寫正式練習紀錄 / 圖鑑。
+- `src/lib/partyDb.js`
+  - `partyRooms.members.{id}.accountType` 已寫入。
+  - `storeBattleRewards()` 可接 `{id, accountType}`，會跳過 guest / kid 的正式寶箱。
+  - `claimBattleReward()` 新增 `options.isGuest`，訪客 / 兒童只標記請領，不寫正式寶箱 / 圖鑑。
+- 已用 `rg` 確認 `PartyLobby.jsx` / `PartyBattleRoom.jsx` / `partyDb.js` 沒有殘留 `startsWith("guest")`。
+- `npm run build` 通過。
+
+待測：
+- 兩個訪客 / 兒童帳號建立 / 加入同一組隊房。
+- 訪客房主開房、正式會員加入，以及正式會員房主開房、訪客加入，兩種混合情境。
+- 確認訪客 / 兒童勝利後只有低階持久獎勵，正式會員仍有原本寶箱 / XP / 練習紀錄。
+
+### 2026-07-10 Phase 4 地下城入口活動化
+- `src/components/dungeon/GuestDungeonEntry.jsx`
+  - 訪客 / 兒童地下城入口改成「地下城探索活動」樣式。
+  - T1 / T2 卡片改為活動式文案：T1 新手探索、T2 團康挑戰。
+  - 文案明確說明使用正式迷霧探索版本，可單人或組隊。
+- `src/components/dungeon/DungeonSelectionPanel.jsx`
+  - 訪客 / 兒童不再隱藏「組隊探索」。
+  - 訪客文案改為「團康組隊探索」，建立邀請碼讓大家一起挑戰低階探索地下城。
+- `src/components/dungeon/DungeonLobby.jsx`
+  - 訪客 / 兒童地下城首頁新增「加入團康地下城」入口。
+  - 可輸入邀請碼加入，也可加入開放中的組隊地下城房間。
+  - 訪客仍不顯示正式會員的挖掘 / 儲存槽 / 卷軸三來源。
+- `src/lib/expeditionTeamDb.js`
+  - 組隊地下城成員資料新增 `accountType`。
+  - `claimTeamExpeditionResult()` 會辨識 guest / kid：
+    - 金幣上限封頂為低階活動量。
+    - 不給箭露。
+    - 不給射手 XP。
+    - 不給正式地下城寶箱。
+    - 仍會標記請領與保留遠征紀錄。
+- `src/components/dungeon/TeamExpeditionBattle.jsx`
+  - 戰鬥房會把 `guestProfile` 傳給 `DungeonBattleRoom`，避免教練裝置共用時誤讀 `useAuth()`。
+  - guest / kid 不觸發寶箱王高價加碼、不寫正式遠征首殺廣播。
+- `npm run build` 通過。
+
+待測：
+- 訪客建立 T1 / T2 組隊地下城，另一位訪客用邀請碼加入。
+- 訪客進入組隊地下城戰鬥時，獎勵與寫入對象是訪客自己的 `members/{id}`。
+- 訪客 / 兒童結算不拿正式寶箱、箭露、射手 XP。
+- 正式會員地下城挖掘、儲存槽、組隊遠征維持原行為。
+
+### 2026-07-10 Phase 7 地下城舊判斷清理
+- `src/components/dungeon/DungeonBattleRoom.jsx`
+  - 新增 `isGuestMode = !!guestProfile || accountType in ["guest","kid"]`。
+  - `useCatCompanion(isGuestMode ? profile : null)`，避免教練登入狀態污染訪客/兒童貓咪。
+  - 地下城正式箭數累積、藥水庫存訂閱、卡片收藏訂閱、ready 重整同步、練習紀錄寫入都改用 `isGuestMode` 判斷。
+  - 移除同檔以 `myId.startsWith("guest")` 判斷訪客的做法。
+- `src/lib/dungeonDb.js`
+  - `createDungeonRoom()` / `joinDungeonRoom()` 支援可選 `extraData.accountType`，成員資料預設 `official`。
+  - `confirmDungeonEvent()` 的金幣事件改用 `members.{id}.accountType` 跳過 guest/kid。
+  - `claimDungeonReward()` 支援 `options.accountType`，guest/kid 不領舊式正式金幣獎勵。
+- `DungeonBattleRoom` 呼叫 `claimDungeonReward()` 時會傳入目前 profile 的 `accountType`。
+
+### 2026-07-10 Phase 8 session 隔離
+- `src/pages/GuestApp.jsx`
+  - 訪客 / 兒童 profile session key 改為 `guest_v2_profile_${accountType}_${sessionSourceId || "default"}`。
+  - 組隊進行中 session key 改為 `guest_v2_party_session_${accountType}_${sessionSourceId || "default"}`。
+  - 組隊恢復資料會記錄 `memberId`，若與目前體驗角色不同會自動清除，避免上一位玩家的房間被下一位玩家接走。
+  - 當同一分頁從 `?guest=1` 切到 `?kid=<sessionId>` 時，會主動重讀對應 session、重置組隊 / 世界王暫態並回首頁。
+
+### 2026-07-10 Phase 9 轉正式防呆
+- `src/lib/db.js::convertGuestToOfficial()`
+  - 轉換前會確認原帳號仍是 `guest` 或 `kid`。
+  - 如果已經是 `official` 或其他類型，會拒絕重複轉正式。
+- `src/components/admin/AdminKidMode.jsx`
+  - 轉正式建立 Firebase Auth 帳號時，臨時 app 名稱加入亂數，降低同毫秒操作撞名風險。
+  - Email 會先 trim 再建立 Auth 帳號與寫入會員文件。
+  - 轉正式提示會顯示來源是訪客或兒童帳號。
+
+### 2026-07-10 Phase 10 正式資料層防線
+- `src/lib/db.js`
+  - 新增 `isGuestOrKidMember(memberId)`，以 `members/{id}.accountType` 判斷訪客/兒童；舊 `guest...` 前綴仍視為訪客以相容舊資料。
+  - 以下正式系統寫入不再只靠 `memberId.startsWith("guest")`：
+    - `addRoundArrows()`
+    - `saveMonsterLog()` 的怪物圖鑑更新
+    - `recordBattleDex()`
+    - `recordPotionUsed()`
+    - `addCardPack()`
+    - `addMonsterCard()`
+    - `addWorldBossCard()`
+    - `checkAndGrantArrowMilestones()`
+  - `recordPotionUsed()` 現在可接受單一 potion id 字串或陣列，避免把字串逐字元寫入圖鑑。
+  - `addCoins()` 沒有改成排除 guest/kid，因為新版體驗帳號需要低階持久金幣。
+
+### 2026-07-10 Phase 11 兒童場次回訪歸屬
+- `src/lib/guestAuth.js`
+  - 新兒童/訪客帳號會寫入 `sessionSourceId` 與 `lastSessionSourceId`。
+  - 既有帳號再次掃不同兒童場次 QR 時，不搬動原始 `sessionSourceId`，但會更新 `lastSessionSourceId`。
+- `src/components/admin/AdminKidMode.jsx`
+  - 場次篩選同時比對 `sessionSourceId` 與 `lastSessionSourceId`。
+  - 帳號卡片顯示原始場次與最近場次，方便教練辨識回訪孩子。
+
+### 2026-07-10 Phase 12 紀念卡強化
+- `src/components/member/GuestShareCard.jsx`
+  - 可接收 `profile` 與 `wbResult`。
+  - 卡面顯示金幣、裝備完成度、材料數、貓咪數。
+  - 若有最近世界王結果，顯示最近世界王傷害。
+- `src/pages/GuestApp.jsx`
+  - 開啟紀念卡時傳入 `guestFullProfile` 與 `wbResult`。
+
+### 2026-07-10 Phase 13 低階體驗轉蛋
+- `src/pages/GuestApp.jsx`
+  - 新增 `GuestGachaPanel`，從角色頁進入。
+  - 每次消耗 1 枚 `gachaCoins`，獲得 8~24 金幣。
+  - 定位為低風險活動回饋，不接正式貓村高價轉蛋池、不掉貓卡或世界王卡。
+- `src/components/member/GuestShop.jsx`
+  - 新增「體驗轉蛋幣」商品，花 60 金幣取得 1 枚 `gachaCoins`。
+
+### 2026-07-10 Phase 14 世界王活動來源打點
+- `src/pages/GuestApp.jsx`
+  - `guestOverride` 會帶 `currentSessionSourceId`。
+- `src/components/worldboss/WorldBossAttack.jsx`
+  - 呼叫 `attackWorldBoss()` 時傳入 `accountType` 與 `sessionSourceId`。
+- `src/lib/worldBossDb.js`
+  - `participants.{memberId}` 會保存 `accountType` 與 `sessionSourceId`。
+  - 後續若要做「本場活動榜」或活動王篩選，可直接用這兩個欄位，不需要回填歷史資料。
+
+### 2026-07-10 Phase 15 世界王本場活動榜
+- `src/components/worldboss/WorldBossLobby.jsx`
+  - 訪客 / 兒童模式會用 `activeProfile.currentSessionSourceId || lastSessionSourceId || sessionSourceId` 找出目前活動來源。
+  - 若世界王 `participants.{memberId}.sessionSourceId` 與目前活動來源相同，會額外顯示「本場活動榜」。
+  - 本場活動榜只影響 UI 呈現，不改世界王血量、全體傷害排行、參戰人數加成或正式獎勵。
+  - 舊參戰資料若沒有 `sessionSourceId`，不會被硬塞進本場活動榜；仍會保留在全體傷害排行。
+
+### 2026-07-10 Phase 16 後台世界王場次彙整
+- `src/components/admin/AdminKidMode.jsx`
+  - 後台訂閱最新一筆世界王，讀取 `participants.{memberId}.sessionSourceId`。
+  - 每張夏令營場次卡會顯示該場孩子 / 訪客在最新世界王的參戰人數、本場累積傷害與最高傷害者。
+  - 這是營運回顧用 UI，只讀現有 participants，不新增世界王查詢、不改活動排行或獎勵結算。
+  - 沒有 `sessionSourceId` 的舊世界王參戰資料不會歸入任何場次卡。
+
+### 2026-07-10 Phase 17 世界王本機暫存隔離
+- `src/components/worldboss/WorldBossAttack.jsx`
+  - 世界王中途戰鬥暫存 key 從 `wb_battle_${event.id}` 改為 `wb_battle_${event.id}_${memberId}`。
+  - 暫存內容會寫入 `memberId`，讀取時同時比對 `eventId` 與 `memberId`。
+  - 訪客 / 兒童世界王備用金幣暫存 key 改為 `guest_wb_coins_${memberId}`。
+  - 訪客 / 兒童世界王藥水暫存 key 改為 `guest_wb_potion_${eventId}_${memberId}`。
+  - 目的：同一台平板連續給多位孩子掃 QR 時，不會讀到上一位玩家的未完成世界王戰鬥、備用金幣或藥水選擇。
+
+### 2026-07-10 Phase 18 訪客 / 兒童主視覺大改
+- `src/pages/GuestApp.jsx`
+  - 新增 scoped CSS `GUEST_VISUAL_CSS`，只影響訪客 / 兒童模式。
+  - 登入頁改成全螢幕遊戲入口，使用 `/ui/page-bg.webp` 與射手貓素材。
+  - 登入後主畫面改成深色活動介面，包含固定頂部狀態列、金幣 pill、底部玻璃感導覽。
+  - 首頁改為大型活動 hero、金幣 / 世界王狀態摘要、活動入口 grid，不再是白底一般卡片清單。
+  - 角色頁改為深色角色卡、角色摘要 grid、角色功能活動卡。
+  - 訪客與兒童共用同一套視覺骨架，但兒童 hero 使用較暖色活動調性。
+  - 打怪、組隊、地下城、世界王的實際玩法入口保持原本正式元件，不重刻戰鬥邏輯。
+
+### 2026-07-10 Phase 19 初始資金、體驗商店與紀念戰績
+- `src/lib/guestAuth.js`
+  - 新建 guest / kid 帳號給 500 初始金幣。
+  - 既有 guest / kid 若沒有 `starterCoinsGranted`，下次登入會一次性補 500 金幣並標記，避免舊測試帳號停在 0 金幣。
+- `src/components/member/GuestShop.jsx`
+  - 商店改成深色活動視覺，修正白底與灰字標題對比不足。
+  - 新增「新手裝備包」商品，花 240 金幣補齊 10 格普通 `rpgEquip`，並寫入 `unlockedEquipItems`。
+  - 世界王藥水 key 改為 `guest_wb_potion_${memberId}`，避免共用裝置互相污染。
+- `src/pages/GuestApp.jsx`
+  - 體驗轉蛋機改成深色活動視覺，修正白底區塊與灰字看不清楚問題。
+- `src/lib/db.js`
+  - 新增 `recordGuestBattleStats(memberId, entry)`，只允許 guest / kid 寫入低風險體驗戰績摘要。
+- `MonsterBattle.jsx` / `PartyBattleRoom.jsx` / `DungeonBattleRoom.jsx` / `WorldBossAttack.jsx`
+  - 訪客 / 兒童完成戰鬥時會累積 `guestBattleStats`：戰鬥次數、勝場、箭數、總分、傷害與最近一次表現。
+- `src/components/member/GuestShareCard.jsx`
+  - 紀念卡顯示箭數、勝場、平均分、最近表現與傷害摘要。

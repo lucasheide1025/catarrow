@@ -1,6 +1,6 @@
 // src/lib/guestAuth.js
 // 訪客/兒童帳號的匿名登入 + 跨次造訪接續邏輯（見 .trellis/tasks/07-09-guest-kid-mode-overhaul）
-import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import {
   collection, query, where, limit, getDocs, addDoc, updateDoc, doc, serverTimestamp,
@@ -8,6 +8,7 @@ import {
 import { auth, db, firebaseConfig } from "./firebase";
 
 const C_MEMBERS = "members";
+const GUEST_STARTER_COINS = 500;
 
 // email 轉小寫去空白；電話只留數字
 export function normalizeContact(raw) {
@@ -61,20 +62,29 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
 
     if (!snap.empty) {
       const existing = snap.docs[0];
-      await updateDoc(existing.ref, { uid, lastLoginAt: serverTimestamp() });
-      return { ok: true, id: existing.id, ...existing.data(), uid, isNew: false };
+      const data = existing.data();
+      const starterPatch = data.starterCoinsGranted ? {} : {
+        coins: (data.coins || 0) + GUEST_STARTER_COINS,
+        starterCoinsGranted: true,
+      };
+      const sessionPatch = sessionSourceId ? { lastSessionSourceId: sessionSourceId } : {};
+      await updateDoc(existing.ref, { uid, lastLoginAt: serverTimestamp(), ...sessionPatch });
+      if (Object.keys(starterPatch).length > 0) await updateDoc(existing.ref, starterPatch);
+      return { ok: true, id: existing.id, ...data, ...starterPatch, uid, ...sessionPatch, isNew: false };
     }
 
     const ref = await addDoc(collection(db, C_MEMBERS), {
       accountType, contactHash, contactRaw: contact,
       sessionSourceId: sessionSourceId || null,
+      lastSessionSourceId: sessionSourceId || null,
       uid,
       name: accountType === "kid" ? "小小射手" : "訪客射手",
-      coins: 0,
+      coins: GUEST_STARTER_COINS,
+      starterCoinsGranted: true,
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
     });
-    return { ok: true, id: ref.id, accountType, uid, coins: 0, isNew: true };
+    return { ok: true, id: ref.id, accountType, uid, coins: GUEST_STARTER_COINS, isNew: true };
   } catch (e) {
     return { ok: false, reason: e?.message || "系統忙碌，請稍後再試" };
   } finally {
@@ -169,5 +179,93 @@ export async function loginGuestWithPassword(email, password) {
     return { ok: false, reason: e?.message || "登入失敗，請稍後再試" };
   } finally {
     deleteApp(tmpApp).catch(() => {});
+  }
+}
+// ── Google 登入（訪客預約用）─────────────────────────────
+// 只負責「跳 Google 視窗 → 拿到 email / 姓名 / uid」，不寫資料庫。
+// 為什麼不順便存檔？因為預約還需要「電話」，Google 不會給電話，
+// 電話要留到 UI 那格讓客人自己填，所以存檔（含電話）放到步驟 3。
+export async function signInWithGoogle() {
+  // 一律開隔離的臨時 App：預約頁可能開在「教練已登入」的裝置上，
+  // 客人用自己的 Google 登入絕不能蓋掉教練的登入狀態（比照你密碼登入的做法）。
+  const tmpApp = initializeApp(firebaseConfig, "pubbook_google_" + Date.now());
+  const tmpAuth = getAuth(tmpApp);
+  try {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(tmpAuth, provider);
+    const email = (result.user.email || "").trim();
+    const name  = result.user.displayName || "";
+    const uid   = result.user.uid;
+    if (!email) return { ok: false, reason: "無法取得 Google Email，請改用其他方式登入" };
+
+    // 防呆（修 2026-07-11 事件）：若這個 Google 帳號的 uid 已對應到「正式學員/教練」文件，
+    //   就擋下來、不讓它走訪客預約——避免跟正式帳號在 members 層混淆，也提醒使用者其實有
+    //   正式帳號可用（主登入頁現在也支援 Google 登入）。查不到或查詢失敗就放行（fail-open，
+    //   這只是額外保護，不能擋住一般新客）。教練/正式學員文件都有 uid；訪客文件不寫 uid。
+    try {
+      const dupSnap = await getDocs(query(collection(db, C_MEMBERS), where("uid", "==", uid), limit(5)));
+      const isOfficial = dupSnap.docs.some(d => {
+        const t = d.data()?.accountType;
+        return t !== "guest" && t !== "kid";
+      });
+      if (isOfficial) {
+        return { ok: false, reason: "這個 Google 帳號已經是正式學員／教練帳號，請改用主系統登入（登入頁也支援 Google 登入），不要走訪客預約。" };
+      }
+    } catch { /* 查詢失敗（如未登入無 list 權限）就放行，不擋一般新客 */ }
+
+    return { ok: true, email, name, uid };
+  } catch (e) {
+    if (e?.code === "auth/popup-closed-by-user") return { ok: false, reason: "已取消 Google 登入" };
+    if (e?.code === "auth/popup-blocked")        return { ok: false, reason: "瀏覽器擋了登入視窗，請允許彈出視窗後再試" };
+    return { ok: false, reason: e?.message || "Google 登入失敗，請稍後再試" };
+  } finally {
+    deleteApp(tmpApp).catch(() => {});
+  }
+}
+
+// ── 社群登入後存檔（Google/FB/LINE 共用）─────────────────────
+// signInWithGoogle() 只負責「證明身份、拿到 email」，這支負責「把 email＋電話存成訪客帳號」。
+// 身份一律以 email 為準（算 contactHash 找回舊記錄），跟密碼註冊/登入同一套邏輯，
+// 所以同一個 email 不管用密碼還是 Google 進來，都會接到「同一筆」members 文件。
+// 這支只碰 Firestore、不碰 Auth，所以不用像 signInWithGoogle 那樣開隔離臨時 App。
+export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google" }) {
+  const trimmedEmail = (email || "").trim();
+  if (!trimmedEmail)           return { ok: false, reason: "缺少 Email" };
+  if (!phone || !phone.trim()) return { ok: false, reason: "請留下電話，方便有狀況時聯絡你" };
+  try {
+    const contactHash = await sha256(normalizeContact(trimmedEmail));
+    const q = query(
+      collection(db, C_MEMBERS),
+      where("accountType", "==", "guest"),
+      where("contactHash", "==", contactHash),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+
+    // ⚠️ 絕對不能把 Google 拿到的 uid 寫進訪客文件的「uid」欄位！
+    //   useAuth.js 用 where("uid","==",fbUser.uid) 解析教練/會員登入。若教練本人用自己的
+    //   Google 帳號測預約登入，signInWithGoogle 拿到的就是教練的 uid；一旦寫進訪客文件，
+    //   useAuth 會同時撈到教練文件與這筆訪客文件 → 教練帳號讀不到（2026-07-11 踩過）。
+    //   訪客身份本來就靠 contactHash + sessionStorage，不需要這個 uid；改存 socialUid 當純參考。
+    if (!snap.empty) {
+      const existing = snap.docs[0];
+      await updateDoc(existing.ref, {
+        socialUid: uid || null, phone: phone.trim(), socialProvider: provider, lastLoginAt: serverTimestamp(),
+      });
+      return { ok: true, id: existing.id, ...existing.data(), phone: phone.trim(), isNew: false };
+    }
+
+    const ref = await addDoc(collection(db, C_MEMBERS), {
+      accountType: "guest", contactHash, contactRaw: trimmedEmail,
+      sessionSourceId: null, socialUid: uid || null, socialProvider: provider,
+      name: (name || "").trim() || "訪客射手",
+      email: trimmedEmail, phone: phone.trim(),
+      coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
+    });
+    return { ok: true, id: ref.id, accountType: "guest",
+      name: (name || "").trim() || "訪客射手", email: trimmedEmail, phone: phone.trim(),
+      coins: 0, isNew: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "登入失敗，請稍後再試" };
   }
 }

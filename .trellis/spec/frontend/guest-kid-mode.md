@@ -120,6 +120,31 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
 
 **Related pitfall — a boolean flag flowing into unrelated logic.** `DungeonExpedition.jsx` had a `fromStorage` flag that was unconditionally `true` (assuming every dungeon came from the saved/`pendingReveal` storage system). Guest dungeons are ephemeral (`savedId:null`, never written to storage), so this needed to become `fromStorage: !isGuest` — otherwise the consume-effect tried to remove a saved dungeon that was never saved, and the guest got stuck on a permanent loading screen (no render branch handled the resulting stuck `"consume"` phase). When reusing a production component for a new caller, audit every boolean/flag param it already takes, not just the ones you're intentionally threading through.
 
+## Convention: browser storage for guest/kid gameplay must be keyed by member identity
+
+Guest/kid mode is frequently used on a shared coach tablet or camp device. Any `sessionStorage`/`localStorage` entry that can affect gameplay state, rewards, coins, room restoration, or battle resume must include enough identity to distinguish the current player. At minimum, include `memberId`; for event-scoped state also include the event/room id.
+
+Good examples:
+```js
+const saveKey = `wb_battle_${event.id}_${memberId}`;
+const potionKey = `guest_wb_potion_${event.id}_${memberId}`;
+const partyKey = `guest_v2_party_session_${accountType}_${sessionSourceId || "default"}`;
+```
+
+The stored payload should also include the same identity when practical, and the read path should verify it before resuming state:
+```js
+const saved = JSON.parse(localStorage.getItem(saveKey) || "null");
+const canResume = saved?.eventId === event.id && saved?.memberId === memberId;
+```
+
+Bad examples:
+```js
+localStorage.setItem(`wb_battle_${event.id}`, payload); // shared across all kids on the same device
+sessionStorage.setItem("guest_coins", coins);           // shared across all guest/kid accounts
+```
+
+Why: QR-based kid sessions intentionally allow multiple children to use the same browser. A global key can make the next child resume the previous child's battle, room, potion choice, or fallback coin cache. This is a correctness bug even if the server-side Firestore writes are otherwise scoped correctly.
+
 ## Convention: excluding guest/kid from official-only queries
 
 **What**: `getMembers()` and `getMembersForBilling()` in `src/lib/db.js` filter out `accountType in ["guest","kid"]` after fetching, treating an absent `accountType` field as official.

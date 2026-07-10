@@ -142,6 +142,8 @@ function KillScreen({ event, myReward, onClose }) {
 
 export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete }) {
   const { profile } = useAuth();
+  const activeProfile = guestOverride || profile;
+  const isGuestMode = !!guestOverride || ["guest", "kid"].includes(activeProfile?.accountType);
 
   useEffect(() => {
     if (document.querySelector("[data-wb-lobby-css]")) return;
@@ -164,7 +166,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
   const [replayIntro,   setReplayIntro]   = useState(false);
 
-  const myId   = guestOverride?.id   || profile?.id;
+  const myId   = activeProfile?.id;
   const _wd = new Date();
   const today = `${_wd.getFullYear()}-${String(_wd.getMonth()+1).padStart(2,"0")}-${String(_wd.getDate()).padStart(2,"0")}`;
 
@@ -185,7 +187,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           setShowKillScreen(true);
         }
         // 自行請領擊殺獎勵：不受上面的 sessionStorage 限制，靠 participants.{id}.claimed 防重複
-        if (myId && !myId.startsWith("guest") && ev.participants?.[myId] && !ev.participants[myId].claimed) {
+        if (myId && !isGuestMode && ev.participants?.[myId] && !ev.participants[myId].claimed) {
           import("../../lib/worldBossDb").then(({ claimWorldBossKillReward }) => {
             claimWorldBossKillReward(myId, ev.id).then(res => {
               if (res.ok) setMyReward(res);
@@ -204,7 +206,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         )
       : null;
     return () => { unsub(); unsubLogs?.(); };
-  }, [myId]);
+  }, [myId, isGuestMode]);
 
   if (loading) {
     return (
@@ -248,9 +250,21 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const bonus        = getParticipantBonus(total);
   const myData       = participants[myId];
   const attackedToday = myData?.lastAttackedDate === today;
+  const currentSessionSourceId =
+    activeProfile?.currentSessionSourceId ||
+    activeProfile?.lastSessionSourceId ||
+    activeProfile?.sessionSourceId ||
+    null;
+  const activityPartList = isGuestMode && currentSessionSourceId
+    ? partList.filter(([, p]) => p.sessionSourceId === currentSessionSourceId)
+    : [];
 
   // 傷害排行（前 5）
   const topDmg = partList
+    .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
+    .sort((a, b) => b.dmg - a.dmg)
+    .slice(0, 5);
+  const activityTopDmg = activityPartList
     .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
     .sort((a, b) => b.dmg - a.dmg)
     .slice(0, 5);
@@ -367,10 +381,34 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           </div>
         )}
 
+        {/* 本場活動榜：訪客/兒童模式依活動來源分組，避免和正式玩家排行混在一起 */}
+        {activityTopDmg.length > 0 && (
+          <div className="bg-sky-500/10 border border-sky-400/30 rounded-2xl px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-sky-300 font-bold">🏕️ 本場活動榜</div>
+              <div className="text-[11px] text-sky-200/80 font-bold">{activityPartList.length} 人參戰</div>
+            </div>
+            <div className="space-y-2">
+              {activityTopDmg.map((p, i) => (
+                <div key={p.id} className={`flex items-center gap-3 rounded-xl px-2 py-1 ${p.id === myId ? "bg-white/10" : ""}`}>
+                  <span className="text-sm w-5 text-center font-black"
+                    style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#94a3b8" : i === 2 ? "#cd7c2f" : "#38bdf8" }}>
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 text-sm text-slate-200 truncate">{p.id === myId ? "你" : p.name}</span>
+                  <span className="text-sm font-black text-amber-300">{p.dmg.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 傷害排行 */}
         {topDmg.length > 0 && (
           <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-            <div className="text-xs text-slate-400 font-bold mb-2">💥 傷害排行</div>
+            <div className="text-xs text-slate-400 font-bold mb-2">
+              💥 {isGuestMode ? "全體世界王傷害排行" : "傷害排行"}
+            </div>
             <div className="space-y-2">
               {topDmg.map((p, i) => (
                 <div key={p.id} className="flex items-center gap-3">
@@ -429,6 +467,16 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
         {/* 獎勵說明 */}
         {(() => {
+          if (isGuestMode) {
+            return (
+              <div className="bg-sky-500/10 border border-sky-400/30 rounded-2xl px-4 py-3">
+                <div className="text-xs text-sky-300 font-bold mb-2">🎁 體驗版獎勵</div>
+                <div className="text-xs text-slate-300 leading-relaxed">
+                  本模式保留共同討伐、參戰紀錄與傷害排行。訪客/兒童角色不領取正式世界王擊殺箱、王卡、排名獎與箭露，只會在出戰完成後取得少量體驗金幣與貓貓成長回饋。
+                </div>
+              </div>
+            );
+          }
           const rw = event.reward || {};
           function rewardLine(r) {
             const items = [];
@@ -466,7 +514,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         })()}
 
         {/* 世界王戰鬥紀錄 */}
-        {!guestOverride && (
+        {!isGuestMode && (
           <BattleRecords logs={wbLogs} title="📊 世界王戰鬥紀錄" maxGroups={8}/>
         )}
       </div>

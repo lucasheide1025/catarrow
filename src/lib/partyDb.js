@@ -48,8 +48,8 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
       createdAt: serverTimestamp(),
       members: {
         [hostId]: type === "quest"
-          ? { name: hostName, done: false, doneAt: null }
-          : { name: hostName, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true }
+          ? { name: hostName, accountType: extraData.accountType || "official", done: false, doneAt: null }
+          : { name: hostName, accountType: extraData.accountType || "official", hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true }
       },
     };
     if (type === "quest") {
@@ -78,7 +78,7 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
 }
 
 // ── 加入房間（用邀請碼） ───────────────────────────────────────
-export async function joinPartyRoom(code, memberId, memberName) {
+export async function joinPartyRoom(code, memberId, memberName, extraData = {}) {
   try {
     // 找出邀請碼符合的房間（client-side filter，房間數少可接受）
     const { getDocs, query, where, collection: col } = await import("firebase/firestore");
@@ -93,8 +93,8 @@ export async function joinPartyRoom(code, memberId, memberName) {
     if (room.type === "quest" && memberCount >= 4) return { ok: false, reason: "組隊任務房間最多 4 人" };
 
     const memberData = room.type === "quest"
-      ? { name: memberName, done: false, doneAt: null }
-      : { name: memberName, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true };
+      ? { name: memberName, accountType: extraData.accountType || "official", done: false, doneAt: null }
+      : { name: memberName, accountType: extraData.accountType || "official", hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true };
 
     await updateDoc(doc(db, PARTY, roomDoc.id), {
       [`members.${memberId}`]: memberData,
@@ -616,8 +616,10 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
 export async function storeBattleRewards(roomId, memberIds, monster, mode = "student") {
   try {
     const rewardPending = {};
-    for (const mid of memberIds) {
-      if (mid.startsWith("guest")) continue; // 訪客無背包，不需要寶箱紀錄
+    for (const member of memberIds) {
+      const mid = typeof member === "string" ? member : member.id;
+      const isGuest = typeof member === "object" && ["guest", "kid"].includes(member.accountType);
+      if (isGuest) continue; // 訪客/兒童不拿正式寶箱，避免衝擊正式經濟
       const { mainChest, bonusChest, potionChest } = makeChests(monster, mode);
       rewardPending[mid] = [mainChest, bonusChest, potionChest].filter(Boolean);
     }
@@ -630,10 +632,10 @@ export async function storeBattleRewards(roomId, memberIds, monster, mode = "stu
 
 // ── Battle：玩家領取自己的戰鬥獎勵 ─────────────────────────
 // monsterId / result / dmgDealt 用於更新怪物圖鑑
-// 訪客（guest_ 開頭）跳過寶箱 & 圖鑑寫入，但仍標記已領取
-export async function claimBattleReward(roomId, memberId, chests, monsterId, result, dmgDealt) {
+// 訪客/兒童跳過正式寶箱 & 圖鑑寫入，但仍標記已領取
+export async function claimBattleReward(roomId, memberId, chests, monsterId, result, dmgDealt, options = {}) {
   try {
-    if (!memberId?.startsWith("guest")) {
+    if (!options.isGuest) {
       await addChests(memberId, chests);
       if (monsterId && result) {
         await recordBattleDex(memberId, monsterId, result, dmgDealt || 0);

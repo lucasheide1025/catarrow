@@ -85,7 +85,8 @@ function slotKeysFor(date, startTime, durationHours) {
 // 而不是固定+1。整筆預約只有一個 isNewStudent，不細分這N人裡面誰新誰舊，是刻意的簡化。）
 // isNewStudent: boolean（使用者自己勾選「是否為第一次來體驗」，不是用 accountType 反推）
 // source:  "online" | "online_public" | "phone"
-export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "") {
+// intake: 非必填問卷 { experience, bowInterest, purpose, remark, needSystemIntro }（只有 online_public 會帶）
+export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "", intake = null) {
   if (!memberId) return { ok: false, reason: "缺少會員 ID" };
   if (source === "online_public" && (!contact?.email || !contact?.phone)) {
     return { ok: false, reason: "Email 與電話為必填" };
@@ -142,6 +143,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
         source,
         paymentMethod: null,
         note: note || "",
+        intake: intake || null,
         rescheduledFrom: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

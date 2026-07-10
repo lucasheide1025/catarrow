@@ -9,7 +9,7 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
-  subscribeCardCollection, addArcherXP, addRoundArrows,
+  subscribeCardCollection, addArcherXP, addRoundArrows, recordGuestBattleStats,
 } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -113,10 +113,11 @@ function saveMbDefaults(obj) {
   localStorage.setItem("mb_defaults", JSON.stringify(obj));
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
-  const { profile } = useAuth();
-  const checkinActive = useCheckinActive(profile?.id);
-  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion();
+export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
+  const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
+  const { hasCat, catName, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion(isGuest ? profile : null);
   const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
@@ -746,7 +747,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   async function startBattle() {
-    if (profile?.id && !questContext) { await recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
+    // 記錄每日場次改成「背景執行、不 await」：這是一次 Firestore 寫入，網路偶爾很慢時
+    // 若 await 會把後面的進場（setPhase("battle_intro")）一起卡住，造成「按了開始挑戰卻無法進場」。
+    // 場次上限的檢查在按鈕出現前就做過了，這裡只是記錄，不需要擋住進場。
+    if (profile?.id && !questContext) { recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
 
     // ⚗️ 戰前喝藥：消耗藥劑、計算本場加成（只影響當場）
     const buffs = calcPotionBuffs(selectedPotions);
@@ -835,6 +839,19 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       ? [...roundScores, { scores:lastRoundArr }]
       : roundScores;
     const completedPracticeRounds = completedRoundScores.map(entry => entry.scores || []);
+    const completedScoresFlat = completedPracticeRounds.flat();
+    const completedScoreTotal = completedScoresFlat.reduce((sum, score) => sum + Number(score || 0), 0);
+    const completedArrowCount = completedScoresFlat.length;
+    if (isGuest && profile?.id) {
+      recordGuestBattleStats(profile.id, {
+        mode: "monster",
+        result,
+        arrows: completedArrowCount,
+        score: completedScoreTotal,
+        damage: totalDmgDealt,
+        target: monster?.name || "怪物",
+      }).catch(() => {});
+    }
     if (result==="win") {
       sfxMonsterDead();
       setTimeout(() => sfxSuccess(), 600);
@@ -856,7 +873,26 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           setGuestWonBefore(true);
         }
         setWonChests([]);
-        setDroppedMaterials([]);
+
+        const mats = rollMaterialDrops(monster)
+          .filter(m => !m.id?.startsWith("frag_"))
+          .slice(0, 1);
+        setDroppedMaterials(mats);
+        if (profile?.id && mats.length > 0) {
+          addMaterials(profile.id, mats).catch(() => {});
+        }
+
+        const baseCoins = rollCoins(monster.tier, mode);
+        const boost = parseFloat(sessionStorage.getItem("guest_coin_boost") || "1");
+        const total = Math.max(1, Math.round(baseCoins * boost));
+        sessionStorage.removeItem("guest_coin_boost");
+        setDroppedCoins(total);
+        if (profile?.id) {
+          addCoins(profile.id, total).catch(() => {});
+        } else {
+          const prev = parseInt(sessionStorage.getItem("guest_coins") || "0", 10);
+          sessionStorage.setItem("guest_coins", String(prev + total));
+        }
       } else {
         // 一般射手：先算好所有寶箱，再一次 addChests（避免兩次 getDoc+setDoc 競態）
         const mainChests = [mainChest, potionChest].filter(Boolean);
@@ -1755,7 +1791,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         position:"fixed", top:0, bottom:0,
         left:"50%", transform:"translateX(-50%)",
         width:"100%", maxWidth:540,
-        overflow:"hidden", zIndex:9999,
+        // 小螢幕上底部輸入區＋送出鈕可能超出可視高度：改成 Y 軸可捲，確保一定捲得到「送出」
+        // （修：訪客單人戰鬥輸入完分數畫面卡住、拉不到送出鈕）。X 軸維持 hidden 不讓橫向亂跑。
+        overflowX:"hidden", overflowY:"auto", zIndex:9999,
         backgroundImage:`url(${battleBg})`,
         backgroundSize:"cover", backgroundPosition:"center",
         display:"flex", flexDirection:"column"
@@ -2235,6 +2273,26 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
                 <span className="text-white font-black text-sm">+{lootCatXP}</span>
               </div>
             )}
+          </div>
+        )}
+        {isGuest && (droppedCoins > 0 || droppedMaterials.length > 0) && (
+          <div className="w-full rounded-2xl p-4 flex flex-col gap-3"
+            style={{ background:"linear-gradient(135deg,rgba(15,23,42,0.78),rgba(30,41,59,0.72))", border:"1px solid rgba(148,163,184,0.28)" }}>
+            <div className="text-slate-200 font-black text-sm">🎒 本場獎勵已存入體驗角色</div>
+            <div className="grid grid-cols-2 gap-2">
+              {droppedCoins > 0 && (
+                <div className="rounded-xl px-3 py-2 bg-amber-500/15 border border-amber-400/30">
+                  <div className="text-[10px] text-amber-200 font-bold">金幣</div>
+                  <div className="text-amber-300 font-black text-lg">+{droppedCoins}</div>
+                </div>
+              )}
+              {droppedMaterials.map((mat, idx) => (
+                <div key={`${mat.id}-${idx}`} className="rounded-xl px-3 py-2 bg-emerald-500/10 border border-emerald-400/25">
+                  <div className="text-[10px] text-emerald-200 font-bold">材料</div>
+                  <div className="text-emerald-100 font-black text-sm truncate">+1 {mat.name || mat.id}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {/* ── 掉落物顯示（怪物死亡後的戰利品）── */}

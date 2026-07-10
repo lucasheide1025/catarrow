@@ -1,6 +1,6 @@
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
-> 最後更新：2026-07-10
+> 最後更新：2026-07-11
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -13,12 +13,30 @@
 | 官網要手動 `vercel deploy`，push 不會上線 | `catarrow-archery` 專案沒接 GitHub 自動部署；改 `website/` 後要複製到暫存夾跑 `npx vercel deploy --prod`（CLI 已登入 broudes-1864）。主 App `catarrow` 才是 push 自動部署，兩者不同專案別搞混 |
 | 訪客/兒童新方向：多人玩法要開 | 規格見 `guest-kid-ui-redesign-spec.md`；組隊、T1-T2 探索地下城、低階活動世界王都要支援團康，不要沿用「訪客只能單人」舊假設 |
 | 訪客/兒童差異在規則，不在質感 | UI 要共用正式打怪/組隊/地下城/世界王；難度鎖 T1-T2，獎勵低風險 |
+| 訪客/兒童主視覺已改成活動式深色介面 | `GuestApp.jsx` scoped CSS 重做登入頁、頂部狀態列、首頁 hero、活動入口 grid、底部導覽與角色頁；正式戰鬥元件入口不重刻 |
 | 不要用 `startsWith("guest")` 判斷新訪客 | 新 guest/kid 是 Firestore 隨機 doc id；要用 `accountType`、`guestProfile` 或明確 mode flag |
+| 訪客/兒童 session 已依模式隔離 | `GuestApp` session key 包含 `accountType` + `sessionSourceId`；組隊 session 也綁 `memberId`，同裝置切 QR 不會接錯上一位玩家 |
+| 兒童場次有原始與最近歸屬 | `sessionSourceId` 保留首次場次；`lastSessionSourceId` 會在回訪掃不同場次 QR 時更新；後台篩選兩者都看 |
+| 訪客/兒童轉正式是原文件改寫 | `convertGuestToOfficial()` 只允許 `guest/kid` 轉 `official`，docId 保留、uid 換成正式 Auth uid；不要建立第二份 members 文件 |
+| 正式資料層用 `accountType` 排除體驗帳號 | `db.js::isGuestOrKidMember()` 保護箭數、怪物圖鑑、藥水圖鑑、卡包、怪物卡、王卡、里程碑；`addCoins()` 例外，guest/kid 需要低階持久金幣 |
 | 訪客單人打怪已改用 `guestProfile` | `GuestApp` 等 `guestFullProfile` 後傳給 `MonsterBattle`；`useCatCompanion(profileOverride)` 可避免教練裝置共用時讀到教練貓咪 |
 | 訪客組隊已改用 `accountType` | `partyRooms.members.{id}.accountType` 會寫入；`PartyBattleRoom` 不再用 `startsWith("guest")`，guest/kid 只拿低階持久金幣/材料，不拿正式寶箱與 XP |
+| 訪客地下城組隊已開放但低價化 | `dungeonRooms.members.{id}.accountType` 會寫入；guest/kid 可建/加入 T1-T2 組隊探索，但結算不給正式寶箱、箭露、射手 XP、首殺廣播 |
+| 地下城訪客判斷不要看 id 前綴 | `DungeonBattleRoom` 已改用 `isGuestMode`；`dungeonDb` 舊式房間成員也可寫 `accountType`，金幣事件/舊獎勵會跳過 guest/kid |
+| 訪客世界王已開放但只給體驗回饋 | `WorldBossLobby`/`WorldBossAttack` 使用 `guestOverride`/`accountType`；guest/kid 可參戰與上活動傷害排行，但正式擊殺箱、王卡、排名獎、箭露、射手 XP 都不給，只給少量體驗金幣與貓貓 XP |
+| 世界王參戰資料有活動來源 | `participants.{id}` 會寫 `accountType` 與 `sessionSourceId`；訪客/兒童大廳已用此欄位顯示「本場活動榜」，舊資料沒有場次 id 時只留在全體排行 |
+| 世界王本機暫存要綁玩家 | `WorldBossAttack` 的中途戰鬥、訪客備用金幣、藥水暫存 key 已包含 `memberId`，避免同平板換孩子時接到上一人的戰鬥 |
+| 後台場次卡可看世界王活動成果 | `AdminKidMode` 訂閱最新世界王，把 participants 依 `sessionSourceId` 彙整到夏令營場次卡：人數、總傷害、最高傷害者 |
+| 訪客角色頁是正式系統摘要 | `GuestProfileHub` 顯示金幣、裝備完成度、材料、轉蛋幣、貓咪數；裝備頁用 `guestProfile`，商店金幣讀寫 `members/{id}.coins` |
+| 訪客/兒童初始資金是 500 | `resolveGuestSession()` 新帳號直接給 500；舊帳號若沒有 `starterCoinsGranted`，下次登入一次性補 500，避免測試帳號 0 金幣不能買體驗商店 |
+| 體驗商店已深色化且賣新手裝備包 | `GuestShop` 不再白底；「新手裝備包」花 240 金幣補齊 10 格 common `rpgEquip` 並解鎖 itemId |
+| 訪客/兒童有體驗戰績摘要 | `recordGuestBattleStats()` 累積 `guestBattleStats`：戰鬥、勝場、箭數、總分、傷害、最近表現；紀念卡會顯示箭數/勝場/平均分/最近傷害 |
+| 訪客/兒童紀念卡已顯示成果摘要 | `GuestShareCard` 接 `profile`/`wbResult`，卡面顯示金幣、裝備、材料、貓咪與最近世界王傷害 |
+| 訪客/兒童低階轉蛋已開 | 角色頁 `GuestGachaPanel` 消耗 1 `gachaCoins` 給 8~24 金幣；商店可用 60 金幣買 1 枚體驗轉蛋幣，不接正式貓村轉蛋池 |
 | 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
 | 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
 | 採集不給金幣/寶箱/射手 XP | 採集定位是貓貓 XP、羈絆、少量怪物材料與少量村資源；主線掉寶仍留給單人打怪與地下城 |
+| 採集模式已有演出層 | `GatheringRun.jsx` 使用 `public/council/bg|cat|obs` 舊素材，依採集點與 T 階切換背景、貓、障礙物；射擊/復原/送出/結算接 Web Audio 音效與震動，但進度、掉寶、箭數公式不變 |
 | `profile.id` ≠ `profile.uid` | `id`=Firestore docId，`uid`=Auth UID；混用會找不到文件 |
 | 卡片加成顯示必須用 `useState` | `useRef` 不觸發重新渲染，MonsterBattle 選擇畫面曾因此不顯示加成 |
 | 下課後不觸發里程碑 | `MemberPractice` 有 `classEndedRef`，下課後跳過里程碑計算 |

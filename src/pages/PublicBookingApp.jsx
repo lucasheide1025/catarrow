@@ -14,8 +14,9 @@
 // 那邊已經處理好「隔離臨時Firebase App、不能動到這台裝置上教練自己的登入」這件事，
 // 這個檔案不需要、也不應該自己碰 Firebase Auth。
 import { useState, useEffect } from "react";
-import { registerGuestWithPassword, loginGuestWithPassword } from "../lib/guestAuth";
-import { createBooking } from "../lib/bookingDb";
+import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial } from "../lib/guestAuth";
+import { createBooking, getBookingsForMember, cancelBooking } from "../lib/bookingDb";
+import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
 import ParticipantCountPicker from "../components/booking/ParticipantCountPicker";
@@ -56,11 +57,29 @@ export default function PublicBookingApp() {
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authErr, setAuthErr]   = useState("");
+  // Google 登入：登入後拿到 {email,name,uid}，再讓客人補填電話才存檔
+  const [googleInfo, setGoogleInfo]   = useState(null);
+  const [googlePhone, setGooglePhone] = useState("");
 
   // ④ 送出
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
+
+  // ⑤ 我的預約（登入後可查詢/取消）
+  const [showMine, setShowMine]       = useState(false);
+  const [myBookings, setMyBookings]   = useState([]);
+  const [loadingMine, setLoadingMine] = useState(false);
+
+  // ⑥ 前台登入入口（回訪訪客不用先選時段就能登入）
+  const [showLogin, setShowLogin] = useState(false);
+
+  // ⑦ 非必填問卷（intake）
+  const [intakeExp, setIntakeExp]                 = useState(""); // 有接觸過射箭嗎
+  const [intakeBow, setIntakeBow]                 = useState(""); // 想了解的弓種
+  const [intakePurpose, setIntakePurpose]         = useState(""); // 來射箭的目的
+  const [intakeRemark, setIntakeRemark]           = useState(""); // 其他備註
+  const [intakeSystemIntro, setIntakeSystemIntro] = useState(""); // 是否需要介紹電子射箭系統
 
   async function handleAuth() {
     setAuthErr("");
@@ -85,20 +104,76 @@ export default function PublicBookingApp() {
     const profileObj = { id: res.id, name: res.name || name.trim() || "訪客射手", email: res.email || email.trim(), phone: res.phone || phone.trim() };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(profileObj));
     setProfile(profileObj);
+    setShowLogin(false); // 前台登入入口用完關掉
     // 找回舊記錄且已經有預約紀錄 → 預設取消勾選「第一次來體驗」，仍可自己改
     setIsNewStudent(!(res.bookingStats?.totalBookings > 0));
+  }
+
+  // 按「用 Google 登入」→ 跳 Google 視窗，拿到 email/姓名/uid（還沒存檔，因為要補電話）
+  async function handleGoogleLogin() {
+    setAuthErr("");
+    setAuthBusy(true);
+    const res = await signInWithGoogle();
+    setAuthBusy(false);
+    if (!res.ok) { setAuthErr(res.reason || "Google 登入失敗"); return; }
+    setGoogleInfo({ email: res.email, name: res.name, uid: res.uid });
+    setGooglePhone("");
+  }
+
+  // 補填完電話 → 存成訪客帳號（email＋電話）→ finishAuth 會自動送出預約
+  async function handleGooglePhoneConfirm() {
+    if (!googlePhone.trim()) { setAuthErr("電話為必填，方便有狀況時第一時間聯絡你"); return; }
+    setAuthBusy(true);
+    const res = await saveGuestFromSocial({
+      name: googleInfo.name, email: googleInfo.email,
+      phone: googlePhone, uid: googleInfo.uid,
+    });
+    setAuthBusy(false);
+    if (!res.ok) { setAuthErr(res.reason || "登入失敗"); return; }
+    setGoogleInfo(null);
+    finishAuth(res); // 沿用現成的：設 profile → useEffect 自動送出預約
+  }
+
+  // ── 我的預約：查詢／取消／登出 ──
+  async function loadMyBookings() {
+    if (!profile?.id) return;
+    setLoadingMine(true);
+    const res = await getBookingsForMember(profile.id);
+    setMyBookings(res.ok ? res.bookings.filter(b => b.status === "confirmed") : []);
+    setLoadingMine(false);
+  }
+  useEffect(() => { if (showMine) loadMyBookings(); }, [showMine]); // eslint-disable-line
+
+  async function handleCancelBooking(id) {
+    const res = await cancelBooking(id);
+    if (res.ok) loadMyBookings();
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setProfile(null); setShowMine(false);
+    setSelectedSlot(null); setSlotConfirmed(false); setDone(false);
+    setGoogleInfo(null);
+    setName(""); setEmail(""); setPhone(""); setPassword(""); setGooglePhone("");
   }
 
   async function handleSubmitBooking() {
     if (!selectedSlot || !profile) return;
     setSubmitErr("");
     setSubmitting(true);
+    const intake = {
+      experience: intakeExp || "",
+      bowInterest: intakeBow || "",
+      purpose: intakePurpose || "",
+      remark: (intakeRemark || "").trim(),
+      needSystemIntro: intakeSystemIntro || "",
+    };
     const res = await createBooking(
       profile.id, profile.name,
       { email: profile.email, phone: profile.phone },
       planType, durationHours, participantCount, isNewStudent,
       selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
-      "online_public",
+      "online_public", "", intake,
     );
     setSubmitting(false);
     if (!res.ok) { setSubmitErr(res.reason || "預約失敗，請稍後再試"); return; }
@@ -131,48 +206,130 @@ export default function PublicBookingApp() {
           <button onClick={() => { setDone(false); setSelectedSlot(null); setSlotConfirmed(false); }} style={submitButtonStyle(false)}>
             ➕ 再約一個時段
           </button>
+          <button onClick={() => { setDone(false); setSelectedSlot(null); setSlotConfirmed(false); setShowMine(true); }}
+            style={{ width: "100%", padding: "12px 0", borderRadius: 14, border: "1px solid rgba(124,58,237,.4)", background: "rgba(124,58,237,.15)", color: "#c4b5fd", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            📋 查看我的預約
+          </button>
+          <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(255,255,255,.45)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>登出</button>
         </div>
       </div>
     );
   }
 
-  // ── ③ 時段已確認但還沒登入/註冊 → 顯示身份表單 ─────────────
-  if (slotConfirmed && !profile) {
+  // ── ⑤ 我的預約（登入後查詢／取消）────────────────────────
+  if (profile && showMine) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12, marginTop: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <button onClick={() => setShowMine(false)} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回預約</button>
+            <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>登出</button>
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "white", textAlign: "center", marginBottom: 4 }}>📋 我的預約</div>
+          {loadingMine ? (
+            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14, textAlign: "center", padding: "20px 0" }}>載入中…</div>
+          ) : myBookings.length === 0 ? (
+            <div style={{ color: "rgba(255,255,255,.5)", fontSize: 14, textAlign: "center", padding: "20px 0" }}>目前沒有預約</div>
+          ) : (
+            myBookings.slice()
+              .sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`))
+              .map(b => (
+                <div key={b.id} style={{ background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: "white", fontWeight: 700, fontSize: 14 }}>{b.date}　{b.startTime}-{b.endTime}</div>
+                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginTop: 2 }}>
+                      {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
+                    </div>
+                  </div>
+                  <button onClick={() => handleCancelBooking(b.id)}
+                    style={{ flexShrink: 0, background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", color: "#f87171", borderRadius: 10, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    取消
+                  </button>
+                </div>
+              ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── ③ 時段已確認、或按了前台「登入」→ 顯示身份表單 ─────────────
+  if ((slotConfirmed || showLogin) && !profile) {
     return (
       <div style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
-          <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
-            已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}・{participantCount}人
-            <button onClick={() => { setSlotConfirmed(false); setSelectedSlot(null); }} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
-              重新選時段
-            </button>
-          </div>
+          {slotConfirmed && selectedSlot ? (
+            <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
+              已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}・{participantCount}人
+              <button onClick={() => { setSlotConfirmed(false); setSelectedSlot(null); }} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
+                重新選時段
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <button onClick={() => { setShowLogin(false); setAuthErr(""); setGoogleInfo(null); }} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回</button>
+              <span style={{ color: "white", fontSize: 16, fontWeight: 900 }}>登入</span>
+              <span style={{ width: 40 }} />
+            </div>
+          )}
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { setAuthTab("register"); setAuthErr(""); }}
-              style={tabButtonStyle(authTab === "register")}>第一次來（註冊）</button>
-            <button onClick={() => { setAuthTab("login"); setAuthErr(""); }}
-              style={tabButtonStyle(authTab === "login")}>已有帳號（登入）</button>
-          </div>
-
-          {authTab === "register" ? (
+          {googleInfo ? (
+            // ── Google 登入成功 → 只差一格電話 ──
             <>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" style={inputStyle} autoFocus />
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} />
-              <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="電話" style={inputStyle} />
-              <input value={password} onChange={e => setPassword(e.target.value)} placeholder="設定密碼（至少6碼）" type="password" style={inputStyle} />
+              <div style={{ color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
+                已用 Google 登入：{googleInfo.email}
+              </div>
+              <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, textAlign: "center", lineHeight: 1.7 }}>
+                再留一個電話就完成——電話為必填，有狀況我們才能第一時間聯絡你。
+              </div>
+              <input value={googlePhone} onChange={e => setGooglePhone(e.target.value)}
+                placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
+              {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
+              <button onClick={handleGooglePhoneConfirm} disabled={authBusy} style={submitButtonStyle(authBusy)}>
+                {authBusy ? "處理中…" : "✅ 完成並預約"}
+              </button>
+              <button onClick={() => { setGoogleInfo(null); setAuthErr(""); }}
+                style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
+                改用其他方式
+              </button>
             </>
           ) : (
             <>
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoFocus />
-              <input value={password} onChange={e => setPassword(e.target.value)} placeholder="密碼" type="password" style={inputStyle} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { setAuthTab("register"); setAuthErr(""); }}
+                  style={tabButtonStyle(authTab === "register")}>第一次來（註冊）</button>
+                <button onClick={() => { setAuthTab("login"); setAuthErr(""); }}
+                  style={tabButtonStyle(authTab === "login")}>已有帳號（登入）</button>
+              </div>
+
+              {authTab === "register" ? (
+                <>
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" style={inputStyle} autoFocus />
+                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} />
+                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="電話" style={inputStyle} />
+                  <input value={password} onChange={e => setPassword(e.target.value)} placeholder="設定密碼（至少6碼）" type="password" style={inputStyle} />
+                </>
+              ) : (
+                <>
+                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoFocus />
+                  <input value={password} onChange={e => setPassword(e.target.value)} placeholder="密碼" type="password" style={inputStyle} />
+                </>
+              )}
+
+              {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
+              <button onClick={handleAuth} disabled={authBusy} style={submitButtonStyle(authBusy)}>
+                {authBusy ? "處理中…" : authTab === "register" ? "🚀 完成註冊並預約" : "🔑 登入並預約"}
+              </button>
+
+              <div style={{ textAlign: "center", color: "rgba(255,255,255,.35)", fontSize: 12, margin: "4px 0" }}>或</div>
+              <button onClick={handleGoogleLogin} disabled={authBusy}
+                style={{ width: "100%", minHeight: 48, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)",
+                  background: "#fff", color: "#1f2937", fontWeight: 800, cursor: authBusy ? "default" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <span style={{ fontWeight: 900, color: "#4285F4" }}>G</span> 用 Google 登入
+              </button>
             </>
           )}
-
-          {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
-          <button onClick={handleAuth} disabled={authBusy} style={submitButtonStyle(authBusy)}>
-            {authBusy ? "處理中…" : authTab === "register" ? "🚀 完成註冊並預約" : "🔑 登入並預約"}
-          </button>
         </div>
       </div>
     );
@@ -200,6 +357,30 @@ export default function PublicBookingApp() {
   return (
     <div style={wrapStyle}>
       <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+        <a href="https://archery.catgroup.com.tw/"
+          style={{ color: "rgba(255,255,255,.55)", fontSize: 13, fontWeight: 700, textDecoration: "none", alignSelf: "flex-start" }}>
+          ← 返回首頁
+        </a>
+        {profile && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <button onClick={() => setShowMine(true)}
+              style={{ background: "rgba(124,58,237,.2)", border: "1px solid rgba(124,58,237,.4)", color: "#c4b5fd", borderRadius: 10, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              📋 我的預約
+            </button>
+            <button onClick={handleLogout}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 13, textDecoration: "underline", cursor: "pointer", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              登出（{profile.name || profile.email}）
+            </button>
+          </div>
+        )}
+        {!profile && (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={() => { setShowLogin(true); setAuthTab("login"); setAuthErr(""); }}
+              style={{ background: "none", border: "1px solid rgba(124,58,237,.4)", color: "#c4b5fd", borderRadius: 10, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              已有帳號？登入
+            </button>
+          </div>
+        )}
         <div style={{ fontSize: 48, textAlign: "center" }}>🏹</div>
         <div style={{ fontSize: 22, fontWeight: 900, color: "white", textAlign: "center" }}>貓小隊射箭場・線上約課</div>
         <div style={{ fontSize: 13, color: "rgba(255,255,255,.55)", textAlign: "center", lineHeight: 1.6 }}>
@@ -220,6 +401,56 @@ export default function PublicBookingApp() {
             style={{ width: 16, height: 16 }} />
           是否為第一次來體驗
         </label>
+
+        {/* ── 提醒 ── */}
+        <div style={{ background: "rgba(251,191,36,.1)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 12, padding: "10px 14px", color: "#fde68a", fontSize: 12.5, lineHeight: 1.8 }}>
+          ⚠️ 5 歲以下無法參與射箭；10 歲以下需大人全程陪同。<br />
+          👕 建議穿短袖；場內有貓咪，會過敏或不喜歡貓的朋友請斟酌。
+        </div>
+
+        {/* ── 非必填問卷 ── */}
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>以下皆為選填，幫助我們更了解你（可不填）：</div>
+
+        <label style={labelStyle}>有接觸過射箭嗎？
+          <select value={intakeExp} onChange={e => setIntakeExp(e.target.value)} style={inputStyle}>
+            <option value="">不指定</option>
+            <option value="新手">新手</option>
+            <option value="接觸過">接觸過（夜市、觀光景點、體驗課）</option>
+            <option value="熟悉">熟悉（可自行操作）</option>
+          </select>
+        </label>
+
+        <label style={labelStyle}>想了解的弓種
+          <select value={intakeBow} onChange={e => setIntakeBow(e.target.value)} style={inputStyle}>
+            <option value="">不指定</option>
+            <option value="競技反曲弓">競技反曲弓</option>
+            <option value="美式獵弓">美式獵弓</option>
+            <option value="傳統弓">傳統弓</option>
+            <option value="沒概念">沒概念</option>
+          </select>
+        </label>
+
+        <label style={labelStyle}>來射箭的目的
+          <select value={intakePurpose} onChange={e => setIntakePurpose(e.target.value)} style={inputStyle}>
+            <option value="">不指定</option>
+            <option value="純粹玩樂">純粹玩樂</option>
+            <option value="體驗">體驗</option>
+            <option value="正式學習">正式學習</option>
+          </select>
+        </label>
+
+        <label style={labelStyle}>是否需要介紹電子射箭系統
+          <select value={intakeSystemIntro} onChange={e => setIntakeSystemIntro(e.target.value)} style={inputStyle}>
+            <option value="">不指定</option>
+            <option value="是">是</option>
+            <option value="否">否</option>
+          </select>
+        </label>
+
+        <label style={labelStyle}>其他備註需求
+          <textarea value={intakeRemark} onChange={e => setIntakeRemark(e.target.value)} rows={2}
+            placeholder="有任何特殊需求可以在這裡告訴我們" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+        </label>
       </div>
 
       {selectedSlot && !slotConfirmed && (
@@ -235,6 +466,13 @@ export default function PublicBookingApp() {
 const inputStyle = {
   width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid rgba(124,58,237,.4)",
   background: "rgba(255,255,255,.06)", color: "white", fontSize: 16, outline: "none", boxSizing: "border-box",
+  // colorScheme:"dark" 讓 <select> 展開的原生下拉用深色渲染，避免白底白字看不見
+  colorScheme: "dark",
+};
+
+const labelStyle = {
+  display: "flex", flexDirection: "column", gap: 6,
+  fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.75)",
 };
 
 function tabButtonStyle(active) {

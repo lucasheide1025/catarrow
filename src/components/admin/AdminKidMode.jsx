@@ -8,6 +8,7 @@ import {
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { fmtDT, today } from "../../lib/constants";
+import { subscribeLatestWorldBoss } from "../../lib/worldBossDb";
 import { Card, Btn, Inp, TA, Modal, Sel, Spinner, Empty, ConfirmModal, useToast } from "../shared/UI";
 import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
 import { firebaseConfig } from "../../lib/firebase";
@@ -19,11 +20,30 @@ const ACCOUNT_TYPE_STYLE = {
   kid:   "bg-pink-600/30 text-pink-300",
 };
 
+function buildWorldBossSessionStats(event) {
+  const stats = {};
+  Object.entries(event?.participants || {}).forEach(([id, p]) => {
+    const sessionId = p.sessionSourceId;
+    if (!sessionId) return;
+    if (!stats[sessionId]) {
+      stats[sessionId] = { count: 0, dmg: 0, top: null };
+    }
+    const dmg = p.totalDmg || 0;
+    stats[sessionId].count += 1;
+    stats[sessionId].dmg += dmg;
+    if (!stats[sessionId].top || dmg > stats[sessionId].top.dmg) {
+      stats[sessionId].top = { id, name: p.name || "未命名", dmg };
+    }
+  });
+  return stats;
+}
+
 export default function AdminKidMode() {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
   const [sessions, setSessions] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [latestWorldBoss, setLatestWorldBoss] = useState(null);
   const [loading, setLoading]   = useState(true);
 
   const [sessionModal, setSessionModal] = useState(null); // null | {} | session object
@@ -40,9 +60,17 @@ export default function AdminKidMode() {
     return () => { unsubS?.(); unsubA?.(); };
   }, []);
 
+  useEffect(() => {
+    const unsub = subscribeLatestWorldBoss(setLatestWorldBoss);
+    return () => unsub?.();
+  }, []);
+
   const displayedAccounts = filterSession === "all"
     ? accounts
-    : accounts.filter(a => (a.sessionSourceId || "") === filterSession);
+    : accounts.filter(a => (a.sessionSourceId || "") === filterSession || (a.lastSessionSourceId || "") === filterSession);
+
+  const sessionNameById = Object.fromEntries(sessions.map(s => [s.id, s.name || s.id]));
+  const wbSessionStats = buildWorldBossSessionStats(latestWorldBoss);
 
   async function handleDeleteSession(id) {
     try {
@@ -78,28 +106,51 @@ export default function AdminKidMode() {
       {sessions.length === 0 && <Empty message="尚未建立任何場次" />}
 
       <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-        {sessions.map(s => (
-          <Card key={s.id} className="p-3 flex flex-col gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="font-black text-white text-sm">{s.name || "（未命名場次）"}</div>
-                <div className="text-gray-400 text-xs mt-0.5">{s.startDate || "?"} ～ {s.endDate || "?"}</div>
+        {sessions.map(s => {
+          const wbStat = wbSessionStats[s.id];
+          return (
+            <Card key={s.id} className="p-3 flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-black text-white text-sm">{s.name || "（未命名場次）"}</div>
+                  <div className="text-gray-400 text-xs mt-0.5">{s.startDate || "?"} ～ {s.endDate || "?"}</div>
+                </div>
+                <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0">
+                  <span className={`text-xs font-bold ${s.active ? "text-green-400" : "text-gray-500"}`}>
+                    {s.active ? "啟用中" : "已停用"}
+                  </span>
+                  <input type="checkbox" checked={!!s.active} onChange={() => handleToggleActive(s)}
+                    className="accent-green-500 w-4 h-4" />
+                </label>
               </div>
-              <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0">
-                <span className={`text-xs font-bold ${s.active ? "text-green-400" : "text-gray-500"}`}>
-                  {s.active ? "啟用中" : "已停用"}
-                </span>
-                <input type="checkbox" checked={!!s.active} onChange={() => handleToggleActive(s)}
-                  className="accent-green-500 w-4 h-4" />
-              </label>
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              <Btn v="secondary" size="sm" onClick={() => setQrModal(s)}>📱 QR</Btn>
-              <Btn v="secondary" size="sm" onClick={() => setSessionModal(s)}>✏️ 編輯</Btn>
-              <button onClick={() => setDelConfirm(s.id)} className="text-red-300 hover:text-red-500 text-xs ml-auto self-center">刪除</button>
-            </div>
-          </Card>
-        ))}
+
+              {latestWorldBoss && (
+                <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 px-3 py-2">
+                  <div className="flex justify-between gap-2 text-xs">
+                    <span className="text-sky-300 font-bold truncate">🌍 {latestWorldBoss.bossData?.name || "世界王"}</span>
+                    <span className="text-slate-300 font-black">{wbStat?.count || 0} 人</span>
+                  </div>
+                  <div className="mt-1 flex justify-between gap-2 text-xs text-slate-400">
+                    <span>本場傷害</span>
+                    <span className="text-amber-300 font-black">{(wbStat?.dmg || 0).toLocaleString()}</span>
+                  </div>
+                  {wbStat?.top && (
+                    <div className="mt-1 flex justify-between gap-2 text-[11px] text-slate-500">
+                      <span className="truncate">最高：{wbStat.top.name}</span>
+                      <span>{wbStat.top.dmg.toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-1.5 flex-wrap">
+                <Btn v="secondary" size="sm" onClick={() => setQrModal(s)}>📱 QR</Btn>
+                <Btn v="secondary" size="sm" onClick={() => setSessionModal(s)}>✏️ 編輯</Btn>
+                <button onClick={() => setDelConfirm(s.id)} className="text-red-300 hover:text-red-500 text-xs ml-auto self-center">刪除</button>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {/* ── 帳號列表 ── */}
@@ -128,6 +179,12 @@ export default function AdminKidMode() {
             <div className="text-gray-400 text-xs">
               聯絡方式：{a.contactRaw || "—"}
             </div>
+            {(a.sessionSourceId || a.lastSessionSourceId) && (
+              <div className="text-gray-500 text-xs leading-relaxed">
+                原始場次：{sessionNameById[a.sessionSourceId] || a.sessionSourceId || "—"}<br />
+                最近場次：{sessionNameById[a.lastSessionSourceId] || a.lastSessionSourceId || "—"}
+              </div>
+            )}
             <div className="flex gap-2 text-xs text-gray-500">
               <span>🪙 {a.coins || 0}</span>
               <span>最近登入：{a.lastLoginAt?.toDate?.() ? fmtDT(a.lastLoginAt) : "—"}</span>
@@ -258,11 +315,12 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
     setSaving(true);
     setErr("");
     // 用第二個 Firebase App 建立帳號，避免切換主要登入身份（比照 AddMemberModal）
-    const tmpApp  = initializeApp(firebaseConfig, "tmp_" + Date.now());
+    const tmpApp  = initializeApp(firebaseConfig, `tmp_convert_${Date.now()}_${Math.random().toString(36).slice(2)}`);
     const tmpAuth = getAuth(tmpApp);
     try {
-      const cred = await createUserWithEmailAndPassword(tmpAuth, form.email, form.password);
-      const { email, password, ...rest } = form;
+      const email = form.email.trim();
+      const cred = await createUserWithEmailAndPassword(tmpAuth, email, form.password);
+      const { email: _email, password: _password, ...rest } = form;
       await convertGuestToOfficial(account.id, { ...rest, email }, cred.user.uid, operatorId);
       toast("已轉為正式會員 🐱");
       onClose();
@@ -280,7 +338,7 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
     <Modal open wide onClose={onClose} title={`轉正式 — ${account.name || account.id}`}>
       <div className="flex flex-col gap-5">
         <div className="bg-amber-900/20 border border-amber-400/30 rounded-xl px-3 py-2 text-amber-300 text-xs">
-          原本的遊戲資料（金幣/材料/地下城進度等）會原封不動保留在同一份記錄，僅補上正式學籍欄位。
+          原本的遊戲資料（金幣/材料/地下城進度等）會原封不動保留在同一份記錄，僅補上正式學籍欄位。來源：{ACCOUNT_TYPE_LABEL[account.accountType] || account.accountType}
         </div>
         <div>
           <div className="text-slate-400 text-xs font-bold mb-3">🔑 登入資訊</div>

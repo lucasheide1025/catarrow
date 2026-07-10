@@ -55,6 +55,18 @@ const sortByLastLogin = docs =>
 // 所以用 JS filter 而非 Firestore where（避免漏掉沒有 accountType 欄位的舊資料）
 const isOfficial = m => m.accountType !== "guest" && m.accountType !== "kid";
 
+async function isGuestOrKidMember(memberId) {
+  if (!memberId) return true;
+  if (memberId.startsWith("guest")) return true;
+  try {
+    const snap = await getDoc(doc(db, C.members, memberId));
+    const type = snap.exists() ? snap.data()?.accountType : null;
+    return type === "guest" || type === "kid";
+  } catch {
+    return false;
+  }
+}
+
 export async function getMembers() {
   const snap = await getDocs(collection(db, C.members));
   return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOfficial));
@@ -133,6 +145,9 @@ export function subscribeKidAccounts(callback) {
 export async function convertGuestToOfficial(memberId, officialFields, newUid, operatorId) {
   const before = await getMember(memberId);
   if (!before) throw new Error("找不到該訪客/兒童記錄");
+  if (before.accountType !== "guest" && before.accountType !== "kid") {
+    throw new Error("此帳號已不是訪客/兒童，不能重複轉正式");
+  }
   const patch = {
     ...officialFields,
     uid: newUid,
@@ -284,7 +299,7 @@ export async function addPracticeLog(memberId, data, operatorId) {
 // ── 每回合送出箭後立刻更新終身箭數 ─────────────────────────────
 // 統一由各模式的 submit handler 呼叫，取代 addPracticeLog 的批次更新。
 export async function addRoundArrows(memberId, count) {
-  if (!memberId || !count || count <= 0 || memberId.startsWith("guest")) return;
+  if (!memberId || !count || count <= 0 || await isGuestOrKidMember(memberId)) return;
   // 把 totalArrowsAllTime 與地下城發掘進度（dungeonExcavation）合併成同一次 updateDoc，
   // 避免每回合對同一份 members/{id} 文件寫兩次。
   const patch = { totalArrowsAllTime: increment(count) };
@@ -2084,7 +2099,7 @@ export async function saveMonsterLog(memberId, data) {
       distance:    data.distance    || null,
       createdAt:   serverTimestamp(),
     });
-    if (memberId && data.monsterId && !memberId.startsWith("guest")) {
+    if (memberId && data.monsterId && !(await isGuestOrKidMember(memberId))) {
       const totalScore = data.score || (data.roundScores || []).reduce((s, r) => s + (r.total || 0), 0);
       await updateMonsterDex(memberId, data.monsterId, data.result, totalScore, data.dmgDealt).catch(() => {});
     }
@@ -2439,7 +2454,7 @@ export async function getAllMonsterDex() {
 
 // 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
-  if (!memberId || !monsterId || memberId.startsWith("guest")) return;
+  if (!memberId || !monsterId || await isGuestOrKidMember(memberId)) return;
   await updateMonsterDex(memberId, monsterId, result, 0, dmgDealt || 0).catch(() => {});
 }
 
@@ -2485,10 +2500,11 @@ export function subscribePotionDex(memberId, callback) {
 }
 
 export async function recordPotionUsed(memberId, potionIds) {
-  if (!memberId || !potionIds?.length || memberId.startsWith("guest")) return;
+  const ids = Array.isArray(potionIds) ? potionIds : [potionIds].filter(Boolean);
+  if (!memberId || !ids.length || await isGuestOrKidMember(memberId)) return;
   const ref = doc(db, C_POTION_DEX, memberId);
   const updates = { updatedAt: serverTimestamp() };
-  for (const id of potionIds) updates[`used.${id}`] = increment(1);
+  for (const id of ids) updates[`used.${id}`] = increment(1);
   await setDoc(ref, updates, { merge: true });
 }
 
@@ -2555,6 +2571,42 @@ export async function addCoins(memberId, amount) {
   }
 }
 
+export async function recordGuestBattleStats(memberId, entry = {}) {
+  if (!memberId) return { ok: false, reason: "missing_member" };
+  try {
+    const isGuestMember = await isGuestOrKidMember(memberId);
+    if (!isGuestMember) return { ok: false, reason: "not_guest" };
+    const arrows = Math.max(0, Number(entry.arrows || 0));
+    const damage = Math.max(0, Math.round(Number(entry.damage || 0)));
+    const score = Math.max(0, Number(entry.score || 0));
+    const wins = entry.result === "win" ? 1 : 0;
+    const mode = entry.mode || "battle";
+    const last = {
+      mode,
+      result: entry.result || "done",
+      arrows,
+      damage,
+      score,
+      avgScore: arrows > 0 ? Math.round((score / arrows) * 10) / 10 : 0,
+      target: entry.target || null,
+      at: Date.now(),
+    };
+    await updateDoc(doc(db, C.members, memberId), {
+      "guestBattleStats.totalBattles": increment(1),
+      "guestBattleStats.totalWins": increment(wins),
+      "guestBattleStats.totalArrows": increment(arrows),
+      "guestBattleStats.totalDamage": increment(damage),
+      "guestBattleStats.totalScore": increment(score),
+      "guestBattleStats.last": last,
+      "guestBattleStats.recent": arrayUnion(last),
+      "guestBattleStats.updatedAt": serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "record_failed" };
+  }
+}
+
 // ─── 地下城次數管理 ────────────────────────────────────────
 export async function markDungeonUsed(memberId) {
   if (!memberId) return;
@@ -2588,7 +2640,7 @@ export async function resetAllMonsterSessions() {
 // ─── 圖片收集卡包 ──────────────────────────────────────────
 // 給玩家一個 card_pack 卡包，存入 chestInventory，之後從背包開箱
 export async function addCardPack(memberId, count = 1) {
-  if (!memberId || memberId.startsWith("guest")) return;
+  if (!memberId || await isGuestOrKidMember(memberId)) return;
   try {
     const packs = Array.from({ length: count }, (_, i) => ({
       id: `cardpack_${memberId}_${Date.now()}_${i}`,
@@ -2629,7 +2681,7 @@ function resolveEquippedCard(item, cards, wbCards) {
 
 // cardData = { monsterId, name, icon, tier, family }
 export async function addMonsterCard(memberId, cardData, chosenStat) {
-  if (!memberId || !cardData?.monsterId || memberId.startsWith("guest")) return;
+  if (!memberId || !cardData?.monsterId || await isGuestOrKidMember(memberId)) return;
   try {
     const ref  = doc(db, C_CARDS, memberId);
     const snap = await getDoc(ref);
@@ -2652,7 +2704,7 @@ export async function addMonsterCard(memberId, cardData, chosenStat) {
 // 世界王卡：一隻王一張，沒有重複張數概念。已擁有則直接略過（呼叫端可另外轉換材料）。
 // statMode==="choose"（教練系列）時 chosenStat 必填；statMode==="fixed" 直接用 WB_CARDS 內建的 stat。
 export async function addWorldBossCard(memberId, bossKey, chosenStat) {
-  if (!memberId || !bossKey || memberId.startsWith("guest")) return { ok: false };
+  if (!memberId || !bossKey || await isGuestOrKidMember(memberId)) return { ok: false };
   const cardDef = WB_CARDS[bossKey];
   if (!cardDef) return { ok: false, reason: "找不到世界王卡定義" };
   try {
@@ -3497,7 +3549,7 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
 // ●● 使用者共用箭數里程碑檢查（取代各模式各自傳入 0 導致每日重複跳出的 bug）●●
 // 自動查詢今日練習紀錄的實際累計箭數，正確計算穿越了哪些門檻，實際發獎交給 grantArrowMilestoneRewards。
 export async function checkAndGrantArrowMilestones(memberId, sessionArrowCount) {
-  if (!memberId || !sessionArrowCount || sessionArrowCount <= 0 || memberId.startsWith("guest")) {
+  if (!memberId || !sessionArrowCount || sessionArrowCount <= 0 || await isGuestOrKidMember(memberId)) {
     return { milestones: [] };
   }
   const d = new Date();
