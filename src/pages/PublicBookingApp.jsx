@@ -413,37 +413,37 @@ export default function PublicBookingApp() {
 
         <label style={labelStyle}>有接觸過射箭嗎？
           <select value={intakeExp} onChange={e => setIntakeExp(e.target.value)} style={inputStyle}>
-            <option value="">不指定</option>
-            <option value="新手">新手</option>
-            <option value="接觸過">接觸過（夜市、觀光景點、體驗課）</option>
-            <option value="熟悉">熟悉（可自行操作）</option>
+            <option style={optStyle} value="">不指定</option>
+            <option style={optStyle} value="新手">新手</option>
+            <option style={optStyle} value="接觸過">接觸過（夜市、觀光景點、體驗課）</option>
+            <option style={optStyle} value="熟悉">熟悉（可自行操作）</option>
           </select>
         </label>
 
         <label style={labelStyle}>想了解的弓種
           <select value={intakeBow} onChange={e => setIntakeBow(e.target.value)} style={inputStyle}>
-            <option value="">不指定</option>
-            <option value="競技反曲弓">競技反曲弓</option>
-            <option value="美式獵弓">美式獵弓</option>
-            <option value="傳統弓">傳統弓</option>
-            <option value="沒概念">沒概念</option>
+            <option style={optStyle} value="">不指定</option>
+            <option style={optStyle} value="競技反曲弓">競技反曲弓</option>
+            <option style={optStyle} value="美式獵弓">美式獵弓</option>
+            <option style={optStyle} value="傳統弓">傳統弓</option>
+            <option style={optStyle} value="沒概念">沒概念</option>
           </select>
         </label>
 
         <label style={labelStyle}>來射箭的目的
           <select value={intakePurpose} onChange={e => setIntakePurpose(e.target.value)} style={inputStyle}>
-            <option value="">不指定</option>
-            <option value="純粹玩樂">純粹玩樂</option>
-            <option value="體驗">體驗</option>
-            <option value="正式學習">正式學習</option>
+            <option style={optStyle} value="">不指定</option>
+            <option style={optStyle} value="純粹玩樂">純粹玩樂</option>
+            <option style={optStyle} value="體驗">體驗</option>
+            <option style={optStyle} value="正式學習">正式學習</option>
           </select>
         </label>
 
         <label style={labelStyle}>是否需要介紹電子射箭系統
           <select value={intakeSystemIntro} onChange={e => setIntakeSystemIntro(e.target.value)} style={inputStyle}>
-            <option value="">不指定</option>
-            <option value="是">是</option>
-            <option value="否">否</option>
+            <option style={optStyle} value="">不指定</option>
+            <option style={optStyle} value="是">是</option>
+            <option style={optStyle} value="否">否</option>
           </select>
         </label>
 
@@ -469,6 +469,9 @@ const inputStyle = {
   // colorScheme:"dark" 讓 <select> 展開的原生下拉用深色渲染，避免白底白字看不見
   colorScheme: "dark",
 };
+
+// <option> 深色底＋白字：colorScheme 在部分瀏覽器不生效，直接給每個 option 上這個最可靠
+const optStyle = { background: "#1a1030", color: "#ffffff" };
 
 const labelStyle = {
   display: "flex", flexDirection: "column", gap: 6,
