@@ -394,8 +394,8 @@ export default function PublicBookingApp() {
               ) : (
                 historyBookings.slice().sort((a, b) => `${b.date}_${b.startTime}`.localeCompare(`${a.date}_${a.startTime}`)).map(b => (
                   renderBookingCard(b, false, { onReschedule: setRescheduleTarget, onCancel: setCancelTarget })
-              )
-            )}
+                ))
+              )}
           </div>
 
           {/* ── 個人資料 ── */}
