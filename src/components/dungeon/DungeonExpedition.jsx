@@ -697,6 +697,11 @@ export default function DungeonExpedition({
   const isHidden = excavation?.isHidden || false;
   const arrowsPerRound = excavation?.arrowsPerRound === 3 ? 3 : 6;
   const targetFmt = excavation?.targetFmt || "full_110";
+  // 意外離開/重整後「回到房間」：從已完成的層數（0~2）續玩，而不是被迫結算或從頭開始。
+  // 戰利品本來就是打一隻入袋一次（已存帳），所以不必還原整張地圖，只要回到該層即可。
+  // HP 不回滿——還原離開前保存的 HP，避免玩家靠「重整」無限回血刷關。
+  const resumeFromFloor = Math.max(0, Math.min(2, Math.floor(Number(excavation?.resumeFromFloor) || 0)));
+  const resumeHp = Math.max(0, Math.floor(Number(excavation?.resumeHp) || 0));
   const [phase, setPhase] = useState(isFromStorage ? "consume" : "intro");
   const [entryError, setEntryError] = useState("");
 
@@ -730,11 +735,15 @@ export default function DungeonExpedition({
   const [wonLast, setWonLast] = useState(false);
   const [resultRewards, setResultRewards] = useState(null);
 
-  // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測並結算部分獎勵（見 dungeon 穩定性任務）
+  // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
+  // 一併保存目前 HP（隨 hp 變動即時更新），續玩時還原離開前的 HP，避免重整回滿血刷關。
   useEffect(() => {
     if (!myId) return;
-    setActiveExpeditionProgress(myId, { family, difficultyTier, isHidden, floorsCleared }).catch(() => {});
-  }, [myId, family, difficultyTier, isHidden, floorsCleared]);
+    setActiveExpeditionProgress(myId, {
+      family, difficultyTier, isHidden, floorsCleared,
+      hp: playerState?.hp, maxHP: playerState?.maxHP,
+    }).catch(() => {});
+  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP]);
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
@@ -777,15 +786,19 @@ export default function DungeonExpedition({
   useEffect(() => {
     if (phase === "intro") {
       const base = buildExpeditionMemberData(profile, cardBonus);
+      // 續玩：HP 用離開前保存的值（夾在 1~maxHP，避免回滿刷血）；全新開始才用滿血 base.hp。
+      const isResume = resumeFromFloor > 0 || resumeHp > 0;
+      const startHp = isResume ? Math.max(1, Math.min(resumeHp || base.hp, base.maxHP)) : base.hp;
       setPlayerState({
-        hp: base.hp,
+        hp: startHp,
         maxHP: base.maxHP,
         atk: base.atk,
         def: base.def,
         wbBonus: base.wbBonus,
         buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
       });
-      startFloor(0);
+      if (resumeFromFloor > 0) setFloorsCleared(resumeFromFloor);
+      startFloor(resumeFromFloor);
     }
   }, [phase, startFloor]); // eslint-disable-line
 

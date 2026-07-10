@@ -20,6 +20,7 @@ import {
   subscribeOpenTeamExpeditionRooms,
   startTeamExpeditionRoom,
 } from "../../lib/expeditionTeamDb";
+import { getExcavationDifficulty } from "../../lib/dungeonData";
 
 function restoreDungeonFromTeamRoom(room) {
   return {
@@ -194,6 +195,20 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
     setSoloSettling(false);
   }
 
+  // 回到房間續玩：從已完成的層數重新進入，還原離開前的 HP（不回滿，防重整刷血）。
+  // 戰利品打一隻就已入袋，故不需還原整張地圖。
+  function handleResumeSolo() {
+    if (!soloRecovery || soloSettling) return;
+    setSoloRecovery(null);
+    setExpeditionStart({
+      family: soloRecovery.family,
+      difficulty: soloRecovery.difficultyTier,
+      isHidden: soloRecovery.isHidden,
+      resumeFromFloor: soloRecovery.floorsCleared || 0,
+      resumeHp: soloRecovery.hp || 0,
+    });
+  }
+
   // ── 遠征模式 ─────────────────────────────────────────────
   if (expeditionStart) {
     if (expeditionStart.teamMode) {
@@ -326,17 +341,26 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
                   偵測到中斷的單人遠征
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-amber-100/80">
-                  已完成 {soloRecovery.floorsCleared || 0} 層，點擊結算領取這部分的獎勵。
+                  已完成 {soloRecovery.floorsCleared || 0} 層。可以<b className="text-amber-100">回到地下城</b>從這一層繼續（HP 沿用離開前的狀態），或直接結算領取這部分的獎勵。
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
-                    onClick={handleSettleSolo}
+                    onClick={handleResumeSolo}
                     disabled={soloSettling}
                     className="min-h-11 flex-1 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-black text-slate-950 transition-colors hover:bg-amber-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     style={{ touchAction:"manipulation" }}
                   >
-                    {soloSettling ? "結算中…" : "結算並領取"}
+                    🗺️ 回到地下城
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSettleSolo}
+                    disabled={soloSettling}
+                    className="min-h-11 rounded-xl border border-amber-300/40 px-4 py-2.5 text-sm font-bold text-amber-100 transition-colors hover:bg-amber-400/10 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ touchAction:"manipulation" }}
+                  >
+                    {soloSettling ? "結算中…" : "改為結算"}
                   </button>
                 </div>
               </div>
@@ -348,7 +372,90 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
         ) : tab === "dex" ? (
           <DungeonDex guestProfile={guestProfile} />
         ) : tab === "enter" && !selectedDungeon && isGuest ? (
-          <GuestDungeonEntry tierCap={tierCap} onSelect={setSelectedDungeon} />
+          <div className="space-y-4">
+            <GuestDungeonEntry tierCap={tierCap} onSelect={setSelectedDungeon} />
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px" style={{ background:"rgba(255,255,255,0.08)" }} />
+              <span className="text-[10px] font-bold" style={{ color:"var(--text-muted)" }}>或</span>
+              <div className="flex-1 h-px" style={{ background:"rgba(255,255,255,0.08)" }} />
+            </div>
+            <button onClick={() => setShowJoinPanel(!showJoinPanel)}
+              className="w-full py-4 rounded-2xl font-black text-base border transition-all active:scale-95"
+              style={{
+                background:"rgba(99,102,241,0.08)",
+                borderColor:"rgba(99,102,241,0.25)",
+                color:"#a5b4fc",
+              }}>
+              👥 加入團康地下城
+            </button>
+            {showJoinPanel && (
+              <div className="rounded-2xl p-4 space-y-4"
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.10)" }}>
+                <div>
+                  <div className="text-sm font-black text-white mb-2">輸入邀請碼</div>
+                  <div className="flex gap-2">
+                    <input
+                      value={joinCode}
+                      onChange={e => setJoinCode(e.target.value.toUpperCase())}
+                      placeholder="輸入 6 碼邀請碼"
+                      maxLength={6}
+                      className="flex-1 min-h-11 px-4 rounded-xl bg-slate-900/70 border border-white/10 text-white font-black tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                    <button
+                      onClick={handleJoinByCode}
+                      disabled={joinLoading || !joinCode.trim()}
+                      className="min-h-11 px-4 rounded-xl bg-indigo-500 text-white text-sm font-black disabled:opacity-40"
+                    >
+                      加入
+                    </button>
+                  </div>
+                  {joinErr && <div className="text-xs text-rose-300 font-bold mt-2">{joinErr}</div>}
+                </div>
+
+                {openTeamRooms.length > 0 && (
+                  <div>
+                    <div className="text-sm font-black text-white mb-2">開放中的地下城房間</div>
+                    <div className="space-y-2">
+                      {openTeamRooms.map(room => {
+                        const diff = getExcavationDifficulty(room.dungeonDifficulty || 1);
+                        return (
+                          <div key={room.id} className="rounded-xl p-3 flex items-center gap-3"
+                            style={{ background:"rgba(15,23,42,0.7)", border:"1px solid rgba(255,255,255,0.08)" }}>
+                            <div className="text-2xl">{diff?.icon || "🏰"}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-black text-white truncate">{room.hostName || "射手"} 的地下城</div>
+                              <div className="text-xs text-slate-400">{diff?.label || "地下城"} · {room.memberCount || 1}/8 人</div>
+                            </div>
+                            <button onClick={async () => {
+                              setJoinLoading(true);
+                              setJoinErr("");
+                              const res = await joinTeamExpeditionRoom(
+                                room.code,
+                                myId,
+                                myName,
+                                buildMemberData(),
+                              );
+                              if (res.ok) {
+                                setReconnectRoom(null);
+                                setTeamLobby({ roomId: res.roomId, dungeon: res.dungeon, hostId: res.hostId });
+                                setShowJoinPanel(false);
+                              } else {
+                                setJoinErr(res.reason);
+                              }
+                              setJoinLoading(false);
+                            }} disabled={joinLoading}
+                              className="px-4 py-2 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40">
+                              加入
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : tab === "enter" && !selectedDungeon ? (
           <div className="space-y-4">
             <DungeonStorageTab
