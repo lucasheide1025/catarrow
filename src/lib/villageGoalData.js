@@ -26,9 +26,64 @@ export const GOAL_TYPES = [
     contributionLabel: "擊殺",
     color: "#a78bfa",
   },
+  {
+    id: "gathering_progress",
+    icon: "🏹",
+    name: "採集總進度",
+    desc: "全村累積貓村採集進度",
+    contributionLabel: "%",
+    color: "#22c55e",
+  },
+  {
+    id: "gathering_participants",
+    icon: "🐾",
+    name: "採集參與人次",
+    desc: "全村一起完成採集委託",
+    contributionLabel: "人次",
+    color: "#f97316",
+  },
+  {
+    id: "gathering_material",
+    icon: "🧩",
+    name: "採集指定怪物素材",
+    desc: "透過採集取得指定怪物素材",
+    contributionLabel: "個",
+    color: "#38bdf8",
+  },
+  {
+    id: "gathering_resource",
+    icon: "📦",
+    name: "採集指定村資源",
+    desc: "透過採集取得指定貓村資源",
+    contributionLabel: "個",
+    color: "#facc15",
+  },
 ];
 
 export const GOAL_TYPE_MAP = Object.fromEntries(GOAL_TYPES.map(g => [g.id, g]));
+
+export const GATHERING_GOAL_MATERIALS = [
+  { id: "mountain_m1", label: "山岳族 T1素材" },
+  { id: "mountain_m2", label: "山岳族 T2素材" },
+  { id: "insect_m1", label: "昆蟲族 T1素材" },
+  { id: "insect_m2", label: "昆蟲族 T2素材" },
+  { id: "ghost_m1", label: "幽靈族 T1素材" },
+  { id: "ghost_m2", label: "幽靈族 T2素材" },
+  { id: "workplace_m1", label: "職場族 T1素材" },
+  { id: "exam_m1", label: "考試族 T1素材" },
+  { id: "temple_m1", label: "神殿族 T1素材" },
+];
+
+export const GATHERING_GOAL_RESOURCES = [
+  { key: "ore_t1", label: "礦石 T1" },
+  { key: "melon_t1", label: "瓜果 T1" },
+  { key: "fish_t1", label: "鮮魚 T1" },
+  { key: "meat_t1", label: "獸肉 T1" },
+  { key: "driedfish_t1", label: "小魚乾 T1" },
+  { key: "can_t1", label: "罐頭 T1" },
+  { key: "fur_t1", label: "陪練貓毛 T1" },
+  { key: "potion_t1", label: "貓草藥水材料 T1" },
+];
 
 // ── 目標值（依村莊等級分 4 檔）─────────────────────────────
 const TIER_THRESHOLDS = [
@@ -49,6 +104,10 @@ export function getGoalTarget(villageLevel, goalType) {
     total_arrows:  [5000, 15000, 40000, 80000],
     total_damage:  [50000, 150000, 400000, 800000],
     monster_kills: [20, 50, 100, 200],
+    gathering_progress: [1500, 4000, 9000, 18000],
+    gathering_participants: [20, 45, 90, 160],
+    gathering_material: [80, 180, 360, 720],
+    gathering_resource: [60, 140, 280, 560],
   };
   const arr = targets[goalType];
   return arr ? arr[tier] : 5000;

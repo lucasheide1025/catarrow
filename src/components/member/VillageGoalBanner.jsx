@@ -16,6 +16,23 @@ const C = {
   barFill: "linear-gradient(90deg,#f59e0b,#fbbf24)",
 };
 
+function gatheringGoalTitle(goal, fallbackTitle) {
+  if (!goal?.goalType?.startsWith("gathering_")) return fallbackTitle;
+  const meta = GOAL_TYPE_MAP[goal.goalType];
+  const targetName = goal.targetMaterialName || goal.targetResourceName || "";
+  const value = Number(goal.targetValue || 0).toLocaleString();
+  return `${meta?.icon || "🏹"} 村目標：${targetName ? `${targetName} ` : ""}${value} ${meta?.contributionLabel || ""}`;
+}
+
+function gatheringGoalDesc(goal, fallbackDesc) {
+  if (!goal?.goalType?.startsWith("gathering_")) return fallbackDesc;
+  if (goal.goalType === "gathering_progress") return "全村累積貓村採集進度，單人與組隊採集都會推進。";
+  if (goal.goalType === "gathering_participants") return "全村累積採集參與人次，組隊採集會依參與人數推進。";
+  if (goal.goalType === "gathering_material") return `透過採集取得${goal.targetMaterialName || "指定怪物素材"}來推進。`;
+  if (goal.goalType === "gathering_resource") return `透過採集取得${goal.targetResourceName || "指定村資源"}來推進。`;
+  return fallbackDesc;
+}
+
 export default function VillageGoalBanner() {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
@@ -77,7 +94,10 @@ export default function VillageGoalBanner() {
 
   const meta = GOAL_TYPE_MAP[goal.goalType];
   const pct = Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100));
-  const title = buildGoalTitle(goal.goalType, goal.targetValue);
+  const titleText = gatheringGoalTitle(goal, goal.customTitle || buildGoalTitle(goal.goalType, goal.targetValue));
+  const desc = goal?.goalType?.startsWith("gathering_")
+    ? `${titleText}｜${gatheringGoalDesc(goal, goal.customDescription || meta?.desc || "")}`
+    : gatheringGoalDesc(goal, goal.customDescription || meta?.desc || "");
 
   return (
     <div
@@ -113,7 +133,7 @@ export default function VillageGoalBanner() {
       {/* 描述 + 貢獻 + 參與者 */}
       <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span>
-          {meta?.desc || ""}
+          {desc}
           {totalCount > 0 && (
             <span style={{ marginLeft: 8, color: C.goldDim, fontWeight: 700 }}>
               👥 {profile?.name || profile?.nickname || "我"} + {totalCount - 1}位村民

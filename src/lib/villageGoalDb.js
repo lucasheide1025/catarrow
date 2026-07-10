@@ -14,6 +14,49 @@ import {
 
 const COLLECTION = "villageGoals";
 
+const GATHERING_MATERIAL_TARGETS = [
+  { id: "mountain_m1", label: "山岳族 T1素材" },
+  { id: "mountain_m2", label: "山岳族 T2素材" },
+  { id: "insect_m1", label: "昆蟲族 T1素材" },
+  { id: "insect_m2", label: "昆蟲族 T2素材" },
+  { id: "ghost_m1", label: "幽靈族 T1素材" },
+  { id: "ghost_m2", label: "幽靈族 T2素材" },
+  { id: "workplace_m1", label: "職場族 T1素材" },
+  { id: "exam_m1", label: "考試族 T1素材" },
+  { id: "temple_m1", label: "神殿族 T1素材" },
+];
+
+const GATHERING_RESOURCE_TARGETS = [
+  { key: "ore_t1", label: "礦石 T1" },
+  { key: "melon_t1", label: "瓜果 T1" },
+  { key: "fish_t1", label: "鮮魚 T1" },
+  { key: "meat_t1", label: "獸肉 T1" },
+  { key: "driedfish_t1", label: "小魚乾 T1" },
+  { key: "can_t1", label: "罐頭 T1" },
+  { key: "fur_t1", label: "陪練貓毛 T1" },
+  { key: "potion_t1", label: "貓草藥水材料 T1" },
+];
+
+function pickGatheringTarget(goalType) {
+  if (goalType === "gathering_material") {
+    return GATHERING_MATERIAL_TARGETS[Math.floor(Math.random() * GATHERING_MATERIAL_TARGETS.length)];
+  }
+  if (goalType === "gathering_resource") {
+    return GATHERING_RESOURCE_TARGETS[Math.floor(Math.random() * GATHERING_RESOURCE_TARGETS.length)];
+  }
+  return null;
+}
+
+function applyGatheringTargetFields(goalType, target) {
+  if (goalType === "gathering_material" && target?.id) {
+    return { targetMaterialId: target.id, targetMaterialName: target.label };
+  }
+  if (goalType === "gathering_resource" && target?.key) {
+    return { targetResourceKey: target.key, targetResourceName: target.label };
+  }
+  return {};
+}
+
 // ── 模組級快取：當前 active 目標的 ID ────────────────────────
 // 由 initGoalTracker 在 App 啟動時訂閱，供貢獻 hook 讀取
 let _cachedActiveGoal = null;  // { id, goalType, ... } | null
@@ -91,6 +134,44 @@ export async function contributeKillToGoal(memberId) {
   }
 }
 
+export async function contributeGatheringToGoal(memberId, {
+  progressPct = 0,
+  participants = 1,
+  materialId = "",
+  materialCount = 0,
+  villageResources = {},
+} = {}) {
+  const goal = _cachedActiveGoal;
+  if (!goal || !memberId) return;
+
+  let amount = 0;
+  if (goal.goalType === "gathering_progress") {
+    amount = Math.max(0, Math.round(Number(progressPct) || 0));
+  } else if (goal.goalType === "gathering_participants") {
+    amount = Math.max(0, Math.round(Number(participants) || 0));
+  } else if (goal.goalType === "gathering_material") {
+    if (goal.targetMaterialId && materialId !== goal.targetMaterialId) return;
+    amount = Math.max(0, Math.round(Number(materialCount) || 0));
+  } else if (goal.goalType === "gathering_resource") {
+    const key = goal.targetResourceKey;
+    if (!key) return;
+    amount = Math.max(0, Math.round(Number(villageResources?.[key]) || 0));
+  } else {
+    return;
+  }
+
+  if (amount <= 0) return;
+  try {
+    await updateDoc(doc(db, COLLECTION, goal.id), {
+      currentValue: increment(amount),
+      [`participants.${memberId}.contributed`]: increment(amount),
+      [`participants.${memberId}.gatheringRuns`]: increment(1),
+    });
+  } catch (e) {
+    console.warn("[villageGoal] contributeGathering failed:", e.message);
+  }
+}
+
 // ── 自動刷新村目標（任何人進入貓村時觸發，內部防重複）──────
 export async function autoSpawnVillageGoal(villageLevel = 1) {
   try {
@@ -111,12 +192,14 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
     const typeMeta = GOAL_TYPES[Math.floor(Math.random() * GOAL_TYPES.length)];
     const goalType = typeMeta.id;
     const targetValue = getGoalTarget(villageLevel, goalType);
+    const gatheringTarget = pickGatheringTarget(goalType);
     const rewards = getGoalReward(villageLevel);
     const endAt = new Date(Date.now() + 86400000); // 24 小時後
 
     const ref = await addDoc(collection(db, COLLECTION), {
       goalType,
       targetValue,
+      ...applyGatheringTargetFields(goalType, gatheringTarget),
       currentValue: 0,
       status: "active",
       startAt: serverTimestamp(),
@@ -296,6 +379,10 @@ export async function adminUpdateGoal(goalId, updates) {
     const allowedFields = {};
     if (updates.targetValue !== undefined) allowedFields.targetValue = Number(updates.targetValue);
     if (updates.currentValue !== undefined) allowedFields.currentValue = Number(updates.currentValue);
+    if (updates.targetMaterialId !== undefined) allowedFields.targetMaterialId = updates.targetMaterialId || "";
+    if (updates.targetMaterialName !== undefined) allowedFields.targetMaterialName = updates.targetMaterialName || "";
+    if (updates.targetResourceKey !== undefined) allowedFields.targetResourceKey = updates.targetResourceKey || "";
+    if (updates.targetResourceName !== undefined) allowedFields.targetResourceName = updates.targetResourceName || "";
     if (updates.rewards) {
       allowedFields.rewards = {
         arrowdew: Number(updates.rewards.arrowdew ?? 0),
@@ -328,6 +415,10 @@ export async function adminCreateCustomGoal({
   title,
   description,
   durationHours = 24,
+  targetMaterialId = "",
+  targetMaterialName = "",
+  targetResourceKey = "",
+  targetResourceName = "",
 }) {
   try {
     // 先關閉現有 active 目標（如果有）
@@ -342,10 +433,23 @@ export async function adminCreateCustomGoal({
     }
 
     const endAt = new Date(Date.now() + durationHours * 3600000);
+    const fallbackTarget = pickGatheringTarget(goalType);
+    const gatheringFields = goalType === "gathering_material"
+      ? {
+          targetMaterialId: targetMaterialId || fallbackTarget?.id || "",
+          targetMaterialName: targetMaterialName || fallbackTarget?.label || "",
+        }
+      : goalType === "gathering_resource"
+        ? {
+            targetResourceKey: targetResourceKey || fallbackTarget?.key || "",
+            targetResourceName: targetResourceName || fallbackTarget?.label || "",
+          }
+        : {};
 
     const ref = await addDoc(collection(db, COLLECTION), {
       goalType,
       targetValue: Number(targetValue),
+      ...gatheringFields,
       currentValue: 0,
       status: "active",
       startAt: serverTimestamp(),

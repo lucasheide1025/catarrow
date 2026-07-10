@@ -10,6 +10,12 @@
 
 | 規則 | 原因 |
 |------|------|
+| 訪客/兒童新方向：多人玩法要開 | 規格見 `guest-kid-ui-redesign-spec.md`；組隊、T1-T2 探索地下城、低階活動世界王都要支援團康，不要沿用「訪客只能單人」舊假設 |
+| 訪客/兒童差異在規則，不在質感 | UI 要共用正式打怪/組隊/地下城/世界王；難度鎖 T1-T2，獎勵低風險 |
+| 不要用 `startsWith("guest")` 判斷新訪客 | 新 guest/kid 是 Firestore 隨機 doc id；要用 `accountType`、`guestProfile` 或明確 mode flag |
+| 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
+| 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
+| 採集不給金幣/寶箱/射手 XP | 採集定位是貓貓 XP、羈絆、少量怪物材料與少量村資源；主線掉寶仍留給單人打怪與地下城 |
 | `profile.id` ≠ `profile.uid` | `id`=Firestore docId，`uid`=Auth UID；混用會找不到文件 |
 | 卡片加成顯示必須用 `useState` | `useRef` 不觸發重新渲染，MonsterBattle 選擇畫面曾因此不顯示加成 |
 | 下課後不觸發里程碑 | `MemberPractice` 有 `classEndedRef`，下課後跳過里程碑計算 |

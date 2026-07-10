@@ -16,6 +16,7 @@ import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequiremen
 import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
+import { addCatBond, addCatXP } from "./catDb";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -4003,12 +4004,71 @@ export async function completeCouncilSession(memberId, {
   contractVersion,
   checkpointsCleared = 0,
   rewardMultiplier = 0,
+  gatheringRewards = null,
+  catId = null,
+  totalArrows = 0,
 }) {
   const TIER_ORDER = ['common','rare','elite','fierce','boss','mythic'];
   const TO_CHEST   = { common:'wood', rare:'iron', elite:'gold', fierce:'epic', boss:'mythic', mythic:'mythic' };
   const MAT_SUFFIX = { common:'m1', rare:'m2', elite:'m3', fierce:'m4', boss:'m5', mythic:'m6' };
   const mat1Id     = `${race}_m1`;
   const promises   = [];
+
+  if (contractVersion >= 2) {
+    const rewards = gatheringRewards || {};
+    const materialCount = Math.max(0, Math.min(80, Math.round(Number(rewards.materialCount) || 0)));
+    const goalVillageResources = { ...(rewards.villageResources || {}) };
+    if (rewards.materialId && materialCount > 0) {
+      promises.push(addMaterials(memberId, Array(materialCount).fill({ id: rewards.materialId })));
+    }
+
+    const villageUpdates = {};
+    Object.entries(rewards.villageResources || {}).forEach(([key, amount]) => {
+      const count = Math.max(0, Math.min(50, Math.round(Number(amount) || 0)));
+      if (key && count > 0) villageUpdates[`village.resources.${key}`] = increment(count);
+    });
+
+    (rewards.rareRewards || []).forEach(item => {
+      const count = Math.max(0, Math.min(20, Math.round(Number(item?.count) || 0)));
+      if (count <= 0) return;
+      if (item.type === "villageResource" && item.resourceKey) {
+        villageUpdates[`village.resources.${item.resourceKey}`] = increment(count);
+        goalVillageResources[item.resourceKey] = (goalVillageResources[item.resourceKey] || 0) + count;
+      } else if (item.type === "gachaCoins") {
+        villageUpdates.gachaCoins = increment(Math.min(3, count));
+      } else if (item.type === "material" && item.materialId) {
+        promises.push(addMaterials(memberId, Array(count).fill({ id: item.materialId })));
+      }
+    });
+
+    if (Object.keys(villageUpdates).length > 0) {
+      promises.push(updateDoc(doc(db, C.members, memberId), villageUpdates));
+    }
+
+    if (catId) {
+      const catXP = Math.max(0, Math.min(500, Math.round(Number(rewards.catXP) || 0)));
+      const catBond = Math.max(0, Math.min(10, Math.round(Number(rewards.catBond) || 0)));
+      if (catXP > 0) promises.push(addCatXP(memberId, catId, catXP));
+      if (catBond > 0) promises.push(addCatBond(memberId, catId, "gathering", catBond));
+    }
+    const arrowCount = Math.max(0, Math.min(18, Math.round(Number(totalArrows) || 0)));
+    if (arrowCount > 0) promises.push(addRoundArrows(memberId, arrowCount));
+
+    await Promise.all(promises);
+    try {
+      const { contributeGatheringToGoal } = await import("./villageGoalDb");
+      await contributeGatheringToGoal(memberId, {
+        progressPct: rewards.progressPct || 0,
+        participants: rewards.goalParticipants || rewards.participants || 1,
+        materialId: rewards.materialId || "",
+        materialCount,
+        villageResources: goalVillageResources,
+      });
+    } catch (e) {
+      console.warn("contributeGatheringToGoal:", e?.message);
+    }
+    return;
+  }
 
   if (contractVersion >= 1) {
     const cleared = Math.max(0, Math.min(3, Number(checkpointsCleared) || 0));

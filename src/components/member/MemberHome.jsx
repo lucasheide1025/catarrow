@@ -34,6 +34,7 @@ const HOME_HUBS = [
 
 // ── 快速入口（常用功能捷徑）─────────────────────────────
 const QUICK_LINKS = [
+  { page:"guide",       icon:"📘", label:"說明書" },
   { page:"monster",     icon:"⚔️", label:"打怪" },
   { page:"practice",    icon:"🎯", label:"自主練習" },
   { page:"coinshop",    icon:"🛒", label:"商店" },
@@ -774,7 +775,7 @@ export default function MemberHome({
       {/* ── 快速入口（常用功能捷徑）───────────────────────────── */}
       <div>
         <SectionHeader icon="⚡" title="快速入口" />
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns:"repeat(auto-fit, minmax(64px, 1fr))" }}>
           {QUICK_LINKS.map(q => (
             <button key={q.page} onClick={() => onPageChange(q.page)}
               className="flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
