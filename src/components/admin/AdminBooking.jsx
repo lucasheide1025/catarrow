@@ -14,13 +14,14 @@ import {
 } from "../../lib/bookingDb";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
-  fetchSlotCountsForRange, PLAN_TYPES, durationLabel,
+  fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice,
 } from "../../lib/bookingSchedule";
 import { resolveGuestSession } from "../../lib/guestAuth";
 import { getMembers, addBillingRecord } from "../../lib/db";
 import { fmtDT } from "../../lib/constants";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
+import ParticipantCountPicker from "../booking/ParticipantCountPicker";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
 import { PLANS as BILLING_PLANS, PAY_METHODS, EARLY_BIRD_DISC } from "./BillingSystem";
 
@@ -274,7 +275,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                     <div className="text-white font-bold text-sm">{b.memberName || "顧客"}</div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
-                      ・{durationLabel(b.durationHours || 1)}
+                      ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
                       {b.source === "phone" ? "・電話進線" : b.source === "online_public" ? "・新生自助" : "・線上自助"}
                       {b.isNewStudent ? "・🆕新生" : "・舊生"}
                     </div>
@@ -342,7 +343,10 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const [note, setNote]           = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const basePrice  = BILLING_PLANS.find(p => p.id === plan)?.price ?? 0;
+  const participantCount = booking.participantCount || 1;
+  // 07-10-booking-ui-polish-headcount：N人的預約結帳金額要乘上人數，早鳥折扣則維持每筆固定折額
+  // （不隨人數翻倍，這是刻意的簡化：折扣是給「這一次預約」的優惠，不是每人各自折）。
+  const basePrice  = (BILLING_PLANS.find(p => p.id === plan)?.price ?? 0) * participantCount;
   const finalPrice = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
 
   async function handleSubmit() {
@@ -445,6 +449,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   const [newForm, setNewForm] = useState({ name: "", email: "", phone: "" });
   const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
+  const [participantCount, setParticipantCount] = useState(1);
   const [isNewStudent, setIsNewStudent] = useState(true);
   const [slot, setSlot] = useState(initialSlot || null);
   const [busy, setBusy] = useState(false);
@@ -501,7 +506,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     const res = await createBooking(
       selectedMember.id, selectedMember.name,
       { email: selectedMember.email || "", phone: selectedMember.phone || "" },
-      planType, durationHours, isNewStudent,
+      planType, durationHours, participantCount, isNewStudent,
       slot.date, slot.startTime, slot.endTime, "phone",
     );
     setBusy(false);
@@ -561,12 +566,20 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
             </div>
             <PlanDurationPicker planType={planType} durationHours={durationHours}
               onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSlot(null); }} />
+            <ParticipantCountPicker value={participantCount}
+              onChange={n => { setParticipantCount(n); setSlot(null); }} />
             <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
               <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
                 className="accent-blue-500 w-4 h-4" />
               是否為第一次來體驗
             </label>
-            <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} />
+            <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} />
+            {slot && (
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
+                <span className="text-slate-400 text-sm">總金額</span>
+                <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
+              </div>
+            )}
             {err && <div className="text-red-400 text-sm">{err}</div>}
             <Btn v="primary" onClick={handleSubmit} disabled={busy || !slot}>{busy ? "送出中…" : "確認建立預約"}</Btn>
           </>

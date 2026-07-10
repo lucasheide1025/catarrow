@@ -76,12 +76,17 @@ function slotKeysFor(date, startTime, durationHours) {
 // ─── 建立預約（學生前台 / 新生隱藏入口 / 教練後台代建 共用）────
 
 // contact: { email, phone }（皆為必填，是轉正式學籍的依據）
-// durationHours: 1 | 3（3 小時＝方案表「2送1」選項）
+// durationHours: 1 | 2 | 3（3 小時＝方案表「2送1」選項）
+// participantCount: 1~LANE_CAPACITY（07-10-booking-ui-polish-headcount：選N人＝這筆預約原子性
+// 佔用N個靶位，不是備註欄位——每一格容量檢查從「count>=LANE_CAPACITY」推廣成
+// 「count+participantCount>LANE_CAPACITY」，寫入時每一格的 count/new-returningCount 都 +participantCount
+// 而不是固定+1。整筆預約只有一個 isNewStudent，不細分這N人裡面誰新誰舊，是刻意的簡化。）
 // isNewStudent: boolean（使用者自己勾選「是否為第一次來體驗」，不是用 accountType 反推）
 // source:  "online" | "online_public" | "phone"
-export async function createBooking(memberId, memberName, contact, planType, durationHours, isNewStudent, date, startTime, endTime, source, note = "") {
+export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "") {
   if (!memberId) return { ok: false, reason: "缺少會員 ID" };
   if (!contact?.email || !contact?.phone) return { ok: false, reason: "Email 與電話為必填" };
+  const count = Math.max(1, Math.min(LANE_CAPACITY, participantCount || 1));
 
   const leadErr = checkLeadTime(date, startTime);
   if (leadErr) return { ok: false, reason: leadErr };
@@ -100,31 +105,31 @@ export async function createBooking(memberId, memberName, contact, planType, dur
 
       const counters = counterSnaps.map(readCounter);
 
-      // ── 逐格檢查：任何一格額滿/封鎖就整筆丟出，不寫入任何東西
-      // （3 小時預約要嘛 3 格都成功鎖定，要嘛整筆失敗，不能鎖到第 2 格才發現第 3 格滿了）──
+      // ── 逐格檢查：任何一格「加上這次要佔用的人數」會超過上限，或已封鎖，就整筆丟出，
+      // 不寫入任何東西（3 小時×N人預約要嘛全部格子都通過，要嘛整筆失敗）──
       counters.forEach((c, i) => {
-        if (c.blocked)             throw new Error(`SLOT_BLOCKED:${slotKeys[i]}`);
-        if (c.count >= LANE_CAPACITY) throw new Error(`SLOT_FULL:${slotKeys[i]}`);
+        if (c.blocked)                        throw new Error(`SLOT_BLOCKED:${slotKeys[i]}`);
+        if (c.count + count > LANE_CAPACITY)  throw new Error(`SLOT_FULL:${slotKeys[i]}`);
       });
 
       const bookingStats   = memberSnap.exists() ? (memberSnap.data().bookingStats || {}) : {};
       const isFirstBooking = !bookingStats.firstBookingAt;
 
-      // ── 全部通過才寫入：每一格各自 +1（count 與 new/returningCount 一起動）──
+      // ── 全部通過才寫入：每一格各自 +count（不是固定+1）──
       counterRefs.forEach((ref, i) => {
         const c = counters[i];
         tx.set(ref, {
-          count: c.count + 1,
+          count: c.count + count,
           blocked: c.blocked,
-          newCount:       c.newCount       + (isNewStudent ? 1 : 0),
-          returningCount: c.returningCount + (isNewStudent ? 0 : 1),
+          newCount:       c.newCount       + (isNewStudent ? count : 0),
+          returningCount: c.returningCount + (isNewStudent ? 0 : count),
         }, { merge: true });
       });
 
       tx.set(bookingRef, {
         memberId, memberName,
         contactEmail: contact.email, contactPhone: contact.phone,
-        planType, participantCount: 1,
+        planType, participantCount: count,
         durationHours, isNewStudent: !!isNewStudent,
         date, startTime, endTime,
         slotKeys, slotKey: slotKeys[0], // slotKey（單數）保留＝slotKeys[0]，向後相容舊讀取程式碼
@@ -186,6 +191,7 @@ export async function cancelBooking(bookingId) {
       const counterRefs = slotKeys.map(k => doc(db, SLOT_COUNTS, k));
       const memberRef   = doc(db, "members", booking.memberId);
       const isNew       = !!booking.isNewStudent;
+      const count       = booking.participantCount || 1; // 07-10-booking-ui-polish-headcount：釋放跟建立時同樣的人數
 
       // ── 讀取先於寫入（這筆預約牽涉到的全部時段格 + 會員文件）──
       const counterSnaps = await Promise.all(counterRefs.map(ref => tx.get(ref)));
@@ -194,14 +200,14 @@ export async function cancelBooking(bookingId) {
       const counters      = counterSnaps.map(readCounter);
       const currentTotal  = memberSnap.exists() ? (memberSnap.data().bookingStats?.totalBookings || 0) : 0;
 
-      // ── 寫入：每一格都釋放容量 + 各自扣回 new/returningCount（不會低於 0）──
+      // ── 寫入：每一格都釋放 count 個名額 + 各自扣回對應的 new/returningCount（不會低於 0）──
       counterRefs.forEach((ref, i) => {
         const c = counters[i];
         tx.set(ref, {
-          count: Math.max(0, c.count - 1),
+          count: Math.max(0, c.count - count),
           blocked: c.blocked,
-          newCount:       Math.max(0, c.newCount       - (isNew ? 1 : 0)),
-          returningCount: Math.max(0, c.returningCount - (isNew ? 0 : 1)),
+          newCount:       Math.max(0, c.newCount       - (isNew ? count : 0)),
+          returningCount: Math.max(0, c.returningCount - (isNew ? 0 : count)),
         }, { merge: true });
       });
 
@@ -247,6 +253,7 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
       if (old.status !== "confirmed") throw new Error("BOOKING_NOT_ACTIVE");
 
       const durationHours = old.durationHours || 1;
+      const participantCount = old.participantCount || 1; // 07-10-booking-ui-polish-headcount：改期沿用同樣人數，不開放連人數一起改
       const isNew          = !!old.isNewStudent;
       const oldSlotKeys     = (old.slotKeys && old.slotKeys.length) ? old.slotKeys : [old.slotKey];
       const newSlotKeys     = slotKeysFor(newDate, newStartTime, durationHours);
@@ -271,18 +278,18 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
       newSlotKeys.forEach((k) => {
         if (oldSet.has(k)) return;
         const c = counterByKey[k];
-        if (c.blocked)                 throw new Error(`SLOT_BLOCKED:${k}`);
-        if (c.count >= LANE_CAPACITY)  throw new Error(`SLOT_FULL:${k}`);
+        if (c.blocked)                                throw new Error(`SLOT_BLOCKED:${k}`);
+        if (c.count + participantCount > LANE_CAPACITY) throw new Error(`SLOT_FULL:${k}`);
       });
 
-      // ── 寫入：對每個牽涉到的格子計算淨變化——只在舊格出現＝-1，只在新格出現＝+1，
-      // 兩者都出現（改期後仍佔用同一格）就互相抵銷、不用動這格 ──
+      // ── 寫入：對每個牽涉到的格子計算淨變化——只在舊格出現＝-participantCount，
+      // 只在新格出現＝+participantCount，兩者都出現（改期後仍佔用同一格）就互相抵銷、不用動這格 ──
       allKeys.forEach(k => {
         const inOld = oldSet.has(k);
         const inNew = newSet.has(k);
         if (inOld === inNew) return; // 沒有變化的格子（新舊都佔用，或都不佔用）
         const c = counterByKey[k];
-        const delta = inNew ? 1 : -1;
+        const delta = inNew ? participantCount : -participantCount;
         tx.set(refByKey[k], {
           count: Math.max(0, c.count + delta),
           blocked: c.blocked,

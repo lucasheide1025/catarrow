@@ -36,6 +36,12 @@ export const PLAN_PRICE = {
   own_equipment: { 1: 200, 2: 400, 3: 400 },
 };
 
+// 單價 × 人數＝總金額（07-10-booking-ui-polish-headcount：確認預約畫面要顯示自動加總的金額）
+export function totalPrice(planType, durationHours, participantCount = 1) {
+  const unit = PLAN_PRICE[planType]?.[durationHours] ?? 0;
+  return unit * Math.max(1, participantCount);
+}
+
 // 方案類別 × 時數 攤平成一份「組合選單」，前台三個入口共用同一份，不要各自重刻選單邏輯。
 export const COMBINED_PLAN_OPTIONS = PLAN_TYPES.flatMap(pt =>
   DURATION_OPTIONS.map(d => ({
@@ -128,10 +134,11 @@ export async function fetchSlotCountsForRange(startDate, endDate) {
 }
 
 // 判斷某時段目前該顯示的狀態（唯讀顯示用，不是唯一防線——後端 bookingDb.js 一定會再檢查一次）。
-// durationHours（07-10-booking-multihour-and-stats 新增，預設 1）：3 小時方案要連續 3 格都能選，
-// 這裡額外檢查「以這格當起點，往後數 durationHours 格」有沒有任何一格額滿/封鎖——
+// durationHours（07-10-booking-multihour-and-stats）：3小時方案要連續3格都能選。
+// participantCount（07-10-booking-ui-polish-headcount，預設1）：選N人＝檢查「這一格＋延伸出去的每一格」
+// 扣掉目前已佔用的，剩餘名額是否還能塞得下N人，塞不下要直接disabled，不是選了才在送出時失敗。
 // 顯示的統計數字（新X／舊X）仍然是這一格自己的即時人數，不是跨格加總。
-export function slotState(date, startTime, slotCounts, durationHours = 1) {
+export function slotState(date, startTime, slotCounts, durationHours = 1, participantCount = 1) {
   const slotStartMs = new Date(date + "T" + startTime + ":00+08:00").getTime();
   if (slotStartMs - Date.now() < 30 * 60 * 1000) {
     return { state: "too_soon", label: "已截止", disabled: true };
@@ -144,18 +151,18 @@ export function slotState(date, startTime, slotCounts, durationHours = 1) {
   const returningCount  = localInfo.returningCount || 0;
   const countLabel = `新${newCount}／舊${returningCount}（共${count}/${LANE_CAPACITY}）`;
 
-  if (localInfo.blocked)            return { state: "blocked", label: "教練暫停", disabled: true };
-  if (count >= LANE_CAPACITY)       return { state: "full", label: countLabel, disabled: true };
+  if (localInfo.blocked)                              return { state: "blocked", label: "教練暫停", disabled: true };
+  if (count + participantCount > LANE_CAPACITY)        return { state: "full", label: countLabel + "・人數超過剩餘名額", disabled: true };
 
-  // 多時段方案（3小時）：起點本身沒問題，但延伸出去的格子若有任一格額滿/封鎖，這個起點也不能選
+  // 多時段方案（1小時以上）：起點本身沒問題，但延伸出去的格子若有任一格容量不夠（含人數），這個起點也不能選
   if (durationHours > 1) {
     const [h, m] = startTime.split(":").map(Number);
     const mm = m === 0 ? "00" : String(m).padStart(2, "0");
     for (let i = 1; i < durationHours; i++) {
       const key = `${date}_${String(h + i).padStart(2, "0")}:${mm}`;
       const c = slotCounts[key] || {};
-      if (c.blocked || (c.count || 0) >= LANE_CAPACITY) {
-        return { state: "span_unavailable", label: countLabel + "・延伸時段已滿", disabled: true };
+      if (c.blocked || (c.count || 0) + participantCount > LANE_CAPACITY) {
+        return { state: "span_unavailable", label: countLabel + "・延伸時段名額不足", disabled: true };
       }
     }
   }

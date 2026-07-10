@@ -13,7 +13,7 @@ import { slotsForDate, isBusinessDay, todayStr, addDays, fetchSlotCountsForRange
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const CLOSING_HOUR = 22; // 全站營業時間固定 22:00 打烊（bookingSchedule.js slotsForDate 既有假設）
 
-export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, durationHours = 1 }) {
+export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, durationHours = 1, participantCount = 1 }) {
   const days = useMemo(() => {
     const base = todayStr();
     return Array.from({ length: daysAhead }).map((_, i) => {
@@ -65,7 +65,7 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, dur
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {slots.map(s => {
-            const st = slotState(date, s.startTime, slotCounts, durationHours);
+            const st = slotState(date, s.startTime, slotCounts, durationHours, participantCount);
             const isSel = selected?.date === date && selected?.startTime === s.startTime;
             return (
               <button key={s.startTime} type="button" disabled={st.disabled} title={st.label}
