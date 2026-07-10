@@ -436,8 +436,9 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
 }
 
 // ── 主元件 ─────────────────────────────────────────────────
-export default function RPGEquipPanel({ onGoShop, showSummary = true }) {
-  const { profile } = useAuth();
+export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfile }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
   const [activeSlot,      setActiveSlot]      = useState(null);
   const [displayNextMats, setDisplayNextMats] = useState(null);
   const [upgrading,       setUpgrading]       = useState(false);

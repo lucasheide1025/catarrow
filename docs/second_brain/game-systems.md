@@ -1,7 +1,22 @@
 # 🎮 game-systems — 遊戲化規格
-> 最後更新：2026-06-27（合約/事件全面重設計）
+> 最後更新：2026-07-10（訪客/兒童地下城比照正式系統）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
+
+## 訪客/兒童地下城（2026-07-10，整合正式系統）
+
+訪客/兒童模式的地下城不再是獨立簡化版（`GuestDungeonSimple.jsx` 已刪除），改成直接重用正式系統元件
+（`DungeonLobby`/`DungeonSelectionPanel`/`DungeonExpedition`/`DungeonBattleRoom`），只是入口換成新元件
+`GuestDungeonEntry.jsx`（T1/T2 難度選擇，跳過挖掘機制，就地生成 dungeon 物件）。
+
+- **難度封頂**：固定 T1-T2（`tierCap=2`），兩層防禦——入口 UI 只給 2 個選項 + `DungeonExpedition.jsx` 內
+  再次用 `Math.min(difficulty, tierCap)` 夾住樓層怪物池，**且** boss 物件本身也用封頂後的 tier 重新抽取
+  （不能只夾數字不夾 boss 物件，否則王關戰鬥可能仍是高難度怪物）。
+- **不開放**：挖掘探索分頁（賺解鎖機率的機制對訪客沒意義，整個不渲染）、組隊地下城（只做單人）。
+- **開放**：裝備系統（`EquipmentPage`/`RPGEquipPanel`）、真實掉落物（材料/金幣/收藏品持久化寫回
+  `members/{id}`，跟正式學生走同一條結算路徑，跟 `MonsterBattle.jsx` 訪客首勝勳章流程完全獨立無關）。
+- 完整技術細節（prop 傳遞設計、兩層封頂逐字實作、`useAuth()` 資料外洩踩坑）見 `quick-ref.md`
+  「🎈 訪客/兒童地下城整合」章節與 `changelog.md` 2026-07-10 條目。
 
 ## 完整角色數值公式
 

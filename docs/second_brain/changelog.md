@@ -3,6 +3,56 @@
 
 ---
 
+## 2026-07-10（線上約課預約系統・學生試用版：與 SimplyBook 並存，尚未 push main）
+
+### 改了什麼
+- 新 collection `bookings`／`bookingSlotCounts`（資料層 `src/lib/bookingDb.js`，Step 1 已完工並通過獨立 review：`createBooking`/`cancelBooking`/`rescheduleBooking`/`blockSlot`/`unblockSlot`/`getBookingsForMember`/`getBookingsForDateRange`，容量計算全走 `runTransaction`，全場固定 `LANE_CAPACITY=8`）。
+- 新 `src/lib/bookingSchedule.js`（唯讀顯示層，不含寫入邏輯）+ 共用元件 `src/components/booking/DateSlotPicker.jsx`（日期/時段選擇器，學生前台/新生隱藏入口/教練後台代建三處共用）。
+- `MemberApp.jsx`／`AdminApp.jsx`（射手模式）新增「約課」底部導覽按鈕，只在 `profile?.bookingBetaAccess===true || role==="admin"` 時渲染（不是灰階，比照既有條件式不渲染慣例）；新元件 `src/components/member/MemberBooking.jsx`（選時段送出預約 + 我的預約清單改期/取消）。
+- 新元件 `src/components/admin/AdminBooking.jsx`，掛進 `AdminApp.jsx` 會員中心 Hub：行事曆週/日檢視（色塊格線）、建立預約 Modal（顧客搜尋既有 `members` 或建立新顧客電話進線）、封鎖/解除封鎖時段、`bookingBetaAccess` 開放名單開關、收費分類報表（`planType × paymentMethod`）。
+- 新頁面 `src/pages/PublicBookingApp.jsx`（比照 `GuestApp.jsx` 模式）+ `App.jsx` 新增一個不公開、不規律 query 參數的隱藏路由，供教練私下告知新生使用；頁面掛載時手動插入 `<meta name="robots" content="noindex,nofollow">`。
+- `firestore.rules` 新增 `bookings`／`bookingSlotCounts` 區塊（Step 1 已完工，**尚待使用者手動貼進 Firebase Console**，CLI 部署規則會 403，這個專案的已知限制）。
+
+### 為什麼
+- 官網「立即預約」CTA 導去 SimplyBook，跟這個 App 的學籍系統完全沒有資料串接。這次做一套自製系統跟 SimplyBook 並存試用，驗證穩定後才考慮換官網連結（這次不動 `website/`，官網上不會出現任何連到新系統的連結）。
+- `bookingBetaAccess` 漸進開放旗標是 push main 之外的第二層保護：即使之後上線，教練也能自己控制先開放給誰測試，不是全體學生一次全開。
+- 新生隱藏入口刻意不做 App Check/驗證碼等反濫用機制，只靠「網址不公開」——這是刻意的權宜之計（試用階段流量小），要正式公開取代 SimplyBook 那天才需要一起補上。
+
+### 踩坑提醒
+- **`db.js::updateMember()` 的 `safeFields` 白名單沒有 `bookingBetaAccess`**——用它寫入這個欄位會被靜默濾掉，`AdminBooking.jsx` 的開放名單開關繞過 `updateMember`，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`。以後新增任何 `members` 欄位，若要用 `updateMember()` 寫入記得同步檢查這個白名單。
+- **`accessControl.js` 的 `restricted`/`retired`/`autoLocked` 分級白名單沒有 `"booking"` 頁面 id**——`official`（未鎖定）學生 `getAllowedPages()` 回傳 `null`（全開）才不受影響；分級中的學生即使開了 `bookingBetaAccess` 也進不去這個分頁，這次視為預期行為（PRD 沒要求覆蓋），如果之後要讓分級學生也能約課，要記得把 `"booking"` 加進對應分級白名單。
+- **`fetchSlotCountsForRange` 用 `documentId()` range query**（`bookingSlotCounts` 的文件 ID 就是 `slotKey="YYYY-MM-DD_HH:mm"`，字典序可排序），上界用「隔天日期前綴」當 exclusive 邊界（`addDays(endDate,1)+"_"`），不是用 `` 高位字元技巧——兩種寫法邏輯上都對，這次選前者是因為更直觀好懂，不需要解釋 Unicode 邊界字元的用途。
+- Firestore 額度當天稍早已耗盡兩次（預期下午3點恢復），本次全程只能用程式碼審查 + `CI=true npx react-scripts build` 驗證，**沒有跑過任何真實 Firestore 端對端測試**，尤其是 PRD 驗收項目4「雙分頁同時搶同一時段最後名額」這個最核心的正確性風險，只確認了 `bookingDb.js` transaction 邏輯讀寫順序正確，沒有實際開兩個分頁跑過。額度恢復、使用者測試通過前，**不要 push main**（PRD 明確要求）。
+- 新生隱藏入口的實際網址只在 `App.jsx` 一個常數定義一次（grep 全 `src/`+`website/` 已確認零殘留連結），這份筆記與 `App.jsx` 原始碼可能外流，**實際網址不寫進任何文件**，只在完工報告當下跟使用者口頭/文字複述一次。
+
+---
+
+## 2026-07-10（訪客/兒童地下城比照正式系統：整合而非重刻，T1-T2封頂+裝備+真實掉落物）
+
+### 改了什麼
+- **重用正式地下城元件，不是再刻一套**：`DungeonLobby.jsx`/`DungeonSelectionPanel.jsx`/`DungeonExpedition.jsx`/`EquipmentPage.jsx`/`RPGEquipPanel.jsx`/`DungeonDex.jsx` 全部新增可選 `guestProfile`/`isGuest`/`tierCap` 參數（沒傳就照舊呼叫 `useAuth()`，正式學生行為完全不變，逐一 regression 過）。
+- 新元件 `src/components/dungeon/GuestDungeonEntry.jsx`：訪客/兒童專屬 T1/T2 難度選擇畫面，選完用 `drawExpeditionBoss(tier,family)` 就地組出 dungeon 物件（`family` 隨機挑六族之一，比照 `dungeonExcavation.js::claimAutoDig` 既有清單），**不寫入** `pendingReveal`/`savedDungeons`——訪客的「選擇」本身就是這次遠征，是純前端暫存物件，不進儲存槽系統。
+- **難度封頂兩層防禦**（見 `.trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3`）：
+  1. 第一層：`GuestDungeonEntry` UI 只給 T1/T2 兩個按鈕可選。
+  2. 第二層（真正的防線，不能省略）：`DungeonExpedition.jsx` 內 `isGuest` 時 `difficultyTier = Math.min(excavation?.difficulty||1, tierCap||2)`，**且** `fixedBoss` 也改成用這個已封頂的 `difficultyTier` 重新呼叫 `drawExpeditionBoss()` 重抽（不信任上游傳入的 `excavation.boss` 物件本身可能是封頂前抽的）——這一步很關鍵，因為 `difficultyTier`（數字）夾住只影響樓層怪物池/獎勵倍率，王關戰鬥用的是獨立的 `boss` 物件，兩者都要重新從封頂後的 tier 導出才是真正的防線。用 `useMemo` 鎖定同一場遠征內王的身份，避免每次 render 重抽。
+- `DungeonLobby.jsx` 的「進入地下城」分頁：`isGuest` 時渲染 `GuestDungeonEntry` 取代讀 `savedDungeons` 的畫面；`DungeonSelectionPanel` call site 補上 `isGuest={isGuest}`（Step 1 建好的組隊按鈕隱藏功能原本沒接上，這次修正）；`onStartSolo` 的 `fromStorage` 改成 `!isGuest`（訪客的 dungeon 物件 `savedId` 是 `null`，不能觸發 `removeSavedDungeon` 消耗儲存槽邏輯）。
+- `GuestApp.jsx`：新增 `guestFullProfile`（`onSnapshot` 訂閱完整 `members/{id}` 文件，取代原本只有 `{id,name,coins}` 的 `guestOverride` 快照+舊的單純 `liveCoins` 監聽），地下城分頁改成 `<DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} .../>`，取代舊的 `<GuestDungeonSimple>`；新增「裝備」入口（GuestHome 卡片 + `equipment` tab）掛 `<EquipmentPage guestProfile={guestFullProfile} .../>`。
+- **`GuestDungeonSimple.jsx` 已刪除**（grep 確認零殘留引用後移除）——舊版是固定3層+固定王+跳過 Firestore 持久化的簡化版，跟正式系統完全獨立；現在訪客/兒童直接吃正式系統的迷霧格子探索/前後衛編隊/裝備加成/真實掉落物。
+- **掉落物現在真的會持久化**：訪客/兒童現在走的是跟正式學生完全同一條地下城結算路徑（`DungeonExpedition.jsx::handleBattleDone/handleFinish` → `grantExpeditionRewards`/`addMaterials`/`addChests`/`addCoins`/`addCollectibles`），這條路徑逐行確認過**沒有任何** `isGuest`/`if(!isGuest)` 守衛——是整合的自然結果，不需要另外設計新掉落表。**跟 `MonsterBattle.jsx` 的訪客首勝實體勳章流程完全無關，那個檔案這次完全沒動。**
+
+### 為什麼
+- 訪客/兒童模式原本的地下城視覺跟正式學籍系統落差太大（`GuestDungeonSimple.jsx` 是完全獨立刻的 inline style），玩法也砍到只剩固定3層固定王，跟正式系統的迷霧探索/裝備加成/前後衛完全沒關聯。直接重用正式元件而非模仿重刻，「質感落差」問題自然解決，因為用的就是同一套視覺與邏輯，且未來正式系統任何改版訪客會自動跟著吃到，不需要雙邊維護兩份地下城邏輯。
+- 難度封頂特意做兩層是因為 PRD 驗收明確要求「程式碼層面確認 tierCap 有確實夾住所有相關的隨機抽取函式，不是只擋 UI」——單靠入口 UI 擋選項不夠，任何未來程式改動或邊界案例都可能讓訪客意外拿到 T3+ 內容，兩層獨立檢查才是真正的防線。
+
+### 踩坑提醒
+- **`DungeonBattleRoom.jsx`/`PartyBattleRoom.jsx`/`db.js` 裡大量 `myId.startsWith("guest")` 字串前綴守衛，是舊系統遺留（早於 07-09 guest-kid-mode-overhaul），目標的是舊版literal `"guest_"+timestamp` 這種非持久化 ID**——現在 `guest-kid-mode-overhaul` 之後的訪客/兒童 member id 是 Firestore `addDoc` 自動產生的隨機 ID，永遠不會以字面 `"guest"` 開頭，這些舊守衛實質上對新訪客系統是死代碼、不會誤觸發，**已逐一追過確認不影響本次整合**，未來新增訪客邏輯時不要再沿用 `startsWith("guest")` 字串判斷這個過時模式，一律用明確傳遞的 `isGuest`/`guestProfile` 參數。
+- **凡是被 `DungeonLobby`/`EquipmentPage` 底下渲染、且內部自己呼叫 `useAuth()` 的子元件都要一併檢查/補 `guestProfile`**——這次實作過程中發現 Step 1 只改了 `DungeonLobby`/`EquipmentPage`/`DungeonSelectionPanel` 本身，但它們渲染的 `RPGEquipPanel.jsx`（裝備實際操作面板）、`DungeonDex.jsx`（圖鑑）內部各自獨立呼叫 `useAuth()`，完全沒收到 `guestProfile`，這次一併補上。**這不只是功能不完整的問題，是真的資料外洩風險**：`guestAuth.js` 明確記載了「教練裝置被小朋友掃 QR code 進兒童模式」這個共用裝置情境，此時 `auth.currentUser` 仍是教練本人的真實登入——若子元件沒有明確吃 `guestProfile` 而是回退用 `useAuth()`，兒童模式畫面會顯示教練自己的裝備/圖鑑資料，不是空的或報錯，是「看起來正常但資料是別人的」這種更難發現的 bug。以後任何新增給訪客用的頁面，凡是有 `useAuth()` 呼叫的子元件都要沿著 render tree 追到底、逐一補上 `guestProfile` fallback，不能只改最外層容器就假設完工。
+- **check agent 複查時又追出一個同類型的漏網之魚：`DungeonBattleRoom.jsx`**——這個檔案也是獨立呼叫 `useAuth()`（沒收到任何 profile prop），而且它正是被 `DungeonExpedition.jsx` 內部的 `ExpeditionBattleRoom` 包裝元件在訪客單人遠征戰鬥時實際渲染的戰鬥核心（`isGuest`/`guestProfile` 在 Step 2 施工時被 `DungeonExpedition.jsx` 接住了，但沒有再往下傳進 `<DungeonBattleRoom>`）。同一顆「教練裝置被小朋友掃 QR code」地雷：戰鬥中的獎勵發放（`addCoins`/`addMaterials`/`recordBattleDex` 等，全部以 `useAuth()` 解出的 `myId` 為準）會因此寫進教練自己的 `members` 文件而不是小朋友的。已修正：`DungeonBattleRoom` 新增可選 `guestProfile` 參數（`const profile = guestProfile || authProfile`，跟其他檔案同一慣例），`DungeonExpedition.jsx` 的 `ExpeditionBattleRoom` 新增 `guestProfile` prop 並在呼叫 `<DungeonBattleRoom>` 時往下傳，主元件渲染 `<ExpeditionBattleRoom>` 時傳入 `guestProfile={isGuest ? profile : undefined}`（非訪客時維持 `undefined`，行為與改動前逐字一致）。`DungeonController.jsx`/`TeamExpeditionBattle.jsx` 呼叫 `<DungeonBattleRoom>` 時没有傳這個新參數，正式學生/組隊路徑不受影響（`guestProfile` 預設 `undefined` 時退回 `useAuth()`，跟改動前完全相同）。教訓：**Grep `useAuth()` 只抓到「直接」被容器渲染的子元件不夠，要沿著整條 render 呼叫鏈（含中間層的本地 wrapper component，例如同檔案內的 `ExpeditionBattleRoom`）追到最底層才算完整。**
+- Firestore 規則 `members` 的 `update` 已有 `(isLoggedIn() && resource.data.accountType in ["guest","kid"])` 分支，訪客/兒童寫入完全不受 `hasOnly` 欄位白名單限制（研究已確認，設計文件也有記載）——這次新增的所有欄位寫入（`rpgEquip`/`dungeonCollectibles`/`coins`/`activeExpedition`/`dungeonExcavation`）都不需要動 `firestore.rules`。
+- Firestore 配額當時耗盡（預期下午3點重置），本次只能靠仔細讀程式碼路徑 + `CI=true npx react-scripts build` 驗證，**沒有跑過真實 Firestore 的端對端測試**——尤其是「訪客實際跑完一場遠征後 `members/{id}` 材料/金幣有正確增加」這條，是靠逐行追蹤 `handleBattleDone`→`handleFinish`→`grantExpeditionRewards`/`addMaterials`/`addChests` 完全沒有 guard 來確認的，還沒有真的在瀏覽器裡點過一輪驗證寫入結果，配額恢復後應該找時機補一次真實跑局驗證。
+
+---
+
 ## 2026-07-10（官網 SEO/GEO 泛用關鍵字內容上線：首頁情境區塊 + 10題FAQ + 8支獨立頁面）
 
 ### 改了什麼

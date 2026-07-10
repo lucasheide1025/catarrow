@@ -13,8 +13,9 @@ const RARITY_COLOR = {
   exclusive: { bg:"rgba(168,85,247,0.30)",  border:"rgba(168,85,247,0.4)",  text:"#d8b4fe" },
 };
 
-export default function DungeonDex() {
-  const { profile } = useAuth();
+export default function DungeonDex({ guestProfile }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
   const collectibles = profile?.dungeonCollectibles || {};
   const [selFamily, setSelFamily] = useState("all");
   const [showExclusive, setShowExclusive] = useState(false);

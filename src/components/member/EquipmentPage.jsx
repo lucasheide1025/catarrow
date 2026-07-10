@@ -9,8 +9,9 @@ import {
 import { GRADE_PREFIX } from "../../lib/equipData";
 import RPGEquipPanel from "./RPGEquipPanel";
 
-export default function EquipmentPage({ onPageChange }) {
-  const { profile } = useAuth();
+export default function EquipmentPage({ onPageChange, guestProfile }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
   const equipment = profile?.rpgEquip || {};
   const bonus     = calcEquipBonus(equipment);
   const equipped  = EQUIP_SLOT_DEFS.filter(s => equipment[s.id]?.itemId).length;
@@ -89,6 +90,7 @@ export default function EquipmentPage({ onPageChange }) {
         <div className="mt-4">
           <RPGEquipPanel
             showSummary={false}
+            guestProfile={guestProfile}
             onGoShop={onPageChange ? () => onPageChange("coinshop") : null}
           />
         </div>

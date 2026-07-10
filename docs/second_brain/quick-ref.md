@@ -886,6 +886,41 @@ grantExpeditionRewards(memberId, rewards)
 
 ---
 
+## 🎈 訪客/兒童地下城整合（2026-07-10）
+
+```js
+// 整合策略：重用正式元件，不重刻。只換「怎麼拿到一個 dungeon 物件」這一步，
+// 下游 DungeonSelectionPanel/DungeonExpedition/DungeonBattleRoom 全部原封不動重用。
+
+// DungeonLobby.jsx / EquipmentPage.jsx / DungeonSelectionPanel.jsx / DungeonDex.jsx / RPGEquipPanel.jsx
+// 全部新增可選 { guestProfile, isGuest, tierCap }（RPGEquipPanel/DungeonDex 只有 guestProfile）
+// const { profile: authProfile } = useAuth(); const profile = guestProfile || authProfile;
+// 沒傳新參數 = 完全比照改動前行為，正式學生/教練切射手模式都不受影響。
+
+// src/components/dungeon/GuestDungeonEntry.jsx（新元件）
+// T1/T2 選擇畫面（tierCap 決定選項數，目前固定傳2）→ 選完用 drawExpeditionBoss(tier,family) 就地組出
+// { family, difficulty:tier, boss, isHidden:false, savedId:null }，不寫入 pendingReveal/savedDungeons
+
+// 難度封頂兩層（DungeonExpedition.jsx，缺一不可）：
+// 1) difficultyTier = isGuest ? Math.min(excavation?.difficulty||1, tierCap||2) : excavation?.difficulty||1
+// 2) fixedBoss：isGuest 時不信任上游傳入的 boss 物件，改用「已封頂的 difficultyTier」重新 drawExpeditionBoss()
+//    （用 useMemo 鎖定同一場遠征內王的身份，避免每次 render 重抽）
+//    原因：difficultyTier 數字只夾住樓層怪物池/獎勵倍率，王關戰鬥吃的是獨立 boss 物件，兩者都要重新從
+//    封頂後的 tier 導出才是真正防線，不能只夾其中一個。
+
+// GuestApp.jsx：guestFullProfile = onSnapshot(members/{id}) 完整文件（取代舊的 {id,name,coins} 快照）
+//   <DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} .../>
+//   <EquipmentPage guestProfile={guestFullProfile} .../>（新增「裝備」入口，GuestHome 卡片）
+// GuestDungeonSimple.jsx 已刪除（舊固定3層+固定王簡化版，跳過持久化，跟正式系統無關聯）
+```
+
+⚠️ 踩坑提醒：
+- **凡是被拉進訪客渲染樹、內部自己呼叫 `useAuth()` 的子元件，都要單獨補 `guestProfile`**——不能只改最外層容器。這次 `RPGEquipPanel.jsx`/`DungeonDex.jsx` 一開始都漏了（各自獨立 `useAuth()`），這不只是「訪客看不到資料」，是「教練裝置被小朋友掃碼共用」情境下**會顯示教練自己的裝備/圖鑑**（`auth.currentUser` 仍是教練），比空白畫面更難發現。**check agent 複查時又追出 `DungeonBattleRoom.jsx` 也是同一個漏洞**（它是 `DungeonExpedition.jsx` 內 `ExpeditionBattleRoom` 包裝元件實際渲染的戰鬥核心，`isGuest`/`guestProfile` 傳到 `DungeonExpedition` 就停了，沒有再往下傳進 `<DungeonBattleRoom>`），已補上 `guestProfile` 參數並在 `ExpeditionBattleRoom`/主元件呼叫處逐層往下傳——教訓是 grep `useAuth()` 要沿著「整條 render 呼叫鏈」（含同檔案內的本地 wrapper component）追到最底層，不能只看容器元件層級。
+- `DungeonBattleRoom.jsx`/`PartyBattleRoom.jsx`/`db.js` 裡的 `myId.startsWith("guest")` 字串前綴守衛是 07-09 之前的舊系統遺留，目標舊版 literal `"guest_"+timestamp` 非持久化 ID；新訪客系統 id 是 Firestore 自動生成隨機 ID，永遠不會以 `"guest"` 開頭，這些守衛對新系統是死代碼，新增訪客邏輯不要再沿用這個模式，一律用 `isGuest`/`guestProfile` 明確傳遞。
+- 地下城掉落物結算路徑（`DungeonExpedition.jsx::handleBattleDone/handleFinish`）逐行確認過沒有任何 `isGuest` 守衛，訪客/兒童現在會真的拿到材料/金幣並寫回 `members/{id}`；跟 `MonsterBattle.jsx` 的訪客首勝實體勳章流程（`LOOT_TABLE_GUEST`）完全獨立，那個檔案沒動。
+
+---
+
 ## 🎮 地下城系統速查（2026-06-27 重設計）
 
 ### 合約類型（CONTRACT_TYPES in dungeonData.js）（2026-06-28 修改）
@@ -1045,3 +1080,39 @@ src/lib/
   adventurerSystem.js   levelFromXP(adventurerXP) / rankFromLevel(lv) → {name,icon,color}
   sound.js / theme.js
 ```
+
+---
+
+## 📅 線上約課系統速查（07-10-booking-system-student-pilot，2026-07-10）
+
+**跟 SimplyBook 並存，不是取代**。官網「立即預約」CTA 完全沒動，這套是自製系統，先給既有學生/新生試用。**完工後尚未 push main**（PRD 明確要求：使用者自己測試過才問要不要 push；且 Firestore 額度事故當天做的，全程沒有即時對真實資料做並發搶位測試，只做到程式碼審查層級——見下方「已知待驗證項目」）。
+
+### 資料層（`src/lib/bookingDb.js`，視為穩定 API，別的地方不要重刻邏輯）
+```js
+createBooking(memberId, memberName, {email,phone}, planType, date, startTime, endTime, source, note)
+cancelBooking(bookingId)
+rescheduleBooking(bookingId, newDate, newStartTime, newEndTime)   // 舊釋放+新鎖定同一個 transaction
+blockSlot(date, startTime) / unblockSlot(date, startTime)
+getBookingsForMember(memberId, maxCount=200)
+getBookingsForDateRange(startDate, endDate)   // 一定要帶日期範圍，不能無界查詢
+LANE_CAPACITY = 8   // 全場固定 8 個靶位
+```
+容量計算全部用 `runTransaction` 對 `bookingSlotCounts/{slotKey}`（`slotKey="YYYY-MM-DD_HH:mm"`）原子計數，`bookings` collection 本身不能拿來即時計數。30 分鐘最短前置時間檢查寫死在 `createBooking`/`rescheduleBooking` 函式本體（純函式，不查資料庫），三個入口（學生/新生/教練代建）共用同一個函式，後端擋一次三邊都保護到。
+
+`members/{id}.bookingStats = {firstBookingAt, totalBookings, lastBookingAt}`：`totalBookings` 語意＝**目前有效預約數**（取消要扣回去，改期淨變化為 0），跟 create/cancel/reschedule 同一個 transaction 內更新，UI 一律直接讀這個欄位，**不對 `bookings` 額外查詢**。
+
+### 唯讀顯示層（`src/lib/bookingSchedule.js`）
+只負責「畫格子」，不含任何寫入邏輯：`slotsForDate(date)`（週一公休；週二 13-22 共9格；週三~日 10-22 共12格，每格1hr）、`isBusinessDay`、`fetchSlotCountsForRange(start,end)`（用 `documentId()` range query 一次查完一段日期範圍的 `bookingSlotCounts`，不逐日查）、`slotState(date,startTime,slotCounts)`（可選/已滿/封鎖/太快顯示狀態）、`PLAN_TYPES`（單人一般／兒童學生敬老／自備器材）。共用元件 `src/components/booking/DateSlotPicker.jsx` 被學生前台/新生隱藏入口/教練後台代建三處重用。
+
+### `bookingBetaAccess` 漸進開放旗標
+`members/{id}.bookingBetaAccess: boolean`（預設不存在＝false）。`MemberApp.jsx`/`AdminApp.jsx`（射手模式）的「約課」底部導覽按鈕只在 `profile?.bookingBetaAccess===true || role==="admin"` 時才**渲染**（不是灰階，比照 `accessControl.js`/`MonsterBattle.jsx` 既有的條件式不渲染慣例）。教練後台切換開關在 `AdminBooking.jsx` 的「開放名單」分頁，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`（**注意**：`db.js::updateMember()` 的 `safeFields` 白名單沒有這個欄位，用它會被靜默濾掉，這個功能繞過 `updateMember` 直接寫）。⚠️ 只有 `studentTier==="official"`（未鎖定）的學生 `getAllowedPages()` 才會回傳 `null`（全開）；`restricted`/`retired`/`autoLocked` 的白名單沒有 `"booking"`，這幾個分級的學生就算開了 `bookingBetaAccess` 也進不去分頁（目前視為預期行為，PRD 沒特別要求覆蓋）。
+
+### 新生隱藏入口
+`src/pages/PublicBookingApp.jsx`（比照 `GuestApp.jsx` 獨立頂層模式）→ `App.jsx` 用一個不公開、不規律的 query 參數字串進入（實際字串只在 `App.jsx` 頂部一個常數定義一次，故意不記錄在這份筆記——文件本身可能外流，實際網址只跟教練口頭/私訊複述過，需要時直接看 `App.jsx` 該常數）。頁面掛載時手動插入 `<meta name="robots" content="noindex,nofollow">`（這個 App 平常都在登入後面，沒有既有的 per-route meta 機制，這是最小侵入的手動做法）。註冊沿用既有 `resolveGuestSession(email,"guest",null)`（`guestAuth.js`），跟訪客模式共用同一套 `accountType:"guest"`/`contactHash` 機制，之後要轉正式學籍走既有 `convertGuestToOfficial`。
+
+### 教練後台 `AdminBooking.jsx`
+掛在 `AdminApp.jsx` 的「會員中心」Hub（`memberSub==="booking"`），內部三個子分頁：行事曆（週/日切換，色塊格線，點格子開 `SlotDetailModal`：封鎖/解除封鎖、標記付款方式 cash/transfer、取消、改期、＋新增預約）、開放名單（`bookingBetaAccess` 開關 + `bookingStats` 三欄位顯示）、收費報表（`getBookingsForDateRange` 依區間查詢，`planType × paymentMethod` 記憶體內分組統計，不新增 Firestore 查詢模式）。建立預約（電話進線）搜尋既有顧客時讀的是**全部** `members`（含 guest/kid），不是 `getMembers()`（那個過濾掉 guest/kid）；新顧客一樣走 `resolveGuestSession`，不是另外刻建立邏輯。
+
+### 已知待驗證項目（Firestore 額度當天恢復後要做）
+- PRD 驗收4：雙分頁同時搶同一時段最後名額——只做到程式碼審查（transaction 邏輯正確），**沒有實際跑並發測試**。
+- 完整新生自助註冊+預約流程、教練後台完整跑一輪、學生完整跑一輪（選時段→送出→查看→改期→取消）——都只做到 `CI=true npx react-scripts build` 通過 + 程式碼審查，沒有對真實 Firestore 資料即時操作驗證。

@@ -6,6 +6,7 @@ import DungeonExcavationTab from "./DungeonExcavationTab";
 import DungeonStorageTab from "./DungeonStorageTab";
 import DungeonSelectionPanel from "./DungeonSelectionPanel";
 import DungeonTeamLobby from "./DungeonTeamLobby";
+import GuestDungeonEntry from "./GuestDungeonEntry";
 import DungeonExpedition from "./DungeonExpedition";
 import TeamExpeditionBattle from "./TeamExpeditionBattle";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
@@ -33,11 +34,12 @@ function restoreDungeonFromTeamRoom(room) {
   };
 }
 
-export default function DungeonLobby({ onBack }) {
-  const { profile } = useAuth();
+export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
   const myId = profile?.id;
   const myName = profile?.name || "射手";
-  const [tab, setTab] = useState("excavate");
+  const [tab, setTab] = useState(isGuest ? "enter" : "excavate");
   const [expeditionStart, setExpeditionStart] = useState(null);
   // 進入地下城選單狀態
   const [selectedDungeon, setSelectedDungeon] = useState(null);
@@ -211,6 +213,8 @@ export default function DungeonLobby({ onBack }) {
       <DungeonExpedition
         excavation={expeditionStart}
         profile={profile}
+        isGuest={isGuest}
+        tierCap={tierCap}
         onComplete={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
         onAbandon={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
       />
@@ -255,7 +259,7 @@ export default function DungeonLobby({ onBack }) {
       <div className="sticky top-0 z-20 px-4 pb-4"
         style={{ background:"linear-gradient(180deg,rgba(15,23,42,0.96) 0%,rgba(15,23,42,0.86) 72%,transparent 100%)" }}>
       <div className="flex bg-slate-600/90 rounded-2xl p-1 shadow-lg">
-        {["excavate","enter","dex"].map(t => (
+        {(isGuest ? ["enter","dex"] : ["excavate","enter","dex"]).map(t => (
           <button key={t} onClick={() => { setTab(t); if (t !== "enter") { setSelectedDungeon(null); setShowJoinPanel(false); } }}
             className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${tab===t ? "bg-white/25 text-white" : "text-slate-300 hover:text-white"}`}
             style={{ touchAction:"manipulation" }}>
@@ -342,7 +346,9 @@ export default function DungeonLobby({ onBack }) {
         {tab === "excavate" ? (
           <DungeonExcavationTab profile={profile} />
         ) : tab === "dex" ? (
-          <DungeonDex />
+          <DungeonDex guestProfile={guestProfile} />
+        ) : tab === "enter" && !selectedDungeon && isGuest ? (
+          <GuestDungeonEntry tierCap={tierCap} onSelect={setSelectedDungeon} />
         ) : tab === "enter" && !selectedDungeon ? (
           <div className="space-y-4">
             <DungeonStorageTab
@@ -450,13 +456,15 @@ export default function DungeonLobby({ onBack }) {
           <DungeonSelectionPanel
             dungeon={selectedDungeon}
             profile={profile}
+            isGuest={isGuest}
             onBack={() => setSelectedDungeon(null)}
             onStartSolo={({ boss, arrowsPerRound, targetFmt }) => {
               setExpeditionStart({
                 family: selectedDungeon.family,
                 difficulty: selectedDungeon.difficulty,
                 isHidden: selectedDungeon.isHidden,
-                fromStorage: true,
+                // 訪客/兒童的地下城是 GuestDungeonEntry 就地生成，非儲存槽，不消耗/寫入 savedDungeons
+                fromStorage: !isGuest,
                 savedId: selectedDungeon.id,
                 boss: selectedDungeon.boss || boss || null,
                 arrowsPerRound,

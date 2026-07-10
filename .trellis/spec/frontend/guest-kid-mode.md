@@ -101,6 +101,25 @@ await writeAuditLog({ action: "convertToOfficial", after: logged, ... }); // nev
 >
 > **Prevention**: any code path that calls `signInAnonymously` (or otherwise mints a Firebase Auth identity for an unauthenticated flow) on a page that a logged-in coach/member could also reach in the same tab/session **must** check `auth.currentUser?.isAnonymous` before deciding whether to reuse vs. isolate. Grep for `signInAnonymously` before adding a new one — as of this fix there is exactly one call site in the codebase (`guestAuth.js`); keep it that way or apply the same isolation pattern to any new one.
 
+## Convention: threading `guestProfile`/`isGuest`/`tierCap` into production components (dungeon/equipment reuse, 2026-07-10)
+
+**What**: rather than building a separate simplified clone of a system for guest/kid mode (the old `GuestDungeonSimple.jsx` approach), the project now prefers extending the REAL production component with optional params that default to identical behavior when absent:
+```js
+// DungeonLobby.jsx / EquipmentPage.jsx / DungeonBattleRoom.jsx pattern
+export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;   // official callers pass nothing -> byte-identical to before
+  ...
+}
+```
+`isGuest` gates which UI sections render at all (hide, never grey-out — see the existing `{!isGuest && ...}` convention already used throughout `MonsterBattle.jsx`). `tierCap` (e.g. `2`) clamps a difficulty value at **two independent points**: once where the guest UI lets the user choose a tier, and again at the deepest point where that tier number is actually consumed to draw monsters/bosses (`Math.min(source, tierCap)`) — never trust the upstream value alone, in case a future code path produces a dungeon object that wasn't generated through the capped entry point.
+
+**Why**: keeps exactly one implementation of game logic (no drift between a "real" and "guest" version), and the fallback pattern makes official-student regression risk mechanically checkable (grep every call site, confirm none pass the new params, confirm the fallback reduces to old behavior when they're absent).
+
+**Gotcha — the `useAuth()` leak is not confined to the component you're editing.** When adding `guestProfile` support to an entry component (e.g. `DungeonLobby.jsx`), grep **every component reachable from its render tree** for direct `useAuth()` calls, not just its direct children. `DungeonSelectionPanel.jsx`/`EquipmentPage.jsx` were fixed first; a check pass later caught that `RPGEquipPanel.jsx` and `DungeonDex.jsx` also called `useAuth()` directly (missed because they're one hop removed from the obvious call site) — and a *second* check pass caught that `DungeonBattleRoom.jsx` (reached via a local wrapper inside `DungeonExpedition.jsx`, two hops down) had the same gap. Each miss meant: if a coach's own device is already logged in with a real account and someone scans a kid-mode QR code on that same tab (see the anonymous-auth-reuse incident above — this is a real, expected scenario, not an edge case), the affected component would silently show/write **the coach's own data** instead of the child's. Treat this as an exhaustive-grep problem, not a "check the obvious spots" problem — search the whole subtree every time, including wrapper/helper components that don't look like they'd need auth.
+
+**Related pitfall — a boolean flag flowing into unrelated logic.** `DungeonExpedition.jsx` had a `fromStorage` flag that was unconditionally `true` (assuming every dungeon came from the saved/`pendingReveal` storage system). Guest dungeons are ephemeral (`savedId:null`, never written to storage), so this needed to become `fromStorage: !isGuest` — otherwise the consume-effect tried to remove a saved dungeon that was never saved, and the guest got stuck on a permanent loading screen (no render branch handled the resulting stuck `"consume"` phase). When reusing a production component for a new caller, audit every boolean/flag param it already takes, not just the ones you're intentionally threading through.
+
 ## Convention: excluding guest/kid from official-only queries
 
 **What**: `getMembers()` and `getMembersForBilling()` in `src/lib/db.js` filter out `accountType in ["guest","kid"]` after fetching, treating an absent `accountType` field as official.

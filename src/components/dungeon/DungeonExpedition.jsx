@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { drawFloorMonsters, drawMixedMonsterPool } from "../../lib/monsterData";
+import { drawFloorMonsters, drawMixedMonsterPool, drawExpeditionBoss } from "../../lib/monsterData";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
@@ -481,7 +481,7 @@ function ExpeditionBattleRoom({
   memberData, memberName, monster,
   difficultyTier, floorIndex, roomType,
   arrowsPerRound, targetFmt,
-  onDone, onAbandon,
+  onDone, onAbandon, guestProfile,
 }) {
   const [roomId, setRoomId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -592,6 +592,7 @@ function ExpeditionBattleRoom({
       isMapMode={true}
       onReturnToMap={() => {}}
       onExit={onAbandon}
+      guestProfile={guestProfile}
     />
   );
 }
@@ -666,6 +667,8 @@ export default function DungeonExpedition({
   profile,
   onComplete,
   onAbandon: onAbandonProp,
+  isGuest,
+  tierCap,
 }) {
   const myId = profile?.id;
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
@@ -675,11 +678,22 @@ export default function DungeonExpedition({
     return subscribeCardCollection(myId, setCardColl);
   }, [myId]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
-  const difficultyTier = excavation?.difficulty || 1;
+  // 難度封頂第二層防禦：訪客/兒童一律夾在 1~tierCap（不完全信任上游 GuestDungeonEntry 傳來的值）
+  // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3
+  const difficultyTier = isGuest
+    ? Math.min(Math.max(1, excavation?.difficulty || 1), tierCap || 2)
+    : (excavation?.difficulty || 1);
   const isFromStorage = excavation?.fromStorage === true;
   const savedId = excavation?.savedId;
   const family = excavation?.family || "ghost";
-  const fixedBoss = excavation?.boss || null;
+  // 訪客/兒童：不信任上游傳入的 boss 物件（可能是封頂前抽出的），一律用已封頂的 difficultyTier 重新抽王，
+  // 確保王關戰鬥本身也真的被夾住，不只是樓層怪物池／獎勵倍率（design.md §3 的「兩層都要夾」）
+  // useMemo 鎖定同一場遠征內的王身份，避免每次 render 都重抽（family/difficultyTier 不變就不重算）
+  const guestFixedBoss = useMemo(
+    () => (isGuest ? drawExpeditionBoss(difficultyTier, family) : null),
+    [isGuest, difficultyTier, family],
+  );
+  const fixedBoss = isGuest ? guestFixedBoss : (excavation?.boss || null);
   const isHidden = excavation?.isHidden || false;
   const arrowsPerRound = excavation?.arrowsPerRound === 3 ? 3 : 6;
   const targetFmt = excavation?.targetFmt || "full_110";
@@ -1291,6 +1305,7 @@ export default function DungeonExpedition({
         targetFmt={targetFmt}
         onDone={handleBattleDone}
         onAbandon={handleAbandon}
+        guestProfile={isGuest ? profile : undefined}
       />
     );
   }

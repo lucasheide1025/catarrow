@@ -11,7 +11,8 @@ import DuelLobby       from "../components/duel/DuelLobby";
 import DuelRoom        from "../components/duel/DuelRoom";
 import WorldBossLobby  from "../components/worldboss/WorldBossLobby";
 import GuestShop       from "../components/member/GuestShop";
-import GuestDungeonSimple from "../components/dungeon/GuestDungeonSimple";
+import DungeonLobby    from "../components/dungeon/DungeonLobby";
+import EquipmentPage   from "../components/member/EquipmentPage";
 import GuestShareCard  from "../components/member/GuestShareCard";
 
 const SESSION_KEY = "guest_v2_profile";
@@ -46,15 +47,18 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   const [duelMyTeam,  setDuelMyTeam]  = useState("A");
   const [duelSubTab,  setDuelSubTab]  = useState("lobby");
   const [wbResult, setWbResult] = useState(null);
-  const [liveCoins, setLiveCoins] = useState(0);
   const [showShareCard, setShowShareCard] = useState(false);
 
+  // 完整即時會員文件（地下城/裝備頁直接吃這份 profile，不用另外組裝——
+  // 這就是 guest-kid-mode-overhaul 已經持久化的真實 members 文件，見 design.md §5）
+  const [guestFullProfile, setGuestFullProfile] = useState(null);
   useEffect(() => {
-    if (!guestProfile?.id) return;
+    if (!guestProfile?.id) { setGuestFullProfile(null); return; }
     return onSnapshot(doc(db, "members", guestProfile.id), snap => {
-      setLiveCoins(snap.exists() ? (snap.data().coins || 0) : 0);
+      setGuestFullProfile(snap.exists() ? { id: snap.id, ...snap.data() } : null);
     });
   }, [guestProfile?.id]);
+  const liveCoins = guestFullProfile?.coins ?? guestProfile?.coins ?? 0;
 
   useEffect(() => {
     if (!guestProfile) return;
@@ -156,7 +160,24 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
       <div style={{ paddingBottom: 90 }}>
         {tab === "home" && <GuestHome name={guestProfile.name} isKid={isKid} accent={themeAccent} onGo={setTab} onShareCard={() => setShowShareCard(true)} />}
         {tab === "monster" && <MonsterBattle isGuest={true} kidMode={isKid} />}
-        {tab === "dungeon" && <GuestDungeonSimple guestOverride={guestOverride} onExit={() => setTab("home")} />}
+        {tab === "dungeon" && (
+          guestFullProfile ? (
+            <DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} onBack={() => setTab("home")} />
+          ) : (
+            <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
+              載入中…
+            </div>
+          )
+        )}
+        {tab === "equipment" && (
+          guestFullProfile ? (
+            <EquipmentPage guestProfile={guestFullProfile} onPageChange={page => { if (page === "coinshop") setTab("shop"); else setTab("home"); }} />
+          ) : (
+            <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
+              載入中…
+            </div>
+          )
+        )}
         {tab === "worldboss" && (
           <WorldBossLobby guestOverride={guestOverride} onBattleComplete={result => setWbResult(result)} />
         )}
@@ -196,6 +217,7 @@ function GuestHome({ name, isKid, accent, onGo, onShareCard }) {
   const cards = [
     { id: "monster",   icon: "⚔️", title: "打怪", desc: "挑戰怪物，累積戰績" },
     { id: "dungeon",   icon: "🏰", title: "地下城", desc: "闖3層，挑戰最終王" },
+    { id: "equipment", icon: "⚔️", title: "裝備", desc: "升級你的裝備" },
     { id: "worldboss", icon: "🌍", title: "世界王", desc: "跟大家一起挑戰大魔王" },
     { id: "duel",      icon: "🤺", title: "決鬥", desc: "跟朋友 1v1 較量" },
     { id: "party",     icon: "👥", title: "組隊", desc: "建房間，一起闖關" },

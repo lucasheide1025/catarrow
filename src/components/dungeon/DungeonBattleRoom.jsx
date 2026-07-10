@@ -174,8 +174,14 @@ function pickBg(family) {
   return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
 }
 
-export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false }) {
-  const { profile } = useAuth();
+export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false, guestProfile }) {
+  // 訪客/兒童單人遠征：profile 由 DungeonExpedition → ExpeditionBattleRoom 明確傳入，
+  // 不能只靠 useAuth()——教練/會員登入中的裝置掃兒童模式 QR code 時，訪客的匿名登入走的是
+  // 隔離的臨時 Firebase App（見 guestAuth.js），不會更新這裡 useAuth() 訂閱的主要 auth 物件，
+  // 若沒有 guestProfile fallback，myId 會誤用教練自己的 id，獎勵會寫錯人的 members 文件。
+  // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §2（isGuest/guestProfile 明確傳遞慣例）
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName } = useCatCompanion();
   const myId        = profile?.id;
   const bondSavedRef         = useRef(false);

@@ -27,6 +27,7 @@ export default function DungeonSelectionPanel({
   onBack,
   onStartSolo,     // () 開始單人遠征
   onStartTeam,     // (dungeon) 建立組隊房間
+  isGuest,
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [arrowsPerRound, setArrowsPerRound] = useState(DEFAULT_DUNGEON_ARROWS);
@@ -262,27 +263,29 @@ export default function DungeonSelectionPanel({
         </button>
 
         {/* 組隊探索 */}
-        <button onClick={() => onStartTeam({
-          ...dungeon,
-          boss,
-          arrowsPerRound,
-          targetFmt,
-        })}
-          className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
-          style={{
-            background:"rgba(139,92,246,0.10)",
-            borderColor:"rgba(139,92,246,0.25)",
-          }}>
-          <div className="flex items-center gap-4">
-            <div className="text-3xl">👥</div>
-            <div>
-              <div className="text-base font-black text-white">組隊探索</div>
-              <div className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
-                建立房間邀請夥伴一起挑戰（最多 4 人）
+        {!isGuest && (
+          <button onClick={() => onStartTeam({
+            ...dungeon,
+            boss,
+            arrowsPerRound,
+            targetFmt,
+          })}
+            className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
+            style={{
+              background:"rgba(139,92,246,0.10)",
+              borderColor:"rgba(139,92,246,0.25)",
+            }}>
+            <div className="flex items-center gap-4">
+              <div className="text-3xl">👥</div>
+              <div>
+                <div className="text-base font-black text-white">組隊探索</div>
+                <div className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
+                  建立房間邀請夥伴一起挑戰（最多 4 人）
+                </div>
               </div>
             </div>
-          </div>
-        </button>
+          </button>
+        )}
       </div>
     </div>
   );
