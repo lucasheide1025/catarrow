@@ -1,6 +1,6 @@
 # 貓貓村採集任務重製交接筆記
 > 日期：2026-07-10  
-> 狀態：功能已完成、`npm run build` 已通過、尚未 commit / push / deploy。使用者決定晚點交給 Claude 佈署。
+> 狀態：功能已完成、`npm run build` 已通過。Claude 已審查程式碼（重點查過箭數封頂、協力加成封頂 4 人、村目標串接無重複計算等經濟安全項目）、已 commit（`f691b5d`）並 push 到 `origin/main`。本機 Vercel CLI token 仍是壞的（`npx vercel ls` 回傳 `missing an authentication token`），已改用 push GitHub 觸發 Vercel 自動部署，尚待使用者於 Vercel 後台確認 production 部署成功。
 
 ---
 
@@ -129,11 +129,8 @@
 
 ## 尚未完成
 
-- 尚未 commit。
-- 尚未 push。
-- 尚未 Vercel production deploy。
 - 尚未用多人真實帳號完整測協力採集 Firestore 流程。
-- 使用者表示晚點會讓 Claude 佈署。
+- 尚未在 Vercel 後台肉眼確認 production 部署完成（本機 CLI token 壞掉，無法用 CLI 查詢）。
 
 ---
 
