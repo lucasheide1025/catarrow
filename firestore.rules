@@ -42,6 +42,7 @@ service cloud.firestore {
                     "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
                     "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
+                    "bookingStats",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
                     "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
