@@ -20,8 +20,9 @@ export default function MemberBooking() {
   const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
   const [participantCount, setParticipantCount] = useState(1);
-  // bookingStats.totalBookings 是 0（或還沒有這個欄位）時預設勾選「第一次來體驗」，使用者仍可自己改
-  const [isNewStudent, setIsNewStudent] = useState(() => !(profile?.bookingStats?.totalBookings > 0));
+  // 學籍會員（能進到這個分頁的都已有學籍）一律算「舊生」，不再讓他們自己勾「是否第一次體驗」。
+  // 新生統計只在教練後台代建（AdminBooking）與訪客自助（PublicBookingApp）才需要區分。
+  const isNewStudent = false;
   const [confirming, setConfirming] = useState(false); // 07-10-booking-ui-polish-headcount：選完時段先看確認畫面
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
@@ -98,11 +99,6 @@ export default function MemberBooking() {
             onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
           <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setErr(""); setConfirming(true); }}
             durationHours={durationHours} participantCount={participantCount} />
-          <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
-            <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
-              className="accent-blue-500 w-4 h-4" />
-            是否為第一次來體驗
-          </label>
           {err && <div className="text-red-400 text-sm">{err}</div>}
         </Card>
       )}

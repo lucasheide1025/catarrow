@@ -75,7 +75,9 @@ function slotKeysFor(date, startTime, durationHours) {
 
 // ─── 建立預約（學生前台 / 新生隱藏入口 / 教練後台代建 共用）────
 
-// contact: { email, phone }（皆為必填，是轉正式學籍的依據）
+// contact: { email, phone }。只有訪客自助（source==="online_public"）強制填寫——那是日後
+//   找回帳號 / 轉正式學籍的依據。學籍會員自己約課（"online"）或教練代建（"phone"）不強制，
+//   因為會員本來就有帳號，很多人 profile 沒留 email/電話，不該擋住他們預約。
 // durationHours: 1 | 2 | 3（3 小時＝方案表「2送1」選項）
 // participantCount: 1~LANE_CAPACITY（07-10-booking-ui-polish-headcount：選N人＝這筆預約原子性
 // 佔用N個靶位，不是備註欄位——每一格容量檢查從「count>=LANE_CAPACITY」推廣成
@@ -85,7 +87,9 @@ function slotKeysFor(date, startTime, durationHours) {
 // source:  "online" | "online_public" | "phone"
 export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "") {
   if (!memberId) return { ok: false, reason: "缺少會員 ID" };
-  if (!contact?.email || !contact?.phone) return { ok: false, reason: "Email 與電話為必填" };
+  if (source === "online_public" && (!contact?.email || !contact?.phone)) {
+    return { ok: false, reason: "Email 與電話為必填" };
+  }
   const count = Math.max(1, Math.min(LANE_CAPACITY, participantCount || 1));
 
   const leadErr = checkLeadTime(date, startTime);
@@ -128,7 +132,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
 
       tx.set(bookingRef, {
         memberId, memberName,
-        contactEmail: contact.email, contactPhone: contact.phone,
+        contactEmail: contact?.email || "", contactPhone: contact?.phone || "",
         planType, participantCount: count,
         durationHours, isNewStudent: !!isNewStudent,
         date, startTime, endTime,
