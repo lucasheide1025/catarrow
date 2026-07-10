@@ -429,10 +429,8 @@ export default function MemberApp() {
     setPage("adventure-hub");
   }
 
-  // 線上約課分頁（07-10-booking-system-student-pilot）：漸進開放，只有 bookingBetaAccess===true
-  // 的會員或教練（射手模式自己測試用）才看得到這顆導覽按鈕本身，不是渲染出來但灰階/鎖定——
-  // 比照 accessControl.js／MonsterBattle.jsx 既有的「條件式不渲染」慣例（design.md §2）。
-  const canSeeBooking = profile?.bookingBetaAccess === true || role === "admin";
+  // 線上約課分頁：正式開放給所有已登入學生，教練/管理員在射手模式也可使用。
+  const canSeeBooking = !!profile?.id || role === "admin";
   const nav = [
     { id:"home",          icon:"🏠", label:"首頁" },
     { id:"adventure-hub", icon:"🗺️", label:"冒險" },

@@ -1,6 +1,5 @@
 // src/components/member/MemberBooking.jsx — 學生前台「線上約課」分頁（07-10-booking-system-student-pilot）
-// 只在 profile?.bookingBetaAccess===true || role==="admin" 時才會被 MemberApp.jsx / AdminApp.jsx
-// 的射手模式渲染入口（design.md §4.1），這個元件本身不重複做這層判斷。
+// 由 MemberApp.jsx 控制入口；目前已正式開放給所有已登入學生。
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember } from "../../lib/bookingDb";

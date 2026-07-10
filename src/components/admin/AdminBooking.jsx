@@ -47,7 +47,7 @@ export default function AdminBooking() {
       <h2 className="text-white font-black text-xl">📅 線上約課</h2>
       <div className="flex gap-2">
         <Btn v={tab === "calendar" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("calendar")}>行事曆</Btn>
-        <Btn v={tab === "beta" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("beta")}>開放名單</Btn>
+        <Btn v={tab === "beta" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("beta")}>名單註記</Btn>
         <Btn v={tab === "report" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("report")}>收費報表</Btn>
       </div>
       {tab === "calendar" && <CalendarTab toast={toast} />}
@@ -615,7 +615,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   );
 }
 
-// ─── bookingBetaAccess 開放名單 ─────────────────────────────────
+// ─── bookingBetaAccess 歷史註記 ─────────────────────────────────
 function BetaAccessTab({ toast }) {
   const [members, setMembers] = useState(null);
   const [search, setSearch] = useState("");
@@ -631,7 +631,7 @@ function BetaAccessTab({ toast }) {
       const next = !m.bookingBetaAccess;
       await updateDoc(doc(db, "members", m.id), { bookingBetaAccess: next, updatedAt: serverTimestamp() });
       setMembers(list => list.map(x => x.id === m.id ? { ...x, bookingBetaAccess: next } : x));
-      toast(next ? `已開放給 ${m.nickname || m.name} ✓` : `已關閉 ${m.nickname || m.name} 的權限`);
+      toast(next ? `已標記 ${m.nickname || m.name} ✓` : `已取消 ${m.nickname || m.name} 的標記`);
     } catch (e) { toast("更新失敗：" + (e?.message || ""), "error"); }
     setBusyId(null);
   }
@@ -647,7 +647,7 @@ function BetaAccessTab({ toast }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="bg-blue-900/20 border border-blue-400/30 rounded-xl px-4 py-3 text-blue-300 text-xs leading-relaxed">
-        勾選開啟後，該學生的「約課」分頁才會出現。教練自己在射手模式永遠看得到（不受此開關影響）。
+        線上約課已正式開放給所有已登入學生。這裡保留舊 beta 名單作為歷史註記，不再控制學生前台是否顯示「約課」分頁。
       </div>
       <Inp placeholder="搜尋姓名／暱稱／Email" value={search} onChange={e => setSearch(e.target.value)} />
       {filtered.length === 0 ? <Empty message="沒有符合的會員" /> : (
