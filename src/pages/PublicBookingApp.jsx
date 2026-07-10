@@ -7,8 +7,8 @@
 import { useState, useEffect } from "react";
 import { resolveGuestSession } from "../lib/guestAuth";
 import { createBooking } from "../lib/bookingDb";
-import { PLAN_TYPES, DURATION_OPTIONS } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
+import PlanDurationPicker from "../components/booking/PlanDurationPicker";
 
 const SESSION_KEY = "public_booking_profile";
 
@@ -123,22 +123,10 @@ export default function PublicBookingApp() {
     <div style={wrapStyle}>
       <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ fontSize: 14, color: "rgba(255,255,255,.6)", textAlign: "center" }}>嗨，{profile.name}！選一個想來的時段吧</div>
-        <div>
-          <label style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>時數</label>
-          <select value={durationHours}
-            onChange={e => { setDurationHours(Number(e.target.value)); setSelectedSlot(null); }}
-            style={{ ...inputStyle, marginTop: 6 }}>
-            {DURATION_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-          </select>
-        </div>
+        <PlanDurationPicker planType={planType} durationHours={durationHours}
+          onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
         <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 16, padding: 16 }}>
           <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setSubmitErr(""); }} durationHours={durationHours} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>方案類別</label>
-          <select value={planType} onChange={e => setPlanType(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>
-            {PLAN_TYPES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.75)", fontWeight: 700, cursor: "pointer" }}>
           <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}

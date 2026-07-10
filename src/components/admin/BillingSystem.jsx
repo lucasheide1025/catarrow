@@ -5,17 +5,24 @@ import {
   subscribeBillingRecords, getMembersForBilling, getTodayCheckinMembers,
 } from "../../lib/db";
 
-const PLANS = [
+// 匯出給 AdminBooking.jsx 的結帳串接用（避免另外定義一份價格表，見
+// .trellis/tasks/07-10-booking-billing-integration/prd.md）
+// 2小時方案（07-10-booking-billing-integration 後續）：收費不變＝直接是1小時的2倍，
+// 沒有另外的折扣價（3小時「2送1」才有折扣，2小時單純是「多留1小時、多收1小時的錢」）。
+export const PLANS = [
   { id: "自一", price: 200 },
+  { id: "自二", price: 400 },
   { id: "自三", price: 400 },
   { id: "單一", price: 300 },
+  { id: "單二", price: 600 },
   { id: "單三", price: 600 },
   { id: "學一", price: 200 },
+  { id: "學二", price: 400 },
   { id: "學三", price: 400 },
 ];
-const PAY_METHODS = ["現金", "轉帳", "月卡"];
-const EARLY_BIRD_MAX  = 123;
-const EARLY_BIRD_DISC = 50;
+export const PAY_METHODS = ["現金", "轉帳", "月卡"];
+export const EARLY_BIRD_MAX  = 123;
+export const EARLY_BIRD_DISC = 50;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currentYear  = new Date().getFullYear();

@@ -19,11 +19,39 @@ export const PLAN_TYPES = [
   { id: "own_equipment", label: "自備器材" },
 ];
 
-// 時數選項（07-10-booking-multihour-and-stats）：跟方案類別是兩個獨立的選擇，不是 6 選 1 的下拉。
+// 時數選項（07-10-booking-multihour-and-stats + 後續加2小時）
 export const DURATION_OPTIONS = [
   { value: 1, label: "1小時" },
+  { value: 2, label: "2小時" },
   { value: 3, label: "3小時（2送1）" },
 ];
+
+// 方案類別 × 時數 → 價格（NT$）。2小時刻意「收費不變」＝直接是1小時的2倍，沒有折扣
+// （3小時「2送1」才是折扣價）。這份數字要跟 BillingSystem.jsx 的 PLANS 常數保持一致——
+// 那邊是給「結帳寫進會計系統」用的方案代碼+價格，這邊是給「預約當下顯示金額」用的純價格表，
+// 兩處各自獨立維護但數字必須對得上，之後改價記得兩邊都要改。
+export const PLAN_PRICE = {
+  general:       { 1: 300, 2: 600, 3: 600 },
+  discount:      { 1: 200, 2: 400, 3: 400 },
+  own_equipment: { 1: 200, 2: 400, 3: 400 },
+};
+
+// 方案類別 × 時數 攤平成一份「組合選單」，前台三個入口共用同一份，不要各自重刻選單邏輯。
+export const COMBINED_PLAN_OPTIONS = PLAN_TYPES.flatMap(pt =>
+  DURATION_OPTIONS.map(d => ({
+    planType: pt.id,
+    durationHours: d.value,
+    label: `${pt.label}・${d.label}`,
+    price: PLAN_PRICE[pt.id][d.value],
+  }))
+);
+
+// 時數的顯示文字，統一從 DURATION_OPTIONS 找，不要在各個元件裡各自寫死 1/2/3 的三元判斷
+// （新增2小時之前，好幾個地方都各自寫了 `durationHours===3 ? "3小時" : "1小時"` 這種只認識兩種值
+// 的寫法，現在多了2小時，全部要改用這個函式，之後再加時數選項也不用到處補判斷式）。
+export function durationLabel(hours) {
+  return DURATION_OPTIONS.find(d => d.value === hours)?.label || `${hours}小時`;
+}
 
 // 依起始時間＋時數，算出 "HH:mm" 格式的結束時間（design.md §1：endTime 依 durationHours 計算）
 export function computeEndTime(startTime, durationHours) {

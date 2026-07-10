@@ -14,18 +14,27 @@ import {
 } from "../../lib/bookingDb";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
-  fetchSlotCountsForRange, PLAN_TYPES, DURATION_OPTIONS,
+  fetchSlotCountsForRange, PLAN_TYPES, durationLabel,
 } from "../../lib/bookingSchedule";
 import { resolveGuestSession } from "../../lib/guestAuth";
-import { getMembers } from "../../lib/db";
+import { getMembers, addBillingRecord } from "../../lib/db";
 import { fmtDT } from "../../lib/constants";
 import DateSlotPicker from "../booking/DateSlotPicker";
-import { Card, Btn, Inp, Sel, Modal, Spinner, Empty, useToast } from "../shared/UI";
+import PlanDurationPicker from "../booking/PlanDurationPicker";
+import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
+import { PLANS as BILLING_PLANS, PAY_METHODS, EARLY_BIRD_DISC } from "./BillingSystem";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
-const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳" };
+const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳", monthly: "💳 月卡" };
 // 行事曆格子空間有限，用短版方案名稱（教練後台直接顯示「誰＋什麼方案」用，不是給學生看的）
 const PLAN_SHORT_LABEL = { general: "單人一般", discount: "兒童/學生/敬老", own_equipment: "自備器材" };
+// 預約方案類別＋時數 → 會計系統既有方案代碼（見 BillingSystem.jsx 的 PLANS，價格沿用那邊，不重複定義）
+const BOOKING_TO_BILLING_PLAN = {
+  general:       { 1: "單一", 2: "單二", 3: "單三" },
+  discount:      { 1: "學一", 2: "學二", 3: "學三" },
+  own_equipment: { 1: "自一", 2: "自二", 3: "自三" },
+};
+const PAY_METHOD_CODE = { "現金": "cash", "轉帳": "transfer", "月卡": "monthly" };
 
 export default function AdminBooking() {
   const { toast, ToastContainer } = useToast();
@@ -205,6 +214,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [checkoutTarget, setCheckoutTarget] = useState(null);
 
   // 這一格目前人數的新/舊生拆分，直接從這一格的實際預約清單算（清單已含跨時段進來的3小時預約）
   const newCount = bookings.filter(b => b.isNewStudent).length;
@@ -228,16 +238,6 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     if (!res.ok) { toast(res.reason || "取消失敗", "error"); return; }
     toast("已取消 ✓");
     onChanged();
-  }
-
-  async function markPayment(bookingId, method) {
-    setBusy(true);
-    try {
-      await updateDoc(doc(db, "bookings", bookingId), { paymentMethod: method, updatedAt: serverTimestamp() });
-      toast("已標記付款方式 ✓");
-      onChanged();
-    } catch (e) { toast("標記失敗：" + (e?.message || ""), "error"); }
-    setBusy(false);
   }
 
   async function handleReschedule(newSlot) {
@@ -274,7 +274,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                     <div className="text-white font-bold text-sm">{b.memberName || "顧客"}</div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
-                      ・{b.durationHours === 3 ? "3小時（2送1）" : "1小時"}
+                      ・{durationLabel(b.durationHours || 1)}
                       {b.source === "phone" ? "・電話進線" : b.source === "online_public" ? "・新生自助" : "・線上自助"}
                       {b.isNewStudent ? "・🆕新生" : "・舊生"}
                     </div>
@@ -284,8 +284,14 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-slate-500 text-xs">付款方式：{b.paymentMethod ? PAYMENT_LABEL[b.paymentMethod] : "未標記"}</span>
-                  <Btn v="secondary" size="sm" onClick={() => markPayment(b.id, "cash")} disabled={busy}>標為現金</Btn>
-                  <Btn v="secondary" size="sm" onClick={() => markPayment(b.id, "transfer")} disabled={busy}>標為轉帳</Btn>
+                  {b.billingRecordId ? (
+                    <span className="text-emerald-400 text-xs font-bold">✅ 已結帳</span>
+                  ) : (
+                    <Btn v="success" size="sm" onClick={() => setCheckoutTarget(b)} disabled={busy}>💰 結帳</Btn>
+                  )}
+                  {b.billingRecordId && (
+                    <Btn v="ghost" size="sm" onClick={() => setCheckoutTarget(b)} disabled={busy}>重新結帳</Btn>
+                  )}
                   <Btn v="ghost" size="sm" onClick={() => setRescheduleTarget(b)} disabled={busy}>改期</Btn>
                 </div>
               </Card>
@@ -308,12 +314,114 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
           <div className="flex flex-col gap-4">
             <div className="text-slate-400 text-xs">
               原時段：{rescheduleTarget.date} {rescheduleTarget.startTime}-{rescheduleTarget.endTime}
-              （{rescheduleTarget.durationHours === 3 ? "3小時（2送1），時數不可變更" : "1小時"}）
+              （{durationLabel(rescheduleTarget.durationHours || 1)}，時數不可變更）
             </div>
             <RescheduleSlotPicker durationHours={rescheduleTarget.durationHours || 1} onConfirm={handleReschedule} />
           </div>
         </Modal>
       )}
+
+      {checkoutTarget && (
+        <CheckoutModal booking={checkoutTarget} onClose={() => setCheckoutTarget(null)}
+          onDone={() => { setCheckoutTarget(null); onChanged(); }} toast={toast} />
+      )}
+    </Modal>
+  );
+}
+
+// ─── 結帳：把預約轉成一筆會計系統記錄（07-10-booking-billing-integration）──
+// 方案/日期/付款方式全部從這筆預約自動帶入，教練仍可在送出前修改任何一項。
+// 送出＝呼叫既有 addBillingRecord()，寫進跟 BillingSystem.jsx「記帳」分頁同一個 collection，
+// 不另外做一套記帳資料——這樣會計系統的清單/報表/CSV匯出自動就看得到這筆。
+function CheckoutModal({ booking, onClose, onDone, toast }) {
+  const defaultPlan = BOOKING_TO_BILLING_PLAN[booking.planType]?.[booking.durationHours || 1] || "單一";
+  const [plan, setPlan]           = useState(defaultPlan);
+  const [discount, setDiscount]   = useState(false);
+  const [payMethod, setPayMethod] = useState("現金");
+  const [date, setDate]           = useState(booking.date);
+  const [note, setNote]           = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const basePrice  = BILLING_PLANS.find(p => p.id === plan)?.price ?? 0;
+  const finalPrice = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
+
+  async function handleSubmit() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const [y, m, d] = date.split("-").map(Number);
+      const ref = await addBillingRecord({
+        memberName: booking.memberName || "顧客",
+        memberId:   booking.memberId ?? null,
+        plan, basePrice,
+        discount:      discount ? EARLY_BIRD_DISC : 0,
+        finalPrice,
+        paymentMethod: payMethod,
+        year: y, month: m, day: d, date,
+        note: note.trim() || `線上約課結帳（預約 ${booking.id}）`,
+        createdBy: "", createdByName: "教練（線上約課結帳）",
+      });
+      await updateDoc(doc(db, "bookings", booking.id), {
+        billingRecordId: ref.id,
+        paymentMethod: PAY_METHOD_CODE[payMethod] || "cash",
+        updatedAt: serverTimestamp(),
+      });
+      toast(`✓ 已結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
+      onDone();
+    } catch (e) {
+      toast("結帳失敗：" + (e?.message || ""), "error");
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`結帳：${booking.memberName || "顧客"}`} wide>
+      <div className="flex flex-col gap-4">
+        <div className="text-slate-400 text-xs">
+          原預約：{booking.date} {booking.startTime}-{booking.endTime}
+          ・{PLAN_TYPES.find(p => p.id === booking.planType)?.label || booking.planType}
+          {booking.billingRecordId && <span className="text-amber-400 ml-2">⚠ 這筆先前已結過帳，送出會再新增一筆記錄</span>}
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5">方案（已依預約自動帶入，可修改）</div>
+          <div className="grid grid-cols-3 gap-2">
+            {BILLING_PLANS.map(p => (
+              <button key={p.id} onClick={() => setPlan(p.id)}
+                className={`rounded-xl px-2 py-2 text-center border ${plan === p.id ? "border-blue-500 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
+                <div className={`font-black text-sm ${plan === p.id ? "text-blue-300" : "text-white"}`}>{p.id}</div>
+                <div className="text-slate-400 text-[11px]">NT${p.price}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
+          <div>
+            <div className="text-slate-400 text-xs">實收金額</div>
+            <div className="text-white text-2xl font-black">NT$ {finalPrice}</div>
+          </div>
+          <Btn v={discount ? "warn" : "secondary"} size="sm" onClick={() => setDiscount(d => !d)}>
+            {discount ? `✓ 早鳥 -$${EARLY_BIRD_DISC}` : "早鳥折扣"}
+          </Btn>
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5">付款方式</div>
+          <div className="flex gap-2">
+            {PAY_METHODS.map(m => (
+              <Btn key={m} v={payMethod === m ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setPayMethod(m)}>{m}</Btn>
+            ))}
+          </div>
+        </div>
+
+        <Inp label="日期" type="date" value={date} onChange={e => setDate(e.target.value)} />
+        <Inp label="備註（選填）" value={note} onChange={e => setNote(e.target.value)} placeholder="例：補繳、折扣說明…" />
+
+        <Btn v="primary" onClick={handleSubmit} disabled={submitting}>
+          {submitting ? "結帳中…" : "確認結帳"}
+        </Btn>
+      </div>
     </Modal>
   );
 }
@@ -451,11 +559,8 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               <span>顧客：{selectedMember.name}（{selectedMember.email || selectedMember.phone || "—"}）</span>
               <button type="button" onClick={() => setSelectedMember(null)} className="text-xs underline text-blue-400 flex-shrink-0">重選</button>
             </div>
-            <Sel label="時數" value={durationHours}
-              onChange={e => { setDurationHours(Number(e.target.value)); setSlot(null); }}
-              options={DURATION_OPTIONS.map(d => ({ value: d.value, label: d.label }))} />
-            <Sel label="方案類別" value={planType} onChange={e => setPlanType(e.target.value)}
-              options={PLAN_TYPES.map(p => ({ value: p.id, label: p.label }))} />
+            <PlanDurationPicker planType={planType} durationHours={durationHours}
+              onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSlot(null); }} />
             <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
               <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
                 className="accent-blue-500 w-4 h-4" />
