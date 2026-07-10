@@ -43,6 +43,16 @@
   - I 人頁紓壓段落刻意避開療效宣稱，只寫「休閒用途、轉換心情」，非醫療用途
   - 驗證：`JSON.parse` 過全部 9 個 JSON-LD block（首頁 2 個 + 8 子頁各 1 個）、`node --check` 過首頁與 8 子頁共 9 個 `<script>` block、grep 確認全站無殘留 `href="#"` 佔位連結
   - 不在本任務範圍：sitemap.xml/robots.txt/BreadcrumbList schema 更新（留給下一個任務，等內容確認後再排）、正式部署（`website/` 整包複製到獨立 Vercel 專案，需使用者確認內容後手動執行）
+- **2026-07-10 真實照片整合**（Trellis task `07-10-website-real-photos-integration`，只動 `website/index.html` + 新增 `website/assets/images/archery/real/`）：把 218 張真實照片中使用者指定的 46 張整合進首頁，取代插畫示意內容，讓官網更真實可信
+  - **來源路徑**：`public/images/archery/real/<分類資料夾>/`（App 端靜態資源，11 個分類子資料夾，原始檔備份不刪除）→ 一次性 Node 腳本用既有 `sharp` 依賴壓縮（`resize(width:1600) + webp quality 80`，超 800KB 才降到 70/60/50 quality floor）→ 輸出到 `website/assets/images/archery/real/`（維持分類子資料夾，官網用相對路徑引用，因為官網是獨立 Vercel 專案 `catarrow-archery` 只打包 `website/`）；壓縮腳本為暫存工具，跑完即丟（未留在 repo）
+  - **壓縮成果**：46 張唯一檔案（Hero 圖與新手教學區共用同一張，只處理一次）合計 39.37MB → 4.67MB，全部 <800KB（多數在 quality 80 就已壓到 <250KB，未觸及 quality floor）
+  - **Hero 改版**：`.hero` 從左文右插畫兩欄，改為真實照片全幅背景（`.hero-photo-media` 絕對定位 + `::after` 深色/暖橘漸層遮罩）+ 文字疊加在上方（改用淺色文字），插畫吉祥物 `assets/006.png` 仍保留在下方 `#why` 卡片，未刪除
+  - **新增 11 個真實照片區塊**（`id="real-*"`，緊接在 GEO 實體描述段落後、`#why` 之前，原有 `#why`〜`#visit` 的 `.sec-num` 全部順移 +11 → 現為 12〜22）：新手教學／場地器材與代購／弓種實拍／親子與兒童／團康活動／長期練習／戶外進階訓練／學籍系統與訓練 App／貓咪安全區／校外合作與賽事成果／活動相簿，標題文字逐字對應 PRD
+  - **共用 CSS**：`.real-grid`（`auto-fit minmax(240px,1fr)`，免每區塊寫斷點）、`.real-photo.r32/r43/r34/r23`（依實際圖片比例挑 aspect-ratio class，`object-fit:cover` 不變形）、`.phone-mock`（學籍系統/App 區用手機外框樣式包 4 張截圖，不做滿版大圖）
+  - **活動相簿「查看更多」**：11 張圖全部在 DOM 裡，`max-width:640px` 時最後 2 張加 `.album-extra` 用 CSS 隱藏，按鈕 `#albumMoreBtn`（`.btn-ghost`）點擊後對 `#albumGrid` 加 `.expanded` 解除隱藏——純前端展開，非分頁載入
+  - Hero 圖 `fetchpriority="high"` 且不加 `loading="lazy"`；其餘全部 `loading="lazy"`；所有圖片皆有具體 alt（依情境撰寫，非檔名）+ 明確 width/height；不使用輪播套件
+  - 驗證：46 個圖片路徑全部存在、無重複 `id`、`<section>`/`</section>` 數量相等（24/24）、`<style>` 大括號配平、全部 `<script>` 用 `new Function()` 語法檢查通過；grep 確認 8 支既有情境子頁（rainy-day/sunny-day/beginner-guide/family/couple/friends-group/corporate-team-building/solo-friendly）完全未被動到
+  - 不在本任務範圍：正式部署（同上，需使用者確認內容後手動執行）；`public/images/archery/real/` 原始檔全部保留當備份，未刪除
 **核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
 **報到**：pending→教練審核→active/rejected、下課結算箭露、浮動視窗
 **練習**：自主練習、歷史/總覽/分析、箭數里程碑（多回合+世界王已修 2026-07-02）、箭露累積

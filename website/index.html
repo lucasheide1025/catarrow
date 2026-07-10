@@ -502,6 +502,49 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
 .faq-list details[open] summary .qline{transform:scaleX(1)}
 
+/* ── 真實照片區塊：Hero／新手教學／器材／弓種／親子／團康／長期練習／戶外／App／貓咪／校外／相簿 ── */
+.hero.hero-photo{padding:0;min-height:640px;display:flex;align-items:flex-end;overflow:hidden}
+.hero-photo-media{position:absolute;inset:0;z-index:0}
+.hero-photo-media img{width:100%;height:100%;object-fit:cover}
+.hero-photo-media::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(100deg,rgba(43,41,38,.86) 0%,rgba(43,41,38,.6) 40%,rgba(232,114,12,.32) 78%,rgba(232,114,12,.14) 100%)}
+.hero-photo .wrap{position:relative;z-index:1;padding:170px 24px 90px}
+.hero-photo .hero-grid{grid-template-columns:1fr;max-width:640px}
+.hero-photo .hero-loc{color:rgba(250,246,239,.88)}
+.hero-photo h1{color:var(--paper)}
+.hero-photo .hero-sub{color:rgba(250,246,239,.85)}
+.hero-photo .hero-desc{color:rgba(250,246,239,.8)}
+.hero-photo .tag{background:rgba(250,246,239,.12);border-color:rgba(250,246,239,.35);color:var(--paper)}
+.hero-photo .btn-ghost{border-color:var(--paper);color:var(--paper)}
+.hero-photo .btn-ghost:hover{background:var(--paper);color:var(--ink)}
+
+.real-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.real-photo{position:relative;overflow:hidden;border-radius:16px;border:1.5px solid var(--line);background:var(--paper-deep)}
+.real-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.real-photo.r32{aspect-ratio:3/2}
+.real-photo.r43{aspect-ratio:4/3}
+.real-photo.r34{aspect-ratio:3/4}
+.real-photo.r23{aspect-ratio:2/3}
+.real-cap{margin-top:10px;font-size:13.5px;color:var(--ink-soft);text-align:center}
+.real-single{max-width:420px;margin:0 auto}
+
+.phone-mock-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:760px;margin:0 auto}
+.phone-mock{border:7px solid var(--ink);border-radius:26px;overflow:hidden;aspect-ratio:9/19.5;background:var(--ink);box-shadow:0 18px 40px rgba(43,41,38,.18)}
+.phone-mock img{width:100%;height:100%;object-fit:cover;display:block}
+
+.album-more-btn{display:none;margin:30px auto 0}
+@media(max-width:640px){
+  .album-grid .album-extra{display:none}
+  .album-grid.expanded .album-extra{display:block}
+  .album-more-btn{display:inline-flex}
+  .album-more-btn.hidden{display:none}
+}
+@media(max-width:960px){
+  .hero.hero-photo{min-height:520px}
+  .hero-photo .wrap{padding:130px 24px 60px}
+  .phone-mock-row{grid-template-columns:repeat(2,1fr);max-width:320px}
+}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .hero-grid{grid-template-columns:1fr;gap:36px}
@@ -554,9 +597,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <main id="top">
 
 <!-- Hero -->
-<section class="hero" aria-label="主視覺">
-  <div class="rings r1"></div>
-  <div class="rings r2"></div>
+<section class="hero hero-photo" aria-label="主視覺">
+  <div class="hero-photo-media">
+    <img src="assets/images/archery/real/01_新手教學與首頁主視覺/AAA00001-2.webp" alt="學員在貓小隊室內射箭場專注拉弓，教練在一旁陪同指導的真實畫面" width="1600" height="1067" fetchpriority="high">
+  </div>
   <div class="wrap hero-grid">
     <div>
       <p class="hero-loc rv">台南市中西區 · CAT ARCHERY</p>
@@ -575,10 +619,6 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
         <li class="tag">新式團康</li>
       </ul>
     </div>
-    <div class="hero-cat">
-      <div class="target" aria-hidden="true"></div>
-      <img src="assets/006.png" alt="戴著耳機拉弓的暹羅貓插畫——貓小隊射箭場吉祥物" width="516" height="601" fetchpriority="high">
-    </div>
   </div>
 </section>
 
@@ -589,10 +629,189 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </div>
 
-<!-- 01 Why -->
+<!-- 真實照片 01：新手教學 -->
+<section id="real-beginner" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">Beginner Guide · 新手教學實況</span></div>
+    <h2 class="rv">第一次射箭，<span class="accent">也有人一步一步帶</span></h2>
+    <p class="sec-lead rv">教練會依照每個人的狀況調整教法，從安全規則、持弓到放箭動作，一步一步陪你完成第一箭。</p>
+    <div class="real-grid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/01_新手教學與首頁主視覺/AAA00001-2.webp" alt="教練在旁指導新手學員持弓站姿" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/01_新手教學與首頁主視覺/AAA00004-2.webp" alt="新手學員在教練協助下練習開弓瞄準" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/01_新手教學與首頁主視覺/AAA00006.webp" alt="教練示範正確持弓手勢給新手學員參考" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/01_新手教學與首頁主視覺/AAA00005_.webp" alt="新手學員專注放箭的瞬間" width="1600" height="1067" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 02：場地器材與器材代購 -->
+<section id="real-gear" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">Gear &amp; Rental · 場地器材與代購</span></div>
+    <h2 class="rv">器材不用自備，<span class="accent">想進階也能協助選購</span></h2>
+    <p class="sec-lead rv">第一次來不用自備弓箭或護具，場內器材免費借用；練習一段時間後若想擁有自己的弓具，教練會協助評估身高、拉距、慣用手、目標與預算——不強迫購買器材，也不把買弓當成入門門檻。</p>
+    <div class="real-grid">
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/07_場地器材與器材代購/S__16039981_0.webp" alt="場內整排可租借的反曲弓與箭袋" width="827" height="621" loading="lazy"></div>
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/07_場地器材與器材代購/S__16039982_0.webp" alt="教練展示不同磅數的弓具供學員選擇" width="827" height="621" loading="lazy"></div>
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/07_場地器材與器材代購/S__16039942_0.webp" alt="護具與箭矢等免費借用器材整齊擺放" width="827" height="621" loading="lazy"></div>
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/07_場地器材與器材代購/S__16039943_0.webp" alt="教練協助學員評估挑選適合的自購弓具" width="827" height="621" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 03：弓種實拍 -->
+<section id="real-bow-photos" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">Real Bows · 弓種實拍</span></div>
+    <h2 class="rv">弓長什麼樣子？<span class="accent">實拍給你看</span></h2>
+    <p class="sec-lead rv">每一種弓都有不同的手感與個性，三種主力弓種的真實樣貌，讓你出發前先有畫面。</p>
+    <div class="real-grid">
+      <div class="rv">
+        <div class="real-photo r32"><img src="assets/images/archery/real/06_弓種展示/AAA00032-2.webp" alt="學員手持競技反曲弓瞄準靶心的實拍照片" width="1600" height="1067" loading="lazy"></div>
+        <p class="real-cap">競技反曲弓</p>
+      </div>
+      <div class="rv">
+        <div class="real-photo r32"><img src="assets/images/archery/real/06_弓種展示/AAA00034.webp" alt="學員手持美式獵弓準備放箭的實拍照片" width="1600" height="1067" loading="lazy"></div>
+        <p class="real-cap">美式獵弓</p>
+      </div>
+      <div class="rv">
+        <div class="real-photo r32"><img src="assets/images/archery/real/06_弓種展示/AAA00119_.webp" alt="學員手持傳統弓拉弓的實拍照片" width="1600" height="1067" loading="lazy"></div>
+        <p class="real-cap">傳統弓</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 04：親子與兒童 -->
+<section id="real-family" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">04</span><span class="sec-en">Family Time · 親子與兒童</span></div>
+    <h2 class="rv">親子、朋友、<span class="accent">第一次體驗都適合</span></h2>
+    <p class="sec-lead rv">依照年齡與身高安排合適磅數的器材，大人小孩都能一起上場，一起練專注、練等待。</p>
+    <div class="real-grid">
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/03_親子與兒童/S__16039969_0.webp" alt="家長帶著孩子一起在射箭場練習" width="827" height="621" loading="lazy"></div>
+      <div class="real-photo r34 rv"><img src="assets/images/archery/real/03_親子與兒童/S__16039979_0.webp" alt="小朋友在教練協助下拉弓瞄準" width="621" height="828" loading="lazy"></div>
+      <div class="real-photo r34 rv"><img src="assets/images/archery/real/03_親子與兒童/S__16039965_0.webp" alt="親子一起在靶前合照留念" width="621" height="828" loading="lazy"></div>
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/03_親子與兒童/S__16039966_0.webp" alt="兒童學員專注放箭的畫面" width="827" height="621" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 05：團康活動 -->
+<section id="real-group" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">05</span><span class="sec-en">Group Activities · 團康活動實況</span></div>
+    <h2 class="rv">小型場地，<span class="accent">也能玩成一場活動</span></h2>
+    <p class="sec-lead rv">8～16 人的團體活動，不需要運動背景，一樣能玩得盡興。</p>
+    <div class="real-grid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/AAA00002-2.webp" alt="一群朋友在射箭場排隊等待上場體驗" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/AAA00008_.webp" alt="團體活動中學員互相討論射箭技巧" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/AAA00009.webp" alt="教練為團體學員講解安全規則" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/AAA00021-2.webp" alt="團康活動學員舉弓合照" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r34 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/S__16039968_0.webp" alt="朋友聚會團體在射箭場拍照留念" width="621" height="828" loading="lazy"></div>
+      <div class="real-photo r43 rv"><img src="assets/images/archery/real/02_團康活動與朋友體驗/S__16039972_0.webp" alt="團體活動中學員輪流上場射箭" width="827" height="621" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 06：長期練習 -->
+<section id="real-practice" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">06</span><span class="sec-en">Long-term Practice · 長期練習</span></div>
+    <h2 class="rv">不只體驗，<span class="accent">也能一路練下去</span></h2>
+    <p class="sec-lead rv">從新手到熟手，累積練習時數，動作會越來越穩定純熟。</p>
+    <div class="real-grid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/04_熟生練箭與長期練習/AAA00003-2.webp" alt="熟手學員長時間專注練習拉弓姿勢" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/04_熟生練箭與長期練習/AAA00008.webp" alt="學員反覆練習瞄準動作精進技巧" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/04_熟生練箭與長期練習/AAA00014.webp" alt="熟手學員在射道上連續放箭練習" width="1600" height="1067" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 07：戶外與進階訓練 -->
+<section id="real-outdoor" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">07</span><span class="sec-en">Outdoor Training · 戶外進階訓練</span></div>
+    <h2 class="rv">通過學籍考核後，<span class="accent">也能挑戰戶外進階練習</span></h2>
+    <p class="sec-lead rv">完成新生課程並通過考核，即可使用不對外開放的戶外練習場，挑戰更長距離的射箭。</p>
+    <div class="real-grid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/05_戶外與進階訓練/AAA00003-3.webp" alt="學員在戶外練習場挑戰長距離射箭" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/05_戶外與進階訓練/AAA00014-2.webp" alt="學籍學員在戶外靶場專注瞄準" width="1600" height="1067" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 08：學籍系統與訓練 App -->
+<section id="real-app" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">08</span><span class="sec-en">Training App · 學籍系統與訓練 App</span></div>
+    <h2 class="rv">每次練習，<span class="accent">都看得見自己的成長</span></h2>
+    <p class="sec-lead rv">自製訓練 App 記錄每一次練習的積分與進度，練了多少、進步多少，一目了然。</p>
+    <div class="phone-mock-row">
+      <div class="phone-mock rv"><img src="assets/images/archery/real/09_學籍系統與訓練App/S__16039954_0.webp" alt="訓練 App 排行榜畫面截圖" width="410" height="887" loading="lazy"></div>
+      <div class="phone-mock rv"><img src="assets/images/archery/real/09_學籍系統與訓練App/S__16039958_0.webp" alt="訓練 App 個人練習紀錄畫面截圖" width="410" height="887" loading="lazy"></div>
+      <div class="phone-mock rv"><img src="assets/images/archery/real/09_學籍系統與訓練App/S__16039962_0.webp" alt="訓練 App 勳章圖鑑畫面截圖" width="331" height="717" loading="lazy"></div>
+      <div class="phone-mock rv"><img src="assets/images/archery/real/09_學籍系統與訓練App/S__16039963.webp" alt="訓練 App 積分成長曲線畫面截圖" width="155" height="336" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 09：貓咪安全區 -->
+<section id="real-cat" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">Cat Safety · 貓咪安全區</span></div>
+    <h2 class="rv">貓咪是家人，<span class="accent">遇見是緣分</span></h2>
+    <p class="sec-lead rv">貓咪是家人，不是營業項目。射箭時貓咪會遠離射道，確保人與貓都安全。</p>
+    <div class="real-single">
+      <div class="real-photo r23 rv"><img src="assets/images/archery/real/08_貓咪安全區與品牌記憶/AAA00001.webp" alt="貓店長在射箭場休息區慵懶趴著的畫面" width="1600" height="1067" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 10：校外合作與賽事成果 -->
+<section id="real-events" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">10</span><span class="sec-en">Events &amp; Partnerships · 校外合作與賽事成果</span></div>
+    <h2 class="rv">想更進一步，<span class="accent">也可以一起走出去</span></h2>
+    <p class="sec-lead rv">除了場內練習，也支援校外合作教學與對外賽事，陪學員一起走出去看看。</p>
+    <div class="real-grid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/AAA00010_.webp" alt="校外合作教學活動現場照片" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/AAA00014_.webp" alt="學員代表參加校外射箭賽事" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/AAA00101.webp" alt="賽事現場學員專注比賽的畫面" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/AAA00248.webp" alt="賽事成果合照，學員與教練一起慶祝" width="1600" height="1067" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 真實照片 11：活動相簿 -->
+<section id="real-album" class="real-sec">
+  <div class="wrap">
+    <div class="sec-head rv"><span class="sec-num">11</span><span class="sec-en">Photo Album · 活動相簿</span></div>
+    <h2 class="rv">貓小隊的<span class="accent">日常活動紀錄</span></h2>
+    <p class="sec-lead rv">平常上課、活動、比賽的隨手記錄，看看貓小隊的日常。</p>
+    <div class="real-grid album-grid" id="albumGrid">
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00023.webp" alt="貓小隊日常活動照片：學員在場內練習" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00033.webp" alt="貓小隊日常活動照片：教練與學員互動" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00039.webp" alt="貓小隊日常活動照片：團體活動花絮" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00040_.webp" alt="貓小隊日常活動照片：學員專注放箭" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00069.webp" alt="貓小隊日常活動照片：靶場練習實況" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/11_活動紀錄相簿候選/AAA00113.webp" alt="貓小隊日常活動照片：學員合照留念" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/DSC05663.webp" alt="貓小隊日常活動照片：校外賽事花絮" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/DSC05666.webp" alt="貓小隊日常活動照片：賽事現場紀錄" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r32 rv"><img src="assets/images/archery/real/10_校外合作賽事成果/DSC05683.webp" alt="貓小隊日常活動照片：賽事成果合照" width="1600" height="1067" loading="lazy"></div>
+      <div class="real-photo r23 rv album-extra"><img src="assets/images/archery/real/08_貓咪安全區與品牌記憶/AAA00005-2.webp" alt="貓小隊日常活動照片：貓店長入鏡畫面" width="1600" height="2400" loading="lazy"></div>
+      <div class="real-photo r32 rv album-extra"><img src="assets/images/archery/real/08_貓咪安全區與品牌記憶/AAA00010.webp" alt="貓小隊日常活動照片：貓店長悠閒模樣" width="1600" height="1067" loading="lazy"></div>
+    </div>
+    <div style="text-align:center">
+      <button type="button" class="btn-ghost album-more-btn" id="albumMoreBtn">查看更多 <span class="arr">➔</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- 12 Why -->
 <section id="why">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">Why Us · 為什麼選擇我們</span></div>
+    <div class="sec-head rv"><span class="sec-num">12</span><span class="sec-en">Why Us · 為什麼選擇我們</span></div>
     <h2 class="rv">射箭，本來就該<br>這麼<span class="accent">純粹</span>。</h2>
     <p class="sec-lead rv">我們把複雜的事情變簡單。讓你學得會、玩得開心、來了還想再來。</p>
     <div class="cards3">
@@ -618,10 +837,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 02 弓種 -->
+<!-- 13 弓種 -->
 <section class="bows" id="bows">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">Bow Selection · 選擇你的弓</span></div>
+    <div class="sec-head rv"><span class="sec-num">13</span><span class="sec-en">Bow Selection · 選擇你的弓</span></div>
     <h2 class="rv">四種弓道，<span class="accent">四種自己</span>。</h2>
     <p class="sec-lead rv">從古典到現代，每種弓都有它的靈魂。找到最適合你的那一把。</p>
     <div class="bow-grid">
@@ -665,10 +884,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 03 價目表 -->
+<!-- 14 價目表 -->
 <section id="price">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">Pricing · 價目表</span></div>
+    <div class="sec-head rv"><span class="sec-num">14</span><span class="sec-en">Pricing · 價目表</span></div>
     <h2 class="rv">透明價格，<span class="accent">一價全包</span>。</h2>
     <p class="sec-lead rv">除自備器材方案外，費用皆包含器材租賃、場地、教練指導與教學課程。</p>
     <div class="price-grid">
@@ -723,10 +942,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 04 訓練系統 -->
+<!-- 15 訓練系統 -->
 <section id="training">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">04</span><span class="sec-en">Training System · 訓練系統</span></div>
+    <div class="sec-head rv"><span class="sec-num">15</span><span class="sec-en">Training System · 訓練系統</span></div>
     <h2 class="rv">系統化訓練，<br>從新手到<span class="accent">專家</span>。</h2>
     <p class="sec-lead rv">我們自行開發了一套完整的射箭訓練 App——關卡、打怪、積分、勳章，讓每位學員都有清晰的成長路徑，就算不比賽也有目標。全部免費使用。</p>
     <div class="train-grid">
@@ -782,10 +1001,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 05 情境導購（B 段：什麼時候適合來） -->
+<!-- 16 情境導購（B 段：什麼時候適合來） -->
 <section id="scenarios">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">05</span><span class="sec-en">Scenarios · 什麼時候適合來</span></div>
+    <div class="sec-head rv"><span class="sec-num">16</span><span class="sec-en">Scenarios · 什麼時候適合來</span></div>
     <h2 class="rv">什麼時候適合來<span class="accent">貓小隊射箭</span>？</h2>
     <p class="sec-lead rv">不管是雨天、大太陽，還是臨時想找點新鮮事，總有一個理由適合走進來拉一次弓。點卡片看該情境的完整介紹。</p>
     <div class="scen-grid">
@@ -833,10 +1052,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 06 團康 -->
+<!-- 17 團康 -->
 <section class="group" id="group">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">06</span><span class="sec-en">Group &amp; Games · 團康與遊戲模式</span></div>
+    <div class="sec-head rv"><span class="sec-num">17</span><span class="sec-en">Group &amp; Games · 團康與遊戲模式</span></div>
     <h2 class="rv">刺激精彩，<span class="accent">交給我們</span>。</h2>
     <p class="sec-lead rv">適合 8 ～ 16 人團體，公司團建或朋友聚會的最佳選擇。專業教練協助規劃，帶領分組對抗活動。</p>
     <div class="group-photo rv">
@@ -880,10 +1099,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 07 場地師資 -->
+<!-- 18 場地師資 -->
 <section id="facility">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">07</span><span class="sec-en">Facility &amp; Team · 場地與師資</span></div>
+    <div class="sec-head rv"><span class="sec-num">18</span><span class="sec-en">Facility &amp; Team · 場地與師資</span></div>
     <h2 class="rv">你的城市<span class="accent">靜心防空洞</span>。</h2>
     <p class="sec-lead rv">室內冷氣場地，兩條射道、八個靶位，通過學籍考核還能解鎖 70 米戶外練習場。</p>
     <div class="fac-photo rv">
@@ -919,10 +1138,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 08 評論 -->
+<!-- 19 評論 -->
 <section class="reviews" id="reviews">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">08</span><span class="sec-en">Reviews · 學員真實評論</span></div>
+    <div class="sec-head rv"><span class="sec-num">19</span><span class="sec-en">Reviews · 學員真實評論</span></div>
     <h2 class="rv">他們都說，<span class="accent">還會再來</span>。</h2>
   </div>
   <div class="mq" aria-label="學員評論輪播">
@@ -943,10 +1162,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 09 FAQ -->
+<!-- 20 FAQ -->
 <section id="faq">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">09</span><span class="sec-en">FAQ · 常見問題</span></div>
+    <div class="sec-head rv"><span class="sec-num">20</span><span class="sec-en">FAQ · 常見問題</span></div>
     <h2 class="rv">你想知道的，<span class="accent">都在這</span>。</h2>
     <div class="faq-list rv">
       <details>
@@ -1025,10 +1244,10 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   </div>
 </section>
 
-<!-- 10 線上預約 -->
+<!-- 21 線上預約 -->
 <section id="booking">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">10</span><span class="sec-en">Booking · 線上預約</span></div>
+    <div class="sec-head rv"><span class="sec-num">21</span><span class="sec-en">Booking · 線上預約</span></div>
     <h2 class="rv">選好時段，<span class="accent">直接預約</span>。</h2>
     <p class="sec-lead rv">點選下方按鈕後，會開啟貓小隊的線上預約系統。請選擇日期、時段與人數完成預約。8 人以上團體活動請來電 0973-770-682。</p>
     <div class="book-box rv">
@@ -1052,7 +1271,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <!-- 交通資訊 -->
 <section class="info" id="visit">
   <div class="wrap">
-    <div class="sec-head rv"><span class="sec-num">11</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
+    <div class="sec-head rv"><span class="sec-num">22</span><span class="sec-en">Visit · 聯絡與營業資訊</span></div>
     <h2 class="rv">找到<span class="accent">我們</span>。</h2>
     <div class="info-grid">
       <div class="icard rv">
@@ -1219,6 +1438,16 @@ document.querySelectorAll('.bcard').forEach(card => {
     setTimeout(() => card.classList.remove('tap-wiggle'), 500);
   }, {passive:true});
 });
+
+// ── 真實照片：#real-album 活動相簿「查看更多」（純前端展開，手機版預設只顯示前 9 張）──
+const albumBtn = document.getElementById('albumMoreBtn');
+const albumGrid = document.getElementById('albumGrid');
+if (albumBtn && albumGrid) {
+  albumBtn.addEventListener('click', () => {
+    albumGrid.classList.add('expanded');
+    albumBtn.classList.add('hidden');
+  });
+}
 </script>
 </body>
 </html>
