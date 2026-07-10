@@ -75,6 +75,8 @@ const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby
 const DungeonController  = lazy(() => import("../components/dungeon/DungeonController"));
 const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
 const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
+const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
+const AdminBooking       = lazy(() => import("../components/admin/AdminBooking"));
 
 const CAN_SCORE = ["upcoming", "open", "ongoing"];
 
@@ -88,6 +90,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminLearn");
     import("../components/admin/AdminTierPermissions");
     import("../components/admin/AdminKidMode");
+    import("../components/admin/AdminBooking");
   },
   "hub-events": () => {
     import("../components/admin/AdminCompetitions");
@@ -129,6 +132,9 @@ const ARCHER_NAV_PRELOADS = {
   "profile": () => {
     import("../components/member/MemberProfile");
     import("../components/member/MemberHistory");
+  },
+  "booking": () => {
+    import("../components/member/MemberBooking");
   },
 };
 
@@ -482,6 +488,8 @@ const adminNav = [
     { id:"training-hub",  icon:"🏹", label:"練箭"  },
     { id:"gacha",         icon:"🏡", label:"貓村"  },
     { id:"inventory-hub", icon:"🎒", label:"背包"  },
+    // 線上約課（07-10-booking-system-student-pilot）：教練切射手模式時永遠看得到，方便測試（design.md §4.1）
+    { id:"booking",       icon:"📅", label:"約課"  },
     { id:"profile",       icon:"👤", label:"我的"  },
   ];
   const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
@@ -665,6 +673,7 @@ const adminNav = [
             questCtx={questCtx?.completed ? null : questCtx}
             onQuestCtxClear={()=>setQuestCtx(null)}
           />}
+          {page==="booking"     && <MemberBooking />}
         </Suspense>
         </div>
         {/* 底部導覽（深藍主題） */}
@@ -790,6 +799,9 @@ const adminNav = [
         {page==="hub-member" && memberSub==="kidmode" && (
           <><HubBack onClick={()=>setMemberSub(null)}/><AdminKidMode/></>
         )}
+        {page==="hub-member" && memberSub==="booking" && (
+          <><HubBack onClick={()=>setMemberSub(null)}/><AdminBooking/></>
+        )}
 
         {/* ── 賽事中心 Hub ── */}
         {page==="hub-events" && eventsSub===null              && <AdminEventsHub onSelect={setEventsSub}/>}
@@ -874,6 +886,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
         <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
         <HubCard icon="🏰" label="地下城測試" desc="設定玩家地下城類型" onClick={() => onSelect("dungeon-test")} />
         <HubCard icon="🎈" label="兒童模式" desc="夏令營場次、帳號轉正式" onClick={() => onSelect("kidmode")} />
+        <HubCard icon="📅" label="線上約課" desc="行事曆、開放名單、報表" onClick={() => onSelect("booking")} />
       </div>
     </div>
   );

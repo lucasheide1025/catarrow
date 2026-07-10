@@ -401,5 +401,38 @@ service cloud.firestore {
       allow read:  if isLoggedIn();
       allow write: if isAdmin();
     }
+
+    // ── 線上約課預約系統（07-10-booking-system-student-pilot，學生試用版）──────
+    // bookings：memberId 存的是 members collection docId（不是 auth uid，比照專案既有慣例），
+    // 用 get() 反查 members/{memberId}.uid 是否等於目前登入者，跟下面 members/{id}/cats 子集合
+    // 用的是同一套查法。⚠️ 已知限制：訪客/兒童帳號（accountType in ["guest","kid"]）每次匿名重新
+    // 登入 uid 都會變，這條規則只保證「同一次瀏覽器 session 內」建立→查看→取消/改期自己的預約，
+    // 跨 session 回訪查詢自己歷史預約不保證讀得到——跟 members 集合本身既有的訪客身份限制是同一種
+    // 已知取捨，不是本次新引入的漏洞。
+    match /bookings/{bookingId} {
+      allow read: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid
+      );
+      allow create: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid
+      );
+      // 學生只能改自己預約的 status（取消用；改期是「新建一筆 + 把舊那筆標記 cancelled」，
+      // 不是直接改日期時段），不能亂改別人的或改金額/時段以外的欄位。
+      allow update: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt"])
+      );
+      allow delete: if false; // 一律用 status 標記，不真的刪除文件
+    }
+
+    // bookingSlotCounts：容量計數器，slotKey = "YYYY-MM-DD_HH:mm"，不含個資，
+    // 讀寫都只要求登入即可（跟訪客模式類似的寬鬆取捨），實際容量正確性由 bookingDb.js 的
+    // runTransaction 保護，不是靠規則層擋。
+    match /bookingSlotCounts/{slotKey} {
+      allow read, write: if isLoggedIn();
+    }
   }
 }

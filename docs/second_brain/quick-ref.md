@@ -1099,13 +1099,15 @@ LANE_CAPACITY = 8   // 全場固定 8 個靶位
 ```
 容量計算全部用 `runTransaction` 對 `bookingSlotCounts/{slotKey}`（`slotKey="YYYY-MM-DD_HH:mm"`）原子計數，`bookings` collection 本身不能拿來即時計數。30 分鐘最短前置時間檢查寫死在 `createBooking`/`rescheduleBooking` 函式本體（純函式，不查資料庫），三個入口（學生/新生/教練代建）共用同一個函式，後端擋一次三邊都保護到。
 
+⚠️ **全部方案類別目前統一鎖 1 小時**——`slotKey` 每次交易只鎖單一時段格，沒有「同一個 transaction 內同時鎖多個連續格」的邏輯；design.md 資料模型章節原本寫「`endTime` 依 planType 對應時數換算（1hr 或 3hr）」這次沒有實作（check agent 複查已確認並記錄，見 changelog）。之後如果真的要做 3 小時方案，要先在這個檔案補「連續 N 格原子鎖定＋任一格失敗就整個回滾」的邏輯，不能只在 UI 加時數選項。
+
 `members/{id}.bookingStats = {firstBookingAt, totalBookings, lastBookingAt}`：`totalBookings` 語意＝**目前有效預約數**（取消要扣回去，改期淨變化為 0），跟 create/cancel/reschedule 同一個 transaction 內更新，UI 一律直接讀這個欄位，**不對 `bookings` 額外查詢**。
 
 ### 唯讀顯示層（`src/lib/bookingSchedule.js`）
 只負責「畫格子」，不含任何寫入邏輯：`slotsForDate(date)`（週一公休；週二 13-22 共9格；週三~日 10-22 共12格，每格1hr）、`isBusinessDay`、`fetchSlotCountsForRange(start,end)`（用 `documentId()` range query 一次查完一段日期範圍的 `bookingSlotCounts`，不逐日查）、`slotState(date,startTime,slotCounts)`（可選/已滿/封鎖/太快顯示狀態）、`PLAN_TYPES`（單人一般／兒童學生敬老／自備器材）。共用元件 `src/components/booking/DateSlotPicker.jsx` 被學生前台/新生隱藏入口/教練後台代建三處重用。
 
 ### `bookingBetaAccess` 漸進開放旗標
-`members/{id}.bookingBetaAccess: boolean`（預設不存在＝false）。`MemberApp.jsx`/`AdminApp.jsx`（射手模式）的「約課」底部導覽按鈕只在 `profile?.bookingBetaAccess===true || role==="admin"` 時才**渲染**（不是灰階，比照 `accessControl.js`/`MonsterBattle.jsx` 既有的條件式不渲染慣例）。教練後台切換開關在 `AdminBooking.jsx` 的「開放名單」分頁，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`（**注意**：`db.js::updateMember()` 的 `safeFields` 白名單沒有這個欄位，用它會被靜默濾掉，這個功能繞過 `updateMember` 直接寫）。⚠️ 只有 `studentTier==="official"`（未鎖定）的學生 `getAllowedPages()` 才會回傳 `null`（全開）；`restricted`/`retired`/`autoLocked` 的白名單沒有 `"booking"`，這幾個分級的學生就算開了 `bookingBetaAccess` 也進不去分頁（目前視為預期行為，PRD 沒特別要求覆蓋）。
+`members/{id}.bookingBetaAccess: boolean`（預設不存在＝false）。`MemberApp.jsx`/`AdminApp.jsx`（射手模式）的「約課」底部導覽按鈕只在 `profile?.bookingBetaAccess===true || role==="admin"` 時才**渲染**（不是灰階，比照 `accessControl.js`/`MonsterBattle.jsx` 既有的條件式不渲染慣例）。教練後台切換開關在 `AdminBooking.jsx` 的「開放名單」分頁，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`（**注意**：`db.js::updateMember()` 的 `safeFields` 白名單沒有這個欄位，用它會被靜默濾掉，這個功能繞過 `updateMember` 直接寫）。⚠️ 只有 `studentTier==="official"`（未鎖定）的學生 `getAllowedPages()` 才會回傳 `null`（全開）；`restricted`/`retired`/`autoLocked` 的白名單沒有 `"booking"`，這幾個分級的學生就算開了 `bookingBetaAccess` 也進不去分頁（目前視為預期行為，PRD 沒特別要求覆蓋）。`"booking"` 已補進 `accessControl.js::PAGE_REGISTRY`（新分組「預約」，check agent 複查時加的），教練後台「權限設定」矩陣現在看得到這個頁面的打勾格，之後想讓特定分級學生也能約課，教練直接勾選即可，不用再改程式碼；`DEFAULT_TIER_PERMISSIONS` 預設沒有跟著開放（維持現況）。
 
 ### 新生隱藏入口
 `src/pages/PublicBookingApp.jsx`（比照 `GuestApp.jsx` 獨立頂層模式）→ `App.jsx` 用一個不公開、不規律的 query 參數字串進入（實際字串只在 `App.jsx` 頂部一個常數定義一次，故意不記錄在這份筆記——文件本身可能外流，實際網址只跟教練口頭/私訊複述過，需要時直接看 `App.jsx` 該常數）。頁面掛載時手動插入 `<meta name="robots" content="noindex,nofollow">`（這個 App 平常都在登入後面，沒有既有的 per-route meta 機制，這是最小侵入的手動做法）。註冊沿用既有 `resolveGuestSession(email,"guest",null)`（`guestAuth.js`），跟訪客模式共用同一套 `accountType:"guest"`/`contactHash` 機制，之後要轉正式學籍走既有 `convertGuestToOfficial`。

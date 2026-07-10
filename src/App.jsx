@@ -7,7 +7,13 @@ import LoginPage   from "./pages/LoginPage";
 import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
+import PublicBookingApp from "./pages/PublicBookingApp";
 import { initGoalTracker } from "./lib/villageGoalDb";
+
+// 新生隱藏約課入口的 query 參數值（07-10-booking-system-student-pilot）——刻意用一串不易猜測、
+// 沒有規律的字串，不要改成 "booking"/"bk=1" 這種容易猜的形式。這個常數本身只在這裡使用一次，
+// 不要匯出到別的檔案或被任何導覽/連結引用，"不公開連結"才是真正的防線，這串值只是多一層保險。
+const PUBLIC_BOOKING_TOKEN = "3345b3d554e6";
 
 // ── 主路由：有 guest/kid 參數時跳訪客/兒童模式，否則走正常登入流程 ───────
 // 2026-07-09 改版：訪客/兒童帳號改用信箱/電話跨次接續（見 guestAuth.js），
@@ -18,6 +24,7 @@ function AppRoutes() {
 
   if (searchParams.get("kid"))   return <GuestApp accountType="kid"   sessionSourceId={searchParams.get("kid") === "1" ? null : searchParams.get("kid")} />;
   if (searchParams.get("guest")) return <GuestApp accountType="guest" />;
+  if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">

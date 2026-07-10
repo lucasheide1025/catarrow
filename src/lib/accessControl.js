@@ -25,6 +25,7 @@ export const PAGE_REGISTRY = [
     { id: "comps", label: "比賽列表" }, { id: "comp-detail", label: "比賽詳情" },
   ]},
   { group: "貓村", pages: [{ id: "gacha", label: "貓村" }] },
+  { group: "預約", pages: [{ id: "booking", label: "線上約課（07-10-booking-system-student-pilot）" }] },
   { group: "背包", pages: [
     { id: "inventory-hub", label: "背包大廳" }, { id: "coinshop", label: "商店" },
     { id: "materials", label: "材料" }, { id: "cats", label: "貓咪" },

@@ -32,6 +32,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Guild Quest System](./guild-quest-system.md) | Three quest generators sharing `guildQuests`, the `questSubtype` validation gotcha, and the client-triggered daily-refresh pattern | ✅ Active |
 | [Guest / Kid Mode](./guest-kid-mode.md) | `accountType` account model, doc-ID-agnostic login lookup, in-place official conversion, official-only query filtering, `deleteField()` sentinel gotcha, anonymous-auth-reuse production incident | ✅ Active |
 | [Firestore Cost Optimization](./firestore-cost-optimization.md) | Session-cache pattern for the hottest write path (`computeExcavationPatch`), one-off-fetch vs live-listener convention, `limit()` over new-index tradeoffs | ✅ Active |
+| [Booking System](./booking-system.md) | Atomic slot-capacity transaction contract, three shared entry points, `bookingBetaAccess`/`accessControl.js` dual-gating, hidden-URL tradeoff, uniform-1hr known limitation | ✅ Active |
 
 ---
 

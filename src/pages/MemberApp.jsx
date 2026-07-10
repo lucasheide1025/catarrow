@@ -65,6 +65,7 @@ const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby
 const DungeonController  = lazy(() => import("../components/dungeon/DungeonController"));
 const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
 const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
+const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
@@ -99,6 +100,9 @@ const NAV_PRELOADS = {
     import("../components/member/MemberProfile");
     import("../components/member/MemberAchievements");
     import("../components/member/MemberHistory");
+  },
+  "booking": () => {
+    import("../components/member/MemberBooking");
   },
 };
 
@@ -421,12 +425,17 @@ export default function MemberApp() {
     setPage("adventure-hub");
   }
 
+  // 線上約課分頁（07-10-booking-system-student-pilot）：漸進開放，只有 bookingBetaAccess===true
+  // 的會員或教練（射手模式自己測試用）才看得到這顆導覽按鈕本身，不是渲染出來但灰階/鎖定——
+  // 比照 accessControl.js／MonsterBattle.jsx 既有的「條件式不渲染」慣例（design.md §2）。
+  const canSeeBooking = profile?.bookingBetaAccess === true || role === "admin";
   const nav = [
     { id:"home",          icon:"🏠", label:"首頁" },
     { id:"adventure-hub", icon:"🗺️", label:"冒險" },
     { id:"training-hub",  icon:"🏹", label:"練箭" },
     { id:"gacha",         icon:"🏡", label:"貓村" },
     { id:"inventory-hub", icon:"🎒", label:"背包" },
+    ...(canSeeBooking ? [{ id:"booking", icon:"📅", label:"約課" }] : []),
     { id:"profile",       icon:"👤", label:"我的" },
   ];
 
@@ -746,6 +755,7 @@ export default function MemberApp() {
         {page==="party-battle" && partyRoomId && (
           <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}
+        {page==="booking"     && canSeeBooking && <MemberBooking />}
         </Suspense>
         )}
       </div>
