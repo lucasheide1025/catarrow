@@ -2673,6 +2673,25 @@ function normalizeEquipped(item) {
   return item;
 }
 
+function normalizeWorldBossCard(key, card = {}) {
+  const def = WB_CARDS[key] || {};
+  const merged = { ...def, ...card, bossKey: card.bossKey || def.bossKey || key, tier: "worldboss", stars: card.stars || 1 };
+  if (merged.statMode === "fixed") {
+    merged.stat = merged.stat || def.stat || "atk";
+  }
+  if (merged.statMode === "choose") {
+    merged.stat = null;
+    merged.chosenStat = merged.chosenStat || null;
+  }
+  return merged;
+}
+
+function normalizeWorldBossCards(wbCards = {}) {
+  return Object.fromEntries(
+    Object.entries(wbCards || {}).map(([key, card]) => [key, normalizeWorldBossCard(key, card)])
+  );
+}
+
 // 依 equipped 項目 + 卡池，解析出實際卡片物件（供計算屬性/被動時使用）
 function resolveEquippedCard(item, cards, wbCards) {
   const { key, source } = normalizeEquipped(item);
@@ -2712,7 +2731,7 @@ export async function addWorldBossCard(memberId, bossKey, chosenStat) {
     const snap = await getDoc(ref);
     const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
     if (data.wbCards?.[bossKey]) return { ok: false, reason: "已擁有此王卡" };
-    const wbCards = { ...(data.wbCards || {}) };
+    const wbCards = normalizeWorldBossCards(data.wbCards || {});
     wbCards[bossKey] = {
       ...cardDef, tier: "worldboss", stars: 1,
       stat: cardDef.statMode === "fixed" ? cardDef.stat : null,
@@ -2754,12 +2773,12 @@ export async function equipCard(memberId, key, source = "monster") {
     const snap = await getDoc(ref);
     const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
     const cards   = data.cards   || {};
-    const wbCards = data.wbCards || {};
+    const wbCards = normalizeWorldBossCards(data.wbCards || {});
     const equipped = (data.equipped || []).map(normalizeEquipped);
 
     if (equipped.some(e => e.key === key && e.source === source)) return { ok: true };
 
-    const targetCard = source === "wb" ? wbCards[key] : cards[key];
+    const targetCard = source === "wb" ? normalizeWorldBossCard(key, wbCards[key]) : cards[key];
     if (!targetCard) return { ok: false, reason: "找不到卡片" };
     if (targetCard.statMode === "choose" && !targetCard.chosenStat) {
       return { ok: false, reason: "請先為這張王卡選擇屬性" };
@@ -2867,7 +2886,10 @@ export function subscribeCardCollection(memberId, callback) {
   if (!memberId) { callback(EMPTY_COLLECTION); return () => {}; }
   return onSnapshot(
     doc(db, C_CARDS, memberId),
-    snap => callback(snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION),
+    snap => {
+      const data = snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION;
+      callback({ ...data, wbCards: normalizeWorldBossCards(data.wbCards || {}) });
+    },
     err  => { console.warn("subscribeCardCollection:", err?.message); callback(EMPTY_COLLECTION); }
   );
 }

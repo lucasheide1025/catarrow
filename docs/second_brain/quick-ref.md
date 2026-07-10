@@ -26,6 +26,7 @@
 | 訪客世界王已開放但只給體驗回饋 | `WorldBossLobby`/`WorldBossAttack` 使用 `guestOverride`/`accountType`；guest/kid 可參戰與上活動傷害排行，但正式擊殺箱、王卡、排名獎、箭露、射手 XP 都不給，只給少量體驗金幣與貓貓 XP |
 | 世界王參戰資料有活動來源 | `participants.{id}` 會寫 `accountType` 與 `sessionSourceId`；訪客/兒童大廳已用此欄位顯示「本場活動榜」，舊資料沒有場次 id 時只留在全體排行 |
 | 世界王本機暫存要綁玩家 | `WorldBossAttack` 的中途戰鬥、訪客備用金幣、藥水暫存 key 已包含 `memberId`，避免同平板換孩子時接到上一人的戰鬥 |
+| 世界王大廳/準備頁不可雙捲動 | `WorldBossLobby` 與 `WorldBossAttack` 的 prep 階段要用自然高度交給外層頁面捲動；不要在大廳/準備頁用 `h-[100dvh] overflow-y-auto`。只有真正 `phase==="battle"` 的世界王戰鬥畫面可固定全螢幕 |
 | 後台場次卡可看世界王活動成果 | `AdminKidMode` 訂閱最新世界王，把 participants 依 `sessionSourceId` 彙整到夏令營場次卡：人數、總傷害、最高傷害者 |
 | 訪客角色頁是正式系統摘要 | `GuestProfileHub` 顯示金幣、裝備完成度、材料、轉蛋幣、貓咪數；裝備頁用 `guestProfile`，商店金幣讀寫 `members/{id}.coins` |
 | 訪客/兒童初始資金是 500 | `resolveGuestSession()` 新帳號直接給 500；舊帳號若沒有 `starterCoinsGranted`，下次登入一次性補 500，避免測試帳號 0 金幣不能買體驗商店 |
@@ -33,6 +34,7 @@
 | 訪客/兒童有體驗戰績摘要 | `recordGuestBattleStats()` 累積 `guestBattleStats`：戰鬥、勝場、箭數、總分、傷害、最近表現；紀念卡會顯示箭數/勝場/平均分/最近傷害 |
 | 訪客/兒童紀念卡已顯示成果摘要 | `GuestShareCard` 接 `profile`/`wbResult`，卡面顯示金幣、裝備、材料、貓咪與最近世界王傷害 |
 | 訪客/兒童低階轉蛋已開 | 角色頁 `GuestGachaPanel` 消耗 1 `gachaCoins` 給 8~24 金幣；商店可用 60 金幣買 1 枚體驗轉蛋幣，不接正式貓村轉蛋池 |
+| 訪客正式戰鬥頁必須全螢幕 | 進入「打怪分頁」不等於進入戰鬥；`MonsterBattle` 透過 `onImmersiveChange` 只在 `battle_intro/battle/monster_die/loot/result` 階段要求 `GuestApp.jsx` 隱藏 topbar/bottom nav，選怪、選難度、戰前確認時仍保留訪客底部功能列 |
 | 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
 | 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
 | 採集不給金幣/寶箱/射手 XP | 採集定位是貓貓 XP、羈絆、少量怪物材料與少量村資源；主線掉寶仍留給單人打怪與地下城 |
@@ -61,6 +63,7 @@
 | 世界王擊殺獎勵改自行請領+均等（2026-07-09，phase1） | `distributeWorldBossRewards` 只算 `top3Ids` 定案，`claimWorldBossKillReward(memberId,eventId)` 各自請領，共同獎勵統一用原 `rank1` 檔次，前三名/尾刀額外拿紀念品。`WorldBossLobby.jsx` 的 `KillScreen` 補了「你的獎勵」顯示。`expireWorldBossEvent`/`handleGiveCardPacks` 還是舊的跨帳號寫入模式，但只有 admin 後台會呼叫，目前沒壞，之後若改成 client-triggered 要一起修 |
 | 世界王 Phase2：18隻王 + 專屬寶箱/卡片 + 卡片裝備改版（2026-07-09） | 詳見下方「世界王 Phase 2」章節，含**地下城完全沒串接卡片系統**的重要缺口 |
 | `equipped` 欄位格式已改（2026-07-09） | 從字串陣列（monsterId）改成 `{key,source}` 物件陣列；用 `resolveEquippedCards()`（monsterCards.js）統一解析，不要再手刻 `.map(id=>cards[id])`，5 處舊寫法已修（見 changelog） |
+| 卡片收藏已改真實卡面 | `CardCollection.jsx` 的一般怪物卡與世界王卡都使用實體卡樣式；一般卡讀 `public/monsters/{monsterId}.webp` 並帶入怪物 HP/ATK/DEF/desc，王卡讀 `worldBossCards.js` 補完的 artPath/serial/rarity/被動效果。`db.js` 訂閱與裝備時會 normalize 舊 `wbCards`，避免舊王卡缺 stat 或卡面資料而無法裝備 |
 | MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
 | `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
 | 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |

@@ -270,7 +270,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     .slice(0, 5);
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {showKillScreen && killEvent && (
@@ -290,7 +290,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
+      <div className="px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] space-y-4">
 
         {/* Boss 展示區 */}
         <div className="rounded-3xl overflow-hidden border border-white/10"

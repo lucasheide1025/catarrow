@@ -284,7 +284,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
       </div>
       </div>
 
-      <main className="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+      <main className="px-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {reconnectRoom && (
           <section
             aria-labelledby="dungeon-reconnect-title"

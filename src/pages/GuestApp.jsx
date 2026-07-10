@@ -36,6 +36,9 @@ const GUEST_VISUAL_CSS = `
 .guest-stage:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(5,10,22,.18),#07111f 76%),url(/ui/page-bg.webp);background-size:cover;background-position:center;opacity:.42}
 .guest-stage.kid:before{background:linear-gradient(180deg,rgba(30,18,4,.12),#111827 78%),url(/ui/page-bg.webp);background-size:cover;background-position:center;opacity:.44}
 .guest-content{position:relative;z-index:1;padding:16px 14px 108px;max-width:720px;margin:0 auto}
+.guest-stage.immersive{background:#020617;overflow:hidden}
+.guest-stage.immersive:before{display:none}
+.guest-stage.immersive .guest-content{position:static;z-index:auto;max-width:none;padding:0;margin:0}
 .guest-login{min-height:100vh;display:grid;place-items:center;padding:22px;position:relative;background:#07111f;color:#fff;overflow:hidden}
 .guest-login:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,10,24,.24),rgba(4,10,24,.92)),url(/ui/page-bg.webp);background-size:cover;background-position:center;filter:saturate(1.12)}
 .guest-login-panel{position:relative;width:min(100%,390px);display:flex;flex-direction:column;gap:14px}
@@ -109,6 +112,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   const [partySubTab, setPartySubTab] = useState("lobby");
   const [wbResult, setWbResult] = useState(null);
   const [showShareCard, setShowShareCard] = useState(false);
+  const [guestBattleImmersive, setGuestBattleImmersive] = useState(false);
 
   useEffect(() => {
     if (document.querySelector("[data-guest-visual-css]")) return;
@@ -158,6 +162,10 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
       } catch { sessionStorage.removeItem(partySessionKey); }
     }
   }, [guestProfile, partySessionKey]);
+
+  useEffect(() => {
+    setGuestBattleImmersive(false);
+  }, [tab, partySubTab]);
 
   async function handleEnter() {
     setErr("");
@@ -228,10 +236,11 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     accountType,
     currentSessionSourceId: sessionSourceId || guestFullProfile?.lastSessionSourceId || guestFullProfile?.sessionSourceId || null,
   };
+  const immersiveBattle = (tab === "monster" && guestBattleImmersive) || (tab === "party" && partySubTab === "battle");
 
   return (
-    <div className={`guest-stage ${isKid ? "kid" : "guest"}`}>
-      <div className="guest-topbar">
+    <div className={`guest-stage ${isKid ? "kid" : "guest"} ${immersiveBattle ? "immersive" : ""}`}>
+      {!immersiveBattle && <div className="guest-topbar">
         <div className="guest-topbar-inner">
           <div className="guest-mode-mark" style={{ background: themeGrad }}>{isKid ? "🎈" : "🏹"}</div>
           <div>
@@ -240,9 +249,9 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
           </div>
           <div className="guest-coin-pill">🪙 {liveCoins || 0}</div>
         </div>
-      </div>
+      </div>}
 
-      {partyRoomId && partySubTab !== "battle" && (
+      {!immersiveBattle && partyRoomId && partySubTab !== "battle" && (
         <button onClick={() => { setTab("party"); setPartySubTab("battle"); }}
           className="guest-party-banner">
           🎮 組隊進行中 — 點此回到房間
@@ -253,7 +262,13 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         {tab === "home" && <GuestHome name={guestProfile.name} isKid={isKid} accent={themeAccent} onGo={setTab} onShareCard={() => setShowShareCard(true)} coins={liveCoins} wbResult={wbResult} />}
         {tab === "monster" && (
           guestFullProfile ? (
-            <MonsterBattle isGuest={true} kidMode={isKid} guestProfile={guestFullProfile} />
+            <MonsterBattle
+              isGuest={true}
+              kidMode={isKid}
+              guestProfile={guestFullProfile}
+              onBack={() => setTab("home")}
+              onImmersiveChange={setGuestBattleImmersive}
+            />
           ) : (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
               載入中…
@@ -304,14 +319,14 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         )}
       </div>
 
-      <div className="guest-bottom-nav">
+      {!immersiveBattle && <div className="guest-bottom-nav">
         {TABS.map(n => (
           <button key={n.id} onClick={() => setTab(n.id)} className={`guest-nav-btn ${tab === n.id ? "active" : ""}`}>
             <span className="guest-nav-icon">{n.icon}</span>
             <span>{n.label}</span>
           </button>
         ))}
-      </div>
+      </div>}
 
       {showShareCard && (
         <GuestShareCard

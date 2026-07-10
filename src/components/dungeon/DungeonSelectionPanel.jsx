@@ -51,7 +51,7 @@ export default function DungeonSelectionPanel({
           background:"rgba(0,0,0,0.85)",
           backdropFilter:"blur(8px)",
         }}>
-        <div className="text-center max-w-sm w-full max-h-[92dvh] overflow-y-auto py-4"
+        <div className="text-center max-w-sm w-full max-h-[92dvh] overflow-y-auto pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]"
           onClick={e => e.stopPropagation()}>
           <div className="text-6xl mb-4">
             {dungeon.isHidden ? "🎁" : family.emoji}

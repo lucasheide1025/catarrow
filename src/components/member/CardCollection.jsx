@@ -11,6 +11,8 @@ import {
   TIER_CARD_BONUS, calcCardBonus, canUpgradeStar, getUpgradeCost,
   getCardStat, getStatLabel, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED,
 } from "../../lib/monsterCards";
+import { WB_CARDS } from "../../lib/worldBossCards";
+import { FAMILIES, MONSTERS } from "../../lib/monsterData";
 import { sfxLevelUp, sfxBuff, sfxError } from "../../lib/sound";
 
 const STAT_OPTIONS = [
@@ -27,6 +29,8 @@ const CATEGORY_TABS = [
   { id: "wb",  label: "世界王 👑" },
 ];
 
+const MONSTER_MAP = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
+
 function StarRow({ stars, max = 5 }) {
   return (
     <span className="text-yellow-400 text-xs">
@@ -38,6 +42,160 @@ function StarRow({ stars, max = 5 }) {
 // equipped 相容讀取：舊格式字串 / 新格式 {key,source}
 function normalizeEquipped(item) {
   return typeof item === "string" ? { key: item, source: "monster" } : item;
+}
+
+function normalizeWbCard(key, card = {}) {
+  return {
+    ...(WB_CARDS[key] || {}),
+    ...card,
+    key,
+    source: "wb",
+    bossKey: card.bossKey || key,
+    tier: "worldboss",
+    stars: card.stars || 1,
+  };
+}
+
+function WorldBossArt({ card, className = "" }) {
+  const [failed, setFailed] = useState(false);
+  if (!failed && card.artPath) {
+    return <img className={className} src={card.artPath} alt="" draggable="false" onError={() => setFailed(true)} />;
+  }
+  return <span className={className} style={{ display: "grid", placeItems: "center", fontSize: 42 }}>{card.icon || "👑"}</span>;
+}
+
+function WorldBossRealCard({ card, equipped, selected, compact = false, activeTitle, onSelect, onEquip, onUnequip, onSetTitle, onPickStat }) {
+  const stat = getCardStat(card);
+  const bonus = calcCardBonus(card.tier, card.stars);
+  const needStat = card.statMode === "choose" && !card.chosenStat;
+  const frame = card.frameColor || "#facc15";
+  const bg = card.bgColor || "#1c1917";
+
+  return (
+    <div
+      className={`wb-real-card ${equipped ? "equipped" : ""} ${selected ? "selected" : ""} ${compact ? "compact" : ""}`}
+      style={{ "--wb-frame": frame, "--wb-bg": bg }}
+      onClick={onSelect}
+    >
+      <div className="wb-card-top">
+        <span>{card.serial || "WB-000"}</span>
+        <b>{card.rarity || "WORLD"}</b>
+      </div>
+      <div className="wb-card-art">
+        <WorldBossArt card={card} className="wb-card-img" />
+      </div>
+      <div className="wb-card-name">
+        <b>{card.name}</b>
+        <span>{card.title}</span>
+      </div>
+      <div className="wb-card-statline">
+        <span>{card.typeLabel || "世界王"}</span>
+        <b>{needStat ? "待設定" : `+${bonus} ${getStatLabel(stat)}`}</b>
+      </div>
+      {!compact && (
+        <>
+          <div className="wb-card-params">
+            <span>HP {Number(card.hp || 0).toLocaleString()}</span>
+            <span>ATK {card.atk || 0}</span>
+            <span>DEF {card.def || 0}</span>
+          </div>
+          <div className="wb-card-effect">{needStat ? "裝備前選擇此卡的戰鬥定位。" : card.effectText}</div>
+          <div className="wb-card-lore">{card.lore || card.flavor}</div>
+        </>
+      )}
+      {equipped && <div className="wb-card-equipped">裝備中{activeTitle ? " · 稱號" : ""}</div>}
+      {selected && !compact && (
+        <div className="wb-card-actions" onClick={e => e.stopPropagation()}>
+          {needStat ? (
+            STAT_OPTIONS.map(s => (
+              <button key={s.id} onClick={() => onPickStat(s.id)}>{s.label}</button>
+            ))
+          ) : equipped ? (
+            <>
+              <button onClick={onUnequip}>卸下</button>
+              {!activeTitle && <button onClick={onSetTitle}>設為稱號</button>}
+            </>
+          ) : (
+            <button className="primary" onClick={onEquip}>裝備</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MonsterArt({ card, className = "" }) {
+  const [failed, setFailed] = useState(false);
+  const imgPath = `/monsters/${card.key || card.monsterId}.webp`;
+  if (!failed) {
+    return <img className={className} src={imgPath} alt="" draggable="false" onError={() => setFailed(true)} />;
+  }
+  return <span className={className} style={{ display: "grid", placeItems: "center", fontSize: 38 }}>{card.icon || "🃏"}</span>;
+}
+
+function MonsterRealCard({ card, equipped, selected, compact = false, onSelect, onEquip, onUnequip, onUpgrade, onPickStat, upgrading }) {
+  const cfg = TIER_CARD_BONUS[card.tier] || TIER_CARD_BONUS.common;
+  const monster = MONSTER_MAP[card.key] || {};
+  const family = FAMILIES[card.family || monster.family] || {};
+  const stat = getCardStat(card);
+  const bonus = calcCardBonus(card.tier, card.stars);
+  const canUp = canUpgradeStar(card.stars, card.duplicates, card.tier);
+  const upCost = getUpgradeCost(card.stars);
+  const needStat = card.tier === "mythic" && !card.chosenStat;
+
+  return (
+    <div
+      className={`monster-real-card ${equipped ? "equipped" : ""} ${selected ? "selected" : ""} ${compact ? "compact" : ""}`}
+      style={{ "--card-frame": cfg.color, "--card-bg": cfg.bg || "#f8fafc" }}
+      onClick={onSelect}
+    >
+      <div className="monster-card-top">
+        <span>{family.icon || card.icon} {family.label || "怪物"}</span>
+        <b>{cfg.label}</b>
+      </div>
+      <div className="monster-card-art">
+        <MonsterArt card={card} className="monster-card-img" />
+      </div>
+      <div className="monster-card-name">
+        <b>{card.name}</b>
+        <StarRow stars={card.stars} />
+      </div>
+      <div className="monster-card-statline">
+        <span>{needStat ? "待設定屬性" : `+${bonus} ${getStatLabel(stat)}`}</span>
+        <b>重複 {card.duplicates || 0}</b>
+      </div>
+      {!compact && (
+        <>
+          <div className="monster-card-params">
+            <span>HP {monster.hp || "-"}</span>
+            <span>ATK {monster.atk || "-"}</span>
+            <span>DEF {monster.def || "-"}</span>
+          </div>
+          <div className="monster-card-lore">{monster.desc || card.desc || "從怪物戰鬥中取得的收藏卡。"}</div>
+        </>
+      )}
+      {equipped && <div className="monster-card-equipped">裝備中</div>}
+      {selected && !compact && (
+        <div className="monster-card-actions" onClick={e => e.stopPropagation()}>
+          {needStat ? (
+            STAT_OPTIONS.map(s => (
+              <button key={s.id} onClick={() => onPickStat(s.id)}>{s.label}</button>
+            ))
+          ) : equipped ? (
+            <button onClick={onUnequip}>卸下</button>
+          ) : (
+            <button className="primary" onClick={onEquip}>裝備</button>
+          )}
+          {canUp && (
+            <button onClick={onUpgrade} disabled={upgrading}>升星（{upCost}張）</button>
+          )}
+          {!canUp && (card.stars || 1) < 5 && (
+            <div className="monster-card-upgrade-note">升星需 {upCost} 張重複</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function CardCollection() {
@@ -99,7 +257,7 @@ export default function CardCollection() {
   // 合併卡片清單（怪物卡 + 世界王卡）
   const allCards = [
     ...Object.entries(cards).map(([id, c]) => ({ ...c, key: id, source: "monster" })),
-    ...Object.entries(wbCards).map(([id, c]) => ({ ...c, key: id, source: "wb" })),
+    ...Object.entries(wbCards).map(([id, c]) => normalizeWbCard(id, c)),
   ];
 
   const cardList = allCards
@@ -118,7 +276,7 @@ export default function CardCollection() {
   const equippedMonster = equipped.filter(e => e.source === "monster")
     .map(e => ({ ...cards[e.key], key: e.key, source: "monster" })).filter(c => c.name);
   const equippedWb = equipped.filter(e => e.source === "wb")
-    .map(e => ({ ...wbCards[e.key], key: e.key, source: "wb" })).filter(c => c.name);
+    .map(e => normalizeWbCard(e.key, wbCards[e.key])).filter(c => c.name);
 
   const equipSlots = { hp: [], atk: [], def: [] };
   for (const c of equippedMonster) {
@@ -169,14 +327,14 @@ export default function CardCollection() {
               if (!card) {
                 return <div key={i} className="aspect-[3/4] rounded-xl border border-dashed border-white/15 bg-white/[0.02]" />;
               }
-              const cfg = TIER_CARD_BONUS[card.tier] || TIER_CARD_BONUS.common;
               return (
-                <button key={i} onClick={() => handleUnequip(card.key, "monster")}
-                  className="aspect-[3/4] rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform"
-                  style={{ borderColor: cfg.color, background: cfg.color + "1f" }}>
-                  <span className="text-lg">{card.icon}</span>
-                  <span className="text-[9px] font-bold truncate max-w-full px-1" style={{ color: cfg.color }}>{card.name}</span>
-                </button>
+                <MonsterRealCard
+                  key={i}
+                  card={card}
+                  equipped
+                  compact
+                  onSelect={() => handleUnequip(card.key, "monster")}
+                />
               );
             })}
           </div>
@@ -194,19 +352,14 @@ export default function CardCollection() {
             }
             const isTitle = activeTitleBossKey === card.key;
             return (
-              <div key={i} className="wb-holo-card aspect-[3/4] rounded-xl p-1.5 flex flex-col items-center justify-between relative">
-                {isTitle && <span className="absolute top-1 right-1 text-[10px]">👑</span>}
-                <span className="text-lg mt-1">{card.icon}</span>
-                <span className="text-[9px] font-bold text-amber-100 truncate max-w-full px-1">{card.name}</span>
-                <div className="flex gap-1 w-full">
-                  <button onClick={() => handleUnequip(card.key, "wb")}
-                    className="flex-1 text-[8px] font-bold py-0.5 rounded bg-white/10 text-white/80">卸下</button>
-                  {!isTitle && (
-                    <button onClick={() => handleSetTitle(card.key)}
-                      className="flex-1 text-[8px] font-bold py-0.5 rounded bg-amber-400/20 text-amber-200">設稱號</button>
-                  )}
-                </div>
-              </div>
+              <WorldBossRealCard
+                key={i}
+                card={card}
+                equipped
+                compact
+                activeTitle={isTitle}
+                onSelect={() => handleUnequip(card.key, "wb")}
+              />
             );
           })}
         </div>
@@ -232,109 +385,308 @@ export default function CardCollection() {
           還沒有卡片，打怪有機率掉落！
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {cardList.map(card => {
-            const cfg        = TIER_CARD_BONUS[card.tier] || TIER_CARD_BONUS.common;
             const equipped_  = isEquipped(card.key, card.source);
-            const stat       = getCardStat(card);
-            const bonus      = calcCardBonus(card.tier, card.stars);
-            const canUp      = canUpgradeStar(card.stars, card.duplicates, card.tier);
-            const upCost     = getUpgradeCost(card.stars);
-            const needStat   = (card.tier === "mythic" && !card.chosenStat) ||
-                                (card.source === "wb" && card.statMode === "choose" && !card.chosenStat);
             const selKey     = `${card.source}:${card.key}`;
             const isSelected = selected === selKey;
             const isWb       = card.source === "wb";
 
+            if (isWb) {
+              return (
+                <WorldBossRealCard
+                  key={selKey}
+                  card={card}
+                  equipped={equipped_}
+                  selected={isSelected}
+                  activeTitle={activeTitleBossKey === card.key}
+                  onSelect={() => setSelected(isSelected ? null : selKey)}
+                  onEquip={() => handleEquip(card.key, "wb")}
+                  onUnequip={() => handleUnequip(card.key, "wb")}
+                  onSetTitle={() => handleSetTitle(card.key)}
+                  onPickStat={stat => handleStatPick(card.key, "wb", stat)}
+                />
+              );
+            }
             return (
-              <div key={selKey}
-                className={`rounded-xl border-2 overflow-hidden flex flex-col ${isWb ? "wb-holo-card" : ""}`}
-                style={isWb ? {} : {
-                  borderColor: equipped_ ? cfg.color : cfg.color + "40",
-                  background:  equipped_ ? cfg.color + "1a" : "rgba(255,255,255,0.05)",
-                }}
-                onClick={() => setSelected(isSelected ? null : selKey)}>
-                <div className="aspect-square flex flex-col items-center justify-center gap-1 p-2 cursor-pointer">
-                  <span className="text-3xl">{card.icon}</span>
-                  <span className={`text-[10px] font-black text-center truncate max-w-full ${isWb ? "text-amber-100" : ""}`}
-                    style={isWb ? {} : { color: equipped_ ? cfg.color : "#e2e8f0" }}>
-                    {card.name}
-                  </span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
-                    style={{ background: isWb ? "#facc15" : cfg.color }}>{isWb ? "世界王" : cfg.label}</span>
-                  {!isWb && <StarRow stars={card.stars} />}
-                  {equipped_ && <span className="text-[8px] font-black text-emerald-300">✓ 裝備中</span>}
-                </div>
-
-                {isSelected && (
-                  <div className="flex flex-col gap-1.5 px-2 pb-2 pt-1 border-t border-white/10" onClick={e => e.stopPropagation()}>
-                    {isWb && card.flavor && (
-                      <div className="text-[9px] italic text-amber-200/70 text-center">「{card.flavor}」</div>
-                    )}
-                    {needStat ? (
-                      <div className="flex flex-col gap-1">
-                        <div className="text-[9px] font-black text-amber-300 text-center">選擇加成屬性</div>
-                        <div className="flex gap-1">
-                          {STAT_OPTIONS.map(s => (
-                            <button key={s.id}
-                              onClick={() => handleStatPick(card.key, card.source, s.id)}
-                              className="flex-1 px-1 py-1.5 rounded-lg bg-amber-500/10 border border-amber-400/40 text-amber-300 text-[9px] font-bold text-center active:scale-95">
-                              {s.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="text-[9px] text-center text-slate-300">+{bonus} {getStatLabel(stat)}</div>
-                        {equipped_ ? (
-                          <button onClick={() => handleUnequip(card.key, card.source)}
-                            className="w-full py-1.5 rounded-lg text-[10px] font-bold bg-white/10 text-slate-300">卸下</button>
-                        ) : (
-                          <button onClick={() => handleEquip(card.key, card.source)}
-                            className="w-full py-1.5 rounded-lg text-[10px] font-bold text-white"
-                            style={{ background: isWb ? "#facc15" : cfg.color }}>裝備</button>
-                        )}
-                        {canUp && (
-                          <button onClick={() => handleUpgrade(card.key)} disabled={upgrading}
-                            className="w-full py-1.5 rounded-lg text-[10px] font-black text-white disabled:opacity-40"
-                            style={{ background: cfg.color }}>
-                            ✨ 升星（{upCost}張）
-                          </button>
-                        )}
-                        {!isWb && !canUp && (card.stars || 1) < 5 && (
-                          <div className="text-[8px] text-center text-slate-500">升星需 {upCost} 張重複（現有 {card.duplicates || 0}）</div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+              <MonsterRealCard
+                key={selKey}
+                card={card}
+                equipped={equipped_}
+                selected={isSelected}
+                onSelect={() => setSelected(isSelected ? null : selKey)}
+                onEquip={() => handleEquip(card.key, "monster")}
+                onUnequip={() => handleUnequip(card.key, "monster")}
+                onUpgrade={() => handleUpgrade(card.key)}
+                onPickStat={stat => handleStatPick(card.key, "monster", stat)}
+                upgrading={upgrading}
+              />
             );
           })}
         </div>
       )}
 
       <style>{`
-        .wb-holo-card {
-          background: linear-gradient(135deg, #78350f, #451a03 40%, #1c1917);
-          border: 2px solid transparent;
-          background-clip: padding-box;
+        .monster-real-card,
+        .wb-real-card {
           position: relative;
+          min-width: 0;
+          aspect-ratio: 2.5 / 3.55;
+          border-radius: 14px;
+          padding: 8px;
+          overflow: hidden;
+          cursor: pointer;
+          box-shadow: 0 14px 30px rgba(0,0,0,.28);
+          transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
         }
-        .wb-holo-card::before {
+        .monster-real-card {
+          color: #1f2937;
+          border: 3px solid var(--card-frame);
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,255,255,.56)),
+            radial-gradient(circle at 30% 16%, var(--card-bg), #ffffff 50%, #e5e7eb);
+        }
+        .wb-real-card {
+          color: #fff7ed;
+          border: 3px solid var(--wb-frame);
+          background:
+            radial-gradient(circle at 30% 12%, rgba(250,204,21,.22), transparent 34%),
+            linear-gradient(145deg, var(--wb-bg), #111827 46%, #030712);
+        }
+        .monster-real-card.selected,
+        .wb-real-card.selected,
+        .monster-real-card.equipped,
+        .wb-real-card.equipped {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 38px rgba(0,0,0,.36);
+        }
+        .wb-real-card::before {
           content: "";
           position: absolute;
-          inset: -2px;
+          inset: 0;
           border-radius: inherit;
-          padding: 2px;
-          background: linear-gradient(120deg, #facc15, #f59e0b, #fde68a, #facc15);
+          background: linear-gradient(120deg, transparent, rgba(255,255,255,.34), transparent);
           background-size: 300% 300%;
           animation: wbHoloShift 3s ease infinite;
-          -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-          z-index: 0;
+          pointer-events: none;
+        }
+        .monster-card-top,
+        .wb-card-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          min-height: 18px;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .02em;
+          position: relative;
+          z-index: 1;
+        }
+        .monster-card-top b,
+        .wb-card-top b {
+          padding: 2px 5px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .monster-card-top b {
+          background: var(--card-frame);
+          color: white;
+        }
+        .wb-card-top b {
+          background: rgba(250,204,21,.22);
+          color: #fde68a;
+          border: 1px solid rgba(250,204,21,.45);
+        }
+        .monster-card-art,
+        .wb-card-art {
+          height: 34%;
+          margin: 6px 0;
+          border-radius: 10px;
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          position: relative;
+          z-index: 1;
+        }
+        .monster-card-art {
+          background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.5));
+          border: 1px solid rgba(15,23,42,.12);
+        }
+        .wb-card-art {
+          background: radial-gradient(circle, rgba(255,255,255,.18), rgba(0,0,0,.28));
+          border: 1px solid rgba(255,255,255,.2);
+        }
+        .monster-card-img,
+        .wb-card-img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 8px 10px rgba(0,0,0,.28));
+        }
+        .monster-card-name,
+        .wb-card-name {
+          min-height: 34px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          gap: 1px;
+          position: relative;
+          z-index: 1;
+        }
+        .monster-card-name b,
+        .wb-card-name b {
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 13px;
+          line-height: 1.15;
+        }
+        .wb-card-name span {
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: #fde68a;
+          font-size: 9px;
+          font-weight: 900;
+        }
+        .monster-card-statline,
+        .wb-card-statline,
+        .monster-card-params,
+        .wb-card-params {
+          display: flex;
+          justify-content: space-between;
+          gap: 4px;
+          position: relative;
+          z-index: 1;
+        }
+        .monster-card-statline,
+        .wb-card-statline {
+          margin-top: 4px;
+          padding: 5px 6px;
+          border-radius: 8px;
+          font-size: 9px;
+          font-weight: 950;
+        }
+        .monster-card-statline {
+          color: #111827;
+          background: rgba(255,255,255,.78);
+        }
+        .wb-card-statline {
+          color: #fef3c7;
+          background: rgba(0,0,0,.28);
+          border: 1px solid rgba(255,255,255,.12);
+        }
+        .monster-card-params,
+        .wb-card-params {
+          margin-top: 5px;
+          font-size: 8px;
+          font-weight: 900;
+          opacity: .86;
+        }
+        .monster-card-lore,
+        .wb-card-lore,
+        .wb-card-effect {
+          position: relative;
+          z-index: 1;
+          margin-top: 5px;
+          border-radius: 8px;
+          padding: 6px;
+          font-size: 9px;
+          line-height: 1.35;
+        }
+        .monster-card-lore {
+          color: #374151;
+          background: rgba(255,255,255,.66);
+        }
+        .wb-card-effect {
+          color: #fde68a;
+          background: rgba(250,204,21,.12);
+          border: 1px solid rgba(250,204,21,.22);
+          font-weight: 900;
+          text-align: center;
+        }
+        .wb-card-lore {
+          color: rgba(255,247,237,.72);
+          background: rgba(0,0,0,.22);
+        }
+        .monster-card-equipped,
+        .wb-card-equipped {
+          position: absolute;
+          right: 8px;
+          bottom: 8px;
+          z-index: 2;
+          padding: 3px 6px;
+          border-radius: 999px;
+          font-size: 8px;
+          font-weight: 950;
+        }
+        .monster-card-equipped {
+          color: #065f46;
+          background: rgba(16,185,129,.18);
+        }
+        .wb-card-equipped {
+          color: #fde68a;
+          background: rgba(0,0,0,.48);
+          border: 1px solid rgba(250,204,21,.3);
+        }
+        .monster-card-actions,
+        .wb-card-actions {
+          position: relative;
+          z-index: 3;
+          display: grid;
+          gap: 6px;
+          grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+          margin-top: 7px;
+        }
+        .monster-card-actions button,
+        .wb-card-actions button {
+          min-height: 28px;
+          border: 0;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+        .monster-card-actions button {
+          color: white;
+          background: var(--card-frame);
+        }
+        .wb-card-actions button {
+          color: #111827;
+          background: #facc15;
+        }
+        .monster-card-upgrade-note {
+          grid-column: 1 / -1;
+          color: rgba(15,23,42,.62);
+          text-align: center;
+          font-size: 9px;
+          font-weight: 800;
+        }
+        .monster-real-card.compact,
+        .wb-real-card.compact {
+          padding: 6px;
+          border-width: 2px;
+        }
+        .monster-real-card.compact .monster-card-art,
+        .wb-real-card.compact .wb-card-art {
+          height: 45%;
+          margin: 4px 0;
+        }
+        .monster-real-card.compact .monster-card-statline,
+        .wb-real-card.compact .wb-card-statline,
+        .monster-real-card.compact .monster-card-params,
+        .wb-real-card.compact .wb-card-params,
+        .monster-real-card.compact .monster-card-lore,
+        .wb-real-card.compact .wb-card-lore,
+        .wb-real-card.compact .wb-card-effect,
+        .monster-real-card.compact .monster-card-equipped,
+        .wb-real-card.compact .wb-card-equipped {
+          display: none;
         }
         @keyframes wbHoloShift {
           0%   { background-position: 0% 50%; }
@@ -342,7 +694,17 @@ export default function CardCollection() {
           100% { background-position: 0% 50%; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .wb-holo-card::before { animation: none; }
+          .wb-real-card::before { animation: none; }
+        }
+        @media (max-width: 380px) {
+          .monster-real-card,
+          .wb-real-card {
+            padding: 7px;
+          }
+          .monster-card-name b,
+          .wb-card-name b {
+            font-size: 12px;
+          }
         }
       `}</style>
     </div>

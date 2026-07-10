@@ -113,7 +113,7 @@ function saveMbDefaults(obj) {
   localStorage.setItem("mb_defaults", JSON.stringify(obj));
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
+export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, onImmersiveChange = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
@@ -228,6 +228,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const extraDexRef = useRef({}); // monsterDex/craftStats/... 不放 dep array，用 ref 同步最新值
   extraDexRef.current = { monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl };
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  useEffect(() => {
+    const immersivePhases = new Set(["battle_intro", "battle", "monster_die", "loot", "result"]);
+    onImmersiveChange?.(immersivePhases.has(phase));
+    return () => onImmersiveChange?.(false);
+  }, [phase, onImmersiveChange]);
 
   // 讀取今日已有箭數（用於里程碑計算）
 
@@ -2008,7 +2014,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         </div>
 
         {/* ── 輸入區 ── */}
-        <div style={{flex:"0 0 auto", padding:"3px 6px", background:"rgba(0,0,0,0.68)"}}>
+        <div style={{
+          flex:"0 0 auto",
+          padding:"3px 6px max(8px, env(safe-area-inset-bottom))",
+          background:"rgba(0,0,0,0.72)",
+          borderTop:"1px solid rgba(255,255,255,0.08)",
+        }}>
 
           {/* HP 危機 */}
           {archPct<=25 && battlePhase==="input" && (
@@ -2108,7 +2119,16 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               />
 
               {/* TURN + 回合總分 + 送出 */}
-              <div style={{display:"flex", gap:4, alignItems:"center"}}>
+              <div style={{
+                display:"flex",
+                gap:4,
+                alignItems:"center",
+                position:"sticky",
+                bottom:0,
+                zIndex:20,
+                paddingTop:4,
+                background:"linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,0.72) 18%)",
+              }}>
                 {/* 回合計數格 */}
                 <div style={{
                   flexShrink:0, width:46, height:40,

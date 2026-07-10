@@ -210,6 +210,31 @@ function CalendarTab({ toast }) {
   );
 }
 
+// ─── 客人自助預約時填的非必填問卷（intake），只有 online_public 來源才會有 ──
+// 欄位對應 PublicBookingApp 的 intake：{experience,bowInterest,purpose,needSystemIntro,remark}
+// 全部空白就整塊不顯示（教練代建/會員自約沒有這塊）。
+function IntakeInfo({ intake }) {
+  if (!intake) return null;
+  const rows = [
+    ["射箭經驗", intake.experience],
+    ["想了解弓種", intake.bowInterest],
+    ["目的", intake.purpose],
+    ["需介紹電子系統", intake.needSystemIntro],
+    ["備註", intake.remark],
+  ].filter(([, v]) => v && String(v).trim());
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-400/20 px-2 py-1.5 flex flex-col gap-0.5">
+      <div className="text-amber-300 text-[11px] font-bold">📝 客人填答</div>
+      {rows.map(([k, v]) => (
+        <div key={k} className="text-[11px] text-amber-100/80 leading-tight">
+          <span className="text-amber-300/70">{k}：</span>{v}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── 時段詳情 Modal：清單、封鎖切換、標記付款方式、取消/改期、＋新增預約 ──
 function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast }) {
   const [busy, setBusy] = useState(false);
@@ -280,6 +305,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                       {b.isNewStudent ? "・🆕新生" : "・舊生"}
                     </div>
                     <div className="text-slate-500 text-xs mt-0.5">{b.contactEmail} {b.contactPhone ? `· ${b.contactPhone}` : ""}</div>
+                    <IntakeInfo intake={b.intake} />
                   </div>
                   <Btn v="danger" size="sm" onClick={() => handleCancel(b.id)} disabled={busy}>取消</Btn>
                 </div>

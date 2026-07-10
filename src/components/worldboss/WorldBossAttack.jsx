@@ -787,7 +787,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const canAfford  = coins >= potionCost;
 
     return (
-      <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
+      <div className="min-h-full flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white relative">
         {/* Prep 退出確認 */}
         {showPrepExit && (
           <div style={{ position:"absolute", inset:0, zIndex:50, background:"rgba(0,0,0,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
@@ -811,7 +811,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-5 pt-4">
+        <div className="px-4 pb-4 space-y-5 pt-4">
           {/* Boss 預覽 */}
           <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
             <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={72}/>
@@ -898,7 +898,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         </div>
 
         <div className="shrink-0 px-4 pt-3"
-          style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
+          style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
           {potionCost > 0 && !canAfford && (
             <div className="text-center text-xs text-rose-400 mb-2">金幣不足，請選擇其他藥水</div>
           )}

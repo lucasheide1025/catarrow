@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   subscribeCampSessions, createCampSession, updateCampSession, deleteCampSession,
-  subscribeKidAccounts, convertGuestToOfficial,
+  subscribeKidAccounts, convertGuestToOfficial, deleteMember,
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { fmtDT, today } from "../../lib/constants";
@@ -50,6 +50,7 @@ export default function AdminKidMode() {
   const [qrModal, setQrModal]           = useState(null); // session object
   const [delConfirm, setDelConfirm]     = useState(null); // session id
   const [convertModal, setConvertModal] = useState(null); // account object
+  const [delAccount, setDelAccount]     = useState(null); // 要刪除的訪客/兒童帳號 object
   const [filterSession, setFilterSession] = useState("all");
 
   useEffect(() => {
@@ -78,6 +79,17 @@ export default function AdminKidMode() {
       toast("場次已刪除 ✓");
     } catch (e) { toast("刪除失敗：" + (e?.message || "")); }
     setDelConfirm(null);
+  }
+
+  async function handleDeleteAccount(acc) {
+    // 只刪 members 文件本身（遊戲資料/預約統計都在這份文件裡）。Firebase Auth 那邊，
+    // 訪客/兒童帳號多半沒有對應的 Auth 帳號（是用 email hash 找回，不走 Auth 登入），
+    // 就算社群登入建立過 Auth 帳號，刪掉 members 文件後 useAuth 就查不到、等同停用。
+    try {
+      await deleteMember(acc.id, profile.id);
+      toast("訪客帳號已刪除 ✓");
+    } catch (e) { toast("刪除失敗：" + (e?.message || "")); }
+    setDelAccount(null);
   }
 
   async function handleToggleActive(session) {
@@ -189,7 +201,11 @@ export default function AdminKidMode() {
               <span>🪙 {a.coins || 0}</span>
               <span>最近登入：{a.lastLoginAt?.toDate?.() ? fmtDT(a.lastLoginAt) : "—"}</span>
             </div>
-            <Btn v="primary" size="sm" onClick={() => setConvertModal(a)}>✅ 轉正式</Btn>
+            <div className="flex gap-2 items-center">
+              <Btn v="primary" size="sm" className="flex-1" onClick={() => setConvertModal(a)}>✅ 轉正式</Btn>
+              <button onClick={() => setDelAccount(a)}
+                className="text-red-300 hover:text-red-500 text-xs px-1.5 py-1 flex-shrink-0">🗑 刪除</button>
+            </div>
           </Card>
         ))}
       </div>
@@ -207,6 +223,10 @@ export default function AdminKidMode() {
 
       <ConfirmModal open={!!delConfirm} title="確認刪除場次" message="確定要刪除此場次？此操作無法復原（不影響已建立的兒童帳號資料）。"
         onConfirm={() => handleDeleteSession(delConfirm)} onCancel={() => setDelConfirm(null)} />
+
+      <ConfirmModal open={!!delAccount} title="確認刪除訪客帳號"
+        message={`確定要刪除「${delAccount?.name || delAccount?.id || ""}」這個訪客/兒童帳號嗎？\n該帳號的遊戲進度、金幣、預約統計都會一併移除，此操作無法復原。`}
+        onConfirm={() => handleDeleteAccount(delAccount)} onCancel={() => setDelAccount(null)} />
     </div>
   );
 }
