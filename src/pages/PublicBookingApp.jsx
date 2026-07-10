@@ -35,6 +35,13 @@ export default function PublicBookingApp() {
     return () => { document.head.removeChild(meta); };
   }, []);
 
+  // 官網「會員登入」按鈕會帶 ?login=1 進來 → 直接打開前台登入畫面（未登入時才有意義）
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("login") === "1") {
+      setShowLogin(true);
+    }
+  }, []);
+
   const [profile, setProfile] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null"); } catch { return null; }
   });

@@ -1,6 +1,7 @@
 // src/components/dungeon/DungeonShop.jsx — 地下城商店（動畫強化版）
 import { useState, useMemo, useEffect, useRef } from "react";
 import { purchaseDungeonItem, confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { sfxDoorOpen, sfxError, sfxShopBuy, sfxSuccess, sfxTap } from "../../lib/sound";
 
 // 擴充商店商品
 const SHOP_ITEM_META = {
@@ -92,6 +93,7 @@ export default function DungeonShop({
 
   // 進場動畫
   useEffect(() => {
+    sfxDoorOpen();
     const t = setTimeout(() => setAnimPhase("open"), 300);
     return () => clearTimeout(t);
   }, []);
@@ -109,9 +111,10 @@ export default function DungeonShop({
   async function handleBuy(item) {
     if (loading) return;
     const isPotion = item.id === "hp_potion";
-    if (!isPotion && myPurchases.includes(item.id)) return;
-    if (item.id === "revival_front" && !hasFallenFront) return;
-    if (coins < item.cost) return;
+    if (!isPotion && myPurchases.includes(item.id)) { sfxError(); return; }
+    if (item.id === "revival_front" && !hasFallenFront) { sfxError(); return; }
+    if (coins < item.cost) { sfxError(); return; }
+    sfxShopBuy();
     setLoading(true);
     setBuyFloatItem(null); // 重設
     setTimeout(() => setBuyFloatItem(item), 50);
@@ -131,6 +134,7 @@ export default function DungeonShop({
 
   async function handleConfirm() {
     if (confirmed) return;
+    sfxTap();
     setConfirmed(true);
     setAnimPhase("leaving");
     if (localMode) {
@@ -142,6 +146,7 @@ export default function DungeonShop({
 
   async function handleResolve() {
     if (!isHost) return;
+    sfxSuccess();
     if (localMode) {
       onLocalDone?.();
       return;
@@ -181,7 +186,7 @@ export default function DungeonShop({
   };
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{ background:"linear-gradient(160deg,#0c1929,#0f2942)", position:"relative" }}>
       <Particles count={24} />
 
@@ -210,31 +215,45 @@ export default function DungeonShop({
         </div>
       </div>
 
-      {/* 全員狀態小卡（進場動畫） */}
-      <div style={{ display:"flex", gap:4, padding:"6px 12px", overflowX:"auto", background:"rgba(0,0,0,0.3)", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+      {/* 全員狀態 */}
+      <div style={{ display:"flex", gap:10, padding:"10px 12px", overflowX:"auto", background:"rgba(0,0,0,0.34)", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
         {Object.entries(members).map(([id, m], i) => {
           const hpPct = m.maxHP > 0 ? Math.max(0, Math.min(1, m.hp/m.maxHP)) : 0;
+          const isMe = id === memberId;
           return (
             <div key={id} style={{
-              flexShrink:0, minWidth:52, textAlign:"center", padding:"4px 4px 3px",
-              borderRadius:6, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.04)",
+              flexShrink:0, minWidth:150, padding:"10px 12px",
+              borderRadius:14,
+              border:`1px solid ${isMe ? "rgba(96,165,250,0.45)" : "rgba(255,255,255,0.1)"}`,
+              background:isMe ? "rgba(96,165,250,0.12)" : "rgba(255,255,255,0.055)",
               animation: animPhase === "open" ? `s-fade-in 0.4s ease ${0.1+i*0.06}s both` : undefined,
               transition:"all 0.3s ease",
             }}>
-              <div style={{ fontSize:7, color: m.alive ? (m.role==="rear"?"#a78bfa":"#4ade80") : "#f87171", fontWeight:700, marginBottom:2 }}>
-                {m.alive ? (m.role==="rear"?"🛡":"⚔️") : "💀"} {(m.name||"").slice(0,5)}
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <span style={{ fontSize:22 }}>{m.alive ? (m.role==="rear"?"🛡️":"⚔️") : "💀"}</span>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:13, lineHeight:1.2, color:"white", fontWeight:900, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {m.name || "隊員"}{isMe ? "（你）" : ""}
+                  </div>
+                  <div style={{ fontSize:11, color: m.alive ? (m.role==="rear"?"#c4b5fd":"#86efac") : "#fca5a5", fontWeight:800, marginTop:2 }}>
+                    {m.alive ? (m.role==="rear"?"後衛支援":"前衛作戰") : "倒地"}
+                  </div>
+                </div>
               </div>
-              <div style={{ height:3, borderRadius:2, background:"rgba(255,255,255,0.1)", overflow:"hidden", marginBottom:2 }}>
+              <div style={{ height:7, borderRadius:999, background:"rgba(255,255,255,0.12)", overflow:"hidden", marginBottom:6 }}>
                 <div style={{ height:"100%", width:`${hpPct*100}%`, background:hpPct>0.5?"#16a34a":hpPct>0.25?"#d97706":"#dc2626", transition:"width 0.5s ease" }}/>
               </div>
-              <div style={{ fontSize:7, color:"#94a3b8" }}>{m.hp}/{m.maxHP}</div>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10, fontSize:12, color:"#cbd5e1", fontWeight:800 }}>
+                <span>HP {m.hp}/{m.maxHP}</span>
+                <span>ATK {Math.round((m.atk || 0) * (m.buffs?.atkMult || 1))}</span>
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Items */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="px-4 py-4 space-y-3">
         {fullItems.map((item, i) => {
           const isPotion        = item.id === "hp_potion";
           const alreadyBought   = !isPotion && myPurchases.includes(item.id);
@@ -301,7 +320,7 @@ export default function DungeonShop({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t border-blue-500/20 space-y-3">
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-blue-500/20 space-y-3">
         {/* 已購/確認成員 */}
         <div className="flex justify-center gap-2 flex-wrap">
           {Object.keys(roomConfirms).map(id => (

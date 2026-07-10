@@ -17,7 +17,7 @@ export default function DungeonPathSelect({ roomId, room, isHost }) {
   const totalFloors  = room?.totalFloors  || 7;
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+    <div className="min-h-full flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header */}
       <div className="shrink-0 text-center py-6 border-b border-white/10">
         <div className="text-3xl mb-1">🗺️</div>
@@ -26,7 +26,7 @@ export default function DungeonPathSelect({ roomId, room, isHost }) {
       </div>
 
       {/* Path options */}
-      <div className="flex-1 overflow-y-auto px-4 py-8 flex flex-col justify-center gap-4">
+      <div className="px-4 pt-8 pb-[calc(7rem+env(safe-area-inset-bottom))] flex flex-col justify-center gap-4">
         {["A","B"].map(key => {
           const p = pathOptions[key];
           if (!p) return null;

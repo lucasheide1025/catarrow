@@ -2,7 +2,7 @@
 // 三種傷害類型（HP↓ / ATK↓ / DEF↓）+ 全員賭大小閃躲機制 + 動畫過場
 import { useState, useEffect, useMemo } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
-import { sfxCast, sfxSuccess, sfxCounter } from "../../lib/sound";
+import { sfxCast, sfxSuccess, sfxCounter, sfxTap } from "../../lib/sound";
 
 // 陷阱類型
 const TRAP_TYPES = [
@@ -40,6 +40,7 @@ export default function DungeonTrap({
     if (trapType) return;
     const type = TRAP_TYPES[Math.floor(Math.random() * TRAP_TYPES.length)];
     setTrapType(type);
+    sfxCounter();
 
     // 動畫序列
     const t1 = setTimeout(() => setAnimPhase("trap_reveal"), 500);
@@ -64,6 +65,7 @@ export default function DungeonTrap({
 
   async function handleBet(bet) {
     if (myBet || animPhase !== "dice_bet") return;
+    sfxTap();
     setMyBet(bet);
     if (localMode) {
       setLocalChoices({ [memberId]: bet });
@@ -85,7 +87,7 @@ export default function DungeonTrap({
     const dice = rollDice();
     setDiceValue(dice);
     setAnimPhase("dice_result");
-    if (localMode) sfxCast();
+    sfxCast();
 
     const isBig = dice >= 4;
     const success = majorityBet === "big" ? isBig : !isBig;
@@ -94,7 +96,7 @@ export default function DungeonTrap({
     // 繼續動畫
     setTimeout(async () => {
       setAnimPhase("done");
-      if (localMode) (success ? sfxSuccess() : sfxCounter());
+      (success ? sfxSuccess() : sfxCounter());
 
       // 本地單人：效果交給父層套用（不寫 Firestore）
       if (localMode) {
@@ -167,7 +169,7 @@ export default function DungeonTrap({
   const diceEmoji = diceValue != null ? ["⚀","⚁","⚂","⚃","⚄","⚅"][diceValue - 1] : "🎲";
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{ background:"linear-gradient(160deg,#1a0a0a,#2d0a0a)" }}>
       <style>{`
 @keyframes tf-flash { 0%,100%{opacity:1} 50%{opacity:0.2} }
@@ -200,7 +202,7 @@ export default function DungeonTrap({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col items-center justify-center gap-5"
+      <div className="px-5 py-8 flex flex-col items-center justify-center gap-5"
         style={animPhase === "trap_reveal" ? {animation:"tf-shake 0.5s ease"} : {}}>
 
         {/* Phase 1: Trap Reveal */}
@@ -339,7 +341,7 @@ export default function DungeonTrap({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t border-red-500/20 space-y-3">
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-red-500/20 space-y-3">
         {animPhase === "dice_bet" && !myBet && (
           <div className="text-center text-slate-400 text-sm py-2">👆 選擇大或小來賭一把</div>
         )}

@@ -189,7 +189,7 @@ export default function DungeonTreasureRoom({
   `;
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{
         background:"linear-gradient(160deg,#1a0f00,#2d1a00)",
         position:"relative",
@@ -215,7 +215,7 @@ export default function DungeonTreasureRoom({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 gap-4">
+      <div className="flex flex-col items-center justify-center px-6 py-8 gap-4">
 
         {/* 金幣獎勵 */}
         {loot && phase === "fountain" && (
@@ -247,7 +247,7 @@ export default function DungeonTreasureRoom({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-8 pt-3 border-t border-amber-700/30">
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-amber-700/30">
         {phase === "cards" ? (
           <button onClick={handleCardNext}
             className="w-full py-4 rounded-2xl font-black text-base shadow-lg active:scale-[0.98]"

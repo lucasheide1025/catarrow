@@ -162,7 +162,7 @@ export function GridMapStage({
 
   return (
     <div style={{
-      minHeight:"100dvh",
+      minHeight:"100%",
       background:"linear-gradient(160deg,#0a0a0f,#12091a,#0a0f0a)",
       color:"white", display:"flex", flexDirection:"column",
     }}>
@@ -197,7 +197,7 @@ export function GridMapStage({
       <PlayerStatusBar playerState={playerState} coins={coins} />
 
       {/* Map */}
-      <div style={{ flex:1, padding:"14px 8px 10px", display:"flex", justifyContent:"center", alignItems:"flex-start", overflow:"auto" }}>
+      <div style={{ padding:"14px 8px 10px", display:"flex", justifyContent:"center", alignItems:"flex-start", overflowX:"auto", overflowY:"visible" }}>
         <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} style={{ display:"block", maxWidth:"100%" }}>
           {/* 背景格線（含牆格，僅隱約可見） */}
           {Array.from({ length: GRID_SIZE }).flatMap((_, gy) =>
@@ -259,7 +259,7 @@ export function GridMapStage({
 
       {/* 底部：目前房間資訊 / 樓梯面板 */}
       <div style={{
-        padding:"10px 14px 18px", borderTop:"1px solid rgba(255,255,255,0.07)",
+        padding:"10px 14px calc(7rem + env(safe-area-inset-bottom))", borderTop:"1px solid rgba(255,255,255,0.07)",
         background:"rgba(0,0,0,0.32)", animation:"gm-fade 0.3s ease",
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: showStairs ? 10 : 0 }}>
@@ -338,7 +338,7 @@ export function BranchStage({
 
   return (
     <div style={{
-      minHeight:"100dvh",
+      minHeight:"100%",
       background:"linear-gradient(160deg,#0f0a14,#1a0a0a)",
       color:"white", display:"flex", flexDirection:"column",
     }}>
@@ -371,7 +371,7 @@ export function BranchStage({
 
       {!branchChoice ? (
         // ── 選路 ──
-        <div style={{ flex:1, padding:"18px 16px", display:"flex", flexDirection:"column", gap:12, justifyContent:"center" }}>
+        <div style={{ padding:"18px 16px calc(7rem + env(safe-area-inset-bottom))", display:"flex", flexDirection:"column", gap:12, justifyContent:"center" }}>
           <div style={{ textAlign:"center", marginBottom:6, animation:"bs-fade 0.4s ease both" }}>
             <div style={{ fontSize:44 }}>🚪</div>
             <div style={{ fontWeight:900, fontSize:17, marginTop:6 }}>王關入口</div>
@@ -401,8 +401,8 @@ export function BranchStage({
         </div>
       ) : (
         // ── 分支進度 ──
-        <div style={{ flex:1, padding:"16px", display:"flex", flexDirection:"column" }}>
-          <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8, justifyContent:"center" }}>
+        <div style={{ padding:"16px 16px calc(7rem + env(safe-area-inset-bottom))", display:"flex", flexDirection:"column" }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:8, justifyContent:"center" }}>
             {branchSeq.map((room, i) => {
               const done = i < branchStep;
               const current = i === branchStep;
@@ -734,6 +734,8 @@ export default function DungeonExpedition({
   const [floorsCleared, setFloorsCleared] = useState(0);
   const [wonLast, setWonLast] = useState(false);
   const [resultRewards, setResultRewards] = useState(null);
+  // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
+  const [playerState, setPlayerState] = useState(null);
 
   // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
   // 一併保存目前 HP（隨 hp 變動即時更新），續玩時還原離開前的 HP，避免重整回滿血刷關。
@@ -746,8 +748,6 @@ export default function DungeonExpedition({
   }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP]);
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
-  // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
-  const [playerState, setPlayerState] = useState(null);
   // 可變怪物佇列（每場戰鬥消耗一隻）
   const monsterQueueRef = useRef([]);
   // 樓層事件修正（怪物 HP/ATK 倍率等）

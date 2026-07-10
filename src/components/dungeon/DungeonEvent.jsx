@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { confirmDungeonEvent } from "../../lib/dungeonDb";
-import { sfxBuff, sfxDebuff } from "../../lib/sound";
+import { sfxBuff, sfxDebuff, sfxSuccess, sfxTap } from "../../lib/sound";
 
 const TYPE_STYLE = {
   buff:    "border-emerald-400/50 bg-emerald-900/30 text-emerald-300",
@@ -26,9 +26,9 @@ export default function DungeonEvent({
   const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
 
-  // 本地單人：事件揭示音效
+  // 事件揭示音效
   useEffect(() => {
-    if (localMode && ev) (ev.type === "debuff" ? sfxDebuff() : sfxBuff());
+    if (ev) (ev.type === "debuff" ? sfxDebuff() : sfxBuff());
   }, []); // eslint-disable-line
 
   if (!ev) return null;
@@ -38,6 +38,7 @@ export default function DungeonEvent({
 
   async function handleConfirm() {
     if (loading) return;
+    sfxTap();
     if (localMode) {
       setLocalConfirms({ [memberId]: true });
       return;
@@ -49,6 +50,7 @@ export default function DungeonEvent({
 
   async function handleResolve() {
     if (!isHost || loading) return;
+    sfxSuccess();
     if (localMode) {
       onLocalEffect?.({ type:"event", event: ev });
       onLocalDone?.();
@@ -65,8 +67,8 @@ export default function DungeonEvent({
   const myConfirmed = roomConfirms[memberId];
 
   return (
-    <div className="h-screen overflow-y-auto flex flex-col text-white"
-      style={{ height: "100dvh", background:"linear-gradient(160deg,#1a1a2e,#16213e)" }}>
+    <div className="min-h-full flex flex-col text-white"
+      style={{ background:"linear-gradient(160deg,#1a1a2e,#16213e)" }}>
 
       <style>{`
 @keyframes e-card-in { 0%{opacity:0;transform:scale(0.9) rotate(-2deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
@@ -80,7 +82,7 @@ export default function DungeonEvent({
       </div>
 
       {/* Event card */}
-      <div className="flex-1 overflow-y-auto flex items-center justify-center px-6" style={{animation:"e-card-in 0.5s ease"}}>
+      <div className="flex items-center justify-center px-6 py-8" style={{animation:"e-card-in 0.5s ease"}}>
         <div className={`w-full max-w-sm rounded-3xl border-2 p-8 text-center ${style}`} style={{animation:"e-glow 3s ease infinite"}}>
           <div className="text-6xl mb-4">{ev.icon}</div>
           <div className="text-2xl font-black mb-2">{ev.title}</div>
@@ -101,7 +103,7 @@ export default function DungeonEvent({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t border-white/10 space-y-3">
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-white/10 space-y-3">
         {!myConfirmed ? (
           <button onClick={handleConfirm} disabled={loading}
             className="w-full py-3 rounded-2xl font-black text-base shadow-lg disabled:opacity-40 transition-all active:scale-[0.98]"

@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonRest.jsx — 地下城休息區（動畫強化版）
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
-import { sfxPotionDrink, sfxBuff } from "../../lib/sound";
+import { sfxPotionDrink, sfxBuff, sfxSuccess, sfxTap } from "../../lib/sound";
 
 const REST_OPTIONS = [
   { id: "heal",   icon: "💤", title: "恢復全體血量", desc: "全體隊員恢復 50~100% 隨機最大血量",   color: "#4ade80" },
@@ -86,6 +86,7 @@ export default function DungeonRest({
 
   // 進場動畫
   useEffect(() => {
+    sfxBuff();
     const t1 = setTimeout(() => setAnimPhase("open"), 400);
     const t2 = setTimeout(() => setAnimPhase("voting"), 800);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -148,6 +149,7 @@ export default function DungeonRest({
   async function handleSelect(optionId) {
     if (animPhase !== "voting" && animPhase !== "open") return;
     if (myChoice) return;
+    sfxTap();
     setAnimPhase("voting");
     if (localMode) {
       (optionId === "cure" ? sfxBuff() : sfxPotionDrink());
@@ -160,6 +162,7 @@ export default function DungeonRest({
 
   async function handleResolve() {
     if (!isHost) return;
+    sfxSuccess();
     if (localMode) {
       // 本地單人：自己的選擇即定案，效果交給父層套用
       const bestOption = roomChoices[memberId] || "heal";
@@ -220,7 +223,7 @@ export default function DungeonRest({
   const canVote = (animPhase === "open" || animPhase === "voting") && !myChoice;
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{ background:"linear-gradient(160deg,#1a0a2e,#2d1a4e)", position:"relative" }}>
       <Particles count={22} />
       {showHealEffect && <HealEffect optionId={healOptionId} />}
@@ -285,7 +288,7 @@ export default function DungeonRest({
       </div>
 
       {/* 投票 / 效果區域 */}
-      <div className="flex-1 overflow-y-auto px-5 py-6 space-y-4">
+      <div className="px-5 py-6 space-y-4">
         {(animPhase === "open" || animPhase === "voting") && !allConfirmed && (
           <div className="text-center text-sm text-purple-200/70 mb-1 font-semibold" style={{ animation:"r-fade 0.5s ease both" }}>
             🗳️ {myChoice ? "已投票，等待隊友…" : "全員投票選擇方式"}
@@ -382,7 +385,7 @@ export default function DungeonRest({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t border-purple-500/20 space-y-3">
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-purple-500/20 space-y-3">
         {animPhase === "done" && isHost ? (
           <button onClick={handleResolve}
             className="w-full py-4 rounded-2xl font-black text-base shadow-lg"

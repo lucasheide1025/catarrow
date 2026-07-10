@@ -161,11 +161,11 @@ export default function DungeonChest({
   useEffect(() => {
     const t1 = setTimeout(() => {
       setAnimPhase("opening"); setShowRays(true);
-      if (localMode) sfxOpenChest();
+      sfxOpenChest();
     }, 500);
     const t2 = setTimeout(() => {
       setAnimPhase("reveal"); setShowFountain(true);
-      if (localMode) sfxCoinDrop();
+      sfxCoinDrop();
     }, 1600);
     const t3 = setTimeout(() => { setAnimPhase("done"); setShowRays(false); }, 2400);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
@@ -173,6 +173,7 @@ export default function DungeonChest({
 
   async function handleConfirm() {
     if (confirmed) return;
+    sfxCoinDrop();
     setConfirmed(true);
     if (localMode) {
       // 本地單人：金幣交由父層發放（含音效），收藏品照常入背包
@@ -211,12 +212,8 @@ export default function DungeonChest({
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
 
   return (
-    <div className="h-screen overflow-y-auto flex flex-col text-white"
+    <div className="min-h-full flex flex-col text-white"
       style={{
-        // 用 100dvh（行動裝置扣掉網址列更準）；舊瀏覽器不支援 dvh 時，這行會被丟棄，
-        // 自動退回 Tailwind h-screen 的 100vh。搭配 overflow-y-auto，即使高度算錯，
-        // 使用者仍能捲到底部的「領取」按鈕（修：有些手機點不到領取道具）。
-        height: "100dvh",
         background: isHidden
           ? "linear-gradient(160deg,#1a0a2e,#2d1a4e)"
           : "linear-gradient(160deg,#0a1a0a,#1a2e1a)",
@@ -262,7 +259,7 @@ export default function DungeonChest({
       </div>
 
       {/* 寶箱內容 */}
-      <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 gap-6">
+      <div className="flex flex-col items-center justify-center px-6 py-8 gap-6">
         {/* 開箱中動畫 */}
         {animPhase === "opening" && (
           <div className="text-center" style={{ perspective: 400 }}>
@@ -339,7 +336,7 @@ export default function DungeonChest({
       )}
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-6 pt-3 border-t space-y-3" style={{
+      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t space-y-3" style={{
         borderColor: isHidden ? "rgba(168,85,247,0.2)" : "rgba(74,222,128,0.25)",
       }}>
         {!confirmed ? (
