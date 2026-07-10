@@ -18,6 +18,7 @@ const CSS = `
 export default function CouncilHall({ profile, village, onBack }) {
   const [tab, setTab] = useState("collect");
   const [activeSite, setActiveSite] = useState(null);
+  const [activeRunNonce, setActiveRunNonce] = useState(0);
   const [partySite, setPartySite] = useState(null);
   const [selectedTiers, setSelectedTiers] = useState({});
   const [dailyLeft, setDailyLeft] = useState(null);
@@ -26,6 +27,7 @@ export default function CouncilHall({ profile, village, onBack }) {
 
   const buildings = useMemo(() => village?.buildings || {}, [village?.buildings]);
   const equippedCat = profile?.equippedCat || null;
+  const soloStorageKey = profile?.id ? `cat_gathering_run_${profile.id}_solo` : "";
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -35,6 +37,34 @@ export default function CouncilHall({ profile, village, onBack }) {
       .catch(() => { if (!cancelled) setDailyLeft(5); });
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id || activeSite) return;
+    try {
+      const raw = localStorage.getItem(`cat_gathering_run_${profile.id}_solo`);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      const site = saved?.siteId ? GATHERING_SITE_MAP[saved.siteId] : null;
+      if (!site) return;
+      setSelectedTiers(prev => ({ ...prev, [site.id]: saved.tier || prev[site.id] }));
+      setActiveSite(site);
+      setDoneMsg("已重新連線到未完成的採集委託。");
+      setTimeout(() => setDoneMsg(""), 3600);
+    } catch {}
+  }, [profile?.id, activeSite]);
+
+  useEffect(() => {
+    if (!profile?.id || activeSite || partySite) return;
+    try {
+      const raw = localStorage.getItem(`cat_gathering_party_${profile.id}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved?.roomId) return;
+      setPartySite(GATHERING_SITES[0]);
+      setDoneMsg("已重新連線到協力採集房間。");
+      setTimeout(() => setDoneMsg(""), 3600);
+    } catch {}
+  }, [profile?.id, activeSite, partySite]);
 
   async function handleContractStart() {
     if (dailyLeft <= 0 || saving) return false;
@@ -52,8 +82,8 @@ export default function CouncilHall({ profile, village, onBack }) {
   }
 
   async function handleFinish(result) {
-    setActiveSite(null);
-    if (!result) return;
+    if (!result) return false;
+    const shouldContinue = !!result.continueRun;
     setSaving(true);
     try {
       await completeCouncilSession(profile.id, result);
@@ -64,22 +94,31 @@ export default function CouncilHall({ profile, village, onBack }) {
         setDoneMsg("委託完成，獎勵已入帳。");
       }
       setTimeout(() => setDoneMsg(""), 4200);
+      if (shouldContinue) {
+        setActiveRunNonce(n => n + 1);
+      } else {
+        setActiveSite(null);
+      }
+      return true;
     } catch (error) {
       setDoneMsg(`領取失敗：${error.message || "請稍後再試"}`);
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
   async function handleClaimOnly(result) {
-    if (!result) return;
+    if (!result) return false;
     setSaving(true);
     try {
       await completeCouncilSession(profile.id, result);
       setDoneMsg("協力採集成果已入帳。");
       setTimeout(() => setDoneMsg(""), 4200);
+      return true;
     } catch (error) {
       setDoneMsg(`領取失敗：${error.message || "請稍後再試"}`);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -91,12 +130,14 @@ export default function CouncilHall({ profile, village, onBack }) {
     const tier = selectedTiers[activeSite.id] || tiers[tiers.length - 1];
     return (
       <GatheringRun
+        key={`${activeSite.id}_${tier}_${activeRunNonce}`}
         site={activeSite}
         tier={tier}
         buildingLevel={level}
         memberId={profile?.id}
         catId={equippedCat?.catId || null}
         catName={equippedCat?.name || ""}
+        storageKey={soloStorageKey}
         onStart={handleContractStart}
         onFinish={handleFinish}
         onBack={() => setActiveSite(null)}

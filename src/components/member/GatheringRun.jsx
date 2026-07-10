@@ -19,8 +19,10 @@ import {
   unlockAudio,
   vibrate,
 } from "../../lib/sound";
+import { MATERIALS } from "../../lib/monsterMaterials";
 
 const SCORE_LABELS = ["X", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "M"];
+const MATERIAL_MAP = Object.fromEntries(MATERIALS.map(item => [item.id, item]));
 
 const RESULT_COLOR = {
   comfort: "#94a3b8",
@@ -39,9 +41,10 @@ const GATHERING_RUN_CSS = `
 }
 .gather-panel {
   border-radius: 8px;
-  background: rgba(0,0,0,0.18);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 18px 52px rgba(0,0,0,0.24);
+  background: rgba(3,7,18,0.68);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 18px 52px rgba(0,0,0,0.34);
+  backdrop-filter: blur(12px);
 }
 .gather-stage {
   position: relative;
@@ -57,7 +60,8 @@ const GATHERING_RUN_CSS = `
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(0,0,0,0.62), rgba(0,0,0,0.22), rgba(0,0,0,0.58)),
+    linear-gradient(90deg, rgba(0,0,0,0.78), rgba(0,0,0,0.46), rgba(0,0,0,0.74)),
+    linear-gradient(180deg, rgba(0,0,0,0.2), rgba(0,0,0,0.54)),
     radial-gradient(circle at 18% 30%, rgba(255,255,255,0.18), transparent 16%),
     radial-gradient(circle at 82% 22%, rgba(255,255,255,0.12), transparent 18%),
     linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0));
@@ -70,6 +74,12 @@ const GATHERING_RUN_CSS = `
   align-items: center;
   gap: 12px;
   min-height: 118px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(3,7,18,0.58);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px);
 }
 .gather-archer,
 .gather-node {
@@ -110,6 +120,8 @@ const GATHERING_RUN_CSS = `
   height: 74px;
   border-top: 1px dashed rgba(255,255,255,0.26);
   border-bottom: 1px dashed rgba(255,255,255,0.12);
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  border-radius: 8px;
 }
 .gather-arrow-fx {
   position: absolute;
@@ -138,8 +150,8 @@ const GATHERING_RUN_CSS = `
   margin-top: 10px;
   padding: 9px 11px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(3,7,18,0.74);
+  border: 1px solid rgba(255,255,255,0.2);
   font-size: 13px;
   font-weight: 900;
   animation: gather-pop 0.28s ease-out;
@@ -228,6 +240,24 @@ const GATHERING_RUN_CSS = `
   padding: 20px 14px;
   text-align: center;
   overflow: hidden;
+}
+.gather-readable {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(3,7,18,0.68);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+  backdrop-filter: blur(10px);
+}
+.gather-result-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 16px;
 }
 .gather-result-hero::before,
 .gather-result-hero::after {
@@ -321,6 +351,53 @@ function RewardLine({ icon, label, value }) {
   );
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function playGatheringArrowSfx(label, progress, siteId) {
+  if (label === "X") sfxCritBoom();
+  else if (progress >= 20) sfxArrowShoot();
+  else if (progress > 0) sfxGatherClick();
+  else sfxSoftFail();
+  if (progress > 0) sfxCouncilWork(siteId);
+  vibrate(label === "X" ? [0, 24, 36, 24] : 12);
+}
+
+function materialRewardDisplay(materialId, fallbackName) {
+  const item = MATERIAL_MAP[materialId];
+  if (!item) return { icon: "🧩", name: fallbackName || "素材" };
+  return { icon: item.icon || "🧩", name: item.name || fallbackName || "素材" };
+}
+
+function loadStoredRun(storageKey, siteId, tier) {
+  if (!storageKey || typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.siteId !== siteId || parsed?.tier !== tier) return null;
+    if (!["input", "result"].includes(parsed.phase)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredRun(storageKey, payload) {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch {}
+}
+
+function clearStoredRun(storageKey) {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(storageKey);
+  } catch {}
+}
+
 export default function GatheringRun({
   site,
   tier,
@@ -331,11 +408,14 @@ export default function GatheringRun({
   partySize = 1,
   goalParticipants = 1,
   modeLabel = "單人採集",
+  storageKey = "",
   onStart,
   onFinish,
   onBack,
 }) {
-  const seedRef = useRef(Date.now());
+  const restoredRef = useRef(loadStoredRun(storageKey, site.id, tier));
+  const restoredRun = restoredRef.current;
+  const seedRef = useRef(restoredRun?.seed || Date.now());
   const contract = useMemo(() => buildGatheringRunContract({
     buildingId: site.id,
     tier,
@@ -343,10 +423,11 @@ export default function GatheringRun({
     seed: seedRef.current,
   }), [site.id, tier, buildingLevel]);
 
-  const [phase, setPhase] = useState("setup");
-  const [roundNo, setRoundNo] = useState(1);
-  const [arrows, setArrows] = useState([]);
-  const [rounds, setRounds] = useState([]);
+  const [phase, setPhase] = useState(restoredRun?.phase || "setup");
+  const [roundNo, setRoundNo] = useState(restoredRun?.roundNo || 1);
+  const [arrows, setArrows] = useState(() => Array.isArray(restoredRun?.arrows) ? restoredRun.arrows : []);
+  const [rounds, setRounds] = useState(() => Array.isArray(restoredRun?.rounds) ? restoredRun.rounds : []);
+  const [roundProgressFx, setRoundProgressFx] = useState(0);
   const [startLoading, setStartLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastShot, setLastShot] = useState(null);
@@ -355,8 +436,8 @@ export default function GatheringRun({
   const theme = site.palette;
   const tierMeta = GATHERING_TIER_META[contract.tier] || GATHERING_TIER_META.common;
   const totalProgress = rounds.reduce((sum, round) => sum + round.progress, 0);
-  const previewProgress = totalProgress + arrows.reduce((sum, label) => sum + scoreToGatheringProgress(label), 0);
-  const progressPct = Math.min(200, previewProgress);
+  const liveProgress = totalProgress + roundProgressFx;
+  const progressPct = Math.min(200, liveProgress);
   const result = phase === "result" ? calculateGatheringRewards({ contract, rounds, partySize }) : null;
   const bgUrl = `/council/bg/${site.id}.webp`;
   const catUrl = `/council/cat/${site.id}.webp`;
@@ -367,6 +448,22 @@ export default function GatheringRun({
       sfxGatherVictory();
     }
   }, [phase]);
+
+  useEffect(() => {
+    if (!storageKey || phase === "setup") return;
+    saveStoredRun(storageKey, {
+      version: 1,
+      siteId: site.id,
+      tier,
+      buildingLevel,
+      seed: seedRef.current,
+      phase: phase === "animating" ? "input" : phase,
+      roundNo,
+      arrows,
+      rounds,
+      updatedAt: Date.now(),
+    });
+  }, [storageKey, phase, site.id, tier, buildingLevel, roundNo, arrows, rounds]);
 
   async function start() {
     if (startLoading) return;
@@ -392,13 +489,7 @@ export default function GatheringRun({
       sfxSoftFail();
       return;
     }
-    const progress = scoreToGatheringProgress(label);
-    if (label === "X") sfxCritBoom();
-    else if (progress >= 20) sfxArrowShoot();
-    else if (progress > 0) sfxGatherClick();
-    else sfxSoftFail();
-    vibrate(label === "X" ? [0, 24, 36, 24] : 12);
-    setLastShot({ id: Date.now(), label, progress });
+    sfxGatherClick();
     setRoundFx(null);
     setArrows(prev => [...prev, label]);
   }
@@ -410,14 +501,28 @@ export default function GatheringRun({
     setArrows(prev => prev.slice(0, -1));
   }
 
-  function submitRound() {
-    if (arrows.length !== GATHERING_ARROWS_PER_ROUND) {
+  async function submitRound() {
+    if (phase !== "input" || arrows.length !== GATHERING_ARROWS_PER_ROUND) {
       sfxSoftFail();
       return;
     }
-    const roundResult = calculateGatheringRound(arrows);
-    const nextRounds = [...rounds, { ...roundResult, arrows }];
-    sfxRoundEnd();
+    const submittedArrows = [...arrows];
+    setPhase("animating");
+    setRoundFx(null);
+    setRoundProgressFx(0);
+    let animatedProgress = 0;
+
+    for (const label of submittedArrows) {
+      const progress = scoreToGatheringProgress(label);
+      playGatheringArrowSfx(label, progress, site.id);
+      animatedProgress += progress;
+      setLastShot({ id: `${Date.now()}_${label}_${animatedProgress}`, label, progress });
+      setRoundProgressFx(animatedProgress);
+      await sleep(430);
+    }
+
+    const roundResult = calculateGatheringRound(submittedArrows);
+    const nextRounds = [...rounds, { ...roundResult, arrows: submittedArrows }];
     setRoundFx({
       id: Date.now(),
       roundNo,
@@ -427,17 +532,20 @@ export default function GatheringRun({
     });
     setRounds(nextRounds);
     setArrows([]);
+    setRoundProgressFx(0);
+    sfxRoundEnd();
     if (roundNo >= contract.rounds) {
       setPhase("result");
       return;
     }
     setRoundNo(prev => prev + 1);
+    setPhase("input");
   }
 
-  function finish() {
+  async function finish({ continueRun = false } = {}) {
     if (!result) return;
     sfxGatherVictory();
-    onFinish?.({
+    const payload = {
       race: site.race,
       clearedTier: contract.tier,
       contractVersion: contract.version,
@@ -448,7 +556,10 @@ export default function GatheringRun({
       totalArrows: rounds.length * GATHERING_ARROWS_PER_ROUND,
       goalParticipants,
       progressPct: result.progressPct,
-    });
+      continueRun,
+    };
+    const ok = await onFinish?.(payload);
+    if (ok !== false) clearStoredRun(storageKey);
   }
 
   if (phase === "setup") {
@@ -509,21 +620,24 @@ export default function GatheringRun({
 
   if (phase === "result" && result) {
     const resultColor = RESULT_COLOR[result.completion.key] || "#22c55e";
+    const materialDisplay = materialRewardDisplay(result.materialId, result.materialName);
     return (
       <div className="gather-run" style={{ background: `linear-gradient(160deg,${theme[0]},${theme[1]})` }}>
         <style>{GATHERING_RUN_CSS}</style>
         <section className="gather-panel gather-result-hero" style={{ border: `1px solid ${resultColor}66`, background: `linear-gradient(180deg,rgba(0,0,0,0.48),rgba(0,0,0,0.22)), url("${bgUrl}") center / cover` }}>
-          <div className="gather-result-icon" style={{ border: `2px solid ${resultColor}88` }}>
-            {result.progressPct >= 100 ? "✅" : "🧭"}
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 950, color: resultColor }}>{result.completion.label}</div>
-          <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.72)" }}>
-            總進度 {result.progressPct}% · 總分 {result.totalScore} · X {result.xCount}
+          <div className="gather-readable">
+            <div className="gather-result-icon" style={{ border: `2px solid ${resultColor}88` }}>
+              {result.progressPct >= 100 ? "✅" : "🧭"}
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 950, color: resultColor }}>{result.completion.label}</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.82)" }}>
+              總進度 {result.progressPct}% · 總分 {result.totalScore} · X {result.xCount}
+            </div>
           </div>
         </section>
 
         <section style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <RewardLine icon="🧩" label={result.materialName} value={`×${result.materialCount}`} />
+          <RewardLine icon={materialDisplay.icon} label={materialDisplay.name} value={`×${result.materialCount}`} />
           {Object.values(result.villageResources).map((count, index) => (
             <RewardLine key={index} icon={site.icon} label={result.villageResourceName} value={`×${count}`} />
           ))}
@@ -532,25 +646,49 @@ export default function GatheringRun({
           {result.partySize > 1 && (
             <RewardLine icon="👥" label="協力加成" value={`素材 x${result.partyBonus.materialMult.toFixed(2)} · 貓XP x${result.partyBonus.catXPMult.toFixed(2)}`} />
           )}
-          {result.rareRewards.map((reward, index) => (
-            <RewardLine key={`${reward.type}-${index}`} icon={reward.type === "gachaCoins" ? "🎰" : "✨"} label={reward.name} value={`×${reward.count}`} />
-          ))}
+          {result.rareRewards.map((reward, index) => {
+            const rareMaterial = reward.type === "material"
+              ? materialRewardDisplay(reward.materialId, reward.name)
+              : null;
+            return (
+              <RewardLine
+                key={`${reward.type}-${index}`}
+                icon={reward.type === "gachaCoins" ? "🎰" : rareMaterial?.icon || "✨"}
+                label={rareMaterial?.name || reward.name}
+                value={`×${reward.count}`}
+              />
+            );
+          })}
         </section>
 
-        <button onClick={finish} style={{
-          width: "100%",
-          minHeight: 54,
-          marginTop: 16,
-          border: "none",
-          borderRadius: 8,
-          background: "linear-gradient(90deg,#16a34a,#22c55e)",
-          color: "white",
-          fontWeight: 950,
-          fontSize: 17,
-          cursor: "pointer",
-        }}>
-          領取採集成果
-        </button>
+        <div className="gather-result-actions">
+          <button onClick={() => finish({ continueRun: true })} style={{
+            width: "100%",
+            minHeight: 54,
+            border: "none",
+            borderRadius: 8,
+            background: "linear-gradient(90deg,#16a34a,#22c55e)",
+            color: "white",
+            fontWeight: 950,
+            fontSize: 17,
+            cursor: "pointer",
+          }}>
+            領取並繼續採集
+          </button>
+          <button onClick={() => finish({ continueRun: false })} style={{
+            width: "100%",
+            minHeight: 48,
+            border: "1px solid rgba(255,255,255,0.16)",
+            borderRadius: 8,
+            background: "rgba(255,255,255,0.1)",
+            color: "white",
+            fontWeight: 900,
+            fontSize: 15,
+            cursor: "pointer",
+          }}>
+            領取並返回委託板
+          </button>
+        </div>
       </div>
     );
   }
@@ -604,7 +742,7 @@ export default function GatheringRun({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, marginBottom: 7 }}>
               <span style={{ color: theme[2], fontWeight: 900 }}>採集進度</span>
-              <b>{Math.round(previewProgress)}%</b>
+            <b>{Math.round(liveProgress)}%</b>
             </div>
             <div className="gather-progress-track">
               <div className="gather-progress-fill" style={{ width: `${progressPct / 2}%`, background: `linear-gradient(90deg,${theme[2]},#ffffff)` }} />
@@ -634,7 +772,7 @@ export default function GatheringRun({
         </div>
         <div className="gather-score-grid">
           {SCORE_LABELS.map(label => (
-            <button key={label} className={`gather-score-btn ${scoreClass(label)}`} onClick={() => addArrow(label)} disabled={arrows.length >= GATHERING_ARROWS_PER_ROUND} style={{
+            <button key={label} className={`gather-score-btn ${scoreClass(label)}`} onClick={() => addArrow(label)} disabled={phase !== "input" || arrows.length >= GATHERING_ARROWS_PER_ROUND} style={{
               border: `1px solid ${theme[2]}55`,
               background: label === "X" ? theme[2] : "rgba(0,0,0,0.16)",
               color: label === "X" ? theme[0] : "white",
@@ -660,13 +798,13 @@ export default function GatheringRun({
         minHeight: 52,
         border: "none",
         borderRadius: 8,
-        background: arrows.length === GATHERING_ARROWS_PER_ROUND ? `linear-gradient(90deg,${theme[2]},#ffffff)` : "rgba(255,255,255,0.12)",
-        color: arrows.length === GATHERING_ARROWS_PER_ROUND ? theme[0] : "rgba(255,255,255,0.45)",
+        background: phase === "input" && arrows.length === GATHERING_ARROWS_PER_ROUND ? `linear-gradient(90deg,${theme[2]},#ffffff)` : "rgba(255,255,255,0.12)",
+        color: phase === "input" && arrows.length === GATHERING_ARROWS_PER_ROUND ? theme[0] : "rgba(255,255,255,0.45)",
         fontWeight: 950,
         fontSize: 16,
-        cursor: arrows.length === GATHERING_ARROWS_PER_ROUND ? "pointer" : "default",
+        cursor: phase === "input" && arrows.length === GATHERING_ARROWS_PER_ROUND ? "pointer" : "default",
       }}>
-        {roundNo >= contract.rounds ? "結束委託並結算" : "送出本輪"}
+        {phase === "animating" ? "採集中..." : roundNo >= contract.rounds ? "送出並結算" : "送出本輪"}
       </button>
     </div>
   );

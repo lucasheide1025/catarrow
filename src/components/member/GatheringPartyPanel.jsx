@@ -18,6 +18,14 @@ function memberName(profile) {
   return profile?.name || profile?.nickname || profile?.displayName || "玩家";
 }
 
+function partySessionKey(memberId) {
+  return memberId ? `cat_gathering_party_${memberId}` : "";
+}
+
+function partyRunStorageKey(memberId, roomId) {
+  return memberId && roomId ? `cat_gathering_run_${memberId}_party_${roomId}` : "";
+}
+
 export default function GatheringPartyPanel({
   profile,
   initialSite,
@@ -28,7 +36,17 @@ export default function GatheringPartyPanel({
   onClaim,
   onBack,
 }) {
-  const [roomId, setRoomId] = useState("");
+  const memberId = profile?.id;
+  const sessionKey = partySessionKey(memberId);
+  const [roomId, setRoomId] = useState(() => {
+    if (!sessionKey || typeof window === "undefined") return "";
+    try {
+      const saved = JSON.parse(localStorage.getItem(sessionKey) || "null");
+      return saved?.roomId || "";
+    } catch {
+      return "";
+    }
+  });
   const [room, setRoom] = useState(null);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,7 +58,23 @@ export default function GatheringPartyPanel({
     return subscribeGatheringPartyRoom(roomId, setRoom);
   }, [roomId]);
 
-  const memberId = profile?.id;
+  useEffect(() => {
+    if (!sessionKey || !roomId || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(sessionKey, JSON.stringify({ roomId, updatedAt: Date.now() }));
+    } catch {}
+  }, [sessionKey, roomId]);
+
+  useEffect(() => {
+    if (!sessionKey || !room || typeof window === "undefined") return;
+    if (room.status === "closed") {
+      try {
+        localStorage.removeItem(sessionKey);
+        localStorage.removeItem(partyRunStorageKey(memberId, roomId));
+      } catch {}
+    }
+  }, [sessionKey, room, memberId, roomId]);
+
   const members = room?.members || {};
   const memberEntries = Object.entries(members);
   const partySize = Math.max(1, memberEntries.length);
@@ -116,7 +150,7 @@ export default function GatheringPartyPanel({
   }
 
   async function handlePartyFinish(result) {
-    if (!roomId || !memberId) return;
+    if (!roomId || !memberId) return false;
     const resultWithParty = {
       ...result,
       gatheringRewards: {
@@ -125,9 +159,16 @@ export default function GatheringPartyPanel({
         goalParticipants: 1,
       },
     };
-    await onClaim?.(resultWithParty);
-    await submitGatheringPartyResult(roomId, memberId, resultWithParty.gatheringRewards);
-    setRunning(false);
+    const claimed = await onClaim?.(resultWithParty);
+    if (claimed === false) return false;
+    try {
+      await submitGatheringPartyResult(roomId, memberId, resultWithParty.gatheringRewards);
+      setRunning(false);
+      return true;
+    } catch (error) {
+      setMsg(`提交採集結果失敗：${error.message || "請稍後再試"}`);
+      return false;
+    }
   }
 
   if (running && roomSite) {
@@ -142,6 +183,7 @@ export default function GatheringPartyPanel({
         partySize={partySize}
         goalParticipants={1}
         modeLabel="協力採集"
+        storageKey={partyRunStorageKey(memberId, roomId)}
         onStart={handlePartyStart}
         onFinish={handlePartyFinish}
         onBack={() => setRunning(false)}

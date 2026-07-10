@@ -57,6 +57,9 @@ const GUEST_VISUAL_CSS = `
 .guest-top-title{font-size:13px;font-weight:1000;color:#f8fafc}
 .guest-top-sub{font-size:11px;font-weight:800;color:#94a3b8;margin-top:1px}
 .guest-coin-pill{margin-left:auto;border:1px solid rgba(251,191,36,.34);background:rgba(251,191,36,.12);color:#fde68a;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:1000}
+.guest-top-actions{display:flex;align-items:center;gap:6px;margin-left:0}
+.guest-top-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:#dbeafe;border-radius:999px;padding:7px 9px;font-size:11px;font-weight:1000;cursor:pointer;white-space:nowrap}
+.guest-top-btn.logout{color:#fecaca;border-color:rgba(248,113,113,.24);background:rgba(127,29,29,.16)}
 .guest-party-banner{position:relative;z-index:2;width:100%;border:0;background:#2563eb;color:white;padding:8px 16px;font-size:12px;font-weight:1000}
 .guest-hero{border:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,rgba(15,23,42,.92),rgba(30,64,175,.78));border-radius:26px;padding:18px;min-height:202px;position:relative;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.26)}
 .guest-hero.kid{background:linear-gradient(135deg,rgba(120,53,15,.92),rgba(220,38,38,.78))}
@@ -88,6 +91,7 @@ const GUEST_VISUAL_CSS = `
 .guest-stat-head{display:flex;align-items:center;gap:8px;color:#9fb3cc;font-size:12px;font-weight:1000}
 .guest-stat-icon{width:32px;height:32px;border-radius:11px;display:grid;place-items:center}
 .guest-stat-value{font-size:24px;font-weight:1000;margin-top:9px;color:#f8fafc}
+@media (max-width:430px){.guest-topbar-inner{gap:8px}.guest-coin-pill{padding:7px 8px}.guest-top-btn{padding:7px 8px;font-size:10px}.guest-top-btn .full{display:none}}
 @media (max-width:380px){.guest-action{min-height:176px;padding:15px}.guest-action.feature{min-height:154px}.guest-action-title{font-size:17px}.guest-action-desc{font-size:11.5px;line-height:1.68;padding-right:12px}}
 @media (min-width:680px){.guest-action-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.guest-action.feature{grid-column:span 1}.guest-hero{min-height:230px}.guest-hero:after{width:240px;height:240px}.guest-hero-title{font-size:34px}}
 `;
@@ -189,6 +193,22 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     sessionStorage.removeItem(partySessionKey);
   }
 
+  function handleLogout() {
+    sessionStorage.removeItem(sessionKey);
+    sessionStorage.removeItem(partySessionKey);
+    setGuestProfile(null);
+    setGuestFullProfile(null);
+    setPartyRoomId(null);
+    setPartyIsHost(false);
+    setPartySubTab("lobby");
+    setWbResult(null);
+    setTab("home");
+  }
+
+  function handleGoMemberFront() {
+    window.location.href = "/?login=1";
+  }
+
   const isKid = accountType === "kid";
   const themeAccent = isKid ? "#f59e0b" : "#7c3aed";
   const themeGrad = isKid
@@ -248,6 +268,14 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
             <div className="guest-top-sub">{guestProfile.name}</div>
           </div>
           <div className="guest-coin-pill">🪙 {liveCoins || 0}</div>
+          <div className="guest-top-actions">
+            <button className="guest-top-btn" onClick={handleGoMemberFront}>
+              會員<span className="full">中心</span>
+            </button>
+            <button className="guest-top-btn logout" onClick={handleLogout}>
+              登出
+            </button>
+          </div>
         </div>
       </div>}
 
