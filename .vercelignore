@@ -20,3 +20,11 @@ scripts/
 image-prompts/
 docs/
 .trellis/
+
+# 排除本機分析/備份/建置產物
+build/
+codebase-ui-extracted/
+codebase-ui.zip
+backup_*.json
+restore.js
+backup.js
