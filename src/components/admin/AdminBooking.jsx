@@ -24,6 +24,8 @@ import { Card, Btn, Inp, Sel, Modal, Spinner, Empty, useToast } from "../shared/
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳" };
+// 行事曆格子空間有限，用短版方案名稱（教練後台直接顯示「誰＋什麼方案」用，不是給學生看的）
+const PLAN_SHORT_LABEL = { general: "單人一般", discount: "兒童/學生/敬老", own_equipment: "自備器材" };
 
 export default function AdminBooking() {
   const { toast, ToastContainer } = useToast();
@@ -141,22 +143,39 @@ function CalendarTab({ toast }) {
                   const newCount = counterInfo.newCount || 0;
                   const returningCount = counterInfo.returningCount || 0;
                   const full = count >= LANE_CAPACITY;
-                  const colorClass = blocked
-                    ? "bg-gray-700/50 border-gray-600 text-gray-400"
+                  // 這一格實際的預約名單（本名+方案），教練後台要直接看到「誰」訂了，不用點進詳情才看得到
+                  // ——比照使用者提供的 SimplyBook 截圖，行事曆格子直接列出姓名+方案色塊。
+                  // 學生前台（MemberBooking/PublicBookingApp/DateSlotPicker）刻意只顯示新/舊生人數，
+                  // 完全不讀 memberName/contactEmail/contactPhone，不能讓學生看到彼此的預約身份。
+                  const occupants = bookingsBySlot[slotKey] || [];
+                  const cellBg = blocked
+                    ? "bg-gray-700/50 border-gray-600"
                     : full
-                      ? "bg-red-900/40 border-red-500/50 text-red-300"
+                      ? "bg-red-900/30 border-red-500/40"
                       : count > 0
-                        ? "bg-blue-900/40 border-blue-500/50 text-blue-300"
-                        : "bg-white/5 border-white/10 text-slate-500";
+                        ? "bg-blue-900/20 border-blue-500/30"
+                        : "bg-white/5 border-white/10";
                   return (
                     <button key={`${d}-${h}`}
                       onClick={() => setDetailSlot({ date: d, startTime, endTime: `${String(h + 1).padStart(2, "0")}:00` })}
-                      className={`rounded-lg border min-h-[38px] px-1 py-1 text-[10px] font-bold flex flex-col items-center justify-center leading-tight ${colorClass}`}>
-                      {blocked ? "封鎖" : (
-                        <>
-                          <span>{`新${newCount}／舊${returningCount}`}</span>
-                          <span>{`共${count}/${LANE_CAPACITY}`}</span>
-                        </>
+                      className={`rounded-lg border min-h-[38px] max-h-[140px] overflow-y-auto px-1 py-1 text-left flex flex-col gap-0.5 ${cellBg}`}>
+                      {blocked ? (
+                        <span className="text-[10px] font-bold text-gray-400 text-center">封鎖</span>
+                      ) : occupants.length === 0 ? (
+                        <span className="text-[10px] text-slate-500 text-center">空</span>
+                      ) : (
+                        occupants.map(b => (
+                          <div key={b.id} className="rounded bg-blue-800/60 px-1 py-0.5 leading-tight">
+                            <div className="text-[10px] font-bold text-white truncate">{b.memberName || "顧客"}</div>
+                            <div className="text-[9px] text-blue-200 truncate">
+                              {PLAN_SHORT_LABEL[b.planType] || b.planType}
+                              {b.durationHours > 1 ? `・${b.durationHours}hr` : ""}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {!blocked && (
+                        <span className="text-[9px] text-slate-500 text-center mt-auto">{`共${count}/${LANE_CAPACITY}${newCount||returningCount?`・新${newCount}／舊${returningCount}`:""}`}</span>
                       )}
                     </button>
                   );
