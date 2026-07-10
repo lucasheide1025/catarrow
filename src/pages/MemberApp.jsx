@@ -165,6 +165,10 @@ export default function MemberApp() {
   useEffect(() => {
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
+      // 失敗廣播（broadcastExpeditionFailure）跟首殺廣播寫同一個 dungeonBroadcasts collection，
+      // 不能把「有人失敗」誤顯示成「首殺」——只放行真正的首殺（修 #2：單人敗北跳首殺）。
+      // emoji==="💀" 兜底過濾沒有 kind 欄位的舊失敗廣播。
+      if (data.kind === "failure" || data.emoji === "💀") return;
       const dismissedId = localStorage.getItem("dismissedBroadcastId");
       if (dismissedId === data.id) return;
       if (lastBroadcastIdRef.current === data.id) return;

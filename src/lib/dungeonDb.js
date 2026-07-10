@@ -1135,6 +1135,7 @@ export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabe
     const ref = await addDoc(collection(db, "dungeonBroadcasts"), {
       dungeonId, dungeonName, difficultyLabel, emoji,
       teamNames, memberName,
+      kind: "firstClear", // 區分「真首殺」與「失敗廣播」，避免全系統橫幅把失敗誤顯示成首殺
       createdAt: serverTimestamp(),
     });
     const heroLabel = teamNames.length ? teamNames.join("、") : (memberName || "神秘射手");

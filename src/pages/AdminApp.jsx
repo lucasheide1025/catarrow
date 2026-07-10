@@ -441,6 +441,8 @@ export default function AdminApp() {
   useEffect(() => {
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
+      // 失敗廣播跟首殺廣播共用 dungeonBroadcasts，過濾掉失敗，別把失敗誤顯示成首殺（修 #2）
+      if (data.kind === "failure" || data.emoji === "💀") return;
       const dismissedId = localStorage.getItem("dismissedBroadcastId");
       if (dismissedId === data.id) return;
       if (lastBroadcastIdRef.current === data.id) return;

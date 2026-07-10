@@ -113,6 +113,7 @@ export async function broadcastExpeditionFailure(memberName, difficultyLabel) {
       emoji: "💀",
       teamNames: [memberName],
       isExpedition: true,
+      kind: "failure", // 明確標記為「失敗廣播」——全系統首殺橫幅會過濾掉，不會誤顯示成首殺
       createdAt: serverTimestamp(),
     });
   } catch (e) {
