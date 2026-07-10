@@ -3,6 +3,23 @@
 
 ---
 
+## 2026-07-10（新生隱藏入口改用Email密碼註冊登入 + 結帳串接會計系統 + 2小時方案，尚未 push main）
+
+### 改了什麼
+- `src/lib/guestAuth.js` 新增 `registerGuestWithPassword`/`loginGuestWithPassword`：新生隱藏入口（`PublicBookingApp.jsx`）從「留姓名/email/電話」升級成「Email+密碼」，回訪可以直接登入找回同一筆記錄，不用重填資料。跟既有 `resolveGuestSession` 一樣，一律在隔離的臨時 Firebase App 上做，絕不碰主要 `auth` 物件（同一個坑，避免這台裝置上教練自己的登入被干擾）。身份仍然以 email 的 `contactHash` 為準，不是 uid——這樣舊的匿名QR碼記錄也能被密碼登入正確接續上。這組密碼帳號只在這個隱藏頁面有效，不會打開完整學生App（沒有 `bookingBetaAccess`）。
+- `PublicBookingApp.jsx` 流程重排：改成「先選方案+時段 → 選完才出現註冊/登入 → 用選好的時段直接送出」，不是原本「先填資料才能選時段」。
+- `AdminBooking.jsx` 行事曆詳情每筆預約加「結帳」按鈕：依 `planType+durationHours` 自動對應到既有 `BillingSystem.jsx` 的方案代碼（單一/單二/單三…），送出呼叫既有 `addBillingRecord()` 寫進同一個會計系統collection，不重做一套；`bookings` 新增 `billingRecordId` 避免重複結帳。
+- 新增 **2小時**方案（收費不變＝直接是1小時的2倍，沒有折扣——3小時「2送1」才是折扣價，數字剛好等於2小時的原價）；`BillingSystem.PLANS` 新增 自二/單二/學二 三個代碼。
+- 方案類別+時數原本是兩個獨立下拉，改成單一組合選單（`PlanDurationPicker.jsx`，三個入口共用），每個選項直接顯示金額。
+- 教練後台行事曆格子改成直接顯示每筆預約的「姓名+方案」小色塊（比照使用者提供的SimplyBook截圖），不用點進去才看得到是誰；學生前台確認過完全沒有讀取其他人的姓名/聯絡方式，只顯示新舊生聚合人數。
+
+### 踩坑提醒
+- 新增任何「時數」相關的顯示文字，都要走 `bookingSchedule.js::durationLabel()`，不要各自寫 `durationHours===3?"3小時":"1小時"` 這種只認得兩種值的三元判斷——這次新增2小時就是因為好幾個地方各自寫死判斷式，得逐一找出來改。
+- 方案價格數字在兩個地方各自維護（`bookingSchedule.js::PLAN_PRICE` 給預約時顯示用、`BillingSystem.jsx::PLANS` 給結帳寫進會計系統用），之後真的要調價記得兩邊都要改，不是同一份資料。
+- 密碼註冊/登入函式的安全屬性：`registerGuestWithPassword`/`loginGuestWithPassword` 內部只能用 `tmpAuth`（隔離臨時App），絕對不能出現對主要 `auth` 物件的 `signInWithEmailAndPassword`/`createUserWithEmailAndPassword` 呼叫——之後如果要擴充這兩個函式，這條界線不能破。
+
+---
+
 ## 2026-07-10（線上約課擴充：3小時方案＋跨時段原子鎖定＋新舊生統計，尚未 push main）
 
 ### 改了什麼

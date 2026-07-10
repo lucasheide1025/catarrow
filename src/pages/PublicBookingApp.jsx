@@ -1,11 +1,19 @@
-// src/pages/PublicBookingApp.jsx — 新生隱藏入口：公開自助註冊＋約課（07-10-booking-system-student-pilot）
+// src/pages/PublicBookingApp.jsx — 新生隱藏入口：先選時段，再Email+密碼註冊/登入（07-10-booking-system-student-pilot ＋ 07-10-public-booking-password-auth）
 //
 // 比照 src/pages/GuestApp.jsx 的獨立頂層元件模式：不掛進 AuthProvider，自己管理 profile state。
 // ⚠️ 這個頁面刻意「不公開連結」——不出現在官網、不進主導覽選單，只透過 App.jsx 一個不易猜測的
 // query 參數進入（見 prd.md「風險提醒」）。這個檔案本身不能被任何導覽/連結引用到，
 // 否則等於自己洩漏了隱藏入口（實作後務必用 grep 全專案確認沒有殘留連結）。
+//
+// 流程（07-10-public-booking-password-auth 改版）：
+//   ① 選方案+時數+時段（不用先登入）
+//   ② 選完才出現「註冊」／「登入」——註冊留密碼，之後回訪可以直接登入找回同一筆記錄
+//   ③ 用①選好的時段直接送出預約，不用重選
+// 註冊/登入都呼叫 guestAuth.js 的 registerGuestWithPassword/loginGuestWithPassword，
+// 那邊已經處理好「隔離臨時Firebase App、不能動到這台裝置上教練自己的登入」這件事，
+// 這個檔案不需要、也不應該自己碰 Firebase Auth。
 import { useState, useEffect } from "react";
-import { resolveGuestSession } from "../lib/guestAuth";
+import { registerGuestWithPassword, loginGuestWithPassword } from "../lib/guestAuth";
 import { createBooking } from "../lib/bookingDb";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
@@ -26,30 +34,48 @@ export default function PublicBookingApp() {
   const [profile, setProfile] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null"); } catch { return null; }
   });
-  const [name, setName]   = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [busy, setBusy]   = useState(false);
-  const [err, setErr]     = useState("");
 
+  // ① 方案/時段選擇（不用登入就能選）
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
   const [isNewStudent, setIsNewStudent] = useState(true); // 這個入口大多是新客，預設勾選，回訪舊客可自己取消
+
+  // ② 註冊/登入表單
+  const [authTab, setAuthTab] = useState("register"); // "register" | "login"
+  const [name, setName]   = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authErr, setAuthErr]   = useState("");
+
+  // ③ 送出
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
 
-  async function handleRegister() {
-    setErr("");
-    if (!name.trim() || !email.trim() || !phone.trim()) { setErr("姓名／Email／電話皆為必填"); return; }
-    setBusy(true);
-    // 沿用既有訪客機制：用 email 找回/建立同一筆 members 文件（accountType:"guest"），
-    // 跨次造訪同一組 email 會接續同一筆記錄，不會重複建立（design.md §4.2）。
-    const res = await resolveGuestSession(email.trim(), "guest", null);
-    setBusy(false);
-    if (!res.ok) { setErr(res.reason || "註冊失敗，請稍後再試"); return; }
-    const profileObj = { id: res.id, name: name.trim() || res.name, email: email.trim(), phone: phone.trim() };
+  async function handleAuth() {
+    setAuthErr("");
+    if (authTab === "register") {
+      if (!name.trim() || !email.trim() || !phone.trim() || !password) { setAuthErr("姓名／Email／電話／密碼皆為必填"); return; }
+      setAuthBusy(true);
+      const res = await registerGuestWithPassword(name, email, phone, password);
+      setAuthBusy(false);
+      if (!res.ok) { setAuthErr(res.reason || "註冊失敗，請稍後再試"); return; }
+      finishAuth(res);
+    } else {
+      if (!email.trim() || !password) { setAuthErr("Email／密碼皆為必填"); return; }
+      setAuthBusy(true);
+      const res = await loginGuestWithPassword(email, password);
+      setAuthBusy(false);
+      if (!res.ok) { setAuthErr(res.reason || "登入失敗，請稍後再試"); return; }
+      finishAuth(res);
+    }
+  }
+
+  function finishAuth(res) {
+    const profileObj = { id: res.id, name: res.name || name.trim() || "訪客射手", email: res.email || email.trim(), phone: res.phone || phone.trim() };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(profileObj));
     setProfile(profileObj);
     // 找回舊記錄且已經有預約紀錄 → 預設取消勾選「第一次來體驗」，仍可自己改
@@ -57,7 +83,7 @@ export default function PublicBookingApp() {
   }
 
   async function handleSubmitBooking() {
-    if (!selectedSlot) { setSubmitErr("請先選擇時段"); return; }
+    if (!selectedSlot || !profile) return;
     setSubmitErr("");
     setSubmitting(true);
     const res = await createBooking(
@@ -74,32 +100,7 @@ export default function PublicBookingApp() {
 
   const wrapStyle = { minHeight: "100vh", background: "#0f0a1e", fontFamily: "sans-serif", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 16px" };
 
-  // ── 步驟一：姓名/email/電話 ──────────────────────────────
-  if (!profile) {
-    return (
-      <div style={wrapStyle}>
-        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 32 }}>
-          <div style={{ fontSize: 48, textAlign: "center" }}>🏹</div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "white", textAlign: "center" }}>貓小隊射箭場・線上約課</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.55)", textAlign: "center", lineHeight: 1.6 }}>
-            第一次來？留下姓名、Email、電話即可開始預約
-          </div>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名"
-            style={inputStyle} autoFocus />
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
-            style={inputStyle} />
-          <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="電話"
-            style={inputStyle} />
-          {err && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{err}</div>}
-          <button onClick={handleRegister} disabled={busy} style={submitButtonStyle(busy)}>
-            {busy ? "處理中…" : "🚀 開始預約"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 步驟二：完成畫面 ──────────────────────────────────────
+  // ── 完成畫面 ──────────────────────────────────────────────
   if (done) {
     return (
       <div style={wrapStyle}>
@@ -110,6 +111,9 @@ export default function PublicBookingApp() {
             {selectedSlot?.date}　{selectedSlot?.startTime}-{selectedSlot?.endTime}<br />
             我們會保留這個時段給您，現場請提早 10 分鐘到櫃檯報到
           </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)", textAlign: "center" }}>
+            下次要再約，直接用 Email／密碼登入就能找回這筆帳號，不用重填資料
+          </div>
           <button onClick={() => { setDone(false); setSelectedSlot(null); }} style={submitButtonStyle(false)}>
             ➕ 再約一個時段
           </button>
@@ -118,30 +122,88 @@ export default function PublicBookingApp() {
     );
   }
 
-  // ── 步驟三：選時段 + 方案 + 送出 ──────────────────────────
+  // ── ② 已選好時段但還沒登入/註冊 → 顯示身份表單 ─────────────
+  if (selectedSlot && !profile) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+          <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
+            已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
+            <button onClick={() => setSelectedSlot(null)} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
+              重新選時段
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { setAuthTab("register"); setAuthErr(""); }}
+              style={tabButtonStyle(authTab === "register")}>第一次來（註冊）</button>
+            <button onClick={() => { setAuthTab("login"); setAuthErr(""); }}
+              style={tabButtonStyle(authTab === "login")}>已有帳號（登入）</button>
+          </div>
+
+          {authTab === "register" ? (
+            <>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" style={inputStyle} autoFocus />
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} />
+              <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="電話" style={inputStyle} />
+              <input value={password} onChange={e => setPassword(e.target.value)} placeholder="設定密碼（至少6碼）" type="password" style={inputStyle} />
+            </>
+          ) : (
+            <>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoFocus />
+              <input value={password} onChange={e => setPassword(e.target.value)} placeholder="密碼" type="password" style={inputStyle} />
+            </>
+          )}
+
+          {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
+          <button onClick={handleAuth} disabled={authBusy} style={submitButtonStyle(authBusy)}>
+            {authBusy ? "處理中…" : authTab === "register" ? "🚀 完成註冊並預約" : "🔑 登入並預約"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ① 選方案+時段（尚未選好時段的畫面）／已登入後補送出按鈕 ──
   return (
     <div style={wrapStyle}>
-      <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ fontSize: 14, color: "rgba(255,255,255,.6)", textAlign: "center" }}>嗨，{profile.name}！選一個想來的時段吧</div>
+      <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16, marginTop: profile ? 0 : 24 }}>
+        {!profile ? (
+          <>
+            <div style={{ fontSize: 48, textAlign: "center" }}>🏹</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "white", textAlign: "center" }}>貓小隊射箭場・線上約課</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,.55)", textAlign: "center", lineHeight: 1.6 }}>
+              先選想來的方案跟時段，選完再留資料
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,.6)", textAlign: "center" }}>嗨，{profile.name}！選一個想來的時段吧</div>
+        )}
+
         <PlanDurationPicker planType={planType} durationHours={durationHours}
           onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
         <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 16, padding: 16 }}>
           <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setSubmitErr(""); }} durationHours={durationHours} />
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.75)", fontWeight: 700, cursor: "pointer" }}>
-          <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
-            style={{ width: 16, height: 16 }} />
-          是否為第一次來體驗
-        </label>
-        {selectedSlot && (
-          <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700 }}>
-            已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
-          </div>
+
+        {profile && (
+          <>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.75)", fontWeight: 700, cursor: "pointer" }}>
+              <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
+                style={{ width: 16, height: 16 }} />
+              是否為第一次來體驗
+            </label>
+            {selectedSlot && (
+              <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700 }}>
+                已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
+              </div>
+            )}
+            {submitErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{submitErr}</div>}
+            <button onClick={handleSubmitBooking} disabled={submitting || !selectedSlot} style={submitButtonStyle(submitting || !selectedSlot)}>
+              {submitting ? "送出中…" : "確認預約"}
+            </button>
+          </>
         )}
-        {submitErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{submitErr}</div>}
-        <button onClick={handleSubmitBooking} disabled={submitting || !selectedSlot} style={submitButtonStyle(submitting || !selectedSlot)}>
-          {submitting ? "送出中…" : "確認預約"}
-        </button>
       </div>
     </div>
   );
@@ -151,6 +213,14 @@ const inputStyle = {
   width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid rgba(124,58,237,.4)",
   background: "rgba(255,255,255,.06)", color: "white", fontSize: 16, outline: "none", boxSizing: "border-box",
 };
+
+function tabButtonStyle(active) {
+  return {
+    flex: 1, padding: "10px 12px", borderRadius: 12, border: active ? "2px solid #7c3aed" : "2px solid rgba(255,255,255,.15)",
+    background: active ? "rgba(124,58,237,.2)" : "rgba(255,255,255,.05)", color: active ? "#c4b5fd" : "rgba(255,255,255,.6)",
+    fontSize: 13, fontWeight: 900, cursor: "pointer",
+  };
+}
 
 function submitButtonStyle(disabled) {
   return {

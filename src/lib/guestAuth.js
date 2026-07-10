@@ -1,6 +1,6 @@
 // src/lib/guestAuth.js
 // 訪客/兒童帳號的匿名登入 + 跨次造訪接續邏輯（見 .trellis/tasks/07-09-guest-kid-mode-overhaul）
-import { signInAnonymously, getAuth } from "firebase/auth";
+import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import {
   collection, query, where, limit, getDocs, addDoc, updateDoc, doc, serverTimestamp,
@@ -79,5 +79,95 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
     return { ok: false, reason: e?.message || "系統忙碌，請稍後再試" };
   } finally {
     if (tmpApp) deleteApp(tmpApp).catch(() => {});
+  }
+}
+
+// ── 新生自助入口（PublicBookingApp.jsx）：Email＋密碼註冊/登入 ──────
+// 07-10-public-booking-password-auth：讓回訪的訪客不用每次都重填姓名/電話，
+// 用密碼登入直接找回同一筆記錄。跟 resolveGuestSession 一樣，一律在隔離的
+// 臨時 Firebase App 上做（這個頁面可能在教練自己也登入著的裝置上被打開，
+// 絕不能碰到主要的 auth 物件——同一個坑，見上面 resolveGuestSession 的說明）。
+//
+// 身份仍然以 email 的 contactHash 為準，不是 Firebase Auth uid——這樣即使
+// 使用者之前用過舊的匿名QR碼流程建立過同一個 email 的記錄，密碼登入時一樣能
+// 正確接續回同一筆 members 文件，不會產生重複帳號。
+//
+// ⚠️ 這組帳號密碼的效力範圍只有這個隱藏頁面本身——不會因此獲得 bookingBetaAccess
+// 或能登入完整的學生 App（LoginPage/useAuth.js 走的是完全獨立的登入邏輯）。
+
+export async function registerGuestWithPassword(name, email, phone, password) {
+  const trimmedEmail = (email || "").trim();
+  if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
+
+  const tmpApp = initializeApp(firebaseConfig, "pubbook_reg_" + Date.now());
+  const tmpAuth = getAuth(tmpApp);
+  try {
+    const cred = await createUserWithEmailAndPassword(tmpAuth, trimmedEmail, password);
+    const uid = cred.user.uid;
+    const contactHash = await sha256(normalizeContact(trimmedEmail));
+
+    const q = query(
+      collection(db, C_MEMBERS),
+      where("accountType", "==", "guest"),
+      where("contactHash", "==", contactHash),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+      // 這個 email 之前用匿名QR碼流程留過記錄——原地接上，不建立新文件
+      const existing = snap.docs[0];
+      await updateDoc(existing.ref, { uid, hasPassword: true, lastLoginAt: serverTimestamp() });
+      return { ok: true, id: existing.id, ...existing.data(), uid, isNew: false };
+    }
+
+    const ref = await addDoc(collection(db, C_MEMBERS), {
+      accountType: "guest", contactHash, contactRaw: trimmedEmail,
+      sessionSourceId: null, uid, hasPassword: true,
+      name: (name || "").trim() || "訪客射手",
+      email: trimmedEmail, phone: (phone || "").trim(),
+      coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
+    });
+    return { ok: true, id: ref.id, accountType: "guest", uid, name: (name || "").trim() || "訪客射手", email: trimmedEmail, phone: (phone || "").trim(), coins: 0, isNew: true };
+  } catch (e) {
+    if (e?.code === "auth/email-already-in-use") return { ok: false, reason: "這個 Email 已經註冊過了，請改用「登入」" };
+    if (e?.code === "auth/weak-password")        return { ok: false, reason: "密碼至少需要 6 碼" };
+    if (e?.code === "auth/invalid-email")        return { ok: false, reason: "Email 格式不正確" };
+    return { ok: false, reason: e?.message || "註冊失敗，請稍後再試" };
+  } finally {
+    deleteApp(tmpApp).catch(() => {});
+  }
+}
+
+export async function loginGuestWithPassword(email, password) {
+  const trimmedEmail = (email || "").trim();
+  if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
+
+  const tmpApp = initializeApp(firebaseConfig, "pubbook_login_" + Date.now());
+  const tmpAuth = getAuth(tmpApp);
+  try {
+    const cred = await signInWithEmailAndPassword(tmpAuth, trimmedEmail, password);
+    // 密碼驗證通過後改用 contactHash 找回會員文件（不是靠這次登入拿到的 uid 反查）——
+    // 理由同註冊那邊：這樣才能正確接續舊的匿名QR碼記錄，身份認定統一以 email 為準。
+    const contactHash = await sha256(normalizeContact(trimmedEmail));
+    const q = query(
+      collection(db, C_MEMBERS),
+      where("accountType", "==", "guest"),
+      where("contactHash", "==", contactHash),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return { ok: false, reason: "找不到對應的會員記錄，請改用「註冊」或聯絡教練協助" };
+
+    const existing = snap.docs[0];
+    await updateDoc(existing.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+    return { ok: true, id: existing.id, ...existing.data(), uid: cred.user.uid, isNew: false };
+  } catch (e) {
+    if (e?.code === "auth/invalid-credential" || e?.code === "auth/wrong-password" || e?.code === "auth/user-not-found") {
+      return { ok: false, reason: "Email 或密碼不正確" };
+    }
+    return { ok: false, reason: e?.message || "登入失敗，請稍後再試" };
+  } finally {
+    deleteApp(tmpApp).catch(() => {});
   }
 }
