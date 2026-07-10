@@ -14,7 +14,7 @@
 // 那邊已經處理好「隔離臨時Firebase App、不能動到這台裝置上教練自己的登入」這件事，
 // 這個檔案不需要、也不應該自己碰 Firebase Auth。
 import { useState, useEffect } from "react";
-import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial } from "../lib/guestAuth";
+import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial, getGuestProfile, updateGuestProfile, changeGuestPassword } from "../lib/guestAuth";
 import { createBooking, getBookingsForMember, cancelBooking } from "../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
@@ -66,10 +66,19 @@ export default function PublicBookingApp() {
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
 
-  // ⑤ 我的預約（登入後可查詢/取消）
+  // ⑤ 會員中心（登入後：預約查詢/取消、個資、改密碼、學籍、進遊戲）
   const [showMine, setShowMine]       = useState(false);
   const [myBookings, setMyBookings]   = useState([]);
   const [loadingMine, setLoadingMine] = useState(false);
+  const [memberDoc, setMemberDoc]     = useState(null); // 完整會員資料（accountType/hasPassword/socialProvider…）
+  const [editName, setEditName]       = useState("");
+  const [editPhone, setEditPhone]     = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg]   = useState("");
+  const [oldPw, setOldPw]             = useState("");
+  const [newPw, setNewPw]             = useState("");
+  const [savingPw, setSavingPw]       = useState(false);
+  const [pwMsg, setPwMsg]             = useState("");
 
   // ⑥ 前台登入入口（回訪訪客不用先選時段就能登入）
   const [showLogin, setShowLogin] = useState(false);
@@ -134,19 +143,53 @@ export default function PublicBookingApp() {
     finishAuth(res); // 沿用現成的：設 profile → useEffect 自動送出預約
   }
 
-  // ── 我的預約：查詢／取消／登出 ──
-  async function loadMyBookings() {
+  // ── 會員中心：載入預約＋會員資料 ──
+  async function loadMemberCenter() {
     if (!profile?.id) return;
     setLoadingMine(true);
-    const res = await getBookingsForMember(profile.id);
+    const [res, mDoc] = await Promise.all([
+      getBookingsForMember(profile.id),
+      getGuestProfile(profile.id),
+    ]);
     setMyBookings(res.ok ? res.bookings.filter(b => b.status === "confirmed") : []);
+    setMemberDoc(mDoc);
+    setEditName(mDoc?.name || profile.name || "");
+    setEditPhone(mDoc?.phone || profile.phone || "");
     setLoadingMine(false);
   }
-  useEffect(() => { if (showMine) loadMyBookings(); }, [showMine]); // eslint-disable-line
+  useEffect(() => { if (showMine) loadMemberCenter(); }, [showMine]); // eslint-disable-line
 
   async function handleCancelBooking(id) {
     const res = await cancelBooking(id);
-    if (res.ok) loadMyBookings();
+    if (res.ok) loadMemberCenter();
+  }
+
+  async function handleSaveProfile() {
+    setProfileMsg("");
+    setSavingProfile(true);
+    const res = await updateGuestProfile(profile.id, { name: editName, phone: editPhone });
+    setSavingProfile(false);
+    if (!res.ok) { setProfileMsg(res.reason || "更新失敗"); return; }
+    setProfileMsg("已更新 ✓");
+    const updated = { ...profile, name: (editName.trim() || profile.name), phone: editPhone.trim() };
+    setProfile(updated);
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+  }
+
+  async function handleChangePassword() {
+    setPwMsg("");
+    if (!oldPw || !newPw) { setPwMsg("請填寫目前密碼與新密碼"); return; }
+    setSavingPw(true);
+    const res = await changeGuestPassword(profile.email, oldPw, newPw);
+    setSavingPw(false);
+    if (!res.ok) { setPwMsg(res.reason || "改密碼失敗"); return; }
+    setPwMsg("密碼已更新 ✓");
+    setOldPw(""); setNewPw("");
+  }
+
+  function enterGuestGame() {
+    // 進入訪客學籍系統（遊戲）。用同一個 email 進去會歸戶到同一個帳號。
+    window.location.href = "/?guest=1";
   }
 
   function handleLogout() {
@@ -216,38 +259,78 @@ export default function PublicBookingApp() {
     );
   }
 
-  // ── ⑤ 我的預約（登入後查詢／取消）────────────────────────
+  // ── ⑤ 會員中心（登入後：學籍/預約/個資/改密碼/進遊戲）──────────
   if (profile && showMine) {
+    const acct = memberDoc?.accountType;
+    const isEnrolled = !!acct && acct !== "guest" && acct !== "kid"; // 正式生
+    const canChangePw = !!memberDoc?.hasPassword; // email＋密碼註冊的才有密碼
     return (
       <div style={wrapStyle}>
-        <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12, marginTop: 24 }}>
+        <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 14, marginTop: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <button onClick={() => setShowMine(false)} style={{ background: "none", border: "none", color: "#c4b5fd", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 返回預約</button>
+            <span style={{ color: "white", fontSize: 16, fontWeight: 900 }}>會員中心</span>
             <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>登出</button>
           </div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: "white", textAlign: "center", marginBottom: 4 }}>📋 我的預約</div>
-          {loadingMine ? (
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14, textAlign: "center", padding: "20px 0" }}>載入中…</div>
-          ) : myBookings.length === 0 ? (
-            <div style={{ color: "rgba(255,255,255,.5)", fontSize: 14, textAlign: "center", padding: "20px 0" }}>目前沒有預約</div>
-          ) : (
-            myBookings.slice()
-              .sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`))
-              .map(b => (
-                <div key={b.id} style={{ background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+
+          {/* 帳號 / 學籍狀態 */}
+          <div style={cardStyle}>
+            <div style={{ color: "white", fontWeight: 900, fontSize: 16 }}>{memberDoc?.name || profile.name}</div>
+            <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginTop: 2 }}>{profile.email}</div>
+            <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, background: isEnrolled ? "rgba(34,197,94,.15)" : "rgba(251,191,36,.12)", border: `1px solid ${isEnrolled ? "rgba(34,197,94,.4)" : "rgba(251,191,36,.35)"}`, color: isEnrolled ? "#86efac" : "#fde68a", borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
+              {isEnrolled ? "🎓 正式生" : "🆕 尚未入籍（訪客）"}
+            </div>
+          </div>
+
+          {/* 進入訪客學籍系統（遊戲）*/}
+          <button onClick={enterGuestGame}
+            style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: "linear-gradient(90deg,#7c3aed,#4f46e5)", color: "white", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
+            🎮 進入訪客學籍系統（打怪／學籍）
+          </button>
+
+          {/* 我的預約 */}
+          <div style={cardStyle}>
+            <div style={sectionTitle}>📋 我的預約</div>
+            {loadingMine ? <div style={hintStyle}>載入中…</div>
+              : myBookings.length === 0 ? <div style={hintStyle}>目前沒有預約</div>
+              : myBookings.slice().sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`)).map(b => (
+                <div key={b.id} style={{ background: "rgba(255,255,255,.05)", borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 8 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ color: "white", fontWeight: 700, fontSize: 14 }}>{b.date}　{b.startTime}-{b.endTime}</div>
-                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginTop: 2 }}>
-                      {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
-                    </div>
+                    <div style={{ color: "white", fontWeight: 700, fontSize: 13 }}>{b.date}　{b.startTime}-{b.endTime}</div>
+                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 2 }}>{PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}</div>
                   </div>
-                  <button onClick={() => handleCancelBooking(b.id)}
-                    style={{ flexShrink: 0, background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", color: "#f87171", borderRadius: 10, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                    取消
-                  </button>
+                  <button onClick={() => handleCancelBooking(b.id)} style={{ flexShrink: 0, background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", color: "#f87171", borderRadius: 10, padding: "5px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>取消</button>
                 </div>
-              ))
-          )}
+              ))}
+          </div>
+
+          {/* 個人資料 */}
+          <div style={cardStyle}>
+            <div style={sectionTitle}>👤 個人資料</div>
+            <label style={{ ...labelStyle, marginTop: 8 }}>姓名
+              <input value={editName} onChange={e => { setEditName(e.target.value); setProfileMsg(""); }} style={inputStyle} />
+            </label>
+            <label style={{ ...labelStyle, marginTop: 8 }}>電話
+              <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setProfileMsg(""); }} style={inputStyle} />
+            </label>
+            {profileMsg && <div style={{ color: profileMsg.includes("✓") ? "#86efac" : "#f87171", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{profileMsg}</div>}
+            <button onClick={handleSaveProfile} disabled={savingProfile} style={{ ...smallBtn, marginTop: 10 }}>{savingProfile ? "儲存中…" : "儲存個人資料"}</button>
+          </div>
+
+          {/* 修改密碼 */}
+          <div style={cardStyle}>
+            <div style={sectionTitle}>🔒 修改密碼</div>
+            {canChangePw ? (
+              <>
+                <input value={oldPw} onChange={e => { setOldPw(e.target.value); setPwMsg(""); }} placeholder="目前密碼" type="password" style={{ ...inputStyle, marginTop: 8 }} />
+                <input value={newPw} onChange={e => { setNewPw(e.target.value); setPwMsg(""); }} placeholder="新密碼（至少6碼）" type="password" style={{ ...inputStyle, marginTop: 8 }} />
+                {pwMsg && <div style={{ color: pwMsg.includes("✓") ? "#86efac" : "#f87171", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{pwMsg}</div>}
+                <button onClick={handleChangePassword} disabled={savingPw} style={{ ...smallBtn, marginTop: 10 }}>{savingPw ? "處理中…" : "更新密碼"}</button>
+              </>
+            ) : (
+              <div style={{ ...hintStyle, textAlign: "left", padding: "8px 0" }}>你是用 Google 登入，沒有密碼、也不需要密碼。下次一樣用 Google 登入即可。</div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -477,6 +560,11 @@ const labelStyle = {
   display: "flex", flexDirection: "column", gap: 6,
   fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.75)",
 };
+
+const cardStyle    = { background: "rgba(255,255,255,.06)", borderRadius: 16, padding: "14px 16px" };
+const sectionTitle = { color: "white", fontWeight: 900, fontSize: 15 };
+const hintStyle    = { color: "rgba(255,255,255,.5)", fontSize: 13, textAlign: "center", padding: "12px 0" };
+const smallBtn     = { width: "100%", padding: "11px 0", borderRadius: 12, border: "none", background: "linear-gradient(90deg,#fbbf24,#f59e0b)", color: "#7c2d12", fontWeight: 800, fontSize: 14, cursor: "pointer" };
 
 function tabButtonStyle(active) {
   return {

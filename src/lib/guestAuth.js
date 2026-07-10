@@ -1,9 +1,9 @@
 // src/lib/guestAuth.js
 // 訪客/兒童帳號的匿名登入 + 跨次造訪接續邏輯（見 .trellis/tasks/07-09-guest-kid-mode-overhaul）
-import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updatePassword } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import {
-  collection, query, where, limit, getDocs, addDoc, updateDoc, doc, serverTimestamp,
+  collection, query, where, limit, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp,
 } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "./firebase";
 
@@ -267,5 +267,52 @@ export async function saveGuestFromSocial({ name, email, phone, uid, provider = 
       coins: 0, isNew: true };
   } catch (e) {
     return { ok: false, reason: e?.message || "登入失敗，請稍後再試" };
+  }
+}
+
+// ── 會員中心：取完整會員資料（含 accountType/hasPassword/socialProvider）──
+export async function getGuestProfile(memberId) {
+  if (!memberId) return null;
+  try {
+    const s = await getDoc(doc(db, C_MEMBERS, memberId));
+    return s.exists() ? { id: s.id, ...s.data() } : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── 會員中心：更新個人資料（姓名/電話）──
+export async function updateGuestProfile(memberId, { name, phone }) {
+  if (!memberId) return { ok: false, reason: "缺少會員 id" };
+  try {
+    const patch = {};
+    if (typeof name === "string")  patch.name  = name.trim() || "訪客射手";
+    if (typeof phone === "string") patch.phone = phone.trim();
+    if (Object.keys(patch).length === 0) return { ok: true };
+    await updateDoc(doc(db, C_MEMBERS, memberId), patch);
+    return { ok: true, ...patch };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "更新失敗，請稍後再試" };
+  }
+}
+
+// ── 會員中心：修改密碼（只有 email＋密碼註冊的訪客能改；Google 登入的沒有密碼）──
+// 用隔離臨時 App 先以「舊密碼」登入驗證，再 updatePassword，最後刪臨時 App。
+export async function changeGuestPassword(email, oldPassword, newPassword) {
+  const e = (email || "").trim();
+  if (!e || !oldPassword || !newPassword) return { ok: false, reason: "請完整填寫" };
+  if (newPassword.length < 6) return { ok: false, reason: "新密碼至少 6 碼" };
+  const tmpApp = initializeApp(firebaseConfig, "pubbook_pw_" + Date.now());
+  const tmpAuth = getAuth(tmpApp);
+  try {
+    const cred = await signInWithEmailAndPassword(tmpAuth, e, oldPassword);
+    await updatePassword(cred.user, newPassword);
+    return { ok: true };
+  } catch (err) {
+    if (err?.code === "auth/invalid-credential" || err?.code === "auth/wrong-password") return { ok: false, reason: "目前密碼不正確" };
+    if (err?.code === "auth/weak-password") return { ok: false, reason: "新密碼太弱（至少 6 碼）" };
+    return { ok: false, reason: err?.message || "改密碼失敗，請稍後再試" };
+  } finally {
+    deleteApp(tmpApp).catch(() => {});
   }
 }
