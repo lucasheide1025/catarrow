@@ -211,8 +211,12 @@ export default function DungeonChest({
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
+    <div className="h-screen overflow-y-auto flex flex-col text-white"
       style={{
+        // 用 100dvh（行動裝置扣掉網址列更準）；舊瀏覽器不支援 dvh 時，這行會被丟棄，
+        // 自動退回 Tailwind h-screen 的 100vh。搭配 overflow-y-auto，即使高度算錯，
+        // 使用者仍能捲到底部的「領取」按鈕（修：有些手機點不到領取道具）。
+        height: "100dvh",
         background: isHidden
           ? "linear-gradient(160deg,#1a0a2e,#2d1a4e)"
           : "linear-gradient(160deg,#0a1a0a,#1a2e1a)",

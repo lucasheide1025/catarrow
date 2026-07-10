@@ -65,8 +65,8 @@ export default function DungeonEvent({
   const myConfirmed = roomConfirms[memberId];
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col text-white"
-      style={{ background:"linear-gradient(160deg,#1a1a2e,#16213e)" }}>
+    <div className="h-screen overflow-y-auto flex flex-col text-white"
+      style={{ height: "100dvh", background:"linear-gradient(160deg,#1a1a2e,#16213e)" }}>
 
       <style>{`
 @keyframes e-card-in { 0%{opacity:0;transform:scale(0.9) rotate(-2deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }

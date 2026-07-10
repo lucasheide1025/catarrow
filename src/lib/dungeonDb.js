@@ -38,8 +38,9 @@ const MODE_SCALE = {
   veteran: { hp:4.0, atk:2.0, def:2.0 },
 };
 
-const DEFAULT_MEMBER = (name) => ({
+const DEFAULT_MEMBER = (name, extraData = {}) => ({
   name, hp:0, maxHP:0, atk:0, def:0,
+  accountType: extraData.accountType || "official",
   alive:true, ready:false, arrows:[],
   contract: null,
   buffs: { atkMult:1, defMult:1, dmgMult:1, hasRevival:false },
@@ -51,7 +52,7 @@ const DEFAULT_MEMBER = (name) => ({
 });
 
 // ── 建立房間 ──────────────────────────────────────────────────
-export async function createDungeonRoom(hostId, hostName, hostAtk = 10) {
+export async function createDungeonRoom(hostId, hostName, hostAtk = 10, extraData = {}) {
   try {
     const code = genCode();
     const ref  = await addDoc(collection(db, D), {
@@ -64,7 +65,7 @@ export async function createDungeonRoom(hostId, hostName, hostAtk = 10) {
       targetFmt: "full_110",
       hostAtk,
       result: null,
-      members: { [hostId]: DEFAULT_MEMBER(hostName) },
+      members: { [hostId]: DEFAULT_MEMBER(hostName, extraData) },
       monster: null, monsterHP: 0, monsterMaxHP: 0,
       round: 1, log: [],
       processing: false,
@@ -79,7 +80,7 @@ export async function createDungeonRoom(hostId, hostName, hostAtk = 10) {
 }
 
 // ── 加入房間（用邀請碼）──────────────────────────────────────
-export async function joinDungeonRoom(code, memberId, memberName) {
+export async function joinDungeonRoom(code, memberId, memberName, extraData = {}) {
   try {
     const snap = await getDocs(
       query(collection(db, D),
@@ -95,7 +96,7 @@ export async function joinDungeonRoom(code, memberId, memberName) {
     const frontCount = Object.values(members).filter(m => (m.role || "front") !== "rear").length;
     const defaultRole = frontCount >= 4 ? "rear" : "front";
     await updateDoc(doc(db, D, roomDoc.id), {
-      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName), role: defaultRole, displayGroup: defaultRole },
+      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName, extraData), role: defaultRole, displayGroup: defaultRole },
     });
     return { ok:true, roomId:roomDoc.id };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -702,7 +703,7 @@ export async function confirmDungeonEvent(roomId, room) {
       }
       case "gold_bonus":
         for (const id of aliveIds) {
-          if (!id.startsWith("guest")) addCoins(id, eff.value).catch(() => {});
+          if (!["guest", "kid"].includes(members[id]?.accountType)) addCoins(id, eff.value).catch(() => {});
         }
         break;
       case "monster_hp_mult":
@@ -803,10 +804,10 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
 }
 
 // ── 結算金幣（2x 地下城加成，房主替所有人呼叫）──────────────
-export async function claimDungeonReward(memberId, baseCoins, goldMult = 1) {
+export async function claimDungeonReward(memberId, baseCoins, goldMult = 1, options = {}) {
   try {
     const totalCoins = Math.round(baseCoins * 3 * goldMult); // 地下城固定 3x
-    if (!memberId.startsWith("guest")) await addCoins(memberId, totalCoins);
+    if (!["guest", "kid"].includes(options.accountType)) await addCoins(memberId, totalCoins);
     return { ok:true, coins:totalCoins };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
@@ -1139,7 +1140,9 @@ export async function addDungeonBroadcast(dungeonId, dungeonName, difficultyLabe
     const heroLabel = teamNames.length ? teamNames.join("、") : (memberName || "神秘射手");
     createNotification({
       type: "dungeon",
-      title: `⚡ 地下城首殺！`,
+      // 標題直接帶地城名＋難度，讓通知鈴鐺/預覽只顯示標題時也看得出「哪個地下城被首殺」
+      // （修 #2：原本標題寫死「⚡ 地下城首殺！」，名稱只在內文，使用者看不到是哪個地城）
+      title: `⚡ ${dungeonName}（${difficultyLabel}）首殺！`,
       content: `${emoji} ${dungeonName}（${difficultyLabel}）— ${heroLabel} 成為首殺英雄！`,
       targetMemberId: null,
     }).catch(() => {});
