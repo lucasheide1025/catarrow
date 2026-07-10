@@ -63,12 +63,25 @@ export function AuthProvider({ children }) {
 
       // 設定 profile，立即解除 loading
       if (memberDoc) {
+        const mData = memberDoc.data();
+        // ⚠️ 訪客/兒童帳號（accountType in ["guest","kid"]）不該透過主 App 的
+        // onAuthStateChanged 自動登入——它們只透過 ?guest=1 / ?kid=xxx URL 參數
+        // 由 App.jsx 直接渲染 GuestApp 來處理自己的 auth（resolveGuestSession），
+        // 不經過 useAuth.js。如果讓 useAuth 設了 profile，會導致「登入過訪客帳號後
+        // 切回學籍系統，無論如何都會變成訪客帳號」（2026-07-11 回報）。
+        if (mData.accountType === "guest" || mData.accountType === "kid") {
+          setRole(null);
+          setProfile(null);
+          setCurrentUser(fbUser);
+          setLoading(false);
+          return;
+        }
         setRole(isAdmin ? "admin" : "member");
         setProfile({
           id:  memberDoc.id,
           uid: fbUser.uid,
           ...(isAdmin ? adminData : {}),
-          ...memberDoc.data(),
+          ...mData,
           ...(isAdmin ? { isAdmin: true } : {}),
         });
       } else if (isAdmin) {

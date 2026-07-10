@@ -123,6 +123,22 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     workingAuth = getAuth(tmpApp);
   }
   try {
+    // ⚠️ 2026-07-11 修復「有學籍學生無法透過官網預約登入」：註冊前先查這個 Email
+    //   是否已經有正式學員/教練帳號，避免用同一組 Firebase Auth email 創 guest 文件
+    //   造成兩筆 member 文件打架。
+    const dupCheck = await getDocs(query(
+      collection(db, C_MEMBERS),
+      where("email", "==", trimmedEmail),
+      limit(5)
+    ));
+    const hasOfficial = dupCheck.docs.some(d => {
+      const t = d.data()?.accountType;
+      return t && t !== "guest" && t !== "kid";
+    });
+    if (hasOfficial) {
+      return { ok: false, reason: "這個 Email 已經是正式學員／教練帳號，請直接用「登入」或用主系統登入" };
+    }
+
     const cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
     const uid = cred.user.uid;
     const contactHash = await sha256(normalizeContact(trimmedEmail));
@@ -183,8 +199,29 @@ export async function loginGuestWithPassword(email, password) {
       where("contactHash", "==", contactHash),
       limit(1)
     );
-    const snap = await getDocs(q);
-    if (snap.empty) return { ok: false, reason: "找不到對應的會員記錄，請改用「註冊」或聯絡教練協助" };
+    let snap = await getDocs(q);
+
+    // ⚠️ 2026-07-11 修復「有學籍學生無法預約登入」：若 guest 查不到，改查 Email
+    //   是否有正式學員/教練記錄。讓學生能用同一組 Email 登入預約頁面，
+    //   不用再建一個 guest 帳號，booking 會掛在學生原本的 memberId 上。
+    if (snap.empty) {
+      const officialQ = query(
+        collection(db, C_MEMBERS),
+        where("email", "==", trimmedEmail),
+        limit(5)
+      );
+      const officialSnap = await getDocs(officialQ);
+      const officialDoc = officialSnap.docs.find(d => {
+        const t = d.data()?.accountType;
+        return t && t !== "guest" && t !== "kid";
+      });
+      if (officialDoc) {
+        const mData = officialDoc.data();
+        await updateDoc(officialDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+        return { ok: true, id: officialDoc.id, name: mData.name || "", email: mData.email || trimmedEmail, phone: mData.phone || "", uid: cred.user.uid, bookingStats: mData.bookingStats || null, accountType: mData.accountType, isNew: false };
+      }
+      return { ok: false, reason: "找不到對應的會員記錄，請改用「註冊」或聯絡教練協助" };
+    }
 
     const existing = snap.docs[0];
     await updateDoc(existing.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
@@ -224,16 +261,25 @@ export async function signInWithGoogle() {
     const uid   = result.user.uid;
     if (!email) return { ok: false, reason: "無法取得 Google Email，請改用其他方式登入" };
 
-    // 防呆（修 2026-07-11 事件）：若這個 Google 帳號的 uid 已對應到「正式學員/教練」文件，
-    //   就擋下來、不讓它走訪客預約——避免跟正式帳號在 members 層混淆，也提醒使用者其實有
-    //   正式帳號可用（主登入頁現在也支援 Google 登入）。查不到或查詢失敗就放行（fail-open，
-    //   這只是額外保護，不能擋住一般新客）。教練/正式學員文件都有 uid；訪客文件不寫 uid。
+    // 防呆（修 2026-07-11 事件）：若這個 Google 帳號的 uid 或 email 已對應到
+    // 「正式學員/教練」文件，就擋下來、不讓它走訪客預約——避免跟正式帳號在 members
+    // 層混淆，也提醒使用者其實有正式帳號可用（主登入頁現在也支援 Google 登入）。
+    // 查不到或查詢失敗就放行（fail-open，這只是額外保護，不能擋住一般新客）。
     try {
+      // 用 uid 查（教練/正式學員文件都有 uid）
       const dupSnap = await getDocs(query(collection(db, C_MEMBERS), where("uid", "==", uid), limit(5)));
-      const isOfficial = dupSnap.docs.some(d => {
+      let isOfficial = dupSnap.docs.some(d => {
         const t = d.data()?.accountType;
         return t !== "guest" && t !== "kid";
       });
+      // 用 email 查（有些正式學員文件的 uid 欄位可能跟 Google 拿到的 uid 不一致）
+      if (!isOfficial && email) {
+        const emailSnap = await getDocs(query(collection(db, C_MEMBERS), where("email", "==", email), limit(5)));
+        isOfficial = emailSnap.docs.some(d => {
+          const t = d.data()?.accountType;
+          return t !== "guest" && t !== "kid";
+        });
+      }
       if (isOfficial) {
         return { ok: false, reason: "這個 Google 帳號已經是正式學員／教練帳號，請改用主系統登入（登入頁也支援 Google 登入），不要走訪客預約。" };
       }
