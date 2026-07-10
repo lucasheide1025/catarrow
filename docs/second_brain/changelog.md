@@ -3,6 +3,19 @@
 
 ---
 
+## 2026-07-10（官網真實照片整合上線 + 情境子頁配圖 + 部署方式修正）
+
+### 改了什麼
+- 官網首頁 12 區塊真實照片、Hero 還原插畫版、照片統一橫式裁切、器材代購分組、訓練系統勳章清單改 11 款、場地 banner 換 AAA00185，全部**實際部署上線**。
+- 8 支情境子頁（新手/公司團康/情侶/親子/朋友/雨天/一個人/大太陽）各加一個 3-4 張的照片牆（固定高度 190px、object-fit cover grid），取代原本的插畫佔位圖。
+
+### 踩坑提醒（重要）
+- **官網 `catarrow-archery` 這個 Vercel 專案沒有接 GitHub 自動部署**。`git push` 只會更新 GitHub repo，**不會**讓官網上線。今天就因為誤以為 push 就會部署，結果連稍早的真實照片整合都沒真的上線、被使用者發現「跟原本沒差多少」。
+- 正確部署方式：把 `website/` 內容複製到暫存資料夾 → `npx vercel link --project catarrow-archery` → `npx vercel deploy --prod --yes`。CLI 已在本機登入（`broudes-1864`），token 之前壞掉是因為沒登入，重新 OAuth 授權後恢復。
+- 主 App（`catarrow` 專案）才是 push GitHub 自動部署；官網（`catarrow-archery`）要手動 deploy。兩者是**不同 Vercel 專案、不同部署機制**，別搞混。
+
+---
+
 ## 2026-07-10（貓貓村採集任務重製＋協力採集，已 push main — commit f691b5d）
 
 ### 改了什麼

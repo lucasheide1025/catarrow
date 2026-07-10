@@ -10,9 +10,12 @@
 
 | 規則 | 原因 |
 |------|------|
+| 官網要手動 `vercel deploy`，push 不會上線 | `catarrow-archery` 專案沒接 GitHub 自動部署；改 `website/` 後要複製到暫存夾跑 `npx vercel deploy --prod`（CLI 已登入 broudes-1864）。主 App `catarrow` 才是 push 自動部署，兩者不同專案別搞混 |
 | 訪客/兒童新方向：多人玩法要開 | 規格見 `guest-kid-ui-redesign-spec.md`；組隊、T1-T2 探索地下城、低階活動世界王都要支援團康，不要沿用「訪客只能單人」舊假設 |
 | 訪客/兒童差異在規則，不在質感 | UI 要共用正式打怪/組隊/地下城/世界王；難度鎖 T1-T2，獎勵低風險 |
 | 不要用 `startsWith("guest")` 判斷新訪客 | 新 guest/kid 是 Firestore 隨機 doc id；要用 `accountType`、`guestProfile` 或明確 mode flag |
+| 訪客單人打怪已改用 `guestProfile` | `GuestApp` 等 `guestFullProfile` 後傳給 `MonsterBattle`；`useCatCompanion(profileOverride)` 可避免教練裝置共用時讀到教練貓咪 |
+| 訪客組隊已改用 `accountType` | `partyRooms.members.{id}.accountType` 會寫入；`PartyBattleRoom` 不再用 `startsWith("guest")`，guest/kid 只拿低階持久金幣/材料，不拿正式寶箱與 XP |
 | 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
 | 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
 | 採集不給金幣/寶箱/射手 XP | 採集定位是貓貓 XP、羈絆、少量怪物材料與少量村資源；主線掉寶仍留給單人打怪與地下城 |
