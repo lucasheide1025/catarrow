@@ -1,4 +1,5 @@
 // test-booking-concurrency.js — Step 1 驗證腳本（07-10-booking-system-student-pilot）
+//                              ＋ Test E 多時段併發驗證（07-10-booking-multihour-and-stats）
 // 執行方式：node test-booking-concurrency.js
 // 需求：serviceAccountKey.json 放在專案根目錄（backup.js 已在用同一把 key）
 //
@@ -11,6 +12,11 @@
 //    驗證的是「這個 transaction 設計本身在真正的 Firestore 上是否具備原子性」，
 //    不是驗證 bookingDb.js 這份原始檔案逐行有沒有語法錯誤（那個交給 CI=true npx react-scripts build）。
 // 3. 跑完一定會把自己建立的全部測試資料刪乾淨，最後再查一次確認沒有殘留。
+//
+// Test E（新增）：複寫 bookingDb.js 多時段版本的 createBooking（slotKeys 陣列版），
+// 驗證「3小時預約橫跨 3 個時段格時，N 個格子的全有全無保證」在真正的 Firestore 上也成立——
+// 不是只有單一時段格版本（Test A）才具備原子性。跟 Test A-D 一樣：邏輯是複寫，不是 import 原始檔，
+// 同樣尚未實際跑過（Firestore 額度尚未恢復，見 booking-system.md §6），先確保程式碼邏輯經過靜態走查正確。
 
 const admin = require("firebase-admin");
 const fs    = require("fs");
@@ -213,6 +219,88 @@ async function rescheduleBookingAdmin(bookingId, newDate, newStartTime, newEndTi
   }
 }
 
+// ─── Test E 用：複寫 bookingDb.js 多時段版本的 createBooking ─────────────
+// （design.md §2-3：slotKeysFor + 全部讀取→逐格檢查→全部通過才逐格寫入）
+
+function slotKeysForMulti(date, startTime, durationHours) {
+  const [h, m] = startTime.split(":").map(Number);
+  const mm = m === 0 ? "00" : String(m).padStart(2, "0");
+  const keys = [];
+  for (let i = 0; i < durationHours; i++) keys.push(`${date}_${String(h + i).padStart(2, "0")}:${mm}`);
+  return keys;
+}
+
+function readCounterMulti(snap) {
+  if (!snap.exists) return { count: 0, blocked: false, newCount: 0, returningCount: 0 };
+  const data = snap.data() || {};
+  return {
+    count: data.count || 0, blocked: !!data.blocked,
+    newCount: data.newCount || 0, returningCount: data.returningCount || 0,
+  };
+}
+
+async function createBookingMultiAdmin(memberId, memberName, contact, planType, durationHours, isNewStudent, date, startTime, endTime, source, note = "") {
+  const leadErr = checkLeadTime(date, startTime);
+  if (leadErr) return { ok: false, reason: leadErr };
+
+  const slotKeys    = slotKeysForMulti(date, startTime, durationHours);
+  const counterRefs = slotKeys.map(k => db.collection("bookingSlotCounts").doc(k));
+  const memberRef   = db.collection("members").doc(memberId);
+  const bookingRef  = db.collection("bookings").doc();
+  slotKeys.forEach(k => createdCounterKeys.add(k));
+
+  try {
+    await db.runTransaction(async (tx) => {
+      // ── 全部讀取先於任何寫入：3 個 bookingSlotCounts 文件 + 會員文件 ──
+      const counterSnaps = await Promise.all(counterRefs.map(ref => tx.get(ref)));
+      const memberSnap   = await tx.get(memberRef);
+      const counters     = counterSnaps.map(readCounterMulti);
+
+      // ── 逐格檢查：任何一格額滿/封鎖就整筆丟出，不寫入任何東西 ──
+      counters.forEach((c, i) => {
+        if (c.blocked)                 throw new Error(`SLOT_BLOCKED:${slotKeys[i]}`);
+        if (c.count >= LANE_CAPACITY)  throw new Error(`SLOT_FULL:${slotKeys[i]}`);
+      });
+
+      const bookingStats   = memberSnap.exists ? (memberSnap.data().bookingStats || {}) : {};
+      const isFirstBooking = !bookingStats.firstBookingAt;
+
+      // ── 全部通過才寫入：每一格各自 +1（count 與 new/returningCount 一起動）──
+      counterRefs.forEach((ref, i) => {
+        const c = counters[i];
+        tx.set(ref, {
+          count: c.count + 1,
+          blocked: c.blocked,
+          newCount:       c.newCount       + (isNewStudent ? 1 : 0),
+          returningCount: c.returningCount + (isNewStudent ? 0 : 1),
+        }, { merge: true });
+      });
+
+      tx.set(bookingRef, {
+        memberId, memberName,
+        contactEmail: contact.email, contactPhone: contact.phone,
+        planType, participantCount: 1,
+        durationHours, isNewStudent: !!isNewStudent,
+        date, startTime, endTime, slotKeys, slotKey: slotKeys[0],
+        instructorId: null, status: "confirmed", source,
+        paymentMethod: null, note: note || "", rescheduledFrom: null,
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), cancelledAt: null,
+      });
+
+      const statsPatch = { totalBookings: FieldValue.increment(1), lastBookingAt: FieldValue.serverTimestamp() };
+      if (isFirstBooking) statsPatch.firstBookingAt = FieldValue.serverTimestamp();
+      tx.set(memberRef, { bookingStats: statsPatch }, { merge: true });
+    });
+    createdBookingIds.add(bookingRef.id);
+    return { ok: true, id: bookingRef.id, slotKeys };
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.startsWith("SLOT_FULL"))    return { ok: false, reason: "這個時段已經滿了，換一個時段看看" };
+    if (msg.startsWith("SLOT_BLOCKED")) return { ok: false, reason: "這個時段教練暫停預約" };
+    return { ok: false, reason: "系統忙碌，請稍後再試：" + e.message };
+  }
+}
+
 // ─── 測試用小工具 ────────────────────────────────────────────
 
 // 用 UTC+8 位移算出「距現在 N 分鐘後」在台北時區的 date/HH:mm 字串
@@ -325,6 +413,57 @@ async function main() {
 
   // 收尾：取消掉改期後留下的那筆 confirmed 預約，讓 totalBookings 乾淨歸零好驗證
   await cancelBookingAdmin(rescheduleResult.id);
+
+  // ── Test E：3小時預約併發搶最後一格時段（多時段版本的全有全無保證）──────
+  // 用 16:00/17:00/18:00 三個 key（跟 Test A-D 用過的 10/14/15/20:00 完全不重疊，避免互相污染）。
+  // 中間那格（17:00）預先設成 7/8（只差最後一位），兩端（16:00/18:00）還很空（3/8）。
+  // 兩個「9:00~12:00 概念相同、時段換成 16:00~19:00」的 3 小時預約同時搶 17:00 這最後一位：
+  // 應該剛好一個成功、一個失敗，而且失敗那個絕對不能在 16:00 或 18:00 留下任何殘留 +1
+  // （這才是「N 個格子全有全無」跟「單一格子全有全無」的差異所在——多一個格子失敗的機會，
+  //  但保證仍然要成立：只要有 1 格失敗，其他 2 格也一格都不能寫入）。
+  const slotEStart  = { date: TEST_DATE, startTime: "16:00" };
+  const slotEMid    = { date: TEST_DATE, startTime: "17:00" }; // 只差最後一位的瓶頸格
+  const slotEEnd    = { date: TEST_DATE, startTime: "18:00" };
+  const slotEKeys   = [slotEStart, slotEMid, slotEEnd].map(s => slotKeyOf(s.date, s.startTime));
+
+  await db.collection("bookingSlotCounts").doc(slotEKeys[0]).set({ count: 3, blocked: false, newCount: 1, returningCount: 2 });
+  await db.collection("bookingSlotCounts").doc(slotEKeys[1]).set({ count: 7, blocked: false, newCount: 2, returningCount: 5 });
+  await db.collection("bookingSlotCounts").doc(slotEKeys[2]).set({ count: 3, blocked: false, newCount: 0, returningCount: 3 });
+  slotEKeys.forEach(k => createdCounterKeys.add(k));
+
+  const [raceE1, raceE2] = await Promise.all([
+    createBookingMultiAdmin(TEST_MEMBER_ID, "測試會員", CONTACT, "general", 3, true, slotEStart.date, slotEStart.startTime, "19:00", "online", "race-E1"),
+    createBookingMultiAdmin(TEST_MEMBER_ID, "測試會員", CONTACT, "general", 3, true, slotEStart.date, slotEStart.startTime, "19:00", "online", "race-E2"),
+  ]);
+  const raceEResults  = [raceE1, raceE2];
+  const eSuccesses    = raceEResults.filter(r => r.ok);
+  const eFailures     = raceEResults.filter(r => !r.ok);
+
+  ok("Test E：兩個 3 小時預約同時搶最後一位，剛好只有一人成功", eSuccesses.length === 1 && eFailures.length === 1,
+    `(成功:${eSuccesses.length} 失敗:${eFailures.length})`);
+  ok("Test E：失敗那邊的原因是「已經滿了」", eFailures[0]?.reason?.includes("已經滿了"), `(reason=${eFailures[0]?.reason})`);
+
+  const [counterEStart, counterEMid, counterEEnd] = await Promise.all(
+    slotEKeys.map(k => db.collection("bookingSlotCounts").doc(k).get())
+  );
+  // 贏家把 3 格都各自 +1：起點 3→4、瓶頸格 7→8、終點 3→4。
+  // 輸家完全沒有寫入——若輸家有任何殘留寫入，起點/終點會變成 5（多寫了 2 次）而不是正確的 4，
+  // 這正是「N 個格子全有全無」在真正 Firestore transaction 上是否成立的關鍵斷言。
+  ok("Test E：起點格（16:00）count 正確變成 4（不多不少，沒有輸家殘留）",
+    counterEStart.data()?.count === 4, `(count=${counterEStart.data()?.count})`);
+  ok("Test E：瓶頸格（17:00）count 正確變成 8（不會超賣）",
+    counterEMid.data()?.count === 8, `(count=${counterEMid.data()?.count})`);
+  ok("Test E：終點格（18:00）count 正確變成 4（不多不少，沒有輸家殘留）",
+    counterEEnd.data()?.count === 4, `(count=${counterEEnd.data()?.count})`);
+  ok("Test E：起點格 newCount 正確 +1（1→2，兩個測試預約都是 isNewStudent=true，只有贏家那筆算數）",
+    counterEStart.data()?.newCount === 2, `(newCount=${counterEStart.data()?.newCount})`);
+  ok("Test E：瓶頸格 newCount 正確 +1（2→3）",
+    counterEMid.data()?.newCount === 3, `(newCount=${counterEMid.data()?.newCount})`);
+  ok("Test E：終點格 newCount 正確 +1（0→1）",
+    counterEEnd.data()?.newCount === 1, `(newCount=${counterEEnd.data()?.newCount})`);
+
+  // 贏家那筆的 bookingId 記在 createdBookingIds（createBookingMultiAdmin 內部已加），
+  // 不需要額外取消——收尾清理會連同 bookings/bookingSlotCounts 一起刪掉。
 
   // ── 清理所有測試資料 ─────────────────────────────────────────
   console.log("\n=== 清理測試資料 ===");

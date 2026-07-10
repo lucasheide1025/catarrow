@@ -3,6 +3,32 @@
 
 ---
 
+## 2026-07-10（線上約課擴充：3小時方案＋跨時段原子鎖定＋新舊生統計，尚未 push main）
+
+### 改了什麼
+- `src/lib/bookingDb.js`：`createBooking`/`cancelBooking`/`rescheduleBooking` 三個全部從「單一 `slotKey`」推廣成「`slotKeys[]` 陣列」，容量鎖定/釋放對N個時段格在同一個transaction內做「全部讀取→逐格檢查→全部通過才逐格寫入」，任何一格失敗整筆丟出、零寫入（不會出現3小時預約鎖到第2格才發現第3格滿的爛尾狀態）。新增內部工具 `slotKeysFor(date,startTime,durationHours)`。`createBooking` 簽章新增 `durationHours`（1|3）、`isNewStudent`（boolean）兩個參數。`rescheduleBooking` 對舊/新 slotKeys 做 union，只對「新增佔用」的格子做容量檢查，重疊格子淨變化為0不重複讀寫；`durationHours`/`isNewStudent` 固定沿用原預約值，這次不開放改期時連時數一起改。
+- `bookings/{id}` 新增欄位：`durationHours`、`slotKeys:string[]`、`isNewStudent:boolean`；`slotKey`（單數）保留＝`slotKeys[0]`向後相容舊讀取程式碼。
+- `bookingSlotCounts/{slotKey}` 新增 `newCount`/`returningCount`，跟既有 `count` 在同一次 `tx.set()` 一起寫（不變式 `count===newCount+returningCount`）。3小時預約橫跨的每一格都各自+1，不是只加在起點格。
+- `src/lib/bookingSchedule.js`：新增 `DURATION_OPTIONS`、`computeEndTime(startTime,durationHours)`；`slotState()` 簽章加 `durationHours=1` 參數，多時段方案時額外檢查「以這格當起點往後數N格」有沒有任何一格額滿/封鎖，顯示文字從單純的 `count/8` 改成 `新X／舊X（共Y/8）`。
+- `src/components/booking/DateSlotPicker.jsx`：新增 `durationHours` prop——過濾掉「起點+時數會超過22:00打烊」的起始時段、選中後用 `computeEndTime` 算正確 `endTime`（不再永遠 `+1小時`）。
+- 三個建立預約入口（`MemberBooking.jsx`／`PublicBookingApp.jsx`／`AdminBooking.jsx` 的 `CreateBookingModal`）都新增「時數」（1/3小時）選擇＋「是否為第一次來體驗」勾選框，並更新 `createBooking(...)` 呼叫傳入新參數。預設值：`bookingStats.totalBookings` 是0（或不存在）時預設勾選「第一次」，教練代建時用選定顧客的 `bookingStats` 帶出同樣的預設，使用者/教練都可自己改。
+- `AdminBooking.jsx` 的行事曆格線（`CalendarTab`，這是**獨立於** `DateSlotPicker` 的一套格線邏輯）：格子上的人數顯示改成直接讀 `bookingSlotCounts[slotKey]` 的 `count`/`newCount`/`returningCount`（原本用 `bookingsBySlot.length` 現算，只認單數 `booking.slotKey`，3小時預約跨進來的格子會漏算，這次順便修正）；`bookingsBySlot` 分組改用 `booking.slotKeys||[booking.slotKey]` 逐格 push，`SlotDetailModal` 現在點任何一格都能看到「從更早時段跨進來、還在佔用中」的預約並可取消/改期。
+- `test-booking-concurrency.js` 新增 Test E：複寫一份多時段版本的 `createBooking`（`createBookingMultiAdmin`），驗證兩個3小時預約併發搶同一個瓶頸時段格時，剛好一個成功、輸家在起點/終點格完全不留殘留寫入（「N格全有全無」保證）。
+
+### 為什麼
+- 官網價目表本來就有「1小時／3小時（2送1）」兩種方案，上一個任務刻意留白（design.md 有寫但沒做，見上一版 changelog 條目），這次補上。
+- `isNewStudent` 用使用者自己勾選、不用 `accountType` 反推：官方學生也曾是新生、訪客帳號也可能是老客戶回訪，兩者不是同一個維度。
+- 每個時段格都要正確算入「橫跨進來的3小時預約」：如果只在起點格+1，10:00/11:00這種被跨進來的格子會低估目前人數，教練後台跟學生前台看到的「還剩幾位」會不準確。
+
+### 踩坑提醒
+- **hourly slot key 語意**：一個 key 代表「這個小時是這筆預約佔用的其中一格起點」，9:00起3小時佔用 `9:00,10:00,11:00` 三個key，**不含 12:00**（那是 endTime，不是這筆預約佔用的格子）。這是 PRD 驗收項目2（9點3小時舊生預約→10/11點正確算入→12點不算入）的核心正確性依據，改這塊邏輯前一定要先想清楚這個語意，不要直覺地把 endTime 也算進 slotKeys。
+- **`AdminBooking.jsx` 的行事曆格線不是共用 `DateSlotPicker`**——是它自己刻的一套週/日檢視格線，這次多時段顯示要在兩個地方分開改（見上方「改了什麼」），改任何一邊記得檢查另一邊要不要跟著改，這跟 `TargetFaceOverlay` 5處呼叫端各自維護鎖定邏輯是同一類坑。
+- **DateSlotPicker 新增的 22:00 打烊過濾邏輯是這次任務自己加的判斷**（design.md沒有明講這個邊界情況），不是照抄設計文件的既有規格——3小時方案若允許從21:00開始會跨出打烊時間、產生沒人看得到的「幽靈時段格」，所以在起始時段清單裡直接濾掉「起點+時數>22:00」的選項。之後如果新增其他時數選項（例如2小時），這個過濾邏輯要一起適用，不用額外改。
+- **`test-booking-concurrency.js` Test E 尚未實際對 Firestore 跑過**（額度尚未恢復），只做到 `node --check` 語法驗證＋人工邏輯走查，比照 Test A-D 原本的待驗證狀態。
+- 這個任務沿用上一個任務「不要 push main」的既有限制，commit 之後仍要等使用者親自測試（含 Firestore 額度恢復後跑併發測試腳本）才問要不要 push。
+
+---
+
 ## 2026-07-10（線上約課預約系統・學生試用版：與 SimplyBook 並存，尚未 push main）
 
 ### 改了什麼

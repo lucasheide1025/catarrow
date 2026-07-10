@@ -1,13 +1,19 @@
 // src/components/booking/DateSlotPicker.jsx
-// 共用日期＋時段選擇器（07-10-booking-system-student-pilot）
+// 共用日期＋時段選擇器（07-10-booking-system-student-pilot ＋ 07-10-booking-multihour-and-stats）
 // 學生前台（MemberBooking）／新生隱藏入口（PublicBookingApp）／教練後台代建 共用同一套 UI，
 // 只負責「選出一個 {date,startTime,endTime}」，實際送出預約一律由呼叫端呼叫 bookingDb.js。
+//
+// durationHours（1|3，預設 1）：3 小時方案要連續佔用 3 個時段格，這裡負責：
+// (a) 只列出「起點 + durationHours 小時」還在營業時間內（22:00 打烊）的起始時間；
+// (b) 每個按鈕的可選/額滿狀態要連同延伸出去的格子一起檢查（slotState 內部處理）；
+// (c) 選中後算出正確的 endTime（computeEndTime），不是永遠 +1 小時。
 import { useState, useEffect, useMemo } from "react";
-import { slotsForDate, isBusinessDay, todayStr, addDays, fetchSlotCountsForRange, slotState } from "../../lib/bookingSchedule";
+import { slotsForDate, isBusinessDay, todayStr, addDays, fetchSlotCountsForRange, slotState, computeEndTime } from "../../lib/bookingSchedule";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
+const CLOSING_HOUR = 22; // 全站營業時間固定 22:00 打烊（bookingSchedule.js slotsForDate 既有假設）
 
-export default function DateSlotPicker({ selected, onSelect, daysAhead = 14 }) {
+export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, durationHours = 1 }) {
   const days = useMemo(() => {
     const base = todayStr();
     return Array.from({ length: daysAhead }).map((_, i) => {
@@ -30,7 +36,8 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14 }) {
     return () => { cancelled = true; };
   }, [date]);
 
-  const slots = slotsForDate(date);
+  // 3 小時方案：起點 + durationHours 必須還在打烊時間（22:00）之前結束，否則這個起點根本不成立
+  const slots = slotsForDate(date).filter(s => parseInt(s.startTime, 10) + durationHours <= CLOSING_HOUR);
 
   return (
     <div className="flex flex-col gap-3">
@@ -58,11 +65,11 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14 }) {
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {slots.map(s => {
-            const st = slotState(date, s.startTime, slotCounts);
+            const st = slotState(date, s.startTime, slotCounts, durationHours);
             const isSel = selected?.date === date && selected?.startTime === s.startTime;
             return (
               <button key={s.startTime} type="button" disabled={st.disabled} title={st.label}
-                onClick={() => onSelect({ date, startTime: s.startTime, endTime: s.endTime })}
+                onClick={() => onSelect({ date, startTime: s.startTime, endTime: computeEndTime(s.startTime, durationHours) })}
                 className={`rounded-xl px-2 py-2.5 text-xs font-bold border flex flex-col items-center gap-0.5 transition-colors
                   ${isSel
                     ? "bg-blue-600 border-blue-500 text-white"
@@ -70,7 +77,7 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14 }) {
                       ? "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed"
                       : "bg-white/10 border-white/15 text-slate-200 hover:border-blue-400"}`}>
                 <span>{s.startTime}</span>
-                <span className="text-[10px] opacity-80">{st.label}</span>
+                <span className="text-[10px] opacity-80 leading-tight text-center">{st.label}</span>
               </button>
             );
           })}

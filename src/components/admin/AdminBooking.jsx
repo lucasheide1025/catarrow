@@ -14,7 +14,7 @@ import {
 } from "../../lib/bookingDb";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
-  fetchSlotCountsForRange, PLAN_TYPES,
+  fetchSlotCountsForRange, PLAN_TYPES, DURATION_OPTIONS,
 } from "../../lib/bookingSchedule";
 import { resolveGuestSession } from "../../lib/guestAuth";
 import { getMembers } from "../../lib/db";
@@ -81,9 +81,15 @@ function CalendarTab({ toast }) {
 
   function refresh() { setReloadTick(t => t + 1); }
 
+  // 每個 booking 可能橫跨多個時段格（3小時方案），要在它牽涉到的每一個 slotKey 底下都列出來，
+  // 這樣不管點哪一格的詳情，都看得到「從更早時段跨進來、目前還在佔用中」的預約（design.md §4 的推廣）。
+  // 向後相容：舊資料沒有 slotKeys 陣列時 fallback 成單數 slotKey。
   const bookingsBySlot = useMemo(() => {
     const m = {};
-    bookings.forEach(b => { (m[b.slotKey] ||= []).push(b); });
+    bookings.forEach(b => {
+      const keys = (b.slotKeys && b.slotKeys.length) ? b.slotKeys : [b.slotKey];
+      keys.forEach(k => { (m[k] ||= []).push(b); });
+    });
     return m;
   }, [bookings]);
 
@@ -126,9 +132,14 @@ function CalendarTab({ toast }) {
                     return <div key={`${d}-${h}`} className="rounded-lg bg-white/[0.02] min-h-[38px]" />;
                   }
                   const slotKey = `${d}_${startTime}`;
-                  const list = bookingsBySlot[slotKey] || [];
-                  const blocked = !!slotCounts[slotKey]?.blocked;
-                  const count = list.length;
+                  // count/newCount/returningCount 直接讀 bookingSlotCounts（同一份資料前後台都讀這裡，
+                  // 保證數字一致），不用 bookingsBySlot.length 現算——3小時預約跨進來的人數
+                  // 已經在 bookingDb.js 的 transaction 裡正確算進每一格的 count 了（design.md §5）。
+                  const counterInfo = slotCounts[slotKey] || {};
+                  const blocked = !!counterInfo.blocked;
+                  const count = counterInfo.count || 0;
+                  const newCount = counterInfo.newCount || 0;
+                  const returningCount = counterInfo.returningCount || 0;
                   const full = count >= LANE_CAPACITY;
                   const colorClass = blocked
                     ? "bg-gray-700/50 border-gray-600 text-gray-400"
@@ -140,8 +151,13 @@ function CalendarTab({ toast }) {
                   return (
                     <button key={`${d}-${h}`}
                       onClick={() => setDetailSlot({ date: d, startTime, endTime: `${String(h + 1).padStart(2, "0")}:00` })}
-                      className={`rounded-lg border min-h-[38px] px-1 py-1 text-[11px] font-bold flex flex-col items-center justify-center ${colorClass}`}>
-                      {blocked ? "封鎖" : `${count}/${LANE_CAPACITY}`}
+                      className={`rounded-lg border min-h-[38px] px-1 py-1 text-[10px] font-bold flex flex-col items-center justify-center leading-tight ${colorClass}`}>
+                      {blocked ? "封鎖" : (
+                        <>
+                          <span>{`新${newCount}／舊${returningCount}`}</span>
+                          <span>{`共${count}/${LANE_CAPACITY}`}</span>
+                        </>
+                      )}
                     </button>
                   );
                 })}
@@ -170,6 +186,10 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+
+  // 這一格目前人數的新/舊生拆分，直接從這一格的實際預約清單算（清單已含跨時段進來的3小時預約）
+  const newCount = bookings.filter(b => b.isNewStudent).length;
+  const returningCount = bookings.length - newCount;
 
   async function toggleBlock() {
     setBusy(true);
@@ -216,7 +236,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     <Modal open onClose={onClose} title={`${slot.date} ${slot.startTime}-${slot.endTime}`} wide>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <div className="text-slate-300 text-sm">目前 {bookings.length}/{LANE_CAPACITY} 位・{blocked ? "已封鎖" : "開放中"}</div>
+          <div className="text-slate-300 text-sm">
+            目前 {bookings.length}/{LANE_CAPACITY} 位（新{newCount}／舊{returningCount}）・{blocked ? "已封鎖" : "開放中"}
+          </div>
           <Btn v={blocked ? "success" : "warn"} size="sm" onClick={toggleBlock} disabled={busy}>
             {blocked ? "解除封鎖" : "封鎖此時段"}
           </Btn>
@@ -233,7 +255,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                     <div className="text-white font-bold text-sm">{b.memberName || "顧客"}</div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
+                      ・{b.durationHours === 3 ? "3小時（2送1）" : "1小時"}
                       {b.source === "phone" ? "・電話進線" : b.source === "online_public" ? "・新生自助" : "・線上自助"}
+                      {b.isNewStudent ? "・🆕新生" : "・舊生"}
                     </div>
                     <div className="text-slate-500 text-xs mt-0.5">{b.contactEmail} {b.contactPhone ? `· ${b.contactPhone}` : ""}</div>
                   </div>
@@ -263,8 +287,11 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
       {rescheduleTarget && (
         <Modal open onClose={() => setRescheduleTarget(null)} title={`改期：${rescheduleTarget.memberName || "顧客"}`} wide>
           <div className="flex flex-col gap-4">
-            <div className="text-slate-400 text-xs">原時段：{rescheduleTarget.date} {rescheduleTarget.startTime}-{rescheduleTarget.endTime}</div>
-            <RescheduleSlotPicker onConfirm={handleReschedule} />
+            <div className="text-slate-400 text-xs">
+              原時段：{rescheduleTarget.date} {rescheduleTarget.startTime}-{rescheduleTarget.endTime}
+              （{rescheduleTarget.durationHours === 3 ? "3小時（2送1），時數不可變更" : "1小時"}）
+            </div>
+            <RescheduleSlotPicker durationHours={rescheduleTarget.durationHours || 1} onConfirm={handleReschedule} />
           </div>
         </Modal>
       )}
@@ -272,11 +299,11 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   );
 }
 
-function RescheduleSlotPicker({ onConfirm }) {
+function RescheduleSlotPicker({ durationHours = 1, onConfirm }) {
   const [slot, setSlot] = useState(null);
   return (
     <div className="flex flex-col gap-4">
-      <DateSlotPicker selected={slot} onSelect={setSlot} />
+      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} />
       <Btn v="primary" disabled={!slot} onClick={() => onConfirm(slot)}>確認改期到此時段</Btn>
     </div>
   );
@@ -290,9 +317,16 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   const [selectedMember, setSelectedMember] = useState(null); // {id,name,email,phone}
   const [newForm, setNewForm] = useState({ name: "", email: "", phone: "" });
   const [planType, setPlanType] = useState("general");
+  const [durationHours, setDurationHours] = useState(1);
+  const [isNewStudent, setIsNewStudent] = useState(true);
   const [slot, setSlot] = useState(initialSlot || null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  // 選定顧客後，用該顧客的 bookingStats 帶出「是否為第一次來體驗」預設值，教練仍可自己改
+  useEffect(() => {
+    if (selectedMember) setIsNewStudent(!(selectedMember.bookingStats?.totalBookings > 0));
+  }, [selectedMember]);
 
   useEffect(() => {
     // 電話進線的顧客可能還沒有正式學籍（accountType:"guest"），搜尋要涵蓋全部 members，
@@ -327,7 +361,10 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     const res = await resolveGuestSession(newForm.email.trim(), "guest", null);
     setBusy(false);
     if (!res.ok) { setErr(res.reason || "建立顧客失敗"); return; }
-    setSelectedMember({ id: res.id, name: newForm.name.trim() || res.name, email: newForm.email.trim(), phone: newForm.phone.trim() });
+    setSelectedMember({
+      id: res.id, name: newForm.name.trim() || res.name, email: newForm.email.trim(), phone: newForm.phone.trim(),
+      bookingStats: res.bookingStats, // 若是找回既有訪客記錄，可能已經有 bookingStats，用來預設「是否為第一次」
+    });
   }
 
   async function handleSubmit() {
@@ -337,7 +374,8 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     const res = await createBooking(
       selectedMember.id, selectedMember.name,
       { email: selectedMember.email || "", phone: selectedMember.phone || "" },
-      planType, slot.date, slot.startTime, slot.endTime, "phone",
+      planType, durationHours, isNewStudent,
+      slot.date, slot.startTime, slot.endTime, "phone",
     );
     setBusy(false);
     if (!res.ok) { setErr(res.reason || "建立失敗"); return; }
@@ -361,7 +399,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
                   <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
                     {results.map(m => (
                       <button key={m.id} type="button"
-                        onClick={() => setSelectedMember({ id: m.id, name: m.nickname || m.name || "顧客", email: m.email || "", phone: m.phone || m.contactRaw || "" })}
+                        onClick={() => setSelectedMember({ id: m.id, name: m.nickname || m.name || "顧客", email: m.email || "", phone: m.phone || m.contactRaw || "", bookingStats: m.bookingStats })}
                         className="text-left bg-white/5 hover:bg-white/10 rounded-xl px-3 py-2 text-sm text-slate-200">
                         <div className="font-bold">{m.nickname || m.name || "（無名稱）"}</div>
                         <div className="text-xs text-slate-400">{m.email || m.contactRaw || "—"}{m.phone ? ` · ${m.phone}` : ""}</div>
@@ -394,9 +432,17 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               <span>顧客：{selectedMember.name}（{selectedMember.email || selectedMember.phone || "—"}）</span>
               <button type="button" onClick={() => setSelectedMember(null)} className="text-xs underline text-blue-400 flex-shrink-0">重選</button>
             </div>
+            <Sel label="時數" value={durationHours}
+              onChange={e => { setDurationHours(Number(e.target.value)); setSlot(null); }}
+              options={DURATION_OPTIONS.map(d => ({ value: d.value, label: d.label }))} />
             <Sel label="方案類別" value={planType} onChange={e => setPlanType(e.target.value)}
               options={PLAN_TYPES.map(p => ({ value: p.id, label: p.label }))} />
-            <DateSlotPicker selected={slot} onSelect={setSlot} />
+            <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
+              <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
+                className="accent-blue-500 w-4 h-4" />
+              是否為第一次來體驗
+            </label>
+            <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} />
             {err && <div className="text-red-400 text-sm">{err}</div>}
             <Btn v="primary" onClick={handleSubmit} disabled={busy || !slot}>{busy ? "送出中…" : "確認建立預約"}</Btn>
           </>

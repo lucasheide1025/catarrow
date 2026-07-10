@@ -7,7 +7,7 @@
 import { useState, useEffect } from "react";
 import { resolveGuestSession } from "../lib/guestAuth";
 import { createBooking } from "../lib/bookingDb";
-import { PLAN_TYPES } from "../lib/bookingSchedule";
+import { PLAN_TYPES, DURATION_OPTIONS } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 
 const SESSION_KEY = "public_booking_profile";
@@ -34,6 +34,8 @@ export default function PublicBookingApp() {
 
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [planType, setPlanType] = useState("general");
+  const [durationHours, setDurationHours] = useState(1);
+  const [isNewStudent, setIsNewStudent] = useState(true); // 這個入口大多是新客，預設勾選，回訪舊客可自己取消
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
@@ -50,6 +52,8 @@ export default function PublicBookingApp() {
     const profileObj = { id: res.id, name: name.trim() || res.name, email: email.trim(), phone: phone.trim() };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(profileObj));
     setProfile(profileObj);
+    // 找回舊記錄且已經有預約紀錄 → 預設取消勾選「第一次來體驗」，仍可自己改
+    setIsNewStudent(!(res.bookingStats?.totalBookings > 0));
   }
 
   async function handleSubmitBooking() {
@@ -59,7 +63,8 @@ export default function PublicBookingApp() {
     const res = await createBooking(
       profile.id, profile.name,
       { email: profile.email, phone: profile.phone },
-      planType, selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
+      planType, durationHours, isNewStudent,
+      selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
       "online_public",
     );
     setSubmitting(false);
@@ -118,8 +123,16 @@ export default function PublicBookingApp() {
     <div style={wrapStyle}>
       <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ fontSize: 14, color: "rgba(255,255,255,.6)", textAlign: "center" }}>嗨，{profile.name}！選一個想來的時段吧</div>
+        <div>
+          <label style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>時數</label>
+          <select value={durationHours}
+            onChange={e => { setDurationHours(Number(e.target.value)); setSelectedSlot(null); }}
+            style={{ ...inputStyle, marginTop: 6 }}>
+            {DURATION_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+        </div>
         <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 16, padding: 16 }}>
-          <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setSubmitErr(""); }} />
+          <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setSubmitErr(""); }} durationHours={durationHours} />
         </div>
         <div>
           <label style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>方案類別</label>
@@ -127,6 +140,11 @@ export default function PublicBookingApp() {
             {PLAN_TYPES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.75)", fontWeight: 700, cursor: "pointer" }}>
+          <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
+            style={{ width: 16, height: 16 }} />
+          是否為第一次來體驗
+        </label>
         {selectedSlot && (
           <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700 }}>
             已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}

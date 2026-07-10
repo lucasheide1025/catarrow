@@ -19,6 +19,18 @@ export const PLAN_TYPES = [
   { id: "own_equipment", label: "自備器材" },
 ];
 
+// 時數選項（07-10-booking-multihour-and-stats）：跟方案類別是兩個獨立的選擇，不是 6 選 1 的下拉。
+export const DURATION_OPTIONS = [
+  { value: 1, label: "1小時" },
+  { value: 3, label: "3小時（2送1）" },
+];
+
+// 依起始時間＋時數，算出 "HH:mm" 格式的結束時間（design.md §1：endTime 依 durationHours 計算）
+export function computeEndTime(startTime, durationHours) {
+  const [h, m] = startTime.split(":").map(Number);
+  return `${String(h + durationHours).padStart(2, "0")}:${m === 0 ? "00" : String(m).padStart(2, "0")}`;
+}
+
 // 場地在台北，全站沿用同一個時區假設（跟 bookingDb.js 的 30 分鐘檢查一致）
 const VENUE_TZ = "Asia/Taipei";
 
@@ -87,16 +99,38 @@ export async function fetchSlotCountsForRange(startDate, endDate) {
   }
 }
 
-// 判斷某時段目前該顯示的狀態（唯讀顯示用，不是唯一防線——後端 bookingDb.js 一定會再檢查一次）
-export function slotState(date, startTime, slotCounts) {
-  const slotKey = date + "_" + startTime;
-  const info = slotCounts[slotKey] || { count: 0, blocked: false };
+// 判斷某時段目前該顯示的狀態（唯讀顯示用，不是唯一防線——後端 bookingDb.js 一定會再檢查一次）。
+// durationHours（07-10-booking-multihour-and-stats 新增，預設 1）：3 小時方案要連續 3 格都能選，
+// 這裡額外檢查「以這格當起點，往後數 durationHours 格」有沒有任何一格額滿/封鎖——
+// 顯示的統計數字（新X／舊X）仍然是這一格自己的即時人數，不是跨格加總。
+export function slotState(date, startTime, slotCounts, durationHours = 1) {
   const slotStartMs = new Date(date + "T" + startTime + ":00+08:00").getTime();
   if (slotStartMs - Date.now() < 30 * 60 * 1000) {
     return { state: "too_soon", label: "已截止", disabled: true };
   }
-  if (info.blocked) return { state: "blocked", label: "教練暫停", disabled: true };
-  const count = info.count || 0;
-  if (count >= LANE_CAPACITY) return { state: "full", label: "已滿", disabled: true };
-  return { state: "available", label: count + "/" + LANE_CAPACITY, disabled: false };
+
+  const localKey  = date + "_" + startTime;
+  const localInfo = slotCounts[localKey] || {};
+  const count          = localInfo.count || 0;
+  const newCount        = localInfo.newCount || 0;
+  const returningCount  = localInfo.returningCount || 0;
+  const countLabel = `新${newCount}／舊${returningCount}（共${count}/${LANE_CAPACITY}）`;
+
+  if (localInfo.blocked)            return { state: "blocked", label: "教練暫停", disabled: true };
+  if (count >= LANE_CAPACITY)       return { state: "full", label: countLabel, disabled: true };
+
+  // 多時段方案（3小時）：起點本身沒問題，但延伸出去的格子若有任一格額滿/封鎖，這個起點也不能選
+  if (durationHours > 1) {
+    const [h, m] = startTime.split(":").map(Number);
+    const mm = m === 0 ? "00" : String(m).padStart(2, "0");
+    for (let i = 1; i < durationHours; i++) {
+      const key = `${date}_${String(h + i).padStart(2, "0")}:${mm}`;
+      const c = slotCounts[key] || {};
+      if (c.blocked || (c.count || 0) >= LANE_CAPACITY) {
+        return { state: "span_unavailable", label: countLabel + "・延伸時段已滿", disabled: true };
+      }
+    }
+  }
+
+  return { state: "available", label: countLabel, disabled: false };
 }

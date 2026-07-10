@@ -1083,28 +1083,33 @@ src/lib/
 
 ---
 
-## 📅 線上約課系統速查（07-10-booking-system-student-pilot，2026-07-10）
+## 📅 線上約課系統速查（07-10-booking-system-student-pilot → 07-10-booking-multihour-and-stats，2026-07-10）
 
 **跟 SimplyBook 並存，不是取代**。官網「立即預約」CTA 完全沒動，這套是自製系統，先給既有學生/新生試用。**完工後尚未 push main**（PRD 明確要求：使用者自己測試過才問要不要 push；且 Firestore 額度事故當天做的，全程沒有即時對真實資料做並發搶位測試，只做到程式碼審查層級——見下方「已知待驗證項目」）。
 
 ### 資料層（`src/lib/bookingDb.js`，視為穩定 API，別的地方不要重刻邏輯）
 ```js
-createBooking(memberId, memberName, {email,phone}, planType, date, startTime, endTime, source, note)
+createBooking(memberId, memberName, {email,phone}, planType, durationHours, isNewStudent, date, startTime, endTime, source, note)
 cancelBooking(bookingId)
-rescheduleBooking(bookingId, newDate, newStartTime, newEndTime)   // 舊釋放+新鎖定同一個 transaction
+rescheduleBooking(bookingId, newDate, newStartTime, newEndTime)   // durationHours/isNewStudent 沿用原預約，不可在改期時變更
 blockSlot(date, startTime) / unblockSlot(date, startTime)
 getBookingsForMember(memberId, maxCount=200)
 getBookingsForDateRange(startDate, endDate)   // 一定要帶日期範圍，不能無界查詢
 LANE_CAPACITY = 8   // 全場固定 8 個靶位
 ```
-容量計算全部用 `runTransaction` 對 `bookingSlotCounts/{slotKey}`（`slotKey="YYYY-MM-DD_HH:mm"`）原子計數，`bookings` collection 本身不能拿來即時計數。30 分鐘最短前置時間檢查寫死在 `createBooking`/`rescheduleBooking` 函式本體（純函式，不查資料庫），三個入口（學生/新生/教練代建）共用同一個函式，後端擋一次三邊都保護到。
+容量計算全部用 `runTransaction` 對 `bookingSlotCounts/{slotKey}`（`slotKey="YYYY-MM-DD_HH:mm"`）原子計數，`bookings` collection 本身不能拿來即時計數。30 分鐘最短前置時間檢查寫死在 `createBooking`/`rescheduleBooking` 函式本體（純函式，不查資料庫，只檢查起始時段），三個入口（學生/新生/教練代建）共用同一個函式，後端擋一次三邊都保護到。
 
-⚠️ **全部方案類別目前統一鎖 1 小時**——`slotKey` 每次交易只鎖單一時段格，沒有「同一個 transaction 內同時鎖多個連續格」的邏輯；design.md 資料模型章節原本寫「`endTime` 依 planType 對應時數換算（1hr 或 3hr）」這次沒有實作（check agent 複查已確認並記錄，見 changelog）。之後如果真的要做 3 小時方案，要先在這個檔案補「連續 N 格原子鎖定＋任一格失敗就整個回滾」的邏輯，不能只在 UI 加時數選項。
+✅ **3小時方案（2送1）已支援，多時段原子鎖定**（原本「統一1小時」的已知限制已解決）：`bookingDb.js` 內部 `slotKeysFor(date,startTime,durationHours)` 算出一筆預約橫跨的全部時段格 key（1或3個，例：10:00起3小時→`["date_10:00","date_11:00","date_12:00"]`，**不含 12:00**——hourly slot key 代表「這筆預約佔用了這一小時的起點」，3小時預約佔滿9/10/11這3個起點，到了12:00這個key就不屬於這筆預約了）。`createBooking`/`cancelBooking`/`rescheduleBooking` 三個都改成對 `slotKeys[]` 陣列做「全部讀取→逐格檢查→全部通過才逐格寫入」，任何一格額滿/封鎖就整筆丟出、零寫入（`Promise.all(refs.map(ref=>tx.get(ref)))` 讀，寫入時逐格 `tx.set`）。`rescheduleBooking` 對舊/新 slotKeys 做 union，只對「新增佔用」的格子做容量檢查，重疊格子（改期後仍佔用）淨變化為0不用動。`bookings/{id}` 新增 `durationHours:1|3`、`slotKeys:string[]`、`isNewStudent:boolean`；`slotKey`（單數）保留＝`slotKeys[0]`向後相容。
+
+`bookingSlotCounts/{slotKey}` 新增 `newCount`/`returningCount`（跟 `count` 同一次 `tx.set()` 一起寫，不變式 `count===newCount+returningCount`）。**正確性關鍵**：3小時預約橫跨的每一格都各自 +1（不是只加在起點格），所以任何一格被問「現在幾人」都會正確包含「從更早時段跨進來、還沒結束的3小時預約」。`isNewStudent` 是使用者自己勾選「是否為第一次來體驗」，**不是**用 `accountType`（official/guest）反推（官方學生也曾是新生、訪客也可能是老客戶）。
 
 `members/{id}.bookingStats = {firstBookingAt, totalBookings, lastBookingAt}`：`totalBookings` 語意＝**目前有效預約數**（取消要扣回去，改期淨變化為 0），跟 create/cancel/reschedule 同一個 transaction 內更新，UI 一律直接讀這個欄位，**不對 `bookings` 額外查詢**。
 
 ### 唯讀顯示層（`src/lib/bookingSchedule.js`）
-只負責「畫格子」，不含任何寫入邏輯：`slotsForDate(date)`（週一公休；週二 13-22 共9格；週三~日 10-22 共12格，每格1hr）、`isBusinessDay`、`fetchSlotCountsForRange(start,end)`（用 `documentId()` range query 一次查完一段日期範圍的 `bookingSlotCounts`，不逐日查）、`slotState(date,startTime,slotCounts)`（可選/已滿/封鎖/太快顯示狀態）、`PLAN_TYPES`（單人一般／兒童學生敬老／自備器材）。共用元件 `src/components/booking/DateSlotPicker.jsx` 被學生前台/新生隱藏入口/教練後台代建三處重用。
+只負責「畫格子」，不含任何寫入邏輯：`slotsForDate(date)`（週一公休；週二 13-22 共9格；週三~日 10-22 共12格，每格1hr）、`isBusinessDay`、`fetchSlotCountsForRange(start,end)`（用 `documentId()` range query 一次查完一段日期範圍的 `bookingSlotCounts`，不逐日查，回傳整包欄位含 newCount/returningCount）、`slotState(date,startTime,slotCounts,durationHours=1)`（可選/已滿/封鎖/太快顯示狀態；`durationHours>1` 時額外檢查「以這格當起點往後數 N 格」有沒有任何一格額滿/封鎖，顯示文字仍是這一格自己的即時人數：`新X／舊X（共Y/8）`）、`computeEndTime(startTime,durationHours)`、`PLAN_TYPES`（單人一般／兒童學生敬老／自備器材）、`DURATION_OPTIONS`（1小時／3小時2送1）。共用元件 `src/components/booking/DateSlotPicker.jsx`（新增 `durationHours` prop：過濾掉「起點+時數會超過22:00打烊」的時段、選中後用 `computeEndTime` 算正確 endTime）被學生前台/新生隱藏入口/教練後台代建三處重用。
+
+### 教練後台行事曆的獨立顯示邏輯（`AdminBooking.jsx` 的 `CalendarTab`，不是共用 `DateSlotPicker`）
+週/日檢視格線是自己刻的一套（不透過 `DateSlotPicker`），改多時段這次要注意**兩處分開改**：① 格子上顯示的人數已改成直接讀 `bookingSlotCounts[slotKey].count/newCount/returningCount`（不再用 `bookingsBySlot.length` 現算，因為那個只認 `booking.slotKey` 單數欄位，3小時預約跨進來的格子會漏算）；② `bookingsBySlot` 分組已改成用 `booking.slotKeys||[booking.slotKey]` 逐格 push，讓 `SlotDetailModal` 點任何一格都能看到「從更早時段跨進來、還在佔用中」的預約並可取消/改期。
 
 ### `bookingBetaAccess` 漸進開放旗標
 `members/{id}.bookingBetaAccess: boolean`（預設不存在＝false）。`MemberApp.jsx`/`AdminApp.jsx`（射手模式）的「約課」底部導覽按鈕只在 `profile?.bookingBetaAccess===true || role==="admin"` 時才**渲染**（不是灰階，比照 `accessControl.js`/`MonsterBattle.jsx` 既有的條件式不渲染慣例）。教練後台切換開關在 `AdminBooking.jsx` 的「開放名單」分頁，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`（**注意**：`db.js::updateMember()` 的 `safeFields` 白名單沒有這個欄位，用它會被靜默濾掉，這個功能繞過 `updateMember` 直接寫）。⚠️ 只有 `studentTier==="official"`（未鎖定）的學生 `getAllowedPages()` 才會回傳 `null`（全開）；`restricted`/`retired`/`autoLocked` 的白名單沒有 `"booking"`，這幾個分級的學生就算開了 `bookingBetaAccess` 也進不去分頁（目前視為預期行為，PRD 沒特別要求覆蓋）。`"booking"` 已補進 `accessControl.js::PAGE_REGISTRY`（新分組「預約」，check agent 複查時加的），教練後台「權限設定」矩陣現在看得到這個頁面的打勾格，之後想讓特定分級學生也能約課，教練直接勾選即可，不用再改程式碼；`DEFAULT_TIER_PERMISSIONS` 預設沒有跟著開放（維持現況）。
@@ -1115,6 +1120,8 @@ LANE_CAPACITY = 8   // 全場固定 8 個靶位
 ### 教練後台 `AdminBooking.jsx`
 掛在 `AdminApp.jsx` 的「會員中心」Hub（`memberSub==="booking"`），內部三個子分頁：行事曆（週/日切換，色塊格線，點格子開 `SlotDetailModal`：封鎖/解除封鎖、標記付款方式 cash/transfer、取消、改期、＋新增預約）、開放名單（`bookingBetaAccess` 開關 + `bookingStats` 三欄位顯示）、收費報表（`getBookingsForDateRange` 依區間查詢，`planType × paymentMethod` 記憶體內分組統計，不新增 Firestore 查詢模式）。建立預約（電話進線）搜尋既有顧客時讀的是**全部** `members`（含 guest/kid），不是 `getMembers()`（那個過濾掉 guest/kid）；新顧客一樣走 `resolveGuestSession`，不是另外刻建立邏輯。
 
-### 已知待驗證項目（Firestore 額度當天恢復後要做）
-- PRD 驗收4：雙分頁同時搶同一時段最後名額——只做到程式碼審查（transaction 邏輯正確），**沒有實際跑並發測試**。
-- 完整新生自助註冊+預約流程、教練後台完整跑一輪、學生完整跑一輪（選時段→送出→查看→改期→取消）——都只做到 `CI=true npx react-scripts build` 通過 + 程式碼審查，沒有對真實 Firestore 資料即時操作驗證。
+### 已知待驗證項目（Firestore 額度恢復後要做）
+- PRD 驗收4：雙分頁同時搶同一時段最後名額（單一時段格版本）——只做到程式碼審查（transaction 邏輯正確），**沒有實際跑並發測試**。
+- `test-booking-concurrency.js` Test E（07-10-booking-multihour-and-stats 新增）：兩個 3 小時預約併發搶同一個瓶頸時段格——同樣只做到程式碼靜態走查+`node --check`語法驗證，**沒有實際對 Firestore 跑過**。斷言重點：輸家不能在起點/終點格留下任何殘留寫入（起點/終點格若變成非預期的數字就代表「N格全有全無」保證破了）。
+- 3小時預約跨時段統計正確性（PRD驗收2）：9:00起3小時預約→10:00/11:00時段格的count/newCount/returningCount要正確算入→12:00不算入——已用程式碼邏輯走查確認（見下方推演），沒有即時 Firestore 驗證。
+- 完整新生自助註冊+預約流程、教練後台完整跑一輪、學生完整跑一輪（選時段→送出→查看→改期→取消，含1小時與3小時兩種方案）——都只做到 `CI=true npx react-scripts build` 通過 + 程式碼審查，沒有對真實 Firestore 資料即時操作驗證。

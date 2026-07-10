@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember } from "../../lib/bookingDb";
-import { PLAN_TYPES } from "../../lib/bookingSchedule";
+import { PLAN_TYPES, DURATION_OPTIONS } from "../../lib/bookingSchedule";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import { Card, Btn, Sel, Modal, Spinner, Empty, ConfirmModal, useToast } from "../shared/UI";
 
@@ -15,6 +15,9 @@ export default function MemberBooking() {
 
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [planType, setPlanType] = useState("general");
+  const [durationHours, setDurationHours] = useState(1);
+  // bookingStats.totalBookings 是 0（或還沒有這個欄位）時預設勾選「第一次來體驗」，使用者仍可自己改
+  const [isNewStudent, setIsNewStudent] = useState(() => !(profile?.bookingStats?.totalBookings > 0));
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
 
@@ -40,7 +43,8 @@ export default function MemberBooking() {
     const res = await createBooking(
       profile.id, profile.nickname || profile.name,
       { email: profile.email || "", phone: profile.phone || "" },
-      planType, selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
+      planType, durationHours, isNewStudent,
+      selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
       "online",
     );
     setSubmitting(false);
@@ -82,9 +86,17 @@ export default function MemberBooking() {
 
       {tab === "new" && (
         <Card className="p-4 flex flex-col gap-4">
-          <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setErr(""); }} />
+          <Sel label="時數" value={durationHours}
+            onChange={e => { setDurationHours(Number(e.target.value)); setSelectedSlot(null); }}
+            options={DURATION_OPTIONS.map(d => ({ value: d.value, label: d.label }))} />
+          <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setErr(""); }} durationHours={durationHours} />
           <Sel label="方案類別" value={planType} onChange={e => setPlanType(e.target.value)}
             options={PLAN_TYPES.map(p => ({ value: p.id, label: p.label }))} />
+          <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
+            <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
+              className="accent-blue-500 w-4 h-4" />
+            是否為第一次來體驗
+          </label>
           {selectedSlot && (
             <div className="text-slate-300 text-sm bg-white/5 rounded-xl px-3 py-2">
               已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
@@ -109,6 +121,7 @@ export default function MemberBooking() {
                     <div className="text-white font-bold text-sm">{b.date}　{b.startTime}-{b.endTime}</div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
+                      ・{b.durationHours === 3 ? "3小時（2送1）" : "1小時"}
                     </div>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">
@@ -136,10 +149,14 @@ export default function MemberBooking() {
 
 function RescheduleForm({ booking, onConfirm }) {
   const [slot, setSlot] = useState(null);
+  // 改期不開放連時數一起改（design.md §4），沿用原預約的 durationHours
+  const durationHours = booking.durationHours || 1;
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-slate-400 text-xs">原時段：{booking.date} {booking.startTime}-{booking.endTime}</div>
-      <DateSlotPicker selected={slot} onSelect={setSlot} />
+      <div className="text-slate-400 text-xs">
+        原時段：{booking.date} {booking.startTime}-{booking.endTime}（{durationHours === 3 ? "3小時（2送1）" : "1小時"}）
+      </div>
+      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} />
       <Btn v="primary" disabled={!slot} onClick={() => onConfirm(slot)}>確認改期到此時段</Btn>
     </div>
   );
