@@ -1,12 +1,17 @@
 // src/hooks/useAuth.js
 import { useState, useEffect, createContext, useContext } from "react";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithCredential } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { updateLastLogin } from "../lib/db";
 
 const AuthContext = createContext(null);
+
+// 待連結的 Google 憑證：當同一個 email 已用密碼註冊、專案又是「一個 email 一個帳號」設定時，
+// signInWithPopup 會丟 account-exists-with-different-credential。此時先把 Google 憑證暫存這裡，
+// 等使用者用密碼登入後再 linkWithCredential 綁上去（見 loginWithGoogle / linkGoogleWithPassword）。
+let pendingGoogleCred = null;
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -125,7 +130,21 @@ export function AuthProvider({ children }) {
   // ⚠️ 只有「查詢成功且確定為空」才刪；查詢失敗（網路/權限）一律不刪，避免誤刪正式會員。
   async function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
+    let cred;
+    try {
+      cred = await signInWithPopup(auth, provider);
+    } catch (e) {
+      // 同一個 email 已用密碼註冊、且專案設「一個 email 一個帳號」→ 需先用密碼登入再連結。
+      // 暫存 Google 憑證，丟出特殊碼讓登入頁引導輸入密碼後呼叫 linkGoogleWithPassword。
+      if (e?.code === "auth/account-exists-with-different-credential") {
+        pendingGoogleCred = GoogleAuthProvider.credentialFromError(e);
+        const err = new Error("需要先用密碼登入以連結 Google");
+        err.code = "auth/link-password-required";
+        err.email = e?.customData?.email || "";
+        throw err;
+      }
+      throw e;
+    }
     const uid = cred.user.uid;
     const email = cred.user.email;
 
@@ -156,12 +175,34 @@ export function AuthProvider({ children }) {
     return cred.user;
   }
 
+  // 用密碼登入既有帳號後，把先前待連結的 Google 憑證綁上去，讓密碼與 Google 兩種登入方式共存。
+  // 綁定成功後這個帳號同時擁有 password + google.com 兩個 provider，之後直接 Google 登入就能進。
+  async function linkGoogleWithPassword(email, password) {
+    if (!pendingGoogleCred) {
+      const e = new Error("沒有待連結的 Google 憑證，請重新用 Google 登入");
+      e.code = "auth/no-pending-link";
+      throw e;
+    }
+    const cred = await signInWithEmailAndPassword(auth, email, password); // 先證明擁有既有帳號
+    const gCred = pendingGoogleCred;
+    pendingGoogleCred = null;
+    try {
+      await linkWithCredential(cred.user, gCred);
+    } catch (e) {
+      // 已連結過 / 憑證被別的帳號用 → 使用者其實已用密碼登入成功，忽略連結錯誤即可
+      if (e?.code !== "auth/provider-already-linked" && e?.code !== "auth/credential-already-in-use") {
+        console.warn("linkWithCredential:", e?.code, e?.message);
+      }
+    }
+    return cred.user;
+  }
+
   async function logout() {
     await signOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, loginWithGoogle, linkGoogleWithPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -3,6 +3,14 @@
 
 ---
 
+## 2026-07-12（Google×密碼 自動連結共存）
+
+- `useAuth`：Google 登入若撞 `auth/account-exists-with-different-credential`（同 email 已有密碼帳號、專案設「一個 email 一個帳號」），暫存 Google 憑證（模組級 `pendingGoogleCred`）並拋 `auth/link-password-required`。新增 `linkGoogleWithPassword(email,password)`：用密碼登入既有帳號後 `linkWithCredential` 綁上 Google，之後兩種登入方式共存。
+- `LoginPage`：撞到時顯示「輸入密碼連結 Google」小表單（連結並登入／取消）。
+- 已連結過（provider-already-linked / credential-already-in-use）視為成功忽略。
+
+---
+
 ## 2026-07-12（防堵 Google 登入孤兒帳號 + 教練新增帳號撞 email 的救援）
 
 ### 問題
