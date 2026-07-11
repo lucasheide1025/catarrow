@@ -665,7 +665,12 @@ export default function DungeonExpedition({
         maxHP: member.maxHP ?? prev.maxHP,
         atk:   member.atk   ?? prev.atk,
         def:   member.def   ?? prev.def,
-        buffs: { ...prev.buffs, ...(member.buffs || {}) },
+        // 戰鬥中的增益（藥水/戰鬥buff）只對「該場戰鬥」有效：結束後不把倍率帶回，
+        // 只保留事件增益(prev.buffs，換層才由 handleDescend 歸零) 與復活符消耗狀態。
+        buffs: {
+          ...prev.buffs,
+          hasRevival: member.buffs?.hasRevival ?? prev.buffs?.hasRevival ?? false,
+        },
       } : prev);
     }
     if (!won) {

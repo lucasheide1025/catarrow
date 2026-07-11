@@ -28,6 +28,16 @@
 
 ---
 
+## 2026-07-11（地下城戰鬥增益只對該場有效：戰鬥結束歸零）
+
+### 改了什麼
+- `DungeonExpedition.handleBattleDone`：戰後同步 playerState 時**不再把 `member.buffs` 的倍率帶回**（原本 `{...prev.buffs, ...member.buffs}` 會把戰鬥中喝的藥水/戰鬥buff 永久累積）。現在只保留 `prev.buffs`（事件增益，仍由 `handleDescend` 換層歸零）＋同步 `hasRevival` 的消耗狀態。→ 戰鬥中的增益藥水只影響該場，戰鬥結束即歸零。
+
+### 待處理（6a，未修）
+- 使用者回報「正式會員模式，戰鬥中喝藥水沒作用」。已逐層追過：`onCarryPotion → applyDungeonCarryPotion`（room doc `buffs.atkMult`，effect schema `atkPct/defPct/hpPct` 對得上）→ `processDungeonRound` Step1 `effectiveAtk = atk×buffs.atkMult`（有吃），expedition room `status:"active"`、member alive、potion `kind:"carry"` 都正確。**靜態看不出 bug**。最可疑：`useFirestoreRound` 送出回合時用的 `room`(React state) 可能早於喝藥水的 snapshot → `processDungeonRound` 吃到喝藥水前的舊 buff（stale-room race）。需實機重現（會員遠征戰鬥、喝ATK藥水、看傷害有無變）才能確認；未盲改共用/CODEX 戰鬥碼。
+
+---
+
 ## 2026-07-11（地下城防堆疊：商店一次性商品 + 事件增益換層歸零）
 
 ### 改了什麼
