@@ -3,6 +3,17 @@
 
 ---
 
+## 2026-07-12（平衡：怪物弱化/強化變體改浮動）
+
+- `monsterData.js::applyVariant`：弱化/強化的 HP/ATK/DEF 倍率從固定值改**浮動區間**（原本弱化過頭×0.6、強化過頭×1.5/1.4）。
+  - 弱化 weak：三圍 ×**0.78~0.92**
+  - 強化 strong：HP ×**1.15~1.40**、ATK/DEF ×**1.10~1.30**
+  - normal(×1.0) / boss(HP×2.0,ATK/DEF×1.6) 維持固定。
+- 每隻怪生成時擲一次 `t`(0~1)，三圍用同一個 t 內插 → 一隻怪強弱一致（不會血厚攻低），整場固定不變（抽怪那刻定案）。
+- ⚠️ 戰鬥實際走 `applyVariant`(內部 `VARIANT_RANGE`/`VARIANT_FIXED`，原 `VARIANT_MULT`)；`monsterConfig.js::VARIANT_CONFIG` 的 hp/atk/def 是**死資料**（`getMonsterVariantStats` 無人呼叫），只有它的掉落倍率 dropMult/coinMult 才在用。要調戰鬥強度改 monsterData 這張，不要改 monsterConfig。
+
+---
+
 ## 2026-07-12（組隊地下城 batch 3：增益分層 + 放棄分流）
 
 ### 增益拆兩桶（藥水戰鬥級 / 事件商人樓層級）
