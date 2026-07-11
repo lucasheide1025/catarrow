@@ -424,7 +424,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isLoggedIn() &&
         get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt"])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt", "checkinId"])
       );
       allow delete: if false; // 一律用 status 標記，不真的刪除文件
     }

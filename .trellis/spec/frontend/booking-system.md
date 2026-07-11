@@ -119,3 +119,11 @@ The admin calendar uses an eight-lane day scheduler: each participant occupies o
 Admin-created bookings may backfill past dates through `createBooking(..., { bypassLeadTime:true })`. The option defaults to false and must only be passed by the authenticated admin flow. It skips only the 30-minute lead-time check; blocked-slot and capacity transaction checks remain mandatory.
 
 Closing or opening a continuous time range uses `setSlotRangeBlocked()` and one Firestore `writeBatch`. Never loop over `blockSlot()` calls from the UI because a network failure could leave a partially updated range. The range is half-open: 13:00-17:00 updates the 13:00, 14:00, 15:00, and 16:00 slot documents.
+
+## Convention: booking completion links check-in and billing records
+
+A booking becomes immutable when its Taipei start instant arrives. Both the UI and the `cancelBooking` / `rescheduleBooking` transactions enforce this; UI-only disabling is insufficient.
+
+Student check-in links the matching same-day booking through `bookings.checkinId` and `checkins.bookingId`. Coach review completion or checkout changes the booking to `status:"completed"`. Billing records store both identifiers, and the resulting `billingRecordId` is mirrored to the booking and checkin so AdminBooking and AdminDailyQuest cannot offer duplicate checkout actions.
+
+Walk-in visitors use `source:"walk_in"`, `memberId:null`, a manually entered phone, and optional note. They participate in the identical slot-capacity transaction but intentionally skip member document and bookingStats updates.

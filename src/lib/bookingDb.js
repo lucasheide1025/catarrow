@@ -59,6 +59,11 @@ function slotKeyOf(date, startTime) {
   return `${date}_${startTime}`;
 }
 
+export function bookingHasStarted(booking, now = Date.now()) {
+  const start = new Date(`${booking?.date}T${booking?.startTime}:00${VENUE_TZ_OFFSET}`).getTime();
+  return Number.isFinite(start) && start <= now;
+}
+
 // 一筆預約橫跨 durationHours 個連續小時，回傳它實際佔用的全部時段格 key（design.md §2）。
 // 例：10:00 起 3 小時 → ["date_10:00","date_11:00","date_12:00"]（不含 12:00 之後，
 // 因為 hourly slot key 代表「這筆預約佔用了這一小時」，3 小時預約佔用 10/11/12 這三個起點小時，
@@ -87,7 +92,8 @@ function slotKeysFor(date, startTime, durationHours) {
 // source:  "online" | "online_public" | "phone"
 // intake: 非必填問卷 { experience, bowInterest, purpose, remark, needSystemIntro }（只有 online_public 會帶）
 export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "", intake = null, options = {}) {
-  if (!memberId) return { ok: false, reason: "缺少會員 ID" };
+  const isWalkIn = source === "walk_in";
+  if (!memberId && !isWalkIn) return { ok: false, reason: "缺少會員 ID" };
   if (source === "online_public" && (!contact?.email || !contact?.phone)) {
     return { ok: false, reason: "Email 與電話為必填" };
   }
@@ -100,7 +106,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
 
   const slotKeys    = slotKeysFor(date, startTime, durationHours);
   const counterRefs = slotKeys.map(k => doc(db, SLOT_COUNTS, k));
-  const memberRef   = doc(db, "members", memberId);
+  const memberRef   = memberId ? doc(db, "members", memberId) : null;
   const bookingRef  = doc(collection(db, BOOKINGS)); // 先產生 ref 拿 id，還沒寫入
 
   try {
@@ -108,7 +114,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
       // ── 全部讀取要在任何寫入之前完成（Firestore transaction 規則）——
       // 3 小時預約牽涉到 3 個 bookingSlotCounts 文件，全部平行讀完才能開始判斷/寫入 ──
       const counterSnaps = await Promise.all(counterRefs.map(ref => tx.get(ref)));
-      const memberSnap   = await tx.get(memberRef);
+      const memberSnap   = memberRef ? await tx.get(memberRef) : null;
 
       const counters = counterSnaps.map(readCounter);
 
@@ -119,7 +125,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
         if (c.count + count > LANE_CAPACITY)  throw new Error(`SLOT_FULL:${slotKeys[i]}`);
       });
 
-      const bookingStats   = memberSnap.exists() ? (memberSnap.data().bookingStats || {}) : {};
+      const bookingStats   = memberSnap?.exists() ? (memberSnap.data().bookingStats || {}) : {};
       const isFirstBooking = !bookingStats.firstBookingAt;
 
       // ── 全部通過才寫入：每一格各自 +count（不是固定+1）──
@@ -159,7 +165,7 @@ export async function createBooking(memberId, memberName, contact, planType, dur
       // firstBookingAt 只在第一次寫入時設定，Firestore 沒有「只在不存在時才設定」的原生語法，
       // 所以要先讀出現有值判斷（design.md §3）。
       if (isFirstBooking) statsPatch.firstBookingAt = serverTimestamp();
-      tx.set(memberRef, { bookingStats: statsPatch }, { merge: true });
+      if (memberRef) tx.set(memberRef, { bookingStats: statsPatch }, { merge: true });
     });
     return { ok: true, id: bookingRef.id };
   } catch (e) {
@@ -193,20 +199,21 @@ export async function cancelBooking(bookingId) {
       if (!bookingSnap.exists()) throw new Error("BOOKING_NOT_FOUND");
       const booking = bookingSnap.data();
       if (booking.status !== "confirmed") throw new Error("BOOKING_NOT_ACTIVE");
+      if (bookingHasStarted(booking)) throw new Error("BOOKING_STARTED");
 
       // 舊資料（沒有 slotKeys 陣列，只有單數 slotKey）向後相容 fallback
       const slotKeys    = (booking.slotKeys && booking.slotKeys.length) ? booking.slotKeys : [booking.slotKey];
       const counterRefs = slotKeys.map(k => doc(db, SLOT_COUNTS, k));
-      const memberRef   = doc(db, "members", booking.memberId);
+      const memberRef   = booking.memberId ? doc(db, "members", booking.memberId) : null;
       const isNew       = !!booking.isNewStudent;
       const count       = booking.participantCount || 1; // 07-10-booking-ui-polish-headcount：釋放跟建立時同樣的人數
 
       // ── 讀取先於寫入（這筆預約牽涉到的全部時段格 + 會員文件）──
       const counterSnaps = await Promise.all(counterRefs.map(ref => tx.get(ref)));
-      const memberSnap   = await tx.get(memberRef);
+      const memberSnap   = memberRef ? await tx.get(memberRef) : null;
 
       const counters      = counterSnaps.map(readCounter);
-      const currentTotal  = memberSnap.exists() ? (memberSnap.data().bookingStats?.totalBookings || 0) : 0;
+      const currentTotal  = memberSnap?.exists() ? (memberSnap.data().bookingStats?.totalBookings || 0) : 0;
 
       // ── 寫入：每一格都釋放 count 個名額 + 各自扣回對應的 new/returningCount（不會低於 0）──
       counterRefs.forEach((ref, i) => {
@@ -225,7 +232,7 @@ export async function cancelBooking(bookingId) {
         updatedAt: serverTimestamp(),
       });
       // lastBookingAt 刻意不更新——取消不是「一次新的預約」，不該覆蓋掉最近一次真正的預約時間（design.md §3）
-      tx.set(memberRef, {
+      if (memberRef) tx.set(memberRef, {
         bookingStats: { totalBookings: Math.max(0, currentTotal - 1) },
       }, { merge: true });
     });
@@ -233,6 +240,7 @@ export async function cancelBooking(bookingId) {
   } catch (e) {
     if (e.message === "BOOKING_NOT_FOUND")  return { ok: false, reason: "找不到這筆預約" };
     if (e.message === "BOOKING_NOT_ACTIVE") return { ok: false, reason: "這筆預約已經是取消或完成狀態" };
+    if (e.message === "BOOKING_STARTED")    return { ok: false, reason: "預約時間已開始，無法取消" };
     console.error("[cancelBooking]", e);
     return { ok: false, reason: "系統忙碌，請稍後再試" };
   }
@@ -259,6 +267,7 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
       if (!oldSnap.exists()) throw new Error("BOOKING_NOT_FOUND");
       const old = oldSnap.data();
       if (old.status !== "confirmed") throw new Error("BOOKING_NOT_ACTIVE");
+      if (bookingHasStarted(old)) throw new Error("BOOKING_STARTED");
 
       const durationHours = old.durationHours || 1;
       const participantCount = old.participantCount || 1; // 07-10-booking-ui-polish-headcount：改期沿用同樣人數，不開放連人數一起改
@@ -270,11 +279,11 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
       const allKeys = Array.from(new Set([...oldSlotKeys, ...newSlotKeys]));
       const refByKey = {};
       allKeys.forEach(k => { refByKey[k] = doc(db, SLOT_COUNTS, k); });
-      const memberRef = doc(db, "members", old.memberId);
+      const memberRef = old.memberId ? doc(db, "members", old.memberId) : null;
 
       // ── 全部讀取（舊+新全部 bookingSlotCounts 文件 + 會員文件）要在任何寫入之前 ──
       const snapPairs = await Promise.all(allKeys.map(async (k) => [k, await tx.get(refByKey[k])]));
-      const memberSnap = await tx.get(memberRef);
+      const memberSnap = memberRef ? await tx.get(memberRef) : null;
 
       const counterByKey = {};
       snapPairs.forEach(([k, snap]) => { counterByKey[k] = readCounter(snap); });
@@ -335,9 +344,9 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
 
       // totalBookings 淨變化為 0：舊時段 decrement + 新時段 increment 在同一個 transaction 內互相抵銷，
       // 只有 lastBookingAt 更新成新時段時間（design.md §3）。Math.max 保護理論上不會觸底，但還是要寫。
-      const currentTotal = memberSnap.exists() ? (memberSnap.data().bookingStats?.totalBookings || 0) : 0;
+      const currentTotal = memberSnap?.exists() ? (memberSnap.data().bookingStats?.totalBookings || 0) : 0;
       const netTotal = Math.max(0, currentTotal - 1) + 1;
-      tx.set(memberRef, {
+      if (memberRef) tx.set(memberRef, {
         bookingStats: { totalBookings: netTotal, lastBookingAt: serverTimestamp() },
       }, { merge: true });
     });
@@ -348,6 +357,7 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
     if (msg.startsWith("SLOT_BLOCKED")) return { ok: false, reason: "新時段教練暫停預約" };
     if (msg === "BOOKING_NOT_FOUND")    return { ok: false, reason: "找不到這筆預約" };
     if (msg === "BOOKING_NOT_ACTIVE")   return { ok: false, reason: "這筆預約已經是取消或完成狀態，無法改期" };
+    if (msg === "BOOKING_STARTED")      return { ok: false, reason: "預約時間已開始，無法改期" };
     console.error("[rescheduleBooking]", e);
     return { ok: false, reason: "系統忙碌，請稍後再試" };
   }
@@ -390,6 +400,68 @@ export async function setSlotRangeBlocked(date, startTime, endTime, blocked) {
     }
     await batch.commit();
     return { ok:true, count:endHour - startHour };
+  } catch (e) {
+    return { ok:false, reason:e.message };
+  }
+}
+
+export async function linkCurrentBookingToCheckin(memberId, date, checkinId) {
+  if (!memberId || !date || !checkinId) return { ok:false };
+  const result = await getBookingsForDateRange(date, date);
+  if (!result.ok) return result;
+  const nowTime = new Date().toLocaleTimeString("en-GB", {
+    timeZone:"Asia/Taipei", hour:"2-digit", minute:"2-digit", hour12:false,
+  });
+  const candidates = result.bookings.filter(b => b.memberId === memberId && b.status === "confirmed");
+  const booking = candidates.find(b =>
+    b.memberId === memberId && b.status === "confirmed" &&
+    b.startTime <= nowTime && nowTime < b.endTime
+  ) || (candidates.length === 1 ? candidates[0] : null);
+  if (!booking) return { ok:true, bookingId:null };
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, BOOKINGS, booking.id), { checkinId, updatedAt:serverTimestamp() });
+    batch.update(doc(db, "checkins", checkinId), { bookingId });
+    await batch.commit();
+    return { ok:true, bookingId:booking.id };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function completeBookingFromCheckin(bookingId, checkinId, billingRecordId = null) {
+  if (!bookingId) return { ok:true, linked:false };
+  const bookingRef = doc(db, BOOKINGS, bookingId);
+  try {
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(bookingRef);
+      if (!snap.exists()) throw new Error("BOOKING_NOT_FOUND");
+      const booking = snap.data();
+      const memberRef = booking.memberId ? doc(db, "members", booking.memberId) : null;
+      const memberSnap = memberRef ? await tx.get(memberRef) : null;
+      if (booking.billingRecordId && billingRecordId && booking.billingRecordId !== billingRecordId) {
+        throw new Error("BOOKING_ALREADY_BILLED");
+      }
+      const firstCompletion = booking.status !== "completed";
+      tx.update(bookingRef, {
+        status:"completed",
+        completedAt:booking.completedAt || serverTimestamp(),
+        completionSource:billingRecordId ? "checkout" : "checkin",
+        ...(checkinId ? { checkinId } : {}),
+        ...(billingRecordId ? { billingRecordId } : {}),
+        updatedAt:serverTimestamp(),
+      });
+      if (checkinId) tx.update(doc(db, "checkins", checkinId), {
+        bookingId,
+        ...(billingRecordId ? { billingRecordId } : {}),
+      });
+      if (firstCompletion && memberRef && memberSnap?.exists()) {
+        const stats = memberSnap.data().bookingStats || {};
+        tx.set(memberRef, { bookingStats:{
+          totalBookings:Math.max(0, (stats.totalBookings || 0) - 1),
+          totalCompleted:(stats.totalCompleted || 0) + 1,
+        } }, { merge:true });
+      }
+    });
+    return { ok:true, linked:true };
   } catch (e) {
     return { ok:false, reason:e.message };
   }

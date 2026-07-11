@@ -13,6 +13,7 @@ import {
   adminDismissCheckin, addBillingRecord,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
+import { completeBookingFromCheckin } from "../../lib/bookingDb";
 
 const PLANS_EQUIP = [
   { id:"自訂一小時", price:200 },
@@ -140,7 +141,9 @@ export default function AdminDailyQuest({ mode = "all" }) {
       const finalPrice = bs.plan === "月卡" ? 0 : Math.max(0, basePrice - discount);
       const dateStr = new Date().toISOString().slice(0, 10);
       const [y, m, d] = dateStr.split("-").map(Number);
-      await addBillingRecord({
+      let billingId = bs.billingRecordId || null;
+      if (!billingId) {
+        const billingRef = await addBillingRecord({
         memberName:    c.memberNickname || c.memberName,
         memberId:      c.memberId || null,
         plan:          bs.plan,
@@ -152,7 +155,16 @@ export default function AdminDailyQuest({ mode = "all" }) {
         note: "",
         createdByName: profile?.nickname || profile?.name || "教練",
         createdBy:     profile?.id || null,
-      });
+        bookingId:     c.bookingId || null,
+        checkinId:     c.id,
+        });
+        billingId = billingRef.id;
+        setBillState(s => ({ ...s, [c.id]:{ ...s[c.id], billingRecordId:billingId, busy:true } }));
+      }
+      if (c.bookingId) {
+        const linked = await completeBookingFromCheckin(c.bookingId, c.id, billingId);
+        if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
+      }
       if (c.memberId) {
         updateDoc(doc(db, "members", c.memberId), { defaultPlan: bs.plan }).catch(() => {});
       }
@@ -169,6 +181,10 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   async function skipBill(c) {
     setBillState(s => { const n = { ...s }; delete n[c.id]; return n; });
+    if (c.bookingId) {
+      const linked = await completeBookingFromCheckin(c.bookingId, c.id);
+      if (!linked.ok) { toast("完成預約連動失敗：" + (linked.reason || ""), "error"); return; }
+    }
     await adminDismissCheckin(c.id);
     toast(`已完成 ${c.memberNickname || c.memberName} 的紀錄（未記帳）`);
   }

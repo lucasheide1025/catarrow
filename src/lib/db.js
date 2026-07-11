@@ -1048,6 +1048,10 @@ export async function submitCheckin(memberId, memberName, memberNickname) {
     classEnded: false,
     createdAt: serverTimestamp(),
   }, { merge: false });
+  try {
+    const { linkCurrentBookingToCheckin } = await import("./bookingDb");
+    await linkCurrentBookingToCheckin(memberId, date, id);
+  } catch (e) { console.warn("linkCurrentBookingToCheckin:", e?.message); }
   // 學生分級：報到當下立即更新最後報到日期（不等教練審核），確保 14 天自動鎖定能即時解鎖
   try { await updateDoc(doc(db, C.members, memberId), { lastCheckinDate: date }); } catch (e) { /* ignore */ }
   // 地下城發掘進度 +10
@@ -1109,7 +1113,7 @@ export function subscribePendingCheckins(callback) {
     query(collection(db, C_CHECKIN), where("date", "==", date)),
     snap => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(c => (c.status === "pending" || c.status === "active" || c.type === "simple") && c.status !== "cancelled" && !c.adminDismissed);
+        .filter(c => (c.status === "pending" || c.status === "active" || c.type === "simple") && c.status !== "cancelled" && !c.adminDismissed && !(c.classEnded && c.billingRecordId));
       callback(list);
     },
     err => { console.warn("subscribePendingCheckins:", err.message); callback([]); }
@@ -2456,6 +2460,25 @@ export async function getAllMonsterDex() {
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
   if (!memberId || !monsterId || await isGuestOrKidMember(memberId)) return;
   await updateMonsterDex(memberId, monsterId, result, 0, dmgDealt || 0).catch(() => {});
+}
+
+export async function getRecentCheckinMembers(days = 14) {
+  try {
+    const start = new Date();
+    start.setDate(start.getDate() - Math.max(1, days) + 1);
+    const startDate = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}-${String(start.getDate()).padStart(2,"0")}`;
+    const snap = await getDocs(query(collection(db, C_CHECKIN), where("date", ">=", startDate)));
+    const latest = new Map();
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (!data.memberId || data.status === "cancelled" || data.status === "rejected") return;
+      const current = latest.get(data.memberId);
+      if (!current || (data.date || "") > current.date) latest.set(data.memberId, {
+        memberId:data.memberId, memberName:data.memberNickname || data.memberName || "", date:data.date,
+      });
+    });
+    return [...latest.values()].sort((a,b) => b.date.localeCompare(a.date));
+  } catch (e) { console.warn("getRecentCheckinMembers:", e?.message); return []; }
 }
 
 // ─── 合成統計 ──────────────────────────────────────────────

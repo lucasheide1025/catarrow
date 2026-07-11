@@ -2,7 +2,7 @@
 // 由 MemberApp.jsx 控制入口；目前已正式開放給所有已登入學生。
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember } from "../../lib/bookingDb";
+import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember, bookingHasStarted } from "../../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../../lib/bookingSchedule";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
@@ -30,12 +30,18 @@ export default function MemberBooking() {
   const [loadingList, setLoadingList] = useState(true);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadBookings = useCallback(async () => {
     if (!profile?.id) return;
     setLoadingList(true);
     const res = await getBookingsForMember(profile.id);
-    setBookings(res.ok ? res.bookings.filter(b => b.status === "confirmed") : []);
+    setBookings(res.ok ? res.bookings.filter(b => ["confirmed", "completed"].includes(b.status)) : []);
     setLoadingList(false);
   }, [profile?.id]);
 
@@ -115,7 +121,10 @@ export default function MemberBooking() {
           <div className="flex flex-col gap-2">
             {bookings.slice()
               .sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`))
-              .map(b => (
+              .map(b => {
+                const completed = b.status === "completed";
+                const started = bookingHasStarted(b, now);
+                return (
                 <Card key={b.id} className="p-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-white font-bold text-sm">{b.date}　{b.startTime}-{b.endTime}</div>
@@ -124,13 +133,17 @@ export default function MemberBooking() {
                       ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人
                       ・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
                     </div>
+                    <div className={`text-xs mt-1 font-bold ${completed ? "text-emerald-400" : started ? "text-amber-400" : "text-blue-400"}`}>
+                      {completed ? "✓ 已完成課程" : started ? "上課時間已到" : "已預約"}
+                    </div>
                   </div>
-                  <div className="flex gap-1.5 flex-shrink-0">
+                  {!completed && !started && <div className="flex gap-1.5 flex-shrink-0">
                     <Btn v="secondary" size="sm" onClick={() => setRescheduleTarget(b)}>改期</Btn>
                     <Btn v="danger" size="sm" onClick={() => setCancelTarget(b)}>取消</Btn>
-                  </div>
+                  </div>}
                 </Card>
-              ))}
+                );
+              })}
           </div>
         )
       )}

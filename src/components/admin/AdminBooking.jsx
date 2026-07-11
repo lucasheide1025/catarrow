@@ -10,14 +10,15 @@ import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } fr
 import { db } from "../../lib/firebase";
 import {
   createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
+  completeBookingFromCheckin,
+  bookingHasStarted,
   getBookingsForDateRange, LANE_CAPACITY,
 } from "../../lib/bookingDb";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
   fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice, computeEndTime,
 } from "../../lib/bookingSchedule";
-import { resolveGuestSession } from "../../lib/guestAuth";
-import { getMembers, addBillingRecord } from "../../lib/db";
+import { getMembers, addBillingRecord, getRecentCheckinMembers } from "../../lib/db";
 import { fmtDT } from "../../lib/constants";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
@@ -109,7 +110,7 @@ function CalendarTab({ toast }) {
       getBookingsForDateRange(range.start, range.end),
       fetchSlotCountsForRange(range.start, range.end),
     ]);
-    setBookings(bRes.ok ? bRes.bookings.filter(b => b.status === "confirmed") : []);
+    setBookings(bRes.ok ? bRes.bookings.filter(b => ["confirmed", "completed"].includes(b.status)) : []);
     setSlotCounts(cMap);
     setLoading(false);
   }, [range]);
@@ -432,7 +433,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                     <div className="text-slate-500 text-xs mt-0.5">{b.contactEmail} {b.contactPhone ? `· ${b.contactPhone}` : ""}</div>
                     <IntakeInfo intake={b.intake} />
                   </div>
-                  <Btn v="danger" size="sm" onClick={() => handleCancel(b.id)} disabled={busy}>取消</Btn>
+                  {b.status === "confirmed" && !bookingHasStarted(b) && <Btn v="danger" size="sm" onClick={() => handleCancel(b.id)} disabled={busy}>取消</Btn>}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-slate-500 text-xs">付款方式：{b.paymentMethod ? PAYMENT_LABEL[b.paymentMethod] : "未標記"}</span>
@@ -441,10 +442,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                   ) : (
                     <Btn v="success" size="sm" onClick={() => setCheckoutTarget(b)} disabled={busy}>💰 結帳</Btn>
                   )}
-                  {b.billingRecordId && (
-                    <Btn v="ghost" size="sm" onClick={() => setCheckoutTarget(b)} disabled={busy}>重新結帳</Btn>
-                  )}
-                  <Btn v="ghost" size="sm" onClick={() => setRescheduleTarget(b)} disabled={busy}>改期</Btn>
+                  {b.status === "completed"
+                    ? <span className="text-emerald-400 text-xs font-bold">🏁 已完成課程</span>
+                    : !bookingHasStarted(b) && <Btn v="ghost" size="sm" onClick={() => setRescheduleTarget(b)} disabled={busy}>改期</Btn>}
                 </div>
               </Card>
             ))}
@@ -493,6 +493,7 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const [date, setDate]           = useState(booking.date);
   const [note, setNote]           = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [createdBillingId, setCreatedBillingId] = useState(null);
 
   const participantCount = booking.participantCount || 1;
   // 07-10-booking-ui-polish-headcount：N人的預約結帳金額要乘上人數，早鳥折扣則維持每筆固定折額
@@ -505,22 +506,22 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
     setSubmitting(true);
     try {
       const [y, m, d] = date.split("-").map(Number);
-      const ref = await addBillingRecord({
-        memberName: booking.memberName || "顧客",
-        memberId:   booking.memberId ?? null,
-        plan, basePrice,
-        discount:      discount ? EARLY_BIRD_DISC : 0,
-        finalPrice,
-        paymentMethod: payMethod,
-        year: y, month: m, day: d, date,
-        note: note.trim() || `線上約課結帳（預約 ${booking.id}）`,
-        createdBy: "", createdByName: "教練（線上約課結帳）",
-      });
-      await updateDoc(doc(db, "bookings", booking.id), {
-        billingRecordId: ref.id,
-        paymentMethod: PAY_METHOD_CODE[payMethod] || "cash",
-        updatedAt: serverTimestamp(),
-      });
+      let billingId = createdBillingId;
+      if (!billingId) {
+        const ref = await addBillingRecord({
+          memberName: booking.memberName || "顧客", memberId:booking.memberId ?? null,
+          plan, basePrice, discount:discount ? EARLY_BIRD_DISC : 0, finalPrice, paymentMethod:payMethod,
+          year:y, month:m, day:d, date,
+          note:note.trim() || `線上約課結帳（預約 ${booking.id}）`,
+          createdBy:"", createdByName:"教練（線上約課結帳）",
+          bookingId:booking.id, checkinId:booking.checkinId || null,
+        });
+        billingId = ref.id;
+        setCreatedBillingId(billingId);
+      }
+      await updateDoc(doc(db, "bookings", booking.id), { paymentMethod: PAY_METHOD_CODE[payMethod] || "cash", updatedAt:serverTimestamp() });
+      const linked = await completeBookingFromCheckin(booking.id, booking.checkinId || null, billingId);
+      if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
       toast(`✓ 已結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
       onDone();
     } catch (e) {
@@ -593,11 +594,13 @@ function RescheduleSlotPicker({ durationHours = 1, onConfirm }) {
 
 // ─── 建立預約 Modal（教練後台代建，含電話進線）──────────────────
 function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
-  const [mode, setMode] = useState("search"); // "search" | "new"
+  const [mode, setMode] = useState("recent"); // "recent" | "search"
   const [searchTerm, setSearchTerm] = useState("");
   const [allMembers, setAllMembers] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null); // {id,name,email,phone}
-  const [newForm, setNewForm] = useState({ name: "", email: "", phone: "" });
+  const [recentVisits, setRecentVisits] = useState([]);
+  const [walkInPhone, setWalkInPhone] = useState("");
+  const [walkInNote, setWalkInNote] = useState("");
   const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
   const [participantCount, setParticipantCount] = useState(1);
@@ -619,7 +622,13 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     getDocs(query(collection(db, "members"), limit(2000))).then(snap => {
       setAllMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }).catch(() => setAllMembers([]));
+    getRecentCheckinMembers(14).then(setRecentVisits);
   }, []);
+
+  const recentMembers = useMemo(() => recentVisits.map(v => {
+    const member = (allMembers || []).find(m => m.id === v.memberId);
+    return member && !["guest", "kid"].includes(member.accountType) ? { ...member, recentVisitDate:v.date } : null;
+  }).filter(Boolean), [allMembers, recentVisits]);
 
   const results = useMemo(() => {
     if (!allMembers || !searchTerm.trim()) return [];
@@ -633,22 +642,6 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     ).slice(0, 20);
   }, [allMembers, searchTerm]);
 
-  async function handleCreateNewCustomer() {
-    if (!newForm.name.trim() || !newForm.email.trim() || !newForm.phone.trim()) {
-      setErr("姓名／Email／電話皆為必填"); return;
-    }
-    setBusy(true); setErr("");
-    // 沿用既有 resolveGuestSession：用 email 找回/建立同一筆 members 文件（accountType:"guest"），
-    // 之後要轉正式學籍走既有 convertGuestToOfficial，不另建顧客資料表（design.md §1）。
-    const res = await resolveGuestSession(newForm.email.trim(), "guest", null);
-    setBusy(false);
-    if (!res.ok) { setErr(res.reason || "建立顧客失敗"); return; }
-    setSelectedMember({
-      id: res.id, name: newForm.name.trim() || res.name, email: newForm.email.trim(), phone: newForm.phone.trim(),
-      bookingStats: res.bookingStats, // 若是找回既有訪客記錄，可能已經有 bookingStats，用來預設「是否為第一次」
-    });
-  }
-
   async function handleSubmit() {
     if (!selectedMember) { setErr("請先搜尋或建立顧客"); return; }
     if (!initialSlot) { setErr("缺少開始時段"); return; }
@@ -658,9 +651,9 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     setBusy(true); setErr("");
     const res = await createBooking(
       selectedMember.id, selectedMember.name,
-      { email: selectedMember.email || "", phone: selectedMember.phone || "" },
+      { email: selectedMember.email || "", phone: selectedMember.isWalkIn ? walkInPhone.trim() : (selectedMember.phone || "") },
       planType, durationHours, participantCount, isNewStudent,
-      initialSlot.date, initialSlot.startTime, computeEndTime(initialSlot.startTime, durationHours), "phone", "", null,
+      initialSlot.date, initialSlot.startTime, computeEndTime(initialSlot.startTime, durationHours), selectedMember.isWalkIn ? "walk_in" : "phone", selectedMember.isWalkIn ? walkInNote.trim() : "", null,
       { bypassLeadTime:true },
     );
     setBusy(false);
@@ -675,10 +668,21 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
         {!selectedMember ? (
           <>
             <div className="flex gap-2">
-              <Btn v={mode === "search" ? "primary" : "secondary"} size="sm" onClick={() => setMode("search")}>搜尋既有顧客</Btn>
-              <Btn v={mode === "new" ? "primary" : "secondary"} size="sm" onClick={() => setMode("new")}>新顧客</Btn>
+              <Btn v={mode === "recent" ? "primary" : "secondary"} size="sm" onClick={() => setMode("recent")}>近期學生</Btn>
+              <Btn v={mode === "search" ? "primary" : "secondary"} size="sm" onClick={() => setMode("search")}>搜尋顧客</Btn>
+              <Btn v="warn" size="sm" onClick={() => setSelectedMember({ id:null, name:"臨時訪客", isWalkIn:true })}>臨時訪客</Btn>
             </div>
-            {mode === "search" ? (
+            {mode === "recent" ? (
+              <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
+                {recentMembers.map(m => (
+                  <button key={m.id} type="button" onClick={() => setSelectedMember({ id:m.id, name:m.nickname || m.name, email:m.email || "", phone:m.phone || "", bookingStats:m.bookingStats })}
+                    className="text-left bg-white/5 hover:bg-white/10 rounded-xl px-3 py-2 text-sm text-slate-200">
+                    <div className="font-bold">{m.nickname || m.name}</div><div className="text-xs text-slate-400">最近到訪：{m.recentVisitDate}</div>
+                  </button>
+                ))}
+                {allMembers !== null && recentMembers.length === 0 && <div className="text-slate-500 text-xs text-center py-3">近 14 天沒有學生到訪紀錄</div>}
+              </div>
+            ) : (
               <div className="flex flex-col gap-2">
                 <Inp placeholder="輸入 Email、電話或姓名搜尋" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 {allMembers === null ? <Spinner /> : (
@@ -702,14 +706,6 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <Inp label="姓名" value={newForm.name} onChange={e => setNewForm(p => ({ ...p, name: e.target.value }))} />
-                <Inp label="Email" value={newForm.email} onChange={e => setNewForm(p => ({ ...p, email: e.target.value }))} />
-                <Inp label="電話" value={newForm.phone} onChange={e => setNewForm(p => ({ ...p, phone: e.target.value }))} />
-                {err && <div className="text-red-400 text-sm">{err}</div>}
-                <Btn v="primary" onClick={handleCreateNewCustomer} disabled={busy}>{busy ? "建立中…" : "建立顧客並繼續"}</Btn>
-              </div>
             )}
           </>
         ) : (
@@ -722,6 +718,10 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); }} />
             <ParticipantCountPicker value={participantCount}
               onChange={setParticipantCount} />
+            {selectedMember.isWalkIn && <>
+              <Inp label="預約電話" value={walkInPhone} onChange={e => setWalkInPhone(e.target.value)} placeholder="手動輸入聯絡電話" />
+              <Inp label="備註" value={walkInNote} onChange={e => setWalkInNote(e.target.value)} placeholder="臨時訪客備註（選填）" />
+            </>}
             <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
               預約時間：{initialSlot.date} {initialSlot.startTime}－{computeEndTime(initialSlot.startTime, durationHours)}
             </div>
