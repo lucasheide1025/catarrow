@@ -232,6 +232,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const targetFmt = room?.targetFmt || "full_110";
   const [shopDone,      setShopDone]      = useState(false);
   const [localClaimed,  setLocalClaimed]  = useState(false); // 非房主領取後等待狀態
+  const [showGiveUp,    setShowGiveUp]    = useState(false); // 戰鬥中「放棄」二次確認
   const [controlsStarted, setControlsStarted] = useState(false); // 先點開始計分，再開啟底部控制列
   const [viewRearInInput, setViewRearInInput] = useState(false); // 輸入時後衛視角切換
 
@@ -598,7 +599,28 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
   async function handleClaimSelf() {
     if (expeditionMode) {
-      // 遠征模式：不發放個人獎勵，僅跳轉（獎勵由遠征系統統一發放）
+      // 遠征模式：個人金幣/寶箱由遠征系統統一發放。但「今日箭數練習紀錄 + 里程碑」是個人紀錄，
+      // 仍要在這裡各自寫入——否則組隊地下城的今日箭數/里程碑不會增加（總箭數走 addRoundArrows 沒問題）。
+      if (myId && !isGuestMode) {
+        const { rounds: practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
+        if (practiceRounds.length > 0) {
+          const arrowCount = practiceRounds.flat().length;
+          const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
+          addPracticeLog(myId, {
+            date: new Date().toISOString().slice(0, 10), source: "dungeon",
+            monsterName: room.monster?.name || "地下城遠征", result: room?.result === "lose" ? "lose" : "win",
+            rounds: practiceRounds,
+            total: practiceRounds.flat().reduce((s, v) => s + v, 0),
+            totalArrows: arrowCount,
+            bowType: shootingProfile.bowType, distance: shootingProfile.distance,
+            targetFormat: targetFmt,
+            inputMode: arrowPositions.length ? "target" : "button",
+            ...(arrowPositions.length ? { arrowPositions } : {}),
+          }, myId).catch(() => {});
+          import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
+            checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
+        }
+      }
       if (isHost) {
         await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
       } else {
@@ -1353,6 +1375,26 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       backgroundImage:`url(${battleBgRef.current || "/ui/dungeon-bg.webp"})`, backgroundSize:"cover", backgroundPosition:"center",
       display:"flex", flexDirection:"column", fontFamily:"sans-serif",
     }}>
+      {showGiveUp && (
+        <div style={{ position:"absolute", inset:0, zIndex:10000, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div style={{ background:"#1e293b", border:"1px solid rgba(255,255,255,0.15)", borderRadius:16, padding:20, maxWidth:340, width:"100%", boxShadow:"0 12px 40px rgba(0,0,0,0.6)" }}>
+            <div style={{ fontSize:16, fontWeight:900, color:"#fca5a5", marginBottom:10 }}>🏳️ 放棄這場地下城？</div>
+            <div style={{ fontSize:13, color:"#cbd5e1", lineHeight:1.65, marginBottom:18 }}>
+              怪物太強打不下去時可以放棄。放棄後這場地下城結束、無法繼續，但已通關樓層的獎勵會保留結算。確定要放棄嗎？
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setShowGiveUp(false)}
+                style={{ flex:1, padding:"11px", borderRadius:11, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.06)", color:"#e2e8f0", fontWeight:800, fontSize:14, cursor:"pointer" }}>
+                取消，繼續打
+              </button>
+              <button onClick={() => { setShowGiveUp(false); handleLeave(); }}
+                style={{ flex:1, padding:"11px", borderRadius:11, border:"none", background:"#dc2626", color:"white", fontWeight:900, fontSize:14, cursor:"pointer" }}>
+                確定放棄
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`
 @keyframes mb-float{0%{transform:translateY(0) scale(1.15);opacity:1}100%{transform:translateY(-70px) scale(0.80);opacity:0}}
 @keyframes mb-miss{0%{transform:translateY(0) scale(1.1);opacity:1}100%{transform:translateY(-55px) scale(0.65);opacity:0}}
@@ -1405,10 +1447,15 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               style={{ background: showBattleLog?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color: showBattleLog?"#fbbf24":"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
               📜
             </button>
-            {!expeditionMode && (
+            {!expeditionMode ? (
               <button onClick={handleLeave}
                 style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.55)", borderRadius:7, padding:"1px 8px", fontSize:11, cursor:"pointer" }}>
                 離開
+              </button>
+            ) : (
+              <button onClick={() => setShowGiveUp(true)}
+                style={{ background:"rgba(239,68,68,0.18)", border:"1px solid rgba(239,68,68,0.4)", color:"#fca5a5", borderRadius:7, padding:"1px 8px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                🏳️ 放棄
               </button>
             )}
           </div>

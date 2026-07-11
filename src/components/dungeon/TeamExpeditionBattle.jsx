@@ -389,7 +389,8 @@ export default function TeamExpeditionBattle({
         alive: m.alive !== false,
         role: m.role || "front",
         displayGroup: m.displayGroup || m.role || "front",
-        buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+        // 每場戰鬥都用乾淨 buffs，不繼承上一場——戰鬥藥水/踩事件增益打完該場就歸零，不帶到下一場/下一層。
+        buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false },
         wbBonus: m.wbBonus || null,
       }));
 
