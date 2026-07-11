@@ -7,6 +7,7 @@ import {
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
+import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
@@ -2227,10 +2228,13 @@ export async function addPotions(memberId, potions) {
   if (!memberId || !potions?.length) return;
   try {
     const ref  = doc(db, C_POTIONS, memberId);
-    const snap = await getDoc(ref);
-    const items = snap.exists() ? (snap.data().items || {}) : {};
-    potions.forEach(p => { items[p.id] = (items[p.id] || 0) + (p.count || 1); });
-    await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      const migrated = migratePotionInventory(snap.exists() ? snap.data() : {});
+      const items = { ...migrated.items };
+      potions.forEach(p => { items[p.id] = (items[p.id] || 0) + (p.count || 1); });
+      tx.set(ref, { items, catalogVersion: migrated.catalogVersion, updatedAt: serverTimestamp() }, { merge: true });
+    });
   } catch (e) { console.warn("addPotions:", e?.message); }
 }
  
@@ -2238,79 +2242,84 @@ export async function addPotions(memberId, potions) {
 export function subscribePotions(memberId, callback) {
   return onSnapshot(
     doc(db, C_POTIONS, memberId),
-    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    snap => {
+      const data = snap.exists() ? snap.data() : {};
+      const migrated = migratePotionInventory(data);
+      callback(migrated.items);
+      if (migrated.migrated) {
+        setDoc(doc(db, C_POTIONS, memberId), {
+          items: migrated.items,
+          catalogVersion: migrated.catalogVersion,
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch(e => console.warn("migratePotionInventory:", e?.message));
+      }
+    },
     err  => { console.warn("subscribePotions:", err.message); callback({}); }
   );
 }
  
 // 合成藥劑：檢查配方材料（村莊資源）→ 扣材料 + 扣金幣 → 加 1 瓶藥
 // 2026-06-30 修正：改從 members/{id}.village.resources 讀取材料（非 materialInventory）
-export async function craftPotion(memberId, potionId) {
+export async function craftPotion(memberId, potionId, craftCount = 1) {
   if (!memberId || !potionId) return { ok: false, reason: "參數錯誤" };
   const potion = POTIONS.find(p => p.id === potionId);
   if (!potion?.recipe?.length) return { ok: false, reason: "這個藥劑沒有合成配方" };
+  const executions = Math.max(1, Math.min(999, Math.floor(Number(craftCount) || 1)));
   try {
-    // 1. 讀取會員文件（村莊資源 + 金幣）
     const memRef = doc(db, C.members, memberId);
-    const memSnap = await getDoc(memRef);
-    if (!memSnap.exists()) return { ok: false, reason: "找不到會員資料" };
-    const memData = memSnap.data();
-    const resources = memData.village?.resources || {};
-    const coins = memData.coins || 0;
-
-    // 2. 檢查配方材料（從村莊資源）
-    for (const r of potion.recipe) {
-      const have = Math.floor(resources[r.id] || 0);
-      if (have < r.count) {
-        const parts = r.id.split("_t");
-        const resName = parts[1] ? `${parts[0]} T${parts[1]}` : r.id;
-        return { ok: false, reason: `材料不足：「${resName}」需要 ${r.count} 個，目前 ${have} 個` };
+    const invRef = doc(db, C_POTIONS, memberId);
+    const outputCount = executions * (potion.craftYield || 1);
+    const result = await runTransaction(db, async tx => {
+      const [memSnap, invSnap] = await Promise.all([tx.get(memRef), tx.get(invRef)]);
+      if (!memSnap.exists()) throw new Error("找不到會員資料");
+      const memData = memSnap.data();
+      const resources = memData.village?.resources || {};
+      const coins = memData.coins || 0;
+      for (const r of potion.recipe) {
+        const need = r.count * executions;
+        const have = Math.floor(resources[r.id] || 0);
+        if (have < need) throw new Error(`材料不足：「${r.id}」需要 ${need} 個，目前 ${have} 個`);
       }
-    }
+      const goldCost = (potion.gold || 0) * executions;
+      if (coins < goldCost) throw new Error(`金幣不足：需要 ${goldCost} 金幣，目前 ${Math.floor(coins)} 金幣`);
 
-    // 3. 檢查金幣
-    if ((coins || 0) < (potion.gold || 0)) {
-      return { ok: false, reason: `金幣不足：需要 ${potion.gold} 金幣，目前 ${Math.floor(coins)} 金幣` };
-    }
+      const resourceUpdates = {};
+      potion.recipe.forEach(r => { resourceUpdates[`village.resources.${r.id}`] = increment(-r.count * executions); });
+      resourceUpdates.coins = increment(-goldCost);
+      tx.update(memRef, resourceUpdates);
 
-    // 4. 扣除村莊資源 + 金幣
-    const newResources = { ...resources };
-    potion.recipe.forEach(r => {
-      newResources[r.id] = Math.max(0, (newResources[r.id] || 0) - r.count);
+      const migrated = migratePotionInventory(invSnap.exists() ? invSnap.data() : {});
+      const items = { ...migrated.items, [potionId]: (migrated.items[potionId] || 0) + outputCount };
+      tx.set(invRef, { items, catalogVersion: migrated.catalogVersion, updatedAt: serverTimestamp() }, { merge: true });
+      return { outputCount, goldCost };
     });
-    await setDoc(memRef, {
-      village: {
-        ...(memData.village || {}),
-        resources: newResources,
-      },
-      coins: Math.max(0, (coins || 0) - (potion.gold || 0)),
-    }, { merge: true });
-
-    // 5. 加入藥劑
-    await addPotions(memberId, [{ id: potionId, count: 1 }]);
-    await updateCraftStats(memberId, "potion", { potionId }).catch(() => {});
-    return { ok: true, potion };
+    await updateCraftStats(memberId, "potion", { potionId, count: outputCount }).catch(() => {});
+    return { ok: true, potion, executions, ...result };
   } catch (e) {
     console.warn("craftPotion:", e?.message);
-    return { ok: false, reason: "系統忙碌中，請稍後再試" };
+    return { ok: false, reason: e?.message || "系統忙碌中，請稍後再試" };
   }
 }
 // 使用藥劑（戰鬥開始時呼叫，potionIds = ["heal_s", ...] 每個扣 1 瓶）
 export async function usePotions(memberId, potionIds) {
   if (!memberId || !potionIds?.length) return { ok: true };
   try {
-    const ref  = doc(db, C_POTIONS, memberId);
-    const snap = await getDoc(ref);
-    const items = snap.exists() ? (snap.data().items || {}) : {};
-    for (const pid of potionIds) {
-      if ((items[pid] || 0) < 1) return { ok: false, reason: "藥劑數量不足" };
-    }
-    potionIds.forEach(pid => { items[pid] = (items[pid] || 0) - 1; });
-    await setDoc(ref, { items, updatedAt: serverTimestamp() }, { merge: true });
+    const ref = doc(db, C_POTIONS, memberId);
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      const migrated = migratePotionInventory(snap.exists() ? snap.data() : {});
+      const items = { ...migrated.items };
+      const needed = potionIds.reduce((out, id) => ({ ...out, [id]: (out[id] || 0) + 1 }), {});
+      for (const [pid, count] of Object.entries(needed)) {
+        if ((items[pid] || 0) < count) throw new Error("藥劑數量不足");
+      }
+      Object.entries(needed).forEach(([pid, count]) => { items[pid] -= count; });
+      tx.set(ref, { items, catalogVersion: migrated.catalogVersion, updatedAt: serverTimestamp() }, { merge: true });
+    });
     return { ok: true };
   } catch (e) {
     console.warn("usePotions:", e?.message);
-    return { ok: false, reason: "系統忙碌中" };
+    return { ok: false, reason: e?.message || "系統忙碌中" };
   }
 } 
 // ─── 碎片庫存 ──────────────────────────────────────────────
@@ -2924,9 +2933,10 @@ async function updateCraftStats(memberId, type, data) {
   const snap = await getDoc(ref);
   const stats = snap.exists() ? snap.data() : {};
   if (type === "potion") {
-    stats.potionsCrafted = (stats.potionsCrafted || 0) + 1;
+    const count = Math.max(1, Math.floor(data.count || 1));
+    stats.potionsCrafted = (stats.potionsCrafted || 0) + count;
     stats.potionTypesCrafted = stats.potionTypesCrafted || {};
-    stats.potionTypesCrafted[data.potionId] = (stats.potionTypesCrafted[data.potionId] || 0) + 1;
+    stats.potionTypesCrafted[data.potionId] = (stats.potionTypesCrafted[data.potionId] || 0) + count;
   } else if (type === "frag") {
     stats.fragsCrafted = (stats.fragsCrafted || 0) + 1;
     stats.fragTypesCrafted = stats.fragTypesCrafted || {};

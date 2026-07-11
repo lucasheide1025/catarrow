@@ -30,3 +30,11 @@
 - Cards expose quantity or remaining limit, purpose, destination, and price without requiring another dialog.
 - Empty categories require a clear empty state.
 - Use 44px minimum action targets, visible focus styles, explicit transition properties, and semantic buttons.
+
+## Combat consumables
+
+- `src/lib/itemData.js::POTIONS` is the consumable catalog source of truth. Mode availability, action cost, duration, recipes, output quantity, future feature flags, and art metadata belong to catalog entries rather than component ID-prefix checks.
+- Potion inventory uses `catalogVersion`; legacy ID migration must be pure and idempotent. Merge old counts once and preserve unknown keys.
+- Batch crafting validates and commits member resources, coins, migrated inventory, and output quantity in one Firestore transaction. UI maximum calculations are previews only and must be revalidated server-side.
+- Future consumables may be crafted and stored, but mode resolvers reject consumption until their dependent combat feature is enabled.
+- Normal combat throws never target world bosses. World boss consumes carry and raid categories only, and raid state remains local to one sortie.

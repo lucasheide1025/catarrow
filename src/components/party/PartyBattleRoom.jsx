@@ -10,6 +10,7 @@ import {
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing, setPartyMemberRole,
+  applyPartyCarryPotion, applyPartyUtilityPotion,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -1959,22 +1960,29 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               arrows={arrows} onArrow={addArrow}
               targetFmt={targetFmt}
               arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
+              battleMode="party"
               potionInv={potionInv}
               onCarryPotion={async lv => {
+                if (potionUsedThisRound) return;
                 setPotionUsedThisRound(true);
-                const pot = getPotion(lv.id);
-                if (pot) {
-                  const buff = calcPotionBuffs([lv.id]);
-                  // 藥水 buff 由 getArcherStats 在下一回合寫入時套用
-                  await recordPotionUsed(myId, lv.id).catch(() => {});
-                  sfxPotionDrink();
-                  setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
-                  setBottomTab("score");
-                }
+                const applied = await applyPartyCarryPotion(roomId, myId, lv.id);
+                if (!applied.ok) { setPotionUsedThisRound(false); return; }
+                await usePotions(myId, [lv.id]);
+                await recordPotionUsed(myId, lv.id).catch(() => {});
+                sfxPotionDrink();
+                setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
+                setBottomTab("score");
               }}
               onThrowPotion={async p => {
-                if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND)) return;
+                if (potionUsedThisRound || (p.actionCost === "arrow" && arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND))) return;
                 setPotionUsedThisRound(true);
+                if (p.actionCost === "utility") {
+                  const applied = await applyPartyUtilityPotion(roomId, myId, p.id);
+                  if (!applied.ok) { setPotionUsedThisRound(false); return; }
+                } else {
+                  addArrow(p.id);
+                }
+                await usePotions(myId, [p.id]);
                 await recordPotionUsed(myId, p.id).catch(() => {});
                 sfxPotionDrink();
                 setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));

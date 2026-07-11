@@ -352,9 +352,9 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "累積合成藥水 10 瓶",
     check: c => (c.craftStats?.potionsCrafted || 0) >= 10 },
   { id: "brew_all",      cat: "forge", icon: "🌈", name: "全能藥師",   rarity: "epic",
-    desc: "9 種藥水各合成過至少一次", hidden: true,
-    riddle: "九味靈藥，缺一不可…",
-    check: c => Object.keys(c.craftStats?.potionTypesCrafted || {}).length >= 9 },
+    desc: "新版消耗品各製作過至少一次", hidden: true,
+    riddle: "工坊百味，缺一不可…",
+    check: c => POTIONS.every(p => (c.craftStats?.potionTypesCrafted?.[p.id] || 0) >= 1) },
   { id: "frag_forge_1",  cat: "forge", icon: "✨", name: "碎片煉士",   rarity: "uncommon",
     desc: "第一次合成章碎片",
     check: c => (c.craftStats?.fragsCrafted || 0) >= 1 },
@@ -379,9 +379,9 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "累積使用藥水 50 次",
     check: c => Object.values(c.potionDex?.used || {}).reduce((s,n)=>s+n,0) >= 50 },
   { id: "potion_all_9",  cat: "forge", icon: "🌈", name: "全種藥師",   rarity: "epic",
-    desc: "9 種藥水各使用至少一次", hidden: true,
-    riddle: "九味靈藥，各嚐過一遍…",
-    check: c => POTIONS.every(p => (c.potionDex?.used?.[p.id] || 0) >= 1) },
+    desc: "所有已開放消耗品各使用至少一次", hidden: true,
+    riddle: "百味戰術，各試過一遍…",
+    check: c => POTIONS.filter(p => !p.futureFeature).every(p => (c.potionDex?.used?.[p.id] || 0) >= 1) },
 
   // ══ 怪物卡收藏 ══
   { id: "card_1",         cat: "card", icon: "🃏", name: "初探怪窟",   rarity: "common",
@@ -618,7 +618,7 @@ const POTION_RARITY_MILESTONES = {
   legendary: [[1,"epic","初嘗"]],
 };
 
-for (const potion of POTIONS) {
+for (const potion of POTIONS.filter(item => !item.futureFeature)) {
   const milestones = POTION_RARITY_MILESTONES[potion.rarity] || POTION_RARITY_MILESTONES.common;
   for (const [count, rarity, suffix] of milestones) {
     AUTO_ACHIEVEMENTS.push({

@@ -373,6 +373,12 @@ Two independent mechanisms, do not conflate them:
 
 ## Expedition Battle Presentation
 
+## Combat Consumables
+
+- Carry consumables persist for the current enemy/floor and clear on floor transition. Store active carry IDs by family so a higher level replaces a lower level without multiplicative re-use.
+- Carry, damage throw, and utility throw share one use per member per round. Damage throws consume an arrow slot; utility throws do not.
+- Dungeon room processing, not local UI state, owns shared debuffs, team marks, control, shields, regeneration, and poison duration.
+
 - The persisted `monster.variant` is the only source for the entry glow, battle badge, combat stats, and result label. Never infer a variant from room type or use a hard-coded red entry glow.
 - Every expedition battle must visibly label `weak`, `normal`, `strong`, or `boss` as 弱化、普通、強悍、BOSS.
 - If a generated monster queue is exhausted, the fallback variant still follows the floor contract: floor 1 weak, floor 2 normal, floor 3 strong.

@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -28,6 +28,8 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
+import { POTIONS as BATTLE_CONSUMABLES, calcPotionBuffs } from "../../lib/itemData";
+import { getConsumablesForMode, mergeCarryBuff, resolveConsumable } from "../../lib/consumableSystem";
 
 // ── WorldBoss 事件型別（客製，不經過 BattleAnimation） ──────
 const WB_EVT = {
@@ -306,6 +308,24 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [dmgLog,    setDmgLog]    = useState([]);
   const [catMsg,    setCatMsg]    = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [potionInv, setPotionInv] = useState({});
+  const [consumableUsedRound, setConsumableUsedRound] = useState(false);
+  const [activeCarryBuffs, setActiveCarryBuffs] = useState(_hasSave ? (_saved.activeCarryBuffs || {}) : {});
+  const [raidUsed, setRaidUsed] = useState(_hasSave ? (_saved.raidUsed || {}) : {});
+  const [sortieDmgPct, setSortieDmgPct] = useState(_hasSave ? (_saved.sortieDmgPct || 0) : 0);
+  const [botDmgPct, setBotDmgPct] = useState(_hasSave ? (_saved.botDmgPct || 0) : 0);
+  const [potionShield, setPotionShield] = useState(_hasSave ? (_saved.potionShield || 0) : 0);
+  const [nextCounterReducePct, setNextCounterReducePct] = useState(_hasSave ? (_saved.nextCounterReducePct || 0) : 0);
+
+  useEffect(() => {
+    if (isGuest || !profile?.id) return undefined;
+    return subscribePotions(profile.id, setPotionInv);
+  }, [profile?.id, isGuest]);
+
+  const worldBossConsumables = useMemo(
+    () => getConsumablesForMode(BATTLE_CONSUMABLES, "worldboss").filter(item => (potionInv[item.id] || 0) > 0),
+    [potionInv],
+  );
   const [result,     setResult]    = useState(null);
   const [guestActivityReward, setGuestActivityReward] = useState(null);
   const [showCard,   setShowCard]  = useState(false);
@@ -463,6 +483,40 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setTimeout(() => { setTargetPending(false); finishRound(arrows); }, 2000);
   }
 
+  async function useWorldBossConsumable(item) {
+    if (consumableUsedRound || subPhase !== "shooting" || (potionInv[item.id] || 0) <= 0) return;
+    if (item.oncePerSortie && raidUsed[item.id]) return;
+    if (item.requiresBot && bots.length === 0) return;
+    if (item.actionCost === "arrow" && arrows.length >= ARROWS_PER) return;
+    const resolved = resolveConsumable(item, {
+      mode:"worldboss", playerAtk:baseATK, enemyHp:bossHP, enemyMaxHp:event.bossMaxHP, botCount:bots.length,
+    });
+    if (!resolved.ok) return;
+
+    if (!isGuest && myId) {
+      const used = await usePotions(myId, [item.id]);
+      if (!used.ok) return;
+      recordPotionUsed(myId, item.id).catch(() => {});
+    }
+    setPotionInv(current => ({ ...current, [item.id]:Math.max(0, (current[item.id] || 0) - 1) }));
+    setConsumableUsedRound(true);
+    sfxPotionDrink();
+
+    if (item.category === "carry") {
+      setActiveCarryBuffs(current => mergeCarryBuff(current, item));
+      if (item.effect?.hpPct) setMyHP(current => Math.min(baseHP, current + Math.round(baseHP * item.effect.hpPct / 100)));
+      if (item.effect?.shieldPct) setPotionShield(current => Math.max(current, Math.round(baseHP * item.effect.shieldPct / 100)));
+    } else if (item.actionCost === "arrow") {
+      setArrows(current => [...current, { label:item.icon, score:0, consumableId:item.id }]);
+      setRaidUsed(current => ({ ...current, [item.id]:true }));
+    } else {
+      if (item.effect?.sortieDmgPct) setSortieDmgPct(current => Math.max(current, item.effect.sortieDmgPct));
+      if (item.effect?.botDmgPct) setBotDmgPct(current => Math.max(current, item.effect.botDmgPct));
+      if (item.effect?.counterReducePct) setNextCounterReducePct(current => Math.max(current, item.effect.counterReducePct));
+      setRaidUsed(current => ({ ...current, [item.id]:true }));
+    }
+  }
+
   // ── 回合結算流程（逐箭計算）──────────────────────────────
   async function finishRound(fullArrows) {
     setSubPhase("processing");
@@ -471,6 +525,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     let totalDmg = 0;
     let crits = 0;
     let localBossHP = bossHP; // 本地追蹤 HP，迴圈中用此計算
+    const carryBuffs = calcPotionBuffs(Object.values(activeCarryBuffs).map(entry => entry.id));
+    const effectiveATK = Math.round(baseATK * (carryBuffs.atkMult || 1));
+    const playerDmgMult = (carryBuffs.dmgMult || 1) * (1 + sortieDmgPct / 100);
 
     // 取出其他隊員列表（所有曾參戰者，不限今日）
     const teammates = Object.values(event.participants || {})
@@ -483,15 +540,20 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     for (let i = 0; i < fullArrows.length; i++) {
       const a   = fullArrows[i];
-      const dmg = Math.round(wbArrowDmg(a.score, baseATK, boss.def, participantBonus, wbDmgBonusPct) * potionMult);
-      const isCrit = a.score >= 10;
+      const raidHit = a.consumableId
+        ? resolveConsumable(a.consumableId, { mode:"worldboss", playerAtk:effectiveATK, enemyHp:localBossHP, enemyMaxHp:event.bossMaxHP, botCount:bots.length })
+        : null;
+      const dmg = raidHit?.ok
+        ? raidHit.damage
+        : Math.round(wbArrowDmg(a.score, effectiveATK, boss.def, participantBonus, wbDmgBonusPct) * potionMult * playerDmgMult);
+      const isCrit = !a.consumableId && a.score >= 10;
       if (isCrit) crits++;
       totalDmg += dmg;
       localBossHP = Math.max(0, localBossHP - dmg);
 
       events.push({
         type: WB_EVT.ARROW,
-        payload: { i, label: a.label, dmg, isCrit, isMiss: a.score === 0, currentBossHP: localBossHP },
+        payload: { i, label: a.label, dmg, isCrit, isMiss: !a.consumableId && a.score === 0, currentBossHP: localBossHP },
       });
 
       // 貓咪助攻（25%，視覺效果）
@@ -508,7 +570,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       // 隊友助攻（隊員越多、觸發率越高）
       if (teammates.length > 0 && Math.random() < supportChance) {
         const tm    = teammates[Math.floor(Math.random() * teammates.length)];
-        const tmATK = tm.atk || Math.round(baseATK * 0.8);
+        const tmATK = Math.round((tm.atk || baseATK * 0.8) * (1 + botDmgPct / 100));
         const sdmg  = Math.max(1, Math.round(wbArrowDmg(
           6 + Math.floor(Math.random() * 4), tmATK * 0.7, boss.def, participantBonus
         )));
@@ -602,7 +664,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     addTimer(() => {
       setAnimBossCharge(false);
-      const cdmg   = wbCounter(boss.atk || 100, baseDEF, wbDmgReducePct);
+      const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1));
+      const rawCdmg = Math.round(wbCounter(boss.atk || 100, effectiveDef, wbDmgReducePct) * (1 - nextCounterReducePct / 100));
+      const absorbed = Math.min(potionShield, rawCdmg);
+      const cdmg = rawCdmg - absorbed;
+      setPotionShield(current => Math.max(0, current - absorbed));
+      setNextCounterReducePct(0);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       // 有專屬語錄的王（目前是六族小王）優先用自己的梗，其餘沿用通用台詞池
       const ownQuotes = BOSS_QUOTES[event?.bossKey];
@@ -619,7 +686,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
       addTimer(() => {
         setAnimBossAttackDown(false);
-        const nextMyHP  = Math.max(0, myHP - cdmg);
+        const regen = Math.round(baseHP * (carryBuffs.regenPct || 0) / 100);
+        const nextMyHP  = Math.min(baseHP, Math.max(0, myHP - cdmg) + regen);
         const nextCompHPs = {};
         companions.forEach(c => { nextCompHPs[c.id] = Math.max(0, (companionHPs[c.id] ?? c.hp) - cdmg); });
         setMyHP(nextMyHP);
@@ -640,10 +708,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 eventId: event.id, memberId: _storageOwnerId, roundIdx: nextRounds.length,
                 allRounds: nextRounds, myHP: nextMyHP,
                 localBossHP, companionHPs: nextCompHPs,
+                activeCarryBuffs, raidUsed, sortieDmgPct, botDmgPct,
+                potionShield:Math.max(0, potionShield - absorbed), nextCounterReducePct:0,
               }));
             } catch { /**/ }
             setArrows([]);
             setRoundIdx(r => r + 1);
+            setConsumableUsedRound(false);
             setDmgLog([]);
             setSubPhase("shooting");
           }
@@ -1113,6 +1184,26 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               )}
             </BattleLogPanel>
         </div>
+
+        {subPhase === "shooting" && worldBossConsumables.length > 0 && (
+          <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.86)", borderTop:"1px solid rgba(251,191,36,0.2)", padding:"6px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, overflowX:"auto" }}>
+              <span style={{ fontSize:10, color:"#fbbf24", fontWeight:900, flexShrink:0 }}>消耗品</span>
+              {worldBossConsumables.map(item => {
+                const disabled = consumableUsedRound || (item.oncePerSortie && raidUsed[item.id]) || (item.requiresBot && bots.length === 0) || (item.actionCost === "arrow" && arrows.length >= ARROWS_PER);
+                return (
+                  <button key={item.id} disabled={disabled} onClick={() => useWorldBossConsumable(item)} title={`${item.name}：${item.effectText}`}
+                    style={{ flexShrink:0, width:68, minHeight:48, borderRadius:8, border:`1px solid ${item.category === "raid" ? "#fbbf2466" : "#60a5fa55"}`, background:disabled?"rgba(255,255,255,0.03)":"rgba(251,191,36,0.09)", color:disabled?"#475569":"#e2e8f0", opacity:disabled ? 0.45 : 1, fontSize:9, fontWeight:800, padding:"3px" }}>
+                    <div style={{ fontSize:16 }}>{item.icon}</div>
+                    <div>{item.name}</div>
+                    <div style={{ color:"#94a3b8", fontSize:8 }}>×{potionInv[item.id] || 0}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ textAlign:"center", color:"#64748b", fontSize:8, marginTop:2 }}>{consumableUsedRound ? "本回合已使用消耗品" : "每回合最多使用一個；一般投擲物不能用於世界王"}</div>
+          </div>
+        )}
 
         {/* ── 輸入區（Boss 圖正下方） ── */}
         <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px 2px" }}>

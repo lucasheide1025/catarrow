@@ -19,6 +19,7 @@ import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { makeChests, openChestContents, CHEST_TYPES, calcPotionBuffs, CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
+import { mergeCarryBuff, resolveConsumable } from "../../lib/consumableSystem";
 import { computeDexStats } from "../../lib/achievementDex";
 import {
   MONSTERS, FAMILIES, TIER_LABEL,
@@ -139,6 +140,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [archerHP, setArcherHP]         = useState(100);
   const [monsterHP, setMonsterHP]       = useState(0);
   const [archerATKMod, setArcherATKMod] = useState(0);
+  const [activeCarryBuffs, setActiveCarryBuffs] = useState({});
+  const [potionShield, setPotionShield] = useState(0);
+  const [monsterDmgTakenPct, setMonsterDmgTakenPct] = useState(0);
+  const [counterReducePct, setCounterReducePct] = useState(0);
+  const [poisonEffect, setPoisonEffect] = useState(null);
   const [distance, setDistance]         = useState(DISTANCE_START);
   const [round, setRound]               = useState(1);
   const [log, setLog]                   = useState([]);
@@ -312,6 +318,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       ts: Date.now(),
       monster, mode, battleMode, monsterHP, archerHP,
       round, roundScores, selectedDistance, distanceMode, battleStats,
+      activeCarryBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
       log: log.slice(-8),
     };
     try { sessionStorage.setItem("mb_battle_save", JSON.stringify(save)); } catch {}
@@ -518,14 +525,15 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     sfxPotionDrink();
     pendingPotionRef.current.push(potion.id); // 延後寫入，submitRound 時批次消耗
     setPotionInv(prev => ({ ...prev, [potion.id]: (prev[potion.id]||0) - 1 }));
-    if (potion.effect.atkPct) {
-      const baseATK = (battleStats||archerStats)?.atk || 10;
-      setArcherATKMod(m => m + Math.round(baseATK * potion.effect.atkPct / 100));
-    }
+    setActiveCarryBuffs(current => mergeCarryBuff(current, potion));
     if (potion.effect.hpPct) {
       const maxHP = (battleStats||archerStats)?.hp||100;
       const heal = Math.round(maxHP * potion.effect.hpPct / 100);
       setArcherHP(h => Math.min(maxHP, h + heal));
+    }
+    if (potion.effect.shieldPct) {
+      const maxHP = (battleStats||archerStats)?.hp||100;
+      setPotionShield(current => Math.max(current, Math.round(maxHP * potion.effect.shieldPct / 100)));
     }
     setUsedPotionThisRound({ icon:potion.icon, name:potion.name, effectText:potion.effectText });
     setPotionUsedThisRound(true);
@@ -535,14 +543,29 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   // 🎯 使用投擲道具（取代一箭）
   function useThrowPotion(potion) {
     if (potionUsedThisRound || processing) return;
-    if (arrows.length >= arrowsPerRound) return;
+    if (potion.actionCost === "arrow" && arrows.length >= arrowsPerRound) return;
     if (!profile?.id || isGuest) return;
     const count = potionInv[potion.id] || 0;
     if (count <= 0) return;
     sfxTap();
     pendingPotionRef.current.push(potion.id); // 延後寫入，submitRound 時批次消耗
     setPotionInv(prev => ({ ...prev, [potion.id]: (prev[potion.id]||0) - 1 }));
-    setArrows(prev => [...prev, potion.id]);
+    if (potion.actionCost === "arrow") {
+      setArrows(prev => [...prev, potion.id]);
+    } else {
+      const resolved = resolveConsumable(potion, {
+        mode:"monster", playerAtk:(battleStats||archerStats)?.atk || 10,
+        enemyHp:monsterHP, enemyMaxHp:monster?.hp || monsterHP,
+        isBoss:["boss","mythic"].includes(monster?.tier),
+      });
+      const effect = resolved.effect || {};
+      if (effect.monAtkPct) setMonster(current => ({ ...current, atk:Math.max(1, Math.round(current.atk * (1 - effect.monAtkPct / 100))) }));
+      if (effect.monDefPct) setMonster(current => ({ ...current, def:Math.max(0, Math.round(current.def * (1 - effect.monDefPct / 100))) }));
+      if (effect.teamDmgPct) setMonsterDmgTakenPct(current => Math.max(current, effect.teamDmgPct));
+      if (effect.skipRound === "big" && !["boss","mythic"].includes(monster?.tier)) setSkipBigRound(true);
+      if (effect.bossCounterReducePct && ["boss","mythic"].includes(monster?.tier)) setCounterReducePct(current => Math.min(70, Math.max(current, effect.bossCounterReducePct)));
+      if (effect.counterReducePct) setCounterReducePct(current => Math.min(70, current + effect.counterReducePct));
+    }
     setUsedPotionThisRound({ icon:potion.icon, name:potion.name, effectText:potion.effectText });
     setPotionUsedThisRound(true);
     setBottomTab("score");
@@ -571,6 +594,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
     // ── 1. 建立引擎輸入 ─────────────────────────────────
     const roundConfig = { mode, battleMode, targetFmt, selectedDistance, distanceMode, arrowsPerRound };
+    const consumableBuffs = calcPotionBuffs(Object.values(activeCarryBuffs).map(entry => entry.id));
     const roundCtx = {
       monster, archerStats: bSt,
       monsterHP, archerHP, distance, round,
@@ -578,6 +602,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       skipCounter, skipBigRound,
       headHitCount: 0, revived, archerATKMod,
       totalDmgDealt, totalDmgRecvd, critCount,
+      consumableBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
     };
     const catCtx = hasCat ? {
       hasCat, catName,
@@ -693,6 +718,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setSkipBigRound(finalState.skipBigRound);
     setRevived(finalState.revived);
     setArcherATKMod(finalState.archerATKMod);
+    setPotionShield(finalState.potionShield || 0);
+    setCounterReducePct(0);
+    setPoisonEffect(finalState.poisonEffect || null);
     setTotalDmgDealt(finalState.totalDmgDealt);
     setTotalDmgRecvd(finalState.totalDmgRecvd);
     setCritCount(finalState.critCount);
@@ -729,6 +757,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setArcherHP(s.archerHP);
     setRound(s.round || 1);
     setRoundScores(s.roundScores || []);
+    setActiveCarryBuffs(s.activeCarryBuffs || {});
+    setPotionShield(s.potionShield || 0);
+    setMonsterDmgTakenPct(s.monsterDmgTakenPct || 0);
+    setCounterReducePct(s.counterReducePct || 0);
+    setPoisonEffect(s.poisonEffect || null);
     setSelectedDistance(s.selectedDistance || 15);
     setDistanceMode(s.distanceMode || "fixed");
     if (s.battleStats) setBattleStats(s.battleStats);
@@ -769,6 +802,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       def: baseStats.def + cardBonus.def + lvBon.def,
     };
     setBattleStats(bStats);
+    setActiveCarryBuffs({});
+    setPotionShield(0);
+    setMonsterDmgTakenPct(0);
+    setCounterReducePct(0);
+    setPoisonEffect(null);
     // 投擲型藥劑：立即對怪物扣血＋麻痺效果（開戰前）
     let throwDmgTotal = 0;
     let throwSkip = null;

@@ -5,6 +5,7 @@ import { BattleScoreButtons } from "../shared/SharedBattleComponents";
 import { setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { getTargetScoreLabels } from "../../lib/targetFace";
 import { CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
+import { getConsumablesForMode } from "../../lib/consumableSystem";
 
 function TabButton({ active, disabled, onClick, children }) {
   return (
@@ -111,7 +112,14 @@ function ScoreTabContent({
   return null;
 }
 
-function PotionTabContent({ potionSubTab, setPotionSubTab, potionInv, potionUsedThisRound, arrows, onCarryPotion, onThrowPotion }) {
+const CARRY_GROUPS = [
+  ["heal","❤️","回復"], ["power","⚔️","力量"], ["guard","🛡️","守護"],
+  ["shield","🫧","護盾"], ["regen","🌿","再生"], ["berserk","🔥","狂戰"], ["cleanse","✨","淨化"],
+];
+
+function PotionTabContent({ potionSubTab, setPotionSubTab, potionInv, potionUsedThisRound, arrows, arrowsPerRound = 6, onCarryPotion, onThrowPotion, battleMode = "monster" }) {
+  const carryItems = getConsumablesForMode(CARRY_POTIONS, battleMode);
+  const throwItems = getConsumablesForMode(THROW_POTIONS, battleMode);
   return (
     <div>
       <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
@@ -120,25 +128,27 @@ function PotionTabContent({ potionSubTab, setPotionSubTab, potionInv, potionUsed
       </div>
       {potionSubTab === "carry" && (
         <div>
-          <PotionGroupRow icon="❤️" label="HP恢復" potions={CARRY_POTIONS.filter(p=>p.id.startsWith("hp_"))} potionInv={potionInv} potionUsedThisRound={potionUsedThisRound} onClick={onCarryPotion} />
-          <PotionGroupRow icon="⚔️" label="ATK提升" potions={CARRY_POTIONS.filter(p=>p.id.startsWith("atk_"))} potionInv={potionInv} potionUsedThisRound={potionUsedThisRound} onClick={onCarryPotion} />
-          <PotionGroupRow icon="🛡️" label="DEF提升" potions={CARRY_POTIONS.filter(p=>p.id.startsWith("def_"))} potionInv={potionInv} potionUsedThisRound={potionUsedThisRound} onClick={onCarryPotion} />
+          {CARRY_GROUPS.map(([family, icon, label]) => (
+            <PotionGroupRow key={family} icon={icon} label={label} potions={carryItems.filter(p=>p.family === family)} potionInv={potionInv} potionUsedThisRound={potionUsedThisRound} onClick={onCarryPotion} />
+          ))}
           <div style={{fontSize:9, color:"#475569", textAlign:"center", marginTop:4}}>每回合選一種，喝了自動跳回計分</div>
         </div>
       )}
       {potionSubTab === "throw" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 3 }}>
-          {THROW_POTIONS.map(p => {
+          {throwItems.map(p => {
             const count = potionInv[p.id] || 0;
-            const disabled = count <= 0 || potionUsedThisRound || arrows.length >= 6;
+            const arrowBlocked = p.actionCost === "arrow" && arrows.length >= arrowsPerRound;
+            const disabled = count <= 0 || potionUsedThisRound || arrowBlocked;
             return (
               <button key={p.id} onClick={() => disabled ? undefined : onThrowPotion(p)} disabled={disabled}
                 style={{ padding:"5px 2px", borderRadius:6, border:"none", display:"flex", flexDirection:"column", alignItems:"center", gap:1,
                   fontSize:9, fontWeight:700, cursor:disabled?"default":"pointer",
-                  background: (count>0&&!potionUsedThisRound&&arrows.length<6) ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.04)",
-                  color: (count>0&&!potionUsedThisRound&&arrows.length<6) ? "#fca5a5" : "#475569", opacity: disabled ? 0.35 : 1 }}>
+                  background: !disabled ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.04)",
+                  color: !disabled ? "#fca5a5" : "#475569", opacity: disabled ? 0.35 : 1 }}>
                 <span style={{fontSize:16}}>{p.icon}</span>
                 <span>{p.name}</span>
+                <span style={{fontSize:7, color:"rgba(255,255,255,0.45)"}}>{p.actionCost === "arrow" ? "占 1 箭" : "額外動作"}</span>
                 <span style={{fontSize:8, color:"rgba(255,255,255,0.3)"}}>x{count}</span>
               </button>
             );
@@ -159,6 +169,7 @@ export default function BattleBottomBar({
   potionInv, onCarryPotion, onThrowPotion,
   targetFmt,        // 靶面格式（"full_110"/"half_610"/"field_16"），控制計分按鈕
   arrowsPerRound,   // 每回合箭數（黨模式可能非預設 6）
+  battleMode = "monster",
   controlsLocked = false,
   onStartScoring,
   showModeChooser = true,
@@ -205,6 +216,8 @@ export default function BattleBottomBar({
           potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
           potionInv={potionInv} potionUsedThisRound={potionUsedThisRound}
           arrows={arrows}
+          arrowsPerRound={arrowsPerRound}
+          battleMode={battleMode}
           onCarryPotion={onCarryPotion}
           onThrowPotion={onThrowPotion}
         />

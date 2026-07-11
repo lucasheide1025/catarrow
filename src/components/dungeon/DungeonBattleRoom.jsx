@@ -7,7 +7,7 @@ import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
-  applyDungeonCarryPotion,
+  applyDungeonCarryPotion, applyDungeonUtilityPotion,
   forceSkipDungeonPlayer,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
@@ -538,17 +538,26 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   function onThrowPotion(p) {
     const _apr = room?.arrowsPerRound || 6;
-    if (potionUsedThisRound || arrows.length >= _apr) return;
+    if (potionUsedThisRound || (p.actionCost === "arrow" && arrows.length >= _apr)) return;
     const count = (potionInv[p.id] || 0);
     if (count <= 0) return;
-    sfxCast();
-    setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
-    setPotionUsedThisRound(true);
-    if (myId && !isGuestMode) {
-      usePotions(myId, [p.id]).catch(() => {});
+    if (p.actionCost === "arrow") {
+      sfxCast();
+      setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
+      setPotionUsedThisRound(true);
+      if (myId && !isGuestMode) usePotions(myId, [p.id]).catch(() => {});
+      addArrow(p.id);
+      setBottomTab("score");
+      return;
     }
-    addArrow(p.id);
-    setBottomTab("score");
+    setPotionUsedThisRound(true);
+    applyDungeonUtilityPotion(roomId, myId, p.id).then(applied => {
+      if (!applied.ok) { setPotionUsedThisRound(false); return; }
+      sfxCast();
+      setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
+      if (myId && !isGuestMode) usePotions(myId, [p.id]).catch(() => {});
+      setBottomTab("score");
+    });
   }
 
   async function handleSubmit() {
@@ -1834,6 +1843,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                 arrows={arrows} onArrow={addArrow}
                 targetFmt={targetFmt}
                 arrowsPerRound={room.arrowsPerRound || 6}
+                battleMode="dungeon"
                 potionInv={potionInv}
                 onCarryPotion={onCarryPotion}
                 onThrowPotion={onThrowPotion}

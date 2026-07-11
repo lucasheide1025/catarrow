@@ -7,8 +7,9 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed, createNotification } from "./db";
-import { getPotion } from "./itemData";
+import { calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
+import { resolveConsumable } from "./consumableSystem";
 import {
   assignContracts, rerollContract, generatePathOptions,
   drawDungeonEvent, DUNGEON_SHOP_ITEMS, generateDungeonFloors,
@@ -141,22 +142,53 @@ export async function applyDungeonCarryPotion(roomId, memberId, potionId) {
           (member.hp || 0) + Math.round(maxHP * effect.hpPct / 100)
         );
       }
-      // 戰鬥藥水寫進 potionBuffs（戰鬥級）——與 buffs（樓層級：事件/商人）分開，
-      // 這樣藥水打完該場就清、不會被 syncTeamExpeditionMembers 帶回 teamRoom 跨場。
-      if (effect.atkPct) {
-        updates[`members.${memberId}.potionBuffs.atkMult`] =
-          Math.round((member.potionBuffs?.atkMult || 1) * (1 + effect.atkPct / 100) * 100) / 100;
-      }
-      if (effect.defPct) {
-        updates[`members.${memberId}.potionBuffs.defMult`] =
-          Math.round((member.potionBuffs?.defMult || 1) * (1 + effect.defPct / 100) * 100) / 100;
-      }
+      // 戰鬥級藥水依 family 保存，同類高級版覆蓋低級版，不因重複飲用無限累乘。
+      const families = { ...(member.potionBuffs?.families || {}) };
+      const current = getPotion(families[potion.family]);
+      if (!current || (potion.level || 0) >= (current.level || 0)) families[potion.family] = potion.id;
+      const buffs = calcPotionBuffs(Object.values(families));
+      updates[`members.${memberId}.potionBuffs`] = {
+        families,
+        atkMult: buffs.atkMult,
+        defMult: buffs.defMult,
+        dmgMult: buffs.dmgMult,
+        regenPct: buffs.regenPct,
+        shield: Math.max(member.potionBuffs?.shield || 0, Math.round((member.maxHP || 100) * (buffs.shieldPct || 0) / 100)),
+      };
       transaction.update(roomRef, updates);
     });
     return { ok:true };
   } catch (e) {
     return { ok:false, reason:e.message };
   }
+}
+
+export async function applyDungeonUtilityPotion(roomId, memberId, potionId) {
+  const potion = getPotion(potionId);
+  if (!roomId || !memberId || potion?.kind !== "throw" || potion.actionCost === "arrow" || potion.futureFeature) {
+    return { ok:false, reason:"invalid utility" };
+  }
+  try {
+    await runTransaction(db, async transaction => {
+      const roomRef = doc(db, D, roomId);
+      const snap = await transaction.get(roomRef);
+      if (!snap.exists()) throw new Error("room not found");
+      const room = snap.data();
+      const member = room.members?.[memberId];
+      const round = room.round || 1;
+      if (room.status !== "active" || !member?.alive) throw new Error("battle not active");
+      if (member.potionUsedRound === round) throw new Error("potion already used this round");
+      const effect = potion.effect || {};
+      const updates = { [`members.${memberId}.potionUsedRound`]:round };
+      if (effect.monAtkPct) updates["monster.atk"] = Math.max(1, Math.round((room.monster?.atk || 1) * (1 - effect.monAtkPct / 100)));
+      if (effect.monDefPct) updates["monster.def"] = Math.max(0, Math.round((room.monster?.def || 0) * (1 - effect.monDefPct / 100)));
+      if (effect.teamDmgPct) updates["consumableEffects.teamDmgMult"] = Math.max(room.consumableEffects?.teamDmgMult || 1, 1 + effect.teamDmgPct / 100);
+      if (effect.skipRound === "big") updates["consumableEffects.skipCounterRound"] = round;
+      if (effect.counterReducePct) updates["consumableEffects.counterReducePct"] = Math.min(70, (room.consumableEffects?.counterReducePct || 0) + effect.counterReducePct);
+      transaction.update(roomRef, updates);
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
 }
 
 // ── 房主開啟第一層 ────────────────────────────────────────────
@@ -309,8 +341,14 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const effectiveAtk = isRear
         ? 0
         : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
       const contract     = m.contract || { type:"standard", param:null };
+      const damageItems  = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
+      const scoreArrows  = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
+      const directDmg    = isRear ? 0 : damageItems.reduce((sum, arrow) => sum + (resolveConsumable(arrow?.label || arrow, {
+        mode:"dungeon", playerAtk:effectiveAtk, enemyHp:room.monsterHP, enemyMaxHp:room.monster?.hp,
+        isBoss:["boss","mythic"].includes(room.monster?.tier),
+      }).damage || 0), 0);
       const raw = isRear
         ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(arrow=>({
             dmg:0,
@@ -318,7 +356,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
             partName: rearHeal ? "治癒" : "助攻",
             label:arrow?.label || arrow,
           })) }
-        : calcDmgFn(m.arrows || [], effectiveAtk, room.monster.def, contract, dmgMult);
+        : calcDmgFn(scoreArrows, effectiveAtk, room.monster.def, contract, dmgMult);
       const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
         const arrow = (m.arrows || [])[index];
         return Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
@@ -333,7 +371,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       });
       allData[id] = {
         name: m.name || "射手",
-        totalDmg: raw.dmg || 0,
+        totalDmg: (raw.dmg || 0) + directDmg,
         crits:    raw.crits || 0,
         arrowBreakdown,
         contract,
@@ -343,13 +381,27 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       };
     }
 
+    const poisonByMember = { ...(room.consumableEffects?.poisonByMember || {}) };
+    for (const id of aliveIds) {
+      const existing = poisonByMember[id];
+      if (existing?.rounds > 0) {
+        allData[id].totalDmg += existing.damage;
+        poisonByMember[id] = { ...existing, rounds:existing.rounds - 1 };
+      }
+      const usedPoison = (members[id].arrows || []).some(arrow => (arrow?.label || arrow) === "throw_poison");
+      if (usedPoison) {
+        const atk = Math.round((members[id].atk || 10) * (members[id].buffs?.atkMult || 1) * (members[id].potionBuffs?.atkMult || 1));
+        poisonByMember[id] = { damage:Math.round(atk * 0.4), rounds:2 };
+      }
+    }
+
     // Step 2：隨機事件（沿用組隊打怪的觸發機制）
     const eventRaw  = shouldTriggerEvent() ? drawRandomEvent() : null;
     const eff       = eventRaw?.effect || {};
     const event     = eventRaw
       ? { id:eventRaw.id, icon:eventRaw.icon, title:eventRaw.title, desc:eventRaw.desc, type:eventRaw.type }
       : null;
-    const skipAllCtr = !!eff.skipCounter;
+    const skipAllCtr = !!eff.skipCounter || room.consumableEffects?.skipCounterRound === round;
 
     // Step 3：攻擊2箭 → 怪物反擊1次（分離的 mini 結構）
     // 攻擊順序：前衛 → 後衛（動畫用）
@@ -362,6 +414,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     let   monsterHP   = room.monsterHP || 0;
     const memberHPNow = {};
     for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
+    const potionShieldNow = Object.fromEntries(aliveIds.map(id => [id, members[id].potionBuffs?.shield || 0]));
     const ctrAccum    = {};
 
     let lastHitInfo = null;
@@ -441,7 +494,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
         const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1));
-        const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0));
+        const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const absorbed     = Math.min(potionShieldNow[id] || 0, rawCtr);
+        potionShieldNow[id] = Math.max(0, (potionShieldNow[id] || 0) - absorbed);
+        const ctr          = rawCtr - absorbed;
         ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
         const prevHP       = memberHPNow[id];
         memberHPNow[id]    = Math.max(0, prevHP - ctr);
@@ -491,6 +547,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const m      = members[id];
       const isRear = m.role === "rear";
       let hp       = memberHPNow[id];
+      if (m.potionBuffs?.regenPct && hp > 0) hp = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * m.potionBuffs.regenPct / 100));
       // 後衛heal：治癒量由其他後衛分給（不補自己）
       if (receivedHeal[id]) hp = Math.min(m.maxHP || 9999, hp + receivedHeal[id]);
       if (eff.archerHP)   hp = Math.min(m.maxHP || 9999, hp + eff.archerHP);
@@ -521,6 +578,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         liveAfter++;
       }
       memberUpd[`members.${id}.hp`]        = hp;
+      memberUpd[`members.${id}.potionBuffs.shield`] = potionShieldNow[id] || 0;
       memberUpd[`members.${id}.arrows`]    = [];
       memberUpd[`members.${id}.ready`]     = false;
       if (isRear) memberUpd[`members.${id}.rearChoice`] = null; // 每回合清除後衛選擇
@@ -634,6 +692,9 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       processing: false,
       nextFloorModifiers: nextMods,
       floorPerformance: perf,
+      "consumableEffects.counterReducePct": 0,
+      "consumableEffects.skipCounterRound": null,
+      "consumableEffects.poisonByMember": poisonByMember,
       ...(newStatus === "path_select"
         ? { pathOptions: generatePathOptions(), chosenPath: null }
         : {}),
@@ -846,6 +907,7 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
     await updateDoc(doc(db, D, roomId), {
       ...upd,
       currentFloor,
+      consumableEffects: {},
       monster: {
         id: nextMonster.id, name: nextMonster.name, icon: nextMonster.icon,
         hp:  Math.round(nextMonster.hp  * ms.hp),

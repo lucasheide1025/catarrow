@@ -143,149 +143,70 @@ export function getFragment(id) { return FRAGMENTS.find(f => f.id === id) || nul
 // recipe 使用村莊資源（非怪物材料）
 // ════════════════════════════════════════════════════════════
 
+const carry = ({ id, family, level, name, icon, rarity, effect, effectText, desc, recipe, gold, craftYield, futureFeature }) => ({
+  id, family, level, name, icon, rarity, kind:"carry", category:"carry",
+  battleModes:["monster","party","dungeon","worldboss"], actionCost:"utility",
+  effect, effectText, desc, recipe, gold, craftYield, futureFeature,
+  asset:"/consumables/consumable-atlas.webp",
+});
+
+const throwable = ({ id, family, name, icon, rarity, effect, effectText, desc, recipe, gold, craftYield, actionCost = "utility", futureFeature }) => ({
+  id, family, name, icon, rarity, kind:"throw", category:"throw",
+  battleModes:["monster","party","dungeon"], actionCost,
+  effect, effectText, desc, recipe, gold, craftYield, futureFeature,
+  asset:"/consumables/consumable-atlas.webp",
+});
+
+const raid = ({ id, family, name, icon, rarity, effect, effectText, desc, recipe, gold, actionCost = "utility", requiresBot = false }) => ({
+  id, family, name, icon, rarity, kind:"raid", category:"raid",
+  battleModes:["worldboss"], actionCost, oncePerSortie:true, requiresBot,
+  effect, effectText, desc, recipe, gold, craftYield:1,
+  asset:"/consumables/consumable-atlas.webp",
+});
+
+export const POTION_CATALOG_VERSION = 2;
+
 export const POTIONS = [
   // ══ 攜帶型：HP恢復（3 級）════════════════════════════════
-  {
-    id:"hp_5",   name:"HP恢復 Lv1", icon:"❤️",   rarity:"common",
-    kind:"carry",
-    effect:{ hpPct:5 },  effectText:"回復 5% HP",
-    desc:"貓草熬製的基礎恢復藥水。",
-    recipe:[ { id:"potion_t1", count:5 } ],
-    gold:500,
-  },
-  {
-    id:"hp_10",  name:"HP恢復 Lv2", icon:"❤️",   rarity:"uncommon",
-    kind:"carry",
-    effect:{ hpPct:10 }, effectText:"回復 10% HP",
-    desc:"加入蜂蜜調味的強化恢復藥水。",
-    recipe:[ { id:"potion_t2", count:5 } ],
-    gold:1000,
-  },
-  {
-    id:"hp_15",  name:"HP恢復 Lv3", icon:"❤️",   rarity:"rare",
-    kind:"carry",
-    effect:{ hpPct:15 }, effectText:"回復 15% HP",
-    desc:"貓村長特製秘方，療效顯著。",
-    recipe:[ { id:"potion_t3", count:5 } ],
-    gold:2000,
-  },
-  // ══ 攜帶型：ATK提升（3 級）══════════════════════════════
-  {
-    id:"atk_5",  name:"ATK提升 Lv1", icon:"⚔️",  rarity:"common",
-    kind:"carry",
-    effect:{ atkPct:5 },  effectText:"ATK +5%",
-    desc:"微辣配方，拉弓更順手。",
-    recipe:[ { id:"potion_t1", count:5 } ],
-    gold:500,
-  },
-  {
-    id:"atk_10", name:"ATK提升 Lv2", icon:"⚔️",  rarity:"uncommon",
-    kind:"carry",
-    effect:{ atkPct:10 }, effectText:"ATK +10%",
-    desc:"加入辣椒粉，戰鬥力倍增。",
-    recipe:[ { id:"potion_t2", count:5 } ],
-    gold:1000,
-  },
-  {
-    id:"atk_15", name:"ATK提升 Lv3", icon:"⚔️",  rarity:"rare",
-    kind:"carry",
-    effect:{ atkPct:15 }, effectText:"ATK +15%",
-    desc:"用龍血草調製，一箭穿雲！",
-    recipe:[ { id:"potion_t3", count:5 } ],
-    gold:2000,
-  },
-  // ══ 攜帶型：DEF提升（3 級）══════════════════════════════
-  {
-    id:"def_5",  name:"DEF提升 Lv1", icon:"🛡️",  rarity:"common",
-    kind:"carry",
-    effect:{ defPct:5 },  effectText:"DEF +5%",
-    desc:"樹皮精華，讓皮膚硬一些。",
-    recipe:[ { id:"potion_t1", count:5 } ],
-    gold:500,
-  },
-  {
-    id:"def_10", name:"DEF提升 Lv2", icon:"🛡️",  rarity:"uncommon",
-    kind:"carry",
-    effect:{ defPct:10 }, effectText:"DEF +10%",
-    desc:"龜殼粉入藥，防禦力大增。",
-    recipe:[ { id:"potion_t2", count:5 } ],
-    gold:1000,
-  },
-  {
-    id:"def_15", name:"DEF提升 Lv3", icon:"🛡️",  rarity:"rare",
-    kind:"carry",
-    effect:{ defPct:15 }, effectText:"DEF +15%",
-    desc:"融合鎧甲花的汁液，堅不可摧。",
-    recipe:[ { id:"potion_t3", count:5 } ],
-    gold:2000,
-  },
+  carry({ id:"carry_heal_basic", family:"heal", level:1, name:"回復藥", icon:"❤️", rarity:"common", effect:{hpPct:15}, effectText:"立即回復 15% HP", desc:"日常使用的鮮魚草本回復藥。", recipe:[{id:"potion_t1",count:2},{id:"fish_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_heal_advanced", family:"heal", level:2, name:"高級回復藥", icon:"💗", rarity:"uncommon", effect:{hpPct:30}, effectText:"立即回復 30% HP", desc:"濃縮鮮魚精華的高效回復藥。", recipe:[{id:"potion_t2",count:2},{id:"fish_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_power_basic", family:"power", level:1, name:"力量藥", icon:"⚔️", rarity:"common", effect:{atkPct:10}, effectText:"本場戰鬥 ATK +10%", desc:"以動物肉精華提升拉弓力量。", recipe:[{id:"potion_t1",count:2},{id:"meat_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_power_advanced", family:"power", level:2, name:"高級力量藥", icon:"🗡️", rarity:"uncommon", effect:{atkPct:20}, effectText:"本場戰鬥 ATK +20%", desc:"強力濃縮的戰鬥增幅藥。", recipe:[{id:"potion_t2",count:2},{id:"meat_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_guard_basic", family:"guard", level:1, name:"守護藥", icon:"🛡️", rarity:"common", effect:{defPct:15}, effectText:"本場戰鬥 DEF +15%", desc:"礦物粉調製的基礎守護藥。", recipe:[{id:"potion_t1",count:2},{id:"ore_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_guard_advanced", family:"guard", level:2, name:"高級守護藥", icon:"🔰", rarity:"uncommon", effect:{defPct:30}, effectText:"本場戰鬥 DEF +30%", desc:"高密度礦物精華形成堅實防護。", recipe:[{id:"potion_t2",count:2},{id:"ore_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_shield_basic", family:"shield", level:1, name:"護盾藥", icon:"🫧", rarity:"common", effect:{shieldPct:10}, effectText:"獲得最大 HP 10% 護盾", desc:"罐頭膠質形成一次額外承傷層。", recipe:[{id:"potion_t1",count:2},{id:"can_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_shield_advanced", family:"shield", level:2, name:"高級護盾藥", icon:"🔵", rarity:"uncommon", effect:{shieldPct:20}, effectText:"獲得最大 HP 20% 護盾", desc:"更厚實的防護膜，維持本場戰鬥。", recipe:[{id:"potion_t2",count:2},{id:"can_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_regen_basic", family:"regen", level:1, name:"再生藥", icon:"🌱", rarity:"common", effect:{regenPct:4}, effectText:"每大回合回復 4% HP", desc:"瓜瓜草本讓體力緩慢恢復。", recipe:[{id:"potion_t1",count:2},{id:"melon_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_regen_advanced", family:"regen", level:2, name:"高級再生藥", icon:"🌿", rarity:"uncommon", effect:{regenPct:8}, effectText:"每大回合回復 8% HP", desc:"長期戰鬥使用的濃縮再生藥。", recipe:[{id:"potion_t2",count:2},{id:"melon_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_berserk_basic", family:"berserk", level:1, name:"狂戰藥", icon:"🔥", rarity:"common", effect:{dmgPct:15,defPenaltyPct:10}, effectText:"傷害 +15%、DEF -10%", desc:"以小魚乾辛香料換取高風險爆發。", recipe:[{id:"potion_t1",count:2},{id:"driedfish_t1",count:1}], gold:100, craftYield:3 }),
+  carry({ id:"carry_berserk_advanced", family:"berserk", level:2, name:"高級狂戰藥", icon:"💥", rarity:"uncommon", effect:{dmgPct:30,defPenaltyPct:20}, effectText:"傷害 +30%、DEF -20%", desc:"捨棄防守的強烈爆發配方。", recipe:[{id:"potion_t2",count:2},{id:"driedfish_t2",count:1}], gold:250, craftYield:2 }),
+  carry({ id:"carry_cleanse_basic", family:"cleanse", level:1, name:"淨化藥", icon:"✨", rarity:"common", effect:{cleanseCount:1}, effectText:"清除 1 個異常狀態（預備）", desc:"異常狀態系統開放後可使用。", recipe:[{id:"potion_t1",count:2},{id:"fish_t1",count:1}], gold:100, craftYield:3, futureFeature:"status_effects" }),
+  carry({ id:"carry_cleanse_advanced", family:"cleanse", level:2, name:"高級淨化藥", icon:"🌟", rarity:"uncommon", effect:{cleanseAll:true,statusResistRounds:1}, effectText:"清除全部異常並獲得抗性（預備）", desc:"異常狀態系統開放後可使用。", recipe:[{id:"potion_t2",count:2},{id:"fish_t2",count:1}], gold:250, craftYield:2, futureFeature:"status_effects" }),
 
-  // ══ 投擲型：傷害藥水（3 種）════════════════════════════
-  {
-    id:"throw_fixed",  name:"固定傷藥水", icon:"💉", rarity:"uncommon",
-    kind:"throw",
-    effect:{ throwDmg:30 }, effectText:"對怪固定扣 30 HP",
-    desc:"強酸配方，碰到就燒一塊肉。",
-    recipe:[ { id:"ore_t2", count:3 }, { id:"melon_t2", count:3 } ],
-    gold:300,
-  },
-  {
-    id:"throw_pct",    name:"比例傷藥水", icon:"💉", rarity:"rare",
-    kind:"throw",
-    effect:{ throwPct:0.10 }, effectText:"對怪扣 maxHP 10%",
-    desc:"用詛咒草藥調製，傷口會不斷擴大。",
-    recipe:[ { id:"fish_t3", count:3 }, { id:"meat_t3", count:3 } ],
-    gold:500,
-  },
-  {
-    id:"throw_random", name:"隨機傷藥水", icon:"💉", rarity:"uncommon",
-    kind:"throw",
-    effect:{ throwDmgMin:15, throwDmgMax:50 }, effectText:"對怪扣 15~50 HP",
-    desc:"不穩定的煉金產物，效果飄忽不定。",
-    recipe:[ { id:"driedfish_t2", count:3 }, { id:"can_t2", count:3 } ],
-    gold:300,
-  },
-  // ══ 投擲型：弱化藥水（2 種）════════════════════════════
-  {
-    id:"throw_atkdown",  name:"降ATK藥水", icon:"🧪", rarity:"rare",
-    kind:"throw",
-    effect:{ monAtkPct:20 }, effectText:"怪物 ATK -20%",
-    desc:"麻痺怪物的肌肉，讓牠攻擊無力。",
-    recipe:[ { id:"fur_t3", count:3 }, { id:"ore_t3", count:3 } ],
-    gold:500,
-  },
-  {
-    id:"throw_defdown",  name:"降DEF藥水", icon:"🧴", rarity:"rare",
-    kind:"throw",
-    effect:{ monDefPct:20 }, effectText:"怪物 DEF -20%",
-    desc:"腐蝕性液體，削弱怪物的護甲。",
-    recipe:[ { id:"fish_t3", count:3 }, { id:"driedfish_t3", count:3 } ],
-    gold:500,
-  },
-  // ══ 投擲型：控制道具（2 種）════════════════════════════
-  {
-    id:"throw_paralyze", name:"麻痺藥水", icon:"🕸️", rarity:"epic",
-    kind:"throw",
-    effect:{ skipRound:"big" }, effectText:"禁止怪物反擊一次（全隊共用）",
-    desc:"蜘蛛王毒液提煉，怪物全身僵硬。",
-    recipe:[ { id:"meat_t4", count:3 }, { id:"can_t4", count:3 } ],
-    gold:800,
-  },
-  {
-    id:"throw_knife",    name:"投擲小刀", icon:"🔪", rarity:"common",
-    kind:"throw",
-    effect:{ throwDmg:15 }, effectText:"直接造成 15 傷害（不吃 ATK/DEF）",
-    desc:"磨利的貓爪刀片，輕巧好丟。",
-    recipe:[ { id:"ore_t2", count:5 } ],
-    gold:200,
-  },
-];
+  throwable({ id:"throw_knife", family:"damage", name:"投擲小刀", icon:"🔪", rarity:"common", effect:{atkDamagePct:120}, effectText:"造成 ATK 120% 傷害", desc:"取代一箭的穩定攻擊道具。", recipe:[{id:"potion_t1",count:1},{id:"ore_t1",count:2}], gold:100, craftYield:3, actionCost:"arrow" }),
+  throwable({ id:"throw_bomb", family:"damage", name:"爆裂彈", icon:"💣", rarity:"common", effect:{atkDamagePct:80,throwDmg:20}, effectText:"造成 ATK 80% +20 傷害", desc:"爆風與碎片同時命中目標。", recipe:[{id:"potion_t1",count:1},{id:"ore_t1",count:2}], gold:100, craftYield:3, actionCost:"arrow" }),
+  throwable({ id:"throw_corrosion", family:"damage", name:"腐蝕瓶", icon:"🧫", rarity:"rare", effect:{throwPct:0.06,bossAtkCapPct:250}, effectText:"扣最大 HP 6%（頭目有上限）", desc:"對普通怪物造成高比例腐蝕傷害。", recipe:[{id:"potion_t3",count:1},{id:"can_t2",count:2}], gold:400, craftYield:1, actionCost:"arrow" }),
+  throwable({ id:"throw_poison", family:"damage", name:"毒液瓶", icon:"☠️", rarity:"uncommon", effect:{dotAtkPct:40,dotRounds:3}, effectText:"每大回合 ATK 40%，持續 3 回合", desc:"重複使用只刷新持續時間。", recipe:[{id:"potion_t2",count:1},{id:"melon_t2",count:1}], gold:200, craftYield:2, actionCost:"arrow" }),
+  throwable({ id:"throw_weaken", family:"debuff", name:"虛弱粉塵", icon:"🌫️", rarity:"uncommon", effect:{monAtkPct:20}, effectText:"本場怪物 ATK -20%", desc:"削弱怪物的攻擊力量。", recipe:[{id:"potion_t2",count:1},{id:"driedfish_t2",count:1}], gold:200, craftYield:2 }),
+  throwable({ id:"throw_armor_break", family:"debuff", name:"破甲酸", icon:"🧴", rarity:"uncommon", effect:{monDefPct:25}, effectText:"本場怪物 DEF -25%", desc:"腐蝕護甲，讓後續攻擊更有效。", recipe:[{id:"potion_t2",count:1},{id:"ore_t2",count:1}], gold:200, craftYield:2 }),
+  throwable({ id:"throw_hunter_mark", family:"support", name:"獵人標記", icon:"🎯", rarity:"rare", effect:{teamDmgPct:10}, effectText:"全隊對目標傷害 +10%", desc:"強力團隊用品，每個目標只保留一層。", recipe:[{id:"potion_t3",count:1},{id:"fish_t2",count:2}], gold:400, craftYield:1 }),
+  throwable({ id:"throw_paralyze", family:"control", name:"麻痺瓶", icon:"🕸️", rarity:"uncommon", effect:{skipRound:"big",bossCounterReducePct:50}, effectText:"停止一次反擊；頭目改為減傷", desc:"普通怪停止反擊，頭目下一次反擊減半。", recipe:[{id:"potion_t2",count:1},{id:"meat_t2",count:1}], gold:200, craftYield:2 }),
+  throwable({ id:"throw_smoke", family:"control", name:"煙霧彈", icon:"💨", rarity:"uncommon", effect:{counterReducePct:50}, effectText:"下一次怪物反擊傷害 -50%", desc:"遮蔽怪物視線，降低下一次反擊。", recipe:[{id:"potion_t2",count:1},{id:"melon_t2",count:1}], gold:200, craftYield:2 }),
+  throwable({ id:"throw_binding_net", family:"control", name:"束縛網", icon:"🕸️", rarity:"uncommon", effect:{delaySpecial:1}, effectText:"延後一次首領大招（預備）", desc:"特殊攻擊系統開放後可使用。", recipe:[{id:"potion_t2",count:1},{id:"meat_t2",count:1}], gold:200, craftYield:2, futureFeature:"boss_specials" }),
+
+  raid({ id:"raid_bomb", family:"raid_damage", name:"討伐爆彈", icon:"💣", rarity:"rare", effect:{atkDamagePct:180}, effectText:"對世界王造成 ATK 180% 傷害", desc:"世界王專用，取代一箭。", recipe:[{id:"potion_t3",count:1},{id:"ore_t2",count:2}], gold:400, actionCost:"arrow" }),
+  raid({ id:"raid_execution_spear", family:"raid_damage", name:"終結獵矛", icon:"🔱", rarity:"rare", effect:{atkDamagePct:120,executeHpPct:25,executeAtkPct:260}, effectText:"ATK 120%；低血量時 260%", desc:"世界王低於 25% HP 時發揮終結威力。", recipe:[{id:"potion_t3",count:1},{id:"meat_t2",count:2}], gold:400, actionCost:"arrow" }),
+  raid({ id:"raid_shatter_mark", family:"raid_debuff", name:"碎甲印記", icon:"🔶", rarity:"rare", effect:{sortieDmgPct:12}, effectText:"本次出戰傷害 +12%", desc:"效果只屬於自己的本次出戰。", recipe:[{id:"potion_t3",count:1},{id:"ore_t2",count:2}], gold:400 }),
+  raid({ id:"raid_rally_flare", family:"raid_support", name:"集結信號彈", icon:"🎆", rarity:"rare", effect:{botDmgPct:25}, effectText:"本次雇用助手傷害 +25%", desc:"沒有雇用助手時不可使用。", recipe:[{id:"potion_t3",count:1},{id:"can_t2",count:2}], gold:400, requiresBot:true }),
+  raid({ id:"raid_suppression_chain", family:"raid_control", name:"鎮壓鎖鏈", icon:"⛓️", rarity:"rare", effect:{counterReducePct:60,delaySpecial:1}, effectText:"下一次反擊 -60%", desc:"未來世界王特殊大招上線後也會延後一次。", recipe:[{id:"potion_t3",count:1},{id:"melon_t2",count:2}], gold:400 }),
+].map((item, spriteIndex) => ({ ...item, spriteIndex }));
 
 export function getPotion(id) { return POTIONS.find(p => p.id === id) || null; }
 
 // 攜帶型藥水分類輔助
 export const CARRY_POTIONS = POTIONS.filter(p => p.kind === "carry");
 export const THROW_POTIONS = POTIONS.filter(p => p.kind === "throw");
+export const RAID_POTIONS = POTIONS.filter(p => p.kind === "raid");
 
 // 舊系統 MAX_POTIONS_PER_BATTLE = 3 已移除（新系統改為回合中消耗，無每戰上限）
 
@@ -304,26 +225,26 @@ const CHEST_TIER_CFG = {
 
 // 藥水箱抽表（權重越高越容易出現）
 const POTION_CHEST_TABLE = [
-  // 攜帶型 - common
-  { id:"hp_5",           weight:16 },
-  { id:"atk_5",          weight:16 },
-  { id:"def_5",          weight:16 },
-  { id:"throw_knife",    weight:14 },
-  // 攜帶型 - uncommon
-  { id:"hp_10",          weight:12 },
-  { id:"atk_10",         weight:12 },
-  { id:"def_10",         weight:12 },
-  { id:"throw_fixed",    weight:10 },
-  { id:"throw_random",   weight:10 },
-  // 攜帶型 - rare
-  { id:"hp_15",          weight:6 },
-  { id:"atk_15",         weight:6 },
-  { id:"def_15",         weight:6 },
-  { id:"throw_pct",      weight:6 },
-  { id:"throw_atkdown",  weight:6 },
-  { id:"throw_defdown",  weight:6 },
-  // 投擲型 - epic
-  { id:"throw_paralyze", weight:3 },
+  { id:"carry_heal_basic",      weight:14 },
+  { id:"carry_power_basic",     weight:14 },
+  { id:"carry_guard_basic",     weight:14 },
+  { id:"carry_shield_basic",    weight:10 },
+  { id:"carry_regen_basic",     weight:10 },
+  { id:"carry_berserk_basic",   weight:8 },
+  { id:"throw_knife",           weight:10 },
+  { id:"throw_bomb",            weight:8 },
+  { id:"carry_heal_advanced",   weight:5 },
+  { id:"carry_power_advanced",  weight:5 },
+  { id:"carry_guard_advanced",  weight:5 },
+  { id:"carry_shield_advanced", weight:4 },
+  { id:"carry_regen_advanced",  weight:4 },
+  { id:"carry_berserk_advanced",weight:3 },
+  { id:"throw_weaken",          weight:4 },
+  { id:"throw_armor_break",     weight:4 },
+  { id:"throw_paralyze",        weight:2 },
+  { id:"throw_smoke",           weight:2 },
+  { id:"throw_corrosion",       weight:1 },
+  { id:"throw_hunter_mark",     weight:1 },
 ];
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
@@ -437,7 +358,7 @@ export function openChestContents(chest) {
 // }
 export function calcPotionBuffs(potionIds) {
   const buffs = {
-    hpPct: 0, atkPct: 0, defPct: 0,
+    hpPct: 0, atkPct: 0, defPct: 0, shieldPct: 0, regenPct: 0, dmgPct: 0, defPenaltyPct: 0,
     monAtkMult: 1, monDefMult: 1,
     skipRound: null,
     throwEffects: [],
@@ -456,6 +377,11 @@ export function calcPotionBuffs(potionIds) {
         dmgMin:     e.throwDmgMin || 0,
         dmgMax:     e.throwDmgMax || 0,
         weaponDmg:  e.weaponDmg   || 0,
+        atkDamagePct:e.atkDamagePct || 0,
+        dotAtkPct:  e.dotAtkPct || 0,
+        dotRounds:  e.dotRounds || 0,
+        teamDmgPct: e.teamDmgPct || 0,
+        counterReducePct:e.counterReducePct || 0,
         monAtkPct:  e.monAtkPct   || 0,
         monDefPct:  e.monDefPct   || 0,
         skipRound:  e.skipRound   || null,
@@ -469,6 +395,10 @@ export function calcPotionBuffs(potionIds) {
       if (e.hpPct)  buffs.hpPct  += e.hpPct;
       if (e.atkPct) buffs.atkPct += e.atkPct;
       if (e.defPct) buffs.defPct += e.defPct;
+      if (e.shieldPct) buffs.shieldPct = Math.max(buffs.shieldPct, e.shieldPct);
+      if (e.regenPct) buffs.regenPct = Math.max(buffs.regenPct, e.regenPct);
+      if (e.dmgPct) buffs.dmgPct = Math.max(buffs.dmgPct, e.dmgPct);
+      if (e.defPenaltyPct) buffs.defPenaltyPct = Math.max(buffs.defPenaltyPct, e.defPenaltyPct);
     }
     buffs.used.push(p);
   });
@@ -476,5 +406,7 @@ export function calcPotionBuffs(potionIds) {
   buffs.monDefMult = Math.max(0.1, buffs.monDefMult);
   buffs.hpMult  = 1 + (buffs.hpPct  || 0) / 100;
   buffs.atkMult = 1 + (buffs.atkPct || 0) / 100;
+  buffs.defMult = Math.max(0.1, 1 + ((buffs.defPct || 0) - (buffs.defPenaltyPct || 0)) / 100);
+  buffs.dmgMult = 1 + (buffs.dmgPct || 0) / 100;
   return buffs;
 }

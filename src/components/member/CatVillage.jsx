@@ -29,7 +29,8 @@ import CouncilHall  from "./CouncilHall";
 import VillageGoalBanner from "./VillageGoalBanner";
 import { autoSpawnVillageGoal } from "../../lib/villageGoalDb";
 import { craftPotion, subscribePotions } from "../../lib/db";
-import { CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
+import { CARRY_POTIONS, THROW_POTIONS, RAID_POTIONS } from "../../lib/itemData";
+import { calculateMaxCrafts } from "../../lib/consumableSystem";
 
 // 手繪風配色常數
 const C = {
@@ -1543,8 +1544,30 @@ function ForgePanel({ profile, resources }) {
 }
 
 // ── 藥水製作面板 ────────────────────────────────────────────
+function ConsumableArt({ item, size = 40 }) {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    const image = new Image();
+    image.onload = () => setLoaded(true);
+    image.onerror = () => setLoaded(false);
+    image.src = item.asset;
+    return () => { image.onload = null; image.onerror = null; };
+  }, [item.asset]);
+  if (!loaded) return <span aria-hidden="true" style={{ width:size, height:size, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:size * .55 }}>{item.icon}</span>;
+  const col = item.spriteIndex % 6;
+  const row = Math.floor(item.spriteIndex / 6);
+  return (
+    <span aria-hidden="true" style={{
+      width:size, height:size, flexShrink:0, display:"inline-block",
+      backgroundImage:`url(${item.asset})`, backgroundRepeat:"no-repeat",
+      backgroundSize:"600% 500%", backgroundPosition:`${col * 20}% ${row * 25}%`,
+    }} />
+  );
+}
+
 function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCrafted }) {
   const [tab, setTab] = useState("carry");
+  const [craftMode, setCraftMode] = useState(1);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
 
@@ -1557,15 +1580,19 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
     legendary: { bg:"rgba(234,179,8,0.12)",  text:"#ca8a04", label:"傳說" },
   };
 
-  const potions = tab === "carry" ? CARRY_POTIONS : THROW_POTIONS;
+  const potions = tab === "carry" ? CARRY_POTIONS : tab === "throw" ? THROW_POTIONS : RAID_POTIONS;
 
   async function handleCraft(potion) {
     if (busy || !memberId) return;
+    const maxCrafts = calculateMaxCrafts(potion, resources, coins);
+    const executions = craftMode === "max" ? maxCrafts : craftMode;
+    if (craftMode !== "max" && maxCrafts < executions) return;
+    if (executions <= 0) return;
     setBusy(true);
     try {
-      const res = await craftPotion(memberId, potion.id);
+      const res = await craftPotion(memberId, potion.id, executions);
       if (res.ok) {
-        setMsg(`✅ 成功合成 ${potion.icon} ${potion.name}！`);
+        setMsg(`✅ 成功製作 ${potion.name} ×${res.outputCount}！`);
         sfxSuccess();
         onCrafted?.();
       } else {
@@ -1598,7 +1625,7 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
 
       {/* 頁籤：攜帶型 vs 投擲型 */}
       <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
-        {[["carry","💊 攜帶型"],["throw","💣 投擲型"]].map(([id, lb]) => (
+        {[["carry","💊 攜帶型"],["throw","💣 投擲型"],["raid","👑 討伐型"]].map(([id, lb]) => (
           <button key={id} onClick={() => setTab(id)}
             className="flex-1 py-2 text-[11px] font-bold transition-colors"
             style={{
@@ -1606,6 +1633,16 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
               color: tab === id ? "#FFF8F0" : C.mid,
             }}>
             {lb}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-1.5 mb-3" role="group" aria-label="製作次數">
+        {[[1,"製作 1 次"],[5,"製作 5 次"],["max","最大數量"]].map(([value, label]) => (
+          <button key={value} onClick={() => setCraftMode(value)}
+            className="flex-1 min-h-11 px-2 py-2 rounded-lg text-[11px] font-bold transition-colors"
+            style={{ background: craftMode === value ? C.sage : "rgba(255,255,255,0.55)", color: craftMode === value ? "white" : C.mid, border:`1px solid ${C.border}` }}>
+            {label}
           </button>
         ))}
       </div>
@@ -1622,16 +1659,18 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
       <div className="flex flex-col gap-2.5">
         {potions.map(p => {
           const havePotion = potionInventory?.[p.id] || 0;
-          const canAffordMat = p.recipe.every(r => (resources?.[r.id] || 0) >= r.count);
-          const canAffordGold = (coins || 0) >= (p.gold || 0);
-          const canCraft = canAffordMat && canAffordGold;
+          const maxCrafts = calculateMaxCrafts(p, resources, coins);
+          const executions = craftMode === "max" ? maxCrafts : craftMode;
+          const canCraft = executions > 0 && maxCrafts >= executions;
+          const costMultiplier = Math.max(1, executions);
+          const totalGold = (p.gold || 0) * costMultiplier;
           return (
             <div key={p.id} className="rounded-xl p-3"
               style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
               {/* 標題列 */}
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span style={{ fontSize: 22 }}>{p.icon}</span>
+                  <ConsumableArt item={p} />
                   <div>
                     <div className="flex items-center gap-1.5">
                       <div className="text-sm font-black" style={{ color: C.brown }}>{p.name}</div>
@@ -1644,6 +1683,7 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
                       )}
                     </div>
                     <div className="text-[10px]" style={{ color: C.sage }}>{p.effectText}</div>
+                    {p.futureFeature && <div className="text-[9px] font-bold" style={{ color:"#b45309" }}>預備道具：目前可製作、尚未開放使用</div>}
                   </div>
                 </div>
                 <div className="text-right shrink-0 ml-2">
@@ -1657,20 +1697,21 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {p.recipe.map(r => {
                   const have = Math.floor(resources?.[r.id] || 0);
-                  const ok = have >= r.count;
+                  const need = r.count * costMultiplier;
+                  const ok = have >= need;
                   const resEmoji = RES_EMOJI[r.id.split("_t")[0]] || "📦";
                   return (
                     <div key={r.id} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
                       style={{ background: ok ? "rgba(90,158,80,0.10)" : "rgba(192,83,58,0.08)",
                         color: ok ? C.sage : "#C0533A" }}>
-                      {resEmoji} {formatResKey(r.id)} ×{r.count}（{have}）
+                      {resEmoji} {formatResKey(r.id)} ×{need}（{have}）
                     </div>
                   );
                 })}
                 <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
-                  style={{ background: canAffordGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
-                    color: canAffordGold ? "#D4933A" : "#C0533A" }}>
-                  🪙 {p.gold} 金幣
+                  style={{ background: (coins || 0) >= totalGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
+                    color: (coins || 0) >= totalGold ? "#D4933A" : "#C0533A" }}>
+                  🪙 {totalGold} 金幣
                 </div>
               </div>
               {/* 製作按鈕 */}
@@ -1684,7 +1725,7 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
                   boxShadow: canCraft ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
                   cursor: canCraft ? "pointer" : "default",
                 }}>
-                {busy ? "合成中…" : canCraft ? `✦ 合成 ${p.name}` : "材料不足"}
+                {busy ? "製作中…" : canCraft ? `製作 ${executions} 次，取得 ×${executions * (p.craftYield || 1)}` : "材料不足"}
               </button>
             </div>
           );

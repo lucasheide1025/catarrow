@@ -5,8 +5,9 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addChests, recordBattleDex } from "./db";
-import { CHEST_TYPES, makeChests } from "./itemData";
+import { CHEST_TYPES, makeChests, calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
+import { resolveConsumable } from "./consumableSystem";
 
 const PARTY = "partyRooms";
 
@@ -247,6 +248,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       membersUpdate[`members.${mid}.arrows`] = [];
       membersUpdate[`members.${mid}.ready`]  = false;
       membersUpdate[`members.${mid}.alive`]  = true;
+      membersUpdate[`members.${mid}.potionBuffs`] = { atkMult:1, defMult:1, dmgMult:1, families:{}, shield:0, regenPct:0 };
       // hp/atk/def 留給各 client 用 updateBattleMemberStats 寫入
       if (!m.maxHP) {
         membersUpdate[`members.${mid}.hp`]    = 500;
@@ -271,6 +273,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       log: [],
       result: null,
       processing: false,
+      consumableEffects: {},
       status: "active",
     });
     return { ok: true };
@@ -287,6 +290,8 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
       [`members.${memberId}.maxHP`]:   maxHP,
       [`members.${memberId}.atk`]:     atk,
       [`members.${memberId}.def`]:     def,
+      [`members.${memberId}.baseAtk`]: atk,
+      [`members.${memberId}.baseDef`]: def,
       ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
       [`members.${memberId}.catATK`]:  catATK || 0,
       [`members.${memberId}.catName`]: catName || "",
@@ -297,6 +302,65 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
   } catch (e) {
     return { ok: false, reason: e.message };
   }
+}
+
+export async function applyPartyCarryPotion(roomId, memberId, potionId) {
+  const potion = getPotion(potionId);
+  if (!potion || potion.kind !== "carry" || potion.futureFeature) return { ok:false, reason:"invalid potion" };
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, PARTY, roomId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("room not found");
+      const room = snap.data();
+      const member = room.members?.[memberId];
+      const round = room.round || 1;
+      if (room.status !== "active" || !member?.alive) throw new Error("battle not active");
+      if (member.potionUsedRound === round) throw new Error("potion already used this round");
+      const families = { ...(member.potionBuffs?.families || {}) };
+      const current = getPotion(families[potion.family]);
+      if (!current || (potion.level || 0) >= (current.level || 0)) families[potion.family] = potion.id;
+      const buffs = calcPotionBuffs(Object.values(families));
+      const maxHP = member.maxHP || 100;
+      const updates = {
+        [`members.${memberId}.potionUsedRound`]:round,
+        [`members.${memberId}.potionBuffs`]:{
+          families, atkMult:buffs.atkMult, defMult:buffs.defMult, dmgMult:buffs.dmgMult,
+          regenPct:buffs.regenPct,
+          shield:Math.max(member.potionBuffs?.shield || 0, Math.round(maxHP * (buffs.shieldPct || 0) / 100)),
+        },
+      };
+      if (potion.effect?.hpPct) updates[`members.${memberId}.hp`] = Math.min(maxHP, (member.hp || 0) + Math.round(maxHP * potion.effect.hpPct / 100));
+      tx.update(ref, updates);
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function applyPartyUtilityPotion(roomId, memberId, potionId) {
+  const potion = getPotion(potionId);
+  if (!potion || potion.kind !== "throw" || potion.actionCost === "arrow" || potion.futureFeature) return { ok:false, reason:"invalid utility" };
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, PARTY, roomId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("room not found");
+      const room = snap.data();
+      const member = room.members?.[memberId];
+      const round = room.round || 1;
+      if (room.status !== "active" || !member?.alive) throw new Error("battle not active");
+      if (member.potionUsedRound === round) throw new Error("potion already used this round");
+      const effect = potion.effect || {};
+      const updates = { [`members.${memberId}.potionUsedRound`]:round };
+      if (effect.monAtkPct) updates["monster.atk"] = Math.max(1, Math.round((room.monster?.atk || 1) * (1 - effect.monAtkPct / 100)));
+      if (effect.monDefPct) updates["monster.def"] = Math.max(0, Math.round((room.monster?.def || 0) * (1 - effect.monDefPct / 100)));
+      if (effect.teamDmgPct) updates["consumableEffects.teamDmgMult"] = Math.max(room.consumableEffects?.teamDmgMult || 1, 1 + effect.teamDmgPct / 100);
+      if (effect.skipRound === "big") updates["consumableEffects.skipCounterRound"] = round;
+      if (effect.counterReducePct) updates["consumableEffects.counterReducePct"] = Math.min(70, (room.consumableEffects?.counterReducePct || 0) + effect.counterReducePct);
+      tx.update(ref, updates);
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
 }
 
 // ── Battle：送出箭分 ──────────────────────────────────────────
@@ -400,17 +464,40 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         };
         continue;
       }
-      const buffedAtk = Math.round((m.atk || 10) * (1 + atkBuffPctForFront));
-      const raw = calcDmgFn(m.arrows || [], buffedAtk, room.monster.def, m.wbBonus?.dmgBonusPct || 0);
+      const buffedAtk = Math.round((m.baseAtk || m.atk || 10) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront));
+      const damageItems = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
+      const scoreArrows = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
+      const directDmg = damageItems.reduce((sum, arrow) => sum + (resolveConsumable(arrow?.label || arrow, {
+        mode:"party", playerAtk:buffedAtk, enemyHp:room.monsterHP, enemyMaxHp:room.monster?.hp,
+        isBoss:["boss","mythic"].includes(room.monster?.tier),
+      }).damage || 0), 0);
+      const raw = calcDmgFn(scoreArrows, buffedAtk, room.monster.def, m.wbBonus?.dmgBonusPct || 0);
       const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
-      const rawBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
+      const rawBreakdown = [
+        ...(typeof raw === "object" ? (raw.arrowBreakdown || []) : []),
+        ...damageItems.map(arrow => ({ label:arrow?.label || arrow, dmg:resolveConsumable(arrow?.label || arrow, { mode:"party", playerAtk:buffedAtk, enemyHp:room.monsterHP, enemyMaxHp:room.monster?.hp, isBoss:["boss","mythic"].includes(room.monster?.tier) }).damage || 0, partName:"投擲道具", partIcon:getPotion(arrow?.label || arrow)?.icon || "💣" })),
+      ];
       allPlayerData[id] = {
         name:           m.name || "射手",
-        totalDmg:       Math.round(rawDmg),
+        totalDmg:       Math.round((rawDmg + directDmg) * (m.potionBuffs?.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1)),
         crits:          typeof raw === "number" ? 0 : (raw.crits || 0),
         arrowBreakdown: rawBreakdown,
         rearHeal: false, rearBuff: false, scorePct: 0,
       };
+    }
+
+    const poisonByMember = { ...(room.consumableEffects?.poisonByMember || {}) };
+    for (const id of aliveIds) {
+      const existing = poisonByMember[id];
+      if (existing?.rounds > 0) {
+        allPlayerData[id].totalDmg += existing.damage;
+        poisonByMember[id] = { ...existing, rounds:existing.rounds - 1 };
+      }
+      const usedPoison = (members[id].arrows || []).some(arrow => (arrow?.label || arrow) === "throw_poison");
+      if (usedPoison) {
+        const atk = Math.round((members[id].baseAtk || members[id].atk || 10) * (members[id].potionBuffs?.atkMult || 1));
+        poisonByMember[id] = { damage:Math.round(atk * 0.4), rounds:2 };
+      }
     }
 
     // Step 2: 隨機事件（大回合開始時決定）
@@ -419,7 +506,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const event      = eventRaw
       ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
       : null;
-    const skipAllCtr = !!eff.skipCounter;
+    const skipAllCtr = !!eff.skipCounter || room.consumableEffects?.skipCounterRound === round;
 
     // Step 3: 大回合制 — 每位玩家一個 mini-round 包含全部箭矢，前衛先後衛後，最後怪物反擊一次
     // 攻擊順序：前衛 → 後衛（動畫用）
@@ -499,7 +586,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       const ctrLog = [];
       for (const id of ctrTargets) {
         const mem = members[id];
-        const ctr = Math.ceil(calcCtrFn(room.monster.atk, mem?.def || 10, mem?.wbBonus?.dmgReducePct || 0));
+        const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (mem?.potionBuffs?.defMult || 1));
+        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const absorbed = Math.min(mem?.potionBuffs?.shield || 0, rawCtr);
+        const ctr = rawCtr - absorbed;
+        memberUpdates[`members.${id}.potionBuffs.shield`] = Math.max(0, (mem?.potionBuffs?.shield || 0) - absorbed);
         ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
         memberHPNow[id] = Math.max(0, memberHPNow[id] - ctr);
         ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr });
@@ -562,6 +653,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         liveAfter++;
       }
       memberUpdates[`members.${id}.hp`] = hp;
+      if (m.potionBuffs?.regenPct && hp > 0) memberUpdates[`members.${id}.hp`] = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * m.potionBuffs.regenPct / 100));
     }
 
     // Step 5: 聚合 playerLog（歷史記錄用）
@@ -603,6 +695,9 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       log: arrayUnion(logEntry),
       result,
       status: newStatus,
+      "consumableEffects.counterReducePct": 0,
+      "consumableEffects.skipCounterRound": null,
+      "consumableEffects.poisonByMember": poisonByMember,
       processing: false,
     });
 

@@ -103,12 +103,23 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
   let skipCtr       = ctx.skipCounter;
   let skipBigRound  = ctx.skipBigRound;
   let curATKMod     = ctx.archerATKMod;
+  let potionShield  = ctx.potionShield || 0;
+  let poisonEffect  = ctx.poisonEffect || null;
   let revived       = ctx.revived;
   let roundTotalDmg = 0;
   let roundDmgRecvd = 0; // 本回合承受的傷害累計
   const processedArrowScores = [];
 
-  let effATK = (ctx.archerStats.atk || 10) + curATKMod;
+  if (poisonEffect?.rounds > 0 && monsterHP > 0) {
+    const poisonDmg = Math.round(((ctx.archerStats?.atk || 0) + curATKMod) * poisonEffect.atkPct / 100);
+    monsterHP = Math.max(0, monsterHP - poisonDmg);
+    roundTotalDmg += poisonDmg;
+    poisonEffect = { ...poisonEffect, rounds:poisonEffect.rounds - 1 };
+    events.push(createThrowPotionEvent(-1, getPotion("throw_poison"), poisonDmg, `毒液持續傷害 ${poisonDmg}`, {}));
+  }
+
+  const consumableBuffs = ctx.consumableBuffs || {};
+  let effATK = Math.round(((ctx.archerStats.atk || 10) + curATKMod) * (consumableBuffs.atkMult || 1));
   const maxFmtScore = targetFmt === 'field_16' ? 6 : 10;
   const scorePlus  = ctx.archerStats.scorePlus || 0;
 
@@ -159,7 +170,12 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
     if (throwPotion && throwPotion.kind === 'throw') {
       const ef = throwPotion.effect;
       let throwDmg = 0;
-      if (ef.throwDmg) throwDmg = ef.throwDmg;
+      if (ef.atkDamagePct) throwDmg = Math.round(((ctx.archerStats?.atk || 0) + curATKMod) * ef.atkDamagePct / 100) + (ef.throwDmg || 0);
+      else if (ef.dotAtkPct) {
+        throwDmg = Math.round(((ctx.archerStats?.atk || 0) + curATKMod) * ef.dotAtkPct / 100);
+        poisonEffect = { atkPct:ef.dotAtkPct, rounds:Math.max(0, (ef.dotRounds || 1) - 1) };
+      }
+      else if (ef.throwDmg) throwDmg = ef.throwDmg;
       else if (ef.throwPct) throwDmg = Math.ceil(monsterHP * ef.throwPct);
       else if (ef.throwDmgMin && ef.throwDmgMax) throwDmg = Math.floor(Math.random() * (ef.throwDmgMax - ef.throwDmgMin + 1)) + ef.throwDmgMin;
 
@@ -213,7 +229,7 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       curUnlocked = new Set([...curUnlocked, part.id]);
     }
 
-    const dmg = calcStandardArrowDmg(score, effATK, ctx.monster.def, part.mult * baseCritMult);
+    const dmg = Math.round(calcStandardArrowDmg(score, effATK, ctx.monster.def, part.mult * baseCritMult) * (consumableBuffs.dmgMult || 1) * (1 + (ctx.monsterDmgTakenPct || 0) / 100));
 
     if (part.id === 'head') headHitCount++;
 
@@ -311,7 +327,9 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       : 0;
     const isCrit = Math.random() < critChance;
     const headStunned = headHitCount > 0 && battleMode === 'zombie';
-    let cdmg = calcStandardCounter(ctx.monster.atk, ctx.archerStats.def, headStunned, isCrit);
+    const effectiveDef = Math.round((ctx.archerStats.def || 0) * (consumableBuffs.defMult || 1));
+    let cdmg = calcStandardCounter(ctx.monster.atk, effectiveDef, headStunned, isCrit);
+    if (ctx.counterReducePct) cdmg = Math.round(cdmg * (1 - ctx.counterReducePct / 100));
 
     // 貓貓防禦盾
     let finalCdmg = cdmg;
@@ -339,6 +357,9 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       events.push(createCounterEvent(finalCdmg, isCrit));
     }
 
+    const shieldAbsorb = Math.min(potionShield, finalCdmg);
+    potionShield -= shieldAbsorb;
+    finalCdmg -= shieldAbsorb;
     archerHP = Math.max(0, archerHP - finalCdmg);
     roundDmgRecvd += finalCdmg;
 
@@ -412,12 +433,16 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
   // 本回合所有 headHitCount 用途結束，正式重置
   headHitCount = 0;
 
+  if (consumableBuffs.regenPct && archerHP > 0) {
+    archerHP = Math.min(ctx.archerStats.hp || archerHP, archerHP + Math.round((ctx.archerStats.hp || 0) * consumableBuffs.regenPct / 100));
+  }
+
   return {
     events,
     finalState: {
       ...ctx,
       monsterHP, archerHP, distance: curDist,
-      unlockedParts: curUnlocked, skipCounter: false, archerATKMod: 0,
+      unlockedParts: curUnlocked, skipCounter: false, archerATKMod: 0, potionShield, poisonEffect,
       headHitCount: 0,
       totalDmgDealt: ctx.totalDmgDealt + roundTotalDmg,
       totalDmgRecvd: ctx.totalDmgRecvd + roundDmgRecvd,
