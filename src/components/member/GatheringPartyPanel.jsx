@@ -15,7 +15,7 @@ import {
 import GatheringRun from "./GatheringRun";
 
 function memberName(profile) {
-  return profile?.name || profile?.nickname || profile?.displayName || "玩家";
+  return profile?.nickname || profile?.name || profile?.displayName || "玩家";
 }
 
 function partySessionKey(memberId) {

@@ -215,7 +215,7 @@ export default function TeamExpeditionBattle({
   onAbandon,
 }) {
   const myId = profile?.id;
-  const myName = profile?.name || "射手";
+  const myName = profile?.nickname || profile?.name || "射手";
   const isGuestMode = ["guest", "kid"].includes(profile?.accountType);
 
   // ── 訂閱組隊房間 ──────────────────────────────────────────

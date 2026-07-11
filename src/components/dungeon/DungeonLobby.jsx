@@ -39,7 +39,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const myId = profile?.id;
-  const myName = profile?.name || "射手";
+  const myName = profile?.nickname || profile?.name || "射手";
   const [tab, setTab] = useState(isGuest ? "enter" : "excavate");
   const [expeditionStart, setExpeditionStart] = useState(null);
   // 進入地下城選單狀態

@@ -778,7 +778,7 @@ export default function DungeonExpedition({
     return {
       members: {
         [myId]: {
-          name: profile?.name || "射手",
+          name: profile?.nickname || profile?.name || "射手",
           hp: playerState.hp,
           maxHP: playerState.maxHP,
           atk: playerState.atk,
@@ -928,7 +928,7 @@ export default function DungeonExpedition({
           wbBonus: playerState.wbBonus,
           buffs: playerState.buffs,
         }}
-        memberName={profile?.name || "射手"}
+        memberName={profile?.nickname || profile?.name || "射手"}
         monster={pendingRoom.monster}
         difficultyTier={difficultyTier}
         floorIndex={floorIndex}
@@ -955,7 +955,7 @@ export default function DungeonExpedition({
         loot={runLoot}
         party={buildExpeditionParty({
           [myId]: {
-            name: profile?.name || "射手",
+            name: profile?.nickname || profile?.name || "射手",
             alive: playerState?.hp > 0,
           },
         }, myId, runStats)}
