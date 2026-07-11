@@ -111,3 +111,11 @@ await runTransaction(db, async (tx) => {
 **What was fixed (07-10-booking-multihour-and-stats)**: the original student-pilot implementation only ever created 1-hour bookings, because the capacity transaction locked a single `slotKey`. This is now generalized — `createBooking`/`cancelBooking`/`rescheduleBooking` all operate on a `slotKeys[]` array (1 or 3 consecutive hourly keys), locking/releasing every slot in the array atomically within one `runTransaction`, per §3 above. There is no longer a uniform-1-hour limitation.
 
 **Do not regress this** by having the UI create multiple 1-hour bookings in a loop to fake a multi-hour one — that reintroduces the exact "sequential non-atomic writes" anti-pattern this whole system was built to avoid. Any future duration options (e.g. 2-hour) should extend `slotKeysFor()`'s consecutive-key generation, not bypass the transaction.
+
+## Convention: admin schedule operations preserve public time rules
+
+The admin calendar uses an eight-lane day scheduler: each participant occupies one lane and multi-hour bookings span consecutive time rows. This is presentation-only; `bookingSlotCounts` remains the capacity source of truth.
+
+Admin-created bookings may backfill past dates through `createBooking(..., { bypassLeadTime:true })`. The option defaults to false and must only be passed by the authenticated admin flow. It skips only the 30-minute lead-time check; blocked-slot and capacity transaction checks remain mandatory.
+
+Closing or opening a continuous time range uses `setSlotRangeBlocked()` and one Firestore `writeBatch`. Never loop over `blockSlot()` calls from the UI because a network failure could leave a partially updated range. The range is half-open: 13:00-17:00 updates the 13:00, 14:00, 15:00, and 16:00 slot documents.

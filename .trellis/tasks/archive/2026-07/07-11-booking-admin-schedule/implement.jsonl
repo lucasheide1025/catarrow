@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/booking-system.md", "reason": "Booking data model and atomic capacity contracts"}
+{"file": "src/components/admin/AdminBooking.jsx", "reason": "Primary admin calendar and create-booking UI"}
+{"file": "src/lib/bookingDb.js", "reason": "Booking transactions, lead-time checks, and blocking APIs"}
+{"file": "src/lib/bookingSchedule.js", "reason": "Schedule slots, durations, and range helpers"}

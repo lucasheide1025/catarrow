@@ -9,12 +9,12 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import {
-  createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot,
+  createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
   getBookingsForDateRange, LANE_CAPACITY,
 } from "../../lib/bookingDb";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
-  fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice,
+  fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice, computeEndTime,
 } from "../../lib/bookingSchedule";
 import { resolveGuestSession } from "../../lib/guestAuth";
 import { getMembers, addBillingRecord } from "../../lib/db";
@@ -36,6 +36,30 @@ const BOOKING_TO_BILLING_PLAN = {
   own_equipment: { 1: "自一", 2: "自二", 3: "自三" },
 };
 const PAY_METHOD_CODE = { "現金": "cash", "轉帳": "transfer", "月卡": "monthly" };
+
+const CALENDAR_HOURS = Array.from({ length:12 }, (_, i) => 10 + i);
+
+function allocateDayLanes(bookings, date) {
+  const occupied = Array.from({ length:LANE_CAPACITY }, () => new Set());
+  const placements = [];
+  bookings
+    .filter(b => b.date === date)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.id.localeCompare(b.id))
+    .forEach(booking => {
+      const startHour = Number(booking.startTime?.split(":")[0]);
+      const duration = Math.max(1, booking.durationHours || 1);
+      const hours = Array.from({ length:duration }, (_, i) => startHour + i);
+      const freeLanes = occupied
+        .map((hoursUsed, lane) => ({ hoursUsed, lane }))
+        .filter(({ hoursUsed }) => hours.every(hour => !hoursUsed.has(hour)))
+        .slice(0, Math.max(1, booking.participantCount || 1));
+      freeLanes.forEach(({ hoursUsed, lane }, participantIndex) => {
+        hours.forEach(hour => hoursUsed.add(hour));
+        placements.push({ booking, lane, participantIndex, duration, startHour });
+      });
+    });
+  return placements;
+}
 
 export default function AdminBooking() {
   const { toast, ToastContainer } = useToast();
@@ -59,13 +83,14 @@ export default function AdminBooking() {
 
 // ─── 行事曆檢視 ──────────────────────────────────────────────
 function CalendarTab({ toast }) {
-  const [viewMode, setViewMode] = useState("week"); // "week" | "day"
+  const [viewMode, setViewMode] = useState("day"); // "week" | "day"
   const [anchor, setAnchor] = useState(todayStr());
   const [bookings, setBookings] = useState([]);
   const [slotCounts, setSlotCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [detailSlot, setDetailSlot] = useState(null); // { date, startTime, endTime }
   const [reloadTick, setReloadTick] = useState(0);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const range = useMemo(() => {
     if (viewMode === "day") return { start: anchor, end: anchor };
@@ -105,7 +130,7 @@ function CalendarTab({ toast }) {
     return m;
   }, [bookings]);
 
-  const ALL_HOURS = Array.from({ length: 12 }).map((_, i) => 10 + i); // 10~21 時起跳
+  const dayPlacements = useMemo(() => allocateDayLanes(bookings, anchor), [bookings, anchor]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -115,6 +140,7 @@ function CalendarTab({ toast }) {
           <Btn v={viewMode === "day" ? "primary" : "secondary"} size="sm" onClick={() => setViewMode("day")}>日檢視</Btn>
         </div>
         <div className="flex gap-2 items-center">
+          <Btn v="warn" size="sm" onClick={() => setRangeOpen(true)}>批次關閉／開放</Btn>
           <Btn v="secondary" size="sm" onClick={() => setAnchor(a => addDays(a, viewMode === "day" ? -1 : -7))}>← 上一{viewMode === "day" ? "天" : "週"}</Btn>
           <Btn v="secondary" size="sm" onClick={() => setAnchor(todayStr())}>今天</Btn>
           <Btn v="secondary" size="sm" onClick={() => setAnchor(a => addDays(a, viewMode === "day" ? 1 : 7))}>下一{viewMode === "day" ? "天" : "週"} →</Btn>
@@ -122,7 +148,46 @@ function CalendarTab({ toast }) {
       </div>
       <div className="text-slate-400 text-xs">{range.start} ～ {range.end}</div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <Spinner /> : viewMode === "day" ? (
+        <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/40">
+          <div className="grid relative min-w-[680px]"
+            style={{ gridTemplateColumns:`56px repeat(${LANE_CAPACITY}, minmax(72px, 1fr))`, gridTemplateRows:`32px repeat(${CALENDAR_HOURS.length}, 64px)` }}>
+            <div className="border-b border-r border-white/10" />
+            {Array.from({ length:LANE_CAPACITY }, (_, lane) => (
+              <div key={`lane-head-${lane}`} className="border-b border-r border-white/10 text-center text-[11px] font-bold text-slate-400 py-2">
+                靶位 {lane + 1}
+              </div>
+            ))}
+            {CALENDAR_HOURS.map((hour, row) => {
+              const startTime = `${String(hour).padStart(2, "0")}:00`;
+              const valid = slotsForDate(anchor).some(slot => slot.startTime === startTime);
+              const info = slotCounts[`${anchor}_${startTime}`] || {};
+              return (
+                <Fragment key={`day-row-${hour}`}>
+                  <div className="border-b border-r border-white/10 text-right pr-2 pt-2 text-[11px] text-slate-500"
+                    style={{ gridColumn:1, gridRow:row + 2 }}>{startTime}</div>
+                  <button type="button" disabled={!valid}
+                    onClick={() => valid && setDetailSlot({ date:anchor, startTime, endTime:computeEndTime(startTime, 1) })}
+                    className={`${info.blocked ? "bg-gray-700/60" : valid ? "bg-white/[0.025] hover:bg-white/[0.06]" : "bg-black/20"} border-b border-white/10 text-left px-2`}
+                    style={{ gridColumn:`2 / span ${LANE_CAPACITY}`, gridRow:row + 2 }}>
+                    {info.blocked && <span className="text-[10px] font-bold text-gray-400">已封鎖</span>}
+                  </button>
+                </Fragment>
+              );
+            })}
+            {dayPlacements.map(({ booking, lane, participantIndex, duration, startHour }) => (
+              <button key={`${booking.id}-${participantIndex}`} type="button"
+                onClick={() => setDetailSlot({ date:booking.date, startTime:booking.startTime, endTime:computeEndTime(booking.startTime, 1) })}
+                className="z-10 m-0.5 overflow-hidden rounded-md border border-blue-300/50 bg-blue-700/80 px-1.5 py-1 text-left shadow-lg"
+                style={{ gridColumn:lane + 2, gridRow:`${startHour - 10 + 2} / span ${duration}` }}>
+                <div className="text-[11px] font-black text-white truncate">{booking.memberName || "顧客"}</div>
+                <div className="text-[9px] text-blue-100 leading-tight">{PLAN_SHORT_LABEL[booking.planType] || booking.planType}</div>
+                <div className="text-[9px] text-blue-200">{participantIndex + 1}/{booking.participantCount || 1}人・{duration}hr</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
         <div className="overflow-x-auto">
           <div className="grid gap-1" style={{ gridTemplateColumns: `56px repeat(${days.length}, minmax(84px,1fr))` }}>
             <div />
@@ -134,7 +199,7 @@ function CalendarTab({ toast }) {
                 </div>
               );
             })}
-            {ALL_HOURS.map(h => (
+            {CALENDAR_HOURS.map(h => (
               <Fragment key={`h-${h}`}>
                 <div className="text-slate-500 text-[11px] text-right pr-1 pt-1">{String(h).padStart(2, "0")}:00</div>
                 {days.map(d => {
@@ -179,7 +244,7 @@ function CalendarTab({ toast }) {
                             <div className="text-[10px] font-bold text-white truncate">{b.memberName || "顧客"}</div>
                             <div className="text-[9px] text-blue-200 truncate">
                               {PLAN_SHORT_LABEL[b.planType] || b.planType}
-                              {b.durationHours > 1 ? `・${b.durationHours}hr` : ""}
+                              ・{b.participantCount || 1}人{b.durationHours > 1 ? `・${b.durationHours}hr` : ""}
                             </div>
                           </div>
                         ))
@@ -205,6 +270,10 @@ function CalendarTab({ toast }) {
           onChanged={() => { refresh(); }}
           toast={toast}
         />
+      )}
+      {rangeOpen && (
+        <RangeBlockModal initialDate={anchor} bookingsBySlot={bookingsBySlot}
+          onClose={() => setRangeOpen(false)} onDone={() => { setRangeOpen(false); refresh(); }} toast={toast} />
       )}
     </div>
   );
@@ -235,6 +304,61 @@ function IntakeInfo({ intake }) {
   );
 }
 
+function RangeBlockModal({ initialDate, bookingsBySlot, onClose, onDone, toast }) {
+  const date = initialDate;
+  const [startTime, setStartTime] = useState("13:00");
+  const [endTime, setEndTime] = useState("17:00");
+  const [blocked, setBlocked] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const startHour = Number(startTime.split(":")[0]);
+  const endHour = Number(endTime.split(":")[0]);
+  const affectedKeys = Number.isFinite(startHour) && Number.isFinite(endHour) && endHour > startHour
+    ? Array.from({ length:endHour - startHour }, (_, i) => `${date}_${String(startHour + i).padStart(2, "0")}:00`)
+    : [];
+  const occupiedCount = new Set(affectedKeys.flatMap(key => (bookingsBySlot[key] || []).map(b => b.id))).size;
+
+  async function submit() {
+    if (!affectedKeys.length) { toast("結束時間必須晚於開始時間", "error"); return; }
+    setBusy(true);
+    const res = await setSlotRangeBlocked(date, startTime, endTime, blocked);
+    setBusy(false);
+    if (!res.ok) { toast(res.reason || "操作失敗", "error"); return; }
+    toast(`${blocked ? "已關閉" : "已開放"} ${res.count} 個時段 ✓`);
+    onDone();
+  }
+
+  const hourOptions = Array.from({ length:13 }, (_, i) => 10 + i);
+  return (
+    <Modal open onClose={onClose} title="批次關閉／開放時段" wide>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">日期：{date}</div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs font-bold text-slate-400">開始時間
+            <select value={startTime} onChange={e => setStartTime(e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800 p-2 text-white">
+              {hourOptions.slice(0, -1).map(h => <option key={h} value={`${String(h).padStart(2, "0")}:00`}>{String(h).padStart(2, "0")}:00</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-bold text-slate-400">結束時間
+            <select value={endTime} onChange={e => setEndTime(e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800 p-2 text-white">
+              {hourOptions.slice(1).map(h => <option key={h} value={`${String(h).padStart(2, "0")}:00`}>{String(h).padStart(2, "0")}:00</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Btn v={blocked ? "warn" : "secondary"} className="flex-1" onClick={() => setBlocked(true)}>關閉此區間</Btn>
+          <Btn v={!blocked ? "success" : "secondary"} className="flex-1" onClick={() => setBlocked(false)}>重新開放</Btn>
+        </div>
+        {occupiedCount > 0 && blocked && (
+          <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            此區間已有 {occupiedCount} 筆預約。關閉不會取消既有預約，只會阻止新增與改期進入。
+          </div>
+        )}
+        <Btn v="primary" onClick={submit} disabled={busy || !affectedKeys.length}>{busy ? "處理中…" : "確認套用整個區間"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── 時段詳情 Modal：清單、封鎖切換、標記付款方式、取消/改期、＋新增預約 ──
 function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast }) {
   const [busy, setBusy] = useState(false);
@@ -243,8 +367,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   const [checkoutTarget, setCheckoutTarget] = useState(null);
 
   // 這一格目前人數的新/舊生拆分，直接從這一格的實際預約清單算（清單已含跨時段進來的3小時預約）
-  const newCount = bookings.filter(b => b.isNewStudent).length;
-  const returningCount = bookings.length - newCount;
+  const newCount = bookings.reduce((sum, b) => sum + (b.isNewStudent ? (b.participantCount || 1) : 0), 0);
+  const returningCount = bookings.reduce((sum, b) => sum + (!b.isNewStudent ? (b.participantCount || 1) : 0), 0);
+  const totalPeople = newCount + returningCount;
 
   async function toggleBlock() {
     setBusy(true);
@@ -282,7 +407,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="text-slate-300 text-sm">
-            目前 {bookings.length}/{LANE_CAPACITY} 位（新{newCount}／舊{returningCount}）・{blocked ? "已封鎖" : "開放中"}
+            目前 {totalPeople}/{LANE_CAPACITY} 位（新{newCount}／舊{returningCount}）・{blocked ? "已封鎖" : "開放中"}
           </div>
           <Btn v={blocked ? "success" : "warn"} size="sm" onClick={toggleBlock} disabled={busy}>
             {blocked ? "解除封鎖" : "封鎖此時段"}
@@ -326,7 +451,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
           </div>
         )}
 
-        {!blocked && bookings.length < LANE_CAPACITY && (
+        {!blocked && totalPeople < LANE_CAPACITY && (
           <Btn v="primary" onClick={() => setCreateOpen(true)}>＋ 在此時段新增預約</Btn>
         )}
       </div>
@@ -477,7 +602,6 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   const [durationHours, setDurationHours] = useState(1);
   const [participantCount, setParticipantCount] = useState(1);
   const [isNewStudent, setIsNewStudent] = useState(true);
-  const [slot, setSlot] = useState(initialSlot || null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -527,13 +651,17 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
 
   async function handleSubmit() {
     if (!selectedMember) { setErr("請先搜尋或建立顧客"); return; }
-    if (!slot) { setErr("請選擇時段"); return; }
+    if (!initialSlot) { setErr("缺少開始時段"); return; }
+    if (Number(computeEndTime(initialSlot.startTime, durationHours).split(":")[0]) > 22) {
+      setErr("此方案會超過當日 22:00，請從更早的時段建立"); return;
+    }
     setBusy(true); setErr("");
     const res = await createBooking(
       selectedMember.id, selectedMember.name,
       { email: selectedMember.email || "", phone: selectedMember.phone || "" },
       planType, durationHours, participantCount, isNewStudent,
-      slot.date, slot.startTime, slot.endTime, "phone",
+      initialSlot.date, initialSlot.startTime, computeEndTime(initialSlot.startTime, durationHours), "phone", "", null,
+      { bypassLeadTime:true },
     );
     setBusy(false);
     if (!res.ok) { setErr(res.reason || "建立失敗"); return; }
@@ -591,23 +719,18 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               <button type="button" onClick={() => setSelectedMember(null)} className="text-xs underline text-blue-400 flex-shrink-0">重選</button>
             </div>
             <PlanDurationPicker planType={planType} durationHours={durationHours}
-              onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSlot(null); }} />
+              onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); }} />
             <ParticipantCountPicker value={participantCount}
-              onChange={n => { setParticipantCount(n); setSlot(null); }} />
-            <label className="flex items-center gap-2 text-slate-300 text-sm cursor-pointer">
-              <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
-                className="accent-blue-500 w-4 h-4" />
-              是否為第一次來體驗
-            </label>
-            <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} />
-            {slot && (
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
-                <span className="text-slate-400 text-sm">總金額</span>
-                <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
-              </div>
-            )}
+              onChange={setParticipantCount} />
+            <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              預約時間：{initialSlot.date} {initialSlot.startTime}－{computeEndTime(initialSlot.startTime, durationHours)}
+            </div>
+            <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
+              <span className="text-slate-400 text-sm">總金額</span>
+              <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
+            </div>
             {err && <div className="text-red-400 text-sm">{err}</div>}
-            <Btn v="primary" onClick={handleSubmit} disabled={busy || !slot}>{busy ? "送出中…" : "確認建立預約"}</Btn>
+            <Btn v="primary" onClick={handleSubmit} disabled={busy}>{busy ? "送出中…" : "確認建立預約"}</Btn>
           </>
         )}
       </div>

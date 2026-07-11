@@ -17,7 +17,7 @@
 
 import {
   collection, doc, getDocs, setDoc, query, where, orderBy, limit,
-  serverTimestamp, increment, runTransaction,
+  serverTimestamp, increment, runTransaction, writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -86,15 +86,17 @@ function slotKeysFor(date, startTime, durationHours) {
 // isNewStudent: boolean（使用者自己勾選「是否為第一次來體驗」，不是用 accountType 反推）
 // source:  "online" | "online_public" | "phone"
 // intake: 非必填問卷 { experience, bowInterest, purpose, remark, needSystemIntro }（只有 online_public 會帶）
-export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "", intake = null) {
+export async function createBooking(memberId, memberName, contact, planType, durationHours, participantCount, isNewStudent, date, startTime, endTime, source, note = "", intake = null, options = {}) {
   if (!memberId) return { ok: false, reason: "缺少會員 ID" };
   if (source === "online_public" && (!contact?.email || !contact?.phone)) {
     return { ok: false, reason: "Email 與電話為必填" };
   }
   const count = Math.max(1, Math.min(LANE_CAPACITY, participantCount || 1));
 
-  const leadErr = checkLeadTime(date, startTime);
-  if (leadErr) return { ok: false, reason: leadErr };
+  if (!options.bypassLeadTime) {
+    const leadErr = checkLeadTime(date, startTime);
+    if (leadErr) return { ok: false, reason: leadErr };
+  }
 
   const slotKeys    = slotKeysFor(date, startTime, durationHours);
   const counterRefs = slotKeys.map(k => doc(db, SLOT_COUNTS, k));
@@ -370,6 +372,27 @@ export async function unblockSlot(date, startTime) {
     await setDoc(doc(db, SLOT_COUNTS, slotKey), { blocked: false }, { merge: true });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 教練後台批次關閉／開放半開區間 [startTime, endTime)。
+// writeBatch 讓整段時段一次成功或一次失敗，不留下部分套用的狀態。
+export async function setSlotRangeBlocked(date, startTime, endTime, blocked) {
+  const startHour = Number(startTime?.split(":")[0]);
+  const endHour = Number(endTime?.split(":")[0]);
+  if (!date || !Number.isInteger(startHour) || !Number.isInteger(endHour) || endHour <= startHour) {
+    return { ok:false, reason:"請選擇正確的開始與結束時間" };
+  }
+  try {
+    const batch = writeBatch(db);
+    for (let hour = startHour; hour < endHour; hour++) {
+      const time = `${String(hour).padStart(2, "0")}:00`;
+      batch.set(doc(db, SLOT_COUNTS, slotKeyOf(date, time)), { blocked:!!blocked }, { merge:true });
+    }
+    await batch.commit();
+    return { ok:true, count:endHour - startHour };
+  } catch (e) {
+    return { ok:false, reason:e.message };
+  }
 }
 
 // ─── 查詢 ────────────────────────────────────────────────────
