@@ -218,8 +218,17 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
     onSubmitSuccess: (submittedArrows) => {
+      // 🔍 暫時診斷（組隊地下城箭數不累積排查）
+      console.log("[箭數診斷] onSubmitSuccess", {
+        isGuestMode, myId, expeditionMode,
+        arrowsLen: Array.isArray(submittedArrows) ? submittedArrows.length : `非陣列(${typeof submittedArrows})`,
+      });
       if (!isGuestMode && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
-        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+        addRoundArrows(myId, submittedArrows.length)
+          .then(() => console.log("[箭數診斷] addRoundArrows 已送出", myId, submittedArrows.length))
+          .catch(e => console.warn("[箭數診斷] addRoundArrows 呼叫層失敗", e?.code, e?.message));
+      } else {
+        console.warn("[箭數診斷] 守門未通過，未呼叫 addRoundArrows");
       }
     },
   });
