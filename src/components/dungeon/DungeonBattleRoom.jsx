@@ -1378,9 +1378,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       {showGiveUp && (
         <div style={{ position:"absolute", inset:0, zIndex:10000, background:"rgba(0,0,0,0.72)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
           <div style={{ background:"#1e293b", border:"1px solid rgba(255,255,255,0.15)", borderRadius:16, padding:20, maxWidth:340, width:"100%", boxShadow:"0 12px 40px rgba(0,0,0,0.6)" }}>
-            <div style={{ fontSize:16, fontWeight:900, color:"#fca5a5", marginBottom:10 }}>🏳️ 放棄這場地下城？</div>
+            <div style={{ fontSize:16, fontWeight:900, color:"#fca5a5", marginBottom:10 }}>
+              {isHost ? "🏳️ 房主放棄，全隊結束？" : "🏳️ 放棄並離開戰場？"}
+            </div>
             <div style={{ fontSize:13, color:"#cbd5e1", lineHeight:1.65, marginBottom:18 }}>
-              怪物太強打不下去時可以放棄。放棄後這場地下城結束、無法繼續，但已通關樓層的獎勵會保留結算。確定要放棄嗎？
+              {isHost
+                ? "你是房主，放棄後整場地下城結束、全隊一起離開。已通關樓層的獎勵會保留結算。"
+                : "放棄後你會離開這場戰鬥，隊伍其他人可以繼續。"}
+              確定要放棄嗎？
             </div>
             <div style={{ display:"flex", gap:10 }}>
               <button onClick={() => setShowGiveUp(false)}

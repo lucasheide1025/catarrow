@@ -141,13 +141,15 @@ export async function applyDungeonCarryPotion(roomId, memberId, potionId) {
           (member.hp || 0) + Math.round(maxHP * effect.hpPct / 100)
         );
       }
+      // 戰鬥藥水寫進 potionBuffs（戰鬥級）——與 buffs（樓層級：事件/商人）分開，
+      // 這樣藥水打完該場就清、不會被 syncTeamExpeditionMembers 帶回 teamRoom 跨場。
       if (effect.atkPct) {
-        updates[`members.${memberId}.buffs.atkMult`] =
-          Math.round((member.buffs?.atkMult || 1) * (1 + effect.atkPct / 100) * 100) / 100;
+        updates[`members.${memberId}.potionBuffs.atkMult`] =
+          Math.round((member.potionBuffs?.atkMult || 1) * (1 + effect.atkPct / 100) * 100) / 100;
       }
       if (effect.defPct) {
-        updates[`members.${memberId}.buffs.defMult`] =
-          Math.round((member.buffs?.defMult || 1) * (1 + effect.defPct / 100) * 100) / 100;
+        updates[`members.${memberId}.potionBuffs.defMult`] =
+          Math.round((member.potionBuffs?.defMult || 1) * (1 + effect.defPct / 100) * 100) / 100;
       }
       transaction.update(roomRef, updates);
     });
@@ -306,8 +308,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const rearBuff   = isRear && !rearHeal;
       const effectiveAtk = isRear
         ? 0
-        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (1 + atkBuffPctForFront));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (mods.dmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
+        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront));
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
       const contract     = m.contract || { type:"standard", param:null };
       const raw = isRear
         ? { dmg:0, crits:0, arrowBreakdown:(m.arrows||[]).map(arrow=>({
@@ -438,7 +440,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       for (const id of ctrTargets) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
-        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1));
+        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1));
         const ctr          = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0));
         ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
         const prevHP       = memberHPNow[id];
@@ -831,10 +833,11 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
       upd[`members.${id}.contract`]      = rerollContract();
       upd[`members.${id}.contractReset`] = false;
     }
-    // 換樓層：所有成員的臨時增益/減益（喝藥水、踩事件的 atk/def/dmg 倍率、復活）歸零，不帶到下一層。
-    // 例如一樓踩到雙倍傷害，進二樓時全員恢復正常值。全員都重置（含當層陣亡者），避免任何 buff 殘留。
+    // 換樓層：樓層級增益（buffs：事件/商人）與戰鬥級增益（potionBuffs：藥水）全部歸零。
+    // 例如一樓踩到雙倍傷害/喝藥水，進二樓時全員恢復正常值。全員都重置（含當層陣亡者）。
     for (const id of memberIds) {
       upd[`members.${id}.buffs`] = { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false };
+      upd[`members.${id}.potionBuffs`] = { atkMult: 1, defMult: 1, dmgMult: 1 };
     }
 
     await updateDoc(doc(db, D, roomId), {

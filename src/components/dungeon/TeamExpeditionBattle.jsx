@@ -363,7 +363,13 @@ export default function TeamExpeditionBattle({
     setPhase("floor_intro");
     setCurrentRoomId(null);
     prevRoomIdRef.current = null;
+    // 進入新樓層：清掉所有成員的樓層級 buffs（事件/商人增益只在該層有效，換樓歸零）。
+    const buffReset = {};
+    Object.keys(teamRoom.members || {}).forEach(id => {
+      if (teamRoom.members[id]) buffReset[`members.${id}.buffs`] = { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false };
+    });
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
+      ...buffReset,
       expeditionMapState: stripMapStateGrid(expeditionMapState),
       expeditionFloorIndex: fi,
       currentBattleRoomId: null,
@@ -389,8 +395,10 @@ export default function TeamExpeditionBattle({
         alive: m.alive !== false,
         role: m.role || "front",
         displayGroup: m.displayGroup || m.role || "front",
-        // 每場戰鬥都用乾淨 buffs，不繼承上一場——戰鬥藥水/踩事件增益打完該場就歸零，不帶到下一場/下一層。
-        buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false },
+        // buffs＝樓層級（事件/商人）：繼承 teamRoom 成員的當層 buffs，同層多場戰鬥都帶著。
+        buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false },
+        // potionBuffs＝戰鬥級（藥水）：每場都乾淨，打完該場就歸零（不會被 sync 帶回 teamRoom）。
+        potionBuffs: { atkMult: 1, defMult: 1, dmgMult: 1 },
         wbBonus: m.wbBonus || null,
       }));
 
