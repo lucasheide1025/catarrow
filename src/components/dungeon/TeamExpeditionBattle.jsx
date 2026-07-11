@@ -530,12 +530,14 @@ export default function TeamExpeditionBattle({
 
   const enterExplorationRoom = useCallback(async (room, positionedState) => {
     if (!isHost || !room) return;
-    if (["battle", "elite_battle", "boss_battle"].includes(room.type)) {
-      await startRoomBattle(room, positionedState);
+    // ⚠️ cleared/樓梯/入口 的判斷必須在「戰鬥房」判斷之前：已清除的怪物/菁英/BOSS 房再踩，
+    // 只移動位置、不可重新觸發戰鬥（原本順序相反，導致已清房回頭踩會再打一次）。
+    if (room.cleared || room.type === "stairs" || room.type === "entrance") {
+      await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
       return;
     }
-    if (room.type === "stairs" || room.type === "entrance" || room.cleared) {
-      await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
+    if (["battle", "elite_battle", "boss_battle"].includes(room.type)) {
+      await startRoomBattle(room, positionedState);
       return;
     }
     const preparedRoom = { ...room };
