@@ -15,6 +15,7 @@
 - Brand changes are cosmetic and preserve grade/plus level. UI copy must not imply brands change combat stats.
 - Only play the upgrade sound and success presentation after the server confirms the upgrade.
 - The success presentation must show the resulting grade, plus level, and stat bonus, and respect `prefers-reduced-motion`.
+- Material curve changes must update `isMatsCurveCurrent()` expectations so persisted `nextMats` from older curves are regenerated instead of silently retaining obsolete costs.
 
 ## Equipment page
 

@@ -13,7 +13,7 @@ import { subscribeMyCats, upgradeCatEquip, equipCat } from "../../lib/catDb";
 import {
   CATS, getBondLevel,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
-  CAT_EQUIP_MAX_PLUS, calcForgeCost, catEquipLevel,
+  CAT_EQUIP_MAX_PLUS, calcForgeCost, catEquipEnhancement,
 } from "../../lib/catData";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
@@ -1378,6 +1378,7 @@ function ForgePanel({ profile, resources }) {
     }
 
     const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(slotData.grade);
+    const currentEnhancement = catEquipEnhancement(slotData.grade, slotData.plusLevel);
     let newGrade    = slotData.grade;
     let newPlusLevel = slotData.plusLevel;
     if (slotData.plusLevel < CAT_EQUIP_MAX_PLUS) {
@@ -1393,9 +1394,10 @@ function ForgePanel({ profile, resources }) {
 
     if (res.ok) {
       sfxSuccess();
+      const nextEnhancement = currentEnhancement + 1;
       setForgeMsg(newPlusLevel === 0
-        ? `✨ 裝備升階！→ ${newGrade}`
-        : `🔨 強化成功！+${newPlusLevel}`
+        ? `✨ 裝備升階！→ ${newGrade} +${nextEnhancement}`
+        : `🔨 強化成功！${newGrade} +${nextEnhancement}`
       );
     } else {
       setForgeMsg("鍛造失敗，請再試");
@@ -1477,15 +1479,15 @@ function ForgePanel({ profile, resources }) {
         const cost     = calcForgeCost(slot.id, slotData.grade, slotData.plusLevel);
         const canAfford = cost ? Object.entries(cost).every(([k,v]) => (resources[k]||0) >= v) : false;
         const isMaxed  = !cost;
-        const lv       = catEquipLevel(slotData.grade, slotData.plusLevel);
+        const enhancement = catEquipEnhancement(slotData.grade, slotData.plusLevel);
         const bonus    = (gIdx * 10 + 1) + (slotData.plusLevel || 0);
         const statLabel = slot.stat === "hp"
           ? `HP +${bonus * 5}`
           : slot.stat === "atk" ? `ATK +${bonus}` : `DEF +${bonus}`;
         const nextLabel = isMaxed ? "MAX"
           : slotData.plusLevel < CAT_EQUIP_MAX_PLUS
-            ? `強化 +${slotData.plusLevel + 1}`
-            : `升階 → ${CAT_EQUIP_GRADE_NAMES[gIdx + 1]}`;
+            ? `強化 +${enhancement + 1}`
+            : `升階 ${CAT_EQUIP_GRADE_NAMES[gIdx + 1]} +${enhancement + 1}`;
         const gradeColor = CAT_EQUIP_GRADE_COLORS[gIdx] || C.mid;
         const gradeBg    = CAT_EQUIP_GRADE_BG[gIdx]    || "rgba(156,163,175,0.1)";
 
@@ -1499,11 +1501,11 @@ function ForgePanel({ profile, resources }) {
               <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
                 <span style={{ fontWeight:"bold", color:C.brown, fontSize:13 }}>{slot.label}</span>
                 <span style={{ fontSize:10, fontWeight:800, color:"white", background:gradeColor, borderRadius:6, padding:"1px 6px" }}>
-                  Lv.{lv}
+                  +{enhancement}
                 </span>
               </div>
               <div style={{ fontSize:11, color:gradeColor, fontWeight:"bold" }}>
-                {slotData.grade} +{slotData.plusLevel}
+                {slotData.grade} +{enhancement}
               </div>
               <div style={{ fontSize:11, color:C.mid }}>{statLabel}</div>
               {cost && (

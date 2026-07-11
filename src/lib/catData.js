@@ -289,12 +289,17 @@ export const CAT_EQUIP_GRADE_BG = [
   "rgba(245,158,11,0.15)",  // 傳說 gold
   "rgba(239,68,68,0.15)",   // 神話 red
 ];
-export const CAT_EQUIP_MAX_PLUS = 9; // +0～+9，每品質10格，6品質共60級
+export const CAT_EQUIP_MAX_PLUS = 9; // 每個品質內保留 +0～+9 的既有儲存格式
+export const CAT_EQUIP_MAX_ENHANCEMENT = 50;
 
-// 裝備等級 = gradeIdx × 10 + plusLevel + 1（顯示 Lv.1～Lv.60）
-export function catEquipLevel(grade, plusLevel) {
+export function catEquipEnhancement(grade, plusLevel) {
   const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(grade);
-  return (gIdx < 0 ? 0 : gIdx) * 10 + (plusLevel || 0) + 1;
+  return Math.max(0, (gIdx < 0 ? 0 : gIdx) * 10 + (plusLevel || 0));
+}
+
+// 戰力計算沿用從 1 起算的內部等級；介面顯示 catEquipEnhancement() 的累積 +0～+50。
+export function catEquipLevel(grade, plusLevel) {
+  return catEquipEnhancement(grade, plusLevel) + 1;
 }
 
 // 裝備加成 = (gradeIdx × 10 + 1) + plusLevel → ATK/DEF 直接加；HP × 5
@@ -315,27 +320,20 @@ export function calcCatEquipBonus(equip = {}) {
 }
 
 // ── 鍛造費用表（×10 倍，適配長期掛機）────────────────────────
-// plusUpgrades[i] = 升至 +(i+1) 所需；共9條（+0→+9）
-// gradeUpgrades[g] = 從 grade g 升至 g+1 所需
+// plusUpgrades[i] = 品質內升至下一級所需；實際材料 Tier 由目前品質決定。
 export const CAT_FORGE_COSTS = {
   plusUpgrades: [
     { tier: 1, amount:  30 },  // +0 → +1
     { tier: 1, amount:  60 },  // +1 → +2
     { tier: 1, amount: 100 },  // +2 → +3
-    { tier: 2, amount:  30 },  // +3 → +4
-    { tier: 2, amount:  60 },  // +4 → +5
-    { tier: 2, amount: 100 },  // +5 → +6
-    { tier: 3, amount:  30 },  // +6 → +7
-    { tier: 3, amount:  60 },  // +7 → +8
-    { tier: 3, amount: 100 },  // +8 → +9
+    { tier: 1, amount: 150 },  // +3 → +4
+    { tier: 1, amount: 200 },  // +4 → +5
+    { tier: 1, amount: 300 },  // +5 → +6
+    { tier: 1, amount: 450 },  // +6 → +7
+    { tier: 1, amount: 600 },  // +7 → +8
+    { tier: 1, amount: 800 },  // +8 → +9
   ],
-  gradeUpgrades: [
-    { main: [{ tier: 1, amount: 200 }],                                        special: null            }, // 普通→稀有
-    { main: [{ tier: 1, amount: 300 }, { tier: 2, amount: 100 }],              special: null            }, // 稀有→精英
-    { main: [{ tier: 2, amount: 200 }, { tier: 3, amount:  80 }],              special: null            }, // 精英→頭目
-    { main: [{ tier: 3, amount: 150 }, { tier: 4, amount:  50 }],              special: { fur_t1: 20 } }, // 頭目→傳說
-    { main: [{ tier: 4, amount: 100 }, { tier: 5, amount:  30 }],              special: { fur_t1: 50 } }, // 傳說→神話
-  ],
+  gradeFurAmounts: [10, 15, 20, 30, 50],
 };
 
 // 計算升級所需材料（回傳 { [resourceKey]: amount }）
@@ -343,17 +341,18 @@ export function calcForgeCost(slotId, currentGrade, currentPlus) {
   const slot = CAT_EQUIP_SLOTS.find(s => s.id === slotId);
   const gIdx = CAT_EQUIP_GRADE_NAMES.indexOf(currentGrade);
   if (!slot || gIdx < 0) return null;
+  if (catEquipEnhancement(currentGrade, currentPlus) >= CAT_EQUIP_MAX_ENHANCEMENT) return null;
+
+  const tier = Math.min(5, gIdx + 1);
 
   if (currentPlus < CAT_EQUIP_MAX_PLUS) {
-    const { tier, amount } = CAT_FORGE_COSTS.plusUpgrades[currentPlus];
+    const { amount } = CAT_FORGE_COSTS.plusUpgrades[currentPlus];
     return { [`${slot.matKey}_t${tier}`]: amount };
   }
-  if (gIdx >= CAT_EQUIP_GRADE_NAMES.length - 1) return null; // 已是神話
-  const { main, special } = CAT_FORGE_COSTS.gradeUpgrades[gIdx];
-  const cost = {};
-  for (const { tier, amount } of main) cost[`${slot.matKey}_t${tier}`] = amount;
-  if (special) Object.assign(cost, special);
-  return cost;
+  return {
+    [`${slot.matKey}_t${tier}`]: 1000,
+    [`fur_t${tier}`]: CAT_FORGE_COSTS.gradeFurAmounts[gIdx],
+  };
 }
 
 // ── 貓貓技能觸發機率（0–0.25）──────────────────────────────

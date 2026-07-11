@@ -6,6 +6,7 @@
 - Shop, equipment, cats, stories, cards, and village production are separate features and must not be presented as backpack categories.
 - Potion crafting belongs to the Cat Village potion workshop. The backpack only displays potion inventory and current in-battle usage copy.
 - Backpack material lists default to owned entries; collection completion belongs to a dex surface.
+- General material chests grant materials only. Potion rewards come from the dedicated potion chest, and chest descriptions must match this boundary.
 
 ## Shop catalog
 

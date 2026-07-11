@@ -32,14 +32,13 @@ const _GRADE_MAT_TIER = {
 // 升級材料需求：同一品級內隨 plusLevel 遞增（曲線），避免「+0 跟 +4 一樣便宜」秒升。
 // 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
 // 每個 plusLevel 的三種材料數量：mainA=主族、mainB=副族（同 tier）、key=關鍵素材（高一階 tier）。
-// 每品級總消耗 8+10+16+20+26 = 80（原本 6×5=30，約 2.7 倍），且後段明顯變重、前段幾乎不變。
-// （2026-07-11 在初版曲線 61 的基礎上整體再 +30%。）
+// 2026-07-12：在前一版曲線上增加 50%，零碎數量無條件進位。
 const _PLUS_MAT_COUNTS = {
-  0: { mainA: 4,  mainB: 3, key: 1 }, // 合計 8
-  1: { mainA: 5,  mainB: 4, key: 1 }, // 10
-  2: { mainA: 8,  mainB: 5, key: 3 }, // 16
-  3: { mainA: 10, mainB: 7, key: 3 }, // 20
-  4: { mainA: 13, mainB: 9, key: 4 }, // 26
+  0: { mainA: 6,  mainB: 5,  key: 2 },
+  1: { mainA: 8,  mainB: 6,  key: 2 },
+  2: { mainA: 12, mainB: 8,  key: 5 },
+  3: { mainA: 15, mainB: 11, key: 5 },
+  4: { mainA: 20, mainB: 14, key: 6 },
 };
 
 export function matCountsFor(plusLevel) {

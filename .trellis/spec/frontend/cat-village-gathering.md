@@ -30,6 +30,14 @@
 - Reward preview and granted quantities must use the same checkpoint multiplier.
 - Keep legacy `completeCouncilSession()` behavior for records without `contractVersion`.
 
+## Cat equipment forging
+
+- Cat equipment persists the local grade plus level as `{ grade, plusLevel }`, but player-facing forge surfaces show the cumulative enhancement from `+0` through `+50` together with the grade name.
+- The cumulative value is `gradeIndex * 10 + plusLevel`; mythic `+0` is the normal `+50` cap. Legacy data above that cap keeps its stats but cannot forge further.
+- Ten-level bands use matching village resource tiers: T1 through `+10`, T2 through `+20`, continuing through T5 at `+50`.
+- Grade promotion consumes the matching tier of both the slot's primary resource and cat fur. Never hard-code high-grade promotions to `fur_t1`.
+- Forge UI derives costs and cap state from `calcForgeCost()` rather than reproducing tier rules in components.
+
 ## Co-op preparation
 
 - Future team rooms persist the complete contract descriptor, never regenerate it independently on each client.

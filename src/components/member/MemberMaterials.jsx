@@ -478,10 +478,10 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
           )}
 
           {openResult && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
+            <div className="fixed inset-0 bg-black/70 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
               onClick={() => setOpenResult(null)}>
               {(openResult.cards?.length > 0 || openResult.catResult || openResult.bulk) && <Confetti />}
-              <div className="rounded-3xl p-6 w-full max-w-sm"
+              <div className="rounded-3xl p-6 w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
                 style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
                 onClick={e => e.stopPropagation()}>
                 <div className="text-center font-black text-xl mb-4 text-gray-100">
@@ -571,7 +571,7 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
                   <div className="text-center text-gray-400 text-sm py-4">這次開箱什麼都沒有…</div>
                 )}
                 <button onClick={() => setOpenResult(null)}
-                  className="w-full mt-4 py-3 rounded-2xl bg-purple-600 text-white font-black active:scale-95 transition-all">
+                  className="sticky bottom-0 w-full mt-4 py-3 rounded-2xl bg-purple-600 text-white font-black active:scale-95 transition-all shadow-lg">
                   收下！
                 </button>
               </div>

@@ -7,16 +7,16 @@ import { MONSTERS } from "./monsterData";
 
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
-  wood:   { id:"wood",   name:"木寶箱",   icon:"📦", color:"#a16207", potionChance:0.10,
-            desc:"普通木箱：普通材料 ×1，10% 掉藥水。" },
-  iron:   { id:"iron",   name:"鐵寶箱",   icon:"🧰", color:"#64748b", potionChance:0.15,
-            desc:"鐵製箱：普通+非凡材料各 1~2 個，15% 掉藥水。" },
-  gold:   { id:"gold",   name:"黃金寶箱", icon:"🎁", color:"#f59e0b", potionChance:0.20,
-            desc:"黃金箱：前三階段材料各 1~3 個，20% 掉藥水。" },
-  epic:   { id:"epic",   name:"史詩寶箱", icon:"💜", color:"#a78bfa", potionChance:0.25,
-            desc:"史詩箱：前四階段材料各 1~4 個，25% 掉藥水。" },
-  mythic: { id:"mythic", name:"神話寶箱", icon:"🔮", color:"#a855f7", potionChance:0.35,
-            desc:"神話箱：全五階段材料各 1~5 個，35% 掉藥水。" },
+  wood:   { id:"wood",   name:"木寶箱",   icon:"📦", color:"#a16207", potionChance:0,
+            desc:"普通木箱：普通材料 ×1。" },
+  iron:   { id:"iron",   name:"鐵寶箱",   icon:"🧰", color:"#64748b", potionChance:0,
+            desc:"鐵製箱：普通+非凡材料各 1~2 個。" },
+  gold:   { id:"gold",   name:"黃金寶箱", icon:"🎁", color:"#f59e0b", potionChance:0,
+            desc:"黃金箱：前三階段材料各 1~3 個。" },
+  epic:   { id:"epic",   name:"史詩寶箱", icon:"💜", color:"#a78bfa", potionChance:0,
+            desc:"史詩箱：前四階段材料各 1~4 個。" },
+  mythic: { id:"mythic", name:"神話寶箱", icon:"🔮", color:"#a855f7", potionChance:0,
+            desc:"神話箱：全五階段材料各 1~5 個。" },
   cat:    { id:"cat",    name:"貓貓箱",   icon:"🐱", color:"#ec4899", potionChance:0,
             desc:"神秘的貓貓箱！90% 機率隨機掉落一種章碎片×1，集10片可合成對應章！" },
   potion:   { id:"potion",   name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
@@ -289,19 +289,6 @@ export const THROW_POTIONS = POTIONS.filter(p => p.kind === "throw");
 
 // 舊系統 MAX_POTIONS_PER_BATTLE = 3 已移除（新系統改為回合中消耗，無每戰上限）
 
-// 各寶箱可掉的藥劑池（依 rarity 分層）
-const RARITY_TIER_MAP = {
-  wood:   ["common"],
-  iron:   ["common", "uncommon"],
-  gold:   ["common", "uncommon", "rare"],
-  epic:   ["common", "uncommon", "rare", "epic"],
-  mythic: ["common", "uncommon", "rare", "epic"],
-};
-const CHEST_POTION_POOL = {};
-for (const [type, rarities] of Object.entries(RARITY_TIER_MAP)) {
-  CHEST_POTION_POOL[type] = POTIONS.filter(p => rarities.includes(p.rarity)).map(p => p.id);
-}
-
 // ── 材料分層開箱設定 ─────────────────────────────────────
 // RARITY_ORDER[0]=tier1(普通) … [4]=tier5(傳說)
 const RARITY_ORDER = ["common","uncommon","rare","epic","legendary"];
@@ -429,19 +416,7 @@ export function openChestContents(chest) {
     for (let i = 0; i < count; i++) materials.push(mat);
   }
 
-  // 藥水機率
-  const potions = [];
-  const potionChance = CHEST_TYPES[chest.type]?.potionChance || 0;
-  if (Math.random() < potionChance) {
-    const pool = CHEST_POTION_POOL[chest.type] || [];
-    if (pool.length) {
-      const pid = pool[Math.floor(Math.random() * pool.length)];
-      const potion = getPotion(pid);
-      if (potion) potions.push(potion);
-    }
-  }
-
-  return { materials, potions, fragments: [] };
+  return { materials, potions: [], fragments: [] };
 }
 
 // ── 計算戰鬥加成 ────────────────────────────────────────

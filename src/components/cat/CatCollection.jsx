@@ -9,7 +9,7 @@ import {
   CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
-  catEquipLevel,
+  catEquipEnhancement,
 } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import CatSVG from "./CatSVG";
@@ -380,16 +380,16 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
                 const gIdx  = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : 0;
                 const color = CAT_EQUIP_GRADE_COLORS[gIdx >= 0 ? gIdx : 0];
                 const bg    = CAT_EQUIP_GRADE_BG[gIdx >= 0 ? gIdx : 0];
-                const lv    = catEquipLevel(e?.grade || "普通", e?.plusLevel || 0);
+                const enhancement = catEquipEnhancement(e?.grade || "普通", e?.plusLevel || 0);
                 return (
                   <div key={slot.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-t border-white/5"
                     style={{ background: bg }}>
                     <span className="text-sm w-5 text-center">{slot.icon}</span>
                     <span className="text-xs text-slate-300 flex-1">{slot.label}</span>
                     <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md text-white" style={{ background: color }}>
-                      Lv.{lv}
+                      +{enhancement}
                     </span>
-                    <span className="text-[10px] font-bold" style={{ color }}>{e?.grade || "普通"} +{e?.plusLevel || 0}</span>
+                    <span className="text-[10px] font-bold" style={{ color }}>{e?.grade || "普通"} +{enhancement}</span>
                   </div>
                 );
               })}
