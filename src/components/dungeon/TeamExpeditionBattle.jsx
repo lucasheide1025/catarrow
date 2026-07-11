@@ -49,7 +49,7 @@ import DungeonEvent from "./DungeonEvent";
 import DungeonTrap from "./DungeonTrap";
 import DungeonChest from "./DungeonChest";
 import DungeonRest from "./DungeonRest";
-import { GridMapStage, BranchStage } from "./DungeonExpedition";
+import { GridMapStage, BranchStage } from "./DungeonStages";
 
 function attachGridMonsters(gridFloor, floorIndex, difficulty, plan) {
   const queue = [...(plan.monsters || [])];

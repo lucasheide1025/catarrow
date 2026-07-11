@@ -3,6 +3,25 @@
 
 ---
 
+## 2026-07-11（修復：訪客地下城「開始探索」production 崩潰 — Cannot access before initialization / TDZ）
+
+### 改了什麼
+- 新增 `src/components/dungeon/DungeonStages.jsx`：把原本定義在 `DungeonExpedition.jsx`、又被 `TeamExpeditionBattle.jsx` 具名匯入的 `GridMapStage`／`BranchStage`／`PlayerStatusBar`＋房型圖示常數 `TYPE_ICONS`／`TYPE_HINTS` 抽出成獨立模組。
+- `DungeonExpedition.jsx` 與 `TeamExpeditionBattle.jsx` 改成都從 `DungeonStages.jsx` 匯入這些關卡元件（原本 TeamExpeditionBattle 是 `import { GridMapStage, BranchStage } from "./DungeonExpedition"`）。
+- `FLOOR_LABELS` 留在 `DungeonExpedition.jsx`（只有同檔的 `FloorIntro` 用）。
+
+### 為什麼（root cause）
+- 症狀：訪客模式進地下城→點「開始探索」立刻 `Uncaught ReferenceError: Cannot access 'yt' before initialization`。**只在 production build 發生、dev 完全正常**（`yt` 是 minify 後的變數名）。
+- 成因：`TeamExpeditionBattle` 直接從 `DungeonExpedition`（一個同時含 default export＋大量模組級 const 的大型元件檔）具名匯入 `GridMapStage`/`BranchStage`。這種「跨檔匯入大型元件模組的具名匯出」在 webpack production 的 **scope hoisting（module concatenation）** 下會把模組併進同一 scope，使 `const`（如 `TYPE_ICONS`）在被讀取時仍在 TDZ → 拋 "Cannot access before initialization"；`GridMapStage` 正是「開始探索」渲染的元件，所以崩在那一刻。dev 不做 scope hoisting 故不炸。
+- 正是第二大腦 memory 記過的坑：「共用常數勿放 UI 元件再 re-export」。抽成獨立小模組即消除。
+
+### 踩坑提醒
+- 「dev 正常、prod 才炸、錯誤是 minified 變數名 + before initialization」= 幾乎必為 **循環／跨檔匯入大型模組 + prod scope hoisting**。把共用元件/常數抽到獨立檔是標準解。
+- 已在 dev 完整走過訪客 T1（選單→單人遠征→確認出發→FloorIntro→開始探索→GridMapStage 正常渲染、含 TYPE_HINTS 文案），無 regression；`CI=true build` 乾淨編譯。
+- **prod 崩潰本身未能在本機測試環境實機重現**（訪客登入卡在 Firestore 權限/持久化鎖），故此修復是「針對該症狀的標準成因下標準解＋dev 無 regression」，非實機 before/after 對照。上線後請實測訪客 T1 一次確認。
+
+---
+
 ## 2026-07-10（官網真實照片整合上線 + 情境子頁配圖 + 部署方式修正）
 
 ### 改了什麼
