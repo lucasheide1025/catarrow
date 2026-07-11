@@ -590,6 +590,21 @@ export default function PublicBookingApp() {
           先選想來的方案跟時段，選完再留資料
         </div>
 
+        {/* 📢 新版預約系統上線公告 */}
+        <div style={{
+          background: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(239,68,68,.14))",
+          border: "1.5px solid rgba(245,158,11,.55)", borderRadius: 16, padding: "16px 18px",
+          boxShadow: "0 0 24px rgba(245,158,11,.15)",
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#fbbf24", display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 22 }}>📢</span> 預約系統已全面更新
+          </div>
+          <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.9)", lineHeight: 2 }}>
+            ・<b style={{ color: "#fca5a5" }}>沒有學籍帳號</b>的舊帳號：請直接<b>重新註冊</b>（選好下方時段後即可註冊）。<br />
+            ・<b style={{ color: "#93c5fd" }}>已有學籍帳號</b>的學員：請改用<b>學員專用 App</b> 預約，不需在這裡註冊。
+          </div>
+        </div>
+
         <PlanDurationPicker planType={planType} durationHours={durationHours}
           onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
         <ParticipantCountPicker value={participantCount}
