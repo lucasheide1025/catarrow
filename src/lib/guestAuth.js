@@ -123,9 +123,18 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     workingAuth = getAuth(tmpApp);
   }
   try {
-    // ⚠️ 2026-07-11 修復「有學籍學生無法透過官網預約登入」：註冊前先查這個 Email
+    // ⚠️ 2026-07-12 修復「註冊權限不足」：原先的 Email 重複檢查寫在 createUserWithEmailAndPassword 之前
+    //   （因為那時還沒有 auth context，list 權限需要 isLoggedIn()，導致 Missing or insufficient permissions）。
+    //   修法：先建立 Auth 用戶（拿到 auth context），再做所有 Firestore 查詢。
+    //   如果發現 Email 已屬於正式學員，雖然 Auth 用戶已建立，但 login 流程能正常接回正式學員文件。
+    const cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
+
+    // ⚠️ 2026-07-11 修復「有學籍學生無法透過官網預約登入」：註冊後查這個 Email
     //   是否已經有正式學員/教練帳號，避免用同一組 Firebase Auth email 創 guest 文件
     //   造成兩筆 member 文件打架。
+    const uid = cred.user.uid;
+    const contactHash = await sha256(normalizeContact(trimmedEmail));
+
     const dupCheck = await getDocs(query(
       collection(db, C_MEMBERS),
       where("email", "==", trimmedEmail),
@@ -138,10 +147,6 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     if (hasOfficial) {
       return { ok: false, reason: "這個 Email 已經是正式學員／教練帳號，請直接用「登入」或用主系統登入" };
     }
-
-    const cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
-    const uid = cred.user.uid;
-    const contactHash = await sha256(normalizeContact(trimmedEmail));
 
     const q = query(
       collection(db, C_MEMBERS),
@@ -199,11 +204,13 @@ export async function loginGuestWithPassword(email, password) {
       where("contactHash", "==", contactHash),
       limit(1)
     );
-    let snap = await getDocs(q);
-
-    // ⚠️ 2026-07-11 修復「有學籍學生無法預約登入」：若 guest 查不到，改查 Email
+    let snap = await getDocs(q);      // ⚠️ 2026-07-11 修復「有學籍學生無法預約登入」：若 guest 查不到，改查 Email
     //   是否有正式學員/教練記錄。讓學生能用同一組 Email 登入預約頁面，
     //   不用再建一個 guest 帳號，booking 會掛在學生原本的 memberId 上。
+    // ⚠️ 2026-07-12 作者回報「舊測試學生帳號登入依舊顯示找不到記錄」：
+    //   有些舊正式學員文件的 email 欄位為空（只有 contactHash），或者 accountType
+    //   為 "student" / undefined。新增第三道 fallback：用 contactHash 廣搜所有
+    //   accountType（不含 guest/kid 的正式學員），涵蓋 email 為空但已有接觸記錄的舊帳號。
     if (snap.empty) {
       const officialQ = query(
         collection(db, C_MEMBERS),
@@ -211,10 +218,23 @@ export async function loginGuestWithPassword(email, password) {
         limit(5)
       );
       const officialSnap = await getDocs(officialQ);
-      const officialDoc = officialSnap.docs.find(d => {
+      let officialDoc = officialSnap.docs.find(d => {
         const t = d.data()?.accountType;
         return t && t !== "guest" && t !== "kid";
       });
+      // 第三道 fallback：用 contactHash 查正式學員（email 可能為空）
+      if (!officialDoc) {
+        const fallbackQ = query(
+          collection(db, C_MEMBERS),
+          where("contactHash", "==", contactHash),
+          limit(5)
+        );
+        const fallbackSnap = await getDocs(fallbackQ);
+        officialDoc = fallbackSnap.docs.find(d => {
+          const t = d.data()?.accountType;
+          return t && t !== "guest" && t !== "kid";
+        });
+      }
       if (officialDoc) {
         const mData = officialDoc.data();
         await updateDoc(officialDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });

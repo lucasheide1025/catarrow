@@ -35,6 +35,7 @@ const AdminArchery       = lazy(() => import("../components/admin/AdminArchery")
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
 const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
+const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAccounts"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
@@ -90,6 +91,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminLearn");
     import("../components/admin/AdminTierPermissions");
     import("../components/admin/AdminKidMode");
+    import("../components/admin/AdminGuestAccounts");
     import("../components/admin/AdminBooking");
   },
   "hub-events": () => {
@@ -798,6 +800,9 @@ const adminNav = [
         {page==="hub-member" && memberSub==="dungeon-test" && (
           <><HubBack onClick={()=>setMemberSub(null)}/><AdminDungeon/></>
         )}
+        {page==="hub-member" && memberSub==="guest-accounts" && (
+          <><HubBack onClick={()=>setMemberSub(null)}/><AdminGuestAccounts/></>
+        )}
         {page==="hub-member" && memberSub==="kidmode" && (
           <><HubBack onClick={()=>setMemberSub(null)}/><AdminKidMode/></>
         )}
@@ -887,6 +892,7 @@ function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, 
         <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />
         <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
         <HubCard icon="🏰" label="地下城測試" desc="設定玩家地下城類型" onClick={() => onSelect("dungeon-test")} />
+        <HubCard icon="🎫" label="訪客帳號" desc="檢視訪客、預約統計、轉正式" onClick={() => onSelect("guest-accounts")} />
         <HubCard icon="🎈" label="兒童模式" desc="夏令營場次、帳號轉正式" onClick={() => onSelect("kidmode")} />
         <HubCard icon="📅" label="線上約課" desc="行事曆、開放名單、報表" onClick={() => onSelect("booking")} />
       </div>
