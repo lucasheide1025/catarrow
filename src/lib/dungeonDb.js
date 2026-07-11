@@ -552,7 +552,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     let result    = null;
     let newStatus = "active";
 
-    if (liveAfter === 0) {
+    // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會「打不死怪又不算輸」而卡死（2026-07-12）。
+    // frontIds 是本回合開始時存活的前衛；本回合結束後前衛全數 HP<=0 就判輸。
+    const frontLiveAfter = frontIds.filter(id => (memberHPNow[id] || 0) > 0).length;
+    if (liveAfter === 0 || (frontIds.length > 0 && frontLiveAfter === 0)) {
       result    = "lose";
       newStatus = "completed";
     } else if (monsterHP <= 0) {
@@ -636,7 +639,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         : {}),
     });
 
-    return { ok:true, won:monsterHP <= 0, lost:liveAfter === 0 };
+    return { ok:true, won:monsterHP <= 0, lost:result === "lose" };
   } catch (e) {
     console.error("[processDungeonRound]", e);
     await updateDoc(doc(db, D, roomId), { processing:false }).catch(() => {});

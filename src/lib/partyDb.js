@@ -586,9 +586,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       counterRound:    !skipAllCtr,
     };
 
+    // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會打不死怪又不算輸而卡死（2026-07-12）。
+    const frontLiveAfter = frontIds.filter(id => (memberHPNow[id] || 0) > 0).length;
     let result = null;
     if (monsterHP <= 0) result = "win";
-    else if (liveAfter === 0) result = "lose";
+    else if (liveAfter === 0 || (frontIds.length > 0 && frontLiveAfter === 0)) result = "lose";
 
     const newStatus = result === "win"  ? "pending_confirm"
                     : result === "lose" ? "completed"
