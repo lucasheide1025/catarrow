@@ -3,6 +3,22 @@
 
 ---
 
+## 2026-07-12（組隊地下城多項修正 + 全站暱稱優先顯示）
+
+### 組隊地下城
+- **換樓層 buff 歸零**：`advanceDungeonFloor` 換樓時把所有成員 buffs(atk/def/dmg 倍率、復活)重置，藥水/踩事件增益不再帶到下一層。
+- **箭數/里程碑**：診斷確認 `addRoundArrows`/`totalArrowsAllTime` 每回合寫入其實成功；真正缺的是**今日箭數里程碑**——地下城結算(win/lose)有寫 practiceLog(今日箭數來源)卻沒呼叫 `checkAndGrantArrowMilestones`，故里程碑不觸發。已補上。⚠️ 今日箭數/里程碑在**整場結算時**記入(靠 practiceLog)，非每回合；終身箭數才是每回合累積。
+- **已清房間重觸發戰鬥**：`TeamExpeditionBattle.enterExplorationRoom` 判斷順序錯，戰鬥房(battle/elite/boss)判斷排在 `room.cleared` 之前，導致已清房回頭踩會重打。把 cleared/樓梯/入口檢查移到戰鬥判斷之前。
+
+### 全站顯示暱稱優先（nickname || name）
+- 多處寫入端誤用 `profile.name`：組隊地下城建房/加入(`DungeonLobby.myName`)、遠征成員資料與名牌(`DungeonExpedition` 3 處)、地下城公告廣播(`TeamExpeditionBattle.myName`)、採集組隊(`GatheringPartyPanel.memberName` 順序寫反)。統一改 `nickname || name`。世界王/組隊打怪原本已正確。
+
+### 踩坑提醒
+- 「今日箭數」的真相來源是**當日 practiceLogs 的 totalArrows 加總**（`checkAndGrantArrowMilestones` 內部就是這樣算），跟 `totalArrowsAllTime`(終身)是兩套。地下城要影響今日箭數/里程碑，一定要寫 practiceLog + 呼叫 checkAndGrant。
+- 顯示名字一律 `nickname || name`；未來新增任何「把玩家名字存進房間/公告/參戰」的地方都要遵守，不要直接用 `profile.name`。
+
+---
+
 ## 2026-07-12（Google×密碼 自動連結共存）
 
 - `useAuth`：Google 登入若撞 `auth/account-exists-with-different-credential`（同 email 已有密碼帳號、專案設「一個 email 一個帳號」），暫存 Google 憑證（模組級 `pendingGoogleCred`）並拋 `auth/link-password-required`。新增 `linkGoogleWithPassword(email,password)`：用密碼登入既有帳號後 `linkWithCredential` 綁上 Google，之後兩種登入方式共存。
