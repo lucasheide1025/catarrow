@@ -831,6 +831,11 @@ export async function advanceDungeonFloor(roomId, room, nextMonster) {
       upd[`members.${id}.contract`]      = rerollContract();
       upd[`members.${id}.contractReset`] = false;
     }
+    // 換樓層：所有成員的臨時增益/減益（喝藥水、踩事件的 atk/def/dmg 倍率、復活）歸零，不帶到下一層。
+    // 例如一樓踩到雙倍傷害，進二樓時全員恢復正常值。全員都重置（含當層陣亡者），避免任何 buff 殘留。
+    for (const id of memberIds) {
+      upd[`members.${id}.buffs`] = { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false };
+    }
 
     await updateDoc(doc(db, D, roomId), {
       ...upd,

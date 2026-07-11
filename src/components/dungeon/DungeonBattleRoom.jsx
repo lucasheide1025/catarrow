@@ -561,9 +561,15 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   async function handleSubmit() {
     const _apr = room?.arrowsPerRound || 6;
-    if (arrows.length < _apr || submitted || submitting) return;
+    // 🔍 暫時診斷（組隊地下城箭數不累積排查）
+    console.log("[箭數診斷] handleSubmit 被呼叫", { arrowsLen: arrows.length, _apr, submitted, submitting, myRole: me?.role, expeditionMode });
+    if (arrows.length < _apr || submitted || submitting) {
+      console.warn("[箭數診斷] handleSubmit 提前 return", { arrowsLen: arrows.length, _apr, submitted, submitting });
+      return;
+    }
     const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
     const ok = await fsHandleSubmit(arrows, choice);
+    console.log("[箭數診斷] fsHandleSubmit 回傳", ok);
     if (ok) {
       setRearChoice(null);
       setArrows([]);
