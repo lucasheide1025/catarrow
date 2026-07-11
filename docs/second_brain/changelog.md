@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-07-12（組隊地下城 batch 3：增益分層 + 放棄分流）
+
+### 增益拆兩桶（藥水戰鬥級 / 事件商人樓層級）
+規格：戰鬥藥水＝該場用、打完歸零；事件/商人增益＝該層用、換樓或結束才清。
+- `members.{id}.buffs`＝**樓層級**（事件/商人）。`members.{id}.potionBuffs`＝**戰鬥級**（藥水）。
+- `applyDungeonCarryPotion` 改寫 `potionBuffs`（原本寫 buffs → 被 `syncTeamExpeditionMembers:359` 帶回 teamRoom 跨場，這就是藥水跨場根源）。
+- 傷害計算（dungeonDb 309/310/441）兩桶相乘：`buffs.xMult * potionBuffs.xMult`。
+- `startRoomBattle` 恢復繼承 teamRoom 的樓層 buffs（同層多場帶著）+ 每場乾淨 potionBuffs。
+- 換樓歸零：`startFloor`（組隊）清 teamRoom.members.buffs；`advanceDungeonFloor`（單人）清 buffs + potionBuffs。
+- potionBuffs 不被 sync 回 teamRoom（syncTeamExpeditionMembers 只同步 buffs），故打完該場自然消失。
+
+### 放棄分流
+`handleAbandon` 本來就依 isHost 分流（房主→設 completed/abandoned + cleanupTeamExpeditionRoom 全隊解散；隊員→leaveTeamExpeditionRoom 自己離開）。放棄按鈕經 handleLeave→onExit→handleAbandon 已正確觸發，只補確認框文案依 isHost 區分。
+
+### 踩坑提醒
+- 組隊遠征增益資料流：事件/商人房操作 teamRoom（roomId=teamRoomId）→ 寫 teamRoom.members.buffs；戰鬥房是獨立 dungeonRoom，`syncTeamExpeditionMembers` 把戰鬥房成員 hp/buffs 同步回 teamRoom（會跨場）。要「戰鬥級」不跨場的東西一律放 potionBuffs（不進 sync）。
+- 新增任何「戰鬥中暫時增益」都要想清楚是樓層級(buffs)還是戰鬥級(potionBuffs)，並在傷害計算把新桶乘進去。
+
+---
+
 ## 2026-07-12（組隊地下城 batch 2：今日箭數/里程碑、藥水跨場、放棄鈕）
 
 - **今日箭數/里程碑破案**：`DungeonBattleRoom.handleClaimSelf` 在 `expeditionMode` **早退 return**，跳過了 practiceLog(今日箭數來源)+`checkAndGrantArrowMilestones`(里程碑)，只有非遠征模式才寫。→ 組隊遠征今日箭數/里程碑永遠不增加（總箭數 totalArrowsAllTime 走 addRoundArrows 每回合正常）。已在 expeditionMode 分支 return 前補回這兩個「個人紀錄」（金幣/寶箱仍由遠征系統發）。今日箭數＝當日 practiceLogs.totalArrows 加總，不濾來源。
