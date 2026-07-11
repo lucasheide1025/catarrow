@@ -3,6 +3,20 @@
 
 ---
 
+## 2026-07-11（地下城防堆疊：商店一次性商品 + 事件增益換層歸零）
+
+### 改了什麼
+- **商店一次性商品**（`DungeonExpedition.handleLocalBuy` + `DungeonShop.jsx`）：攻擊藥水(atk_mult)、防禦藥水(def_mult)、復活符(revival)**整趟遠征只能買一次**。以 **effect** 為單位追蹤（`ONE_TIME_SHOP_EFFECTS`＋新 state `boughtOneTime`），所以 atk_boost(×1.2) 與 atk_large(×1.5) 買了其一另一支也鎖；跨不同商店房也記得（父層 state，不像舊的 `localPurchases` 每個商店房重置）。DungeonShop 新增 `boughtEffects` prop 據此禁用+顯示「已購」。
+- **ATK/DEF 藥水改寫進 base atk/def**（不再是 `buffs.atkMult`），這樣整趟持續、又不受下面換層歸零影響。
+- **事件增益/減益換層歸零**（`handleDescend`）：進下一層時 `buffs.atkMult/defMult/dmgMult` 全部歸 1，防止跨層無限堆疊；`hasRevival`（復活符）保留。離開/戰勝地下城本來就會重建 playerState，自動恢復。
+
+### 踩坑 / 待確認
+- 舊的 `DungeonShop.localPurchases` 只擋「同一個商店房內、同一 item.id」重買——換商店房或換等級品項(atk_boost↔atk_large)就破功，這次才用父層 effect 級追蹤根治。
+- **只改 solo（localMode）路徑**；多人組隊商店（`shopPurchases` 存 room doc）未動，若組隊也要一次性需另做。
+- `hp_max_boost`（生命上限符）目前**沒**列入一次性（照使用者只點名的三項）——但它也是永久堆疊，要不要一起鎖待使用者確認。
+
+---
+
 ## 2026-07-11（教練後台預約通知 Part A：新預約 + 下一小時提醒橫幅）
 
 ### 改了什麼

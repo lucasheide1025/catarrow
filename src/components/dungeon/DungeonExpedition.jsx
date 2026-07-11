@@ -59,7 +59,7 @@ import { makeCoinChest, floorToMonsterTier } from "../../lib/lootTable";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import {
   sfxTap, sfxDoorOpen, sfxPathSelect, sfxBuff, sfxDebuff,
-  sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter,
+  sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter, sfxError,
 } from "../../lib/sound";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
@@ -77,6 +77,10 @@ const FLOOR_LABELS = [
   { icon:"⚔️", title:"第 2 層 · 戰鬥層", desc:"迷霧更深、怪物更多，還有一隻精英怪擋路！" },
   { icon:"👑", title:"第 3 層 · 王關",   desc:"三條岔路只能選一條——盡頭是 Boss 與寶藏！" },
 ];
+
+// 商店裡「整趟遠征只能買一次」的效果（防無限堆疊）：攻擊藥水 / 防禦藥水 / 復活符。
+// 以 effect 為單位（atk_boost×1.2 與 atk_large×1.5 都算 atk_mult，買了其一另一支也鎖）。
+const ONE_TIME_SHOP_EFFECTS = ["atk_mult", "def_mult", "revival"];
 
 
 // ── 戰鬥包裝元件 ────────────────────────────────────────
@@ -339,6 +343,8 @@ export default function DungeonExpedition({
   const [resultRewards, setResultRewards] = useState(null);
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
   const [playerState, setPlayerState] = useState(null);
+  // 整趟遠征已買過的「一次性商店效果」（atk_mult/def_mult/revival）→ 商店據此鎖定，防跨商店堆疊
+  const [boughtOneTime, setBoughtOneTime] = useState({});
 
   // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
   // 一併保存目前 HP（隨 hp 變動即時更新），續玩時還原離開前的 HP，避免重整回滿血刷關。
@@ -541,10 +547,12 @@ export default function DungeonExpedition({
 
   // 商店本地購買：扣金幣 + 套用效果
   const handleLocalBuy = useCallback((item) => {
+    // 整趟遠征只能買一次的效果：已買過就擋下（不扣款、不套用）
+    if (ONE_TIME_SHOP_EFFECTS.includes(item.effect) && boughtOneTime[item.effect]) { sfxError(); return; }
     sfxShopBuy();
     addCoins(myId, -item.cost).catch(() => {});
+    if (ONE_TIME_SHOP_EFFECTS.includes(item.effect)) setBoughtOneTime(b => ({ ...b, [item.effect]: true }));
     setPlayerState(p => {
-      const r2 = v => Math.round(v * 100) / 100;
       switch (item.effect) {
         case "hp_restore":
           return { ...p, hp: Math.min(p.maxHP, Math.round(p.hp + p.maxHP * item.value)) };
@@ -552,17 +560,18 @@ export default function DungeonExpedition({
           const maxHP = Math.round(p.maxHP * (1 + item.value));
           return { ...p, maxHP, hp: Math.min(maxHP, Math.round(p.hp * (1 + item.value))) };
         }
+        // ATK/DEF 藥水：寫進 base atk/def（整趟持續，不受換層時事件增益歸零影響）；且只能買一次
         case "atk_mult":
-          return { ...p, buffs: { ...p.buffs, atkMult: r2((p.buffs.atkMult || 1) * item.value) } };
+          return { ...p, atk: Math.round((p.atk || 0) * item.value) };
         case "def_mult":
-          return { ...p, buffs: { ...p.buffs, defMult: r2((p.buffs.defMult || 1) * item.value) } };
+          return { ...p, def: Math.round((p.def || 0) * item.value) };
         case "revival":
           return { ...p, buffs: { ...p.buffs, hasRevival: true } };
         default:
           return p;
       }
     });
-  }, [myId]);
+  }, [myId, boughtOneTime]);
 
   // ── 進入房間 ────────────────────────────────────────────
   const enterRoom = useCallback((room) => {
@@ -626,6 +635,9 @@ export default function DungeonExpedition({
 
   const handleDescend = useCallback(() => {
     sfxDoorOpen();
+    // 進入下一層：事件增益/減益（atkMult/defMult/dmgMult）歸零，避免跨層無限堆疊。
+    // 保留 hasRevival（商店復活符屬整趟持續）；ATK/DEF 藥水已寫進 base atk/def 不受影響。
+    setPlayerState(p => p ? { ...p, buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: p.buffs?.hasRevival ?? false } } : p);
     setFloorsCleared(prev => Math.max(prev, floorIndex + 1));
     startFloor(floorIndex + 1);
   }, [floorIndex, startFloor]);
@@ -860,6 +872,7 @@ export default function DungeonExpedition({
             {...common}
             memberData={{ id: myId, coins, hp: playerState.hp, maxHP: playerState.maxHP, buffs: playerState.buffs }}
             onLocalBuy={handleLocalBuy}
+            boughtEffects={boughtOneTime}
           />
         );
       case "trap":

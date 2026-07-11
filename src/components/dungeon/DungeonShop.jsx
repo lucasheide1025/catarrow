@@ -68,6 +68,7 @@ function BuyFloat({ item, onDone }) {
 export default function DungeonShop({
   roomId, room, memberId, memberData, isHost,
   localMode = false, onLocalBuy, onLocalDone, onSharedDone,
+  boughtEffects = {}, // 整趟遠征已買過的一次性效果 { atk_mult:true, ... }（solo localMode 由父層傳入）
 }) {
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -111,6 +112,7 @@ export default function DungeonShop({
   async function handleBuy(item) {
     if (loading) return;
     const isPotion = item.id === "hp_potion";
+    if (boughtEffects[item.effect]) { sfxError(); return; } // 整趟已買過此效果
     if (!isPotion && myPurchases.includes(item.id)) { sfxError(); return; }
     if (item.id === "revival_front" && !hasFallenFront) { sfxError(); return; }
     if (coins < item.cost) { sfxError(); return; }
@@ -256,7 +258,7 @@ export default function DungeonShop({
       <div className="px-4 py-4 space-y-3">
         {fullItems.map((item, i) => {
           const isPotion        = item.id === "hp_potion";
-          const alreadyBought   = !isPotion && myPurchases.includes(item.id);
+          const alreadyBought   = !!boughtEffects[item.effect] || (!isPotion && myPurchases.includes(item.id));
           const isRevivalFront  = item.id === "revival_front";
           const revivalBlocked  = isRevivalFront && !hasFallenFront && !alreadyBought;
           const canAfford       = coins >= item.cost;
