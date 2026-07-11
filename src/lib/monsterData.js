@@ -537,11 +537,15 @@ export function getTierPoolByPower(power) {
 }
 
 // ── 變體倍率 ─────────────────────────────────────────────
-// weak: -40% HP/ATK/DEF；strong: +50% HP, +40% ATK/DEF
-const VARIANT_MULT = {
-  weak:   { hp: 0.6, atk: 0.6, def: 0.6 },
+// 弱化/強化改成「浮動」——每隻怪各自在區間內隨機（2026-07-12）。
+// 原本固定值造成「弱化過頭(×0.6沒存在感)、強化過頭(×1.5/1.4太痛)」，改成收窄的浮動區間。
+// normal 維持基準 1.0；boss 是設計好的關卡王，維持固定不浮動。
+const VARIANT_RANGE = {
+  weak:   { hp: [0.78, 0.92], atk: [0.78, 0.92], def: [0.78, 0.92] },
+  strong: { hp: [1.15, 1.40], atk: [1.10, 1.30], def: [1.10, 1.30] },
+};
+const VARIANT_FIXED = {
   normal: { hp: 1.0, atk: 1.0, def: 1.0 },
-  strong: { hp: 1.5, atk: 1.4, def: 1.4 },
   boss:   { hp: 2.0, atk: 1.6, def: 1.6 },
 };
 
@@ -557,7 +561,16 @@ function pickVariant(archerPower) {
 
 // ── 對怪物套用變體（回傳新物件，不修改原資料）───────────
 export function applyVariant(monster, variant) {
-  const mult = VARIANT_MULT[variant] || VARIANT_MULT.normal;
+  const range = VARIANT_RANGE[variant];
+  let mult;
+  if (range) {
+    // 一隻怪只擲一次 t，三圍用同一個 t 內插 → 強弱一致（不會血厚但攻低）。擲一次固定在該怪身上，整場不變。
+    const t = Math.random();
+    const lerp = ([lo, hi]) => lo + (hi - lo) * t;
+    mult = { hp: lerp(range.hp), atk: lerp(range.atk), def: lerp(range.def) };
+  } else {
+    mult = VARIANT_FIXED[variant] || VARIANT_FIXED.normal;
+  }
   return {
     ...monster,
     variant,
