@@ -78,9 +78,9 @@ const FLOOR_LABELS = [
   { icon:"👑", title:"第 3 層 · 王關",   desc:"三條岔路只能選一條——盡頭是 Boss 與寶藏！" },
 ];
 
-// 商店裡「整趟遠征只能買一次」的效果（防無限堆疊）：攻擊藥水 / 防禦藥水 / 復活符。
+// 商店「一次性商品」規則：除了回血藥水(hp_restore)以外，所有商品整趟遠征只能買一次（防無限堆疊）。
 // 以 effect 為單位（atk_boost×1.2 與 atk_large×1.5 都算 atk_mult，買了其一另一支也鎖）。
-const ONE_TIME_SHOP_EFFECTS = ["atk_mult", "def_mult", "revival"];
+const isOneTimeShopEffect = (e) => !!e && e !== "hp_restore";
 
 
 // ── 戰鬥包裝元件 ────────────────────────────────────────
@@ -547,11 +547,11 @@ export default function DungeonExpedition({
 
   // 商店本地購買：扣金幣 + 套用效果
   const handleLocalBuy = useCallback((item) => {
-    // 整趟遠征只能買一次的效果：已買過就擋下（不扣款、不套用）
-    if (ONE_TIME_SHOP_EFFECTS.includes(item.effect) && boughtOneTime[item.effect]) { sfxError(); return; }
+    // 一次性商品（回血藥水以外）：已買過就擋下（不扣款、不套用）
+    if (isOneTimeShopEffect(item.effect) && boughtOneTime[item.effect]) { sfxError(); return; }
     sfxShopBuy();
     addCoins(myId, -item.cost).catch(() => {});
-    if (ONE_TIME_SHOP_EFFECTS.includes(item.effect)) setBoughtOneTime(b => ({ ...b, [item.effect]: true }));
+    if (isOneTimeShopEffect(item.effect)) setBoughtOneTime(b => ({ ...b, [item.effect]: true }));
     setPlayerState(p => {
       switch (item.effect) {
         case "hp_restore":

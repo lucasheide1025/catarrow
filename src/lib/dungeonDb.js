@@ -672,6 +672,12 @@ export async function purchaseDungeonItem(roomId, memberId, item, memberData) {
     const upd = item.id === "hp_potion"
       ? {}
       : { [`shopPurchases.${memberId}`]: arrayUnion(item.id) };
+    // 一次性商品（回血藥水以外）以 effect 記到 shopBoughtEffects——這個欄位「跨層保留」
+    // （selectDungeonPath / advanceDungeonFloor 只清 shopPurchases，不清這個），
+    // 所以換層後同款效果仍鎖定，避免多人組隊也能瘋狂堆疊。
+    if (item.effect && item.effect !== "hp_restore") {
+      upd[`shopBoughtEffects.${memberId}`] = arrayUnion(item.effect);
+    }
 
     switch (item.effect) {
       case "hp_restore":

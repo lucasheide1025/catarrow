@@ -37,8 +37,11 @@
 
 ### 踩坑 / 待確認
 - 舊的 `DungeonShop.localPurchases` 只擋「同一個商店房內、同一 item.id」重買——換商店房或換等級品項(atk_boost↔atk_large)就破功，這次才用父層 effect 級追蹤根治。
-- **只改 solo（localMode）路徑**；多人組隊商店（`shopPurchases` 存 room doc）未動，若組隊也要一次性需另做。
-- `hp_max_boost`（生命上限符）目前**沒**列入一次性（照使用者只點名的三項）——但它也是永久堆疊，要不要一起鎖待使用者確認。
+
+### 2026-07-11 補強（依使用者回覆）
+- **規則統一**：除了回血藥水(`hp_restore`)以外，**所有商品整趟只能買一次**（含 `hp_max_boost` 生命上限符）。solo 用 `isOneTimeShopEffect(e)=e!=="hp_restore"`。
+- **多人組隊也一起處理**：`dungeonDb.purchaseDungeonItem` 新增 `shopBoughtEffects.{memberId}`（arrayUnion effect），此欄位**不**被 `selectDungeonPath`/`advanceDungeonFloor` 清除（那兩支只清 `shopPurchases`），所以換層後同款效果仍鎖定。`DungeonShop` 統一用 `boughtEffectSet`（多人 room.shopBoughtEffects＋solo 父層 boughtEffects＋本房 item.id→effect）判斷 `alreadyBought`。
+- `revival_front`（前衛復活藥，多人限定）目前也被歸為一次性（除 hp_restore 外全鎖）——若希望它可重複買，之後把它加進白名單。
 
 ---
 

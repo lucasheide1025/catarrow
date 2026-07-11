@@ -83,6 +83,15 @@ export default function DungeonShop({
   const shopItems     = room?.shopItems     || [];
   const shopPurchases = room?.shopPurchases || {};
   const myPurchases   = localMode ? localPurchases : (shopPurchases[memberId] || []);
+  // 一次性商品（回血藥水以外）整趟只能買一次。已買過的 effect 集合來源：
+  //  ・多人：room.shopBoughtEffects[memberId]（跨層保留）  ・solo：父層 boughtEffects（整趟 state）
+  //  ・本商店房內剛買的 item.id → effect（即時反映）
+  const isOneTime = (e) => !!e && e !== "hp_restore";
+  const boughtEffectSet = new Set([
+    ...(room?.shopBoughtEffects?.[memberId] || []),
+    ...Object.keys(boughtEffects).filter(k => boughtEffects[k]),
+    ...myPurchases.map(id => SHOP_ITEM_META[id]?.effect).filter(Boolean),
+  ]);
   const coins         = memberData?.coins ?? 0;
   const members       = room?.members || {};
   const aliveIds      = Object.keys(members).filter(id => members[id].alive);
@@ -112,8 +121,7 @@ export default function DungeonShop({
   async function handleBuy(item) {
     if (loading) return;
     const isPotion = item.id === "hp_potion";
-    if (boughtEffects[item.effect]) { sfxError(); return; } // 整趟已買過此效果
-    if (!isPotion && myPurchases.includes(item.id)) { sfxError(); return; }
+    if (isOneTime(item.effect) && boughtEffectSet.has(item.effect)) { sfxError(); return; } // 整趟已買過此效果
     if (item.id === "revival_front" && !hasFallenFront) { sfxError(); return; }
     if (coins < item.cost) { sfxError(); return; }
     sfxShopBuy();
@@ -257,8 +265,7 @@ export default function DungeonShop({
       {/* Items */}
       <div className="px-4 py-4 space-y-3">
         {fullItems.map((item, i) => {
-          const isPotion        = item.id === "hp_potion";
-          const alreadyBought   = !!boughtEffects[item.effect] || (!isPotion && myPurchases.includes(item.id));
+          const alreadyBought   = isOneTime(item.effect) && boughtEffectSet.has(item.effect);
           const isRevivalFront  = item.id === "revival_front";
           const revivalBlocked  = isRevivalFront && !hasFallenFront && !alreadyBought;
           const canAfford       = coins >= item.cost;
