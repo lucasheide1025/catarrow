@@ -3,6 +3,15 @@
 
 ---
 
+## 2026-07-12（組隊地下城 batch 2：今日箭數/里程碑、藥水跨場、放棄鈕）
+
+- **今日箭數/里程碑破案**：`DungeonBattleRoom.handleClaimSelf` 在 `expeditionMode` **早退 return**，跳過了 practiceLog(今日箭數來源)+`checkAndGrantArrowMilestones`(里程碑)，只有非遠征模式才寫。→ 組隊遠征今日箭數/里程碑永遠不增加（總箭數 totalArrowsAllTime 走 addRoundArrows 每回合正常）。已在 expeditionMode 分支 return 前補回這兩個「個人紀錄」（金幣/寶箱仍由遠征系統發）。今日箭數＝當日 practiceLogs.totalArrows 加總，不濾來源。
+- **藥水/事件增益跨場**：`TeamExpeditionBattle.startRoomBattle`(392行)建新戰鬥房時 `buffs: m.buffs || {default}` 會**繼承上一場**的 buffs。改成每場一律乾淨 buffs → 戰鬥藥水/踩事件增益打完該場就歸零，不帶到下一場/下一層。（先前 `advanceDungeonFloor` 的 buffs 重置只管非遠征的單房多層路徑，遠征是每房開新戰鬥房，要在建房時重置才有效。）
+- **戰鬥中放棄鈕**：`DungeonBattleRoom` expeditionMode header 新增「🏳️ 放棄」+ 二次確認框，接既有 `onExit→onAbandon(handleAbandon)` 結算流程。解決「怪太強打不死、卡在戰鬥出不去」。
+- 戰鬥中顯示會員本名：其實已被前一批暱稱修正涵蓋（`startRoomBattle` 用 teamRoom 成員 name，來源是 DungeonLobby 的 myName=nickname）——但只對**修正後新開的組隊房**生效，舊房仍是舊名。
+
+---
+
 ## 2026-07-12（組隊地下城多項修正 + 全站暱稱優先顯示）
 
 ### 組隊地下城
