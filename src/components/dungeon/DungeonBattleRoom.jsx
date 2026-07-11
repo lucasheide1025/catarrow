@@ -523,6 +523,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       return;
     }
     const applied = await applyDungeonCarryPotion(roomId, myId, lv.id);
+    // 診斷用（藥水無作用排查）：喝完看 console 這行，把整段貼回來
+    console.log("[戰鬥藥水診斷]", { id: lv.id, kind: pot?.kind, effect: pot?.effect, appliedOk: applied?.ok, appliedReason: applied?.reason, atkMultBefore: me?.buffs?.atkMult, roomStatus: room?.status });
     if (!applied.ok) {
       setPotionUsedThisRound(false);
       return;
