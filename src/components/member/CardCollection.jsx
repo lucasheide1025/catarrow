@@ -1,7 +1,7 @@
 // src/components/member/CardCollection.jsx
 // 怪物卡片 + 世界王卡片收藏、升星、裝備
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeCardCollection, equipCard, unequipCard, upgradeCard, setMythicCardStat,
@@ -104,22 +104,6 @@ function WorldBossRealCard({ card, equipped, selected, compact = false, activeTi
         </>
       )}
       {equipped && <div className="wb-card-equipped">裝備中{activeTitle ? " · 稱號" : ""}</div>}
-      {selected && !compact && (
-        <div className="wb-card-actions" onClick={e => e.stopPropagation()}>
-          {needStat ? (
-            STAT_OPTIONS.map(s => (
-              <button key={s.id} onClick={() => onPickStat(s.id)}>{s.label}</button>
-            ))
-          ) : equipped ? (
-            <>
-              <button onClick={onUnequip}>卸下</button>
-              {!activeTitle && <button onClick={onSetTitle}>設為稱號</button>}
-            </>
-          ) : (
-            <button className="primary" onClick={onEquip}>裝備</button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -175,25 +159,6 @@ function MonsterRealCard({ card, equipped, selected, compact = false, onSelect, 
         </>
       )}
       {equipped && <div className="monster-card-equipped">裝備中</div>}
-      {selected && !compact && (
-        <div className="monster-card-actions" onClick={e => e.stopPropagation()}>
-          {needStat ? (
-            STAT_OPTIONS.map(s => (
-              <button key={s.id} onClick={() => onPickStat(s.id)}>{s.label}</button>
-            ))
-          ) : equipped ? (
-            <button onClick={onUnequip}>卸下</button>
-          ) : (
-            <button className="primary" onClick={onEquip}>裝備</button>
-          )}
-          {canUp && (
-            <button onClick={onUpgrade} disabled={upgrading}>升星（{upCost}張）</button>
-          )}
-          {!canUp && (card.stars || 1) < 5 && (
-            <div className="monster-card-upgrade-note">升星需 {upCost} 張重複</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -205,12 +170,20 @@ export default function CardCollection() {
   const [upgrading,  setUpgrading]  = useState(false);
   const [notice,     setNotice]     = useState("");
   const [filterCat,  setFilterCat]  = useState("all");
+  const actionBarRef = useRef(null);
 
   useEffect(() => {
     if (!profile?.id) return;
     const unsub = subscribeCardCollection(profile.id, setCollection);
     return unsub;
   }, [profile?.id]); // eslint-disable-line
+
+  // 點卡片後把底部動作列捲進畫面（block:"nearest" 避免整頁亂捲）
+  useEffect(() => {
+    if (selected && actionBarRef.current) {
+      actionBarRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selected]);
 
   function showNotice(msg) {
     setNotice(msg);
@@ -289,6 +262,8 @@ export default function CardCollection() {
     acc[stat] = (acc[stat] || 0) + calcCardBonus(card.tier, card.stars);
     return acc;
   }, { hp: 0, atk: 0, def: 0 });
+
+  const selectedCard = selected ? allCards.find(c => `${c.source}:${c.key}` === selected) : null;
 
   return (
     <div className="flex flex-col gap-4 p-4 pb-8">
@@ -426,6 +401,64 @@ export default function CardCollection() {
         </div>
       )}
 
+      {/* 底部動作列：點卡片後在這裡出現大顆的裝備/卸下/設為稱號/升星按鈕 */}
+      {selectedCard && (() => {
+        const sc = selectedCard;
+        const isWbSel = sc.source === "wb";
+        const equippedSel = isEquipped(sc.key, sc.source);
+        const needStatSel = isWbSel ? (sc.statMode === "choose" && !sc.chosenStat) : (sc.tier === "mythic" && !sc.chosenStat);
+        const isTitleSel = isWbSel && activeTitleBossKey === sc.key;
+        const canUpSel = !isWbSel && canUpgradeStar(sc.stars, sc.duplicates, sc.tier);
+        const upCostSel = getUpgradeCost(sc.stars);
+        const btn = "flex-1 min-w-[92px] py-3 rounded-xl font-black text-sm border";
+        return (
+          <div ref={actionBarRef} className="rounded-2xl p-3 flex flex-col gap-2"
+            style={{ background:"rgba(15,23,42,0.96)", border:"1px solid rgba(255,255,255,0.14)", boxShadow:"0 -6px 24px rgba(0,0,0,0.45)" }}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-white font-black text-sm truncate">{isWbSel ? "👑 " : ""}{sc.name}</div>
+                <div className="text-slate-400 text-[11px]">
+                  {equippedSel ? "裝備中" : "未裝備"}{!isWbSel ? ` · 重複 ${sc.duplicates || 0}` : ""}
+                </div>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 text-lg px-2 flex-shrink-0">✕</button>
+            </div>
+            {needStatSel ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="text-slate-400 text-[11px]">裝備前先選擇這張卡的戰鬥定位：</div>
+                <div className="flex gap-2">
+                  {STAT_OPTIONS.map(s => (
+                    <button key={s.id} className={`${btn} bg-indigo-500/25 text-indigo-200 border-indigo-400/40`}
+                      onClick={() => handleStatPick(sc.key, sc.source, s.id)}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {equippedSel ? (
+                  <button className={`${btn} bg-rose-500/20 text-rose-200 border-rose-400/40`}
+                    onClick={() => handleUnequip(sc.key, sc.source)}>卸下</button>
+                ) : (
+                  <button className={`${btn} bg-emerald-500/25 text-emerald-100 border-emerald-400/40`}
+                    onClick={() => handleEquip(sc.key, sc.source)}>裝備</button>
+                )}
+                {isWbSel && equippedSel && !isTitleSel && (
+                  <button className={`${btn} bg-amber-500/25 text-amber-100 border-amber-400/40`}
+                    onClick={() => handleSetTitle(sc.key)}>設為稱號</button>
+                )}
+                {canUpSel && (
+                  <button disabled={upgrading} className={`${btn} bg-yellow-500/20 text-yellow-100 border-yellow-400/40 disabled:opacity-50`}
+                    onClick={() => handleUpgrade(sc.key)}>升星（{upCostSel}張）</button>
+                )}
+                {!isWbSel && !canUpSel && (sc.stars || 1) < 5 && (
+                  <div className="w-full text-slate-400 text-[11px] text-center pt-1">升星需 {upCostSel} 張重複卡</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <style>{`
         .monster-real-card,
         .wb-real-card {
@@ -459,12 +492,6 @@ export default function CardCollection() {
         .wb-real-card.equipped {
           transform: translateY(-2px);
           box-shadow: 0 18px 38px rgba(0,0,0,.36);
-        }
-        /* 選取後要顯示「裝備/卸下/設為稱號」按鈕：解除固定比例與裁切，讓卡片往下撐開，按鈕才不會被遮住 */
-        .monster-real-card.selected,
-        .wb-real-card.selected {
-          aspect-ratio: auto;
-          overflow: visible;
         }
         .wb-real-card::before {
           content: "";
