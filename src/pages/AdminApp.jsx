@@ -17,6 +17,7 @@ import MemberHome         from "../components/member/MemberHome";
 import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
+import AdminBookingAlert  from "../components/admin/AdminBookingAlert";
 
 const AdminMembers       = lazy(() => import("../components/admin/AdminMembers"));
 const AdminCompetitions  = lazy(() => import("../components/admin/AdminCompetitions"));
@@ -770,6 +771,8 @@ const adminNav = [
           <span style={{marginLeft:"auto",fontSize:"12px",color:"#60a5fa",fontWeight:"bold"}}>前往審核 →</span>
         </button>
       )}
+
+      <AdminBookingAlert onGoBooking={() => { setPage("hub-member"); setMemberSub("booking"); }} />
 
       <div style={{paddingBottom:"80px"}} className="content-area">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>

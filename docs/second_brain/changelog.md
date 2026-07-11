@@ -3,6 +3,23 @@
 
 ---
 
+## 2026-07-11（教練後台預約通知 Part A：新預約 + 下一小時提醒橫幅）
+
+### 改了什麼
+- 新增 `src/components/admin/AdminBookingAlert.jsx`：教練後台頂部橫幅。① 🆕 自上次查看後的新預約筆數（createdAt 晚於 localStorage `adminBookingAlert_lastSeenMs`，首次以「現在」建基準避免被歷史灌爆），點擊→booking 頁並更新 lastSeen；② ⏰ 未來一小時內開始的預約（今天、startTime∈[now, now+60min]），**沒有就不顯示**（對應需求「若無則不用通知」）。每 5 分鐘自動刷新。
+- `src/pages/AdminApp.jsx`：加一行 import＋在既有審核橫幅（🔔/🎫）之後掛 `<AdminBookingAlert onGoBooking={...}/>`（只在非射手模式的後台 render 顯示）。
+
+### 為什麼 / 設計取捨
+- 這是「教練登入系統內」的通知（Part A）。Part B「系統外通知」（LINE/推播）需要 Firestore-triggered Cloud Function（前端無法安全持有外部 API 金鑰），待與使用者討論後另做。
+- **刻意做成自給自足小元件**：自己抓資料（reuse `bookingDb.getBookingsForDateRange`，唯讀）＋純前端計算＋lastSeen 存 localStorage，**完全不動 `AdminBooking.jsx` / `bookingDb.js`**——因為 CODEX 當時正在改那兩支（booking-attendance-completion 任務）。這樣兩邊工作零衝突，AdminApp 只需掛一行。
+- 視覺沿用後台既有審核橫幅語言（全寬色塊按鈕），不另創樣式。
+
+### 踩坑提醒
+- 與 CODEX 同時改預約系統：我只 commit 這 2 個檔（新元件＋AdminApp 掛載），沒碰 CODEX 的熱檔。
+- **尚未用真實預約資料實機看過橫幅渲染**（後台切換有自動化點擊卡頓＋測試帳號當下無新/下一小時預約→元件正確回傳 null 不顯示）；已確認 `CI build` 乾淨、後台載入 console 零錯誤。上線後請造一筆今天近一小時的預約確認橫幅有出來。
+
+---
+
 ## 2026-07-11（修復：訪客地下城「開始探索」production 崩潰 — Cannot access before initialization / TDZ）
 
 ### 改了什麼
