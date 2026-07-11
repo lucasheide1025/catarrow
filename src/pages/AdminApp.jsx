@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { sfxNotify } from "../lib/sound";
+import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
@@ -427,11 +427,11 @@ export default function AdminApp() {
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); u7 && u7(); };
   }, []);
 
-  // 待審核報到時，每 12 秒播音效提醒（工作電腦保持開啟用）
+  // 待審核報到時，每 12 秒播音效提醒（工作電腦保持開啟用）——改用加大音量的專用提示音
   useEffect(() => {
     if (pendingCheckinAwaitN <= 0) return;
-    sfxNotify();
-    const t = setInterval(() => sfxNotify(), 12000);
+    sfxCheckinAlert();
+    const t = setInterval(() => sfxCheckinAlert(), 12000);
     return () => clearInterval(t);
   }, [pendingCheckinAwaitN]);
 
