@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, markDungeonUsed, createNotification } from "./db";
+import { getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import {
   assignContracts, rerollContract, generatePathOptions,
@@ -108,6 +109,52 @@ export function subscribeDungeonRoom(roomId, cb) {
     if (snap.exists()) cb({ id:snap.id, ...snap.data() });
     else cb(null);
   });
+}
+
+// Apply a carry potion to the shared room state before consuming inventory.
+// A transaction prevents duplicate taps from applying the same round twice.
+export async function applyDungeonCarryPotion(roomId, memberId, potionId) {
+  const potion = getPotion(potionId);
+  if (!roomId || !memberId || potion?.kind !== "carry") {
+    return { ok:false, reason:"invalid potion" };
+  }
+
+  try {
+    await runTransaction(db, async transaction => {
+      const roomRef = doc(db, D, roomId);
+      const snap = await transaction.get(roomRef);
+      if (!snap.exists()) throw new Error("room not found");
+
+      const room = snap.data();
+      const member = room.members?.[memberId];
+      if (room.status !== "active" || !member?.alive) throw new Error("battle not active");
+
+      const round = room.round || 1;
+      if (member.potionUsedRound === round) throw new Error("potion already used this round");
+
+      const effect = potion.effect || {};
+      const updates = { [`members.${memberId}.potionUsedRound`]: round };
+      if (effect.hpPct) {
+        const maxHP = member.maxHP || 100;
+        updates[`members.${memberId}.hp`] = Math.min(
+          maxHP,
+          (member.hp || 0) + Math.round(maxHP * effect.hpPct / 100)
+        );
+      }
+      if (effect.atkPct) {
+        updates[`members.${memberId}.buffs.atkMult`] =
+          Math.round((member.buffs?.atkMult || 1) * (1 + effect.atkPct / 100) * 100) / 100;
+      }
+      if (effect.defPct) {
+        updates[`members.${memberId}.buffs.defMult`] =
+          Math.round((member.buffs?.defMult || 1) * (1 + effect.defPct / 100) * 100) / 100;
+      }
+      transaction.update(roomRef, updates);
+    });
+    return { ok:true };
+  } catch (e) {
+    return { ok:false, reason:e.message };
+  }
 }
 
 // ── 房主開啟第一層 ────────────────────────────────────────────

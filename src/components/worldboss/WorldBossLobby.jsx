@@ -2,12 +2,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { subscribeLatestWorldBoss, autoSpawnWorldBoss } from "../../lib/worldBossDb";
-import { subscribePracticeLogs } from "../../lib/db";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
 import WorldBossIntro from "./WorldBossIntro";
-import BattleRecords from "../member/BattleRecords";
 import { sfxTap } from "../../lib/sound";
 
 function HPBar({ current, max }) {
@@ -161,7 +159,6 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [event,         setEvent]         = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [inBattle,      setInBattle]      = useState(false);
-  const [wbLogs,        setWbLogs]        = useState([]);
   const [showKillScreen, setShowKillScreen] = useState(false);
   const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
   const [replayIntro,   setReplayIntro]   = useState(false);
@@ -200,12 +197,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         setMyReward(null);
       }
     });
-    const unsubLogs = myId
-      ? subscribePracticeLogs(myId, logs =>
-          setWbLogs(logs.filter(l => l.source === "worldboss")), 60
-        )
-      : null;
-    return () => { unsub(); unsubLogs?.(); };
+    return unsub;
   }, [myId, isGuestMode]);
 
   if (loading) {
@@ -270,7 +262,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     .slice(0, 5);
 
   return (
-    <div className="min-h-full flex flex-col text-white"
+    <div className="h-[100dvh] min-h-0 overflow-hidden flex flex-col text-white"
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {showKillScreen && killEvent && (
@@ -290,7 +282,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </div>
 
       {/* 可捲動主體 */}
-      <div className="px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 space-y-4"
+        style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y" }}>
 
         {/* Boss 展示區 */}
         <div className="rounded-3xl overflow-hidden border border-white/10"
@@ -513,10 +506,6 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           );
         })()}
 
-        {/* 世界王戰鬥紀錄 */}
-        {!isGuestMode && (
-          <BattleRecords logs={wbLogs} title="📊 世界王戰鬥紀錄" maxGroups={8}/>
-        )}
       </div>
 
       {/* 底部按鈕 */}

@@ -171,6 +171,19 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     setGuestBattleImmersive(false);
   }, [tab, partySubTab]);
 
+  // ── 讀取預填資料（從會員中心的 enterGuestGame 跨頁傳入）────────────────
+  useEffect(() => {
+    const prefKey = 'guest_prefill';
+    try {
+      const pref = JSON.parse(sessionStorage.getItem(prefKey) || 'null');
+      if (pref) {
+        if (pref.email && !contact) setContact(pref.email);
+        if (pref.name && !nameInput) setNameInput(pref.name);
+        sessionStorage.removeItem(prefKey); // 用完即刪，避免下次進 GuestApp 又被預填
+      }
+    } catch { /* ignore */ }
+  }, []); // eslint-disable-line
+
   async function handleEnter() {
     setErr("");
     if (!contact.trim()) { setErr("請輸入信箱或電話"); return; }

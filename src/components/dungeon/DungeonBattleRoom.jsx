@@ -7,6 +7,7 @@ import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
+  applyDungeonCarryPotion,
   forceSkipDungeonPlayer,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
@@ -310,6 +311,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       prevRoundKeyRef.current = key;
       setFsSubmitted(false);
       setArrows([]);
+      setPotionUsedThisRound(false);
     }
   }, [room?.status, room?.currentFloor, room?.round]); // eslint-disable-line
 
@@ -510,17 +512,24 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // loading 狀態由 hook 的 submitting 處理
 
   // ── 藥水處理器 ────────────────────────────────────────────────
-  function onCarryPotion(lv) {
+  async function onCarryPotion(lv) {
     if (potionUsedThisRound) return;
     const count = (potionInv[lv.id] || 0);
     if (count <= 0) return;
-    sfxPotionDrink();
-    setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
     setPotionUsedThisRound(true);
     const pot = getPotion(lv.id);
-    if (pot && myId && !isGuestMode) {
-      usePotions(myId, [lv.id]).catch(() => {});
+    if (!pot || !myId || isGuestMode) {
+      setPotionUsedThisRound(false);
+      return;
     }
+    const applied = await applyDungeonCarryPotion(roomId, myId, lv.id);
+    if (!applied.ok) {
+      setPotionUsedThisRound(false);
+      return;
+    }
+    sfxPotionDrink();
+    setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
+    usePotions(myId, [lv.id]).catch(() => {});
     setBottomTab("score");
   }
 

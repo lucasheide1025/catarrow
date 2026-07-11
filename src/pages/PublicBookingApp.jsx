@@ -215,6 +215,16 @@ export default function PublicBookingApp() {
 
   function enterGuestGame() {
     // 進入訪客學籍系統（遊戲）。用同一個 email 進去會歸戶到同一個帳號。
+    // 2026-07-12 修復：把姓名跟信箱預先寫進 sessionStorage，讓 GuestApp 直接讀取、
+    // 自動填入聯絡方式與姓名，不用客戶端再手動打一次。
+    const prefKey = 'guest_prefill';
+    try {
+      sessionStorage.setItem(prefKey, JSON.stringify({
+        email: profile.email || (memberDoc?.email) || '',
+        name: profile.name || (memberDoc?.name) || '',
+        phone: profile.phone || (memberDoc?.phone) || '',
+      }));
+    } catch { /* ignore */ }
     window.location.href = "/?guest=1";
   }
 
