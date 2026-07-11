@@ -218,17 +218,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
     onSubmitSuccess: (submittedArrows) => {
-      // 🔍 暫時診斷（組隊地下城箭數不累積排查）
-      console.log("[箭數診斷] onSubmitSuccess", {
-        isGuestMode, myId, expeditionMode,
-        arrowsLen: Array.isArray(submittedArrows) ? submittedArrows.length : `非陣列(${typeof submittedArrows})`,
-      });
       if (!isGuestMode && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
-        addRoundArrows(myId, submittedArrows.length)
-          .then(() => console.log("[箭數診斷] addRoundArrows 已送出", myId, submittedArrows.length))
-          .catch(e => console.warn("[箭數診斷] addRoundArrows 呼叫層失敗", e?.code, e?.message));
-      } else {
-        console.warn("[箭數診斷] 守門未通過，未呼叫 addRoundArrows");
+        addRoundArrows(myId, submittedArrows.length).catch(() => {});
       }
     },
   });
@@ -561,15 +552,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   async function handleSubmit() {
     const _apr = room?.arrowsPerRound || 6;
-    // 🔍 暫時診斷（組隊地下城箭數不累積排查）
-    console.log("[箭數診斷] handleSubmit 被呼叫", { arrowsLen: arrows.length, _apr, submitted, submitting, myRole: me?.role, expeditionMode });
-    if (arrows.length < _apr || submitted || submitting) {
-      console.warn("[箭數診斷] handleSubmit 提前 return", { arrowsLen: arrows.length, _apr, submitted, submitting });
-      return;
-    }
+    if (arrows.length < _apr || submitted || submitting) return;
     const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
     const ok = await fsHandleSubmit(arrows, choice);
-    console.log("[箭數診斷] fsHandleSubmit 回傳", ok);
     if (ok) {
       setRearChoice(null);
       setArrows([]);
@@ -690,6 +675,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         ...(arrowPositions.length ? { arrowPositions } : {}),
       }, myId).catch(() => {});
       if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
+      // 今日箭數里程碑（比照單人打怪；地下城原本漏了這步 → 里程碑不觸發）。
+      // 今日箭數本身靠上面這筆 practiceLog 累計，里程碑則要另外呼叫 checkAndGrantArrowMilestones。
+      if (arrowCount > 0 && !isGuestMode) {
+        import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
+          checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
+      }
     }
     // XP 依怪物 tier 縮放（打怪模式標準）
     const monsterTierKey = room?.monster?.tier || "common";
@@ -918,6 +909,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                     ...(arrowPositions.length ? { arrowPositions } : {}),
                   }, myId).catch(() => {});
                   if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
+                  // 今日箭數里程碑（失敗場也算射出的箭，比照單人打怪）
+                  if (arrowCount > 0 && !isGuestMode) {
+                    import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
+                      checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
+                  }
                 }
               }
               if (isMapMode) {

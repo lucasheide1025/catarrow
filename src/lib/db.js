@@ -308,10 +308,7 @@ export async function addRoundArrows(memberId, count) {
     const excav = await computeExcavationPatch(memberId, count);
     if (excav) Object.assign(patch, excav.patch);
   } catch (e) { /* ignore，退回只寫 totalArrowsAllTime */ }
-  // 🔍 暫時診斷（組隊地下城箭數不累積排查）：把原本被 .catch(()=>{}) 吞掉的錯誤印出來
-  await updateDoc(doc(db, C.members, memberId), patch)
-    .then(() => console.log("[箭數診斷] members updateDoc 成功", memberId, "patchKeys:", Object.keys(patch)))
-    .catch(e => console.warn("[箭數診斷] members updateDoc 被拒！", e?.code, e?.message, "patchKeys:", Object.keys(patch)));
+  await updateDoc(doc(db, C.members, memberId), patch).catch(() => {});
   // 村目标贡献 hook（非同步，不阻塞）
   try {
     const { contributeArrowsToGoal } = await import("./villageGoalDb");
