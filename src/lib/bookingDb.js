@@ -467,6 +467,29 @@ export async function completeBookingFromCheckin(bookingId, checkinId, billingRe
   }
 }
 
+// 下課結帳 fallback：checkin 身上沒有 bookingId 時（報到時間落在時段外、當天多筆預約，
+// 或 checkin 不是經 submitCheckin 建立→沒跑過 linkCurrentBookingToCheckin），結帳當下再找一次
+// 當天該會員「尚未結帳」的 confirmed 預約補做完成連動。否則線上約課那筆會永遠停在「結帳」按鈕，
+// 被重複結帳、重複開會計記錄。選取規則刻意跟 linkCurrentBookingToCheckin 一致：優先時段內，
+// 否則只有唯一一筆才自動處理（多筆又都不在時段內＝無法安全判斷是哪一筆，留給教練從行事曆手動結）。
+export async function completeBookingForMemberOnDate(memberId, date, checkinId, billingId = null) {
+  if (!memberId || !date) return { ok: true, linked: false };
+  const result = await getBookingsForDateRange(date, date);
+  if (!result.ok) return { ok: false, reason: result.reason };
+  const candidates = result.bookings.filter(
+    b => b.memberId === memberId && b.status === "confirmed" && !b.billingRecordId
+  );
+  if (candidates.length === 0) return { ok: true, linked: false };
+  const nowTime = new Date().toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const booking =
+    candidates.find(b => b.startTime <= nowTime && nowTime < b.endTime) ||
+    (candidates.length === 1 ? candidates[0] : null);
+  if (!booking) return { ok: true, linked: false };
+  return completeBookingFromCheckin(booking.id, checkinId, billingId);
+}
+
 // ─── 查詢 ────────────────────────────────────────────────────
 
 // 學生「我的預約」清單。刻意不加 orderBy(date) 搭配 where(memberId==) ——
@@ -482,6 +505,23 @@ export async function getBookingsForMember(memberId, maxCount = 200) {
     const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     bookings.sort((a, b) => `${b.date}_${b.startTime}`.localeCompare(`${a.date}_${a.startTime}`));
     return { ok: true, bookings };
+  } catch (e) {
+    return { ok: false, reason: e.message, bookings: [] };
+  }
+}
+
+// 後台「最新預約清單」＋置頂提示用：抓最近建立的 N 筆預約（依 createdAt 由新到舊）。
+// orderBy 單一欄位 createdAt 走 Firestore 自動單欄位索引，不需要手動建複合索引（跟 getBookingsForMember
+// 刻意不加 orderBy 的理由不同——那個是「memberId== + orderBy(date)」的複合組合才要索引）。
+// 多抓一些再由呼叫端過濾掉 cancelled，避免一批取消把清單洗空。
+export async function getRecentBookings(maxCount = 10) {
+  try {
+    const snap = await getDocs(query(
+      collection(db, BOOKINGS),
+      orderBy("createdAt", "desc"),
+      limit(maxCount),
+    ));
+    return { ok: true, bookings: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
   } catch (e) {
     return { ok: false, reason: e.message, bookings: [] };
   }

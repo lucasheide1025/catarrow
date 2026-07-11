@@ -13,7 +13,7 @@ import {
   adminDismissCheckin, addBillingRecord,
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
-import { completeBookingFromCheckin } from "../../lib/bookingDb";
+import { completeBookingFromCheckin, completeBookingForMemberOnDate } from "../../lib/bookingDb";
 
 const PLANS_EQUIP = [
   { id:"自訂一小時", price:200 },
@@ -161,10 +161,12 @@ export default function AdminDailyQuest({ mode = "all" }) {
         billingId = billingRef.id;
         setBillState(s => ({ ...s, [c.id]:{ ...s[c.id], billingRecordId:billingId, busy:true } }));
       }
-      if (c.bookingId) {
-        const linked = await completeBookingFromCheckin(c.bookingId, c.id, billingId);
-        if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
-      }
+      // checkin 有綁 bookingId 直接連動；沒綁（報到時沒對上時段）就結帳當下再找一次當天的預約，
+      // 避免線上約課那筆停在「結帳」被重複結帳。
+      const linked = c.bookingId
+        ? await completeBookingFromCheckin(c.bookingId, c.id, billingId)
+        : await completeBookingForMemberOnDate(c.memberId, c.date, c.id, billingId);
+      if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
       if (c.memberId) {
         updateDoc(doc(db, "members", c.memberId), { defaultPlan: bs.plan }).catch(() => {});
       }
@@ -181,10 +183,10 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   async function skipBill(c) {
     setBillState(s => { const n = { ...s }; delete n[c.id]; return n; });
-    if (c.bookingId) {
-      const linked = await completeBookingFromCheckin(c.bookingId, c.id);
-      if (!linked.ok) { toast("完成預約連動失敗：" + (linked.reason || ""), "error"); return; }
-    }
+    const linked = c.bookingId
+      ? await completeBookingFromCheckin(c.bookingId, c.id)
+      : await completeBookingForMemberOnDate(c.memberId, c.date, c.id);
+    if (!linked.ok) { toast("完成預約連動失敗：" + (linked.reason || ""), "error"); return; }
     await adminDismissCheckin(c.id);
     toast(`已完成 ${c.memberNickname || c.memberName} 的紀錄（未記帳）`);
   }

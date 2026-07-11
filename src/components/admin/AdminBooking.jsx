@@ -12,8 +12,9 @@ import {
   createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
   completeBookingFromCheckin,
   bookingHasStarted,
-  getBookingsForDateRange, LANE_CAPACITY,
+  getBookingsForDateRange, getRecentBookings, LANE_CAPACITY,
 } from "../../lib/bookingDb";
+import { seedIfFirstRun, getSeenSet, isUnseen, markSeen, markAllSeen } from "../../lib/bookingSeen";
 import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
   fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice, computeEndTime,
@@ -82,6 +83,81 @@ export default function AdminBooking() {
   );
 }
 
+// ─── 最新預約清單（前十筆，未看過的高亮 + 可點過去看）─────────
+// 用 getRecentBookings（依 createdAt 由新到舊）抓最新十筆，直接寫清楚「約哪一天幾點・人數・方案」。
+// 「看過了沒」走共用的 bookingSeen（跟頂部橫幅同一組 seenIds）：未看過整列琥珀色高亮 + 🆕，
+// 點下去＝標記已看 + 跳到那天日曆並開該時段詳情。reloadTick 變動（新增/取消預約後）會自動重抓。
+function RecentBookingsPanel({ reloadTick, onOpen }) {
+  const [list, setList] = useState(null);
+  const [seenVer, setSeenVer] = useState(0); // 標記已看後 +1 逼重新讀 seenIds 重繪高亮
+  const [collapsed, setCollapsed] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await getRecentBookings(20);
+    if (!res.ok) { setList([]); return; }
+    const confirmed = res.bookings.filter(b => ["confirmed", "completed"].includes(b.status));
+    seedIfFirstRun(confirmed.map(b => b.id));
+    setList(confirmed.slice(0, 10));
+  }, []);
+  useEffect(() => { load(); }, [load, reloadTick]);
+
+  const seen = useMemo(() => getSeenSet(), [seenVer, list]);
+  const items = list || [];
+  const unseenCount = items.filter(b => isUnseen(b.id, seen)).length;
+
+  function open(b) {
+    markSeen(b.id);
+    setSeenVer(v => v + 1);
+    onOpen?.(b);
+  }
+  function allSeen() {
+    markAllSeen(items.map(b => b.id));
+    setSeenVer(v => v + 1);
+  }
+
+  return (
+    <Card className="p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-white font-black text-sm">🆕 最新預約</span>
+          {unseenCount > 0 && (
+            <span className="text-[11px] font-bold text-amber-300 bg-amber-500/15 border border-amber-400/30 rounded-full px-2 py-0.5">{unseenCount} 筆待看</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {unseenCount > 0 && <Btn v="ghost" size="sm" onClick={allSeen}>全部已看</Btn>}
+          <Btn v="ghost" size="sm" onClick={() => setCollapsed(c => !c)}>{collapsed ? "展開" : "收起"}</Btn>
+        </div>
+      </div>
+      {!collapsed && (
+        list === null ? <Spinner /> :
+        items.length === 0 ? <div className="text-slate-500 text-xs py-2">目前沒有預約</div> :
+        <div className="flex flex-col gap-1.5">
+          {items.map(b => {
+            const unseen = isUnseen(b.id, seen);
+            const people = (b.participantCount || 1) > 1 ? `${b.participantCount}人` : "1人";
+            return (
+              <button key={b.id} type="button" onClick={() => open(b)}
+                className={`w-full text-left rounded-lg px-3 py-2 border transition ${unseen
+                  ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/[0.15]"
+                  : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+                <div className="flex items-center gap-2">
+                  {unseen && <span className="text-[10px] font-black text-amber-300 bg-amber-500/20 rounded px-1.5 py-0.5 flex-shrink-0">🆕 新</span>}
+                  <span className={`font-bold text-sm truncate ${unseen ? "text-amber-100" : "text-white"}`}>{b.memberName || "顧客"}</span>
+                  {b.status === "completed" && <span className="text-emerald-400 text-[11px] flex-shrink-0 ml-auto">🏁 已完成</span>}
+                </div>
+                <div className="text-slate-300 text-xs mt-0.5">
+                  📅 {b.date} {b.startTime}–{b.endTime}・{people}・{PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── 行事曆檢視 ──────────────────────────────────────────────
 function CalendarTab({ toast }) {
   const [viewMode, setViewMode] = useState("day"); // "week" | "day"
@@ -135,6 +211,14 @@ function CalendarTab({ toast }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <RecentBookingsPanel
+        reloadTick={reloadTick}
+        onOpen={(b) => {
+          setViewMode("day");
+          setAnchor(b.date);
+          setDetailSlot({ date: b.date, startTime: b.startTime, endTime: computeEndTime(b.startTime, 1) });
+        }}
+      />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex gap-2">
           <Btn v={viewMode === "week" ? "primary" : "secondary"} size="sm" onClick={() => setViewMode("week")}>週檢視</Btn>
