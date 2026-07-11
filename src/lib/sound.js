@@ -127,23 +127,23 @@ export function sfxNotify() {
 // ── 教練後台大聲提示音（工作電腦保持開啟用，比 sfxNotify 大聲、三種彼此可辨識）──
 // 每日報到待審：明亮上行三連音（加大音量版）
 export function sfxCheckinAlert() {
-  tone(784,  0.14, "triangle", 0.42, 0);
-  tone(988,  0.16, "triangle", 0.40, 0.15);
-  tone(1319, 0.20, "triangle", 0.38, 0.32);
+  tone(784,  0.20, "triangle", 0.82, 0);
+  tone(988,  0.22, "triangle", 0.80, 0.18);
+  tone(1319, 0.28, "triangle", 0.76, 0.38);
   vibrate([0, 45, 60, 45]);
 }
 // 新預約：門鈴「叮—咚」雙音下行＋明亮尾音（跟報到明顯不同）
 export function sfxNewBookingAlert() {
-  tone(1047, 0.18, "sine",     0.46, 0);    // 叮
-  tone(784,  0.24, "sine",     0.44, 0.17); // 咚
-  tone(1568, 0.12, "triangle", 0.32, 0.42); // 尾音
+  tone(1047, 0.24, "sine",     0.86, 0);    // 叮
+  tone(784,  0.30, "sine",     0.84, 0.22); // 咚
+  tone(1568, 0.18, "triangle", 0.68, 0.52); // 尾音
   vibrate([0, 55, 40, 55, 40]);
 }
 // 下一小時提醒：急促重複三短音（時鐘/催促感，跟前兩者都不同）
 export function sfxNextHourAlert() {
-  tone(660, 0.09, "square", 0.36, 0);
-  tone(660, 0.09, "square", 0.36, 0.15);
-  tone(880, 0.14, "square", 0.38, 0.30);
+  tone(660, 0.13, "square", 0.72, 0);
+  tone(660, 0.13, "square", 0.72, 0.18);
+  tone(880, 0.20, "square", 0.76, 0.36);
   vibrate([0, 30, 30, 30, 30, 30]);
 }
 

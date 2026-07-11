@@ -6,7 +6,7 @@
 // 文件欄位、後者是教練事後標記用的單欄位更新，都不需要 transaction），直接用 Firestore
 // updateDoc 寫入，比照專案其他 admin 元件（AdminAchievements 等）已有的直接寫入慣例。
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
-import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } from "firebase/firestore";
+import { collection, getDoc, getDocs, doc, updateDoc, serverTimestamp, query, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import {
   createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
@@ -182,11 +182,29 @@ function CalendarTab({ toast }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [bRes, cMap] = await Promise.all([
+    const [bRes, cMap, billingSnap] = await Promise.all([
       getBookingsForDateRange(range.start, range.end),
       fetchSlotCountsForRange(range.start, range.end),
+      getDocs(query(
+        collection(db, "billingRecords"),
+        where("date", ">=", range.start),
+        where("date", "<=", range.end),
+        limit(500),
+      )).catch(() => null),
     ]);
-    setBookings(bRes.ok ? bRes.bookings.filter(b => ["confirmed", "completed"].includes(b.status)) : []);
+    let visibleBookings = bRes.ok ? bRes.bookings.filter(b => ["confirmed", "completed"].includes(b.status)) : [];
+    const billingRecords = billingSnap?.docs?.map(d => ({ id:d.id, ...d.data() })) || [];
+    visibleBookings = await Promise.all(visibleBookings.map(async booking => {
+      if (booking.billingRecordId) return booking;
+      const checkinId = booking.checkinId || (booking.memberId ? `${booking.memberId}_${booking.date}` : null);
+      const existing = billingRecords.find(record =>
+        record.bookingId === booking.id || (checkinId && record.checkinId === checkinId)
+      );
+      if (!existing) return booking;
+      const linked = await completeBookingFromCheckin(booking.id, checkinId, existing.id);
+      return linked.ok ? { ...booking, status:"completed", billingRecordId:existing.id, checkinId } : booking;
+    }));
+    setBookings(visibleBookings);
     setSlotCounts(cMap);
     setLoading(false);
   }, [range]);
@@ -487,6 +505,46 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     onChanged();
   }
 
+  async function openCheckout(booking) {
+    if (booking.source === "walk_in" || booking.source === "online_public" || !booking.memberId) {
+      setCheckoutTarget(booking);
+      return;
+    }
+    setBusy(true);
+    try {
+      const memberSnap = await getDoc(doc(db, "members", booking.memberId));
+      const accountType = memberSnap.data()?.accountType;
+      if (["guest", "kid"].includes(accountType)) {
+        setCheckoutTarget(booking);
+        return;
+      }
+      const checkinId = booking.checkinId || `${booking.memberId}_${booking.date}`;
+      const checkinSnap = await getDoc(doc(db, "checkins", checkinId));
+      const checkin = checkinSnap.exists() ? checkinSnap.data() : null;
+      if (!checkin?.classEnded) {
+        toast("此學生尚未按下課，暫時不能結帳", "error");
+        return;
+      }
+      let existingBillingId = checkin.billingRecordId || null;
+      if (!existingBillingId) {
+        const billingSnap = await getDocs(query(collection(db, "billingRecords"), where("checkinId", "==", checkinId), limit(1)));
+        existingBillingId = billingSnap.docs[0]?.id || null;
+      }
+      if (existingBillingId) {
+        const linked = await completeBookingFromCheckin(booking.id, checkinId, existingBillingId);
+        if (!linked.ok) { toast("既有帳務連動失敗：" + (linked.reason || ""), "error"); return; }
+        toast("已找到審核中心帳務，約課狀態已同步 ✓");
+        onChanged();
+        return;
+      }
+      setCheckoutTarget({ ...booking, checkinId });
+    } catch (e) {
+      toast("檢查下課狀態失敗：" + (e?.message || ""), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal open onClose={onClose} title={`${slot.date} ${slot.startTime}-${slot.endTime}`} wide>
       <div className="flex flex-col gap-4">
@@ -524,7 +582,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                   {b.billingRecordId ? (
                     <span className="text-emerald-400 text-xs font-bold">✅ 已結帳</span>
                   ) : (
-                    <Btn v="success" size="sm" onClick={() => setCheckoutTarget(b)} disabled={busy}>💰 結帳</Btn>
+                    <Btn v="success" size="sm" onClick={() => openCheckout(b)} disabled={busy}>💰 結帳</Btn>
                   )}
                   {b.status === "completed"
                     ? <span className="text-emerald-400 text-xs font-bold">🏁 已完成課程</span>

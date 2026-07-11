@@ -127,3 +127,9 @@ A booking becomes immutable when its Taipei start instant arrives. Both the UI a
 Student check-in links the matching same-day booking through `bookings.checkinId` and `checkins.bookingId`. Coach review completion or checkout changes the booking to `status:"completed"`. Billing records store both identifiers, and the resulting `billingRecordId` is mirrored to the booking and checkin so AdminBooking and AdminDailyQuest cannot offer duplicate checkout actions.
 
 Walk-in visitors use `source:"walk_in"`, `memberId:null`, a manually entered phone, and optional note. They participate in the identical slot-capacity transaction but intentionally skip member document and bookingStats updates.
+
+## Convention: official-student checkout requires class end
+
+AdminBooking checkout for an official student requires the same-day checkin to have `classEnded:true`. If that checkin already references a billing record, repair the booking linkage instead of opening another checkout. Walk-in, public guest, and guest/kid accounts bypass this class-end gate.
+
+Admin calendar loading also repairs legacy partial failures by matching date-range billing records through `bookingId` or `checkinId`. Completion fallback must never return success when no booking was linked; use checkin creation time and nearest same-day unbilled booking to resolve ambiguous records.

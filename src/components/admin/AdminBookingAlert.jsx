@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getRecentBookings, getBookingsForDateRange } from "../../lib/bookingDb";
 import { todayStr, PLAN_TYPES } from "../../lib/bookingSchedule";
-import { seedIfFirstRun, getSeenSet, isUnseen } from "../../lib/bookingSeen";
+import { seedIfFirstRun, getSeenSet, isUnseen, markSeen } from "../../lib/bookingSeen";
 import { sfxNewBookingAlert, sfxNextHourAlert } from "../../lib/sound";
 
 function hmToMin(hm) {
@@ -61,7 +61,8 @@ export default function AdminBookingAlert({ onGoBooking }) {
         .filter(b => { const s = hmToMin(b.startTime); return s >= nowMin && s <= nowMin + 60; })
         .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
       const nhKey = nh.map(b => b.id).sort().join(",");
-      if (nhKey && nhKey !== prevNextHourKeyRef.current) setDismissedNextHour(false);
+      const persistedKey = localStorage.getItem("admin_booking_next_hour_read") || "";
+      if (nhKey && nhKey !== prevNextHourKeyRef.current) setDismissedNextHour(nhKey === persistedKey);
       prevNextHourKeyRef.current = nhKey;
       setNextHour(nh);
     }
@@ -88,10 +89,14 @@ export default function AdminBookingAlert({ onGoBooking }) {
   }, [soundNew, soundNext]);
 
   function seeNew() {
-    setDismissedNew(true); // 只停止提示音+收起橫幅；不標記已看，讓教練在清單逐筆點過去看
+    newBookings.forEach(b => markSeen(b.id));
+    setNewBookings([]);
+    setDismissedNew(true);
     onGoBooking?.();
   }
   function seeNextHour() {
+    const key = nextHour.map(b => b.id).sort().join(",");
+    localStorage.setItem("admin_booking_next_hour_read", key);
     setDismissedNextHour(true);
     onGoBooking?.();
   }

@@ -16,7 +16,7 @@
 // 修改完務必提醒使用者手動貼進 Firebase Console（CLI 部署規則會 403，這個專案的已知限制）。
 
 import {
-  collection, doc, getDocs, setDoc, query, where, orderBy, limit,
+  collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit,
   serverTimestamp, increment, runTransaction, writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -476,17 +476,37 @@ export async function completeBookingForMemberOnDate(memberId, date, checkinId, 
   if (!memberId || !date) return { ok: true, linked: false };
   const result = await getBookingsForDateRange(date, date);
   if (!result.ok) return { ok: false, reason: result.reason };
-  const candidates = result.bookings.filter(
-    b => b.memberId === memberId && b.status === "confirmed" && !b.billingRecordId
+  const candidates = result.bookings.filter(b =>
+    b.memberId === memberId && ["confirmed", "completed"].includes(b.status) && !b.billingRecordId
   );
-  if (candidates.length === 0) return { ok: true, linked: false };
+  if (candidates.length === 0) return { ok:false, linked:false, reason:"找不到可連動的當日預約" };
+  let checkinTime = null;
+  if (checkinId) {
+    try {
+      const snap = await getDoc(doc(db, "checkins", checkinId));
+      const value = snap.data()?.createdAt;
+      const d = value?.toDate?.();
+      if (d) checkinTime = d.toLocaleTimeString("en-GB", {
+        timeZone:"Asia/Taipei", hour:"2-digit", minute:"2-digit", hour12:false,
+      });
+    } catch {}
+  }
   const nowTime = new Date().toLocaleTimeString("en-GB", {
     timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false,
   });
+  const toMinutes = value => {
+    const [h, m] = (value || "00:00").split(":").map(Number);
+    return h * 60 + m;
+  };
+  const referenceTime = checkinTime || nowTime;
   const booking =
+    candidates.find(b => b.checkinId === checkinId) ||
+    candidates.find(b => checkinTime && b.startTime <= checkinTime && checkinTime < b.endTime) ||
     candidates.find(b => b.startTime <= nowTime && nowTime < b.endTime) ||
-    (candidates.length === 1 ? candidates[0] : null);
-  if (!booking) return { ok: true, linked: false };
+    candidates.slice().sort((a, b) =>
+      Math.abs(toMinutes(a.startTime) - toMinutes(referenceTime)) - Math.abs(toMinutes(b.startTime) - toMinutes(referenceTime))
+    )[0];
+  if (!booking) return { ok:false, linked:false, reason:"無法判斷要連動的預約" };
   return completeBookingFromCheckin(booking.id, checkinId, billingId);
 }
 
