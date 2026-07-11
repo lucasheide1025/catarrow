@@ -6,6 +6,7 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX } from "../../lib/archerLevel";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
+import { WB_CARDS } from "../../lib/worldBossCards";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
 import { auth } from "../../lib/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
@@ -59,6 +60,12 @@ export default function MemberProfile({
   }, [profile?.id]);
 
   const thisYear = new Date().getFullYear();
+
+  // 世界王卡稱號（前台顯示）：cardData 來自 subscribeCardCollection，含 activeTitleBossKey / wbCards
+  const titleKey = cardData?.activeTitleBossKey || null;
+  const activeTitle = titleKey
+    ? (cardData?.wbCards?.[titleKey]?.title || WB_CARDS[titleKey]?.title || "")
+    : "";
 
   function buildGroups() {
     const g = {};
@@ -147,6 +154,12 @@ export default function MemberProfile({
             <div>
               <div className="text-white/60 text-xs mb-1">射手</div>
               <div className="font-black text-2xl">{profile?.nickname || profile?.name}</div>
+              {activeTitle && (
+                <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full text-amber-100"
+                  style={{ background:"linear-gradient(120deg,#b45309,#f59e0b,#fde68a,#f59e0b)", backgroundSize:"300% 300%", boxShadow:"0 0 6px rgba(251,191,36,0.55)" }}>
+                  👑 {activeTitle}
+                </div>
+              )}
               <div className="text-white/70 text-sm">{profile?.name}</div>
             </div>
             <div className="flex items-start gap-2">

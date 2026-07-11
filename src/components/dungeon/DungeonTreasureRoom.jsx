@@ -139,7 +139,6 @@ export default function DungeonTreasureRoom({
       ...(loot.material ? [{ item:loot.material }] : []),
       ...(loot.chest ? [{ icon:"📦", label:"額外材料寶箱 ×2" }] : []),
       ...(loot.goldChest ? [{ icon:"🎁", label:"額外金幣寶箱 ×2" }] : []),
-      ...(loot.card ? [{ icon:"🃏", label:`怪物卡片：${loot.card.name}` }] : []),
       ...(loot.extraItem ? [{
         item:loot.extraItem,
         icon:"👑",

@@ -43,7 +43,6 @@ import {
   addChests,
   addCoins,
   addMaterials,
-  addMonsterCard,
 } from "../../lib/db";
 import {
   buildExpeditionParty,
@@ -704,7 +703,7 @@ export default function DungeonExpedition({
     if (loot.coins > 0) addCoins(myId, loot.coins).catch(() => {});
     if (loot.arrowDew > 0) addArrowdew(myId, loot.arrowDew).catch(() => {});
     if (loot.material?.id) addMaterials(myId, [loot.material]).catch(() => {});
-    if (loot.card) addMonsterCard(myId, loot.card).catch(() => {});
+    // 地下城不掉怪物卡片（掉卡只保留在單人打怪 / 組隊）
     const treasureChestLoot = createExpeditionKillLoot(
       fixedBoss || monsterPool.boss || {
         id: "treasure_reward",
@@ -728,7 +727,6 @@ export default function DungeonExpedition({
       treasure: [
         ...(loot.material ? [{ ...loot.material, kind: "material" }] : []),
         ...(loot.extraItem ? [{ ...loot.extraItem, kind: "collectible" }] : []),
-        ...(loot.card ? [{ ...loot.card, kind: "card" }] : []),
         ...(loot.arrowDew > 0
           ? [{ id: "arrowdew", name: `箭露 +${loot.arrowDew}`, icon: "💧", kind: "resource" }]
           : []),

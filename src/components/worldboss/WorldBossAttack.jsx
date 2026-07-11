@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -767,6 +767,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         const _dmgPct = (res.dmg || 0) / (event.bossMaxHP || 1);
         const bossXP  = Math.min(WORLD_BOSS_XP_CAP, Math.max(50, Math.round(_dmgPct * 10000)));
         addArcherXP(myId, bossXP).catch(() => {});
+        // 世界王同時給冒險者 XP（標準＝與射手 XP 同額）；世界王是冒險者 XP 主要來源之一
+        addAdventurerXP(myId, bossXP).catch(() => {});
         const _wbCatId = profile?.equippedCat?.catId;
         if (_wbCatId) addCatXP(myId, _wbCatId, bossXP).catch(() => {});
         // 箭露：30 箭，每箭 +1~5 隨機（min 30 / max 150）

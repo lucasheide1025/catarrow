@@ -71,9 +71,11 @@ export function rollMaterialDrops(monster) {
   return results;
 }
 
-// 怪物卡片掉落（依模式機率，回傳卡片基本資訊或 null）
-export function rollCardDrop(monster, mode = "student") {
-  const chance = CARD_CHANCE_BY_MODE[mode] ?? CARD_CHANCE;
+// 怪物卡片掉落（回傳卡片基本資訊或 null）
+// 單人打怪 / 組隊固定 20%（CARD_CHANCE）——不再依模式縮放。傳入且在表內的 mode 才用模式值
+// （保留擴充彈性），不傳或不在表內一律 20%。地下城完全不呼叫此函式（不掉卡）。
+export function rollCardDrop(monster, mode = null) {
+  const chance = (mode && CARD_CHANCE_BY_MODE[mode]) ?? CARD_CHANCE;
   if (Math.random() > chance) return null;
   return {
     monsterId: monster.id,

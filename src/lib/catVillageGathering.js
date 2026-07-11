@@ -213,11 +213,16 @@ export function calculateGatheringRewards({ contract, rounds, partySize = 1 }) {
   const multiplier = completion.multiplier;
   const partyBonus = getGatheringPartyBonus(partySize);
 
+  // 採集定位（2026-07-11 調整）：大量貓貓 XP、較多羈絆、大幅提高貓貓村材料。
+  // 怪物素材（materialCount）維持原樣——升級裝備的素材沿用打怪/地下城，採集不灌它。
+  const VILLAGE_MAT_BOOST = 3;   // 貓貓村材料（村資源）大幅 ×3
+  const CAT_XP_BOOST = 1.6;      // 貓貓 XP 大量 ×1.6
+  const CAT_BOND_BOOST = 1.5;    // 貓貓羈絆 較多 ×1.5
   const materialCount = Math.max(1, Math.round((2 + tierNo * 2) * multiplier * partyBonus.materialMult));
-  const villageCount = Math.max(1, Math.round((1 + tierNo) * multiplier));
-  const catXP = Math.max(1, Math.round((GATHERING_TIER_META[contract.tier]?.catXP || 40) * multiplier * partyBonus.catXPMult));
+  const villageCount = Math.max(1, Math.round((1 + tierNo) * multiplier * VILLAGE_MAT_BOOST));
+  const catXP = Math.max(1, Math.round((GATHERING_TIER_META[contract.tier]?.catXP || 40) * multiplier * partyBonus.catXPMult * CAT_XP_BOOST));
   const bondBase = GATHERING_TIER_META[contract.tier]?.bond || 1;
-  const catBond = Math.max(1, Math.round(bondBase * (progressPct >= 180 ? 1.35 : progressPct >= 130 ? 1.15 : 1)) + partyBonus.bondBonus);
+  const catBond = Math.max(1, Math.round(bondBase * CAT_BOND_BOOST * (progressPct >= 180 ? 1.35 : progressPct >= 130 ? 1.15 : 1)) + partyBonus.bondBonus);
 
   const rewards = {
     progressPct,

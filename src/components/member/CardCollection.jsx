@@ -385,7 +385,7 @@ export default function CardCollection() {
           還沒有卡片，打怪有機率掉落！
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           {cardList.map(card => {
             const equipped_  = isEquipped(card.key, card.source);
             const selKey     = `${card.source}:${card.key}`;
@@ -440,11 +440,11 @@ export default function CardCollection() {
           transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
         }
         .monster-real-card {
-          color: #1f2937;
+          color: #f1f5f9;
           border: 3px solid var(--card-frame);
           background:
-            linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,255,255,.56)),
-            radial-gradient(circle at 30% 16%, var(--card-bg), #ffffff 50%, #e5e7eb);
+            radial-gradient(circle at 30% 12%, rgba(255,255,255,.10), transparent 34%),
+            linear-gradient(155deg, #1e293b, #0f172a 55%, #020617);
         }
         .wb-real-card {
           color: #fff7ed;
@@ -459,6 +459,12 @@ export default function CardCollection() {
         .wb-real-card.equipped {
           transform: translateY(-2px);
           box-shadow: 0 18px 38px rgba(0,0,0,.36);
+        }
+        /* 選取後要顯示「裝備/卸下/設為稱號」按鈕：解除固定比例與裁切，讓卡片往下撐開，按鈕才不會被遮住 */
+        .monster-real-card.selected,
+        .wb-real-card.selected {
+          aspect-ratio: auto;
+          overflow: visible;
         }
         .wb-real-card::before {
           content: "";
@@ -510,8 +516,8 @@ export default function CardCollection() {
           z-index: 1;
         }
         .monster-card-art {
-          background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.5));
-          border: 1px solid rgba(15,23,42,.12);
+          background: radial-gradient(circle, rgba(255,255,255,.14), rgba(0,0,0,.3));
+          border: 1px solid rgba(255,255,255,.14);
         }
         .wb-card-art {
           background: radial-gradient(circle, rgba(255,255,255,.18), rgba(0,0,0,.28));
@@ -573,8 +579,9 @@ export default function CardCollection() {
           font-weight: 950;
         }
         .monster-card-statline {
-          color: #111827;
-          background: rgba(255,255,255,.78);
+          color: #e2e8f0;
+          background: rgba(0,0,0,.3);
+          border: 1px solid rgba(255,255,255,.1);
         }
         .wb-card-statline {
           color: #fef3c7;
@@ -600,8 +607,8 @@ export default function CardCollection() {
           line-height: 1.35;
         }
         .monster-card-lore {
-          color: #374151;
-          background: rgba(255,255,255,.66);
+          color: rgba(226,232,240,.8);
+          background: rgba(0,0,0,.24);
         }
         .wb-card-effect {
           color: #fde68a;
@@ -626,8 +633,9 @@ export default function CardCollection() {
           font-weight: 950;
         }
         .monster-card-equipped {
-          color: #065f46;
-          background: rgba(16,185,129,.18);
+          color: #6ee7b7;
+          background: rgba(16,185,129,.22);
+          border: 1px solid rgba(16,185,129,.35);
         }
         .wb-card-equipped {
           color: #fde68a;
@@ -662,7 +670,7 @@ export default function CardCollection() {
         }
         .monster-card-upgrade-note {
           grid-column: 1 / -1;
-          color: rgba(15,23,42,.62);
+          color: rgba(226,232,240,.68);
           text-align: center;
           font-size: 9px;
           font-weight: 800;

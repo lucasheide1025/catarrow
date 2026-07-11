@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
-import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats } from "../../lib/equipData";
+import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
 
 const STAT_SECTIONS = [
@@ -477,11 +477,11 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
     const equip = equipment[slotDef.id];
     setActiveSlot(slotDef);
     setUpgradeErr("");
-    if (equip?.nextMats) {
+    if (equip?.nextMats && isMatsCurveCurrent(equip.nextMats, equip.plusLevel || 0)) {
       setDisplayNextMats(equip.nextMats);
     } else if (equip?.itemId) {
-      // 舊資料或首次裝備：產生並存入 Firestore
-      const mats = generateRandomMats(equip.grade || "common");
+      // 舊資料/舊曲線格式 或 首次裝備：依目前曲線重算並存回 Firestore（一次性收斂）
+      const mats = generateRandomMats(equip.grade || "common", equip.plusLevel || 0);
       setDisplayNextMats(mats);
       saveEquipNextMats(profile.id, slotDef.id, mats);
     } else {
@@ -496,8 +496,8 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
       await changeEquipBrand(profile.id, activeSlot.id, itemId);
     } else {
       await equipItem(profile.id, activeSlot.id, itemId);
-      // 首次裝備：產生初始隨機材料需求
-      const mats = generateRandomMats("common");
+      // 首次裝備：產生初始隨機材料需求（common +0）
+      const mats = generateRandomMats("common", 0);
       await saveEquipNextMats(profile.id, activeSlot.id, mats);
     }
     setActiveSlot(null);

@@ -3468,8 +3468,8 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
       matUpdates[`items.${mats.keyItem.id}`] = increment(-mats.keyItem.count);
     }
 
-    // 升級完成後產生下一輪隨機材料
-    const newNextMats = generateRandomMats(newGrade);
+    // 升級完成後產生下一輪隨機材料（材料需求隨 newPlusLevel 遞增，見 equipData.generateRandomMats 曲線）
+    const newNextMats = generateRandomMats(newGrade, newPlusLevel);
 
     // 材料 + 會員（金幣＋裝備＋nextMats）兩個文件同時寫入
     await Promise.all([
@@ -4121,7 +4121,7 @@ export async function completeCouncilSession(memberId, {
 
     const villageUpdates = {};
     Object.entries(rewards.villageResources || {}).forEach(([key, amount]) => {
-      const count = Math.max(0, Math.min(50, Math.round(Number(amount) || 0)));
+      const count = Math.max(0, Math.min(150, Math.round(Number(amount) || 0))); // 採集村材料大幅提高，上限 50→150
       if (key && count > 0) villageUpdates[`village.resources.${key}`] = increment(count);
     });
 
@@ -4143,8 +4143,8 @@ export async function completeCouncilSession(memberId, {
     }
 
     if (catId) {
-      const catXP = Math.max(0, Math.min(500, Math.round(Number(rewards.catXP) || 0)));
-      const catBond = Math.max(0, Math.min(10, Math.round(Number(rewards.catBond) || 0)));
+      const catXP = Math.max(0, Math.min(800, Math.round(Number(rewards.catXP) || 0)));   // 採集大量貓XP，上限 500→800
+      const catBond = Math.max(0, Math.min(15, Math.round(Number(rewards.catBond) || 0))); // 採集較多羈絆，上限 10→15
       if (catXP > 0) promises.push(addCatXP(memberId, catId, catXP));
       if (catBond > 0) promises.push(addCatBond(memberId, catId, "gathering", catBond));
     }

@@ -6,13 +6,14 @@
 
 // ── 升級材料需求表 ───────────────────────────────────────────
 // 只保留金幣費用；材料需求改由 generateRandomMats() 動態產生並存入 Firestore
+// 金幣費用（2026-07-11 在曲線基礎上整體 +30%，抑制升級速度）
 export const EQUIP_UPGRADE_COST = {
-  common: { gold: 100  },
-  rare:   { gold: 300  },
-  elite:  { gold: 800  },
-  epic:   { gold: 2000 },
-  legend: { gold: 5000 },
-  mythic: { gold: 10000 },
+  common: { gold: 130   },
+  rare:   { gold: 390   },
+  elite:  { gold: 1040  },
+  epic:   { gold: 2600  },
+  legend: { gold: 6500  },
+  mythic: { gold: 13000 },
 };
 
 // ── 隨機材料生成 ─────────────────────────────────────────────
@@ -28,16 +29,43 @@ const _GRADE_MAT_TIER = {
   mythic: { main: "m6", key: "m6" },
 };
 
-export function generateRandomMats(grade) {
+// 升級材料需求：同一品級內隨 plusLevel 遞增（曲線），避免「+0 跟 +4 一樣便宜」秒升。
+// 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
+// 每個 plusLevel 的三種材料數量：mainA=主族、mainB=副族（同 tier）、key=關鍵素材（高一階 tier）。
+// 每品級總消耗 8+10+16+20+26 = 80（原本 6×5=30，約 2.7 倍），且後段明顯變重、前段幾乎不變。
+// （2026-07-11 在初版曲線 61 的基礎上整體再 +30%。）
+const _PLUS_MAT_COUNTS = {
+  0: { mainA: 4,  mainB: 3, key: 1 }, // 合計 8
+  1: { mainA: 5,  mainB: 4, key: 1 }, // 10
+  2: { mainA: 8,  mainB: 5, key: 3 }, // 16
+  3: { mainA: 10, mainB: 7, key: 3 }, // 20
+  4: { mainA: 13, mainB: 9, key: 4 }, // 26
+};
+
+export function matCountsFor(plusLevel) {
+  return _PLUS_MAT_COUNTS[Math.max(0, Math.min(4, plusLevel || 0))];
+}
+
+// 已存的 nextMats 數量是否符合「目前這條曲線」。用來偵測舊格式（舊的固定 3/2/1）並觸發重算。
+// 只比對數量不比對家族——家族本來就隨機、不該當作判斷依據。
+export function isMatsCurveCurrent(nextMats, plusLevel) {
+  const mats = nextMats?.materials;
+  if (!Array.isArray(mats) || mats.length < 2 || !nextMats?.keyItem) return false;
+  const c = matCountsFor(plusLevel);
+  return mats[0]?.count === c.mainA && mats[1]?.count === c.mainB && nextMats.keyItem?.count === c.key;
+}
+
+export function generateRandomMats(grade, plusLevel = 0) {
   const tiers = _GRADE_MAT_TIER[grade];
   if (!tiers) return null;
+  const c = matCountsFor(plusLevel);
   const shuffled = [..._FAMILIES].sort(() => Math.random() - 0.5);
   return {
     materials: [
-      { id: `${shuffled[0]}_${tiers.main}`, count: 3 },
-      { id: `${shuffled[1]}_${tiers.main}`, count: 2 },
+      { id: `${shuffled[0]}_${tiers.main}`, count: c.mainA },
+      { id: `${shuffled[1]}_${tiers.main}`, count: c.mainB },
     ],
-    keyItem: { id: `${shuffled[2]}_${tiers.key}`, count: 1, note: "升級關鍵素材" },
+    keyItem: { id: `${shuffled[2]}_${tiers.key}`, count: c.key, note: "升級關鍵素材" },
   };
 }
 

@@ -8,7 +8,7 @@ import {
   createNotification, saveMonsterLog,
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
-  addCoins, addMonsterCard, recordPotionUsed, addAdventurerXP,
+  addCoins, addMonsterCard, recordPotionUsed,
   subscribeCardCollection, addArcherXP, addRoundArrows, recordGuestBattleStats,
 } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
@@ -17,7 +17,6 @@ import { CAT_TIER_XP } from "../../lib/catLevel";
 import { getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
-const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 import { makeChests, openChestContents, CHEST_TYPES, calcPotionBuffs, CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 import { computeDexStats } from "../../lib/achievementDex";
@@ -925,8 +924,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           addChests(profile.id, [...mainChests, ...(coinChest ? [coinChest] : [])]).catch(() => {});
         }
 
-        // 怪物卡片（依模式機率）
-        const card = rollCardDrop(monster, mode);
+        // 怪物卡片（固定 20%，不依模式）
+        const card = rollCardDrop(monster);
         if (card) {
           setDroppedCard(card);
           addMonsterCard(profile.id, card).catch(() => {});
@@ -990,11 +989,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         saveBond("monster");
         saveXP(CAT_TIER_XP[monster.tier] || 5).catch(() => {});
       }
-      // 冒險者 XP（依怪物階級）
+      // 經驗值：射手（主要）+ 貓貓；冒險者 XP 已取消（改由世界王/公會任務取得）
       if (!isGuest && profile?.id) {
-        const xp = ADVENTURER_XP_PER_TIER[monster.tier] || 15;
-        setGainedXP(xp);
-        addAdventurerXP(profile.id, xp).catch(() => {});
         // 射手等級 XP
         const archerXP = MONSTER_TIER_XP[monster.tier] || 5;
         setGainedArcherXP(archerXP);

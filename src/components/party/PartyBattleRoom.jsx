@@ -11,7 +11,7 @@ import {
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing, setPartyMemberRole,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, addAdventurerXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -40,7 +40,6 @@ const MODE_OPTIONS = [
   { id:"veteran", label:"老手", icon:"🏹" },
   { id:"match",   label:"賽事", icon:"🏆" },
 ];
-const ADVENTURER_XP_PER_TIER = { common:15, rare:30, elite:50, fierce:75, boss:100, mythic:150 };
 
 // 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片 / 射手等級）
 function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
@@ -757,8 +756,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         const xpMult = PARTY_XP_MULT;
         const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * xpMult);
         addArcherXP(myId, xp).catch(() => {});
-        const advXP = Math.round((ADVENTURER_XP_PER_TIER[monsterTier] || 15) * xpMult);
-        addAdventurerXP(myId, advXP).catch(() => {});
+        // 冒險者 XP 已取消（改由世界王/公會任務取得）
         const _ptyCatId = authProfile?.equippedCat?.catId;
         const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * xpMult) : 0;
         if (_ptyCatId) addCatXP(myId, _ptyCatId, catXP).catch(() => {});

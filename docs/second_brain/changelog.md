@@ -3,6 +3,90 @@
 
 ---
 
+## 2026-07-11（經驗值/掉卡/採集大改版 + 卡片 UI 修復）
+
+### 經驗值重新分配
+- **單人打怪**（MonsterBattle）：移除冒險者 XP（含結算顯示自動隱藏，因 gainedXP 不再 set）。保留 射手（主）＋貓XP＋貓羈絆(+1)。
+- **組隊**（PartyBattleRoom）：移除冒險者 XP。保留 射手＋貓XP＋貓羈絆(+2)。
+- **地下城**（DungeonBattleRoom）：本來就無冒險者 XP；**補上貓羈絆 `addCatBond("dungeon")`+2**（原本只有貓XP）。
+- **世界王**（WorldBossAttack）：**新增冒險者 XP**＝射手 XP 同額（bossXP）。射手/貓XP/貓羈絆本來就有。
+- 結論：冒險者 XP 現在只從「世界王 + 公會任務」取得，不再每隻怪都給。
+
+### 掉卡
+- **地下城不再掉怪物卡片**：移除 `DungeonExpedition` 的 `addMonsterCard` + 寶藏顯示 + `DungeonTreasureRoom` 卡片列。（上游 `loot.card` 仍會算但無人消費＝無害死資料。）
+- **單人/組隊固定 20%**：`lootTable.rollCardDrop` 預設改 flat `CARD_CHANCE`(0.20)，不再依 mode 縮放；MonsterBattle 呼叫拿掉 mode 參數。
+
+### 採集（GatheringRun/PartyPanel → completeCouncilSession，contractVersion≥2）
+- 本來就無射手/冒險者 XP。**放大**：`catVillageGathering.calculateGatheringRewards` 村材料 ×3、貓XP ×1.6、貓羈絆 ×1.5。
+- `completeCouncilSession` 上限放寬：村資源 50→150、貓XP 500→800、羈絆 10→15。
+- ⚠️ CouncilBattle / GatheringBattle（有射手XP那支）是**死代碼**（無任何 render），未動。
+
+### 卡片 UI（CardCollection）
+- 卡片變小：瀏覽區 `grid-cols-2`→`grid-cols-3`。
+- 去白底：`.monster-real-card` 及子元素（art/statline/lore/equipped/upgrade-note）全改深色卡面＋淺字，跟世界王卡一致。
+- 按鈕不再被遮：`.selected` 時 `aspect-ratio:auto; overflow:visible` 讓卡片撐開顯示裝備/卸下/設為稱號。
+- **世界王卡稱號前台顯示**：`MemberProfile` 名字下方新增稱號徽章（讀 `cardData.activeTitleBossKey` → `wbCards[key].title` / `WB_CARDS[key].title`）。原本稱號只有 CardCollection 內部讀，前台完全沒接。
+
+### 踩坑提醒
+- 冒險者 XP 顯示：MonsterBattle 的 `gainedXP` state 保留但不再 set，`{gainedXP>0 && ...}` 自動隱藏，未拆 JSX（低風險）。
+- 世界王冒險者 XP 加在「每次攻擊」路徑（WorldBossAttack:769 旁），與射手 XP 同源同額，非結算路徑（worldBossDb 是擊殺均分獎勵，另一條）。
+- 採集只放大「貓貓村材料（村資源）」，怪物素材 materialCount 未動——升級裝備素材沿用打怪/地下城，避免抵銷剛做的裝備升級 nerf。
+- 稱號徽章目前只加在 MemberProfile；若要 MemberHome/排行也顯示需各自接 cardData/訂閱。
+
+---
+
+## 2026-07-11（平衡：裝備升級材料需求改 plusLevel 遞增曲線 + 整體 +30%含金幣）
+
+### 改了什麼
+- `equipData.js::generateRandomMats(grade, plusLevel)` 新增 `plusLevel` 參數 + `_PLUS_MAT_COUNTS` 曲線表。材料數量（主族/副族/關鍵素材）隨 +等級遞增，合計：+0=8、+1=10、+2=16、+3=20、+4=26 個，每品級總消耗 30→80（約 2.7 倍，後段變重、前段幾乎不變）。
+- `equipData.js::EQUIP_UPGRADE_COST` 金幣整體 ×1.3：common 130 / rare 390 / elite 1040 / epic 2600 / legend 6500 / mythic 13000。
+- 三個呼叫點都串入 plusLevel：`db.js` upgradeEquipSlot 的 `generateRandomMats(newGrade, newPlusLevel)`、`RPGEquipPanel.jsx` openSlot（`equip.plusLevel`）與首次裝備（`common,0`）。
+
+### 為什麼
+- 原本同品級內 +0~+4 材料需求固定 6 個 + 金幣固定，配上一場戰鬥掉 3~7 個材料（掉落率**刻意不動**，保留學生打怪即時回饋/多巴胺），導致後段秒升。改用「墊高消耗」而非「砍 faucet」拉長節奏。
+- 分兩步定案：先做遞增曲線（總消耗 61），使用者再要求在此基礎上整體 +30% 且**金幣一併調**，故材料曲線→80、金幣→×1.3。掉落率與 UI 仍不動；`generateRandomMats` 回傳結構不變。
+
+### 踩坑提醒
+- **既有玩家的 nextMats 是舊公式（6 個）存在 Firestore**，openSlot 有 nextMats 就直接用，所以每個槽位「下一次升級」仍是舊便宜價，要升過一次後 `newNextMats` 才套用新曲線。會自然收斂，未做強制覆寫（純前端、逐玩家、成本不值得）。
+- 曲線只吃 plusLevel 0~4（`Math.min(4)` 夾住），神話+4 是最高、不會再生成。
+
+---
+
+## 2026-07-11（後台線上約課：最新預約清單 + 置頂提示顯示明細 + 未看高亮可點）
+
+### 改了什麼
+- 新檔 `src/lib/bookingSeen.js`：教練「新預約/看過了沒」的共用真相來源（localStorage `adminBooking_seenIds` 集合 + 首次啟用把現有預約全標已看當基準）。`seedIfFirstRun/getSeenSet/isUnseen/markSeen/markAllSeen`。
+- `bookingDb.js` 新增 `getRecentBookings(maxCount)`：`orderBy("createdAt","desc") limit()` 抓最新建立的預約（單欄位索引，免建複合索引）。
+- `AdminBooking.jsx` 行事曆頁最上方新增 `RecentBookingsPanel`：最新 10 筆，每列寫明「日期・時間・人數・方案」。未看過整列琥珀高亮 🆕，點下去＝標記已看 + 跳到那天日曆開該時段詳情。附「全部已看」「收起」。
+- `AdminBookingAlert.jsx` 置頂橫幅：改用共用 seenIds（不再自己算 lastSeen 時間戳），並把每筆新預約的「日期・時間・人數・方案・姓名」直接列出來（最多顯示 4 筆 +「等共 N 筆」）。點「查看預約 →」只停音效+跳頁，不強制標已看。
+
+### 為什麼
+- 教練要一眼看到「約什麼時候」，原本橫幅只寫「N 筆新預約」資訊不足。
+- 橫幅與清單若各自判斷「看過沒」會數字對不上，故抽 `bookingSeen.js` 當單一真相來源。
+
+### 踩坑提醒
+- `getRecentBookings` 用 createdAt 排序，比舊的「日期範圍查詢」更能抓到「約很遠未來、但剛建立」的新預約；但它會含 cancelled，呼叫端要自行 filter（清單/橫幅都只取 confirmed）。多抓 20 筆再過濾，避免一批取消洗空清單。
+- seenIds 判斷純前端、單裝置：換瀏覽器/清快取會重跑首次基準。教練固定一台後台即可，不需跨裝置同步。
+- 橫幅點擊刻意「不標記已看」——只停提示音；真正標已看在清單逐筆點或「全部已看」。這是為了對應「未看過不同色、可點過去看」的需求。
+
+---
+
+## 2026-07-11（修：下課結帳沒對到線上約課 → 可重複結帳）
+
+### 改了什麼
+- `bookingDb.js` 新增 `completeBookingForMemberOnDate(memberId, date, checkinId, billingId)`：結帳當下再找一次當天該會員「尚未結帳」的 confirmed 預約補做完成連動（選取規則同 `linkCurrentBookingToCheckin`：優先時段內，否則唯一一筆才自動處理）。
+- `AdminDailyQuest.jsx` `confirmBill` / `skipBill`：原本 `if (c.bookingId)` 才連動 → 改成沒綁 bookingId 時 fallback 呼叫上面新函式。
+
+### 為什麼
+- 「已結帳」判斷看的是 `booking.billingRecordId`（`AdminBooking.jsx:440`），唯一寫入來源是 `completeBookingFromCheckin`。而 `checkin.bookingId` 只在**報到當下**由 `linkCurrentBookingToCheckin` 綁定，綁定條件脆弱（報到時間要落在時段內、或當天只有一筆預約）。沒綁到時下課結帳整個跳過 booking，線上約課永遠停在「結帳」按鈕 → 可重複結帳、重複開會計記錄。
+
+### 踩坑提醒
+- 兩個結帳入口不對稱：`AdminBooking` 的 `CheckoutModal` 本來就有 `booking.id`（可靠）；`AdminDailyQuest` 下課結帳只有 `checkin`，得靠 fallback 反查。日後改結帳流程兩邊都要顧。
+- `skipBill`（未記帳完成）會把 booking 標 completed 但**不寫 billingRecordId**，所以 `AdminBooking` 仍顯示「結帳」按鈕（+🏁已完成課程），這是刻意的：完成但未收費，教練可事後補結帳。
+- 多筆預約又都不在報到時段內＝無法安全判斷是哪一筆，fallback 刻意不動，留給教練從行事曆手動結帳。
+
+---
+
 ## 2026-07-11（訪客預約頁更新公告 + 世界王出戰準備頁可滾動修復）
 
 ### 改了什麼

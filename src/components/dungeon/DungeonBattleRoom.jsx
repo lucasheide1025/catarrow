@@ -18,7 +18,7 @@ import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS }
 import { calcDungeonCounter } from "../../lib/damage";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
-import { addCatXP } from "../../lib/catDb";
+import { addCatXP, addCatBond } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import { rollRuneDrop, calcRuneBonus as calcRuneBonusFn } from "../../lib/runeData";
@@ -682,6 +682,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     addArcherXP(myId, totalFloors * tierXP).catch(() => {});
     const _selfCatId = profile?.equippedCat?.catId;
     if (_selfCatId) addCatXP(myId, _selfCatId, totalFloors * CAT_DUNGEON_FLOOR_XP).catch(() => {});
+    // 貓貓羈絆（地下城 +2，同組隊）
+    if (_selfCatId) addCatBond(myId, _selfCatId, "dungeon").catch(() => {});
 
     // 地圖模式稀有獎勵
     if (isMapMode) {
