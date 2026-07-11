@@ -115,11 +115,44 @@ export function AuthProvider({ children }) {
     return cred.user;
   }
 
-  // 用 Google 登入主 App（教練/會員帳號若是 Google 帳號用這個）。登入後 onAuthStateChanged
-  // 會照常用 uid 去 members 找對應文件，找不到就等於沒有這個帳號。
+  // 用 Google 登入主 App（教練/會員帳號若是 Google 帳號用這個）。
+  //
+  // 防堵孤兒帳號（2026-07-12）：Google 一登入成功，Firebase Auth 當下就建了帳號，這步無法阻止。
+  // 若這人根本還不是學員（admin/members 都查無），這個帳號會殘留在 Auth，害教練日後用同一個
+  // email 新增學員時撞 auth/email-already-in-use，而且會員/訪客中心都看不到（因為它只在 Auth 層）。
+  // 對策：剛登入的使用者可以刪自己 → 三查（admin uid / members uid / members email）都確定沒有，
+  // 就 delete() 掉這個剛建的孤兒帳號並拋出清楚錯誤。
+  // ⚠️ 只有「查詢成功且確定為空」才刪；查詢失敗（網路/權限）一律不刪，避免誤刪正式會員。
   async function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
     const cred = await signInWithPopup(auth, provider);
+    const uid = cred.user.uid;
+    const email = cred.user.email;
+
+    let hasMember;
+    try {
+      const [adminSnap, memberSnap] = await Promise.all([
+        getDoc(doc(db, "admins", uid)),
+        getDocs(query(collection(db, "members"), where("uid", "==", uid))),
+      ]);
+      hasMember = adminSnap.exists() || !memberSnap.empty;
+      if (!hasMember && email) {
+        const emailSnap = await getDocs(query(collection(db, "members"), where("email", "==", email)));
+        hasMember = !emailSnap.empty;
+      }
+    } catch (e) {
+      // 查詢失敗 → 不確定有沒有會員，寧可不刪，照常放行交給 onAuthStateChanged 處理
+      console.warn("Google 登入會員檢查失敗，跳過孤兒清理：", e?.message);
+      return cred.user;
+    }
+
+    if (!hasMember) {
+      try { await cred.user.delete(); }        // 剛登入屬 recent auth，可直接刪自己
+      catch { await signOut(auth); }           // 萬一刪除失敗，至少登出不留登入狀態
+      const err = new Error("此 Google 帳號尚未建立學員資料");
+      err.code = "auth/no-member-profile";
+      throw err;
+    }
     return cred.user;
   }
 

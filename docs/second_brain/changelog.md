@@ -3,6 +3,32 @@
 
 ---
 
+## 2026-07-12（防堵 Google 登入孤兒帳號 + 教練新增帳號撞 email 的救援）
+
+### 問題
+教練後台新增學員時報 `auth/email-already-in-use`，但會員中心/訪客中心都找不到這個 email。
+根因：學生在主登入頁**用 Google 登入**（`useAuth.loginWithGoogle`），Firebase Auth 當下就建了帳號，
+但這人還不是學員（members 無對應文件）→ 帳號殘留在 Auth 層（會員/訪客中心讀 Firestore，看不到），
+卻擋掉教練用同 email 建帳號。且 Google 帳號沒有密碼，無法用密碼連結。
+
+### 修法
+- `useAuth.loginWithGoogle`：popup 成功後三查（admins/uid、members/uid、members/email），
+  **確定都查無**才 `cred.user.delete()` 刪掉這個剛建的孤兒帳號並拋 `auth/no-member-profile`。
+  查詢失敗一律不刪（避免誤刪正式會員）。`LoginPage` 顯示「請先請教練建立帳號」。
+- `AdminMembers` AddMemberModal：撞到 `email-already-in-use` 時，用教練填的密碼試登入既有帳號 →
+  查無會員就補建 members 文件（認領密碼型孤兒帳號）；密碼不符則提示可能是 Google 帳號，
+  引導去 Firebase Console 刪除。
+
+### 踩坑提醒
+- Google 登入成功的瞬間 Auth 帳號就建立了，前端無法「不建立」；只能靠剛登入者 `delete()` 自己善後。
+- 刪除孤兒**只能刪查詢成功且確定為空**的情況；transient 查詢失敗刪帳號會誤殺正式會員。
+- 此修復防堵「未來」的孤兒；已卡住的那個要嘛請學生再 Google 登入一次自動清除，要嘛教練到
+  Firebase Console → Authentication 手動刪。前端無權限刪別人的 Auth 帳號。
+- 教練用 email/密碼建的會員 uid 是密碼型；同人之後用 Google 登入時 email 相符會被 useAuth 的
+  email 備援查詢補寫 uid（帳號連結），不會被當孤兒刪除。
+
+---
+
 ## 2026-07-11（卡片動作列移到卡片下方）
 
 - `CardCollection`：點卡片後，裝備/卸下/設為稱號/升星/選屬性按鈕不再擠在小卡片裡，改成格線下方一條全寬動作列（大顆好按），選取時 `scrollIntoView({block:"nearest"})` 自動捲入畫面；卡片內動作區塊與 `.selected` 撐開 CSS 移除。

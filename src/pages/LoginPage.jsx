@@ -27,6 +27,7 @@ export default function LoginPage() {
     } catch (e) {
       if (e?.code === "auth/popup-closed-by-user") setErr("已取消 Google 登入");
       else if (e?.code === "auth/popup-blocked")   setErr("瀏覽器擋了登入視窗，請允許彈出視窗後再試");
+      else if (e?.code === "auth/no-member-profile") setErr("這個 Google 帳號還沒有學員資料，請先請教練建立帳號，再用 Google 登入。");
       else setErr("Google 登入失敗，請稍後再試");
     }
     setLoading(false);

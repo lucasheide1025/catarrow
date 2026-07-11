@@ -14,7 +14,7 @@ import { calcAge, formatArcherNo, fmtDT, today, thisYear, BOW_TYPES, getCertLeve
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, BadgePip, SearchBar, ConfirmModal, useToast } from "../shared/UI";
 import { EquipmentEditor, EquipmentViewer, normalizeEquipment, ArmorManager, AccessoryManager } from "../shared/Equipment";
 import AdminCertExamModal from "./AdminCertExamModal";
-import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from "firebase/auth";
 import { auth, firebaseConfig } from "../../lib/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 
@@ -459,7 +459,38 @@ function AddMemberModal({ onClose, onDone, operatorId, toast }) {
       await createMember({ ...rest, uid: cred.user.uid }, operatorId);
       toast("會員新增成功 🐱");
       onDone(); onClose();
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      if (e?.code === "auth/email-already-in-use") {
+        // 這個 Email 的 Firebase Auth 帳號已存在。常見原因：學生曾被刪除（deleteMember 只刪 Firestore，
+        // 前端刪不掉 Auth 帳號），或學生已自行註冊。用教練填的密碼試登入既有帳號 → 補建/提示，避免卡死。
+        try {
+          const signInCred = await signInWithEmailAndPassword(tmpAuth, form.email, form.password);
+          const existingUid = signInCred.user.uid;
+          const all = await getMembers();
+          const emailLc = (form.email || "").toLowerCase();
+          const dup = all.find(m =>
+            m.uid === existingUid || m.id === existingUid ||
+            (m.email && emailLc && m.email.toLowerCase() === emailLc)
+          );
+          if (dup) {
+            setErr(`這個 Email 已經有會員資料（${dup.name || dup.nickname || dup.id}），無需重複新增。`);
+          } else {
+            const { password, ...rest } = form;
+            await createMember({ ...rest, uid: existingUid }, operatorId);
+            toast("已連結既有登入帳號並建立會員資料 🐱");
+            onDone(); onClose();
+          }
+        } catch (signErr) {
+          if (signErr?.code === "auth/wrong-password" || signErr?.code === "auth/invalid-credential") {
+            setErr("這個 Email 已被註冊但密碼不符，無法自動連結。可能原因：①密碼填錯（請填該帳號正確密碼）②這個 Email 是用 Google 登入註冊的（沒有密碼）——若是後者，請到 Firebase Console → Authentication 刪掉該帳號後再新增，或改用其他 Email。");
+          } else {
+            setErr("這個 Email 已被註冊，且無法自動連結：" + (signErr?.message || signErr?.code || ""));
+          }
+        }
+      } else {
+        setErr(e.message);
+      }
+    }
     finally { deleteApp(tmpApp).catch(() => {}); }
     setSaving(false);
   }
