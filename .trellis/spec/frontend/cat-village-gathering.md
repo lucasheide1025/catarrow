@@ -38,6 +38,14 @@
 - Grade promotion consumes the matching tier of both the slot's primary resource and cat fur. Never hard-code high-grade promotions to `fur_t1`.
 - Forge UI derives costs and cap state from `calcForgeCost()` rather than reproducing tier rules in components.
 
+## Potion crafting
+
+- Potion crafting keeps the carry, throw, and raid tabs, then groups recipes by their combat purpose inside each tab.
+- Recipe cards use two columns on compact screens and may expand to three columns at wider breakpoints.
+- Every card directly exposes the item art, name, rarity, effect, owned quantity, recipe requirements, gold cost, output quantity, and craft action without requiring a detail view.
+- Material rows show required and owned quantities in a compact layout. Craft actions keep a minimum 44px touch target and remain anchored at the bottom of each card.
+- Items that depend on unfinished combat systems remain craftable only when intended and must be visibly labeled as preview items whose use is not yet available.
+
 ## Co-op preparation
 
 - Future team rooms persist the complete contract descriptor, never regenerate it independently on each client.

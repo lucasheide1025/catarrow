@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"Verify categorized recipe cards satisfy the documented compact-screen contract."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify build, tests, touch targets, and layout stability before completion."}

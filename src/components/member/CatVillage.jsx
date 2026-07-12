@@ -1565,6 +1565,25 @@ function ConsumableArt({ item, size = 40 }) {
   );
 }
 
+const POTION_CRAFT_GROUPS = {
+  carry: [
+    { id:"recovery", label:"回復續航", icon:"❤️", match:item => ["heal","regen"].includes(item.family) && !item.futureFeature },
+    { id:"offense", label:"輸出強化", icon:"⚔️", match:item => ["power","berserk"].includes(item.family) && !item.futureFeature },
+    { id:"defense", label:"防護生存", icon:"🛡️", match:item => ["guard","shield"].includes(item.family) && !item.futureFeature },
+    { id:"future", label:"預備配方", icon:"✨", match:item => !!item.futureFeature },
+  ],
+  throw: [
+    { id:"damage", label:"直接傷害", icon:"💥", match:item => item.family === "damage" && !item.futureFeature },
+    { id:"debuff", label:"弱化破甲", icon:"🧴", match:item => item.family === "debuff" && !item.futureFeature },
+    { id:"control", label:"支援控制", icon:"🎯", match:item => ["support","control"].includes(item.family) && !item.futureFeature },
+    { id:"future", label:"預備配方", icon:"🕸️", match:item => !!item.futureFeature },
+  ],
+  raid: [
+    { id:"damage", label:"討伐傷害", icon:"💣", match:item => item.actionCost === "arrow" },
+    { id:"tactics", label:"討伐戰術", icon:"👑", match:item => item.actionCost !== "arrow" },
+  ],
+};
+
 function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCrafted }) {
   const [tab, setTab] = useState("carry");
   const [craftMode, setCraftMode] = useState(1);
@@ -1581,6 +1600,10 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
   };
 
   const potions = tab === "carry" ? CARRY_POTIONS : tab === "throw" ? THROW_POTIONS : RAID_POTIONS;
+  const potionGroups = (POTION_CRAFT_GROUPS[tab] || []).map(group => ({
+    ...group,
+    items: potions.filter(group.match),
+  })).filter(group => group.items.length > 0);
 
   async function handleCraft(potion) {
     if (busy || !memberId) return;
@@ -1655,9 +1678,19 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
         <span className="text-[10px]" style={{ color: C.muted }}>金幣</span>
       </div>
 
-      {/* 藥水製作清單 */}
-      <div className="flex flex-col gap-2.5">
-        {potions.map(p => {
+      {/* 依用途分區，手機維持雙欄方便快速比較與製作。 */}
+      <div className="flex flex-col gap-4">
+        {potionGroups.map(group => (
+          <section key={group.id}>
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-black" style={{ color:C.brown }}>
+                <span aria-hidden="true">{group.icon}</span>
+                <span>{group.label}</span>
+              </div>
+              <span className="text-[10px] font-bold" style={{ color:C.muted }}>{group.items.length} 種</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-stretch">
+              {group.items.map(p => {
           const havePotion = potionInventory?.[p.id] || 0;
           const maxCrafts = calculateMaxCrafts(p, resources, coins);
           const executions = craftMode === "max" ? maxCrafts : craftMode;
@@ -1665,71 +1698,72 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
           const costMultiplier = Math.max(1, executions);
           const totalGold = (p.gold || 0) * costMultiplier;
           return (
-            <div key={p.id} className="rounded-xl p-3"
+            <div key={p.id} className="rounded-lg p-2 min-w-0 h-full flex flex-col"
               style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
-              {/* 標題列 */}
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <ConsumableArt item={p} />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-sm font-black" style={{ color: C.brown }}>{p.name}</div>
-                      {/* 稀有度標籤 */}
+              <div className="flex items-start gap-1.5 mb-1.5 min-w-0">
+                <ConsumableArt item={p} size={36} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] leading-tight font-black break-words" style={{ color:C.brown }}>{p.name}</div>
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
                       {RARITY_COLORS[p.rarity] && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                      <span className="text-[9px] leading-none font-bold px-1 py-0.5 rounded"
                           style={{ background: RARITY_COLORS[p.rarity].bg, color: RARITY_COLORS[p.rarity].text }}>
                           {RARITY_COLORS[p.rarity].label}
                         </span>
                       )}
-                    </div>
-                    <div className="text-[10px]" style={{ color: C.sage }}>{p.effectText}</div>
-                    {p.futureFeature && <div className="text-[9px] font-bold" style={{ color:"#b45309" }}>預備道具：目前可製作、尚未開放使用</div>}
+                    <span className="text-[9px] font-black" style={{ color:havePotion > 0 ? C.sage : C.muted }}>持有 {havePotion}</span>
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-2">
-                  <div className="text-[10px] font-bold" style={{ color: C.mid }}>庫存</div>
-                  <div className="text-sm font-black" style={{ color: havePotion > 0 ? C.sage : C.muted }}>×{havePotion}</div>
-                </div>
               </div>
-              {/* 描述 */}
-              <div className="text-[10px] mb-2" style={{ color: C.muted }}>{p.desc}</div>
-              {/* 材料 */}
-              <div className="flex flex-wrap gap-1.5 mb-2">
+              <div className="text-[10px] leading-snug font-bold min-h-7 mb-1" style={{ color:C.sage }}>{p.effectText}</div>
+              <div className="text-[9px] leading-snug mb-2 min-h-6" style={{
+                color:C.muted, display:"-webkit-box", WebkitLineClamp:2,
+                WebkitBoxOrient:"vertical", overflow:"hidden",
+              }}>{p.desc}</div>
+              {p.futureFeature && (
+                <div className="text-[9px] leading-tight font-bold mb-2 px-1.5 py-1 rounded" style={{ color:"#9a5b08", background:"rgba(212,147,58,0.10)" }}>
+                  預備道具・尚未開放使用
+                </div>
+              )}
+              <div className="flex flex-col gap-1 mb-2">
                 {p.recipe.map(r => {
                   const have = Math.floor(resources?.[r.id] || 0);
                   const need = r.count * costMultiplier;
                   const ok = have >= need;
                   const resEmoji = RES_EMOJI[r.id.split("_t")[0]] || "📦";
                   return (
-                    <div key={r.id} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                    <div key={r.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold min-w-0"
                       style={{ background: ok ? "rgba(90,158,80,0.10)" : "rgba(192,83,58,0.08)",
                         color: ok ? C.sage : "#C0533A" }}>
-                      {resEmoji} {formatResKey(r.id)} ×{need}（{have}）
+                      <span className="truncate min-w-0">{resEmoji} {formatResKey(r.id)}</span>
+                      <span className="shrink-0">{need}/{have}</span>
                     </div>
                   );
                 })}
-                <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                <div className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold"
                   style={{ background: (coins || 0) >= totalGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
                     color: (coins || 0) >= totalGold ? "#D4933A" : "#C0533A" }}>
-                  🪙 {totalGold} 金幣
+                  <span>🪙 金幣</span><span>{totalGold}</span>
                 </div>
               </div>
-              {/* 製作按鈕 */}
               <button
                 disabled={!canCraft || busy}
                 onClick={() => handleCraft(p)}
-                className="w-full py-2 rounded-lg text-xs font-bold active:scale-95 transition-all"
+                className="w-full min-h-11 mt-auto px-1 py-2 rounded-lg text-[10px] leading-tight font-bold active:scale-95 transition-all"
                 style={{
                   background: canCraft ? "linear-gradient(135deg,#7CBF70,#5A9E50)" : C.lockBd,
                   color: canCraft ? "white" : C.muted,
                   boxShadow: canCraft ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
                   cursor: canCraft ? "pointer" : "default",
                 }}>
-                {busy ? "製作中…" : canCraft ? `製作 ${executions} 次，取得 ×${executions * (p.craftYield || 1)}` : "材料不足"}
+                {busy ? "製作中…" : canCraft ? `製作 ×${executions * (p.craftYield || 1)}` : "材料不足"}
               </button>
             </div>
           );
-        })}
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );
