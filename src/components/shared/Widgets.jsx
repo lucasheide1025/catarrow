@@ -81,7 +81,7 @@ export function Skeleton({ h = 16, w = "100%", className = "" }) {
 // ─── Hub 入口卡（CSS 漸層底，取代 cell-*.webp）─────────────
 // <HubTile icon="⚔️" title="打怪" desc="單人戰鬥" badge={3} accent="#f59e0b" onClick={...} />
 // ⚠️ accent 必須是 6 碼 hex（內部以 `${accent}26` 疊 15% 透明度），不可傳 var(--xxx)
-export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b" }) {
+export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b", image }) {
   return (
     <button onClick={onClick}
       className="relative flex flex-col items-start gap-1 p-4 text-left transition-all active:scale-95 w-full"
@@ -89,7 +89,11 @@ export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b" 
         minHeight: 96,
         borderRadius: "var(--r-lg)",
         border: "1px solid var(--glass-border)",
-        background: `linear-gradient(135deg, ${accent}26 0%, var(--glass-bg) 55%)`,
+        backgroundImage: image
+          ? `linear-gradient(90deg, rgba(2,6,23,.86) 0%, rgba(2,6,23,.55) 55%, rgba(2,6,23,.18) 100%), url(${image})`
+          : `linear-gradient(135deg, ${accent}26 0%, var(--glass-bg) 55%)`,
+        backgroundSize: image ? "cover" : undefined,
+        backgroundPosition: image ? "center right" : undefined,
         boxShadow: "var(--shadow-card)",
       }}>
       {badge > 0 && (

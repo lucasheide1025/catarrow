@@ -156,6 +156,8 @@ export default function MemberHome({
   }
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
+  const archerLevel = archerLevelFromXP(profile?.archerXP || 0);
+  const adventurerLevel = levelFromXP(profile?.adventurerXP || 0);
 
   async function submitCardRequest() {
     setCardBusy(true); setCardMsg("");
@@ -172,6 +174,48 @@ export default function MemberHome({
   return (
     <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
       {showShare && <ShareCard onClose={() => setShowShare(false)} />}
+
+      <section style={{
+        position:"relative", overflow:"hidden", padding:"18px 16px", borderRadius:"var(--r-md)",
+        background:"linear-gradient(135deg, rgba(14,116,144,.96), rgba(30,41,59,.96) 56%, rgba(15,23,42,.98))",
+        border:"1px solid rgba(103,232,249,.28)", boxShadow:"0 14px 30px rgba(8,47,73,.28)",
+      }}>
+        <div style={{ position:"absolute", right:-34, top:-42, width:150, height:150, borderRadius:"50%", border:"1px solid rgba(103,232,249,.18)" }} />
+        <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:12, alignItems:"flex-start" }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ color:"rgba(236,254,255,.72)", fontSize:11, fontWeight:800 }}>今日訓練狀態</div>
+            <div style={{ color:"#fff", fontSize:22, lineHeight:1.25, fontWeight:900, marginTop:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {profile?.nickname || profile?.name || "射手"}
+            </div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
+              <span style={{ color:"#cffafe", fontSize:11, fontWeight:800, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:"1px solid rgba(103,232,249,.2)" }}>射手 Lv.{archerLevel}</span>
+              <span style={{ color:"#e0f2fe", fontSize:11, fontWeight:800, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:"1px solid rgba(103,232,249,.2)" }}>冒險 Lv.{adventurerLevel}</span>
+            </div>
+          </div>
+          <button onClick={() => onPageChange("notifications")} aria-label="查看通知" style={{ position:"relative", width:38, height:38, borderRadius:10, border:"1px solid rgba(255,255,255,.2)", background:"rgba(15,23,42,.35)", color:"#fff", fontSize:18, cursor:"pointer" }}>
+            🔔
+            {unreadNotif > 0 && <span style={{ position:"absolute", top:-5, right:-5, minWidth:17, height:17, padding:"0 4px", display:"grid", placeItems:"center", borderRadius:999, background:"#f43f5e", color:"#fff", fontSize:9, fontWeight:900, border:"2px solid #164e63" }}>{Math.min(unreadNotif, 99)}</span>}
+          </button>
+        </div>
+        {(() => {
+          const dex = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
+          const guildRank = rankFromLevel(adventurerLevel);
+          return <div style={{ position:"relative", display:"flex", gap:6, flexWrap:"wrap", marginTop:12 }}>
+            <span style={{ fontSize:11, color:"#e0f2fe", fontWeight:800 }}>{formatArcherNo(profile?.archerNo)}　射齡 {calcAge(profile?.joinDate)}　{getCohort(profile?.joinDate) != null ? cohortLabel(getCohort(profile.joinDate)) : ""}</span>
+            <span style={{ fontSize:11, color: certification?.level === "gold" ? "#fde68a" : "#bfdbfe", fontWeight:900 }}>🏅 {certification?.level === "gold" ? "金證" : certification?.level === "blue" ? "藍證" : "未認證"}</span>
+            <span style={{ fontSize:11, color:guildRank.color, fontWeight:900 }}>🏛️ 公會 Lv.{adventurerLevel}</span>
+            <span style={{ fontSize:11, color:"#fef3c7", fontWeight:900 }}>🎖️ 圖鑑 {dex.totalUnlocked}/{dex.totalAll}</span>
+          </div>;
+        })()}
+        <div style={{ position:"relative", display:"grid", gridTemplateColumns:"repeat(2, minmax(0, 1fr))", gap:8, marginTop:15 }}>
+          <button onClick={() => onPageChange("training-hub")} style={{ minHeight:44, border:0, borderRadius:8, background:"#ecfeff", color:"#155e75", fontSize:13, fontWeight:900, cursor:"pointer" }}>開始練習</button>
+          <button onClick={() => onPageChange("adventure-hub")} style={{ minHeight:44, border:"1px solid rgba(255,255,255,.25)", borderRadius:8, background:"rgba(15,23,42,.32)", color:"#fff", fontSize:13, fontWeight:900, cursor:"pointer" }}>前往冒險</button>
+        </div>
+        <div style={{ position:"relative", display:"flex", gap:12, marginTop:12, color:"rgba(236,254,255,.78)", fontSize:11, fontWeight:800 }}>
+          <span>今日 {todayArrows} 箭</span><span>金幣 {(profile?.coins || 0).toLocaleString()}</span><span>貓夥伴 {hasCat ? "同行中" : "尚未同行"}</span>
+        </div>
+        <button onClick={() => setShowShare(true)} style={{ position:"relative", marginTop:10, border:0, background:"transparent", color:"#a5f3fc", fontSize:11, fontWeight:900, padding:0, cursor:"pointer" }}>分享射手名片</button>
+      </section>
 
       {/* 月卡申請 Modal */}
       {showCardModal && (
@@ -349,7 +393,7 @@ export default function MemberHome({
       <div className="grid grid-cols-2 gap-3">
         {HOME_HUBS.map(hub => (
           <HubTile key={hub.page} icon={hub.icon} title={hub.title} desc={hub.desc}
-            accent={hub.accent} onClick={() => onPageChange(hub.page)} />
+            accent={hub.accent} image={`/ui/home/${hub.page.replace("-hub", "")}.webp`} onClick={() => onPageChange(hub.page)} />
         ))}
       </div>
 
@@ -447,7 +491,7 @@ export default function MemberHome({
       )}
 
       {/* ── 射手狀態卡（可換主題）──────────────────────────── */}
-      <div className="p-5 border-0 text-white relative overflow-hidden"
+      {false && <div className="p-5 border-0 text-white relative overflow-hidden"
         style={{ background: currentTheme.bg }}>
 
         {/* 宇宙黑主題：星星背景 */}
@@ -539,7 +583,7 @@ export default function MemberHome({
           </div>
 
         </div>
-      </div>
+      </div>}
 
       {/* 射手等級 */}
       {(() => {
