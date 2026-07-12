@@ -57,9 +57,10 @@ function normalizeWbCard(key, card = {}) {
 }
 
 function WorldBossArt({ card, className = "" }) {
-  const [failed, setFailed] = useState(false);
-  if (!failed && card.artPath) {
-    return <img className={className} src={card.artPath} alt="" draggable="false" onError={() => setFailed(true)} />;
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = [`/cards/worldboss/${card.bossKey || card.key}.webp`, card.artPath].filter(Boolean);
+  if (sourceIndex < sources.length) {
+    return <img className={className} src={sources[sourceIndex]} alt={card.name || "世界王"} draggable="false" onError={() => setSourceIndex(index => index + 1)} />;
   }
   return <span className={className} style={{ display: "grid", placeItems: "center", fontSize: 42 }}>{card.icon || "👑"}</span>;
 }
@@ -109,10 +110,11 @@ function WorldBossRealCard({ card, equipped, selected, compact = false, activeTi
 }
 
 function MonsterArt({ card, className = "" }) {
-  const [failed, setFailed] = useState(false);
-  const imgPath = `/monsters/${card.key || card.monsterId}.webp`;
-  if (!failed) {
-    return <img className={className} src={imgPath} alt="" draggable="false" onError={() => setFailed(true)} />;
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const id = card.key || card.monsterId;
+  const sources = [`/cards/monsters/${id}.webp`, `/monsters/${id}.webp`];
+  if (sourceIndex < sources.length) {
+    return <img className={className} src={sources[sourceIndex]} alt={card.name || "怪物"} draggable="false" onError={() => setSourceIndex(index => index + 1)} />;
   }
   return <span className={className} style={{ display: "grid", placeItems: "center", fontSize: 38 }}>{card.icon || "🃏"}</span>;
 }
@@ -554,7 +556,8 @@ export default function CardCollection() {
         .wb-card-img {
           width: 100%;
           height: 100%;
-          object-fit: contain;
+          object-fit: cover;
+          object-position: center 46%;
           filter: drop-shadow(0 8px 10px rgba(0,0,0,.28));
         }
         .monster-card-name,

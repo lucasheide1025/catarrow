@@ -43,3 +43,6 @@
 
 - Monster cards and the monster dex render `/monsters/{monsterId}.webp` through the shared raster image component. The component owns contained sizing, accessible alt text, missing-asset fallback, and optional variant glow.
 - `MonsterSVG` remains a compatibility surface for experimental or legacy battle tooling only; new collection and card interfaces must use the transparent WebP artwork.
+- Collectible card art is separate from battle and dex art. Normal cards load opaque 4:3 scenes from `/cards/monsters/{monsterId}.webp`; world-boss cards load `/cards/worldboss/{bossKey}.webp`.
+- Dedicated card scenes use `object-fit: cover` with a centered upper focal point. Missing card scenes fall back to the existing battle, world-boss, or cat portrait asset before using an emoji.
+- The canonical card-art inventory contains 36 normal monsters and every key in `WORLD_BOSSES` (currently 24). Do not rely on stale comments or a manually assumed world-boss count.
