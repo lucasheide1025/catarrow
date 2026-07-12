@@ -12,6 +12,7 @@ import { CATS, CAT_IDS, CAT_TYPE_MAP, CAT_SKILL_GROUPS,
   calcCatSkillChance, calcCatSkillEffect } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { playBattleSound, toggleBattleSoundMode, getBattleSoundMode } from "../../lib/battleSound";
+import { sfxTap } from "../../lib/sound";
 
 // ══════════════════════════════════════════════════════════════
 // 精選 6 隻可用怪物（取真實資料）
@@ -188,6 +189,7 @@ const initBattle = {
   playerDef: SELF.def,
   roundDmg: 0,
   roundCrits: 0,
+  totalDmgAllRounds: 0, // 跨回合累計總傷害（勝利畫面顯示用；NEXT_ROUND 不重置，只有 RESET 歸零）
   counterDmg: 0,
   pendingCounter: 0,   // 反擊傷害暫存：送出時算好，等動畫「反擊步驟」才真的扣玩家 HP
   potionShield: 0,
@@ -304,6 +306,7 @@ function battleReducer(state, action) {
         ...state,
         roundDmg: totalDmg,
         roundCrits: crits,
+        totalDmgAllRounds: (state.totalDmgAllRounds || 0) + totalDmg,
         pendingCounter,
         counterDmg: pendingCounter, // 結算面板顯示用
         phase: PHASE.PROCESSING,
@@ -665,6 +668,7 @@ export default function AdminBattleTest() {
 
   const handleScore = useCallback((s) => {
     if (!isScoring) return;
+    sfxTap(); // 點擊分數（數字鍵盤 / 靶面）的即時回饋音效
     dispatch({ type: "SCORE_ARROW", score: s, battleMode });
   }, [isScoring, battleMode]);
 
@@ -1744,7 +1748,7 @@ export default function AdminBattleTest() {
               <div style={{fontSize:12,color:"#9fb0cf",lineHeight:1.6,marginBottom:16}}>
                 花了 <b style={{color:"#dbe6f8"}}>{battle.round}</b> 回合擊敗了 <b style={{color:"#dbe6f8"}}>{battle.monsterName}</b>
                 <br />
-                總傷害：<b style={{color:"#ffd27a"}}>{battle.arrows.reduce((s,a)=>s+a.dmg,0) + battle.roundDmg}</b>
+                總傷害：<b style={{color:"#ffd27a"}}>{battle.totalDmgAllRounds}</b>
               </div>
               <button onClick={handleReset} style={{
                 width:"100%",padding:12,borderRadius:11,
