@@ -1067,42 +1067,36 @@ function MonsterSVG({ id, size = 80, className = "", variant }) {
 }
 export default memo(MonsterSVG);
 
-/**
- * 戰鬥畫面專用：有 /monsters/{id}.webp 就顯示圖片，否則退回 SVG
- * 圖片以原始比例顯示，不強制裁切為正方形
- */
-export function MonsterBattleImg({ id, variant }) {
+export function MonsterImage({ id, name, size = 80, className = "", variant }) {
   const [failed, setFailed] = useState(false);
-  if (!failed) {
-    // 變體光暈用 CSS box-shadow 做在 <img> 外層容器上
-    const glowShadow = variant === "weak"
-      ? "0 0 18px rgba(96,165,250,0.5), 0 0 36px rgba(96,165,250,0.2)"
-      : variant === "strong"
-      ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
-      : "none";
+
+  if (failed) {
     return (
-      <div style={{
-        display:"inline-flex",
-        position:"relative",
-        filter: glowShadow !== "none" ? undefined : undefined,
-      }}>
-        <img
-          src={`/monsters/${id}.webp`}
-          alt={id || "monster"}
-          onError={() => setFailed(true)}
-          style={{
-            display:"block",
-            maxHeight:200, maxWidth:"100%",
-            width:"auto", height:"auto",
-            objectFit:"contain",
-            imageRendering:"auto",
-            boxShadow: glowShadow,
-            borderRadius: 14,
-            transition:"box-shadow 0.3s ease",
-          }}
-        />
-      </div>
+      <span className={className} role="img" aria-label={name || "怪物"} style={{
+        width:size, height:size, display:"grid", placeItems:"center", flexShrink:0,
+        fontSize:Math.max(20, size * 0.5), background:"rgba(255,255,255,0.08)", borderRadius:8,
+      }}>👾</span>
     );
   }
-  return <MonsterSVG id={id} size={160} variant={variant}/>;
+
+  return (
+    <img
+      className={className}
+      src={`/monsters/${id}.webp`}
+      alt={name || "怪物"}
+      onError={() => setFailed(true)}
+      draggable="false"
+      style={{
+        width:size, height:size, display:"block", flexShrink:0, objectFit:"contain",
+        filter:variant ? `drop-shadow(${variant === "weak" ? "0 0 9px rgba(96,165,250,0.7)" : "0 0 10px rgba(239,68,68,0.7)"})` : undefined,
+      }}
+    />
+  );
+}
+
+/**
+ * 戰鬥畫面專用：沿用共用透明怪物立繪與載入失敗 fallback。
+ */
+export function MonsterBattleImg({ id, variant }) {
+  return <MonsterImage id={id} size={160} variant={variant}/>;
 }

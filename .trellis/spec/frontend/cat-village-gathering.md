@@ -46,6 +46,13 @@
 - Material rows show required and owned quantities in a compact layout. Craft actions keep a minimum 44px touch target and remain anchored at the bottom of each card.
 - Items that depend on unfinished combat systems remain craftable only when intended and must be visibly labeled as preview items whose use is not yet available.
 
+## Raster artwork
+
+- Gathering encounters use the canonical transparent `/council/obs/{siteId}_{tier}.webp` target art in both current and legacy flows; emoji may be fallback content only.
+- Cat expedition mission definitions own their image paths. Slots and mission selectors render those images with contained, stable dimensions rather than reconstructing paths or using emoji as primary art.
+- Foreground game illustrations are alpha WebP with transparent corners, no baked card frame, no text, and no cast shadow. Keep generated source images out of `public/` after the final WebP has been validated.
+- Dynamic SVG that communicates live topology or progress is functional visualization and is not replaced by decorative raster art.
+
 ## Co-op preparation
 
 - Future team rooms persist the complete contract descriptor, never regenerate it independently on each client.

@@ -24,6 +24,10 @@ const STYLE = `
 }
 `;
 
+function gatheringTargetUrl(siteId, tier) {
+  return `/council/obs/${siteId}_${tier}.webp`;
+}
+
 // 計算村莊 tier（依建築平均等級）
 function getVillageTier(village) {
   if (!village?.buildings) return 1;
@@ -177,7 +181,7 @@ export default function GatheringBattle({ building, village, onFinish }) {
                 transition: "all 0.3s",
                 boxShadow: current ? `0 0 0 3px ${GATHER_TIER[t].color}44` : "none",
               }}>
-                {done ? "✓" : COUNCIL_MONSTERS[bId][t].emoji}
+                {done ? "✓" : <img src={gatheringTargetUrl(bId, t)} alt="" style={{ width:24, height:24, objectFit:"contain" }} />}
               </div>
             );
           })}
@@ -191,7 +195,7 @@ export default function GatheringBattle({ building, village, onFinish }) {
             animation: shaking ? "gbShake 0.35s ease" : "none",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 44, lineHeight: 1 }}>{monster.emoji}</span>
+              <img src={gatheringTargetUrl(bId, tier)} alt={monster.name} style={{ width:72, height:72, objectFit:"contain", flexShrink:0 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                   <span style={{

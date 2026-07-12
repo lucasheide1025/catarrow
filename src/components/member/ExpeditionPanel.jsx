@@ -129,7 +129,7 @@ function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onColl
       borderRadius:16, padding:"10px 8px",
       display:"flex", flexDirection:"column", alignItems:"center", gap:4,
     }}>
-      <div style={{ fontSize:20 }}>{expMission?.emoji || "⚡"}</div>
+      <img src={expMission?.image} alt={expMission?.label || "遠征任務"} style={{ width:48, height:48, objectFit:"contain" }} />
       <img
         src={`/cats/portraits/${expedition.catId}.webp`}
         alt={expedition.catName}
@@ -378,7 +378,7 @@ export default function ExpeditionPanel({ profile }) {
                       textAlign:"left", transition:"all 0.15s",
                     }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: isSelected ? 8 : 0 }}>
-                      <span style={{ fontSize:22 }}>{m.emoji}</span>
+                      <img src={m.image} alt="" style={{ width:52, height:52, objectFit:"contain", flexShrink:0 }} />
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:900, fontSize:13, color:"white" }}>
                           T{m.tier} {m.label}

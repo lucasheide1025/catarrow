@@ -38,3 +38,8 @@
 - Batch crafting validates and commits member resources, coins, migrated inventory, and output quantity in one Firestore transaction. UI maximum calculations are previews only and must be revalidated server-side.
 - Future consumables may be crafted and stored, but mode resolvers reject consumption until their dependent combat feature is enabled.
 - Normal combat throws never target world bosses. World boss consumes carry and raid categories only, and raid state remains local to one sortie.
+
+## Monster artwork
+
+- Monster cards and the monster dex render `/monsters/{monsterId}.webp` through the shared raster image component. The component owns contained sizing, accessible alt text, missing-asset fallback, and optional variant glow.
+- `MonsterSVG` remains a compatibility surface for experimental or legacy battle tooling only; new collection and card interfaces must use the transparent WebP artwork.
