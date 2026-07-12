@@ -3,6 +3,15 @@
 
 ---
 
+## 2026-07-12（修 bug：後台線上約課行事曆卡住轉不停）
+
+- **症狀**：後台「線上約課 → 行事曆」Spinner 一直轉、表格出不來。
+- **根因**：`AdminBooking.jsx` 第 9 行的 `firebase/firestore` import **漏了 `where`**，但 190/191/530 行有用到。日曆 `load()`（183 行）在 `Promise.all` 內同步呼叫 `where(...)` 建 billingRecords 查詢 → 丟 `ReferenceError`。`load` 是 async 且在 `useEffect` 內無 `.catch`，例外變未處理 rejection，**209 行的 `setLoading(false)` 永遠跑不到 → loading 卡 true**。
+- **修法**：import 補上 `where`（同時修好 530 行「結帳」查 billingRecords 的同一缺失）。
+- ⚠️ 踩坑：Firestore 函式漏 import 在 dev 有時因快取不會立即炸，線上必壞。任何 async loader 的 `setLoading(false)` 要能保證執行（或 loader 內包 try/finally），否則一個同步例外就讓畫面永久卡 loading。
+
+---
+
 ## 2026-07-12（平衡：怪物弱化/強化變體改浮動）
 
 - `monsterData.js::applyVariant`：弱化/強化的 HP/ATK/DEF 倍率從固定值改**浮動區間**（原本弱化過頭×0.6、強化過頭×1.5/1.4）。

@@ -6,7 +6,7 @@
 // 文件欄位、後者是教練事後標記用的單欄位更新，都不需要 transaction），直接用 Firestore
 // updateDoc 寫入，比照專案其他 admin 元件（AdminAchievements 等）已有的直接寫入慣例。
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
-import { collection, getDoc, getDocs, doc, updateDoc, serverTimestamp, query, limit } from "firebase/firestore";
+import { collection, getDoc, getDocs, doc, updateDoc, serverTimestamp, query, where, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import {
   createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
