@@ -24,6 +24,7 @@ import { fmtDT } from "../../lib/constants";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
 import ParticipantCountPicker from "../booking/ParticipantCountPicker";
+import BookingScheduleCard from "../booking/BookingScheduleCard";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
 import { PLANS as BILLING_PLANS, PAY_METHODS, EARLY_BIRD_DISC } from "./BillingSystem";
 
@@ -168,6 +169,7 @@ function CalendarTab({ toast }) {
   const [detailSlot, setDetailSlot] = useState(null); // { date, startTime, endTime }
   const [reloadTick, setReloadTick] = useState(0);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
 
   const range = useMemo(() => {
     if (viewMode === "day") return { start: anchor, end: anchor };
@@ -243,6 +245,7 @@ function CalendarTab({ toast }) {
           <Btn v={viewMode === "day" ? "primary" : "secondary"} size="sm" onClick={() => setViewMode("day")}>日檢視</Btn>
         </div>
         <div className="flex gap-2 items-center">
+          {viewMode === "day" && <Btn v="success" size="sm" onClick={() => setCardOpen(true)}>🖼 輸出課表</Btn>}
           <Btn v="warn" size="sm" onClick={() => setRangeOpen(true)}>批次關閉／開放</Btn>
           <Btn v="secondary" size="sm" onClick={() => setAnchor(a => addDays(a, viewMode === "day" ? -1 : -7))}>← 上一{viewMode === "day" ? "天" : "週"}</Btn>
           <Btn v="secondary" size="sm" onClick={() => setAnchor(todayStr())}>今天</Btn>
@@ -377,6 +380,9 @@ function CalendarTab({ toast }) {
       {rangeOpen && (
         <RangeBlockModal initialDate={anchor} bookingsBySlot={bookingsBySlot}
           onClose={() => setRangeOpen(false)} onDone={() => { setRangeOpen(false); refresh(); }} toast={toast} />
+      )}
+      {cardOpen && (
+        <BookingScheduleCard date={anchor} bookings={bookings} onClose={() => setCardOpen(false)} />
       )}
     </div>
   );
