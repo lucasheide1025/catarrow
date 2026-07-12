@@ -48,3 +48,37 @@ export function markAllSeen(ids = []) {
   ids.forEach(id => id && set.add(id));
   writeSet(set);
 }
+
+// ─── 取消通知專用的「已看」集合 ─────────────────────────────────
+// 跟新預約分開一組，避免同一筆預約先亮「新」、被取消後又要重新亮「取消」時 id 已在集合內而不亮。
+const LS_CANCEL = "adminBooking_cancelSeenIds";
+const LS_CANCEL_INIT = "adminBooking_cancelSeenInit";
+
+function readCancelSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_CANCEL) || "[]")); }
+  catch { return new Set(); }
+}
+function writeCancelSet(set) {
+  localStorage.setItem(LS_CANCEL, JSON.stringify([...set].slice(-300)));
+}
+
+export function seedCancelIfFirstRun(ids = []) {
+  if (localStorage.getItem(LS_CANCEL_INIT)) return;
+  const set = readCancelSet();
+  ids.forEach(id => id && set.add(id));
+  writeCancelSet(set);
+  localStorage.setItem(LS_CANCEL_INIT, "1");
+}
+
+export function getCancelSeenSet() { return readCancelSet(); }
+
+export function isCancelUnseen(id, seenSet = null) {
+  const set = seenSet || readCancelSet();
+  return !!id && !set.has(id);
+}
+
+export function markAllCancelSeen(ids = []) {
+  const set = readCancelSet();
+  ids.forEach(id => id && set.add(id));
+  writeCancelSet(set);
+}

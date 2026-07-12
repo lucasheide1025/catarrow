@@ -21,12 +21,12 @@ const PLAN_LABEL = Object.fromEntries(PLAN_TYPES.map(p => [p.id, p.label]));
 // 場館名稱：之後要改招牌只改這裡
 const VENUE_NAME = "🎯 貓小隊射箭場";
 
-const W = 720;               // 邏輯寬（實際輸出會 ×scale 提高清晰度）
-const PAD = 36;
-const HEADER_H = 148;
-const ROW_H = 88;
-const ROW_GAP = 12;
-const FOOTER_H = 52;
+const W = 500;               // 邏輯寬（實際輸出會 ×scale 提高清晰度）
+const PAD = 22;
+const HEADER_H = 88;
+const ROW_H = 52;
+const ROW_GAP = 7;
+const FOOTER_H = 34;
 
 // Canvas 沒有跨瀏覽器保證的 roundRect，自己補一個路徑函式（OPPO 等舊 WebView 也吃得下）
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -52,7 +52,7 @@ function ellipsize(ctx, text, maxWidth) {
 function drawCard(canvas, date, rows, scale) {
   const H = HEADER_H + (rows.length
     ? rows.length * ROW_H + (rows.length - 1) * ROW_GAP
-    : 120) + FOOTER_H + PAD;
+    : 64) + FOOTER_H + PAD;
 
   canvas.width = W * scale;
   canvas.height = H * scale;
@@ -71,73 +71,69 @@ function drawCard(canvas, date, rows, scale) {
   // ── Header ─────────────────────────────
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#93c5fd";
-  ctx.font = "700 22px system-ui, 'Segoe UI', sans-serif";
-  ctx.fillText(VENUE_NAME, PAD, PAD + 24);
+  ctx.font = "700 15px system-ui, 'Segoe UI', sans-serif";
+  ctx.fillText(VENUE_NAME + "　今日課表", PAD, PAD + 15);
 
   const d = new Date(date + "T00:00:00+08:00");
   ctx.fillStyle = "#ffffff";
-  ctx.font = "900 46px system-ui, 'Segoe UI', sans-serif";
-  ctx.fillText(date, PAD, PAD + 78);
+  ctx.font = "900 30px system-ui, 'Segoe UI', sans-serif";
+  ctx.fillText(date, PAD, PAD + 50);
 
   // 週幾徽章
   const dowText = `週${DOW[d.getDay()]}`;
-  ctx.font = "700 20px system-ui, sans-serif";
-  const bw = ctx.measureText(dowText).width + 28;
-  roundRectPath(ctx, PAD + ctx.measureText(date).width + 16, PAD + 52, bw, 34, 17);
+  ctx.font = "700 15px system-ui, sans-serif";
+  const bw = ctx.measureText(dowText).width + 20;
+  roundRectPath(ctx, PAD + ctx.measureText(date).width + 12, PAD + 26, bw, 24, 12);
   ctx.fillStyle = "rgba(59,130,246,0.22)";
   ctx.fill();
   ctx.fillStyle = "#bfdbfe";
-  ctx.fillText(dowText, PAD + ctx.measureText(date).width + 30, PAD + 76);
-
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "700 24px system-ui, sans-serif";
-  ctx.fillText("📋 今日課表", PAD, PAD + 118);
+  ctx.fillText(dowText, PAD + ctx.measureText(date).width + 22, PAD + 43);
 
   // ── Rows ───────────────────────────────
   let y = HEADER_H;
+  const rw = W - PAD * 2;
   if (!rows.length) {
-    roundRectPath(ctx, PAD, y, W - PAD * 2, 96, 16);
+    roundRectPath(ctx, PAD, y, rw, 56, 12);
     ctx.fillStyle = "rgba(255,255,255,0.04)";
     ctx.fill();
     ctx.fillStyle = "#64748b";
-    ctx.font = "700 22px system-ui, sans-serif";
+    ctx.font = "700 16px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("今日尚無排定課程 🗒️", W / 2, y + 56);
+    ctx.fillText("今日尚無排定課程 🗒️", W / 2, y + 34);
     ctx.textAlign = "left";
   } else {
     rows.forEach(b => {
       const color = PLAN_COLOR[b.planType] || "#3b82f6";
-      const x = PAD, rw = W - PAD * 2;
+      const x = PAD;
       // 底板
-      roundRectPath(ctx, x, y, rw, ROW_H, 16);
+      roundRectPath(ctx, x, y, rw, ROW_H, 12);
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       ctx.fill();
       // 左側方案色條
-      roundRectPath(ctx, x, y, 8, ROW_H, 4);
+      roundRectPath(ctx, x, y, 6, ROW_H, 3);
       ctx.fillStyle = color;
       ctx.fill();
 
-      // 時間
+      // 時間 + 時數
       ctx.fillStyle = "#ffffff";
-      ctx.font = "900 26px system-ui, sans-serif";
-      ctx.fillText(`${b.startTime}–${b.endTime}`, x + 26, y + 38);
+      ctx.font = "800 19px system-ui, sans-serif";
+      ctx.fillText(`${b.startTime}–${b.endTime}`, x + 16, y + 24);
       ctx.fillStyle = "#94a3b8";
-      ctx.font = "600 15px system-ui, sans-serif";
-      ctx.fillText(durationLabel(b.durationHours || 1), x + 26, y + 64);
+      ctx.font = "600 12px system-ui, sans-serif";
+      ctx.fillText(durationLabel(b.durationHours || 1), x + 16, y + 43);
 
-      // 姓名（右側大字）
-      const nameX = x + 200;
+      // 姓名（右側）
+      const nameX = x + 148;
       const people = (b.participantCount || 1) > 1 ? `（${b.participantCount}人）` : "";
       ctx.fillStyle = "#f1f5f9";
-      ctx.font = "800 25px system-ui, sans-serif";
-      const name = ellipsize(ctx, (b.memberName || "顧客") + people, rw - 200 - 130);
-      ctx.fillText(name, nameX, y + 38);
+      ctx.font = "800 18px system-ui, sans-serif";
+      ctx.fillText(ellipsize(ctx, (b.memberName || "顧客") + people, rw - 148 - 16), nameX, y + 23);
 
       // 方案 + 新舊生
       ctx.fillStyle = color;
-      ctx.font = "700 16px system-ui, sans-serif";
+      ctx.font = "700 13px system-ui, sans-serif";
       const tag = `${PLAN_LABEL[b.planType] || b.planType}${b.isNewStudent ? " · 🆕新生" : ""}`;
-      ctx.fillText(ellipsize(ctx, tag, rw - 200 - 24), nameX, y + 64);
+      ctx.fillText(ellipsize(ctx, tag, rw - 148 - 16), nameX, y + 43);
 
       y += ROW_H + ROW_GAP;
     });
@@ -145,8 +141,8 @@ function drawCard(canvas, date, rows, scale) {
 
   // ── Footer ─────────────────────────────
   ctx.fillStyle = "#475569";
-  ctx.font = "500 14px system-ui, sans-serif";
-  ctx.fillText(`共 ${rows.length} 堂 · 由線上約課系統產生`, PAD, H - PAD);
+  ctx.font = "500 12px system-ui, sans-serif";
+  ctx.fillText(`共 ${rows.length} 堂 · 線上約課系統`, PAD, H - PAD + 4);
 
   return H;
 }

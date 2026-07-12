@@ -547,6 +547,24 @@ export async function getRecentBookings(maxCount = 10) {
   }
 }
 
+// 後台「預約取消通知」用：抓最近被取消的 N 筆（依 cancelledAt 由新到舊）。
+// cancelledAt 建立時預設 null、取消時才寫 serverTimestamp，orderBy 單一欄位走自動索引；
+// null 在 desc 排序落在最後，實務上被 limit 擋掉，再由呼叫端過濾 status==="cancelled" 保險。
+export async function getRecentCancellations(maxCount = 10) {
+  try {
+    const snap = await getDocs(query(
+      collection(db, BOOKINGS),
+      orderBy("cancelledAt", "desc"),
+      limit(maxCount),
+    ));
+    const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(b => b.status === "cancelled" && b.cancelledAt);
+    return { ok: true, bookings };
+  } catch (e) {
+    return { ok: false, reason: e.message, bookings: [] };
+  }
+}
+
 // 教練行事曆用：一定要帶日期範圍 where，不能無界查詢全部歷史預約
 // （今天處理 Firestore 額度問題學到的教訓，見 .trellis/spec/frontend/firestore-cost-optimization.md）。
 // startDate/endDate 格式 "YYYY-MM-DD"，range 都在同一個欄位（date）上，

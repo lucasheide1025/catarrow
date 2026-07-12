@@ -9,10 +9,11 @@
 // 不再各自用各自的 lastSeen 時間戳，避免橫幅與清單數字對不上。
 // 點「查看預約 →」只停止提示音並跳到清單，不強制標記已看——留給教練在清單逐筆點過去看。
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getRecentBookings, getBookingsForDateRange } from "../../lib/bookingDb";
+import { getRecentBookings, getBookingsForDateRange, getRecentCancellations } from "../../lib/bookingDb";
 import { todayStr, PLAN_TYPES } from "../../lib/bookingSchedule";
-import { seedIfFirstRun, getSeenSet, isUnseen, markSeen } from "../../lib/bookingSeen";
-import { sfxNewBookingAlert, sfxNextHourAlert } from "../../lib/sound";
+import { seedIfFirstRun, getSeenSet, isUnseen, markSeen,
+         seedCancelIfFirstRun, getCancelSeenSet, isCancelUnseen, markAllCancelSeen } from "../../lib/bookingSeen";
+import { sfxNewBookingAlert, sfxNextHourAlert, sfxError } from "../../lib/sound";
 
 function hmToMin(hm) {
   const [h, m] = (hm || "0:0").split(":").map(Number);
@@ -30,15 +31,19 @@ function bookingSummary(b) {
 export default function AdminBookingAlert({ onGoBooking }) {
   const [newBookings, setNewBookings] = useState([]);
   const [nextHour, setNextHour] = useState([]);
+  const [cancelled, setCancelled] = useState([]);
   const [dismissedNew, setDismissedNew] = useState(false);
   const [dismissedNextHour, setDismissedNextHour] = useState(false);
+  const [dismissedCancel, setDismissedCancel] = useState(false);
   const prevNewCountRef = useRef(0);
   const prevNextHourKeyRef = useRef("");
+  const prevCancelCountRef = useRef(0);
 
   const load = useCallback(async () => {
-    const [recentRes, todayRes] = await Promise.all([
+    const [recentRes, todayRes, cancelRes] = await Promise.all([
       getRecentBookings(20),
       getBookingsForDateRange(todayStr(), todayStr()),
+      getRecentCancellations(20),
     ]);
 
     // ① 新預約：最近建立的 confirmed 中，seenIds 尚未標記過的。首次啟用先把現有的全標已看當基準。
@@ -66,6 +71,16 @@ export default function AdminBookingAlert({ onGoBooking }) {
       prevNextHourKeyRef.current = nhKey;
       setNextHour(nh);
     }
+
+    // ③ 取消通知：最近被取消的，seenIds(取消專用) 尚未標記過的。首次啟用先把現有的全標已看當基準。
+    if (cancelRes.ok) {
+      seedCancelIfFirstRun(cancelRes.bookings.map(b => b.id));
+      const seen = getCancelSeenSet();
+      const unseen = cancelRes.bookings.filter(b => isCancelUnseen(b.id, seen));
+      if (unseen.length > prevCancelCountRef.current) setDismissedCancel(false);
+      prevCancelCountRef.current = unseen.length;
+      setCancelled(unseen);
+    }
   }, []);
 
   useEffect(() => {
@@ -74,19 +89,21 @@ export default function AdminBookingAlert({ onGoBooking }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // 提示音：有未閱讀的新預約/下一小時預約時，每 12 秒響一次（兩者用不同音效、錯開避免疊在一起）
+  // 提示音：有未閱讀的新預約/下一小時/取消預約時，每 12 秒響一次（各用不同音效、錯開避免疊在一起）
   const soundNew = newBookings.length > 0 && !dismissedNew;
   const soundNext = nextHour.length > 0 && !dismissedNextHour;
+  const soundCancel = cancelled.length > 0 && !dismissedCancel;
   useEffect(() => {
-    if (!soundNew && !soundNext) return;
+    if (!soundNew && !soundNext && !soundCancel) return;
     const ring = () => {
       if (soundNew) sfxNewBookingAlert();
       if (soundNext) setTimeout(() => sfxNextHourAlert(), soundNew ? 700 : 0);
+      if (soundCancel) setTimeout(() => sfxError(), (soundNew ? 700 : 0) + (soundNext ? 700 : 0));
     };
     ring();
     const t = setInterval(ring, 12000);
     return () => clearInterval(t);
-  }, [soundNew, soundNext]);
+  }, [soundNew, soundNext, soundCancel]);
 
   function seeNew() {
     newBookings.forEach(b => markSeen(b.id));
@@ -100,12 +117,22 @@ export default function AdminBookingAlert({ onGoBooking }) {
     setDismissedNextHour(true);
     onGoBooking?.();
   }
+  function seeCancel() {
+    markAllCancelSeen(cancelled.map(b => b.id));
+    setCancelled([]);
+    setDismissedCancel(true);
+    onGoBooking?.();
+  }
 
   const showNew = newBookings.length > 0 && !dismissedNew;
-  if (!showNew && nextHour.length === 0) return null;
+  const showNextHour = nextHour.length > 0 && !dismissedNextHour;
+  const showCancel = cancelled.length > 0 && !dismissedCancel;
+  if (!showNew && !showNextHour && !showCancel) return null;
 
   const shown = newBookings.slice(0, 4);
   const extra = newBookings.length - shown.length;
+  const cancelShown = cancelled.slice(0, 4);
+  const cancelExtra = cancelled.length - cancelShown.length;
 
   return (
     <>
@@ -130,7 +157,7 @@ export default function AdminBookingAlert({ onGoBooking }) {
           <span style={{ fontSize:"12px", color:"#10b981", fontWeight:"bold", flexShrink:0, alignSelf:"center" }}>查看預約 →</span>
         </button>
       )}
-      {nextHour.length > 0 && (
+      {showNextHour && (
         <button
           onClick={seeNextHour}
           style={{ width:"100%", background:"rgba(96,165,250,0.08)", borderBottom:"1px solid rgba(96,165,250,0.2)", padding:"10px 16px", display:"flex", alignItems:"center", gap:"8px", cursor:"pointer", border:"none", textAlign:"left" }}>
@@ -140,6 +167,27 @@ export default function AdminBookingAlert({ onGoBooking }) {
             {nextHour.map(b => `${b.startTime} ${b.memberName || "顧客"}${b.participantCount > 1 ? `×${b.participantCount}` : ""}`).join("、")}
           </span>
           <span style={{ marginLeft:"auto", fontSize:"12px", color:"#60a5fa", fontWeight:"bold", flexShrink:0 }}>行事曆 →</span>
+        </button>
+      )}
+      {showCancel && (
+        <button
+          onClick={seeCancel}
+          style={{ width:"100%", background:"rgba(248,113,113,0.10)", borderBottom:"1px solid rgba(248,113,113,0.25)", padding:"10px 16px", display:"flex", alignItems:"flex-start", gap:"8px", cursor:"pointer", border:"none", textAlign:"left" }}>
+          <span style={{ fontSize:"16px", lineHeight:"18px" }}>❌</span>
+          <span style={{ flex:1, minWidth:0 }}>
+            <span style={{ display:"block", fontSize:"13px", color:"#f87171", fontWeight:"bold", marginBottom:"3px" }}>
+              {cancelled.length} 筆預約已被取消
+            </span>
+            {cancelShown.map(b => (
+              <span key={b.id} style={{ display:"block", fontSize:"12px", color:"#fecaca", lineHeight:"17px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                • {bookingSummary(b)}
+              </span>
+            ))}
+            {cancelExtra > 0 && (
+              <span style={{ display:"block", fontSize:"12px", color:"#fca5a5", lineHeight:"17px" }}>…等共 {cancelled.length} 筆</span>
+            )}
+          </span>
+          <span style={{ fontSize:"12px", color:"#ef4444", fontWeight:"bold", flexShrink:0, alignSelf:"center" }}>知道了 →</span>
         </button>
       )}
     </>
