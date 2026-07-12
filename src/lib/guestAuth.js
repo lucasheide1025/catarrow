@@ -127,7 +127,20 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     //   （因為那時還沒有 auth context，list 權限需要 isLoggedIn()，導致 Missing or insufficient permissions）。
     //   修法：先建立 Auth 用戶（拿到 auth context），再做所有 Firestore 查詢。
     //   如果發現 Email 已屬於正式學員，雖然 Auth 用戶已建立，但 login 流程能正常接回正式學員文件。
-    const cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
+    // ⚠️ 2026-07-12 修復「註冊/登入互踢死結」：
+    //   舊版只 createUser，若之後 Firestore 步驟失敗（權限/網路/hasOfficial 提早 return），
+    //   會在 Firebase Auth 留下一個「沒有 member 文件的孤兒帳號」。之後這個 Email：
+    //   註冊→email-already-in-use→「請用登入」；登入→查無 member 文件→「請用註冊」，永遠卡死。
+    //   修法：撞到 email-already-in-use 時，用同一組密碼登入接回來（密碼對＝本人／孤兒），
+    //   繼續往下把缺失的 member 文件補建 → 自我修復死結，且重試不再生成新孤兒。
+    let cred;
+    try {
+      cred = await createUserWithEmailAndPassword(workingAuth, trimmedEmail, password);
+    } catch (e) {
+      if (e?.code !== "auth/email-already-in-use") throw e;
+      cred = await signInWithEmailAndPassword(workingAuth, trimmedEmail, password).catch(() => null);
+      if (!cred) return { ok: false, reason: "這個 Email 已經註冊過了，請改用「登入」" };
+    }
 
     // ⚠️ 2026-07-11 修復「有學籍學生無法透過官網預約登入」：註冊後查這個 Email
     //   是否已經有正式學員/教練帳號，避免用同一組 Firebase Auth email 創 guest 文件
@@ -240,7 +253,20 @@ export async function loginGuestWithPassword(email, password) {
         await updateDoc(officialDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
         return { ok: true, id: officialDoc.id, name: mData.name || "", email: mData.email || trimmedEmail, phone: mData.phone || "", uid: cred.user.uid, bookingStats: mData.bookingStats || null, accountType: mData.accountType, isNew: false };
       }
-      return { ok: false, reason: "找不到對應的會員記錄，請改用「註冊」或聯絡教練協助" };
+      // ⚠️ 2026-07-12 登入端自我修復孤兒帳號：密碼驗證通過（＝這個 Email 確實是本人的
+      //   Firebase Auth 帳號），但查不到任何 member 文件——多半是上次註冊建立了 Auth 用戶
+      //   但 Firestore 建文件失敗留下的孤兒。這裡直接補建 guest 文件接回，不再回「找不到記錄」，
+      //   徹底打破「註冊叫你登入、登入叫你註冊」的死結。
+      //   （前面 officialQ + contactHash fallback 已確認沒有正式學員文件，補 guest 不會打架。）
+      //   缺點：登入沒收電話，補建的文件 phone 為空；使用者之後在會員中心補電話即可預約。
+      const displayName = cred.user.displayName || "訪客射手";
+      const ref = await addDoc(collection(db, C_MEMBERS), {
+        accountType: "guest", contactHash, contactRaw: trimmedEmail,
+        sessionSourceId: null, uid: cred.user.uid, hasPassword: true,
+        name: displayName, email: trimmedEmail, phone: "",
+        coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
+      });
+      return { ok: true, id: ref.id, accountType: "guest", uid: cred.user.uid, name: displayName, email: trimmedEmail, phone: "", coins: 0, isNew: true };
     }
 
     const existing = snap.docs[0];

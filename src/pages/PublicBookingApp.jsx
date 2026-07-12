@@ -73,6 +73,11 @@ export default function PublicBookingApp() {
   const [submitErr, setSubmitErr]   = useState("");
   const [done, setDone] = useState(false);
   const [pendingAuthSubmit, setPendingAuthSubmit] = useState(false); // 未登入時按送出 → 先登入，登入後自動送出
+  // 登入修復的孤兒帳號可能沒電話 → 送出預約前先補（online_public 強制要電話）
+  const [phonePrompt, setPhonePrompt] = useState(false);
+  const [phoneInput, setPhoneInput]   = useState("");
+  const [phoneErr, setPhoneErr]       = useState("");
+  const [phoneSaving, setPhoneSaving] = useState(false);
 
   // ⑤ 會員中心（登入後：預約查詢/取消/改期、個資、改密碼、學籍、進遊戲）
   const [showMine, setShowMine]             = useState(false);
@@ -249,6 +254,18 @@ export default function PublicBookingApp() {
 
   async function handleSubmitBooking() {
     if (!selectedSlot || !profile) return;
+    // 沒有電話（多半是登入自我修復接回的孤兒帳號）→ 先跳一格補電話再送出
+    if (!profile.phone?.trim()) {
+      setPhoneInput(profile.phone || "");
+      setPhoneErr("");
+      setPhonePrompt(true);
+      return;
+    }
+    await doSubmitBooking(profile);
+  }
+
+  // 真正送出（用傳入的 prof，避免 setState 非同步還沒生效就送出舊資料）
+  async function doSubmitBooking(prof) {
     setSubmitErr("");
     setSubmitting(true);
     const intake = {
@@ -259,8 +276,8 @@ export default function PublicBookingApp() {
       needSystemIntro: intakeSystemIntro || "",
     };
     const res = await createBooking(
-      profile.id, profile.name,
-      { email: profile.email, phone: profile.phone },
+      prof.id, prof.name,
+      { email: prof.email, phone: prof.phone },
       planType, durationHours, participantCount, isNewStudent,
       selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
       "online_public", "", intake,
@@ -268,6 +285,21 @@ export default function PublicBookingApp() {
     setSubmitting(false);
     if (!res.ok) { setSubmitErr(res.reason || "預約失敗，請稍後再試"); return; }
     setDone(true);
+  }
+
+  // 補電話 → 存進會員文件 + 更新本地 profile → 直接用新資料送出
+  async function handlePhoneConfirmAndSubmit() {
+    const p = phoneInput.trim();
+    if (!p) { setPhoneErr("電話為必填，方便有狀況時第一時間聯絡你"); return; }
+    setPhoneSaving(true);
+    const res = await updateGuestProfile(profile.id, { phone: p });
+    setPhoneSaving(false);
+    if (!res.ok) { setPhoneErr(res.reason || "電話儲存失敗，請稍後再試"); return; }
+    const updated = { ...profile, phone: p };
+    setProfile(updated);
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+    setPhonePrompt(false);
+    await doSubmitBooking(updated);
   }
 
   // 登入/註冊成功（profile 剛被設定）且 pendingAuthSubmit == true → 直接送出，不用使用者再多按一次
@@ -301,6 +333,29 @@ export default function PublicBookingApp() {
             📋 查看我的預約
           </button>
           <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(255,255,255,.45)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>登出</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 補電話（登入修復的孤兒帳號送出預約前）──────────────────
+  if (profile && phonePrompt) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 60 }}>
+          <div style={{ fontSize: 40, textAlign: "center" }}>📱</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "white", textAlign: "center" }}>差一個電話就完成</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.6)", textAlign: "center", lineHeight: 1.7 }}>
+            有狀況時我們才能第一時間聯絡你，留一個電話就送出預約。
+          </div>
+          <input value={phoneInput} onChange={e => { setPhoneInput(e.target.value); setPhoneErr(""); }}
+            placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
+          {phoneErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{phoneErr}</div>}
+          <button onClick={handlePhoneConfirmAndSubmit} disabled={phoneSaving} style={submitButtonStyle(phoneSaving)}>
+            {phoneSaving ? "處理中…" : "✅ 儲存並送出預約"}
+          </button>
+          <button onClick={() => setPhonePrompt(false)}
+            style={{ background: "none", border: "none", color: "rgba(255,255,255,.45)", fontSize: 13, textDecoration: "underline", cursor: "pointer" }}>返回</button>
         </div>
       </div>
     );
