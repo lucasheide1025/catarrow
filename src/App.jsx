@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Spinner } from "./components/shared/UI";
+import ErrorBoundary from "./components/shared/ErrorBoundary";
 import { useState, useEffect } from "react";
 import LoginPage   from "./pages/LoginPage";
 import AdminApp    from "./pages/AdminApp";
@@ -44,12 +45,14 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="*" element={<AppRoutes />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="*" element={<AppRoutes />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

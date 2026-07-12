@@ -8,7 +8,7 @@
 // 對應到新的 chunk 檔名 → 正常。用時間戳防止無限重載（10 秒內剛因此重載過就不再重載，
 // 避免遇到「真的缺檔」時陷入重整迴圈）。
 
-function reloadOnceForStaleChunk() {
+export function reloadOnceForStaleChunk() {
   try {
     const KEY = "__chunk_reload_ts__";
     const last = Number(sessionStorage.getItem(KEY) || 0);
@@ -20,7 +20,7 @@ function reloadOnceForStaleChunk() {
   }
 }
 
-function isChunkError(errOrMsg) {
+export function isChunkError(errOrMsg) {
   const name = errOrMsg?.name || "";
   const msg = errOrMsg?.message || (typeof errOrMsg === "string" ? errOrMsg : "");
   return name === "ChunkLoadError" || /Loading chunk [\w-]+ failed/i.test(msg) || /ChunkLoadError/i.test(msg);
