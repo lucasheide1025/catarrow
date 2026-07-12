@@ -119,16 +119,18 @@ function drawCard(canvas, date, rows, scale) {
   const d = new Date(date + "T00:00:00+08:00");
   ctx.fillStyle = "#ffffff";
   ctx.font = "900 28px system-ui, sans-serif";
+  const dateW = ctx.measureText(date).width; // 先在 28px 字級量好日期寬，別等切到 14px 才量（會量太窄）
   ctx.fillText(date, PAD, PAD + 46);
 
   const dowText = `週${DOW[d.getDay()]}`;
   ctx.font = "700 14px system-ui, sans-serif";
   const bw = ctx.measureText(dowText).width + 18;
-  roundRectPath(ctx, PAD + ctx.measureText(date).width + 12, PAD + 24, bw, 22, 11);
+  const badgeX = PAD + dateW + 12;
+  roundRectPath(ctx, badgeX, PAD + 24, bw, 22, 11);
   ctx.fillStyle = "rgba(59,130,246,0.22)";
   ctx.fill();
   ctx.fillStyle = "#bfdbfe";
-  ctx.fillText(dowText, PAD + ctx.measureText(date).width + 21, PAD + 39);
+  ctx.fillText(dowText, badgeX + 9, PAD + 39);
 
   // 圖例：新生 / 舊生 顏色說明
   const lgy = PAD + 70;
