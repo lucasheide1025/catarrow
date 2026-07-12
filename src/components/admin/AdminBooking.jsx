@@ -519,8 +519,16 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     setBusy(true);
     try {
       const memberSnap = await getDoc(doc(db, "members", booking.memberId));
-      const accountType = memberSnap.data()?.accountType;
+      const memberData = memberSnap.data();
+      const accountType = memberData?.accountType;
       if (["guest", "kid"].includes(accountType)) {
+        setCheckoutTarget(booking);
+        return;
+      }
+      // 教練用自己的帳號幫客人代訂時：教練不是來上課的學生，不該被「尚未下課」擋住結帳。
+      // 以 admins/{uid} 判定是否為教練帳號（accountType 是 official，無法只靠它區分）。
+      const adminSnap = await getDoc(doc(db, "admins", memberData?.uid || "__none__"));
+      if (adminSnap.exists()) {
         setCheckoutTarget(booking);
         return;
       }
