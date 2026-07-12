@@ -650,12 +650,14 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const [note, setNote]           = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createdBillingId, setCreatedBillingId] = useState(null);
+  const [priceOverride, setPriceOverride] = useState(null); // null=用自動帶入的金額；有值=教練手動改的實收金額
 
   const participantCount = booking.participantCount || 1;
   // 07-10-booking-ui-polish-headcount：N人的預約結帳金額要乘上人數，早鳥折扣則維持每筆固定折額
   // （不隨人數翻倍，這是刻意的簡化：折扣是給「這一次預約」的優惠，不是每人各自折）。
   const basePrice  = (BILLING_PLANS.find(p => p.id === plan)?.price ?? 0) * participantCount;
-  const finalPrice = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
+  const autoFinal  = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
+  const finalPrice = priceOverride != null ? priceOverride : autoFinal; // 手動覆寫優先，否則用自動帶入
 
   async function handleSubmit() {
     if (submitting) return;
@@ -710,8 +712,18 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
 
         <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
           <div>
-            <div className="text-slate-400 text-xs">實收金額</div>
-            <div className="text-white text-2xl font-black">NT$ {finalPrice}</div>
+            <div className="text-slate-400 text-xs flex items-center gap-2">
+              實收金額（可手動修改）
+              {priceOverride != null && (
+                <button type="button" onClick={() => setPriceOverride(null)} className="text-blue-400 underline text-[11px]">↺ 回自動</button>
+              )}
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-white text-2xl font-black">NT$</span>
+              <input type="number" min="0" value={finalPrice}
+                onChange={e => setPriceOverride(e.target.value === "" ? 0 : Math.max(0, Math.round(Number(e.target.value))))}
+                className="w-24 bg-transparent text-white text-2xl font-black outline-none border-b border-white/20 focus:border-blue-400" />
+            </div>
           </div>
           <Btn v={discount ? "warn" : "secondary"} size="sm" onClick={() => setDiscount(d => !d)}>
             {discount ? `✓ 早鳥 -$${EARLY_BIRD_DISC}` : "早鳥折扣"}
