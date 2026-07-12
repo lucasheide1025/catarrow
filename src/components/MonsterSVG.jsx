@@ -1,6 +1,7 @@
 // src/components/MonsterSVG.jsx — 36 隻怪物 SVG 插圖
 // 使用方式：<MonsterSVG id="ghost_1" size={80} />
 import { useState, memo } from "react";
+import { getBattleMonsterSources } from "../lib/battleAssets";
 
 // ── 變體光暈效果（弱化=藍光、強化=紅橙光）───────────────
 const VARIANT_GLOW = {
@@ -1097,6 +1098,24 @@ export function MonsterImage({ id, name, size = 80, className = "", variant }) {
 /**
  * 戰鬥畫面專用：沿用共用透明怪物立繪與載入失敗 fallback。
  */
-export function MonsterBattleImg({ id, variant }) {
-  return <MonsterImage id={id} size={160} variant={variant}/>;
+export function MonsterBattleImg({ id, name, icon, size = 160, variant }) {
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = getBattleMonsterSources(id);
+
+  if (sourceIndex >= sources.length) {
+    return <MonsterImage id={id} name={name} size={size} variant={variant}/>;
+  }
+
+  return (
+    <img
+      src={sources[sourceIndex]}
+      alt={name || icon || "怪物"}
+      onError={() => setSourceIndex(index => index + 1)}
+      draggable="false"
+      style={{
+        width:size, height:size, display:"block", flexShrink:0, objectFit:"contain",
+        filter:variant ? `drop-shadow(${variant === "weak" ? "0 0 9px rgba(96,165,250,0.7)" : "0 0 10px rgba(239,68,68,0.7)"})` : undefined,
+      }}
+    />
+  );
 }

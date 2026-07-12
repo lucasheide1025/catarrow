@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"Defines Cat Village gathering, expedition, and raster artwork contracts."}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"Defines monster collection and shared artwork rendering contracts."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines responsive image and component interaction conventions."}

@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"檢查測試、建置與變更品質"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"驗證材料寶箱與藥水箱邊界"}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"驗證 RPG 裝備升級相容性"}
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"驗證鍛造與行動裝置介面契約"}

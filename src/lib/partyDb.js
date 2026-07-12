@@ -106,26 +106,14 @@ export async function joinPartyRoom(code, memberId, memberName, extraData = {}) 
   }
 }
 
-// ── Battle：等待室選擇初始角色（前衛/後衛，各上限 4 人）─────────
-// 只決定戰鬥開始時的初始 role，不影響「前衛倒下→自動轉後衛復活」的既有機制
+// ── Battle：等待室選擇初始角色（前衛/後衛）───────────────
+// 已改為新模型：開場全員前衛，無上限；前衛倒下自動復活轉後衛
+// 保留函式避免匯入端報錯，但不再被 UI 呼叫（等待室已移除選角步驟）
 export async function setPartyMemberRole(roomId, memberId, role) {
   try {
     if (!["front", "rear"].includes(role)) return { ok: false, reason: "角色錯誤" };
-    const roomRef = doc(db, PARTY, roomId);
-    await runTransaction(db, async tx => {
-      const snap = await tx.get(roomRef);
-      if (!snap.exists()) throw new Error("房間不存在");
-      const data = snap.data();
-      const members = data.members || {};
-      if (!members[memberId]) throw new Error("你不在房間中");
-      if ((members[memberId].role || "front") === role) return;
-      const sameRoleCount = Object.entries(members)
-        .filter(([id, m]) => id !== memberId && (m.role || "front") === role)
-        .length;
-      if (sameRoleCount >= 4) {
-        throw new Error(role === "front" ? "前衛人數已達上限（4 人）" : "後衛人數已達上限（4 人）");
-      }
-      tx.update(roomRef, { [`members.${memberId}.role`]: role });
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${memberId}.role`]: role,
     });
     return { ok: true };
   } catch (e) {

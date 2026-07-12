@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"檢查測試、建置、相容與非回歸"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"驗證批量製作與庫存遷移一致性"}
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"驗證製作介面與村莊資源成本"}
+{"file":".trellis/spec/frontend/dungeon-system.md","reason":"驗證戰鬥效果生命週期與跨模式語意"}

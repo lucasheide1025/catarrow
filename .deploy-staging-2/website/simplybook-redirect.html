@@ -1,0 +1,40 @@
+<!-- ============================================================
+  貓小隊射箭場 · SimplyBook 公開頁強制轉址語法
+  用途：貼到 SimplyBook 後台「首頁內容（HTML）」欄位，
+        所有公開的 SimplyBook 頂層頁面一律轉到新官網。
+        唯一後台白名單：
+        https://catarcherycom.secure.simplybook.asia/v2/design#homepage-tab
+  目標網址：https://archery.catgroup.com.tw
+  ⚠ 未來換自訂網域時，把下面兩處網址一起改掉。
+  ============================================================ -->
+
+<!-- 主要手段：JS 條件轉址（location.replace 不留歷史，最無縫）-->
+<script>
+(function () {
+  try {
+    // 唯一人工操作白名單：SimplyBook 設計後台。
+    var isAdminEditor =
+      window.location.hostname === 'catarcherycom.secure.simplybook.asia' &&
+      window.location.pathname.indexOf('/v2/design') === 0;
+
+    // 官網預約區會以 iframe 載入 SimplyBook；iframe 必須放行，
+    // 否則 iframe 會載入官網，而官網又建立 iframe，形成無限巢狀。
+    var isFramed = window.top !== window.self;
+
+    // 除後台與內嵌預約外，所有頂層 SimplyBook 頁面都強制回官網。
+    // 不再放行 #book；直接開啟 /v2/#book 也必須回官網。
+    if (!isAdminEditor && !isFramed) {
+      window.location.replace('https://archery.catgroup.com.tw');
+    }
+  } catch (e) {}
+})();
+</script>
+
+<!-- 轉址中的過場畫面（幾乎瞬間，使用者通常看不到）-->
+<div style="min-height:60vh;display:flex;align-items:center;justify-content:center;background:#faf6ef;font-family:'Noto Sans TC',sans-serif;color:#5c5750;">
+  <div style="text-align:center;">
+    <img src="https://i.ibb.co/n8QGPZ0Z/logo.png" alt="貓小隊射箭場" width="90" style="display:block;margin:0 auto 16px;">
+    <p style="margin:0 0 4px;font-size:16px;">正在前往貓小隊官方網站…</p>
+    <p style="margin:0;font-size:14px;">若未自動跳轉，請點 <a href="https://archery.catgroup.com.tw" style="color:#e8720c;font-weight:700;">這裡</a></p>
+  </div>
+</div>

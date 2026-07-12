@@ -23,6 +23,10 @@ docs/
 
 # 排除本機分析/備份/建置產物
 build/
+.deploy-staging/
+.deploy-staging-2/
+.deploy-static-home/
+.deploy-staging-source.zip
 codebase-ui-extracted/
 codebase-ui.zip
 backup_*.json

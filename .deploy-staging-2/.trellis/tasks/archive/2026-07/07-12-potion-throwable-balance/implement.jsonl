@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"製作與戰鬥消耗品元件慣例"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"跨模式重構、測試與相容性要求"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"背包、藥水庫存與原子資源操作邊界"}
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"村莊工坊、材料與手機版介面契約"}
+{"file":".trellis/spec/frontend/dungeon-system.md","reason":"地下城戰鬥級效果、換層清除與角色資料契約"}
+{"file":".trellis/spec/frontend/battle-practice-analysis.md","reason":"戰鬥模式資料一致性與紀錄邊界"}

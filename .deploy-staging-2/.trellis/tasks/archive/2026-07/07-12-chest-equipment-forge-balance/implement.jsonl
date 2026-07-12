@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"開箱結果 modal 與貓村鍛造元件實作慣例"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"前端修改的品質與驗證要求"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"背包、寶箱與藥水功能邊界"}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"RPG 裝備升級資料與顯示契約"}
+{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"貓貓村工坊與手機捲動邊界"}

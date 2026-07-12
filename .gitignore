@@ -13,3 +13,5 @@ firestore-new-rules-snippet.txt
 codebase-ui-extracted/
 codebase-ui.zip
 install.ps1
+nul
+.deploy-staging-source.zip

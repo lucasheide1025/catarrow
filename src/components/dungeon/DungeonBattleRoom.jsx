@@ -27,8 +27,10 @@ import { rollFamilyDrop, rollBossDrops, getFirstClearTrophy, COLLECTIBLE_MAP } f
 import { addCollectibles } from "../../lib/dungeonDb";
 import {
   sfxTap, sfxArrowShoot, sfxCast, sfxCounter, sfxCritBoom,
-  sfxRoundEnd, sfxSuccess, sfxSoftFail, sfxMonsterDead, sfxPotionDrink, vibrate,
+  sfxRoundEnd, sfxMonsterDead, sfxPotionDrink, vibrate,
 } from "../../lib/sound";
+import { playBattleSound } from "../../lib/battleSound";
+import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
@@ -45,6 +47,7 @@ import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResult
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
 import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
+import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
@@ -135,14 +138,15 @@ function MonsterVariantBadge({ variant }) {
 }
 
 function DungeonMonsterImg({ id, icon, charge, hit, variant }) {
-  const [err, setErr] = useState(false);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = getBattleMonsterSources(id);
   const anim = charge ? "mb-charge 0.7s ease infinite" : hit ? "mb-monster-hit 0.5s ease" : undefined;
   const glowShadow = getMonsterVariantStyle(variant).glow;
-  return err ? (
+  return sourceIndex >= sources.length ? (
     <span style={{ fontSize:80, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
     <div style={{ display:"inline-flex", position:"relative" }}>
-      <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
+      <img src={sources[sourceIndex]} alt={icon} onError={() => setSourceIndex(index => index + 1)}
         style={{ maxWidth:"82%", maxHeight:200, objectFit:"contain", animation:anim,
           boxShadow: glowShadow, borderRadius: 14, transition:"box-shadow 0.3s ease" }}/>
     </div>
@@ -171,8 +175,7 @@ function ContractBadge({ contract }) {
 }
 
 function pickBg(family) {
-  const idx = Math.ceil(Math.random() * 6);
-  return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+  return getBattleBackgroundUrl(family);
 }
 
 export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false, guestProfile }) {
@@ -478,9 +481,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           });
           setShowKillAnim(true);
           sfxMonsterDead();
-          sfxSuccess();
+          playBattleSound("victory_cheer", {});
         } else {
-          if (allDead) { sfxSoftFail(); }
+          if (allDead) { playBattleSound("soft_fail", { monsterName: monster?.name || "" }); }
           else         { sfxRoundEnd(); }
           setShowRoundResult(true);
         }
@@ -752,7 +755,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       if (firstClearBonus.gachaCoins) addGachaCoins(myId, firstClearBonus.gachaCoins).catch(() => {});
     }
 
-    sfxSuccess();
+    playBattleSound("victory_cheer", {});
 
     if (isBossRoom) {
       onReturnToMap?.();

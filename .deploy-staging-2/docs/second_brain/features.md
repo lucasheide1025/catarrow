@@ -1,0 +1,206 @@
+# 📋 features — 功能清單
+> 最後更新：2026-07-14
+
+## 🎓 學生分級與系統鎖定（2026-07-04）
+
+- `members.studentTier`: `"restricted"|"official"|"retired"`（缺欄位→視為 restricted）；`accountFrozen: boolean`；`lastCheckinDate` 快取（submitCheckin 當下 + approveCheckin 補寫）
+- 與 `CERT_LEVELS`（技術檢定）、`monthlyCard`（付費方案）是**不同軸線**，不合併
+- 核心純函式 `src/lib/accessControl.js`：`getAllowedPages/isPageAllowed/isAutoLocked`；`official` 超過 14 天未報到自動鎖定（`lastCheckinDate` 缺欄位時不誤鎖，見遷移策略）
+- 權限矩陣可由教練後台調整：`systemConfig/tierPermissions`（`onSnapshot` 即時生效），文件不存在時 fallback `DEFAULT_TIER_PERMISSIONS`
+- 系統維護鎖：`systemConfig/maintenance`，啟用時一般會員前台全被擋，AdminApp／教練射手模式不受影響
+- 優先權：維護鎖 > `accountFrozen` > `studentTier`；`role==="admin"` 完全豁免（`MemberApp` 只服務 role==="member"，天然豁免）
+- `MemberApp.jsx`：全站關卡（維護/凍結全螢幕）+ 單一 `pageLocked` 判斷（依目前 `page` 是否在允許清單內），鎖定顯示 `LockedFeatureCard`（不強制跳轉），導覽列不隱藏項目
+- 教練後台：`AdminMembers.jsx` 每列會員可設 `studentTier`/`accountFrozen`（`TierModal`）+ 批次勾選一鍵設為 `official` + 維護鎖開關卡片；新頁 `AdminTierPermissions.jsx`（打勾矩陣，`hub-member` → 「權限設定」）
+
+## 🎨 2026-07-03 UI 全面改版 Phase 0-2（同左）
+
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Ffeatures`
+
+## ✅ 已實作
+
+**冒險者公會一般懸賞任務自動化（2026-07-04 新增）**：4 個全新獨立難度（1~4，獨立於六階雙週懸賞與三階每日靶紙任務），教練後台管理任務範本池（`guildBountyTemplates`）+ 難度獎勵表（`guildBountyRewards`），每日全員同一批自動刷新（每難度固定抽 1 個範本，日期當 seed），沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑；結算時依難度額外發放固定寶箱（wood/iron/gold/epic）
+
+**官網（2026-07-04 新增，2026-07-10 視覺互動改版）**：`website/` 靜態 SEO 單頁官網（與 App 完全獨立、無建置流程、單一 `index.html`），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；⚠ 網域 placeholder `catarchery.tw` 待部署後替換、地址 12/14 號待確認
+- **2026-07-10 視覺互動改版**（Trellis task `07-10-website-visual-interactive-refresh`，只動 `website/`，不連 Firestore／App）：全站沿用既有 `.rv` IntersectionObserver（同一實例、依 class 分流行為，不新增 observer），所有新效果皆有對應 `prefers-reduced-motion` 降級
+  - `#training`（R2 核心）：手機 mockup 從單張靜態圖改為可切換的 3 畫面預覽（`.phone-shots` + 分頁圓點 `.pdot` + 觸控滑動），目前 3 張暫用同一張 `assets/015.png` 佔位（切換機制已完成，之後補拍打怪戰鬥／勳章圖鑑截圖只需換 `src`）；`.badges` 加 scroll-triggered 依序解鎖動畫（stagger 110ms/個）
+  - `#group`（R2 核心）：新增第 5 張模式卡「地下城遠征 Dungeon Expedition」（對應 App 實際的組隊三層迷霧地下城遠征系統），5 張卡 hover 各有專屬圖示動態（攻擊震動／交錯閃現／靶紙 ping／箭矢推移／寶石微光）
+  - `#hero`：`.rings` 隨滑鼠做輕微視差（±5~8px）、`.hero-cat:hover` 時 `.target` 品牌橘閃光一次
+  - `#why`：`.wcard` hover 加爪痕刮過 SVG 描邊動畫（`stroke-dashoffset`，3 道錯開時間）
+  - `#price`：`.cnum` 數字滾動進場時從 0 計數到實際金額（`requestAnimationFrame` easing），完成時 `.hit` 箭矢圖示做一次命中回彈
+  - `#bows`：`.bcard` 新增箭矢圖示（`.arrow-ico`），hover／觸控 tap 時輕微擺動
+  - `#facility`：`.fac-photo img` 加極慢速 Ken Burns 縮放（純 CSS `animation`）
+  - `#faq`：`summary` 展開瞬間加箭矢畫過底線動畫（`.qline` scaleX）
+  - `#reviews` marquee hover 暫停：改版前已存在，未變動
+  - 明確不動：`#booking`/`#visit`/`#final`（轉換型區塊，維持現狀，design.md 定調）
+  - 驗證：Chrome headless 截圖走查全頁（hero/why/bows/price/training/group/facility/reviews/faq/booking），HTML tag 配對、JSON-LD 解析、JS 語法均通過腳本檢查
+- **2026-07-10 SEO/GEO 泛用關鍵字內容上線**（Trellis task `07-10-website-seo-geo-content-rollout`，只動 `website/`，仍無建置流程）：目標讓 Google/AI 搜尋在「台南下雨天去哪」「台南親子活動」等非品牌情境下主動推薦，不只靠品牌詞搜尋
+  - 首頁新增 `#scenarios`（05，原 05~10 全部順移 +1 → 現為 06~11）：「什麼時候適合來貓小隊射箭？」8 張情境卡片（`.scen-grid`/`.scard`，`repeat(4,1fr)`→960px `repeat(2,1fr)`→560px `1fr`，8 剛好整除各斷點，不會重蹈上次 5 卡塞 4 欄的孤兒列問題），每張連到對應獨立頁
+  - 首頁 FAQPage JSON-LD `mainEntity` 由 8 題追加到 18 題（新 10 題疊加在後，同一陣列），`.faq-list` 視覺同步新增 10 個 `<details>`
+  - 新增 **8 支**獨立頁面（PRD/design 文件標題誤寫「7 支」，實際逐頁規格與 implement.md 都是 8 支）：`website/rainy-day/`、`website/sunny-day/`、`website/beginner-guide/`、`website/family/`、`website/couple/`、`website/friends-group/`、`website/corporate-team-building/`、`website/solo-friendly/`，各自 `<slug>/index.html`（乾淨網址、不依賴 rewrite）
+  - 每頁 `<head>`/`<style>`/header/footer 從 `index.html` 整份複製再微調：**不**重複 LocalBusiness/SportsActivityLocation schema（只留首頁），改帶各頁專屬 FAQPage schema（3 題，跟首頁與彼此不重複文字）；header 錨點加 `/` 前綴（`/#why` 等）；圖片路徑加 `../`
+  - 子頁沿用同一份 `<script>`，但把行銷 marquee 區塊 `document.getElementById('mqTrack')` 的操作加 `if (track) {...}` guard——子頁沒有 `#mqTrack` 元素，若不加 guard 會拋錯中斷同一支 script 後續所有邏輯（此為本任務發現並修正的坑，其餘 DOM 查找皆已有原生 guard 或空陣列安全）
+  - 企業團康頁 CTA 沿用 `#group` 的 `.group-cta`／`.line-btn` 樣式與既有 LINE 連結 `https://line.me/ti/p/UJXIAt1s0O`
+  - I 人頁紓壓段落刻意避開療效宣稱，只寫「休閒用途、轉換心情」，非醫療用途
+  - 驗證：`JSON.parse` 過全部 9 個 JSON-LD block（首頁 2 個 + 8 子頁各 1 個）、`node --check` 過首頁與 8 子頁共 9 個 `<script>` block、grep 確認全站無殘留 `href="#"` 佔位連結
+  - 不在本任務範圍：sitemap.xml/robots.txt/BreadcrumbList schema 更新（留給下一個任務，等內容確認後再排）、正式部署（`website/` 整包複製到獨立 Vercel 專案，需使用者確認內容後手動執行）
+- **2026-07-10 真實照片整合**（Trellis task `07-10-website-real-photos-integration`，只動 `website/index.html` + 新增 `website/assets/images/archery/real/`）：把 218 張真實照片中使用者指定的 46 張整合進首頁，取代插畫示意內容，讓官網更真實可信
+  - **來源路徑**：`public/images/archery/real/<分類資料夾>/`（App 端靜態資源，11 個分類子資料夾，原始檔備份不刪除）→ 一次性 Node 腳本用既有 `sharp` 依賴壓縮（`resize(width:1600) + webp quality 80`，超 800KB 才降到 70/60/50 quality floor）→ 輸出到 `website/assets/images/archery/real/`（維持分類子資料夾，官網用相對路徑引用，因為官網是獨立 Vercel 專案 `catarrow-archery` 只打包 `website/`）；壓縮腳本為暫存工具，跑完即丟（未留在 repo）
+  - **壓縮成果**：46 張唯一檔案（Hero 圖與新手教學區共用同一張，只處理一次）合計 39.37MB → 4.67MB，全部 <800KB（多數在 quality 80 就已壓到 <250KB，未觸及 quality floor）
+  - **Hero 改版**：`.hero` 從左文右插畫兩欄，改為真實照片全幅背景（`.hero-photo-media` 絕對定位 + `::after` 深色/暖橘漸層遮罩）+ 文字疊加在上方（改用淺色文字），插畫吉祥物 `assets/006.png` 仍保留在下方 `#why` 卡片，未刪除
+  - **新增 11 個真實照片區塊**（`id="real-*"`，緊接在 GEO 實體描述段落後、`#why` 之前，原有 `#why`〜`#visit` 的 `.sec-num` 全部順移 +11 → 現為 12〜22）：新手教學／場地器材與代購／弓種實拍／親子與兒童／團康活動／長期練習／戶外進階訓練／學籍系統與訓練 App／貓咪安全區／校外合作與賽事成果／活動相簿，標題文字逐字對應 PRD
+  - **共用 CSS**：`.real-grid`（`auto-fit minmax(240px,1fr)`，免每區塊寫斷點）、`.real-photo.r32/r43/r34/r23`（依實際圖片比例挑 aspect-ratio class，`object-fit:cover` 不變形）、`.phone-mock`（學籍系統/App 區用手機外框樣式包 4 張截圖，不做滿版大圖）
+  - **活動相簿「查看更多」**：11 張圖全部在 DOM 裡，`max-width:640px` 時最後 2 張加 `.album-extra` 用 CSS 隱藏，按鈕 `#albumMoreBtn`（`.btn-ghost`）點擊後對 `#albumGrid` 加 `.expanded` 解除隱藏——純前端展開，非分頁載入
+  - Hero 圖 `fetchpriority="high"` 且不加 `loading="lazy"`；其餘全部 `loading="lazy"`；所有圖片皆有具體 alt（依情境撰寫，非檔名）+ 明確 width/height；不使用輪播套件
+  - 驗證：46 個圖片路徑全部存在、無重複 `id`、`<section>`/`</section>` 數量相等（24/24）、`<style>` 大括號配平、全部 `<script>` 用 `new Function()` 語法檢查通過；grep 確認 8 支既有情境子頁（rainy-day/sunny-day/beginner-guide/family/couple/friends-group/corporate-team-building/solo-friendly）完全未被動到
+  - 不在本任務範圍：正式部署（同上，需使用者確認內容後手動執行）；`public/images/archery/real/` 原始檔全部保留當備份，未刪除
+**核心**：登入/角色分流、會員 CRUD、射手卡分享、主題換色（8 種）
+**報到**：pending→教練審核→active/rejected、下課結算箭露、浮動視窗
+**練習**：自主練習、歷史/總覽/分析、箭數里程碑（多回合+世界王已修 2026-07-02）、箭露累積
+**比賽**：建立/提交/審核/結算/排行榜、外部比賽、報名
+**檢定**：6 等級 3 弓種、檢定考試任務（藍書/金書）、教練審核
+**地下城三大來源系統（2026-07-14）**：
+- **① ⏳ 定時生成**：每次領取/放棄/保存後自動重設計時器（隨機 24~144h），時間到可領取隨機地下城（6 族 × T1~T6）
+- **② ⛏️ 練箭挖掘**：報到 +20、每箭 +1、每 30 箭提升最高可開等級（T1→T6）；即時顯示 T1~T6 完整機率表；免費降級（T6→T1 無限制）；金幣強化保留
+- **③ 📜 世界王卷軸**：擊殺世界王給卷軸，使用時隨機獲得 T1~T6 地下城存入儲存槽；使用前檢查槽位空滿
+- **三卡並排 UI**：DungeonExcavationTab 同時顯示三個來源的操作卡片
+
+**端對端地下城流程**：
+- 挖掘探索（3 來源）→ 100% 揭曉（難度/族系/隱藏）→ 選擇保存/放棄
+- 儲存槽固定 3 格（空槽 🕳️ 可視化）→ 選擇面板（單人 or 組隊）
+- 單人遠征（DungeonExpedition：第 1、2 層 5×5 迷霧格子＋功能房本地模式，第 3 層 A/B/C 分支王關，2026-07-03 Phase G）
+- **組隊遠征**（接現有 DungeonBattleRoom 多人戰鬥系統，2026-07-14 修正路由）：建立組隊房間 → 房主開始 → 三層 DungeonBattleRoom → 結算畫面
+- **遠征 Boss／獎勵修訂（2026-07-04）**：建立時固定 Boss；weak/normal/strong/boss 分層；每隻怪保證材料寶箱 ×2＋金幣寶箱 ×2；寶藏房逐張翻牌；最終報告含隊員、傷害與 MVP
+- 後台測試工具（AdminDungeon：幫任何玩家設定/移除儲存槽地下城）
+
+**遊戲化（既有）**：
+- 打怪（6 種族 6 難度，正常/組隊/決鬥/地下城/世界首領/賽事）
+- 地下城地圖探索：SVG 地圖 + 10 種房型 + 投票移動 + 前後衛陣型 + 符文系統 + 合約系統
+- 地下城經典模式：7 層隨機樓層，支援 8 人組隊
+- 後衛機制（地下城 + 組隊）：可選治癒/攻擊，反擊只打前衛
+- 怪物人數縮放 + 卡死預防機制 + 每人各自領獎
+- 怪物卡片 100 張（5 星升級，最多裝備 5 張）
+- 射手等級（200 級，5 種模式 XP）
+- RPG 裝備（品質+強化）、成就系統、公會任務、議會廳
+- 我的裝備頁顯示槽位完成度、實際 ATK／DEF／HP 總加成、單件公式與升級前後比較；神話裝備可強化至 +4
+
+**貓系統**：9 隻貓角色、貓村（9 棟 20 級）、貓卡 100 張、轉蛋機、故事書
+- 貓貓戰鬥技能（補血/增傷/防護），等級 200 + 裝備 5 格鍛造
+- 九隻貓採「類型基底＋個體配點＋固有特性」：上排治癒、中排攻擊、下排防禦；同類三隻仍有不同成長倍率、技能威力與觸發率
+- 貓貓獨立 HP 條、議會廳陪練、組隊虛擬夥伴
+
+**後台**：記帳、通知、訊息、月卡申請/審核、圖鑑、版本更新提示
+
+## 🚧 待辦
+
+- [ ] **🔴 2026-07-04 交接三項（見 changelog.md 頂部「交接筆記」章節，有完整檔案/行號診斷，直接接手不用重查）**：
+  ① ~~冒險者公會一般懸賞任務自動化~~ **已完成（2026-07-04，見下方「已實作」與 changelog）**
+  ② 箭數里程碑跨模式重複觸發 bug（5檔案根因已查清：AdventurerGuild/CouncilBattle/DuelRoom/DailyQuest 都寫死`getMilestonesReached(0,...)`，MonsterBattle的`sessionArrowsRef`每場重置）
+  ③ 首殺通知 bug（A:橫幅已讀狀態未持久化，純前端好修；B:新地下城系統首殺完全沒接上，需改用family+tier當key，設計已定案）
+- [x] 地下城組隊失敗路由與全區廣播（2026-07-03 接手收尾）
+- [ ] 使用兩個真實帳號完成組隊遠征 Firestore 多客戶端實測
+- [ ] 藥水系統大改版——三層藥水架構 + 底部 tab 列 UI（see `potion-system-redesign.md`）
+- [ ] UI 改版 Phase 4：後台套版、shared/Equipment.jsx 內層、戰鬥頁 token 收斂、最終刪 `.content-area` 覆寫層
+- [ ] 音效/動畫批次 D：戰鬥層（受擊震屏、爆擊 hit-stop、怪物死亡溶解）
+- [x] 地下城終戰模式（發掘→三層探險→Boss）— Trellis task `07-14-dungeon-expedition` — **全完成 2026-07-14**
+- [x] 三大來源系統（定時生成 + 練箭挖掘 + 世界王卷軸）
+- [x] 組隊遠征接 DungeonBattleRoom（正確路由）
+
+## 🏗️ 戰鬥系統架構（2026-07-01 Phases 1-8）
+
+### 共用模組（9 新檔）
+
+```
+src/lib/
+  damage.js          ← 5 模式共用傷害公式（箭矢/反擊/貓貓/世界王）
+  score.js           ← 集中計分邏輯（label↔value、SCORE_MAP、COLORS）
+
+src/battle/
+  BattleEvents.js    ← 22 個標準化 EventType + createXxxEvent builders
+  BattleConfig.js    ← 戰鬥參數集中管理（箭數、距離、倍率、機率）
+  BattleEngine.js    ← 單人戰鬥事件產生器（MonsterBattle pilot）
+  BattleAnimation.js ← 19 個 playXxx + EVENT_DISPATCH 映射表
+  useFirestoreRound.js ← Firestore 回合生命週期 hook（Party/Duel/Dungeon）
+  RoundController.js ← 通用事件播放控制器（Monster/Council/WorldBoss）
+  useBattleRound.js  ← React hook 封裝 RoundController
+  useMiniRoundReveal.js ← mini-round 動畫 hook（Party/Dungeon）
+  useDuelReveal.js   ← 決鬥逐箭揭露 hook（DuelRoom）
+```
+
+### 重構的 8 個元件
+
+| 模式 | Phase | 重構目標 | 行數變化 |
+|------|-------|---------|---------|
+| MonsterBattle.jsx | 6 | 50 行 event loop → RoundController | −263 |
+| PartyBattleRoom.jsx | 5, 7 | handleSubmit + host processing → useFirestoreRound；mini-round 動畫 → useMiniRoundReveal | +58 |
+| DuelRoom.jsx | 5, 8 | subscribe + host processing → useFirestoreRound；12 步逐箭揭露 → useDuelReveal | +58 |
+| DungeonBattleRoom.jsx | 5, 7 | 4 合 1 subscribe + host processing → useFirestoreRound；90 行 inline mini-round → useMiniRoundReveal | +94 |
+| CouncilBattle.jsx | 6 | 內聯動畫/音效/log → RoundController | +138 |
+| WorldBossAttack.jsx | 6 | 25 行 arrow loop → RoundController + customDelays 600ms | +12 |
+
+### 架構原則
+
+- **事件驅動**：標準化 EventType 22 種，EventType-driven dispatch
+- **關注點分離**：傷害引擎 (damage.js) → 事件產生 (BattleEngine) → 動畫派遣 (BattleAnimation) → 回合控制 (RoundController/useFirestoreRound)
+- **Firestore 回合抽象**：subscribe + submit + host process 三合一 hook，減少重複 30-50 行/元件
+- **向後相容**：customDelays 等參數使用 options 物件，預設值不影響既有呼叫
+
+---
+
+## 🔧 2026-06-27 修正/改版
+
+- **地下城事件**：補實裝 `def_mult_all`（守護結界）；reversal 合約 dmg 拼寫 bug 已修
+- **商店購買記憶**：`shopPurchases` 不再在每次進出商店時重置；`hp_potion` 可重複購買
+- **進場動畫 / 樓層**：地圖模式用 `mapCurrentRoomId` 作 key；`currentFloor` 從 `mapFloorIndex+1` 算
+- **今日箭數同步**：`DailyQuest` 改用 `subscribeTodayPracticeLogs`（Firestore 側限日期）
+- **成就通知**：改為個人通知（不再全頻廣播），deps 補全避免部分成就偵測失效
+- **首頁改版**：公會等級 pill（adventurerXP）、三個收藏進度格、月卡移入等級卡、移除個人資訊列/年度檢定/最近成績
+- **廣播訊息**：移除底圖，加 8 類分類篩選；type="achievement" 對應「成就」分類
+- **怪物卡片**：改條列式，inline 顯示可升星、快速裝備按鈕；合約 HEX 補三色
+- **地下城前後衛顯示**：改視角分排（單排顯示）；前衛死亡轉排時機修正（動畫後才移動）；`displayGroup` 欄位控制視覺分排；非房主卡住自動恢復；全員 ready 延遲 2 秒結算
+
+## 🔧 2026-06-28 修正
+
+- **復活藥/休息區復活**：修正 `handleResolve` 邏輯——改為掃描隊伍中所有 `alive && role==="rear"` 的成員來復活，不再錯誤檢查購買者本身的 role
+- **商店 revival_front 條件**：只有隊伍中有前衛倒地（role=rear 的存活成員）時才能購買
+- **休息區全員狀態卡**：頂部加橫排 HP 小卡，顯示所有隊員的 HP/role 狀態，便於討論投票選項
+- **商店全員狀態卡**：同上，便於討論購買決策
+- **商店購買限制修正**：移除 local `bought` state，改用 Firestore `shopPurchases` 作唯一購買記錄依據（避免換頁後 local state 重置而允許重複購買）
+- **計分板折疊**：12 顆分數按鈕改為 7 顆折疊切換——Row A（X 10 9 8 7 6 M）/ Row B（6 5 4 3 2 1 M），節省螢幕空間
+- **前衛觀察後衛**：輸入分數時，前衛新增小按鈕可切換角色卡視角至後衛排觀察狀況
+- **關卡機制改版**：
+  - `all_hit`（全中關）→「M懲罰關」：不再全部清零，改為每一發 M 扣除 10% 總傷害，最低歸零
+  - `score_gate`（得分關）→ 比例懲罰：低於門檻的箭依距離降低該箭傷害（差1分-10%），且最高門檻 cap 至 9（不再要求 X/10）；score_gate 的分數按鈕去除 X 和 10
+- **後台暗色主題**：`AdminReviewCenter`、`AdminMembers`、`AdminFinance` 共修正 16 處白底/淺色框（CertReviewCard、ExtReviewCard、MsgReplyCard、CertTaskCard 等）；QR code 白底保留（掃碼必需）
+
+## ⚡ 2026-06-28 效能優化（vercel-react-best-practices）
+
+- **Lazy Loading**（bundle-dynamic-imports）：MemberApp / AdminApp 共 50+ 元件改 `React.lazy`，主 bundle 676KB → **475KB（-30%）**
+- **React.memo**（rerender-memo）：`MonsterSVG`、`BadgeSVG`、`SharedBattleComponents` 全員加 memo，戰鬥畫面 timer tick 不再重渲染純 SVG/HP bar
+- **智能預載**（bundle-preload + js-request-idle-callback）：
+  - `MemberApp` / `AdminApp` 登入後瀏覽器空閒時預下載最常用 chunk
+  - nav 按鈕加 `onPointerEnter`，碰到就開始下載，切頁無 loading 感
+  - Safari 無 `requestIdleCallback` 時 fallback 到 `setTimeout(cb, 1000)`
+
+## ✨ 2026-06-28 View Transitions（vercel-react-view-transitions）
+
+- **react@canary** 升級（19.3.0-canary）：`ViewTransition` 只在 canary 可用，用 `--legacy-peer-deps` 安裝
+- **全分頁 cross-fade**：所有 `setPage()` 呼叫改透過 `startTransition()` 包裹（`useCallback` 封裝為新的 `setPage`）
+- `MemberApp` 與 `AdminApp` 兩個 content-area 加 `<ViewTransition key={page} enter="fade-in" exit="fade-out" default="none">` 包裹 Suspense
+- **底部導覽列隔離**：`member-nav` / `admin-nav` 加 `viewTransitionName`，切頁時導覽列不跟著動
+- CSS recipes 加入 `src/index.css`：fade / slide-y keyframes、nav persistent isolation、reduced motion 支援
+
+## 🔧 2026-06-28（續）地下城多人 Bug 修正
+
+- **非房主拖出地圖**：`DungeonBattleRoom.handleClaimSelf` 改為：房主才呼叫 `returnToMapAfterBattle`，非房主設 `localClaimed=true` 顯示「等待房主」overlay，等 Firestore status 自然切換
+- **隊員看不到房主選的怪物房**：`DungeonExplore.handleRoomClick` 選到怪物房時寫 `mapPendingRoom` 到 Firestore；非房主 subscribe 到後顯示唯讀預告 modal（「等待隊長決定是否出戰…」）；房主按出戰或撤退後清除 `mapPendingRoom`
+- `dungeonDb.js` 新增 `proposeMapBattle(roomId, roomData)` / `clearMapPendingRoom(roomId)`
+
+## ✅ 地下城終戰模式完成範圍
+
+- 三大來源、三槽選單、單人／組隊三層遠征、結算獎勵、失敗廣播均已接線。
+- 2026-07-03 接手收尾：等待室 transaction、固定房主、樓層 HP 延續、全員結果同步、固定獎勵與 `expeditionRecords` 規則已修。
+- 尚待兩帳號實機驗證；在完成前不要把「build 通過」等同多人流程已驗證。
+- [ ] 藥水系統大改版——三層藥水架構 + 底部 tab 列 UI（see `potion-system-redesign.md`）——原設計藥水應從遠征隊取得，煉金室仍維持箭露生產
+- [x] CouncilBattle / WorldBossAttack 改用統一 `damage.js` 公式（Phase 8）
+- [x] 透過 `RoundController` 重構 Party/Duel/Dungeon 戰鬥模式的 event playback
+- [x] 透過 `useDuelReveal` 重構 DuelRoom 的逐箭揭露動畫

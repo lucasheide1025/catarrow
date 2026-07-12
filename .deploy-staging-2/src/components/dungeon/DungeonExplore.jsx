@@ -1,0 +1,479 @@
+// src/components/dungeon/DungeonExplore.jsx — 地下城探索主畫面
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import DungeonMap from "./DungeonMap";
+import {
+  getDungeonFloor, getReachableRooms, getRoomMeta, getContractBadge,
+  getContractDesc, DUNGEON_MAPS,
+  canTriggerHiddenRoom,
+} from "../../lib/dungeonData";
+import {
+  subscribeDungeonRoom, saveMapExploration, advanceMapFloor, enterMapCombatRoom,
+  enterNonCombatRoom, proposeMapBattle, clearMapPendingRoom,
+  tryDiscoverHiddenRoom, enterHiddenRoom,
+} from "../../lib/dungeonDb";
+import { MONSTERS, applyVariant } from "../../lib/monsterData";
+
+// 地圖房間難度 tier (1-6) → 怪物 tier 字串
+function mapRoomTier(tier) {
+  return (["common", "rare", "elite", "fierce", "boss", "mythic"])[Math.min((tier || 1) - 1, 5)];
+}
+
+// ── 非戰鬥房間事件 modal ──────────────────────────────────────
+function RoomEventModal({ room, memberHPs, onClose }) {
+  const meta = getRoomMeta(room.type);
+  if (!room) return null;
+
+  const eventInfo = {
+    chest:    { title:"發現寶箱！", color:"#4ade80", desc:"獲得素材與金幣。（Phase 3 接掉寶表）", icon:"📦" },
+    rest:     { title:"休息室",     color:"#a78bfa", desc:"全體回復 30% 最大血量。", icon:"💤" },
+    trap:     { title:"陷阱！",     color:"#f87171", desc:"踩到機關，全體受到傷害。", icon:"🪤" },
+    merchant: { title:"神秘商人",   color:"#60a5fa", desc:"可用金幣購買道具。（Phase 3 接商店）", icon:"🛒" },
+    teleport: { title:"傳送陣",     color:"#e879f9", desc:"傳送到同層已探索的另一個房間。", icon:"🌀" },
+    hidden:   { title:"隱藏房間！", color:"#a78bfa", desc:"發現秘密通道！獲得隱藏獎勵。", icon:"❓" },
+    event:    { title:"特殊事件",   color:"#fde68a", desc:"發生了神秘的事件……", icon:"✨" },
+    stairs:   { title:"找到樓梯！", color:"#94a3b8", desc:"可以前往下一層。", icon:"🪜" },
+  }[room.type] || { title: meta.label, color: meta.color, desc: "", icon: meta.icon };
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,0.75)",
+      display:"flex", alignItems:"flex-end", justifyContent:"center",
+      zIndex:100, backdropFilter:"blur(4px)",
+    }}>
+      <div style={{
+        width:"100%", maxWidth:480, background:"linear-gradient(160deg,#1a1a2e,#16213e)",
+        borderRadius:"24px 24px 0 0", padding:"24px 20px 36px",
+        border:"1.5px solid rgba(255,255,255,0.1)", borderBottom:"none",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+          <div style={{
+            width:52, height:52, borderRadius:14, fontSize:28,
+            background: eventInfo.color + "22",
+            border:`1.5px solid ${eventInfo.color}44`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            {eventInfo.icon}
+          </div>
+          <div>
+            <div style={{ fontWeight:900, fontSize:17, color: eventInfo.color }}>{eventInfo.title}</div>
+            <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)" }}>{room.label}</div>
+          </div>
+        </div>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginBottom:20 }}>
+          {eventInfo.desc}
+        </div>
+        <button onClick={onClose} style={{
+          width:"100%", padding:"13px 0", borderRadius:14, fontWeight:900,
+          fontSize:15, border:"none", cursor:"pointer",
+          background:`linear-gradient(90deg,${eventInfo.color},${eventInfo.color}cc)`,
+          color:"#000",
+        }}>
+          確認，繼續探索
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── 主元件 ────────────────────────────────────────────────────
+export default function DungeonExplore({
+  dungeon: dungeonProp,
+  roomId,
+  isHost = true,
+  memberId,
+  profile,
+  onBack,
+}) {
+  const [room,          setRoom]          = useState(null);
+  const [eventModal,         setEventModal]         = useState(null);
+  const [enteringBattle,     setEnteringBattle]     = useState(false);
+
+  const [floorIndex,    setFloorIndex]    = useState(0);
+  const [currentRoomId, setCurrentRoomId] = useState(null);
+  const [exploredIds,   setExploredIds]   = useState(new Set());
+  const [clearedIds,    setClearedIds]    = useState(new Set());
+  const [inited,        setInited]        = useState(false);
+
+  // Firestore 訂閱
+  useEffect(() => {
+    if (!roomId) return;
+    return subscribeDungeonRoom(roomId, setRoom);
+  }, [roomId]);
+
+  // 從 Firestore 同步地圖狀態（非 host 或初始 load）
+  useEffect(() => {
+    if (!room) return;
+    if (room.mapFloorIndex   != null) setFloorIndex(room.mapFloorIndex);
+    if (room.mapCurrentRoomId)        setCurrentRoomId(room.mapCurrentRoomId);
+    if (room.mapExploredIds)          setExploredIds(new Set(room.mapExploredIds));
+    if (room.mapClearedIds)           setClearedIds(new Set(room.mapClearedIds));
+    setInited(true);
+  }, [room]);
+
+  // preview mode init
+  useEffect(() => {
+    if (roomId) return;
+    const dungeon = dungeonProp;
+    if (!dungeon) return;
+    const startId = dungeon.floors?.[0]?.startRoomId;
+    setCurrentRoomId(startId);
+    setExploredIds(new Set(startId ? [startId] : []));
+    setInited(true);
+  }, [dungeonProp, roomId]);
+
+  const dungeon         = dungeonProp || DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId);
+  const generatedFloors = room?.generatedFloors || null;
+  // 優先讀 Firestore 隨機生成的樓層，preview 模式 fallback 到靜態地圖
+  const floorData       = generatedFloors
+    ? (generatedFloors[floorIndex] || null)
+    : (dungeon ? getDungeonFloor(dungeon, floorIndex) : null);
+
+  const reachableIds = useMemo(
+    () => floorData && currentRoomId ? getReachableRooms(floorData, currentRoomId) : new Set(),
+    [floorData, currentRoomId]
+  );
+
+  // ── 處理房間點擊（隊長直接決定，無需投票）──────────────────────
+  const handleRoomClick = useCallback(async (roomId_) => {
+    if (!floorData) return;
+    const clickedRoom = floorData.rooms.find(r => r.id === roomId_);
+    if (!clickedRoom) return;
+
+    // 更新本地探索狀態
+    const newExplored = new Set([...exploredIds, roomId_]);
+    setExploredIds(newExplored);
+    setCurrentRoomId(roomId_);
+
+    // 儲存到 Firestore（host only）
+    if (roomId && isHost) {
+      await saveMapExploration(roomId, {
+        floorIndex, currentRoomId: roomId_, exploredIds: newExplored, clearedIds,
+      });
+    }
+
+    // 入口房：靜默通過，自動標記為已清除
+    if (clickedRoom.type === "entrance") {
+      const newCleared = new Set([...clearedIds, roomId_]);
+      setClearedIds(newCleared);
+      if (roomId && isHost) {
+        await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds: newExplored, clearedIds: newCleared });
+      }
+      return;
+    }
+
+    // 已清除的房間：再次經過不觸發（商人除外，可重複逛）
+    if (clearedIds.has(roomId_) && clickedRoom.type !== "merchant") {
+      if (roomId && isHost) {
+        await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds: newExplored, clearedIds });
+      }
+      return;
+    }
+
+    // 決定行為
+    if (["monster","elite","boss"].includes(clickedRoom.type)) {
+      setEventModal({ ...clickedRoom, _type:"battle_preview" });
+      // 同步到 Firestore，讓隊員也看到房間預告
+      if (roomId && isHost) {
+        proposeMapBattle(roomId, { ...clickedRoom, _type:"battle_preview" }).catch(() => {});
+      }
+      // 進入戰鬥房後嘗試發現隱藏房間
+      if (roomId && isHost && canTriggerHiddenRoom(clickedRoom.type)) {
+        tryDiscoverHiddenRoom(roomId, room, floorIndex, roomId_)
+          .then(res => {
+            if (res?.found) {
+              // 發現隱藏房間後，會自動更新 generatedFloors 在 Firestore 上
+              // DungeonMap 會自動透過 room 訂閱更新
+            }
+          }).catch(() => {});
+      }
+    } else if (clickedRoom.type === "hidden") {
+      // 隱藏房間：直接給獎勵後標記為清除
+      if (roomId && isHost) {
+        await enterHiddenRoom(roomId, room, clickedRoom.meta);
+      }
+    } else if (clickedRoom.type === "stairs") {
+      setEventModal(clickedRoom);
+    } else if (clickedRoom.type === "teleport") {
+      // 傳送房間：隨機傳送到同層已探索的其他房間
+      if (!floorData) return;
+      const sameFloorRooms = floorData.rooms.filter(r => r.id !== roomId_);
+      const exploredOthers = sameFloorRooms.filter(r => exploredIds.has(r.id));
+      if (exploredOthers.length > 0) {
+        const target = exploredOthers[Math.floor(Math.random() * exploredOthers.length)];
+        const newExplored = new Set([...exploredIds, target.id]);
+        setCurrentRoomId(target.id);
+        setExploredIds(newExplored);
+        if (roomId && isHost) {
+          await saveMapExploration(roomId, { floorIndex, currentRoomId: target.id, exploredIds: newExplored, clearedIds });
+        }
+      } else {
+        // 無其他已探索房間 → 原地清除（等於空房間）
+        const newCleared = new Set([...clearedIds, roomId_]);
+        setClearedIds(newCleared);
+        if (roomId && isHost) {
+          await saveMapExploration(roomId, { floorIndex, currentRoomId: roomId_, exploredIds, clearedIds: newCleared });
+        }
+      }
+      return;
+    } else if (["merchant","rest","trap","event","chest"].includes(clickedRoom.type)) {
+      // 非戰鬥互動房間 → 透過 Firestore 路由到對應元件
+      if (roomId && isHost) {
+        await enterNonCombatRoom(roomId, clickedRoom.type, { roomId: clickedRoom.id });
+      }
+    } else {
+      setEventModal(clickedRoom);
+    }
+  }, [floorData, exploredIds, clearedIds, floorIndex, roomId, isHost]);
+
+  // 切換樓層
+  const handleNextFloor = useCallback(async () => {
+    const nextIdx  = floorIndex + 1;
+    const totalF   = generatedFloors?.length || dungeon?.floorCount || 1;
+    if (nextIdx >= totalF) return;
+    if (roomId && isHost) {
+      await advanceMapFloor(roomId, generatedFloors || dungeon, nextIdx);
+    } else {
+      const nextFloor = generatedFloors
+        ? generatedFloors[nextIdx]
+        : getDungeonFloor(dungeon, nextIdx);
+      if (!nextFloor) return;
+      setFloorIndex(nextIdx);
+      setCurrentRoomId(nextFloor.startRoomId);
+      setExploredIds(new Set([nextFloor.startRoomId]));
+    }
+    setEventModal(null);
+  }, [floorIndex, dungeon, generatedFloors, roomId, isHost]);
+
+  // 確認進入戰鬥（host 呼叫 enterMapCombatRoom，Firestore status→active，DungeonController 自動路由）
+  const handleEnterBattle = useCallback(async () => {
+    if (!roomId || !isHost || !eventModal) return;
+    setEnteringBattle(true);
+    await clearMapPendingRoom(roomId).catch(() => {});
+    const family      = dungeon?.family || "ghost";
+    const tier        = eventModal.meta?.tier || 1;
+    const monsterTier = mapRoomTier(tier);
+    let pool          = MONSTERS.filter(m => m.family === family && m.tier === monsterTier);
+    if (pool.length === 0) pool = MONSTERS.filter(m => m.family === family); // fallback 同族任意 tier
+    const monster     = pool[Math.floor(Math.random() * pool.length)] || MONSTERS[0];
+    const variant     = Math.random() < 0.3 ? "weak" : Math.random() < 0.3 ? "strong" : "normal";
+    const totalFloors = generatedFloors?.length || dungeon?.floorCount || 1;
+    await enterMapCombatRoom(roomId, room, eventModal.meta || {}, {
+      monster: applyVariant(monster, variant),
+      totalFloors,
+    });
+    // DungeonController 的 Firestore 訂閱感應到 status:"active" → 自動切換 DungeonBattleRoom
+    setEnteringBattle(false);
+    setEventModal(null);
+  }, [roomId, isHost, eventModal, room, generatedFloors, dungeon]);
+
+  if (!inited || (!dungeon && !generatedFloors)) {
+    return <div style={{ minHeight:"100dvh", background:"#0a0a0f", color:"rgba(255,255,255,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>載入地圖…</div>;
+  }
+
+  const currentRoom = floorData?.rooms?.find(r => r.id === currentRoomId);
+  const totalFloors = generatedFloors?.length || dungeon?.floorCount || 1;
+
+  return (
+    <div style={{
+      height:"100dvh", overflow:"hidden",
+      background:"linear-gradient(160deg,#0a0a0f,#12091a,#0a0f0a)",
+      color:"white", display:"flex", flexDirection:"column", position:"relative",
+    }}>
+      {/* ── 頂部標題列 ── */}
+      <div style={{
+        display:"flex", alignItems:"center", gap:10,
+        padding:"12px 14px 8px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0,
+      }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:18, cursor:"pointer", padding:"2px 6px" }}>←</button>
+        <div style={{ flex:1 }}>
+          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+            {dungeon?.emoji} {dungeon?.name}
+            {floorData?.isBossFloor && (
+              <span style={{ fontSize:10, background:"#ef4444", color:"white", borderRadius:5, padding:"2px 6px", fontWeight:700 }}>BOSS層</span>
+            )}
+          </div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>
+            第 {floorIndex + 1} 層 / 共 {totalFloors} 層
+            {roomId && <span style={{ marginLeft:6, color:"rgba(255,255,255,0.2)" }}>
+              {isHost ? "（房主）" : "（隊員）"}
+            </span>}
+          </div>
+        </div>
+        {/* 樓層進度點 */}
+        <div style={{ display:"flex", gap:4 }}>
+          {Array.from({ length: totalFloors }, (_, i) => (
+            <div key={i} style={{
+              width:8, height:8, borderRadius:"50%",
+              background: i < floorIndex ? "#4ade80" : i === floorIndex ? "#fbbf24" : "rgba(255,255,255,0.12)",
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── 探索地圖 ── */}
+      <div style={{ flex:1, padding:"16px 8px", display:"flex", alignItems:"flex-start", justifyContent:"center", overflowY:"auto" }}>
+        <DungeonMap
+          floorData={floorData}
+          exploredIds={exploredIds}
+          currentRoomId={currentRoomId}
+          reachableIds={reachableIds}
+          clearedIds={clearedIds}
+          onRoomClick={isHost ? handleRoomClick : undefined}
+          disabled={!isHost}
+        />
+      </div>
+
+      {/* ── 底部提示 ── */}
+      <div style={{ flexShrink:0, padding:"8px 16px 24px", textAlign:"center", fontSize:11, color:"rgba(255,255,255,0.2)" }}>
+        {isHost ? "點擊發光的房間移動（隊長決定）" : "等待隊長決定路線"}
+      </div>
+
+      {/* ── 非戰鬥房間 modal ── */}
+      {eventModal && eventModal._type !== "battle_preview" && (
+        <RoomEventModal
+          room={eventModal}
+          memberHPs={{}}
+          onClose={async () => {
+            if (eventModal.type === "stairs") {
+              await handleNextFloor();
+            } else {
+              // 標記已清除
+              setClearedIds(prev => new Set([...prev, eventModal.id]));
+              if (roomId && isHost) {
+                await saveMapExploration(roomId, {
+                  floorIndex, currentRoomId, exploredIds,
+                  clearedIds: new Set([...clearedIds, eventModal.id]),
+                });
+              }
+              setEventModal(null);
+            }
+          }}
+        />
+      )}
+
+      {/* ── 非房主：房主選擇了怪物房，顯示唯讀預告 ── */}
+      {!isHost && room?.mapPendingRoom && (
+        <div style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.75)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+          zIndex:95, backdropFilter:"blur(4px)",
+        }}>
+          <div style={{
+            width:"100%", maxWidth:480, background:"linear-gradient(160deg,#1a0a0a,#2d1212)",
+            borderRadius:"24px 24px 0 0", padding:"24px 20px 36px",
+            border:"1.5px solid rgba(239,68,68,0.3)", borderBottom:"none",
+          }}>
+            {(() => {
+              const pending = room.mapPendingRoom;
+              const meta    = getRoomMeta(pending.type);
+              const badge   = getContractBadge(pending);
+              const desc    = getContractDesc({ type: pending.meta?.contract, param: pending.meta?.contractParam });
+              return (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+                    <div style={{
+                      width:52, height:52, borderRadius:14, fontSize:28,
+                      background: meta.color + "22", border:`1.5px solid ${meta.color}44`,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                    }}>
+                      {meta.icon}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight:900, fontSize:17, color: meta.color }}>{meta.label}</div>
+                      <div style={{ fontSize:12, color:"rgba(255,255,255,0.45)" }}>{pending.label}</div>
+                    </div>
+                  </div>
+                  {badge && (
+                    <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"8px 12px", marginBottom:14, border:`1px solid ${badge.color}33` }}>
+                      <span style={{ fontWeight:900, color: badge.color }}>⚔️ {badge.label}</span>
+                      <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginLeft:8 }}>{desc}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:18 }}>
+                    T{pending.meta?.tier || 1} 等級怪物正在等待。
+                  </div>
+                  <div style={{
+                    padding:"13px 0", textAlign:"center", borderRadius:14,
+                    background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.2)",
+                    color:"rgba(255,100,100,0.7)", fontSize:14, fontWeight:700,
+                  }}>
+                    ⏳ 等待隊長決定是否出戰…
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── 戰鬥房間預告（多步驟）── */}
+      {eventModal?._type === "battle_preview" && (
+        <div style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.82)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+          zIndex:100, backdropFilter:"blur(4px)",
+        }}>
+          <div style={{
+            width:"100%", maxWidth:480,
+            background:"linear-gradient(160deg,#1a0a0a,#2d0a0a)",
+            borderRadius:"24px 24px 0 0", padding:"22px 18px 32px",
+            border:"1.5px solid rgba(239,68,68,0.3)", borderBottom:"none",
+          }}>
+            {/* ─ 步驟 0：房間資訊 ─ */}
+            {(() => {
+              const meta  = getRoomMeta(eventModal.type);
+              const badge = getContractBadge(eventModal);
+              const desc  = getContractDesc({ type: eventModal.meta?.contract, param: eventModal.meta?.contractParam });
+              return (
+                <>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+                    <div style={{ fontSize:36 }}>{meta.icon}</div>
+                    <div>
+                      <div style={{ fontWeight:900, fontSize:16, color: meta.color }}>{meta.label}</div>
+                      <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)" }}>{eventModal.label}</div>
+                    </div>
+                  </div>
+                  {badge && (
+                    <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"8px 12px", marginBottom:14, border:`1px solid ${badge.color}33` }}>
+                      <span style={{ fontWeight:900, color: badge.color }}>⚔️ {badge.label}</span>
+                      <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginLeft:8 }}>{desc}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:18 }}>
+                    T{eventModal.meta?.tier || 1} 等級怪物正在等待。
+                  </div>
+                  <div style={{ display:"flex", gap:10 }}>
+                    {isHost ? (
+                      <button onClick={handleEnterBattle} disabled={enteringBattle} style={{
+                        flex:2, padding:"13px 0", borderRadius:14, fontWeight:900,
+                        fontSize:15, border:"none", cursor: enteringBattle ? "default" : "pointer",
+                        background: enteringBattle ? "rgba(255,255,255,0.1)" : "linear-gradient(90deg,#dc2626,#ef4444)",
+                        color:"white",
+                      }}>
+                        {enteringBattle ? "進入中…" : "⚔️ 出戰！"}
+                      </button>
+                    ) : (
+                      <div style={{ flex:2, padding:"13px 0", textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:13 }}>
+                        等待隊長下令…
+                      </div>
+                    )}
+                    <button onClick={() => {
+                      setEventModal(null);
+                      if (roomId && isHost) clearMapPendingRoom(roomId).catch(() => {});
+                    }} style={{
+                      flex:1, padding:"13px 0", borderRadius:14, fontWeight:800,
+                      fontSize:13, border:"1px solid rgba(255,255,255,0.1)",
+                      background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.5)", cursor:"pointer",
+                    }}>
+                      撤退
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

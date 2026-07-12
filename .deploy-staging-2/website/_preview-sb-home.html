@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>預覽 · SimplyBook 首頁內容</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&family=Noto+Serif+TC:wght@600;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;background:#faf6ef;">
+<!-- 這只是本機預覽用外殼；正式貼到 SimplyBook 時不需要這個外殼，只要貼 simplybook-home-full.html 的內容 -->
+<div id="mount"></div>
+<script>
+fetch('simplybook-home-full.html').then(r=>r.text()).then(t=>{document.getElementById('mount').innerHTML=t;});
+</script>
+</body>
+</html>

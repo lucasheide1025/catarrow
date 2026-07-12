@@ -1,0 +1,324 @@
+:root {
+  --bg-deep:       #0f172a;
+  --bg-surface:    #1e293b;
+  --bg-card:       #1e293b;
+  --bg-elevated:   #334155;
+  --text-primary:  #f1f5f9;
+  --text-secondary:#94a3b8;
+  --text-muted:    #64748b;
+  --text-accent:   #60a5fa;
+  --text-gold:     #fbbf24;
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-card:   rgba(255,255,255,0.10);
+  --nav-active:    #3b82f6;
+  --nav-indicator: #f59e0b;
+
+  /* ── 語意色：fg = 文字/icon，bg = 淡色底 ── */
+  --success-fg: #4ade80;  --success-bg: rgba(34,197,94,0.12);
+  --warn-fg:    #fbbf24;  --warn-bg:    rgba(251,191,36,0.12);
+  --danger-fg:  #f87171;  --danger-bg:  rgba(239,68,68,0.12);
+  --info-fg:    #60a5fa;  --info-bg:    rgba(59,130,246,0.12);
+
+  /* ── 強調色 ── */
+  --accent:      #f59e0b;               /* 金 — 品牌強調 */
+  --accent-soft: rgba(245,158,11,0.15);
+  --primary:     #3b82f6;               /* 藍 — 互動主色 */
+
+  /* ── 圓角 / 陰影 ── */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+  --shadow-card:     0 2px 12px rgba(0,0,0,0.35);
+  --shadow-elevated: 0 8px 24px rgba(0,0,0,0.45);
+
+  /* ── 玻璃卡 ── */
+  --glass-bg:     rgba(30,41,59,0.72);
+  --glass-border: rgba(255,255,255,0.10);
+}
+
+/* ── Skeleton shimmer（Widgets.jsx 使用）── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/*
+ ─── 動畫總開關（fxSettings.js 控制）─────────────────────────
+ <html class="no-anim"> 時抑制所有動畫/轉場（含 View Transitions）。
+ 手動關閉或系統 prefers-reduced-motion 都會加上此 class。
+ ──────────────────────────────────────────────────────── */
+.no-anim *, .no-anim *::before, .no-anim *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+.no-anim::view-transition-group(*),
+.no-anim::view-transition-old(*),
+.no-anim::view-transition-new(*) {
+  animation: none !important;
+}
+
+/*
+ ─── 通用動畫庫（批次 A）───────────────────────────────────
+ keyframes 前綴 fx-；utility class 直接掛元素即可。
+ ──────────────────────────────────────────────────────── */
+@keyframes fx-pop-in {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes fx-fade-up {
+  0%   { transform: translateY(12px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes fx-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+@keyframes fx-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+  50%      { box-shadow: 0 0 14px 3px rgba(245,158,11,0.25); }
+}
+@keyframes fx-float-up {
+  0%   { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-36px); opacity: 0; }
+}
+@keyframes fx-bounce-once {
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-6px); }
+  70%      { transform: translateY(2px); }
+}
+.fx-pop        { animation: fx-pop-in 0.35s cubic-bezier(.34,1.56,.64,1) both; }
+.fx-fade-up    { animation: fx-fade-up 0.3s ease-out both; }
+.fx-shake      { animation: fx-shake 0.4s ease-in-out; }
+.fx-pulse      { animation: fx-pulse-glow 1.6s ease-in-out infinite; }
+.fx-float-up   { animation: fx-float-up 0.8s ease-out both; }
+.fx-bounce     { animation: fx-bounce-once 0.45s ease-out; }
+
+/*
+ ─── Token 元件層（shared/UI.jsx 使用）──────────────────────
+ 深色原生元件樣式：偽類（focus/placeholder）用純 CSS 定義，
+ 不依賴 Tailwind CDN 的 JIT。
+ ──────────────────────────────────────────────────────── */
+.ui-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ui-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-card);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ui-input::placeholder { color: var(--text-muted); }
+.ui-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
+}
+.ui-input-error { border-color: var(--danger-fg); }
+.ui-input-error:focus {
+  border-color: var(--danger-fg);
+  box-shadow: 0 0 0 2px rgba(239,68,68,0.25);
+}
+.ui-input option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+* {
+  scrollbar-color: #334155 transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ ─── 深藍主題：子頁面內容覆寫 ────────────────────────────────
+ 用 .content-area 範圍保護。
+ 只覆蓋 Tailwind class（不碰 inline styles），
+ 避免破壞 BillingSystem 等使用自己 light 主題的元件。
+ 貓貓村用 .no-override 跳過。
+ ──────────────────────────────────────────────────────── */
+.content-area .bg-white           { background-color: #1e293b; }
+.content-area .bg-gray-50         { background-color: #1e293b; }
+.content-area .bg-gray-100        { background-color: #1e293b; }
+.content-area .bg-gray-200        { background-color: rgba(255,255,255,0.06); }
+.content-area .bg-slate-50        { background-color: #1e293b; }
+.content-area .bg-red-50          { background-color: rgba(239,68,68,0.10); }
+.content-area .bg-blue-50         { background-color: rgba(59,130,246,0.12); }
+.content-area .bg-blue-100        { background-color: rgba(59,130,246,0.15); }
+.content-area .bg-green-50        { background-color: rgba(34,197,94,0.10); }
+.content-area .bg-amber-50        { background-color: rgba(251,191,36,0.10); }
+.content-area .bg-purple-50       { background-color: rgba(168,85,247,0.10); }
+.content-area .bg-teal-50         { background-color: rgba(20,184,166,0.10); }
+.content-area .bg-orange-50       { background-color: rgba(249,115,22,0.10); }
+.content-area .bg-rose-50         { background-color: rgba(244,63,94,0.10); }
+.content-area .bg-indigo-50       { background-color: rgba(99,102,241,0.10); }
+.content-area .bg-yellow-50       { background-color: rgba(234,179,8,0.10); }
+
+.content-area .text-gray-900,
+.content-area .text-gray-800        { color: #f1f5f9; }
+.content-area .text-gray-700        { color: #e2e8f0; }
+.content-area .text-gray-600        { color: #94a3b8; }
+.content-area .text-gray-500,
+.content-area .text-gray-400        { color: #64748b; }
+.content-area .text-gray-300        { color: #cbd5e1; }
+.content-area .text-gray-200        { color: #e2e8f0; }
+.content-area .text-gray-100        { color: #f1f5f9; }
+
+.content-area .text-blue-800        { color: #93c5fd; }
+.content-area .text-blue-700        { color: #93c5fd; }
+.content-area .text-blue-600        { color: #60a5fa; }
+.content-area .text-amber-600       { color: #fbbf24; }
+.content-area .text-green-600       { color: #4ade80; }
+.content-area .text-green-700       { color: #4ade80; }
+.content-area .text-purple-600      { color: #c084fc; }
+.content-area .text-purple-700      { color: #c084fc; }
+.content-area .text-orange-600      { color: #fb923c; }
+.content-area .text-orange-700      { color: #fb923c; }
+.content-area .text-teal-600        { color: #2dd4bf; }
+.content-area .text-red-600         { color: #f87171; }
+.content-area .text-red-500         { color: #ef4444; }
+
+.content-area .border-gray-200,
+.content-area .border-gray-100      { border-color: rgba(255,255,255,0.08); }
+.content-area .border-gray-300      { border-color: rgba(255,255,255,0.12); }
+
+.content-area .shadow-sm             { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.content-area .shadow-md             { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+.content-area .bg-blue-600           { background-color: #1d4ed8; }
+
+/* ── 低透明度白底（dungeon 等） ── */
+.content-area .bg-white\/5,
+.content-area .bg-white\/8,
+.content-area .bg-white\/10          { background-color: rgba(255,255,255,0.06); }
+.content-area .bg-white\/20          { background-color: rgba(255,255,255,0.08); }
+
+/*
+ ─── 保護 light 主題元件 ────────────────────────────────────
+ BillingSystem、AdminMessages 等使用 light 背景的元件，
+ 用 .no-override 跳過所有暗色覆寫。
+ ──────────────────────────────────────────────────────── */
+.content-area .no-override .bg-white         { background-color: #fff; }
+.content-area .no-override .bg-gray-50       { background-color: #f9fafb; }
+.content-area .no-override .bg-gray-100      { background-color: #f3f4f6; }
+.content-area .no-override .bg-gray-200      { background-color: #e5e7eb; }
+.content-area .no-override .bg-gray-300      { background-color: #d1d5db; }
+.content-area .no-override .bg-slate-50      { background-color: #f8fafc; }
+.content-area .no-override .bg-slate-100     { background-color: #f1f5f9; }
+.content-area .no-override .bg-slate-800     { background-color: #1e293b; }
+.content-area .no-override .bg-slate-900     { background-color: #0f172a; }
+.content-area .no-override .bg-blue-50       { background-color: #eff6ff; }
+.content-area .no-override .bg-blue-100      { background-color: #dbeafe; }
+.content-area .no-override .bg-blue-600      { background-color: #2563eb; }
+.content-area .no-override .bg-green-50      { background-color: #f0fdf4; }
+.content-area .no-override .bg-amber-50      { background-color: #fffbeb; }
+.content-area .no-override .bg-purple-50     { background-color: #faf5ff; }
+.content-area .no-override .bg-teal-50       { background-color: #f0fdfa; }
+.content-area .no-override .bg-red-50        { background-color: #fef2f2; }
+.content-area .no-override .bg-yellow-50     { background-color: #fefce8; }
+.content-area .no-override .bg-orange-50     { background-color: #fff7ed; }
+.content-area .no-override .bg-rose-50       { background-color: #fff1f2; }
+.content-area .no-override .bg-indigo-50     { background-color: #eef2ff; }
+.content-area .no-override .bg-white\/20     { background-color: rgba(255,255,255,0.2); }
+.content-area .no-override .text-gray-400    { color: #9ca3af; }
+.content-area .no-override .text-gray-500    { color: #6b7280; }
+.content-area .no-override .text-gray-600    { color: #4b5563; }
+.content-area .no-override .text-gray-700    { color: #374151; }
+.content-area .no-override .text-gray-800    { color: #1f2937; }
+.content-area .no-override .text-gray-900    { color: #111827; }
+.content-area .no-override .text-blue-600     { color: #2563eb; }
+.content-area .no-override .text-blue-700     { color: #1d4ed8; }
+.content-area .no-override .text-blue-800     { color: #1e40af; }
+.content-area .no-override .text-amber-600    { color: #d97706; }
+.content-area .no-override .text-green-600    { color: #16a34a; }
+.content-area .no-override .text-green-700    { color: #15803d; }
+.content-area .no-override .text-purple-600   { color: #9333ea; }
+.content-area .no-override .text-purple-700   { color: #7e22ce; }
+.content-area .no-override .text-orange-600   { color: #ea580c; }
+.content-area .no-override .text-orange-700   { color: #c2410c; }
+.content-area .no-override .text-teal-600     { color: #0d9488; }
+.content-area .no-override .text-red-500      { color: #ef4444; }
+.content-area .no-override .text-red-600      { color: #dc2626; }
+.content-area .no-override .text-white        { color: #fff; }
+.content-area .no-override .border-gray-100   { border-color: #f3f4f6; }
+.content-area .no-override .border-gray-200   { border-color: #e5e7eb; }
+.content-area .no-override .border-gray-300   { border-color: #d1d5db; }
+.content-area .no-override .bg-blue-600       { background-color: #2563eb; }
+.content-area .no-override .shadow-sm         { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.content-area .no-override .shadow-md         { box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+/* ─── View Transitions ──────────────────────────────────── */
+:root {
+  --duration-exit:  120ms;
+  --duration-enter: 180ms;
+  --duration-move:  300ms;
+}
+
+@keyframes vt-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes vt-slide-y {
+  from { transform: translateY(var(--slide-y-offset, 10px)); }
+  to   { transform: translateY(0); }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(.fade-out) {
+  animation: none;
+}
+::view-transition-new(.fade-in) {
+  animation: var(--duration-enter) ease-out vt-fade;
+}
+
+::view-transition-old(.slide-down) {
+  animation:
+    var(--duration-exit) ease-out both vt-fade reverse,
+    var(--duration-exit) ease-out both vt-slide-y reverse;
+}
+::view-transition-new(.slide-up) {
+  --slide-y-offset: 14px;
+  animation:
+    var(--duration-enter) ease-in var(--duration-exit) both vt-fade,
+    var(--duration-move)  ease-in both vt-slide-y;
+}
+
+::view-transition-group(member-nav),
+::view-transition-group(admin-nav) {
+  animation: none;
+  z-index: 100;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay:    0s !important;
+  }
+}

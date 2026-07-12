@@ -34,6 +34,38 @@
 | 訪客/兒童有體驗戰績摘要 | `recordGuestBattleStats()` 累積 `guestBattleStats`：戰鬥、勝場、箭數、總分、傷害、最近表現；紀念卡會顯示箭數/勝場/平均分/最近傷害 |
 | 訪客/兒童紀念卡已顯示成果摘要 | `GuestShareCard` 接 `profile`/`wbResult`，卡面顯示金幣、裝備、材料、貓咪與最近世界王傷害 |
 | 訪客/兒童低階轉蛋已開 | 角色頁 `GuestGachaPanel` 消耗 1 `gachaCoins` 給 8~24 金幣；商店可用 60 金幣買 1 枚體驗轉蛋幣，不接正式貓村轉蛋池 |
+---
+
+## 🔊 戰鬥模擬器音效管理器（2026-07-12）
+
+### battleSound.js API
+```js
+// src/lib/battleSound.js（統一音效管理器，AdminBattleTest.jsx 專用）
+import { playBattleSound, setBattleSoundMode, toggleBattleSoundMode, SOUND_IDS } from "../../lib/battleSound";
+
+// debug 模式（console.log 輸出，預設）
+playBattleSound("arrow_hit", { arrowIdx:3, score:"X", dmg:78, isCrit:true });
+// → 🔊 [SOUND] arrow_hit: 第3箭 X → 78傷害 💥爆擊
+
+// live 模式（播放真實音效，預留）
+setBattleSoundMode("live");
+toggleBattleSoundMode();  // 即時切換
+```
+
+### 9 個音效 ID
+| ID | 時機 | context 欄位 |
+|----|------|-------------|
+| `cat_intro` | VS 進場動畫（有選貓） | catName, typeLabel, typeIcon |
+| `cat_type_sound` | VS 進場動畫（依類型） | skillGroup |
+| `arrow_flight` | 每箭命中判定前 | arrowIdx, monsterName, battleMode |
+| `arrow_hit` | 每箭命中判定 | arrowIdx, score, dmg, isCrit |
+| `cat_attack` | 貓貓協戰動畫 | catName, particle, skillGroup |
+| `monster_counter` | 怪物反擊動畫 | monsterName, counterDmg |
+| `victory_fanfare` | 怪物 HP 歸零擊倒 | monsterName, round, roundDmg |
+| `victory_cheer` | 轉 WON 畫面 | （無） |
+| `defeat_sigh` | 敗北畫面 | monsterName, playerName, round |
+
+**完整說明見** `docs/sound-effect-checklist.md`
 | 訪客正式戰鬥頁必須全螢幕 | 進入「打怪分頁」不等於進入戰鬥；`MonsterBattle` 透過 `onImmersiveChange` 只在 `battle_intro/battle/monster_die/loot/result` 階段要求 `GuestApp.jsx` 隱藏 topbar/bottom nav，選怪、選難度、戰前確認時仍保留訪客底部功能列 |
 | 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
 | 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
@@ -45,6 +77,8 @@
 | `upgradeEquipSlot` 傳 clientData | 接受 `{equip, coins, matItems}`，不需 getDoc（效能優化） |
 | `submitMonthlyCardRequest` 傳 clientCard | 接受 `clientCard, hasPending`，不需 getDocs |
 | 音效全用 Web Audio 合成 | 不用音檔，用 `sfxTap/sfxSuccess/sfxCast/sfxBuff...` |
+| 戰鬥模擬器音效已集中管理 | `src/lib/battleSound.js`：9 個音效 ID、debug/live 雙模式；`playBattleSound(id, ctx)` 取代散落 console.log；`setBattleSoundMode/toggleBattleSoundMode` 切換模式；控制面板有 🔧/🎵 切換按鈕 |
+| 音效整合清單 | `docs/sound-effect-checklist.md`：9 個掛載點含時機/行號/未來實作 code，搜尋 `playBattleSound(` 可找到所有呼叫點 |
 | 怪物/徽章全用 SVG | `MonsterSVG` / `BadgeSVG` 元件，不用圖片 |
 | 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
 | Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
@@ -1120,8 +1154,8 @@ src/lib/
 ### 資料層（`src/lib/bookingDb.js`，視為穩定 API，別的地方不要重刻邏輯）
 ```js
 createBooking(memberId, memberName, {email,phone}, planType, durationHours, isNewStudent, date, startTime, endTime, source, note)
-cancelBooking(bookingId)
-rescheduleBooking(bookingId, newDate, newStartTime, newEndTime)   // durationHours/isNewStudent 沿用原預約，不可在改期時變更
+cancelBooking(bookingId, options?)             // options.force=教練無條件取消（跳過已開始/非confirmed guard）；計數器只在原本 confirmed 才釋放
+rescheduleBooking(bookingId, newDate, newStartTime, newEndTime, options?)  // options: force（跳過前置/已開始）、durationHours、planType（＝變更方案/時數，人數不變）；isNewStudent 沿用
 blockSlot(date, startTime) / unblockSlot(date, startTime)
 getBookingsForMember(memberId, maxCount=200)
 getBookingsForDateRange(startDate, endDate)   // 一定要帶日期範圍，不能無界查詢

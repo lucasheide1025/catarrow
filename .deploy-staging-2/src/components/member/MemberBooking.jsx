@@ -1,0 +1,178 @@
+// src/components/member/MemberBooking.jsx — 學生前台「線上約課」分頁（07-10-booking-system-student-pilot）
+// 由 MemberApp.jsx 控制入口；目前已正式開放給所有已登入學生。
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember, bookingHasStarted } from "../../lib/bookingDb";
+import { PLAN_TYPES, durationLabel, totalPrice } from "../../lib/bookingSchedule";
+import DateSlotPicker from "../booking/DateSlotPicker";
+import PlanDurationPicker from "../booking/PlanDurationPicker";
+import ParticipantCountPicker from "../booking/ParticipantCountPicker";
+import ConfirmBookingModal from "../booking/ConfirmBookingModal";
+import { Card, Btn, Modal, Spinner, Empty, ConfirmModal, useToast } from "../shared/UI";
+
+export default function MemberBooking() {
+  const { profile } = useAuth();
+  const { toast, ToastContainer } = useToast();
+  const [tab, setTab] = useState("new"); // "new" | "mine"
+
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [planType, setPlanType] = useState("general");
+  const [durationHours, setDurationHours] = useState(1);
+  const [participantCount, setParticipantCount] = useState(1);
+  // 學籍會員（能進到這個分頁的都已有學籍）一律算「舊生」，不再讓他們自己勾「是否第一次體驗」。
+  // 新生統計只在教練後台代建（AdminBooking）與訪客自助（PublicBookingApp）才需要區分。
+  const isNewStudent = false;
+  const [confirming, setConfirming] = useState(false); // 07-10-booking-ui-polish-headcount：選完時段先看確認畫面
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const [bookings, setBookings] = useState([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const loadBookings = useCallback(async () => {
+    if (!profile?.id) return;
+    setLoadingList(true);
+    const res = await getBookingsForMember(profile.id);
+    setBookings(res.ok ? res.bookings.filter(b => ["confirmed", "completed"].includes(b.status)) : []);
+    setLoadingList(false);
+  }, [profile?.id]);
+
+  useEffect(() => { loadBookings(); }, [loadBookings]);
+
+  async function handleSubmit() {
+    if (!selectedSlot) { setErr("請先選擇時段"); return; }
+    setErr("");
+    setSubmitting(true);
+    const res = await createBooking(
+      profile.id, profile.nickname || profile.name,
+      { email: profile.email || "", phone: profile.phone || "" },
+      planType, durationHours, participantCount, isNewStudent,
+      selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
+      "online",
+    );
+    setSubmitting(false);
+    if (!res.ok) { setErr(res.reason || "預約失敗，請稍後再試"); setConfirming(false); return; }
+    toast("預約成功 ✓");
+    setSelectedSlot(null);
+    setConfirming(false);
+    await loadBookings();
+    setTab("mine");
+  }
+
+  async function handleCancel(id) {
+    const res = await cancelBooking(id);
+    setCancelTarget(null);
+    if (!res.ok) { toast(res.reason || "取消失敗", "error"); return; }
+    toast("已取消 ✓");
+    loadBookings();
+  }
+
+  async function handleReschedule(newSlot) {
+    if (!rescheduleTarget) return;
+    const res = await rescheduleBooking(rescheduleTarget.id, newSlot.date, newSlot.startTime, newSlot.endTime);
+    if (!res.ok) { toast(res.reason || "改期失敗", "error"); return; }
+    toast("改期成功 ✓");
+    setRescheduleTarget(null);
+    loadBookings();
+  }
+
+  return (
+    <div className="p-4 flex flex-col gap-4">
+      <ToastContainer />
+      <h2 className="text-white font-black text-xl">📅 線上約課</h2>
+
+      <div className="flex gap-2">
+        <Btn v={tab === "new" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("new")}>新增預約</Btn>
+        <Btn v={tab === "mine" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("mine")}>
+          我的預約{bookings.length ? `（${bookings.length}）` : ""}
+        </Btn>
+      </div>
+
+      {tab === "new" && (
+        <Card className="p-4 flex flex-col gap-4">
+          <PlanDurationPicker planType={planType} durationHours={durationHours}
+            onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
+          <ParticipantCountPicker value={participantCount}
+            onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
+          <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setErr(""); setConfirming(true); }}
+            durationHours={durationHours} participantCount={participantCount} />
+          {err && <div className="text-red-400 text-sm">{err}</div>}
+        </Card>
+      )}
+
+      {confirming && (
+        <ConfirmBookingModal slot={selectedSlot} planType={planType} durationHours={durationHours}
+          participantCount={participantCount} busy={submitting}
+          onConfirm={handleSubmit}
+          onCancel={() => { setConfirming(false); setSelectedSlot(null); }} />
+      )}
+
+      {tab === "mine" && (
+        loadingList ? <Spinner /> :
+        bookings.length === 0 ? <Empty icon="📅" message="目前沒有預約" /> : (
+          <div className="flex flex-col gap-2">
+            {bookings.slice()
+              .sort((a, b) => `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`))
+              .map(b => {
+                const completed = b.status === "completed";
+                const started = bookingHasStarted(b, now);
+                return (
+                <Card key={b.id} className="p-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-white font-bold text-sm">{b.date}　{b.startTime}-{b.endTime}</div>
+                    <div className="text-slate-400 text-xs mt-0.5">
+                      {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
+                      ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人
+                      ・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
+                    </div>
+                    <div className={`text-xs mt-1 font-bold ${completed ? "text-emerald-400" : started ? "text-amber-400" : "text-blue-400"}`}>
+                      {completed ? "✓ 已完成課程" : started ? "上課時間已到" : "已預約"}
+                    </div>
+                  </div>
+                  {!completed && !started && <div className="flex gap-1.5 flex-shrink-0">
+                    <Btn v="secondary" size="sm" onClick={() => setRescheduleTarget(b)}>改期</Btn>
+                    <Btn v="danger" size="sm" onClick={() => setCancelTarget(b)}>取消</Btn>
+                  </div>}
+                </Card>
+                );
+              })}
+          </div>
+        )
+      )}
+
+      <ConfirmModal open={!!cancelTarget} title="確認取消預約"
+        message={cancelTarget ? `確定要取消 ${cancelTarget.date} ${cancelTarget.startTime} 的預約嗎？` : ""}
+        onConfirm={() => handleCancel(cancelTarget.id)} onCancel={() => setCancelTarget(null)} />
+
+      <Modal open={!!rescheduleTarget} onClose={() => setRescheduleTarget(null)} title="改期" wide>
+        {rescheduleTarget && (
+          <RescheduleForm booking={rescheduleTarget} onConfirm={handleReschedule} />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function RescheduleForm({ booking, onConfirm }) {
+  const [slot, setSlot] = useState(null);
+  // 改期不開放連時數/人數一起改（design.md §4 ＋ 07-10-booking-ui-polish-headcount），沿用原預約的值
+  const durationHours = booking.durationHours || 1;
+  const participantCount = booking.participantCount || 1;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-slate-400 text-xs">
+        原時段：{booking.date} {booking.startTime}-{booking.endTime}（{durationLabel(durationHours)}・{participantCount}人）
+      </div>
+      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} />
+      <Btn v="primary" disabled={!slot} onClick={() => onConfirm(slot)}>確認改期到此時段</Btn>
+    </div>
+  );
+}

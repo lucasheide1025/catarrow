@@ -9,7 +9,7 @@ import {
   subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
   submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
-  resetPartyRoom, sendPartyCheer, clearPartyProcessing, setPartyMemberRole,
+  resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
@@ -17,11 +17,13 @@ import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFr
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
-import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxSuccess, sfxSoftFail, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
+import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
+import { playBattleSound } from "../../lib/battleSound";
+import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import { calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { calcRoundDamage, calcPartyCounter } from "../../lib/damage";
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS } from "../../lib/score";
-import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs } from "../../lib/itemData";
+import { makeChests, CHEST_TYPES, getPotion, calcPotionBuffs, CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 import PartyBattleCard from "./PartyBattleCard";
 import { LOOT_TABLE_GUEST, drawLoot, rollCoins, rollMaterialDrop, rollCardDrop, makeCoinChest } from "../../lib/lootTable";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
@@ -32,6 +34,8 @@ import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, Ba
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import BattleBottomBar from "../member/BattleBottomBar";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
+import BattleScreen from "../battle/BattleScreen";
+import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
@@ -84,7 +88,8 @@ function HPBar({ current, max, color = "#22c55e" }) {
 }
 
 function PartyMonsterImg({ id, icon, charge, size, variant }) {
-  const [err, setErr] = useState(false);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = getBattleMonsterSources(id);
   const anim = charge ? "mb-charge 0.7s ease infinite" : undefined;
   const h = size || 148;
   const glowShadow = variant === "weak"
@@ -92,18 +97,17 @@ function PartyMonsterImg({ id, icon, charge, size, variant }) {
     : variant === "strong"
     ? "0 0 18px rgba(239,68,68,0.5), 0 0 36px rgba(239,68,68,0.25), 0 0 54px rgba(249,115,22,0.15)"
     : "none";
-  return err ? (
+  return sourceIndex >= sources.length ? (
     <span style={{ fontSize: size ? Math.round(size*0.6) : 40, display:"block", textAlign:"center", animation:anim }}>{icon}</span>
   ) : (
-    <img src={`/monsters/${id}.webp`} alt={icon} onError={() => setErr(true)}
+    <img src={sources[sourceIndex]} alt={icon} onError={() => setSourceIndex(index => index + 1)}
       style={{ maxWidth: size ? size : "82%", maxHeight: h, objectFit:"contain", animation:anim,
         boxShadow: glowShadow, borderRadius: 14, transition:"box-shadow 0.3s ease" }}/>
   );
 }
 
 function pickBg(family) {
-  const idx = Math.ceil(Math.random() * 6);
-  return family ? `/ui/battle-bg/bg_${family}_${idx}.webp` : `/ui/dungeon-bg.webp`;
+  return getBattleBackgroundUrl(family);
 }
 
 function getPartyPracticeData(log, memberId, targetFmt) {
@@ -216,8 +220,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [potionSubTab, setPotionSubTab] = useState("carry");
   const [scoringModeChosen, setScoringModeChosen] = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
-  const [roleBusy, setRoleBusy] = useState(false); // 等待室：初始角色選擇中
-  const [roleError, setRoleError] = useState("");
+
 
   const {
     liveEntry, liveMiniIdx: liveMiniRoundIdx,
@@ -484,9 +487,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 勝利音效：等動畫播完（liveEntry 清除）再播，讓玩家先看到擊殺動畫
   useEffect(() => {
     if (room?.status === "pending_confirm" && !liveEntry && logInited) {
-      sfxSuccess(); setTimeout(() => sfxEpic(), 350);
+      playBattleSound("victory_cheer", {}); setTimeout(() => sfxEpic(), 350);
     }
-    if (room?.result === "lose") sfxSoftFail();
+    if (room?.result === "lose") playBattleSound("soft_fail", { monsterName: room?.monster?.name, playerName: myId, round: room?.round });
   }, [room?.status, room?.result, liveEntry]); // eslint-disable-line
 
   // processing 卡住防護：processing: true 超過 15 秒自動清除（網路不順時可能殘留）
@@ -612,8 +615,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return a.id < b.id ? -1 : 1;
     });
   const me         = members[myId] || {};
-  const frontCount = memberList.filter(m => (m.role || "front") === "front").length;
-  const rearCount  = memberList.length - frontCount;
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
   const isGuestPlayer = isGuestMode || ["guest", "kid"].includes(me.accountType);
@@ -646,6 +647,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
+  async function handlePartyScoringSubmit(scores) {
+    if (myReady || submitting) return;
+    if (myRole === "rear" && !myRearChoice) return;
+    const labelMap = {10:"X",9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2",1:"1",0:"M"};
+    const newArrows = scores.map(s => ({
+      score: s,
+      label: labelMap[s] || String(s),
+    }));
+    setArrows(newArrows);
+    const ok = await fsHandleSubmit(newArrows, myRole, myRearChoice);
+    if (ok) setArrows([]);
+  }
+
   async function handleSubmit() {
     if (arrows.length < (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady || submitting) return;
     if (myRole === "rear" && !myRearChoice) return;
@@ -666,14 +680,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStarting(true);
     await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18);
     setStarting(false);
-  }
-  async function handleChooseRole(role) {
-    if (roleBusy || !myId) return;
-    setRoleBusy(true);
-    setRoleError("");
-    const res = await setPartyMemberRole(roomId, myId, role);
-    if (!res.ok) setRoleError(res.reason);
-    setRoleBusy(false);
   }
   async function handleLeave() {
     // 戰鬥進行中：防誤觸確認
@@ -815,9 +821,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="text-xs font-black text-slate-400 uppercase tracking-widest">隊員 {memberList.length}/8</div>
-            <div className="text-xs font-bold text-slate-400">
-              🛡️ 前衛 {frontCount}/4 ・ 🏳️ 後衛 {rearCount}/4
-            </div>
           </div>
           {memberList.map(m => {
             const isMe = m.id === myId;
@@ -848,32 +851,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                     {hasCat && <span className="text-indigo-300 bg-indigo-900/30 px-1.5 py-0.5 rounded">🐱 {catName} 光環 +10%</span>}
                   </div>
                 )}
-                {isMe && (
-                  <div className="flex gap-2 mt-1">
-                    <button type="button" onClick={() => handleChooseRole("front")}
-                      disabled={roleBusy || mRole === "front" || frontCount >= 4}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40 ${
-                        mRole === "front" ? "bg-rose-600 text-white border-rose-600" : "bg-slate-700 text-slate-300 border-slate-600"
-                      }`}>
-                      🛡️ 前衛
-                    </button>
-                    <button type="button" onClick={() => handleChooseRole("rear")}
-                      disabled={roleBusy || mRole === "rear" || rearCount >= 4}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all disabled:opacity-40 ${
-                        mRole === "rear" ? "bg-sky-600 text-white border-sky-600" : "bg-slate-700 text-slate-300 border-slate-600"
-                      }`}>
-                      🏳️ 後衛
-                    </button>
-                  </div>
-                )}
               </div>
             );
           })}
           {memberList.length < 8 && (
             <div className="text-slate-500 text-xs text-center py-1">等待夥伴加入…</div>
-          )}
-          {roleError && (
-            <div className="text-rose-300 text-xs font-bold text-center" aria-live="polite">{roleError}</div>
           )}
         </div>
 
@@ -1904,120 +1886,67 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             🎯 開始計分
           </button>
         )}
+        {/* ⬇ BattleScreen 計分模式 ⬇ */}
         {me.alive && !myReady && !liveEntry && scoringReady && (
-          <>
-            {/* HP 危機警告 */}
-            {me.hp > 0 && me.maxHP > 0 && me.hp/me.maxHP < 0.25 && (
-              <div style={{ textAlign:"center", color:"#ef4444", fontWeight:900, fontSize:11, padding:"2px 0 3px" }}>
-                ⚠️ HP 危急！請謹慎作戰
-              </div>
-            )}
-            {/* 後衛策略選擇（只在伺服器將玩家設為後衛後出現，前衛不顯示此選項） */}
-            {myRole === "rear" && (
-              <div style={{ background:"rgba(0,0,0,0.5)", border:"2px solid rgba(20,184,166,0.5)", borderRadius:10, padding:"8px 10px", marginBottom:6 }}>
-                <div style={{ color:"#e2e8f0", fontSize:10, fontWeight:700, textAlign:"center", marginBottom:6 }}>🛡️ 後衛 — 選擇行動</div>
-                <div style={{ display:"flex", gap:6 }}>
-                  <button onClick={() => setMyRearChoice("heal")}
-                    style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="heal"?"#34d399":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
-                      background: myRearChoice==="heal" ? "rgba(16,185,129,0.25)" : "rgba(255,255,255,0.04)",
-                      color: myRearChoice==="heal" ? "#6ee7b7" : "#64748b" }}>
-                    💊 治癒隊友
-                  </button>
-                  <button onClick={() => setMyRearChoice("dmg")}
-                    style={{ flex:1, padding:"5px 0", borderRadius:8, fontWeight:900, fontSize:11, border:`1px solid ${myRearChoice==="dmg"?"#f59e0b":"rgba(255,255,255,0.1)"}`, cursor:"pointer",
-                      background: myRearChoice==="dmg" ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)",
-                      color: myRearChoice==="dmg" ? "#fcd34d" : "#64748b" }}>
-                    ⚡ 協助攻擊
-                  </button>
-                </div>
-              </div>
-            )}
-            <BattleArrowSlots
-                arrows={arrows}
-                totalArrows={room?.arrowsPerRound || ARROWS_PER_ROUND}
-                onUndo={removeLastArrow}
-                showUndo={arrows.length>0}
-                extraContent={
-                  !scoringModeChosen ? (
-                    <button onClick={() => setTargetMode(m => !m)} style={{
-                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-                    }}>🎯</button>
-                  ) : null
-                }
-              />
-            {targetPending && (
-              <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>
-            )}
-            <BattleBottomBar
-              bottomTab={bottomTab} setBottomTab={setBottomTab}
-              potionSubTab={potionSubTab} setPotionSubTab={setPotionSubTab}
-              potionUsedThisRound={potionUsedThisRound}
-              scoringModeChosen={scoringModeChosen} setScoringModeChosen={setScoringModeChosen}
-              targetMode={targetMode} setTargetMode={setTargetMode}
-              arrows={arrows} onArrow={addArrow}
-              targetFmt={targetFmt}
-              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
-              battleMode="party"
-              potionInv={potionInv}
-              onCarryPotion={async lv => {
-                if (potionUsedThisRound) return;
-                setPotionUsedThisRound(true);
-                const applied = await applyPartyCarryPotion(roomId, myId, lv.id);
-                if (!applied.ok) { setPotionUsedThisRound(false); return; }
-                await usePotions(myId, [lv.id]);
-                await recordPotionUsed(myId, lv.id).catch(() => {});
-                sfxPotionDrink();
-                setPotionInv(prev => ({ ...prev, [lv.id]: (prev[lv.id]||0) - 1 }));
-                setBottomTab("score");
+          <div style={{padding:"6px 8px 10px"}}>
+            <BattleScreen
+              scoringMode
+              player={{
+                name: profile?.name || me?.name || "Player",
+                lv: me?.level || 1,
+                atk: me?.atk || 10,
+                def: me?.def || 10,
+                hp: me?.hp || 100,
+                maxHp: me?.maxHP || 100,
               }}
-              onThrowPotion={async p => {
-                if (potionUsedThisRound || (p.actionCost === "arrow" && arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND))) return;
-                setPotionUsedThisRound(true);
-                if (p.actionCost === "utility") {
-                  const applied = await applyPartyUtilityPotion(roomId, myId, p.id);
-                  if (!applied.ok) { setPotionUsedThisRound(false); return; }
+              monster={{
+                id: room.monster?.id,
+                name: room.monster?.name,
+                family: room.monster?.family,
+                hp: displayHP,
+                atk: room.monster?.atk,
+                def: room.monster?.def,
+                tier: room.monster?.tier,
+              }}
+              battleMode={targetMode ? "zombie" : "score"}
+              scoreInput={targetMode ? "target" : "keypad"}
+              difficulty={{hp:1, atk:1, def:1}}
+              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
+              bgImage={battleBgRef.current || "/ui/dungeon-bg.webp"}
+              onSubmit={handlePartyScoringSubmit}
+              onPotionUsed={(pid) => {
+                const p = [...CARRY_POTIONS, ...THROW_POTIONS].find(x=>x.id===pid);
+                if (!p || !myId || isGuestMode) return;
+                if (p.kind === "carry") {
+                  applyPartyCarryPotion(roomId, myId, p).catch(()=>{});
                 } else {
-                  addArrow(p.id);
+                  applyPartyUtilityPotion(roomId, myId, p).catch(()=>{});
                 }
-                await usePotions(myId, [p.id]);
-                await recordPotionUsed(myId, p.id).catch(() => {});
-                sfxPotionDrink();
-                setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
-                setBottomTab("score");
+                usePotions(myId, [pid]).catch(()=>{});
+                recordPotionUsed(myId, [pid]).catch(()=>{});
               }}
+              potions={[...CARRY_POTIONS, ...THROW_POTIONS].filter(Boolean)}
             />
-            <TargetFaceOverlay
-              open={targetMode && !targetPending && !myReady}
-              fmtId={targetFmt}
-              arrowLabels={arrows.map(a => a.label)}
-              arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
-              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
-              onArrow={addArrow}
-              onUndo={removeLastArrow}
-              onSubmit={handleTargetSubmit}
-            />
-            {/* 送出 */}
-            {(() => {
-              const rearNotReady = myRole === "rear" && !myRearChoice;
-              const disabled = arrows.length<(room?.arrowsPerRound || ARROWS_PER_ROUND) || submitting || targetPending || rearNotReady;
-              return (
-                <button onClick={handleSubmit} disabled={disabled}
-                  style={{ width:"100%", padding:"9px 0", borderRadius:12, fontWeight:900, fontSize:13, cursor:"pointer",
-                    background: !disabled ? "linear-gradient(90deg,#7c3aed,#2563eb)" : "rgba(255,255,255,0.07)",
-                    color:"white", border:"none", opacity:disabled?0.55:1 }}>
-                  {(submitting||targetPending)?"計算中…"
-                    : rearNotReady?"🛡 請先選擇後衛策略"
-                    : `✅ 送出 (${myArrowTotal}分)`}
+            {myRole === "rear" && !myRearChoice && (
+              <div style={{display:"flex",gap:6,marginTop:6}}>
+                <button onClick={()=>setMyRearChoice("heal")}
+                  style={{flex:1,padding:"5px 0",borderRadius:8,fontWeight:900,fontSize:11,
+                    border:"1px solid rgba(52,211,153,0.5)",cursor:"pointer",
+                    background: myRearChoice==="heal"?"rgba(16,185,129,0.25)" : "rgba(255,255,255,0.05)",
+                    color:"#34d399"}}>
+                  💚 治癒隊友
                 </button>
-              );
-            })()}
-          </>
-        )}
-
-        {me.alive && myReady && (
+                <button onClick={()=>setMyRearChoice("dmg")}
+                  style={{flex:1,padding:"5px 0",borderRadius:8,fontWeight:900,fontSize:11,
+                    border:"1px solid rgba(251,146,60,0.5)",cursor:"pointer",
+                    background: myRearChoice==="dmg"?"rgba(251,146,60,0.25)" : "rgba(255,255,255,0.05)",
+                    color:"#fb923c"}}>
+                  ⚔️ 協助攻擊
+                </button>
+              </div>
+            )}
+          </div>
+        )}{me.alive && myReady && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, padding:"4px 0" }}>
             <div style={{ color:"#4ade80", fontWeight:900, fontSize:12 }}>
               ✅ 已送出，等待其他隊員…

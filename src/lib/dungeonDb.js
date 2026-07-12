@@ -94,11 +94,9 @@ export async function joinDungeonRoom(code, memberId, memberName, extraData = {}
     const members = roomDoc.data().members || {};
     if (Object.keys(members).length >= 8)
       return { ok:false, reason:"地下城最多 8 人" };
-    // 前衛固定 4 人：若已有 4 個前衛則預設為後衛
-    const frontCount = Object.values(members).filter(m => (m.role || "front") !== "rear").length;
-    const defaultRole = frontCount >= 4 ? "rear" : "front";
+    // 新模型：開場全員前衛，無上限。第一次陣亡自動復活 50% HP 轉後衛
     await updateDoc(doc(db, D, roomDoc.id), {
-      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName, extraData), role: defaultRole, displayGroup: defaultRole },
+      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName, extraData), role: "front", displayGroup: "front" },
     });
     return { ok:true, roomId:roomDoc.id };
   } catch (e) { return { ok:false, reason:e.message }; }
@@ -276,7 +274,8 @@ export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice =
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-// ── 選擇前後衛角色（等待室使用）──────────────────────────────
+// ── 選擇前後衛角色（等待室使用）— 已廢除（新模型開場全員前衛）
+// 保留函式避免匯入端報錯，但不再被 UI 呼叫
 export async function setDungeonMemberRole(roomId, memberId, role) {
   try {
     await updateDoc(doc(db, D, roomId), {
@@ -563,12 +562,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           // 前衛第一次死亡 → role 改後衛，HP 復活 50%
           hp = Math.round((m.maxHP || 100) * 0.5);
           memberUpd[`members.${id}.role`] = "rear";
-          // displayGroup：後衛位置有空才真正移動，否則維持在前排（只改狀態標籤）
-          const curRearDisplayCount = Object.values(members)
-            .filter(m2 => (m2.displayGroup || m2.role || "front") === "rear").length;
-          if (curRearDisplayCount < 4) {
-            memberUpd[`members.${id}.displayGroup`] = "rear";
-          }
+          // displayGroup：一律改為後排顯示（新模型無後衛上限）
+          memberUpd[`members.${id}.displayGroup`] = "rear";
           liveAfter++;
         } else {
           // 後衛死亡 → 真的陣亡

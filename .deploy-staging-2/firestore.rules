@@ -1,0 +1,439 @@
+// firestore.rules
+// 部署指令：firebase deploy --only firestore:rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 輔助函式
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    // admins 集合：本人可讀自己的（登入時判斷身份用），禁止寫入
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // members：admin 全權操作，會員可讀自己；list（集合查詢）任意登入者可用（排行榜需要）
+    // 2026-07-09 新增訪客/兒童帳號（accountType in ["guest","kid"]）：匿名登入即可讀寫自己建立的記錄，
+    // 且「不要求 uid 對應本人」——因為訪客每次匿名重新登入 uid 都會變，要能跨次造訪接續回同一筆記錄。
+    // 這是使用者已確認接受的安全取捨（訪客/兒童帳號沒有真實金流/隱私資料，安全等級刻意低於正式學籍）。
+    match /members/{memberId} {
+      allow get:    if isAdmin()
+        || resource.data.uid   == request.auth.uid
+        || resource.data.email == request.auth.token.email
+        || (isLoggedIn() && resource.data.accountType in ["guest", "kid"]);
+      allow list:   if isLoggedIn();
+      allow create: if isAdmin() || (
+        isLoggedIn() &&
+        request.resource.data.accountType in ["guest", "kid"] &&
+        request.resource.data.uid == request.auth.uid
+      );
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
+                    "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
+                    "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
+                    "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
+                    "bookingStats",
+                    "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
+                    "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
+                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
+                    "activeExpedition", "expeditions"])
+      ) || (
+        isLoggedIn() && resource.data.accountType in ["guest", "kid"]
+      );
+    }
+
+    // campSessions：夏令營場次管理，登入者可讀，admin 可寫
+    match /campSessions/{sessionId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // competitions：admin 全權，會員可讀；會員可 update（用於報名加入 participants）
+    match /competitions/{compId} {
+      allow read:   if isLoggedIn();
+      allow write:  if isAdmin();
+      allow update: if isLoggedIn();
+    }
+
+    // results：admin 全權，登入者可讀寫
+    // 注意：memberId 存的是 Firestore doc ID，不是 auth.uid，無法在規則層做精確比對
+    match /results/{resultId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin() || isLoggedIn();
+      allow delete: if isAdmin();
+    }
+
+    // registrations：admin 全權，登入者可讀寫自己的
+    match /registrations/{regId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // messages：admin 全權，登入者可讀寫
+    match /messages/{msgId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin() ||
+        (isLoggedIn() &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberRead"]));
+      allow delete: if isAdmin();
+    }
+
+    // learnLogs：admin 全權，登入者可讀寫
+    match /learnLogs/{logId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // practiceLogs：同上
+    match /practiceLogs/{logId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // badgeLogs：admin 全權，登入者可讀；會員可更新領取狀態
+    match /badgeLogs/{logId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+      allow update: if isLoggedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["status", "claimedAt", "claimedBy", "disputeReason", "disputedAt", "disputedBy"]);
+    }
+
+    // certRecords：admin 全權，登入者可讀
+    match /certRecords/{recordId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // achievements：admin 全權，登入者可讀
+    match /achievements/{achId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // achievementApplications：登入者可讀自己的、可申請；admin 全權
+    match /achievementApplications/{docId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // externalComps：admin 全權，登入者可讀寫
+    match /externalComps/{compId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // auditLogs：只有 admin 可讀，系統自動寫入
+    match /auditLogs/{logId} {
+      allow read:  if isAdmin();
+      allow write: if isLoggedIn();
+    }
+
+    // monthlyCardRequests：admin 全權；登入者可讀寫
+    match /monthlyCardRequests/{reqId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // monthlyCardLogs：admin 全權讀寫
+    match /monthlyCardLogs/{logId} {
+      allow read:  if isAdmin();
+      allow write: if isLoggedIn();
+    }
+
+    // monthlyCardConfig：admin 全權；登入者可讀
+    match /monthlyCardConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // checkins：admin 全權；登入者可讀寫
+    match /checkins/{checkinId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isAdmin() || isLoggedIn();
+      allow delete: if isAdmin();
+    }
+
+    // dailyQuestConfig：admin 全權；登入者可讀
+    match /dailyQuestConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // monsterConfig / monsterEventConfig：admin 全權；登入者可讀
+    match /monsterConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // monsterSessions：登入者可讀寫
+    match /monsterSessions/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // monsterLogs / monsterDex / craftStats：登入者可讀寫
+    match /monsterLogs/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /monsterDex/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /craftStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // duelRooms / duelStats：登入者可讀寫
+    match /duelRooms/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /duelStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // partyRooms / partyConfig：登入者可讀寫
+    match /partyRooms/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /partyConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // billingRecords：僅教練可讀寫（財務資料）
+    match /billingRecords/{recId} {
+      allow read, write: if isAdmin();
+    }
+
+    // notifications：登入者可讀寫，刪除限 admin
+    match /notifications/{notifId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update: if isLoggedIn();
+      allow delete: if isAdmin();
+    }
+
+    // certifications：射手證任務進度，登入者可讀寫
+    match /certifications/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // certConfig：射手證設定，admin 寫，登入者讀
+    match /certConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // dexGrants：圖鑑授予（admin 操作），登入者可讀
+    match /dexGrants/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // dexConfig：圖鑑屆數設定，admin 寫，登入者讀
+    match /dexConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guestSessions：訪客戰鬥，免登入可讀寫（3小時過期）
+    match /guestSessions/{docId} {
+      allow read, write: if true;
+    }
+
+    // guestNotifications：訪客留信箱，免登入可寫，禁讀
+    match /guestNotifications/{docId} {
+      allow write: if true;
+      allow read:  if false;
+    }
+
+    // storyChapterConfig：故事本章節設定，admin 寫，登入者讀
+    match /storyChapterConfig/{key} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // 遊戲背包（素材/寶箱/藥水/碎片）：登入者可讀寫
+    match /materialInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /chestInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /potionInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /fragmentInventory/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /chestStats/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /potionDex/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // cardCollections：卡牌收集，登入者可讀寫
+    match /cardCollections/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // sysConfig：系統設定（版本號等），登入者可讀，admin 可寫
+    match /sysConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+    match /equipItems/{id} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // dungeonRooms：地下城多人房間，登入者可讀寫
+    match /dungeonRooms/{roomId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // worldBossEvents：世界大 Boss 活動，登入者可讀寫
+    match /worldBossEvents/{eventId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // worldBossHistory：歷史紀錄，登入者可讀，管理員可寫
+    match /worldBossHistory/{docId} {
+      allow read: if isLoggedIn();
+      allow write: if isLoggedIn();
+    }
+
+    // dungeonFirstClear：首殺記錄（登入者可讀寫，由 trySetDungeonFirstClear 原子寫入）
+    match /dungeonFirstClear/{dungeonId} {
+      allow read:  if isLoggedIn();
+      allow write: if isLoggedIn();
+    }
+
+    // dungeonBroadcasts：地下城首殺廣播（登入者可讀寫，用於全域通知）
+    match /dungeonBroadcasts/{broadcastId} {
+      allow read:  if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // 貓咪陪練：subcollection 在 members/{id}/cats/{catId}
+    // 只有本人或教練可讀寫（透過 members doc 確認 uid）
+    match /members/{memberId}/cats/{catId} {
+      allow read, write: if isAdmin()
+        || (isLoggedIn() && get(/databases/$(database)/documents/members/$(memberId)).data.uid == request.auth.uid);
+    }
+    // guildQuests：任務公告，登入者可讀；admin 可寫
+    match /guildQuests/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guildQuestSubs：徽章任務提交審核
+    match /guildQuestSubs/{docId} {
+      allow read:          if isAdmin();
+      allow create:        if isLoggedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // guildProgress：每位會員的公會任務進度（今日完成 + 已提交懸賞）
+    match /guildProgress/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // coachChallenges：教練挑戰賽申請
+    match /coachChallenges/{docId} {
+      allow create:        if isLoggedIn();
+      allow read, update:  if isAdmin();
+    }
+
+    // councilSessions：議會廳每日採集次數紀錄，登入者可讀寫；admin 可刪（重置）
+    match /councilSessions/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // villageGoals：村莊共同目標，登入者可讀/貢獻；admin 可建立/刪除
+    match /villageGoals/{docId} {
+      allow read:   if isLoggedIn();
+      allow create: if isAdmin() || isLoggedIn();
+      allow update: if isLoggedIn();
+      allow delete: if isAdmin();
+    }
+
+    // cardMarket：貓咪卡片市集，登入者可讀寫
+    match /cardMarket/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
+    // systemConfig：學生分級系統維護鎖／權限矩陣設定，登入者可讀，admin 可寫
+    match /systemConfig/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guildBountyTemplates：一般懸賞任務範本池，admin 管理，登入者可讀
+    match /guildBountyTemplates/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // guildBountyRewards：一般懸賞難度獎勵表，admin 管理，登入者可讀
+    match /guildBountyRewards/{docId} {
+      allow read:  if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── 線上約課預約系統（07-10-booking-system-student-pilot，學生試用版）──────
+    // bookings：memberId 存的是 members collection docId（不是 auth uid，比照專案既有慣例），
+    // 用 get() 反查 members/{memberId}.uid 是否等於目前登入者，跟下面 members/{id}/cats 子集合
+    // 用的是同一套查法。⚠️ 已知限制：訪客/兒童帳號（accountType in ["guest","kid"]）每次匿名重新
+    // 登入 uid 都會變，這條規則只保證「同一次瀏覽器 session 內」建立→查看→取消/改期自己的預約，
+    // 跨 session 回訪查詢自己歷史預約不保證讀得到——跟 members 集合本身既有的訪客身份限制是同一種
+    // 已知取捨，不是本次新引入的漏洞。
+    match /bookings/{bookingId} {
+      allow read: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid
+      );
+      allow create: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid
+      );
+      // 學生只能改自己預約的 status（取消用；改期是「新建一筆 + 把舊那筆標記 cancelled」，
+      // 不是直接改日期時段），不能亂改別人的或改金額/時段以外的欄位。
+      allow update: if isAdmin() || (
+        isLoggedIn() &&
+        get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt", "checkinId"])
+      );
+      allow delete: if false; // 一律用 status 標記，不真的刪除文件
+    }
+
+    // bookingSlotCounts：容量計數器，slotKey = "YYYY-MM-DD_HH:mm"，不含個資，
+    // 讀寫都只要求登入即可（跟訪客模式類似的寬鬆取捨），實際容量正確性由 bookingDb.js 的
+    // runTransaction 保護，不是靠規則層擋。
+    match /bookingSlotCounts/{slotKey} {
+      allow read, write: if isLoggedIn();
+    }
+  }
+}

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"Verify all canonical monster and world-boss keys resolve dedicated opaque card artwork."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify asset dimensions, decoding, fallback behavior, tests, and production build."}

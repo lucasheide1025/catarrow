@@ -1,0 +1,1157 @@
+# ⚡ quick-ref — Claude 工作速查表
+> 讀這份，3 秒掌握上下文，不再重複掃源碼。
+> 最後更新：2026-07-11
+
+🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
+
+---
+
+## 🔑 最重要規則（踩過的坑）
+
+| 規則 | 原因 |
+|------|------|
+| 官網要手動 `vercel deploy`，push 不會上線 | `catarrow-archery` 專案沒接 GitHub 自動部署；改 `website/` 後要複製到暫存夾跑 `npx vercel deploy --prod`（CLI 已登入 broudes-1864）。主 App `catarrow` 才是 push 自動部署，兩者不同專案別搞混 |
+| 訪客/兒童新方向：多人玩法要開 | 規格見 `guest-kid-ui-redesign-spec.md`；組隊、T1-T2 探索地下城、低階活動世界王都要支援團康，不要沿用「訪客只能單人」舊假設 |
+| 訪客/兒童差異在規則，不在質感 | UI 要共用正式打怪/組隊/地下城/世界王；難度鎖 T1-T2，獎勵低風險 |
+| 訪客/兒童主視覺已改成活動式深色介面 | `GuestApp.jsx` scoped CSS 重做登入頁、頂部狀態列、首頁 hero、活動入口 grid、底部導覽與角色頁；正式戰鬥元件入口不重刻 |
+| 不要用 `startsWith("guest")` 判斷新訪客 | 新 guest/kid 是 Firestore 隨機 doc id；要用 `accountType`、`guestProfile` 或明確 mode flag |
+| 訪客/兒童 session 已依模式隔離 | `GuestApp` session key 包含 `accountType` + `sessionSourceId`；組隊 session 也綁 `memberId`，同裝置切 QR 不會接錯上一位玩家 |
+| 兒童場次有原始與最近歸屬 | `sessionSourceId` 保留首次場次；`lastSessionSourceId` 會在回訪掃不同場次 QR 時更新；後台篩選兩者都看 |
+| 訪客/兒童轉正式是原文件改寫 | `convertGuestToOfficial()` 只允許 `guest/kid` 轉 `official`，docId 保留、uid 換成正式 Auth uid；不要建立第二份 members 文件 |
+| 正式資料層用 `accountType` 排除體驗帳號 | `db.js::isGuestOrKidMember()` 保護箭數、怪物圖鑑、藥水圖鑑、卡包、怪物卡、王卡、里程碑；`addCoins()` 例外，guest/kid 需要低階持久金幣 |
+| 訪客單人打怪已改用 `guestProfile` | `GuestApp` 等 `guestFullProfile` 後傳給 `MonsterBattle`；`useCatCompanion(profileOverride)` 可避免教練裝置共用時讀到教練貓咪 |
+| 訪客組隊已改用 `accountType` | `partyRooms.members.{id}.accountType` 會寫入；`PartyBattleRoom` 不再用 `startsWith("guest")`，guest/kid 只拿低階持久金幣/材料，不拿正式寶箱與 XP |
+| 訪客地下城組隊已開放但低價化 | `dungeonRooms.members.{id}.accountType` 會寫入；guest/kid 可建/加入 T1-T2 組隊探索，但結算不給正式寶箱、箭露、射手 XP、首殺廣播 |
+| 地下城訪客判斷不要看 id 前綴 | `DungeonBattleRoom` 已改用 `isGuestMode`；`dungeonDb` 舊式房間成員也可寫 `accountType`，金幣事件/舊獎勵會跳過 guest/kid |
+| 訪客世界王已開放但只給體驗回饋 | `WorldBossLobby`/`WorldBossAttack` 使用 `guestOverride`/`accountType`；guest/kid 可參戰與上活動傷害排行，但正式擊殺箱、王卡、排名獎、箭露、射手 XP 都不給，只給少量體驗金幣與貓貓 XP |
+| 世界王參戰資料有活動來源 | `participants.{id}` 會寫 `accountType` 與 `sessionSourceId`；訪客/兒童大廳已用此欄位顯示「本場活動榜」，舊資料沒有場次 id 時只留在全體排行 |
+| 世界王本機暫存要綁玩家 | `WorldBossAttack` 的中途戰鬥、訪客備用金幣、藥水暫存 key 已包含 `memberId`，避免同平板換孩子時接到上一人的戰鬥 |
+| 世界王大廳/準備頁不可雙捲動 | `WorldBossLobby` 與 `WorldBossAttack` 的 prep 階段要用自然高度交給外層頁面捲動；不要在大廳/準備頁用 `h-[100dvh] overflow-y-auto`。只有真正 `phase==="battle"` 的世界王戰鬥畫面可固定全螢幕 |
+| 後台場次卡可看世界王活動成果 | `AdminKidMode` 訂閱最新世界王，把 participants 依 `sessionSourceId` 彙整到夏令營場次卡：人數、總傷害、最高傷害者 |
+| 訪客角色頁是正式系統摘要 | `GuestProfileHub` 顯示金幣、裝備完成度、材料、轉蛋幣、貓咪數；裝備頁用 `guestProfile`，商店金幣讀寫 `members/{id}.coins` |
+| 訪客/兒童初始資金是 500 | `resolveGuestSession()` 新帳號直接給 500；舊帳號若沒有 `starterCoinsGranted`，下次登入一次性補 500，避免測試帳號 0 金幣不能買體驗商店 |
+| 體驗商店已深色化且賣新手裝備包 | `GuestShop` 不再白底；「新手裝備包」花 240 金幣補齊 10 格 common `rpgEquip` 並解鎖 itemId |
+| 訪客/兒童有體驗戰績摘要 | `recordGuestBattleStats()` 累積 `guestBattleStats`：戰鬥、勝場、箭數、總分、傷害、最近表現；紀念卡會顯示箭數/勝場/平均分/最近傷害 |
+| 訪客/兒童紀念卡已顯示成果摘要 | `GuestShareCard` 接 `profile`/`wbResult`，卡面顯示金幣、裝備、材料、貓咪與最近世界王傷害 |
+| 訪客/兒童低階轉蛋已開 | 角色頁 `GuestGachaPanel` 消耗 1 `gachaCoins` 給 8~24 金幣；商店可用 60 金幣買 1 枚體驗轉蛋幣，不接正式貓村轉蛋池 |
+| 訪客正式戰鬥頁必須全螢幕 | 進入「打怪分頁」不等於進入戰鬥；`MonsterBattle` 透過 `onImmersiveChange` 只在 `battle_intro/battle/monster_die/loot/result` 階段要求 `GuestApp.jsx` 隱藏 topbar/bottom nav，選怪、選難度、戰前確認時仍保留訪客底部功能列 |
+| 貓村採集箭數只算個人 18 箭 | `completeCouncilSession(contractVersion>=2)` 用 `Math.min(18,totalArrows)`；協力採集不能乘 `partySize`，否則會灌爆箭數里程碑 |
+| 協力採集最多 8 人但獎勵倍率封頂 4 人 | UI 房間上限是 8；`getGatheringPartyBonus()` 為了經濟平衡只給到 4 人檔，不要同步放大倍率 |
+| 採集不給金幣/寶箱/射手 XP | 採集定位是貓貓 XP、羈絆、少量怪物材料與少量村資源；主線掉寶仍留給單人打怪與地下城 |
+| 採集模式已有演出層 | `GatheringRun.jsx` 使用 `public/council/bg|cat|obs` 舊素材，依採集點與 T 階切換背景、貓、障礙物；射擊/復原/送出/結算接 Web Audio 音效與震動，但進度、掉寶、箭數公式不變 |
+| `profile.id` ≠ `profile.uid` | `id`=Firestore docId，`uid`=Auth UID；混用會找不到文件 |
+| 卡片加成顯示必須用 `useState` | `useRef` 不觸發重新渲染，MonsterBattle 選擇畫面曾因此不顯示加成 |
+| 下課後不觸發里程碑 | `MemberPractice` 有 `classEndedRef`，下課後跳過里程碑計算 |
+| `upgradeEquipSlot` 傳 clientData | 接受 `{equip, coins, matItems}`，不需 getDoc（效能優化） |
+| `submitMonthlyCardRequest` 傳 clientCard | 接受 `clientCard, hasPending`，不需 getDocs |
+| 音效全用 Web Audio 合成 | 不用音檔，用 `sfxTap/sfxSuccess/sfxCast/sfxBuff...` |
+| 怪物/徽章全用 SVG | `MonsterSVG` / `BadgeSVG` 元件，不用圖片 |
+| 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
+| Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
+| **`totalArrowsAllTime` 要在 hasOnly 列表** | `addRoundArrows` 用 `increment("totalArrowsAllTime")` 但規則沒放行 → Firestore 靜默擋掉，終身箭數永遠不增加；**所有會員自己更新的新欄位都要加進 hasOnly** |
+| 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
+| `trySetDungeonFirstClear` 已改 transaction（2026-07-09） | 組隊多人同時領獎會併發呼叫，非 atomic 的「先查後寫」會產生重複首殺廣播；判斷依據是 `dungeonFirstClear/{dungeonId}` 是否存在，不要查 `dungeonBroadcasts` |
+| 首殺/世界王擊殺已同步寫入 `notifications`（2026-07-09） | `addDungeonBroadcast`/`attackWorldBoss` defeated 分支都會呼叫 `createNotification`；`MemberNotifications.jsx` FILTERS 有「地下城」「世界王」頁籤。`attackWorldBoss` 本身仍非 transaction，未來若要修世界王結算 race condition 要留意 |
+| client-triggered「幫別人寫入」模式一律會靜默失敗（2026-07-09 村目標修正時再次確認） | `members` collection 規則只准會員改自己的文件；任何「一人瀏覽器迴圈幫全部參與者發獎勵」的寫法都要改成自行請領（`claimVillageGoalReward` 是範本），不要再新增這種模式 |
+| 遠征 `onExit({preserve:true})` 語意（2026-07-09 修正） | `DungeonBattleRoom.jsx` 戰鬥畫面的「離開」已在 expeditionMode 隱藏；`TeamExpeditionBattle.jsx`/`DungeonExpedition.jsx` 的 `onExit`/`onAbandon` 鏈路現在才是唯一離開途徑（地圖層「撤退」二次確認），改動這塊要小心別又把 preserve 訊號接回全隊解散邏輯 |
+| `members.activeExpedition`（2026-07-09 新增） | 單人遠征進度持久化，`expeditionDb.js::setActiveExpeditionProgress`/`clearActiveExpeditionProgress`/`settleAbandonedExpedition`；`DungeonLobby.jsx` 偵測並提供「結算並領取」banner，**不做**地圖位置復原 |
+| 寶箱族（第7族）已上線（2026-07-09） | 18隻怪物：`treasure_1~6`=假(有ATK)，`treasure_1_real~6_real`=真(ATK≈1)，`treasure_king_small/big_1~6`=王(`isKing:true`，各自T1-T6)。隱藏地下城=100%寶箱族（`dungeonExcavation.js::revealExcavation`），`calculateExpeditionRewards` 依 `family==="treasure"` 給×3金幣/箭露。`drawFloorMonsters` 三層樓都要看 `options.family`，不是只有王。DEF 已調降跟一般族系同量級 |
+| 藥水庫存要直接 `subscribePotions(myId,cb)`（2026-07-09 修正） | 玩家藥水存在獨立 `potionInventory/{memberId}` collection，不在 `members`/房間文件裡；`DungeonBattleRoom.jsx` 原本錯誤讀 `room.members.{id}.items`（死欄位，從沒被寫入過），已修正 |
+| 前後衛不再直接輸出傷害（2026-07-09，`dungeonDb.js`+`partyDb.js` 都已同步） | 後衛 dmg 選項幫存活前衛加攻擊力（命中分數%×25%均攤，可疊加），heal 改成 `maxHP×15%×命中分數%`均攤。兩套系統各自獨立實作，改任何一邊記得檢查另一邊要不要跟著改 |
+| `members` collection 白名單缺欄位會導致必現的 permission 錯誤（2026-07-09） | `expeditions` 欄位（貓咪遠征隊）曾經漏加進 `firestore.rules` hasOnly 清單，已補上。新增任何寫入 `members` 的欄位時記得同步檢查白名單 |
+| 市集交換卡片改自行請領（2026-07-09） | `buyCardListing` 不再直接寫賣家文件，改成 `cardMarket` listing 標記 `sellerClaimed:false`，賣家的 `CardMarketPanel`（`CatVillage.jsx`）偵測到自己有已售出未請領的掛賣會自動呼叫 `claimCardSaleProceeds` |
+| 世界王擊殺獎勵改自行請領+均等（2026-07-09，phase1） | `distributeWorldBossRewards` 只算 `top3Ids` 定案，`claimWorldBossKillReward(memberId,eventId)` 各自請領，共同獎勵統一用原 `rank1` 檔次，前三名/尾刀額外拿紀念品。`WorldBossLobby.jsx` 的 `KillScreen` 補了「你的獎勵」顯示。`expireWorldBossEvent`/`handleGiveCardPacks` 還是舊的跨帳號寫入模式，但只有 admin 後台會呼叫，目前沒壞，之後若改成 client-triggered 要一起修 |
+| 世界王 Phase2：18隻王 + 專屬寶箱/卡片 + 卡片裝備改版（2026-07-09） | 詳見下方「世界王 Phase 2」章節，含**地下城完全沒串接卡片系統**的重要缺口 |
+| `equipped` 欄位格式已改（2026-07-09） | 從字串陣列（monsterId）改成 `{key,source}` 物件陣列；用 `resolveEquippedCards()`（monsterCards.js）統一解析，不要再手刻 `.map(id=>cards[id])`，5 處舊寫法已修（見 changelog） |
+| 卡片收藏已改真實卡面 | `CardCollection.jsx` 的一般怪物卡與世界王卡都使用實體卡樣式；一般卡讀 `public/monsters/{monsterId}.webp` 並帶入怪物 HP/ATK/DEF/desc，王卡讀 `worldBossCards.js` 補完的 artPath/serial/rarity/被動效果。`db.js` 訂閱與裝備時會 normalize 舊 `wbCards`，避免舊王卡缺 stat 或卡面資料而無法裝備 |
+| MonsterBattle roundScores 非最終回合 | `setRoundScores` 只在 BATTLE_WIN/LOSE 事件（最終回合）呼叫；非最終回合要在 `!battleEnded` 路徑手動 push，否則 `endBattle` 看到 `roundScores=[]` |
+| `calcPotionBuffs` 輸出兩種格式 | 同時有 `hpPct/atkPct`（%數字）和 `hpMult/atkMult`（倍率）；MonsterBattle 讀 Mult；修改時兩者都要維護 |
+| 孤立字元 = 運行期 ReferenceError | 源碼多一個字母（如 `n`）在函式外，minified 後報 `n is not defined`；症狀難以追蹤 |
+| 大型二進位不進 git | `codebase-ui-extracted/`（含 .exe）超過 GitHub 100MB；務必先加 `.gitignore` 再 `git add` |
+| Tailwind 是 CDN 版 | 偽類（focus/placeholder）樣式寫 index.css 純 CSS 類（`.ui-card`/`.ui-input`），不能靠任意 Tailwind class |
+| HubTile `accent` 只吃 hex | 內部 `${accent}26` 疊透明層，傳 `var(--xxx)` 產生非法 CSS |
+| 主題已收斂單一 navy | `theme.js` 只剩 1 組；要加主題就往 `APP_THEMES` 加元素，MemberProfile 選擇器自動出現（`length > 1` 守門） |
+| Firestore 讀寫優化未做完的項目（2026-07-10） | `subscribePendingCertTasks` unscoped 監聽、AdminApp/MemberApp ~13 個常駐 onSnapshot、DuelRoom 心跳寫入、`subscribeEquipItems`/`subscribeAllGuildQuests` 全集合監聽、db.js 剩餘死代碼全量稽核——原因與細節見 `.trellis/tasks/07-09-db-cost-and-deadcode-cleanup/prd.md` 的「不在本次範圍」章節，不要重新花時間調查一次 |
+
+---
+
+## 🎓 學生分級與系統鎖定（2026-07-04）
+
+```js
+// src/lib/accessControl.js（純函式，無 UI 依賴）
+DEFAULT_TIER_PERMISSIONS = { restricted:[...], autoLocked:[...], retired:[...] }
+PAGE_REGISTRY            // 分組頁面清單，供權限設定頁打勾矩陣用
+isAutoLocked(member)                              // official 且 lastCheckinDate 存在且 >14 天
+getAllowedPages(member, role, tierPermissions)    // null=全開；[]=凍結全鎖；否則允許頁面 id 陣列
+isPageAllowed(member, role, pageId, tierPermissions)
+
+// db.js 新函式
+setStudentTier(memberId, tier, operatorId)
+setAccountFrozen(memberId, frozen, operatorId)
+bulkSetStudentTier(memberIds[], tier, operatorId)   // batch write，上線初期教練批次工具用
+setMaintenanceMode(enabled, message, operatorId)    // systemConfig/maintenance
+subscribeMaintenanceConfig(cb)
+setTierPermissions(permissions, operatorId)         // systemConfig/tierPermissions（整份覆寫）
+subscribeTierPermissions(cb)                        // cb(null) 時前端 fallback 用 DEFAULT_TIER_PERMISSIONS
+
+// members 新欄位（缺欄位時的預設行為）
+studentTier     // 缺欄位 → 視為 "restricted"
+accountFrozen   // 缺欄位 → 視為 false
+lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫；缺欄位 → isAutoLocked 直接 false（不誤鎖）
+
+// MemberApp.jsx 掛載點（role==="admin" 天然豁免，因為 MemberApp 只服務 member）
+// 優先權：maintenanceConfig.enabled → 全螢幕 MaintenanceScreen
+//        → profile.accountFrozen   → 全螢幕 FrozenScreen
+//        → pageLocked（目前 page 不在 getAllowedPages 清單內）→ LockedFeatureCard（不強制跳轉）
+// retired 狀態：page state 初次載入時若為 "home" 自動轉 "profile"（一次性 ref 守門，不重複跳轉）
+
+// 教練後台
+// AdminMembers.jsx：每列 TierModal（studentTier 下拉 + accountFrozen 勾選）
+//   + 批次勾選 checkbox → bulkSetStudentTier(...,"official") + 維護鎖開關卡片
+// AdminTierPermissions.jsx（新頁，hub-member →「權限設定」）：PAGE_REGISTRY 打勾矩陣，儲存整份覆寫 tierPermissions
+```
+
+⚠️ 踩坑提醒：
+- `systemConfig` 是全新 collection，與既有 `sysConfig`（版本號用）**不同名、不共用**，design.md 明確指定新名稱
+- `lastCheckinDate` 缺欄位時 `isAutoLocked` 必須直接回傳 false，否則所有舊會員一上線就被誤判「很久沒報到」而鎖死
+- `getAllowedPages` 對 `!member`（profile 尚未載入）回傳 `null`（全開），避免登入瞬間畫面被誤鎖一下
+
+---
+
+## 📦 Firestore Collections
+
+```js
+// src/lib/db.js 頂部 const C（主要）
+members / competitions / results / messages / learnLogs
+practiceLogs / achievements / certRecords / badgeLogs
+auditLogs / externalComps / registrations / billingRecords
+
+// 獨立常數
+checkins          C_CHECKIN       // 今日報到（docId = memberId_YYYY-MM-DD）
+guildProgress     C_GUILD
+guildQuests       C_GUILD_Q
+guildQuestSubs    C_GUILD_SUBS
+guildBountyTemplates "guildBountyTemplates"  // 一般懸賞任務範本池（2026-07-04）
+guildBountyRewards   "guildBountyRewards"    // 一般懸賞難度獎勵表，單一文件 config（2026-07-04）
+questConfig       C_QUEST_CONFIG
+monsterSessions   C_MONSTER
+monsterLogs       C_MONSTER_LOG
+cardCollections   C_CARD_COLL     // { cards:{[monsterId]:{}}, equipped:[monsterId,...] }
+monthlyCards      C_MONTHLY_CARD
+monthlyCardLogs   C_MONTHLY_LOG
+cardMarket        C_CARD_MARKET   // ★ 規則移到正確 block（2026-07-02 修）
+villageGoals      "villageGoals"  // 村目標（由 villageGoalDb.js 管理，2026-07-02 補規則）
+dungeonRooms      "dungeonRooms"  // 地下城房間（含 memberRunes 欄位）
+dungeonFirstClears"dungeonFirstClears"
+systemBroadcasts  "systemBroadcasts"
+```
+
+### 關鍵 members 欄位
+```
+totalArrowsAllTime  // 終身箭數（由 addRoundArrows increment，需在 firestore.rules hasOnly 中）
+archerXP / coins / gachaCoins  // gachaCoins 顯示用 Math.floor
+village.resources.arrowdew
+fatCat: { gold, silver, bronze }
+achievement: { black, gold, silver }
+dailyQuestCount  // 累積上課次數（下課+1）
+runeInventory: { [runeId]: qty }  // 符文背包（2026-06-27）
+expeditions: {                    // 遠征隊（2026-06-27）3 槽 map
+  "0": { catId, catName, missionTier, hours, startedAt, endsAt, status, archerCost },
+  "1": { ... },
+  "2": { ... },
+}
+// 舊欄位 expedition（單一物件）仍可能存在，UI 向後兼容顯示為 slot 0
+```
+
+---
+
+## 🔧 db.js 函式分類速查
+
+### 報到（新流程 2026-06-25）
+```js
+submitCheckin(memberId, name, nick)      // pending 狀態
+approveCheckin(docId, operatorId)        // → active（教練通過）
+rejectCheckin(docId, operatorId)         // → rejected（教練不通過）
+subscribeMyCheckin(memberId, cb)         // 即時訂閱今日報到
+subscribePendingCheckins(cb)             // 後台：所有今日待處理
+submitClassEnd(memberId, docId)          // classEnded=true，dailyQuestCount+1
+addArrowdew(memberId, amount)            // 增加箭露
+checkinId(memberId, date)                // 產生 docId
+```
+
+### 練習紀錄
+```js
+subscribeTodayPracticeLogs(memberId, todayStr, cb)  // ← 用這個（只讀今日）
+subscribePracticeLogs(memberId, cb, maxCount=300)   // 全部歷史，2026-07-10 加 limit() 防無界讀取，慎用
+// WorldBossLobby/PartyLobby 只需要「我的」子集，改傳 maxCount=60 再前端 filter source；
+// MemberPractice.jsx（完整歷史頁）不傳，走預設 300 當防禦性天花板
+addPracticeLog(memberId, data, operatorId)
+```
+
+### 射手 XP
+```js
+addArcherXP(memberId, amount)  // 直接 increment，不需讀取
+```
+
+### 怪物卡片
+```js
+subscribeCardCollection(memberId, cb)
+// cb 接收：{ cards: {[monsterId]: {...}}, equipped: [monsterId,...] }
+// 使用方式：const equipped = coll.equipped.map(id => coll.cards[id]).filter(Boolean)
+// 然後：calcEquippedBonus(equipped) → { hp, atk, def }
+```
+
+### 裝備
+```js
+upgradeEquipSlot(memberId, slotId, { equip, coins, matItems })  // 不需 getDoc
+equipItem / unequipSlot / spendCoins / shopBuyEquip
+```
+
+### 月卡
+```js
+submitMonthlyCardRequest(memberId, name, hours, clientCard, hasPending)  // 不需 getDoc
+approveMonthlyCardRequest / rejectMonthlyCardRequest / checkExpireMonthlyCard
+```
+
+### 村莊
+```js
+collectVillageResources(memberId, village)
+upgradeVillageBuilding(memberId, buildingId, village)
+initVillageIfNeeded(memberId, currentVillage)
+adminAdjustVillageResource(memberId, resourceKey, delta)
+
+```
+
+### 遠征隊（2026-06-27 改版）
+```js
+// 3 槽位同時：Firestore members/{id}.expeditions.{0|1|2}
+// 舊欄位 members/{id}.expedition 向後兼容（UI 自動顯示為 slot 0）
+startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost)
+collectExpedition(memberId, slotIdx, rewards)  // rewards 由客戶端 calcExpeditionRewards 計算
+
+// expeditionData.js
+calcCatFullStats(catData)         // catData: {catXP,type,bond,equip} → {catATK,catHP,catDEF,catLevel}
+catPowerMult(catATK)              // Lv1全能ATK10→1.0x；Lv200→3.0x；類型/裝備/羈絆影響ATK
+calcExpeditionRewards(missionTier, catData)  // 接收完整 catData，用 catPowerMult 計算倍率
+
+// 卡片市集
+listCardForSale(...)   // expiredAt = 上架+7天（新欄位）
+buyCardListing(...)    // 成交後自動 createNotification 給賣家（targetMemberId=sellerId）
+subscribeCardMarket(cb) // 客戶端過濾已過期掛賣
+```
+
+### 公會一般懸賞（每日刷新，2026-07-04 新增）
+```js
+// db.js（新增，沿用既有 publishGuildQuest/submitGuildQuestCompletion 發佈+結算路徑）
+DEFAULT_BOUNTY_REWARDS  // 4 難度預設獎勵 {xp,coins,arrowDew,gachaCoins,chestType}，guildBountyRewards/config 不存在時 fallback
+getGuildBountyTemplates() / subscribeGuildBountyTemplates(cb)
+createGuildBountyTemplate(data, adminId) / updateGuildBountyTemplate(id, data, adminId)
+toggleGuildBountyTemplateActive(id, active, adminId) / deleteGuildBountyTemplate(id)
+getGuildBountyRewards() / subscribeGuildBountyRewards(cb) / setGuildBountyRewards(rewardsObj, adminId)
+autoPublishDailyGeneralBounties()
+// client-triggered（比照 autoPublishBountyQuests），AdventurerGuild.jsx 掛載時呼叫，內部用 guildMeta/dailyGeneralBounty 的 dateKey 防重複
+// 流程：下架昨天 bountySource==="daily_general" 的 active 任務 → 讀 active 範本池 + 獎勵表
+//      → 用日期當 seed（adventurerSystem.js::makeSeedRand，已改 export）每難度固定抽 1 個範本（允許重複）
+//      → publishGuildQuest 發佈，帶 bountyDifficulty/bountySource:"daily_general"/bountyDateKey
+
+// ⚠️ 關鍵踩坑：guildQuests 文件的 questSubtype 寫的是 "kill_monster"（不是 design.md 字面的 "general"！）
+// 原因：AdventurerGuild.jsx 的擊殺進度判定/接任/狩獵按鈕流程完全以 questSubtype==="kill_monster" 為準
+// （見 canAcceptQuest 之後的 sub===判斷式），若寫 "general" 會導致前端跳過擊殺驗證、直接可提交
+// 用 bountySource==="daily_general" + bountyDifficulty 這兩個額外欄位區分於雙週懸賞，不靠 questSubtype 區分
+
+// submitGuildQuestCompletion 擴充：quest.bountyDifficulty 存在時，async 讀 getGuildBountyRewards()
+// 取得對應 chestType，額外 addChests(memberId, [{...,family:"guild",tier:bountyDifficulty}])
+
+// 教練後台：AdminGuildQuests.jsx 新增 tab="bounty" → AdminGuildBountyTemplates.jsx
+//   範本清單（4 難度分組 CRUD）+ 難度獎勵表編輯 + 「立即重新產生今日任務」按鈕（測試用，內部仍會防重複）
+// 會員端：AdventurerGuild.jsx 懸賞告示卡片 + 確認接取頁都加 bountyDifficulty 徽章顯示（BOUNTY_DIFF_LABEL）
+```
+
+### 里程碑 / 轉蛋
+```js
+grantArrowMilestoneRewards(memberId, milestones)
+getMilestonesReached(oldArrows, newArrows)  // 從 arrowMilestone.js，每日防重複由 arrowMilestoneDone 保護
+drawGachaCards(memberId, type)  // "single" | "ten"
+
+// MonsterBattle 里程碑正確用法（2026-07-02 修）：
+// 用 sessionArrowsRef（useRef(0)）跨回合累積；startBattle 時重置為 0
+// getMilestonesReached(sessionArrowsRef.current, sessionArrowsRef.current + arrowCount)
+// ★ 不可用 getMilestonesReached(0, arrowCount)，否則每場都從 0 算，跨局里程碑全錯
+
+// villageGoalDb.js（村目標）
+contributeArrowsToGoal(memberId, count)   // 由 addRoundArrows 自動 hook 呼叫
+// ⚡ 2026-07-10：addRoundArrows 已把 totalArrowsAllTime + dungeonExcavation 進度合併成同一次 updateDoc
+//   （原本每箭 1 次 getDoc + 2 次 updateDoc，全站呼叫頻率最高路徑）。
+//   dungeonExcavation.js::addExcavationByArrows 已改名 computeExcavationPatch()，只回傳 patch 不自己寫入，
+//   內部用模組級 _excavCache（單分頁記憶體，5分鐘TTL）避免每箭重讀整份 member 文件。
+//   ⚠️ 該檔案任何新增/修改「會寫入 dungeonExcavation 欄位」的函式，寫入成功後必須 _excavCache.delete(memberId)，
+//   否則會被快取的舊值蓋掉，詳見 changelog.md 2026-07-10 條目。
+adminCreateCustomGoal({goalType, targetValue, rewards, ...})  // 後台發布村目標
+autoSpawnVillageGoal(villageLevel)        // 前端自動觸發（24h 冷卻）
+checkGoalStatus(goal)                     // 前端每分鐘輪詢（完成或過期）
+```
+
+---
+
+## 🎮 遊戲常數
+
+### archerLevel.js
+```js
+MAX_ARCHER_LEVEL=200 / XP_PER_LEVEL=20
+archerLevelFromXP(xp) / archerXPProgress(xp) / archerLevelBonus(lv)→{hp,atk,def}
+每級加成：hp+5 / atk+1 / def+1
+
+MONSTER_TIER_XP = { common:5,rare:10,elite:20,fierce:30,boss:50,mythic:80 }
+PARTY_XP_MULT=1.5 / DUEL_WIN=50 / DUEL_LOSE=20 / DUNGEON_FLOOR=15
+WORLD_BOSS_XP_CAP=300 / WORLD_BOSS_XP_MULT=2.0
+PARTY_BONUS_CHEST_CHANCE=0.30
+```
+
+### monsterCards.js
+```js
+MAX_EQUIPPED_CARDS=5
+calcEquippedBonus(cards[])→{hp,atk,def}
+calcCardBonus(tier,stars)
+FAMILY_STAT={forest:hp,dragon:atk,undead:def,beast:atk,demon:hp,machine:def}
+STAR_UPGRADE_COST=[1,2,3,4,5]
+```
+
+### monsterData.js
+```js
+calcArcherStats({member,certification,certRecords,dexStats})→{hp,atk,def}
+// HP基礎200/ATK基礎15/DEF基礎10
+// 完整數值 = archerStats + archerLevelBonus + calcEquippedBonus
+
+FAMILIES = { forest,dragon,undead,beast,demon,machine }
+TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"]
+```
+
+### constants.js
+```js
+BOW_TYPES / CERT_LEVELS / EQUIP_SLOT_DEFS / EQUIP_GRADES
+calcBadgePoints(member,type) / certLevelStyle(level,variant)
+fmtDate/fmtDT/today/thisYear/formatArcherNo/calcEquipBonus
+```
+
+### catLevel.js（新 2026-06-25）
+```js
+CAT_MAX_LEVEL=200 / CAT_XP_PER_LEVEL=20
+catLevelFromXP(xp) / catXPProgress(xp) / catLevelBonus(lv)→{hp,atk,def}
+CAT_TIER_XP = { common:5,rare:10,elite:20,fierce:30,boss:50,mythic:80 }
+// XP 在 MonsterBattle endBattle("win") 時呼叫 saveXP(CAT_TIER_XP[tier])
+```
+
+### catData.js 新增（2026-06-25）
+```js
+CAT_SKILL_GROUPS = { daming/gege/meimei:"heal", niuniu/haji/baobao:"atk", youyou/xiaoan/diandian:"def" }
+CAT_EQUIP_SLOTS  = 5格 [bow(atk/ore), arrow(atk/meat), armor(def/ore), herbBag(def/driedfish), potion(hp/potion)]
+CAT_EQUIP_GRADE_NAMES = ["普通","稀有","精英","頭目","傳說","神話"]  // 注意非「史詩」
+CAT_EQUIP_MAX_PLUS = 9
+calcCatEquipBonus(equip)→{ atkBonus, defBonus, hpBonus }
+calcForgeCost(slotId, grade, plusLevel)→{ [resourceKey]:amount } | null（已極限）
+calcCatSkillChance(catLevel, bondLv) → 0–0.25
+calcCatSkillEffect(skillGroup, catLevel, bondLv) → { healed } | { extraMult } | { reduction, blockFull }
+```
+
+### catDb.js 新增（2026-06-25）
+```js
+addCatXP(memberId, catId, amount)        // 戰鬥後加貓咪 XP，同步 equippedCat.catXP
+upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap)  // 鍛造，扣村莊資源
+// equipCat 已更新：同步 catXP + equip 到 equippedCat 快取
+```
+
+### useCatCompanion.js — 三類型特化數值（更新 2026-06-26）
+```js
+// CAT_TYPE_BASE（export from useCatCompanion.js）
+// attack:  { hp:140, atk:16, def:7  }  高傷低耐
+// defense: { hp:300, atk:7,  def:16 }  高血高防
+// allround:{ hp:200, atk:10, def:10 }  均衡
+// CAT_COMBAT_BASE = CAT_TYPE_BASE.allround（向後相容）
+//
+// 羈絆連續加成（bondTierMult）：
+//   攻/防型：+5%/bondLv；全能型：+2.5%/bondLv（無里程碑制，每級都有效）
+//   攻擊型主屬性=ATK；防禦型=HP+DEF；全能型=全部
+//
+// 回傳：catLevel,catXP,bondLv,skillGroup,triggerCatSkill,saveXP,hasCat,catATK,catHP,catDEF
+// triggerCatSkill() → {triggered:false}|{triggered:true,skillGroup,healed/extraMult/reduction/blockFull}
+//
+// ⚠️ CAT_TYPE_BASE 只在 useCatCompanion.js（hook），不在 lib
+//    純函式版本 calcCatFullStats() 在 expeditionData.js（內嵌相同常數）
+```
+
+### 地下城收藏品（2026-06-27 新增）
+```js
+// src/lib/dungeonCollectibles.js
+FAMILY_COLLECTIBLES  // {ghost/mountain/insect/workplace/exam/temple: {common/rare/boss: [{id,name,icon,desc}]}}
+COLLECTIBLE_MAP      // { [itemId]: {id, name, icon, desc, family, rarity} }
+rollFamilyDrop(family, roomType)  // "chest"|"elite"|"monster" → {itemId} | null
+rollBossDrop(family)              // 必掉 boss 池隨機一件
+getFirstClearTrophy(dungeonId)    // → {itemId:"ghost_normal_trophy"} | null
+
+// src/lib/dungeonDb.js 新增
+addCollectible(memberId, itemId, qty=1)
+addCollectibles(memberId, drops=[{itemId,qty}])
+subscribeCollectibles(memberId, cb)  // cb({[itemId]: qty})
+
+// Firestore: members/{id}.dungeonCollectibles = {[itemId]: qty}
+// 掉落率：chest 50%普+20%稀 / elite 35%稀+30%普 / monster 10%普 / boss 必掉1
+```
+
+---
+
+## 👑 世界王速查（Phase 2 2026-07-09 → 六大族改版 2026-07-09 同日追加）
+
+**⚠️ 六大族已改版**：不是「R1~R6跨族排序」了，是「一族2隻（小王=T1~T3、大王=T4~T6），族與族之間不比強度」。24隻王 = 教練3（`head_coach/wife/yumi`，隱藏王最強）+ 貓貓9（`cat_<catId>`，入門王最弱）+ 六大族12（`{family}_boss_small`／`{family}_boss`，`familyTier:"small"|"big"`）。
+
+```js
+// src/lib/worldBossData.js
+WORLD_BOSSES[key]              // .family="coach"|"cat"|六族key；貓有.catId/.catGroup；六族有.familyGroup/.familyTier
+getRewardTier(boss)            // → "entry"|"low"|"mid"|"high"|"top"（現在只管保底 base，均分主體看下面）
+WB_FAMILY_TO_DUNGEON_FAMILY    // 世界王family key → monsterData.js六族key 對照（名稱不完全同）
+
+// 均分獎勵主體（六大族改版新增，取代舊的 rank1/rank3/rankAll，那組現在是死資料）
+DROP_TABLE_BY_CATEGORY         // { family_small, family_big, cat, coach } 四分類完整掉落表，池子/機率全寫死在這裡，後台不可調
+getDropCategory(boss)          // boss → 上面四個 key 之一
+RANK_BONUS                     // { 1,2,3,lastHit } 排名額外獎勵，疊加在均分獎勵之上
+WB_TROPHY_MAP                  // 48件世界王專屬收藏獎盃（24隻×尾刀+前三名），存進 member.dungeonCollectibles
+BOSS_QUOTES                    // 目前只有6隻六族小王有專屬反擊語錄，其餘18隻沿用 WorldBossAttack.jsx 通用台詞池
+
+// src/lib/worldBossCards.js（新檔）
+WB_CARDS[bossKey]  // { statMode:"fixed"|"choose", stat, flavor, title... } 18張世界王卡定義
+
+// src/lib/monsterCards.js
+resolveEquippedCards(cardCollectionDoc)  // 統一解析 equipped（相容新舊格式），calcEquippedBonus 前一定要先過這個
+calcEquippedBonus(cards) // 回傳多 dmgBonusPct/dmgReducePct/healBonusPct（僅worldboss卡才非0）
+MAX_EQUIPPED_PER_STAT=3  // 怪物卡 HP/ATK/DEF 各自上限
+MAX_WB_EQUIPPED=3        // 世界王卡獨立欄位上限（不分屬性）
+
+// src/lib/db.js
+equipCard(memberId, key, source)   // source: "monster"|"wb"，簽章跟舊版不同（舊版只有 monsterId）
+addWorldBossCard(memberId, bossKey, chosenStat)  // 一隻王一張，重複略過
+adminGrantWorldBossCard(...)       // 後台限定發放入口，AdminWorldBoss.jsx「發放王卡」分頁
+setActiveTitle/clearActiveTitle    // 稱號＝已裝備王卡選一張的 title 對外顯示
+```
+
+✅ **地下城卡片串接缺口已修復（同日追加）**：地下城真正的資料流是 `buildExpeditionMemberData(profile, cardBonus)`（`expeditionMemberData.js`）→ 各種 `create*ExpeditionRoom/BattleRoom` 把 `memberData.wbBonus` 寫進 `dungeonRooms/{id}.members.{id}.wbBonus` → `processDungeonRound` 讀取。`DungeonBattleRoom.jsx` 本身仍然不直接讀卡片（它只讀 room member 的 `atk/def/wbBonus`，這些值已經在建房間當下算好），~~`updateDungeonMemberStats()` 仍是死代碼~~（2026-07-10 已刪除，走的是別條路徑）。有 3 條平行建房間路徑（單人/組隊/舊版未用的 `dungeonDb.js::createDungeonRoom`），未來新增 room member 欄位務必 3 條都追過，`TeamExpeditionBattle.jsx` 有一處「重新組裝 members 陣列」最容易漏。
+
+---
+
+## ⚙️ 戰鬥系統快速速查（2026-07-02 更新）
+
+### 檔案一覽
+
+| 檔案 | 職責 |
+|------|------|
+| `src/lib/damage.js` | 統一傷害公式（箭矢/反擊/貓貓/世界王） |
+| `src/lib/score.js` | 統一計分邏輯（label↔value） |
+| `src/battle/BattleEvents.js` | 22 種 EventType + builder |
+| `src/battle/BattleConfig.js` | 戰鬥參數集中管理 |
+| `src/battle/BattleEngine.js` | 單人戰鬥事件產生器（Phase 0=隨機事件，1=箭矢，2=貓貓，3=反擊） |
+| `src/battle/BattleAnimation.js` | playXxx + EVENT_DISPATCH（含 playBattleWin） |
+| `src/battle/useFirestoreRound.js` | Firestore 回合 hook（支援 onSubmitSuccess 回呼） |
+| `src/battle/RoundController.js` | 通用事件播放控制器（RANDOM_EVENT await 等玩家確認） |
+| `src/battle/useBattleRound.js` | React hook 封裝 RoundController |
+| `src/battle/useMiniRoundReveal.js` | mini-round 動畫 hook（animPhase / initialDelay / entryEndExtra） |
+| `src/battle/useDuelReveal.js` | 決鬥逐箭揭露 hook |
+
+### 使用模式速查
+
+**PartyBattleRoom / DungeonBattleRoom**（mini-round 動畫播放）：
+```js
+import { useMiniRoundReveal } from "../battle/useMiniRoundReveal";
+
+const {
+  liveEntry, liveMiniIdx, animHit, animMonsterCharge, animPhase,
+  startReveal, stopReveal, ...
+} = useMiniRoundReveal();
+
+// animPhase 語意（2026-07-02）：
+//   "player"    = initialDelay 預備期，尚未攻擊（顯示「玩家回合」banner）
+//   "attacking" = 玩家攻擊 mini 進行中（banner 消失）
+//   "cat"       = 貓貓攻擊 mini
+//   "counter"   = 怪物反擊 mini（顯示「怪物反擊！」banner）
+//   null        = 無動畫
+
+// 擊殺回合偵測（PartyBattleRoom 標準做法）
+const isKillingRound = (entry.miniRounds || []).some(m => (m.monsterHPAfter ?? Infinity) <= 0);
+
+startReveal(entry, {
+  key: `party-${entry.round}`,
+  initialDelay: 2000,                              // 預備期（玩家回合 banner）
+  entryEndExtra: isKillingRound ? 3500 : 1500,    // 擊殺後多停 3.5s
+  members: room?.members || {},
+  onMiniTick: (mini, idx) => { sfxArrowShoot(); },
+  onCounterHit: (mini, idx) => { sfxCounter(); },
+  onEntryEnd: (entry) => {
+    if (isKillingRound) { sfxMonsterDead(); setTimeout(() => sfxSuccess(), 600); }
+  },
+});
+
+// 有隨機事件時：不立即 startReveal，等玩家點擊彈窗確認（handleDismissEvent 才呼叫）
+// 擊殺 overlay：{liveEntry && displayHP <= 0 && <div>💀 擊倒！</div>}
+```
+
+**MonsterBattle / CouncilBattle / WorldBossAttack**（單人回合動畫）：
+```js
+import { createDispatch } from "../battle/BattleAnimation";
+import { RoundController } from "../battle/RoundController";
+
+const dispatchRef = useRef(null);
+const controllerRef = useRef(null);
+if (!dispatchRef.current) dispatchRef.current = createDispatch({ animate, sfx, vis, log });
+if (!controllerRef.current) controllerRef.current = new RoundController({ customDelays: { [MY_EVT]: 600 } });
+
+// 構建事件陣列
+const events = [...];
+// 播放
+const { battleResult } = await controllerRef.current.playEvents(events, eventCtx, {
+  [EventType.ARROW_HIT]: (p, ctx) => { /* 更新 state */ },
+  [EventType.ARROW_CRIT]: ...
+});
+```
+
+**DuelRoom**（逐箭揭露 A→B 隊 12 步）：
+```js
+import { useDuelReveal } from "../battle/useDuelReveal";
+
+const duelReveal = useDuelReveal({
+  room,
+  onSoundEffect: (hasCrit, hasHit) => {
+    if (hasCrit) sfxCritBoom();
+    else if (hasHit) sfxArrowHit();
+  },
+  onComplete: () => { /* sfxMonsterDead if anyone dead */ },
+});
+const { revealEntry, revealIdx, displayHp, floats, flashIds,
+        attackingIds, hittingIds, eventPhase, isRevealing,
+        skipEvent, stopReveal } = duelReveal;
+
+// hook 內部自動監聽 room?.log?.length，不需 useEffect 手動處理
+// 事件暫停畫面：{eventPhase && revealEntry?.event && <EventOverlay onSkip={skipEvent} />}
+// 貓貓回合：<CatRoundOverlay open={duelReveal.showCatRound} cats={duelReveal.duelCatCats} />
+// 重置：resetLocalState() { stopReveal(); /* 清除 component state */ }
+// 揭露完成檢查：{revealIdx >= 12 ? <結果按鈕/> : <結算中/>}
+```
+
+**PartyBattleRoom / DuelRoom / DungeonBattleRoom**（Firestore 多人房間）：
+```js
+import { useFirestoreRound } from "../battle/useFirestoreRound";
+
+const { room, submitted, submitting, handleSubmit, setFsSubmitted } = useFirestoreRound({
+  roomId, myId, isHost,
+  subscribe: (id, cb) => subscribeFirestoreRoom(id, cb),
+  submit: (id, memberId, ...args) => submitToFirestore(id, ...args),
+  processRound: async (id, room) => { await processMyRound(id, room); },
+  getMembers: (r) => Object.values(r.members || {}),
+  isProcessing: (r) => r.processing,
+  processDelayMs: 1000,  // 地下城市需要 1s delay
+  maxRetries: 4,
+});
+```
+
+### 踩坑提醒
+
+- **CouncilBattle/WorldBossAttack 自訂 EventType**（`CB_EVT` / `WB_EVT`）：這些不在 `EVENT_DISPATCH` 中，dispatch 會跳過 animate step（只跑 handler）
+- **`submit` config 參數順序**：DuelRoom 的 submit 是 `(roomId, team, memberId, arrows, target)`，其他模式是 `(roomId, memberId, arrows, choice)`
+- **`customDelays`**：只影響 getDelayMs 的查表，不影響 EVENT_DISPATCH 的行為
+- **`useFirestoreRound` 的 `setFsSubmitted(false)`**：重設 submitted 讓玩家可以重新輸入箭分（用於 undo、new round restart、非房主卡住 recovery）
+- **RoundController `onRandomEventEnd` 必須回傳 Promise**：2026-07-02 起加了 `await`，若回傳 undefined（非 Promise）await 會立即 resolve，等同沒暫停
+- **組隊隨機事件彈窗**：有事件時不呼叫 `startReveal`，存 `pendingRevealRef.current = entry`；`handleDismissEvent` 點擊後才啟動。彈窗 div 原本有 `pointerEvents:"none"` — 必須刪掉才能接收點擊
+- **`animPhase = "player"` 只在 initialDelay 期**：mini 開始時立即變 `"attacking"`；banner 判斷只用 `animPhase === "player"`，不檢查 liveMiniIdx
+- **擊殺 overlay 與 pending_confirm 衝突**：`liveEntry !== null` 時不會跳出結算畫面（pending_confirm 判斷需 `!liveEntry`），3.5s entryEndExtra 期間兩者安全共存
+- **`useDuelReveal` 只服務 DuelRoom**：無跨模式複用價值，抽取是為了隔離程式碼（−165 行 inline logic）
+- **DuelRoom 的 `skipEvent`**：取代舊的 `startReveal()` 手動設定 eventPhase+revealIdx
+- **`TargetFaceOverlay`（`src/components/shared/TargetFaceOverlay.jsx`）共用元件（2026-07-04 鎖定計分模式修正）**：目前 5 個呼叫端 Party/Dungeon/MonsterBattle/WorldBoss/Duel，「回合中不能切換按鈕↔靶面計分」的鎖定邏輯**是各呼叫端自己維護**，元件本身不強制。改任何一處鎖定條件時務必 `grep "TargetFaceOverlay"` 檢查全部 5 處是否同步。`onClose` prop 全部呼叫端已移除（該 prop 只用來「關閉覆蓋層」，舊寫法誤把它跟 `setTargetMode(false)` 綁在一起，變成中途切換模式的漏洞）；Party/Dungeon/MonsterBattle 用 `scoringModeChosen` state（整場只選一次，不逐回合重置）鎖定，WorldBoss/Duel 沒有這個 state，改用「本回合箭數是否為 0」（`arrows.length===0`）當鎖定條件。
+
+---
+
+## 🖼️ 圖片路徑
+
+```
+public/ui/
+  page-bg.webp / login-bg.webp / dungeon-bg.webp
+  profile-banner.webp / party-bar.webp / card-bg.webp
+  cell-{monster|party|duel|dungeon|shop|checkin|...}.webp  ← ★ 2026-07-03 起已無程式引用（hub/首頁改 CSS 漸層），檔案保留
+  cert-{beginner|novice|intermediate|advanced|elite}.webp
+  badge-frame-{black|gold|silver|bronze}.webp
+  equip-slot.webp / equip-slot-filled.webp
+  battle-bg/bg_{family}_{1-6}.webp   ← family: forest/dragon/undead/beast/demon/machine
+  village/                            ← 貓村圖片
+```
+
+---
+
+## 🔊 音效/動畫開關（2026-07-03 批次 A+B）
+
+```
+src/lib/fxSettings.js
+  getSoundEnabled/setSoundEnabled、getAnimEnabled/setAnimEnabled
+  initFxSettings()  ← index.js render 前呼叫；動畫關 → <html class="no-anim">
+  localStorage: fx_sound / fx_anim（"0"=關，預設開）
+sound.js 總閘門在 ctx()（合成音效）；playAudio(mp3)/vibrate 另有 guard
+  新 UI 音效：sfxSwitch(tab切換)/sfxOpen/sfxClose/sfxError
+index.css 動畫庫：.fx-pop/.fx-fade-up/.fx-shake/.fx-pulse/.fx-float-up/.fx-bounce
+  .no-anim 抑制所有 animation/transition + View Transitions
+Widgets.jsx：CountUp（數字滾動）；StatBar 滿值自動 fx-pulse
+UI.jsx Btn：全站點擊音 sfxTap；<Btn silent> 可關（自帶音效按鈕用）
+設定 UI：MemberProfile 的 FxSettings 卡
+⚠️ scrollIntoView 一律加 block:"nearest"，否則整頁亂捲（已修3處戰鬥log）
+⚠️ 比較型音效（n>prev）ref 初始用 null，首次快照不播（AdminApp 月卡已修）
+```
+
+---
+
+## 🎨 設計系統（2026-07-03 UI 改版）
+
+```
+tokens：index.css :root
+  既有：--bg-deep/surface/card/elevated、--text-primary/secondary/muted/accent/gold、--border-subtle/card、--nav-active/indicator
+  新增：--success/warn/danger/info-{fg,bg}、--accent/--accent-soft/--primary、--r-{sm,md,lg,xl}、--shadow-{card,elevated}、--glass-{bg,border}
+元件層 CSS 類（index.css）：.ui-card（玻璃卡）/ .ui-input / .ui-input-error
+共用元件：
+  shared/UI.jsx      15 元件全深色 token 化；Btn 有 outline variant；dark-* 為 alias
+  shared/Widgets.jsx SectionHeader / StatBar / ProgressRing / Skeleton / HubTile（accent 傳 hex！）
+覆寫層：.content-area .bg-white{...} 暫留保護未遷移頁（比賽/練習/排行/訊息）；元件 token 化後不再命中
+MemberHome 新 props：todayCheckin / worldBoss（MemberApp+AdminApp 下傳，掛既有訂閱）
+hub 頁新 props：badges = {}（badgeKey→count）
+BillingSystem / CatVillage 不用 shared/UI（自帶樣式），改元件不影響
+```
+
+---
+
+## 🚧 地下城三大來源系統速查（2026-07-14 實作）
+
+### 資料結構
+
+```js
+// members/{memberId}.dungeonExcavation
+{
+  progress: 0,                  // 0~100（練箭挖掘進度）
+  dailyArrowsUsed: 0,           // 今日練箭量（用於 T1~T6 機率計算）
+  lastActiveDate: "2026-07-14",
+  pendingReveal: null,          // 100%時鎖定 { family, difficulty, isHidden, fromAutoDig?, source }
+  revealedAt: null,             // ISO string
+  completed: false,
+  autoDigNextAt: null,          // ⏳ 定時生成：下次可領取的 timestamp
+  savedDungeons: [],            // 儲存槽：最多 3 個 [{ id, family, difficultyTier, isHidden, savedAt, fromWorldBoss? }]
+  dungeonScrollCount: 0,        // 📜 世界王卷軸持有數
+}
+```
+
+### ① ⏳ 定時生成（新系統）
+
+```js
+// 自動計時器（隨機 24~144 小時）
+initAutoDigTimer(memberId)           // 初始化 timer（寫入 autoDigNextAt = Date.now() + random(24~144h ms)）
+resetAutoDigTimer(memberId)          // 重設計時器（下一輪隨機）
+claimAutoDig(memberId)               // 時間到領取 → 隨機 6 族 + T1~T6 均等 → pendingReveal
+checkAutoDigStatus(ex)               // 純函式 → { ready: boolean, remainingMs: number }
+
+// 連動重設
+abandonExcavation(memberId)          // 放棄後自動 resetAutoDigTimer（若來源是 fromAutoDig）
+saveExcavation(memberId)             // 保存後自動 resetAutoDigTimer
+```
+
+### ② ⛏️ 練箭挖掘（公式修正）
+
+```js
+// 進度累積（2026-07-14 修正公式）
+initDailyExcavation(memberId)        // 登入時初始化（換日 +10 舊進度）
+addExcavationByCheckin(memberId)     // 報到 +20（原 +10，db.js submitCheckin/approveCheckin 中呼叫）
+addExcavationByArrows(memberId, n)   // 每箭 +1（原 +0.3，db.js addRoundArrows 中呼叫）
+
+// T1~T6 機率系統（取代舊稀有度骰子）
+getTierProbabilities(dailyArrows)    // 純函式 → [{ tier, label, icon, pct, color }]
+// maxTier = min(6, 1 + floor(dailyArrows / 30))
+// 每日箭數  |  最高等級  |  各級機率
+// ----------|-----------|-------------
+//      0    |    T1     |  T1=100%
+//     30    |    T2     |  T1=50%,  T2=50%
+//     60    |    T3     |  T1=33%,  T2=33%,  T3=33%
+//     90    |    T4     |  T1~T4 各 25%
+//    120    |    T5     |  T1~T5 各 20%
+//    150+   |    T6     |  T1~T6 各 ~16.7%
+
+// 難度調整（揭曉 overlay）
+downgradeExcavationDifficulty(memberId, targetTier)  // 免費無限降級（min T1）
+revealExcavation(memberId, difficultyTier, isHidden)  // 揭曉 → 用機率表抽難度
+upgradeExcavationDifficulty(memberId)                 // 金幣強化（反向升級，隨機 500~2000）
+```
+
+### ③ 📜 世界王卷軸（新系統）
+
+```js
+// 世界王擊殺獎勵
+grantDungeonScroll(memberId)         // +1 卷軸（dungeonScrollCount）
+grantWorldBossDungeon(memberId)      // 別名（向後相容）
+
+// 使用卷軸
+useDungeonScroll(memberId)           // 檢查 scrollCount>0 + savedDungeons.length<3
+// → 成功：隨機 6 族 + T1~T6 均等 → 直接存入 savedDungeons（跳過 pendingReveal）
+// → 失敗：{ ok:false, reason: "儲存槽已滿"|"沒有卷軸" }
+
+// 查詢
+getDungeonScrollCount(memberId)      // 讀取 scrollCount
+```
+
+### UI 元件
+
+```js
+// DungeonExcavationTab.jsx — 三卡並排
+// 卡 1：⏳ 定時生成 - countdown timer + claim button
+// 卡 2：⛏️ 練箭挖掘 - progress bar + T1~T6 table + reveal overlay
+// 卡 3：📜 世界王卷軸 - scroll count + use button
+//
+// DungeonStorageTab.jsx — 固定 3 槽（Array.from({length:3})）
+// 空格：🕳️ 空槽 placeholder
+// 已滿：族系色卡 + 難度徽章 + 🌍 世界王掉落 badge（橘色）
+//
+// DungeonSelectionPanel.jsx — 選地城 → 單人 / 組隊
+//
+// AdminDungeon.jsx — 後台測試（6 項：搜尋/種族/難度/隱藏/存入/檢視刪除）
+```
+
+### 組隊遠征 → DungeonBattleRoom（2026-07-14 路由修正）
+
+```js
+// expeditionTeamDb.js
+startTeamExpeditionRoom(roomId, hostId) // waiting → active；開始後禁止加入
+createTeamExpeditionBattleRoom({ members, hostId, monster, difficultyTier, floorIndex })
+syncTeamExpeditionMembers(roomId, battleMembers) // 樓層間保存 HP/alive
+claimTeamExpeditionResult(roomId, memberId)       // 全員領取後才清房
+updateTeamExpeditionRoom(roomId, data)             // 協調欄位更新
+
+// TeamExpeditionBattle.jsx（新元件）
+// HOST：generate 3 floors → create battle room for each floor → manage transitions
+// ALL：subscribe team room → render DungeonBattleRoom via TeamBattleRoom wrapper
+// Result：房主只抽一次 rewards，寫入 expeditionResult 後全員共用
+//
+// DungeonBattleRoom.jsx 新增 expeditionMode prop
+// expeditionMode=true 時 handleClaimSelf 跳過獎勵，僅呼叫 returnToMapAfterBattle（host）
+//
+// 關鍵：
+// - 戰鬥房 hostId 必須顯式使用 teamRoom.hostId，不能取 Object.entries(members)[0]
+// - 只有 host 清理每層 battle room
+// - 儲存槽在開戰時消耗；遠征結束不得清除目前新一輪 excavation progress
+```
+
+### 單人遠征 5×5 迷霧格子（2026-07-03 Phase G，G1~G3）
+
+```js
+// expeditionGrid.js（新檔，純函式）
+generateGridFloor(floorIndex, difficultyTier)
+//   → { size:5, grid[y][x]=roomId|null, rooms[], startPos, stairsPos }
+//   房物件 { id, type, label, pos:{x,y}, cleared }
+//   type: entrance|battle|elite_battle|shop|event|trap|chest|rest|stairs
+generateBranchFloor()
+//   → { entrance, branches:{A|B|C:{rooms[4]（3功能+rest）}}, boss, treasure }
+isAdjacent(a, b) / getAdjacentPositions(pos) / GRID_SIZE=5
+
+// DungeonExpedition.jsx 流程
+// 第1、2層 GridMapStage（迷霧：只顯示已探索+相鄰格）→ 樓梯下樓
+// 第3層 BranchStage：A/B/C 選定即鎖 → 3房 → 休息 → boss → DungeonTreasureRoom
+// playerState（hp/buffs）跨房跨樓層；戰鬥房出場用 ?? 同步回快照
+
+// 功能房「本地單人模式」共用 props（DungeonShop/Trap/Event/Chest/Rest）：
+// localMode + onLocalEffect(effect) + onLocalDone()（Shop 另有 onLocalBuy(item)）
+// localMode=true → confirm 走內部 state、不寫 Firestore 房間文件；多人行為不變
+// onLocalEffect payload：hp_loss / buff_mult / heal_pct / cure / coins / event
+// DungeonTreasureRoom 新增選填 onLoot(loot)：生成時回傳一次供實發
+
+// 坑：
+// - 金幣直接讀 profile.coins（useAuth onSnapshot 即時），勿自己累 delta
+// - grantExpeditionRewards 曾漏 import increment → 獎勵靜默失敗（已修）
+// - Step G4 團隊接格子未做，TeamExpeditionBattle/expeditionTeamDb 未動
+```
+
+### 地下城探索/戰鬥 UI 修整（2026-07-03）
+
+```js
+// DungeonExpedition.jsx
+// - 進入遠征後顯示逐房探索地圖過場
+// - 進入下一房前先看見方格房間與目前位置
+// - 遠征結果仍由 DungeonExpeditionResult 統一發放
+
+// DungeonBattleRoom.jsx + BattleBottomBar.jsx
+// - 先按「開始計分」再展開計分 / 藥水 / 隊友
+// - 地下城戰鬥預設直接顯示分數按鈕
+// - 移除戰前額外模式選擇，減少誤觸與遮擋
+
+// 遠征 / 斷線重連
+// - `DungeonExpedition.jsx` 改成玩家手動點房間，不再系統自動推進
+// - `expeditionMemberData.js` 是遠征進場素質的共用來源
+// - `expeditionDb.js` 建戰鬥房改用 `??`，避免 `0` 被誤覆蓋成預設值
+// - `MemberApp.jsx` / `AdminApp.jsx` 的地下城離開改成暫離保留房號；只有房間失效時才清除
+
+// runtime 失敗記錄
+// - 早期版本的 ExpeditionMapStage 曾因元件匯入問題觸發 undefined render error
+// - 最終改成內嵌 SVG 地圖，避免對外部 DungeonMap 元件依賴
+```
+
+### 選單系統（地下城儲存槽）
+
+```js
+// members/{memberId}.dungeonExcavation.savedDungeons = [
+//   { id, family, difficulty, isHidden, revealedAt, fromAutoDig?, fromWorldBoss? }
+// ]
+// 最多 3 個，已滿時挖掘暫停（storageFull）
+// 固定 3 槽視覺顯示（DungeonStorageTab），空格 🕳️ 空槽 1/2/3
+
+// dungeonExcavation.js
+saveExcavation(memberId)                // pendingReveal → savedDungeons (push, max 3)
+removeSavedDungeon(memberId, id)        // filter out by id
+getSavedDungeons(memberId)              // 讀 savedDungeons 陣列
+grantWorldBossDungeon(memberId)         // grantDungeonScroll 的向後相容別名
+adminSetSavedDungeon(memberId, entry)    // 後台直接寫入（支援取代特定 index）
+
+// DungeonSelectionPanel 流程：
+// 選地城 → 單人：確認 overlay → 出發（fromStorage:true）
+//        → 組隊：createTeamExpeditionRoom → 6 碼邀請碼
+// 加入地下城：輸入邀請碼 或 從開放房間列表點擊加入
+// 世界王掉落標示：卡片上顯示 🌍 世界王掉落（橘色 badge）
+```
+
+### 三層結構
+
+```
+第1層 — 探索層：2-3 弱化怪（六族隨機）+ 大量事件/陷阱/商人
+第2層 — 戰鬥層：3-4 普通/強悍怪（六族隨機）+ 陷阱/寶箱
+第3層 — 王關層：強悍精英 → 休息 → 商人 → Boss → 🎁 寶箱族獎勵房
+```
+
+### 6 級難度
+
+| 級別 | Tier | 命名 |
+|-----|------|------|
+| 1 | common | 普通級 |
+| 2 | rare | 稀有級 |
+| 3 | elite | 精英級 |
+| 4 | fierce | 強悍級 |
+| 5 | boss | 頭目級 |
+| 6 | mythic | 神話級 |
+
+### 寶箱族（第 7 族）
+- FAMILIES.treasure = { label:"寶箱族", icon:"🎁", color:"#fbbf24" }
+- 6 階寶箱怪（common→mythic）HP:100 ATK:5 DEF:50
+- 掉落：金幣×3、寶箱率100%、材料全稀有
+
+### 失敗處理
+- 全滅/房主關閉 → 全區廣播「XXX 挑戰地下城失敗」
+- 儲存槽模式只消耗已選槽位，不清除正在累積的新一輪挖掘進度
+- 已獲獎勵不回收
+
+### 選單系統（地下城儲存槽）
+```js
+// members/{memberId}.dungeonExcavation.savedDungeons = [
+//   { id, family, difficulty, isHidden, revealedAt, fromAutoDig?, fromWorldBoss? }
+// ]
+// 最多 3 個，已滿時挖掘暫停（storageFull）
+// 固定 3 槽視覺顯示（DungeonStorageTab），空格 🕳️ 空槽 1/2/3
+
+// dungeonExcavation.js
+saveExcavation(memberId)                // pendingReveal → savedDungeons (push, max 3)
+removeSavedDungeon(memberId, id)        // filter out by id
+getSavedDungeons(memberId)              // 讀 savedDungeons 陣列
+grantWorldBossDungeon(memberId)         // grantDungeonScroll 的向後相容別名
+adminSetSavedDungeon(memberId, entry)    // 後台直接寫入（支援取代特定 index）
+
+// DungeonSelectionPanel 流程：
+// 選地城 → 單人：確認 overlay → 出發（fromStorage:true）
+//        → 組隊：createTeamExpeditionRoom → 6 碼邀請碼
+// 加入地下城：輸入邀請碼 或 從開放房間列表點擊加入
+// 世界王掉落標示：卡片上顯示 🌍 世界王掉落（橘色 badge）
+```
+
+### 後台測試工具（AdminDungeon.jsx）
+```js
+// 功能（2026-07-14 簡化版）：
+// 1. 🔍 玩家搜尋（文字過濾 members list）
+// 2. 🎲 種族選擇（6 族網格按鈕，選中高亮族系色）
+// 3. 📊 難度選擇（1~6 級，按鈕式）
+// 4. 🌟 隱藏開關
+// 5. 📦 存入玩家儲存槽（寫入 dungeonExcavation.savedDungeons）
+// 6. 📋 當前儲存槽檢視 + ✕ 刪除
+//
+// 已移除：地下城次數重置（resetDungeonUsed/resetAllDungeonUsed）
+// 原因：地下城已無每日次數限制，改為挖掘進度制
+```
+
+### 組隊遠征（expeditionTeamDb.js）
+```js
+// 集合：dungeonRooms（與舊 dungeon rooms 共用集合）
+// 欄位：{ hostId, hostName, dungeonFamily, dungeonDifficulty,
+//         dungeonIsHidden, members:{...}, status:"expedition_waiting", code }
+
+createTeamExpeditionRoom({ hostId, hostName, dungeon, memberData })
+  // → { ok:true, roomId, code }
+joinTeamExpeditionRoom(code, memberId, memberName, memberData)
+  // transaction 檢查 max 8（2026-07-04 前誤寫 4，已修正）與 waiting；→ { ok:true, roomId, dungeon, hostId }
+subscribeTeamExpeditionRoom(roomId, cb)
+leaveTeamExpeditionRoom(roomId, memberId) // deleteField，不能寫 null
+startTeamExpeditionRoom(roomId, hostId)   // 原子鎖定 active
+setTeamExpeditionMemberRole(roomId, memberId, role) // 2026-07-04 新增：等待室選前衛/後衛，各上限4，transaction 防超額
+disbandTeamExpeditionRoom(roomId)     // status="completed"
+cleanupTeamExpeditionRoom(roomId)     // deleteDoc
+subscribeOpenTeamExpeditionRooms(cb)  // 開放房間列表（供加入面板）
+```
+
+**2026-07-04 崩潰修正**：`expeditionGrid.js::generateGridFloor()` 回傳的 `gridFloor.grid` 是 2D 陣列（Firestore 不支援巢狀陣列）。`TeamExpeditionBattle.jsx` 每次把 `expeditionMapState` 寫入 Firestore 前，一律先呼叫本地 helper `stripMapStateGrid()`（內部呼叫 `expeditionGrid.js::stripGridForSync(gridFloor)` 剔除 `grid` 欄位）。`grid` 只是本地渲染輔助，`GridMapStage` 只用 `rooms` 重建查找表，讀取端不需還原。單人模式 `expeditionGrid.js` 本身格式不動（仍含 `grid`，因為單人模式從不寫入 Firestore）。
+
+### 遠征獎勵結算（expeditionDb.js Phase E）
+```js
+EXPEDITION_REWARD_TABLE  // 6 級難度 × { coins, arrowDew, archerXP }
+
+calculateExpeditionRewards({ difficultyTier, floorsCleared, won })
+  // → { coins, arrowDew, archerXP }
+  // won=true: 全額 floorsCleared=3；won=false: × floorMult
+
+saveExpeditionRecord(memberId, record)
+  // record: { won, family, difficultyTier, floorsCleared, rewards, completedAt }
+  // members.{id}.expeditionRecords 陣列，最多保留 20 筆
+  // firestore.rules members.update 白名單必須包含 expeditionRecords
+
+grantExpeditionRewards(memberId, rewards)
+  // Firestore increment: coins, arrowDew, archerXP
+```
+
+---
+
+## 🎈 訪客/兒童地下城整合（2026-07-10）
+
+```js
+// 整合策略：重用正式元件，不重刻。只換「怎麼拿到一個 dungeon 物件」這一步，
+// 下游 DungeonSelectionPanel/DungeonExpedition/DungeonBattleRoom 全部原封不動重用。
+
+// DungeonLobby.jsx / EquipmentPage.jsx / DungeonSelectionPanel.jsx / DungeonDex.jsx / RPGEquipPanel.jsx
+// 全部新增可選 { guestProfile, isGuest, tierCap }（RPGEquipPanel/DungeonDex 只有 guestProfile）
+// const { profile: authProfile } = useAuth(); const profile = guestProfile || authProfile;
+// 沒傳新參數 = 完全比照改動前行為，正式學生/教練切射手模式都不受影響。
+
+// src/components/dungeon/GuestDungeonEntry.jsx（新元件）
+// T1/T2 選擇畫面（tierCap 決定選項數，目前固定傳2）→ 選完用 drawExpeditionBoss(tier,family) 就地組出
+// { family, difficulty:tier, boss, isHidden:false, savedId:null }，不寫入 pendingReveal/savedDungeons
+
+// 難度封頂兩層（DungeonExpedition.jsx，缺一不可）：
+// 1) difficultyTier = isGuest ? Math.min(excavation?.difficulty||1, tierCap||2) : excavation?.difficulty||1
+// 2) fixedBoss：isGuest 時不信任上游傳入的 boss 物件，改用「已封頂的 difficultyTier」重新 drawExpeditionBoss()
+//    （用 useMemo 鎖定同一場遠征內王的身份，避免每次 render 重抽）
+//    原因：difficultyTier 數字只夾住樓層怪物池/獎勵倍率，王關戰鬥吃的是獨立 boss 物件，兩者都要重新從
+//    封頂後的 tier 導出才是真正防線，不能只夾其中一個。
+
+// GuestApp.jsx：guestFullProfile = onSnapshot(members/{id}) 完整文件（取代舊的 {id,name,coins} 快照）
+//   <DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} .../>
+//   <EquipmentPage guestProfile={guestFullProfile} .../>（新增「裝備」入口，GuestHome 卡片）
+// GuestDungeonSimple.jsx 已刪除（舊固定3層+固定王簡化版，跳過持久化，跟正式系統無關聯）
+```
+
+⚠️ 踩坑提醒：
+- **凡是被拉進訪客渲染樹、內部自己呼叫 `useAuth()` 的子元件，都要單獨補 `guestProfile`**——不能只改最外層容器。這次 `RPGEquipPanel.jsx`/`DungeonDex.jsx` 一開始都漏了（各自獨立 `useAuth()`），這不只是「訪客看不到資料」，是「教練裝置被小朋友掃碼共用」情境下**會顯示教練自己的裝備/圖鑑**（`auth.currentUser` 仍是教練），比空白畫面更難發現。**check agent 複查時又追出 `DungeonBattleRoom.jsx` 也是同一個漏洞**（它是 `DungeonExpedition.jsx` 內 `ExpeditionBattleRoom` 包裝元件實際渲染的戰鬥核心，`isGuest`/`guestProfile` 傳到 `DungeonExpedition` 就停了，沒有再往下傳進 `<DungeonBattleRoom>`），已補上 `guestProfile` 參數並在 `ExpeditionBattleRoom`/主元件呼叫處逐層往下傳——教訓是 grep `useAuth()` 要沿著「整條 render 呼叫鏈」（含同檔案內的本地 wrapper component）追到最底層，不能只看容器元件層級。
+- `DungeonBattleRoom.jsx`/`PartyBattleRoom.jsx`/`db.js` 裡的 `myId.startsWith("guest")` 字串前綴守衛是 07-09 之前的舊系統遺留，目標舊版 literal `"guest_"+timestamp` 非持久化 ID；新訪客系統 id 是 Firestore 自動生成隨機 ID，永遠不會以 `"guest"` 開頭，這些守衛對新系統是死代碼，新增訪客邏輯不要再沿用這個模式，一律用 `isGuest`/`guestProfile` 明確傳遞。
+- 地下城掉落物結算路徑（`DungeonExpedition.jsx::handleBattleDone/handleFinish`）逐行確認過沒有任何 `isGuest` 守衛，訪客/兒童現在會真的拿到材料/金幣並寫回 `members/{id}`；跟 `MonsterBattle.jsx` 的訪客首勝實體勳章流程（`LOOT_TABLE_GUEST`）完全獨立，那個檔案沒動。
+
+---
+
+## 🎮 地下城系統速查（2026-06-27 重設計）
+
+### 合約類型（CONTRACT_TYPES in dungeonData.js）（2026-06-28 修改）
+```js
+// 9 種合約
+standard       // 基本傷害；按鈕：X 10 9 8 7 6 M（折疊兩頁）
+score_gate     // 低於 param 分（上限9）每差1分 -10% 傷害（比例懲罰）
+               // 按鈕：9 8 7 6 5 4 3 2 1 M（無 X/10，太難）
+               // param cap: Math.min(6 + tier, 9)
+hit_count      // 命中即固定傷害（M=0傷）；按鈕：命中 / M
+all_hit        // ← 改「M懲罰關」：每發 M 扣 10% 總傷害（可疊加至0）
+               // 按鈕：完整分數（X 10 9...M），不再是命中/M
+x_crit         // 只有X算爆擊，其他傷害減半；按鈕：完整分數
+target_score   // 6箭總分 < param 則全輪清零
+reversal       // 分數倒轉（6↔X，7↔10，8↔9）後正常計算
+odd_only       // 只算 7/9/X，其餘視同脫靶
+even_only      // 只算 6/8/10，其餘視同脫靶
+```
+
+### 合約 UI 顏色（CONTRACT_HEX in DungeonBattleRoom.jsx）
+```js
+{ standard:"#cbd5e1", score_gate:"#93c5fd", hit_count:"#86efac",
+  all_hit:"#fde047", x_crit:"#d8b4fe", target_score:"#fbbf24",
+  reversal:"#fb923c", odd_only:"#67e8f9", even_only:"#f9a8d4" }
+```
+
+### 商店商品（DUNGEON_SHOP_ITEMS in dungeonData.js）
+```js
+hp_potion / hp_max_boost / atk_boost / def_boost
+atk_large / def_large / revival / revival_front
+// hp_potion 可重複購買；其他每次進商店各限一件
+```
+
+### 事件效果類型（effect.type → confirmDungeonEvent 處理）
+```js
+hp_restore_all  // 所有人 +value*maxHP
+atk_debuff_all  // 所有人 atkMult *= value（>1 為 buff）
+atk_buff_one    // 隨機一人 atkMult *= value
+dmg_mult_all    // 所有人 dmgMult *= value
+def_mult_all    // 所有人 defMult *= value  ← 2026-06-27 補實裝
+gold_bonus      // 每人 +value 金幣（即時）
+gold_mult       // nextFloor goldMult = value
+monster_hp_mult // nextFloor monsterHpMult = value
+monster_atk_mult// nextFloor monsterAtkMult = value
+skip_counter    // 怪物不反擊（processDungeonRound 讀 currentEvent）
+```
+
+### 商店購買記憶（shopPurchases）（2026-06-28 修正）
+```js
+// Firestore: dungeonRooms/{id}.shopPurchases = { [memberId]: [itemId,...] }
+// hp_potion 不記錄，允許重複購買
+// enterNonCombatRoom / resolveNonCombatRoom 不再重置 shopPurchases
+// ⚠️ 不要用 local `bought` state 判斷已購，只用 myPurchases（Firestore 側）
+//    local state 在 component 重掛時會清除，導致重複購買
+
+// revival_front 購買條件（2026-06-28）：
+const hasFallenFront = Object.values(members).some(m => m.alive && m.role === "rear");
+// !hasFallenFront → 按鈕 disabled，顯示「⚠️ 無前衛倒地」
+```
+
+### 復活邏輯（revival_front）— 踩過的坑（2026-06-28）
+```js
+// ❌ 錯誤：檢查購買者本身的 role（購買者幾乎都是前衛，邏輯永遠不觸發）
+if (choice === "revive_front") {
+  const m = members[id]; // id = 購買者
+  if (m && m.role === "rear") { /* 永遠不執行 */ }
+}
+
+// ✅ 正確：掃描隊伍中所有 alive && role==="rear" 的成員
+const fallenFronters = Object.entries(members)
+  .filter(([, m]) => m.alive && m.role === "rear");
+if (fallenFronters.length > 0) {
+  const [targetId, targetM] = fallenFronters[0];
+  upd[`members.${targetId}.role`] = "front";
+  upd[`members.${targetId}.hp`] = Math.round((targetM.maxHP || 100) * 0.5);
+}
+```
+
+### 前後衛顯示系統（displayGroup）
+```js
+// DEFAULT_MEMBER 有兩個角色欄位：
+// role         = "front"|"rear"  → 戰鬥邏輯（反擊免疫、heal/dmg 選擇）
+// displayGroup = "front"|"rear"  → 視覺分排（只在有空位時才隨死亡移動）
+
+// 規則：前衛死亡時
+// 若當前後衛 displayGroup=="rear" 人數 < 4 → displayGroup 改 "rear"（真正移位）
+// 若 >= 4 → displayGroup 保持 "front"（紫框 + 🛡後衛標籤，不移動）
+
+// 客戶端 DungeonBattleRoom.jsx：
+const dgOf = (m) =>
+  (liveEntry?.displayGroupsBefore?.[m.id]) ?? (m.displayGroup ?? m.role ?? "front");
+// 動畫中（liveEntry != null）讀 displayGroupsBefore（回合開始前快照）
+// 動畫結束後 liveEntry = null，自動切到最新 displayGroup
+
+// logEntry 結構（dungeonDb.js processDungeonRound）：
+// displayGroupsBefore: { [memberId]: "front"|"rear" }  ← Step 5b 前快照
+
+// 視角分排（每人只看自己那排）：
+// myRowMembers    = 我的 displayGroup 那排（完整卡片）
+// otherRowMembers = 對方排（動畫時顯示緊湊小卡，平時隱藏）
+```
+
+### 地下城多人廣播設計（2026-06-28 修正）
+```js
+// 問題1：非房主點「領取獎勵」→ returnToMapAfterBattle 把所有人拖出戰鬥
+// ✅ 解法：只有 isHost 才呼叫 returnToMapAfterBattle；非房主設 localClaimed=true 顯示 overlay
+if (isHost) {
+  await returnToMapAfterBattle(...);
+} else {
+  setLocalClaimed(true); // 等 Firestore status 自然切換
+}
+
+// 問題2：房主走到怪物房→modal 是 local state，隊員看不到任何東西
+// ✅ 解法：房主寫 mapPendingRoom 到 Firestore；隊員 subscribe 顯示唯讀 modal
+// dungeonDb: proposeMapBattle(roomId, roomData) → updateDoc({ mapPendingRoom: roomData })
+// dungeonDb: clearMapPendingRoom(roomId)        → updateDoc({ mapPendingRoom: deleteField() })
+// 觸發時機：
+//   handleRoomClick → proposeMapBattle（房主選怪物房時）
+//   handleEnterBattle → clearMapPendingRoom（進戰前清除）
+//   撤退按鈕 → clearMapPendingRoom（退出清除）
+// 非房主：讀 room.mapPendingRoom 顯示「⏳ 等待隊長決定是否出戰…」
+```
+
+### 卡死預防機制
+```js
+// 房主：processing 超時 20 秒 → clearDungeonProcessing(roomId)
+// 非房主：processing 超時 20 秒 → setSubmitted(false) + Firestore 清 ready/arrows
+// 全員 ready → 延遲 2 秒（allReadyTimerRef）再呼叫 handleProcess
+//   ↑ 防止最後一人送出後，房主在快照傳播前就觸發結算
+```
+
+---
+
+## 📂 元件路徑速查
+
+```
+src/pages/         MemberApp.jsx / AdminApp.jsx
+src/components/member/
+  MemberHome.jsx        首頁（等級卡+公會等級+收藏格+月卡+廣播分類）
+  MemberPractice.jsx    自主練習（classEndedRef 里程碑保護）
+  DailyQuest.jsx        報到狀態+下課按鈕（subscribeTodayPracticeLogs）
+  MonsterBattle.jsx     打怪（cardColl: useState+useRef 雙軌）
+  CardCollection.jsx    怪物卡片（條列式，inline 升星提示）
+  MemberDex.jsx         成就圖鑑（個人通知，不再全頻廣播）
+  RPGEquipPanel.jsx     裝備升級（傳 clientData 給 upgradeEquipSlot）
+src/components/admin/
+  AdminDailyQuest.jsx   後台報到審核+記帳
+src/components/dungeon/
+  DungeonBattleRoom.jsx 戰鬥（前後衛顯示 + buff 指示器）
+  DungeonShop.jsx       商店（購買記憶 + hp_potion 重購）
+  DungeonRest.jsx       ← 新元件（2026-06-27）
+  DungeonTrap.jsx       ← 新元件（2026-06-27）
+src/lib/
+  db.js / constants.js / archerLevel.js
+  monsterData.js / monsterCards.js / arrowMilestone.js
+  dungeonData.js / dungeonDb.js / dungeonCollectibles.js
+  adventurerSystem.js   levelFromXP(adventurerXP) / rankFromLevel(lv) → {name,icon,color}
+  sound.js / theme.js
+```
+
+---
+
+## 📅 線上約課系統速查（07-10-booking-system-student-pilot → 07-10-booking-multihour-and-stats，2026-07-10）
+
+**跟 SimplyBook 並存，不是取代**。官網「立即預約」CTA 完全沒動，這套是自製系統，先給既有學生/新生試用。**完工後尚未 push main**（PRD 明確要求：使用者自己測試過才問要不要 push；且 Firestore 額度事故當天做的，全程沒有即時對真實資料做並發搶位測試，只做到程式碼審查層級——見下方「已知待驗證項目」）。
+
+### 資料層（`src/lib/bookingDb.js`，視為穩定 API，別的地方不要重刻邏輯）
+```js
+createBooking(memberId, memberName, {email,phone}, planType, durationHours, isNewStudent, date, startTime, endTime, source, note)
+cancelBooking(bookingId)
+rescheduleBooking(bookingId, newDate, newStartTime, newEndTime)   // durationHours/isNewStudent 沿用原預約，不可在改期時變更
+blockSlot(date, startTime) / unblockSlot(date, startTime)
+getBookingsForMember(memberId, maxCount=200)
+getBookingsForDateRange(startDate, endDate)   // 一定要帶日期範圍，不能無界查詢
+LANE_CAPACITY = 8   // 全場固定 8 個靶位
+```
+容量計算全部用 `runTransaction` 對 `bookingSlotCounts/{slotKey}`（`slotKey="YYYY-MM-DD_HH:mm"`）原子計數，`bookings` collection 本身不能拿來即時計數。30 分鐘最短前置時間檢查寫死在 `createBooking`/`rescheduleBooking` 函式本體（純函式，不查資料庫，只檢查起始時段），三個入口（學生/新生/教練代建）共用同一個函式，後端擋一次三邊都保護到。
+
+✅ **3小時方案（2送1）已支援，多時段原子鎖定**（原本「統一1小時」的已知限制已解決）：`bookingDb.js` 內部 `slotKeysFor(date,startTime,durationHours)` 算出一筆預約橫跨的全部時段格 key（1或3個，例：10:00起3小時→`["date_10:00","date_11:00","date_12:00"]`，**不含 12:00**——hourly slot key 代表「這筆預約佔用了這一小時的起點」，3小時預約佔滿9/10/11這3個起點，到了12:00這個key就不屬於這筆預約了）。`createBooking`/`cancelBooking`/`rescheduleBooking` 三個都改成對 `slotKeys[]` 陣列做「全部讀取→逐格檢查→全部通過才逐格寫入」，任何一格額滿/封鎖就整筆丟出、零寫入（`Promise.all(refs.map(ref=>tx.get(ref)))` 讀，寫入時逐格 `tx.set`）。`rescheduleBooking` 對舊/新 slotKeys 做 union，只對「新增佔用」的格子做容量檢查，重疊格子（改期後仍佔用）淨變化為0不用動。`bookings/{id}` 新增 `durationHours:1|3`、`slotKeys:string[]`、`isNewStudent:boolean`；`slotKey`（單數）保留＝`slotKeys[0]`向後相容。
+
+`bookingSlotCounts/{slotKey}` 新增 `newCount`/`returningCount`（跟 `count` 同一次 `tx.set()` 一起寫，不變式 `count===newCount+returningCount`）。**正確性關鍵**：3小時預約橫跨的每一格都各自 +1（不是只加在起點格），所以任何一格被問「現在幾人」都會正確包含「從更早時段跨進來、還沒結束的3小時預約」。`isNewStudent` 是使用者自己勾選「是否為第一次來體驗」，**不是**用 `accountType`（official/guest）反推（官方學生也曾是新生、訪客也可能是老客戶）。
+
+`members/{id}.bookingStats = {firstBookingAt, totalBookings, lastBookingAt}`：`totalBookings` 語意＝**目前有效預約數**（取消要扣回去，改期淨變化為 0），跟 create/cancel/reschedule 同一個 transaction 內更新，UI 一律直接讀這個欄位，**不對 `bookings` 額外查詢**。
+
+### 唯讀顯示層（`src/lib/bookingSchedule.js`）
+只負責「畫格子」，不含任何寫入邏輯：`slotsForDate(date)`（週一公休；週二 13-22 共9格；週三~日 10-22 共12格，每格1hr）、`isBusinessDay`、`fetchSlotCountsForRange(start,end)`（用 `documentId()` range query 一次查完一段日期範圍的 `bookingSlotCounts`，不逐日查，回傳整包欄位含 newCount/returningCount）、`slotState(date,startTime,slotCounts,durationHours=1)`（可選/已滿/封鎖/太快顯示狀態；`durationHours>1` 時額外檢查「以這格當起點往後數 N 格」有沒有任何一格額滿/封鎖，顯示文字仍是這一格自己的即時人數：`新X／舊X（共Y/8）`）、`computeEndTime(startTime,durationHours)`、`PLAN_TYPES`（單人一般／兒童學生敬老／自備器材）、`DURATION_OPTIONS`（1小時／3小時2送1）。共用元件 `src/components/booking/DateSlotPicker.jsx`（新增 `durationHours` prop：過濾掉「起點+時數會超過22:00打烊」的時段、選中後用 `computeEndTime` 算正確 endTime）被學生前台/新生隱藏入口/教練後台代建三處重用。
+
+### 教練後台行事曆的獨立顯示邏輯（`AdminBooking.jsx` 的 `CalendarTab`，不是共用 `DateSlotPicker`）
+週/日檢視格線是自己刻的一套（不透過 `DateSlotPicker`），改多時段這次要注意**兩處分開改**：① 格子上顯示的人數已改成直接讀 `bookingSlotCounts[slotKey].count/newCount/returningCount`（不再用 `bookingsBySlot.length` 現算，因為那個只認 `booking.slotKey` 單數欄位，3小時預約跨進來的格子會漏算）；② `bookingsBySlot` 分組已改成用 `booking.slotKeys||[booking.slotKey]` 逐格 push，讓 `SlotDetailModal` 點任何一格都能看到「從更早時段跨進來、還在佔用中」的預約並可取消/改期。
+
+### `bookingBetaAccess` 漸進開放旗標
+`members/{id}.bookingBetaAccess: boolean`（預設不存在＝false）。`MemberApp.jsx`/`AdminApp.jsx`（射手模式）的「約課」底部導覽按鈕只在 `profile?.bookingBetaAccess===true || role==="admin"` 時才**渲染**（不是灰階，比照 `accessControl.js`/`MonsterBattle.jsx` 既有的條件式不渲染慣例）。教練後台切換開關在 `AdminBooking.jsx` 的「開放名單」分頁，直接 `updateDoc(doc(db,"members",id),{bookingBetaAccess})`（**注意**：`db.js::updateMember()` 的 `safeFields` 白名單沒有這個欄位，用它會被靜默濾掉，這個功能繞過 `updateMember` 直接寫）。⚠️ 只有 `studentTier==="official"`（未鎖定）的學生 `getAllowedPages()` 才會回傳 `null`（全開）；`restricted`/`retired`/`autoLocked` 的白名單沒有 `"booking"`，這幾個分級的學生就算開了 `bookingBetaAccess` 也進不去分頁（目前視為預期行為，PRD 沒特別要求覆蓋）。`"booking"` 已補進 `accessControl.js::PAGE_REGISTRY`（新分組「預約」，check agent 複查時加的），教練後台「權限設定」矩陣現在看得到這個頁面的打勾格，之後想讓特定分級學生也能約課，教練直接勾選即可，不用再改程式碼；`DEFAULT_TIER_PERMISSIONS` 預設沒有跟著開放（維持現況）。
+
+### 新生隱藏入口
+`src/pages/PublicBookingApp.jsx`（比照 `GuestApp.jsx` 獨立頂層模式）→ `App.jsx` 用一個不公開、不規律的 query 參數字串進入（實際字串只在 `App.jsx` 頂部一個常數定義一次，故意不記錄在這份筆記——文件本身可能外流，實際網址只跟教練口頭/私訊複述過，需要時直接看 `App.jsx` 該常數）。頁面掛載時手動插入 `<meta name="robots" content="noindex,nofollow">`（這個 App 平常都在登入後面，沒有既有的 per-route meta 機制，這是最小侵入的手動做法）。註冊沿用既有 `resolveGuestSession(email,"guest",null)`（`guestAuth.js`），跟訪客模式共用同一套 `accountType:"guest"`/`contactHash` 機制，之後要轉正式學籍走既有 `convertGuestToOfficial`。
+
+### 教練後台 `AdminBooking.jsx`
+掛在 `AdminApp.jsx` 的「會員中心」Hub（`memberSub==="booking"`），內部三個子分頁：行事曆（週/日切換，色塊格線，點格子開 `SlotDetailModal`：封鎖/解除封鎖、標記付款方式 cash/transfer、取消、改期、＋新增預約）、開放名單（`bookingBetaAccess` 開關 + `bookingStats` 三欄位顯示）、收費報表（`getBookingsForDateRange` 依區間查詢，`planType × paymentMethod` 記憶體內分組統計，不新增 Firestore 查詢模式）。建立預約（電話進線）搜尋既有顧客時讀的是**全部** `members`（含 guest/kid），不是 `getMembers()`（那個過濾掉 guest/kid）；新顧客一樣走 `resolveGuestSession`，不是另外刻建立邏輯。
+
+### 已知待驗證項目（Firestore 額度恢復後要做）
+- PRD 驗收4：雙分頁同時搶同一時段最後名額（單一時段格版本）——只做到程式碼審查（transaction 邏輯正確），**沒有實際跑並發測試**。
+- `test-booking-concurrency.js` Test E（07-10-booking-multihour-and-stats 新增）：兩個 3 小時預約併發搶同一個瓶頸時段格——同樣只做到程式碼靜態走查+`node --check`語法驗證，**沒有實際對 Firestore 跑過**。斷言重點：輸家不能在起點/終點格留下任何殘留寫入（起點/終點格若變成非預期的數字就代表「N格全有全無」保證破了）。
+- 3小時預約跨時段統計正確性（PRD驗收2）：9:00起3小時預約→10:00/11:00時段格的count/newCount/returningCount要正確算入→12:00不算入——已用程式碼邏輯走查確認（見下方推演），沒有即時 Firestore 驗證。
+- 完整新生自助註冊+預約流程、教練後台完整跑一輪、學生完整跑一輪（選時段→送出→查看→改期→取消，含1小時與3小時兩種方案）——都只做到 `CI=true npx react-scripts build` 通過 + 程式碼審查，沒有對真實 Firestore 資料即時操作驗證。

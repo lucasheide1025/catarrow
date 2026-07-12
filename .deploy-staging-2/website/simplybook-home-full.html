@@ -1,0 +1,309 @@
+<!-- ============================================================
+  貓小隊射箭場 · SimplyBook 首頁「完整版」內容
+  用途：整份貼到 SimplyBook 後台的首頁內容 / 描述（HTML）欄位。
+  特性：全部 inline 樣式、圖片用 i.ibb.co 線上網址、FAQ 用原生 <details>
+        （免 JS）、無 <script>／<style> 依賴 → 不怕後台過濾。
+  預約：所有「立即預約」按鈕都連 #book（SimplyBook 預約流程）。
+  ⚠ 響應式靠 flex-wrap，窄螢幕自動疊成單欄；:hover 效果請靠已貼的
+     simplybook-custom.css（有沒有都能看，只是少了滑鼠互動）。
+  ============================================================ -->
+<div style="max-width:1100px;margin:0 auto;padding:8px 16px 60px;font-family:'Noto Sans TC',-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif;color:#2b2926;line-height:1.75;background:#faf6ef;">
+
+  <!-- ===== HERO ===== -->
+  <div style="text-align:center;padding:40px 12px 20px;">
+    <img src="https://i.ibb.co/n8QGPZ0Z/logo.png" alt="貓小隊射箭場 logo" width="120" style="display:block;margin:0 auto 16px;max-width:120px;height:auto;">
+    <p style="font-size:13px;letter-spacing:.3em;color:#5c5750;margin:0 0 10px;">台南市中西區 · CAT ARCHERY</p>
+    <h1 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(32px,7vw,60px);line-height:1.25;margin:0 0 10px;">城市喧囂外的<span style="color:#e8720c;">靜心</span>起點</h1>
+    <p style="font-family:'Noto Serif TC',serif;font-size:clamp(16px,2.4vw,21px);letter-spacing:.12em;color:#5c5750;margin:0 0 8px;">專業裸弓 · 舒壓療癒 · 貓咪陪伴</p>
+    <p style="color:#5c5750;max-width:460px;margin:0 auto 26px;">隱身社區巷弄的室內射箭場。一支箭、一個靶，還有隨緣出沒的貓店長——一個只屬於你的專注時刻。</p>
+    <p style="margin:0 0 22px;">
+      <a href="#book" style="display:inline-block;background:#e8720c;color:#fff;font-weight:700;letter-spacing:.08em;font-size:17px;padding:16px 40px;border-radius:999px;text-decoration:none;box-shadow:0 6px 20px rgba(232,114,12,.35);">🎯 立即預約體驗</a>
+    </p>
+    <p style="margin:0;font-size:0;">
+      <span style="display:inline-block;font-size:13.5px;border:1.5px solid rgba(43,41,38,.18);border-radius:999px;padding:6px 16px;margin:4px;color:#5c5750;">新手友善</span>
+      <span style="display:inline-block;font-size:13.5px;border:1.5px solid rgba(43,41,38,.18);border-radius:999px;padding:6px 16px;margin:4px;color:#5c5750;">I 人友善</span>
+      <span style="display:inline-block;font-size:13.5px;border:1.5px solid rgba(43,41,38,.18);border-radius:999px;padding:6px 16px;margin:4px;color:#5c5750;">室內冷氣</span>
+      <span style="display:inline-block;font-size:13.5px;border:1.5px solid rgba(43,41,38,.18);border-radius:999px;padding:6px 16px;margin:4px;color:#5c5750;">運動紓壓</span>
+      <span style="display:inline-block;font-size:13.5px;border:1.5px solid rgba(43,41,38,.18);border-radius:999px;padding:6px 16px;margin:4px;color:#5c5750;">新式團康</span>
+    </p>
+  </div>
+
+  <!-- ===== 為什麼選擇我們 ===== -->
+  <div style="padding:44px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">WHY US · 為什麼選擇我們</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 8px;">射箭，本來就該這麼<span style="color:#e8720c;">純粹</span></h2>
+    <p style="color:#5c5750;max-width:520px;margin:0 auto 30px;">我們把複雜的事情變簡單。讓你學得會、玩得開心、來了還想再來。</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;">
+    <div style="flex:1 1 260px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:20px;padding:28px 22px;text-align:center;box-shadow:0 8px 22px rgba(43,41,38,.06);">
+      <img src="https://i.ibb.co/67FM8YD8/005.png" alt="不綁約零壓力" width="120" style="display:block;margin:0 auto 14px;max-width:120px;height:auto;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:20px;margin:0 0 8px;">不綁約 · 零壓力</h3>
+      <p style="font-size:14px;color:#5c5750;margin:0;">射一次、付一次。不推銷課程，不收額外教練費。自由零負擔，說來就來。</p>
+    </div>
+    <div style="flex:1 1 260px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:20px;padding:28px 22px;text-align:center;box-shadow:0 8px 22px rgba(43,41,38,.06);">
+      <img src="https://i.ibb.co/Cp0ftm1h/006.png" alt="I人友善靜心場域" width="120" style="display:block;margin:0 auto 14px;max-width:120px;height:auto;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:20px;margin:0 0 8px;">I 人友善 · 靜心場域</h3>
+      <p style="font-size:14px;color:#5c5750;margin:0;">無社交壓力的環境，讓你自在獨處。每一次拉弓，都是與自己的對話。</p>
+    </div>
+    <div style="flex:1 1 260px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:20px;padding:28px 22px;text-align:center;box-shadow:0 8px 22px rgba(43,41,38,.06);">
+      <img src="https://i.ibb.co/Q3TmHzNd/007.png" alt="貓店長隨緣陪伴" width="120" style="display:block;margin:0 auto 14px;max-width:120px;height:auto;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:20px;margin:0 0 8px;">貓店長 · 隨緣陪伴</h3>
+      <p style="font-size:14px;color:#5c5750;margin:0;">貓咪是家人，非營業項目。遇見是緣分，請勿強迫互動。射箭時貓咪遠離射道，確保安全。</p>
+    </div>
+  </div>
+
+  <!-- ===== 四種弓道 ===== -->
+  <div style="background:#2b2926;color:#faf6ef;border-radius:24px;padding:44px 24px;margin:44px 0 0;">
+    <div style="text-align:center;">
+      <p style="font-size:12px;letter-spacing:.35em;color:rgba(250,246,239,.6);margin:0 0 6px;">BOW SELECTION · 選擇你的弓</p>
+      <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 8px;">四種弓道，<span style="color:#e8720c;">四種自己</span></h2>
+      <p style="color:rgba(250,246,239,.7);max-width:520px;margin:0 auto 30px;">從古典到現代，每種弓都有它的靈魂。找到最適合你的那一把。</p>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;">
+      <div style="flex:1 1 220px;background:rgba(250,246,239,.06);border:1px solid rgba(250,246,239,.14);border-radius:18px;padding:22px 18px;text-align:center;">
+        <img src="https://i.ibb.co/v5NSFnt/001.png" alt="競技反曲弓" style="height:190px;width:auto;max-width:100%;display:block;margin:0 auto 14px;">
+        <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:18px;margin:0;">競技反曲弓</h3>
+        <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">RECURVE BAREBOW</p>
+        <p style="font-size:13px;color:rgba(250,246,239,.7);margin:0;">賽事正式競技弓種，拿掉所有輔助，純靠感知與穩定取勝。主力推薦。</p>
+      </div>
+      <div style="flex:1 1 220px;background:rgba(250,246,239,.06);border:1px solid rgba(250,246,239,.14);border-radius:18px;padding:22px 18px;text-align:center;">
+        <img src="https://i.ibb.co/G4D1rfg5/002.png" alt="現代傳統弓" style="height:190px;width:auto;max-width:100%;display:block;margin:0 auto 14px;">
+        <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:18px;margin:0;">現代傳統弓</h3>
+        <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">TRADITIONAL</p>
+        <p style="font-size:13px;color:rgba(250,246,239,.7);margin:0;">古典一體成型木弓，無弓窗設計，回歸最原始的本能射擊。</p>
+      </div>
+      <div style="flex:1 1 220px;background:rgba(250,246,239,.06);border:1px solid rgba(250,246,239,.14);border-radius:18px;padding:22px 18px;text-align:center;">
+        <img src="https://i.ibb.co/hxhgBw91/003.png" alt="美式獵弓" style="height:190px;width:auto;max-width:100%;display:block;margin:0 auto 14px;">
+        <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:18px;margin:0;">美式獵弓</h3>
+        <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">HUNTING BOW</p>
+        <p style="font-size:13px;color:rgba(250,246,239,.7);margin:0;">短小精悍的現代複合材料獵弓，操作輕快靈活，帥氣十足。</p>
+      </div>
+      <div style="flex:1 1 220px;background:rgba(250,246,239,.06);border:1px solid rgba(250,246,239,.14);border-radius:18px;padding:22px 18px;text-align:center;position:relative;">
+        <span style="position:absolute;top:12px;right:12px;background:#e8720c;color:#fff;font-size:10px;font-weight:700;letter-spacing:.1em;padding:3px 10px;border-radius:999px;">COMING SOON</span>
+        <img src="https://i.ibb.co/YBf4LBS3/004.png" alt="育樂彈弓" style="height:190px;width:auto;max-width:100%;display:block;margin:0 auto 14px;">
+        <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:18px;margin:0;">育樂彈弓</h3>
+        <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">SPORT SLINGBOW</p>
+        <p style="font-size:13px;color:rgba(250,246,239,.7);margin:0;">即將推出！門檻最低、趣味最高的入門選擇，適合完全零基礎的新朋友。</p>
+      </div>
+    </div>
+    <div style="border:1px solid rgba(232,114,12,.5);background:rgba(232,114,12,.08);border-radius:18px;padding:24px 26px;margin:24px 0 0;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:19px;margin:0 0 12px;">主力推薦 · 競技反曲弓（裸弓）<span style="color:#e8720c;"> RECURVE BAREBOW</span></h3>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 26px;font-size:14px;color:rgba(250,246,239,.82);">
+        <span style="flex:1 1 240px;">► SANLIDA X9 / X10 及 Krossen 專業弓身</span>
+        <span style="flex:1 1 240px;">► 磅數 20 ～ 34 lbs，多段位可選</span>
+        <span style="flex:1 1 240px;">► 距離 5m ～ 18m，共九個靶位</span>
+        <span style="flex:1 1 240px;">► 多種指法與瞄準方式教學，最適合入門</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 價目表 ===== -->
+  <div style="padding:48px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">PRICING · 價目表</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 8px;">透明價格，<span style="color:#e8720c;">一價全包</span></h2>
+    <p style="color:#5c5750;max-width:560px;margin:0 auto 30px;">除自備器材方案外，費用皆包含器材租賃、場地、教練指導與教學課程。</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;">
+    <div style="flex:2 1 380px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:20px;overflow:hidden;">
+      <div style="display:flex;background:#2b2926;color:#faf6ef;font-weight:700;font-size:14px;padding:14px 20px;">
+        <span style="flex:2;">方案</span><span style="flex:1;text-align:center;">時數</span><span style="flex:1;text-align:right;">價格</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">單人單靶<br><span style="font-size:12px;color:#5c5750;">含器材、場地、教練、課程</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">1 小時</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:18px;">NT$300</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">單人單靶 · 2 送 1<br><span style="font-size:12px;color:#5c5750;">買 2 小時送 1 小時</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">3 小時</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:18px;">NT$600</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">兒童｜學生｜敬老<br><span style="font-size:12px;color:#5c5750;">滿 5 歲／學生證／滿 60 歲</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">1 小時</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:18px;">NT$200</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">兒童｜學生｜敬老 · 2 送 1<br><span style="font-size:12px;color:#5c5750;">同上資格</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">3 小時</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:18px;">NT$400</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">自備器材<br><span style="font-size:12px;color:#5c5750;">限 50 磅內（複合弓／彈弓禁止），僅場地</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">1 小時</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:18px;">NT$200</span>
+      </div>
+      <div style="display:flex;align-items:center;padding:14px 20px;border-top:1px solid rgba(43,41,38,.1);">
+        <span style="flex:2;">團康活動 8 人<br><span style="font-size:12px;color:#5c5750;">每加 1 人 1hr+200／3hr+350，上限 16 人，來電預約</span></span>
+        <span style="flex:1;text-align:center;color:#5c5750;">1hr／3hr</span>
+        <span style="flex:1;text-align:right;font-family:'Noto Serif TC',serif;font-weight:900;color:#e8720c;font-size:16px;">2,250／4,500</span>
+      </div>
+    </div>
+    <div style="flex:1 1 240px;background:#fdeedd;border:1.5px solid rgba(232,114,12,.35);border-radius:20px;padding:26px 24px;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:20px;margin:0 0 4px;">這一切都免費</h3>
+      <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:0 0 16px;">ALL INCLUDED · 不加價</p>
+      <p style="font-size:14px;color:#5c5750;margin:0;padding:10px 0;border-top:1px dashed rgba(232,114,12,.4);">★ <strong style="color:#2b2926;">器材全免費借用</strong> — 弓、箭、護具一應俱全</p>
+      <p style="font-size:14px;color:#5c5750;margin:0;padding:10px 0;border-top:1px dashed rgba(232,114,12,.4);">★ <strong style="color:#2b2926;">教練指導免費</strong> — 進場費即包含</p>
+      <p style="font-size:14px;color:#5c5750;margin:0;padding:10px 0;border-top:1px dashed rgba(232,114,12,.4);">★ <strong style="color:#2b2926;">訓練系統免費</strong> — 關卡、打怪、積分</p>
+      <p style="font-size:14px;color:#5c5750;margin:0;padding:10px 0;border-top:1px dashed rgba(232,114,12,.4);">★ <strong style="color:#2b2926;">學籍升級免費</strong> — 練習達標即升級</p>
+    </div>
+  </div>
+
+  <!-- ===== 訓練系統 ===== -->
+  <div style="display:flex;flex-wrap:wrap;gap:36px;align-items:center;padding:52px 0 0;">
+    <div style="flex:1 1 300px;text-align:center;">
+      <img src="https://i.ibb.co/NdktDgpT/015.png" alt="貓小隊自製射箭訓練 App" style="width:100%;max-width:360px;border-radius:20px;box-shadow:0 20px 46px rgba(43,41,38,.18);border:1px solid rgba(43,41,38,.14);">
+    </div>
+    <div style="flex:1 1 340px;">
+      <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">TRAINING SYSTEM · 訓練系統</p>
+      <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,4.5vw,38px);margin:0 0 10px;">系統化訓練，<br>從新手到<span style="color:#e8720c;">專家</span></h2>
+      <p style="color:#5c5750;margin:0 0 22px;">我們自行開發了一套完整的射箭訓練 App——關卡、打怪、積分、勳章，讓每位學員都有清晰的成長路徑，全部免費使用。</p>
+      <div style="display:flex;gap:16px;padding:18px 0;border-top:1px solid rgba(43,41,38,.14);">
+        <span style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:28px;color:#e8720c;">01</span>
+        <span><strong style="font-family:'Noto Serif TC',serif;font-size:17px;">新手入門</strong><br><span style="font-size:14px;color:#5c5750;">跟著教練學基礎動作與安全規則，九大新手手動、分鏡式練習。</span></span>
+      </div>
+      <div style="display:flex;gap:16px;padding:18px 0;border-top:1px solid rgba(43,41,38,.14);">
+        <span style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:28px;color:#e8720c;">02</span>
+        <span><strong style="font-family:'Noto Serif TC',serif;font-size:17px;">畢業考核</strong><br><span style="font-size:14px;color:#5c5750;">完成 5 堂新生課並通過考核，升級「學籍」——享折扣＋不對外開放的 70 米戶外練習場。</span></span>
+      </div>
+      <div style="display:flex;gap:16px;padding:18px 0;border-top:1px solid rgba(43,41,38,.14);border-bottom:1px solid rgba(43,41,38,.14);">
+        <span style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:28px;color:#e8720c;">03</span>
+        <span><strong style="font-family:'Noto Serif TC',serif;font-size:17px;">賽事挑戰</strong><br><span style="font-size:14px;color:#5c5750;">參加會內、會外與雙週積分賽，累積肥貓積分，贏取實體榮譽勳章。</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 團康 ===== -->
+  <div style="padding:52px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">GROUP · 團康 &amp; 遊戲模式</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 8px;">刺激精彩，<span style="color:#e8720c;">交給我們</span></h2>
+    <p style="color:#5c5750;max-width:560px;margin:0 auto 26px;">適合 8 ～ 16 人團體，公司團建或朋友聚會的最佳選擇。專業教練協助規劃分組對抗活動。</p>
+  </div>
+  <img src="https://i.ibb.co/JwzJGT3T/009.png" alt="貓小隊團體合照" style="width:100%;border-radius:20px;border:1px solid rgba(43,41,38,.14);margin:0 0 20px;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;">
+    <div style="flex:1 1 220px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px 20px;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:17px;margin:0;">打怪模式</h3>
+      <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">SOLO HUNT</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">一人挑戰系統關卡，射中要害得分，累積積分解鎖下一關。</p>
+    </div>
+    <div style="flex:1 1 220px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px 20px;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:17px;margin:0;">組隊打怪</h3>
+      <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">TEAM HUNT</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">分組合作挑戰怪物靶，積分加總決定最強團隊。最適合團建！</p>
+    </div>
+    <div style="flex:1 1 220px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px 20px;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:17px;margin:0;">決鬥模式</h3>
+      <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">DUEL MODE</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">1 對 1 各射同分值靶，先達標者獲勝。最適合活動決賽！</p>
+    </div>
+    <div style="flex:1 1 220px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px 20px;">
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:17px;margin:0;">練習模式</h3>
+      <p style="font-size:11px;letter-spacing:.2em;color:#e8720c;margin:2px 0 10px;">PRACTICE</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">自由練習無時間壓力，專注動作修正，教練隨時指導。</p>
+    </div>
+  </div>
+  <div style="background:#2b2926;color:#faf6ef;border-radius:18px;padding:24px 30px;margin:20px 0 0;text-align:center;">
+    <p style="margin:0 0 6px;">適合 8 ～ 16 人團體 · 公司團建 · 朋友聚會 · 歡迎來電洽詢專屬團康方案</p>
+    <a href="tel:+886973770682" style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:26px;color:#e8720c;text-decoration:none;letter-spacing:.06em;">0973-770-682</a>
+  </div>
+
+  <!-- ===== 場地師資 ===== -->
+  <div style="padding:52px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">FACILITY &amp; TEAM · 場地與師資</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 8px;">你的城市<span style="color:#e8720c;">靜心防空洞</span></h2>
+    <p style="color:#5c5750;max-width:560px;margin:0 auto 26px;">室內冷氣場地，兩條射道、九個靶位，通過學籍考核還能解鎖 70 米戶外練習場。</p>
+  </div>
+  <img src="https://i.ibb.co/LzhFbjz7/008.png" alt="貓小隊室內射箭場射道實景" style="width:100%;border-radius:20px;border:1px solid rgba(43,41,38,.14);margin:0 0 20px;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 20px;">
+    <div style="flex:1 1 260px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:22px 26px;display:flex;justify-content:space-between;align-items:center;">
+      <span><span style="font-size:11px;letter-spacing:.2em;color:#e8720c;">LEFT LANE</span><br><strong style="font-family:'Noto Serif TC',serif;font-size:17px;">左側新手射道</strong></span>
+      <span style="text-align:right;color:#5c5750;font-size:13px;"><strong style="font-family:'Noto Serif TC',serif;font-size:20px;color:#2b2926;display:block;">5m～10m</strong>三個靶位</span>
+    </div>
+    <div style="flex:1 1 260px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:22px 26px;display:flex;justify-content:space-between;align-items:center;">
+      <span><span style="font-size:11px;letter-spacing:.2em;color:#e8720c;">RIGHT LANE</span><br><strong style="font-family:'Noto Serif TC',serif;font-size:17px;">右側進階射道</strong></span>
+      <span style="text-align:right;color:#5c5750;font-size:13px;"><strong style="font-family:'Noto Serif TC',serif;font-size:20px;color:#2b2926;display:block;">5m～18m</strong>六個靶位</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;">
+    <div style="flex:1 1 200px;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px;text-align:center;background:linear-gradient(160deg,#fff 60%,#fdeedd);">
+      <p style="font-size:10.5px;letter-spacing:.25em;color:#e8720c;margin:0 0 8px;">HEAD COACH</p>
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:22px;margin:0 0 8px;">聖凱</h3>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">競技反曲弓（裸弓）<br>美式獵弓 · 傳統弓</p>
+    </div>
+    <div style="flex:1 1 200px;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px;text-align:center;background:linear-gradient(160deg,#fff 60%,#fdeedd);">
+      <p style="font-size:10.5px;letter-spacing:.25em;color:#e8720c;margin:0 0 8px;">ASSISTANT COACH</p>
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:22px;margin:0 0 8px;">小白</h3>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">競技反曲弓（裸弓）<br>專業輔助教學</p>
+    </div>
+    <div style="flex:1 1 200px;border:1px solid rgba(43,41,38,.14);border-radius:18px;padding:24px;text-align:center;background:linear-gradient(160deg,#fff 60%,#fdeedd);">
+      <p style="font-size:10.5px;letter-spacing:.25em;color:#e8720c;margin:0 0 8px;">ACTING COACH</p>
+      <h3 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:22px;margin:0 0 8px;">Yumi</h3>
+      <p style="font-size:13.5px;color:#5c5750;margin:0;">競技反曲弓（裸弓）<br>代理教練指導</p>
+    </div>
+  </div>
+
+  <!-- ===== 評論 ===== -->
+  <div style="padding:52px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">REVIEWS · 學員真實評論</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 26px;">他們都說，<span style="color:#e8720c;">還會再來</span></h2>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;">
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">費用有包含場地費＋教學，價格非常實惠。在台南對射箭有興趣的人歡迎來體驗，還有三隻貓可以嚕！</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">林信嘉 <span style="color:#5c5750;font-weight:400;font-size:12px;">台南很值得推薦的射箭場</span></p>
+    </div>
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">教練細心指導並給予大量時間練習，三個小時幾乎欲罷不能，直到貓貓走過來才休息。下次還會來！</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">葉巴斯 <span style="color:#5c5750;font-weight:400;font-size:12px;">第一次體驗</span></p>
+    </div>
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">可以當日線上預約，時間彈性。長期低頭工作，下班後練箭一小時，整個肩背都伸展開了。射箭的咻咻聲很療癒～</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">陳怡伶 <span style="color:#5c5750;font-weight:400;font-size:12px;">讓身心充電的帥運動</span></p>
+    </div>
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">台南難得的練弓教室，上午 10 點就開放練習，對需輪班又想把弓練好的上班族來說是極佳選擇。</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">Li C-H <span style="color:#5c5750;font-weight:400;font-size:12px;">練弓第一選擇</span></p>
+    </div>
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">教練教得好、無壓力、因材施教，設備環境氛圍都很好。來了你就不會想離開，比其他箭館好太多了。</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">D ibo <span style="color:#5c5750;font-weight:400;font-size:12px;">極優</span></p>
+    </div>
+    <div style="flex:1 1 300px;background:#fff;border:1px solid rgba(43,41,38,.14);border-radius:16px;padding:20px 22px;">
+      <p style="color:#e8720c;letter-spacing:2px;font-size:13px;margin:0 0 8px;">★★★★★</p>
+      <p style="font-size:13.5px;color:#5c5750;margin:0 0 12px;">本來只想加強背肌，沒想到收穫的不只是身體協調，還有更多人生道理與體悟。這裡真的與眾不同。</p>
+      <p style="font-size:13px;font-weight:700;margin:0;">楊宗毅 <span style="color:#5c5750;font-weight:400;font-size:12px;">練弓也練心</span></p>
+    </div>
+  </div>
+
+  <!-- ===== FAQ ===== -->
+  <div style="padding:52px 0 10px;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">FAQ · 常見問題</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(26px,5vw,42px);margin:0 0 26px;">你想知道的，<span style="color:#e8720c;">都在這</span></h2>
+  </div>
+  <div style="max-width:820px;margin:0 auto;">
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">在台南射箭體驗一次多少錢？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">單人單靶 1 小時 NT$300，已含器材、場地、教練指導與教學課程，不另收教練費；買 2 小時送 1 小時共 NT$600。兒童（滿 5 歲）、學生、60 歲以上敬老價 1 小時 NT$200。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">完全沒射過箭的新手可以參加嗎？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">可以。我們主打新手友善，教練會從安全規則、站姿、握弓到放箭逐步教學，並依狀況挑選合適磅數的弓。不綁約、不推銷課程，射一次付一次。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">需要預約嗎？怎麼預約？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">建議先線上預約，系統開放當日預約。個人點本頁「立即預約」選時段即可；8 人以上團體活動請來電 0973-770-682 洽詢。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">需要自備弓箭或裝備嗎？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">不用。弓、箭、護具全部免費借用。若想用自己的器材（限 50 磅內，複合弓與彈弓禁止），可選自備器材方案，1 小時 NT$200 僅收場地費。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">幾歲可以射箭？小孩可以參加嗎？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">滿 5 歲以上即可參加。兒童、持有效證明的學生與滿 60 歲以上長者享優惠價 1 小時 NT$200。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">附近有停車場嗎？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">有。鄰近有「大豐里停車場」與「Times 台南中華西和緯停車場」，步行即達。</p></details>
+    <details style="border-top:1px solid rgba(43,41,38,.14);border-bottom:1px solid rgba(43,41,38,.14);padding:16px 4px;"><summary style="cursor:pointer;font-weight:700;font-size:16px;">真的有貓咪嗎？可以摸嗎？</summary><p style="color:#5c5750;font-size:14px;margin:12px 0 0;">有貓店長隨緣陪伴。貓咪是家人、非營業項目，遇見是緣分，請勿強迫互動。射箭時貓咪會遠離射道，確保安全。</p></details>
+  </div>
+
+  <!-- ===== 聯絡資訊 ===== -->
+  <div style="background:#f3ecdf;border-radius:20px;padding:36px 26px;margin:52px 0 0;text-align:center;">
+    <p style="font-size:12px;letter-spacing:.35em;color:#e8720c;margin:0 0 6px;">VISIT · 聯絡與營業資訊</p>
+    <h2 style="font-family:'Noto Serif TC',serif;font-weight:900;font-size:clamp(24px,4.5vw,36px);margin:0 0 20px;">找到<span style="color:#e8720c;">我們</span></h2>
+    <p style="font-size:15px;color:#2b2926;margin:0 0 6px;">📍 台南市中西區和緯路四段 277 巷 8 弄 12 號</p>
+    <p style="font-size:15px;margin:0 0 6px;">☎ <a href="tel:+886973770682" style="color:#e8720c;font-weight:700;text-decoration:none;">0973-770-682</a>（電話 / LINE）</p>
+    <p style="font-size:14px;color:#5c5750;margin:0 0 6px;">🕒 週一公休 ｜ 週二 13:00–22:00 ｜ 週三～週日 10:00–22:00</p>
+    <p style="font-size:14px;color:#5c5750;margin:0 0 22px;">🅿 大豐里停車場 · Times 台南中華西和緯停車場</p>
+    <a href="#book" style="display:inline-block;background:#e8720c;color:#fff;font-weight:700;letter-spacing:.08em;font-size:17px;padding:16px 40px;border-radius:999px;text-decoration:none;box-shadow:0 6px 20px rgba(232,114,12,.35);">🎯 立即預約專屬時光</a>
+  </div>
+
+</div>

@@ -119,6 +119,7 @@ export default function MemberApp() {
   const [scoring, setScoring] = useState(false);
   useEffect(()=>{ sessionStorage.setItem("member_page",page); },[page]);
   useEffect(()=>{ if(page==="comp-detail"&&!selComp) setPage("comps"); },[]); // eslint-disable-line
+  const [battleImmersive, setBattleImmersive] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("party_room"))?.roomId || null; } catch { return null; }
@@ -598,8 +599,8 @@ export default function MemberApp() {
         </div>
       </OverlayModal>
 
-      {/* Header */}
-      <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
+      {/* Header（戰鬥沉浸模式隱藏） */}
+      <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: battleImmersive ? 'none' : undefined }}>
         <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"10px 14px 8px" }}>
           {/* 第一列：頭像等級環｜暱稱＋檢定 pill｜通知鈴鐺｜登出 */}
           <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
@@ -717,6 +718,7 @@ export default function MemberApp() {
             if (fromGuild) { setFromGuild(false); setPage("guild"); }
             else { setQuestCtx(null); setPage("adventure-hub"); }
           }}
+          onImmersiveChange={setBattleImmersive}
           questContext={questCtx} onKillForQuest={handleQuestKill}
           monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
           potionDex={potionDex} duelStats={duelStats} />}
@@ -762,8 +764,8 @@ export default function MemberApp() {
         )}
       </div>
 
-      {/* 底部導覽（token 化，active 用 --accent 指示條）*/}
-      <div style={{ flexShrink:0, background:"var(--bg-deep)", borderTop:"1px solid var(--border-subtle)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
+      {/* 底部導覽（戰鬥沉浸模式隱藏） */}
+      <div style={{ flexShrink:0, background:"var(--bg-deep)", borderTop:"1px solid var(--border-subtle)", display: battleImmersive ? 'none' : 'flex', zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
@@ -785,6 +787,25 @@ export default function MemberApp() {
           );
         })}
       </div>
+
+      {/* 戰鬥沉浸模式：顯示導覽列按鈕 */}
+      {battleImmersive && (
+        <button onClick={() => setBattleImmersive(false)}
+          style={{
+            position:"fixed", top:8, left:"50%", transform:"translateX(-50%)",
+            zIndex:9999, background:"rgba(15,23,42,0.85)",
+            border:"1px solid rgba(255,255,255,0.2)",
+            borderRadius:20, padding:"6px 16px",
+            color:"rgba(255,255,255,0.8)",
+            fontSize:12, fontWeight:700, cursor:"pointer",
+            backdropFilter:"blur(8px)",
+            display:"flex", alignItems:"center", gap:6,
+          }}
+        >
+          <span>▴</span>
+          <span>顯示導覽列</span>
+        </button>
+      )}
     </div>
   );
 }

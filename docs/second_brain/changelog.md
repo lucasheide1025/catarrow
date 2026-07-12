@@ -3,6 +3,74 @@
 
 ---
 
+## 2026-07-12（約課：教練無條件取消/改期/變更方案）
+
+**為什麼**：新舊預約關係（改期產生的 cancelled+confirmed 配對）＋「已開始」guard 導致教練刪不掉/改不了；學生臨時要換方案但課已開始也卡死。
+
+- **`bookingDb.js::cancelBooking(bookingId, options)`**：加 `options.force`（教練後台）跳過「已開始」與「非 confirmed」兩道 guard。⚠️ **計數器安全**：只有原本 `status==="confirmed"`（`wasHolding`）才釋放時段名額＋扣 `totalBookings`；force 取消已 cancelled/completed 的不再重複釋放，否則 `bookingSlotCounts` 會被扣爛。
+- **`bookingDb.js::rescheduleBooking(...newEndTime, options)`**：加 `options.force`（跳過 30 分前置＋已開始）＋支援 `options.durationHours`/`options.planType` 覆寫（＝**變更方案/時數**）。改時數＝佔用連續格數變、但**人數不變**，沿用既有「新舊格淨變化」計數器邏輯，不動人數數學。呼叫端要自己算好對應 `newEndTime`。
+- **`AdminBooking.jsx`**：教練按鈕**永遠顯示**（非 cancelled 都能取消、confirmed 都能改期）；已開始/已結帳的顯示「**強制取消/強制改期**」＋ `window.confirm` 二次確認；一律傳 `force:true`。改期 Modal 的 `RescheduleSlotPicker` 內建 `PlanDurationPicker`，可一步改方案/時數（換時數會清掉已選時段、驅動 `DateSlotPicker` 重查連續格；`endTime` 用「新起始＋新時數」重算不信 picker）。
+- ⚠️ **規則零改動**：`firestore.rules` 的 `bookings.update` 本來就無條件放行 `isAdmin()`，不用貼 Console。
+- ⚠️ **已知取捨**：強制取消 `completed`（已結帳）預約只改 `status`，**不動連著的 `billingRecords`**。若要一併退款/作廢帳務是另一條線。
+
+---
+
+## 2026-07-12（遠征隊灌值 + 建築產能上調 + 貓貓圖鑑加乘預留）
+
+**為什麼**：鍛造上限到 50 級（一格 ~18,450 材料），但遠征隊完全沒發貓 XP/羈絆、材料杯水車薪、且高階 tier 掉不到（貓草包=driedfish 要 T4 才掉→根本開不了工）。**決策：鍛造成本不砍（維持長期目標），改灌遠征＋提高建築產能來餵。**
+
+- **`expeditionData.js`**：①材料全域 `EXPEDITION_MATERIAL_BOOST = 4`；②T3~T5 補齊缺的 matKey tier（T3 加 ore_t3/meat_t2/driedfish_t1、T4 加 ore_t4/meat_t3/driedfish_t2、T5 加 ore_t5/meat_t5/driedfish_t3）打通死路；③每趟發 catXP（×貓戰力倍率、上限 800）＋catBond（固定值、上限 15），`calcExpeditionRewards` 吐出 `catXP`/`catBond` key。
+- **`db.js::collectExpedition(memberId, slotIdx, rewards, catId)`**：加 `catId` 參數；把 `catXP`/`catBond` 從村莊資源迴圈排除，改呼叫 `addCatXP`/`addCatBond`（clamp 800/15）。⚠️ 原本會把任何 key 無腦寫進 `village.resources.${key}`，不接線的話 catXP 會變成假村莊資源。`ExpeditionPanel.jsx` 領獎補傳 `exp.catId`、`fmtRewardKey` 加「⭐貓咪經驗/💛羈絆」標籤。
+- **`villageData.js`**：①`STAGE_MULTIPLIERS [1,1,1.1,1.2,1.4]→[1.2,1.4,1.7,2,2.5]`。⚠️ **關鍵**：stageMult **只作用於分層材料**（礦/肉/小魚乾/藥水＝鍛造料），**不影響箭露/扭蛋幣** → 提高鍛造料產能但**建築升級門檻（卡箭露）不變**，正好對到「升級需求不下修、但提高產能」。②**貓貓圖鑑生產加乘預留** `CATDEX_PRODUCTION_MULT = 1.0`，`calcPendingResources(village, { catDexMult })` 傳入放大全村產能，未實裝前恆為 1 不動平衡。
+- ⚠️ 鍛造一格滿級成本：5 品質 ×（品質內強化 2,690 ＋轉品質 1,000）＝matKey ~18,450 ＋皮 125。弓/防具共用 ore（雙倍需求）。
+
+---
+
+## 2026-07-12（接手 FREEBUFF 戰鬥模擬器 `AdminBattleTest.jsx`：確認送出/放慢/靶面/打擊感）
+
+Claude 接手修 4 項細節（主體由 FREEBUFF 寫）：
+
+- **#3 分數要確認才送出**（原本第 6 箭自動結算跳關）：`SCORE_ARROW` 拆成「只記錄不結算」，滿 6 箭停在 SCORING；新增 `SUBMIT_ROUND`（按送出才扣怪/反擊/判勝敗）、`UNDO_ARROW`（刪最後一箭）。計分覆蓋層加「⌫ 刪除上一箭 / 🏹 送出這一回合」控制列，滿箭時鍵盤變灰停用。⚠️ `UNDO_ARROW` 用新增的 `computeUnlocked(arrows)` 從剩餘箭重算殭屍靶已解鎖部位，否則刪箭後解鎖狀態殘留。
+- **#1 戰鬥過程放慢**：PROCESSING delay 逐箭 320→640ms（爆擊箭 820）、前後加緩衝、貓貓 450→1000、反擊 550→1100、結算 200→450。
+- **#4 靶面＋鍵盤並存**（使用者選）：計分覆蓋層上方加 SVG `TargetFace`——分數仍用鍵盤，每箭依環數在靶紙留落點（世界射箭配色；`arrowMark(i,score)` 固定角度表+環數半徑帶算落點，穩定不亂跳；爆擊箭金色、最新箭脈動）。
+- **#2 打擊感**：逐箭命中時怪物身上浮「-傷害」（爆擊放大金色）＋爆擊全螢幕金光 `critFlash`＋怪物 `hitShock` 亮白。新增 keyframes dmgFloat/critFlash/hitShock。⚠️ **`battleSound.js` 預設 `_mode="debug"` 只印 console 不出聲**，測試畫面要切 live 才有音效——「音效不足」有一半是這個。
+- ⚠️ 此檔仍是 FREEBUFF 進行中的 WIP（git 未追蹤），Claude 只改細節；動戰鬥相關檔前要跟 FREEBUFF 對，避免 git 分岔。
+
+---
+
+## 2026-07-12（課表小卡定案版：時段分組小色牌）
+
+- `BookingScheduleCard.jsx` **最終版式**（取代前兩版一列一筆的做法）：
+  - 依**開始時段分組**，同時段的人併同一列；每人一個**小色牌**（可自動換行 flow layout）。
+  - 色牌只顯示「姓名（多人加 ×N）」＋**新舊生**：🆕琥珀＝新生、藍＝舊生（`NEW_STYLE`/`OLD_STYLE`）。**不再顯示方案／時數**（教練只要知道這時段有誰、是不是新生）。
+  - 尺寸再縮到 W=460，Modal 內 `max-w-[460px]`；header 加「新生／舊生」圖例。
+- ⚠️ **踩坑（Canvas measureText 字級陷阱）**：週幾弽章的 X 位置用 `ctx.measureText(date).width` 算，但量測時 `ctx.font` 已切成弽章的 14px、日期實際是 900 28px → 量出來偏窄，弽章被推左壓住日期（「週日被遮住」）。**修法：在畫日期的 28px 字級當下先存 `dateW`，切字級前量。measureText 永遠回傳「當前 ctx.font」的寬度，跨字級量測前務必先量好存起來。**
+- ⚠️ 版面高度需在設定 `canvas.width/height`（會重置 ctx）**之前**先用 ctx 量測分組/換行算出總高；量到的數字是純數值，重置後仍有效，重置後再 `scale` 並依存好的 layout 繪製。
+
+---
+
+## 2026-07-12（約課通知三改：小卡精簡 / 取消通知 / 修下一小時橫幅殘留）
+
+- **課表小卡改精簡**：`BookingScheduleCard.jsx` 尺寸字級全縮（W 720→520、PAD 36→22、ROW_H 88→52、字級同比縮），原本「太大一片」，現在緊湊適合群組分享。
+- **新增預約取消通知**：
+  - `bookingDb.js::getRecentCancellations(n)`：依 `cancelledAt` desc 抓最近取消的（單欄位自動索引，client 再 filter `status==="cancelled" && cancelledAt`）。
+  - `bookingSeen.js`：加**取消專用**已看集合（`LS_CANCEL`/`LS_CANCEL_INIT`，含 `seedCancelIfFirstRun`/`getCancelSeenSet`/`isCancelUnseen`/`markAllCancelSeen`）。⚠️ 故意跟新預約的 seen 分開——同一筆先亮「新」被取消後又要亮「取消」，共用集合會因 id 已存在而不亮。
+  - `AdminBookingAlert.jsx`：紅色 ❌ 橫幅列出被取消的預約，音效 `sfxError`，教練點「知道了」→ `markAllCancelSeen` 整批標記已看即消失。
+- **修 bug：下一小時橫幅點過不消失**：render 條件原本只看 `nextHour.length > 0`，沒看 `dismissedNextHour` → 教練點過音效停了、訊息卻殘留一直在。改用 `showNextHour = nextHour.length>0 && !dismissedNextHour` 統一控制顯示與 null-guard。⚠️ 這類「dismiss 後要整個消失」的橫幅，顯示條件與 sound gate 要用同一個 `show*` 布林，不能一個看 length、一個看 dismissed。
+
+---
+
+## 2026-07-12（新功能：今日課表小卡 PNG 匯出）
+
+- **新檔** `src/components/booking/BookingScheduleCard.jsx`：把某一天已排定的預約畫成一張圖，教練下載 PNG 後貼到學生群組。
+- **接入** `AdminBooking.jsx::CalendarTab`：日檢視工具列加「🖼 輸出課表」鈕（週檢視不顯示，用 `viewMode==="day"` 守）→ 開 Modal 顯示 canvas 預覽 + 下載鈕。傳入的 `bookings` 就是該天已載好的資料，元件內再 filter 這天+confirmed/completed 並依 startTime 排序。
+- **做法**：用 Canvas 2D 直接繪製再 `toBlob` 匯出，**不加任何套件**（比照 Web Audio 音效 / SVG 怪物的零相依哲學，跨裝置最穩）。自製 `roundRectPath`（不靠瀏覽器原生 `ctx.roundRect`，兼容舊 WebView/OPPO）。高清輸出用 `Math.min(2, devicePixelRatio)*2` 當 scale。
+- 卡片內容：場館名＋日期＋週幾徽章、每列（時段／時數／姓名(人數)／方案色條＋新舊生）、底部堂數。方案色：general 藍 / discount 綠 / own_equipment 橘。
+- ⚠️ 用途取向＝「已排定課表通知」，會顯示學生姓名，Modal 內有提示只貼自己的學生群組。若日後要「招生用（只露空位不露姓名）」是另一種卡，需另做。
+- ⚠️ 踩坑：`// eslint-disable-next-line react-hooks/exhaustive-deps` 在本專案 CRA 設定下會因「規則未啟用」變成**編譯錯誤**（不是警告）。本專案沒開 exhaustive-deps，別加這行 disable 註解。
+
+---
+
 ## 2026-07-12（修 bug：後台線上約課行事曆卡住轉不停）
 
 - **症狀**：後台「線上約課 → 行事曆」Spinner 一直轉、表格出不來。
@@ -3121,3 +3189,62 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 ### 組隊打怪靶紙選擇器修復
 **為什麼**：`TargetFmtPicker` 出現在戰鬥每一回合，應只在設定時選一次。
 **改了什麼**：`PartyBattleRoom.jsx` 移除戰鬥階段的 `TargetFmtPicker` block。
+
+## 2026-07-12（戰鬥模擬器大改版：VS動畫＋戰鬥流程動畫＋統一音效管理器＋音效整合清單）
+
+### VS 進場動畫（`AdminBattleTest.jsx`）
+- **貓貓夥伴進場**：射手左側新增縮小版貓貓頭像（44px），帶技能類型對應的發光邊框（綠/紅/紫），晚 0.3 秒彈入。貓貓名字以 `+ 貓名` 格式並排顯示。沒選貓貓時不出現。
+- **貓貓進場戰吼**：9 隻貓依 skillGroup（heal/atk/def）各有 2 種隨機台詞，`CAT_BATTLE_CRIES` 常數，useMemo 鎖定不重選。晚 0.7 秒彈入＋發光陰影。
+- **類型專屬進場特效**（`CAT_INTRO_EFFECTS`）：IIFE 渲染背景光暈＋浮動粒子（catParticle keyframe，向外飛散旋轉 360°）＋類型標籤徽章。
+  - 💚 治癒型 → 翠綠＋✨×6／⚡ 攻擊型 → 赤紅＋💥×5／🛡️ 防禦型 → 紫色＋🔮×5
+
+### 戰鬥過程動畫（PROCESSING phase）
+- **新階段** `PHASE.PROCESSING("processing")`：SCORE_ARROW 最後一箭結束後（非勝敗）進入 PROCESSING 而非直接跳 ROUND_RES。NEXT_PHASE reducer 負責轉場。
+- **animStep 狀態機**（-1~9）：useEffect async 序列依序執行，`delay(320)` 每箭間隔。cancelled flag＋cleanup 防記憶體洩漏。
+- **逐箭 UI**：z-index 9 半透明覆蓋層，底部顯示已命中箭數對應格（亮起高亮＋傷害數字）。
+- **貓貓協戰動畫**：animStep 7 中央彈窗（類型色邊框＋發光陰影）。
+- **怪物反擊動畫**：animStep 8 紅色警告面板。
+- **怪物震動**：PROCESSING 期間套用 `procMonster` keyframe（translateX ±6px + rotate ±2°），每 0.45 秒循環。
+- **可選貓貓**：控制面板 9 隻 CAT_IDS＋「❌ 無」，用 `calcCatCombatStats()` 真實計算模擬中高等級。
+- **貓貓協戰邏輯**（ROUND_RES 觸發）：承受反擊傷害(35%－貓 DEF×0.5)＋協戰攻擊(ATK×0.8×亂數)＋技能觸發(治癒/追加/減傷疊加)。
+
+### 音效預留 → 統一音效管理器 `src/lib/battleSound.js` 🆕
+- 9 個音效ID：cat_intro/cat_type_sound/arrow_flight/arrow_hit/cat_attack/monster_counter/victory_fanfare/victory_cheer/defeat_sigh
+- 雙模式：debug（console.log `🔊 [SOUND]` 前綴） vs live（播放真實音效，預留）
+- API：playBattleSound/setBattleSoundMode/toggleBattleSoundMode/getBattleSoundMode/SOUND_IDS
+- AdminBattleTest.jsx 全部 9 處 console.log 已替換為 playBattleSound() 統一呼叫
+- 箭矢飛行兩段式（battleMode 判斷 分數靶→破風疾馳／殭屍靶→近距離穿透）＋命中音（含爆擊標記）
+- 勝利/敗北音效預留：victory_fanfare（擊倒時）、victory_cheer（轉 WON 時）、defeat_sigh（敗北時）
+
+### 音效整合清單文件 `docs/sound-effect-checklist.md` 🆕
+- 完整記錄 9 個音效掛載點（ID／時機／Console範例／行號／未來實作 code）、API、建議音效函式列表（10 個）
+
+### live 模式真實音效播放 + 控制面板音效切換（2026-07-12 追加）
+- `battleSound.js` 加入 12 個 `import` 和 9 個 `livePlay` 映射：cat_intro→sfxBattleIntro, arrow_hit→sfxArrowHit/sfxCritBoom, victory_fanfare→sfxVictoryFanfare 等
+- live 模式在瀏覽器 Console 輸入 `toggleBattleSoundMode()` 即可從 debug 切換到播放真實音效
+- 控制面板（showCtl 區塊）加入「🔧 音效：除錯／🎵 音效：播放中」切換按鈕（綠色高亮表示 live 模式）
+- 按鈕即時切換 `toggleBattleSoundMode()` + React state 同步，無需重整
+
+### 🚀 接手開發指引（給 CLAUDE / CODEX）
+本任務已完成的工作：
+- `src/lib/battleSound.js`🆕：統一音效管理器（9 IDs、debug/live 雙模式、`playBattleSound/setBattleSoundMode/toggleBattleSoundMode`）
+- `AdminBattleTest.jsx`：全部 9 處 console.log 已替換為 `playBattleSound()`，控制面板加入音效切換按鈕
+- `docs/sound-effect-checklist.md`🆕：9 個掛載點完整文件
+- `docs/second_brain/quick-ref.md` 已新增 🔊 章節
+
+**下一步可能方向**：
+1. 將 battleSound.js 整合進正式戰鬥（MonsterBattle.jsx / PartyBattleRoom.jsx / DungeonBattleRoom.jsx）
+2. 音效模式狀態存 localStorage 讓重整後恢復
+3. 戰鬥畫面內加入小型音效模式指示器
+4. 調整個別 livePlay 映射的真實聽感（目前是初版對應）
+5. 若有多戰鬥實例同時存在，`_mode` 需改成 instance-scoped
+
+### 踩坑提醒
+- animStep cancelled flag 必須＋cleanup，否則 StrictMode 會疊加非同步序列
+- useMemo 鎖定 catBattleCry 的依賴項要含 hasCat+skillGroup，漏 hasCat 會讓清空貓後仍顯示舊 cry
+- IIFE 粒子 pointerEvents:"none" 避免擋住 VS intro 互動
+- battleSound _mode 是模組級變數，未來多戰鬥實例需改 instance-scoped
+
+---
+
+

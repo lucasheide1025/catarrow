@@ -29,6 +29,7 @@ export default function MemberAdventureHub({ onPageChange, badges = {} }) {
             title={item.title}
             desc={item.page === "guild" ? `Lv.${advLv} ${advRank.icon}` : item.desc}
             accent={item.accent}
+            image={`/ui/adventure/${item.page}.webp`}
             badge={badges[item.badgeKey] || 0}
             onClick={() => onPageChange(item.page)} />
         ))}

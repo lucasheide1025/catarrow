@@ -1,0 +1,227 @@
+/* ============================================================
+   貓小隊射箭場 · SimplyBook 品牌化 Custom CSS
+   用途：貼到 SimplyBook 後台的兩個自訂 CSS 欄位
+         ① 預約首頁 CSS（Booking page）
+         ② 預約套件 CSS（Widget）
+   兩個欄位貼「同一份」即可。
+   品牌色：暖紙 #faf6ef / 炭墨 #2b2926 / 橘 #e8720c
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;900&display=swap');
+
+/* ---------- 隱藏 Cookie 同意橫幅 ----------
+   嵌入 iframe 時 iOS 會封鎖第三方 Cookie，「已接受」狀態存不住，
+   橫幅每次都重複跳出。嵌入情境直接隱藏它最乾淨。
+   （若同時想在 SimplyBook 後台的 GDPR/隱私設定關掉通知，效果一樣。） */
+#sb_cookies_block,
+.cookies.sb-important {
+  display: none !important;
+}
+
+/* ---------- 整體底色與文字 ---------- */
+body,
+.sb-layout,
+.page--booking,
+.step-content {
+  background-color: #faf6ef !important;
+  color: #2b2926 !important;
+}
+
+/* 標題改襯線字，跟官網一致 */
+h1, h2, h3,
+.title-small,
+.title-sub,
+.step_info_item .title-small {
+  font-family: 'Noto Serif TC', serif !important;
+}
+
+/* ---------- 頂部標頭（預約首頁才有） ---------- */
+header.web,
+header.web.custom-bg {
+  background: #2b2926 !important;
+}
+
+/* ---------- 步驟列：服務 → 時間 → 顧客 ---------- */
+.booking-info .step_info_item,
+.step_info_item {
+  background: #f3ecdf !important;
+  color: #5c5750 !important;
+}
+.booking-info .step_info_item.active,
+.step_info_item.active {
+  background: #e8720c !important;
+  color: #ffffff !important;
+}
+/* 步驟列的箭頭切角（偽元素） */
+.step_info_item::before,
+.step_info_item::after {
+  border-left-color: #f3ecdf !important;
+}
+.step_info_item.active::before,
+.step_info_item.active::after {
+  border-left-color: #e8720c !important;
+}
+
+/* ---------- 服務卡片 ---------- */
+.service-step .service-item,
+.service-item {
+  background: #ffffff !important;
+  border: 1px solid rgba(43, 41, 38, 0.14) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 26px rgba(43, 41, 38, 0.07) !important;
+  overflow: hidden !important;
+}
+.service-item h3,
+.service-item .title {
+  color: #2b2926 !important;
+}
+.service-item .duration,
+.service-item .description {
+  color: #5c5750 !important;
+}
+
+/* ---------- 按鈕（選擇 / 返回 / 確認 / 登入） ---------- */
+.btn,
+.btn--action,
+.btn--book,
+.btn--sign-in,
+.btn--sign-up,
+.book-btn-container .btn {
+  background: #e8720c !important;
+  border-color: #e8720c !important;
+  color: #ffffff !important;
+  border-radius: 999px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+}
+.btn:hover,
+.btn--action:hover {
+  background: #c95f05 !important;
+  border-color: #c95f05 !important;
+}
+
+/* ---------- 日曆 ---------- */
+.calendar,
+.top-date-select {
+  background: #ffffff !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(43, 41, 38, 0.14) !important;
+}
+.calendar .weeks-name,
+.calendar .is-holiday {
+  color: #e8720c !important;
+}
+.calendar .date,
+.calendar .sb-available-date {
+  color: #2b2926 !important;
+}
+.calendar .date.selected,
+.calendar .selected {
+  background: #e8720c !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+}
+.calendar .today {
+  border: 1.5px solid #e8720c !important;
+  border-radius: 10px !important;
+}
+.calendar .day-off,
+.calendar .prev-or-next-month {
+  color: #c8c0b2 !important;
+}
+
+/* ---------- 手機日曆防溢出（右側「日」欄被裁掉修正） ----------
+   SimplyBook 日曆每列 .inner 是 flex + nowrap，內含固定寬的 7 個
+   .name（星期標題）/ .date（日期）。窄螢幕下 7 格加總超過容器 →
+   右欄被裁。改成 7 格彈性均分（各 1/7），永遠塞得下。
+   iframe 內的 media query 以 iframe 寬度為準，故只在窄嵌入時生效。 */
+@media (max-width: 767px) {
+  .calendar .inner,
+  .top-date-select .inner {
+    width: 100% !important;
+    flex-wrap: nowrap !important;
+    box-sizing: border-box !important;
+  }
+  .calendar .inner > .date,
+  .calendar .inner > .name,
+  .top-date-select .inner > .date,
+  .top-date-select .inner > .name {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    box-sizing: border-box !important;
+  }
+  .calendar,
+  .top-date-select {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* ---------- 可選時段 ---------- */
+.slots-view .slot,
+.sb-cell,
+.timeline-wrapper .slot {
+  background: #ffffff !important;
+  color: #2b2926 !important;
+  border: 1px solid rgba(43, 41, 38, 0.18) !important;
+  border-radius: 12px !important;
+}
+.slots-view .slot:hover,
+.slots-view .slot.selected,
+.sb-cell.selected,
+.sb-cell:hover {
+  background: #e8720c !important;
+  color: #ffffff !important;
+  border-color: #e8720c !important;
+}
+.time-legend {
+  color: #5c5750 !important;
+}
+
+/* ---------- 表單欄位（顧客資料） ---------- */
+.form-control {
+  background: #ffffff !important;
+  border: 1px solid rgba(43, 41, 38, 0.2) !important;
+  border-radius: 10px !important;
+  color: #2b2926 !important;
+}
+.form-control:focus {
+  border-color: #e8720c !important;
+  box-shadow: 0 0 0 3px rgba(232, 114, 12, 0.18) !important;
+}
+
+/* ============================================================
+   以下為 SimplyBook 舊版版型的模板選擇器（後台範本列的那些）。
+   若部分頁面仍使用舊版 markup，一樣會套上品牌色；
+   v2 版型用不到時不會有任何影響。
+   ============================================================ */
+#events h3 { color: #2b2926 !important; font-family: 'Noto Serif TC', serif !important; }
+#events p.duration, #events div.duration { color: #5c5750 !important; }
+#events p.description, #events div.description { color: #5c5750 !important; }
+#events .selectedEvent { background: #fdeedd !important; border: 1.5px solid #e8720c !important; }
+#events input.reserve_time_btn,
+#events input.select_another_btn,
+#eventForm #save_button {
+  background: #e8720c !important;
+  border: none !important;
+  color: #fff !important;
+  border-radius: 999px !important;
+  font-weight: 700 !important;
+}
+#events .event_price { color: #e8720c !important; font-weight: 700 !important; }
+#eventForm #start_date-block-container h3,
+#eventForm #timeline-container h3 { color: #2b2926 !important; font-family: 'Noto Serif TC', serif !important; }
+div.ui-widget-content { background: #ffffff !important; color: #2b2926 !important; border-color: rgba(43,41,38,.14) !important; }
+div.ui-widget-header { background: #2b2926 !important; color: #faf6ef !important; }
+#timeline-container table.timeline { background: #fff !important; }
+.timeline td.not_worked_time { background: #f3ecdf !important; }
+.timeline td.free_time { background: #ffffff !important; }
+.timeline td.selected_time { background: #e8720c !important; color: #fff !important; }
+.timeline td.reserved_time { background: #c8c0b2 !important; }
+div#loading { background: #faf6ef !important; }
+div#widget_container { background: #faf6ef !important; color: #2b2926 !important; }
+#widget_container #widget_header { background: #2b2926 !important; }
+#widget_container #widget_footer { background: #2b2926 !important; color: #faf6ef !important; }
+#widget_container h1.title a { color: #faf6ef !important; }

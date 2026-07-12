@@ -1,0 +1,3 @@
+{"file": "docs/second_brain/quick-ref.md", "reason": "元件路徑/圖片路徑/踩坑速查（profile.id vs uid、循環 import、教練射手模式）"}
+{"file": "docs/second_brain/features.md", "reason": "功能清單與 2026-06-28 效能優化/View Transitions 細節（改 UI 不得破壞）"}
+{"file": ".trellis/tasks/07-03-ui-redesign-p0/design.md", "reason": "token 規格、元件改造對照表、header/nav/hub/home 設計、風險對策"}
