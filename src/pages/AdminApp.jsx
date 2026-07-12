@@ -35,6 +35,7 @@ const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryMana
 const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
 const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
+const AdminBattleTest   = lazy(() => import("../components/admin/AdminBattleTest"));
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
 const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAccounts"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
@@ -100,6 +101,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminBattleEvent");
     import("../components/admin/AdminGuildQuests");
     import("../components/admin/AdminWorldBoss");
+    import("../components/admin/AdminBattleTest");
   },
   "givetool": () => {
     import("../components/admin/AdminGiveTool");
@@ -820,6 +822,7 @@ const adminNav = [
         {page==="hub-events" && eventsSub==="guild-admin"     && <><HubBack onClick={()=>setEventsSub(null)}/><AdminGuildQuests/></>}
         {page==="hub-events" && eventsSub==="worldboss-admin" && <><HubBack onClick={()=>setEventsSub(null)}/><AdminWorldBoss/></>}
         {page==="hub-events" && eventsSub==="reset-center"    && <><HubBack onClick={()=>setEventsSub(null)}/><AdminResetCenter/></>}
+        {page==="hub-events" && eventsSub==="battle-test"    && <><HubBack onClick={()=>setEventsSub(null)}/><AdminBattleTest/></>}
 
         {/* ── 裝備&故事 Hub ── */}
         {page==="hub-items" && itemsSub===null              && <AdminItemsHub onSelect={setItemsSub}/>}
@@ -914,6 +917,7 @@ function AdminEventsHub({ onSelect }) {
         <HubCard icon="🏛️" label="冒險者公會" desc="懸賞任務、晉階設定" onClick={() => onSelect("guild-admin")} />
         <HubCard icon="🌍" label="世界王"     desc="BOSS 管理、獎勵" onClick={() => onSelect("worldboss-admin")} />
         <HubCard icon="🔄" label="重置中心"   desc="資料重置與清除" onClick={() => onSelect("reset-center")} />
+        <HubCard icon="🎨" label="戰鬥版式"   desc="戰鬥 UI 版式測試預覽" onClick={() => onSelect("battle-test")} />
       </div>
     </div>
   );
