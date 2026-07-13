@@ -1134,7 +1134,7 @@ export async function advanceMapFloor(roomId, dungeonOrFloors, nextFloorIndex) {
 // 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
 export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
   try {
-    const { monster = null, formationMap = {}, runeMap = {}, totalFloors = 1 } = options;
+    const { monster = null, formationMap = {}, totalFloors = 1 } = options;
     const contract = roomMeta?.contract
       ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
       : { type:"standard", param:null };
@@ -1157,7 +1157,6 @@ export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
         upd[`members.${id}.hp`]    = Math.max(1, Math.round((m.maxHP || 100) * 0.3));
       }
       if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
-      if (runeMap[id])      upd[`members.${id}.rune`]      = runeMap[id];
     }
 
     // 遠征開始前已鎖定，進入每個戰鬥房時只沿用房間設定。

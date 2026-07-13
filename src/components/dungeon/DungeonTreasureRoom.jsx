@@ -141,6 +141,7 @@ export default function DungeonTreasureRoom({
     return [
       ...(loot.material ? [{ item:loot.material }] : []),
       ...(loot.kingVault?.kingSeals ? [{ icon:"👑", label:`王之印記 ×${loot.kingVault.kingSeals}` }] : []),
+      ...((loot.kingVault?.runeFragments || []).map(fragment => ({ icon:"🔮", label:`符文碎片 ×${fragment.count}` }))),
       ...((loot.kingVault?.materials || []).map(item => ({ item }))),
       ...(loot.chest ? [{ icon:"📦", label:"額外材料寶箱 ×2" }] : []),
       ...(loot.goldChest ? [{ icon:"🎁", label:"額外金幣寶箱 ×2" }] : []),

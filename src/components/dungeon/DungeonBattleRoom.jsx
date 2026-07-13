@@ -21,8 +21,6 @@ import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP, archerLevelFromXP } from "../../lib/
 import { addCatXP, addCatBond } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
-import { rollRuneDrop, calcRuneBonus as calcRuneBonusFn } from "../../lib/runeData";
-import { addRune, getEquippedRunes } from "../../lib/runeDb";
 import { rollFamilyDrop, rollBossDrops, getFirstClearTrophy, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { addCollectibles } from "../../lib/dungeonDb";
 import {
@@ -794,10 +792,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       if (isBossRoom) {
         addArrowdew(myId, totalFloors * 8).catch(() => {});
         addGachaCoins(myId, 2).catch(() => {});
-        const dungeonMap2 = DUNGEON_MAPS.find(d => d.id === (room?.mapDungeonId || room?.dungeonId));
-        const dungeonTier = { normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap2?.difficulty] || 1;
-        const droppedRune = rollRuneDrop(dungeonTier);
-        if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
         const collectDrops = [...(claimLootRef.current?.collectibles || [])];
         if (firstClearBonus && room?.mapDungeonId) {
           const trophy = getFirstClearTrophy(room.mapDungeonId);
@@ -1043,8 +1037,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         const gm        = room?.nextFloorModifiers?.goldMult || 1;
         const tier       = room.monster.tier || "common";
         const tf         = isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1;
-        const myRunes    = getEquippedRunes(room, myId);
-        const rb         = calcRuneBonusFn(myRunes);
         const dungeonMap = DUNGEON_MAPS.find(d => d.id === (room?.mapDungeonId || room?.dungeonId));
         const family     = dungeonMap?.family || "ghost";
         const roomType   = room?.mapCurrentRoomType || (isBossRoom ? "boss" : "monster");
@@ -1055,14 +1047,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           : [rollFamilyDrop(family, roomType === "chest" ? "chest" : roomType === "elite" ? "elite" : "monster", rewardMult)].filter(Boolean);
         const previewTierXP = MONSTER_TIER_XP[tier] || DUNGEON_FLOOR_XP;
         claimLootRef.current = {
-          coins:      Math.round(rollCoins(tier, 1) * gm * rewardMult * (isBossRoom ? 2 : 1) * rb.goldMult),
+          coins:      Math.round(rollCoins(tier, 1) * gm * rewardMult * (isBossRoom ? 2 : 1)),
           materials:  rollMaterialDrops(room.monster),
-          archerXP:   Math.round(tf * previewTierXP * rewardMult * rb.xpMult),
-          catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rewardMult * rb.xpMult) : 0,
+          archerXP:   Math.round(tf * previewTierXP * rewardMult),
+          catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rewardMult) : 0,
           chestCount: tf,
           arrowdew:   isBossRoom ? tf * 8 : 5,
           gachaCoins: isBossRoom ? 2 : 0,
-          runeDrop:   isBossRoom ? rollRuneDrop({ normal:1, hard:2, elite:3, nightmare:4 }[dungeonMap?.difficulty] || 1) : null,
           collectibles,
         };
       }

@@ -448,6 +448,9 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
           : {}),
         ...(!isGuestMember && rewards.archerXP > 0 ? { archerXP: increment(rewards.archerXP) } : {}),
         ...(kingVault?.kingSeals ? { kingSeals: increment(kingVault.kingSeals) } : {}),
+        ...Object.fromEntries((kingVault?.runeFragments || [])
+          .filter(fragment => fragment?.type && fragment.count > 0)
+          .map(fragment => [`equipmentRuneFragments.${fragment.type}`, increment(fragment.count)])),
         expeditionRecords: [newRecord, ...previousRecords].slice(0, 20),
       });
       if (chests.length > 0) {

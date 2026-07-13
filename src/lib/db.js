@@ -11,6 +11,7 @@ import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
+import { getEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
@@ -3564,6 +3565,27 @@ export async function setEquipSocketRune(memberId, slotId, socketIndex, runeId =
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
+export async function craftEquipmentRune(memberId, runeId) {
+  const rune = getEquipmentRune(runeId);
+  if (!memberId || !rune) return { ok: false, reason: "符文資料不存在" };
+  const ref = doc(db, C.members, memberId);
+  try {
+    await runTransaction(db, async tx => {
+      const data = (await tx.get(ref)).data() || {};
+      const fragments = data.equipmentRuneFragments?.[rune.type] || 0;
+      if (fragments < rune.fragmentCost) throw new Error(`需要${rune.name}碎片 ×${rune.fragmentCost}`);
+      if ((data.coins || 0) < rune.goldCost) throw new Error(`需要金幣 ${rune.goldCost}`);
+      tx.update(ref, {
+        coins: increment(-rune.goldCost),
+        [`equipmentRuneFragments.${rune.type}`]: increment(-rune.fragmentCost),
+        [`equipmentRuneInventory.${rune.id}`]: increment(1),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    return { ok: true, rune };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 export async function grantKingVaultReward(memberId, reward = {}) {
   if (!memberId) return { ok: false, reason: "缺少玩家" };
   try {
@@ -3579,6 +3601,9 @@ export async function grantKingVaultReward(memberId, reward = {}) {
       tx.update(memberRef, {
         ...(reward.coins ? { coins: increment(reward.coins) } : {}),
         ...(reward.kingSeals ? { kingSeals: increment(reward.kingSeals) } : {}),
+        ...Object.fromEntries((reward.runeFragments || [])
+          .filter(fragment => fragment?.type && fragment.count > 0)
+          .map(fragment => [`equipmentRuneFragments.${fragment.type}`, increment(fragment.count)])),
         updatedAt: serverTimestamp(),
       });
       if ((reward.materials || []).length) tx.set(materialRef, { items, updatedAt: serverTimestamp() }, { merge: true });
