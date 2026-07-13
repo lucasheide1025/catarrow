@@ -108,6 +108,8 @@ export function getContractDesc(contract) {
   return info.desc.replace("{param}", contract.param ?? "");
 }
 
+import { calcStandardArrowDmg, isStandardCrit } from "./damage";
+
 // ── 地下城傷害計算（帶任務類型）─────────────────────────────
 // resolveHitPartFn: from monsterData.js
 // contract: { type, param }
@@ -131,43 +133,32 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
   let totalDmg = 0, crits = 0;
   const arrowBreakdown = [];
-  const unlocked = new Set();
+  let unlocked = new Set();
 
   for (const arrow of arrows) {
     const score = arrow.score ?? 0;
-    const isXHit = arrow.label === "X" || (type === "hit_count" && score > 0);
-    const part  = resolveHitPartFn(score, unlocked, isXHit);
-
-    if (!part) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
+    if (!score || arrow.label === "M") {
+      arrowBreakdown.push({ label:"M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
       continue;
     }
-    if (part.id === "chest") unlocked.add("chest");
-    if (part.id === "belly") unlocked.add("belly");
-    if (part.id === "groin") unlocked.add("groin");
-
+    let effectiveScore = score;
+    let effectiveLabel = arrow.label === "X" ? "X" : String(score);
+    let note = "";
+    if (type === "reversal") {
+      const revMap = { 6:11, 7:10, 8:9, 9:8, 10:7 };
+      const reversed = arrow.label === "X" ? 6 : (revMap[score] ?? score);
+      effectiveScore = reversed >= 11 ? 10 : reversed;
+      effectiveLabel = reversed >= 11 ? "X" : String(effectiveScore);
+      note = "逆轉";
+    }
+    const isXHit = effectiveLabel === "X" || (type === "hit_count" && score > 0);
+    const part = resolveHitPartFn(effectiveScore, unlocked, isXHit);
+    if (["chest", "belly", "groin"].includes(part.id)) unlocked = new Set([...unlocked, part.id]);
     const pMult = part.mult;
-
-    // 格擋部位（pMult=0）→ 無效
-    if (pMult === 0) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
-      continue;
-    }
-    // M 分（score=0）→ 50% base 傷害（無 score 加成）
-    if (!score) {
-      const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
-      let halfDmg = Math.max(1, Math.round(base * 0.5));
-      halfDmg = Math.round(halfDmg * dmgMult);
-      totalDmg += halfDmg;
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: part.icon, partName: part.name, partMult: pMult, dmg: halfDmg, isCrit: false });
-      continue;
-    }
 
     // 單數關：只算 7/9/X，其他給 50% 傷害
     if (type === "odd_only" && ![7,9].includes(score) && arrow.label !== "X") {
-      const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
-      const m = 0.85 + Math.random() * 0.3;
-      let d = Math.max(1, Math.round(Math.max(1, Math.round(base * pMult * m)) * 0.5));
+      let d = Math.max(1, Math.round(calcStandardArrowDmg(effectiveScore, atk, monsterDef, pMult, effectiveLabel) * 0.5));
       d = Math.round(d * dmgMult);
       totalDmg += d;
       arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非單數", dmg: d, isCrit:false });
@@ -176,68 +167,20 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
 
     // 雙數關：只算 6/8/10，其他給 50% 傷害
     if (type === "even_only" && ![6,8,10].includes(score)) {
-      const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
-      const m = 0.85 + Math.random() * 0.3;
-      let d = Math.max(1, Math.round(Math.max(1, Math.round(base * pMult * m)) * 0.5));
+      let d = Math.max(1, Math.round(calcStandardArrowDmg(effectiveScore, atk, monsterDef, pMult, effectiveLabel) * 0.5));
       d = Math.round(d * dmgMult);
       totalDmg += d;
       arrowBreakdown.push({ label: arrow.label, partIcon:"🚫", partName:"非雙數", dmg: d, isCrit:false });
       continue;
     }
 
-    // 逆轉關：分數映射（6↔X, 7↔10, 8↔9）
-    // ⚠️ 注意：先用翻轉後分數重新判定部位，避免原始分數導致高脫靶率
-    if (type === "reversal") {
-      const revMap = { 6:11, 7:10, 8:9, 9:8, 10:7 };
-      const revScore = arrow.label === "X" ? 6 : (revMap[score] ?? score);
-      const revIsXHit = revScore >= 11; // X 分數是 11
-      const revPart  = resolveHitPartFn(revScore, unlocked, revIsXHit);
-      if (!revPart) {
-        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
-        continue;
-      }
-      if (revPart.id === "chest") unlocked.add("chest");
-      if (revPart.id === "belly") unlocked.add("belly");
-      if (revPart.id === "groin") unlocked.add("groin");
-      if (revPart.mult === 0) {
-        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"脫靶", dmg:0, isCrit:false });
-        continue;
-      }
-      if (!revScore) {
-        const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
-        let halfDmg = Math.max(1, Math.round(base * 0.5));
-        halfDmg = Math.round(halfDmg * dmgMult);
-        totalDmg += halfDmg;
-        arrowBreakdown.push({ label: arrow.label || "M", partIcon:"💨", partName:"M", dmg: halfDmg, isCrit:false, note:"逆轉" });
-        continue;
-      }
-      const base = 8 + (atk || 10) * 0.7 + revScore * 1.2 - (monsterDef || 0) * 0.35;
-      const m    = 0.85 + Math.random() * 0.3;
-      const isCrit = m > 1.05 || revPart.mult >= 1.8;
-      let d = Math.max(1, Math.round(base * revPart.mult * m));
-      d = Math.round(d * dmgMult);
-      totalDmg += d;
-      if (isCrit) crits++;
-      arrowBreakdown.push({
-        label: arrow.label, partIcon: revPart.icon,
-        partName: revPart.name, partMult: revPart.mult, dmg: d, isCrit,
-        note: "逆轉",
-      });
-      continue;
-    }
-
     let d, isCrit;
     if (type === "hit_count") {
-      // 命中關：命中必定爆擊，瞄準頭/頸部位
-      const base = 8 + (atk || 10) * 0.7 - (monsterDef || 0) * 0.35;
-      const m    = 0.85 + Math.random() * 0.3;
       isCrit = true;
-      d = Math.max(1, Math.round(base * pMult * m));
+      d = calcStandardArrowDmg(9, atk, monsterDef, pMult, "9");
     } else {
-      const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (monsterDef || 0) * 0.35;
-      const m    = 0.85 + Math.random() * 0.3;
-      isCrit = m > 1.05 || pMult >= 1.8;
-      d = Math.max(1, Math.round(base * pMult * m));
+      isCrit = isStandardCrit(0, pMult, effectiveScore, effectiveLabel);
+      d = calcStandardArrowDmg(effectiveScore, atk, monsterDef, pMult, effectiveLabel);
     }
 
     // 指定分數爆擊關
@@ -267,7 +210,7 @@ export function calcDungeonContractDmg(arrows, atk, monsterDef, contract, resolv
     if (isCrit) crits++;
     arrowBreakdown.push({
       label: arrow.label, partIcon: part.icon,
-      partName: part.name, partMult: pMult, dmg: d, isCrit,
+      partName: part.name, partMult: pMult, dmg: d, isCrit, note,
     });
   }
 

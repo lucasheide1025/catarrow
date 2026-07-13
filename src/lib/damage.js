@@ -36,18 +36,60 @@ function landingMeta(arrow) {
  * Single arrow damage (standard formula, no part resolution).
  * Same as monsterData's calcDamage({ score, archerATK, monsterDEF, partMult }).
  */
-export function calcStandardArrowDmg(score, atk, def, partMult) {
-  if (!score || partMult === 0) return 0;
-  const base = 8 + (atk || 10) * 0.7 + score * 1.2 - (def || 0) * 0.35;
-  const mult = 0.85 + Math.random() * 0.3;
-  return Math.max(1, Math.round(base * partMult * mult));
+export function scoreDamageMultiplier(label, score = 0) {
+  if (label === "X") return 2;
+  const value = Number(score) || 0;
+  if (label === "M" || value <= 0) return 0;
+  if (value >= 10) return 1.2;
+  return Math.max(0.2, value / 10);
+}
+
+export function calcStandardArrowDmg(score, atk, def, partMult = 1, label = null) {
+  const scoreMult = scoreDamageMultiplier(label, score);
+  if (scoreMult === 0 || partMult === 0) return 0;
+  const base = 8 + (atk || 10) * 0.7 - (def || 0) * 0.35;
+  return Math.max(1, Math.round(base * scoreMult * partMult));
 }
 
 /**
  * Crit detection for standard formula.
  */
-export function isStandardCrit(variance, partMult, score) {
-  return variance > 1.05 || partMult >= 1.8;
+export function isStandardCrit(_variance, partMult, score, label = null) {
+  return label === "X" || partMult >= 1.8;
+}
+
+export function resolveStandardArrowHit(arrow, atk, def, unlockedParts = new Set(), dmgBonusPct = 0) {
+  const label = arrow?.label ?? (arrow?.score === 0 ? "M" : String(arrow?.score ?? "M"));
+  const score = Number(arrow?.score) || (label === "X" ? 10 : 0);
+  if (label === "M" || score <= 0) {
+    return { label:"M", score:0, scoreMult:0, part:BODY_PARTS.find(part => part.id === "miss"), dmg:0, isCrit:false, unlockedParts };
+  }
+  const part = resolveHitPart(score, unlockedParts, label === "X");
+  const nextUnlocked = new Set(unlockedParts);
+  if (["chest", "belly", "groin"].includes(part.id)) nextUnlocked.add(part.id);
+  const dmg = Math.round(calcStandardArrowDmg(score, atk, def, part.mult, label) * (1 + dmgBonusPct));
+  return { label, score, scoreMult:scoreDamageMultiplier(label, score), part, dmg, isCrit:isStandardCrit(0, part.mult, score, label), unlockedParts:nextUnlocked };
+}
+
+const PLAYER_PARTS = {
+  arm: { id:"arm", name:"手臂", icon:"💪", mult:1.00 },
+  belly: { id:"belly", name:"腹部", icon:"🫁", mult:1.00 },
+  chest: { id:"chest", name:"胸腔", icon:"❤️", mult:1.08 },
+  neck: { id:"neck", name:"頸部", icon:"🎯", mult:1.15 },
+  vulnerable: { id:"vulnerable", name:"要害", icon:"⚡", mult:1.30 },
+};
+
+export function resolvePlayerCounter({ arrows = [], baseDamage = 0, maxHP = 0 }) {
+  const scores = arrows.map(arrow => Number(arrow?.score) || (arrow?.label === "X" ? 10 : 0));
+  const averageScore = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
+  const pool = averageScore >= 9 ? ["arm", "belly"]
+    : averageScore >= 7 ? ["arm", "belly", "chest"]
+    : averageScore >= 5 ? ["belly", "chest", "neck"]
+    : ["chest", "neck", "vulnerable"];
+  const part = PLAYER_PARTS[pool[Math.floor(Math.random() * pool.length)]];
+  const uncappedDamage = Math.max(0, Math.round(baseDamage * part.mult));
+  const cap = Math.max(0, Math.floor((Number(maxHP) || 0) * 0.25));
+  return { averageScore, part, damage:cap > 0 ? Math.min(uncappedDamage, cap) : uncappedDamage, cap };
 }
 
 /**
@@ -58,48 +100,16 @@ export function isStandardCrit(variance, partMult, score) {
 export function calcRoundDamage(arrows, atk, def, dmgBonusPct = 0) {
   let dmg = 0, crits = 0;
   const arrowBreakdown = [];
-  const unlocked = new Set();
+  let unlocked = new Set();
 
   for (const arrow of arrows) {
-    const score = arrow.score ?? 0;
-    const part  = resolveHitPart(score, unlocked, arrow.label === "X");
-    if (!part) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false, ...landingMeta(arrow) });
-      continue;
-    }
-    if (part.id === "chest") unlocked.add("chest");
-    if (part.id === "belly") unlocked.add("belly");
-    if (part.id === "groin") unlocked.add("groin");
-
-    const pMult = part.mult;
-    if (pMult === 0) {
-      arrowBreakdown.push({ label: arrow.label || "M", partIcon: "💨", partName: "脫靶", dmg: 0, isCrit: false, ...landingMeta(arrow) });
-      continue;
-    }
-    // M 分（score=0）但有 pMult：50% base 傷害
-    if (!score) {
-      const base = 8 + (atk || 10) * 0.7 - (def || 0) * 0.35;
-      const halfDmg = Math.max(1, Math.round(base * 0.5 * (1 + dmgBonusPct)));
-      arrowBreakdown.push({
-        label: arrow.label || "M",
-        partIcon: part.icon, partName: part.name,
-        partMult: pMult, dmg: halfDmg, isCrit: false,
-        ...landingMeta(arrow),
-      });
-      dmg += halfDmg;
-      continue;
-    }
-
-    const base   = 8 + (atk || 10) * 0.7 + score * 1.2 - (def || 0) * 0.35;
-    const mult   = 0.85 + Math.random() * 0.3;
-    const isCrit = isStandardCrit(mult, pMult, score);
-    const d      = Math.max(1, Math.round(base * pMult * mult * (1 + dmgBonusPct)));
-    dmg  += d;
-    if (isCrit) crits++;
-
+    const hit = resolveStandardArrowHit(arrow, atk, def, unlocked, dmgBonusPct);
+    unlocked = hit.unlockedParts;
+    dmg += hit.dmg;
+    if (hit.isCrit) crits++;
     arrowBreakdown.push({
-      label: arrow.label, partIcon: part.icon,
-      partName: part.name, partMult: pMult, dmg: d, isCrit,
+      label: hit.label, partIcon: hit.part.icon,
+      partName: hit.part.name, partMult: hit.part.mult, dmg: hit.dmg, isCrit:hit.isCrit,
       ...landingMeta(arrow),
     });
   }
@@ -117,15 +127,15 @@ export function calcStandardCounter(monsterATK, archerDEF, headStunned = false, 
   if (headStunned) base *= 0.5;
   if (isCrit)      base *= 1.8;
   base *= (1 - dmgReducePct);
-  return Math.max(1, Math.round(base * (0.8 + Math.random() * 0.4)));
+  return Math.max(1, Math.round(base));
 }
 
 /**
  * PartyBattle counter — wraps standard with random 10% crit.
  * Used by processPartyRound callback.
  */
-export function calcPartyCounter(monsterATK, archerDEF, dmgReducePct = 0) {
-  return calcStandardCounter(monsterATK, archerDEF, false, Math.random() < 0.1, dmgReducePct);
+export function calcPartyCounter(monsterATK, archerDEF, dmgReducePct = 0, isCrit = Math.random() < 0.1) {
+  return calcStandardCounter(monsterATK, archerDEF, false, isCrit, dmgReducePct);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -210,9 +220,7 @@ export function calcDuelRoundDamage(arrows, atk, targetDef) {
 export function calcWorldBossArrowDmg(score, myATK, bossDef, participantBonus = 1, dmgBonusPct = 0) {
   if (score === 0) return 0;
   const atkFinal = (myATK || 0) * participantBonus;
-  const base     = 5 + atkFinal * 0.6 + score * 1.5 - (bossDef || 0) * 0.3;
-  const mult     = 0.85 + Math.random() * 0.3;
-  return Math.max(1, Math.round(base * mult * (1 + dmgBonusPct)));
+  return Math.round(calcStandardArrowDmg(score, atkFinal, bossDef, 1) * (1 + dmgBonusPct));
 }
 
 /**
@@ -221,8 +229,7 @@ export function calcWorldBossArrowDmg(score, myATK, bossDef, participantBonus = 
  */
 export function calcWorldBossCounter(bossAtk, myDEF, dmgReducePct = 0) {
   const base = ((bossAtk || 0) * 0.4 - (myDEF || 0) * 0.3) * (1 - dmgReducePct);
-  const mult = 0.8 + Math.random() * 0.4;
-  return Math.max(5, Math.round(base * mult));
+  return Math.max(5, Math.round(base));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -238,8 +245,7 @@ export function calcWorldBossCounter(bossAtk, myDEF, dmgReducePct = 0) {
  */
 export function calcDungeonCounter(monsterAtk, archerDef, dmgReducePct = 0) {
   const base = (4 + (monsterAtk || 10) * 0.6 - (archerDef || 10) * 0.3) * (1 - dmgReducePct);
-  const mult = 0.8 + Math.random() * 0.4;
-  return Math.max(1, Math.round(base * mult));
+  return Math.max(1, Math.round(base));
 }
 
 // ════════════════════════════════════════════════════════════════

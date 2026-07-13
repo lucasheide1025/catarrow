@@ -8,8 +8,18 @@ import { addChests, recordBattleDex } from "./db";
 import { CHEST_TYPES, makeChests, calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import { resolveConsumable } from "./consumableSystem";
+import { resolvePlayerCounter } from "./damage";
 
 const PARTY = "partyRooms";
+
+// Keep the event selected before score entry so every player sees the same
+// conditions and the server can resolve the exact same effect after reload.
+function makeRoundEvent() {
+  const event = shouldTriggerEvent() ? drawRandomEvent() : null;
+  return event
+    ? { id: event.id, icon: event.icon, title: event.title, desc: event.desc, type: event.type, effect: event.effect || {} }
+    : null;
+}
 
 // 生成 6 碼大寫邀請碼（排除易混淆字元 0/O、1/I）
 function genCode() {
@@ -50,7 +60,7 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
       members: {
         [hostId]: type === "quest"
           ? { name: hostName, accountType: extraData.accountType || "official", done: false, doneAt: null }
-          : { name: hostName, accountType: extraData.accountType || "official", hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true }
+          : { name: hostName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null }
       },
     };
     if (type === "quest") {
@@ -95,7 +105,7 @@ export async function joinPartyRoom(code, memberId, memberName, extraData = {}) 
 
     const memberData = room.type === "quest"
       ? { name: memberName, accountType: extraData.accountType || "official", done: false, doneAt: null }
-      : { name: memberName, accountType: extraData.accountType || "official", hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, alive: true };
+      : { name: memberName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null };
 
     await updateDoc(doc(db, PARTY, roomDoc.id), {
       [`members.${memberId}`]: memberData,
@@ -216,7 +226,7 @@ const MODE_SCALE = {
 };
 
 // ── Battle：房主設定怪物 & 開始 ───────────────────────────────
-export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance) {
+export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance, targetFormat = "full_110", battleBackground = "") {
   try {
     const memberIds = Object.keys(room.members || {});
     const playerCount = memberIds.length;
@@ -235,7 +245,10 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       const m = room.members[mid];
       membersUpdate[`members.${mid}.arrows`] = [];
       membersUpdate[`members.${mid}.ready`]  = false;
+      membersUpdate[`members.${mid}.skipped`] = false;
       membersUpdate[`members.${mid}.alive`]  = true;
+      membersUpdate[`members.${mid}.role`] = "front";
+      membersUpdate[`members.${mid}.rearChoice`] = null;
       membersUpdate[`members.${mid}.potionBuffs`] = { atkMult:1, defMult:1, dmgMult:1, families:{}, shield:0, regenPct:0 };
       // hp/atk/def 留給各 client 用 updateBattleMemberStats 寫入
       if (!m.maxHP) {
@@ -256,8 +269,10 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
       hpMult, rewardMult,
-      mode, distanceMode, distance,
+      mode, distanceMode, distance, targetFormat, battleBackground,
       round: 1,
+      // 第一回合只做 VS 進場與射擊，不插入回合事件。
+      roundEvent: null,
       log: [],
       result: null,
       processing: false,
@@ -271,7 +286,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "", wbBonus = null) {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "", avatarId = "", wbBonus = null, displayName = "", level = 1, battleCosmetics = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.hp`]:      hp,
@@ -280,11 +295,38 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
       [`members.${memberId}.def`]:     def,
       [`members.${memberId}.baseAtk`]: atk,
       [`members.${memberId}.baseDef`]: def,
+      [`members.${memberId}.level`]:   Math.max(1, Number(level) || 1),
       ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
       [`members.${memberId}.catATK`]:  catATK || 0,
       [`members.${memberId}.catName`]: catName || "",
       [`members.${memberId}.catId`]:   catId || "",
+      [`members.${memberId}.avatarId`]: avatarId || "",
+      ...(displayName ? { [`members.${memberId}.name`]: displayName } : {}),
       ...(wbBonus ? { [`members.${memberId}.wbBonus`]: wbBonus } : {}),
+      ...(battleCosmetics ? { [`members.${memberId}.battleCosmetics`]: battleCosmetics } : {}),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// Keep legacy / already-active rooms in sync without overwriting their live HP.
+export async function updateBattleMemberLevel(roomId, memberId, level) {
+  try {
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${memberId}.level`]: Math.max(1, Number(level) || 1),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+export async function updateBattleMemberCosmetics(roomId, memberId, battleCosmetics) {
+  try {
+    await updateDoc(doc(db, PARTY, roomId), {
+      [`members.${memberId}.battleCosmetics`]: battleCosmetics || null,
     });
     return { ok: true };
   } catch (e) {
@@ -357,6 +399,8 @@ export async function submitArrows(roomId, memberId, arrows, role = "front", rea
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.arrows`]:     arrows,
       [`members.${memberId}.ready`]:      true,
+      // 曾被房主略過的旗標不能殘留到下一輪；正常送分一律清除。
+      [`members.${memberId}.skipped`]:    false,
       [`members.${memberId}.role`]:       role,
       [`members.${memberId}.rearChoice`]: role === "rear" ? rearChoice : null,
     });
@@ -399,8 +443,18 @@ export async function clearPartyProcessing(roomId) {
 // calcDmgFn(arrows, atk, monsterDEF) → { dmg, crits } | number
 // calcCtrFn(monsterATK, archerDEF)   → number
 export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
-  if (room.processing) return { ok: false, reason: "already processing" };
   try {
+    // 手動「立即結算」可能在隊員離房或重新連線的瞬間觸發；不能使用 UI 傳入的舊快照。
+    const freshSnap = await getDoc(doc(db, PARTY, roomId));
+    if (!freshSnap.exists()) return { ok: false, reason: "room not found" };
+    room = freshSnap.data();
+    if (room.status !== "active") return { ok: false, reason: "room is not active" };
+    if (room.processing) return { ok: false, reason: "already processing" };
+
+    const freshAlive = Object.values(room.members || {}).filter(member => member.alive);
+    if (!freshAlive.length || !freshAlive.every(member => member.ready)) {
+      return { ok: false, reason: "waiting for active members" };
+    }
     await updateDoc(doc(db, PARTY, roomId), { processing: true });
 
     const members  = room.members || {};
@@ -431,12 +485,19 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // Step 1: 計算每人全部 6 箭（body part 在此決定，不可拆開分批算）
+    const eventRaw = room.roundEvent || null;
+    const eff = eventRaw?.effect || {};
+    const event = eventRaw
+      ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
+      : null;
+    const eventAtkMult = 1 + ((eff.archerATK || 0) / 100);
     const allPlayerData = {};
     for (const id of aliveIds) {
       const m      = members[id];
       const isRear = (m.role || "front") === "rear";
       const rearHeal = isRear && m.rearChoice === "heal";
       const rearBuff = isRear && !rearHeal;
+      // 後衛的分數只決定治療／助攻強度，不會對怪物造成箭傷。
       if (isRear) {
         const scorePct = rearScorePct[id] || 0;
         allPlayerData[id] = {
@@ -452,7 +513,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         };
         continue;
       }
-      const buffedAtk = Math.round((m.baseAtk || m.atk || 10) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront));
+      const buffedAtk = Math.max(1, Math.round((m.baseAtk || m.atk || 10) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * eventAtkMult));
       const damageItems = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
       const directDmg = damageItems.reduce((sum, arrow) => sum + (resolveConsumable(arrow?.label || arrow, {
@@ -470,7 +531,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         totalDmg:       Math.round((rawDmg + directDmg) * (m.potionBuffs?.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1)),
         crits:          typeof raw === "number" ? 0 : (raw.crits || 0),
         arrowBreakdown: rawBreakdown,
-        rearHeal: false, rearBuff: false, scorePct: 0,
+        rearHeal, rearBuff, scorePct: isRear ? (rearScorePct[id] || 0) : 0,
       };
     }
 
@@ -489,41 +550,73 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // Step 2: 隨機事件（大回合開始時決定）
-    const eventRaw   = shouldTriggerEvent() ? drawRandomEvent() : null;
-    const eff        = eventRaw?.effect || {};
-    const event      = eventRaw
-      ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
-      : null;
     const skipAllCtr = !!eff.skipCounter || room.consumableEffects?.skipCounterRound === round;
 
     // Step 3: 大回合制 — 每位玩家一個 mini-round 包含全部箭矢，前衛先後衛後，最後怪物反擊一次
     // 攻擊順序：前衛 → 後衛（動畫用）
+    // 房主固定先手，其他人再依前／後衛順序出手，讓實際演出與規則一致。
     const orderedAliveIds = [
-      ...frontIds.filter(id => aliveIds.includes(id)),
-      ...rearIds.filter(id => aliveIds.includes(id)),
+      ...(frontIds.includes(room.hostId) ? [room.hostId] : []),
+      ...frontIds.filter(id => id !== room.hostId),
     ];
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
+    if (eff.extraDmg) monsterHP = Math.max(0, monsterHP - eff.extraDmg);
+    if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
     const memberHPNow = {};
     // 若 hp 尚未寫入（stats 還沒到位），預設用 maxHP；避免誤判為陣亡
-    for (const id of aliveIds) memberHPNow[id] = members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500);
+    for (const id of aliveIds) {
+      const currentHp = members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500);
+      const adjustedHp = currentHp + (eff.archerHP || 0) + (eff.healArcher || 0);
+      memberHPNow[id] = Math.max(0, Math.min(members[id].maxHP || adjustedHp, adjustedHp));
+    }
+    // 後衛支援先結算：治療在前衛出手前回復 HP，助攻已在前方 atkBuffPctForFront 套入。
+    const receivedHeal = {};
+    const healGivenBy = {};
+    const supportLog = [];
+    for (const id of rearIds) {
+      const scorePct = rearScorePct[id] || 0;
+      if (members[id].rearChoice === "heal") {
+        const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
+        const pool = Math.round((members[id].maxHP || 100) * 0.15 * scorePct * (1 + healBonusPct));
+        healGivenBy[id] = pool;
+        const targets = frontIds.filter(tid => memberHPNow[tid] > 0);
+        const perPerson = targets.length ? Math.round(pool / targets.length) : 0;
+        for (const tid of targets) {
+          receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
+          memberHPNow[tid] = Math.min(members[tid].maxHP || 9999, memberHPNow[tid] + perPerson);
+        }
+        supportLog.push({ id, name: members[id].name || "後衛", kind:"heal", dmg:0, heal:pool, targets:targets.map(tid=>({id:tid,name:members[tid]?.name||"前衛",heal:perPerson})) });
+      } else {
+        supportLog.push({ id, name: members[id].name || "後衛", kind:"buff", dmg:0, buffPct:Math.round(scorePct * 25), targets:frontIds.map(tid=>({id:tid,name:members[tid]?.name||"前衛"})) });
+      }
+    }
     const ctrAccum    = {};
     let   bossKilled  = false;
     let   catRoundDmg = 0;
+
+    const healSupportLog = supportLog.filter(item => item.kind === "heal");
+    const buffSupportLog = supportLog.filter(item => item.kind === "buff");
+    // 同時有兩種支援時，固定先治療、再助攻，讓前衛卡片依序演出。
+    if (healSupportLog.length > 0) miniRounds.push({ miniRound:miniRounds.length+1, isSupport:true, supportKind:"heal", playerLog:healSupportLog, totalDmg:0, monsterHPAfter:monsterHP });
+    if (buffSupportLog.length > 0) miniRounds.push({ miniRound:miniRounds.length+1, isSupport:true, supportKind:"buff", playerLog:buffSupportLog, totalDmg:0, monsterHPAfter:monsterHP });
 
     for (const id of orderedAliveIds) {
       if (bossKilled) break;
       if (memberHPNow[id] <= 0) continue;
       const pd = allPlayerData[id];
       const allArrows  = pd.arrowBreakdown.slice(0, arrowsPerRound);
-      const totalDmgP  = allArrows.reduce((s, a) => s + (a.dmg || 0), 0);
+      // `totalDmg` is the authoritative individual result after all personal
+      // potion, poison, and team multipliers. Never replace it with a shared
+      // round total when building the per-player animation log.
+      const totalDmgP  = pd.totalDmg;
       const totalCrits = allArrows.filter(a => a.isCrit).length;
       monsterHP = Math.max(0, monsterHP - totalDmgP);
       miniRounds.push({
         miniRound:      miniRounds.length + 1,
         isCounter:      false,
         attackerId:     id,
-        playerLog:      [{ id, name: pd.name, dmg: totalDmgP, ctr: 0, arrowBreakdown: allArrows, crits: totalCrits }],
+        playerLog:      [{ id, name: pd.name, role: members[id].role || "front", dmg: totalDmgP, ctr: 0, arrowBreakdown: allArrows, crits: totalCrits }],
         totalDmg:       totalDmgP,
         monsterHPAfter: monsterHP,
       });
@@ -548,8 +641,12 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
             cDmg += d;
             cArrows.push({ label: String(sc), dmg: d, isCrit: mult > 1.1, partName: "貓爪", partIcon: "🐾" });
           }
+          const skillTriggered = Math.random() < 0.25;
+          const skillName = skillTriggered ? "連環貓掌" : null;
+          const skillBonus = skillTriggered ? Math.max(1, Math.round(cDmg * 0.25)) : 0;
+          cDmg += skillBonus;
           catRoundDmg += cDmg;
-          catLog.push({ id, name: `🐱${cName}`, dmg: cDmg, ctr: 0, arrowBreakdown: cArrows, crits: 0, isCat: true });
+          catLog.push({ id, catId: members[id].catId || "diandian", name: `🐱${cName}`, dmg: cDmg, ctr: 0, arrowBreakdown: cArrows, crits: 0, isCat: true, skillTriggered, skillName, skillBonus });
         }
         monsterHP = Math.max(0, monsterHP - catRoundDmg);
         if (monsterHP <= 0) bossKilled = true;
@@ -565,6 +662,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
+    const memberUpdates = {};
     // 最後怪物反擊：只打前衛；前衛全滅時才打全體
     if (!skipAllCtr && monsterHP > 0) {
       const allFrontDead = frontIds.every(id => memberHPNow[id] <= 0);
@@ -575,13 +673,15 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       for (const id of ctrTargets) {
         const mem = members[id];
         const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (mem?.potionBuffs?.defMult || 1));
-        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
-        const absorbed = Math.min(mem?.potionBuffs?.shield || 0, rawCtr);
-        const ctr = rawCtr - absorbed;
+        const ctrCrit = Math.random() < 0.1;
+        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0, ctrCrit) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const counterHit = resolvePlayerCounter({ arrows:mem?.arrows || [], baseDamage:rawCtr, maxHP:mem?.maxHP || memberHPNow[id] });
+        const absorbed = Math.min(mem?.potionBuffs?.shield || 0, counterHit.damage);
+        const ctr = counterHit.damage - absorbed;
         memberUpdates[`members.${id}.potionBuffs.shield`] = Math.max(0, (mem?.potionBuffs?.shield || 0) - absorbed);
         ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
         memberHPNow[id] = Math.max(0, memberHPNow[id] - ctr);
-        ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr });
+        ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr, ctrCrit, hitPart:counterHit.part, averageScore:counterHit.averageScore });
       }
       miniRounds.push({
         miniRound:      miniRounds.length + 1,
@@ -593,9 +693,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // 後衛治癒：池子 = maxHP × 15% × 命中分數%，均分給存活隊友（比照地下城系統）
-    const receivedHeal = {};
-    const healGivenBy  = {};
-    for (const id of rearIds) {
+    const resolvedSupportLog = [];
+    for (const id of []) {
       if (members[id].rearChoice !== "heal") continue;
       const scorePct = rearScorePct[id] || 0;
       const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
@@ -606,26 +705,39 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       if (!targets.length) continue;
       const perPerson = Math.round(pool / targets.length);
       for (const tid of targets) receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
+      resolvedSupportLog.push({
+        id,
+        name: members[id].name || "後衛",
+        dmg: 0,
+        heal: pool,
+        targets: targets.map(tid => ({ id: tid, name: members[tid]?.name || "隊友", heal: perPerson })),
+      });
     }
+
+    for (const id of []) {
+      if (members[id].rearChoice === "heal") continue;
+      resolvedSupportLog.push({
+        id,
+        name: members[id].name || "後衛",
+        dmg: 0,
+        buffPct: Math.round((rearScorePct[id] || 0) * 25),
+      });
+    }
+
+    // 支援已在前衛出手前加入 miniRounds；這裡不再重複結算。
 
     // Step 4: 套用事件額外效果（作用於大回合總結）
     const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0) + catRoundDmg;
-    if (eff.extraDmg)                       monsterHP = Math.max(0, monsterHP - eff.extraDmg);
-    if (eff.archerATK && eff.archerATK > 0) monsterHP = Math.max(0, monsterHP - eff.archerATK * aliveIds.length);
-    if (eff.monsterHP)                      monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 
-    const memberUpdates = {};
     let   liveAfter     = 0;
+    const demotedMembers = [];
     for (const id of aliveIds) {
       let hp = memberHPNow[id];
       // 後衛治癒
-      if (receivedHeal[id]) hp = Math.min(members[id].maxHP || 9999, hp + receivedHeal[id]);
       // 事件效果
-      if (eff.archerHP)                       hp = Math.max(0, Math.min(members[id].maxHP || hp + 200, hp + eff.archerHP));
-      if (eff.healArcher)                     hp = Math.min(members[id].maxHP || hp + 200, hp + eff.healArcher);
-      if (eff.archerATK && eff.archerATK < 0) hp = Math.max(0, hp + eff.archerATK);
       memberUpdates[`members.${id}.arrows`] = [];
       memberUpdates[`members.${id}.ready`]  = false;
+      memberUpdates[`members.${id}.skipped`] = false;
       if (hp <= 0) {
         const isCurrentlyFront = (members[id].role || "front") === "front";
         if (isCurrentlyFront) {
@@ -633,6 +745,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
           hp = Math.round((members[id].maxHP || 100) * 0.5);
           memberUpdates[`members.${id}.role`]       = "rear";
           memberUpdates[`members.${id}.rearChoice`] = null;
+          demotedMembers.push({ id, name: members[id].name || "隊員" });
           liveAfter++;
         } else {
           memberUpdates[`members.${id}.alive`] = false;
@@ -641,7 +754,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         liveAfter++;
       }
       memberUpdates[`members.${id}.hp`] = hp;
-      if (m.potionBuffs?.regenPct && hp > 0) memberUpdates[`members.${id}.hp`] = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * m.potionBuffs.regenPct / 100));
+      if (members[id]?.potionBuffs?.regenPct && hp > 0) memberUpdates[`members.${id}.hp`] = Math.min(members[id]?.maxHP || 9999, hp + Math.round((members[id]?.maxHP || 100) * members[id].potionBuffs.regenPct / 100));
     }
 
     // Step 5: 聚合 playerLog（歷史記錄用）
@@ -664,6 +777,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHPBefore: room.monsterHP,
       monsterHPAfter:  monsterHP,
       counterRound:    !skipAllCtr,
+      demotedMembers,
     };
 
     // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會打不死怪又不算輸而卡死（2026-07-12）。
@@ -672,8 +786,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     if (monsterHP <= 0) result = "win";
     else if (liveAfter === 0 || (frontIds.length > 0 && frontLiveAfter === 0)) result = "lose";
 
-    const newStatus = result === "win"  ? "pending_confirm"
-                    : result === "lose" ? "completed"
+    const newStatus = result === "win" || result === "lose" ? "pending_confirm"
                     : "active";
 
     await updateDoc(doc(db, PARTY, roomId), {
@@ -683,6 +796,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       log: arrayUnion(logEntry),
       result,
       status: newStatus,
+      roundEvent: newStatus === "active" ? makeRoundEvent() : null,
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
@@ -742,7 +856,10 @@ export async function resetPartyRoom(roomId, memberIds) {
     for (const mid of memberIds) {
       membersUpdate[`members.${mid}.arrows`]  = [];
       membersUpdate[`members.${mid}.ready`]   = false;
+      membersUpdate[`members.${mid}.skipped`] = false;
       membersUpdate[`members.${mid}.alive`]   = true;
+      membersUpdate[`members.${mid}.role`]    = "front";
+      membersUpdate[`members.${mid}.rearChoice`] = null;
       membersUpdate[`members.${mid}.hp`]      = 0;
       membersUpdate[`members.${mid}.maxHP`]   = 0;
     }

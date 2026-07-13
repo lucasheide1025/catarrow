@@ -75,6 +75,8 @@ export function useFirestoreRound({
   const [localProcessing, setLocalProcessing] = useState(false);
   const [allReady, setAllReady] = useState(false);
   const [readyCountdown, setReadyCountdown] = useState(0);
+  const roomRef = useRef(room);
+  roomRef.current = room;
 
   // ── Refs（避免 stale closure）───────────────────────────
   const guardRef = useRef(0);       // 已處理的回合號
@@ -96,12 +98,40 @@ export function useFirestoreRound({
   submitBotArrowsRef.current = submitBotArrows;
   const canProcessRef = useRef(canProcess);
   canProcessRef.current = canProcess;
+  const processRoundRef = useRef(processRound);
+  processRoundRef.current = processRound;
+  const getMembersRef = useRef(getMembers);
+  getMembersRef.current = getMembers;
+  const isProcessingRef = useRef(isProcessing);
+  isProcessingRef.current = isProcessing;
 
   // ── 1. Subscribe ─────────────────────────────────────────
   useEffect(() => {
     if (!roomId) return;
     return subscribe(roomId, r => setRoom(r));
   }, [roomId]); // eslint-disable-line
+
+  // 回合結算後後端會把每位成員的 ready 清回 false。房主有時會先收到
+  // processing/log 更新、稍後才收到 round 更新；直接監看自己的 ready 才能
+  // 保證下一輪不會殘留「已送出」鎖定狀態。
+  // 注意：當 round 結算後 status 同時變成 "resolving" 時，不能擋掉此重置。
+  useEffect(() => {
+    if (!room) return;
+    const me = getMembersRef.current(room).find(member => member.id === myId);
+    if (me && !me.ready) {
+      setSubmitted(false);
+      setLocalProcessing(false);
+    }
+  }, [room?.status, room?.members?.[myId]?.ready, myId]);
+
+  // 同回合的房間快照更新不能取消已開始的房主確認倒數；僅在卸載時統一清除。
+  useEffect(() => () => {
+    const pending = confirmNowRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    clearInterval(pending.interval);
+    confirmNowRef.current = null;
+  }, []);
 
   // ── 2. Submit ────────────────────────────────────────────
   const handleSubmit = useCallback(async (...extraArgs) => {
@@ -126,6 +156,28 @@ export function useFirestoreRound({
   }, [roomId, myId, submitted, localProcessing]); // eslint-disable-line
 
   // ── 3. Host: detect all-ready → process ──────────────────
+  // Non-host clients also render the shared countdown and can recover a
+  // round when the host refreshed. processRound is still protected by its
+  // Firestore processing guard, so only one client resolves the round.
+  useEffect(() => {
+    if (!room || room.status !== "active" || isProcessing(room) || room.hostId === myId) return;
+    const alive = getMembers(room).filter(member => member.alive);
+    if (!alive.length || !alive.every(member => member.ready)) return;
+    setAllReady(true);
+    setReadyCountdown(Math.round(confirmDelayMs / 1000));
+    const interval = setInterval(() => setReadyCountdown(prev => Math.max(0, prev - 1)), 1000);
+    const timer = setTimeout(async () => {
+      clearInterval(interval);
+      const latestRoom = roomRef.current;
+      if (!latestRoom || latestRoom.status !== "active" || isProcessingRef.current(latestRoom)) return;
+      const latestAlive = getMembersRef.current(latestRoom).filter(member => member.alive);
+      if (!latestAlive.length || !latestAlive.every(member => member.ready)) return;
+      const extraArgs = getExtraProcessArgsRef.current?.() || [];
+      await processRoundRef.current(roomId, latestRoom, ...extraArgs).catch(() => {});
+    }, confirmDelayMs);
+    return () => { clearInterval(interval); clearTimeout(timer); };
+  }, [room, myId, roomId, confirmDelayMs]); // eslint-disable-line
+
   useEffect(() => {
     if (!room || room.hostId !== myId || room.status !== "active") return;
 
@@ -191,12 +243,10 @@ export function useFirestoreRound({
         }
       }, confirmDelayMs);
 
-      confirmNowRef.current = { timer: t, interval: countdownInterval, doProcess, processDelayMs };
+      confirmNowRef.current = { timer: t, interval: countdownInterval, doProcess, processDelayMs, round: currentRound };
 
       return () => {
-        clearTimeout(t);
-        clearInterval(countdownInterval);
-        confirmNowRef.current = null;
+        // 同回合有隊員資料更新時 effect 會重跑；倒數需繼續，而非被清掉後卡住。
       };
     }
 
@@ -209,7 +259,22 @@ export function useFirestoreRound({
 
   // ── confirmNow：房主手動提前觸發 ──────────────────────────
   const confirmNow = useCallback(() => {
-    if (!confirmNowRef.current) return;
+    if (!confirmNowRef.current) {
+      // A browser refresh clears the five-second local timer while Firestore
+      // still has every member marked ready.  Let the host resume that exact
+      // pending round instead of leaving the room permanently stuck.
+      const latestRoom = roomRef.current;
+      if (!latestRoom || latestRoom.status !== "active" || isProcessingRef.current(latestRoom)) return;
+      const alive = getMembersRef.current(latestRoom).filter(member => member.alive);
+      if (!alive.length || !alive.every(member => member.ready)) return;
+      const currentRound = getRound(latestRoom);
+      guardRef.current = currentRound;
+      const extraArgs = getExtraProcessArgsRef.current?.() || [];
+      processRoundRef.current(roomId, latestRoom, ...extraArgs).then(res => {
+        if (!res?.ok) guardRef.current = 0;
+      }).catch(() => { guardRef.current = 0; });
+      return;
+    }
     const { timer, interval, doProcess, processDelayMs: pDelay } = confirmNowRef.current;
     clearTimeout(timer);
     clearInterval(interval);

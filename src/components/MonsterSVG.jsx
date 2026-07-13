@@ -1069,9 +1069,10 @@ function MonsterSVG({ id, size = 80, className = "", variant }) {
 export default memo(MonsterSVG);
 
 export function MonsterImage({ id, name, size = 80, className = "", variant }) {
-  const [failed, setFailed] = useState(false);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = getBattleMonsterSources(id);
 
-  if (failed) {
+  if (sourceIndex >= sources.length) {
     return (
       <span className={className} role="img" aria-label={name || "怪物"} style={{
         width:size, height:size, display:"grid", placeItems:"center", flexShrink:0,
@@ -1083,9 +1084,9 @@ export function MonsterImage({ id, name, size = 80, className = "", variant }) {
   return (
     <img
       className={className}
-      src={`/monsters/${id}.webp`}
+      src={sources[sourceIndex]}
       alt={name || "怪物"}
-      onError={() => setFailed(true)}
+      onError={() => setSourceIndex(index => index + 1)}
       draggable="false"
       style={{
         width:size, height:size, display:"block", flexShrink:0, objectFit:"contain",

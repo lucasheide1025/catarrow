@@ -1,6 +1,6 @@
 // src/components/dungeon/DungeonTrap.jsx — 地下城陷阱房間（重設計）
 // 三種傷害類型（HP↓ / ATK↓ / DEF↓）+ 全員賭大小閃躲機制 + 動畫過場
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { sfxCast, sfxSuccess, sfxCounter, sfxTap } from "../../lib/sound";
 
@@ -28,6 +28,11 @@ export default function DungeonTrap({
   const [myBet, setMyBet] = useState(null); // "big" | "small" | null
   const [localConfirms, setLocalConfirms] = useState({});
   const [localChoices, setLocalChoices] = useState({});
+  const rollStartedRef = useRef(false);
+  const trapPersistedRef = useRef(false);
+
+  // 由 host 持久化的固定陷阱參數（所有 client 讀同一份，不使用 per-member random）
+  const TRAP_PARAMS = { hpLossPct: 0.20, atkMultReduction: 0.80, defMultReduction: 0.80 };
 
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id].alive);
@@ -35,18 +40,71 @@ export default function DungeonTrap({
   const roomChoices  = localMode ? localChoices : (room?.roomChoices || {});
   const allConfirmed = aliveIds.length === 0 || aliveIds.every(id => roomConfirms[id]);
 
-  // 初始化陷阱（首次渲染固定）
+  // ── Read persisted trap type from Firestore (host-authoritative) ──
   useEffect(() => {
     if (trapType) return;
+    if (!room?.trapTypeId) return;
+    const found = TRAP_TYPES.find(t => t.id === room.trapTypeId);
+    if (!found) return;
+    setTrapType(found);
+  }, [room?.trapTypeId, trapType]);
+
+  // ── Host persists trap type to Firestore once, all clients read same type ──
+  useEffect(() => {
+    if (trapType) return;
+    // Room already has a persisted trap type (e.g. written by a prior host session)
+    if (room?.trapTypeId) return;
+    if (localMode) {
+      const type = TRAP_TYPES[Math.floor(Math.random() * TRAP_TYPES.length)];
+      setTrapType(type);
+      return;
+    }
+    // Only host picks and persists the trap type
+    if (!isHost || trapPersistedRef.current) return;
+    trapPersistedRef.current = true;
     const type = TRAP_TYPES[Math.floor(Math.random() * TRAP_TYPES.length)];
     setTrapType(type);
-    sfxCounter();
+    import("firebase/firestore").then(({ updateDoc, doc }) =>
+      import("../../lib/firebase").then(({ db }) =>
+        updateDoc(doc(db, "dungeonRooms", roomId), {
+          trapTypeId: type.id,
+          trapParams: TRAP_PARAMS,
+        }).catch(() => {})
+      )
+    );
+  }, []); // eslint-disable-line
 
-    // 動畫序列
+  // ── Unified animation start: fires for host (local setTrapType) and non-host (from room.trapTypeId) ──
+  useEffect(() => {
+    if (!trapType) return;
+    if (room?.roomResolution?.kind === "trap") return; // already resolved, skip animation
+    sfxCounter();
     const t1 = setTimeout(() => setAnimPhase("trap_reveal"), 500);
     const t2 = setTimeout(() => setAnimPhase("dice_bet"), 2500);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []); // eslint-disable-line
+  }, [trapType]);
+
+  // ── Read resolution result (all clients read same data from host) ──
+  useEffect(() => {
+    const resolution = room?.roomResolution;
+    if (!resolution || resolution.kind !== "trap") return;
+    const resolvedType = TRAP_TYPES.find(type => type.id === resolution.trapTypeId);
+    if (resolvedType) setTrapType(resolvedType);
+    setDiceValue(resolution.dice);
+    setDodgeSuccess(!!resolution.success);
+    setAnimPhase("done");
+  }, [room?.roomResolution]);
+
+  // ── Read resolution result (all clients read same data from host) ──
+  useEffect(() => {
+    const resolution = room?.roomResolution;
+    if (!resolution || resolution.kind !== "trap") return;
+    const resolvedType = TRAP_TYPES.find(type => type.id === resolution.trapTypeId);
+    if (resolvedType) setTrapType(resolvedType);
+    setDiceValue(resolution.dice);
+    setDodgeSuccess(!!resolution.success);
+    setAnimPhase("done");
+  }, [room?.roomResolution]);
 
   // 票數統計
   const tally = useMemo(() => {
@@ -83,7 +141,10 @@ export default function DungeonTrap({
   }, [allConfirmed]); // eslint-disable-line
 
   async function handleRollDice() {
-    if (!isHost) return;
+    // roomResolution 已存在表示本陷阱已結算過，跳過避免重複（防止 reconnecting host 再次觸發）
+    if (!isHost || rollStartedRef.current || room?.roomResolution?.kind === "trap") return;
+    if (!trapType) return;
+    rollStartedRef.current = true;
     const dice = rollDice();
     setDiceValue(dice);
     setAnimPhase("dice_result");
@@ -93,52 +154,57 @@ export default function DungeonTrap({
     const success = majorityBet === "big" ? isBig : !isBig;
     setDodgeSuccess(success);
 
-    // 繼續動畫
+    // 繼續動畫（2500ms 後顯示結果）
     setTimeout(async () => {
       setAnimPhase("done");
       (success ? sfxSuccess() : sfxCounter());
 
-      // 本地單人：效果交給父層套用（不寫 Firestore）
+      // ── 本地單人模式：效果用固定 trapParams 交給父層套用（不寫 Firestore）──
       if (localMode) {
         if (trapType && !success) {
           const m = members[memberId];
           if (trapType.id === "hp") {
-            onLocalEffect?.({ type:"hp_loss", value: Math.round((m?.maxHP || 100) * (0.15 + Math.random() * 0.15)) });
+            onLocalEffect?.({ type:"hp_loss", value: Math.round((m?.maxHP || 100) * TRAP_PARAMS.hpLossPct) });
           } else if (trapType.id === "atk") {
-            onLocalEffect?.({ type:"buff_mult", key:"atkMult", value: Math.round((0.75 + Math.random() * 0.1) * 100) / 100 });
+            onLocalEffect?.({ type:"buff_mult", key:"atkMult", value: TRAP_PARAMS.atkMultReduction });
           } else {
-            onLocalEffect?.({ type:"buff_mult", key:"defMult", value: Math.round((0.75 + Math.random() * 0.1) * 100) / 100 });
+            onLocalEffect?.({ type:"buff_mult", key:"defMult", value: TRAP_PARAMS.defMultReduction });
           }
         }
         return;
       }
 
-      // 寫入效果到 Firestore
+      // ── 多人模式：host 使用固定 trapParams 寫入 Firestore（所有 client 看到相同效果）──
       if (trapType && !success) {
+        // 使用 host 事先持久化的 trapParams，若無則用常數預設值
+        const tp = room?.trapParams || TRAP_PARAMS;
         const { updateDoc, doc } = await import("firebase/firestore");
         const { db } = await import("../../lib/firebase");
         const upd = {};
         for (const id of aliveIds) {
           const m = members[id];
           if (!m) continue;
-          const hpLoss = Math.round((m.maxHP || 100) * (0.15 + Math.random() * 0.15));
-          const atkDebuff = 0.75 + Math.random() * 0.1;
-          const defDebuff = 0.75 + Math.random() * 0.1;
 
           if (trapType.id === "hp") {
+            const hpLoss = Math.round((m.maxHP || 100) * tp.hpLossPct);
             const newHP = Math.max(1, (m.hp || m.maxHP || 100) - hpLoss);
             upd[`members.${id}.hp`] = newHP;
           } else if (trapType.id === "atk") {
             const cur = m.buffs?.atkMult || 1;
-            upd[`members.${id}.buffs.atkMult`] = Math.round(cur * atkDebuff * 100) / 100;
+            upd[`members.${id}.buffs.atkMult`] = Math.round(cur * tp.atkMultReduction * 100) / 100;
           } else if (trapType.id === "def") {
             const cur = m.buffs?.defMult || 1;
-            upd[`members.${id}.buffs.defMult`] = Math.round(cur * defDebuff * 100) / 100;
+            upd[`members.${id}.buffs.defMult`] = Math.round(cur * tp.defMultReduction * 100) / 100;
           }
         }
-        if (Object.keys(upd).length > 0) {
-          await updateDoc(doc(db, "dungeonRooms", roomId), upd).catch(() => {});
-        }
+        upd.roomResolution = { kind:"trap", trapTypeId:trapType.id, dice, success, resolvedAt: Date.now() };
+        await updateDoc(doc(db, "dungeonRooms", roomId), upd).catch(() => {});
+      } else {
+        const { updateDoc, doc } = await import("firebase/firestore");
+        const { db } = await import("../../lib/firebase");
+        await updateDoc(doc(db, "dungeonRooms", roomId), {
+          roomResolution: { kind:"trap", trapTypeId:trapType?.id || "hp", dice, success, resolvedAt: Date.now() },
+        }).catch(() => {});
       }
     }, 2500);
   }
@@ -299,18 +365,22 @@ export default function DungeonTrap({
 
             {!dodgeSuccess && trapType && (
               <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-4">
-                <div className="text-xs font-black text-red-300 mb-3">💥 全體效果</div>
+                <div className="text-xs font-black text-red-300 mb-3">💥 全體效果（固定規則）</div>
                 {aliveIds.map(id => {
                   const m = members[id];
                   const isMe = id === memberId;
+                  // 使用 host 持久化的 trapParams，不再使用 per-member random
+                  const tp = room?.roomResolution?.trapParams || room?.trapParams || TRAP_PARAMS;
                   let effectText = "";
                   if (trapType.id === "hp") {
-                    const pct = 15 + Math.floor(Math.random() * 15);
+                    const pct = Math.round(tp.hpLossPct * 100);
                     effectText = `HP -${pct}%`;
                   } else if (trapType.id === "atk") {
-                    effectText = "ATK ×0.75~0.85";
+                    const pct = Math.round((1 - tp.atkMultReduction) * 100);
+                    effectText = `ATK -${pct}%`;
                   } else if (trapType.id === "def") {
-                    effectText = "DEF ×0.75~0.85";
+                    const pct = Math.round((1 - tp.defMultReduction) * 100);
+                    effectText = `DEF -${pct}%`;
                   }
                   return (
                     <div key={id}

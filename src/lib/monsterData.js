@@ -374,21 +374,22 @@ export const MONSTERS = [
 
 // ── 身體部位（殭屍靶紙模式）────────────────────────────
 export const BODY_PARTS = [
-  { id:"head",   name:"頭部",   icon:"💀", mult:2.0, locked:false },
-  { id:"neck",   name:"頸部",   icon:"🎯", mult:1.8, locked:false },
-  { id:"chest",  name:"胸腔",   icon:"❤️", mult:1.5, locked:false },
-  { id:"belly",  name:"腹部",   icon:"🫁", mult:1.2, locked:false },
+  { id:"head",   name:"頭部",   icon:"💀", mult:1.25, locked:false },
+  { id:"neck",   name:"頸部",   icon:"🎯", mult:1.20, locked:false },
+  { id:"chest",  name:"胸腔",   icon:"❤️", mult:1.10, locked:false },
+  { id:"belly",  name:"腹部",   icon:"🫁", mult:1.05, locked:false },
   { id:"arm",    name:"手臂",   icon:"💪", mult:1.0, locked:false },
-  { id:"groin",  name:"鼠蹊",   icon:"⚡", mult:1.6, locked:false },
-  { id:"heart",  name:"心臟",   icon:"❤️‍🔥", mult:3.0, locked:true  }, // 需先命中胸腔
-  { id:"lung",   name:"肺葉",   icon:"🫁", mult:2.5, locked:true  }, // 需先命中胸腔
-  { id:"kidney", name:"腎臟",   icon:"🫘", mult:2.2, locked:true  }, // 需先命中腹部
-  { id:"balls",  name:"要害",   icon:"💥", mult:2.8, locked:true  }, // 需先命中鼠蹊
+  { id:"groin",  name:"鼠蹊",   icon:"⚡", mult:1.15, locked:false },
+  { id:"heart",  name:"心臟",   icon:"❤️‍🔥", mult:1.50, locked:true  }, // 需先命中胸腔
+  { id:"lung",   name:"肺葉",   icon:"🫁", mult:1.35, locked:true  }, // 需先命中胸腔
+  { id:"kidney", name:"腎臟",   icon:"🫘", mult:1.30, locked:true  }, // 需先命中腹部
+  { id:"balls",  name:"要害",   icon:"💥", mult:1.40, locked:true  }, // 需先命中鼠蹊
   { id:"miss",   name:"脫靶",   icon:"💨", mult:0,   locked:false },
 ];
 
 // ── 依分數判定命中部位 ───────────────────────────────────
-// isX = true → X 環，保證頭/頸（一定爆擊）；10 = 一定命中；9~M 按比例脫靶
+// isX = true → X 環，保證頭/頸（一定爆擊）；10 = 一定命中。
+// 1~9 全部命中，只有 M（score=0）才是脫靶。
 
 // Map 查詢比 Array.find 更穩定，避免 find 因任何原因回傳 undefined
 const _BP_MAP = {};
@@ -417,10 +418,6 @@ export function resolveHitPart(score, unlockedParts, isX = false) {
       return _bp("balls");
     return _pick(["head","neck","groin","chest"]);
   }
-
-  // 9~1 分：脫靶率按比例遞增（9分=5%, 8分=15%, 7分=25%…1分=85%）
-  const missRate = Math.max(0, 0.95 - score * 0.10);
-  if (Math.random() < missRate) return _bp("miss");
 
   // 8~9 分：中上部位
   if (score >= 8) {
@@ -549,6 +546,17 @@ const VARIANT_FIXED = {
   boss:   { hp: 2.0, atk: 1.6, def: 1.6 },
 };
 
+// 新戰鬥公式已把環數與部位獨立相乘。依平均 7~8 分、正常部位命中
+// 校準各階級的回合數，避免高 ATK 玩家一回合蒸發中高階怪物。
+const TIER_COMBAT_HP_MULTIPLIER = {
+  common: 0.95,
+  rare:   1.00,
+  elite:  1.05,
+  fierce: 1.10,
+  boss:   1.00,
+  mythic: 1.10,
+};
+
 // ── 依戰力隨機選變體 ────────────────────────────────────
 // 戰力越高，出現強化的機率越高；弱化不受戰力影響
 function pickVariant(archerPower) {
@@ -571,10 +579,11 @@ export function applyVariant(monster, variant) {
   } else {
     mult = VARIANT_FIXED[variant] || VARIANT_FIXED.normal;
   }
+  const combatHpMult = TIER_COMBAT_HP_MULTIPLIER[monster.tier] || 1;
   return {
     ...monster,
     variant,
-    hp:  Math.round(monster.hp  * mult.hp),
+    hp:  Math.round(monster.hp * combatHpMult * mult.hp),
     atk: Math.round(monster.atk * mult.atk),
     def: Math.round(monster.def * mult.def),
   };

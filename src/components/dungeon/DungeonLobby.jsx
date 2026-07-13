@@ -35,7 +35,7 @@ function restoreDungeonFromTeamRoom(room) {
   };
 }
 
-export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap }) {
+export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, autoReconnectRoomId = null }) {
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const myId = profile?.id;
@@ -57,24 +57,50 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
 
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  const [cardReady, setCardReady] = useState(() => isGuest || !myId);
   useEffect(() => {
-    if (!myId) return;
-    return subscribeCardCollection(myId, setCardColl);
-  }, [myId]);
+    if (!myId || isGuest) {
+      setCardReady(true);
+      return undefined;
+    }
+    setCardReady(false);
+    return subscribeCardCollection(myId, data => {
+      setCardColl(data);
+      setCardReady(true);
+    });
+  }, [myId, isGuest]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
-  function buildMemberData() { return buildExpeditionMemberData(profile, cardBonus); }
+  function buildMemberData() { return buildExpeditionMemberData(profile, cardBonus, cardColl); }
 
   // 登入地下城首頁時，找回仍包含自己的等待室、進行中遠征或未領取結算。
   useEffect(() => {
     if (!myId) return undefined;
     let cancelled = false;
     findReconnectableTeamExpedition(myId).then(result => {
-      if (!cancelled && result.ok) setReconnectRoom(result.room);
+      if (cancelled || !result.ok) return;
+      const room = result.room;
+      setReconnectRoom(room);
+      // 從主程式的斷線保護入口回來時，直接以房主的 Firestore 房間
+      // 狀態重建畫面；不使用本機快取，因此樓層、地圖與戰鬥進度永遠以房主為準。
+      if (room && room.id === autoReconnectRoomId) {
+        setTeamLobby({
+          roomId: room.id,
+          dungeon: restoreDungeonFromTeamRoom(room),
+          hostId: room.hostId,
+        });
+        if (room.status === "expedition_active" || room.expeditionPhase === "result") {
+          setExpeditionStart({
+            teamMode: true,
+            teamRoomId: room.id,
+            hostId: room.hostId,
+          });
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [myId]);
+  }, [myId, autoReconnectRoomId]);
 
   // 偵測單人遠征中斷進度（見 dungeon 穩定性任務：不做地圖復原，只提供結算）
   useEffect(() => {
@@ -579,6 +605,10 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap })
               });
             }}
             onStartTeam={async (d) => {
+              if (!cardReady) {
+                alert("正在讀取卡片加成，請稍候再開始地下城。");
+                return;
+              }
               // 建立組隊房間
               const res = await createTeamExpeditionRoom({
                 hostId: myId,

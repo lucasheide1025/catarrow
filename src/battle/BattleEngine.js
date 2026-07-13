@@ -6,8 +6,7 @@
 //   const { events, finalState } = processMonsterRound(config, context, arrows);
 //   // 組件根據 events 播放動畫、最終套用 finalState
 
-import { resolveHitPart } from '../lib/monsterData';
-import { calcStandardArrowDmg, calcStandardCounter } from '../lib/damage';
+import { calcStandardCounter, resolvePlayerCounter, resolveStandardArrowHit } from '../lib/damage';
 import { labelToValue } from '../lib/score';
 import { getPotion } from '../lib/itemData';
 import { shouldTriggerEvent, drawRandomEvent } from '../lib/randomEvents';
@@ -221,21 +220,19 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       ? Math.min(boostedRaw + 5, 10)
       : boostedRaw;
 
-    const baseCritMult = (isX || forceCrit) ? 2.0 : 1.0;
-    const part = resolveHitPart(score, curUnlocked, isX);
-
-    // 部位解鎖
-    if (['chest', 'belly', 'groin'].includes(part.id)) {
-      curUnlocked = new Set([...curUnlocked, part.id]);
-    }
-
-    const dmg = Math.round(calcStandardArrowDmg(score, effATK, ctx.monster.def, part.mult * baseCritMult) * (consumableBuffs.dmgMult || 1) * (1 + (ctx.monsterDmgTakenPct || 0) / 100));
+    const hit = resolveStandardArrowHit(
+      { label: isX ? "X" : (score >= 10 ? "10" : rawLabel), score }, effATK, ctx.monster.def, curUnlocked,
+      (consumableBuffs.dmgMult || 1) * (1 + (ctx.monsterDmgTakenPct || 0) / 100) - 1,
+    );
+    const part = hit.part;
+    curUnlocked = hit.unlockedParts;
+    const dmg = hit.dmg;
 
     if (part.id === 'head') headHitCount++;
 
     const isOrganPart = ['heart', 'kidney', 'lung', 'balls'].includes(part.id);
     const isMiss = part.mult === 0;
-    const isCrit = !isMiss && (isOrganPart || part.mult >= 1.8 || score >= 10);
+    const isCrit = hit.isCrit;
     const hitText = getHitText(part.id);
 
     monsterHP = Math.max(0, monsterHP - dmg);
@@ -330,6 +327,8 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
     const effectiveDef = Math.round((ctx.archerStats.def || 0) * (consumableBuffs.defMult || 1));
     let cdmg = calcStandardCounter(ctx.monster.atk, effectiveDef, headStunned, isCrit);
     if (ctx.counterReducePct) cdmg = Math.round(cdmg * (1 - ctx.counterReducePct / 100));
+    const counterHit = resolvePlayerCounter({ arrows, baseDamage:cdmg, maxHP:ctx.archerStats.hp || archerHP });
+    cdmg = counterHit.damage;
 
     // 貓貓防禦盾
     let finalCdmg = cdmg;
@@ -348,13 +347,13 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
     }
 
     if (counterBlocked) {
-      events.push(createCounterEvent(0, false, false, 0, true));
+      events.push(createCounterEvent(0, false, false, 0, true, counterHit.part));
     } else if (counterReduced > 0) {
-      events.push(createCounterEvent(finalCdmg, isCrit, headStunned, counterReduced));
+      events.push(createCounterEvent(finalCdmg, isCrit, headStunned, counterReduced, false, counterHit.part));
     } else if (headStunned) {
-      events.push(createCounterEvent(finalCdmg, isCrit, true));
+      events.push(createCounterEvent(finalCdmg, isCrit, true, 0, false, counterHit.part));
     } else {
-      events.push(createCounterEvent(finalCdmg, isCrit));
+      events.push(createCounterEvent(finalCdmg, isCrit, false, 0, false, counterHit.part));
     }
 
     const shieldAbsorb = Math.min(potionShield, finalCdmg);

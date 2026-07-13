@@ -112,7 +112,7 @@ function WorldBossRealCard({ card, equipped, selected, compact = false, activeTi
 function MonsterArt({ card, className = "" }) {
   const [sourceIndex, setSourceIndex] = useState(0);
   const id = card.key || card.monsterId;
-  const sources = [`/cards/monsters/${id}.webp`, `/monsters/${id}.webp`];
+  const sources = [`/cards/monsters/${id}.webp`, `/monsters-battle/${id}.webp`, `/monsters/${id}.webp`];
   if (sourceIndex < sources.length) {
     return <img className={className} src={sources[sourceIndex]} alt={card.name || "怪物"} draggable="false" onError={() => setSourceIndex(index => index + 1)} />;
   }

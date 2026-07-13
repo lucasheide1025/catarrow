@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { rollBattleLoot } from "../../lib/monsterRegistry";
 import { MONSTERS, TIER_ORDER } from "../../lib/monsterData";
+import { rollKingVaultReward } from "../../lib/kingVaultRewards";
 import { sfxCoinDrop, sfxGachaReveal } from "../../lib/sound";
 
 // ── 粒子背景（金色） ────────────────────────────────────
@@ -129,6 +130,8 @@ export default function DungeonTreasureRoom({
     ];
     const extraItem = extraItems[Math.floor(Math.random() * extraItems.length)];
     result.extraItem = extraItem;
+    result.kingVault = rollKingVaultReward(difficultyTier, family);
+    result.coins += result.kingVault.coins;
     setLoot(result);
     if (typeof onLoot === "function") onLoot(result); // 只在生成時呼叫一次
   }, [lootOverride]); // eslint-disable-line
@@ -137,6 +140,8 @@ export default function DungeonTreasureRoom({
     if (!loot) return [];
     return [
       ...(loot.material ? [{ item:loot.material }] : []),
+      ...(loot.kingVault?.kingSeals ? [{ icon:"👑", label:`王之印記 ×${loot.kingVault.kingSeals}` }] : []),
+      ...((loot.kingVault?.materials || []).map(item => ({ item }))),
       ...(loot.chest ? [{ icon:"📦", label:"額外材料寶箱 ×2" }] : []),
       ...(loot.goldChest ? [{ icon:"🎁", label:"額外金幣寶箱 ×2" }] : []),
       ...(loot.extraItem ? [{

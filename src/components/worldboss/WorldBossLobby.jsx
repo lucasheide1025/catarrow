@@ -1,7 +1,7 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeLatestWorldBoss, autoSpawnWorldBoss } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, autoSpawnWorldBoss, getLatestWorldBossKill, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
@@ -62,7 +62,7 @@ function CountdownTimer({ endAt }) {
   return <span className="font-mono text-amber-300 font-bold">{left || "–"}</span>;
 }
 
-function KillScreen({ event, myReward, onClose }) {
+function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim }) {
   const boss  = event.bossData || {};
   const killer = event.lastHitBy;
   const parts  = Object.entries(event.participants || {})
@@ -102,6 +102,16 @@ function KillScreen({ event, myReward, onClose }) {
               <span style={{ fontSize:"0.85rem", fontWeight:700, color:"#f87171" }}>{p.dmg.toLocaleString()}</span>
             </div>
           ))}
+        </div>
+      )}
+      {!myReward && canClaim && (
+        <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:360, marginTop:14, padding:14, borderRadius:16, background:"rgba(251,191,36,.1)", border:"1px solid rgba(251,191,36,.45)", textAlign:"center" }}>
+          <div style={{ color:"#fbbf24", fontWeight:900, marginBottom:8 }}>世界王獎勵尚未領取</div>
+          {rewardPreview?.reward && <div style={{ textAlign:"left", color:"#e2e8f0", fontSize:12, lineHeight:1.8, marginBottom:10 }}>
+            {Object.entries(rewardPreview.reward).filter(([,v]) => v && v !== 0).map(([k,v]) => <div key={k}>{({coins:"🪙 金幣",arrowDew:"💧 箭露",archerXP:"🏹 射手經驗",catXP:"😻 貓咪經驗",bond:"💞 羈絆",coinChests:"💰 金幣寶箱",materialChests:"📦 材料寶箱",catBoxes:"🐱 貓貓箱",mimiBoxes:"😺 咪咪箱",cardPacks:"🃏 怪物卡包",scrolls:"🗺️ 召喚卷",wbCardChance:"👑 王卡機率"}[k] || k)}：{k === "wbCardChance" ? `${Math.round(v*100)}%（確認後判定）` : v}</div>)}
+          </div>}
+          {rewardPreview?.error && <div style={{ color:"#fca5a5", fontSize:12, marginBottom:10 }}>{rewardPreview.error}</div>}
+          <button onClick={onClaim} style={{ width:"100%", padding:"10px 0", border:0, borderRadius:10, background:"linear-gradient(135deg,#fbbf24,#f59e0b)", color:"#422006", fontWeight:900, cursor:"pointer" }}>{rewardPreview ? "確認領取以上獎勵" : "查看完整獎勵"}</button>
         </div>
       )}
       {myReward && (
@@ -164,10 +174,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [replayIntro,   setReplayIntro]   = useState(false);
 
   const myId   = activeProfile?.id;
-  const _wd = new Date();
-  const today = `${_wd.getFullYear()}-${String(_wd.getMonth()+1).padStart(2,"0")}-${String(_wd.getDate()).padStart(2,"0")}`;
+  const [today, ...legacyTodayKeys] = getWorldBossAttackDateKeys();
 
   const [myReward, setMyReward] = useState(null); // claimWorldBossKillReward 回傳結果
+  const [rewardPreview, setRewardPreview] = useState(null);
 
   useEffect(() => {
     // 載入時嘗試自動刷新（被擊殺隔天產生新 Boss）
@@ -183,22 +193,60 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           setKillEvent(ev);       // 保存正確的 defeated boss
           setShowKillScreen(true);
         }
-        // 自行請領擊殺獎勵：不受上面的 sessionStorage 限制，靠 participants.{id}.claimed 防重複
-        if (myId && !isGuestMode && ev.participants?.[myId] && !ev.participants[myId].claimed) {
-          import("../../lib/worldBossDb").then(({ claimWorldBossKillReward }) => {
-            claimWorldBossKillReward(myId, ev.id).then(res => {
-              if (res.ok) setMyReward(res);
-            });
-          });
-        }
       } else {
         // 新的 active boss 到來，或無 boss → 關掉 kill screen
         setShowKillScreen(false);
-        setMyReward(null);
       }
     });
     return unsub;
   }, [myId, isGuestMode]);
+
+  const [pendingEvent, setPendingEvent] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (isGuestMode || !myId) {
+      setPendingEvent(null);
+      return () => { cancelled = true; };
+    }
+
+    // The history record is only a snapshot. Confirm claimability against the
+    // current event document before exposing an action that might be rejected.
+    getLatestWorldBossKill()
+      .then(async kill => {
+        if (!kill?.eventId || !kill.participants?.[myId] || kill.participants[myId].claimed) return null;
+        const preview = await previewWorldBossKillReward(myId, kill.eventId);
+        return preview.ok ? kill : null;
+      })
+      .then(kill => { if (!cancelled) setPendingEvent(kill); })
+      .catch(() => { if (!cancelled) setPendingEvent(null); });
+
+    return () => { cancelled = true; };
+  }, [myId, isGuestMode, event?.id, event?.status]);
+
+  async function claimPendingReward(eventId) {
+    if (!myId || !eventId || isGuestMode) return;
+    const pending = pendingEvent?.eventId === eventId ? pendingEvent : null;
+    if (pending && !showKillScreen) {
+      setKillEvent({ ...pending, bossData: pending.bossData || WORLD_BOSSES[pending.bossKey] || {} });
+      setShowKillScreen(true);
+    }
+    if (!rewardPreview || rewardPreview.eventId !== eventId) {
+      const preview = await previewWorldBossKillReward(myId, eventId);
+      if (preview.ok) {
+        setRewardPreview({ eventId, ...preview });
+      } else {
+        setRewardPreview({ eventId, error: preview.reason || "獎勵資料讀取失敗，請重新整理後再試" });
+      }
+      return;
+    }
+    if (!window.confirm("已查看完整獎勵內容，確定要領取並放入背包嗎？")) return;
+    const result = await claimWorldBossKillReward(myId, eventId);
+    if (result.ok) {
+      setMyReward(result);
+      setRewardPreview(null);
+      setPendingEvent(current => current?.eventId === eventId ? null : current);
+    }
+  }
 
   if (loading) {
     return (
@@ -236,12 +284,17 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   }
 
   const boss         = event.bossData || {};
+  const bossMaxHP    = Math.max(1, Number(event.bossMaxHP) || Number(boss.hp) || 1);
+  const participantDamage = Object.values(event.participants || {}).reduce((sum, participant) => sum + (Number(participant?.totalDmg) || 0), 0);
+  const storedCurrentHP = Number(event.bossCurrentHP);
+  const bossCurrentHP = Math.max(0, Math.min(bossMaxHP,
+    Number.isFinite(storedCurrentHP) ? storedCurrentHP : bossMaxHP - participantDamage));
   const participants = event.participants || {};
   const partList     = Object.entries(participants);
   const total        = event.totalParticipants || 0;
   const bonus        = getParticipantBonus(total);
   const myData       = participants[myId];
-  const attackedToday = myData?.lastAttackedDate === today;
+  const attackedToday = [today, ...legacyTodayKeys].includes(myData?.lastAttackedDate);
   const currentSessionSourceId =
     activeProfile?.currentSessionSourceId ||
     activeProfile?.lastSessionSourceId ||
@@ -266,12 +319,11 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
 
       {showKillScreen && killEvent && (
-        <KillScreen event={killEvent} myReward={myReward} onClose={() => setShowKillScreen(false)}/>
+        <KillScreen event={killEvent} myReward={myReward} rewardPreview={rewardPreview} canClaim={!isGuestMode && pendingEvent?.eventId === killEvent.id} onClaim={() => claimPendingReward(killEvent.id)} onClose={() => setShowKillScreen(false)}/>
       )}
       {replayIntro && event && (
         <WorldBossIntro event={event} onClose={() => setReplayIntro(false)}/>
       )}
-
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-2">
         {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
@@ -293,13 +345,13 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             <div className="relative">
               <WorldBossSVG
                 bossKey={event.bossKey}
-                currentHP={event.bossCurrentHP}
-                maxHP={event.bossMaxHP}
+                currentHP={bossCurrentHP}
+                maxHP={bossMaxHP}
                 size={300}
               />
               {/* 階段標籤 */}
               {(() => {
-                const ph = getBossPhase(event.bossCurrentHP, event.bossMaxHP);
+                const ph = getBossPhase(bossCurrentHP, bossMaxHP);
                 const pl = PHASE_LABELS[ph];
                 return (
                   <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-xs font-bold px-2 py-0.5 rounded-full border"
@@ -324,7 +376,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
             {/* HP 條 */}
             <div className="w-full px-4">
-              <HPBar current={event.bossCurrentHP} max={event.bossMaxHP}/>
+              <HPBar current={bossCurrentHP} max={bossMaxHP}/>
             </div>
 
             {/* 屬性列 */}
@@ -433,7 +485,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             </div>
             {/* 今日出戰詳情 */}
             {attackedToday && (() => {
-              const todaySession = (myData.sessions || []).slice().reverse().find(s => s.date === today);
+              const todaySession = (myData.sessions || []).slice().reverse().find(s => [today, ...legacyTodayKeys].includes(s.date));
               if (!todaySession) return null;
               return (
                 <div className="mt-2 pt-2 border-t border-indigo-400/20 space-y-1">
@@ -516,13 +568,16 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             ☠️ Boss 已被擊倒 · 等待教練開啟新 Boss
           </div>
         ) : (
+          <div style={{display:"flex",gap:8}}>
           <button
-            onClick={() => { sfxTap(); setInBattle(true); }}
+            onClick={() => { if (attackedToday) return; sfxTap(); setInBattle(true); }}
             disabled={attackedToday}
             className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
             style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
             {attackedToday ? "✓ 今日已出戰" : "⚔️ 進入戰鬥"}
           </button>
+          {pendingEvent && !myReward && event?.id !== pendingEvent.eventId && <button onClick={() => claimPendingReward(pendingEvent.eventId)} style={{flex:"0 0 42%",padding:"10px 6px",border:0,borderRadius:12,background:"#fbbf24",color:"#422006",fontWeight:900,fontSize:11,whiteSpace:"nowrap"}}>🎁 上次獎勵</button>}
+          </div>
         )}
       </div>
     </div>

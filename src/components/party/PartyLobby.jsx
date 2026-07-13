@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms, cleanupStalePartyRooms } from "../../lib/partyDb";
 import { subscribePracticeLogs } from "../../lib/db";
+import { archerLevelFromXP } from "../../lib/archerLevel";
 import BattleRecords from "../member/BattleRecords";
 
 const TYPE_OPTIONS = [
@@ -50,7 +51,10 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
   async function handleCreate() {
     setLoading(true); setErr("");
-    const res = await createPartyRoom(myId, myName, selType, { accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official") });
+    const res = await createPartyRoom(myId, myName, selType, {
+      accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official"),
+      level: isGuestMode ? 1 : archerLevelFromXP(profile?.archerXP || 0),
+    });
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, selType, true);
     else setErr(res.reason);
@@ -59,17 +63,21 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   async function handleJoinRoom(openRoom) {
     if (loading) return;
     setLoading(true); setErr("");
-    const res = await joinPartyRoom(openRoom.code, myId, myName, { accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official") });
+    const res = await joinPartyRoom(openRoom.code, myId, myName, {
+      accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official"),
+      level: isGuestMode ? 1 : archerLevelFromXP(profile?.archerXP || 0),
+    });
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, openRoom.type, false);
     else setErr(res.reason);
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-10 px-4 relative text-white" style={{ backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex flex-col items-center py-10 px-4 relative overflow-hidden text-white" style={{ backgroundImage:"linear-gradient(180deg,rgba(3,8,22,.68),rgba(3,8,22,.96)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
+      <div aria-hidden="true" className="absolute -right-28 bottom-0 h-80 w-80 opacity-25 pointer-events-none" style={{backgroundImage:"url(/art/characters/adventure-men-roster-v1.png)",backgroundSize:"500% 200%",backgroundPosition:"50% 0%",backgroundRepeat:"no-repeat",filter:"drop-shadow(0 0 28px rgba(96,165,250,.65))"}} />
+      <div className="w-full max-w-md relative z-10">
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 rounded-3xl border border-sky-200/15 bg-slate-950/45 px-4 py-6 shadow-2xl backdrop-blur-md">
           {onBack && (
             <button onClick={onBack} className="absolute left-4 top-4 text-slate-400 text-sm font-bold hover:text-white transition-colors">← 返回</button>
           )}
@@ -79,7 +87,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
         </div>
 
         {/* Tab */}
-        <div className="flex bg-slate-700/50 rounded-2xl p-1 mb-6">
+        <div className="flex border border-white/10 bg-slate-950/60 rounded-2xl p-1 mb-6 shadow-xl backdrop-blur-md">
           {[["create","✨ 建立房間"], ["join","🏹 加入房間"]].map(([id, label]) => (
             <button key={id} onClick={() => { setTab(id); setErr(""); }}
               className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${
@@ -97,8 +105,8 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
               <button key={t.id} onClick={() => setSelType(t.id)}
                 className={`relative w-full rounded-2xl border-2 p-4 text-left transition-all ${
                   selType === t.id
-                    ? `${t.border} ${t.bg}`
-                    : "border-slate-600 bg-slate-700/40"
+            ? `${t.border} ${t.bg} shadow-[0_0_22px_rgba(251,146,60,.15)]`
+                    : "border-slate-600/70 bg-slate-950/55 backdrop-blur"
                 }`}>
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{t.icon}</span>
@@ -136,7 +144,7 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
               const hostName    = r.members?.[r.hostId]?.name || "未知";
               const typeInfo    = TYPE_OPTIONS.find(t => t.id === r.type);
               return (
-                <div key={r.id} className={`rounded-2xl border-2 p-4 ${typeInfo?.border || "border-slate-600"} bg-slate-800/60`}>
+                <div key={r.id} className={`rounded-2xl border-2 p-4 shadow-xl backdrop-blur ${typeInfo?.border || "border-slate-600"} bg-slate-950/65`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{typeInfo?.icon || "👥"}</span>

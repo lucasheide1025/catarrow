@@ -1,7 +1,7 @@
 // src/components/dungeon/DungeonChest.jsx — 地下城寶箱房間（動畫強化版）
-import { useState, useEffect, useMemo } from "react";
-import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
-import { FAMILY_COLLECTIBLES } from "../../lib/dungeonCollectibles";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { confirmNonCombatRoom, ensureChestRoomLoot, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { createOrdinaryChestLoot } from "../../lib/dungeonChestLoot";
 import { sfxOpenChest, sfxCoinDrop } from "../../lib/sound";
 
 // 粒子背景
@@ -133,6 +133,9 @@ export default function DungeonChest({
   const [showFountain, setShowFountain] = useState(false);
   const [showRays, setShowRays] = useState(false);
   const [localConfirms, setLocalConfirms] = useState({});
+  const [rewardIndex, setRewardIndex] = useState(0);
+  const [claimingReward, setClaimingReward] = useState(false);
+  const chestSeedRef = useRef(null);
 
   const members = room?.members || {};
   const aliveIds = Object.keys(members).filter(id => members[id].alive);
@@ -140,22 +143,29 @@ export default function DungeonChest({
   const dungeonMapId = room?.mapDungeonId || "";
   const family = dungeonMapId.split("_")[0] || "ghost";
   const isHidden = !!room?.hiddenRoomLoot?.found;
+  if (!chestSeedRef.current) {
+    chestSeedRef.current = createOrdinaryChestLoot({
+      family,
+      difficultyTier: room?.expeditionDifficulty || room?.dungeonDifficulty || 1,
+      hidden: isHidden,
+    });
+  }
+  const chestLoot = localMode ? chestSeedRef.current : (room?.chestLoot || null);
+  // 每次只顯示一份獎勵，玩家確認後才寫入背包並翻到下一張。
+  const rewardQueue = useMemo(() => {
+    if (!chestLoot) return [];
+    const rewards = [];
+    if (chestLoot.coins > 0) rewards.push({ key:"coins", kind:"coins", icon:"🪙", name:"金幣", amount:chestLoot.coins, desc:"收入金幣背包" });
+    if (chestLoot.item) rewards.push({ key:`item-${chestLoot.item.id}`, kind:"item", icon:chestLoot.item.icon || "✨", name:chestLoot.item.name, desc:chestLoot.item.desc || "地下城收藏品", item:chestLoot.item });
+    if (chestLoot.material) rewards.push({ key:`material-${chestLoot.material.id || chestLoot.material.name}`, kind:"material", icon:chestLoot.material.icon || "🧱", name:chestLoot.material.name, desc:chestLoot.material.desc || "製作素材", material:chestLoot.material });
+    return rewards;
+  }, [chestLoot]);
+  const currentReward = rewardQueue[rewardIndex] || null;
 
-  const chestLoot = useMemo(() => {
-    if (isHidden && room?.hiddenRoomLoot) {
-      return { coins: room.hiddenRoomLoot.coins || 30, item: null, isHidden: true };
-    }
-    const pool = FAMILY_COLLECTIBLES[family];
-    if (!pool) return { coins: 0, item: null };
-    const coins = 10 + Math.floor(Math.random() * 30);
-    const hasItem = Math.random() < 0.4;
-    const item = hasItem
-      ? (Math.random() < 0.25
-        ? pool.rare[Math.floor(Math.random() * pool.rare.length)]
-        : pool.common[Math.floor(Math.random() * pool.common.length)])
-      : null;
-    return { coins, item: item ? { id: item.id, name: item.name, icon: item.icon, desc: item.desc } : null };
-  }, []); // eslint-disable-line
+  useEffect(() => {
+    if (localMode || !isHost || room?.chestLoot || !roomId || !chestSeedRef.current) return;
+    ensureChestRoomLoot(roomId, memberId, chestSeedRef.current).catch(() => {});
+  }, [localMode, isHost, room?.chestLoot, roomId, memberId]);
 
   // 自動播放開箱動畫
   useEffect(() => {
@@ -167,7 +177,7 @@ export default function DungeonChest({
       setAnimPhase("reveal"); setShowFountain(true);
       sfxCoinDrop();
     }, 1600);
-    const t3 = setTimeout(() => { setAnimPhase("done"); setShowRays(false); }, 2400);
+    const t3 = setTimeout(() => setShowFountain(false), 2500);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []); // eslint-disable-line
 
@@ -178,6 +188,10 @@ export default function DungeonChest({
     if (localMode) {
       // 本地單人：金幣交由父層發放（含音效），收藏品照常入背包
       if (chestLoot.coins > 0) onLocalEffect?.({ type:"coins", value: chestLoot.coins });
+      if (chestLoot.material) {
+        const { addMaterials } = await import("../../lib/db");
+        addMaterials(memberId, [chestLoot.material]).catch(() => {});
+      }
       if (chestLoot.item) {
         const { addCollectibles } = await import("../../lib/dungeonDb");
         addCollectibles(memberId, [{ itemId: chestLoot.item.id, qty: 1 }]).catch(() => {});
@@ -185,7 +199,7 @@ export default function DungeonChest({
       setLocalConfirms({ [memberId]: true });
       return;
     }
-    const { addCoins } = await import("../../lib/db");
+    const { addCoins, addMaterials } = await import("../../lib/db");
     const { addCollectibles } = await import("../../lib/dungeonDb");
     if (chestLoot.coins > 0) {
       addCoins(memberId, chestLoot.coins).catch(() => {});
@@ -193,7 +207,41 @@ export default function DungeonChest({
     if (chestLoot.item) {
       addCollectibles(memberId, [{ itemId: chestLoot.item.id, qty: 1 }]).catch(() => {});
     }
+    if (chestLoot.material) addMaterials(memberId, [chestLoot.material]).catch(() => {});
     await confirmNonCombatRoom(roomId, memberId, "opened");
+  }
+
+  async function handleClaimReward() {
+    if (!currentReward || confirmed || claimingReward) return;
+    setClaimingReward(true);
+    sfxCoinDrop();
+    try {
+      if (currentReward.kind === "coins") {
+        if (localMode) onLocalEffect?.({ type:"coins", value:currentReward.amount });
+        else {
+          const { addCoins } = await import("../../lib/db");
+          await addCoins(memberId, currentReward.amount);
+        }
+      } else if (currentReward.kind === "material") {
+        const { addMaterials } = await import("../../lib/db");
+        await addMaterials(memberId, [currentReward.material]);
+      } else {
+        const { addCollectibles } = await import("../../lib/dungeonDb");
+        await addCollectibles(memberId, [{ itemId:currentReward.item.id, qty:1 }]);
+      }
+      const nextIndex = rewardIndex + 1;
+      if (nextIndex < rewardQueue.length) {
+        setRewardIndex(nextIndex);
+      } else {
+        setConfirmed(true);
+        setAnimPhase("done");
+        setShowRays(false);
+        if (localMode) setLocalConfirms({ [memberId]: true });
+        else await confirmNonCombatRoom(roomId, memberId, "opened");
+      }
+    } finally {
+      setClaimingReward(false);
+    }
   }
 
   async function handleResolve() {
@@ -284,7 +332,7 @@ export default function DungeonChest({
         )}
 
         {/* 寶物展示 */}
-        {animPhase === "reveal" && chestLoot && (
+        {false && animPhase === "reveal" && chestLoot && (
           <>
             {chestLoot.coins > 0 && (
               <div className="text-center" style={{ animation:"ch-coin-pop 0.5s ease both" }}>
@@ -304,13 +352,29 @@ export default function DungeonChest({
               </div>
             )}
 
-            {!chestLoot.coins && !chestLoot.item && (
+            {chestLoot.material && (
+              <div style={{ animation:"ch-item-slide 0.6s 0.2s ease both" }}>
+                <ItemReveal item={chestLoot.material} delay={80} isHidden={isHidden} />
+              </div>
+            )}
+
+            {!chestLoot.coins && !chestLoot.item && !chestLoot.material && (
               <div className="text-center text-slate-500 text-lg">寶箱是空的…</div>
             )}
           </>
         )}
 
         {/* 全部完成 */}
+        {animPhase === "reveal" && (
+          currentReward ? (
+            <div key={currentReward.key} className="flex flex-col items-center gap-3" style={{ animation:"ch-item-slide 0.45s ease both" }}>
+              <ItemReveal item={{ icon:currentReward.icon, name:currentReward.name, desc:currentReward.desc }} delay={60} isHidden={isHidden} />
+              {currentReward.kind === "coins" && <div className="text-3xl font-black" style={{ color:"#fbbf24" }}>+{currentReward.amount}</div>}
+              <div className="text-xs font-bold" style={{ color:isHidden ? "#c084fc" : "#86efac" }}>獎勵 {rewardIndex + 1} / {rewardQueue.length}</div>
+            </div>
+          ) : <div className="text-center text-slate-500 text-lg">寶箱裡沒有可領取的物品</div>
+        )}
+
         {animPhase === "done" && (
           <div className="text-center space-y-2" style={{ animation:"ch-item-slide 0.5s ease both" }}>
             <div className="text-lg font-bold" style={{ color: isHidden ? "#c084fc" : "#4ade80" }}>
@@ -340,17 +404,17 @@ export default function DungeonChest({
         borderColor: isHidden ? "rgba(168,85,247,0.2)" : "rgba(74,222,128,0.25)",
       }}>
         {!confirmed ? (
-          <button onClick={handleConfirm} disabled={animPhase !== "done"}
+          <button onClick={handleClaimReward} disabled={animPhase !== "reveal" || !currentReward || claimingReward}
             className="w-full py-4 rounded-2xl font-black text-base shadow-lg disabled:opacity-40 transition-all"
             style={{
-              background: animPhase === "done"
+              background: animPhase === "reveal" && currentReward
                 ? (isHidden
                   ? "linear-gradient(90deg,#7c3aed,#a855f7)"
                   : "linear-gradient(90deg,#f59e0b,#eab308)")
                 : "rgba(255,255,255,0.1)",
-              color: animPhase === "done" ? "white" : "rgba(255,255,255,0.4)",
+              color: animPhase === "reveal" && currentReward ? "white" : "rgba(255,255,255,0.4)",
             }}
-            onMouseEnter={e => { if (animPhase === "done") e.currentTarget.style.transform = "scale(1.02)"; }}
+            onMouseEnter={e => { if (animPhase === "reveal" && currentReward) e.currentTarget.style.transform = "scale(1.02)"; }}
             onMouseLeave={e => { if (animPhase === "done") e.currentTarget.style.transform = ""; }}>
             {animPhase !== "done" ? "⏳ 寶箱開啟中…" : isHidden ? "💰 領取隱藏獎勵！" : "💰 領取寶物，繼續前進"}
           </button>

@@ -38,8 +38,7 @@ import { CAT_IDS, CATS } from "../../lib/catData";
 import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
-import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleStatusTags, BattleStatCard, BattleLogPanel } from "../shared/SharedBattleComponents";
-import BattleBottomBar from "./BattleBottomBar";
+import { BattleStatCard } from "../shared/SharedBattleComponents";
 import { labelToValue, HALF_SCORES, calcArrowStats } from "../../lib/score";
 import { BattleResultPanel, RESULT_CONFIG_SOLO } from "../shared/BattleResultPanel";
 import BattleScreen from "../battle/BattleScreen";
@@ -120,11 +119,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const profile = guestProfile || authProfile;
   const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
   const { hasCat, catName, catId, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion(isGuest ? profile : null);
-  const [phase, setPhase]           = useState(() => localStorage.getItem("mb_archer_style") ? "select" : "archer_select");
+  const [phase, setPhase]           = useState("select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
   const [battleMode, setBattleMode] = useState(() => loadMbDefaults()?.battleMode || "score");
-  const [mode, setMode]             = useState(() => loadMbDefaults()?.mode || localStorage.getItem("mb_default_mode") || "novice");
+  // 難度由怪物的弱化／普通／強悍變體承擔；打怪模式固定學生規則。
+  const [mode, setMode]             = useState("student");
   const [arrowsPerRound, setArrowsPerRound] = useState(() => loadMbDefaults()?.arrowsPerRound || 6);
   const [monster, setMonster]       = useState(null);
   const [battleBg, setBattleBg]     = useState("/ui/dungeon-bg.webp");
@@ -307,8 +307,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   useEffect(() => {
     if (questInitDone.current) return;
     if (!questContext?.monsterId || !archerStats) return;
-    // 若還在選出戰外觀且未設定，讓玩家先選完再說
-    if (phase === "archer_select" && !archerStyle) return;
     const target = MONSTERS.find(m => m.id === questContext.monsterId);
     if (!target) return;
     questInitDone.current = true;
@@ -491,7 +489,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     if (!eventConfig?.active) return;
     const ec = eventConfig;
     setBattleMode(ec.battleMode || "score");
-    setMode(ec.mode || "student");
+    setMode("student");
     const dm = ec.distanceMode || "fixed";
     setDistanceMode(dm);
     const dist = dm === "dynamic" ? (ec.dynamicStart ?? 15) : (ec.fixedDistance ?? 15);
@@ -764,7 +762,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   function restoreBattle(s) {
     setMonster(s.monster);
     setBattleBg(pickBg(s.monster?.family));
-    setMode(s.mode || "novice");
+    setMode("student");
     setBattleMode(s.battleMode || "score");
     setMonsterHP(s.monsterHP);
     setArcherHP(s.archerHP);
@@ -802,7 +800,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       buffs.monAtkMult = Math.max(0, buffs.monAtkMult);
       buffs.monDefMult = Math.max(0, buffs.monDefMult);
     }
-    // 戰前藥水已移至 BattleBottomBar 回合中消耗，此處不再使用
+    // 戰前藥水不再套用；消耗效果在正式回合流程中處理。
     const baseStats = { ...(archerStats || { hp:200, atk:10, def:10 }) };
     if (mode==="veteran") baseStats.hp = Math.max(600, baseStats.hp);
     // 怪物卡片裝備加成（優先用 ref 避免 closure stale 問題）
@@ -859,7 +857,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     shootingProfileRef.current = null;
     setLog([
       { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
-      { type:"system", text:`🎯 ${battleMode==="zombie"?"殭屍靶紙":"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
+      { type:"system", text:`🎯 ${"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
       ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
       ...(throwDmgTotal>0?[{type:"event_bad", text:`💥 投擲命中！怪物直接失去 ${throwDmgTotal} HP！`}]:[]),
       ...(mode==="veteran"&&distanceMode==="dynamic"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
@@ -1098,76 +1096,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
   // ── 畫面 ─────────────────────────────────────────────────
 
-  if (phase==="archer_select") {
-    return (
-      <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"#0f172a", color:"white", fontFamily:"sans-serif" }}>
-        <style>{BATTLE_CSS}</style>
-        {/* Header */}
-        <div style={{ flexShrink:0, padding:"16px 16px 8px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
-          {archerStyle && (
-            <button onClick={() => setPhase(archerSelectReturn)}
-              style={{ background:"none", border:"none", color:"#64748b", fontSize:13, fontWeight:700, cursor:"pointer", marginBottom:8, padding:0 }}>
-              ← 返回
-            </button>
-          )}
-          <div style={{ fontWeight:900, fontSize:18, letterSpacing:"0.02em" }}>🐾 選擇出戰外觀</div>
-          <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>
-            {archerStyle ? "選好後進入戰場就是這隻的樣子！" : "第一次進入打怪模式，請先選擇你的出戰外觀！"}
-          </div>
-        </div>
-
-        {/* Cat grid */}
-        <div style={{ flex:1, overflowY:"auto", padding:"12px 12px 24px" }}>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:10 }}>
-            {CAT_IDS.map(catId => {
-              const cat = CATS[catId];
-              const isSelected = archerStyle === catId;
-              return (
-                <button key={catId}
-                  onClick={() => {
-                    localStorage.setItem("mb_archer_style", catId);
-                    setArcherStyle(catId);
-                    setPhase(archerSelectReturn);
-                  }}
-                  style={{
-                    background: isSelected ? "rgba(109,40,217,0.35)" : "rgba(255,255,255,0.05)",
-                    border: `2px solid ${isSelected ? "#7c3aed" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius:12, padding:"10px 6px 8px", cursor:"pointer",
-                    display:"flex", flexDirection:"column", alignItems:"center", gap:6,
-                    position:"relative", transition:"all .15s",
-                  }}>
-                  {/* Portrait */}
-                  <img
-                    src={`/cats/portraits/${catId}.webp`}
-                    alt={cat?.name}
-                    style={{ width:64, height:64, objectFit:"cover", borderRadius:"50%",
-                      border: isSelected ? "2px solid #a78bfa" : "2px solid rgba(255,255,255,0.15)" }}
-                  />
-                  {/* Archer preview */}
-                  <img
-                    src={`/cats/archers/${catId}.webp`}
-                    alt=""
-                    style={{ width:42, height:52, objectFit:"contain", objectPosition:"center bottom" }}
-                  />
-                  <div style={{ fontSize:11, fontWeight:900, color: isSelected ? "#c4b5fd" : "#e2e8f0" }}>
-                    {cat?.name}
-                  </div>
-                  {isSelected && (
-                    <div style={{
-                      position:"absolute", top:5, right:6,
-                      background:"#7c3aed", borderRadius:20, padding:"1px 6px",
-                      fontSize:9, fontWeight:900, color:"white"
-                    }}>✓ 使用中</div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // ═══ archer_select removed — avatar system replaces cat archer selection ═══
   if (phase==="select") {
     // 任務模式：直接顯示過渡畫面，等 useEffect 設完 monster 跳 prebattle
     if (questContext?.monsterId) {
@@ -1202,8 +1131,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             <button
               onClick={() => { setArcherSelectReturn("select"); setPhase("archer_select"); }}
               className="flex items-center gap-1.5 text-xs text-purple-300 font-bold">
-              <img src={`/cats/portraits/${archerStyle || CAT_IDS[0]}.webp`}
-                style={{ width:18, height:18, borderRadius:"50%", objectFit:"cover" }} alt="" />
               🎨 外觀
             </button>
           </div>
@@ -1325,9 +1252,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
                       style={{ background:tier.bg, color:tier.color }}>
                       【{tier.label}】
                     </div>
-                    <div className="flex gap-2 mt-1.5 text-xs text-slate-500">
-                      <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
-                    </div>
                   </button>
                 );
               })}
@@ -1336,7 +1260,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             {pickedMonster && (() => {
               const defs = loadMbDefaults();
               const modeLabel = mode==="veteran"?"🟠老手":mode==="student"?"🎓學生":"🟢新手";
-              const bmLabel   = battleMode==="zombie"?"🧟殭屍":"🎯分數";
+              const bmLabel   = "🎯分數";
               const distLabel = distanceMode==="dynamic"?"🏃動態":distanceMode==="random"?`🎲${selectedDistance}m`:`📍${selectedDistance}m`;
               return (
                 <>
@@ -1398,7 +1322,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           {ec.desc && <div className="text-amber-100 text-sm mt-1">{ec.desc}</div>}
           <div className="flex gap-2 mt-2 flex-wrap">
             <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-              {ec.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
+              {"🎯 分數靶"}
             </span>
             <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
               {ec.mode === "novice" ? "🟢 新手" : ec.mode === "student" ? "🎓 學生" : "🟠 老手"}
@@ -1460,18 +1384,13 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         <style>{BATTLE_CSS}</style>
         <button onClick={()=>setPhase("select")} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="text-white font-black text-xl text-center">選擇靶紙模式</div>
-        <button onClick={()=>{ setBattleMode("score"); setPhase("difficulty"); }}
+        <button onClick={()=>{ setBattleMode("score"); setMode("student"); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
           <div className="text-2xl mb-1 text-white">🎯 分數靶紙模式</div>
           <div className="font-black text-white mb-1">輸入每箭環數，系統算傷害</div>
           <div className="text-slate-400 text-sm">簡單直接，分數越高傷害越大。</div>
         </button>
-        <button onClick={()=>{ setBattleMode("zombie"); setPhase("difficulty"); }}
-          className="rounded-2xl p-5 text-left border-2 border-purple-500/40 bg-purple-900/20 active:scale-95 transition-transform">
-          <div className="text-2xl mb-1 text-white">🧟 殭屍靶紙模式</div>
-          <div className="font-black text-white mb-1">分數決定命中部位，觸發部位加成</div>
-          <div className="text-slate-400 text-sm">高分命中頭部/心臟，傷害爆表！解鎖器官部位增加趣味。</div>
-        </button>
+
       </div>
     );
   }
@@ -1515,7 +1434,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               {eventConfig.desc && <div className="text-amber-100 text-sm mb-2">{eventConfig.desc}</div>}
               <div className="flex gap-2 flex-wrap">
                 <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-                  {eventConfig.battleMode === "zombie" ? "🧟 殭屍靶" : "🎯 分數靶"}
+                  {"🎯 分數靶"}
                 </span>
                 <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
                   {eventConfig.mode === "novice" ? "🟢 新手" : eventConfig.mode === "student" ? "🎓 學生" : "🟠 老手"}
@@ -1639,10 +1558,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     );
     const tier   = TIER_LABEL[pickedMonster.tier] || {};
     const family = FAMILIES[pickedMonster.family] || {};
-    const previewHPMult = (mode==="veteran" || mode==="match") ? 1.5 : 1.0;
-    const previewHP  = Math.round(pickedMonster.hp  * previewHPMult);
-    const previewATK = (mode==="veteran" || mode==="match") ? Math.round(pickedMonster.atk * 1.25) : pickedMonster.atk;
-    const previewDEF = (mode==="veteran" || mode==="match") ? Math.round(pickedMonster.def * 1.25) : pickedMonster.def;
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -1657,40 +1572,40 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           </div>
           <div className="text-2xl font-black mb-1">{pickedMonster.name}</div>
           <div className="text-purple-200 text-sm mb-4">{pickedMonster.desc}</div>
-          <div className="flex justify-center gap-3 mb-3">
-            {[["HP",previewHP],["ATK",previewATK],["DEF",previewDEF]].map(([k,v])=>(
-              <div key={k} className="bg-white/15 rounded-xl px-4 py-2">
-                <div className="text-purple-200 text-xs">{k}</div>
-                <div className="font-black text-xl">{v}</div>
-              </div>
-            ))}
-          </div>
           {mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強，HP基礎 200，加成無上限</div>}
           {mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
           {mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
-          {archerStats&&(
+          {archerStats&&(()=>{
+            const _lvBon=isGuest?{hp:0,atk:0,def:0}:archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+            const _cardBonus=isGuest?{hp:0,atk:0,def:0}:calcEquippedBonus(resolveEquippedCards(cardColl));
+            const _fHp=archerStats.hp+_lvBon.hp+_cardBonus.hp;
+            const _fAtk=archerStats.atk+_lvBon.atk+_cardBonus.atk;
+            const _fDef=archerStats.def+_lvBon.def+_cardBonus.def;
+            return (
             <div className="bg-white/10 rounded-xl p-3 mb-3">
               <div className="text-purple-200 text-xs mb-2 text-center">你的數值</div>
               <div className="flex justify-around text-sm">
-                {[["HP",archerStats.hp],["ATK",archerStats.atk],["DEF",archerStats.def]].map(([k,v])=>(
+                {[["HP",_fHp],["ATK",_fAtk],["DEF",_fDef]].map(([k,v])=>(
                   <div key={k} className="text-center"><div className="text-purple-200 text-xs">{k}</div><div className="font-black">{v}</div></div>
                 ))}
               </div>
+              {(_cardBonus.hp+_cardBonus.atk+_cardBonus.def+_lvBon.hp+_lvBon.atk+_lvBon.def)>0&&(
+                <div className="text-xs text-center text-purple-300 mt-1">🃏 {_cardBonus.hp+_cardBonus.atk+_cardBonus.def>0?`卡片加成+${_cardBonus.hp+_cardBonus.atk+_cardBonus.def}`:''}{_lvBon.hp+_lvBon.atk+_lvBon.def>0?`${_cardBonus.hp+_cardBonus.atk+_cardBonus.def>0?'  ':'●'}射手等級+${_lvBon.hp+_lvBon.atk+_lvBon.def}`:''}</div>
+              )}
             </div>
-          )}
+            );
+          })()}
           <div className="text-purple-200 text-xs mb-4">
-            {battleMode==="zombie"?"🧟 殭屍靶紙":"🎯 分數靶紙"}
+            {"🎯 分數靶紙"}
             {mode==="veteran"?"⚔️ 老手・起始15米":mode==="student"?`🎓 學生・${distanceMode==="dynamic"?"動態15m起":`固定${selectedDistance}米`}`:`🟢 新手・固定${selectedDistance}米`}　🏹 {arrowsPerRound}箭／回合
           </div>
 
-          {/* 外觀更換 */}
+          {/* 外觀更換 - 使用大頭像 */}
           <button
-            onClick={() => { setArcherSelectReturn("prebattle"); setPhase("archer_select"); }}
+            onClick={() => { if (typeof onImmersiveChange === 'function' && onImmersiveChange.toString().includes('||')){/* noop */ } if (onBack) onBack(); else onImmersiveChange?.(false); setTimeout(() => window.scrollTo(0,0), 50); }}
             className="w-full py-2 rounded-xl text-sm font-bold mb-1"
             style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", color:"#94a3b8", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-            <img src={`/cats/portraits/${archerStyle || CAT_IDS[0]}.webp`}
-              style={{ width:22, height:22, borderRadius:"50%", objectFit:"cover" }} alt="" />
-            🎨 更換射手外觀（{CATS[archerStyle]?.name || "未選擇"}）
+            🎨 更換大頭像（可在「我的」頁面設定）
           </button>
 
           {hasCat && (
@@ -1813,6 +1728,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     );
   }
 
+  const availablePotions = [...THROW_POTIONS, ...CARRY_POTIONS].filter(p => (potionInv[p.id] || 0) > 0);
+
   if (phase==="battle") {
     // Use BattleScreen component instead of inline battle UI
     const playerCatId = archerStyle || (profile?.equippedCat?.catId) || CAT_IDS[0];
@@ -1832,6 +1749,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           player={{
             name: profile?.name || "射手",
             catId: playerCatId,
+            avatarId: profile?.avatarId || null,
             hp: (battleStats||archerStats)?.hp || 100,
             maxHp: (battleStats||archerStats)?.hp || 100,
             atk: (battleStats||archerStats)?.atk || 10,
@@ -1851,15 +1769,29 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             variant: monster?.variant,
             icon: monster?.icon,
           }}
-          battleMode={battleMode}
+          battleMode="score"
+          scoreInput={targetMode ? "target" : "keypad"}
+          targetFormat={targetFmt}
           difficulty={{hp:1, atk:1, def:1}}
           arrowsPerRound={arrowsPerRound}
           allies={[]}
           cat={hasCat ? { catId, catName, type: "allround", catXP: 0, bond: 0 } : null}
           bgImage={battleBg}
           onBattleEnd={handleMBBattleEnd}
+          onLeaveBattle={() => {
+            if (!window.confirm("確定要離開戰鬥嗎？本場未完成的進度不會保留。")) return;
+            sessionStorage.removeItem("mb_battle_save");
+            pendingPotionRef.current = [];
+            if (questContext) onBack?.();
+            else setPhase("select");
+          }}
           autoStart
           fullScreen
+          potions={availablePotions}
+          onPotionUsed={(pid) => {
+            setPotionInv(prev => ({ ...prev, [pid]: Math.max(0, (prev[pid] || 0) - 1) }));
+            if (profile?.id && !isGuest) recordPotionUsed?.(profile.id, [pid]).catch(() => {});
+          }}
           renderMonster={(size, mon) => <MonsterBattleImg id={mon?.id} icon={mon?.icon} size={size} />}
         />
       </div>
@@ -2159,8 +2091,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     if (summary.totalDamage !== undefined) setTotalDmgDealt(summary.totalDamage);
     if (summary.crits !== undefined) setCritCount(summary.crits);
     if (summary.arrowScores && summary.arrowScores.length > 0) {
-      setAllArrows(summary.arrowScores);
-      setRoundScores([{ round: summary.rounds || 1, scores: summary.arrowScores, total: summary.arrowScores.reduce((s,v) => s+v, 0) }]);
+      // BattleScreen preserves X/M labels, while battle statistics operate on
+      // numeric rings.  Normalise here so X is never recorded as six misses.
+      const numericScores = summary.arrowScores.map(score => score === "X" ? 10 : score === "M" ? 0 : Number(score) || 0);
+      setAllArrows(numericScores);
+      setRoundScores([{ round: summary.rounds || 1, scores: numericScores, total: numericScores.reduce((s,v) => s+v, 0) }]);
     }
     if (summary.playerHp !== undefined && (battleStats || archerStats)?.hp) {
       const initialHp = (battleStats || archerStats)?.hp || 100;

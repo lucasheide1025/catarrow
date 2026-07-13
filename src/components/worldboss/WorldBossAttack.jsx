@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
-import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards, updateWorldBossHP } from "../../lib/worldBossDb";
+import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP } from "../../lib/worldBossDb";
 import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
@@ -22,7 +22,7 @@ import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { BattleHPBar, BattleArrowSlots, BattleScoreButtons, BattleResultHeader, BattleStatRow, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { labelToValue, getScoreColor } from "../../lib/score";
 import { getTargetScoreLabels } from "../../lib/targetFace";
-import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter } from "../../lib/damage";
+import { calcWorldBossArrowDmg as wbArrowDmg, calcWorldBossCounter as wbCounter, resolvePlayerCounter, resolveStandardArrowHit } from "../../lib/damage";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import { getMilestonesReached, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { SmallMilestonePopup } from "../member/ArrowMilestonePopup";
@@ -32,6 +32,7 @@ import { RoundController } from "../../battle/RoundController";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import { POTIONS as BATTLE_CONSUMABLES, calcPotionBuffs } from "../../lib/itemData";
 import { getConsumablesForMode, mergeCarryBuff, resolveConsumable } from "../../lib/consumableSystem";
+import BattleScreen from "../battle/BattleScreen";
 
 // ── WorldBoss 事件型別（客製，不經過 BattleAnimation） ──────
 const WB_EVT = {
@@ -39,6 +40,14 @@ const WB_EVT = {
   CAT_MSG: 'wb_cat_msg',
   SUPPORT: 'wb_support',
 };
+
+// 世界王採「玩家 + AI 遠征隊」的合作演出，不把全服參戰者當成同一個即時房間。
+// 上限包含玩家本人，因此最多 19 位虛擬隊友。
+const WORLD_BOSS_PARTY_LIMIT = 14;
+const VIRTUAL_TEAMMATE_NAMES = [
+  "曙光", "星羽", "疾風", "鐵弦", "月影", "赤楓", "霜羽", "流火", "蒼穹", "晨星",
+  "靜謐", "遠雷", "銀鈴", "青嵐", "夜梟", "飛燕", "白露", "熾羽", "破曉",
+];
 
 // scoreVal/scoreColor 統一由 ../../lib/score 管理
 function scoreVal(s) { return labelToValue(s); }
@@ -226,6 +235,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   [profile, certification, certRecords]);
 
   const cardEquip = useMemo(() => calcEquippedBonus(resolveEquippedCards(cardColl)), [cardColl]);
+  const archerLevel = isGuest ? 1 : archerLevelFromXP(profile?.archerXP || 0);
   const lvBon   = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
   const baseATK = (archerBase.atk || 0) + (cardEquip.atk || 0) + lvBon.atk;
   const baseDEF = (archerBase.def || 0) + (cardEquip.def || 0) + lvBon.def;
@@ -235,6 +245,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const participantBonus = getParticipantBonus(event.totalParticipants || 0).atkMult;
   const boss             = event.bossData || {};
+  // Older events and manually-created events can contain a missing/string HP.
+  // Never leak that into the UI as "undefined / 470,000".
+  const bossMaxHP = Math.max(1, Number(event.bossMaxHP) || Number(boss.hp) || 1);
+  const participantDamage = Object.values(event.participants || {}).reduce((sum, participant) => sum + (Number(participant?.totalDmg) || 0), 0);
+  const storedCurrentHP = Number(event.bossCurrentHP);
+  const bossCurrentHP = Math.max(0, Math.min(bossMaxHP,
+    Number.isFinite(storedCurrentHP) ? storedCurrentHP : bossMaxHP - participantDamage));
 
   // ── 中途記憶：同裝置可能輪流給多位孩子使用，暫存 key 必須綁玩家 ──────────
   // 必須在 baseHP 之後宣告，否則 TDZ ReferenceError
@@ -253,7 +270,22 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showBattleLog, setShowBattleLog] = useState(false);
 
   // 隨機從參戰勇者中取最多 8 位同伴
-  const [companions] = useState(() => {
+  const [legacyCompanions] = useState(() => {
+    return Array.from({ length: WORLD_BOSS_PARTY_LIMIT - 1 }, (_, index) => {
+      const bot = drawRandomBot();
+      const atk = Math.max(24, Math.round(baseATK * (bot.atkMult || 0.7)));
+      return {
+        id: `wb-ai-${index + 1}`,
+        name: VIRTUAL_TEAMMATE_NAMES[index] || `遠征隊員 ${index + 1}`,
+        atk,
+        def: Math.max(12, Math.round(atk * 0.55)),
+        hp: Math.max(120, atk * 5),
+        botTier: bot.id,
+      };
+    });
+
+    /* Legacy real-participant companion source intentionally disabled.
+       World Boss uses the local AI expedition roster above.
     const _selfId = guestOverride?.id || profile?.id;
     const parts = Object.entries(event.participants || {})
       .filter(([id]) => id !== _selfId)
@@ -269,7 +301,29 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       [parts[i], parts[j]] = [parts[j], parts[i]];
     }
     return parts.slice(0, 8);
+    */
   });
+
+  // Only real participants are shown and used as World Boss assists.
+  const companions = useMemo(() => {
+    const selfId = guestOverride?.id || profile?.id;
+    return Object.entries(event.participants || {})
+      .filter(([id]) => id !== selfId)
+      .slice(0, WORLD_BOSS_PARTY_LIMIT)
+      .map(([id, participant], index) => {
+        const atk = Math.max(1, Number(participant?.atk) || 1);
+        return {
+          id,
+          name: participant?.name || "射手",
+          atk,
+          def: Math.max(0, Number(participant?.def) || Math.round(atk * 0.5)),
+          hp: Math.max(1, Number(participant?.hp) || atk * 5),
+          avatarId: participant?.avatarId || null,
+          catId: participant?.catId || participant?.archerStyle || ARCHER_STYLES[index % ARCHER_STYLES.length],
+          role: index < 7 ? "front" : "rear",
+        };
+      });
+  }, [event.participants, guestOverride?.id, profile?.id]);
 
   const [phase,    setPhase]    = useState(_hasSave ? "battle" : "prep");
   // subPhase: shooting | processing | roundResult | counterAttack | done
@@ -300,7 +354,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const shootingProfileRef = useRef(null);
 
   const [myHP,       setMyHP]       = useState(_hasSave ? _saved.myHP       : baseHP);
-  const [bossHP,     setBossHP]     = useState(_hasSave ? _saved.localBossHP : event.bossCurrentHP);
+  const [bossHP,     setBossHP]     = useState(() => {
+    const savedHP = Number(_saved?.localBossHP);
+    return _hasSave && Number.isFinite(savedHP) ? Math.max(0, Math.min(bossMaxHP, savedHP)) : bossCurrentHP;
+  });
 
   // boss 反擊
   const [counterDmg,    setCounterDmg]    = useState(0);
@@ -352,9 +409,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const [todayArrows,       setTodayArrows]       = useState(0);
+  const [scoringReady,      setScoringReady]      = useState(false);
   const [showCatRound,      setShowCatRound]      = useState(false);
   const [catRoundCats,      setCatRoundCats]      = useState([]);
   const [catRoundTotalDmg,  setCatRoundTotalDmg]  = useState(0);
+  const [battleDemo,        setBattleDemo]        = useState(null);
   const processingRef = useRef(false);
   const timerRef      = useRef([]);
   // ⚡ 事件派遣器 + 回合控制器（只在首次渲染時建立）
@@ -523,6 +582,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   async function finishRound(fullArrows) {
     setSubPhase("processing");
     setDmgLog([]);
+    setBattleDemo(null);
 
     let totalDmg = 0;
     let crits = 0;
@@ -532,30 +592,53 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const playerDmgMult = (carryBuffs.dmgMult || 1) * (1 + sortieDmgPct / 100);
 
     // 取出其他隊員列表（所有曾參戰者，不限今日）
-    const teammates = Object.values(event.participants || {})
-      .filter(p => p.name !== myName)
-      .map(p => ({ ...p, atk: Math.max(p.atk || 0, 30) }));
-    const supportChance = Math.min(0.3 + teammates.length * 0.12, 0.85);
+    const teammates = companions;
+    const rearTeammates = teammates.filter(teammate => teammate.role === "rear");
+    const frontTeammates = teammates.filter(teammate => teammate.role === "front");
+    const rearBoost = rearTeammates.length > 0 && Math.random() < 0.5 ? 0.05 : 0;
+    const rearHeal = rearBoost === 0 && rearTeammates.length > 0 ? Math.round(baseHP * 0.05) : 0;
 
     // ── 1. 預先計算所有事件 ─────────────────────────────────
     const events = [];
+    let unlockedParts = new Set();
+
+    if (rearTeammates.length > 0) {
+      const rear = rearTeammates[Math.floor(Math.random() * rearTeammates.length)];
+      if (rearBoost > 0) {
+        events.push({ type: WB_EVT.SUPPORT, payload: { sdmg: 0, msg: `${rear.name} 後衛助攻：本回合傷害 +5%`, tmName: rear.name, currentBossHP: localBossHP } });
+      } else {
+        setMyHP(current => Math.min(baseHP, current + rearHeal));
+        events.push({ type: WB_EVT.SUPPORT, payload: { sdmg: 0, msg: `${rear.name} 後衛治療：玩家回復 ${rearHeal} HP`, tmName: rear.name, currentBossHP: localBossHP } });
+      }
+    }
+
+    // 前衛每回合各攻擊一次；每位傷害取自該參戰者的快照數值。
+    frontTeammates.forEach((teammate, index) => {
+      const frontDmg = Math.max(1, Math.round(wbArrowDmg(7 + (index % 3), teammate.atk, boss.def, participantBonus)));
+      totalDmg += frontDmg;
+      localBossHP = Math.max(0, localBossHP - frontDmg);
+      events.push({ type: WB_EVT.SUPPORT, payload: { sdmg: frontDmg, msg: `${teammate.name} 前衛攻擊：-${frontDmg}`, tmName: teammate.name, currentBossHP: localBossHP } });
+    });
 
     for (let i = 0; i < fullArrows.length; i++) {
       const a   = fullArrows[i];
       const raidHit = a.consumableId
         ? resolveConsumable(a.consumableId, { mode:"worldboss", playerAtk:effectiveATK, enemyHp:localBossHP, enemyMaxHp:event.bossMaxHP, botCount:bots.length })
         : null;
-      const dmg = raidHit?.ok
-        ? raidHit.damage
-        : Math.round(wbArrowDmg(a.score, effectiveATK, boss.def, participantBonus, wbDmgBonusPct) * potionMult * playerDmgMult);
-      const isCrit = !a.consumableId && a.score >= 10;
+      const arrowHit = a.consumableId ? null : resolveStandardArrowHit(
+        a, effectiveATK, boss.def, unlockedParts,
+        potionMult * playerDmgMult * (1 + rearBoost) * (1 + wbDmgBonusPct) - 1,
+      );
+      if (arrowHit) unlockedParts = arrowHit.unlockedParts;
+      const dmg = raidHit?.ok ? raidHit.damage : arrowHit.dmg;
+      const isCrit = !a.consumableId && arrowHit.isCrit;
       if (isCrit) crits++;
       totalDmg += dmg;
       localBossHP = Math.max(0, localBossHP - dmg);
 
       events.push({
         type: WB_EVT.ARROW,
-        payload: { i, label: a.label, dmg, isCrit, isMiss: !a.consumableId && a.score === 0, currentBossHP: localBossHP },
+        payload: { i, label: a.label, dmg, isCrit, isMiss: !a.consumableId && a.score === 0, part:arrowHit?.part || null, currentBossHP: localBossHP },
       });
 
       // 貓咪助攻（25%，視覺效果）
@@ -570,7 +653,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       }
 
       // 隊友助攻（隊員越多、觸發率越高）
-      if (teammates.length > 0 && Math.random() < supportChance) {
+      if (false && teammates.length > 0) {
         const tm    = teammates[Math.floor(Math.random() * teammates.length)];
         const tmATK = Math.round((tm.atk || baseATK * 0.8) * (1 + botDmgPct / 100));
         const sdmg  = Math.max(1, Math.round(wbArrowDmg(
@@ -592,15 +675,16 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const controller = controllerRef.current;
     await controller.playEvents(events, {}, {
       [WB_EVT.ARROW]: (p) => {
-        const { i, label, dmg, isCrit, isMiss, currentBossHP } = p;
+        const { i, label, dmg, isCrit, isMiss, part, currentBossHP } = p;
         setProcessingIdx(i);
+        setBattleDemo({ key:`${roundIdx}:${i}:${Date.now()}`, type:"arrow", damage:dmg, isCrit, isMiss, message:isMiss ? `第 ${i + 1} 箭：脫靶` : `第 ${i + 1} 箭：${part?.icon || "🏹"}${part?.name || "命中"} -${dmg}${isCrit ? " 暴擊" : ""}` });
         if (isMiss) { sfxSoftFail(); flashBossHit(false, 0, true); }
         else if (isCrit) { sfxCritBoom(); flashBossHit(true, dmg, false); vibrate(30); }
         else { sfxArrowHit(); flashBossHit(false, dmg, false); vibrate(10); }
         setDmgLog(prev => [...prev,
           isCrit      ? `💥 ${label} 暴擊！ -${dmg}`
           : isMiss    ? `💨 M 飛矢落空`
-                      : `🏹 ${label}環 -${dmg}`
+                      : `🏹 ${label}環 命中${part?.name || "目標"} -${dmg}`
         ]);
         setBossHP(currentBossHP);
       },
@@ -647,6 +731,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       // 顯示貓貓回合覆蓋層
       setCatRoundCats([{ catId: profile?.equippedCat?.catId || "baobao", catName, dmg: catDmg }]);
       setCatRoundTotalDmg(catDmg);
+      setBattleDemo({ key:`${roundIdx}:cat:${Date.now()}`, type:"cat", damage:catDmg, skillTriggered:!!catSkill?.triggered, skillLabel:catSkill?.skillName || catSkill?.skillGroup, message:`🐾 ${catName} 協戰：-${catDmg}${catSkill?.triggered ? " 技能發動" : ""}` });
       setShowCatRound(true);
       sfxArrowHit();
       await delay(1800);
@@ -667,9 +752,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     addTimer(() => {
       setAnimBossCharge(false);
       const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1));
-      const rawCdmg = Math.round(wbCounter(boss.atk || 100, effectiveDef, wbDmgReducePct) * (1 - nextCounterReducePct / 100));
-      const absorbed = Math.min(potionShield, rawCdmg);
-      const cdmg = rawCdmg - absorbed;
+      const rawPlayerCdmg = Math.round(wbCounter(boss.atk || 100, effectiveDef, wbDmgReducePct) * (1 - nextCounterReducePct / 100));
+      const playerCounter = resolvePlayerCounter({ arrows:fullArrows, baseDamage:rawPlayerCdmg, maxHP:baseHP });
+      const absorbed = Math.min(potionShield, playerCounter.damage);
+      const cdmg = playerCounter.damage - absorbed;
+      const companionCounterDmgs = Object.fromEntries(companions.map(companion => [companion.id, Math.round(wbCounter(boss.atk || 100, companion.def, wbDmgReducePct) * (1 - nextCounterReducePct / 100))]));
+      const totalCounterDmg = cdmg + Object.values(companionCounterDmgs).reduce((sum, damage) => sum + damage, 0);
       setPotionShield(current => Math.max(0, current - absorbed));
       setNextCounterReducePct(0);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
@@ -678,20 +766,21 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       const pool   = (ownQuotes && !isLast) ? ownQuotes : (isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS);
       const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
 
-      setCounterDmg(cdmg);
+      setCounterDmg(totalCounterDmg);
       setBossAttackIcon(icon);
       setBossAttackText(text);
+      setBattleDemo({ key:`${roundIdx}:counter:${Date.now()}`, type:"counter", damage:cdmg, message:`${icon} 世界王命中玩家${playerCounter.part.name}：-${cdmg} HP` });
       setSubPhase("counterAttack");
       setAnimBossAttackDown(true);
       if (isLast) { sfxCounterCrit(); vibrate(50); } else { sfxCounter(); vibrate(20); }
-      setDmgLog(prev => [...prev, `${icon} ${text} 對全員造成 ${cdmg} 傷害！`]);
+      setDmgLog(prev => [...prev, `${icon} ${text} 命中玩家${playerCounter.part.name}，造成 ${cdmg} 傷害！`]);
 
       addTimer(() => {
         setAnimBossAttackDown(false);
         const regen = Math.round(baseHP * (carryBuffs.regenPct || 0) / 100);
         const nextMyHP  = Math.min(baseHP, Math.max(0, myHP - cdmg) + regen);
         const nextCompHPs = {};
-        companions.forEach(c => { nextCompHPs[c.id] = Math.max(0, (companionHPs[c.id] ?? c.hp) - cdmg); });
+        companions.forEach(c => { nextCompHPs[c.id] = Math.max(0, (companionHPs[c.id] ?? c.hp) - (companionCounterDmgs[c.id] || 0)); });
         setMyHP(nextMyHP);
         setCompanionHPs(nextCompHPs);
         setAnimPlayerHit(true);
@@ -718,6 +807,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             setRoundIdx(r => r + 1);
             setConsumableUsedRound(false);
             setDmgLog([]);
+            setScoringReady(true);
             setSubPhase("shooting");
           }
         }, 1500);
@@ -764,7 +854,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       if (res.defeated) {
         playBattleSound("victory_cheer", {});
         // 發放擊殺獎勵（防重複由 rewardDistributed flag 保護）
-        distributeWorldBossRewards(event.id).catch(() => {});
         setDeathKiller(myName);
         setDeathFinishArrow(_finishArrow);
         setShowDeathAnim(true);
@@ -853,6 +942,30 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       }
       onComplete?.(res);
     }
+  }
+
+  // ── 消耗品列（共用元件，避免重複渲染）──────────────────────
+  function ConsumablesBar({ compact = false }) {
+    if (worldBossConsumables.length === 0) return null;
+    return (
+      <div style={compact ? { marginBottom:4, background:"rgba(0,0,0,0.86)", borderRadius:8, border:"1px solid rgba(251,191,36,0.2)", padding:"4px 6px" } : { flex:"0 0 auto", background:"rgba(0,0,0,0.86)", borderTop:"1px solid rgba(251,191,36,0.2)", padding:"6px" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, overflowX:"auto" }}>
+          <span style={{ fontSize:10, color:"#fbbf24", fontWeight:900, flexShrink:0 }}>消耗品</span>
+          {worldBossConsumables.map(item => {
+            const disabled = consumableUsedRound || (item.oncePerSortie && raidUsed[item.id]) || (item.requiresBot && bots.length === 0) || (item.actionCost === "arrow" && arrows.length >= ARROWS_PER);
+            return (
+              <button key={item.id} disabled={disabled} onClick={() => useWorldBossConsumable(item)} title={`${item.name}：${item.effectText}`}
+                style={{ flexShrink:0, width:compact?64:68, minHeight:compact?44:48, borderRadius:8, border:`1px solid ${item.category === "raid" ? "#fbbf2466" : "#60a5fa55"}`, background:disabled?"rgba(255,255,255,0.03)":"rgba(251,191,36,0.09)", color:disabled?"#475569":"#e2e8f0", opacity:disabled ? 0.45 : 1, fontSize:9, fontWeight:800, padding:compact?"2px 3px":"3px" }}>
+                <div style={{ fontSize:compact?15:16 }}>{item.icon}</div>
+                <div>{item.name}</div>
+                <div style={{ color:"#94a3b8", fontSize:8 }}>×{potionInv[item.id] || 0}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ textAlign:"center", color:"#64748b", fontSize:8, marginTop:compact?1:2 }}>{consumableUsedRound ? "本回合已使用消耗品" : "每回合最多使用一個；一般投擲物不能用於世界王"}</div>
+      </div>
+    );
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1009,8 +1122,63 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   // ════════════════════════════════════════════════════════════
   // ── 畫面：戰鬥中（MonsterBattle 風格）────────────────────
   if (phase === "battle") {
+    const supportRoster = companions.map((companion, index) => {
+      const hp = companionHPs[companion.id] ?? companion.hp;
+      return {
+        ...companion,
+        hp,
+        maxHp: companion.hp,
+        catId: companion.catId || ARCHER_STYLES[index % ARCHER_STYLES.length],
+        role: companion.role || (index < 10 ? "front" : "rear"),
+        isFront: (companion.role || (index < 10 ? "front" : "rear")) === "front",
+        ready: subPhase !== "shooting",
+      };
+    });
+    return (
+      <div style={{ position:"fixed", inset:0, zIndex:9999, maxWidth:540, margin:"0 auto", background:"#0a1018" }}>
+        {subPhase === "showcase" && !submitting && (
+          <div style={{position:"absolute",inset:0,zIndex:80,pointerEvents:"none",display:"grid",placeItems:"center",background:"rgba(2,6,23,.58)"}}>
+            <div style={{padding:"18px 28px",borderRadius:18,background:"rgba(15,23,42,.94)",border:"1px solid rgba(251,191,36,.65)",boxShadow:"0 0 35px rgba(251,191,36,.3)",textAlign:"center"}}>
+              <div style={{fontSize:28,animation:"mb-archer-attack .55s ease-in-out infinite"}}>🏹 ⚡ 💥</div>
+              <div style={{marginTop:8,color:"#fbbf24",fontSize:16,fontWeight:900}}>戰鬥演示中</div>
+              <div style={{marginTop:4,color:"#cbd5e1",fontSize:11}}>正在播放射擊、助攻與王反擊</div>
+            </div>
+          </div>
+        )}
+        <BattleScreen
+          fullScreen
+          autoStart
+          externalBattle
+          externalRoundKey={roundIdx}
+          externalLocked={subPhase !== "shooting" || submitting}
+          externalDemo={battleDemo}
+          battleMode="score"
+          scoreInput={targetMode ? "target" : "keypad"}
+          targetFormat={targetFmt}
+          arrowsPerRound={ARROWS_PER}
+          bgImage="/ui/dungeon-bg.webp"
+          player={{ name:myName, lv:archerLevel, avatarId:profile?.avatarId || null, catId:profile?.equippedCat?.catId || "diandian", hp:myHP, maxHp:baseHP, atk:baseATK, def:baseDEF }}
+          monster={{ id:event?.bossKey || boss.id, name:boss.name || "世界王", family:boss.family || "worldboss", hp:bossHP, maxHp:bossMaxHP, atk:Number(boss.atk) || 0, def:Number(boss.def) || 0, tier:"mythic", variant:"boss" }}
+          cat={hasCat ? { catId:profile?.equippedCat?.catId || "diandian", catName, type:"allround", catXP:profile?.equippedCat?.xp || 0, bond:profile?.equippedCat?.bond || 0 } : null}
+          allies={supportRoster}
+          renderMonster={(size, mon) => <WorldBossSVG bossKey={event.bossKey} currentHP={mon?.hp ?? bossHP} maxHP={mon?.maxHp ?? bossMaxHP} size={size} />}
+          onLeaveBattle={onBack}
+          onSubmit={(scores) => {
+            if (subPhase !== "shooting" || submitting) return;
+            const labelMap = { 10:"X", 9:"9", 8:"8", 7:"7", 6:"6", 5:"5", 4:"4", 3:"3", 2:"2", 1:"1", 0:"M" };
+            const roundArrows = scores.map(score => ({ score, label:labelMap[score] || String(score) }));
+            setArrows(roundArrows);
+            sfxCast();
+            finishRound(roundArrows);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (phase === "battle") {
     const frontCompanions = companions.slice(0, 3);
-    const backCompanions  = companions.slice(3);
+    const backCompanions  = companions.slice(3, 6);
     const frontCount = frontCompanions.length + 1; // +1 for player
     const backCount  = backCompanions.length;
     const frontW = Math.min(72, Math.floor((528 - Math.max(0, frontCount - 1) * 3) / (frontCount || 1)));
@@ -1027,8 +1195,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       }}>
 
         {/* 暴擊/命中閃爍 */}
-        {animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"radial-gradient(ellipse at center,rgba(245,158,11,0.28) 0%,transparent 70%)", animation:"wbFadeOut 0.42s ease forwards" }}/>}
-        {animBossHit && !animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"rgba(239,68,68,0.10)", animation:"wbFadeOut 0.3s ease forwards" }}/>}
+        {animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"radial-gradient(ellipse at center,rgba(245,158,11,0.28) 0%,transparent 70%)", animation:"wbFadeOut 0.42s ease forwards" }}/>} 
+        {animBossHit && !animCrit && <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:30, background:"rgba(239,68,68,0.10)", animation:"wbFadeOut 0.3s ease forwards" }}/>} 
+
+        {/* 新版組隊資訊列：完整顯示 19 位 AI 隊員，主角卡仍在下方。 */}
+        <div style={{position:"absolute",zIndex:8,top:48,left:8,display:"grid",gridTemplateColumns:"repeat(5, 25px)",gap:4,padding:5,borderRadius:10,background:"rgba(7,12,22,.68)",border:"1px solid rgba(255,255,255,.1)",backdropFilter:"blur(6px)"}}>
+          {companions.map((companion,index)=>{const hp=companionHPs[companion.id]??companion.hp;const active=companionShootIdx===index;return <div key={companion.id} title={`${companion.name} · HP ${hp}/${companion.hp}`} style={{width:25,height:25,borderRadius:8,display:"grid",placeItems:"center",fontSize:8,fontWeight:900,color:hp>0?"#eaf4ff":"#64748b",background:hp>0?"linear-gradient(135deg,rgba(59,130,246,.6),rgba(124,58,237,.55))":"rgba(71,85,105,.5)",border:active?"2px solid #fbbf24":"1px solid rgba(255,255,255,.18)",boxShadow:active?"0 0 12px rgba(251,191,36,.9)":"none",filter:hp>0?"none":"grayscale(1)",animation:active?"mb-archer-attack .4s ease":"none"}}>{companion.name.slice(0,1)}</div>})}
+        </div>
 
         {/* 貓咪回合覆蓋層 */}
         <CatRoundOverlay
@@ -1187,88 +1360,126 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             </BattleLogPanel>
         </div>
 
-        {subPhase === "shooting" && worldBossConsumables.length > 0 && (
-          <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.86)", borderTop:"1px solid rgba(251,191,36,0.2)", padding:"6px" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, overflowX:"auto" }}>
-              <span style={{ fontSize:10, color:"#fbbf24", fontWeight:900, flexShrink:0 }}>消耗品</span>
-              {worldBossConsumables.map(item => {
-                const disabled = consumableUsedRound || (item.oncePerSortie && raidUsed[item.id]) || (item.requiresBot && bots.length === 0) || (item.actionCost === "arrow" && arrows.length >= ARROWS_PER);
-                return (
-                  <button key={item.id} disabled={disabled} onClick={() => useWorldBossConsumable(item)} title={`${item.name}：${item.effectText}`}
-                    style={{ flexShrink:0, width:68, minHeight:48, borderRadius:8, border:`1px solid ${item.category === "raid" ? "#fbbf2466" : "#60a5fa55"}`, background:disabled?"rgba(255,255,255,0.03)":"rgba(251,191,36,0.09)", color:disabled?"#475569":"#e2e8f0", opacity:disabled ? 0.45 : 1, fontSize:9, fontWeight:800, padding:"3px" }}>
-                    <div style={{ fontSize:16 }}>{item.icon}</div>
-                    <div>{item.name}</div>
-                    <div style={{ color:"#94a3b8", fontSize:8 }}>×{potionInv[item.id] || 0}</div>
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ textAlign:"center", color:"#64748b", fontSize:8, marginTop:2 }}>{consumableUsedRound ? "本回合已使用消耗品" : "每回合最多使用一個；一般投擲物不能用於世界王"}</div>
-          </div>
-        )}
+        {subPhase === "shooting" && !scoringReady && <ConsumablesBar />}
 
         {/* ── 輸入區（Boss 圖正下方） ── */}
         <div style={{ flex:"0 0 auto", background:"rgba(0,0,0,0.82)", padding:"4px 6px 2px" }}>
-          <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
-            <BattleArrowSlots
-                arrows={arrows}
-                totalArrows={ARROWS_PER}
-                onUndo={() => setArrows(prev => prev.slice(0,-1))}
-                showUndo={arrows.length > 0 && subPhase === "shooting"}
-                slotSize={36}
-                showScore={false}
-                processing={subPhase !== "shooting"}
-                processingIdx={processingIdx}
-                extraContent={
-                  subPhase === "shooting" && arrows.length === 0 && (
-                    <button onClick={() => setTargetMode(m => !m)} style={{
-                      marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
-                      background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
-                      border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
-                      color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
-                    }}>🎯</button>
-                  )
-                }
-              />
-              <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
-                {subPhase !== "shooting" ? "計算中…" : `${arrows.length}/${ARROWS_PER} 箭`}
-              </span>
-          </div>
-          {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
-          <TargetFaceOverlay
-            open={targetMode && subPhase === "shooting" && !targetPending}
-            fmtId={targetFmt}
-            arrowLabels={arrows.map(a => a.label)}
-            arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
-            arrowsPerRound={ARROWS_PER}
-            onArrow={handleScore}
-            onUndo={() => setArrows(prev => prev.slice(0,-1))}
-            onSubmit={handleTargetSubmit}
-          />
-          {subPhase === "shooting" && (
-            <BattleScoreButtons
-                labels={getTargetScoreLabels(targetFmt)}
-                onScore={handleScore}
-                disabled={false}
-                variant="image"
-              />
+          {subPhase === "shooting" && !scoringReady && (
+            <>
+              {/* 🎯 開始計分 → 啟動新式 BattleScreen 計分 */}
+              <button
+                onClick={() => { setScoringReady(true); }}
+                style={{ width:"100%", padding:"11px 0", borderRadius:12, fontWeight:900, fontSize:14, cursor:"pointer",
+                  background:"linear-gradient(135deg,#7c3aed,#2563eb)", color:"white", border:"none", marginTop:2 }}>
+                🎯 開始計分
+              </button>
+              {/* 保留舊式計分捷徑（按箭頭展開） */}
+              {false && <details style={{ marginTop:6 }}>
+                <summary style={{ fontSize:10, color:"#94a3b8", cursor:"pointer", fontWeight:700, textAlign:"center" }}>使用舊式計分 ⚙️</summary>
+                <div style={{ marginTop:4 }}>
+                  <div style={{ display:"flex", gap:3, marginBottom:4, justifyContent:"center", alignItems:"center" }}>
+                    <BattleArrowSlots
+                        arrows={arrows}
+                        totalArrows={ARROWS_PER}
+                        onUndo={() => setArrows(prev => prev.slice(0,-1))}
+                        showUndo={arrows.length > 0}
+                        slotSize={36}
+                        showScore={false}
+                        processing={false}
+                        processingIdx={-1}
+                        extraContent={
+                          arrows.length === 0 && (
+                            <button onClick={() => setTargetMode(m => !m)} style={{
+                              marginLeft:2, padding:"2px 7px", borderRadius:6, fontSize:11, fontWeight:700,
+                              background: targetMode?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.07)",
+                              border:`1px solid ${targetMode?"#22c55e":"rgba(255,255,255,0.15)"}`,
+                              color: targetMode?"#4ade80":"rgba(255,255,255,0.4)", cursor:"pointer",
+                            }}>🎯</button>
+                          )
+                        }
+                      />
+                      <span style={{ color:"#f1f5f9", fontWeight:900, fontSize:12, marginLeft:4 }}>
+                        {arrows.length}/{ARROWS_PER} 箭
+                      </span>
+                  </div>
+                  {targetPending && <div style={{ textAlign:"center", fontSize:12, color:"#a78bfa", fontWeight:700, marginBottom:4 }}>計算中…⚔️</div>}
+                  <TargetFaceOverlay
+                    open={targetMode && !targetPending}
+                    fmtId={targetFmt}
+                    arrowLabels={arrows.map(a => a.label)}
+                    arrowPositions={arrows.filter(arrow => Number.isFinite(arrow.nx))}
+                    arrowsPerRound={ARROWS_PER}
+                    onArrow={handleScore}
+                    onUndo={() => setArrows(prev => prev.slice(0,-1))}
+                    onSubmit={handleTargetSubmit}
+                  />
+                  <BattleScoreButtons
+                      labels={getTargetScoreLabels(targetFmt)}
+                      onScore={handleScore}
+                      disabled={false}
+                      variant="image"
+                    />
+                  {arrows.length >= ARROWS_PER && !targetPending && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4 }}>
+                      {!statsReady && <div style={{ textAlign:"center", fontSize:11, color:"#94a3b8", paddingBottom:4 }}>⏳ 數值載入中…</div>}
+                      <button onClick={() => { sfxCast(); finishRound(arrows); }}
+                        disabled={!statsReady}
+                        style={{ width:"100%", padding:"12px", background: statsReady ? `linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)` : "#374151", border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor: statsReady ? "pointer" : "not-allowed", boxShadow: statsReady ? `0 4px 20px ${boss.accent||"#f59e0b"}44` : "none", opacity: statsReady ? 1 : 0.5 }}>
+                        ⚔️ 送出 {ARROWS_PER} 箭！
+                      </button>
+                      <button onClick={() => setArrows(prev => prev.slice(0,-1))}
+                        style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
+                        ← 取消上一箭
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </details>}
+            </>
           )}
-          {subPhase === "shooting" && arrows.length >= ARROWS_PER && !targetPending && (
-            <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4 }}>
-              {!statsReady && <div style={{ textAlign:"center", fontSize:11, color:"#94a3b8", paddingBottom:4 }}>⏳ 數值載入中…</div>}
-              <button onClick={() => { sfxCast(); finishRound(arrows); }}
-                disabled={!statsReady}
-                style={{ width:"100%", padding:"12px", background: statsReady ? `linear-gradient(135deg, ${boss.accent||"#f59e0b"}, #ef4444)` : "#374151", border:"none", borderRadius:12, color:"white", fontSize:16, fontWeight:900, cursor: statsReady ? "pointer" : "not-allowed", boxShadow: statsReady ? `0 4px 20px ${boss.accent||"#f59e0b"}44` : "none", opacity: statsReady ? 1 : 0.5 }}>
-                ⚔️ 送出 {ARROWS_PER} 箭！
-              </button>
-              <button onClick={() => setArrows(prev => prev.slice(0,-1))}
-                style={{ width:"100%", padding:"5px", background:"transparent", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"rgba(255,255,255,0.35)", fontSize:11, cursor:"pointer" }}>
-                ← 取消上一箭
-              </button>
+          {/* ⬇ BattleScreen 計分模式（世界王） ⬇ */}
+          {subPhase === "shooting" && scoringReady && (
+            <div style={{padding:"6px 0 8px"}}>
+              <ConsumablesBar compact />
+              <BattleScreen
+                scoringMode
+                player={{
+                  name: myName,
+                  lv: archerLevel,
+                  atk: baseATK,
+                  def: baseDEF,
+                  hp: myHP,
+                  maxHp: baseHP,
+                }}
+                monster={{
+                  id: event?.bossData?.id,
+                  name: boss.name,
+                  family: boss.family,
+                  hp: bossHP,
+                  atk: boss.atk,
+                  def: boss.def,
+                  tier: "mythic",
+                }}
+                battleMode="score"
+                scoreInput={targetMode ? "target" : "keypad"}
+                arrowsPerRound={ARROWS_PER}
+                onSubmit={(scores) => {
+                  const labelMap = {10:"X",9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2",1:"1",0:"M"};
+                  const newArrows = scores.map(s => ({
+                    score: s,
+                    label: labelMap[s] || String(s),
+                  }));
+                  setArrows(newArrows);
+                  sfxCast();
+                  finishRound(newArrows);
+                  setScoringReady(false);
+                }}
+              />
             </div>
           )}
           {subPhase === "processing" && (
-            <div style={{ minHeight:44, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+            <div style={{ minHeight:110, display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center", gap:8, padding:10, borderRadius:14, background:"radial-gradient(circle,rgba(245,158,11,.18),rgba(15,23,42,.72))", border:"1px solid rgba(251,191,36,.3)" }}>
+              <div style={{ fontSize:13, fontWeight:900, color:"#fbbf24", animation:"wb-pulse 0.8s ease-in-out infinite" }}>⚔️ 戰鬥演示中…</div>
               {dmgLog.slice(-3).map((l, i, arr) => (
                 <div key={i} style={{ fontSize:11, textAlign:"center", fontWeight:700, color: i===arr.length-1 ? "white" : "rgba(255,255,255,0.4)", marginBottom:2 }}>{l}</div>
               ))}

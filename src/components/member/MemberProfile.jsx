@@ -13,6 +13,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { APP_THEMES } from "../../lib/theme";
 import { getSoundEnabled, setSoundEnabled, getAnimEnabled, setAnimEnabled } from "../../lib/fxSettings";
 import { sfxTap } from "../../lib/sound";
+import { PlayerAvatar, PLAYER_AVATAR_OPTIONS } from "../shared/PlayerAvatar";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 const HALF_LABEL = { first:"上半年", second:"下半年" };
@@ -54,6 +55,7 @@ export default function MemberProfile({
   const [showHistory,   setShowHistory]   = useState(false);
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
 
   useEffect(() => {
     if (profile?.id) getCertRecords(profile.id).then(setCertRecords).catch(() => {});
@@ -130,6 +132,16 @@ export default function MemberProfile({
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
 
+  async function chooseAvatar(avatarId) {
+    if (!profile?.id || avatarSaving || avatarId === profile.avatarId) return;
+    setAvatarSaving(true);
+    try {
+      await updateMember(profile.id, { avatarId }, profile.id);
+    } finally {
+      setAvatarSaving(false);
+    }
+  }
+
   return (
     <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100%", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
 
@@ -203,7 +215,7 @@ export default function MemberProfile({
                   </div>
                 )}
               </div>
-              <div className="text-5xl">🏹</div>
+              {profile?.avatarId ? <PlayerAvatar avatarId={profile.avatarId} size={54} className="border-2 border-white/55 shadow-lg" /> : <div className="text-5xl">🏹</div>}
             </div>
           </div>
           <div className="flex flex-col gap-1 text-white/60 text-xs">
@@ -223,6 +235,22 @@ export default function MemberProfile({
           </div>
         </div>
       </div>
+
+      <Card className="p-4" style={{ background:"rgba(15,23,42,0.64)" }}>
+        <ST>冒險者大頭貼</ST>
+        <p className="mt-1 text-xs text-slate-400">僅作為個人資料的小尺寸頭像，不會出現在戰鬥角色或改變戰鬥畫面。</p>
+        <div className="mt-3 grid grid-cols-6 gap-2">
+          {PLAYER_AVATAR_OPTIONS.map(option => {
+            const selected = profile?.avatarId === option.id;
+            return <button key={option.id} type="button" disabled={avatarSaving}
+              onClick={() => chooseAvatar(option.id)} aria-label={`選擇大頭貼 ${option.id}`}
+              className="rounded-full p-0.5 transition-transform active:scale-90 disabled:opacity-60"
+              style={{ border:selected ? "2px solid #f5c451" : "2px solid transparent", boxShadow:selected ? "0 0 0 2px rgba(245,196,81,.25)" : "none" }}>
+              <PlayerAvatar avatarId={option.id} size={44} />
+            </button>;
+          })}
+        </div>
+      </Card>
 
       <ArcherCard profile={profile} certification={certification} onExam={() => onPageChange("certexam")} />
 

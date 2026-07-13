@@ -10,6 +10,7 @@ import { addCoins, markDungeonUsed, createNotification } from "./db";
 import { calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import { resolveConsumable } from "./consumableSystem";
+import { resolvePlayerCounter } from "./damage";
 import {
   assignContracts, rerollContract, generatePathOptions,
   drawDungeonEvent, DUNGEON_SHOP_ITEMS, generateDungeonFloors,
@@ -17,21 +18,12 @@ import {
   FLOOR_TIER_OFFSET, FLOOR_STAT_SCALE, FLOOR_REWARD_SCALE,
   DIFFICULTY_REWARD_MULT, DYNAMIC_DIFFICULTY,
 } from "./dungeonData";
+import { createOrdinaryChestLoot } from "./dungeonChestLoot";
 
 const D = "dungeonRooms";
 
 function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
-}
-
-function calcCatDmg(catAtk, monsterDef) {
-  if (!catAtk) return 0;
-  let total = 0;
-  for (let i = 0; i < 6; i++) {
-    const m = 0.5 + Math.random() * 1.5;
-    total += Math.max(1, Math.round((catAtk - monsterDef * 0.5) * m));
-  }
-  return total;
 }
 
 const MODE_SCALE = {
@@ -403,10 +395,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const skipAllCtr = !!eff.skipCounter || room.consumableEffects?.skipCounterRound === round;
 
     // Step 3：攻擊2箭 → 怪物反擊1次（分離的 mini 結構）
-    // 攻擊順序：前衛 → 後衛（動畫用）
+    // 房主固定先手，其他人再依前／後衛順序出手，與新版組隊戰鬥演出一致。
     const orderedAliveIds = [
-      ...frontIds.filter(id => aliveIds.includes(id)),
-      ...rearIds.filter(id => aliveIds.includes(id)),
+      ...(aliveIds.includes(room.hostId) ? [room.hostId] : []),
+      ...frontIds.filter(id => id !== room.hostId && aliveIds.includes(id)),
+      ...rearIds.filter(id => id !== room.hostId && aliveIds.includes(id)),
     ];
     const arrowsPerRound = room.arrowsPerRound || 6;
     const miniRounds  = [];
@@ -418,7 +411,9 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     let lastHitInfo = null;
 
-    for (let i = 0; i < arrowsPerRound; i++) {
+    // Old per-arrow replay shape is retained only for reference.  New team
+    // dungeon rounds are emitted in the same per-member shape as party mode.
+    if (false) for (let i = 0; i < arrowsPerRound; i++) {
       if (monsterHP <= 0) break;
 
       // ── 攻擊小回合 ─────────────────────────────────────
@@ -457,15 +452,73 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
-    // 貓貓攻擊（所有存活成員的貓各出 6 箭，合算傷害）
+    // 貓貓協戰沿用組隊戰鬥的兩爪＋技能紀錄格式，讓共用 BattleScreen
+    // 可以播出相同的貓貓卡片、爪擊與技能提示。
+    // Rear support resolves as its own sequence before front members attack,
+    // matching PartyBattleRoom and preserving the established front/rear rules.
+    const healSupportLog = rearIds
+      .filter(id => allData[id]?.rearHeal)
+      .map(id => {
+        const pool = Math.round((members[id].maxHP || 100) * 0.15 * (allData[id].scorePct || 0) * (1 + (members[id].wbBonus?.healBonusPct || 0)));
+        const targets = frontIds.filter(targetId => memberHPNow[targetId] > 0);
+        const perPerson = targets.length ? Math.round(pool / targets.length) : 0;
+        return { id, name:members[id].name || "rear", kind:"heal", dmg:0, heal:pool, targets:targets.map(targetId => ({ id:targetId, name:members[targetId]?.name || "front", heal:perPerson })) };
+      });
+    const buffSupportLog = rearIds
+      .filter(id => allData[id]?.rearBuff)
+      .map(id => ({ id, name:members[id].name || "rear", kind:"buff", dmg:0, buffPct:Math.round((allData[id].scorePct || 0) * 25), targets:frontIds.map(targetId => ({ id:targetId, name:members[targetId]?.name || "front" })) }));
+    if (healSupportLog.length) miniRounds.push({ miniRound:miniRounds.length + 1, isSupport:true, supportKind:"heal", playerLog:healSupportLog, totalDmg:0, monsterHPAfter:monsterHP });
+    if (buffSupportLog.length) miniRounds.push({ miniRound:miniRounds.length + 1, isSupport:true, supportKind:"buff", playerLog:buffSupportLog, totalDmg:0, monsterHPAfter:monsterHP });
+
+    const orderedFrontIds = [
+      ...(frontIds.includes(room.hostId) ? [room.hostId] : []),
+      ...frontIds.filter(id => id !== room.hostId),
+    ];
+    for (const id of orderedFrontIds) {
+      if (monsterHP <= 0 || memberHPNow[id] <= 0) continue;
+      const data = allData[id];
+      const damage = data?.totalDmg || 0;
+      const hpBefore = monsterHP;
+      monsterHP = Math.max(0, monsterHP - damage);
+      miniRounds.push({
+        miniRound: miniRounds.length + 1,
+        isCounter: false,
+        attackerId: id,
+        playerLog: [{ id, name:data?.name || members[id]?.name || "front", role:"front", dmg:damage, ctr:0, arrowBreakdown:data?.arrowBreakdown || [], crits:data?.crits || 0 }],
+        totalDmg: damage,
+        monsterHPAfter: monsterHP,
+      });
+      if (hpBefore > 0 && monsterHP <= 0) {
+        const lastArrow = (data?.arrowBreakdown || []).filter(entry => (entry.dmg || 0) > 0).at(-1);
+        lastHitInfo = { memberId:id, memberName:data?.name || members[id]?.name || "front", label:lastArrow?.label || "X" };
+      }
+    }
+
     let catTotalDmg = 0;
     const catMiniLog = [];
     for (const id of aliveIds) {
       const m = members[id];
       if (!m.catAtk || memberHPNow[id] <= 0) continue;
-      const dmg = calcCatDmg(m.catAtk, room.monster?.def || 10);
+      let dmg = 0;
+      const arrowBreakdown = [];
+      for (let i = 0; i < 2; i++) {
+        const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
+        const mult = 0.85 + Math.random() * 0.3;
+        const base = 8 + m.catAtk * 0.7 + score * 1.2 - (room.monster?.def || 0) * 0.35;
+        const arrowDmg = Math.max(1, Math.round(base * mult));
+        dmg += arrowDmg;
+        arrowBreakdown.push({ label:String(score), dmg:arrowDmg, isCrit:mult > 1.1, partName:"貓爪", partIcon:"🐾" });
+      }
+      const skillTriggered = Math.random() < 0.25;
+      const skillName = skillTriggered ? "連環貓掌" : null;
+      const skillBonus = skillTriggered ? Math.max(1, Math.round(dmg * 0.25)) : 0;
+      dmg += skillBonus;
       catTotalDmg += dmg;
-      catMiniLog.push({ id, name: m.name, catName: m.catName || "貓貓", dmg });
+      catMiniLog.push({
+        id, catId:m.catId || "diandian", name:`🐱${m.catName || "貓貓"}`,
+        catName:m.catName || "貓貓", dmg, ctr:0, arrowBreakdown, crits:0,
+        isCat:true, skillTriggered, skillName, skillBonus,
+      });
     }
     if (catTotalDmg > 0 && monsterHP > 0) {
       const hpBeforeCatAttack = monsterHP;
@@ -494,16 +547,17 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         const m            = members[id];
         const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1));
         const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
-        const absorbed     = Math.min(potionShieldNow[id] || 0, rawCtr);
+        const counterHit   = resolvePlayerCounter({ arrows:m.arrows || [], baseDamage:rawCtr, maxHP:m.maxHP || memberHPNow[id] });
+        const absorbed     = Math.min(potionShieldNow[id] || 0, counterHit.damage);
         potionShieldNow[id] = Math.max(0, (potionShieldNow[id] || 0) - absorbed);
-        const ctr          = rawCtr - absorbed;
+        const ctr          = counterHit.damage - absorbed;
         ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
         const prevHP       = memberHPNow[id];
         memberHPNow[id]    = Math.max(0, prevHP - ctr);
         const died         = prevHP > 0 && memberHPNow[id] <= 0;
         ctrLog.push({
-          id, name: m.name, dmg: 0, ctr, arrowBreakdown: [],
-          message: `${room.monster.icon||"👾"} ${room.monster.name} 反擊 ${m.name}，造成 ${ctr} 傷害！${died ? ` 💀 ${m.name} 陣亡！` : ""}`,
+          id, name: m.name, dmg: 0, ctr, arrowBreakdown: [], hitPart:counterHit.part, averageScore:counterHit.averageScore,
+          message: `${room.monster.icon||"👾"} ${room.monster.name} 命中${m.name}${counterHit.part.name}，造成 ${ctr} 傷害！${died ? ` 💀 ${m.name} 陣亡！` : ""}`,
           died,
         });
       }
@@ -604,25 +658,32 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const totalFloors  = room.totalFloors  || 7;
     let result    = null;
     let newStatus = "active";
+    let pendingDungeonNextStatus = null;
 
     // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會「打不死怪又不算輸」而卡死（2026-07-12）。
     // frontIds 是本回合開始時存活的前衛；本回合結束後前衛全數 HP<=0 就判輸。
     const frontLiveAfter = frontIds.filter(id => (memberHPNow[id] || 0) > 0).length;
     if (liveAfter === 0 || (frontIds.length > 0 && frontLiveAfter === 0)) {
+      // 與組隊戰鬥一致：先保留新版 BattleScreen 播完反擊與擊倒，
+      // 房主確認後才正式寫入 completed。
       result    = "lose";
-      newStatus = "completed";
+      newStatus = "resolving";
+      pendingDungeonNextStatus = "completed";
     } else if (monsterHP <= 0) {
       if (currentFloor >= totalFloors) {
         result    = "win";
-        newStatus = "completed";
+        pendingDungeonNextStatus = "completed";
       } else {
-        newStatus = "path_select";
+        pendingDungeonNextStatus = "path_select";
       }
+      // Keep the new battle screen mounted until its shared round animation
+      // and host confirmation have completed.
+      newStatus = "resolving";
     }
 
     // ── 動態難度更新（非結算回合才記錄性能） ────────────────
     const perf = room.floorPerformance || { totalDeaths:0, totalRounds:0, totalCtrHits:0, difficultyAdjust:0, rewardAdjust:0, floorLog:[] };
-    if (newStatus === "path_select" || newStatus === "completed") {
+    if (pendingDungeonNextStatus === "path_select" || pendingDungeonNextStatus === "completed" || newStatus === "completed") {
       // 更新該層的效能資料
       // 使用 liveAfter（本回合結束後存活人數）與 aliveIds（本回合開始時存活人數）計算新陣亡數
       const newDeaths = Math.max(0, aliveIds.length - liveAfter);
@@ -672,7 +733,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     // 適用 floorPerformance 到 nextFloorModifiers（後續層用）
     const diffAdj = perf.difficultyAdjust || 0;
     const nextMods = { ...(room.nextFloorModifiers || {}) };
-    if (newStatus !== "completed") {
+    if (pendingDungeonNextStatus !== "completed" && newStatus !== "completed") {
       // 難度調整反映在下一層
       nextMods.dynamicHpMult  = Math.max(0.7, 1 + diffAdj);
       nextMods.dynamicAtkMult = Math.max(0.7, 1 + diffAdj * 0.7);
@@ -684,13 +745,14 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHP, round: round + 1,
       log: arrayUnion(logEntry),
       result, status: newStatus,
+      pendingDungeonNextStatus,
       processing: false,
       nextFloorModifiers: nextMods,
       floorPerformance: perf,
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
-      ...(newStatus === "path_select"
+      ...(pendingDungeonNextStatus === "path_select"
         ? { pathOptions: generatePathOptions(), chosenPath: null }
         : {}),
     });
@@ -701,6 +763,18 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     await updateDoc(doc(db, D, roomId), { processing:false }).catch(() => {});
     return { ok:false, reason:e.message };
   }
+}
+
+export async function confirmDungeonResolution(roomId) {
+  const snap = await getDoc(doc(db, D, roomId));
+  if (!snap.exists()) return { ok:false, reason:"room not found" };
+  const room = snap.data();
+  if (room.status !== "resolving" || !room.pendingDungeonNextStatus) return { ok:false, reason:"no pending resolution" };
+  await updateDoc(doc(db, D, roomId), {
+    status: room.pendingDungeonNextStatus,
+    pendingDungeonNextStatus: deleteField(),
+  });
+  return { ok:true };
 }
 
 // ── 房主選擇路線 ─────────────────────────────────────────────
@@ -773,11 +847,17 @@ export async function purchaseDungeonItem(roomId, memberId, item, memberData) {
 }
 
 // ── 確認事件效果（房主呼叫）─────────────────────────────────
+// Bug #7 fix：不再立即設 status="floor_transition"，改為 store roomResolution 並保持 status="event"，
+// 讓所有 client 有 2-3 秒查看結果的 phase，host 再手動呼叫 resolveNonCombatRoom 推進。
 export async function confirmDungeonEvent(roomId, room) {
   try {
     const ev  = room.currentEvent;
     const eff = ev?.effect || {};
-    const upd = { currentEvent:null, status:"floor_transition" };
+    // 保持 status="event"，不要立即跳轉；roomResolution 讓 client 知道已結算
+    const upd = {
+      currentEvent: null,
+      roomResolution: { kind:"event", icon:ev?.icon, title:ev?.title, desc:ev?.desc, type:ev?.type },
+    };
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
 
@@ -1192,16 +1272,41 @@ export async function tryDiscoverHiddenRoom(roomId, room, floorIndex, currentRoo
 // 獎勵由 DungeonChest 元件在玩家點擊確認時個別發放（避免重複給幣）
 export async function enterHiddenRoom(roomId, room, roomMeta) {
   try {
-    const coins = roomMeta?.coins || 30;
+    const family = (room?.mapDungeonId || "ghost").split("_")[0] || "ghost";
+    const chestLoot = createOrdinaryChestLoot({
+      family,
+      difficultyTier: room?.expeditionDifficulty || room?.dungeonDifficulty || 1,
+      hidden: true,
+    });
     // 切換到寶箱模式顯示獎勵（DungeonChest 會讀 hiddenRoomLoot 發放獎勵）
     await updateDoc(doc(db, D, roomId), {
       status: "chest",
       activeRoomId: roomMeta?.id || null,
       roomConfirms: {},
       roomChoices:  {},
-      hiddenRoomLoot: { coins, found: true },
+      hiddenRoomLoot: { ...chestLoot, found: true },
+      chestLoot,
     });
-    return { ok: true, coins };
+    return { ok: true, coins: chestLoot.coins };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// A normal chest must be generated by the host once, then every client reads the same payload.
+export async function ensureChestRoomLoot(roomId, hostId, proposedLoot) {
+  try {
+    const ref = doc(db, D, roomId);
+    let loot = null;
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("寶箱房間不存在");
+      const room = snap.data();
+      if (room.hostId !== hostId) throw new Error("只有房主可開啟寶箱");
+      loot = room.chestLoot || proposedLoot;
+      if (!room.chestLoot) tx.update(ref, { chestLoot: loot });
+    });
+    return { ok: true, loot };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
@@ -1431,6 +1536,11 @@ export async function enterNonCombatRoom(roomId, roomType, extraData = {}) {
       status: normalizedType,
       activeRoomId: extraData.roomId || null,
       roomConfirms: {},
+      // Every functional room is a new transaction.  Leaving prior votes or
+      // a prior resolution here causes a newly entered rest/trap room to
+      // replay the old effect before anyone has made a choice.
+      roomChoices: {},
+      roomResolution: null,
     };
     if (normalizedType === "shop") {
       const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);

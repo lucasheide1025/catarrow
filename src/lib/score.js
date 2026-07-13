@@ -152,13 +152,14 @@ export function getScoreLabels(targetFmt) {
  */
 export function calcArrowStats(allArrows) {
   if (!allArrows?.length) return null;
-  const total = allArrows.reduce((s, v) => s + v, 0);
-  const count = allArrows.length;
+  const nums = allArrows.map(v => typeof v === "number" ? v : Number(v) || 0);
+  const total = nums.reduce((s, v) => s + v, 0);
+  const count = nums.length;
   const avg   = (total / count).toFixed(1);
-  const tens  = allArrows.filter(v => v === 10).length;
-  const misses = allArrows.filter(v => v === 0).length;
+  const tens  = nums.filter(v => v === 10).length;
+  const misses = nums.filter(v => v === 0).length;
   const dist = {};
-  allArrows.forEach(v => { dist[v] = (dist[v] || 0) + 1; });
+  nums.forEach(v => { dist[v] = (dist[v] || 0) + 1; });
   return { total, count, avg, tens, misses, dist };
 }
 

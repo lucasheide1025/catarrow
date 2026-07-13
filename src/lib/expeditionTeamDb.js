@@ -38,9 +38,14 @@ export async function createTeamExpeditionRoom({
       ready: false,
       catId: memberData?.catId || "",
       catName: memberData?.catName || "",
+      catType: memberData?.catType || "",
+      catXP: memberData?.catXP ?? 0,
+      catBond: memberData?.catBond ?? 0,
       archerStyle: memberData?.archerStyle || "baobao",
       catAtk: memberData?.catAtk ?? 0,
       wbBonus: memberData?.wbBonus || null,
+      avatarId: memberData?.avatarId || null,
+      battleCosmetics: memberData?.battleCosmetics || null,
       joinedAt: serverTimestamp(),
     };
     const ref = await addDoc(collection(db, D), {
@@ -84,9 +89,14 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       ready: false,
       catId: memberData?.catId || "",
       catName: memberData?.catName || "",
+      catType: memberData?.catType || "",
+      catXP: memberData?.catXP ?? 0,
+      catBond: memberData?.catBond ?? 0,
       archerStyle: memberData?.archerStyle || "baobao",
       catAtk: memberData?.catAtk ?? 0,
       wbBonus: memberData?.wbBonus || null,
+      avatarId: memberData?.avatarId || null,
+      battleCosmetics: memberData?.battleCosmetics || null,
       joinedAt: serverTimestamp(),
     };
     const roomRef = doc(db, D, roomDoc.id);
@@ -274,9 +284,14 @@ export async function createTeamExpeditionBattleRoom({
         rearChoice: null,
         catId: m.catId || "",
         catName: m.catName || "",
+        catType: m.catType || "",
+        catXP: m.catXP ?? 0,
+        catBond: m.catBond ?? 0,
         archerStyle: m.archerStyle || "baobao",
         catAtk: m.catAtk || 0,
         wbBonus: m.wbBonus || null,
+        avatarId: m.avatarId || null,
+        battleCosmetics: m.battleCosmetics || null,
       };
     }
 
@@ -387,8 +402,10 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
 
       const memberRef = doc(db, "members", memberId);
       const chestRef = doc(db, "chestInventory", memberId);
+      const materialRef = doc(db, "materialInventory", memberId);
       const memberSnap = await tx.get(memberRef);
       const chestSnap = await tx.get(chestRef);
+      const materialSnap = await tx.get(materialRef);
       if (!memberSnap.exists()) throw new Error("找不到會員資料");
 
       const memberData = data.members?.[memberId] || {};
@@ -405,6 +422,11 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
         data.expeditionResult.loot?.chests || [],
         memberId,
       );
+      const kingVault = isGuestMember ? null : data.expeditionResult.loot?.kingVault;
+      const materialItems = { ...(materialSnap.data()?.items || {}) };
+      (kingVault?.materials || []).forEach(material => {
+        if (material?.id) materialItems[material.id] = (materialItems[material.id] || 0) + 1;
+      });
       const previousRecords = memberSnap.data().expeditionRecords || [];
       const newRecord = {
         id: `er_${roomId}_${memberId}`,
@@ -425,6 +447,7 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
           ? { "village.resources.arrowdew": increment(totalArrowDew) }
           : {}),
         ...(!isGuestMember && rewards.archerXP > 0 ? { archerXP: increment(rewards.archerXP) } : {}),
+        ...(kingVault?.kingSeals ? { kingSeals: increment(kingVault.kingSeals) } : {}),
         expeditionRecords: [newRecord, ...previousRecords].slice(0, 20),
       });
       if (chests.length > 0) {
@@ -432,6 +455,9 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
           chests: [...(chestSnap.data()?.chests || []), ...chests],
           updatedAt: serverTimestamp(),
         }, { merge: true });
+      }
+      if ((kingVault?.materials || []).length > 0) {
+        tx.set(materialRef, { items: materialItems, updatedAt: serverTimestamp() }, { merge: true });
       }
       return {
         alreadyClaimed: false,

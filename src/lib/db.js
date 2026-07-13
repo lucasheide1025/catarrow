@@ -10,10 +10,10 @@ import { POTIONS, FRAGMENTS } from "./itemData";
 import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
-import { EQUIP_UPGRADE_COST, generateRandomMats } from "./equipData";
+import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
-import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, getDefaultAllocation, getResourceKey, TIERED_RESOURCES } from "./villageData";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
 import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
@@ -109,7 +109,7 @@ export async function updateMember(id, data, operatorId) {
   const before = await getMember(id);
   if (!before) throw new Error("找不到該會員資料");
   const updateData = { updatedAt: serverTimestamp() };
-const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo", "archerNoDate", "joinDate", "note", "equipment", "armorSets", "accessorySets", "fatCat", "score", "achievement", "eventPoints", "shareSlogan", "rpgEquip"];
+const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo", "archerNoDate", "joinDate", "note", "equipment", "armorSets", "accessorySets", "fatCat", "score", "achievement", "eventPoints", "shareSlogan", "rpgEquip", "avatarId"];
   safeFields.forEach(field => { if (data[field] !== undefined) updateData[field] = data[field]; });
   await updateDoc(doc(db, C.members, id), updateData);
   await writeAuditLog("UPDATE", id, "member", before, updateData, operatorId);
@@ -3456,7 +3456,7 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
       return { ok: false, reason: `缺少關鍵材料：${mats.keyItem.note || mats.keyItem.id}` };
     }
 
-    // 計算新等級
+    // 計算新等級；精英突破開始必須使用王之印記。
     let newPlusLevel = (equip.plusLevel || 0) + 1;
     let newGrade = equip.grade;
     let upgraded = false;
@@ -3464,6 +3464,10 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
       newPlusLevel = 0;
       newGrade = EQUIP_GRADES[gradeIdx + 1].id;
       upgraded = true;
+    }
+    const sealCost = upgraded ? (KING_SEAL_BREAKTHROUGH_COST[newGrade] || 0) : 0;
+    if (sealCost > 0 && (clientData.kingSeals ?? 0) < sealCost) {
+      return { ok:false, reason:`突破至${EQUIP_GRADES[gradeIdx + 1].name}需要王之印記 ×${sealCost}` };
     }
 
     const memRef = doc(db, C.members, memberId);
@@ -3489,6 +3493,7 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
         [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
         [`rpgEquip.${slotId}.grade`]:     newGrade,
         [`rpgEquip.${slotId}.nextMats`]:  newNextMats,
+        ...(sealCost > 0 ? { kingSeals: increment(-sealCost) } : {}),
         updatedAt: serverTimestamp(),
       }),
     ]);
@@ -3509,6 +3514,76 @@ export async function saveEquipNextMats(memberId, slotId, mats) {
       updatedAt: serverTimestamp(),
     });
   } catch (e) { console.warn("saveEquipNextMats:", e?.message); }
+}
+
+// ── 王之印記打洞／符文鑲嵌 ───────────────────────────────────
+// 打洞失敗只消耗成本，絕不降低強化等級或毀損裝備。
+export async function trySocketEquip(memberId, slotId) {
+  const ref = doc(db, C.members, memberId);
+  try {
+    let result = null;
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      const data = snap.data() || {};
+      const equip = data.rpgEquip?.[slotId];
+      const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === equip?.grade);
+      if (!equip?.itemId) throw new Error("尚未裝備");
+      if (gradeIdx < 2) throw new Error("精英品質以上才可打洞");
+      const sockets = Array.isArray(equip.sockets) ? equip.sockets : [];
+      if (sockets.length >= 3) throw new Error("此裝備已達 3 孔上限");
+      const sealCost = sockets.length + 1;
+      if ((data.kingSeals || 0) < sealCost) throw new Error(`需要王之印記 ×${sealCost}`);
+      const successRate = [0.85, 0.65, 0.45][sockets.length];
+      const success = Math.random() < successRate;
+      const update = { kingSeals: increment(-sealCost), updatedAt: serverTimestamp() };
+      if (success) update[`rpgEquip.${slotId}.sockets`] = [...sockets, null];
+      tx.update(ref, update);
+      result = { ok:true, success, sealCost, successRate, sockets: success ? sockets.length + 1 : sockets.length };
+    });
+    return result;
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function setEquipSocketRune(memberId, slotId, socketIndex, runeId = null) {
+  const ref = doc(db, C.members, memberId);
+  try {
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref); const data = snap.data() || {};
+      const equip = data.rpgEquip?.[slotId];
+      const sockets = Array.isArray(equip?.sockets) ? [...equip.sockets] : [];
+      if (!equip?.itemId || socketIndex < 0 || socketIndex >= sockets.length) throw new Error("符文孔不存在");
+      const oldRune = sockets[socketIndex];
+      if (runeId && (data.equipmentRuneInventory?.[runeId] || 0) < 1) throw new Error("沒有此裝備符文");
+      sockets[socketIndex] = runeId || null;
+      const update = { [`rpgEquip.${slotId}.sockets`]:sockets, updatedAt:serverTimestamp() };
+      if (oldRune) update[`equipmentRuneInventory.${oldRune}`] = increment(1);
+      if (runeId) update[`equipmentRuneInventory.${runeId}`] = increment(-1);
+      tx.update(ref, update);
+    });
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function grantKingVaultReward(memberId, reward = {}) {
+  if (!memberId) return { ok: false, reason: "缺少玩家" };
+  try {
+    const memberRef = doc(db, C.members, memberId);
+    const materialRef = doc(db, C_MATERIALS, memberId);
+    await runTransaction(db, async tx => {
+      const [memberSnap, materialSnap] = await Promise.all([tx.get(memberRef), tx.get(materialRef)]);
+      if (!memberSnap.exists()) throw new Error("找不到玩家資料");
+      const items = { ...(materialSnap.data()?.items || {}) };
+      (reward.materials || []).forEach(material => {
+        if (material?.id) items[material.id] = (items[material.id] || 0) + 1;
+      });
+      tx.update(memberRef, {
+        ...(reward.kingSeals ? { kingSeals: increment(reward.kingSeals) } : {}),
+        updatedAt: serverTimestamp(),
+      });
+      if ((reward.materials || []).length) tx.set(materialRef, { items, updatedAt: serverTimestamp() }, { merge: true });
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 // ─── 遠征隊 ────────────────────────────────────────────────
@@ -3684,7 +3759,7 @@ export async function drawGachaCards(memberId, type = "single") {
 // ─── 貓貓村 ────────────────────────────────────────────────
 export async function collectVillageResources(memberId, village) {
   var now = Date.now();
-  var lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
+  var lastMs = getVillageLastCollectedMs(village?.lastCollectedAt, now);
   var hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
   if (hours < 0.05) return { collected: {}, hours: 0 };
 
@@ -3734,7 +3809,10 @@ export async function collectVillageResources(memberId, village) {
       // Tiered resources: pool * stageMult, split by allocation%
       var stageMult = getStageMultiplier(lv);
       var pool      = rate * stageMult * hours;
-      var alloc     = allocations[id] || getDefaultAllocation(lv);
+      var alloc     = normalizeBuildingAllocation(lv, allocations[id]);
+      if (JSON.stringify(allocations[id] || null) !== JSON.stringify(alloc)) {
+        updates["village.allocations." + id] = alloc;
+      }
 
       // Calculate per-tier raw values (including fraction carryover)
       var tierRaw = {};

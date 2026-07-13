@@ -9,10 +9,11 @@ export const BATTLE_BOW_OPTIONS = [
 
 export const BATTLE_DISTANCE_OPTIONS = [5, 10, 13.5, 15, 18, 20, 30, 50, 70];
 
-const PROFILE_VERSION = 1;
+const PROFILE_VERSION = 2;
 const DEFAULT_PROFILE = {
   version:PROFILE_VERSION,
   bowType:"recurve_bare",
+  bowId:"",
   distance:18,
 };
 
@@ -30,6 +31,7 @@ export function loadBattleShootingProfile(memberId) {
       bowType:BATTLE_BOW_OPTIONS.some(option => option.value === value.bowType)
         ? value.bowType
         : DEFAULT_PROFILE.bowType,
+      bowId:typeof value.bowId === "string" ? value.bowId : "",
       distance:Number(value.distance) > 0 ? Number(value.distance) : DEFAULT_PROFILE.distance,
     };
   } catch {

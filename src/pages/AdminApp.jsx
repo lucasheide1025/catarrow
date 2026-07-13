@@ -153,6 +153,7 @@ export default function AdminApp() {
     return (s && VALID_PAGES.has(s)) ? s : "hub-member";
   });
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
+  const dungeonImmersive = page === "dungeon" || page === "dungeon-room";
   const [memberSub, setMemberSub]   = useState(null);
   const [eventsSub, setEventsSub]   = useState(null);
   const [itemsSub,  setItemsSub]    = useState(null);
@@ -565,7 +566,7 @@ const adminNav = [
           </div>
         </OverlayModal>
 
-        <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40 }}>
+        <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: dungeonImmersive ? "none" : undefined }}>
           <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🏹 射手模式</div>
@@ -684,7 +685,7 @@ const adminNav = [
         </Suspense>
         </div>
         {/* 底部導覽（深藍主題） */}
-      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:"flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:dungeonImmersive ? "none" : "flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
         {memberNav.map(n => {
           const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
           return (

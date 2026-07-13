@@ -163,7 +163,7 @@ export default function BattleCard({ onClose, battleData }) {
                 <div style={{ fontSize:18, fontWeight:900 }}>{d.monster?.name || "怪物"}</div>
                 <div style={{ fontSize:10, color:"rgba(255,255,255,.6)" }}>
                   {d.mode === "veteran" ? "老手模式" : "新手模式"}・
-                  {d.battleMode === "zombie" ? "殭屍靶紙" : "分數靶紙"}・
+                  "分數靶紙"・
                   {d.round || 0} 回合
                 </div>
               </div>

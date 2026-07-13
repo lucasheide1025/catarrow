@@ -4,8 +4,9 @@ import { useAuth } from "../../hooks/useAuth";
 import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
-import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent } from "../../lib/equipData";
+import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent, KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
+import EquipmentIcon from "../shared/EquipmentIcon";
 
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
@@ -48,8 +49,8 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
             <span className="text-xs text-slate-600" aria-hidden="true">🏪</span>
           </div>
           <div className="my-3 flex flex-1 items-center justify-center">
-            <span className="grid size-14 place-items-center rounded-2xl border border-slate-700/50 bg-slate-900/60 text-3xl opacity-40">
-              {slotDef.icon}
+            <span className="grid size-14 place-items-center rounded-2xl border border-slate-700/50 bg-slate-900/60 opacity-40">
+              <EquipmentIcon slotId={slotDef.id} size={52} />
             </span>
           </div>
           <div className="text-center text-xs font-bold text-slate-500">尚未裝備</div>
@@ -74,9 +75,9 @@ function SlotCard({ slotDef, equipped, onClick, onGoShop, itemsMap }) {
           {isMax && <span className="rounded-full bg-pink-500/15 px-1.5 py-0.5 text-[9px] font-black text-pink-300">MAX</span>}
         </div>
         <div className="my-2 flex items-center justify-between gap-2">
-          <span className="grid size-14 shrink-0 place-items-center rounded-2xl border bg-black/20 text-3xl"
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl border bg-black/20"
             style={{ borderColor: `${gStyle.color}45` }}>
-            {slotDef.icon}
+            <EquipmentIcon slotId={slotDef.id} size={52} />
           </span>
           <div className="text-right">
             <div className="text-[10px] font-bold text-slate-500">
@@ -155,9 +156,9 @@ function UpgradeCelebration({ result, onClose }) {
         </div>
         <div className="rounded-[2rem] border-2 bg-slate-900/95 p-6 shadow-2xl"
           style={{ borderColor: result.gradeColor, boxShadow: `0 0 45px ${result.gradeColor}55` }}>
-          <div className="mx-auto grid size-24 place-items-center rounded-3xl border bg-black/20 text-6xl"
+          <div className="mx-auto grid size-24 place-items-center rounded-3xl border bg-black/20"
             style={{ borderColor: `${result.gradeColor}80` }}>
-            {result.icon}
+            <EquipmentIcon slotId={result.slotId} size={88} />
           </div>
           <div className="mt-4 text-xs font-bold text-slate-400">{result.slotName}</div>
           <div className="mt-1 truncate text-lg font-black text-white">{result.itemName}</div>
@@ -178,7 +179,7 @@ function UpgradeCelebration({ result, onClose }) {
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
-function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, upgradeErr, nextMats }) {
+function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, upgradeErr, nextMats }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
   const isEmpty   = !equipped?.itemId;
   const grade     = equipped?.grade     || "common";
@@ -202,7 +203,9 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   const coinsOk = !cost || myCoins >= cost.gold;
   const matsOk  = !mats.materials || mats.materials.every(m => (inv[m.id] || 0) >= m.count);
   const keyOk   = !mats.keyItem || (inv[mats.keyItem.id] || 0) >= (mats.keyItem.count || 1);
-  const canUpgrade = coinsOk && matsOk && keyOk;
+  const sealCost = plus >= 4 && nextGrade ? (KING_SEAL_BREAKTHROUGH_COST[nextGrade] || 0) : 0;
+  const sealsOk = kingSeals >= sealCost;
+  const canUpgrade = coinsOk && matsOk && keyOk && sealsOk;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-0"
@@ -214,7 +217,7 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
         {/* 標題 */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{slotDef.icon}</span>
+            <EquipmentIcon slotId={slotDef.id} size={34} />
             <div>
               <div id="equip-dialog-title" className="font-black text-white">{slotDef.name}</div>
               <div className="text-xs text-slate-500">
@@ -373,6 +376,13 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       );
                     })()}
 
+                    {sealCost > 0 && (
+                      <div className={`flex items-center justify-between rounded-xl px-3 py-2 border ${sealsOk ? "bg-amber-400/10 border-amber-300/25" : "bg-red-500/10 border-red-400/25"}`}>
+                        <span className="text-xs font-black text-amber-200">👑 王之印記（突破至 {gradeName(nextGrade)}）</span>
+                        <span className={`text-sm font-black ${sealsOk ? "text-amber-300" : "text-red-300"}`}>{kingSeals}/{sealCost}</span>
+                      </div>
+                    )}
+
                     {/* 尚未載入隨機配方時的提示 */}
                     {!mats.materials && (
                       <div className="text-slate-500 text-center py-1">載入配方中…</div>
@@ -395,7 +405,7 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                           ? "bg-indigo-600 text-white"
                           : "bg-slate-700 text-slate-500 cursor-not-allowed"
                       } disabled:opacity-60`}>
-                      {upgrading ? "升級中…" : canUpgrade ? `⬆️ 升級 +${plus + 1}` : "材料或金幣不足"}
+                      {upgrading ? "升級中…" : canUpgrade ? `⬆️ 升級 +${plus + 1}` : sealsOk ? "材料或金幣不足" : "王之印記不足"}
                     </button>
                   )}
                   <button onClick={onUnequip}
@@ -521,6 +531,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
     const result = await upgradeEquipSlot(profile.id, slotDef.id, {
       equip:    currentEquip,
       coins:    profile.coins || 0,
+      kingSeals: profile.kingSeals || 0,
       matItems: matInv,
       nextMats: displayNextMats,
     });
@@ -535,7 +546,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
       sfxLevelUp();
       setUpgradeFx({
         upgraded: result.upgraded,
-        icon: slotDef.icon,
+        slotId: slotDef.id,
         slotName: slotDef.name,
         itemName: currentItem?.name || currentEquip?.itemId || slotDef.name,
         gradeName: nextGrade?.name || gradeName(result.newGrade),
@@ -614,6 +625,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
           itemsMap={itemsMap}
           matInv={matInv}
           coins={profile?.coins || 0}
+          kingSeals={profile?.kingSeals || 0}
           upgradeErr={upgradeErr}
           nextMats={displayNextMats}
         />

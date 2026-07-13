@@ -16,13 +16,19 @@ export default function BattleShootingProfile({ memberId }) {
     setShootingProfile(saveBattleShootingProfile(memberId, patch));
   }
 
-  // 底層存值仍是固定 4 分類（bowType 會寫進戰鬥紀錄，MemberPractice 分析依賴這幾個固定值）
-  // 顯示文字改用玩家自建裝備名稱（若有），沒有才顯示通用分類名稱
+  // bowType 維持分類供練習分析使用；bowId 則精確記錄玩家選用的裝備組。
   const myEquip = normalizeEquipment(authProfile?.equipment);
-  const bowOptions = BATTLE_BOW_OPTIONS.map(option => {
-    const custom = myEquip.find(set => set.bowCategory === option.value);
-    return { value:option.value, label: custom ? `${option.label} - ${custom.label || "未命名"}` : option.label };
-  });
+  const defaultEquip = myEquip.find(set => set.isDefault) || myEquip[0];
+  const bowOptions = myEquip.length
+    ? myEquip.map(set => ({
+        value:`equipment:${set.id}`,
+        bowType:set.bowCategory,
+        label:`${set.isDefault ? "★ 預設 · " : ""}${set.label || "未命名弓組"}`,
+      }))
+    : BATTLE_BOW_OPTIONS.map(option => ({ value:`category:${option.value}`, bowType:option.value, label:option.label }));
+  const selectedBowValue = myEquip.some(set => set.id === shootingProfile.bowId)
+    ? `equipment:${shootingProfile.bowId}`
+    : (defaultEquip ? `equipment:${defaultEquip.id}` : `category:${shootingProfile.bowType}`);
 
   return (
     <div className="rounded-xl border border-blue-400/20 bg-blue-500/10 p-3">
@@ -33,7 +39,11 @@ export default function BattleShootingProfile({ memberId }) {
       <div className="grid grid-cols-2 gap-2">
         <label className="text-[10px] font-bold text-white/50">
           弓種
-          <select value={shootingProfile.bowType} onChange={event => update({ bowType:event.target.value })}
+          <select value={selectedBowValue} onChange={event => {
+            const selected = bowOptions.find(option => option.value === event.target.value);
+            if (!selected) return;
+            update({ bowId:event.target.value.startsWith("equipment:") ? event.target.value.slice(10) : "", bowType:selected.bowType });
+          }}
             className="mt-1 w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-2 text-xs font-bold text-white">
             {bowOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>

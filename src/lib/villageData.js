@@ -189,10 +189,46 @@ export function getDefaultAllocation(lv) {
   return alloc;
 }
 
+// 舊帳號可能留下 t1 / tier1、空物件或 0~1 比例的分配格式。顯示與收集
+// 都使用這個入口，避免「欄位存在但讀不到」導致產量完全歸零。
+export function normalizeBuildingAllocation(level, rawAllocation) {
+  const maxTier = getBuildingStage(level || 1);
+  if (!rawAllocation || typeof rawAllocation !== "object" || Array.isArray(rawAllocation)) {
+    return getDefaultAllocation(level || 1);
+  }
+  const raw = {};
+  let total = 0;
+  for (let tier = 1; tier <= maxTier; tier++) {
+    const value = Number(rawAllocation[String(tier)] ?? rawAllocation[`t${tier}`] ?? rawAllocation[`tier${tier}`]);
+    raw[String(tier)] = Number.isFinite(value) && value > 0 ? value : 0;
+    total += raw[String(tier)];
+  }
+  if (total <= 0) return getDefaultAllocation(level || 1);
+  const multiplier = total <= 1.001 ? 100 : 100 / total;
+  const normalized = {};
+  let assigned = 0;
+  for (let tier = 1; tier <= maxTier; tier++) {
+    const pct = tier === maxTier ? Math.max(0, 100 - assigned) : Math.round(raw[String(tier)] * multiplier * 100) / 100;
+    normalized[String(tier)] = pct;
+    assigned += pct;
+  }
+  return normalized;
+}
+
+export function getVillageLastCollectedMs(value, now = Date.now()) {
+  const timestampMs = value?.toMillis?.();
+  const parsed = Number.isFinite(timestampMs) ? timestampMs
+    : value instanceof Date ? value.getTime()
+    : typeof value === "number" ? value
+    : typeof value === "string" ? Date.parse(value)
+    : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, now) : now - 3600000;
+}
+
 // ── 計算待採集資源（前端預覽用）───────────────────────────
 export function calcPendingResources(village, opts = {}) {
   const now = Date.now();
-  const lastMs = village?.lastCollectedAt?.toMillis?.() || (now - 3600000);
+  const lastMs = getVillageLastCollectedMs(village?.lastCollectedAt, now);
   const hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
   const buildings = village?.buildings || {};
   const allocations = village?.allocations || {};
@@ -215,7 +251,7 @@ export function calcPendingResources(village, opts = {}) {
       // 分層資源：產能池 = rate × stageMult × hours × 圖鑑加乘，按分配比例拆分
       const stageMult = getStageMultiplier(lv);
       const pool      = rate * stageMult * hours * catDexMult;
-      const alloc     = allocations[id] || getDefaultAllocation(lv);
+      const alloc     = normalizeBuildingAllocation(lv, allocations[id]);
 
       for (let tier = 1; tier <= maxTier; tier++) {
         const pct    = alloc[String(tier)] || 0;

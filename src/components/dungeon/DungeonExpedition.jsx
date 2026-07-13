@@ -32,7 +32,8 @@ import {
   setActiveExpeditionProgress,
   clearActiveExpeditionProgress,
 } from "../../lib/expeditionDb";
-import { trySetDungeonFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
+import { trySetDungeonFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
+import { getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
 import {
   completeExcavation,
   abandonExcavation,
@@ -43,6 +44,7 @@ import {
   addChests,
   addCoins,
   addMaterials,
+  grantKingVaultReward,
 } from "../../lib/db";
 import {
   buildExpeditionParty,
@@ -52,10 +54,6 @@ import {
   mergeExpeditionLoot,
   mergeExpeditionStats,
 } from "../../lib/expeditionRewards";
-import { rollRuneDrop } from "../../lib/runeData";
-import { addRune } from "../../lib/runeDb";
-import { makeCoinChest, floorToMonsterTier } from "../../lib/lootTable";
-import { MATERIALS } from "../../lib/monsterMaterials";
 import {
   sfxTap, sfxDoorOpen, sfxPathSelect, sfxBuff, sfxDebuff,
   sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter, sfxError,
@@ -279,10 +277,18 @@ export default function DungeonExpedition({
   const myId = profile?.id;
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  const [cardReady, setCardReady] = useState(() => isGuest || !myId);
   useEffect(() => {
-    if (!myId) return;
-    return subscribeCardCollection(myId, setCardColl);
-  }, [myId]);
+    if (!myId || isGuest) {
+      setCardReady(true);
+      return undefined;
+    }
+    setCardReady(false);
+    return subscribeCardCollection(myId, data => {
+      setCardColl(data);
+      setCardReady(true);
+    });
+  }, [myId, isGuest]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
   // 難度封頂第二層防禦：訪客/兒童一律夾在 1~tierCap（不完全信任上游 GuestDungeonEntry 傳來的值）
   // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3
@@ -392,7 +398,7 @@ export default function DungeonExpedition({
 
   // 初始化玩家狀態 + 第一層
   useEffect(() => {
-    if (phase === "intro") {
+    if (phase === "intro" && cardReady) {
       const base = buildExpeditionMemberData(profile, cardBonus);
       // 續玩：HP 用離開前保存的值（夾在 1~maxHP，避免回滿刷血）；全新開始才用滿血 base.hp。
       const isResume = resumeFromFloor > 0 || resumeHp > 0;
@@ -408,7 +414,7 @@ export default function DungeonExpedition({
       if (resumeFromFloor > 0) setFloorsCleared(resumeFromFloor);
       startFloor(resumeFromFloor);
     }
-  }, [phase, startFloor]); // eslint-disable-line
+  }, [phase, startFloor, cardReady]); // eslint-disable-line
 
   const showResult = useCallback((won, cleared) => {
     setWonLast(won);
@@ -419,18 +425,6 @@ export default function DungeonExpedition({
       won,
       family,
     }));
-    // 寶箱王擊殺加碼：大量金幣+材料+寶箱+符文（隱藏地下城才會走到這裡，family 一定是 treasure）
-    if (won && family === "treasure" && myId) {
-      addCoins(myId, 300 + difficultyTier * 100).catch(() => {});
-      const legendaryPool = MATERIALS.filter(m => m.rarity === "legendary");
-      const kingMaterials = Array.from({ length: 3 }, () =>
-        legendaryPool[Math.floor(Math.random() * legendaryPool.length)]
-      ).filter(Boolean);
-      if (kingMaterials.length > 0) addMaterials(myId, kingMaterials).catch(() => {});
-      addChests(myId, [makeCoinChest(floorToMonsterTier(difficultyTier), "寶箱王掉落")]).catch(() => {});
-      const droppedRune = rollRuneDrop(difficultyTier);
-      if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
-    }
     setPhase("result");
   }, [difficultyTier, family, myId]); // eslint-disable-line
 
@@ -703,6 +697,7 @@ export default function DungeonExpedition({
     if (loot.coins > 0) addCoins(myId, loot.coins).catch(() => {});
     if (loot.arrowDew > 0) addArrowdew(myId, loot.arrowDew).catch(() => {});
     if (loot.material?.id) addMaterials(myId, [loot.material]).catch(() => {});
+    if (loot.kingVault) grantKingVaultReward(myId, loot.kingVault).catch(() => {});
     // 地下城不掉怪物卡片（掉卡只保留在單人打怪 / 組隊）
     const treasureChestLoot = createExpeditionKillLoot(
       fixedBoss || monsterPool.boss || {
@@ -735,7 +730,7 @@ export default function DungeonExpedition({
   }, [myId, fixedBoss, monsterPool.boss, family, difficultyTier]);
 
   // 領取獎勵 + 儲存紀錄
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
     const rewards = resultRewards;
     if (!rewards) return;
     // 發放獎勵
@@ -755,12 +750,14 @@ export default function DungeonExpedition({
 
     // ── 遠征首殺判定 ────────────────────────────────────────
     if (wonLast) {
-      const expeditionKey = `expedition_${family}_${difficultyTier}`;
+      const expeditionKey = `${family}_${["normal", "advanced", "hard", "hell"][difficultyTier - 1]}`;
       const diff = getExcavationDifficulty(difficultyTier);
       const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
       const f = FAMILY_MAP[family] || {e:"🏰",l:"遠征"};
-      trySetDungeonFirstClear(expeditionKey, myId, profile?.name || "射手", []).then(fcResult => {
+      await trySetDungeonFirstClear(expeditionKey, myId, profile?.name || "射手", []).then(async fcResult => {
         if (fcResult.isFirst) {
+          const trophy = getExpeditionFirstClearTrophy(family, difficultyTier);
+          if (trophy) await addCollectibles(myId, [trophy]);
           addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e, [], profile?.nickname || profile?.name || "射手").catch(() => {});
         }
       }).catch(() => {});

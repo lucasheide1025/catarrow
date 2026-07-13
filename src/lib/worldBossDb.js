@@ -32,6 +32,20 @@ function randTierNameInRange([min, max]) {
 const WB  = "worldBossEvents";
 const WBH = "worldBossHistory";
 
+function taipeiDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone:"Asia/Taipei", year:"numeric", month:"2-digit", day:"2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+// Older attack records used UTC. Keep that key readable so a player is never
+// offered a second entry while the migration naturally replaces their record.
+export function getWorldBossAttackDateKeys(date = new Date()) {
+  return [...new Set([taipeiDateKey(date), date.toISOString().slice(0, 10)])];
+}
+
 // ── 即時訂閱當前活躍大 Boss ───────────────────────────────────
 export function subscribeActiveWorldBoss(cb) {
   const q = query(collection(db, WB), where("status", "==", "active"), limit(1));
@@ -178,9 +192,9 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     const alreadyDefeated = ev.status === "defeated";
 
     // 每日限一次
-    const today   = new Date().toISOString().slice(0, 10);
+    const [today, ...legacyTodayKeys] = getWorldBossAttackDateKeys();
     const myPrev  = ev.participants?.[memberId];
-    if (myPrev?.lastAttackedDate === today) return { ok: false, reason: "今天已經攻擊過了" };
+    if ([today, ...legacyTodayKeys].includes(myPrev?.lastAttackedDate)) return { ok: false, reason: "今天已經攻擊過了" };
 
     // 計算玩家本次總傷害
     const totalDmg = roundResults.reduce((s, r) => s + (r.dmg || 0), 0) * potionDmgMult;
@@ -249,6 +263,15 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     }
 
     await updateDoc(eventRef, upd);
+    if (defeated) {
+      await addDoc(collection(db, WBH), {
+        eventId, bossKey: ev.bossKey, bossName: ev.bossData?.name,
+        result: "defeated", ts: serverTimestamp(), defeatedAt: serverTimestamp(),
+        lastHitBy: upd.lastHitBy, announcement: upd.announcement,
+        participants: { ...(ev.participants || {}), [memberId]: upd[`participants.${memberId}`] },
+        totalParticipants: ev.totalParticipants,
+      }).catch(() => {});
+    }
 
     // ── 每日出戰獎勵（非訪客）──────────────────────────────
     let dailyReward = null;
@@ -345,7 +368,32 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const snap = await getDoc(doc(db, WB, eventId));
     if (!snap.exists()) return { ok: false, reason: "活動不存在" };
     const ev = snap.data();
-    if (!ev.rewardDistributed) return { ok: false, reason: "尚未結算" };
+    if (!ev.rewardDistributed) {
+      if (ev.status !== "defeated") return { ok: false, reason: "尚未結算" };
+      const top3Ids = Object.entries(ev.participants || {})
+        .filter(([, participant]) => !participant.isGuest)
+        .sort(([, a], [, b]) => (b.totalDmg || 0) - (a.totalDmg || 0))
+        .slice(0, 3)
+        .map(([id]) => id);
+      await updateDoc(doc(db, WB, eventId), { rewardDistributed: true, top3Ids });
+      ev.rewardDistributed = true;
+      ev.top3Ids = top3Ids;
+      // 首位玩家領取時才建立結算快照，讓新王出現後仍能保留一次待領獎勵。
+      // 歷史只保留最新一場，因此下一場結算後會自然覆蓋這次待領狀態。
+      await addDoc(collection(db, WBH), {
+        eventId,
+        bossKey: ev.bossKey,
+        bossName: ev.bossData?.name || WORLD_BOSSES[ev.bossKey]?.name || "世界王",
+        result: "defeated",
+        ts: serverTimestamp(),
+        defeatedAt: ev.defeatedAt || serverTimestamp(),
+        lastHitBy: ev.lastHitBy || null,
+        announcement: ev.announcement || null,
+        participants: ev.participants || {},
+        totalParticipants: ev.totalParticipants || Object.keys(ev.participants || {}).length,
+        top3Ids,
+      }).catch(() => {});
+    }
     const mine = ev.participants?.[memberId];
     if (!mine || mine.isGuest) return { ok: false, reason: "非參戰者" };
     if (mine.claimed) return { ok: false, reason: "already_claimed" };
@@ -508,10 +556,40 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     summary.trophy = trophy;
 
     await updateDoc(doc(db, WB, eventId), { [`participants.${memberId}.claimed`]: true });
+    const historySnap = await getDocs(query(collection(db, WBH), where("eventId", "==", eventId), limit(5))).catch(() => null);
+    if (historySnap) for (const historyDoc of historySnap.docs) {
+      await updateDoc(historyDoc.ref, { [`participants.${memberId}.claimed`]: true }).catch(() => {});
+    }
     return { ok: true, reward: summary, trophy };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
+}
+
+// 只產生領獎前預覽，不寫入玩家資料；隨機王卡會在確認領取時才判定。
+export async function previewWorldBossKillReward(memberId, eventId) {
+  try {
+    const snap = await getDoc(doc(db, WB, eventId));
+    if (!snap.exists()) return { ok: false, reason: "活動不存在" };
+    const ev = snap.data();
+    const mine = ev.participants?.[memberId];
+    if (!mine || mine.isGuest || mine.claimed) return { ok: false, reason: "無可領取獎勵" };
+    const boss = WORLD_BOSSES[ev.bossKey] || {};
+    const cfg = DROP_TABLE_BY_CATEGORY[getDropCategory(boss)] || DROP_TABLE_BY_CATEGORY.family_big;
+    const totalDamage = Object.values(ev.participants || {}).reduce((s, p) => s + (p.totalDmg || 0), 0) || 1;
+    const share = pool => Math.max(1, Math.round((pool || 0) * ((mine.totalDmg || 0) / totalDamage)));
+    const base = ev.reward?.base || {};
+    const rank = (ev.top3Ids || []).indexOf(memberId) + 1;
+    return { ok: true, preview: true, reward: {
+      coins: (base.coins || 0) + share(cfg.coinsPool),
+      arrowDew: share(cfg.arrowDewPool), archerXP: share(cfg.archerXPPool),
+      catXP: share(cfg.catXPPool), bond: share(cfg.bondPool),
+      coinChests: cfg.coinChests?.count || 0, materialChests: getDropCategory(boss).startsWith("family_") ? 1 : 0,
+      catBoxes: cfg.catBoxChance ? 1 : 0, mimiBoxes: cfg.mimiBoxes || 0,
+      cardPacks: cfg.cardPacksRange ? `${cfg.cardPacksRange[0]}~${cfg.cardPacksRange[1]}` : 0,
+      scrolls: cfg.scrolls || 0, wbCardChance: cfg.wbCardChance || 0, rank: rank > 0 ? rank : null,
+    }};
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 // ── 時間到未擊殺 → 安慰獎 ────────────────────────────────────

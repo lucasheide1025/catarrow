@@ -25,7 +25,8 @@ import {
   cleanupTeamExpeditionRoom,
   claimTeamExpeditionResult,
 } from "../../lib/expeditionTeamDb";
-import { trySetDungeonFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
+import { trySetDungeonFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
+import { getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
 import {
   cleanupExpeditionRoom,
   broadcastExpeditionFailure,
@@ -36,11 +37,6 @@ import {
   collectBattleStats,
   createExpeditionKillLoot,
 } from "../../lib/expeditionRewards";
-import { addCoins, addMaterials, addChests } from "../../lib/db";
-import { makeCoinChest, floorToMonsterTier } from "../../lib/lootTable";
-import { MATERIALS } from "../../lib/monsterMaterials";
-import { rollRuneDrop } from "../../lib/runeData";
-import { addRune } from "../../lib/runeDb";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
 import DungeonTreasureRoom from "./DungeonTreasureRoom";
@@ -163,6 +159,13 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile }) {
       // 全滅 = 失敗
       if (data.status === "completed" && data.result === "lose") {
         finishBattle({ won: false }, 1500);
+      }
+      // The final expedition floor resolves through the shared battle room as
+      // completed + win.  Treat it as terminal here; otherwise the battle
+      // room remains mounted after the victory animation with no route to the
+      // expedition reward screen.
+      if (data.status === "completed" && data.result === "win") {
+        finishBattle({ won: true }, 0);
       }
       // map_explore = 通關後房主點擊領取回地圖
       if (data.status === "map_explore") {
@@ -325,6 +328,7 @@ export default function TeamExpeditionBattle({
         ...(treasureLoot.extraItem ? [{ ...treasureLoot.extraItem, kind: "collectible" }] : []),
         ...(treasureLoot.card ? [{ ...treasureLoot.card, kind: "card" }] : []),
       ] : [],
+      kingVault: treasureLoot?.kingVault || null,
     };
     const expeditionResult = {
       won,
@@ -390,8 +394,13 @@ export default function TeamExpeditionBattle({
         def: m.def ?? 10,
         catId: m.catId || "",
         catName: m.catName || profile?.catName || "",
+        catType: m.catType || "",
+        catXP: m.catXP ?? 0,
+        catBond: m.catBond ?? 0,
         archerStyle: m.archerStyle || profile?.archerStyle || "baobao",
         catAtk: m.catAtk || 0,
+        avatarId: m.avatarId || null,
+        battleCosmetics: m.battleCosmetics || null,
         alive: m.alive !== false,
         role: m.role || "front",
         displayGroup: m.displayGroup || m.role || "front",
@@ -555,6 +564,10 @@ export default function TeamExpeditionBattle({
       mapDungeonId: `${dungeonFamily}_expedition`,
       roomConfirms: {},
       roomChoices: {},
+      // Event results are display-only state.  Carrying an old result into
+      // the next map room makes events such as cursed_fog render as already
+      // resolved and prevents their confirmation flow from running.
+      roomResolution: null,
     };
     if (room.type === "shop") {
       const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
@@ -638,6 +651,7 @@ export default function TeamExpeditionBattle({
       roomConfirms: {},
       roomChoices: {},
       currentEvent: null,
+      roomResolution: null,
       expeditionMapState: stripMapStateGrid(nextMapState),
     });
   }, [isHost, mapState, floorIndex, teamRoomId]);
@@ -660,27 +674,16 @@ export default function TeamExpeditionBattle({
         cleanupTeamExpeditionRoom(teamRoomId).catch(() => {});
       }
 
-      // ── 寶箱王擊殺加碼：每人各自領取（見寶箱族擴充任務，避免跨人寫入權限問題）──
-      if (!isGuestMode && wonLast && dungeonFamily === "treasure" && myId) {
-        addCoins(myId, 300 + dungeonDifficulty * 100).catch(() => {});
-        const legendaryPool = MATERIALS.filter(m => m.rarity === "legendary");
-        const kingMaterials = Array.from({ length: 3 }, () =>
-          legendaryPool[Math.floor(Math.random() * legendaryPool.length)]
-        ).filter(Boolean);
-        if (kingMaterials.length > 0) addMaterials(myId, kingMaterials).catch(() => {});
-        addChests(myId, [makeCoinChest(floorToMonsterTier(dungeonDifficulty), "寶箱王掉落")]).catch(() => {});
-        const droppedRune = rollRuneDrop(dungeonDifficulty);
-        if (droppedRune) addRune(myId, droppedRune.id, 1).catch(() => {});
-      }
-
       // ── 遠征首殺判定 ────────────────────────────────────────
       if (!isGuestMode && wonLast) {
-        const expeditionKey = `expedition_${dungeonFamily}_${dungeonDifficulty}`;
+          const expeditionKey = `${dungeonFamily}_${["normal", "advanced", "hard", "hell"][dungeonDifficulty - 1]}`;
         const teamNames = Object.values(teamRoom?.members || {})
           .filter(Boolean).map(m => m.name).filter(Boolean);
         try {
           const fcResult = await trySetDungeonFirstClear(expeditionKey, myId, myName, teamNames);
           if (fcResult.isFirst) {
+            const trophy = getExpeditionFirstClearTrophy(dungeonFamily, dungeonDifficulty);
+            if (trophy) await addCollectibles(myId, [trophy]);
             const diff = getExcavationDifficulty(dungeonDifficulty);
             const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
             const f = FAMILY_MAP[dungeonFamily] || {e:"🏰",l:"遠征"};

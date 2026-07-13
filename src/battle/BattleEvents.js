@@ -99,13 +99,13 @@ export function createThrowPotionEvent(arrowIndex, potion, dmg, effectText, extr
 /**
  * 建立怪物反擊事件
  */
-export function createCounterEvent(dmg, isCrit = false, headStunned = false, reducedBy = 0, blocked = false) {
+export function createCounterEvent(dmg, isCrit = false, headStunned = false, reducedBy = 0, blocked = false, hitPart = null) {
   let type = EventType.COUNTER;
   if (blocked)          type = EventType.COUNTER_BLOCKED;
   else if (reducedBy > 0) type = EventType.COUNTER_REDUCED;
   else if (headStunned) type = EventType.COUNTER_HEAD_STUNNED;
   else if (isCrit)      type = EventType.COUNTER_CRIT;
-  return { type, payload: { dmg, isCrit, headStunned, reducedBy, blocked } };
+  return { type, payload: { dmg, isCrit, headStunned, reducedBy, blocked, hitPart } };
 }
 
 /**

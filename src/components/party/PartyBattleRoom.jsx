@@ -6,8 +6,8 @@ import { useFirestoreRound } from "../../battle/useFirestoreRound";
 import { useMiniRoundReveal } from "../../battle/useMiniRoundReveal";
 import CatMsg from "../cat/CatMsg";
 import {
-  subscribePartyRoom, startPartyBattle, updateBattleMemberStats,
-  submitArrows, processPartyRound, leavePartyRoom, partyHPRange,
+  subscribePartyRoom, startPartyBattle, updateBattleMemberStats, updateBattleMemberLevel, updateBattleMemberCosmetics,
+  submitArrows, processPartyRound, leavePartyRoom,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion,
@@ -17,6 +17,10 @@ import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFr
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
+import { getCatStatMult } from "../../lib/catData";
+import { WB_CARDS } from "../../lib/worldBossCards";
+import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "../../lib/constants";
+import { EQUIP_ITEMS } from "../../lib/equipData";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
 import { playBattleSound } from "../../lib/battleSound";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
@@ -32,19 +36,12 @@ import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
-import BattleBottomBar from "../member/BattleBottomBar";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
-const MODE_OPTIONS = [
-  { id:"novice",  label:"新手", icon:"🌱" },
-  { id:"student", label:"學生", icon:"📚" },
-  { id:"veteran", label:"老手", icon:"🏹" },
-  { id:"match",   label:"賽事", icon:"🏆" },
-];
 
 // 依 profile 計算實際數值（帶入裝備 / 成就 / 報到次數 / 怪物卡片 / 射手等級）
 function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
@@ -64,6 +61,28 @@ function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, de
     def = Math.round(def * catMult);
   }
   return { hp, atk, def };
+}
+
+function getBattleCosmetics(profile, collection = {}) {
+  const equippedWorldBoss = (collection.equipped || [])
+    .filter(entry => entry && typeof entry !== "string" && entry.source === "wb")
+    .map(entry => ({ key: entry.key, card: collection.wbCards?.[entry.key] || {}, meta: WB_CARDS[entry.key] }))
+    .filter(entry => entry.meta)
+    .sort((a, b) => ((b.card.stars || b.card.level || 1) - (a.card.stars || a.card.level || 1)));
+  const topWorldBoss = equippedWorldBoss[0];
+  const legendaryItems = Object.entries(profile?.rpgEquip || {})
+    .filter(([, item]) => ["legend", "mythic"].includes(item?.grade))
+    .map(([slotId, item]) => {
+      const slot = EQUIP_SLOT_DEFS.find(entry => entry.id === slotId);
+      const base = (EQUIP_ITEMS[slotId] || []).find(entry => entry.id === item.itemId);
+      return { name: base?.name || item.itemId || slot?.name || "傳說裝備", grade: item.grade, icon: base?.icon || slot?.icon || "✨" };
+    });
+  return {
+    wbFrame: topWorldBoss ? { color: topWorldBoss.meta.frameColor || "#f5b942", title: topWorldBoss.meta.title || topWorldBoss.meta.name || "世界王卡", stars: topWorldBoss.card.stars || topWorldBoss.card.level || 1 } : null,
+    legendaryCount: legendaryItems.length,
+    highestLegendary: legendaryItems.some(item => item.grade === "mythic") ? "mythic" : (legendaryItems.length ? "legend" : null),
+    legendaryItems,
+  };
 }
 
 // 裝備欄位計數
@@ -150,7 +169,7 @@ function getPartyMvpId(log) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride || authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catATK } = useCatCompanion(guestOverride || null);
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catType, bondLv, catATK } = useCatCompanion(guestOverride || null);
   const myId = guestOverride?.id || authProfile?.id;
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
   const battleBgRef = useRef(null);
@@ -182,13 +201,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     onBeforeSubmit: () => { sfxCast(); vibrate([0, 20, 40]); },
     onSubmitError: (reason) => { alert("送出失敗，請重試（" + reason + "）"); },
     onSubmitSuccess: (submittedArrows) => {
+      setPostSubmitted(true);
       if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
         addRoundArrows(myId, submittedArrows.length).catch(() => {});
       }
     },
   });
 
-  const [setupMode,       setSetupMode]       = useState("student");
+  const setupMode = "student";
   const [starting,        setStarting]        = useState(false);
   const [copied,          setCopied]          = useState(false);
   const [potionInv,       setPotionInv]       = useState({});
@@ -220,7 +240,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [potionSubTab, setPotionSubTab] = useState("carry");
   const [scoringModeChosen, setScoringModeChosen] = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
-
+  // 提交後鎖定所有輸入按鈕，到下一回合開始才解鎖（防止動畫進行中玩家誤操作）
+  const [postSubmitted, setPostSubmitted] = useState(false);
 
   const {
     liveEntry, liveMiniIdx: liveMiniRoundIdx,
@@ -231,9 +252,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   } = useMiniRoundReveal();
 
   const statsWrittenRef   = useRef(false); // 戰鬥中寫入
-  const statsWaitingRef   = useRef(false); // 等待室寫入
+  const statsWaitingVersionRef = useRef(-1); // 等待室最後寫入的 cardCollectionVersion
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
+  const [cardCollectionVersion, setCardCollectionVersion] = useState(0);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const lossPracticeRecordedRef = useRef(false);
@@ -246,7 +268,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 背景圖：room 更新時設定一次
   useEffect(() => {
-    if (room?.monster?.family && !battleBgRef.current) {
+    if (room?.battleBackground) {
+      battleBgRef.current = room.battleBackground;
+    } else if (room?.monster?.family && !battleBgRef.current) {
       battleBgRef.current = pickBg(room.monster.family);
     }
   }, [room?.monster?.family]);
@@ -254,14 +278,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 訂閱怪物卡片裝備（存 ref，不觸發 re-render，確保寫入時取到最新值）
   useEffect(() => {
     if (!myId || isGuestMode) return;
-    return subscribeCardCollection(myId, data => { cardCollRef.current = data; });
+    // cardCollectionVersion written in waiting room stats effect deps; ensures card data loaded before stats write.
+    return subscribeCardCollection(myId, data => { cardCollRef.current = data; setCardCollectionVersion(v => v + 1); });
   }, [myId, isGuestMode]); // eslint-disable-line
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
     if (room?.status !== "waiting") return;
     statsWrittenRef.current  = false;
-    statsWaitingRef.current  = false;
+    statsWaitingVersionRef.current = -1;
     rewardStoredRef.current  = false;
     partyRecordedRef.current = false;
     dexRecordedRef.current   = false;
@@ -285,6 +310,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setScoringReady(false);
     shootingProfileRef.current = null;
   }, [room?.status]); // eslint-disable-line
+
+  // Rooms created before the level field existed must be repaired without
+  // resetting their battle stats or current HP.
+  useEffect(() => {
+    const me = room?.members?.[myId];
+    const level = archerLevelFromXP(profile?.archerXP || 0);
+    if (!room || !myId || !me || Number(me.level) === level) return;
+    updateBattleMemberLevel(roomId, myId, level).catch(() => {});
+  }, [room?.id, room?.members?.[myId]?.level, myId, profile?.archerXP, roomId]);
+
+  useEffect(() => {
+    const me = room?.members?.[myId];
+    if (!room || !myId || !me) return;
+    const next = getBattleCosmetics(profile, cardCollRef.current);
+    if (JSON.stringify(me.battleCosmetics || null) === JSON.stringify(next)) return;
+    updateBattleMemberCosmetics(roomId, myId, next).catch(() => {});
+  }, [room?.id, room?.members?.[myId]?.battleCosmetics, myId, profile?.rpgEquip, roomId, cardCollectionVersion]);
 
   useEffect(() => {
     if (!room || !myId || isGuestMode || lossPracticeRecordedRef.current) return;
@@ -320,12 +362,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
   useEffect(() => {
     setScoringReady(false);
+    setPostSubmitted(false);
     setFsSubmitted(false);
     // 從 Firestore 讀取自己目前的 role（前衛倒下時伺服器會寫入 "rear"）
     const serverRole = room?.members?.[myId]?.role;
-    if (serverRole) { setMyRole(serverRole); if (serverRole === "front") setMyRearChoice(null); }
+    if (serverRole) { setMyRole(serverRole); setMyRearChoice(null); }
     else { setMyRole("front"); setMyRearChoice(null); }
   }, [room?.round]); // eslint-disable-line
+
+  // 不只依賴 round + 1：房主可能先收到 ready 清除，再收到新回合資料。
+  // ready 回到 false 的瞬間就解除計分門禁，避免只有房主卡在上一輪等待畫面。
+  useEffect(() => {
+    if (room?.status !== "active" || room?.members?.[myId]?.ready !== false) return;
+    setScoringReady(false);
+    setFsSubmitted(false);
+    setArrows([]);
+  }, [room?.status, room?.members?.[myId]?.ready, myId]);
+
+  // 擊倒轉為後衛是在結算寫回 Firestore 後立即發生，不能等下一輪才更新本機角色。
+  useEffect(() => {
+    const serverRole = room?.members?.[myId]?.role;
+    if (!serverRole) return;
+    setMyRole(serverRole);
+    if (serverRole === "front") setMyRearChoice(null);
+  }, [room?.members?.[myId]?.role, myId]);
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
   useEffect(() => {
@@ -336,7 +396,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
-    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
+    const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
   }, [isHost, room?.status]); // eslint-disable-line
@@ -363,17 +423,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return calcEquippedBonus(resolveEquippedCards(cardCollRef.current));
   }
 
+  // 計算貓貓羈絆加乘倍率（未裝備貓貓或羈絆 0 級回傳 1.0）
+  function getMyCatMult() {
+    if (!hasCat) return 1.0;
+    const bondLevel = bondLv || 0;
+    if (!bondLevel) return 1.0;
+    return getCatStatMult(catType, bondLevel);
+  }
+
   // 等待室就先寫入真實數值（讓所有人看到彼此的數值）
+  // 需要等 cardCollectionVersion > 0 確保卡片資料已載入，才能寫入正確的卡片加成。
+  // statsWaitingVersionRef 記錄已寫入的版本，避免同一版本重複寫入。
   useEffect(() => {
-    if (!room || !myId || room.status !== "waiting" || statsWaitingRef.current) return;
+    if (!room || !myId || room.status !== "waiting") return;
+    if (!isGuestMode && cardCollectionVersion === 0) return; // 卡片資料尚未載入
+    if (statsWaitingVersionRef.current === cardCollectionVersion) return;
     const me = room.members?.[myId];
     if (!me) return;
-    statsWaitingRef.current = true;
+    statsWaitingVersionRef.current = cardCollectionVersion;
     const cardBonus = getMyCardBonus();
-    const stats = getArcherStats(profile, [], cardBonus, 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 });
-  }, [room?.status, myId]); // eslint-disable-line
+    const catMult = getMyCatMult();
+    const stats = getArcherStats(profile, [], cardBonus, catMult);
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
+  }, [room?.status, myId, cardCollectionVersion, isGuestMode]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
   useEffect(() => {
@@ -384,9 +457,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     // 若已有 HP（中途重連），不覆蓋——避免戰鬥中途重連時把 HP 重置回滿血
     if (me.hp > 0 && me.maxHP > 0 && (room.round || 1) > 1) return;
     const cardBonus = getMyCardBonus();
-    const stats = getArcherStats(profile, selectedPotions, cardBonus, 1.0);
-    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 });
+    const catMult = getMyCatMult();
+    const stats = getArcherStats(profile, selectedPotions, cardBonus, catMult);
+    updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -412,6 +486,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 回合更新：統一透過 useMiniRoundReveal 管理 mini-round 動畫
   useEffect(() => {
     const len = room?.log?.length || 0;
+    // 新版 BattleScreen 會依 room.log 播放正式結算演出；舊 reveal 僅同步游標，不能重播。
+    // The current BattleScreen owns every live round animation.  Do not start
+    // the retired mini-round renderer for a kill-confirmation transition,
+    // otherwise the UI visibly jumps back to the legacy battle layout.
+    if (["active", "pending_confirm"].includes(room?.status)) {
+      logInitializedRef.current = true;
+      prevLogLenRef.current = len;
+      return;
+    }
     // 首次載入（含 F5）：直接把 ref 同步到當前長度，跳過歷史 log 不重播
     if (!logInitializedRef.current) { logInitializedRef.current = true; prevLogLenRef.current = len; setLogInited(true); return; }
     if (len <= prevLogLenRef.current) return;
@@ -617,10 +700,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const me         = members[myId] || {};
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
+  // 角色以資料庫剛寫回的值為準，避免轉為後衛的第一輪仍送出前衛資料。
+  const effectiveMyRole = me.role || myRole;
   const isGuestPlayer = isGuestMode || ["guest", "kid"].includes(me.accountType);
+  const allAliveReady = memberList.filter(m => m.alive !== false).length > 0
+    && memberList.filter(m => m.alive !== false).every(m => m.ready);
+  // 開戰後以房主寫入房間的靶紙格式為唯一來源，避免隊員各自使用 localStorage 設定。
+  const activeTargetFmt = room.targetFormat || targetFmt;
 
   function addArrow(label, landing) {
-    if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady) return;
+    if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady || postSubmitted) return;
     shootingProfileRef.current ||= loadBattleShootingProfile(myId);
     const rawScore = SCORE_MAP[label] ?? 0;
     const score = (targetFmt === "field_16" && rawScore > 0)
@@ -639,31 +728,31 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }]);
   }
   function removeLastArrow() {
-    if (myReady) return;
+    if (myReady || postSubmitted) return;
     setArrows(prev => prev.slice(0, -1));
   }
   function handleTargetSubmit() {
-    if (targetPending) return; // 防止重複觸發疊加多個 timeout
+    if (postSubmitted || targetPending) return; // 防止重複觸發疊加多個 timeout
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
   async function handlePartyScoringSubmit(scores) {
-    if (myReady || submitting) return;
-    if (myRole === "rear" && !myRearChoice) return;
+    if (postSubmitted || myReady || submitting) return;
+    if (effectiveMyRole === "rear" && !myRearChoice) return;
     const labelMap = {10:"X",9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2",1:"1",0:"M"};
     const newArrows = scores.map(s => ({
       score: s,
       label: labelMap[s] || String(s),
     }));
     setArrows(newArrows);
-    const ok = await fsHandleSubmit(newArrows, myRole, myRearChoice);
+    const ok = await fsHandleSubmit(newArrows, effectiveMyRole, myRearChoice);
     if (ok) setArrows([]);
   }
 
   async function handleSubmit() {
-    if (arrows.length < (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady || submitting) return;
-    if (myRole === "rear" && !myRearChoice) return;
-    const ok = await fsHandleSubmit(arrows, myRole, myRearChoice);
+    if (arrows.length < (room?.arrowsPerRound || ARROWS_PER_ROUND) || postSubmitted || myReady || submitting) return;
+    if (effectiveMyRole === "rear" && !myRearChoice) return;
+    const ok = await fsHandleSubmit(arrows, effectiveMyRole, myRearChoice);
     if (ok) setArrows([]);
   }
   async function handleStart() {
@@ -678,7 +767,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }
     setStartError("");
     setStarting(true);
-    await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18);
+    await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18, targetFmt, pickBg(setupMonster.family));
     setStarting(false);
   }
   async function handleLeave() {
@@ -797,7 +886,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setCopied(false), 1500);
   }
   function handleRedrawMonsters() {
-    const stats = getArcherStats(profile, [], getMyCardBonus(), 1.0);
+    const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
     setDrawnMonsters(drawMatchedMonsters(power));
     setSetupMonster(null);
@@ -805,20 +894,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   const tierInfo = room.monster ? TIER_LABEL[room.monster.tier] : null;
   const famInfo  = room.monster ? FAMILIES[room.monster.family] : null;
-  const myStats  = getArcherStats(profile, [], getMyCardBonus(), 1.0);
+  const myStats  = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
   const myEquip  = equipSummary(profile);
 
   // ── 等待/大廳畫面 ──────────────────────────────────────────
   if (room.status === "waiting") {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto">
+      <div className="min-h-screen flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto relative overflow-hidden" style={{background:"linear-gradient(180deg,rgba(5,11,25,.72),rgba(7,12,24,.92))",backgroundImage:"linear-gradient(180deg,rgba(5,11,25,.72),rgba(7,12,24,.92)),url(/ui/page-bg.webp)",backgroundSize:"cover",backgroundPosition:"center"}}>
         <div className="flex items-center justify-between">
           <div className="text-white font-black text-lg">⚔️ 組隊打怪</div>
           <button onClick={handleLeave} className="px-3 py-1.5 bg-slate-700 text-slate-300 text-xs font-bold rounded-lg">離開</button>
         </div>
 
         {/* 隊員列表（含數值）*/}
-        <div className="bg-slate-700/40 rounded-2xl p-4 flex flex-col gap-3">
+        <div className="rounded-3xl p-4 flex flex-col gap-3 shadow-2xl backdrop-blur-md" style={{background:"rgba(8,17,36,.78)",border:"1px solid rgba(125,211,252,.22)"}}>
           <div className="flex items-center justify-between">
             <div className="text-xs font-black text-slate-400 uppercase tracking-widest">隊員 {memberList.length}/8</div>
           </div>
@@ -862,17 +951,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {/* 怪物選擇（房主）*/}
         {isHost && (
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-3 gap-2">
-              {MODE_OPTIONS.map(m => (
-                <button key={m.id} onClick={() => setSetupMode(m.id)}
-                  className={`py-2.5 rounded-xl text-sm font-black border transition-all ${
-                    setupMode === m.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-700 text-slate-300 border-slate-600"
-                  }`}>
-                  {m.icon} {m.label}
-                </button>
-              ))}
-            </div>
-
             <div className="flex items-center justify-between">
               <div className="text-xs font-black text-slate-400 uppercase tracking-widest">系統抽出候選怪物（六族各1）</div>
               <button onClick={handleRedrawMonsters}
@@ -888,9 +966,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {drawnMonsters.map(m => {
                   const tier = TIER_LABEL[m.tier];
                   const fam  = FAMILIES[m.family];
-                  const ms   = setupMode === "novice" ? 1.5 : setupMode === "student" ? 2.0 : 4.0;
-                  const atkM = setupMode === "veteran" ? 2 : 1;
-                  const { min, max } = partyHPRange(memberList.length);
                   return (
                     <button key={m.id} onClick={() => setSetupMonster(m)}
                       className={`text-left rounded-xl p-3 border-2 transition-all flex flex-col gap-1 ${
@@ -914,30 +989,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                           {m.variant === "weak" ? "🔵 弱化版" : "🔴 強化版"}
                         </span>
                       )}
-                      <div className="text-xs text-slate-400">
-                        ❤️ {Math.round(m.hp * ms * min)}~{Math.round(m.hp * ms * max)}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        ⚔️ {Math.round(m.atk * atkM)} 🛡️ {Math.round(m.def * atkM)}
-                      </div>
                     </button>
                   );
                 })}
               </div>
             )}
 
-            {setupMonster && (() => {
-              const ms  = setupMode === "novice" ? 1.5 : setupMode === "student" ? 2.0 : 4.0;
-              const { min, max } = partyHPRange(memberList.length);
-              return (
-                <div className="bg-indigo-900/40 border border-indigo-500/50 rounded-xl p-3 flex items-center justify-between text-sm">
-                  <span className="text-indigo-200 font-black">{setupMonster.icon} {setupMonster.name}</span>
-                  <span className="text-slate-400 text-xs">
-                    HP {Math.round(setupMonster.hp * ms * min)}~{Math.round(setupMonster.hp * ms * max)}
-                  </span>
-                </div>
-              );
-            })()}
+            {setupMonster && <div className="bg-indigo-900/40 border border-indigo-500/50 rounded-xl p-3 text-sm">
+              <span className="text-indigo-200 font-black">{setupMonster.icon} {setupMonster.name}</span>
+            </div>}
 
             {/* 剩餘次數 & 防呆訊息 */}
             {partyBattleLeft !== null && (
@@ -1013,7 +1073,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // logInited：確保 F5 後也等初始化完才顯示，防止搶在擊殺動畫前跳出
   // pendingRevealRef：有事件彈窗待確認時（entry 暫存在 ref），不跳結算—動畫在玩家確認後才播
   const hasUnseenLog = !logInited || (room?.log?.length || 0) > prevLogLenRef.current;
-  if (room.status === "pending_confirm" && !liveEntry && !hasUnseenLog && !pendingRevealRef.current) {
+  const useModernBattleScreen = ["active", "pending_confirm"].includes(room?.status);
+  if (room.status === "pending_confirm" && !useModernBattleScreen && !liveEntry && !hasUnseenLog && !pendingRevealRef.current) {
     const lastEntry = room.log?.[room.log.length - 1];
     const totalTeamDmg = (room.log || []).reduce((s, e) => s + (e.totalDmg || 0), 0);
     const totalRounds  = room.log?.length || 0;
@@ -1558,7 +1619,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
       <CatMsg msg={catMsg} onDone={clearCatMsg}/>
       <CatRoundOverlay
-        open={!!liveEntry && isCatMini}
+        open={room?.status !== "active" && !!liveEntry && isCatMini}
         cats={catOverlayCats}
         totalDmg={curMini?.totalDmg}
       />
@@ -1622,6 +1683,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       )}
 
       {/* 上半：左側 sidebar log + 右側怪物 */}
+
+      {/* 正式出戰後一律使用 BattleScreen（包含 VS 進場）；舊版區塊只保留給非戰鬥狀態。 */}
+      {!useModernBattleScreen ? (
+        <>
+{/* 上半：左側 sidebar log + 右側怪物 */}
       <div style={{ flex:"1 1 0", minHeight:0, display:"flex", gap:6, padding:"8px 8px 0" }}>
 
         {/* 左側：戰鬥紀錄 sidebar（和單人打怪相同的文字行格式） */}
@@ -1892,12 +1958,14 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             <BattleScreen
               scoringMode
               player={{
-                name: profile?.name || me?.name || "Player",
+                name: profile?.nickname || profile?.name || me?.name || "Player",
                 lv: me?.level || 1,
                 atk: me?.atk || 10,
                 def: me?.def || 10,
                 hp: me?.hp || 100,
                 maxHp: me?.maxHP || 100,
+                cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",
+                battleCosmetics: me?.battleCosmetics || null,
               }}
               monster={{
                 id: room.monster?.id,
@@ -1910,13 +1978,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               }}
               battleMode={targetMode ? "zombie" : "score"}
               scoreInput={targetMode ? "target" : "keypad"}
+              targetFormat={activeTargetFmt}
               difficulty={{hp:1, atk:1, def:1}}
               arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
-              bgImage={battleBgRef.current || "/ui/dungeon-bg.webp"}
+              bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
               onSubmit={handlePartyScoringSubmit}
+              partyMode
+              partyRole={effectiveMyRole}
+              partyRearChoice={myRearChoice}
+              onPartyRearChoice={setMyRearChoice}
               onPotionUsed={(pid) => {
                 const p = [...CARRY_POTIONS, ...THROW_POTIONS].find(x=>x.id===pid);
-                if (!p || !myId || isGuestMode) return;
+                if (!p || !myId || isGuestMode || postSubmitted) return;
                 if (p.kind === "carry") {
                   applyPartyCarryPotion(roomId, myId, p).catch(()=>{});
                 } else {
@@ -1927,7 +2000,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               }}
               potions={[...CARRY_POTIONS, ...THROW_POTIONS].filter(Boolean)}
             />
-            {myRole === "rear" && !myRearChoice && (
+            {effectiveMyRole === "rear" && !myRearChoice && (
               <div style={{display:"flex",gap:6,marginTop:6}}>
                 <button onClick={()=>setMyRearChoice("heal")}
                   style={{flex:1,padding:"5px 0",borderRadius:8,fontWeight:900,fontSize:11,
@@ -1982,7 +2055,127 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             💀 你已陣亡，觀戰中…
           </div>
         )}
-      </div>
+      </div>        </>) : (
+        <div style={{
+          position:"fixed", top:0, bottom:0, left:"50%",
+          transform:"translateX(-50%)",
+          width:"100%", maxWidth:540, zIndex:9999,
+          display:"flex", flexDirection:"column",
+          background:"#0a1018",
+        }}>
+          <BattleScreen
+            player={{
+              name: profile?.nickname || profile?.name || me?.name || "Player",
+              lv: me?.level || 1,
+              atk: me?.atk || 10,
+              def: me?.def || 10,
+              hp: me?.hp || 100,
+              maxHp: me?.maxHP || 100,
+              cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",
+              battleCosmetics: me?.battleCosmetics || null,
+              catId: me?.catId || profile?.equippedCat?.catId || "diandian",
+              avatarId: me?.avatarId || profile?.avatarId || null,
+            }}
+            monster={{
+              id: room.monster?.id,
+              name: room.monster?.name,
+              family: room.monster?.family,
+              hp: displayHP,
+              atk: room.monster?.atk,
+              def: room.monster?.def,
+              tier: room.monster?.tier,
+              variant: room.monster?.variant,
+              icon: room.monster?.icon,
+            }}
+            battleMode="score"
+            scoreInput={targetMode ? "target" : "keypad"}
+            targetFormat={activeTargetFmt}
+            difficulty={{hp:1, atk:1, def:1}}
+            arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
+            bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
+            autoStart
+            fullScreen
+            partyMode
+            partySubmitted={myReady || postSubmitted}
+            partyRound={room?.round || 1}
+            partyRoundEvent={room?.roundEvent || null}
+            partyEventToken={`${roomId}:${room?.round || 1}:${room?.roundEvent?.id || "none"}`}
+            onLeaveBattle={handleLeave}
+            partyRole={effectiveMyRole}
+            partyRearChoice={myRearChoice}
+            onPartyRearChoice={setMyRearChoice}
+            partyMembers={memberList.map(m => ({
+              id: m.id,
+              name: m.name || "隊友",
+              catId: m.catId || m.archerStyle || "diandian",
+              role: m.role || "front",
+              alive: m.alive !== false,
+              ready: !!m.ready,
+              skipped: !!m.skipped,
+              avatarId: m.avatarId || null,
+              level: m.level || 1,
+              hp: m.hp || 0,
+              maxHp: m.maxHP || 0,
+              battleCosmetics: m.battleCosmetics || null,
+              isSelf: m.id === myId,
+            }))}
+            partyIsHost={isHost}
+            partyProcessing={!!room.processing}
+            onForceSkipMember={handleForceSkip}
+            partyAllReady={allReady || allAliveReady}
+            partyReadyCountdown={readyCountdown}
+            onConfirmPartyRound={confirmNow}
+            partyResolution={room?.log?.[room.log.length - 1] || null}
+            partyResolutionKey={room?.log?.length || 0}
+            partyPlayerId={myId}
+            partyMonsterMaxHp={room?.monsterMaxHP || room?.monster?.hp || 0}
+            partyResult={room?.result || null}
+            onConfirmPartyResult={handleConfirmResult}
+            cat={hasCat ? { catId, catName, type:"allround", catXP:0, bond:0 } : null}
+            renderMonster={(size, mon) => (
+              <PartyMonsterImg
+                id={mon?.id}
+                icon={mon?.icon || room.monster?.icon || "👾"}
+                size={size}
+                variant={mon?.variant || room.monster?.variant}
+              />
+            )}
+            allies={memberList.filter(m => m.id !== myId).map(m => ({
+              id: m.id,
+              avatarId: m.avatarId || null,
+              catId: m.catId || profile?.equippedCat?.catId || "diandian",
+              catName: m.catName || "貓貓",
+              name: m.name || "队友",
+              hp: m.hp || 100,
+              maxHP: m.maxHP || 100,
+              maxHp: m.maxHP || 100,
+              atk: m.atk || m.baseAtk || 0,
+              def: m.def || m.baseDef || 0,
+              done: m.ready || false,
+              ready: m.ready || false,
+              alive: m.alive !== false,
+              role: m.role || "front",
+              isFront: (m.role || "front") === "front",
+              battleCosmetics: m.battleCosmetics || null,
+            }))}
+            potions={[...CARRY_POTIONS, ...THROW_POTIONS].filter(p => (potionInv[p.id] || 0) > 0)}
+            onPotionUsed={(potionId) => {
+              const p = [...CARRY_POTIONS, ...THROW_POTIONS].find(pp => pp.id === potionId);
+              if (!p || postSubmitted) return;
+              if (p.kind === "carry") {
+                applyPartyCarryPotion(roomId, myId, potionId).catch(() => {});
+              } else {
+                applyPartyUtilityPotion(roomId, myId, potionId).catch(() => {});
+              }
+              usePotions(myId, [potionId]).catch(() => {});
+              recordPotionUsed(myId, potionId).catch(() => {});
+            }}
+            onSubmit={handlePartyScoringSubmit}
+          />
+        </div>
+      )}
+
+
     </div>
   );
 }

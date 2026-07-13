@@ -1,5 +1,5 @@
 // src/components/dungeon/DungeonBattleRoom.jsx — 地下城戰鬥室
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { useFirestoreRound } from "../../battle/useFirestoreRound";
@@ -9,7 +9,7 @@ import {
   subscribeDungeonRoom, submitDungeonArrows, processDungeonRound,
   applyDungeonCarryPotion, applyDungeonUtilityPotion,
   forceSkipDungeonPlayer,
-  clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle,
+  clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle, confirmDungeonResolution,
   trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
@@ -17,7 +17,7 @@ import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
 import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats } from "../../lib/db";
-import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP } from "../../lib/archerLevel";
+import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP, archerLevelFromXP } from "../../lib/archerLevel";
 import { addCatXP, addCatBond } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
 import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
@@ -30,6 +30,7 @@ import {
   sfxRoundEnd, sfxMonsterDead, sfxPotionDrink, vibrate,
 } from "../../lib/sound";
 import { playBattleSound } from "../../lib/battleSound";
+import BattleScreen from "../battle/BattleScreen";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
@@ -41,13 +42,14 @@ import TargetFaceOverlay, {
 } from "../shared/TargetFaceOverlay";
 import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
-import { getPotion } from "../../lib/itemData";
+import { getPotion, CARRY_POTIONS, THROW_POTIONS } from "../../lib/itemData";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleLogPanel } from "../shared/SharedBattleComponents";
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
 import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../lib/score";
 import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
+import { WB_CARDS } from "../../lib/worldBossCards";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
@@ -150,6 +152,17 @@ function DungeonMonsterImg({ id, icon, charge, hit, variant }) {
         style={{ maxWidth:"82%", maxHeight:200, objectFit:"contain", animation:anim,
           boxShadow: glowShadow, borderRadius: 14, transition:"box-shadow 0.3s ease" }}/>
     </div>
+  );
+}
+
+function DungeonArcherImg({ archerStyle, name, size }) {
+  return (
+    <img
+      src={`/cats/archers/${archerStyle || "baobao"}.webp`}
+      alt={name || "射手"}
+      style={{ width:size, height:size, objectFit:"contain", objectPosition:"center bottom" }}
+      onError={event => { event.currentTarget.style.display = "none"; }}
+    />
   );
 }
 
@@ -271,6 +284,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const isHost = room?.hostId === myId;
   const me     = room?.members?.[myId] || {};
   const status = room?.status;
+  const myLevel = profile?.archerXP !== undefined ? archerLevelFromXP(profile?.archerXP || 0) : 1;
 
   // 合約 Tailwind class → inline 可用 hex
   const CONTRACT_HEX = {
@@ -327,6 +341,16 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       setFirstClearBonus(null);
     }
   }, [room?.status]); // eslint-disable-line
+
+  // Team expedition uses one Firestore battle room per map encounter.  A
+  // non-final win resolves to path_select in the shared resolver, but this
+  // mode has no legacy path selector: return the host to the expedition map
+  // immediately so the team controller can sync HP/loot and open the next
+  // room.  This also prevents the legacy dungeon result screen from flashing.
+  useEffect(() => {
+    if (!expeditionMode || !isMapMode || !isHost || room?.status !== "path_select") return;
+    returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
+  }, [expeditionMode, isMapMode, isHost, room?.status, roomId]);
 
   // ── 進場戰鬥動畫（只在戰鬥剛開始時顯示一次）────────────
   // showEntryAnim 預設 true 防止首次渲染閃爍，
@@ -413,6 +437,38 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     return subscribeCardCollection(myId, setMyCardColl);
   }, [myId, isGuestMode]);
 
+  // Must be derived before any conditional return: the shared BattleScreen
+  // branch uses it while the room is active.
+  const myBattleCosmetics = useMemo(() => {
+    const topWorldBoss = (myCardColl.equipped || [])
+      .filter(entry => entry && typeof entry !== "string" && entry.source === "wb")
+      .map(entry => ({ key:entry.key, card:myCardColl.wbCards?.[entry.key] || {}, meta:WB_CARDS[entry.key] }))
+      .filter(entry => entry.meta)
+      .sort((a, b) => (b.card.stars || b.card.level || 1) - (a.card.stars || a.card.level || 1))[0];
+    return {
+      wbFrame: topWorldBoss
+        ? { color:topWorldBoss.meta.frameColor || "#f5b942", title:topWorldBoss.meta.title || topWorldBoss.meta.name || "世界王卡", stars:topWorldBoss.card.stars || topWorldBoss.card.level || 1 }
+        : null,
+    };
+  }, [myCardColl]);
+
+  // Team expedition battle rooms are created from the waiting-room snapshot.
+  // Backfill each connected player's current avatar into the live battle room
+  // so rooms created before avatar persistence still render the real portrait
+  // for every teammate.
+  useEffect(() => {
+    const avatarId = profile?.avatarId || null;
+    if (!myId || !avatarId || !["active", "resolving"].includes(room?.status)) return;
+    if (room?.members?.[myId]?.avatarId === avatarId) return;
+    import("firebase/firestore").then(({ updateDoc, doc }) =>
+      import("../../lib/firebase").then(({ db }) =>
+        updateDoc(doc(db, "dungeonRooms", roomId), {
+          [`members.${myId}.avatarId`]: avatarId,
+        }).catch(() => {})
+      )
+    );
+  }, [myId, profile?.avatarId, room?.status, room?.members?.[myId]?.avatarId, roomId]);
+
   // ── 各自領取按鈕已取代此自動存檔（handleClaimSelf 處理所有獎勵）
 
   // ── 重整後同步：如果 Firestore 顯示已送出但本地未送出，重置 ready 讓玩家重來 ─
@@ -446,6 +502,14 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     const entry = room.log[len - 1];
     if (!entry) return;
     const key = `${room.currentFloor || 1}-${entry.round}`;
+    // BattleScreen 已接手正式戰鬥的逐段演出；舊 reveal 同時啟動會在擊倒後
+    // 把畫面帶回舊戰鬥層，造成重複閃爍與錯誤的「確認結算」畫面。
+    if (["active", "resolving"].includes(room?.status)) {
+      lastAnimKeyRef.current = key;
+      setShowRoundResult(false);
+      setShowKillAnim(false);
+      return;
+    }
     if (key === lastAnimKeyRef.current) return;
     lastAnimKeyRef.current = key;
 
@@ -490,7 +554,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       },
     });
     return () => reveal.stopReveal();
-  }, [room?.log?.length, room?.currentFloor]); // eslint-disable-line
+  }, [room?.log?.length, room?.currentFloor, room?.status]); // eslint-disable-line
 
   // ── 首殺檢查（Boss 房通關時，提前顯示徽章用）─────────────────
   useEffect(() => {
@@ -1316,6 +1380,86 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     );
   }
 
+  // ── 新版戰鬥 UI（使用統一的 BattleScreen 元件）────────────────
+  // 與 PartyBattleRoom.jsx 相同的統一戰鬥畫面，支援單人/組隊地下城
+  if (status === "active" || status === "resolving") {
+    const equippedCat = profile?.equippedCat || {};
+    const battleCatId = me?.catId || equippedCat.catId || "";
+    const memberList = Object.entries(room.members || {})
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => {
+        if (a.id === myId) return -1;
+        if (b.id === myId) return 1;
+        if (a.id === room.hostId) return -1;
+        if (b.id === room.hostId) return 1;
+        return a.id < b.id ? -1 : 1;
+      });
+    // 每層擊殺後會先停在 resolving，等待戰鬥演出完成再前往 path_select。
+    // 非最終層不會寫入整趟遠征的 result: "win"，但 BattleScreen 仍需知道
+    // 這一場怪物已被擊敗，才能顯示確認結算畫面並呼叫 onConfirmPartyResult。
+    const resolvedBattleResult = room.result
+      || (status === "resolving" && (room.monsterHP ?? 1) <= 0 ? "win" : null);
+    return (
+      <BattleScreen
+        player={{
+          name: me?.name || profile?.name || "Player",
+          avatarId: me?.avatarId || profile?.avatarId || null,
+          lv: myLevel || 1,
+          cardFrame: myBattleCosmetics.wbFrame ? "worldboss" : "none",
+          battleCosmetics: myBattleCosmetics,
+          atk: me?.atk || 10,
+          def: me?.def || 10,
+          hp: me?.hp || 100,
+          maxHp: me?.maxHP || 100,
+          catId: battleCatId || "diandian",
+          archerStyle: me?.archerStyle || profile?.archerStyle || "baobao",
+        }}
+        monster={{ id:room.monster?.id, name:room.monster?.name, family:room.monster?.family, hp:room.monsterHP || 0, atk:room.monster?.atk || 10, def:room.monster?.def || 5, tier:room.monster?.tier, variant:room.monster?.variant, icon:room.monster?.icon }}
+        renderMonster={(_, target) => <DungeonMonsterImg id={target?.id || room.monster?.id} icon={target?.icon || room.monster?.icon} variant={target?.variant || room.monster?.variant} />}
+        battleMode="score"
+        scoreInput={targetMode ? "target" : "keypad"}
+        targetFormat={room?.targetFmt || "full_110"}
+        difficulty={{hp:1, atk:1, def:1}}
+        arrowsPerRound={room.arrowsPerRound || 6}
+        bgImage={battleBgRef.current || "/ui/dungeon-bg.webp"}
+        autoStart
+        fullScreen
+        partyMode
+        partySubmitted={submitted}
+        partyRound={room.round || 1}
+        partyRole={me.role || "front"}
+        partyRearChoice={rearChoice}
+        onPartyRearChoice={setRearChoice}
+        partyMembers={memberList.map(m => ({ id:m.id, name:m.name, avatarId:m.avatarId || null, catId:m.catId || "diandian", role:m.role || "front", alive:m.alive !== false, ready:!!m.ready, skipped:!!m.skipped, isSelf:m.id === myId, battleCosmetics:m.battleCosmetics || null }))}
+        partyIsHost={isHost}
+        partyProcessing={!!room.processing || submitting}
+        partyAllReady={allReady}
+        partyReadyCountdown={readyCountdown}
+        onConfirmPartyRound={confirmNow}
+        onForceSkipMember={memberId => forceSkipDungeonPlayer(roomId, memberId)}
+        partyResolution={room.log?.[room.log.length - 1] || null}
+        partyResolutionKey={room.log?.length || 0}
+        partyPlayerId={myId}
+        partyMonsterMaxHp={room.monsterMaxHP || room.monster?.hp || 0}
+        partyResult={resolvedBattleResult}
+        onConfirmPartyResult={handleConfirmDungeonResolution}
+        autoConfirmPartyResult={!expeditionMode}
+        allies={memberList.filter(m => m.id !== myId).map(m => ({ id:m.id, name:m.name, avatarId:m.avatarId || null, catId:m.catId || "diandian", catName:m.catName, hp:m.hp || 0, maxHp:m.maxHP || 1, maxHP:m.maxHP || 1, atk:m.atk || 0, def:m.def || 0, ready:!!m.ready, done:!!m.ready, alive:m.alive !== false, role:m.role || "front", isFront:(m.role || "front") === "front", battleCosmetics:m.battleCosmetics || null }))}
+        cat={battleCatId ? {
+          catId: battleCatId,
+          catName: me?.catName || equippedCat.name || "貓貓",
+          type: me?.catType || equippedCat.type || "allround",
+          catXP: me?.catXP ?? equippedCat.catXP ?? 0,
+          bond: me?.catBond ?? equippedCat.bond ?? 0,
+        } : null}
+        potions={[...CARRY_POTIONS, ...THROW_POTIONS].filter(p => (potionInv[p.id] || 0) > 0 && p.actionCost !== "arrow")}
+        onPotionUsed={handleUnifiedBattlePotion}
+        onLeaveBattle={handleLeave}
+        onSubmit={handleDungeonSubmit}
+      />
+    );
+  }
+
   // ── 主體 ───────────────────────────────────────────────────
   const members     = room.members || {};
   const aliveIds    = Object.keys(members).filter(id => members[id].alive);
@@ -1378,6 +1522,39 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   function handleLeave() {
     onExit?.({ preserve: true });
+  }
+
+  // ── BattleScreen 提交處理（將數字分數轉為箭矢標籤提交）────
+  async function handleDungeonSubmit(scores) {
+    if (submitted || submitting) return;
+    if (me.role === "rear" && !rearChoice) return;
+    const labelMap = {10:"X",9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2",1:"1",0:"M"};
+    const newArrows = scores.map(s => ({ score: s, label: labelMap[s] || String(s) }));
+    setArrows(newArrows);
+    const choice = me.role === "rear" ? (rearChoice || "dmg") : null;
+    const ok = await fsHandleSubmit(newArrows, choice);
+    if (ok) { setRearChoice(null); setArrows([]); }
+  }
+
+  // 新版 BattleScreen 的藥水面板只負責呈現與當下特效；真正數值一律寫回
+  // Firestore 房間，讓單人地下城的回合結算、重連與戰鬥紀錄使用同一份資料。
+  async function handleUnifiedBattlePotion(potionId) {
+    const potion = getPotion(potionId);
+    if (!potion || !myId || isGuestMode) return;
+    const applied = potion.kind === "carry"
+      ? await applyDungeonCarryPotion(roomId, myId, potionId)
+      : await applyDungeonUtilityPotion(roomId, myId, potionId);
+    if (!applied?.ok) {
+      console.warn("[DungeonPotion]", applied?.reason || "apply failed");
+      return;
+    }
+    await usePotions(myId, [potionId]).catch(() => {});
+  }
+
+  // ── BattleScreen 結算確認 ────────────────────────────────
+  async function handleConfirmDungeonResolution() {
+    if (!isHost || status !== "resolving") return;
+    await confirmDungeonResolution(roomId);
   }
 
   return (

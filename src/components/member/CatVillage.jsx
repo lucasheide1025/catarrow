@@ -22,7 +22,7 @@ import {
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, DEFAULT_VILLAGE,
   UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
-  getStageMultiplier, getMaxSlots, getDefaultAllocation, MAX_COLLECT_HOURS,
+  getStageMultiplier, getMaxSlots, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
@@ -258,7 +258,7 @@ function LevelBadge({ lv, actualLv, onClick }) {
 }
 
 // ── 資源採集列 ───────────────────────────────────────────────
-function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec, collectedResult }) {
+function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec, elapsedSec, collectedResult }) {
   const arrowdew = (resources?.arrowdew || 0);
   const hasPending = Object.values(pending || {}).some(v => v > 0);
   const pendingArrow = pending?.arrowdew || 0;
@@ -269,6 +269,12 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
     const m = Math.floor((nextCollectSec % 3600) / 60);
     return h > 0 ? `${h}h${m}m` : `${m}m`;
   }, [nextCollectSec]);
+
+  const elapsedStr = useMemo(() => {
+    const h = Math.floor(elapsedSec / 3600);
+    const m = Math.floor((elapsedSec % 3600) / 60);
+    return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
+  }, [elapsedSec]);
 
   const COLLECT_EMOJI = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', driedfish:'🐠', can:'🥫', potion:'🍵', fur:'🐾', archer:'🏹', arrowdew:'💧', gachaCoins:'🎰', gachaToken:'🎰' };
 
@@ -283,6 +289,18 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
       return { key, icon: COLLECT_EMOJI[key] || '📦', name: RESOURCE_NAMES[key] || key, tier: null, amt };
     });
   }, [collectedResult]);
+
+  const pendingItems = useMemo(() => Object.entries(pending || {})
+    .filter(([, amount]) => Number(amount) > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, amount]) => {
+      const [res, tier] = key.split("_t");
+      return {
+        key,
+        label: `${RESOURCE_NAMES[res] || res}${tier ? ` T${tier}` : ""}`,
+        amount: Number(amount) >= 10 ? Math.floor(Number(amount)).toLocaleString() : Number(amount).toFixed(1),
+      };
+    }), [pending]);
 
   return (
     <>
@@ -314,6 +332,19 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
           }}>
           {collecting ? "採集中…" : hasPending ? "✦ 採集" : (timeStr ? `${timeStr}後` : "已採集")}
         </button>
+      </div>
+      <div className="px-4 py-2.5" style={{ background:"rgba(255,255,255,0.35)", borderBottom:`1px solid ${C.border}` }}>
+        <div className="flex justify-between gap-3 text-[10px] font-bold" style={{ color:C.mid }}>
+          <span>已累積：{elapsedStr}</span>
+          <span>距離滿 {MAX_COLLECT_HOURS} 小時：{timeStr || "已滿"}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {pendingItems.length ? pendingItems.map(item => (
+            <span key={item.key} className="rounded-full px-2 py-1 text-[10px] font-black" style={{ background:"rgba(107,142,94,.13)", color:C.sage, border:"1px solid rgba(107,142,94,.22)" }}>
+              {item.label} +{item.amount}
+            </span>
+          )) : <span className="text-[10px]" style={{ color:C.muted }}>材料正在累積中…</span>}
+        </div>
       </div>
       {collectedItems.length > 0 && (
         <div style={{
@@ -361,7 +392,7 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
   const maxTier   = getBuildingStage(level);
   const baseRate  = getProductionRate(buildingId, level);
   const pool      = baseRate * stageMult;
-  const alloc     = allocations?.[buildingId] || getDefaultAllocation(level);
+  const alloc     = normalizeBuildingAllocation(level, allocations?.[buildingId]);
   const tiers     = [];
   for (let t = 1; t <= maxTier; t++) {
     const pct = alloc[String(t)] || 0;
@@ -790,10 +821,10 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
   const [saving, setSaving]   = useState(false);
 
   // 讀取當前分配（或預設）
-  const currentAlloc = allocations[buildingId] || getDefaultAllocation(level);
+  const currentAlloc = normalizeBuildingAllocation(level, allocations[buildingId]);
 
   function startEdit() {
-    setAlloc({ ...(allocations[buildingId] || getDefaultAllocation(level)) });
+    setAlloc({ ...normalizeBuildingAllocation(level, allocations[buildingId]) });
     setEditing(true);
   }
 
@@ -1856,15 +1887,17 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
     return () => clearInterval(t);
   }, []);
 
-  const { pending, hours } = useMemo(
+  const { pending } = useMemo(
     () => calcPendingResources(village),
     [village, tick] // eslint-disable-line
   );
 
+  const lastCollectedMs = useMemo(() => getVillageLastCollectedMs(village?.lastCollectedAt), [village?.lastCollectedAt]);
+  const elapsedSec = useMemo(() => Math.min(MAX_COLLECT_HOURS * 3600, Math.max(0, Math.floor((Date.now() - lastCollectedMs) / 1000))), [lastCollectedMs, tick]);
   const nextCollectSec = useMemo(() => {
-    const lastMs = village?.lastCollectedAt?.toMillis?.() || (Date.now() - hours * 3600000);
+    const lastMs = lastCollectedMs;
     return Math.max(0, Math.floor((lastMs + MAX_COLLECT_HOURS * 3600000 - Date.now()) / 1000));
-  }, [village, hours]);
+  }, [lastCollectedMs, tick]);
 
   async function handleCollect() {
     if (collecting || !profile?.id) return;
@@ -2008,6 +2041,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
               onCollect={handleCollect}
               collecting={collecting}
               nextCollectSec={nextCollectSec}
+              elapsedSec={elapsedSec}
               collectedResult={collectedResult}
             />
             <div className="px-4 py-2 text-center text-xs"

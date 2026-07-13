@@ -121,6 +121,12 @@ export default function MemberApp() {
   useEffect(()=>{ if(page==="comp-detail"&&!selComp) setPage("comps"); },[]); // eslint-disable-line
   const [battleImmersive, setBattleImmersive] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  // 組隊遠征不會使用舊版 dungeon_room；重新整理後必須另外從 Firestore
+  // 找回仍屬於此玩家的遠征房，否則玩家只能手動再進地下城大廳才看得到續接。
+  const [teamDungeonRecovery, setTeamDungeonRecovery] = useState(null);
+  // 地下城（含組隊遠征）不顯示全站導覽，避免誤觸後離開進度中的房間。
+  const dungeonImmersive = page === "dungeon" || page === "dungeon-room";
+  const hideGlobalChrome = battleImmersive || dungeonImmersive;
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("party_room"))?.roomId || null; } catch { return null; }
   });
@@ -389,6 +395,18 @@ export default function MemberApp() {
     : null;
   const _initialDungeonRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId || null;
   const [dungeonRoomId, setDungeonRoomId] = useState(_initialDungeonRoomId);
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    let cancelled = false;
+    import("../lib/expeditionTeamDb").then(({ findReconnectableTeamExpedition }) =>
+      findReconnectableTeamExpedition(profile.id)
+    ).then(result => {
+      if (!cancelled) setTeamDungeonRecovery(result?.ok ? result.room : null);
+    }).catch(() => {
+      if (!cancelled) setTeamDungeonRecovery(null);
+    });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
   // 載入時驗證 sessionStorage / activeDungeon 中的地下城房間是否仍有效
   // 若房間已結束或不存在，自動清除，避免玩家卡在無限載入
   useEffect(() => {
@@ -600,7 +618,7 @@ export default function MemberApp() {
       </OverlayModal>
 
       {/* Header（戰鬥沉浸模式隱藏） */}
-      <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: battleImmersive ? 'none' : undefined }}>
+      <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: hideGlobalChrome ? 'none' : undefined }}>
         <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"10px 14px 8px" }}>
           {/* 第一列：頭像等級環｜暱稱＋檢定 pill｜通知鈴鐺｜登出 */}
           <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
@@ -667,6 +685,14 @@ export default function MemberApp() {
           <button onClick={() => setPage("dungeon-room")}
             style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#7c3aed,#1e1b4b)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
             🏰 地下城進行中 — 點此回到地下城
+          </button>
+        )}
+        {teamDungeonRecovery && page !== "dungeon" && (
+          <button
+            onClick={() => setPage("dungeon")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#0f766e,#155e75)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}
+          >
+            🧭 組隊地下城進行中 — 點此重新連線
           </button>
         )}
       </div>
@@ -736,7 +762,7 @@ export default function MemberApp() {
           initialTab={gachaInitTab}
           key={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
-        {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} />}
+        {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} autoReconnectRoomId={teamDungeonRecovery?.id || null} />}
         {page==="dungeon-room" && dungeonRoomId && (
           <div style={{ position:"fixed", inset:0, zIndex:60 }}>
             <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
@@ -765,7 +791,7 @@ export default function MemberApp() {
       </div>
 
       {/* 底部導覽（戰鬥沉浸模式隱藏） */}
-      <div style={{ flexShrink:0, background:"var(--bg-deep)", borderTop:"1px solid var(--border-subtle)", display: battleImmersive ? 'none' : 'flex', zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
+      <div style={{ flexShrink:0, background:"var(--bg-deep)", borderTop:"1px solid var(--border-subtle)", display: hideGlobalChrome ? 'none' : 'flex', zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"member-nav" }}>
         {nav.map(n => {
           const active = isNavActive(n.id, page);
           return (
@@ -789,7 +815,7 @@ export default function MemberApp() {
       </div>
 
       {/* 戰鬥沉浸模式：顯示導覽列按鈕 */}
-      {battleImmersive && (
+      {battleImmersive && !dungeonImmersive && (
         <button onClick={() => setBattleImmersive(false)}
           style={{
             position:"fixed", top:8, left:"50%", transform:"translateX(-50%)",

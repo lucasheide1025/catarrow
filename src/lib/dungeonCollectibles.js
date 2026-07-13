@@ -370,6 +370,15 @@ export function getFirstClearTrophy(dungeonId) {
   return COLLECTIBLE_MAP[id] ? { itemId: id } : null;
 }
 
+// 新遠征使用 1~4 的難度編號；首通紀念章則沿用圖鑑的文字難度鍵。
+// 集中轉換，避免結算流程寫出 expedition_ghost_4 這類沒有對應收藏品的 id。
+const EXPEDITION_TROPHY_DIFFICULTIES = ["normal", "advanced", "hard", "hell"];
+
+export function getExpeditionFirstClearTrophy(family, difficultyTier) {
+  const difficulty = EXPEDITION_TROPHY_DIFFICULTIES[Number(difficultyTier) - 1];
+  return difficulty ? getFirstClearTrophy(`${family}_${difficulty}`) : null;
+}
+
 function pick(items) {
   if (!items?.length) return null;
   return { itemId: items[Math.floor(Math.random() * items.length)].id };

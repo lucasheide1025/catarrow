@@ -23,7 +23,7 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
   ];
 
   return (
-    <div className="min-h-full bg-slate-950 text-white">
+    <div className="min-h-full text-white" style={{backgroundImage:"linear-gradient(180deg,rgba(3,8,20,.78),rgba(3,8,20,.96)),url(/ui/page-bg.webp)",backgroundSize:"cover",backgroundPosition:"center",backgroundAttachment:"fixed"}}>
       {/* 頁首 */}
       <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -43,7 +43,7 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
       </div>
 
       <main className="px-4 pt-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-        <section className="rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 to-indigo-950/40 p-4">
+        <section className="rounded-3xl border border-sky-300/20 bg-gradient-to-br from-slate-900/90 to-indigo-950/75 p-4 shadow-2xl backdrop-blur-md" style={{position:"relative",overflow:"hidden"}}>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-black">目前裝備加成</h2>

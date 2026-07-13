@@ -16,6 +16,11 @@ export const EQUIP_UPGRADE_COST = {
   mythic: { gold: 13000 },
 };
 
+// 稀有+4突破到精英起，品階突破必須消耗王房取得的王之印記。
+export const KING_SEAL_BREAKTHROUGH_COST = {
+  elite: 1, epic: 3, legend: 6, mythic: 10,
+};
+
 // ── 隨機材料生成 ─────────────────────────────────────────────
 // 升級完成後呼叫，產生下一次的材料需求（六族隨機交叉）
 // 結果存入 member.rpgEquip[slotId].nextMats，確保同一次升級材料不變

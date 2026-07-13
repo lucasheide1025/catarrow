@@ -39,13 +39,13 @@ service cloud.firestore {
         (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
-                    "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat",
+                    "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
                     "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
                     "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
                     "bookingStats",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
-                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate",
+                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
                     "activeExpedition", "expeditions"])
       ) || (
         isLoggedIn() && resource.data.accountType in ["guest", "kid"]

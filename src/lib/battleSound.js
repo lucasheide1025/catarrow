@@ -21,7 +21,7 @@ import {
 const LS_KEY = "buff_battle_sound_mode";
 const PREFIX = "🔊 [SOUND]";
 
-let _mode = "debug";
+let _mode = "live";
 let _initialized = false;
 
 /**
