@@ -196,6 +196,20 @@ service cloud.firestore {
     match /monsterLogs/{docId} {
       allow read, write: if isLoggedIn();
     }
+    // 統一射手表現資料：戰鬥完成時由客戶端以固定 sessionId 原子寫入。
+    // 子集合 ends 必須明列，父集合規則不會自動涵蓋子集合。
+    match /shootingSessions/{sessionId} {
+      allow read, write: if isLoggedIn();
+      match /ends/{endId} {
+        allow read, write: if isLoggedIn();
+      }
+    }
+    match /gamePerformances/{sessionId} {
+      allow read, write: if isLoggedIn();
+    }
+    match /arrowCountEvents/{sessionId} {
+      allow read, write: if isLoggedIn();
+    }
     match /monsterDex/{docId} {
       allow read, write: if isLoggedIn();
     }

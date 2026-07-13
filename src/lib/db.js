@@ -19,6 +19,7 @@ import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCa
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
+import { buildMonsterShootingRecord } from "./shootingPerformance";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -36,7 +37,32 @@ const C = {
   registrations:"registrations",
   billingRecords:"billingRecords",
   campSessions: "campSessions",
+  shootingSessions: "shootingSessions",
+  gamePerformances: "gamePerformances",
+  arrowCountEvents: "arrowCountEvents",
 };
+
+// Additive dual-write only: old battle logs remain the live compatibility source.
+export async function finalizeMonsterShootingSession(input) {
+  const record = buildMonsterShootingRecord(input);
+  if (!record) return null;
+  const sessionRef = doc(db, C.shootingSessions, record.session.id);
+  const gameRef = doc(db, C.gamePerformances, record.session.id);
+  const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
+  await runTransaction(db, async transaction => {
+    const existing = await transaction.get(sessionRef);
+    if (existing.exists()) {
+      if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
+      return;
+    }
+    const now = serverTimestamp();
+    transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId:record.session.id, createdAt:now, updatedAt:now }));
+    transaction.set(gameRef, { ...record.gamePerformance, createdAt:now });
+    transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
+  });
+  return record.session.id;
+}
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
 const C_GUILD_SUBS = "guildQuestSubs";    // 會員提交紀錄（待審核徽章）

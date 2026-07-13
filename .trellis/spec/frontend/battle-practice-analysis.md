@@ -45,3 +45,17 @@ remains analyzable without fabricated landing coordinates.
 
 Normalize legacy numeric arrows, string labels, and `{label, score}` objects at
 the analysis boundary. Unknown text is not a ten. Do not rewrite old logs.
+
+## Unified shooting-session dual write
+
+- New live records use `shootingSessions/{sessionId}` and `ends/{endId}` for raw
+  arrows, plus `gamePerformances/{sessionId}` for immutable combat results and
+  `arrowCountEvents/{sessionId}` for the one-time arrow total.
+- Keep the raw labels (`X`, numeric ring, `M`) and target landing coordinates;
+  never convert from combat damage. Target input must pass the complete landing
+  object, not just its label.
+- A completed monster battle writes the three documents atomically with one
+  fixed session ID. Legacy `practiceLogs` and `monsterLogs` remain untouched
+  throughout the migration.
+- If a player abandons a battle, preserve submitted and already-entered real
+  arrows as an `abandoned` game result; do not grant or recalculate rewards.

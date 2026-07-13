@@ -221,7 +221,7 @@ function partyEventEffectText(event) {
 const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const {
     player, monster, battleMode="score", scoreInput="keypad", targetFormat="full_110", difficulty={hp:1,atk:1,def:1}, hideMonsterStats=false,
-    arrowsPerRound=6, allies=[], cat=null, potions=[], bgImage, onBattleEnd, onPotionUsed,
+    arrowsPerRound=6, allies=[], cat=null, potions=[], bgImage, onBattleEnd, onShootingAbandon, onPotionUsed,
     autoStart=false, scoringMode=false, onSubmit, fullScreen=false, renderMonster, renderPlayer,
     partyMode=false, partySubmitted=false, partyRound, partyRoundEvent=null, partyEventToken=null, onLeaveBattle,
     partyRole, partyRearChoice, onPartyRearChoice,
@@ -254,6 +254,10 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const [showPartyKnockdown, setShowPartyKnockdown] = useState(false);
   const [showPartyDefeat, setShowPartyDefeat] = useState(false);
   const [partyHistory, setPartyHistory] = useState([]);
+  // Raw archery capture is deliberately separate from the combat reducer.
+  // It is only returned to the caller when this battle completes.
+  const shootingEndsRef = useRef([]);
+  const currentShootingEndRef = useRef([]);
   // A reconnect may mount after Firestore has already persisted `partyResult`.
   // Start unresolved so the persisted mini-round log still plays from
   // `monsterHPBefore`; only the animation effect may mark it complete.
@@ -355,10 +359,10 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   useEffect(()=>{if(!isVictoryAnim)return;playBattleSound("victory_fanfare",{monsterName:battle.monsterName,round:battle.round,roundDmg:battle.roundDmg});const t=setTimeout(()=>{playBattleSound("victory_cheer",{});dispatch({type:"SHOW_WON"});},3000);return()=>clearTimeout(t);},[isVictoryAnim,dispatch,battle.monsterName,battle.round,battle.roundDmg]);
 
   // ─── 勝利回呼 ⏱ ───
-  useEffect(()=>{if(!isWon||!onBattleEnd)return;onBattleEnd("won",{rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,crits:battle.roundCrits,arrows:battle.arrows.length,arrowScores:battle.arrows.map(a=>a.score),playerHp:battle.playerHp,monsterHp:battle.monsterHp});},[isWon,onBattleEnd,battle]);
+  useEffect(()=>{if(!isWon||!onBattleEnd)return;const shootingEnds=shootingEndsRef.current.map(end=>end.slice());const arrowScores=shootingEnds.flat().map(arrow=>arrow.label);onBattleEnd("won",{rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,crits:battle.roundCrits,arrows:arrowScores.length,arrowScores,shootingEnds,playerHp:battle.playerHp,monsterHp:battle.monsterHp});},[isWon,onBattleEnd,battle]);
 
   // ─── 敗北音效 + 回呼 ⏱ ───
-  useEffect(()=>{if(!isLost)return;playBattleSound("defeat_sigh",{monsterName:battle.monsterName,playerName:player?.name||"",round:battle.round});if(onBattleEnd)onBattleEnd("lost",{rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,crits:battle.roundCrits,arrows:battle.arrows.length,arrowScores:battle.arrows.map(a=>a.score),playerHp:battle.playerHp,monsterHp:battle.monsterHp});},[isLost,battle,player?.name,onBattleEnd]);
+  useEffect(()=>{if(!isLost)return;playBattleSound("defeat_sigh",{monsterName:battle.monsterName,playerName:player?.name||"",round:battle.round});if(onBattleEnd){const shootingEnds=shootingEndsRef.current.map(end=>end.slice());const arrowScores=shootingEnds.flat().map(arrow=>arrow.label);onBattleEnd("lost",{rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,crits:battle.roundCrits,arrows:arrowScores.length,arrowScores,shootingEnds,playerHp:battle.playerHp,monsterHp:battle.monsterHp});}},[isLost,battle,player?.name,onBattleEnd]);
 
   function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 
@@ -506,14 +510,15 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const catBattleCry=useMemo(()=>{if(!hasCat)return "";const cries=CAT_BATTLE_CRIES[skillGroup]||CAT_BATTLE_CRIES.heal;return cries[Math.floor(Math.random()*cries.length)];},[hasCat,skillGroup]);
 
   // ─── handleStartBattle（必須在 useImperativeHandle 之前，避免 TDZ）───
-  const handleStartBattle=useCallback(()=>{dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
+  const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
 
   // ─── 回呼 ───
-  const handleScore=useCallback((s)=>{if(!isScoring)return;const normalized=scoreToValue(s,targetFormat);const score=s==="X"?"X":normalized===0?"M":String(normalized);sfxTap();dispatch({type:"SCORE_ARROW",score,displayLabel:s,battleMode,arrowsPerRound,previewDamage:!partyMode});},[isScoring,battleMode,arrowsPerRound,partyMode,targetFormat]);
-  const handleUndo=useCallback(()=>{if(!isScoring)return;dispatch({type:"UNDO_ARROW"});},[isScoring]);
-  const handleSubmit=useCallback(()=>{if(!isScoring||battle.arrows.length<arrowsPerRound)return;if(partyMode&&partyRole==="rear"&&!partyRearChoice)return;if(onSubmit){onSubmit(battle.arrows.map(a=>{const s=a.score;return s==="X"?10:s==="M"?0:Number(s)||0;}));if(partyMode)return;if(externalBattle){dispatch({type:"START_PLAYING"});return;}dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);return;}dispatch({type:"SUBMIT_ROUND",skipCounter:skipBigRound,counterReduce:counterReducePct,arrowsPerRound});},[isScoring,battle.arrows.length,skipBigRound,counterReducePct,arrowsPerRound,onSubmit,partyMode,partyRole,partyRearChoice,externalBattle,player?.hp,player?.maxHp,player?.atk,player?.def]);
+  const handleScore=useCallback((input)=>{if(!isScoring)return;const landing=typeof input==="object"?input:null;const label=landing?.label??input;const normalized=scoreToValue(label,targetFormat);const score=label==="X"?"X":normalized===0?"M":String(normalized);sfxTap();currentShootingEndRef.current.push({label,landing});dispatch({type:"SCORE_ARROW",score,displayLabel:label,battleMode,arrowsPerRound,previewDamage:!partyMode});},[isScoring,battleMode,arrowsPerRound,partyMode,targetFormat]);
+  const handleUndo=useCallback(()=>{if(!isScoring)return;currentShootingEndRef.current.pop();dispatch({type:"UNDO_ARROW"});},[isScoring]);
+  const handleSubmit=useCallback(()=>{if(!isScoring||battle.arrows.length<arrowsPerRound)return;if(partyMode&&partyRole==="rear"&&!partyRearChoice)return;const rawEnd=currentShootingEndRef.current.slice();if(rawEnd.length)shootingEndsRef.current.push(rawEnd);currentShootingEndRef.current=[];if(onSubmit){onSubmit(battle.arrows.map(a=>{const s=a.score;return s==="X"?10:s==="M"?0:Number(s)||0;}));if(partyMode)return;if(externalBattle){dispatch({type:"START_PLAYING"});return;}dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);return;}dispatch({type:"SUBMIT_ROUND",skipCounter:skipBigRound,counterReduce:counterReducePct,arrowsPerRound});},[isScoring,battle.arrows.length,skipBigRound,counterReducePct,arrowsPerRound,onSubmit,partyMode,partyRole,partyRearChoice,externalBattle,player?.hp,player?.maxHp,player?.atk,player?.def]);
   const handleNextRound=useCallback(()=>{dispatch({type:"NEXT_ROUND"});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);},[]);
   const handleReset=useCallback(()=>{dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);setCatCurrentHP(0);setCatMsg(null);setCatSkillActive(null);setRoundEvent(null);setTeamFx([]);},[player?.hp,player?.maxHp,player?.atk,player?.def]);
+  const handleLeave=useCallback(()=>{const didLeave=onLeaveBattle?.();if(didLeave===false)return;const shootingEnds=[...shootingEndsRef.current.map(end=>end.slice())];if(currentShootingEndRef.current.length)shootingEnds.push(currentShootingEndRef.current.slice());onShootingAbandon?.({shootingEnds,arrowScores:shootingEnds.flat().map(arrow=>arrow.label),rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,monsterHp:battle.monsterHp});},[onShootingAbandon,onLeaveBattle,battle]);
 
   // ─── 暴露 startBattle ───
   useImperativeHandle(ref,()=>({startBattle:handleStartBattle}),[handleStartBattle]);
@@ -619,7 +624,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
           <div style={{fontSize:14,fontWeight:900,color:battle.arrows.length>=arrowsPerRound?"#f5b942":"#eef3fc"}}>{"\u2705"} 6 {battle.arrows.length>=arrowsPerRound?"確認無誤後送出":`箭已輸入，${battle.arrowIdx+1}`}</div>
           <div style={{fontSize:11,color:"#9fb0cf"}}>{Math.min(battle.arrows.length,arrowsPerRound)} / {arrowsPerRound}</div>
         </div>
-        {scoreInput==="target"&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:10}}><TargetFaceInput fmtId={targetFormat} radius={92} arrowLabels={battle.arrows.map(a=>a.score)} arrowsPerRound={arrowsPerRound} onArrow={landing=>handleScore(landing.label)} /><div style={{fontSize:11,color:"#9fb0cf",marginTop:4}}>點靶面對應環數計分</div></div>)}
+        {scoreInput==="target"&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:10}}><TargetFaceInput fmtId={targetFormat} radius={92} arrowLabels={battle.arrows.map(a=>a.score)} arrowsPerRound={arrowsPerRound} onArrow={handleScore} /><div style={{fontSize:11,color:"#9fb0cf",marginTop:4}}>點靶面對應環數計分</div></div>)}
         {partyMode&&partyRole==="rear"&&!partyRearChoice&&<div style={{marginBottom:10,padding:"9px",borderRadius:10,background:"rgba(14,55,78,.42)",border:"1px solid rgba(125,211,252,.42)"}}><div style={{fontSize:11,fontWeight:900,color:"#bae6fd",marginBottom:7}}>後衛支援選擇</div><div style={{display:"flex",gap:7}}><button type="button" onClick={()=>onPartyRearChoice?.("heal")} style={{flex:1,padding:"7px 4px",borderRadius:8,border:"1px solid rgba(52,211,153,.48)",background:"rgba(16,185,129,.16)",color:"#6ee7b7",fontSize:11,fontWeight:900,cursor:"pointer"}}>💚 支援治療</button><button type="button" onClick={()=>onPartyRearChoice?.("dmg")} style={{flex:1,padding:"7px 4px",borderRadius:8,border:"1px solid rgba(251,146,60,.48)",background:"rgba(251,146,60,.16)",color:"#fdba74",fontSize:11,fontWeight:900,cursor:"pointer"}}>🏹 支援強化</button></div></div>}
         <div style={{display:"flex",gap:6,marginBottom:12,minHeight:36,alignItems:"center"}}>
           {Array.from({length:arrowsPerRound}).map((_,i)=>{const a=battle.arrows[i];return(<div key={i} style={{flex:1,height:34,borderRadius:9,border:a?(a.isCrit?"1px solid #fbbf24":"1px solid rgba(255,255,255,.2)"):(i===battle.arrowIdx?"2px solid #f5b942":"1px dashed rgba(255,255,255,.16)"),display:"grid",placeItems:"center",fontSize:14,fontWeight:900,color:a?"#eaf6ff":(i===battle.arrowIdx?"#f5b942":"#6b7a99"),background:a?(a.isCrit?"rgba(251,191,36,.18)":"rgba(255,255,255,.08)"):(i===battle.arrowIdx?"rgba(245,185,66,.12)":"rgba(255,255,255,.03)"),fontVariantNumeric:"tabular-nums",boxShadow:i===battle.arrowIdx?"0 0 0 2px rgba(245,185,66,.3)":"none"}}>{a?a.score:(i===battle.arrowIdx?"\u25bc":"")}</div>)})}
@@ -808,7 +813,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
       {isRoundRes&&<Btn label="下一回合" primary onClick={handleNextRound} icon={<span style={{fontSize:16,flexShrink:0}}>➡️</span>}/>}
       {(isWon||isLost)&&<Btn label="再來一次" primary onClick={handleReset} icon={<span style={{fontSize:16,flexShrink:0}}>🔄</span>}/>}
       <Btn label={usedPotionInfo?"已用藥水":"藥　水"} disabled={!inBattle||isScoring||!!usedPotionInfo||partyControlsLocked} onClick={()=>setShowPotionPanel(true)} icon={usedPotionInfo?.potion ? <ConsumableIcon potion={usedPotionInfo.potion} size={18} /> : <span style={{fontSize:16,flexShrink:0}}>🧪</span>}/>
-      {onLeaveBattle&&inBattle&&<Btn label="離開戰鬥" danger onClick={onLeaveBattle} icon={<span style={{fontSize:16,flexShrink:0}}>↩</span>}/>}
+      {onLeaveBattle&&inBattle&&<Btn label="離開戰鬥" danger onClick={handleLeave} icon={<span style={{fontSize:16,flexShrink:0}}>↩</span>}/>}
       {!onLeaveBattle&&!partyMode&&inBattle&&<Btn label="重置" onClick={handleReset} icon={<span style={{fontSize:16,flexShrink:0}}>↺</span>}/>}
     </div>
 
@@ -841,7 +846,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
           <div style={{fontSize:14,fontWeight:900,color:battle.arrows.length>=arrowsPerRound?"#f5b942":"#eef3fc"}}>{battle.arrows.length>=arrowsPerRound?"✅ 6 箭已輸入，確認無誤後送出":`輸入第 ${battle.arrowIdx+1} 箭分數`}</div>
           <div style={{fontSize:11,color:"#9fb0cf"}}>{Math.min(battle.arrows.length,arrowsPerRound)} / {arrowsPerRound} 箭</div>
         </div>
-        {scoreInput==="target"&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:10}}><TargetFaceInput fmtId={targetFormat} radius={112} arrowLabels={battle.arrows.map(a=>a.score)} arrowsPerRound={arrowsPerRound} onArrow={landing=>handleScore(landing.label)} /><div style={{fontSize:11,color:"#9fb0cf",marginTop:4}}>👆 點靶面對應環數計分</div></div>)}
+        {scoreInput==="target"&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:10}}><TargetFaceInput fmtId={targetFormat} radius={112} arrowLabels={battle.arrows.map(a=>a.score)} arrowsPerRound={arrowsPerRound} onArrow={handleScore} /><div style={{fontSize:11,color:"#9fb0cf",marginTop:4}}>👆 點靶面對應環數計分</div></div>)}
         <div style={{display:"flex",gap:6,marginBottom:12,minHeight:36,alignItems:"center"}}>
           {Array.from({length:arrowsPerRound}).map((_,i)=>{const a=battle.arrows[i];return(<div key={i} style={{flex:1,height:34,borderRadius:9,border:a?(a.isCrit?"1px solid #fbbf24":"1px solid rgba(255,255,255,.2)"):(i===battle.arrowIdx?"2px solid #f5b942":"1px dashed rgba(255,255,255,.16)"),display:"grid",placeItems:"center",fontSize:14,fontWeight:900,color:a?"#eaf6ff":(i===battle.arrowIdx?"#f5b942":"#6b7a99"),background:a?(a.isCrit?"rgba(251,191,36,.18)":"rgba(255,255,255,.08)"):(i===battle.arrowIdx?"rgba(245,185,66,.12)":"rgba(255,255,255,.03)"),fontVariantNumeric:"tabular-nums",boxShadow:i===battle.arrowIdx?"0 0 0 2px rgba(245,185,66,.3)":"none"}}>{a?(a.displayLabel||a.score):(i===battle.arrowIdx?"▼":"")}</div>)})}
         </div>

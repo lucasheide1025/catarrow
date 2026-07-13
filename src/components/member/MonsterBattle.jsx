@@ -9,7 +9,7 @@ import {
   getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
   addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed,
-  subscribeCardCollection, addArcherXP, addRoundArrows, recordGuestBattleStats,
+  subscribeCardCollection, addArcherXP, addRoundArrows, recordGuestBattleStats, finalizeMonsterShootingSession,
 } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -226,6 +226,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [eventMode, setEventMode]             = useState(false); // 是否走賽事流程
   const logEndRef = useRef(null);
   const battleEndHandledRef = useRef(false);
+  const battleSessionIdRef = useRef(null);
+  const shootingPerformanceSavedRef = useRef(false);
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
@@ -788,6 +790,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
   async function startBattle() {
     battleEndHandledRef.current = false;
+    shootingPerformanceSavedRef.current = false;
+    battleSessionIdRef.current = profile?.id && !isGuest
+      ? `monster_${profile.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      : null;
     // 記錄每日場次改成「背景執行、不 await」：這是一次 Firestore 寫入，網路偶爾很慢時
     // 若 await 會把後面的進場（setPhase("battle_intro")）一起卡住，造成「按了開始挑戰卻無法進場」。
     // 場次上限的檢查在按鈕出現前就做過了，這裡只是記錄，不需要擋住進場。
@@ -889,6 +895,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     const completedScoresFlat = completedPracticeRounds.flat();
     const completedScoreTotal = completedScoresFlat.reduce((sum, score) => sum + Number(score || 0), 0);
     const completedArrowCount = completedScoresFlat.length;
+    persistMonsterShootingPerformance({
+      result, finalMonsterHp:finalMonHP, totalDamage:totalDmgDealt,
+      capturedEnds:completedPracticeRounds.map(scores => scores.map(label => ({ label:String(label) }))),
+    });
     if (isGuest && profile?.id) {
       recordGuestBattleStats(profile.id, {
         mode: "monster",
@@ -1778,12 +1788,14 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           cat={hasCat ? { catId, catName, type: "allround", catXP: 0, bond: 0 } : null}
           bgImage={battleBg}
           onBattleEnd={handleMBBattleEnd}
+          onShootingAbandon={handleMBShootingAbandon}
           onLeaveBattle={() => {
-            if (!window.confirm("確定要離開戰鬥嗎？本場未完成的進度不會保留。")) return;
+            if (!window.confirm("確定要離開戰鬥嗎？本場未完成的進度不會保留。")) return false;
             sessionStorage.removeItem("mb_battle_save");
             pendingPotionRef.current = [];
             if (questContext) onBack?.();
             else setPhase("select");
+            return true;
           }}
           autoStart
           fullScreen
@@ -2083,6 +2095,38 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     );
   }
 
+  function persistMonsterShootingPerformance({ result, finalMonsterHp, totalDamage, capturedEnds }) {
+    if (shootingPerformanceSavedRef.current || isGuest || !profile?.id || !battleSessionIdRef.current) return;
+    shootingPerformanceSavedRef.current = true;
+    const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(profile.id);
+    finalizeMonsterShootingSession({
+      sessionId:battleSessionIdRef.current,
+      memberId:profile.id,
+      capturedEnds,
+      shootingProfile,
+      targetFormat:targetFmt,
+      arrowsPerEnd:arrowsPerRound,
+      result,
+      monster,
+      totalDamage,
+      finalMonsterHp,
+      characterSnapshot:{
+        level:profile?.archerLevel,
+        attack:(battleStats || archerStats)?.atk,
+        defense:(battleStats || archerStats)?.def,
+      },
+    }).catch(error => console.warn("shooting performance dual-write failed", error));
+  }
+
+  function handleMBShootingAbandon(summary = {}) {
+    persistMonsterShootingPerformance({
+      result:"abandoned",
+      finalMonsterHp:summary.monsterHp,
+      totalDamage:summary.totalDamage,
+      capturedEnds:summary.shootingEnds || [],
+    });
+  }
+
   // BattleScreen callback: handle battle end -> full loot/XP/rewards
   function handleMBBattleEnd(result, summary = {}) {
     if (battleEndHandledRef.current) return;
@@ -2102,6 +2146,19 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       setTotalDmgRecvd(Math.max(0, initialHp - summary.playerHp));
     }
     if (summary.rounds) setRound(summary.rounds);
+    const capturedEnds = Array.isArray(summary.shootingEnds) && summary.shootingEnds.length
+      ? summary.shootingEnds
+      : (summary.arrowScores || []).reduce((ends, label, index) => {
+        const endIndex = Math.floor(index / arrowsPerRound);
+        (ends[endIndex] ||= []).push({ label:String(label) });
+        return ends;
+      }, []);
+    persistMonsterShootingPerformance({
+      result:result === "won" ? "win" : "lose",
+      finalMonsterHp:summary.monsterHp,
+      totalDamage:summary.totalDamage,
+      capturedEnds,
+    });
     if (result === "won") {
       // Guest vs member rewards
       if (isGuest || !profile?.id) {
