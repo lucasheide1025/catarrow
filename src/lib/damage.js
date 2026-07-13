@@ -44,11 +44,15 @@ export function scoreDamageMultiplier(label, score = 0) {
   return Math.max(0.2, value / 10);
 }
 
+function attackDamageVariance() {
+  return 0.9 + Math.random() * 0.2;
+}
+
 export function calcStandardArrowDmg(score, atk, def, partMult = 1, label = null) {
   const scoreMult = scoreDamageMultiplier(label, score);
   if (scoreMult === 0 || partMult === 0) return 0;
   const base = 8 + (atk || 10) * 0.7 - (def || 0) * 0.35;
-  return Math.max(1, Math.round(base * scoreMult * partMult));
+  return Math.max(1, Math.round(base * scoreMult * partMult * attackDamageVariance()));
 }
 
 /**

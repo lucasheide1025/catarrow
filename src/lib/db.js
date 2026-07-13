@@ -3577,6 +3577,7 @@ export async function grantKingVaultReward(memberId, reward = {}) {
         if (material?.id) items[material.id] = (items[material.id] || 0) + 1;
       });
       tx.update(memberRef, {
+        ...(reward.coins ? { coins: increment(reward.coins) } : {}),
         ...(reward.kingSeals ? { kingSeals: increment(reward.kingSeals) } : {}),
         updatedAt: serverTimestamp(),
       });
