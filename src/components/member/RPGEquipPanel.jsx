@@ -1,12 +1,13 @@
 // src/components/member/RPGEquipPanel.jsx — RPG 裝備面板
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
+import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials, setEquipSocketRune, trySocketEquip } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent, KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
 import EquipmentIcon from "../shared/EquipmentIcon";
+import { EQUIPMENT_RUNES, getEquipmentRune, getEquipmentRuneBonus } from "../../lib/equipmentRuneData";
 
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
@@ -25,6 +26,46 @@ function gradeName(gradeId) {
 
 function gradeIdx(gradeId) {
   return EQUIP_GRADES.findIndex(x => x.id === gradeId);
+}
+
+function EquipmentSocketControls({ memberId, slotId, equipped, kingSeals, inventory, readOnly }) {
+  const [busy, setBusy] = useState("");
+  const [picker, setPicker] = useState(null);
+  const [notice, setNotice] = useState("");
+  const sockets = Array.isArray(equipped?.sockets) ? equipped.sockets : [];
+  const gradeIndex = gradeIdx(equipped?.grade);
+  const bonus = getEquipmentRuneBonus(sockets);
+  const availableRunes = Object.values(EQUIPMENT_RUNES).filter(rune => (inventory?.[rune.id] || 0) > 0);
+  const notify = text => { setNotice(text); window.setTimeout(() => setNotice(""), 3200); };
+
+  async function socket() {
+    if (readOnly || busy || !memberId) return;
+    setBusy("socket");
+    const result = await trySocketEquip(memberId, slotId);
+    setBusy("");
+    notify(result.ok ? (result.success ? `打洞成功，目前 ${result.sockets} 洞` : `打洞失敗，消耗 ${result.sealCost} 枚王之印記；裝備未受損`) : result.reason);
+  }
+
+  async function setRune(index, runeId) {
+    if (readOnly || busy || !memberId) return;
+    setBusy(`rune-${index}`);
+    const result = await setEquipSocketRune(memberId, slotId, index, runeId);
+    setBusy("");
+    if (result.ok) { setPicker(null); notify(runeId ? "符文已鑲嵌" : "符文已卸下並放回背包"); }
+    else notify(result.reason);
+  }
+
+  return <section className="mb-3 rounded-xl border border-violet-400/25 bg-violet-950/25 p-3">
+    <div className="flex items-center justify-between gap-2"><h3 className="text-xs font-black text-violet-100">🔮 打洞與符文鑲嵌</h3><span className="text-[10px] font-bold text-amber-200">👑 {kingSeals || 0}</span></div>
+    {notice && <div role="status" className="mt-2 rounded-lg bg-violet-400/10 px-2 py-1.5 text-[10px] font-bold text-violet-100">{notice}</div>}
+    <div className="mt-2 flex gap-2">{[0, 1, 2].map(index => {
+      const rune = getEquipmentRune(sockets[index]);
+      return <button key={index} type="button" disabled={readOnly || index >= sockets.length || Boolean(busy)} onClick={() => setPicker(index)} className="min-h-14 flex-1 whitespace-pre-line rounded-xl border border-dashed border-violet-300/35 bg-black/20 px-1 text-center text-[10px] font-bold text-violet-100 disabled:opacity-45">{index >= sockets.length ? "未開洞" : rune ? `${rune.icon}\nT${rune.tier}` : "空洞\n鑲嵌"}</button>;
+    })}</div>
+    <div className="mt-2 text-[10px] text-slate-400">符文加成：ATK +{Math.round(bonus.atk * 100)}%／DEF +{Math.round(bonus.def * 100)}%／HP +{Math.round(bonus.hp * 100)}%</div>
+    {gradeIndex >= 2 && sockets.length < 3 ? <button type="button" disabled={readOnly || Boolean(busy) || (kingSeals || 0) < sockets.length + 1} onClick={socket} className="mt-3 min-h-10 w-full rounded-xl bg-amber-400 px-3 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{busy === "socket" ? "打洞中…" : `使用 ${sockets.length + 1} 枚王之印記打第 ${sockets.length + 1} 洞（成功率 ${[85, 65, 45][sockets.length]}%）`}</button> : <div className="mt-3 text-[10px] text-slate-500">{sockets.length >= 3 ? "此裝備已開滿 3 洞。" : "精良（Elite）以上裝備才能打洞。"}</div>}
+    {picker !== null && <div className="mt-2 rounded-xl border border-violet-300/25 bg-slate-950 p-2"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white">選擇第 {picker + 1} 洞的符文</span><button type="button" onClick={() => setPicker(null)} className="text-[10px] text-slate-400">關閉</button></div><button type="button" onClick={() => setRune(picker, null)} className="mt-2 min-h-9 w-full rounded-lg border border-white/10 px-2 text-left text-[11px] font-bold text-slate-300">卸下符文，放回背包</button>{availableRunes.map(rune => <button key={rune.id} type="button" onClick={() => setRune(picker, rune.id)} className="mt-2 min-h-9 w-full rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 text-left text-[11px] font-bold text-violet-100">{rune.icon} {rune.name} T{rune.tier} ×{inventory[rune.id]}</button>)}</div>}
+  </section>;
 }
 
 // ── 單一槽位卡片 ───────────────────────────────────────────
@@ -179,7 +220,7 @@ function UpgradeCelebration({ result, onClose }) {
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
-function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, upgradeErr, nextMats }) {
+function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, runeInventory, memberId, readOnly, upgradeErr, nextMats }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
   const isEmpty   = !equipped?.itemId;
   const grade     = equipped?.grade     || "common";
@@ -211,7 +252,7 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-0"
       onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="equip-dialog-title"
-        className="w-full max-w-md bg-slate-900 rounded-t-2xl p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] overscroll-contain"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-900 p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] overscroll-contain"
         onClick={e => e.stopPropagation()}>
 
         {/* 標題 */}
@@ -295,6 +336,15 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                 </div>
 
                 {/* 升級進度條 */}
+                <EquipmentSocketControls
+                  memberId={memberId}
+                  slotId={slotDef.id}
+                  equipped={equipped}
+                  kingSeals={kingSeals}
+                  inventory={runeInventory}
+                  readOnly={readOnly}
+                />
+
                 {!isMax && (
                   <div className="mb-3">
                     <div className="flex items-center justify-between mb-1.5">
@@ -626,6 +676,9 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
           matInv={matInv}
           coins={profile?.coins || 0}
           kingSeals={profile?.kingSeals || 0}
+          runeInventory={profile?.equipmentRuneInventory || {}}
+          memberId={profile?.id}
+          readOnly={Boolean(guestProfile)}
           upgradeErr={upgradeErr}
           nextMats={displayNextMats}
         />

@@ -11,7 +11,7 @@ import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
-import { getEquipmentRune } from "./equipmentRuneData";
+import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
@@ -3546,6 +3546,7 @@ export async function trySocketEquip(memberId, slotId) {
 }
 
 export async function setEquipSocketRune(memberId, slotId, socketIndex, runeId = null) {
+  if (runeId && !getEquipmentRune(runeId)) return { ok:false, reason:"符文資料不存在" };
   const ref = doc(db, C.members, memberId);
   try {
     await runTransaction(db, async tx => {
@@ -3568,6 +3569,7 @@ export async function setEquipSocketRune(memberId, slotId, socketIndex, runeId =
 export async function craftEquipmentRune(memberId, runeId) {
   const rune = getEquipmentRune(runeId);
   if (!memberId || !rune) return { ok: false, reason: "符文資料不存在" };
+  if (rune.tier !== 1) return { ok: false, reason: "只有初階符文能以碎片製作；高階符文請逐階合成" };
   const ref = doc(db, C.members, memberId);
   try {
     await runTransaction(db, async tx => {
@@ -3584,6 +3586,35 @@ export async function craftEquipmentRune(memberId, runeId) {
     });
     return { ok: true, rune };
   } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 合成會消耗一枚同階符文作為材料；主符文永遠保留，失敗時只損失材料與金幣。
+export async function combineEquipmentRune(memberId, runeId) {
+  const sourceRune = getEquipmentRune(runeId);
+  const nextRune = getNextEquipmentRune(runeId);
+  if (!memberId || !sourceRune || !nextRune) return { ok:false, reason:"此符文無法再合成" };
+  const ref = doc(db, C.members, memberId);
+  const goldCost = nextRune.goldCost;
+  try {
+    let result = null;
+    await runTransaction(db, async tx => {
+      const data = (await tx.get(ref)).data() || {};
+      const owned = data.equipmentRuneInventory?.[sourceRune.id] || 0;
+      if (owned < 2) throw new Error("需要兩枚相同的未鑲嵌符文");
+      if ((data.coins || 0) < goldCost) throw new Error(`需要 ${goldCost} 金幣`);
+      const successRate = [0.8, 0.65, 0.5][sourceRune.tier - 1];
+      const success = Math.random() < successRate;
+      const update = {
+        coins: increment(-goldCost),
+        [`equipmentRuneInventory.${sourceRune.id}`]: increment(-1),
+        updatedAt: serverTimestamp(),
+      };
+      if (success) update[`equipmentRuneInventory.${nextRune.id}`] = increment(1);
+      tx.update(ref, update);
+      result = { ok:true, success, sourceRune, nextRune, goldCost, successRate };
+    });
+    return result;
+  } catch (e) { return { ok:false, reason:e.message }; }
 }
 
 export async function grantKingVaultReward(memberId, reward = {}) {

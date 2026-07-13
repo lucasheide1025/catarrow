@@ -8,6 +8,7 @@ import {
 } from "../../lib/constants";
 import { GRADE_PREFIX } from "../../lib/equipData";
 import RPGEquipPanel from "./RPGEquipPanel";
+import EquipmentRunePanel from "./EquipmentRunePanel";
 
 export default function EquipmentPage({ onPageChange, guestProfile }) {
   const { profile: authProfile } = useAuth();
@@ -96,6 +97,8 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
         </div>
 
       {/* 品級說明 */}
+        <EquipmentRunePanel profile={profile} readOnly={Boolean(guestProfile)} />
+
       <section className="mt-1">
         <h2 className="text-xs text-slate-400 font-bold mb-2">品級基礎加成</h2>
         <div className="grid grid-cols-3 gap-1.5">

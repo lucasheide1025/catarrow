@@ -25,6 +25,12 @@ export function getEquipmentRune(runeId) {
   return EQUIPMENT_RUNES[runeId] || null;
 }
 
+export function getNextEquipmentRune(runeId) {
+  const rune = getEquipmentRune(runeId);
+  if (!rune || rune.tier >= EQUIPMENT_RUNE_TIERS.length) return null;
+  return EQUIPMENT_RUNES[`equipment_${rune.type}_t${rune.tier + 1}`] || null;
+}
+
 export function getEquipmentRuneBonus(sockets = []) {
   const bonus = { atk: 0, def: 0, hp: 0 };
   sockets.forEach(runeId => {
