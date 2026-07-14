@@ -104,3 +104,36 @@ export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, 
   };
   return { session, ends, gamePerformance };
 }
+
+// Autonomous practice uses the same immutable raw-arrow structure as combat,
+// but deliberately creates no GamePerformance document.
+export function buildPracticeShootingRecord({ sessionId, memberId, rounds, arrowPositions, shootingProfile, targetFormat, arrowsPerEnd, timingMode = "off", source = { kind:"practice", mode:"freePractice" }, verification = { level:"self" }, countsToward = {} }) {
+  const positions = new Map((arrowPositions || []).map(position => [`${position.round}-${position.arrow}`, position]));
+  const capturedEnds = (rounds || []).map((round, roundIndex) => (round || []).map((label, arrowIndex) => {
+    const landing = positions.get(`${roundIndex + 1}-${arrowIndex + 1}`);
+    return landing ? { label, landing } : { label };
+  }));
+  const format = getTargetFaceFormat(targetFormat);
+  const ends = buildShootingEnds(capturedEnds, targetFormat);
+  const metricsSnapshot = calculateSessionMetrics(ends);
+  if (!metricsSnapshot?.arrowCount) return null;
+  const shootingConfig = {
+    bowType:shootingProfile?.bowType, equipmentProfileId:shootingProfile?.bowId || undefined,
+    distanceM:Number(shootingProfile?.distance), targetFaceCode:format.id, targetFaceVersion:1,
+    targetDiameterCm:format.faceSizeCm || undefined, targetLayout:format.layout === "vertical_triple" ? "verticalTriple" : "single",
+    scoringScheme:"wa", scoringSchemeVersion:1, maxScorePerArrow:format.maxScore,
+    arrowsPerEnd, timingMode,
+  };
+  return {
+    session:{
+      id:sessionId, schemaVersion:SHOOTING_SCHEMA_VERSION, memberId, status:"finalized", isRealShooting:true,
+      source, verification,
+      captureMode:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? "targetPlot" : "scoreInput",
+      shootingConfig, countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false, ...countsToward },
+      arrowCount:metricsSnapshot.arrowCount, completedEndCount:ends.length,
+      analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:true, performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:[] },
+      metricsSnapshot,
+    },
+    ends,
+  };
+}

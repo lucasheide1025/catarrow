@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, finalizePracticeShootingSession } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
 import { CAT_PRACTICE_XP } from "../../lib/catLevel";
@@ -2206,8 +2206,9 @@ function AnalysisTab({ logs, profile }) {
 }
 
 // ── 主元件 ────────────────────────────────────────────────────
-export default function MemberPractice() {
-  const { profile }=useAuth();
+export default function MemberPractice({ profileOverride = null, isGuestMode = false }) {
+  const { profile: authProfile }=useAuth();
+  const profile = profileOverride || authProfile;
   const { toast, ToastContainer }=useToast();
   const [logs,        setLogs]        = useState([]);
   const [monsterLogs, setMonsterLogs] = useState([]);
@@ -2224,12 +2225,12 @@ export default function MemberPractice() {
   const practiceRootRef = useRef(null);
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || isGuestMode) return;
     const unsub = subscribeMyCheckin(profile.id, c => {
       classEndedRef.current = !!c?.classEnded;
     });
     return () => unsub?.();
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, isGuestMode]); // eslint-disable-line
 
   const equipSets=useMemo(()=>normalizeEquipment(profile?.equipment),[profile?.equipment]);
 
@@ -2325,8 +2326,10 @@ export default function MemberPractice() {
       .filter(l=>l.date===todayStr)
       .reduce((s,l)=>s+(l.totalArrows||0),0);
 
-    await addPracticeLog(profile.id,{
+    const practiceSessionId = `practice_${profile.id}_${Date.now()}`;
+    const practicePayload = {
       date:form.date, bowType:form.bowType, distance:form.distance,
+      grantProgress:!isGuestMode,
       targetFormat:form.targetFormat, arrowCount:form.arrowCount, roundCount:form.roundCount,
       maxScore:fmt.max, hasMiss:true, rounds:finishedRounds,
       total:stats.total, miss:stats.misses, totalArrows:stats.arrows,
@@ -2347,7 +2350,18 @@ export default function MemberPractice() {
       ...(sessionDetails?.roundTiming?.length ? { roundTiming:sessionDetails.roundTiming } : {}),
       ...(sessionDetails?.match ? { match:sessionDetails.match } : {}),
       ...(arrowPositions.length>0 ? { arrowPositions } : {}),
-    },profile.id);
+    };
+    await addPracticeLog(profile.id, practicePayload, profile.id);
+    await finalizePracticeShootingSession({
+      sessionId:practiceSessionId,
+      memberId:profile.id,
+      rounds:finishedRounds,
+      arrowPositions,
+      shootingProfile:{ bowType:form.bowType, bowId:form.equipSetId, distance:form.distance },
+      targetFormat:form.targetFormat,
+      arrowsPerEnd:form.arrowCount,
+      timingMode:form.competitionMode || "off",
+    });
 
     toast("練習紀錄已儲存 ✓");
     clearPracticeRecovery(profile.id);
@@ -2358,14 +2372,14 @@ export default function MemberPractice() {
     const arrowCount = stats.arrows || 0;
 
     // 射手 XP（最低速率：每發箭 1 XP）
-    if (arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});
+    if (!isGuestMode && arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});
     // 貓貓 XP（每次儲存 2 XP）
     const _prCatId = profile?.equippedCat?.catId;
-    if (_prCatId) addCatXP(profile.id, _prCatId, CAT_PRACTICE_XP).catch(() => {});
+    if (!isGuestMode && _prCatId) addCatXP(profile.id, _prCatId, CAT_PRACTICE_XP).catch(() => {});
 
     // 里程碑計算（下課後不觸發，避免重複結算）
     const newTodayArrows=oldTodayArrows+arrowCount;
-    if (!classEndedRef.current) {
+    if (!isGuestMode && !classEndedRef.current) {
       const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
       if(milestones.length>0){
         grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});

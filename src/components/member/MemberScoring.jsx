@@ -1,6 +1,6 @@
 // src/components/member/MemberScoring.jsx
 import { useState } from "react";
-import { submitResult, updateMember, getCertRecords } from "../../lib/db";
+import { submitResult, updateMember, getCertRecords, finalizePracticeShootingSession } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { getCertLevelByScores } from "../../lib/constants";
 import { normalizeEquipment, newEquipSet, BOW_CATEGORIES } from "../shared/Equipment";
@@ -124,6 +124,18 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
       payload.reviewStatus= "pending";   // 送審，鎖住
     }
     await submitResult(comp.id, profile.id, payload);
+    finalizePracticeShootingSession({
+      sessionId:`competition_${comp.id}_${profile.id}_${Date.now()}`,
+      memberId:profile.id,
+      rounds:finalRounds,
+      shootingProfile:{ bowType:choice?.cert || profile?.defaultBowType, distance:comp.distance },
+      targetFormat:comp.targetFormat || "full_110",
+      arrowsPerEnd:arrowCount,
+      timingMode:comp.timingMode || "off",
+      source:{ kind:isCert ? "certification" : "competition", mode:isCert ? "certification" : "competition" },
+      verification:{ level:isCert ? "official" : "self" },
+      countsToward:{ officialRecord:!!isCert },
+    }).catch(() => {});
     setSaving(false);
     setPhase("result");
   }
@@ -149,7 +161,20 @@ export default function MemberScoring({ comp, onDone, onBack, lastResult }) {
           memberId: profile.id, name: profile.name, nickname: profile.nickname,
           compTitle: comp.title, compType: comp.type, date: comp.date,
           rounds:newAll, total, miss,
-        }).then(()=>{ setSaving(false); setPhase("result"); });
+        }).then(async ()=>{
+          finalizePracticeShootingSession({
+            sessionId:`competition_${comp.id}_${profile.id}_${Date.now()}`,
+            memberId:profile.id,
+            rounds:newAll,
+            shootingProfile:{ bowType:profile?.defaultBowType, distance:comp.distance },
+            targetFormat:comp.targetFormat || "full_110",
+            arrowsPerEnd:arrowCount,
+            timingMode:comp.timingMode || "off",
+            source:{ kind:"competition", mode:"competition" },
+            verification:{ level:"self" },
+          }).catch(() => {});
+          setSaving(false); setPhase("result");
+        });
       }
     } else setRound(r=>r+1);
   }

@@ -6,11 +6,12 @@ import { SectionHeader, HubTile } from "../shared/Widgets";
 
 // 入口常數陣列（accent 必須是 hex）
 const TRAINING_ITEMS = [
+  { page:"performance", icon:"🏹", title:"射手表現", desc:"真實射箭・進步分析", accent:"#14b8a6", badgeKey:"performance" },
   { page:"practice", icon:"🎯", title:"自主練習",   desc:"記錄每一箭",     accent:"#3b82f6", badgeKey:"practice" },
   { page:"comps",    icon:"🏆", title:"比賽 / 檢定", desc:"賽事與升級檢定", accent:"#d946ef", badgeKey:"comps" },
 ];
 
-export default function MemberTrainingHub({ onPageChange, onJoinParty, badges = {} }) {
+export default function MemberTrainingHub({ onPageChange, onJoinParty, badges = {}, showPerformance = true }) {
   const [showCheckin, setShowCheckin] = useState(true);
 
   return (
@@ -33,7 +34,7 @@ export default function MemberTrainingHub({ onPageChange, onJoinParty, badges = 
       {showCheckin && <DailyQuest onJoinParty={onJoinParty} />}
 
       <div className="grid grid-cols-2 gap-3">
-        {TRAINING_ITEMS.map(item => (
+        {TRAINING_ITEMS.filter(item => showPerformance || item.page !== "performance").map(item => (
           <HubTile key={item.page}
             icon={item.icon}
             title={item.title}

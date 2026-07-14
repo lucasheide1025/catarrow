@@ -1,7 +1,7 @@
 // src/components/member/MemberCertExam.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup, getMember, addRoundArrows, addPracticeLog, checkAndGrantArrowMilestones } from "../../lib/db";
+import { getCertConfig, subscribeCertification, submitCertTask, certBowGroup, getMember, addRoundArrows, addPracticeLog, checkAndGrantArrowMilestones, finalizePracticeShootingSession } from "../../lib/db";
 import { Card, Btn, Inp, Sel, ST, Spinner } from "../shared/UI";
 import { normalizeEquipment } from "../shared/Equipment";
 import { getRewardsForMilestone } from "../../lib/arrowMilestone";
@@ -244,6 +244,19 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
           result: "n/a", rounds: [], total: isTask1 ? 0 : task2Total,
           totalArrows: arrowCount, bowType,
         }, memberId).catch(() => {});
+        if (!isTask1) {
+          finalizePracticeShootingSession({
+            sessionId:`certification_${memberId}_${tier}_${task}_${Date.now()}`,
+            memberId,
+            rounds:[arrows],
+            shootingProfile:{ bowType, distance:task === "task2" ? 18 : undefined },
+            targetFormat:"full_110",
+            arrowsPerEnd:arrows.length,
+            source:{ kind:"certification", mode:"certification" },
+            verification:{ level:"coach" },
+            countsToward:{ officialRecord:false },
+          }).catch(() => {});
+        }
         try {
           const res = await checkAndGrantArrowMilestones(memberId, arrowCount);
           if (res.milestones.length > 0) {

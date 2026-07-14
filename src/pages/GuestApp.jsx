@@ -1,6 +1,6 @@
 // src/pages/GuestApp.jsx
 // 訪客模式全新版本 — 取代舊的 GuestBattle.jsx（掃碼→留信箱/電話→跨次造訪接續同一份記錄）
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { onSnapshot, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { resolveGuestSession } from "../lib/guestAuth";
@@ -14,6 +14,9 @@ import EquipmentPage   from "../components/member/EquipmentPage";
 import GuestShareCard  from "../components/member/GuestShareCard";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
 
+const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
+const MemberPerformance = lazy(() => import("../components/member/MemberPerformance"));
+
 function guestSessionKey(accountType, sessionSourceId) {
   return `guest_v2_profile_${accountType}_${sessionSourceId || "default"}`;
 }
@@ -24,6 +27,8 @@ function guestPartySessionKey(accountType, sessionSourceId) {
 
 const TABS = [
   { id: "home",      icon: "🏠", label: "首頁" },
+  { id: "practice",  icon: "🏹", label: "練箭" },
+  { id: "performance", icon: "📈", label: "表現" },
   { id: "monster",   icon: "⚔️", label: "打怪" },
   { id: "party",     icon: "👥", label: "組隊" },
   { id: "dungeon",   icon: "🏰", label: "地城" },
@@ -301,6 +306,11 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
 
       <div className="guest-content">
         {tab === "home" && <GuestHome name={guestProfile.name} isKid={isKid} accent={themeAccent} onGo={setTab} onShareCard={() => setShowShareCard(true)} coins={liveCoins} wbResult={wbResult} />}
+        {tab === "practice" && (guestFullProfile
+          ? <Suspense fallback={<GuestPanelLoading label="正在載入練箭系統…" />}><MemberPractice profileOverride={guestFullProfile} isGuestMode /></Suspense>
+          : <GuestPanelLoading label="正在載入練習資料…" />
+        )}
+        {tab === "performance" && <Suspense fallback={<GuestPanelLoading label="正在載入射手表現…" />}><MemberPerformance profileOverride={guestFullProfile || guestProfile} /></Suspense>}
         {tab === "monster" && (
           guestFullProfile ? (
             <MonsterBattle
@@ -383,8 +393,14 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   );
 }
 
+function GuestPanelLoading({ label }) {
+  return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>{label}</div>;
+}
+
 function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
   const cards = [
+    { id: "practice",  icon: "🏹", title: "自主練箭", desc: "逐箭記錄・靶面點擊・射手表現", tone: "#14b8a6", feature: true },
+    { id: "performance", icon: "📈", title: "射手表現", desc: "查看每場真實射箭紀錄", tone: "#0ea5e9" },
     { id: "monster",   icon: "⚔️", title: isKid ? "出發打怪" : "單人冒險", desc: "T1-T2 怪物挑戰，熟悉正式戰鬥節奏", tone: "#f59e0b", feature: true },
     { id: "party",     icon: "👥", title: isKid ? "大家一起打" : "一起打怪", desc: "用房號加入隊伍，團康活動一起推進", tone: "#4f46e5", feature: true },
     { id: "dungeon",   icon: "🏰", title: "地下城探索", desc: "正式迷霧探索版本，低階 T1-T2 體驗", tone: "#7c3aed" },

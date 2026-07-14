@@ -8,12 +8,14 @@ import {
   resetMonsterSession,
   setStudentTier, setAccountFrozen, bulkSetStudentTier,
   setMaintenanceMode, subscribeMaintenanceConfig,
+  migrateAllLegacyPracticeLogs,
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, today, thisYear, BOW_TYPES, getCertLevel, calcBadgePoints } from "../../lib/constants";
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, BadgePip, SearchBar, ConfirmModal, useToast } from "../shared/UI";
 import { EquipmentEditor, EquipmentViewer, normalizeEquipment, ArmorManager, AccessoryManager } from "../shared/Equipment";
 import AdminCertExamModal from "./AdminCertExamModal";
+import MemberPerformance from "../member/MemberPerformance";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from "firebase/auth";
 import { auth, firebaseConfig } from "../../lib/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
@@ -60,6 +62,7 @@ export default function AdminMembers() {
   const [delConfirm,  setDelConfirm]  = useState(null);
   const [guestModal,  setGuestModal]  = useState(false);
   const [tierModal,   setTierModal]   = useState(null); // 學生分級 / 帳號凍結編輯
+  const [performanceModal, setPerformanceModal] = useState(null);
 
   // 學生分級批次工具（上線初期教練逐一手動處理大量既有會員用）
   const [selMembers, setSelMembers]   = useState(new Set());
@@ -74,6 +77,13 @@ export default function AdminMembers() {
     const unsub = subscribeAllDisputes(setDisputes);
     const unsubMaint = subscribeMaintenanceConfig(cfg => { setMaintCfg(cfg); setMaintMsg(cfg?.message || ""); });
     return () => { unsub?.(); unsubMaint?.(); };
+  }, []);
+
+  useEffect(() => {
+    const key = "legacy_practice_sessions_v1_started";
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    migrateAllLegacyPracticeLogs().catch(error => console.warn("legacy practice migration:", error?.message));
   }, []);
 
   function toggleSelMember(id) {
@@ -241,6 +251,7 @@ export default function AdminMembers() {
             onDelete={() => setDelConfirm(m.id)}
             onResetMonster={() => handleResetMonster(m.id, m.nickname || m.name)}
             onTier={() => setTierModal(m)}
+            onPerformance={() => setPerformanceModal(m)}
           />
         ))}
       </div>
@@ -255,6 +266,7 @@ export default function AdminMembers() {
                          onClose={() => setDispModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
       {guestModal  && <GuestQRModal onClose={() => setGuestModal(false)} toast={toast} />}
       {tierModal   && <TierModal member={tierModal} onClose={() => setTierModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
+      {performanceModal && <Modal open wide onClose={() => setPerformanceModal(null)} title={`射手表現 — ${performanceModal.nickname || performanceModal.name}`}><MemberPerformance profileOverride={performanceModal} /></Modal>}
 
       <ConfirmModal open={!!delConfirm} title="確認刪除" message="確定要刪除此會員？此操作無法復原。"
         onConfirm={() => handleDelete(delConfirm)} onCancel={() => setDelConfirm(null)} />
@@ -354,7 +366,7 @@ const TIER_BADGE_STYLE = {
 };
 const TIER_BADGE_LABEL = { restricted:"🔒 受限", official:"✅ 正式", retired:"🌙 退休" };
 
-function MemberCard({ member: m, disputeList, selected, onToggleSelect, onEdit, onBadge, onHistory, onCert, onCertExam, onDispute, onDelete, onResetMonster, onTier }) {
+function MemberCard({ member: m, disputeList, selected, onToggleSelect, onEdit, onBadge, onHistory, onCert, onCertExam, onDispute, onDelete, onResetMonster, onTier, onPerformance }) {
   const [expanded, setExpanded] = useState(false);
   const lastLogin  = m.lastLoginAt?.toDate?.() ? fmtDT(m.lastLoginAt) : "未登入";
   const equipSets  = normalizeEquipment(m.equipment).filter(s => s.type !== "armor" && s.type !== "accessory");
@@ -422,6 +434,7 @@ function MemberCard({ member: m, disputeList, selected, onToggleSelect, onEdit, 
             <Btn v="secondary" size="sm" onClick={onCert}>📋 檢定</Btn>
             <Btn v="secondary" size="sm" onClick={onCertExam}>🎖️ 射手證</Btn>
             <Btn v="secondary" size="sm" onClick={onHistory}>📊 歷程</Btn>
+            <Btn v="secondary" size="sm" onClick={onPerformance}>🏹 射手表現</Btn>
             <Btn v="secondary" size="sm" onClick={onTier}>🎓 分級/凍結</Btn>
             <Btn v="secondary" size="sm" onClick={onResetMonster}>⚔️ 重置打怪</Btn>
             {hasDispute && (

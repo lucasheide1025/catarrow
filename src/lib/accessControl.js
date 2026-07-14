@@ -4,8 +4,8 @@
 
 // 內建預設值（systemConfig/tierPermissions 文件不存在時的 fallback）
 export const DEFAULT_TIER_PERMISSIONS = {
-  restricted: ["home", "training-hub", "practice", "profile"],
-  autoLocked: ["home", "training-hub", "practice", "gacha", "profile", "achievements"],
+  restricted: ["home", "training-hub", "practice", "performance", "profile"],
+  autoLocked: ["home", "training-hub", "practice", "performance", "gacha", "profile", "achievements"],
   retired:    ["profile"],
 };
 
@@ -21,7 +21,7 @@ export const PAGE_REGISTRY = [
     { id: "guild", label: "公會" }, { id: "monsterdex", label: "怪物圖鑑" },
   ]},
   { group: "練箭", pages: [
-    { id: "training-hub", label: "練箭大廳" }, { id: "practice", label: "自主練習" },
+    { id: "training-hub", label: "練箭大廳" }, { id: "practice", label: "自主練習" }, { id: "performance", label: "射手表現" },
     { id: "comps", label: "比賽列表" }, { id: "comp-detail", label: "比賽詳情" },
   ]},
   { group: "貓村", pages: [{ id: "gacha", label: "貓村" }] },

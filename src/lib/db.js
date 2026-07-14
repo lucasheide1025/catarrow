@@ -19,7 +19,7 @@ import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCa
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
-import { buildMonsterShootingRecord } from "./shootingPerformance";
+import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord } from "./shootingPerformance";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -68,6 +68,89 @@ export async function finalizeGameShootingSession(input) {
   return finalizeMonsterShootingSession(input);
 }
 
+export async function finalizePracticeShootingSession(input) {
+  const record = buildPracticeShootingRecord(input);
+  if (!record) return null;
+  const sessionRef = doc(db, C.shootingSessions, record.session.id);
+  const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
+  await runTransaction(db, async transaction => {
+    const existing = await transaction.get(sessionRef);
+    if (existing.exists()) {
+      if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
+      return;
+    }
+    const now = serverTimestamp();
+    transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId:record.session.id, createdAt:now, updatedAt:now }));
+    transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "practice", sourceMode:record.session.source?.mode || "freePractice", occurredAt:now, createdAt:now });
+  });
+  return record.session.id;
+}
+
+// Safe, idempotent migration for legacy autonomous practice. Each source log
+// owns one fixed session ID, so rerunning a member never creates duplicates.
+export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
+  const logs = await getPracticeLogs(memberId, maxCount);
+  let detailed = 0;
+  let summary = 0;
+  for (const log of logs) {
+    const sessionId = `legacy_practice_${log.id}`;
+    const rounds = Array.isArray(log.rounds) ? log.rounds.filter(round => Array.isArray(round) && round.length) : [];
+    const arrowCount = Number(log.totalArrows) || rounds.flat().length || 0;
+    if (!arrowCount) continue;
+    let record;
+    if (rounds.length) {
+      record = buildPracticeShootingRecord({
+        sessionId, memberId, rounds, arrowPositions:log.arrowPositions || [],
+        shootingProfile:{ bowType:log.bowType, distance:log.distance },
+        targetFormat:log.targetFormat || "full_110", arrowsPerEnd:Number(log.arrowCount) || rounds[0].length,
+        timingMode:log.competition?.ruleset || "off",
+        source:{ kind:"practice", mode:"freePractice", legacyCollection:"practiceLogs", legacyId:log.id },
+      });
+      if (record) detailed += 1;
+    }
+    if (!record) {
+      const totalScore = Number(log.total) || 0;
+      record = { session:{
+        id:sessionId, schemaVersion:SHOOTING_SCHEMA_VERSION, memberId, status:"finalized", isRealShooting:true,
+        source:{ kind:"practice", mode:"freePractice", legacyCollection:"practiceLogs", legacyId:log.id }, verification:{ level:"self" }, captureMode:"scoreInput",
+        shootingConfig:{ bowType:log.bowType, distanceM:Number(log.distance) || undefined, targetFaceCode:log.targetFormat || undefined, targetFaceVersion:1, scoringScheme:"legacy", scoringSchemeVersion:1, arrowsPerEnd:Number(log.arrowCount) || undefined },
+        countsToward:{ arrowTotal:true, performance:false, personalBest:false, officialRecord:false }, arrowCount, completedEndCount:0,
+        analysis:{ level:0, comparable:false, qualityFlags:["legacy_summary"] },
+        metricsSnapshot:{ version:1, totalScore, arrowCount, averageArrow:arrowCount ? totalScore / arrowCount : 0, xCount:0, missCount:Number(log.miss) || 0, xRate:0, missRate:arrowCount ? (Number(log.miss) || 0) / arrowCount : 0, hitRate:arrowCount ? 1 - ((Number(log.miss) || 0) / arrowCount) : 0 },
+        migration:{ imported:true, confidence:"medium", originalCollection:"practiceLogs", originalId:log.id },
+      }, ends:[] };
+      summary += 1;
+    } else {
+      record.session.migration = { imported:true, confidence:"high", originalCollection:"practiceLogs", originalId:log.id };
+    }
+    const sessionRef = doc(db, C.shootingSessions, sessionId);
+    const arrowEventRef = doc(db, C.arrowCountEvents, sessionId);
+    await runTransaction(db, async transaction => {
+      const existing = await transaction.get(sessionRef);
+      if (existing.exists()) return;
+      const now = serverTimestamp();
+      transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+      record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId, createdAt:now, updatedAt:now }));
+      transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:now, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
+    });
+  }
+  return { detailed, summary, total:detailed + summary };
+}
+
+export async function migrateAllLegacyPracticeLogs() {
+  const members = await getMembers();
+  const totals = { members:0, detailed:0, summary:0, total:0 };
+  for (const member of members) {
+    const result = await migrateLegacyPracticeLogs(member.id);
+    totals.members += 1;
+    totals.detailed += result.detailed;
+    totals.summary += result.summary;
+    totals.total += result.total;
+  }
+  return totals;
+}
+
 // Performance home deliberately reads bounded session summaries only. It does
 // not subscribe and never reads the nested `ends` documents.
 function sortByPerformanceDate(records) {
@@ -103,6 +186,17 @@ export async function getGamePerformanceSummaries(memberId, maxCount = 120) {
     limit(Math.max(1, Math.min(maxCount, 200)))
   ));
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
+// Loaded only after a member opens one session detail. The performance home
+// must not fan out reads across every session's `ends` subcollection.
+export async function getShootingSessionEnds(sessionId) {
+  if (!sessionId) return [];
+  const snap = await getDocs(query(
+    collection(db, C.shootingSessions, sessionId, "ends"),
+    orderBy("index", "asc")
+  ));
+  return snap.docs.map(d => ({ id:d.id, ...d.data() }));
 }
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
@@ -357,7 +451,7 @@ export async function addPracticeLog(memberId, data, operatorId) {
   else { cleanedData.roundsString = JSON.stringify([]); }
   const ref = await addDoc(collection(db, C.practiceLogs), { memberId, ...cleanedData, createdAt: serverTimestamp(), operatorId: operatorId || memberId });
 
-  if (xpGain > 0) addAdventurerXP(memberId, xpGain).catch(() => {});
+  if (xpGain > 0 && cleanedData.grantProgress !== false) addAdventurerXP(memberId, xpGain).catch(() => {});
 
   // 注意：totalArrowsAllTime 已改為由 addRoundArrows() 在每回合送出時即時更新，
   // 此處不再重複累加（防止雙重計算）。
@@ -3582,6 +3676,24 @@ export async function saveEquipNextMats(memberId, slotId, mats) {
       updatedAt: serverTimestamp(),
     });
   } catch (e) { console.warn("saveEquipNextMats:", e?.message); }
+}
+
+export async function getPracticeLogs(memberId, maxCount = 120) {
+  if (!memberId) return [];
+  const snap = await getDocs(query(
+    collection(db, C.practiceLogs),
+    where("memberId", "==", memberId),
+    orderBy("date", "desc"),
+    limit(Math.max(1, Math.min(maxCount, 300)))
+  ));
+  return snap.docs.map(d => {
+    const record = { id:d.id, ...d.data() };
+    if (record.roundsString && typeof record.roundsString === "string") {
+      try { record.rounds = JSON.parse(record.roundsString); } catch { record.rounds = []; }
+    }
+    if (!Array.isArray(record.rounds)) record.rounds = [];
+    return record;
+  });
 }
 
 // ── 王之印記打洞／符文鑲嵌 ───────────────────────────────────

@@ -62,6 +62,7 @@ const MemberAdventureHub = lazy(() => import("../components/member/MemberAdventu
 const MemberTrainingHub  = lazy(() => import("../components/member/MemberTrainingHub"));
 const MemberInventoryHub = lazy(() => import("../components/member/MemberInventoryHub"));
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
+const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
 const CardCollection     = lazy(() => import("../components/member/CardCollection"));
 const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
@@ -501,7 +502,7 @@ const adminNav = [
     { id:"profile",       icon:"👤", label:"我的"  },
   ];
   const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
-  const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice"];
+  const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice","performance"];
   const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
 
@@ -612,7 +613,8 @@ const adminNav = [
               potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
               todayCheckin={todayCheckin} worldBoss={activeWorldBoss} />}
           {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
-          {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
+          {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} showPerformance={archerMode} />}
+          {archerMode && page==="performance" && <MemberPerformance />}
           {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
           {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
           {page==="comps"         && <MemberComps onPageChange={setPage} onSelectComp={c=>{setSelComp(c);setScoring(false);setPage("comp-detail");}}/>}

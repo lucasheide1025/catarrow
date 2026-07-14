@@ -70,9 +70,9 @@ const MemberBooking      = lazy(() => import("../components/member/MemberBooking
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
-const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
+const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice","performance"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
-const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","performance","leaderboard","bowsetting"];
+const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
 
 // hover / touch 預載：使用者碰到導覽按鈕時就開始下載對應 chunk
 const NAV_PRELOADS = {
@@ -492,7 +492,13 @@ export default function MemberApp() {
   // 學生分級與系統鎖定：維護鎖 → 帳號凍結 → 分級鎖定（優先權由高到低）
   const maintenanceActive = !!maintenanceConfig?.enabled;
   const accountFrozen     = !!profile?.accountFrozen;
-  const allowedPages      = getAllowedPages(profile, role, tierPermissions);
+  const configuredAllowedPages = getAllowedPages(profile, role, tierPermissions);
+  // Existing Firestore tier configurations predate the performance page. If a
+  // tier can enter the training area, grant this read-only training analysis
+  // page too instead of rendering a blank locked state.
+  const allowedPages = configuredAllowedPages && (configuredAllowedPages.includes("training-hub") || configuredAllowedPages.includes("practice"))
+    ? [...new Set([...configuredAllowedPages, "performance"])]
+    : configuredAllowedPages;
   const pageLocked        = allowedPages !== null && !allowedPages.includes(page);
   const lockReason = profile?.studentTier === "retired"
     ? "此帳號為退休狀態，僅能查看「我的」頁面，如需恢復請洽詢教練。"
