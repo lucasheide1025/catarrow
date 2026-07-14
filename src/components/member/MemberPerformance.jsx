@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { getGamePerformanceSummaries, getMembers, getPracticeLogs, getShootingSessionEnds, getShootingSessionSummaries, migrateLegacyPracticeLogs } from "../../lib/db";
+import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
 const ALL = "all";
@@ -36,6 +37,15 @@ function FilterSelect({ value, onChange, options }) {
     {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
   </select>;
 }
+function TargetPlotScatter({ ends }) {
+  const arrows = ends.flatMap(end => end.arrows || []).filter(arrow => arrow.captureMode === "targetPlot" && Number.isFinite(arrow.position?.x) && Number.isFinite(arrow.position?.y));
+  if (!arrows.length) return null;
+  return <svg viewBox="0 0 100 100" className="h-28 w-28 shrink-0 rounded-full bg-slate-950/40" aria-label="箭群位置">
+    {[44, 35, 26, 17, 8].map(radius => <circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="rgba(255,255,255,.18)" strokeWidth="1" />)}
+    <line x1="6" x2="94" y1="50" y2="50" stroke="rgba(255,255,255,.15)" /><line x1="50" x2="50" y1="6" y2="94" stroke="rgba(255,255,255,.15)" />
+    {arrows.map((arrow, index) => <circle key={index} cx={50 + arrow.position.x * 44} cy={50 + arrow.position.y * 44} r="2.7" fill="#60a5fa" stroke="#dbeafe" strokeWidth=".6" />)}
+  </svg>;
+}
 function SessionDetail({ session }) {
   const [ends, setEnds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +57,7 @@ function SessionDetail({ session }) {
   }, [session.id]);
   if (loading) return <div className="py-4"><Spinner /></div>;
   if (!ends.length) return <p className="py-3 text-xs" style={{ color:"var(--text-muted)" }}>此場尚未有可讀取的逐箭資料。</p>;
+  const metrics = calculateSessionMetrics(ends);
   return <div className="mt-3 border-t pt-3" style={{ borderColor:"var(--border-subtle)" }}>
     <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>逐回合紀錄</div>
     <div className="flex flex-col gap-2">
@@ -56,6 +67,7 @@ function SessionDetail({ session }) {
         <span className="font-black text-blue-300">{end.metrics?.total ?? "—"}</span>
       </div>)}
     </div>
+    {metrics?.targetPlotArrowCount > 0 && <div className="mt-4 border-t pt-3" style={{ borderColor:"var(--border-subtle)" }}><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>靶面箭群分析</div><div className="mt-2 flex gap-3"><TargetPlotScatter ends={ends} /><div className="grid flex-1 grid-cols-2 gap-2 text-xs"><div><span style={{ color:"var(--text-muted)" }}>座標樣本</span><div className="font-black text-blue-300">{metrics.targetPlotArrowCount} 箭</div></div><div><span style={{ color:"var(--text-muted)" }}>R50</span><div className="font-black text-blue-300">{metrics.groupR50?.toFixed(3)}</div></div><div><span style={{ color:"var(--text-muted)" }}>平均徑向誤差</span><div className="font-black text-blue-300">{metrics.meanRadialError?.toFixed(3)}</div></div><div><span style={{ color:"var(--text-muted)" }}>群心偏移</span><div className="font-black text-blue-300">{metrics.horizontalBias?.toFixed(3)}, {metrics.verticalBias?.toFixed(3)}</div></div></div></div>{metrics.targetSlotMetrics?.length > 1 && <div className="mt-2 text-[11px]" style={{ color:"var(--text-secondary)" }}>{metrics.targetSlotMetrics.map(slot => <span key={slot.targetSlotIndex} className="mr-3">靶位 {slot.targetSlotIndex + 1}：{slot.averageScore.toFixed(2)}／{slot.arrowCount} 箭</span>)}</div>}<p className="mt-2 text-[10px]" style={{ color:"var(--text-muted)" }}>座標為正規化靶面資料；群心數值依序為水平、垂直偏移。</p></div>}
   </div>;
 }
 

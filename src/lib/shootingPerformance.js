@@ -5,6 +5,21 @@ export const SHOOTING_SCHEMA_VERSION = 1;
 
 const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
+function spatialMetrics(arrows) {
+  const plotted = arrows.filter(arrow => arrow.captureMode === "targetPlot" && Number.isFinite(arrow.position?.x) && Number.isFinite(arrow.position?.y));
+  if (!plotted.length) return { targetPlotArrowCount:0 };
+  const horizontalBias = mean(plotted.map(arrow => arrow.position.x));
+  const verticalBias = mean(plotted.map(arrow => arrow.position.y));
+  const radii = plotted.map(arrow => Math.hypot(arrow.position.x - horizontalBias, arrow.position.y - verticalBias)).sort((a, b) => a - b);
+  return {
+    targetPlotArrowCount:plotted.length,
+    groupR50:radii[Math.max(0, Math.ceil(radii.length * 0.5) - 1)],
+    meanRadialError:mean(radii),
+    horizontalBias,
+    verticalBias,
+  };
+}
+
 export function buildPerformanceKey(config = {}) {
   return [
     config.bowType || "unknown",
@@ -55,14 +70,18 @@ export function calculateSessionMetrics(ends = []) {
   const endStdDev = Math.sqrt(mean(endTotals.map(total => (total - endAverage) ** 2)));
   const first = scores.slice(0, Math.ceil(scores.length / 3));
   const last = scores.slice(Math.floor(scores.length * 2 / 3));
-  const plotted = arrows.filter(arrow => arrow.captureMode === "targetPlot" && Number.isFinite(arrow.position?.x) && Number.isFinite(arrow.position?.y));
-  const horizontalBias = plotted.length ? mean(plotted.map(arrow => arrow.position.x)) : undefined;
-  const verticalBias = plotted.length ? mean(plotted.map(arrow => arrow.position.y)) : undefined;
+  const spatial = spatialMetrics(arrows);
+  const targetSlotMetrics = [...new Set(arrows.filter(arrow => arrow.captureMode === "targetPlot").map(arrow => arrow.targetSlot?.index ?? 0))]
+    .map(targetSlotIndex => {
+      const slotArrows = arrows.filter(arrow => arrow.captureMode === "targetPlot" && (arrow.targetSlot?.index ?? 0) === targetSlotIndex);
+      const scores = slotArrows.map(arrow => arrow.recordedScore.score);
+      return { targetSlotIndex, arrowCount:slotArrows.length, averageScore:mean(scores), ...spatialMetrics(slotArrows) };
+    });
   return {
     version:1, totalScore, arrowCount:scores.length, averageArrow, xCount, missCount,
     xRate:xCount / scores.length, missRate:missCount / scores.length, hitRate:(scores.length - missCount) / scores.length,
     endAverage, endStdDev, firstThirdAverage:mean(first), lastThirdAverage:mean(last), fatigueDelta:mean(last) - mean(first),
-    targetPlotArrowCount:plotted.length, ...(plotted.length ? { horizontalBias, verticalBias } : {}),
+    ...spatial, ...(targetSlotMetrics.length ? { targetSlotMetrics } : {}),
   };
 }
 
