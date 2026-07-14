@@ -309,13 +309,19 @@ export async function getChangedShootingSessionSummaries(memberId, afterRevision
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
 }
 
-// Explicit new-device transfer: only recent summaries are downloaded. Session
-// ends remain lazy and are cached locally when a shooter opens their detail.
-export async function bootstrapRecentPerformanceCache(memberId, months = 3) {
+// Explicit new-device transfer downloads recent raw ends once, then Firebase's
+// persistent IndexedDB cache serves exact local performance calculations.
+export async function bootstrapRecentPerformanceCache(memberId, months = 3, onProgress) {
   if (!memberId) return { sessions:[], sync:null };
   const since = Timestamp.fromMillis(Date.now() - months * 31 * 24 * 60 * 60 * 1000);
   const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since)));
   const sessions = sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  let completed = 0;
+  for (let start = 0; start < sessions.length; start += 6) {
+    await Promise.all(sessions.slice(start, start + 6).map(session => getShootingSessionEnds(session.id)));
+    completed += Math.min(6, sessions.length - start);
+    onProgress?.({ completed, total:sessions.length });
+  }
   const sync = await getMemberPerformanceSync(memberId);
   setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true });
   return { sessions, sync };
@@ -348,6 +354,13 @@ export async function getShootingSessionEnds(sessionId) {
     orderBy("index", "asc")
   ));
   return snap.docs.map(d => ({ id:d.id, ...d.data() }));
+}
+export async function getCachedShootingSessionEnds(sessionId) {
+  if (!sessionId) return [];
+  try {
+    const snap = await getDocsFromCache(query(collection(db, C.shootingSessions, sessionId, "ends"), orderBy("index", "asc")));
+    return snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch { return []; }
 }
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
