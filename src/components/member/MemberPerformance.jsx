@@ -245,7 +245,9 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     face:selectOptions(sourceSessions.map(item => item.shootingConfig?.targetFaceCode), "靶面", value => TARGET_FACE_LABELS[value] || value),
     capture:[{ value:ALL, label:"全部輸入" }, { value:"scoreInput", label:"一般計分" }, { value:"targetPlot", label:"靶面點擊" }],
     arrows:selectOptions(sourceSessions.map(item => item.shootingConfig?.arrowsPerEnd), "箭制"),
-    source:[{ value:ALL, label:"全部模式" }, ...[...new Set(sourceSessions.map(item => item.source?.mode).filter(Boolean))].map(value => ({ value, label:SOURCE_LABELS[value] || value }))],
+    // Modes are a product taxonomy, not a side effect of whichever records
+    // happened to be cached on this device. Keep empty modes selectable.
+    source:[{ value:ALL, label:"全部模式" }, ...Object.keys(SOURCE_LABELS).map(value => ({ value, label:SOURCE_LABELS[value] }))],
   }), [sourceSessions]);
   const filtered = useMemo(() => sourceSessions.filter(item => {
     const config = item.shootingConfig || {};
