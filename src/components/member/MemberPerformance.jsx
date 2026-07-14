@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getGamePerformanceSummaries, getMembers, getPracticeLogs, getShootingSessionEnds, getShootingSessionSummaries } from "../../lib/db";
+import { getGamePerformanceSummaries, getMembers, getPracticeLogs, getShootingSessionEnds, getShootingSessionSummaries, migrateLegacyPracticeLogs } from "../../lib/db";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
 const ALL = "all";
@@ -78,7 +78,15 @@ export default function MemberPerformance({ profileOverride = null }) {
     if (!viewedMemberId) { setSessions([]); setGames([]); setLegacyLogs([]); setLoading(false); return; }
     let active = true; setLoading(true); setError("");
     Promise.all([getShootingSessionSummaries(viewedMemberId), getGamePerformanceSummaries(viewedMemberId), getPracticeLogs(viewedMemberId)])
-      .then(([nextSessions, nextGames, nextLegacyLogs]) => { if (active) { setSessions(nextSessions); setGames(nextGames); setLegacyLogs(nextLegacyLogs); } })
+      .then(async ([nextSessions, nextGames, nextLegacyLogs]) => {
+        // Backfill at the point the record is actually viewed. This is
+        // idempotent and also recovers imports interrupted in the admin page.
+        if (nextLegacyLogs.length) {
+          await migrateLegacyPracticeLogs(viewedMemberId);
+          nextSessions = await getShootingSessionSummaries(viewedMemberId);
+        }
+        if (active) { setSessions(nextSessions); setGames(nextGames); setLegacyLogs(nextLegacyLogs); }
+      })
       .catch(() => { if (active) setError("暫時無法讀取表現紀錄，請稍後再試。"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };

@@ -80,10 +80,14 @@ export default function AdminMembers() {
   }, []);
 
   useEffect(() => {
-    const key = "legacy_practice_sessions_v1_started";
+    const key = "legacy_practice_sessions_v2_complete";
     if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, "1");
-    migrateAllLegacyPracticeLogs().catch(error => console.warn("legacy practice migration:", error?.message));
+    migrateAllLegacyPracticeLogs().then(result => {
+      // Keep failed members retryable on the next visit instead of silently
+      // marking an incomplete import as done.
+      if (!result.failed.length) sessionStorage.setItem(key, "1");
+      else console.warn("legacy practice migration incomplete:", result.failed);
+    }).catch(error => console.warn("legacy practice migration:", error?.message));
   }, []);
 
   function toggleSelMember(id) {

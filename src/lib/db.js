@@ -140,13 +140,18 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
 
 export async function migrateAllLegacyPracticeLogs() {
   const members = await getMembers();
-  const totals = { members:0, detailed:0, summary:0, total:0 };
+  const totals = { members:0, detailed:0, summary:0, total:0, failed:[] };
   for (const member of members) {
-    const result = await migrateLegacyPracticeLogs(member.id);
-    totals.members += 1;
-    totals.detailed += result.detailed;
-    totals.summary += result.summary;
-    totals.total += result.total;
+    try {
+      const result = await migrateLegacyPracticeLogs(member.id);
+      totals.members += 1;
+      totals.detailed += result.detailed;
+      totals.summary += result.summary;
+      totals.total += result.total;
+    } catch (error) {
+      // One malformed legacy record must not stop every other student's import.
+      totals.failed.push({ memberId:member.id, message:error?.message || "unknown error" });
+    }
   }
   return totals;
 }
