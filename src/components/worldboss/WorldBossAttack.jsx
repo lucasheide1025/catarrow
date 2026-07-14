@@ -1027,6 +1027,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             </div>
           </div>
 
+          <div className="bg-blue-950/45 border border-blue-400/35 rounded-2xl p-4">
+            <div className="text-sm font-black text-blue-100 mb-1">🏹 實際距離與本場裝備</div>
+            <div className="text-xs text-blue-200/70 mb-3">開始挑戰後會鎖定這組設定，並寫入本次射手表現。</div>
+            <BattleShootingProfile memberId={myId} />
+          </div>
+
           {/* 戰鬥說明 */}
           <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl px-4 py-3 text-xs text-rose-300 space-y-1 leading-relaxed">
             <div className="font-black text-rose-200 mb-1">⚔️ 戰鬥流程</div>
@@ -1092,7 +1098,6 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
             <div className="text-xs text-slate-400 font-bold mb-3">🎯 計分方式</div>
             <div className="flex flex-col gap-3">
-              <BattleShootingProfile memberId={myId} />
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>

@@ -1396,7 +1396,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         <div style={{ fontSize:12, color:"#94a3b8" }}>
           本場規則：{room?.arrowsPerRound || 6} 箭／回合 · {getDungeonTargetLabel(targetFmt)}
         </div>
-        <BattleShootingProfile memberId={myId} />
+        <div style={{ padding:12, borderRadius:12, background:"rgba(30,58,138,.34)", border:"1px solid rgba(96,165,250,.42)" }}>
+          <div style={{ fontWeight:900, fontSize:14, color:"#dbeafe", marginBottom:5 }}>🏹 實際距離與本場裝備</div>
+          <div style={{ color:"#93c5fd", fontSize:11, marginBottom:10 }}>戰鬥開始後會鎖定並寫入這次地下城射擊紀錄。</div>
+          <BattleShootingProfile memberId={myId} />
+        </div>
         <div style={{ color:"#64748b", fontSize:13 }}>等待房主開始戰鬥…</div>
       </div>
     );
