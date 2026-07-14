@@ -188,24 +188,6 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [viewedMemberId]);
-  useEffect(() => {
-    let active = true;
-    async function loadExactRecent() {
-      const arrows = [];
-      for (const session of sessions) {
-        const ends = await getCachedShootingSessionEnds(session.id);
-        for (const end of [...ends].reverse()) for (const arrow of [...(end.arrows || [])].reverse()) {
-          const recorded = arrow.captureMode === "targetPlot" ? arrow.recordedScore : arrow;
-          if (Number.isFinite(Number(recorded?.score))) arrows.push({ score:Number(recorded.score), isX:Boolean(recorded.isX), isMiss:Boolean(recorded.isMiss) });
-          if (arrows.length >= 90) break;
-        }
-        if (arrows.length >= 90) break;
-      }
-      if (active) { setExactArrows(arrows); setExactRecent(arrows.length ? [30, 60, 90].map(target => buildExactRecent(arrows, target)) : []); }
-    }
-    loadExactRecent();
-    return () => { active = false; };
-  }, [sessions]);
   async function transferRecentHistory() {
     if (!viewedMemberId || transferring) return;
     setTransferring(true); setError("");
@@ -230,6 +212,24 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   }), [sourceSessions, filters]);
   const visibleSessions = useMemo(() => filtered.slice(0, sessionListLimit), [filtered, sessionListLimit]);
   const historicalSessions = useMemo(() => filtered.slice(20), [filtered]);
+  useEffect(() => {
+    let active = true;
+    async function loadExactRecent() {
+      const arrows = [];
+      for (const session of filtered) {
+        const ends = await getCachedShootingSessionEnds(session.id);
+        for (const end of [...ends].reverse()) for (const arrow of [...(end.arrows || [])].reverse()) {
+          const recorded = arrow.captureMode === "targetPlot" ? arrow.recordedScore : arrow;
+          if (Number.isFinite(Number(recorded?.score))) arrows.push({ score:Number(recorded.score), isX:Boolean(recorded.isX), isMiss:Boolean(recorded.isMiss) });
+          if (arrows.length >= 90) break;
+        }
+        if (arrows.length >= 90) break;
+      }
+      if (active) { setExactArrows(arrows); setExactRecent(arrows.length ? [30, 60, 90].map(target => buildExactRecent(arrows, target)) : []); }
+    }
+    loadExactRecent();
+    return () => { active = false; };
+  }, [filtered]);
   const shooting = useMemo(() => {
     const arrowCount = filtered.reduce((sum, session) => sum + (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0), 0);
     const best = filtered.reduce((current, session) => !current || (Number(sessionMetrics(session).averageArrow) || 0) > (Number(sessionMetrics(current).averageArrow) || 0) ? session : current, null);
