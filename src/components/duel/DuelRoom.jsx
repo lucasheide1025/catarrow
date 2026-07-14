@@ -24,7 +24,7 @@ import {
 import { BattleResultHeader, BattleStatCard } from "../shared/SharedBattleComponents";
 import { BattleResultPanel } from "../shared/BattleResultPanel";
 import { generateBotArrows } from "../../lib/botUtils";
-import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows, checkAndGrantArrowMilestones } from "../../lib/db";
+import { addPracticeLog, grantArrowMilestoneRewards, addArrowdew, addArcherXP, addRoundArrows, checkAndGrantArrowMilestones, finalizeGameShootingSession } from "../../lib/db";
 import { DUEL_WIN_XP, DUEL_LOSE_XP } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_DUEL_WIN_XP, CAT_DUEL_LOSE_XP } from "../../lib/catLevel";
@@ -418,6 +418,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             return Number(String(arrow.label).match(/\d+/)?.[0]) || 0;
           })
         );
+        const capturedEnds = myBreakdownsByRound.map(roundArrows => roundArrows.map(arrow => ({
+          label:arrow.label,
+          ...(Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny) ? { landing:{ nx:arrow.nx, ny:arrow.ny, faceIndex:arrow.faceIndex || 0, targetFormat:arrow.targetFormat || targetFmt } } : {}),
+        })));
         const arrowPositions = myBreakdownsByRound.flatMap((roundArrows, roundIndex) =>
           roundArrows.flatMap((arrow, arrowIndex) =>
             Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny)
@@ -449,6 +453,14 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           inputMode:arrowPositions.length ? "target" : "button",
           ...(arrowPositions.length ? { arrowPositions } : {}),
         }, profile.id).catch(() => {});
+        finalizeGameShootingSession({
+          sessionId:`duel_${roomId}_${myId}`, memberId:profile.id, capturedEnds,
+          shootingProfile, targetFormat:targetFmt, arrowsPerEnd:ARROWS,
+          result:outcome, sourceMode:"duel",
+          monster:{ id:`duel_${myTeam === "A" ? "teamB" : "teamA"}`, nameSnapshot:"duel" },
+          totalDamage:myDmg,
+          finalMonsterHp:(myTeam === "A" ? room.teamB : room.teamA)?.[Object.keys(myTeam === "A" ? room.teamB || {} : room.teamA || {})[0]]?.hp,
+        }).catch(error => console.warn("duel shooting performance dual-write failed", error));
         addArrowdew(profile.id, myArrowCount).catch(() => {});
         // 射手等級 XP（勝利 50、失敗/平局 20）
         const duelXP = outcome === "win" ? DUEL_WIN_XP : DUEL_LOSE_XP;
