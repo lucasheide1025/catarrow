@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { checkCouncilDailyLimit, completeCouncilSession, recordCouncilSession } from "../../lib/db";
+import { checkCouncilDailyLimit, completeCouncilSession, recordCouncilSession, finalizePracticeShootingSession } from "../../lib/db";
 import { isBuildingUnlocked } from "../../lib/villageData";
 import {
   GATHERING_SITE_MAP,
@@ -87,6 +87,16 @@ export default function CouncilHall({ profile, village, onBack }) {
     setSaving(true);
     try {
       await completeCouncilSession(profile.id, result);
+      await finalizePracticeShootingSession({
+        sessionId:`gathering_${profile.id}_${result.contractId}`,
+        memberId:profile.id,
+        rounds:result.rounds || [],
+        shootingProfile:{ bowType:profile?.defaultBowType },
+        targetFormat:"full_110",
+        arrowsPerEnd:6,
+        source:{ kind:"mission", mode:"councilMission" },
+        countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false },
+      });
       if (result.contractVersion >= 2) {
         const rewards = result.gatheringRewards;
         setDoneMsg(`採集完成：${rewards?.completion?.label || "完成"}，進度 ${rewards?.progressPct || 0}%`);
@@ -113,6 +123,16 @@ export default function CouncilHall({ profile, village, onBack }) {
     setSaving(true);
     try {
       await completeCouncilSession(profile.id, result);
+      await finalizePracticeShootingSession({
+        sessionId:`gathering_party_${profile.id}_${result.contractId}`,
+        memberId:profile.id,
+        rounds:result.rounds || [],
+        shootingProfile:{ bowType:profile?.defaultBowType },
+        targetFormat:"full_110",
+        arrowsPerEnd:6,
+        source:{ kind:"mission", mode:"councilMission" },
+        countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false },
+      });
       setDoneMsg("協力採集成果已入帳。");
       setTimeout(() => setDoneMsg(""), 4200);
       return true;

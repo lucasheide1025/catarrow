@@ -5,7 +5,7 @@ import {
   subscribePartyRoom, markQuestDone as markPartyDone,
   markQuestGaveUp, giveQuestRewards, leavePartyRoom
 } from "../../lib/partyDb";
-import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin, addPracticeLog } from "../../lib/db";
+import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin, addPracticeLog, finalizePracticeShootingSession } from "../../lib/db";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
 
@@ -129,6 +129,16 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         totalArrows: arrows.length,
         distance: task.distance || null,
       }, myId).catch(() => {});
+      finalizePracticeShootingSession({
+        sessionId:`partyQuest_${roomId}_${myId}_${task.id}`,
+        memberId:myId,
+        rounds:[arrows],
+        shootingProfile:{ bowType:profile?.defaultBowType, distance:task.distance },
+        targetFormat:"full_110",
+        arrowsPerEnd:arrowCount,
+        source:{ kind:"mission", mode:"dailyMission" },
+        countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false },
+      }).catch(error => console.warn("party quest shooting session failed", error));
     }
     await markPartyDone(roomId, myId, true);
     setSubmitting(false);

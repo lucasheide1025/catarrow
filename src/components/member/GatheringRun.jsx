@@ -554,6 +554,7 @@ export default function GatheringRun({
       catId,
       buildingId: site.id,
       totalArrows: rounds.length * GATHERING_ARROWS_PER_ROUND,
+      rounds: rounds.map(round => round.arrows),
       goalParticipants,
       progressPct: result.progressPct,
       continueRun,
