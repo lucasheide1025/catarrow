@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -352,6 +352,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [allRounds,    setAllRounds]    = useState(_hasSave ? _saved.allRounds   : []);
   const [roundSummary, setRoundSummary] = useState(null);
   const shootingProfileRef = useRef(null);
+  const shootingSessionIdRef = useRef(null);
 
   const [myHP,       setMyHP]       = useState(_hasSave ? _saved.myHP       : baseHP);
   const [bossHP,     setBossHP]     = useState(() => {
@@ -885,6 +886,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         const practiceRounds = rounds.map(r =>
           (r.arrows || []).map(arrow => scoreVal(arrow?.label ?? arrow))
         );
+        const capturedEnds = rounds.map(round => (round.arrows || []).map(arrow => ({
+          label:arrow?.label ?? String(arrow),
+          ...(Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny) ? { landing:{ nx:arrow.nx, ny:arrow.ny, faceIndex:arrow.faceIndex || 0, targetFormat:arrow.targetFormat || targetFmt } } : {}),
+        })));
         const arrowPositions = rounds.flatMap((battleRound, battleRoundIndex) =>
           (battleRound.arrows || []).flatMap((arrow, arrowIndex) =>
             Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
@@ -925,6 +930,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           inputMode:arrowPositions.length ? "target" : "button",
           ...(arrowPositions.length ? { arrowPositions } : {}),
         }, myId).catch(() => {});
+        const sessionKey = shootingSessionIdRef.current ||= `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        finalizeGameShootingSession({
+          sessionId:`worldboss_${event.id}_${myId}_${sessionKey}`, memberId:myId, capturedEnds,
+          shootingProfile, targetFormat:targetFmt, arrowsPerEnd:ARROWS_PER,
+          result:res.defeated ? "win" : "lose", sourceMode:"worldBoss",
+          monster:{ id:event.bossKey || boss.id, name:boss.name, tier:"mythic", hp:event.bossMaxHP },
+          totalDamage:res.dmg || 0, finalMonsterHp:res.bossHP ?? bossHP,
+          characterSnapshot:{ level:archerLevel, attack:baseATK, defense:baseDEF },
+        }).catch(error => console.warn("world boss shooting performance dual-write failed", error));
         // 射手 / 貓貓 XP：依貢獻傷害比例，min 50 max 300
         const _dmgPct = (res.dmg || 0) / (event.bossMaxHP || 1);
         const bossXP  = Math.min(WORLD_BOSS_XP_CAP, Math.max(50, Math.round(_dmgPct * 10000)));
