@@ -19,7 +19,7 @@ import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCa
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
-import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord } from "./shootingPerformance";
+import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, calculateSessionMetrics } from "./shootingPerformance";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -371,6 +371,18 @@ export async function getGamePerformanceSummaries(memberId, maxCount = 120) {
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
 }
 
+// Full history is intentionally an explicit, bounded action. The normal
+// performance home uses IndexedDB plus the one-document sync manifest.
+export async function getShootingSessionHistory(memberId, maxCount = 300) {
+  if (!memberId) return [];
+  const snap = await getDocs(query(
+    collection(db, C.shootingSessions),
+    where("memberId", "==", memberId),
+    limit(Math.max(1, Math.min(maxCount, 300)))
+  ));
+  return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
 export async function getCachedGamePerformanceSummaries(memberId) {
   if (!memberId) return [];
   try {
@@ -395,6 +407,45 @@ export async function getCachedShootingSessionEnds(sessionId) {
     const snap = await getDocsFromCache(query(collection(db, C.shootingSessions, sessionId, "ends"), orderBy("index", "asc")));
     return snap.docs.map(d => ({ id:d.id, ...d.data() }));
   } catch { return []; }
+}
+
+// Correcting a plotted arrow changes archery analytics only. The linked
+// GamePerformance document is deliberately never read or rewritten here:
+// combat damage and rewards remain the immutable result at battle time.
+export async function correctTargetPlotArrow({ sessionId, memberId, endId, arrowIndex, label, reason = "lineCutter", correctedBy }) {
+  if (!sessionId || !memberId || !endId || !Number.isInteger(arrowIndex)) throw new Error("缺少箭位修正資料");
+  const sessionRef = doc(db, C.shootingSessions, sessionId);
+  const endRef = doc(db, C.shootingSessions, sessionId, "ends", endId);
+  const allowedReason = ["lineCutter", "inputCorrection", "coachDecision", "other"].includes(reason) ? reason : "other";
+  return runTransaction(db, async transaction => {
+    const [sessionSnap, endsSnap] = await Promise.all([
+      transaction.get(sessionRef),
+      transaction.get(query(collection(db, C.shootingSessions, sessionId, "ends"), orderBy("index", "asc"))),
+    ]);
+    if (!sessionSnap.exists()) throw new Error("找不到射擊場次");
+    if (sessionSnap.data()?.memberId !== memberId) throw new Error("射擊場次與會員不符");
+    const ends = endsSnap.docs.map(item => ({ id:item.id, ...item.data() }));
+    const end = ends.find(item => item.id === endId);
+    const arrow = end?.arrows?.[arrowIndex];
+    if (!arrow || arrow.captureMode !== "targetPlot") throw new Error("此箭沒有靶面座標資料");
+    const score = label === "X" ? 10 : label === "M" ? 0 : Math.max(0, Number(label) || 0);
+    const patchedArrow = {
+      ...arrow,
+      recordedScore:{ score, label:String(label), isX:label === "X", isMiss:score === 0 },
+      // Firestore serverTimestamp cannot be stored inside an array element.
+      override:{ applied:true, reason:allowedReason, previousScore:arrow.recordedScore?.score, appliedBy:correctedBy || memberId, appliedAt:Timestamp.now() },
+    };
+    const patchedEnd = { ...end, arrows:end.arrows.map((item, index) => index === arrowIndex ? patchedArrow : item) };
+    const patchedEnds = ends.map(item => item.id === endId ? patchedEnd : item);
+    const metricsSnapshot = calculateSessionMetrics(patchedEnds);
+    const sync = await nextPerformanceSyncRevision(transaction, memberId);
+    transaction.update(endRef, { arrows:patchedEnd.arrows, metrics:{ total:patchedEnd.arrows.reduce((sum, item) => sum + (item.recordedScore?.score ?? item.score ?? 0), 0), arrowCount:patchedEnd.arrows.length, averageArrow:patchedEnd.arrows.length ? patchedEnd.arrows.reduce((sum, item) => sum + (item.recordedScore?.score ?? item.score ?? 0), 0) / patchedEnd.arrows.length : 0, xCount:patchedEnd.arrows.filter(item => item.recordedScore?.isX || item.isX).length, missCount:patchedEnd.arrows.filter(item => (item.recordedScore?.score ?? item.score) === 0).length }, updatedAt:serverTimestamp() });
+    transaction.update(sessionRef, { status:"corrected", metricsSnapshot, syncRevision:sync.revision, correction:{ correctedAt:serverTimestamp(), correctedBy:correctedBy || memberId, reason:allowedReason }, updatedAt:serverTimestamp() });
+    // A correction is a revision, not a new shooting event: never inflate
+    // the member's session or arrow totals while notifying cached clients.
+    transaction.set(sync.ref, { memberId, revision:sync.revision, lastChangedAt:serverTimestamp(), updatedAt:serverTimestamp() }, { merge:true });
+    return metricsSnapshot;
+  });
 }
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
