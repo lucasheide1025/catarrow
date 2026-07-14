@@ -3688,9 +3688,14 @@ export async function getPracticeLogs(memberId, maxCount = 120) {
   const snap = await getDocs(query(
     collection(db, C.practiceLogs),
     where("memberId", "==", memberId),
-    orderBy("date", "desc"),
     limit(Math.max(1, Math.min(maxCount, 300)))
   ));
+  const dateValue = record => {
+    const value = record.date || record.createdAt;
+    if (typeof value?.toMillis === "function") return value.toMillis();
+    const parsed = new Date(value || 0).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
   return snap.docs.map(d => {
     const record = { id:d.id, ...d.data() };
     if (record.roundsString && typeof record.roundsString === "string") {
@@ -3698,7 +3703,7 @@ export async function getPracticeLogs(memberId, maxCount = 120) {
     }
     if (!Array.isArray(record.rounds)) record.rounds = [];
     return record;
-  });
+  }).sort((a, b) => dateValue(b) - dateValue(a));
 }
 
 // ── 王之印記打洞／符文鑲嵌 ───────────────────────────────────

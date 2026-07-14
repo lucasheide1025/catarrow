@@ -77,8 +77,14 @@ export default function MemberPerformance({ profileOverride = null }) {
   useEffect(() => {
     if (!viewedMemberId) { setSessions([]); setGames([]); setLegacyLogs([]); setLoading(false); return; }
     let active = true; setLoading(true); setError("");
-    Promise.all([getShootingSessionSummaries(viewedMemberId), getGamePerformanceSummaries(viewedMemberId), getPracticeLogs(viewedMemberId)])
-      .then(async ([nextSessions, nextGames, nextLegacyLogs]) => {
+    Promise.allSettled([getShootingSessionSummaries(viewedMemberId), getGamePerformanceSummaries(viewedMemberId), getPracticeLogs(viewedMemberId)])
+      .then(async results => {
+        const [sessionResult, gameResult, legacyResult] = results;
+        let nextSessions = sessionResult.status === "fulfilled" ? sessionResult.value : [];
+        const nextGames = gameResult.status === "fulfilled" ? gameResult.value : [];
+        const nextLegacyLogs = legacyResult.status === "fulfilled" ? legacyResult.value : [];
+        const failedReads = results.filter(result => result.status === "rejected");
+        if (failedReads.length) console.warn("performance read failures:", failedReads.map(result => result.reason?.message));
         // Backfill at the point the record is actually viewed. This is
         // idempotent and also recovers imports interrupted in the admin page.
         if (nextLegacyLogs.length) {
@@ -87,7 +93,7 @@ export default function MemberPerformance({ profileOverride = null }) {
         }
         if (active) { setSessions(nextSessions); setGames(nextGames); setLegacyLogs(nextLegacyLogs); }
       })
-      .catch(() => { if (active) setError("暫時無法讀取表現紀錄，請稍後再試。"); })
+      .catch(error => { console.warn("performance load:", error?.message); if (active) setError("舊資料回填暫時失敗，請重新整理後再試。"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [viewedMemberId]);
