@@ -2,17 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, ensureMemberPerformanceSync, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedGamePerformanceSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
+import { TARGET_FACE_FORMATS } from "../../lib/targetFace";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
 const ALL = "all";
-const SOURCE_LABELS = { monster:"打怪", party:"組隊", partyBattle:"組隊", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥", practice:"自主練習", lesson:"課程", competition:"賽事", certification:"檢定" };
+const SOURCE_LABELS = { freePractice:"自主練習", monster:"一般打怪", party:"組隊戰鬥", partyBattle:"組隊戰鬥", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥", dailyMission:"每日任務", councilMission:"採集委託", guildMission:"公會任務", practice:"自主練習", lesson:"課程", competition:"賽事", certification:"檢定" };
 const GAME_MODE_LABELS = { monster:"一般打怪", partyBattle:"組隊戰鬥", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥" };
 const PERIOD_OPTIONS = [["day", "日"], ["week", "週"], ["month", "月"], ["year", "年"], ["all", "全部"]];
+const BOW_LABELS = { rental:"租借器材", recurve_bare:"裸弓", recurve_full:"反曲弓（全配）", compound:"複合弓", traditional:"傳統弓" };
+const TARGET_FACE_LABELS = Object.fromEntries(TARGET_FACE_FORMATS.map(format => [format.id, format.shortLabel || format.label]));
 
 function percent(value) { return `${Math.round((Number(value) || 0) * 100)}%`; }
 function sessionMetrics(session) { return session.metricsSnapshot || {}; }
-function selectOptions(values, label) {
-  return [{ value:ALL, label:`全部${label}` }, ...[...new Set(values.filter(Boolean))].sort().map(value => ({ value:String(value), label:String(value) }))];
+function selectOptions(values, label, display = value => value) {
+  return [{ value:ALL, label:`全部${label}` }, ...[...new Set(values.filter(Boolean))].sort().map(value => ({ value:String(value), label:display(value) }))];
 }
 function arrowLabel(arrow) { return arrow.captureMode === "targetPlot" ? arrow.recordedScore?.label : arrow.label; }
 function displayDate(session) {
@@ -199,9 +202,9 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   }
   const sourceSessions = useMemo(() => sessions.filter(session => session.isRealShooting === true && session.countsToward?.performance !== false && ["finalized", "corrected"].includes(session.status) && (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0) > 0), [sessions]);
   const filterOptions = useMemo(() => ({
-    bow:selectOptions(sourceSessions.map(item => item.shootingConfig?.bowType), "弓種"),
+    bow:selectOptions(sourceSessions.map(item => item.shootingConfig?.bowType), "弓種", value => BOW_LABELS[value] || value),
     distance:selectOptions(sourceSessions.map(item => item.shootingConfig?.distanceM), "距離"),
-    face:selectOptions(sourceSessions.map(item => item.shootingConfig?.targetFaceCode), "靶面"),
+    face:selectOptions(sourceSessions.map(item => item.shootingConfig?.targetFaceCode), "靶面", value => TARGET_FACE_LABELS[value] || value),
     capture:[{ value:ALL, label:"全部輸入" }, { value:"scoreInput", label:"一般計分" }, { value:"targetPlot", label:"靶面點擊" }],
     arrows:selectOptions(sourceSessions.map(item => item.shootingConfig?.arrowsPerEnd), "箭制"),
     source:[{ value:ALL, label:"全部模式" }, ...[...new Set(sourceSessions.map(item => item.source?.mode).filter(Boolean))].map(value => ({ value, label:SOURCE_LABELS[value] || value }))],
