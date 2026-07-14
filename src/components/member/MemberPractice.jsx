@@ -2352,7 +2352,10 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
       ...(arrowPositions.length>0 ? { arrowPositions } : {}),
     };
     await addPracticeLog(profile.id, practicePayload, profile.id);
-    await finalizePracticeShootingSession({
+    // The legacy log is the immediate UI confirmation path. The normalized
+    // session writes 1 parent + every completed end, so do it reliably in the
+    // background rather than holding a 120-arrow student on this screen.
+    finalizePracticeShootingSession({
       sessionId:practiceSessionId,
       memberId:profile.id,
       rounds:finishedRounds,
@@ -2361,7 +2364,7 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
       targetFormat:form.targetFormat,
       arrowsPerEnd:form.arrowCount,
       timingMode:form.competitionMode || "off",
-    });
+    }).catch(error => console.warn("practice shooting session dual-write failed", error));
 
     toast("練習紀錄已儲存 ✓");
     clearPracticeRecovery(profile.id);
