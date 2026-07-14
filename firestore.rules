@@ -45,7 +45,7 @@ service cloud.firestore {
                     "bookingStats",
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
-                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
+                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals", "equipmentRuneFragments",
                     "activeExpedition", "expeditions"])
       ) || (
         isLoggedIn() && resource.data.accountType in ["guest", "kid"]

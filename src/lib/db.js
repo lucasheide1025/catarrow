@@ -69,8 +69,40 @@ function legacyPracticeOccurredAt(log) {
 }
 function legacyPracticeSource(log) {
   const raw = String(log?.source || log?.mode || log?.type || "").toLowerCase();
-  const mode = ({ monster:"monster", battle:"monster", party:"party", partybattle:"party", dungeon:"dungeon", worldboss:"worldBoss", world_boss:"worldBoss", duel:"duel", certification:"certification", competition:"competition", lesson:"lesson" })[raw] || "freePractice";
-  return { kind:["monster", "party", "dungeon", "worldBoss", "duel"].includes(mode) ? "game" : mode === "lesson" ? "lesson" : mode === "certification" ? "certification" : mode === "competition" ? "competition" : "practice", mode };
+  const mode = ({ monster:"monster", battle:"monster", party:"party", partybattle:"party", dungeon:"dungeon", worldboss:"worldBoss", world_boss:"worldBoss", duel:"duel", certification:"certification", competition:"competition" })[raw] || "freePractice";
+  return { kind:["monster", "party", "dungeon", "worldBoss", "duel"].includes(mode) ? "game" : mode === "certification" ? "certification" : mode === "competition" ? "competition" : "practice", mode };
+}
+
+function sameTimestamp(left, right) {
+  if (!left || !right) return false;
+  const leftMs = typeof left.toMillis === "function" ? left.toMillis() : left instanceof Date ? left.getTime() : null;
+  const rightMs = typeof right.toMillis === "function" ? right.toMillis() : right instanceof Date ? right.getTime() : null;
+  return leftMs !== null && leftMs === rightMs;
+}
+
+function legacyGameResult(log) {
+  const value = String(log?.result || log?.status || "").toLowerCase();
+  return ["win", "lose", "abandoned"].includes(value) ? value : "abandoned";
+}
+
+function buildLegacyPracticeGamePerformance({ sessionId, memberId, source, log, ends, syncRevision, occurredAt, now }) {
+  const totalDamage = Number(log?.totalDamage ?? log?.damage) || 0;
+  const monsterName = log?.monsterName || log?.bossName || log?.enemyName;
+  return stripUndefined({
+    id:sessionId,
+    sessionId,
+    memberId,
+    mode:source.mode,
+    result:legacyGameResult(log),
+    monster:monsterName || log?.monsterId ? { id:log?.monsterId || "legacy", nameSnapshot:monsterName || "" } : undefined,
+    rounds:(ends || []).map(end => ({ endIndex:end.index, shootingScore:end.metrics?.total || 0, finalDamage:0 })),
+    totalDamage,
+    rewards:log?.lootName ? { drops:[{ itemId:log.lootType || "legacy", itemNameSnapshot:log.lootName, quantity:1 }] } : undefined,
+    rulesVersion:"legacy-practice-log-v1",
+    locked:true,
+    syncRevision,
+    createdAt:occurredAt || now,
+  });
 }
 
 async function nextPerformanceSyncRevision(transaction, memberId) {
@@ -138,7 +170,7 @@ export async function finalizeMonsterShootingSession(input) {
     // Keep game records on the same revision as their ShootingSession. The
     // browser compares one member manifest, then fetches only these new docs.
     transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), syncRevision:sync.revision, createdAt:now });
-    transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
+    transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "game", sourceMode:record.session.source?.mode || "monster", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   }); } catch (error) {
     if (input.__skipPendingQueue) throw error;
@@ -217,6 +249,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
     }
     const sessionRef = doc(db, C.shootingSessions, sessionId);
     const arrowEventRef = doc(db, C.arrowCountEvents, sessionId);
+    const gameRef = doc(db, C.gamePerformances, sessionId);
     const occurredAt = legacyPracticeOccurredAt(log);
     await runTransaction(db, async transaction => {
       const existing = await transaction.get(sessionRef);
@@ -225,10 +258,26 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       // every idempotent pass, without rewriting scoring or arrow data.
       if (existing.exists()) {
         if (existing.data()?.memberId !== memberId) throw new Error("Shooting session ID collision");
-        if (occurredAt) {
-          transaction.update(sessionRef, { source, startedAt:occurredAt, endedAt:occurredAt, finalizedAt:occurredAt, updatedAt:now });
-          transaction.set(arrowEventRef, { occurredAt, sourceKind:source.kind, sourceMode:source.mode, updatedAt:now }, { merge:true });
+        const existingData = existing.data();
+        const sourceChanged = existingData?.source?.kind !== source.kind || existingData?.source?.mode !== source.mode;
+        const dateChanged = Boolean(occurredAt && !sameTimestamp(existingData?.startedAt, occurredAt));
+        const existingGame = source.kind === "game" ? await transaction.get(gameRef) : null;
+        const gameMissing = source.kind === "game" && !existingGame.exists();
+        if (!sourceChanged && !dateChanged && !gameMissing) return;
+        const sync = await nextPerformanceSyncRevision(transaction, memberId);
+        transaction.update(sessionRef, stripUndefined({
+          source,
+          startedAt:occurredAt || undefined,
+          endedAt:occurredAt || undefined,
+          finalizedAt:occurredAt || undefined,
+          syncRevision:sync.revision,
+          updatedAt:now,
+        }));
+        transaction.set(arrowEventRef, stripUndefined({ occurredAt:occurredAt || undefined, sourceKind:source.kind, sourceMode:source.mode, updatedAt:now }), { merge:true });
+        if (gameMissing) {
+          transaction.set(gameRef, buildLegacyPracticeGamePerformance({ sessionId, memberId, source, log, ends:record.ends, syncRevision:sync.revision, occurredAt, now }));
         }
+        transaction.set(sync.ref, { memberId, revision:sync.revision, lastChangedAt:now, updatedAt:now }, { merge:true });
         return;
       }
       const sync = await nextPerformanceSyncRevision(transaction, memberId);
@@ -236,6 +285,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:sessionTime, endedAt:sessionTime, finalizedAt:sessionTime, createdAt:now, updatedAt:now });
       record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId, createdAt:now, updatedAt:now }));
       transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:source.kind, sourceMode:source.mode, occurredAt:sessionTime, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
+      if (source.kind === "game") transaction.set(gameRef, buildLegacyPracticeGamePerformance({ sessionId, memberId, source, log, ends:record.ends, syncRevision:sync.revision, occurredAt:sessionTime, now }));
       writePerformanceSync(transaction, sync, memberId, record.session);
     });
   }

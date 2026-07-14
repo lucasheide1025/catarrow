@@ -162,6 +162,11 @@ export default function AdminMembers() {
       let av = a[field], bv = b[field];
       if (av?.toDate) av = av.toDate();
       if (bv?.toDate) bv = bv.toDate();
+      // A missing login must never compare equal to a real login timestamp.
+      // This keeps active students at the top of the default member view.
+      const aMissing = av === undefined || av === null || av === "";
+      const bMissing = bv === undefined || bv === null || bv === "";
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
       if (av < bv) return dir === "asc" ? -1 : 1;
       if (av > bv) return dir === "asc" ?  1 : -1;
       return 0;
