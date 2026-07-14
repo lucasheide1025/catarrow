@@ -67,6 +67,11 @@ function legacyPracticeOccurredAt(log) {
     : new Date(text);
   return Number.isFinite(parsed.getTime()) ? Timestamp.fromDate(parsed) : null;
 }
+function legacyPracticeSource(log) {
+  const raw = String(log?.source || log?.mode || log?.type || "").toLowerCase();
+  const mode = ({ monster:"monster", battle:"monster", party:"party", partybattle:"party", dungeon:"dungeon", worldboss:"worldBoss", world_boss:"worldBoss", duel:"duel", certification:"certification", competition:"competition", lesson:"lesson" })[raw] || "freePractice";
+  return { kind:["monster", "party", "dungeon", "worldBoss", "duel"].includes(mode) ? "game" : mode === "lesson" ? "lesson" : mode === "certification" ? "certification" : mode === "competition" ? "competition" : "practice", mode };
+}
 
 async function nextPerformanceSyncRevision(transaction, memberId) {
   const ref = doc(db, C.memberPerformanceSync, memberId);
@@ -180,6 +185,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
   let summary = 0;
   for (const log of logs) {
     const sessionId = `legacy_practice_${log.id}`;
+    const source = { ...legacyPracticeSource(log), legacyCollection:"practiceLogs", legacyId:log.id };
     const rounds = Array.isArray(log.rounds) ? log.rounds.filter(round => Array.isArray(round) && round.length) : [];
     const arrowCount = Number(log.totalArrows) || rounds.flat().length || 0;
     if (!arrowCount) continue;
@@ -190,7 +196,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
         shootingProfile:{ bowType:log.bowType, distance:log.distance },
         targetFormat:log.targetFormat || "full_110", arrowsPerEnd:Number(log.arrowCount) || rounds[0].length,
         timingMode:log.competition?.ruleset || "off",
-        source:{ kind:"practice", mode:"freePractice", legacyCollection:"practiceLogs", legacyId:log.id },
+        source,
       });
       if (record) detailed += 1;
     }
@@ -198,7 +204,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       const totalScore = Number(log.total) || 0;
       record = { session:{
         id:sessionId, schemaVersion:SHOOTING_SCHEMA_VERSION, memberId, status:"finalized", isRealShooting:true,
-        source:{ kind:"practice", mode:"freePractice", legacyCollection:"practiceLogs", legacyId:log.id }, verification:{ level:"self" }, captureMode:"scoreInput",
+        source, verification:{ level:"self" }, captureMode:"scoreInput",
         shootingConfig:{ bowType:log.bowType, distanceM:Number(log.distance) || undefined, targetFaceCode:log.targetFormat || undefined, targetFaceVersion:1, scoringScheme:"legacy", scoringSchemeVersion:1, arrowsPerEnd:Number(log.arrowCount) || undefined },
         countsToward:{ arrowTotal:true, performance:false, personalBest:false, officialRecord:false }, arrowCount, completedEndCount:0,
         analysis:{ level:0, comparable:false, qualityFlags:["legacy_summary"] },
@@ -220,8 +226,8 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       if (existing.exists()) {
         if (existing.data()?.memberId !== memberId) throw new Error("Shooting session ID collision");
         if (occurredAt) {
-          transaction.update(sessionRef, { startedAt:occurredAt, endedAt:occurredAt, finalizedAt:occurredAt, updatedAt:now });
-          transaction.set(arrowEventRef, { occurredAt, updatedAt:now }, { merge:true });
+          transaction.update(sessionRef, { source, startedAt:occurredAt, endedAt:occurredAt, finalizedAt:occurredAt, updatedAt:now });
+          transaction.set(arrowEventRef, { occurredAt, sourceKind:source.kind, sourceMode:source.mode, updatedAt:now }, { merge:true });
         }
         return;
       }
@@ -229,7 +235,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       const sessionTime = occurredAt || now;
       transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:sessionTime, endedAt:sessionTime, finalizedAt:sessionTime, createdAt:now, updatedAt:now });
       record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId, createdAt:now, updatedAt:now }));
-      transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:sessionTime, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
+      transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:source.kind, sourceMode:source.mode, occurredAt:sessionTime, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
       writePerformanceSync(transaction, sync, memberId, record.session);
     });
   }

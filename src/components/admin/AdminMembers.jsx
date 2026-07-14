@@ -90,7 +90,7 @@ export default function AdminMembers() {
   }, []);
 
   useEffect(() => {
-    const key = "legacy_practice_sessions_v2_complete";
+    const key = "legacy_practice_sessions_v3_source_reclassified";
     if (sessionStorage.getItem(key)) return;
     migrateAllLegacyPracticeLogs().then(result => {
       // Keep failed members retryable on the next visit instead of silently
