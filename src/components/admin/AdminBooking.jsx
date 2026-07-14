@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { collection, getDoc, getDocs, doc, updateDoc, serverTimestamp, query, where, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { useAuth } from "../../hooks/useAuth";
 import {
   createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
   completeBookingFromCheckin,
@@ -470,6 +471,7 @@ function RangeBlockModal({ initialDate, bookingsBySlot, onClose, onDone, toast }
 
 // ─── 時段詳情 Modal：清單、封鎖切換、標記付款方式、取消/改期、＋新增預約 ──
 function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast }) {
+  const { profile } = useAuth();
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
@@ -537,10 +539,10 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
         setCheckoutTarget(booking);
         return;
       }
-      // 教練用自己的帳號幫客人代訂時：教練不是來上課的學生，不該被「尚未下課」擋住結帳。
-      // 以 admins/{uid} 判定是否為教練帳號（accountType 是 official，無法只靠它區分）。
-      const adminSnap = await getDoc(doc(db, "admins", memberData?.uid || "__none__"));
-      if (adminSnap.exists()) {
+      // 只比對目前登入教練本人的 member doc。舊作法讀取
+      // admins/{學生 uid}，但規則只准讀自己的 admin 文件，導致所有
+      // 正式學員的結帳檢查在此直接 Permission denied。
+      if (booking.memberId === profile?.id) {
         setCheckoutTarget(booking);
         return;
       }
