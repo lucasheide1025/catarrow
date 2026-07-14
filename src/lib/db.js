@@ -85,6 +85,34 @@ function writePerformanceSync(transaction, sync, memberId, session) {
   }, { merge:true });
 }
 
+const PENDING_SHOOTING_KEY = "catarrow.pending-shooting-sessions.v1";
+function pendingShootingSessions() {
+  try { return JSON.parse(localStorage.getItem(PENDING_SHOOTING_KEY) || "[]"); } catch { return []; }
+}
+function savePendingShootingSessions(items) {
+  try { localStorage.setItem(PENDING_SHOOTING_KEY, JSON.stringify(items.slice(-80))); } catch { /* storage quota unavailable */ }
+}
+function queuePendingShootingSession(kind, input) {
+  const items = pendingShootingSessions().filter(item => item.input?.sessionId !== input.sessionId);
+  items.push({ kind, input:{ ...input, __skipPendingQueue:true }, queuedAt:Date.now() });
+  savePendingShootingSessions(items);
+}
+export async function flushPendingShootingSessions(memberId) {
+  const items = pendingShootingSessions();
+  const remaining = [];
+  let synced = 0;
+  for (const item of items) {
+    if (memberId && item.input?.memberId !== memberId) { remaining.push(item); continue; }
+    try {
+      if (item.kind === "game") await finalizeMonsterShootingSession(item.input);
+      else await finalizePracticeShootingSession(item.input);
+      synced += 1;
+    } catch { remaining.push(item); }
+  }
+  savePendingShootingSessions(remaining);
+  return { synced, pending:remaining.length };
+}
+
 // Additive dual-write only: old battle logs remain the live compatibility source.
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
@@ -92,7 +120,7 @@ export async function finalizeMonsterShootingSession(input) {
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const gameRef = doc(db, C.gamePerformances, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
-  await runTransaction(db, async transaction => {
+  try { await runTransaction(db, async transaction => {
     const existing = await transaction.get(sessionRef);
     if (existing.exists()) {
       if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
@@ -105,7 +133,11 @@ export async function finalizeMonsterShootingSession(input) {
     transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), createdAt:now });
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
-  });
+  }); } catch (error) {
+    if (input.__skipPendingQueue) throw error;
+    queuePendingShootingSession("game", input);
+    console.warn("shooting session queued for retry:", error?.message);
+  }
   return record.session.id;
 }
 
@@ -118,7 +150,7 @@ export async function finalizePracticeShootingSession(input) {
   if (!record) return null;
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
-  await runTransaction(db, async transaction => {
+  try { await runTransaction(db, async transaction => {
     const existing = await transaction.get(sessionRef);
     if (existing.exists()) {
       if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
@@ -130,7 +162,11 @@ export async function finalizePracticeShootingSession(input) {
     record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "practice", sourceMode:record.session.source?.mode || "freePractice", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
-  });
+  }); } catch (error) {
+    if (input.__skipPendingQueue) throw error;
+    queuePendingShootingSession("practice", input);
+    console.warn("practice session queued for retry:", error?.message);
+  }
   return record.session.id;
 }
 

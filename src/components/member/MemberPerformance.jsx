@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { bootstrapRecentPerformanceCache, getCachedGamePerformanceSummaries, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
+import { bootstrapRecentPerformanceCache, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
@@ -89,7 +89,7 @@ export default function MemberPerformance({ profileOverride = null }) {
   useEffect(() => {
     if (!viewedMemberId) { setSessions([]); setGames([]); setLoading(false); return; }
     let active = true; setLoading(true); setError("");
-    Promise.all([getCachedShootingSessionSummaries(viewedMemberId), getCachedGamePerformanceSummaries(viewedMemberId)])
+    Promise.all([getCachedShootingSessionSummaries(viewedMemberId), getCachedGamePerformanceSummaries(viewedMemberId), flushPendingShootingSessions(viewedMemberId)])
       .then(async ([cachedSessions, cachedGames]) => {
         if (active) { setSessions(cachedSessions); setGames(cachedGames); }
         let local = getLocalPerformanceCacheMeta(viewedMemberId);
