@@ -130,7 +130,9 @@ export async function finalizeMonsterShootingSession(input) {
     const now = serverTimestamp();
     transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
     record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
-    transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), createdAt:now });
+    // Keep game records on the same revision as their ShootingSession. The
+    // browser compares one member manifest, then fetches only these new docs.
+    transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), syncRevision:sync.revision, createdAt:now });
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   }); } catch (error) {
@@ -318,13 +320,23 @@ export async function getChangedShootingSessionSummaries(memberId, afterRevision
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
 }
 
+export async function getChangedGamePerformanceSummaries(memberId, afterRevision) {
+  if (!memberId || !Number.isFinite(Number(afterRevision))) return [];
+  const snap = await getDocs(query(collection(db, C.gamePerformances), where("memberId", "==", memberId), where("syncRevision", ">", Number(afterRevision))));
+  return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
 // Explicit new-device transfer downloads recent raw ends once, then Firebase's
 // persistent IndexedDB cache serves exact local performance calculations.
 export async function bootstrapRecentPerformanceCache(memberId, months = 3, onProgress) {
-  if (!memberId) return { sessions:[], sync:null };
+  if (!memberId) return { sessions:[], games:[], sync:null };
   const since = Timestamp.fromMillis(Date.now() - months * 31 * 24 * 60 * 60 * 1000);
-  const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since)));
-  const sessions = sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const [sessionSnap, gameSnap] = await Promise.all([
+    getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since))),
+    getDocs(query(collection(db, C.gamePerformances), where("memberId", "==", memberId), where("createdAt", ">=", since))),
+  ]);
+  const sessions = sortByPerformanceDate(sessionSnap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const games = sortByPerformanceDate(gameSnap.docs.map(d => ({ id:d.id, ...d.data() })));
   let completed = 0;
   for (let start = 0; start < sessions.length; start += 6) {
     await Promise.all(sessions.slice(start, start + 6).map(session => getShootingSessionEnds(session.id)));
@@ -333,16 +345,20 @@ export async function bootstrapRecentPerformanceCache(memberId, months = 3, onPr
   }
   const sync = await getMemberPerformanceSync(memberId);
   setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true });
-  return { sessions, sync };
+  return { sessions, games, sync };
 }
 export async function bootstrapRecentPerformanceSummaries(memberId, months = 3) {
-  if (!memberId) return { sessions:[], sync:null };
+  if (!memberId) return { sessions:[], games:[], sync:null };
   const since = Timestamp.fromMillis(Date.now() - months * 31 * 24 * 60 * 60 * 1000);
-  const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since)));
-  const sessions = sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const [sessionSnap, gameSnap] = await Promise.all([
+    getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since))),
+    getDocs(query(collection(db, C.gamePerformances), where("memberId", "==", memberId), where("createdAt", ">=", since))),
+  ]);
+  const sessions = sortByPerformanceDate(sessionSnap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const games = sortByPerformanceDate(gameSnap.docs.map(d => ({ id:d.id, ...d.data() })));
   const sync = await getMemberPerformanceSync(memberId);
   setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true, summaryOnly:true });
-  return { sessions, sync };
+  return { sessions, games, sync };
 }
 
 export async function getGamePerformanceSummaries(memberId, maxCount = 120) {

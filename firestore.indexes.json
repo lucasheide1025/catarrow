@@ -15,6 +15,22 @@
         { "fieldPath": "memberId", "order": "ASCENDING" },
         { "fieldPath": "finalizedAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "gamePerformances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberId", "order": "ASCENDING" },
+        { "fieldPath": "syncRevision", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "gamePerformances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

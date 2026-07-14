@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, ensureMemberPerformanceSync, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
+import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, ensureMemberPerformanceSync, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedGamePerformanceSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
@@ -144,7 +144,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
           cachedSessions = transferred.sessions;
           cloud = transferred.sync;
           local = getLocalPerformanceCacheMeta(viewedMemberId);
-          setSessions(cachedSessions);
+          setSessions(cachedSessions); setGames(transferred.games);
         }
         // New shooters start at revision 0 automatically; their first session
         // increments it and will be picked up without a manual transfer.
@@ -155,11 +155,17 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         }
         setSyncInfo({ local, cloud });
         if (!local?.initialized || !cloud || Number(local.revision) === Number(cloud.revision)) return;
-        const changes = await getChangedShootingSessionSummaries(viewedMemberId, Number(local.revision) || 0);
+        const [changes, gameChanges] = await Promise.all([
+          getChangedShootingSessionSummaries(viewedMemberId, Number(local.revision) || 0),
+          getChangedGamePerformanceSummaries(viewedMemberId, Number(local.revision) || 0),
+        ]);
         if (!active) return;
         const byId = new Map(cachedSessions.map(session => [session.id, session]));
         changes.forEach(session => byId.set(session.id, session));
         setSessions([...byId.values()].sort((a, b) => (b.finalizedAt?.toMillis?.() || 0) - (a.finalizedAt?.toMillis?.() || 0)));
+        const gamesById = new Map(cachedGames.map(item => [item.id, item]));
+        gameChanges.forEach(item => gamesById.set(item.id, item));
+        setGames([...gamesById.values()].sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)));
         setLocalPerformanceCacheMeta(viewedMemberId, { ...local, initialized:true, revision:Number(cloud.revision) || 0 });
         setSyncInfo({ local:{ ...local, revision:Number(cloud.revision) || 0, initialized:true }, cloud });
       })
@@ -189,8 +195,8 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     if (!viewedMemberId || transferring) return;
     setTransferring(true); setError("");
     try {
-      const { sessions:recentSessions, sync } = await bootstrapRecentPerformanceCache(viewedMemberId, 3, setTransferProgress);
-      setSessions(recentSessions); setSyncInfo({ local:getLocalPerformanceCacheMeta(viewedMemberId), cloud:sync });
+      const { sessions:recentSessions, games:recentGames, sync } = await bootstrapRecentPerformanceCache(viewedMemberId, 3, setTransferProgress);
+      setSessions(recentSessions); setGames(recentGames); setSyncInfo({ local:getLocalPerformanceCacheMeta(viewedMemberId), cloud:sync });
     } catch (error) { setError("建立近三個月歷史資料失敗，請確認網路後再試。"); }
     finally { setTransferring(false); setTransferProgress(null); }
   }
