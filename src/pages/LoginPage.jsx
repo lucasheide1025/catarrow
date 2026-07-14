@@ -11,12 +11,17 @@ export default function LoginPage() {
   const [linkPassword, setLinkPassword] = useState("");
 
   async function handleLogin() {
-    if (!email || !password) { setErr("請填寫帳號和密碼"); return; }
+    if (!email.trim() || !password) { setErr("請輸入 Email 與密碼"); return; }
     setLoading(true);
     try {
       await login(email, password);
     } catch (e) {
-      setErr("帳號或密碼錯誤");
+      if (["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(e?.code)) setErr("Email 或密碼不正確");
+      else if (e?.code === "auth/invalid-email") setErr("Email 格式不正確，請確認沒有多餘空白");
+      else if (e?.code === "auth/too-many-requests") setErr("嘗試次數過多，請稍後再試或重設密碼");
+      else if (e?.code === "auth/network-request-failed") setErr("網路連線失敗，請確認網路後重試");
+      else if (e?.code === "auth/api-key-not-valid") setErr("登入服務設定異常，請通知管理員");
+      else setErr("登入失敗，請稍後再試");
     }
     setLoading(false);
   }

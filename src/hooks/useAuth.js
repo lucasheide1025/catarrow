@@ -116,7 +116,13 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function login(email, password) {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      const error = new Error("Email and password are required");
+      error.code = "auth/missing-credentials";
+      throw error;
+    }
+    const cred = await signInWithEmailAndPassword(auth, normalizedEmail, password);
     return cred.user;
   }
 
