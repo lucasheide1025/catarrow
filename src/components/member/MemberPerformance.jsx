@@ -92,9 +92,17 @@ export default function MemberPerformance({ profileOverride = null }) {
     Promise.all([getCachedShootingSessionSummaries(viewedMemberId), getCachedGamePerformanceSummaries(viewedMemberId)])
       .then(async ([cachedSessions, cachedGames]) => {
         if (active) { setSessions(cachedSessions); setGames(cachedGames); }
-        const local = getLocalPerformanceCacheMeta(viewedMemberId);
+        let local = getLocalPerformanceCacheMeta(viewedMemberId);
         const cloud = await getMemberPerformanceSync(viewedMemberId); // the only normal network read
         if (!active) return;
+        // Existing users already have Firebase's persistent session cache from
+        // prior versions. Attach a zero revision once, then fetch only the
+        // sessions written by the new sync protocol instead of re-reading the
+        // old cache or requiring the new-device transfer button.
+        if (!local?.initialized && cachedSessions.length) {
+          local = { revision:0, initialized:true, rangeMonths:3, sessionCount:cachedSessions.length };
+          setLocalPerformanceCacheMeta(viewedMemberId, local);
+        }
         setSyncInfo({ local, cloud });
         if (!local?.initialized || !cloud || Number(local.revision) === Number(cloud.revision)) return;
         const changes = await getChangedShootingSessionSummaries(viewedMemberId, Number(local.revision) || 0);
