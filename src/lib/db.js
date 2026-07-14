@@ -55,6 +55,18 @@ function stripUndefined(value) {
   return value;
 }
 
+function legacyPracticeOccurredAt(log) {
+  const value = log?.date || log?.createdAt;
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value;
+  if (value instanceof Date && Number.isFinite(value.getTime())) return Timestamp.fromDate(value);
+  const text = String(value);
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? new Date(`${text}T12:00:00+08:00`)
+    : new Date(text);
+  return Number.isFinite(parsed.getTime()) ? Timestamp.fromDate(parsed) : null;
+}
+
 // Additive dual-write only: old battle logs remain the live compatibility source.
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
@@ -139,13 +151,24 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
     }
     const sessionRef = doc(db, C.shootingSessions, sessionId);
     const arrowEventRef = doc(db, C.arrowCountEvents, sessionId);
+    const occurredAt = legacyPracticeOccurredAt(log);
     await runTransaction(db, async transaction => {
       const existing = await transaction.get(sessionRef);
-      if (existing.exists()) return;
       const now = serverTimestamp();
-      transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+      // Earlier imports used the migration time. Correct their chronology on
+      // every idempotent pass, without rewriting scoring or arrow data.
+      if (existing.exists()) {
+        if (existing.data()?.memberId !== memberId) throw new Error("Shooting session ID collision");
+        if (occurredAt) {
+          transaction.update(sessionRef, { startedAt:occurredAt, endedAt:occurredAt, finalizedAt:occurredAt, updatedAt:now });
+          transaction.set(arrowEventRef, { occurredAt, updatedAt:now }, { merge:true });
+        }
+        return;
+      }
+      const sessionTime = occurredAt || now;
+      transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:sessionTime, endedAt:sessionTime, finalizedAt:sessionTime, createdAt:now, updatedAt:now });
       record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId, createdAt:now, updatedAt:now }));
-      transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:now, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
+      transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:sessionTime, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
     });
   }
   return { detailed, summary, total:detailed + summary };
