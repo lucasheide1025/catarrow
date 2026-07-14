@@ -8,7 +8,7 @@ import {
   resetMonsterSession,
   setStudentTier, setAccountFrozen, bulkSetStudentTier,
   setMaintenanceMode, subscribeMaintenanceConfig,
-  migrateAllLegacyPracticeLogs,
+  migrateAllLegacyPracticeLogs, migrateAllLegacyMonsterLogs,
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, today, thisYear, BOW_TYPES, getCertLevel, calcBadgePoints } from "../../lib/constants";
@@ -77,6 +77,14 @@ export default function AdminMembers() {
     const unsub = subscribeAllDisputes(setDisputes);
     const unsubMaint = subscribeMaintenanceConfig(cfg => { setMaintCfg(cfg); setMaintMsg(cfg?.message || ""); });
     return () => { unsub?.(); unsubMaint?.(); };
+  }, []);
+  useEffect(() => {
+    const key = "legacy_monster_sessions_v1_complete";
+    if (sessionStorage.getItem(key)) return;
+    migrateAllLegacyMonsterLogs().then(result => {
+      if (!result.failed.length) sessionStorage.setItem(key, "1");
+      else console.warn("legacy monster migration incomplete:", result.failed);
+    }).catch(error => console.warn("legacy monster migration:", error?.message));
   }, []);
 
   useEffect(() => {

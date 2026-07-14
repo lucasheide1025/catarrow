@@ -19,7 +19,7 @@ import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCa
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
-import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, calculateSessionMetrics } from "./shootingPerformance";
+import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -251,6 +251,42 @@ export async function migrateAllLegacyPracticeLogs() {
       totals.failed.push({ memberId:member.id, message:error?.message || "unknown error" });
     }
   }
+  return totals;
+}
+
+// Legacy monster logs have reliable member/result/round-score snapshots, but
+// usually lack bow, target and distance. Import their real arrows without
+// inventing those conditions, so they count as history but never distort PB.
+export async function migrateLegacyMonsterLogs(memberId, maxCount = 120) {
+  const logs = await getMonsterLogs(memberId, maxCount);
+  let detailed = 0;
+  for (const log of logs) {
+    const rounds = (log.roundScores || []).map(round => Array.isArray(round) ? round : round?.scores).filter(round => Array.isArray(round) && round.length);
+    const ends = buildShootingEnds(rounds, "full_110");
+    const metricsSnapshot = calculateSessionMetrics(ends);
+    if (!metricsSnapshot?.arrowCount) continue;
+    const sessionId = `legacy_monster_${log.id}`;
+    const sessionRef = doc(db, C.shootingSessions, sessionId);
+    await runTransaction(db, async transaction => {
+      const existing = await transaction.get(sessionRef);
+      if (existing.exists()) return;
+      const sync = await nextPerformanceSyncRevision(transaction, memberId);
+      const now = serverTimestamp();
+      const occurredAt = legacyPracticeOccurredAt(log) || now;
+      const session = { id:sessionId, schemaVersion:SHOOTING_SCHEMA_VERSION, memberId, status:"finalized", isRealShooting:true, source:{ kind:"game", mode:"monster", legacyCollection:"monsterLogs", legacyId:log.id }, verification:{ level:"self" }, captureMode:"scoreInput", shootingConfig:{ distanceM:Number(log.distance) || undefined, arrowsPerEnd:ends[0]?.arrows?.length || undefined, scoringScheme:"legacy", scoringSchemeVersion:1 }, countsToward:{ arrowTotal:true, performance:false, personalBest:false, officialRecord:false }, arrowCount:metricsSnapshot.arrowCount, completedEndCount:ends.length, analysis:{ level:1, comparable:false, qualityFlags:["legacy_missing_shooting_config"] }, metricsSnapshot, migration:{ imported:true, confidence:"medium", originalCollection:"monsterLogs", originalId:log.id } };
+      transaction.set(sessionRef, stripUndefined({ ...session, syncRevision:sync.revision, startedAt:occurredAt, endedAt:occurredAt, finalizedAt:occurredAt, createdAt:now, updatedAt:now }));
+      ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId, createdAt:now, updatedAt:now }));
+      transaction.set(doc(db, C.gamePerformances, sessionId), stripUndefined({ id:sessionId, sessionId, memberId, mode:"monster", result:log.result || "lose", monster:{ id:log.monsterId || "unknown", nameSnapshot:log.monsterName || "" }, rounds:ends.map(end => ({ endIndex:end.index, shootingScore:end.metrics.total, finalDamage:0 })), totalDamage:0, rewards:log.lootName ? { drops:[{ itemId:log.lootType || "legacy", itemNameSnapshot:log.lootName, quantity:1 }] } : undefined, rulesVersion:"legacy-monster-log", locked:true, syncRevision:sync.revision, createdAt:now }));
+      transaction.set(doc(db, C.arrowCountEvents, sessionId), { id:sessionId, sessionId, memberId, arrowCount:session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt, createdAt:now, migration:{ imported:true, originalCollection:"monsterLogs", originalId:log.id } });
+      writePerformanceSync(transaction, sync, memberId, session);
+    });
+    detailed += 1;
+  }
+  return { detailed, total:detailed };
+}
+export async function migrateAllLegacyMonsterLogs() {
+  const members = await getMembers(); const totals = { members:0, detailed:0, failed:[] };
+  for (const member of members) try { const result = await migrateLegacyMonsterLogs(member.id); totals.members += 1; totals.detailed += result.detailed; } catch (error) { totals.failed.push({ memberId:member.id, message:error?.message || "unknown error" }); }
   return totals;
 }
 
