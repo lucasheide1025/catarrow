@@ -47,6 +47,7 @@ const MemberAdventureHub = lazy(() => import("../components/member/MemberAdventu
 const MemberTrainingHub  = lazy(() => import("../components/member/MemberTrainingHub"));
 const MemberInventoryHub = lazy(() => import("../components/member/MemberInventoryHub"));
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
+const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
 const CardCollection     = lazy(() => import("../components/member/CardCollection"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
@@ -71,7 +72,7 @@ const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
-const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
+const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","performance","leaderboard","bowsetting"];
 
 // hover / touch 預載：使用者碰到導覽按鈕時就開始下載對應 chunk
 const NAV_PRELOADS = {
@@ -738,6 +739,7 @@ export default function MemberApp() {
         {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
         {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
         {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
+        {page==="performance"   && <MemberPerformance />}
 
         {page==="monster"     && <MonsterBattle
           onBack={() => {

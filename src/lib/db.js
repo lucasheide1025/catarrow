@@ -67,6 +67,43 @@ export async function finalizeMonsterShootingSession(input) {
 export async function finalizeGameShootingSession(input) {
   return finalizeMonsterShootingSession(input);
 }
+
+// Performance home deliberately reads bounded session summaries only. It does
+// not subscribe and never reads the nested `ends` documents.
+function sortByPerformanceDate(records) {
+  const toMs = value => {
+    if (!value) return 0;
+    if (typeof value.toMillis === "function") return value.toMillis();
+    if (typeof value.seconds === "number") return value.seconds * 1000;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  return records.sort((a, b) => {
+    const aMs = toMs(a.finalizedAt) || toMs(a.createdAt);
+    const bMs = toMs(b.finalizedAt) || toMs(b.createdAt);
+    return bMs - aMs;
+  });
+}
+
+export async function getShootingSessionSummaries(memberId, maxCount = 120) {
+  if (!memberId) return [];
+  const snap = await getDocs(query(
+    collection(db, C.shootingSessions),
+    where("memberId", "==", memberId),
+    limit(Math.max(1, Math.min(maxCount, 200)))
+  ));
+  return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
+export async function getGamePerformanceSummaries(memberId, maxCount = 120) {
+  if (!memberId) return [];
+  const snap = await getDocs(query(
+    collection(db, C.gamePerformances),
+    where("memberId", "==", memberId),
+    limit(Math.max(1, Math.min(maxCount, 200)))
+  ));
+  return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
 const C_GUILD_SUBS = "guildQuestSubs";    // 會員提交紀錄（待審核徽章）

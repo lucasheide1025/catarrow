@@ -4,6 +4,7 @@ import { SectionHeader, HubTile } from "../shared/Widgets";
 
 // 入口常數陣列（accent 必須是 hex）
 const RECORDS_ITEMS = [
+  { page:"performance", icon:"🏹", title:"射手表現", desc:"真實射箭・遊戲戰績", accent:"#14b8a6", badgeKey:"performance" },
   { page:"dex",         icon:"🎖️", title:"成就圖鑑", desc:"我的數位收藏", accent:"#f59e0b", badgeKey:"dex" },
   { page:"leaderboard", icon:"📊",  title:"排行榜",   desc:"全道館排名",   accent:"#3b82f6", badgeKey:"leaderboard" },
 ];
