@@ -63,6 +63,7 @@ export default function AdminMembers() {
   const [guestModal,  setGuestModal]  = useState(false);
   const [tierModal,   setTierModal]   = useState(null); // 學生分級 / 帳號凍結編輯
   const [performanceModal, setPerformanceModal] = useState(null);
+  const [migrationReport, setMigrationReport] = useState(null);
 
   // 學生分級批次工具（上線初期教練逐一手動處理大量既有會員用）
   const [selMembers, setSelMembers]   = useState(new Set());
@@ -84,6 +85,7 @@ export default function AdminMembers() {
     migrateAllLegacyMonsterLogs().then(result => {
       if (!result.failed.length) sessionStorage.setItem(key, "1");
       else console.warn("legacy monster migration incomplete:", result.failed);
+      setMigrationReport(current => ({ ...current, monster:result }));
     }).catch(error => console.warn("legacy monster migration:", error?.message));
   }, []);
 
@@ -95,6 +97,7 @@ export default function AdminMembers() {
       // marking an incomplete import as done.
       if (!result.failed.length) sessionStorage.setItem(key, "1");
       else console.warn("legacy practice migration incomplete:", result.failed);
+      setMigrationReport(current => ({ ...current, practice:result }));
     }).catch(error => console.warn("legacy practice migration:", error?.message));
   }, []);
 
@@ -233,6 +236,7 @@ export default function AdminMembers() {
           </div>
         </div>
       )}
+      {migrationReport && <Card className="border border-emerald-400/30 bg-emerald-950/20 p-3 text-xs text-emerald-100">舊資料回填結果：自主練習 {migrationReport.practice?.total ?? "處理中"} 筆、打怪 {migrationReport.monster?.total ?? "處理中"} 筆。{(migrationReport.practice?.failed?.length || migrationReport.monster?.failed?.length) ? "部分會員失敗，重新開啟會員管理會重試。" : "資料不足的舊場次已保留為歷史摘要，不會混入技術平均。"}</Card>}
 
       <Card className="p-4 flex flex-col gap-3">
         <SearchBar value={search} onChange={setSearch} placeholder="搜尋姓名、暱稱、帳號、射手證號…" />
