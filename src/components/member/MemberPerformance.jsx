@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { bootstrapRecentPerformanceCache, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
+import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, ensureMemberPerformanceSync, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
@@ -97,7 +97,7 @@ function SessionDetail({ session }) {
   </div>;
 }
 
-export default function MemberPerformance({ profileOverride = null }) {
+export default function MemberPerformance({ profileOverride = null, coachView = false }) {
   const { profile: authProfile, role } = useAuth();
   const profile = profileOverride || authProfile;
   const [sessions, setSessions] = useState([]); const [games, setGames] = useState([]);
@@ -119,7 +119,7 @@ export default function MemberPerformance({ profileOverride = null }) {
       .then(async ([cachedSessions, cachedGames]) => {
         if (active) { setSessions(cachedSessions); setGames(cachedGames); }
         let local = getLocalPerformanceCacheMeta(viewedMemberId);
-        const cloud = await getMemberPerformanceSync(viewedMemberId); // the only normal network read
+        let cloud = await getMemberPerformanceSync(viewedMemberId); // the only normal network read
         if (!active) return;
         // Existing users already have Firebase's persistent session cache from
         // prior versions. Attach a zero revision once, then fetch only the
@@ -127,6 +127,23 @@ export default function MemberPerformance({ profileOverride = null }) {
         // old cache or requiring the new-device transfer button.
         if (!local?.initialized && cachedSessions.length) {
           local = { revision:0, initialized:true, rangeMonths:3, sessionCount:cachedSessions.length };
+          setLocalPerformanceCacheMeta(viewedMemberId, local);
+        }
+        // A coach cannot use the student's browser cache. On first view, load
+        // only three months of session summaries into the coach's own cache.
+        if (!local?.initialized && coachView) {
+          const transferred = await bootstrapRecentPerformanceSummaries(viewedMemberId, 3);
+          if (!active) return;
+          cachedSessions = transferred.sessions;
+          cloud = transferred.sync;
+          local = getLocalPerformanceCacheMeta(viewedMemberId);
+          setSessions(cachedSessions);
+        }
+        // New shooters start at revision 0 automatically; their first session
+        // increments it and will be picked up without a manual transfer.
+        if (!local?.initialized && !coachView) {
+          cloud = await ensureMemberPerformanceSync(viewedMemberId);
+          local = { revision:Number(cloud?.revision) || 0, initialized:true, rangeMonths:3, sessionCount:0 };
           setLocalPerformanceCacheMeta(viewedMemberId, local);
         }
         setSyncInfo({ local, cloud });

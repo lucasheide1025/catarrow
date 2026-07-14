@@ -270,7 +270,7 @@ export default function AdminMembers() {
                          onClose={() => setDispModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
       {guestModal  && <GuestQRModal onClose={() => setGuestModal(false)} toast={toast} />}
       {tierModal   && <TierModal member={tierModal} onClose={() => setTierModal(null)} onDone={loadMembers} operatorId={profile.id} toast={toast} />}
-      {performanceModal && <Modal open wide onClose={() => setPerformanceModal(null)} title={`射手表現 — ${performanceModal.nickname || performanceModal.name}`}><MemberPerformance profileOverride={performanceModal} /></Modal>}
+      {performanceModal && <Modal open wide onClose={() => setPerformanceModal(null)} title={`射手表現 — ${performanceModal.nickname || performanceModal.name}`}><MemberPerformance profileOverride={performanceModal} coachView /></Modal>}
 
       <ConfirmModal open={!!delConfirm} title="確認刪除" message="確定要刪除此會員？此操作無法復原。"
         onConfirm={() => handleDelete(delConfirm)} onCancel={() => setDelConfirm(null)} />

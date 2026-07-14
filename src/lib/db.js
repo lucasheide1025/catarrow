@@ -302,6 +302,15 @@ export async function getMemberPerformanceSync(memberId) {
   const snap = await getDoc(doc(db, C.memberPerformanceSync, memberId));
   return snap.exists() ? { id:snap.id, ...snap.data() } : null;
 }
+export async function ensureMemberPerformanceSync(memberId) {
+  if (!memberId) return null;
+  const ref = doc(db, C.memberPerformanceSync, memberId);
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) transaction.set(ref, { memberId, revision:0, sessionCount:0, arrowCount:0, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
+  });
+  return getMemberPerformanceSync(memberId);
+}
 
 export async function getChangedShootingSessionSummaries(memberId, afterRevision) {
   if (!memberId || !Number.isFinite(Number(afterRevision))) return [];
@@ -324,6 +333,15 @@ export async function bootstrapRecentPerformanceCache(memberId, months = 3, onPr
   }
   const sync = await getMemberPerformanceSync(memberId);
   setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true });
+  return { sessions, sync };
+}
+export async function bootstrapRecentPerformanceSummaries(memberId, months = 3) {
+  if (!memberId) return { sessions:[], sync:null };
+  const since = Timestamp.fromMillis(Date.now() - months * 31 * 24 * 60 * 60 * 1000);
+  const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since)));
+  const sessions = sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const sync = await getMemberPerformanceSync(memberId);
+  setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true, summaryOnly:true });
   return { sessions, sync };
 }
 
