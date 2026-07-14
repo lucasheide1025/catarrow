@@ -1,6 +1,6 @@
 // src/hooks/useAuth.js
 import { useState, useEffect, createContext, useContext } from "react";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithCredential } from "firebase/auth";
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithCredential } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { doc, getDoc, getDocs, updateDoc, onSnapshot, query, where, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -126,6 +126,16 @@ export function AuthProvider({ children }) {
     return cred.user;
   }
 
+  async function resetPassword(email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      const error = new Error("Email is required");
+      error.code = "auth/missing-email";
+      throw error;
+    }
+    await sendPasswordResetEmail(auth, normalizedEmail);
+  }
+
   // 用 Google 登入主 App（教練/會員帳號若是 Google 帳號用這個）。
   //
   // 防堵孤兒帳號（2026-07-12）：Google 一登入成功，Firebase Auth 當下就建了帳號，這步無法阻止。
@@ -208,7 +218,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, loginWithGoogle, linkGoogleWithPassword, logout }}>
+    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, resetPassword, loginWithGoogle, linkGoogleWithPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 export default function LoginPage() {
-  const { login, loginWithGoogle, linkGoogleWithPassword } = useAuth();
+  const { login, resetPassword, loginWithGoogle, linkGoogleWithPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -22,6 +22,20 @@ export default function LoginPage() {
       else if (e?.code === "auth/network-request-failed") setErr("網路連線失敗，請確認網路後重試");
       else if (e?.code === "auth/api-key-not-valid") setErr("登入服務設定異常，請通知管理員");
       else setErr("登入失敗，請稍後再試");
+    }
+    setLoading(false);
+  }
+
+  async function handlePasswordReset() {
+    if (!email.trim()) { setErr("請先輸入 Email，再重設密碼"); return; }
+    setLoading(true); setErr("");
+    try {
+      await resetPassword(email);
+      setErr("重設密碼信已寄出，請到信箱完成設定後再登入");
+    } catch (e) {
+      if (e?.code === "auth/invalid-email") setErr("Email 格式不正確");
+      else if (e?.code === "auth/too-many-requests") setErr("請求過於頻繁，請稍後再試");
+      else setErr("無法寄出重設信，請通知管理員");
     }
     setLoading(false);
   }
@@ -148,6 +162,10 @@ export default function LoginPage() {
             }}
           >
             {loading ? "登入中…" : "⚔️ 進入射箭場"}
+          </button>
+          <button onClick={handlePasswordReset} disabled={loading}
+            style={{ border:"none", background:"transparent", color:"#a5b4fc", fontSize:"12px", fontWeight:"800", cursor:loading ? "default" : "pointer", padding:"2px" }}>
+            忘記密碼？寄送重設信
           </button>
 
           <div style={{ textAlign:"center", color:"rgba(148,163,184,0.6)", fontSize:"12px", margin:"2px 0" }}>或</div>
