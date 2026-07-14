@@ -34,6 +34,7 @@ export function buildPerformanceKey(config = {}) {
 
 export function makeScoreInputArrow(value, index) {
   const label = String(value?.label ?? value ?? "M");
+  if (label === "H") return { index, captureMode:"scoreInput", score:1, label, isX:false, isMiss:false, measurement:"hitOnly" };
   const isX = label === "X";
   const score = isX ? 10 : label === "M" ? 0 : Math.max(0, Number(label) || 0);
   return { index, captureMode:"scoreInput", score, label, isX, isMiss:score === 0 };

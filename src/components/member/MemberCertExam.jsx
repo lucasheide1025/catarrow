@@ -200,7 +200,8 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
   const SS_KEY = `cert_task_${memberId}_${tier}_${task}`;
   let _ss = {}; try { _ss = JSON.parse(sessionStorage.getItem(SS_KEY) || "{}"); } catch {}
   const [val, setVal]       = useState(_ss.val ?? "");
-  const [arrows, setArrows] = useState(_ss.arrows ?? Array(10).fill(null));
+  const arrowGoal = isTask1 ? 6 : 10;
+  const [arrows, setArrows] = useState(() => Array.isArray(_ss.arrows) && _ss.arrows.length === arrowGoal ? _ss.arrows : Array(arrowGoal).fill(null));
   const [busy, setBusy]     = useState(false);
   const [msg, setMsg]       = useState("");
 
@@ -211,6 +212,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
   const status = data?.reviewStatus;
   const passed = data?.passed === true;
   const task2Total  = arrows.reduce((sum, a) => sum + (a === "M" || a == null ? 0 : Number(a)), 0);
+  const task1Hits = arrows.filter(arrow => arrow === "H").length;
   const arrowsFilled = arrows.every(a => a != null);
 
   function setArrow(i, v) {
@@ -221,8 +223,8 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
     setMsg("");
     let payload;
     if (isTask1) {
-      if (val === "" || Number.isNaN(Number(val))) { setMsg("請輸入中靶數"); return; }
-      payload = { hits: Number(val), score: null };
+      if (!arrowsFilled) { setMsg("請完成 6 支箭的命中／失箭紀錄"); return; }
+      payload = { hits: task1Hits, score: null, arrows:[...arrows] };
     } else {
       if (!arrowsFilled) { setMsg("請完成 10 箭的點選"); return; }
       payload = { score: task2Total, hits: null, arrows: arrows.map(a => a === "M" ? 0 : Number(a)) };
@@ -231,7 +233,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
     try {
       await submitCertTask(memberId, tier, task, payload, bowType, equipLabels);
       sessionStorage.removeItem(SS_KEY);
-      setVal(""); setArrows(Array(10).fill(null));
+      setVal(""); setArrows(Array(arrowGoal).fill(null));
 
       // 檢定的箭也要算進終身箭數/今日練習紀錄/箭數里程碑（之前完全沒接，是漏掉的一塊）
       const arrowCount = isTask1 ? 6 : 10;
@@ -242,21 +244,19 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
           date: new Date().toISOString().slice(0, 10), source: "cert",
           monsterName: `${tier === "gold" ? "金證" : "藍證"}${isTask1 ? "任務一" : "任務二"}`,
           result: "n/a", rounds: [], total: isTask1 ? 0 : task2Total,
-          totalArrows: arrowCount, bowType,
+          totalArrows: arrowCount, bowType, distance,
         }, memberId).catch(() => {});
-        if (!isTask1) {
-          finalizePracticeShootingSession({
+        finalizePracticeShootingSession({
             sessionId:`certification_${memberId}_${tier}_${task}_${Date.now()}`,
             memberId,
-            rounds:[arrows],
+            rounds:[isTask1 ? arrows : arrows],
             shootingProfile:{ bowType, distance },
             targetFormat:"full_110",
             arrowsPerEnd:arrows.length,
             source:{ kind:"certification", mode:"certification" },
             verification:{ level:"coach" },
-            countsToward:{ officialRecord:false },
+            countsToward:{ officialRecord:false, performance:!isTask1, personalBest:!isTask1 },
           }).catch(() => {});
-        }
         try {
           const res = await checkAndGrantArrowMilestones(memberId, arrowCount);
           if (res.milestones.length > 0) {
@@ -287,10 +287,11 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
       {!passed && (
         <>
           {isTask1 ? (
-            <div className="flex gap-2 items-end">
-              <Inp label={`中靶數（${unit}）`} type="number" min="0" max="6" value={val}
-                onChange={e => setVal(e.target.value)} placeholder={`需達 ${pass}`} />
-              <Btn v="primary" onClick={submit} disabled={busy} className="whitespace-nowrap">
+            <div className="flex flex-col gap-2">
+              <div className="text-xs text-gray-400">逐支記錄命中或失箭，會保存為畢業考真實射擊紀錄。</div>
+              <div className="flex flex-col gap-1.5">{arrows.map((arrow, index) => <div key={index} className="flex items-center gap-2"><span className="w-10 text-xs text-gray-400">第 {index + 1} 箭</span>{[["H", "命中"], ["M", "失箭"]].map(([value, text]) => <button key={value} type="button" onClick={() => setArrow(index, value)} className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${arrow === value ? value === "H" ? "border-emerald-400 bg-emerald-500/25 text-emerald-200" : "border-red-400 bg-red-500/25 text-red-200" : "border-white/15 bg-white/10 text-gray-300"}`}>{text}</button>)}</div>)}</div>
+              <div className="flex items-center justify-between rounded-xl bg-blue-500/10 px-3 py-2"><span className="text-sm font-bold text-gray-300">中靶數</span><span className="text-xl font-black text-blue-300">{task1Hits} <span className="text-xs text-gray-400">/ 需達 {pass}</span></span></div>
+              <Btn v="primary" onClick={submit} disabled={busy || !arrowsFilled} className="w-full">
                 {busy ? "送出中…" : status === "pending" ? "重新送審" : "送審"}
               </Btn>
             </div>
