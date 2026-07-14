@@ -36,6 +36,25 @@ function buildExactRecent(arrows, targetArrows) {
   const missCount = sample.filter(arrow => arrow.isMiss).length;
   return { targetArrows, arrowCount:sample.length, average:sample.length ? total / sample.length : null, xRate:sample.length ? xCount / sample.length : 0, missRate:sample.length ? missCount / sample.length : 0 };
 }
+function arrowStats(arrows) {
+  const count = arrows.length;
+  const total = arrows.reduce((sum, arrow) => sum + arrow.score, 0);
+  const misses = arrows.filter(arrow => arrow.isMiss).length;
+  const xs = arrows.filter(arrow => arrow.isX).length;
+  return { count, average:count ? total / count : 0, missRate:count ? misses / count : 0, xRate:count ? xs / count : 0 };
+}
+function buildTrainingInsight(arrows) {
+  if (arrows.length < 30) return { title:"累積樣本中", text:"再完成一些逐箭紀錄後，系統會開始比較近期變化。" };
+  if (arrows.length < 60) return { title:"近期狀態", text:`目前已有 ${arrows.length} 支本機逐箭資料；再累積至 60 支即可比較前後兩段表現。` };
+  const recent = arrowStats(arrows.slice(0, 30));
+  const previous = arrowStats(arrows.slice(30, 60));
+  const averageDelta = recent.average - previous.average;
+  const missDelta = recent.missRate - previous.missRate;
+  if (averageDelta >= 0.2 && missDelta <= 0) return { title:"近期穩定進步", text:`近 30 箭平均 ${recent.average.toFixed(2)}，比前一組提升 ${averageDelta.toFixed(2)}；維持目前節奏。` };
+  if (missDelta >= 0.04) return { title:"先降低失箭", text:`近 30 箭 M 率 ${(recent.missRate * 100).toFixed(0)}%，比前一組增加 ${(missDelta * 100).toFixed(0)}%；下一輪優先放慢射擊節奏與確認出箭流程。` };
+  if (averageDelta <= -0.2) return { title:"近期平均下降", text:`近 30 箭平均比前一組低 ${Math.abs(averageDelta).toFixed(2)}；建議先以穩定節奏完成一組，再調整瞄準。` };
+  return { title:"近期表現持平", text:`近 30 箭平均 ${recent.average.toFixed(2)}，M 率 ${(recent.missRate * 100).toFixed(0)}%；可用下一組專注一致的射前流程。` };
+}
 function Stat({ label, value, note, tone = "text-blue-300" }) {
   return <Card className="p-3"><div className="text-xs" style={{ color:"var(--text-secondary)" }}>{label}</div><div className={`mt-1 text-2xl font-black ${tone}`}>{value}</div>{note && <div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{note}</div>}</Card>;
 }
@@ -82,7 +101,7 @@ export default function MemberPerformance({ profileOverride = null }) {
   const { profile: authProfile, role } = useAuth();
   const profile = profileOverride || authProfile;
   const [sessions, setSessions] = useState([]); const [games, setGames] = useState([]);
-  const [syncInfo, setSyncInfo] = useState(null); const [transferring, setTransferring] = useState(false); const [transferProgress, setTransferProgress] = useState(null); const [exactRecent, setExactRecent] = useState([]); const [members, setMembers] = useState([]);
+  const [syncInfo, setSyncInfo] = useState(null); const [transferring, setTransferring] = useState(false); const [transferProgress, setTransferProgress] = useState(null); const [exactRecent, setExactRecent] = useState([]); const [exactArrows, setExactArrows] = useState([]); const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [filters, setFilters] = useState({ bow:ALL, distance:ALL, face:ALL, capture:ALL, arrows:ALL, source:ALL });
   const [selectedSessionId, setSelectedSessionId] = useState(null);
@@ -137,7 +156,7 @@ export default function MemberPerformance({ profileOverride = null }) {
         }
         if (arrows.length >= 90) break;
       }
-      if (active) setExactRecent(arrows.length ? [30, 60, 90].map(target => buildExactRecent(arrows, target)) : []);
+      if (active) { setExactArrows(arrows); setExactRecent(arrows.length ? [30, 60, 90].map(target => buildExactRecent(arrows, target)) : []); }
     }
     loadExactRecent();
     return () => { active = false; };
@@ -169,6 +188,7 @@ export default function MemberPerformance({ profileOverride = null }) {
     const best = filtered.reduce((current, session) => !current || (Number(sessionMetrics(session).averageArrow) || 0) > (Number(sessionMetrics(current).averageArrow) || 0) ? session : current, null);
     return { arrowCount, recent:[30, 60, 90].map(target => buildRecentApproximation(filtered, target)), bestAverage:best ? Number(sessionMetrics(best).averageArrow) || 0 : null };
   }, [filtered]);
+  const trainingInsight = useMemo(() => buildTrainingInsight(exactArrows), [exactArrows]);
   const game = useMemo(() => { const wins = games.filter(item => item.result === "win").length; const damages = games.map(item => Number(item.totalDamage) || 0); return { count:games.length, wins, totalDamage:damages.reduce((sum, value) => sum + value, 0), highestDamage:damages.length ? Math.max(...damages) : 0 }; }, [games]);
   if (loading) return <Spinner />;
   return <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
@@ -177,6 +197,8 @@ export default function MemberPerformance({ profileOverride = null }) {
     {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
     <section><ST>篩選射擊條件</ST><div className="flex gap-2 overflow-x-auto pb-1"><FilterSelect value={filters.bow} onChange={value => setFilters(current => ({ ...current, bow:value }))} options={filterOptions.bow} /><FilterSelect value={filters.distance} onChange={value => setFilters(current => ({ ...current, distance:value }))} options={filterOptions.distance} /><FilterSelect value={filters.face} onChange={value => setFilters(current => ({ ...current, face:value }))} options={filterOptions.face} /><FilterSelect value={filters.capture} onChange={value => setFilters(current => ({ ...current, capture:value }))} options={filterOptions.capture} /><FilterSelect value={filters.arrows} onChange={value => setFilters(current => ({ ...current, arrows:value }))} options={filterOptions.arrows} /><FilterSelect value={filters.source} onChange={value => setFilters(current => ({ ...current, source:value }))} options={filterOptions.source} /></div></section>
     <section><ST>真實射箭表現</ST>{!filtered.length ? <Empty icon="🏹" message="此條件下尚未有可分析的真實射箭紀錄。" /> : <>{(() => { const recent = exactRecent.length ? exactRecent : shooting.recent; return <><div className="grid grid-cols-2 gap-3"><Stat label="累計真實箭數" value={shooting.arrowCount} note={`${filtered.length} 場已完成射擊`} tone="text-emerald-300" /><Stat label="最佳單場每箭平均" value={shooting.bestAverage?.toFixed(2) ?? "—"} note="依同場實際箭數計算" tone="text-amber-300" /></div><div className="mt-3 grid grid-cols-3 gap-2">{recent.map(item => <Stat key={item.targetArrows} label={`近 ${item.targetArrows} 箭`} value={item.average == null ? "—" : item.average.toFixed(2)} note={item.arrowCount ? `使用 ${item.arrowCount} 箭` : "樣本不足"} />)}</div><div className="mt-3 grid grid-cols-2 gap-3"><Stat label="近期待命中率" value={percent(1 - (recent[0]?.missRate || 0))} note={`M 率 ${percent(recent[0]?.missRate)}`} tone="text-emerald-300" /><Stat label="近期 X 率" value={percent(recent[0]?.xRate)} note="X 與 M 均以真實逐箭輸入統計" tone="text-violet-300" /></div><p className="mt-3 text-[11px] leading-relaxed" style={{ color:"var(--text-muted)" }}>{exactRecent.length ? "近 30／60／90 箭直接以此裝置快取的逐箭資料精確計算。" : "尚未有本機逐箭快取，暫以完整場次摘要近似；可建立近三個月歷史資料取得精確計算。"}</p></>; })()}</>}</section>
+    <section><ST>真實射箭表現</ST>{!filtered.length ? <Empty icon="🏹" message="此條件下尚未有可分析的真實射箭紀錄。" /> : <>{(() => { const recent = exactRecent.length ? exactRecent : shooting.recent; return <><div className="grid grid-cols-2 gap-3"><Stat label="累計真實箭數" value={shooting.arrowCount} note={`${filtered.length} 場已完成射擊`} tone="text-emerald-300" /><Stat label="最佳單場每箭平均" value={shooting.bestAverage?.toFixed(2) ?? "—"} note="依同場實際箭數計算" tone="text-amber-300" /></div><div className="mt-3 grid grid-cols-3 gap-2">{recent.map(item => <Stat key={item.targetArrows} label={`近 ${item.targetArrows} 箭`} value={item.average == null ? "—" : item.average.toFixed(2)} note={item.arrowCount ? `使用 ${item.arrowCount} 箭` : "樣本不足"} />)}</div><div className="mt-3 grid grid-cols-2 gap-3"><Stat label="近期待命中率" value={percent(1 - (recent[0]?.missRate || 0))} note={`M 率 ${percent(recent[0]?.missRate)}`} tone="text-emerald-300" /><Stat label="近期 X 率" value={percent(recent[0]?.xRate)} note="X 與 M 均以真實逐箭輸入統計" tone="text-violet-300" /></div><p className="mt-3 text-[11px] leading-relaxed" style={{ color:"var(--text-muted)" }}>{exactRecent.length ? "近 30／60／90 箭直接以此裝置快取的逐箭資料精確計算。" : "尚未有本機逐箭快取，暫以完整場次摘要近似；可建立近三個月歷史資料取得精確計算。"}</p></>; })()}</>}</section>
+    <section><ST>下一個訓練提示</ST><Card className="p-3"><div className="text-sm font-black text-amber-200">{trainingInsight.title}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{trainingInsight.text}</p><p className="mt-2 text-[10px]" style={{ color:"var(--text-muted)" }}>提示僅依此裝置的逐箭紀錄產生，不使用遊戲傷害或裝備數值。</p></Card></section>
     <section><ST>場次分析</ST>{!filtered.length ? null : <div className="flex flex-col gap-2">{filtered.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; const config = session.shootingConfig || {}; return <Card key={session.id} className="p-3"><button className="w-full text-left" onClick={() => setSelectedSessionId(isSelected ? null : session.id)}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{displayDate(session)} ・ {config.bowType || "未記錄弓種"} ・ {config.distanceM ?? "—"}m ・ {config.targetFaceCode || "未記錄靶面"} ・ {config.arrowsPerEnd || "—"}箭制</div></div><div className="text-right"><div className="text-lg font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div><div className="text-[11px]" style={{ color:"var(--text-muted)" }}>{metrics.totalScore || 0} 分 / {metrics.arrowCount || session.arrowCount} 箭</div></div></div><div className="mt-2 flex gap-3 text-[11px]" style={{ color:"var(--text-secondary)" }}><span>X {metrics.xCount || 0}</span><span>M {metrics.missCount || 0}</span><span>回合波動 {Number(metrics.endStdDev || 0).toFixed(2)}</span><span>後段差 {Number(metrics.fatigueDelta || 0).toFixed(2)}</span></div></button>{isSelected && <SessionDetail session={session} />}</Card>; })}</div>}</section>
     <section><ST>遊戲戰績</ST>{game.count === 0 ? <Empty icon="⚔️" message="尚未有新的遊戲戰績紀錄。" /> : <div className="grid grid-cols-2 gap-3"><Stat label="完成戰鬥" value={game.count} note={`勝率 ${percent(game.count ? game.wins / game.count : 0)}`} tone="text-indigo-300" /><Stat label="累計傷害" value={game.totalDamage.toLocaleString()} note={`最高單場 ${game.highestDamage.toLocaleString()}`} tone="text-rose-300" /></div>}</section>
     <section><ST>本機資料與同步</ST><Card className="p-3"><div className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{syncInfo?.local?.initialized ? "此裝置已儲存射手表現資料" : "此裝置尚未建立射手歷史資料"}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>平常只比對一筆同步摘要；版本相同時不會重新讀取全部射擊紀錄。新設備可主動下載最近三個月的場次與逐箭資料。</p><div className="mt-3 flex items-center justify-between gap-3"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>{transferProgress ? `下載 ${transferProgress.completed}／${transferProgress.total} 場` : `本機版本 ${syncInfo?.local?.revision ?? "—"} ・ 雲端版本 ${syncInfo?.cloud?.revision ?? "—"}`}</span><button type="button" onClick={transferRecentHistory} disabled={transferring} className="rounded bg-blue-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{transferring ? "建立中…" : "新設備：建立近 3 個月歷史資料"}</button></div></Card></section>
