@@ -210,6 +210,12 @@ service cloud.firestore {
     match /arrowCountEvents/{sessionId} {
       allow read, write: if isLoggedIn();
     }
+    // Per-member version manifest for local-first performance sync. It holds
+    // no raw arrows; clients compare this one small document before fetching
+    // changed sessions into their persistent IndexedDB cache.
+    match /memberPerformanceSync/{memberId} {
+      allow read, write: if isLoggedIn();
+    }
     match /monsterDex/{docId} {
       allow read, write: if isLoggedIn();
     }

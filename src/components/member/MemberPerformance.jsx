@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getGamePerformanceSummaries, getMembers, getPracticeLogs, getShootingSessionEnds, getShootingSessionSummaries, migrateLegacyPracticeLogs } from "../../lib/db";
+import { bootstrapRecentPerformanceCache, getCachedGamePerformanceSummaries, getCachedShootingSessionSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 
@@ -75,7 +75,7 @@ export default function MemberPerformance({ profileOverride = null }) {
   const { profile: authProfile, role } = useAuth();
   const profile = profileOverride || authProfile;
   const [sessions, setSessions] = useState([]); const [games, setGames] = useState([]);
-  const [legacyLogs, setLegacyLogs] = useState([]); const [members, setMembers] = useState([]);
+  const [syncInfo, setSyncInfo] = useState(null); const [transferring, setTransferring] = useState(false); const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [filters, setFilters] = useState({ bow:ALL, distance:ALL, face:ALL, capture:ALL, arrows:ALL, source:ALL });
   const [selectedSessionId, setSelectedSessionId] = useState(null);
@@ -87,28 +87,37 @@ export default function MemberPerformance({ profileOverride = null }) {
     getMembers().then(setMembers).catch(() => setMembers([]));
   }, [canReviewMembers]);
   useEffect(() => {
-    if (!viewedMemberId) { setSessions([]); setGames([]); setLegacyLogs([]); setLoading(false); return; }
+    if (!viewedMemberId) { setSessions([]); setGames([]); setLoading(false); return; }
     let active = true; setLoading(true); setError("");
-    Promise.allSettled([getShootingSessionSummaries(viewedMemberId), getGamePerformanceSummaries(viewedMemberId), getPracticeLogs(viewedMemberId)])
-      .then(async results => {
-        const [sessionResult, gameResult, legacyResult] = results;
-        let nextSessions = sessionResult.status === "fulfilled" ? sessionResult.value : [];
-        const nextGames = gameResult.status === "fulfilled" ? gameResult.value : [];
-        const nextLegacyLogs = legacyResult.status === "fulfilled" ? legacyResult.value : [];
-        const failedReads = results.filter(result => result.status === "rejected");
-        if (failedReads.length) console.warn("performance read failures:", failedReads.map(result => result.reason?.message));
-        // Backfill at the point the record is actually viewed. This is
-        // idempotent and also recovers imports interrupted in the admin page.
-        if (nextLegacyLogs.length) {
-          await migrateLegacyPracticeLogs(viewedMemberId);
-          nextSessions = await getShootingSessionSummaries(viewedMemberId);
-        }
-        if (active) { setSessions(nextSessions); setGames(nextGames); setLegacyLogs(nextLegacyLogs); }
+    Promise.all([getCachedShootingSessionSummaries(viewedMemberId), getCachedGamePerformanceSummaries(viewedMemberId)])
+      .then(async ([cachedSessions, cachedGames]) => {
+        if (active) { setSessions(cachedSessions); setGames(cachedGames); }
+        const local = getLocalPerformanceCacheMeta(viewedMemberId);
+        const cloud = await getMemberPerformanceSync(viewedMemberId); // the only normal network read
+        if (!active) return;
+        setSyncInfo({ local, cloud });
+        if (!local?.initialized || !cloud || Number(local.revision) === Number(cloud.revision)) return;
+        const changes = await getChangedShootingSessionSummaries(viewedMemberId, Number(local.revision) || 0);
+        if (!active) return;
+        const byId = new Map(cachedSessions.map(session => [session.id, session]));
+        changes.forEach(session => byId.set(session.id, session));
+        setSessions([...byId.values()].sort((a, b) => (b.finalizedAt?.toMillis?.() || 0) - (a.finalizedAt?.toMillis?.() || 0)));
+        setLocalPerformanceCacheMeta(viewedMemberId, { ...local, initialized:true, revision:Number(cloud.revision) || 0 });
+        setSyncInfo({ local:{ ...local, revision:Number(cloud.revision) || 0, initialized:true }, cloud });
       })
-      .catch(error => { console.warn("performance load:", error?.message); if (active) setError("舊資料回填暫時失敗，請重新整理後再試。"); })
+      .catch(error => { console.warn("performance load:", error?.message); if (active) setError("本機表現資料同步暫時失敗，請稍後再試。"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [viewedMemberId]);
+  async function transferRecentHistory() {
+    if (!viewedMemberId || transferring) return;
+    setTransferring(true); setError("");
+    try {
+      const { sessions:recentSessions, sync } = await bootstrapRecentPerformanceCache(viewedMemberId, 3);
+      setSessions(recentSessions); setSyncInfo({ local:getLocalPerformanceCacheMeta(viewedMemberId), cloud:sync });
+    } catch (error) { setError("建立近三個月歷史資料失敗，請確認網路後再試。"); }
+    finally { setTransferring(false); }
+  }
   const sourceSessions = useMemo(() => sessions.filter(session => session.isRealShooting === true && session.countsToward?.performance !== false && ["finalized", "corrected"].includes(session.status) && (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0) > 0), [sessions]);
   const filterOptions = useMemo(() => ({
     bow:selectOptions(sourceSessions.map(item => item.shootingConfig?.bowType), "弓種"),
@@ -137,6 +146,6 @@ export default function MemberPerformance({ profileOverride = null }) {
     <section><ST>真實射箭表現</ST>{!filtered.length ? <Empty icon="🏹" message="此條件下尚未有可分析的真實射箭紀錄。" /> : <><div className="grid grid-cols-2 gap-3"><Stat label="累計真實箭數" value={shooting.arrowCount} note={`${filtered.length} 場已完成射擊`} tone="text-emerald-300" /><Stat label="最佳單場每箭平均" value={shooting.bestAverage?.toFixed(2) ?? "—"} note="依同場實際箭數計算" tone="text-amber-300" /></div><div className="mt-3 grid grid-cols-3 gap-2">{shooting.recent.map(item => <Stat key={item.targetArrows} label={`近 ${item.targetArrows} 箭`} value={item.average == null ? "—" : item.average.toFixed(2)} note={item.arrowCount ? `使用 ${item.arrowCount} 箭` : "樣本不足"} />)}</div><div className="mt-3 grid grid-cols-2 gap-3"><Stat label="近期待命中率" value={percent(1 - (shooting.recent[0]?.missRate || 0))} note={`M 率 ${percent(shooting.recent[0]?.missRate)}`} tone="text-emerald-300" /><Stat label="近期 X 率" value={percent(shooting.recent[0]?.xRate)} note="X 與 M 均以真實逐箭輸入統計" tone="text-violet-300" /></div><p className="mt-3 text-[11px] leading-relaxed" style={{ color:"var(--text-muted)" }}>30／60／90 箭目前以完整場次摘要近似；點選下方單場可讀取其逐箭資料。</p></>}</section>
     <section><ST>場次分析</ST>{!filtered.length ? null : <div className="flex flex-col gap-2">{filtered.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; const config = session.shootingConfig || {}; return <Card key={session.id} className="p-3"><button className="w-full text-left" onClick={() => setSelectedSessionId(isSelected ? null : session.id)}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{displayDate(session)} ・ {config.bowType || "未記錄弓種"} ・ {config.distanceM ?? "—"}m ・ {config.targetFaceCode || "未記錄靶面"} ・ {config.arrowsPerEnd || "—"}箭制</div></div><div className="text-right"><div className="text-lg font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div><div className="text-[11px]" style={{ color:"var(--text-muted)" }}>{metrics.totalScore || 0} 分 / {metrics.arrowCount || session.arrowCount} 箭</div></div></div><div className="mt-2 flex gap-3 text-[11px]" style={{ color:"var(--text-secondary)" }}><span>X {metrics.xCount || 0}</span><span>M {metrics.missCount || 0}</span><span>回合波動 {Number(metrics.endStdDev || 0).toFixed(2)}</span><span>後段差 {Number(metrics.fatigueDelta || 0).toFixed(2)}</span></div></button>{isSelected && <SessionDetail session={session} />}</Card>; })}</div>}</section>
     <section><ST>遊戲戰績</ST>{game.count === 0 ? <Empty icon="⚔️" message="尚未有新的遊戲戰績紀錄。" /> : <div className="grid grid-cols-2 gap-3"><Stat label="完成戰鬥" value={game.count} note={`勝率 ${percent(game.count ? game.wins / game.count : 0)}`} tone="text-indigo-300" /><Stat label="累計傷害" value={game.totalDamage.toLocaleString()} note={`最高單場 ${game.highestDamage.toLocaleString()}`} tone="text-rose-300" /></div>}</section>
-    {legacyLogs.length > 0 && <section><ST>舊系統練習摘要</ST><Card className="p-3"><div className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>找到 {legacyLogs.length} 筆尚未回填的舊練習紀錄</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>舊資料先獨立顯示，避免與新系統重複計算。可確認逐箭資料後才會安全回填為完整 ShootingSession。</p><div className="mt-3 grid grid-cols-2 gap-3"><Stat label="舊紀錄箭數" value={legacyLogs.reduce((sum, log) => sum + (Number(log.totalArrows) || log.rounds.flat().length || 0), 0)} /><Stat label="舊紀錄平均" value={(() => { const arrows = legacyLogs.reduce((sum, log) => sum + (Number(log.totalArrows) || log.rounds.flat().length || 0), 0); const total = legacyLogs.reduce((sum, log) => sum + (Number(log.total) || 0), 0); return arrows ? (total / arrows).toFixed(2) : "—"; })()} /></div></Card></section>}
+    <section><ST>本機資料與同步</ST><Card className="p-3"><div className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{syncInfo?.local?.initialized ? "此裝置已儲存射手表現資料" : "此裝置尚未建立射手歷史資料"}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>平常只比對一筆同步摘要；版本相同時不會重新讀取全部射擊紀錄。新設備可主動下載最近三個月的場次摘要。</p><div className="mt-3 flex items-center justify-between gap-3"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>本機版本 {syncInfo?.local?.revision ?? "—"} ・ 雲端版本 {syncInfo?.cloud?.revision ?? "—"}</span><button type="button" onClick={transferRecentHistory} disabled={transferring} className="rounded bg-blue-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{transferring ? "建立中…" : "新設備：建立近 3 個月歷史資料"}</button></div></Card></section>
   </div>;
 }

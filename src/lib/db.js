@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch, runTransaction
+  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch, runTransaction, getDocsFromCache
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -40,6 +40,7 @@ const C = {
   shootingSessions: "shootingSessions",
   gamePerformances: "gamePerformances",
   arrowCountEvents: "arrowCountEvents",
+  memberPerformanceSync: "memberPerformanceSync",
 };
 
 // Firestore rejects `undefined` at any nested level. Older practice logs did
@@ -67,6 +68,23 @@ function legacyPracticeOccurredAt(log) {
   return Number.isFinite(parsed.getTime()) ? Timestamp.fromDate(parsed) : null;
 }
 
+async function nextPerformanceSyncRevision(transaction, memberId) {
+  const ref = doc(db, C.memberPerformanceSync, memberId);
+  const snap = await transaction.get(ref);
+  return { ref, revision:(Number(snap.data()?.revision) || 0) + 1, previous:snap.data() || {} };
+}
+
+function writePerformanceSync(transaction, sync, memberId, session) {
+  transaction.set(sync.ref, {
+    memberId,
+    revision:sync.revision,
+    sessionCount:(Number(sync.previous.sessionCount) || 0) + 1,
+    arrowCount:(Number(sync.previous.arrowCount) || 0) + (Number(session.arrowCount) || 0),
+    lastChangedAt:serverTimestamp(),
+    updatedAt:serverTimestamp(),
+  }, { merge:true });
+}
+
 // Additive dual-write only: old battle logs remain the live compatibility source.
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
@@ -80,11 +98,13 @@ export async function finalizeMonsterShootingSession(input) {
       if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
       return;
     }
+    const sync = await nextPerformanceSyncRevision(transaction, record.session.memberId);
     const now = serverTimestamp();
-    transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
     record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
     transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), createdAt:now });
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
+    writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   });
   return record.session.id;
 }
@@ -104,10 +124,12 @@ export async function finalizePracticeShootingSession(input) {
       if (existing.data()?.memberId !== record.session.memberId) throw new Error("Shooting session ID collision");
       return;
     }
+    const sync = await nextPerformanceSyncRevision(transaction, record.session.memberId);
     const now = serverTimestamp();
-    transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
     record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "practice", sourceMode:record.session.source?.mode || "freePractice", occurredAt:now, createdAt:now });
+    writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   });
   return record.session.id;
 }
@@ -165,10 +187,12 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
         }
         return;
       }
+      const sync = await nextPerformanceSyncRevision(transaction, memberId);
       const sessionTime = occurredAt || now;
-      transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:sessionTime, endedAt:sessionTime, finalizedAt:sessionTime, createdAt:now, updatedAt:now });
+      transaction.set(sessionRef, { ...stripUndefined(record.session), syncRevision:sync.revision, startedAt:sessionTime, endedAt:sessionTime, finalizedAt:sessionTime, createdAt:now, updatedAt:now });
       record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId, createdAt:now, updatedAt:now }));
       transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:sessionTime, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
+      writePerformanceSync(transaction, sync, memberId, record.session);
     });
   }
   return { detailed, summary, total:detailed + summary };
@@ -219,6 +243,48 @@ export async function getShootingSessionSummaries(memberId, maxCount = 120) {
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
 }
 
+const performanceCacheKey = memberId => `catarrow.performance-cache.v1.${memberId}`;
+export function getLocalPerformanceCacheMeta(memberId) {
+  try { return JSON.parse(localStorage.getItem(performanceCacheKey(memberId)) || "null"); } catch { return null; }
+}
+export function setLocalPerformanceCacheMeta(memberId, meta) {
+  try { localStorage.setItem(performanceCacheKey(memberId), JSON.stringify({ ...meta, savedAt:Date.now() })); } catch { /* browser storage unavailable */ }
+}
+
+// Firestore persistence is configured in firebase.js and stores these queried
+// documents in IndexedDB. This read never requests the network.
+export async function getCachedShootingSessionSummaries(memberId) {
+  if (!memberId) return [];
+  try {
+    const snap = await getDocsFromCache(query(collection(db, C.shootingSessions), where("memberId", "==", memberId)));
+    return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  } catch { return []; }
+}
+
+export async function getMemberPerformanceSync(memberId) {
+  if (!memberId) return null;
+  const snap = await getDoc(doc(db, C.memberPerformanceSync, memberId));
+  return snap.exists() ? { id:snap.id, ...snap.data() } : null;
+}
+
+export async function getChangedShootingSessionSummaries(memberId, afterRevision) {
+  if (!memberId || !Number.isFinite(Number(afterRevision))) return [];
+  const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("syncRevision", ">", Number(afterRevision))));
+  return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
+// Explicit new-device transfer: only recent summaries are downloaded. Session
+// ends remain lazy and are cached locally when a shooter opens their detail.
+export async function bootstrapRecentPerformanceCache(memberId, months = 3) {
+  if (!memberId) return { sessions:[], sync:null };
+  const since = Timestamp.fromMillis(Date.now() - months * 31 * 24 * 60 * 60 * 1000);
+  const snap = await getDocs(query(collection(db, C.shootingSessions), where("memberId", "==", memberId), where("finalizedAt", ">=", since)));
+  const sessions = sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  const sync = await getMemberPerformanceSync(memberId);
+  setLocalPerformanceCacheMeta(memberId, { revision:Number(sync?.revision) || 0, rangeMonths:months, sessionCount:sessions.length, initialized:true });
+  return { sessions, sync };
+}
+
 export async function getGamePerformanceSummaries(memberId, maxCount = 120) {
   if (!memberId) return [];
   const snap = await getDocs(query(
@@ -227,6 +293,14 @@ export async function getGamePerformanceSummaries(memberId, maxCount = 120) {
     limit(Math.max(1, Math.min(maxCount, 200)))
   ));
   return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+}
+
+export async function getCachedGamePerformanceSummaries(memberId) {
+  if (!memberId) return [];
+  try {
+    const snap = await getDocsFromCache(query(collection(db, C.gamePerformances), where("memberId", "==", memberId)));
+    return sortByPerformanceDate(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+  } catch { return []; }
 }
 
 // Loaded only after a member opens one session detail. The performance home
