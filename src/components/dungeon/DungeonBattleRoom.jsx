@@ -16,7 +16,7 @@ import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats } from "../../lib/db";
+import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP, archerLevelFromXP } from "../../lib/archerLevel";
 import { addCatXP, addCatBond } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
@@ -78,7 +78,11 @@ function getDungeonPracticeData(log, memberId, targetFmt) {
         : []
     )
   );
-  return { rounds, arrowPositions };
+  const capturedEnds = breakdownsByRound.map(arrows => arrows.map(arrow => ({
+    label:arrow.label,
+    ...(Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny) ? { landing:{ nx:arrow.nx, ny:arrow.ny, faceIndex:arrow.faceIndex || 0, targetFormat:arrow.targetFormat || targetFmt } } : {}),
+  })));
+  return { rounds, arrowPositions, capturedEnds };
 }
 
 function calcCtrFn(monsterAtk, archerDef) {
@@ -671,8 +675,33 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   }
 
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
+  function persistDungeonShootingPerformance(result) {
+    if (isGuestMode || !myId) return;
+    const { capturedEnds } = getDungeonPracticeData(room?.log, myId, targetFmt);
+    const totalDamage = (room?.log || []).reduce((sum, entry) => {
+      const player = (entry.playerLog || []).find(item => item.id === myId);
+      return sum + (player?.dmg || 0);
+    }, 0);
+    const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
+    finalizeGameShootingSession({
+      sessionId:`dungeon_${roomId}_${myId}`,
+      memberId:myId,
+      capturedEnds,
+      shootingProfile,
+      targetFormat:targetFmt,
+      arrowsPerEnd:room?.arrowsPerRound || 6,
+      result,
+      sourceMode:"dungeon",
+      monster:room?.monster,
+      totalDamage,
+      finalMonsterHp:room?.monsterHP,
+      characterSnapshot:{ attack:profile?.rpgEquip?.atk, defense:profile?.rpgEquip?.def },
+    }).catch(error => console.warn("dungeon shooting performance dual-write failed", error));
+  }
+
   async function handleClaimSelf() {
     if (expeditionMode) {
+      persistDungeonShootingPerformance(room?.result === "lose" ? "lose" : "win");
       // 遠征模式：個人金幣/寶箱由遠征系統統一發放。但「今日箭數練習紀錄 + 里程碑」是個人紀錄，
       // 仍要在這裡各自寫入——否則組隊地下城的今日箭數/里程碑不會增加（總箭數走 addRoundArrows 沒問題）。
       if (myId && !isGuestMode) {
@@ -725,6 +754,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       } else { onExit?.({ preserve: true }); }
       return;
     }
+    persistDungeonShootingPerformance("win");
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
     const baseMaterials = rollMaterialDrops(room?.monster);
     const totalFloors   = isMapMode
@@ -979,6 +1009,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             <button onClick={async () => {
               // 儲存失敗紀錄
               if (myId && !isGuestMode) {
+                persistDungeonShootingPerformance("lose");
                 const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
                 if (practiceRounds.length > 0) {
                   const arrowCount = practiceRounds.flat().length;

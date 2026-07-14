@@ -63,6 +63,10 @@ export async function finalizeMonsterShootingSession(input) {
   });
   return record.session.id;
 }
+
+export async function finalizeGameShootingSession(input) {
+  return finalizeMonsterShootingSession(input);
+}
 const C_GUILD      = "guildProgress";
 const C_GUILD_Q    = "guildQuests";       // 後台發佈的任務
 const C_GUILD_SUBS = "guildQuestSubs";    // 會員提交紀錄（待審核徽章）

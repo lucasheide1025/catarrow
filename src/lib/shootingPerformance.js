@@ -77,7 +77,7 @@ export function buildShootingEnds(capturedEnds, targetFormat = "full_110") {
   }).filter(end => end.arrows.length);
 }
 
-export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, shootingProfile, targetFormat, arrowsPerEnd, result, monster, totalDamage, finalMonsterHp, characterSnapshot }) {
+export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, shootingProfile, targetFormat, arrowsPerEnd, result, monster, totalDamage, finalMonsterHp, characterSnapshot, sourceMode = "monster" }) {
   const format = getTargetFaceFormat(targetFormat);
   const ends = buildShootingEnds(capturedEnds, targetFormat);
   const metricsSnapshot = calculateSessionMetrics(ends);
@@ -91,14 +91,14 @@ export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, 
   };
   const session = {
     id:sessionId, schemaVersion:SHOOTING_SCHEMA_VERSION, memberId, status:"finalized", isRealShooting:true,
-    source:{ kind:"game", mode:"monster" }, verification:{ level:"self" }, captureMode:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? "targetPlot" : "scoreInput",
+    source:{ kind:"game", mode:sourceMode }, verification:{ level:"self" }, captureMode:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? "targetPlot" : "scoreInput",
     shootingConfig, countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false },
     arrowCount:metricsSnapshot.arrowCount, completedEndCount:ends.length,
     analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:true, performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:[] },
     metricsSnapshot, gameResultLocked:true,
   };
   const gamePerformance = {
-    id:sessionId, sessionId, memberId, mode:"monster", result, monster:{ id:monster?.id || "unknown", nameSnapshot:monster?.name, difficulty:monster?.tier, initialHp:monster?.hp, remainingHp:finalMonsterHp },
+    id:sessionId, sessionId, memberId, mode:sourceMode, result, monster:{ id:monster?.id || "unknown", nameSnapshot:monster?.name, difficulty:monster?.tier, initialHp:monster?.hp, remainingHp:finalMonsterHp },
     rounds:ends.map(end => ({ endIndex:end.index, shootingScore:end.metrics.total })), totalDamage:Number(totalDamage) || 0,
     characterSnapshot, rulesVersion:"monster-battle-v1", locked:true,
   };
