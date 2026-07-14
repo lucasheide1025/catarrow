@@ -186,16 +186,16 @@ function TierExam({ tier, config, cert, memberId, bowOptions, armorOptions, acce
       </div>
 
       <TaskRow tier={tier} task="task1" label="任務 1 · 中靶數（射6箭）" field="hits"
-        unit="箭中靶" pass={th.task1Hits} data={t1} bowType={bowType} memberId={memberId} equipLabels={equipLabels} />
+        unit="箭中靶" pass={th.task1Hits} data={t1} bowType={bowType} memberId={memberId} equipLabels={equipLabels} distance={distance} />
       <TaskRow tier={tier} task="task2" label={`任務 2 · ${distance}米分數`} field="score"
-        unit="分" pass={th.task2Score} data={t2} bowType={bowType} memberId={memberId} equipLabels={equipLabels} />
+        unit="分" pass={th.task2Score} data={t2} bowType={bowType} memberId={memberId} equipLabels={equipLabels} distance={distance} />
     </Card>
   );
 }
 
 const ARROW_VALUES = ["M", 6, 7, 8, 9, 10];
 
-function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId, equipLabels }) {
+function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId, equipLabels, distance }) {
   const isTask1 = field === "hits";
   const SS_KEY = `cert_task_${memberId}_${tier}_${task}`;
   let _ss = {}; try { _ss = JSON.parse(sessionStorage.getItem(SS_KEY) || "{}"); } catch {}
@@ -249,7 +249,7 @@ function TaskRow({ tier, task, label, field, unit, pass, data, bowType, memberId
             sessionId:`certification_${memberId}_${tier}_${task}_${Date.now()}`,
             memberId,
             rounds:[arrows],
-            shootingProfile:{ bowType, distance:task === "task2" ? 18 : undefined },
+            shootingProfile:{ bowType, distance },
             targetFormat:"full_110",
             arrowsPerEnd:arrows.length,
             source:{ kind:"certification", mode:"certification" },
