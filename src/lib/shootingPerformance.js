@@ -95,6 +95,10 @@ export function buildShootingEnds(capturedEnds, targetFormat = "full_110") {
       metrics:{ total:scores.reduce((sum, score) => sum + score, 0), arrowCount:scores.length, averageArrow:mean(scores), xCount:arrows.filter(arrow => arrow.captureMode === "targetPlot" ? arrow.recordedScore.isX : arrow.isX).length, missCount:scores.filter(score => score === 0).length } };
   }).filter(end => end.arrows.length);
 }
+function normalizedDistance(value) {
+  const distance = Number(value);
+  return Number.isFinite(distance) && distance > 0 ? distance : undefined;
+}
 
 export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, shootingProfile, targetFormat, arrowsPerEnd, result, monster, totalDamage, finalMonsterHp, characterSnapshot, sourceMode = "monster" }) {
   const format = getTargetFaceFormat(targetFormat);
@@ -103,7 +107,7 @@ export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, 
   if (!metricsSnapshot?.arrowCount) return null;
   const shootingConfig = {
     bowType:shootingProfile?.bowType, equipmentProfileId:shootingProfile?.bowId || undefined,
-    distanceM:Number(shootingProfile?.distance), targetFaceCode:format.id, targetFaceVersion:1,
+    distanceM:normalizedDistance(shootingProfile?.distance), targetFaceCode:format.id, targetFaceVersion:1,
     targetDiameterCm:format.faceSizeCm || undefined, targetLayout:format.layout === "vertical_triple" ? "verticalTriple" : "single",
     scoringScheme:"wa", scoringSchemeVersion:1, maxScorePerArrow:format.maxScore,
     arrowsPerEnd, timingMode:"off",
@@ -113,7 +117,7 @@ export function buildMonsterShootingRecord({ sessionId, memberId, capturedEnds, 
     source:{ kind:"game", mode:sourceMode }, verification:{ level:"self" }, captureMode:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? "targetPlot" : "scoreInput",
     shootingConfig, countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false },
     arrowCount:metricsSnapshot.arrowCount, completedEndCount:ends.length,
-    analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:true, performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:[] },
+    analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:Boolean(shootingConfig.distanceM), performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:shootingConfig.distanceM ? [] : ["missingDistance"] },
     metricsSnapshot, gameResultLocked:true,
   };
   const gamePerformance = {
@@ -138,7 +142,7 @@ export function buildPracticeShootingRecord({ sessionId, memberId, rounds, arrow
   if (!metricsSnapshot?.arrowCount) return null;
   const shootingConfig = {
     bowType:shootingProfile?.bowType, equipmentProfileId:shootingProfile?.bowId || undefined,
-    distanceM:Number(shootingProfile?.distance), targetFaceCode:format.id, targetFaceVersion:1,
+    distanceM:normalizedDistance(shootingProfile?.distance), targetFaceCode:format.id, targetFaceVersion:1,
     targetDiameterCm:format.faceSizeCm || undefined, targetLayout:format.layout === "vertical_triple" ? "verticalTriple" : "single",
     scoringScheme:"wa", scoringSchemeVersion:1, maxScorePerArrow:format.maxScore,
     arrowsPerEnd, timingMode,
@@ -150,7 +154,7 @@ export function buildPracticeShootingRecord({ sessionId, memberId, rounds, arrow
       captureMode:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? "targetPlot" : "scoreInput",
       shootingConfig, countsToward:{ arrowTotal:true, performance:true, personalBest:true, officialRecord:false, ...countsToward },
       arrowCount:metricsSnapshot.arrowCount, completedEndCount:ends.length,
-      analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:true, performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:[] },
+      analysis:{ level:ends.some(end => end.arrows.some(arrow => arrow.captureMode === "targetPlot")) ? 3 : 2, comparable:Boolean(shootingConfig.distanceM), performanceKey:buildPerformanceKey(shootingConfig), qualityFlags:shootingConfig.distanceM ? [] : ["missingDistance"] },
       metricsSnapshot,
     },
     ends,

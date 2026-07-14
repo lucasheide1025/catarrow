@@ -8,6 +8,8 @@ import {
 import { markQuestDone as markCheckinDone, subscribeMyCheckin, submitCheckin, addPracticeLog, finalizePracticeShootingSession } from "../../lib/db";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { sfxSuccess, sfxTap, sfxSoftFail } from "../../lib/sound";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 
 const HALF_SCORES = [
   { label:"X",  val:10, color:"#fbbf24" },
@@ -133,7 +135,7 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
         sessionId:`partyQuest_${roomId}_${myId}_${task.id}`,
         memberId:myId,
         rounds:[arrows],
-        shootingProfile:{ bowType:profile?.defaultBowType, distance:task.distance },
+        shootingProfile:loadBattleShootingProfile(myId),
         targetFormat:"full_110",
         arrowsPerEnd:arrowCount,
         source:{ kind:"mission", mode:"dailyMission" },
@@ -215,6 +217,8 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
           離開
         </button>
       </div>
+
+      <BattleShootingProfile memberId={myId} />
 
       {/* 任務詳情 */}
       {task ? (

@@ -10,6 +10,8 @@ import {
 import ExpeditionPanel from "./ExpeditionPanel";
 import GatheringPartyPanel from "./GatheringPartyPanel";
 import GatheringRun from "./GatheringRun";
+import BattleShootingProfile from "../shared/BattleShootingProfile";
+import { loadBattleShootingProfile } from "../../lib/battlePractice";
 
 const CSS = `
 @keyframes gather-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -91,7 +93,7 @@ export default function CouncilHall({ profile, village, onBack }) {
         sessionId:`gathering_${profile.id}_${result.contractId}`,
         memberId:profile.id,
         rounds:result.rounds || [],
-        shootingProfile:{ bowType:profile?.defaultBowType },
+        shootingProfile:loadBattleShootingProfile(profile.id),
         targetFormat:"full_110",
         arrowsPerEnd:6,
         source:{ kind:"mission", mode:"councilMission" },
@@ -127,7 +129,7 @@ export default function CouncilHall({ profile, village, onBack }) {
         sessionId:`gathering_party_${profile.id}_${result.contractId}`,
         memberId:profile.id,
         rounds:result.rounds || [],
-        shootingProfile:{ bowType:profile?.defaultBowType },
+        shootingProfile:loadBattleShootingProfile(profile.id),
         targetFormat:"full_110",
         arrowsPerEnd:6,
         source:{ kind:"mission", mode:"councilMission" },
@@ -246,6 +248,7 @@ export default function CouncilHall({ profile, village, onBack }) {
               選擇建築對應的採集地點後，以 3 輪、每輪 6 箭推進採集進度。採集專注在怪物素材、少量貓村資源、貓經驗與羈絆，不會發放寶箱、金幣或射手經驗。
             </div>
           </section>
+          <div style={{ marginBottom: 12 }}><BattleShootingProfile memberId={profile?.id} /></div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(156px, 1fr))", gap: 10 }}>
             {GATHERING_SITES.map(site => {
