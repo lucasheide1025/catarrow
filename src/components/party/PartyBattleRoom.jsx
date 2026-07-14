@@ -12,7 +12,7 @@ import {
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -152,7 +152,10 @@ function getPartyPracticeData(log, memberId, targetFmt) {
         : []
     )
   );
-  return { rounds, arrowPositions };
+  const capturedEnds = breakdownsByRound.map(arrows => arrows.map(arrow => ({ label:arrow.label,
+    ...(Number.isFinite(arrow.nx) && Number.isFinite(arrow.ny) ? { landing:{ nx:arrow.nx, ny:arrow.ny, faceIndex:arrow.faceIndex || 0, targetFormat:arrow.targetFormat || targetFmt } } : {}),
+  })));
+  return { rounds, arrowPositions, capturedEnds };
 }
 
 function getPartyMvpId(log) {
@@ -331,7 +334,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || !myId || isGuestMode || lossPracticeRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
-    const { rounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
+    const { rounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
     if (!rounds.length) return;
     lossPracticeRecordedRef.current = true;
     const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
@@ -357,6 +360,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }, myId).catch(() => {
       lossPracticeRecordedRef.current = false;
     });
+    finalizeGameShootingSession({ sessionId:`party_${roomId}_${myId}`, memberId:myId, capturedEnds,
+      shootingProfile, targetFormat:targetFmt, arrowsPerEnd:room?.arrowsPerRound || ARROWS_PER_ROUND,
+      result:"lose", sourceMode:"party", monster:room.monster,
+      totalDamage:(room.log || []).reduce((sum, entry) => sum + ((entry.playerLog || []).find(player => player.id === myId)?.dmg || 0), 0),
+      finalMonsterHp:room.monsterHP,
+    }).catch(error => console.warn("party shooting performance dual-write failed", error));
   }, [room?.status, isGuestMode]); // eslint-disable-line
 
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
@@ -815,7 +824,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
       if (myId && !isGuestPlayer) {
-        const { rounds:practiceRounds, arrowPositions } = getPartyPracticeData(room.log, myId, targetFmt);
+        const { rounds:practiceRounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
           const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
@@ -846,6 +855,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             },
             ...(arrowPositions.length ? { arrowPositions } : {}),
           }, myId).catch(() => {});
+          finalizeGameShootingSession({ sessionId:`party_${roomId}_${myId}`, memberId:myId, capturedEnds,
+            shootingProfile, targetFormat:targetFmt, arrowsPerEnd:room?.arrowsPerRound || ARROWS_PER_ROUND,
+            result:"win", sourceMode:"party", monster:room.monster, totalDamage:myDmg, finalMonsterHp:room.monsterHP,
+          }).catch(error => console.warn("party shooting performance dual-write failed", error));
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
         // 組隊模式永遠給 50% XP 加成
