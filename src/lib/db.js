@@ -42,6 +42,19 @@ const C = {
   arrowCountEvents: "arrowCountEvents",
 };
 
+// Firestore rejects `undefined` at any nested level. Older practice logs did
+// not consistently record bow, distance, or target settings, so normalise
+// imported records without inventing those missing values.
+function stripUndefined(value) {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value && typeof value === "object" && value.constructor === Object) {
+    return Object.fromEntries(Object.entries(value)
+      .filter(([, child]) => child !== undefined)
+      .map(([key, child]) => [key, stripUndefined(child)]));
+  }
+  return value;
+}
+
 // Additive dual-write only: old battle logs remain the live compatibility source.
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
@@ -56,9 +69,9 @@ export async function finalizeMonsterShootingSession(input) {
       return;
     }
     const now = serverTimestamp();
-    transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
-    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId:record.session.id, createdAt:now, updatedAt:now }));
-    transaction.set(gameRef, { ...record.gamePerformance, createdAt:now });
+    transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
+    transaction.set(gameRef, { ...stripUndefined(record.gamePerformance), createdAt:now });
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:"game", sourceMode:"monster", occurredAt:now, createdAt:now });
   });
   return record.session.id;
@@ -80,8 +93,8 @@ export async function finalizePracticeShootingSession(input) {
       return;
     }
     const now = serverTimestamp();
-    transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
-    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId:record.session.id, createdAt:now, updatedAt:now }));
+    transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+    record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId:record.session.id, createdAt:now, updatedAt:now }));
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "practice", sourceMode:record.session.source?.mode || "freePractice", occurredAt:now, createdAt:now });
   });
   return record.session.id;
@@ -130,8 +143,8 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
       const existing = await transaction.get(sessionRef);
       if (existing.exists()) return;
       const now = serverTimestamp();
-      transaction.set(sessionRef, { ...record.session, startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
-      record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...end, sessionId, createdAt:now, updatedAt:now }));
+      transaction.set(sessionRef, { ...stripUndefined(record.session), startedAt:now, endedAt:now, finalizedAt:now, createdAt:now, updatedAt:now });
+      record.ends.forEach(end => transaction.set(doc(sessionRef, "ends", end.id), { ...stripUndefined(end), sessionId, createdAt:now, updatedAt:now }));
       transaction.set(arrowEventRef, { id:sessionId, sessionId, memberId, arrowCount:record.session.arrowCount, sourceKind:"practice", sourceMode:"freePractice", occurredAt:now, createdAt:now, migration:{ imported:true, originalCollection:"practiceLogs", originalId:log.id } });
     });
   }
