@@ -23,3 +23,22 @@
 - [ ] 戰敗且有真實箭時仍保存射手資料；遊戲結果永久保留當下快照。
 - [ ] 逐箭、靶面座標、三連靶靶位、覆寫分數與 3/6 箭設定有相容的資料契約。
 - [ ] 新資料不會改寫或刪除舊資料。
+
+## Current UI Findings
+
+- The data boundary is already substantially implemented: `shootingSessions` stores real-shooting summaries/ends and `gamePerformances` stores locked game outcomes.
+- The current `MemberPerformance` page places every audience and task in one long scroll: member/coach selection, coach summary, full-history loading, six filters, real-shooting KPIs, training advice, session detail/correction, game records, and device synchronization.
+- The resulting complexity is primarily an information-architecture problem, not a need for more metrics or another data model rewrite.
+- Technical synchronization controls and full-history transfer are shown with equal visual weight to the student's progress and next training action.
+- Game performance is correctly excluded from technical averages, but its large section competes visually with the real-shooting progress story.
+
+## Proposed Product Direction
+
+- Make the default view answer two student questions: “Am I improving?” and “What should I practice next?”
+- Keep only recent trend, 30/60/90-arrow comparison, one training recommendation, and a few recent sessions on the overview.
+- Move complete session history/filtering, game records, and device/data synchronization into separate secondary views.
+- Preserve coach member selection and correction tools, but present them as coach-specific controls rather than student dashboard content.
+
+## Open Product Decision
+
+- Confirm the primary job of the default Shooting Performance landing view before choosing final navigation and content priority.

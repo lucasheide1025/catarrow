@@ -1,7 +1,7 @@
 # 貓小隊射箭場 — 專案開發狀態說明（給 Claude 看）
 
 > 這份文件供新對話的 Claude 快速建立上下文，避免重複探索。
-> 最後更新：2026-07-02
+> 最後更新：2026-07-14
 
 ---
 
@@ -51,6 +51,10 @@
 | `messages/{id}` | 教練←→射手訊息 |
 | `learnLogs/{id}` | 學習記錄（教練填寫） |
 | `practiceLogs/{id}` | 練習記錄（射手自填） |
+| `shootingSessions/{id}` | 射手表現場次（箭分、命中率、箭數），2026-07-14 起改為 localStorage 佇列，下課時批次寫入 |
+| `shootingSessions/{id}/ends/*` | 每回合細部箭資料（子文件集合），同 shootingSessions 排程寫入 |
+| `gamePerformances/{id}` | 遊戲戰績（傷害統計、怪物資料），同 shootingSessions 排程寫入 |
+| `arrowCountEvents/{id}` | 箭數事件紀錄，同 shootingSessions 排程寫入 |
 | `badgeLogs/{id}` | 徽章發放記錄 |
 | `certRecords/{id}` | 檢定記錄 |
 | `achievements/{id}` | 成就資料 |
@@ -182,16 +186,65 @@ resolveHitPart() 套用部位加成
 
 ---
 
-## 九、開發注意事項
+## 九、Firestore 優化（2026-07-14）
+
+### 背景
+
+射手表現系統（Shooting Performance System）導入後，每場打怪/練習寫入 **5+ 個 Firestore 文件**（shootingSessions + ends + gamePerformances + arrowCountEvents + memberPerformanceSync），加上 70+ onSnapshot 即時監聽器，導致讀寫暴增 10 倍以上。
+
+### 變更內容
+
+#### 今日箭數 → localStorage 本地累加
+- `addRoundArrows()` 內新增 localStorage 累加，key 格式 `catarrow.today-arrows.{YYYY-MM-DD}`
+- `MemberApp.jsx`、`AdminApp.jsx`、**`DailyQuest.jsx`、`WorldBossAttack.jsx`** 全部移除 `subscribeTodayPracticeLogs` 即時監聽，改用 localStorage 讀取 + `window.addEventListener('storage')` 跨分頁同步
+- **效果：0 次 Firestore 讀取（原本：4 個 onSnapshot）**
+
+#### 射手表現寫入 → 先存 localStorage，再 best-effort 寫 Firestore
+- `finalizeMonsterShootingSession()` 與 `finalizePracticeShootingSession()`：寫入邏輯反轉——**一律先 `queuePendingShootingSession()` 存 localStorage**，Firestore `runTransaction` 改為 best-effort
+- **效果：每場打怪 0 次 Firestore 寫入（原本：5+ 次）**
+
+#### 下課/載入 App 時 flush
+- `submitClassEnd()` 末尾新增 `flushPendingShootingSessions(memberId)`
+- `MemberApp.jsx`、`AdminApp.jsx` useEffect 載入時自動 flush
+- 忘記按下課 → 下次打開 App 自動補傳
+
+#### 移除 `subscribeTodayPracticeLogs` 函式
+- 所有元件的依賴遷移完成後，從 `src/lib/db.js` 中移除該函式定義
+- 殘留引用僅限備份目錄與 `.legacy.jsx` 舊版備份
+
+### 安全機制
+
+| 情境 | 處理方式 |
+|------|---------|
+| 忘記按下課 | 下次打開 App 自動 flush |
+| Firestore 暫時失敗 | 保留在 localStorage 佇列，下次重試 |
+| 跨日歸零 | localStorage key 綁定日期，隔日自動換 key |
+| 組隊地下城箭數 | 所有模式共用 `addRoundArrows`，無遺漏 |
+| localStorage 殘留累積 | 每日 ~40 bytes，年累積 ~15 KB，無需清理 |
+
+### 已知優化機會（尚未實作）
+
+| 優先級 | 訂閱 | 當前使用次數 | 建議方向 |
+|-------|------|------------|---------|
+| 🔴 P0 | `subscribeCardCollection` | **16 次** | 改為 `getDoc` + IndexedDB cache |
+| 🔴 P0 | `subscribePotions` | **11 次** | 改為 `getDoc` + IndexedDB cache |
+| 🟡 P1 | `subscribeMonsterDex` | **6 次** | 改為 `getDocs()` + 定期刷新 |
+| 🟡 P1 | `subscribeMaterials` / `subscribeCertification` | 3~4 次 | 可評估但效益較小 |
+
+---
+
+## 十、開發注意事項
 
 1. **不要把 `profile.uid` 傳給需要 memberId 的地方**，一律用 `profile.id`
 2. Firestore 安全規則 `isAdmin()` 用 `exists()` 查 admins collection，`admins` 的 read rule 不能設成 `if isAdmin()`（循環依賴），目前正確設定為 `if request.auth.uid == uid`
 3. 打怪、決鬥、組隊邏輯盡量在瀏覽器端計算，Firestore 只存最終結果
 4. 教練也有 `members` 文件（以 uid 查詢），這是刻意設計，確保背包等功能正常
+5. **今日箭數從 localStorage 讀取**，不依賴 Firestore。跨分頁同步透過 `storage` event 監聽。如果清除瀏覽器快取，今日箭數歸零（合理——「這個瀏覽器今天射的箭」本身無跨裝置同步需求）
+6. **射手表現資料流程**：打怪/練習 → `queuePendingShootingSession()` → localStorage → 下課時 `flushPendingShootingSessions()` → Firestore。`flushPendingShootingSessions` 在 `MemberApp.jsx` 和 `AdminApp.jsx` 的 mount useEffect 中也有呼叫，作為遺漏補傳
 
 ---
 
-## 十、戰鬥系統架構交接（2026-07-02）
+## 十一、戰鬥系統架構交接（2026-07-02）
 
 > 以下為 Phase 1-8 戰鬥系統重構後的架構，給後續開發者。
 

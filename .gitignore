@@ -15,3 +15,5 @@ codebase-ui.zip
 install.ps1
 nul
 .deploy-staging-source.zip
+.vercel-cli-cache/
+.tmp-dev-server*

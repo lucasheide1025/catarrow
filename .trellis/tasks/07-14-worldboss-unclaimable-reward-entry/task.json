@@ -1,9 +1,9 @@
 {
-  "id": "archer-performance-system",
-  "name": "archer-performance-system",
-  "title": "射手表現系統重設",
+  "id": "worldboss-unclaimable-reward-entry",
+  "name": "worldboss-unclaimable-reward-entry",
+  "title": "World Boss unclaimable reward entry",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -18,11 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "07-14-shooting-core-monster-dualwrite",
-    "07-14-shooting-multimode-dualwrite",
-    "07-14-performance-dashboard"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

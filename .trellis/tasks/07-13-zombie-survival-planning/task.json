@@ -1,7 +1,7 @@
 {
-  "id": "archer-performance-system",
-  "name": "archer-performance-system",
-  "title": "射手表現系統重設",
+  "id": "zombie-survival-planning",
+  "name": "zombie-survival-planning",
+  "title": "殭屍生存模式架構盤點與規劃",
   "description": "",
   "status": "planning",
   "dev_type": null,
@@ -10,7 +10,7 @@
   "priority": "P2",
   "creator": "your-name",
   "assignee": "your-name",
-  "createdAt": "2026-07-14",
+  "createdAt": "2026-07-13",
   "completedAt": null,
   "branch": null,
   "base_branch": "main",
@@ -18,11 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "07-14-shooting-core-monster-dualwrite",
-    "07-14-shooting-multimode-dualwrite",
-    "07-14-performance-dashboard"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

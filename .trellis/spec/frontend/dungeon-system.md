@@ -384,4 +384,5 @@ Two independent mechanisms, do not conflate them:
 - If a generated monster queue is exhausted, the fallback variant still follows the floor contract: floor 1 weak, floor 2 normal, floor 3 strong.
 - The completed/result branch must not render while the kill overlay is active.
 - Flatten the equipped cat into expedition member data (`catId`, `catName`, `catAtk`) before creating solo or team battle rooms. Cat attack rounds read these persisted fields, not the current client's profile.
+- Preserve the equipped cat's `catType`, `catXP`, and `catBond` through the lobby, coordination room, and every floor battle room. The shared `BattleScreen` uses these fields to reconstruct the same cat combat and bond calculation after reconnect; a client profile is only a compatibility fallback for old rooms.
 - Treasure-room card rewards must be generated from a real monster descriptor with a stable ID and name. Play reveal audio from the user-triggered flip action.

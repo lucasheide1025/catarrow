@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, updateChestOpenStats } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -112,7 +112,6 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     if (res.ok) {
       sfxSuccess();
       setCelebrate({ from: res.from, to: res.to });
-      setInventory(res.inventory);
     } else {
       toast(res.reason || "升級失敗，請稍後再試");
     }
@@ -137,14 +136,9 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     setOpeningChest(null);
     if (res.ok) {
       sfxSuccess();
-      if (isCoin) setTimeout(sfxCoinDrop, 350);
+      if (isCoin) setTimeout(sfxCoinDrop, 350); // 金幣寶箱：成功音後叮鈴收尾
       setOpenResult(isCoin ? { coins: res.coins } : { ...contents, catResult: res.catResult });
-      setChests(res.chests);
       if (!isCoin) updateChestOpenStats(profile.id, chest.type).catch(() => {});
-      // 開箱後重新讀取材料/藥水/碎片
-      refreshMaterials(profile.id, setInventory);
-      refreshPotions(profile.id, setPotions);
-      refreshFragments(profile.id, setFragments);
     } else {
       toast(res.reason || "開箱失敗，請稍後再試");
     }
@@ -177,11 +171,6 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     sfxEpic();
     setOpenAllBusy(false);
     setOpenAllProgress(null);
-    setChests([]);
-    // 全部開完後重新讀取材料/藥水/碎片
-    refreshMaterials(profile.id, setInventory);
-    refreshPotions(profile.id, setPotions);
-    refreshFragments(profile.id, setFragments);
     const groupById = (arr) => {
       const map = {};
       arr.forEach(item => {
@@ -210,7 +199,6 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     if (res.ok) {
       sfxEpic();
       setCraftCelebrate({ frag, label: res.label });
-      setFragments(res.fragments);
     } else {
       toast(res.reason || "合成失敗，請稍後再試");
     }
