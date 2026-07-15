@@ -91,6 +91,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Email delivery queue. Only trusted backend code and the Firebase Email
+    // extension may access these documents through the Admin SDK, which
+    // bypasses Firestore Security Rules. Never expose recipients, message
+    // bodies, or delivery status to client applications.
+    match /mail/{document} {
+      allow read, write: if false;
+    }
+
     // learnLogs：admin 全權，登入者可讀寫
     match /learnLogs/{logId} {
       allow read:   if isLoggedIn();
