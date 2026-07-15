@@ -8,6 +8,72 @@
 - The village panorama is responsive and must never require horizontal page scrolling.
 - On compact screens, building cards use two columns with readable production and upgrade text. Three columns are allowed only at wider breakpoints.
 
+## Scenario: Cat Village listener ownership
+
+### 1. Scope / Trigger
+
+Use this contract whenever a Cat Village child surface needs cats, shared market data, goal data, or village-market configuration. Firestore listeners incur their initial document reads again when duplicated or remounted.
+
+### 2. Signatures
+
+```js
+subscribeMyCats(memberId, callback) -> unsubscribe
+getVillageMarketConfig() -> Promise<object | null>
+subscribeVillageMarketConfig(callback) -> unsubscribe // admin live surface only
+ForgePanel({ profile, resources, myCats })
+```
+
+### 3. Contracts
+
+- `CatVillage` owns exactly one member cats collection listener and passes the resulting map to children such as `ForgePanel`.
+- A child must not subscribe again to data already owned by the page.
+- Student Cat Village reads rarely changed market configuration once on mount. Admin management keeps the live configuration API.
+- Multi-user card-market and village-goal listeners remain live only while their corresponding conditional UI is mounted and must return cleanup functions.
+- Passive production's one-minute timer remains local computation; it must not add Firestore traffic.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Market configuration missing or fetch fails | Use existing default exchange configuration |
+| Student page unmounts before fetch resolves | Ignore the result; do not set state after unmount |
+| Forge equips or upgrades a cat | Parent cats listener/profile listener refreshes the displayed state |
+| Card Market or Village Goal is hidden | Its component unmounts and closes its listener |
+| Admin changes market configuration | Admin UI updates live; an already-open student page refreshes on re-entry |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: Opening Forge reuses the parent's `myCats` map and creates zero additional cat reads.
+- **Base**: Opening Card Market creates its live listener; leaving the tab unsubscribes it.
+- **Bad**: Every child calls `subscribeMyCats(memberId)` independently, multiplying initial reads by the number of mounted consumers.
+
+### 6. Tests Required
+
+- Code trace: exactly one `subscribeMyCats` call exists in the `CatVillage` render tree while Forge is open.
+- Verify market and goal effects return their unsubscribe functions.
+- Verify missing/error configuration uses defaults and an unmounted fetch is ignored.
+- Manually equip/forge a cat and confirm the Forge UI refreshes.
+- Run `npm run build`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+function ForgePanel({ profile }) {
+  useEffect(() => subscribeMyCats(profile.id, setMyCats), [profile.id]);
+}
+```
+
+#### Correct
+
+```js
+function CatVillage() {
+  useEffect(() => subscribeMyCats(profile.id, setMyCats), [profile.id]);
+  return tab === "forge" ? <ForgePanel myCats={myCats} /> : null;
+}
+```
+
 ## Gathering contract boundary
 
 - `src/lib/gatheringContracts.js::buildGatheringContract()` is the canonical solo/team contract builder.

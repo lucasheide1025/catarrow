@@ -4896,6 +4896,11 @@ export function subscribeVillageMarketConfig(callback) {
   );
 }
 
+export async function getVillageMarketConfig() {
+  const snap = await getDoc(doc(db, "sysConfig", "villageMarket"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveVillageMarketConfig(battleExchange) {
   await setDoc(doc(db, "sysConfig", "villageMarket"),
     { battleExchange, updatedAt: serverTimestamp() },

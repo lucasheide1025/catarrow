@@ -5,7 +5,7 @@ import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing, claimCardSaleProceeds,
-  subscribeVillageMarketConfig, setBuildingAllocation,
+  getVillageMarketConfig, setBuildingAllocation,
   setDisplayVillageLv,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
@@ -1363,16 +1363,10 @@ function formatResKey(key) {
 }
 
 // ── 鍛造面板 ─────────────────────────────────────────────────
-function ForgePanel({ profile, resources }) {
+function ForgePanel({ profile, resources, myCats }) {
   const [forging,   setForging]   = useState(false);
   const [forgeMsg,  setForgeMsg]  = useState(null);
-  const [myCats,    setMyCats]    = useState({});
   const [switching, setSwitching] = useState(false);
-
-  useEffect(() => {
-    if (!profile?.id) return;
-    return subscribeMyCats(profile.id, setMyCats);
-  }, [profile?.id]);
 
   const equippedCat = profile?.equippedCat;
   if (!equippedCat?.catId) {
@@ -1860,8 +1854,15 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   }, [tab, profile?.id]); // eslint-disable-line
 
   useEffect(() => {
-    const unsub = subscribeVillageMarketConfig(setMarketConfig);
-    return unsub;
+    let active = true;
+    getVillageMarketConfig()
+      .then(config => {
+        if (active) setMarketConfig(config);
+      })
+      .catch(() => {
+        if (active) setMarketConfig(null);
+      });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -1999,6 +2000,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
         <ForgePanel
           profile={profile}
           resources={resources}
+          myCats={myCats}
         />
       )}
 
