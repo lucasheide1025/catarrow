@@ -176,6 +176,12 @@ shared envelope helper so its top-level `from` is always
 `貓小隊室內射箭場 <broudes@gmail.com>`. Templates cannot control the sender or
 any recipient field.
 
+## Convention: public booking availability is privacy-minimized
+
+The shared `DateSlotPicker` keeps detailed capacity labels as its default for authenticated member and admin flows. Public booking must opt into a privacy-minimized display that maps the existing `slotState()` result to only `可預約`, `已額滿`, `不可預約`, or `公休`; never expose new/returning counts, occupied lanes, or remaining numeric capacity to unauthenticated visitors. This is presentation-only: Firestore slot counts and the booking transaction remain the source of truth.
+
+Public date navigation uses the Asia/Taipei calendar from today through the same date in the next month, inclusively. A seven-day page may navigate back only within that future range and must never construct a past date. Every public-facing booking summary, authentication confirmation, success view, member-center card, cancellation, and reschedule flow displays start time, end time, and `durationLabel()` explicitly so users never infer duration by subtraction.
+
 ## Convention: inactivity reminders use completion-cycle queues
 
 A transition into `bookings.status:"completed"` updates `bookingReminderQueue/{memberId}` with the completed booking ID as the cycle ID and a due time 14 days after the Taipei class end. Replayed completion events and older historical records must never reset a newer or already-sent cycle.

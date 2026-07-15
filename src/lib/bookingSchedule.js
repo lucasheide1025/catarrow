@@ -104,6 +104,14 @@ export function addDays(dateStr, n) {
   return d.toLocaleDateString("sv-SE", { timeZone: VENUE_TZ });
 }
 
+// Public booking window: same calendar day next month, clamped to that month's last day.
+export function addOneMonth(dateStr) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const targetMonthIndex = month; // JS months are zero-based, so current 1-based month means +1 month.
+  const lastDay = new Date(Date.UTC(year, targetMonthIndex + 1, 0)).getUTCDate();
+  return `${targetMonthIndex >= 12 ? year + 1 : year}-${pad2((targetMonthIndex % 12) + 1)}-${pad2(Math.min(day, lastDay))}`;
+}
+
 // 該日期所在週的週一日期（供教練後台週檢視用）
 export function startOfWeek(dateStr) {
   const dow = dateObjOf(dateStr).getDay();

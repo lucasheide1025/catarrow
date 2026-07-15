@@ -20,6 +20,7 @@ import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
 import ParticipantCountPicker from "../components/booking/ParticipantCountPicker";
+import "./PublicBookingApp.css";
 
 
 const SESSION_KEY = "public_booking_profile";
@@ -100,6 +101,13 @@ export default function PublicBookingApp() {
 
   // ⑥ 前台登入入口（回訪訪客不用先選時段就能登入）
   const [showLogin, setShowLogin] = useState(false);
+
+  useEffect(() => {
+    if (!cancelTarget && !rescheduleTarget) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [cancelTarget, rescheduleTarget]);
 
   // ⑦ 非必填問卷（intake）
   const [intakeExp, setIntakeExp]                 = useState(""); // 有接觸過射箭嗎
@@ -284,6 +292,7 @@ export default function PublicBookingApp() {
     );
     setSubmitting(false);
     if (!res.ok) { setSubmitErr(res.reason || "預約失敗，請稍後再試"); return; }
+    setPendingAuthSubmit(false);
     setDone(true);
   }
 
@@ -314,12 +323,12 @@ export default function PublicBookingApp() {
   // ── 完成畫面 ──────────────────────────────────────────────
   if (done) {
     return (
-      <div style={wrapStyle}>
+      <div className="public-booking-legacy-shell" style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 60 }}>
           <div style={{ fontSize: 56 }}>✅</div>
           <div style={{ fontSize: 20, fontWeight: 900, color: "white", textAlign: "center" }}>預約成功！</div>
           <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", textAlign: "center", lineHeight: 1.8 }}>
-            {selectedSlot?.date}　{selectedSlot?.startTime}-{selectedSlot?.endTime}<br />
+            {selectedSlot?.date}　{selectedSlot?.startTime}－{selectedSlot?.endTime}・{durationLabel(durationHours)}<br />
             我們會保留這個時段給您，現場請提早 10 分鐘到櫃檯報到
           </div>
           <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)", textAlign: "center" }}>
@@ -341,7 +350,7 @@ export default function PublicBookingApp() {
   // ── 補電話（登入修復的孤兒帳號送出預約前）──────────────────
   if (profile && phonePrompt) {
     return (
-      <div style={wrapStyle}>
+      <div className="public-booking-legacy-shell" style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 60 }}>
           <div style={{ fontSize: 40, textAlign: "center" }}>📱</div>
           <div style={{ fontSize: 18, fontWeight: 900, color: "white", textAlign: "center" }}>差一個電話就完成</div>
@@ -349,7 +358,7 @@ export default function PublicBookingApp() {
             有狀況時我們才能第一時間聯絡你，留一個電話就送出預約。
           </div>
           <input value={phoneInput} onChange={e => { setPhoneInput(e.target.value); setPhoneErr(""); }}
-            placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
+            name="phone" autoComplete="tel" inputMode="tel" aria-label="聯絡電話" placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
           {phoneErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{phoneErr}</div>}
           <button onClick={handlePhoneConfirmAndSubmit} disabled={phoneSaving} style={submitButtonStyle(phoneSaving)}>
             {phoneSaving ? "處理中…" : "✅ 儲存並送出預約"}
@@ -364,7 +373,7 @@ export default function PublicBookingApp() {
   // ── ⑤ 送出中或錯誤（蓋在 main section 上方，由 slotConfirmed 或 pendingAuthSubmit 觸發）──
   if (profile && (submitting || submitErr)) {
     return (
-      <div style={wrapStyle}>
+      <div className="public-booking-legacy-shell" style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 60 }}>
           {submitErr ? (
             <>
@@ -389,7 +398,7 @@ export default function PublicBookingApp() {
     const activeBookings = myBookings; // confirmed
 
     return (
-      <div style={wrapStyle}>
+      <div className="public-booking-legacy-shell" style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 14, marginTop: 24 }}>
           {/* ── 頂欄 ── */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -468,10 +477,10 @@ export default function PublicBookingApp() {
           <div style={cardStyle}>
             <div style={sectionTitle}>👤 個人資料</div>
             <label style={{ ...labelStyle, marginTop: 8 }}>姓名
-              <input value={editName} onChange={e => { setEditName(e.target.value); setProfileMsg(""); }} style={inputStyle} />
+              <input value={editName} onChange={e => { setEditName(e.target.value); setProfileMsg(""); }} name="name" autoComplete="name" style={inputStyle} />
             </label>
             <label style={{ ...labelStyle, marginTop: 8 }}>電話
-              <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setProfileMsg(""); }} style={inputStyle} />
+              <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setProfileMsg(""); }} name="phone" autoComplete="tel" inputMode="tel" style={inputStyle} />
             </label>
             {profileMsg && <div style={{ color: profileMsg.includes("✓") ? "#86efac" : "#f87171", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{profileMsg}</div>}
             <button onClick={handleSaveProfile} disabled={savingProfile} style={{ ...smallBtn, marginTop: 10 }}>{savingProfile ? "儲存中…" : "儲存個人資料"}</button>
@@ -482,8 +491,8 @@ export default function PublicBookingApp() {
             <div style={sectionTitle}>🔒 修改密碼</div>
             {canChangePw ? (
               <>
-                <input value={oldPw} onChange={e => { setOldPw(e.target.value); setPwMsg(""); }} placeholder="目前密碼" type="password" style={{ ...inputStyle, marginTop: 8 }} />
-                <input value={newPw} onChange={e => { setNewPw(e.target.value); setPwMsg(""); }} placeholder="新密碼（至少6碼）" type="password" style={{ ...inputStyle, marginTop: 8 }} />
+                <label style={{ ...labelStyle, marginTop: 8 }}>目前密碼<input value={oldPw} onChange={e => { setOldPw(e.target.value); setPwMsg(""); }} name="current-password" autoComplete="current-password" placeholder="目前密碼" type="password" style={inputStyle} /></label>
+                <label style={{ ...labelStyle, marginTop: 8 }}>新密碼<input value={newPw} onChange={e => { setNewPw(e.target.value); setPwMsg(""); }} name="new-password" autoComplete="new-password" placeholder="至少 6 碼" type="password" style={inputStyle} /></label>
                 {pwMsg && <div style={{ color: pwMsg.includes("✓") ? "#86efac" : "#f87171", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{pwMsg}</div>}
                 <button onClick={handleChangePassword} disabled={savingPw} style={{ ...smallBtn, marginTop: 10 }}>{savingPw ? "處理中…" : "更新密碼"}</button>
               </>
@@ -495,10 +504,10 @@ export default function PublicBookingApp() {
 
         {/* ── 取消確認 Modal ── */}
         {cancelTarget && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setCancelTarget(null)}>
-            <div style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 360, width: "100%" }} onClick={e => e.stopPropagation()}>
-              <div style={{ color: "white", fontWeight: 900, fontSize: 16, marginBottom: 8 }}>確認取消預約</div>
-              <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, lineHeight: 1.7 }}>確定要取消 {cancelTarget.date} {cancelTarget.startTime} 的預約嗎？</div>
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overscrollBehavior: "contain" }} onClick={() => setCancelTarget(null)}>
+            <div role="dialog" aria-modal="true" aria-labelledby="cancel-booking-title" tabIndex={-1} autoFocus style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 360, width: "100%" }} onClick={e => e.stopPropagation()}>
+              <div id="cancel-booking-title" style={{ color: "white", fontWeight: 900, fontSize: 16, marginBottom: 8 }}>確認取消預約</div>
+              <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, lineHeight: 1.7 }}>確定要取消 {cancelTarget.date} {cancelTarget.startTime}－{cancelTarget.endTime}（{durationLabel(cancelTarget.durationHours || 1)}）的預約嗎？</div>
               <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
                 <button onClick={() => setCancelTarget(null)} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "rgba(255,255,255,.6)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>返回</button>
                 <button onClick={() => handleCancelBooking(cancelTarget.id)} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#ef4444,#dc2626)", color: "white", fontSize: 14, fontWeight: 900, cursor: "pointer" }}>確認取消</button>
@@ -509,11 +518,11 @@ export default function PublicBookingApp() {
 
         {/* ── 改期 Modal ── */}
         {rescheduleTarget && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflowY: "auto" }} onClick={() => { setRescheduleTarget(null); setRescheduleErr(""); }}>
-            <div style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 420, width: "100%", margin: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflowY: "auto", overscrollBehavior: "contain" }} onClick={() => { setRescheduleTarget(null); setRescheduleErr(""); }}>
+            <div role="dialog" aria-modal="true" aria-labelledby="reschedule-booking-title" tabIndex={-1} autoFocus style={{ background: "#1e1b4b", border: "1px solid rgba(124,58,237,.3)", borderRadius: 20, padding: 24, maxWidth: 420, width: "100%", margin: "auto" }} onClick={e => e.stopPropagation()}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                <span style={{ color: "white", fontWeight: 900, fontSize: 16 }}>改期</span>
-                <button onClick={() => setRescheduleTarget(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 22, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+                <span id="reschedule-booking-title" style={{ color: "white", fontWeight: 900, fontSize: 16 }}>改期</span>
+                <button aria-label="關閉改期視窗" onClick={() => setRescheduleTarget(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 22, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
               </div>
               <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginBottom: 16 }}>
                 原時段：{rescheduleTarget.date} {rescheduleTarget.startTime}-{rescheduleTarget.endTime}（{durationLabel(rescheduleTarget.durationHours || 1)}・{rescheduleTarget.participantCount || 1}人）
@@ -530,11 +539,11 @@ export default function PublicBookingApp() {
   // ── ③ showLogin（含前台登入入口 或是 按了送出但未登入）→ 顯示身份表單 ─────────────
   if (showLogin && !profile) {
     return (
-      <div style={wrapStyle}>
+      <div className="public-booking-legacy-shell" style={wrapStyle}>
         <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
           {selectedSlot ? (
             <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 12, padding: "10px 14px", color: "#93c5fd", fontSize: 13, fontWeight: 700, textAlign: "center" }}>
-              已選擇：{selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}・{participantCount}人
+              已選擇：{selectedSlot.date}　{selectedSlot.startTime}－{selectedSlot.endTime}・{durationLabel(durationHours)}・{participantCount}人
               <button onClick={() => { setPendingAuthSubmit(false); setSelectedSlot(null); }} style={{ display: "block", margin: "6px auto 0", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
                 重新選時段
               </button>
@@ -556,8 +565,8 @@ export default function PublicBookingApp() {
               <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, textAlign: "center", lineHeight: 1.7 }}>
                 再留一個電話就完成——電話為必填，有狀況我們才能第一時間聯絡你。
               </div>
-              <input value={googlePhone} onChange={e => setGooglePhone(e.target.value)}
-                placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
+              <input value={googlePhone} onChange={e => setGooglePhone(e.target.value)} name="phone" autoComplete="tel" inputMode="tel"
+                aria-label="聯絡電話" placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
               {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
               <button onClick={handleGooglePhoneConfirm} disabled={authBusy} style={submitButtonStyle(authBusy)}>
                 {authBusy ? "處理中…" : "✅ 完成並預約"}
@@ -578,19 +587,19 @@ export default function PublicBookingApp() {
 
               {authTab === "register" ? (
                 <>
-                  <input value={name} onChange={e => setName(e.target.value)} placeholder="姓名" style={inputStyle} autoFocus />
-                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} />
-                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="電話" style={inputStyle} />
-                  <input value={password} onChange={e => setPassword(e.target.value)} placeholder="設定密碼（至少6碼）" type="password" style={inputStyle} />
+                  <label style={labelStyle}>姓名<input value={name} onChange={e => setName(e.target.value)} name="name" autoComplete="name" placeholder="請輸入姓名" style={inputStyle} autoFocus /></label>
+                  <label style={labelStyle}>Email<input value={email} onChange={e => setEmail(e.target.value)} name="email" autoComplete="email" inputMode="email" placeholder="name@example.com" type="email" style={inputStyle} /></label>
+                  <label style={labelStyle}>電話<input value={phone} onChange={e => setPhone(e.target.value)} name="phone" autoComplete="tel" inputMode="tel" placeholder="聯絡電話" style={inputStyle} /></label>
+                  <label style={labelStyle}>設定密碼<input value={password} onChange={e => setPassword(e.target.value)} name="new-password" autoComplete="new-password" placeholder="至少 6 碼" type="password" style={inputStyle} /></label>
                 </>
               ) : (
                 <>
-                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoFocus />
-                  <input value={password} onChange={e => setPassword(e.target.value)} placeholder="密碼" type="password" style={inputStyle} />
+                  <label style={labelStyle}>Email<input value={email} onChange={e => setEmail(e.target.value)} name="email" autoComplete="email" inputMode="email" placeholder="name@example.com" type="email" style={inputStyle} autoFocus /></label>
+                  <label style={labelStyle}>密碼<input value={password} onChange={e => setPassword(e.target.value)} name="current-password" autoComplete="current-password" placeholder="密碼" type="password" style={inputStyle} /></label>
                 </>
               )}
 
-              {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
+              {authErr && <div role="alert" aria-live="polite" style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
               <button onClick={handleAuth} disabled={authBusy} style={submitButtonStyle(authBusy)}>
                 {authBusy ? "處理中…" : authTab === "register" ? "🚀 完成註冊並預約" : "🔑 登入並預約"}
               </button>
@@ -613,79 +622,70 @@ export default function PublicBookingApp() {
 
   // ── ① 選方案+人數+時段（尚未選好時段的畫面）──
   return (
-    <div style={wrapStyle}>
-      <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
-        <a href="https://archery.catgroup.com.tw/"
-          style={{ color: "rgba(255,255,255,.55)", fontSize: 13, fontWeight: 700, textDecoration: "none", alignSelf: "flex-start" }}>
-          ← 返回首頁
-        </a>
-        {profile && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <button onClick={() => setShowMine(true)}
-              style={{ background: "rgba(124,58,237,.2)", border: "1px solid rgba(124,58,237,.4)", color: "#c4b5fd", borderRadius: 10, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              📋 我的預約
-            </button>
-            <button onClick={handleLogout}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 13, textDecoration: "underline", cursor: "pointer", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              登出（{profile.name || profile.email}）
-            </button>
+    <main className="public-booking-shell">
+      <div className="public-booking-page">
+        <header className="public-booking-header">
+          <a href="https://archery.catgroup.com.tw/" className="public-booking-back">← 返回首頁</a>
+          <button className="public-booking-account" onClick={() => profile ? setShowMine(true) : (setShowLogin(true), setAuthTab("login"), setAuthErr(""))}>
+            {profile ? "我的預約" : "會員登入"}
+          </button>
+        </header>
+        <section className="public-booking-hero">
+          <p className="public-booking-kicker">CATGROUP ARCHERY</p>
+          <h1>把時間留給一場<br />專注而自在的射箭體驗</h1>
+          <p>選擇方案、日期與時段，登入後即可完成預約。</p>
+          <div className="public-booking-actions">
+            <a href="#booking-form" className="public-booking-primary">立即預約</a>
+            <button onClick={() => profile ? setShowMine(true) : (setShowLogin(true), setAuthTab("login"))} className="public-booking-secondary">{profile ? "查看我的預約" : "會員中心登入"}</button>
           </div>
-        )}
-        {!profile && (
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button onClick={() => { setShowLogin(true); setAuthTab("login"); setAuthErr(""); }}
-              style={{ background: "none", border: "1px solid rgba(124,58,237,.4)", color: "#c4b5fd", borderRadius: 10, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              已有帳號？登入
-            </button>
-          </div>
-        )}
-        <div style={{ fontSize: 48, textAlign: "center" }}>🏹</div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: "white", textAlign: "center" }}>貓小隊射箭場・線上約課</div>
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,.55)", textAlign: "center", lineHeight: 1.6 }}>
-          先選想來的方案跟時段，選完再留資料
-        </div>
+        </section>
 
-        {/* 📢 新版預約系統上線公告 */}
-        <div style={{
-          background: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(239,68,68,.14))",
-          border: "1.5px solid rgba(245,158,11,.55)", borderRadius: 16, padding: "16px 18px",
-          boxShadow: "0 0 24px rgba(245,158,11,.15)",
-        }}>
-          <div style={{ fontSize: 16, fontWeight: 900, color: "#fbbf24", display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 22 }}>📢</span> 預約系統已全面更新
-          </div>
-          <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.9)", lineHeight: 2 }}>
-            ・<b style={{ color: "#fca5a5" }}>沒有學籍帳號</b>的舊帳號：請直接<b>重新註冊</b>（選好下方時段後即可註冊）。<br />
-            ・<b style={{ color: "#93c5fd" }}>已有學籍帳號</b>的學員：請改用<b>學員專用 App</b> 預約，不需在這裡註冊。
-          </div>
-        </div>
+        <div className="public-booking-notice"><strong>預約提醒</strong><span>已有學籍的學員請使用學員 App；訪客與體驗課可直接在此預約。</span></div>
 
-        <PlanDurationPicker planType={planType} durationHours={durationHours}
-          onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
-        <ParticipantCountPicker value={participantCount}
-          onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
-        <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 16, padding: 16 }}>
-          <DateSlotPicker selected={selectedSlot} onSelect={s => setSelectedSlot(s)}
-            durationHours={durationHours} participantCount={participantCount} />
-        </div>
+        <section id="booking-form" className="public-booking-grid">
+          <div className="public-booking-main">
+            <div className="public-booking-card"><span className="public-booking-step">01</span><h2>選擇課程方案</h2>
+              <PlanDurationPicker planType={planType} durationHours={durationHours}
+                onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
+              <ParticipantCountPicker value={participantCount} onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
+            </div>
+            <div className="public-booking-card"><span className="public-booking-step">02</span><h2>選擇日期與時段</h2>
+              <DateSlotPicker selected={selectedSlot} onSelect={s => setSelectedSlot(s)} durationHours={durationHours}
+                participantCount={participantCount} availabilityDisplay="public" bookingWindow="public-month" />
+            </div>
+          </div>
+          <aside className="public-booking-summary">
+            <span className="public-booking-step">03</span><h2>確認預約內容</h2>
+            <dl>
+              <div><dt>方案</dt><dd>{PLAN_TYPES.find(p => p.id === planType)?.label || planType}</dd></div>
+              <div><dt>時數</dt><dd>{durationLabel(durationHours)}</dd></div><div><dt>人數</dt><dd>{participantCount} 人</dd></div>
+              <div><dt>日期</dt><dd>{selectedSlot?.date || "尚未選擇"}</dd></div>
+              <div><dt>時間</dt><dd>{selectedSlot ? `${selectedSlot.startTime}－${selectedSlot.endTime}` : "尚未選擇"}</dd></div>
+              <div className="public-booking-total"><dt>總金額</dt><dd>NT$ {totalPrice(planType, durationHours, participantCount)}</dd></div>
+            </dl>
+            <button onClick={handleSubmitOrAuth} disabled={!selectedSlot || submitting} className="public-booking-submit">
+              {submitting ? "送出中…" : profile ? "送出預約" : "登入並完成預約"}
+            </button>
+          </aside>
+        </section>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.75)", fontWeight: 700, cursor: "pointer" }}>
+        <label className="public-booking-first-visit">
           <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
             style={{ width: 16, height: 16 }} />
           是否為第一次來體驗
         </label>
 
         {/* ── 提醒 ── */}
-        <div style={{ background: "rgba(251,191,36,.1)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 12, padding: "10px 14px", color: "#fde68a", fontSize: 12.5, lineHeight: 1.8 }}>
+        <div className="public-booking-safety">
           ⚠️ 5 歲以下無法參與射箭；10 歲以下需大人全程陪同。<br />
           👕 建議穿短袖；場內有貓咪，會過敏或不喜歡貓的朋友請斟酌。
         </div>
 
         {/* ── 非必填問卷 ── */}
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>以下皆為選填，幫助我們更了解你（可不填）：</div>
-
+        <details className="public-booking-optional">
+        <summary>其他需求（選填）</summary><div className="public-booking-optional-fields">
         <label style={labelStyle}>有接觸過射箭嗎？
-          <select value={intakeExp} onChange={e => setIntakeExp(e.target.value)} style={inputStyle}>
+          <select name="archery-experience" value={intakeExp} onChange={e => setIntakeExp(e.target.value)} style={inputStyle}>
             <option style={optStyle} value="">不指定</option>
             <option style={optStyle} value="新手">新手</option>
             <option style={optStyle} value="接觸過">接觸過（夜市、觀光景點、體驗課）</option>
@@ -694,7 +694,7 @@ export default function PublicBookingApp() {
         </label>
 
         <label style={labelStyle}>想了解的弓種
-          <select value={intakeBow} onChange={e => setIntakeBow(e.target.value)} style={inputStyle}>
+          <select name="bow-interest" value={intakeBow} onChange={e => setIntakeBow(e.target.value)} style={inputStyle}>
             <option style={optStyle} value="">不指定</option>
             <option style={optStyle} value="競技反曲弓">競技反曲弓</option>
             <option style={optStyle} value="美式獵弓">美式獵弓</option>
@@ -704,7 +704,7 @@ export default function PublicBookingApp() {
         </label>
 
         <label style={labelStyle}>來射箭的目的
-          <select value={intakePurpose} onChange={e => setIntakePurpose(e.target.value)} style={inputStyle}>
+          <select name="visit-purpose" value={intakePurpose} onChange={e => setIntakePurpose(e.target.value)} style={inputStyle}>
             <option style={optStyle} value="">不指定</option>
             <option style={optStyle} value="純粹玩樂">純粹玩樂</option>
             <option style={optStyle} value="體驗">體驗</option>
@@ -713,7 +713,7 @@ export default function PublicBookingApp() {
         </label>
 
         <label style={labelStyle}>是否需要介紹電子射箭系統
-          <select value={intakeSystemIntro} onChange={e => setIntakeSystemIntro(e.target.value)} style={inputStyle}>
+          <select name="system-introduction" value={intakeSystemIntro} onChange={e => setIntakeSystemIntro(e.target.value)} style={inputStyle}>
             <option style={optStyle} value="">不指定</option>
             <option style={optStyle} value="是">是</option>
             <option style={optStyle} value="否">否</option>
@@ -721,30 +721,12 @@ export default function PublicBookingApp() {
         </label>
 
         <label style={labelStyle}>其他備註需求
-          <textarea value={intakeRemark} onChange={e => setIntakeRemark(e.target.value)} rows={2}
+          <textarea name="booking-note" value={intakeRemark} onChange={e => setIntakeRemark(e.target.value)} rows={2}
             placeholder="有任何特殊需求可以在這裡告訴我們" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-        </label>
-
-        {/* ── 已選時段 + 送出預約按鈕 ── */}
-        {selectedSlot && (
-          <>
-            <div style={{ background: "rgba(37,99,235,.15)", border: "1px solid rgba(37,99,235,.4)", borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ color: "#93c5fd", fontWeight: 700, fontSize: 14 }}>
-                🗓️ {selectedSlot.date}　{selectedSlot.startTime}-{selectedSlot.endTime}
-              </div>
-              <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12.5, marginTop: 5, lineHeight: 1.6 }}>
-                {PLAN_TYPES.find(p => p.id === planType)?.label || planType}・{participantCount}人
-                <br />NT$ {totalPrice(planType, durationHours, participantCount)}
-              </div>
-            </div>
-
-            <button onClick={handleSubmitOrAuth} disabled={submitting} style={submitButtonStyle(submitting)}>
-              {submitting ? "送出中…" : profile ? "🚀 送出預約" : "繼續 → 登入後送出預約"}
-            </button>
-          </>
-        )}
+        </label></div></details>
+        <div aria-live="polite" role="status">{submitErr}</div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -804,7 +786,7 @@ function ReschedulePicker({ booking, onConfirm, onCancel }) {
   const participantCount = booking.participantCount || 1;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} />
+      <DateSlotPicker selected={slot} onSelect={setSlot} durationHours={durationHours} participantCount={participantCount} availabilityDisplay="public" bookingWindow="public-month" />
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onCancel} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "rgba(255,255,255,.6)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>取消</button>
         <button disabled={!slot} onClick={() => onConfirm(slot)}
