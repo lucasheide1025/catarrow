@@ -598,8 +598,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }
     }
     // ── 立即更新終身箭數（每回合送出即計，不需報到）──────────────
-    if (profile?.id && !isGuest) {
-      addRoundArrows(profile.id, arrowsPerRound).catch(() => {});
+    if (profile?.id) {
+      const submittedArrowCount = arrows.length;
+      addRoundArrows(profile.id, submittedArrowCount).catch(error => {
+        console.warn("MonsterBattle arrow progress sync failed; local mileage was preserved:", error?.message || error);
+      });
     }
 
     try {

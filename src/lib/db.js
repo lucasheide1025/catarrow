@@ -21,6 +21,11 @@ import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
+import {
+  createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
+  setLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey,
+} from "./arrowProgress";
+export { dailyArrowStorageKey, getLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey } from "./arrowProgress";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -45,31 +50,6 @@ const C = {
   arrowRoundOperations: "arrowRoundOperations",
 };
 
-const DAILY_ARROW_EVENT = "catarrow:today-arrows";
-export function taipeiDateKey(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone:"Asia/Taipei", year:"numeric", month:"2-digit", day:"2-digit" }).format(date);
-}
-export function dailyArrowStorageKey(memberId, date = new Date()) { return `catarrow.today-arrows.${memberId}.${taipeiDateKey(date)}`; }
-export function getLocalTodayArrows(memberId) {
-  if (!memberId || typeof localStorage === "undefined") return 0;
-  return Number(localStorage.getItem(dailyArrowStorageKey(memberId))) || 0;
-}
-function setLocalTodayArrows(memberId, value) {
-  if (!memberId || typeof localStorage === "undefined") return;
-  const key = dailyArrowStorageKey(memberId);
-  const next = Math.max(0, Number(value) || 0);
-  localStorage.setItem(key, String(next));
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(DAILY_ARROW_EVENT, { detail:{ memberId, value:next } }));
-}
-export function subscribeLocalTodayArrows(memberId, callback) {
-  if (!memberId || typeof window === "undefined") return () => {};
-  const key = dailyArrowStorageKey(memberId);
-  const emit = () => callback(getLocalTodayArrows(memberId));
-  const onLocal = event => { if (event.detail?.memberId === memberId) emit(); };
-  const onStorage = event => { if (event.key === key) emit(); };
-  emit(); window.addEventListener(DAILY_ARROW_EVENT, onLocal); window.addEventListener("storage", onStorage);
-  return () => { window.removeEventListener(DAILY_ARROW_EVENT, onLocal); window.removeEventListener("storage", onStorage); };
-}
 const todayArrowInitializations = new Map();
 export async function initializeTodayArrows(memberId) {
   if (!memberId) return 0;
@@ -654,9 +634,10 @@ async function isGuestOrKidMember(memberId) {
     const isGuestOrKid = !snap.exists() || type === "guest" || type === "kid";
     memberAccountTypeCache.set(memberId, { isGuestOrKid, checkedAt:Date.now() });
     return isGuestOrKid;
-  } catch {
+  } catch (error) {
     // Fail closed: an unavailable identity check must never turn a guest/kid
     // round into an official Firestore progress write.
+    console.warn("isGuestOrKidMember: cloud progress skipped because account type could not be verified:", error?.message || error);
     return true;
   }
 }
@@ -950,14 +931,23 @@ export async function flushPendingArrowProgress(memberId) {
   arrowFlushFlights.set(memberId, flight);
   return flight;
 }
-export async function addRoundArrows(memberId, count) {
-  count = Number(count);
-  if (!memberId || !Number.isFinite(count) || count <= 0) return;
-  setLocalTodayArrows(memberId, getLocalTodayArrows(memberId) + count);
-  if (await isGuestOrKidMember(memberId)) return;
-  const operation = enqueueArrowOperation(memberId, count);
-  if (operation.count >= 12) return flushPendingArrowProgress(memberId);
-  if (!arrowFlushTimers.has(memberId)) arrowFlushTimers.set(memberId, setTimeout(() => flushPendingArrowProgress(memberId).catch(() => {}), 10000));
+const recordRoundArrows = createRoundArrowRecorder({
+  identifyLocalOnly: isGuestOrKidMember,
+  enqueueOfficial: enqueueArrowOperation,
+  afterEnqueue(memberId, operation) {
+    if (operation.count >= 12) return flushPendingArrowProgress(memberId);
+    if (!arrowFlushTimers.has(memberId)) {
+      arrowFlushTimers.set(memberId, setTimeout(() => {
+        flushPendingArrowProgress(memberId).catch(error => {
+          console.warn("addRoundArrows: scheduled cloud sync failed; operation remains queued:", error?.message || error);
+        });
+      }, 10000));
+    }
+    return undefined;
+  },
+});
+export function addRoundArrows(memberId, count) {
+  return recordRoundArrows(memberId, count);
 }
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {
