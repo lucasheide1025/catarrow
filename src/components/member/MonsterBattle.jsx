@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
+import CatAnimator from "../cat/CatAnimator";
+import { useCatAnimationAccess } from "../../hooks/useCatAnimationAccess";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog,
@@ -173,6 +175,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
+  const { visible: catAnimVisible, enabled: catAnimEnabled } = useCatAnimationAccess();
+  const [catAnimState, setCatAnimState] = useState("idle");
+  const catAnimTimeoutRef = useRef(null);
   const catDefShieldRef = useRef(null); // { reduction, blockFull } — 貓貓防禦技能保護下回合
   const [catCurrentHP,  setCatCurrentHP]  = useState(0);
   const catCurrentHPRef = useRef(0);
@@ -420,12 +425,27 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }, [log]);
 
+  function triggerCatAnim(state, duration = 1200) {
+    if (catAnimTimeoutRef.current) clearTimeout(catAnimTimeoutRef.current);
+    setCatAnimState(state);
+    catAnimTimeoutRef.current = setTimeout(() => { setCatAnimState("idle"); catAnimTimeoutRef.current = null; }, duration);
+  }
+
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
   function addLog(type, text) {
     // 支援兩種呼叫格式：addLog({type, text}) 或 addLog(type, text)
     const entry = typeof type === 'object' ? type : { type, text };
     setLog(l=>[...l, entry]);
-    if (entry.type === "hit" || entry.type === "hit_crit" || entry.type === "hit_organ") triggerCatAction();
+    if (entry.type === "hit" || entry.type === "hit_crit" || entry.type === "hit_organ") {
+      triggerCatAction();
+      if (entry.type === "hit_crit" || entry.type === "hit_organ") {
+        triggerCatAnim("happy", 1000);
+      } else {
+        triggerCatAnim("attack", 800);
+      }
+    } else if (entry.type === "miss") {
+      triggerCatAnim("miss", 700);
+    }
   }
   function showFloatDmg(dmg, isCrit, isOrgan) {
     const id   = Date.now() + Math.random();
@@ -860,6 +880,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setMonsterHP(monStartHP);
     // 貓貓 HP 重置
     if (hasCat) { catCurrentHPRef.current = catMaxHP; setCatCurrentHP(catMaxHP); }
+    // 貓貓動畫重置
+    setCatAnimState("idle");
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]); setBattleArrowPositions([]); sessionArrowsRef.current = 0;
@@ -888,6 +910,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   async function endBattle(result, finalArchHP, finalMonHP, lastRoundArr = null) {
+    // 🐱 貓貓勝利／戰敗動畫
+    if (result === "win") {
+      triggerCatAnim("victory", 2000);
+    } else if (result === "lose") {
+      triggerCatAnim("miss", 1500);
+    }
     try {
     const shootingProfile = shootingProfileRef.current
       || loadBattleShootingProfile(profile?.id || "guest");
@@ -1130,6 +1158,14 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+        {/* 🐱 貓貓動畫（教練限定，可開關） */}
+        {hasCat && catAnimVisible && <div style={{
+          position:"fixed", right:12, bottom:180, zIndex:20,
+          pointerEvents:"none",
+          transition:"opacity .3s",
+        }}>
+          <CatAnimator catId={catId} animation={catAnimState} size={72} visible={catAnimVisible} enabled={catAnimEnabled} />
+        </div>}
         {/* 任務模式橫幅 */}
         {questContext && qMon && (
           <div className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.25),rgba(37,99,235,0.18))", border:"1px solid rgba(124,58,237,0.4)" }}>
