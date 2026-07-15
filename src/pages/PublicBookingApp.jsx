@@ -682,7 +682,7 @@ export default function PublicBookingApp() {
         </div>
 
         {/* ── 非必填問卷 ── */}
-        <details className="public-booking-optional">
+        <details className="public-booking-optional" open>
         <summary>其他需求（選填）</summary><div className="public-booking-optional-fields">
         <label style={labelStyle}>有接觸過射箭嗎？
           <select name="archery-experience" value={intakeExp} onChange={e => setIntakeExp(e.target.value)} style={inputStyle}>

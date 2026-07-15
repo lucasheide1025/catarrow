@@ -82,8 +82,11 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, dur
         <div className="grid grid-cols-3 gap-2">
           {slots.map(s => {
             const st = slotState(date, s.startTime, slotCounts, durationHours, participantCount);
-            const publicLabel = st.disabled ? (st.state === "full" ? "已額滿" : "不可預約") : "可預約";
-            const stateLabel = availabilityDisplay === "public" ? publicLabel : st.label;
+            const localSlotKey = `${date}_${s.startTime}`;
+            const localInfo = slotCounts[localSlotKey] || {};
+            const crowded = !st.disabled && localInfo.count > 4;
+            const publicLabel = st.disabled ? (st.state === "full" ? "已額滿" : "不可預約") : (crowded ? "較為擁擠" : "可預約");
+            const stateLabel = availabilityDisplay === "public" ? publicLabel : (crowded ? "較為擁擠" : st.label);
             const isSel = selected?.date === date && selected?.startTime === s.startTime;
             return (
               <button key={s.startTime} type="button" disabled={st.disabled} title={stateLabel}
@@ -93,9 +96,13 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, dur
                     ? "bg-blue-600 border-blue-500 text-white"
                     : st.disabled
                       ? "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed"
-                      : "bg-white/10 border-white/15 text-slate-200 hover:border-blue-400"}`}>
+                      : crowded
+                        ? "bg-orange-900/30 border-orange-500/50 text-orange-200 hover:border-orange-400 animate-pulse"
+                        : "bg-white/10 border-white/15 text-slate-200 hover:border-blue-400"}`}>
                 <span>{s.startTime}－{computeEndTime(s.startTime, durationHours)}</span>
-                <span className="text-[10px] opacity-80 leading-tight text-center">{durationLabel(durationHours)}・{stateLabel}</span>
+                <span className="text-[10px] opacity-80 leading-tight text-center">
+                  {durationLabel(durationHours)}・{stateLabel}
+                </span>
               </button>
             );
           })}

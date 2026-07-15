@@ -96,7 +96,7 @@ export default function AdminBooking() {
 function RecentBookingsPanel({ reloadTick, onOpen }) {
   const [list, setList] = useState(null);
   const [seenVer, setSeenVer] = useState(0); // 標記已看後 +1 逼重新讀 seenIds 重繪高亮
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true); // 預設收起
 
   const load = useCallback(async () => {
     const res = await getRecentBookings(20);
@@ -146,11 +146,20 @@ function RecentBookingsPanel({ reloadTick, onOpen }) {
               <button key={b.id} type="button" onClick={() => open(b)}
                 className={`w-full text-left rounded-lg px-3 py-2 border transition ${unseen
                   ? "border-amber-400/50 bg-amber-500/10 hover:bg-amber-500/[0.15]"
-                  : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
-                <div className="flex items-center gap-2">
+                  : b.billingRecordId
+                    ? "border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10"
+                    : b.isNewStudent
+                      ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10"
+                      : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+                <div className="flex items-center gap-1.5">
                   {unseen && <span className="text-[10px] font-black text-amber-300 bg-amber-500/20 rounded px-1.5 py-0.5 flex-shrink-0">🆕 新</span>}
+                  {b.isNewStudent && !unseen && <span className="text-[10px] font-black text-amber-300 bg-amber-500/20 rounded px-1.5 py-0.5 flex-shrink-0">🆕</span>}
+                  {b.intake && (b.intake.remark || b.intake.experience || b.intake.bowInterest) && (
+                    <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 rounded px-1.5 py-0.5 flex-shrink-0" title="有填寫問卷">📝</span>
+                  )}
                   <span className={`font-bold text-sm truncate ${unseen ? "text-amber-100" : "text-white"}`}>{b.memberName || "顧客"}</span>
                   {b.status === "completed" && <span className="text-emerald-400 text-[11px] flex-shrink-0 ml-auto">🏁 已完成</span>}
+                  {b.billingRecordId && <span className="text-emerald-400 text-[11px] flex-shrink-0 ml-auto font-bold">✅ 已結帳</span>}
                 </div>
                 <div className="text-slate-300 text-xs mt-0.5">
                   📅 {b.date} {b.startTime}–{b.endTime}・{people}・{PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}
@@ -289,7 +298,7 @@ function CalendarTab({ toast }) {
             {dayPlacements.map(({ booking, lane, participantIndex, duration, startHour }) => (
               <button key={`${booking.id}-${participantIndex}`} type="button"
                 onClick={() => setDetailSlot({ date:booking.date, startTime:booking.startTime, endTime:computeEndTime(booking.startTime, 1) })}
-                className="z-10 m-0.5 overflow-hidden rounded-md border border-blue-300/50 bg-blue-700/80 px-1.5 py-1 text-left shadow-lg"
+                className={`z-10 m-0.5 overflow-hidden rounded-md border px-1.5 py-1 text-left shadow-lg ${booking.billingRecordId ? 'border-emerald-300/50 bg-emerald-700/80' : booking.isNewStudent ? 'border-amber-300/50 bg-amber-700/80' : 'border-blue-300/50 bg-blue-700/80'}`}
                 style={{ gridColumn:lane + 2, gridRow:`${startHour - 10 + 2} / span ${duration}` }}>
                 <div className="text-[11px] font-black text-white truncate">{booking.memberName || "顧客"}</div>
                 <div className="text-[9px] text-blue-100 leading-tight">{PLAN_SHORT_LABEL[booking.planType] || booking.planType}</div>
@@ -351,11 +360,12 @@ function CalendarTab({ toast }) {
                         <span className="text-[10px] text-slate-500 text-center">空</span>
                       ) : (
                         occupants.map(b => (
-                          <div key={b.id} className="rounded bg-blue-800/60 px-1 py-0.5 leading-tight">
+                          <div key={b.id} className={`rounded px-1 py-0.5 leading-tight ${b.billingRecordId ? 'bg-emerald-800/60' : b.isNewStudent ? 'bg-amber-700/60' : 'bg-blue-800/60'}`}>
                             <div className="text-[10px] font-bold text-white truncate">{b.memberName || "顧客"}</div>
-                            <div className="text-[9px] text-blue-200 truncate">
+                            <div className={`text-[9px] truncate ${b.billingRecordId ? 'text-emerald-200' : b.isNewStudent ? 'text-amber-200' : 'text-blue-200'}`}>
                               {PLAN_SHORT_LABEL[b.planType] || b.planType}
                               ・{b.participantCount || 1}人{b.durationHours > 1 ? `・${b.durationHours}hr` : ""}
+                              {b.isNewStudent ? ' 🆕' : ''}{b.billingRecordId ? ' ✅' : ''}
                             </div>
                           </div>
                         ))
@@ -594,10 +604,16 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
         ) : (
           <div className="flex flex-col gap-2">
             {bookings.map(b => (
-              <Card key={b.id} className="p-3 flex flex-col gap-2">
+              <Card key={b.id} className={`p-3 flex flex-col gap-2 ${b.billingRecordId ? 'border-emerald-500/50' : ''} ${b.isNewStudent && !b.billingRecordId ? 'border-amber-500/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-white font-bold text-sm">{b.memberName || "顧客"}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-white font-bold text-sm">{b.memberName || "顧客"}</div>
+                      {b.isNewStudent && <span className="text-[10px] font-black text-amber-300 bg-amber-500/20 rounded px-1.5 py-0.5">🆕</span>}
+                      {b.intake && (b.intake.remark || b.intake.experience || b.intake.bowInterest) && (
+                        <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 rounded px-1.5 py-0.5" title="有填寫問卷">📝</span>
+                      )}
+                    </div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
                       ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
