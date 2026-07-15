@@ -249,6 +249,10 @@ Use `sysConfig/costControl` as the single remote policy. The app opens one docum
 
 The initial stages are 50% warning, 80% protection, 90% restricted, and 95% emergency against an NT$300 monthly soft ceiling. Automated events may only raise severity with a newer revision. Recovery is admin-only and manual after metrics stabilize. Project billing must not be automatically disabled.
 
+### Admin alert audio
+
+The admin banner may supplement its persistent visual warning with a Web Audio API tone, but audio is opt-in because browsers can block playback without a user gesture. Keep the audio context unlocked after the administrator uses the enable/test button, persist that preference locally, and play only when the observed policy severity rises. Record recoveries as well as escalations so a later genuine escalation can alert again; duplicate snapshots and ordinary re-renders must remain silent. Audio is never the only incident signal.
+
 ---
 
 ## Convention: `limit()` over server-side `where` filtering when it would require a new composite index
