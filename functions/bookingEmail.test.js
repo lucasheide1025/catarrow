@@ -5,6 +5,8 @@ const assert = require("node:assert/strict");
 const {
   classifyBookingEvent, renderTemplate, buildBookingMessages, normalizeEmail,
   normalizeConfig, validateConfig, defaultTemplateFor, customBookingTemplate,
+  normalizeBookingSource, safeMemberId, memberContactEmail, studentRecipientDecision,
+  bookingRecipientPlan, bookingMailId,
 } = require("./bookingEmail");
 
 test("classifies a new confirmed booking", () => {
@@ -67,6 +69,92 @@ test("normalizes valid email and rejects invalid recipient values", () => {
   assert.equal(normalizeEmail(" Student@Example.COM "), "Student@Example.COM");
   assert.equal(normalizeEmail("not-an-email"), "");
   assert.equal(normalizeEmail(null), "");
+});
+
+test("maps every booking entry source without trusting unknown values", () => {
+  assert.equal(normalizeBookingSource("online_public"), "online_public");
+  assert.equal(normalizeBookingSource("online"), "online");
+  assert.equal(normalizeBookingSource("phone"), "phone");
+  assert.equal(normalizeBookingSource("walk_in"), "walk_in");
+  assert.equal(normalizeBookingSource("client-forged"), "unknown");
+});
+
+test("coach template receives only a normalized booking source label", () => {
+  const messages = buildBookingMessages("confirmed", {
+    memberName:"小明", contactEmail:"student@example.com", source:"client-forged",
+  }, null, { coachText:"{{source}}" });
+  assert.equal(messages.coach.text, "unknown");
+});
+
+test("accepts only safe single-segment member document IDs", () => {
+  assert.equal(safeMemberId(" member-123 "), "member-123");
+  assert.equal(safeMemberId("members/member-123"), "");
+  assert.equal(safeMemberId("bad\nmember"), "");
+  assert.equal(safeMemberId(null), "");
+});
+
+test("prefers member email then legacy contactEmail for member fallback", () => {
+  assert.equal(memberContactEmail({ email:"student@example.com", contactEmail:"old@example.com" }), "student@example.com");
+  assert.equal(memberContactEmail({ email:"invalid", contactEmail:"old@example.com" }), "old@example.com");
+});
+
+test("covers student recipient outcomes for all booking entry points", () => {
+  const matrix = [
+    { source:"online_public", bookingEmail:"public@example.com", memberId:"guest-1", expected:"public@example.com", lookup:false },
+    { source:"online", bookingEmail:"invalid", memberId:"student-1", member:{ email:"student@example.com" }, expected:"student@example.com", lookup:false },
+    { source:"phone", bookingEmail:"", memberId:"student-2", member:{ contactEmail:"phone@example.com" }, expected:"phone@example.com", lookup:false },
+    { source:"walk_in", bookingEmail:"", memberId:null, expected:"", lookup:false },
+  ];
+  for (const row of matrix) {
+    const decision = studentRecipientDecision({ source:row.source, contactEmail:row.bookingEmail, memberId:row.memberId }, row.member ?? null);
+    assert.equal(decision.email, row.expected, row.source);
+    assert.equal(decision.shouldLookupMember, row.lookup, row.source);
+  }
+});
+
+test("public, walk-in, and unknown sources never cross-read a member recipient", () => {
+  const member = { email:"private-member@example.com" };
+  assert.deepEqual(
+    studentRecipientDecision({ source:"online_public", contactEmail:"", memberId:"guest-1" }, member),
+    { source:"online_public", memberId:"guest-1", email:"", shouldLookupMember:false },
+  );
+  assert.equal(studentRecipientDecision({ source:"walk_in", contactEmail:"walkin@example.com", memberId:"student-1" }, member).email, "");
+  assert.equal(studentRecipientDecision({ source:"forged", contactEmail:"attacker@example.com", memberId:"student-1" }, member).email, "");
+});
+
+test("keeps coach notification eligible across the complete entry matrix", () => {
+  for (const source of ["online_public", "online", "phone", "walk_in"]) {
+    const plan = bookingRecipientPlan({ source, contactEmail:"", memberId:null });
+    assert.equal(plan.studentQueued, false, source);
+    assert.equal(plan.coachQueued, true, source);
+  }
+});
+
+test("requests one bounded fallback read only for a safe member-linked booking", () => {
+  assert.equal(studentRecipientDecision({ source:"online", contactEmail:"bad", memberId:"student-1" }).shouldLookupMember, true);
+  assert.equal(studentRecipientDecision({ source:"phone", contactEmail:"", memberId:"student-2" }).shouldLookupMember, true);
+  assert.equal(studentRecipientDecision({ source:"walk_in", contactEmail:"", memberId:"student-3" }).shouldLookupMember, false);
+  assert.equal(studentRecipientDecision({ source:"online_public", contactEmail:"", memberId:"guest-1" }).shouldLookupMember, false);
+  assert.equal(studentRecipientDecision({ source:"unknown", contactEmail:"", memberId:"student-3" }).shouldLookupMember, false);
+  assert.equal(studentRecipientDecision({ source:"online", contactEmail:"", memberId:"bad/path" }).shouldLookupMember, false);
+  assert.equal(studentRecipientDecision({ source:"online", contactEmail:"snapshot@example.com", memberId:"student-1" }).shouldLookupMember, false);
+});
+
+test("cancel and reschedule keep the original source and recipient snapshot", () => {
+  const original = { source:"phone", memberId:"student-1", contactEmail:"student@example.com", status:"confirmed" };
+  const cancelled = { ...original, status:"cancelled" };
+  const rescheduled = { ...original, status:"confirmed", rescheduledFrom:"old-booking" };
+  assert.equal(classifyBookingEvent(original, cancelled), "cancelled");
+  assert.equal(classifyBookingEvent(null, rescheduled, { isVerifiedReschedule:true }), "rescheduled");
+  assert.equal(bookingRecipientPlan(cancelled).email, "student@example.com");
+  assert.equal(bookingRecipientPlan(rescheduled).email, "student@example.com");
+});
+
+test("mail IDs are deterministic per booking, event, and audience", () => {
+  assert.equal(bookingMailId("abc", "confirmed", "student"), "booking-abc-confirmed-student");
+  assert.equal(bookingMailId("abc", "confirmed", "student"), bookingMailId("abc", "confirmed", "student"));
+  assert.notEqual(bookingMailId("abc", "confirmed", "student"), bookingMailId("abc", "confirmed", "coach"));
+  assert.notEqual(bookingMailId("abc", "confirmed", "student"), bookingMailId("abc", "cancelled", "student"));
 });
 
 test("invalid custom template fields fall back to safe non-empty defaults", () => {

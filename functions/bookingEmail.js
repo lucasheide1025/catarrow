@@ -6,6 +6,13 @@ const EVENT_TYPES = Object.freeze({
   CANCELLED: "cancelled",
 });
 
+const BOOKING_SOURCES = Object.freeze([
+  "online_public",
+  "online",
+  "phone",
+  "walk_in",
+]);
+
 const DEFAULT_TEMPLATES = Object.freeze({
   confirmed: {
     studentSubject: "catGROUP 預約確認｜{{date}} {{startTime}}",
@@ -142,6 +149,55 @@ function normalizeEmail(value) {
   return email;
 }
 
+function normalizeBookingSource(value) {
+  return BOOKING_SOURCES.includes(value) ? value : "unknown";
+}
+
+function safeMemberId(value) {
+  if (typeof value !== "string") return "";
+  const memberId = value.trim();
+  if (!memberId || memberId.length > 200 || memberId.includes("/") || /[\u0000-\u001f\u007f]/.test(memberId)) return "";
+  return memberId;
+}
+
+function memberContactEmail(member = {}) {
+  return normalizeEmail(member.email) || normalizeEmail(member.contactEmail) || "";
+}
+
+function studentRecipientDecision(booking = {}, member = null) {
+  const source = normalizeBookingSource(booking.source);
+  const snapshotEmail = normalizeEmail(booking.contactEmail);
+  const memberId = safeMemberId(booking.memberId);
+  // Public bookings already require a contact Email at creation time. Never
+  // replace it from a member document: that could send a guest notification
+  // to an unrelated account if a malformed/legacy booking carries a bad ID.
+  // Walk-ins intentionally have no student Email notification, and unknown
+  // sources fail closed. Only authenticated member and coach-created bookings
+  // may use the single-document member fallback.
+  const acceptsSnapshot = source === "online_public" || source === "online" || source === "phone";
+  const mayUseMember = (source === "online" || source === "phone") && !!memberId;
+  const fallbackEmail = mayUseMember ? memberContactEmail(member || {}) : "";
+  return {
+    source,
+    memberId,
+    email: (acceptsSnapshot ? snapshotEmail : "") || fallbackEmail,
+    shouldLookupMember: acceptsSnapshot && !snapshotEmail && mayUseMember && member === null,
+  };
+}
+
+function bookingRecipientPlan(booking = {}, member = null) {
+  const student = studentRecipientDecision(booking, member);
+  return {
+    ...student,
+    studentQueued: !!student.email,
+    coachQueued: true,
+  };
+}
+
+function bookingMailId(bookingId, eventType, audience) {
+  return `booking-${bookingId}-${eventType}-${audience}`;
+}
+
 function safeTemplateValue(value, fallback, maxLength) {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
@@ -164,7 +220,7 @@ function bookingVariables(eventType, booking, previousBooking = null) {
     endTime: booking.endTime || "",
     planName: booking.planType || "未指定",
     participantCount: booking.participantCount || 1,
-    source: booking.source || "",
+    source: normalizeBookingSource(booking.source),
     oldDate: previousBooking?.date || "",
     oldStartTime: previousBooking?.startTime || "",
     oldEndTime: previousBooking?.endTime || "",
@@ -196,12 +252,19 @@ function buildBookingMessages(eventType, booking, previousBooking = null, custom
 
 module.exports = {
   EVENT_TYPES,
+  BOOKING_SOURCES,
   DEFAULT_TEMPLATES,
   TEMPLATE_DEFINITIONS,
   DEFAULT_COACH_TO,
   DEFAULT_COACH_BCC,
   classifyBookingEvent,
   normalizeEmail,
+  normalizeBookingSource,
+  safeMemberId,
+  memberContactEmail,
+  studentRecipientDecision,
+  bookingRecipientPlan,
+  bookingMailId,
   renderTemplate,
   buildBookingMessages,
   allowedTokensFor,

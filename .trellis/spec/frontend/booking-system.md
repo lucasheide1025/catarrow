@@ -142,6 +142,12 @@ Reschedule classification requires both links written atomically: the old cancel
 
 Invalid or missing student email skips only the student message; the coach message remains eligible. Email delivery failure must never roll back or mutate the already-successful booking transaction.
 
+## Convention: booking Email recipients depend on verified entry source
+
+All booking entry points write the shared `bookings` schema. Recipient selection depends on the normalized source: `online_public` may use only a valid Email stored in the booking snapshot and must never read a member document. `online` and `phone` may perform at most one safe `members/{memberId}` fallback read when the snapshot Email is invalid. `walk_in` and unknown sources must neither read a member document nor create a student message; the coach message remains eligible.
+
+Cancellation updates the same booking document. Rescheduling must copy `source`, `contactEmail`, `contactPhone`, and `memberId` so the same recipient rules apply. Check the fail-closed notification switch before extra recipient reads, and keep mail document IDs deterministic so retried events cannot duplicate messages.
+
 ## Convention: booking Email templates are admin-controlled plaintext
 
 The seven booking Email templates live in `bookingEmailConfig/main` and contain only plaintext `subject` and `text`. The admin UI may preview and request changes, but callable Functions re-check admin membership, token allowlists, Email addresses, lengths, toggles, and the 1-50 daily limit. Firestore clients may never write this config directly; only admins may read it.

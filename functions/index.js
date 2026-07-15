@@ -10,7 +10,8 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { parseCostSignal, shouldRaise } = require("./costSignal");
 const {
   classifyBookingEvent, buildBookingMessages, normalizeEmail, normalizeConfig, validateConfig,
-  customBookingTemplate, defaultTemplateFor, allowedTokensFor,
+  customBookingTemplate, defaultTemplateFor, allowedTokensFor, memberContactEmail,
+  bookingRecipientPlan, bookingMailId,
 } = require("./bookingEmail");
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
 
@@ -184,6 +185,23 @@ exports.handleBookingEmail = onDocumentWritten({
       });
     }
   }
+  const isImmediateEmailCandidate =
+    (!before && after?.status === "confirmed") ||
+    (before?.status === "confirmed" && after?.status === "cancelled");
+  if (!isImmediateEmailCandidate) return;
+
+  // Check the fail-closed rollout gate before any reschedule-relationship or
+  // recipient lookup. Reminder-cycle maintenance above is intentionally
+  // independent so disabling immediate notifications does not lose history.
+  const configSnap = await db.doc("bookingEmailConfig/main").get();
+  const rawConfig = configSnap.exists ? configSnap.data() : {};
+  const config = normalizeConfig(rawConfig);
+  if (config.enabled !== true) {
+    logger.info("Booking email skipped by rollout gate", {
+      bookingId: event.params.bookingId,
+    });
+    return;
+  }
   let previousBooking = null;
   let isVerifiedReschedule = false;
   if (!before && after?.status === "confirmed" && after.rescheduledFrom) {
@@ -203,32 +221,28 @@ exports.handleBookingEmail = onDocumentWritten({
   if (!eventType) return;
 
   const booking = after || before;
-  const configSnap = await db.doc("bookingEmailConfig/main").get();
-  const rawConfig = configSnap.exists ? configSnap.data() : {};
-  const config = normalizeConfig(rawConfig);
-  if (config.enabled !== true) {
-    logger.info("Booking email skipped by rollout gate", {
-      bookingId: event.params.bookingId,
-      eventType,
-    });
-    return;
+  let recipient = bookingRecipientPlan(booking);
+  if (recipient.shouldLookupMember) {
+    const memberSnap = await db.doc(`members/${recipient.memberId}`).get();
+    recipient = bookingRecipientPlan(booking, memberSnap.exists ? memberSnap.data() : {});
   }
-
+  const studentEmail = recipient.email;
+  const bookingForMessage = studentEmail && studentEmail !== normalizeEmail(booking.contactEmail)
+    ? { ...booking, contactEmail: studentEmail }
+    : booking;
   const messages = buildBookingMessages(
     eventType,
-    booking,
+    bookingForMessage,
     previousBooking,
     customBookingTemplate(config, eventType),
   );
-  const baseId = `booking-${event.params.bookingId}-${eventType}`;
-  const studentEmail = normalizeEmail(booking.contactEmail);
   const mailEntries = [
     studentEmail ? {
-      ref: db.doc(`mail/${baseId}-student`),
+      ref: db.doc(`mail/${bookingMailId(event.params.bookingId, eventType, "student")}`),
       data: { to: studentEmail, message: messages.student },
     } : null,
     {
-      ref: db.doc(`mail/${baseId}-coach`),
+      ref: db.doc(`mail/${bookingMailId(event.params.bookingId, eventType, "coach")}`),
       data: { to: config.coachTo, bcc: config.coachBcc, message: messages.coach },
     },
   ].filter(Boolean);
@@ -263,10 +277,6 @@ function taipeiDate(now = new Date()) {
 
 function taipeiTime(now = new Date()) {
   return new Intl.DateTimeFormat("en-GB", { timeZone:"Asia/Taipei", hour:"2-digit", minute:"2-digit", hour12:false }).format(now);
-}
-
-function memberContactEmail(member = {}) {
-  return normalizeEmail(member.email) || normalizeEmail(member.contactEmail) || "";
 }
 
 async function hasFutureConfirmedBooking(db, memberId, today, now = new Date()) {
