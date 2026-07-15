@@ -177,6 +177,72 @@ removeOnlyTheCompletedLocalOperation(operationId);
 
 ---
 
+## Scenario: controlled legacy-data migrations
+
+### 1. Scope / Trigger
+
+Any migration that scans multiple members or expands one source record into several Firestore documents is an operational job, not a page-mount side effect. The July 2026 automatic performance migrations produced tens of thousands of reads/writes when admin sessions reopened.
+
+### 2. Signatures
+
+```js
+migrateAllLegacyPracticeLogs() // operational function; never call from normal UI lifecycle
+migrateAllLegacyMonsterLogs()  // operational function; never call from normal UI lifecycle
+```
+
+A future UI/tool must expose explicit dry-run and bounded execution contracts before reconnecting these exports.
+
+### 3. Contracts
+
+- Never start an all-member migration from `useEffect`, route mount, login, or ordinary page navigation.
+- Never use `sessionStorage`/`localStorage` as the global completion marker for a shared database migration.
+- A controlled migration requires an explicit operator action, Firestore global marker/lease, stable version, cursor, fixed batch limit, progress counters, resumability, and failure details.
+- Changing a browser guard key must never be used to force a whole-database rerun.
+- Keep automatic UI call sites at zero until the complete operational contract exists.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Admin opens/reopens Members | Zero migration reads or writes |
+| Another tab/device/admin opens Members | Zero migration reads or writes |
+| Previous batch failed | Resume only from persisted server cursor after explicit action |
+| Lease is active | Reject a second runner |
+| Dry-run requested | Report counts and estimated document operations; perform no writes |
+| Batch reaches limit | Persist cursor/progress and stop cleanly |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: An operator previews 500 pending records, starts a 50-record batch under a global lease, and resumes from the saved cursor.
+- **Base**: `AdminMembers` imports no all-member migration functions; the exports remain dormant for a future tool.
+- **Bad**: A mount effect guarded by `sessionStorage` scans every member. New tabs/devices rerun it, and one failed member prevents the completion flag forever.
+
+### 6. Tests Required
+
+- Repository search: all-member migration exports have no normal UI call sites.
+- Mount/remount Admin Members and assert no migration function invocation.
+- For a future tool, test lease exclusion, dry-run zero writes, batch limit, cursor resume, version completion, and partial failure reporting.
+- Run `npm run build` after removing or adding migration entry points.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+useEffect(() => {
+  if (!sessionStorage.getItem("migration-v3")) migrateAllLegacyPracticeLogs();
+}, []);
+```
+
+#### Correct
+
+```js
+// Normal pages have no migration effect. A separate admin operation must
+// acquire a Firestore lease and execute an explicit bounded batch.
+```
+
+---
+
 ## Convention: `limit()` over server-side `where` filtering when it would require a new composite index
 
 **What**: `subscribePracticeLogs(memberId, callback, maxCount=300)` gained a `limit(maxCount)` cap. `WorldBossLobby.jsx`/`PartyLobby.jsx` pass `maxCount=60` and still filter by `source` client-side.
