@@ -4,6 +4,7 @@ import {
   serverTimestamp, arrayUnion, query, where, getDocs, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addChests, recordBattleDex } from "./db";
 import { CHEST_TYPES, makeChests, calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
@@ -974,6 +975,7 @@ export async function cleanupStalePartyRooms() {
 
 // 管理員：刪除所有組隊房間（重置中心用）
 export async function deleteAllPartyRooms() {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const snap = await getDocs(query(collection(db, PARTY)));
   await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
   return snap.size;

@@ -20,6 +20,7 @@ import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
+import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 
 // ─── Collections ───────────────────────────────────────────
 const C = {
@@ -188,6 +189,9 @@ function queuePendingShootingSession(kind, input) {
   savePendingShootingSessions(items);
 }
 export async function flushPendingShootingSessions(memberId) {
+  if (!isCostCapabilityAllowed(COST_CAPABILITIES.shootingHistorySync)) {
+    return { synced:0, pending:pendingShootingSessions().length, blocked:true };
+  }
   const flightKey = memberId || "*";
   if (pendingShootingFlushFlights.has(flightKey)) return pendingShootingFlushFlights.get(flightKey);
   const flight = (async () => {
@@ -223,6 +227,7 @@ export async function finalizeMonsterShootingSession(input) {
     await flushPendingArrowProgress(input.memberId).catch(() => {});
     return record.session.id;
   }
+  assertCostCapability(COST_CAPABILITIES.shootingHistorySync);
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const gameRef = doc(db, C.gamePerformances, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
@@ -262,6 +267,7 @@ export async function finalizePracticeShootingSession(input) {
     await flushPendingArrowProgress(input.memberId).catch(() => {});
     return record.session.id;
   }
+  assertCostCapability(COST_CAPABILITIES.shootingHistorySync);
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
   try { await runTransaction(db, async transaction => {
@@ -368,6 +374,7 @@ export async function migrateLegacyPracticeLogs(memberId, maxCount = 120) {
 }
 
 export async function migrateAllLegacyPracticeLogs() {
+  assertCostCapability(COST_CAPABILITIES.migrations);
   const members = await getMembers();
   const totals = { members:0, detailed:0, summary:0, total:0, failed:[] };
   for (const member of members) {
@@ -416,6 +423,7 @@ export async function migrateLegacyMonsterLogs(memberId, maxCount = 120) {
   return { detailed, total:detailed };
 }
 export async function migrateAllLegacyMonsterLogs() {
+  assertCostCapability(COST_CAPABILITIES.migrations);
   const members = await getMembers(); const totals = { members:0, detailed:0, failed:[] };
   for (const member of members) try { const result = await migrateLegacyMonsterLogs(member.id); totals.members += 1; totals.detailed += result.detailed; } catch (error) { totals.failed.push({ memberId:member.id, message:error?.message || "unknown error" }); }
   return totals;
@@ -924,6 +932,9 @@ async function applyArrowOperation(operation) {
 }
 export async function flushPendingArrowProgress(memberId) {
   if (!memberId) return { synced:0, pending:0 };
+  if (!isCostCapabilityAllowed(COST_CAPABILITIES.gameCloudProgress)) {
+    return { synced:0, pending:readArrowOperations(memberId).length, blocked:true };
+  }
   if (arrowFlushFlights.has(memberId)) return arrowFlushFlights.get(memberId);
   clearTimeout(arrowFlushTimers.get(memberId)); arrowFlushTimers.delete(memberId);
   const flight = (async () => {
@@ -1865,6 +1876,7 @@ export async function resetCheckinCount(memberId) {
 
 // 重置所有會員的報到累積次數（先強制下課再歸零）
 export async function resetAllCheckinCounts(memberIds) {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   // 先強制結束今日未下課的報到
   await forceEndTodayCheckins();
   // 批次歸零（Firestore 每批最多 500 筆）
@@ -3324,6 +3336,7 @@ export async function resetDungeonUsed(memberId) {
 }
 
 export async function resetAllDungeonUsed() {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const snap = await getDocs(collection(db, C.members));
   const batch = writeBatch(db);
   snap.docs.forEach(d => batch.update(d.ref, { lastDungeonDate: deleteField() }));
@@ -3331,6 +3344,7 @@ export async function resetAllDungeonUsed() {
 }
 
 export async function resetAllMonsterSessions() {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const snap = await getDocs(collection(db, C.members));
   const todayStr = monsterTodayStr();
   const batch = writeBatch(db);
@@ -4979,6 +4993,7 @@ export async function resetCouncilDailyLimit(memberId) {
 }
 
 export async function resetAllCouncilDailyLimits(memberIds) {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   await Promise.all(memberIds.map(id => resetCouncilDailyLimit(id)));
 }
 
@@ -5134,6 +5149,7 @@ export async function setAccountFrozen(memberId, frozen, operatorId) {
 
 // 批次設定分級（上線初期教練逐一手動處理大量既有會員用）
 export async function bulkSetStudentTier(memberIds, tier, operatorId) {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const ids = Array.isArray(memberIds) ? memberIds : [];
   if (ids.length === 0) return;
   const batch = writeBatch(db);

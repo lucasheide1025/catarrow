@@ -6,6 +6,7 @@ import {
   orderBy, limit, setDoc, increment, deleteField, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, markDungeonUsed, createNotification } from "./db";
 import { calcPotionBuffs, getPotion } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
@@ -1595,6 +1596,7 @@ export async function resolveNonCombatRoom(roomId, room, hostId, clearedRoomId) 
 
 // 管理員：刪除所有地下城房間（重置中心用）
 export async function deleteAllDungeonRooms() {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const snap = await getDocs(collection(db, D));
   await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
   return snap.size;

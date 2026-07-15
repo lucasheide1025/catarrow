@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
+import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, addArrowdew, addArcherXP, createNotification } from "./db";
 import { addCatXP, addCatBond } from "./catDb";
 import { COIN_CHEST_TIERS } from "./lootTable";
@@ -650,6 +651,7 @@ export async function resetWorldBossAttack(eventId, memberId) {
 }
 
 export async function resetAllWorldBossAttacks(eventId) {
+  assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   try {
     const snap  = await getDoc(doc(db, WB, eventId));
     const parts = snap.data()?.participants || {};

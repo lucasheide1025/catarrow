@@ -1,6 +1,7 @@
 // src/pages/MemberApp.jsx
 import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useCostControl } from "../hooks/useCostControl";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
@@ -110,6 +111,7 @@ const NAV_PRELOADS = {
 
 export default function MemberApp() {
   const { logout, profile, role } = useAuth();
+  const { policy: costPolicy } = useCostControl();
   const [page, setPageState]   = useState(()=>sessionStorage.getItem("member_page")||"home");
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   // 學生分級與系統鎖定（2026-07-04）
@@ -243,7 +245,7 @@ export default function MemberApp() {
     document.addEventListener("visibilitychange", flush);
     window.addEventListener("pagehide", flush);
     return () => { document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
-  }, [profile?.id]);
+  }, [profile?.id, costPolicy.level]);
 
   // 緊急任務訂閱：只在新任務出現時彈出通知
   useEffect(() => {

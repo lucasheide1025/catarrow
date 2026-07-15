@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useCostControl } from "../hooks/useCostControl";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -18,6 +19,7 @@ import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
 import AdminBookingAlert  from "../components/admin/AdminBookingAlert";
+import AdminCostControlBanner from "../components/admin/AdminCostControlBanner";
 
 const AdminMembers       = lazy(() => import("../components/admin/AdminMembers"));
 const AdminCompetitions  = lazy(() => import("../components/admin/AdminCompetitions"));
@@ -146,6 +148,7 @@ const ARCHER_NAV_PRELOADS = {
 
 export default function AdminApp() {
   const { logout, profile } = useAuth();
+  const { policy: costPolicy } = useCostControl();
   const VALID_PAGES = new Set(["hub-member","hub-events","givetool","hub-items","archery"]);
   const [page, setPageState]        = useState(() => {
     const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
@@ -260,7 +263,7 @@ export default function AdminApp() {
     if (!profile?.id) return;
     flushPendingShootingSessions(profile.id).catch(() => {});
     flushPendingArrowProgress(profile.id).catch(() => {});
-  }, [profile?.id]);
+  }, [profile?.id, costPolicy.level]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -515,6 +518,7 @@ const adminNav = [
   if (archerMode) {
     return (
       <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",fontFamily:"sans-serif",overflow:"hidden"}}>
+        <AdminCostControlBanner />
         {/* 版本更新提醒 */}
         {latestVersion && latestVersion !== APP_VERSION && (
           <OverlayModal open={true} zIndex={99999} bg="rgba(0,0,0,0.75)">
@@ -718,6 +722,7 @@ const adminNav = [
   // ── 後台模式（深藍主題）──────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"sans-serif"}}>
+      <AdminCostControlBanner />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
       {/* 👑 地下城首殺全系統公告 */}

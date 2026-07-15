@@ -5,6 +5,7 @@ import {
   serverTimestamp, increment, query, where, orderBy, limit, Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addArrowdew, addGachaCoins, createNotification } from "./db";
 import {
   getGoalTarget, getGoalReward, CONSOLATION_REWARD,
@@ -306,6 +307,7 @@ export async function expireGoal(goalId) {
 // （已跟使用者確認接受這個風險：獎勵金額小，寧可多發不要漏發）。
 // 可重複執行：已標記 claimed 的參與者會被跳過，不會重複發放。
 export async function adminBackfillVillageGoalRewards() {
+  assertCostCapability(COST_CAPABILITIES.migrations);
   try {
     const snap = await getDocs(
       query(collection(db, COLLECTION), where("status", "in", ["completed", "expired"]))

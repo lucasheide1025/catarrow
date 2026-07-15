@@ -10,6 +10,7 @@ import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
 import PublicBookingApp from "./pages/PublicBookingApp";
 import { initGoalTracker } from "./lib/villageGoalDb";
+import { CostControlProvider } from "./hooks/useCostControl";
 
 // 新生隱藏約課入口的 query 參數值（07-10-booking-system-student-pilot）——刻意用一串不易猜測、
 // 沒有規律的字串，不要改成 "booking"/"bk=1" 這種容易猜的形式。這個常數本身只在這裡使用一次，
@@ -47,11 +48,13 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="*" element={<AppRoutes />} />
-          </Routes>
-        </BrowserRouter>
+        <CostControlProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="*" element={<AppRoutes />} />
+            </Routes>
+          </BrowserRouter>
+        </CostControlProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

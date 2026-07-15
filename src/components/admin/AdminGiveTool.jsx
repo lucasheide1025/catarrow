@@ -5,6 +5,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { POTIONS, FRAGMENTS, CHEST_TYPES } from "../../lib/itemData";
 import { adminGiveItem, adminSetFragments, adminSetMemberBadge, addCoins } from "../../lib/db";
+import { assertCostCapability, COST_CAPABILITIES } from "../../lib/costControl";
 import AdminDexGrant from "./AdminDexGrant";
 
 const CATEGORIES = [
@@ -95,6 +96,7 @@ export default function AdminGiveTool() {
 
     try {
       const targets = [...selMembers];
+      if (targets.length > 1) assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
       const nameOf = id => {
         const m = members.find(x => x.id === id);
         return m?.nickname || m?.name || id;

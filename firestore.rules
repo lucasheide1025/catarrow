@@ -336,7 +336,19 @@ service cloud.firestore {
     // sysConfig：系統設定（版本號等），登入者可讀，admin 可寫
     match /sysConfig/{docId} {
       allow read:  if isLoggedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() && docId != "costControl";
+    }
+    match /sysConfig/costControl {
+      allow read: if isLoggedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.level in ["normal", "warning", "protect", "restricted", "emergency"]
+        && request.resource.data.monthlyCeilingTwd is number
+        && request.resource.data.monthlyCeilingTwd > 0
+        && request.resource.data.observedPercent is number
+        && request.resource.data.observedPercent >= 0
+        && request.resource.data.revision is int
+        && request.resource.data.revision >= 0;
+      allow delete: if false;
     }
     match /equipItems/{id} {
       allow read:  if isLoggedIn();

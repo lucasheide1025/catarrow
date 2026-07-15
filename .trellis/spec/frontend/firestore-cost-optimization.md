@@ -243,6 +243,14 @@ useEffect(() => {
 
 ---
 
+## Convention: central cost-control capability gates
+
+Use `sysConfig/costControl` as the single remote policy. The app opens one document listener in `CostControlProvider`; feature components must not create additional cost-control listeners. Actual database functions for migrations, backfills, bulk resets/grants/deletes, background sync, analysis, and cloud game progress must call `assertCostCapability(...)`. Hiding a UI button is not enforcement.
+
+The initial stages are 50% warning, 80% protection, 90% restricted, and 95% emergency against an NT$300 monthly soft ceiling. Automated events may only raise severity with a newer revision. Recovery is admin-only and manual after metrics stabilize. Project billing must not be automatically disabled.
+
+---
+
 ## Convention: `limit()` over server-side `where` filtering when it would require a new composite index
 
 **What**: `subscribePracticeLogs(memberId, callback, maxCount=300)` gained a `limit(maxCount)` cap. `WorldBossLobby.jsx`/`PartyLobby.jsx` pass `maxCount=60` and still filter by `source` client-side.
