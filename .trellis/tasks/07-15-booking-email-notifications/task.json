@@ -1,0 +1,30 @@
+{
+  "id": "booking-email-notifications",
+  "name": "booking-email-notifications",
+  "title": "預約 Email 通知系統",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-07-15",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-15-booking-status-emails",
+    "07-15-booking-inactivity-email",
+    "07-15-booking-email-templates"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
