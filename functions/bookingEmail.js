@@ -27,6 +27,99 @@ const DEFAULT_TEMPLATES = Object.freeze({
   },
 });
 
+const INACTIVITY_TEMPLATE = Object.freeze({
+  studentSubject: "catGROUP｜好久不見，回來預約練習吧",
+  studentText: "{{studentName}} 您好，\n\n距離您上次完成課程已經 {{daysSinceLastClass}} 天。\n上次上課日期：{{lastClassDate}}\n\n期待再次與您一起練習！\n預約網址：{{bookingUrl}}",
+});
+
+const TEMPLATE_DEFINITIONS = Object.freeze({
+  studentConfirmed: { eventType: "confirmed", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
+  studentRescheduled: { eventType: "rescheduled", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "oldDate", "oldStartTime", "oldEndTime", "date", "startTime", "endTime", "planName"] },
+  studentCancelled: { eventType: "cancelled", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "date", "startTime", "endTime", "planName"] },
+  studentInactive: { eventType: "inactive", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "daysSinceLastClass", "lastClassDate", "bookingUrl"] },
+  coachConfirmed: { eventType: "confirmed", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
+  coachRescheduled: { eventType: "rescheduled", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "oldDate", "oldStartTime", "oldEndTime", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
+  coachCancelled: { eventType: "cancelled", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
+});
+const DEFAULT_COACH_TO = "broudes@gmail.com";
+const DEFAULT_COACH_BCC = Object.freeze(["chobitsgl1@gmail.com", "beluga0109@gmail.com"]);
+
+function defaultTemplateFor(templateId) {
+  const definition = TEMPLATE_DEFINITIONS[templateId];
+  if (!definition) return null;
+  const source = definition.eventType === "inactive" ? INACTIVITY_TEMPLATE : DEFAULT_TEMPLATES[definition.eventType];
+  return { subject: source[definition.subjectField], text: source[definition.textField] };
+}
+
+function allowedTokensFor(templateId) {
+  return TEMPLATE_DEFINITIONS[templateId]?.tokens || [];
+}
+
+function validateTemplate(templateId, value) {
+  const fallback = defaultTemplateFor(templateId);
+  if (!fallback) throw new Error(`Unknown template: ${templateId}`);
+  const subject = typeof value?.subject === "string" ? value.subject.trim() : "";
+  const text = typeof value?.text === "string" ? value.text.trim() : "";
+  if (!subject || subject.length > 200) throw new Error(`${templateId} subject must be 1-200 characters`);
+  if (!text || text.length > 10000) throw new Error(`${templateId} text must be 1-10000 characters`);
+  const allowed = new Set(allowedTokensFor(templateId));
+  for (const content of [subject, text]) {
+    const tokens = content.matchAll(/{{([^{}]+)}}/g);
+    for (const match of tokens) {
+      if (!allowed.has(match[1])) throw new Error(`${templateId} contains unsupported token: ${match[1]}`);
+    }
+    const remainder = content.replace(/{{[^{}]+}}/g, "");
+    if (remainder.includes("{{") || remainder.includes("}}")) throw new Error(`${templateId} contains an invalid token`);
+  }
+  return { subject, text };
+}
+
+function normalizeConfig(input = {}) {
+  const coachTo = normalizeEmail(input.coachTo) || DEFAULT_COACH_TO;
+  const coachBcc = Array.isArray(input.coachBcc)
+    ? [...new Set(input.coachBcc.map(normalizeEmail).filter(email => email && email !== coachTo))].slice(0, 10)
+    : [...DEFAULT_COACH_BCC];
+  const templates = {};
+  for (const templateId of Object.keys(TEMPLATE_DEFINITIONS)) {
+    const fallback = defaultTemplateFor(templateId);
+    try { templates[templateId] = validateTemplate(templateId, input.templates?.[templateId] || fallback); }
+    catch { templates[templateId] = fallback; }
+  }
+  return {
+    enabled: input.enabled === true,
+    inactivityEnabled: input.inactivityEnabled === true,
+    dailyLimit: Number.isInteger(input.dailyLimit) && input.dailyLimit >= 1 && input.dailyLimit <= 50 ? input.dailyLimit : 20,
+    coachTo,
+    coachBcc,
+    templates,
+  };
+}
+
+function validateConfig(input = {}) {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Error("Invalid config");
+  if (typeof input.enabled !== "boolean" || typeof input.inactivityEnabled !== "boolean") throw new Error("Invalid notification toggles");
+  if (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 1 || input.dailyLimit > 50) throw new Error("Daily limit must be 1-50");
+  const coachTo = normalizeEmail(input.coachTo);
+  if (!coachTo) throw new Error("Invalid primary coach email");
+  if (!Array.isArray(input.coachBcc) || input.coachBcc.length > 10) throw new Error("Invalid coach BCC list");
+  const coachBcc = [...new Set(input.coachBcc.map(normalizeEmail))];
+  if (coachBcc.some(email => !email) || coachBcc.includes(coachTo)) throw new Error("Invalid coach BCC email");
+  const templates = {};
+  for (const templateId of Object.keys(TEMPLATE_DEFINITIONS)) templates[templateId] = validateTemplate(templateId, input.templates?.[templateId]);
+  return { enabled: input.enabled, inactivityEnabled: input.inactivityEnabled, dailyLimit: input.dailyLimit, coachTo, coachBcc, templates };
+}
+
+function customBookingTemplate(config, eventType) {
+  const studentId = { confirmed: "studentConfirmed", rescheduled: "studentRescheduled", cancelled: "studentCancelled" }[eventType];
+  const coachId = { confirmed: "coachConfirmed", rescheduled: "coachRescheduled", cancelled: "coachCancelled" }[eventType];
+  return {
+    studentSubject: config.templates[studentId].subject,
+    studentText: config.templates[studentId].text,
+    coachSubject: config.templates[coachId].subject,
+    coachText: config.templates[coachId].text,
+  };
+}
+
 function classifyBookingEvent(before, after, options = {}) {
   if (!before && after?.status === "confirmed") {
     return after.rescheduledFrom && options.isVerifiedReschedule === true
@@ -104,8 +197,17 @@ function buildBookingMessages(eventType, booking, previousBooking = null, custom
 module.exports = {
   EVENT_TYPES,
   DEFAULT_TEMPLATES,
+  TEMPLATE_DEFINITIONS,
+  DEFAULT_COACH_TO,
+  DEFAULT_COACH_BCC,
   classifyBookingEvent,
   normalizeEmail,
   renderTemplate,
   buildBookingMessages,
+  allowedTokensFor,
+  defaultTemplateFor,
+  validateTemplate,
+  normalizeConfig,
+  validateConfig,
+  customBookingTemplate,
 };

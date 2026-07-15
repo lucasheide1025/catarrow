@@ -99,6 +99,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 預約 Email 的內容含營運設定與收件人。管理員可讀取後台畫面；所有寫入都必須
+    // 經過 callable function 再做身分、Email、長度與範本 token 驗證。
+    match /bookingEmailConfig/{document} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // 測試信節流狀態只供 callable function 使用，不暴露管理員操作時間給前端。
+    match /bookingEmailTestRate/{document} {
+      allow read, write: if false;
+    }
+
     // learnLogs：admin 全權，登入者可讀寫
     match /learnLogs/{logId} {
       allow read:   if isLoggedIn();

@@ -2,7 +2,10 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { classifyBookingEvent, renderTemplate, buildBookingMessages, normalizeEmail } = require("./bookingEmail");
+const {
+  classifyBookingEvent, renderTemplate, buildBookingMessages, normalizeEmail,
+  normalizeConfig, validateConfig, defaultTemplateFor, customBookingTemplate,
+} = require("./bookingEmail");
 
 test("classifies a new confirmed booking", () => {
   assert.equal(classifyBookingEvent(null, { status: "confirmed", rescheduledFrom: null }), "confirmed");
@@ -73,4 +76,59 @@ test("invalid custom template fields fall back to safe non-empty defaults", () =
   assert.match(messages.student.subject, /catGROUP/);
   assert.match(messages.student.text, /預約已確認/);
   assert.equal(messages.coach.subject, "自訂主旨");
+});
+
+test("normalizes missing config to disabled safe defaults", () => {
+  const config = normalizeConfig({});
+  assert.equal(config.enabled, false);
+  assert.equal(config.inactivityEnabled, false);
+  assert.equal(config.dailyLimit, 20);
+  assert.equal(config.coachTo, "broudes@gmail.com");
+  assert.deepEqual(config.templates.studentInactive, defaultTemplateFor("studentInactive"));
+});
+
+test("rejects unknown tokens and invalid limits", () => {
+  const config = normalizeConfig({});
+  assert.throws(() => validateConfig({ ...config, dailyLimit: 51 }), /Daily limit/);
+  assert.throws(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, studentConfirmed: { subject: "{{password}}", text: "內容" } },
+  }), /unsupported token/);
+  assert.throws(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, studentConfirmed: { subject: "{{studentName", text: "內容" } },
+  }), /invalid token/);
+});
+
+test("enforces the same token whitelist shown for each template", () => {
+  const config = normalizeConfig({});
+  assert.throws(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, studentCancelled: { subject: "{{oldDate}}", text: "內容" } },
+  }), /unsupported token/);
+  assert.doesNotThrow(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, studentRescheduled: { subject: "{{oldDate}}", text: "{{date}}" } },
+  }));
+});
+
+test("rejects blank or oversized template fields", () => {
+  const config = normalizeConfig({});
+  assert.throws(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, coachConfirmed: { subject: "", text: "內容" } },
+  }), /subject must be/);
+  assert.throws(() => validateConfig({
+    ...config,
+    templates: { ...config.templates, coachConfirmed: { subject: "正常", text: "x".repeat(10001) } },
+  }), /text must be/);
+});
+
+test("maps seven-template config back into booking message fields", () => {
+  const config = normalizeConfig({});
+  config.templates.studentConfirmed = { subject: "學生 {{studentName}}", text: "{{date}}" };
+  config.templates.coachConfirmed = { subject: "教練 {{studentName}}", text: "{{source}}" };
+  const mapped = customBookingTemplate(config, "confirmed");
+  assert.equal(mapped.studentSubject, "學生 {{studentName}}");
+  assert.equal(mapped.coachText, "{{source}}");
 });

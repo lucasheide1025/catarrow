@@ -26,6 +26,7 @@ import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
 import ParticipantCountPicker from "../booking/ParticipantCountPicker";
 import BookingScheduleCard from "../booking/BookingScheduleCard";
+import BookingEmailSettings from "./BookingEmailSettings";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
 import { PLANS as BILLING_PLANS, PAY_METHODS, EARLY_BIRD_DISC } from "./BillingSystem";
 
@@ -67,7 +68,8 @@ function allocateDayLanes(bookings, date) {
 
 export default function AdminBooking() {
   const { toast, ToastContainer } = useToast();
-  const [tab, setTab] = useState("calendar"); // "calendar" | "beta" | "report"
+  const { role } = useAuth();
+  const [tab, setTab] = useState("calendar"); // "calendar" | "beta" | "report" | "email"
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -77,10 +79,12 @@ export default function AdminBooking() {
         <Btn v={tab === "calendar" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("calendar")}>行事曆</Btn>
         <Btn v={tab === "beta" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("beta")}>名單註記</Btn>
         <Btn v={tab === "report" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("report")}>收費報表</Btn>
+        {role === "admin" && <Btn v={tab === "email" ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setTab("email")}>Email 設定</Btn>}
       </div>
       {tab === "calendar" && <CalendarTab toast={toast} />}
       {tab === "beta"     && <BetaAccessTab toast={toast} />}
       {tab === "report"   && <ReportTab />}
+      {tab === "email" && role === "admin" && <BookingEmailSettings toast={toast} />}
     </div>
   );
 }

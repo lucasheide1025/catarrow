@@ -141,3 +141,9 @@ Booking confirmation, reschedule, and cancellation emails are created only by th
 Reschedule classification requires both links written atomically: the old cancelled booking has `rescheduledTo = newBookingId`, and the new confirmed booking has `rescheduledFrom = oldBookingId`. Firestore Rules use `getAfter()` to verify the two documents have the same member and reciprocal IDs in the same transaction; the Cloud Function independently re-reads and validates the relationship. Never suppress a cancellation merely because an unverified client value named `rescheduledTo` exists.
 
 Invalid or missing student email skips only the student message; the coach message remains eligible. Email delivery failure must never roll back or mutate the already-successful booking transaction.
+
+## Convention: booking Email templates are admin-controlled plaintext
+
+The seven booking Email templates live in `bookingEmailConfig/main` and contain only plaintext `subject` and `text`. The admin UI may preview and request changes, but callable Functions re-check admin membership, token allowlists, Email addresses, lengths, toggles, and the 1-50 daily limit. Firestore clients may never write this config directly; only admins may read it.
+
+Template variables are per-template allowlists, not one global bucket. Unknown or malformed tokens are rejected on save, and missing/corrupt stored templates fall back to versioned backend defaults. Templates can never select recipients or inject arbitrary mail-document fields. Test sends use deterministic request IDs plus a server-side per-admin rate limiter; their documents must not affect booking or inactivity state.

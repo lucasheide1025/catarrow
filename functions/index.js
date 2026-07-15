@@ -5,8 +5,12 @@ const { FieldValue, Timestamp, getFirestore } = require("firebase-admin/firestor
 const { logger } = require("firebase-functions");
 const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { parseCostSignal, shouldRaise } = require("./costSignal");
-const { classifyBookingEvent, buildBookingMessages, normalizeEmail } = require("./bookingEmail");
+const {
+  classifyBookingEvent, buildBookingMessages, normalizeEmail, normalizeConfig, validateConfig,
+  customBookingTemplate, defaultTemplateFor, allowedTokensFor,
+} = require("./bookingEmail");
 
 initializeApp();
 
@@ -71,8 +75,81 @@ exports.handleCostSignal = onMessagePublished({
   });
 });
 
-const COACH_TO = "broudes@gmail.com";
-const COACH_BCC = ["chobitsgl1@gmail.com", "beluga0109@gmail.com"];
+async function requireAdmin(request) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
+  const adminSnap = await getFirestore().doc(`admins/${request.auth.uid}`).get();
+  if (!adminSnap.exists) throw new HttpsError("permission-denied", "只有管理員可以執行此操作");
+}
+
+exports.saveBookingEmailConfig = onCall({ region: "asia-east1" }, async (request) => {
+  await requireAdmin(request);
+  let config;
+  try { config = validateConfig(request.data); }
+  catch (error) { throw new HttpsError("invalid-argument", error.message); }
+  await getFirestore().doc("bookingEmailConfig/main").set({
+    ...config,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: request.auth.uid,
+  }, { merge: false });
+  return { ok: true };
+});
+
+exports.sendBookingEmailTest = onCall({ region: "asia-east1" }, async (request) => {
+  await requireAdmin(request);
+  const requestId = String(request.data?.requestId || "");
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) {
+    throw new HttpsError("invalid-argument", "測試信請求識別碼格式錯誤");
+  }
+  const templateId = String(request.data?.templateId || "");
+  const fallback = defaultTemplateFor(templateId);
+  if (!fallback) throw new HttpsError("invalid-argument", "未知的 Email 範本");
+  let template;
+  try {
+    const config = validateConfig(request.data?.config);
+    template = config.templates[templateId];
+  } catch (error) {
+    throw new HttpsError("invalid-argument", error.message);
+  }
+  const sample = {
+    eventLabel: "新預約", studentName: "測試學生", contactEmail: "student@example.com",
+    date: "2026-07-20", startTime: "10:00", endTime: "11:00", planName: "單人一般",
+    participantCount: "1", source: "online", oldDate: "2026-07-19", oldStartTime: "09:00",
+    oldEndTime: "10:00", daysSinceLastClass: "14", lastClassDate: "2026-07-06",
+    bookingUrl: "https://student.catgroup.com.tw/",
+  };
+  const allowed = new Set(allowedTokensFor(templateId));
+  const variables = Object.fromEntries(Object.entries(sample).filter(([key]) => allowed.has(key)));
+  const { renderTemplate } = require("./bookingEmail");
+  const recipient = normalizeEmail(request.data.config.coachTo);
+  const db = getFirestore();
+  const ref = db.doc(`mail/booking-email-test-${request.auth.uid}-${requestId}`);
+  const rateRef = db.doc(`bookingEmailTestRate/${request.auth.uid}`);
+  const queued = await db.runTransaction(async transaction => {
+    const [mailSnap, rateSnap] = await transaction.getAll(ref, rateRef);
+    if (mailSnap.exists) return false;
+    const recent = (rateSnap.data()?.recent || [])
+      .map(value => value?.toMillis?.() || 0)
+      .filter(value => value > Date.now() - 60000);
+    if (recent.length >= 5) {
+      throw new HttpsError("resource-exhausted", "測試信每分鐘最多寄送 5 封，請稍後再試");
+    }
+    transaction.set(rateRef, {
+      recent: [...recent.map(value => Timestamp.fromMillis(value)), Timestamp.now()],
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.create(ref, {
+      to: recipient,
+      message: {
+        subject: `[測試] ${renderTemplate(template.subject, variables)}`,
+        text: renderTemplate(template.text, variables),
+      },
+      createdAt: FieldValue.serverTimestamp(),
+      bookingEmailTest: { templateId, requestedBy: request.auth.uid, requestId },
+    });
+    return true;
+  });
+  return { ok: true, recipient, queued };
+});
 
 // Rollout gate: bookingEmailConfig/main must explicitly contain enabled:true.
 // Missing config therefore produces no email and makes deployment safe by default.
@@ -104,7 +181,8 @@ exports.handleBookingEmail = onDocumentWritten({
 
   const booking = after || before;
   const configSnap = await db.doc("bookingEmailConfig/main").get();
-  const config = configSnap.exists ? configSnap.data() : {};
+  const rawConfig = configSnap.exists ? configSnap.data() : {};
+  const config = normalizeConfig(rawConfig);
   if (config.enabled !== true) {
     logger.info("Booking email skipped by rollout gate", {
       bookingId: event.params.bookingId,
@@ -117,7 +195,7 @@ exports.handleBookingEmail = onDocumentWritten({
     eventType,
     booking,
     previousBooking,
-    config.templates?.[eventType],
+    customBookingTemplate(config, eventType),
   );
   const baseId = `booking-${event.params.bookingId}-${eventType}`;
   const studentEmail = normalizeEmail(booking.contactEmail);
@@ -128,7 +206,7 @@ exports.handleBookingEmail = onDocumentWritten({
     } : null,
     {
       ref: db.doc(`mail/${baseId}-coach`),
-      data: { to: COACH_TO, bcc: COACH_BCC, message: messages.coach },
+      data: { to: config.coachTo, bcc: config.coachBcc, message: messages.coach },
     },
   ].filter(Boolean);
 
