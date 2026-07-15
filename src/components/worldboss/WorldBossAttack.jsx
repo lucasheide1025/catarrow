@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP } from "../../lib/worldBossDb";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, subscribeTodayPracticeLogs, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -441,16 +441,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const potionDef  = POTIONS.find(p => p.id === potion);
   const potionMult = potionDef?.mult || 1;
 
-  // ── 訂閱今日練箭數（用於里程碑正確計算基線）
+  // ── 今日箭數：從 localStorage 讀取（addRoundArrows 每回合累加），用於里程碑正確計算基線
   useEffect(() => {
-    if (isGuest || !myId) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    return subscribeTodayPracticeLogs(myId, todayStr, logs => {
-      const count = logs.reduce((s, l) =>
-        s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
-      setTodayArrows(count);
-    });
-  }, [myId, isGuest]); // eslint-disable-line
+    if (!myId) return;
+    initializeTodayArrows(myId).catch(() => {});
+    return subscribeLocalTodayArrows(myId, setTodayArrows);
+  }, [myId]);
 
   // 清理所有 timer（離開時避免洩漏）
   useEffect(() => () => timerRef.current.forEach(clearTimeout), []);

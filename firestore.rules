@@ -210,6 +210,21 @@ service cloud.firestore {
     match /arrowCountEvents/{sessionId} {
       allow read, write: if isLoggedIn();
     }
+    // Idempotency markers for locally aggregated arrow progress. A marker can
+    // only be created for the caller's own member record and is immutable.
+    match /arrowRoundOperations/{operationId} {
+      allow get: if isLoggedIn();
+      allow list: if false;
+      allow create: if isLoggedIn()
+        && request.resource.data.memberId is string
+        && exists(/databases/$(database)/documents/members/$(request.resource.data.memberId))
+        && (
+          get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid
+          || (request.auth.token.email != null
+            && get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.email == request.auth.token.email)
+        );
+      allow update, delete: if false;
+    }
     // Per-member version manifest for local-first performance sync. It holds
     // no raw arrows; clients compare this one small document before fetching
     // changed sessions into their persistent IndexedDB cache.

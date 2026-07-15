@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeTodayPracticeLogs, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
@@ -246,16 +246,21 @@ export default function AdminApp() {
     setShowCheckinPopup(false);
   }
 
-  // 今日練箭數全域訂閱
+  // 今日箭數以 localStorage 即時累加；載入時只做一次有上限的 Firestore 補值，不開 listener
+  useEffect(() => {
+    if (!profile?.id) { setTodayArrowsGlobal(0); return; }
+    initializeTodayArrows(profile.id).catch(() => {});
+    const unsubscribe = subscribeLocalTodayArrows(profile.id, setTodayArrowsGlobal);
+    // 跨分頁監聽：同一瀏覽器開多個分頁時保持同步
+    return unsubscribe;
+  }, [profile?.id]);
+
+  // 載入時 flush 累積在 localStorage 的射手表現資料（下課失敗或忘記按時補傳）
   useEffect(() => {
     if (!profile?.id) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    return subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
-      const count = logs.reduce((s, l) =>
-        s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
-      setTodayArrowsGlobal(count);
-    });
-  }, [profile?.id]); // eslint-disable-line
+    flushPendingShootingSessions(profile.id).catch(() => {});
+    flushPendingArrowProgress(profile.id).catch(() => {});
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!profile?.id) return;

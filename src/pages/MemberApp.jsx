@@ -5,8 +5,9 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeCertification, getDexConfig, subscribeDexGrants,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
-  subscribeActiveGuildQuests, subscribeTodayPracticeLogs,
-  subscribeMyCheckin, submitCheckin,
+  subscribeActiveGuildQuests,
+  subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
+  subscribeLocalTodayArrows, initializeTodayArrows,
   subscribeMaintenanceConfig, subscribeTierPermissions } from "../lib/db";
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
@@ -211,16 +212,14 @@ export default function MemberApp() {
     setShowCheckinPopup(false);
   }
 
-  // 今日練箭數全域訂閱（只讀今日，減少 Firestore 資料量）
+  // 今日箭數以 localStorage 即時累加；載入時只做一次有上限的 Firestore 補值，不開 listener
   useEffect(() => {
-    if (!profile?.id) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    return subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
-      const count = logs.reduce((s, l) =>
-        s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)), 0);
-      setTodayArrowsGlobal(count);
-    });
-  }, [profile?.id]); // eslint-disable-line
+    if (!profile?.id) { setTodayArrowsGlobal(0); return; }
+    initializeTodayArrows(profile.id).catch(() => {});
+    const unsubscribe = subscribeLocalTodayArrows(profile.id, setTodayArrowsGlobal);
+    // 跨分頁監聽：同一瀏覽器開多個分頁時保持同步
+    return unsubscribe;
+  }, [profile?.id]);
 
   // 徽章獲得偵測：profile.achievement 有增加時彈出慶祝
   useEffect(() => {
@@ -234,6 +233,17 @@ export default function MemberApp() {
     }
     prevAchRef.current = { silver: ach.silver||0, gold: ach.gold||0, black: ach.black||0 };
   }, [profile?.achievement?.silver, profile?.achievement?.gold, profile?.achievement?.black]); // eslint-disable-line
+
+  // 載入時 flush 累積在 localStorage 的射手表現資料（下課失敗或忘記按時補傳）
+  useEffect(() => {
+    if (!profile?.id) return;
+    flushPendingShootingSessions(profile.id).catch(() => {});
+    flushPendingArrowProgress(profile.id).catch(() => {});
+    const flush = () => { if (document.visibilityState === "hidden") flushPendingArrowProgress(profile.id).catch(() => {}); };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => { document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
+  }, [profile?.id]);
 
   // 緊急任務訂閱：只在新任務出現時彈出通知
   useEffect(() => {

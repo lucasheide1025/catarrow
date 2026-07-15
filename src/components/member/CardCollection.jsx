@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeCardCollection, equipCard, unequipCard, upgradeCard, setMythicCardStat,
+  subscribeCardCollection, refreshCardCollection, equipCard, unequipCard, upgradeCard, setMythicCardStat,
   setWorldBossCardStat, setActiveTitle, clearActiveTitle, subscribeMonsterDex,
 } from "../../lib/db";
 import {
@@ -192,33 +192,39 @@ export default function CardCollection() {
     setTimeout(() => setNotice(""), 2500);
   }
 
+  const refreshCards = () => refreshCardCollection(profile.id, setCollection);
+
   async function handleEquip(key, source) {
     const res = await equipCard(profile.id, key, source);
     if (!res.ok) showNotice(res.reason || "裝備失敗");
+    else await refreshCards();
   }
   async function handleUnequip(key, source) {
     await unequipCard(profile.id, key, source);
+    await refreshCards();
   }
   async function handleUpgrade(monsterId) {
     setUpgrading(true);
     const res = await upgradeCard(profile.id, monsterId);
     setUpgrading(false);
-    if (res.ok) { sfxLevelUp(); showNotice(`✨ 升星成功！現在 ${res.newStars}★`); }
+    if (res.ok) { await refreshCards(); sfxLevelUp(); showNotice(`✨ 升星成功！現在 ${res.newStars}★`); }
     else { sfxError(); showNotice(res.reason || "升星失敗"); }
   }
   async function handleStatPick(key, source, stat) {
     if (source === "wb") await setWorldBossCardStat(profile.id, key, stat);
     else await setMythicCardStat(profile.id, key, stat);
+    await refreshCards();
     sfxBuff();
     showNotice("✅ 屬性已設定！");
   }
   async function handleSetTitle(bossKey) {
     const res = await setActiveTitle(profile.id, bossKey);
-    if (res.ok) showNotice("👑 稱號已設定！");
+    if (res.ok) { await refreshCards(); showNotice("👑 稱號已設定！"); }
     else showNotice(res.reason || "設定失敗");
   }
   async function handleClearTitle() {
     await clearActiveTitle(profile.id);
+    await refreshCards();
     showNotice("已取消稱號");
   }
 

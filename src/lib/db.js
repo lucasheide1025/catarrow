@@ -41,7 +41,56 @@ const C = {
   gamePerformances: "gamePerformances",
   arrowCountEvents: "arrowCountEvents",
   memberPerformanceSync: "memberPerformanceSync",
+  arrowRoundOperations: "arrowRoundOperations",
 };
+
+const DAILY_ARROW_EVENT = "catarrow:today-arrows";
+export function taipeiDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone:"Asia/Taipei", year:"numeric", month:"2-digit", day:"2-digit" }).format(date);
+}
+export function dailyArrowStorageKey(memberId, date = new Date()) { return `catarrow.today-arrows.${memberId}.${taipeiDateKey(date)}`; }
+export function getLocalTodayArrows(memberId) {
+  if (!memberId || typeof localStorage === "undefined") return 0;
+  return Number(localStorage.getItem(dailyArrowStorageKey(memberId))) || 0;
+}
+function setLocalTodayArrows(memberId, value) {
+  if (!memberId || typeof localStorage === "undefined") return;
+  const key = dailyArrowStorageKey(memberId);
+  const next = Math.max(0, Number(value) || 0);
+  localStorage.setItem(key, String(next));
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(DAILY_ARROW_EVENT, { detail:{ memberId, value:next } }));
+}
+export function subscribeLocalTodayArrows(memberId, callback) {
+  if (!memberId || typeof window === "undefined") return () => {};
+  const key = dailyArrowStorageKey(memberId);
+  const emit = () => callback(getLocalTodayArrows(memberId));
+  const onLocal = event => { if (event.detail?.memberId === memberId) emit(); };
+  const onStorage = event => { if (event.key === key) emit(); };
+  emit(); window.addEventListener(DAILY_ARROW_EVENT, onLocal); window.addEventListener("storage", onStorage);
+  return () => { window.removeEventListener(DAILY_ARROW_EVENT, onLocal); window.removeEventListener("storage", onStorage); };
+}
+const todayArrowInitializations = new Map();
+export async function initializeTodayArrows(memberId) {
+  if (!memberId) return 0;
+  const cacheKey = `${memberId}.${taipeiDateKey()}`;
+  if (todayArrowInitializations.has(cacheKey)) return todayArrowInitializations.get(cacheKey);
+  const initialization = (async () => {
+  let serverTotal = 0;
+  try {
+    const snap = await getDocs(query(collection(db, C.practiceLogs), where("memberId", "==", memberId), where("date", "==", taipeiDateKey()), limit(500)));
+    serverTotal = snap.docs.reduce((sum, item) => {
+      const data = item.data();
+      if (Number(data.arrowCount) > 0) return sum + Number(data.arrowCount);
+      try { return sum + JSON.parse(data.roundsString || "[]").flat().length; } catch { return sum; }
+    }, 0);
+  } catch (error) { console.warn("initializeTodayArrows:", error?.message); }
+  const value = Math.max(getLocalTodayArrows(memberId), serverTotal);
+  setLocalTodayArrows(memberId, value);
+  return value;
+  })();
+  todayArrowInitializations.set(cacheKey, initialization);
+  return initialization;
+}
 
 // Firestore rejects `undefined` at any nested level. Older practice logs did
 // not consistently record bow, distance, or target settings, so normalise
@@ -123,8 +172,12 @@ function writePerformanceSync(transaction, sync, memberId, session) {
 }
 
 const PENDING_SHOOTING_KEY = "catarrow.pending-shooting-sessions.v1";
+const pendingShootingFlushFlights = new Map();
 function pendingShootingSessions() {
-  try { return JSON.parse(localStorage.getItem(PENDING_SHOOTING_KEY) || "[]"); } catch { return []; }
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PENDING_SHOOTING_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
 }
 function savePendingShootingSessions(items) {
   try { localStorage.setItem(PENDING_SHOOTING_KEY, JSON.stringify(items.slice(-80))); } catch { /* storage quota unavailable */ }
@@ -135,25 +188,41 @@ function queuePendingShootingSession(kind, input) {
   savePendingShootingSessions(items);
 }
 export async function flushPendingShootingSessions(memberId) {
-  const items = pendingShootingSessions();
-  const remaining = [];
-  let synced = 0;
-  for (const item of items) {
-    if (memberId && item.input?.memberId !== memberId) { remaining.push(item); continue; }
-    try {
-      if (item.kind === "game") await finalizeMonsterShootingSession(item.input);
-      else await finalizePracticeShootingSession(item.input);
-      synced += 1;
-    } catch { remaining.push(item); }
-  }
-  savePendingShootingSessions(remaining);
-  return { synced, pending:remaining.length };
+  const flightKey = memberId || "*";
+  if (pendingShootingFlushFlights.has(flightKey)) return pendingShootingFlushFlights.get(flightKey);
+  const flight = (async () => {
+    const items = pendingShootingSessions();
+    const successfulIds = new Set();
+    let synced = 0;
+    for (const item of items) {
+      if (memberId && item.input?.memberId !== memberId) continue;
+      try {
+        if (item.kind === "game") await finalizeMonsterShootingSession(item.input);
+        else await finalizePracticeShootingSession(item.input);
+        successfulIds.add(item.input?.sessionId);
+        synced += 1;
+      } catch { /* preserve failed entries for retry */ }
+    }
+    // Re-read before removal so sessions queued while this flush was running,
+    // including entries owned by another member, are never overwritten.
+    const remaining = pendingShootingSessions().filter(item => !successfulIds.has(item.input?.sessionId));
+    savePendingShootingSessions(remaining);
+    return { synced, pending:remaining.length };
+  })().finally(() => pendingShootingFlushFlights.delete(flightKey));
+  pendingShootingFlushFlights.set(flightKey, flight);
+  return flight;
 }
 
 // Additive dual-write only: old battle logs remain the live compatibility source.
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
   if (!record) return null;
+  // 一律先存 localStorage，下課或下次登入時才 flush 到 Firestore
+  if (!input.__skipPendingQueue) {
+    queuePendingShootingSession("game", input);
+    await flushPendingArrowProgress(input.memberId).catch(() => {});
+    return record.session.id;
+  }
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const gameRef = doc(db, C.gamePerformances, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
@@ -173,9 +242,9 @@ export async function finalizeMonsterShootingSession(input) {
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "game", sourceMode:record.session.source?.mode || "monster", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   }); } catch (error) {
+    // Firestore 寫入失敗：若來自 flush 重試，保留佇列項目給下次重試
     if (input.__skipPendingQueue) throw error;
-    queuePendingShootingSession("game", input);
-    console.warn("shooting session queued for retry:", error?.message);
+    console.warn("shooting session Firestore write deferred (queued in localStorage):", error?.message);
   }
   return record.session.id;
 }
@@ -187,6 +256,12 @@ export async function finalizeGameShootingSession(input) {
 export async function finalizePracticeShootingSession(input) {
   const record = buildPracticeShootingRecord(input);
   if (!record) return null;
+  // 一律先存 localStorage，下課或下次登入時才 flush 到 Firestore
+  if (!input.__skipPendingQueue) {
+    queuePendingShootingSession("practice", input);
+    await flushPendingArrowProgress(input.memberId).catch(() => {});
+    return record.session.id;
+  }
   const sessionRef = doc(db, C.shootingSessions, record.session.id);
   const arrowCountRef = doc(db, C.arrowCountEvents, record.session.id);
   try { await runTransaction(db, async transaction => {
@@ -202,9 +277,9 @@ export async function finalizePracticeShootingSession(input) {
     transaction.set(arrowCountRef, { id:record.session.id, sessionId:record.session.id, memberId:record.session.memberId, arrowCount:record.session.arrowCount, sourceKind:record.session.source?.kind || "practice", sourceMode:record.session.source?.mode || "freePractice", occurredAt:now, createdAt:now });
     writePerformanceSync(transaction, sync, record.session.memberId, record.session);
   }); } catch (error) {
+    // Firestore 寫入失敗：若來自 flush 重試，保留佇列項目給下次重試
     if (input.__skipPendingQueue) throw error;
-    queuePendingShootingSession("practice", input);
-    console.warn("practice session queued for retry:", error?.message);
+    console.warn("practice session Firestore write deferred (queued in localStorage):", error?.message);
   }
   return record.session.id;
 }
@@ -559,15 +634,22 @@ const sortByLastLogin = docs =>
 // 所以用 JS filter 而非 Firestore where（避免漏掉沒有 accountType 欄位的舊資料）
 const isOfficial = m => m.accountType !== "guest" && m.accountType !== "kid";
 
+const memberAccountTypeCache = new Map();
 async function isGuestOrKidMember(memberId) {
   if (!memberId) return true;
   if (memberId.startsWith("guest")) return true;
+  const cached = memberAccountTypeCache.get(memberId);
+  if (cached && Date.now() - cached.checkedAt < 5 * 60 * 1000) return cached.isGuestOrKid;
   try {
     const snap = await getDoc(doc(db, C.members, memberId));
     const type = snap.exists() ? snap.data()?.accountType : null;
-    return type === "guest" || type === "kid";
+    const isGuestOrKid = !snap.exists() || type === "guest" || type === "kid";
+    memberAccountTypeCache.set(memberId, { isGuestOrKid, checkedAt:Date.now() });
+    return isGuestOrKid;
   } catch {
-    return false;
+    // Fail closed: an unavailable identity check must never turn a guest/kid
+    // round into an official Firestore progress write.
+    return true;
   }
 }
 
@@ -753,21 +835,6 @@ export function subscribePracticeLogs(memberId, callback, maxCount = 300) {
   });
 }
 
-// 只訂閱今日練習紀錄（用於 header 練箭數計數，避免讀取全部歷史）
-export function subscribeTodayPracticeLogs(memberId, todayStr, callback) {
-  return onSnapshot(
-    query(collection(db, C.practiceLogs),
-      where("memberId", "==", memberId),
-      where("date", "==", todayStr)
-    ),
-    snap => {
-      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      callback(logs);
-    },
-    () => callback([])
-  );
-}
-
 export async function addPracticeLog(memberId, data, operatorId) {
   const cleanedData = JSON.parse(JSON.stringify(data));
   if (cleanedData.equipment && typeof cleanedData.equipment === "object") cleanedData.equipment = cleanedData.equipment.label || cleanedData.equipment.category || "未指定裝備";
@@ -800,24 +867,86 @@ export async function addPracticeLog(memberId, data, operatorId) {
   return ref.id;
 }
 
-// ── 每回合送出箭後立刻更新終身箭數 ─────────────────────────────
-// 統一由各模式的 submit handler 呼叫，取代 addPracticeLog 的批次更新。
+const ARROW_OP_PREFIX = "catarrow.pending-arrow-operations.v1";
+const ARROW_DEVICE_KEY = "catarrow.arrow-device-id.v1";
+const ARROW_SEQUENCE_KEY = "catarrow.arrow-operation-sequence.v1";
+const arrowFlushTimers = new Map();
+const arrowFlushFlights = new Map();
+function arrowOperationKey(memberId) { return `${ARROW_OP_PREFIX}.${memberId}`; }
+function readArrowOperations(memberId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(arrowOperationKey(memberId)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+function saveArrowOperations(memberId, items) { localStorage.setItem(arrowOperationKey(memberId), JSON.stringify(items)); }
+function arrowDeviceId() {
+  let id = localStorage.getItem(ARROW_DEVICE_KEY);
+  if (!id) { id = `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`; localStorage.setItem(ARROW_DEVICE_KEY, id); }
+  return id;
+}
+function nextArrowOperationId(memberId) {
+  const seq = (Number(localStorage.getItem(ARROW_SEQUENCE_KEY)) || 0) + 1;
+  localStorage.setItem(ARROW_SEQUENCE_KEY, String(seq));
+  return `${memberId}_${arrowDeviceId()}_${seq}`;
+}
+function enqueueArrowOperation(memberId, count) {
+  const items = readArrowOperations(memberId);
+  const last = items[items.length - 1];
+  if (last && !last.sealed) last.count += count;
+  else items.push({ id:nextArrowOperationId(memberId), memberId, count, createdAt:Date.now(), sealed:false });
+  saveArrowOperations(memberId, items);
+  return items[items.length - 1];
+}
+async function applyArrowOperation(operation) {
+  const memberRef = doc(db, C.members, operation.memberId);
+  const operationRef = doc(db, C.arrowRoundOperations, operation.id);
+  let goal = null;
+  try { const module = await import("./villageGoalDb"); goal = module.getActiveGoal?.() || null; } catch { /* tracker unavailable */ }
+  await runTransaction(db, async transaction => {
+    if ((await transaction.get(operationRef)).exists()) return;
+    const memberSnap = await transaction.get(memberRef);
+    if (!memberSnap.exists()) throw new Error("Member not found");
+    const current = memberSnap.data().dungeonExcavation || {};
+    const patch = { totalArrowsAllTime:increment(operation.count) };
+    if ((Number(current.progress) || 0) < 100) {
+      const today = taipeiDateKey();
+      patch["dungeonExcavation.lastActiveDate"] = today;
+      patch["dungeonExcavation.progress"] = Math.min(100, (Number(current.progress) || 0) + Math.min(operation.count, 100));
+      patch["dungeonExcavation.dailyArrowsUsed"] = current.lastActiveDate === today ? (Number(current.dailyArrowsUsed) || 0) + operation.count : operation.count;
+    }
+    transaction.update(memberRef, patch);
+    if (goal?.id && goal.goalType === "total_arrows") transaction.update(doc(db, "villageGoals", goal.id), {
+      currentValue:increment(operation.count), [`participants.${operation.memberId}.contributed`]:increment(operation.count),
+    });
+    transaction.set(operationRef, { memberId:operation.memberId, arrowCount:operation.count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
+  });
+}
+export async function flushPendingArrowProgress(memberId) {
+  if (!memberId) return { synced:0, pending:0 };
+  if (arrowFlushFlights.has(memberId)) return arrowFlushFlights.get(memberId);
+  clearTimeout(arrowFlushTimers.get(memberId)); arrowFlushTimers.delete(memberId);
+  const flight = (async () => {
+    const items = readArrowOperations(memberId).map(item => ({ ...item, sealed:true }));
+    saveArrowOperations(memberId, items);
+    let synced = 0;
+    for (const item of items) {
+      try { await applyArrowOperation(item); synced += 1; saveArrowOperations(memberId, readArrowOperations(memberId).filter(saved => saved.id !== item.id)); }
+      catch (error) { console.warn("flushPendingArrowProgress:", error?.message); break; }
+    }
+    return { synced, pending:readArrowOperations(memberId).length };
+  })().finally(() => arrowFlushFlights.delete(memberId));
+  arrowFlushFlights.set(memberId, flight);
+  return flight;
+}
 export async function addRoundArrows(memberId, count) {
-  if (!memberId || !count || count <= 0 || await isGuestOrKidMember(memberId)) return;
-  // 把 totalArrowsAllTime 與地下城發掘進度（dungeonExcavation）合併成同一次 updateDoc，
-  // 避免每回合對同一份 members/{id} 文件寫兩次。
-  const patch = { totalArrowsAllTime: increment(count) };
-  try {
-    const { computeExcavationPatch } = await import("./dungeonExcavation");
-    const excav = await computeExcavationPatch(memberId, count);
-    if (excav) Object.assign(patch, excav.patch);
-  } catch (e) { /* ignore，退回只寫 totalArrowsAllTime */ }
-  await updateDoc(doc(db, C.members, memberId), patch).catch(() => {});
-  // 村目标贡献 hook（非同步，不阻塞）
-  try {
-    const { contributeArrowsToGoal } = await import("./villageGoalDb");
-    await contributeArrowsToGoal(memberId, count);
-  } catch (e) { /* ignore */ }
+  count = Number(count);
+  if (!memberId || !Number.isFinite(count) || count <= 0) return;
+  setLocalTodayArrows(memberId, getLocalTodayArrows(memberId) + count);
+  if (await isGuestOrKidMember(memberId)) return;
+  const operation = enqueueArrowOperation(memberId, count);
+  if (operation.count >= 12) return flushPendingArrowProgress(memberId);
+  if (!arrowFlushTimers.has(memberId)) arrowFlushTimers.set(memberId, setTimeout(() => flushPendingArrowProgress(memberId).catch(() => {}), 10000));
 }
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {
@@ -1212,9 +1341,11 @@ export async function getCertification(memberId) {
 }
 
 export function subscribeCertification(memberId, callback) {
-  return onSnapshot(doc(db, CERT_CERTIFICATIONS, memberId),
+  getDoc(doc(db, CERT_CERTIFICATIONS, memberId)).then(
     snap => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
-    err => { console.warn("subscribeCertification:", err.message); callback(null); });
+    err => { console.warn("subscribeCertification:", err.message); callback(null); }
+  );
+  return () => {};
 }
 
 export async function submitCertTask(memberId, tier, task, payload, bowType, equipLabels) {
@@ -1683,6 +1814,13 @@ export async function submitClassEnd(memberId, checkinDocId) {
       await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${newCount} 次`);
     }
   } catch (e) { console.warn("submitClassEnd:", e?.message); }
+  // 下課時 flush 所有累積在 localStorage 的射手表現資料到 Firestore
+  try {
+    await flushPendingShootingSessions(memberId);
+  } catch (e) { console.warn("submitClassEnd flush shooting:", e?.message); }
+  try {
+    await flushPendingArrowProgress(memberId);
+  } catch (e) { console.warn("submitClassEnd flush arrows:", e?.message); }
 }
 
 // 教練最終確認（舊流程相容，新流程已不需要）
@@ -2567,11 +2705,11 @@ export async function addMaterials(memberId, mats) {
  
 // 訂閱玩家材料庫存（即時）
 export function subscribeMaterials(memberId, callback) {
-  return onSnapshot(
-    doc(db, C_MATERIALS, memberId),
+  getDoc(doc(db, C_MATERIALS, memberId)).then(
     snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
     err  => { console.warn("subscribeMaterials:", err.message); callback({}); }
   );
+  return () => {};
 }
  
 // 即時訂閱打怪紀錄
@@ -2640,7 +2778,7 @@ export async function upgradeMaterial(memberId, materialId) {
     inventory[mat.upgradesTo] = (inventory[mat.upgradesTo] || 0) + 1;
 
     await setDoc(ref, { items: inventory, updatedAt: serverTimestamp() }, { merge: true });
-    return { ok: true, from: mat, to: target };
+    return { ok: true, from: mat, to: target, inventory };
   } catch (e) {
     console.warn("upgradeMaterial:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
@@ -2666,11 +2804,11 @@ export async function addChests(memberId, chests) {
  
 // 訂閱寶箱庫存（即時）
 export function subscribeChests(memberId, callback) {
-  return onSnapshot(
-    doc(db, C_CHESTS, memberId),
+  getDoc(doc(db, C_CHESTS, memberId)).then(
     snap => callback(snap.exists() ? (snap.data().chests || []) : []),
     err  => { console.warn("subscribeChests:", err.message); callback([]); }
   );
+  return () => {};
 }
  
 // 開箱：移除寶箱 + 把抽出的內容寫進材料/藥劑/碎片庫存
@@ -2683,7 +2821,8 @@ export async function openChest(memberId, chestId, contents) {
     const list = snap.exists() ? (snap.data().chests || []) : [];
     const chest = list.find(c => c.id === chestId);
     if (!chest) return { ok: false, reason: "找不到這個寶箱（可能已開過）" };
-    await setDoc(ref, { chests: list.filter(c => c.id !== chestId), updatedAt: serverTimestamp() }, { merge: true });
+    const updatedChests = list.filter(c => c.id !== chestId);
+    await setDoc(ref, { chests: updatedChests, updatedAt: serverTimestamp() }, { merge: true });
 
     if (chest.type === "coin") {
       const min   = chest.min || 20;
@@ -2691,7 +2830,7 @@ export async function openChest(memberId, chestId, contents) {
       const coins = min + Math.floor(Math.random() * (max - min + 1));
       await addCoins(memberId, coins);
       await updateChestOpenStats(memberId, "coin");
-      return { ok: true, coins };
+      return { ok: true, coins, chests: updatedChests };
     }
 
     // 咪咪箱：直接開貓（在 member 自己的 session 執行，Firestore 規則不擋）
@@ -2699,7 +2838,7 @@ export async function openChest(memberId, chestId, contents) {
       const { openCatBox } = await import("./catDb").catch(() => ({}));
       const catRes = openCatBox ? await openCatBox(memberId, { bondOnDuplicate: 50 }) : { ok: false };
       if (chest.type) await updateChestOpenStats(memberId, chest.type);
-      return { ok: true, catResult: catRes };
+      return { ok: true, catResult: catRes, chests: updatedChests };
     }
 
     if (contents?.materials?.length)  await addMaterials(memberId, contents.materials);
@@ -2713,7 +2852,7 @@ export async function openChest(memberId, chestId, contents) {
     if (contents?.coins) await addCoins(memberId, contents.coins);
 
     if (chest.type) await updateChestOpenStats(memberId, chest.type);
-    return { ok: true, coins: contents?.coins };
+    return { ok: true, coins: contents?.coins, chests: updatedChests };
   } catch (e) {
     console.warn("openChest:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
@@ -2743,26 +2882,23 @@ export async function addPotions(memberId, potions) {
  
 // 訂閱藥劑庫存（即時）
 export function subscribePotions(memberId, callback) {
-  return onSnapshot(
-    doc(db, C_POTIONS, memberId),
-    snap => {
-      const data = snap.exists() ? snap.data() : {};
-      const migrated = migratePotionInventory(data);
-      callback(migrated.items);
-      if (migrated.migrated) {
-        setDoc(doc(db, C_POTIONS, memberId), {
-          items: migrated.items,
-          catalogVersion: migrated.catalogVersion,
-          updatedAt: serverTimestamp(),
-        }, { merge: true }).catch(e => console.warn("migratePotionInventory:", e?.message));
-      }
-    },
-    err  => { console.warn("subscribePotions:", err.message); callback({}); }
-  );
+  getDoc(doc(db, C_POTIONS, memberId)).then(snap => {
+    const data = snap.exists() ? snap.data() : {};
+    const migrated = migratePotionInventory(data);
+    callback(migrated.items);
+    if (migrated.migrated) {
+      setDoc(doc(db, C_POTIONS, memberId), {
+        items: migrated.items,
+        catalogVersion: migrated.catalogVersion,
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch(e => console.warn("migratePotionInventory:", e?.message));
+    }
+  }).catch(err => {
+    console.warn("subscribePotions:", err.message);
+    callback({});
+  });
+  return () => {};
 }
- 
-// 合成藥劑：檢查配方材料（村莊資源）→ 扣材料 + 扣金幣 → 加 1 瓶藥
-// 2026-06-30 修正：改從 members/{id}.village.resources 讀取材料（非 materialInventory）
 export async function craftPotion(memberId, potionId, craftCount = 1) {
   if (!memberId || !potionId) return { ok: false, reason: "參數錯誤" };
   const potion = POTIONS.find(p => p.id === potionId);
@@ -2900,11 +3036,11 @@ export async function migrateOldFragments(memberId) {
 
 // 訂閱碎片庫存（即時）
 export function subscribeFragments(memberId, callback) {
-  return onSnapshot(
-    doc(db, C_FRAGS, memberId),
+  getDoc(doc(db, C_FRAGS, memberId)).then(
     snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
     err  => { console.warn("subscribeFragments:", err.message); callback({}); }
   );
+  return () => {};
 }
  
 // 合成碎片 → 銀章
@@ -2929,20 +3065,52 @@ export async function craftFragment(memberId, fragId) {
     const memRef = doc(db, "members", memberId);
     await updateDoc(memRef, { [`${badgeField}.${badgeLevel}`]: increment(1) });
     await updateCraftStats(memberId, "frag", { fragId }).catch(() => {});
-    return { ok: true, label };
+    return { ok: true, label, fragments: items };
   } catch (e) {
     console.warn("craftFragment:", e?.message);
     return { ok: false, reason: "系統忙碌中，請稍後再試" };
   }
 }
 
+// ── 重新讀取輔助（subscribe* 已改為 getDoc 單次讀取，用於寫入後刷新）──────
+export function refreshMaterials(memberId, callback) {
+  getDoc(doc(db, C_MATERIALS, memberId)).then(
+    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    () => callback({})
+  );
+}
+export function refreshFragments(memberId, callback) {
+  getDoc(doc(db, C_FRAGS, memberId)).then(
+    snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
+    () => callback({})
+  );
+}
+export function refreshPotions(memberId, callback) {
+  getDoc(doc(db, C_POTIONS, memberId)).then(
+    snap => {
+      const data = snap.exists() ? snap.data() : {};
+      const migrated = migratePotionInventory(data);
+      callback(migrated.items);
+      if (migrated.migrated) {
+        setDoc(doc(db, C_POTIONS, memberId), {
+          items: migrated.items,
+          catalogVersion: migrated.catalogVersion,
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch(e => console.warn("migratePotionInventory:", e?.message));
+      }
+    },
+    () => callback({})
+  );
+}
+
+
 // ─── 怪物圖鑑 ──────────────────────────────────────────────
 export function subscribeMonsterDex(memberId, callback) {
-  return onSnapshot(
-    doc(db, C_MONSTER_DEX, memberId),
+  getDoc(doc(db, C_MONSTER_DEX, memberId)).then(
     snap => callback(snap.exists() ? (snap.data().monsters || {}) : {}),
     err  => { console.warn("subscribeMonsterDex:", err.message); callback({}); }
   );
+  return () => {};
 }
 
 async function updateMonsterDex(memberId, monsterId, result, score, dmgDealt) {
@@ -3419,20 +3587,26 @@ export async function setWorldBossCardStat(memberId, bossKey, chosenStat) {
 
 export function subscribeCardCollection(memberId, callback) {
   if (!memberId) { callback(EMPTY_COLLECTION); return () => {}; }
-  return onSnapshot(
-    doc(db, C_CARDS, memberId),
-    snap => {
-      const data = snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION;
-      callback({ ...data, wbCards: normalizeWorldBossCards(data.wbCards || {}) });
-    },
-    err  => { console.warn("subscribeCardCollection:", err?.message); callback(EMPTY_COLLECTION); }
-  );
+  getDoc(doc(db, C_CARDS, memberId)).then(snap => {
+    const data = snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION;
+    callback({ ...data, wbCards: normalizeWorldBossCards(data.wbCards || {}) });
+  }).catch(err => {
+    console.warn("subscribeCardCollection:", err?.message);
+    callback(EMPTY_COLLECTION);
+  });
+  return () => {};
+}
+export function refreshCardCollection(memberId, callback) {
+  if (!memberId) { callback(EMPTY_COLLECTION); return Promise.resolve(); }
+  return getDoc(doc(db, C_CARDS, memberId)).then(snap => {
+    const data = snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION;
+    callback({ ...data, wbCards:normalizeWorldBossCards(data.wbCards || {}) });
+  }).catch(error => console.warn("refreshCardCollection:", error?.message));
 }
 
-// ──────────────────────────────────────────────────────────
 async function updateCraftStats(memberId, type, data) {
   if (!memberId) return;
-  const ref  = doc(db, C_CRAFT_STATS, memberId);
+  const ref = doc(db, C_CRAFT_STATS, memberId);
   const snap = await getDoc(ref);
   const stats = snap.exists() ? snap.data() : {};
   if (type === "potion") {
@@ -3445,39 +3619,66 @@ async function updateCraftStats(memberId, type, data) {
     stats.fragTypesCrafted = stats.fragTypesCrafted || {};
     stats.fragTypesCrafted[data.fragId] = (stats.fragTypesCrafted[data.fragId] || 0) + 1;
   }
-  await setDoc(ref, { ...stats, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(ref, { ...stats, updatedAt:serverTimestamp() }, { merge:true });
 }
+// ─── 月卡系統 ────────────────────────────────────────────────
 
-// ─── 月卡系統 ─────────────────────────────────────────────────
 const C_MONTHLY        = "monthlyCardRequests";
+
 const C_MONTHLY_CONFIG = "monthlyCardConfig";
-const C_MONTHLY_LOGS   = "monthlyCardLogs";   // append-only，不可修改
+
+const C_MONTHLY_LOGS   = "monthlyCardLogs";
+
+
 
 // 月卡設定（後台設定次數 / 天數）
+
 export async function getMonthlyCardConfig() {
+
   try {
+
     const snap = await getDoc(doc(db, C_MONTHLY_CONFIG, "default"));
+
     if (snap.exists()) return snap.data();
+
   } catch {}
+
   return { sessions: 16, validDays: 60 };
+
 }
+
 export async function saveMonthlyCardConfig(cfg, operatorId) {
+
   await setDoc(doc(db, C_MONTHLY_CONFIG, "default"),
+
     { ...cfg, updatedAt: serverTimestamp(), operatorId }, { merge: true });
+
 }
+
+
 
 // 內部：寫入月卡操作記錄（append-only）
+
 async function _logMonthlyCard(memberId, memberName, action, delta, note, operatorId) {
+
   try {
+
     await addDoc(collection(db, C_MONTHLY_LOGS), {
+
       memberId, memberName, action, delta, note,
+
       operatorId: operatorId || null,
+
       createdAt: serverTimestamp(),
+
     });
+
   } catch {}
+
 }
 
-// 訂閱某射手的月卡記錄（後台查看用）
+
+
 export function subscribeMonthlyCardLogs(memberId, callback) {
   if (!memberId) { callback([]); return () => {}; }
   // 只用 where，避免需要複合索引；前端排序

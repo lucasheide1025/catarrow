@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend spec entrypoint"}
+{"file": ".trellis/spec/frontend/firestore-cost-optimization.md", "reason": "Firestore hot-path and listener conventions"}
+{"file": ".trellis/spec/frontend/guest-kid-mode.md", "reason": "Member-scoped browser storage and guest write rules"}

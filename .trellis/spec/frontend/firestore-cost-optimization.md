@@ -99,6 +99,84 @@ export async function grantBonusExcavation(memberId, amount) {
 
 **Related**: [[project_state]] — same principle applied to `DungeonDex.jsx` (removed a redundant `subscribeCollectibles` listener in favor of reading `profile.dungeonCollectibles`, already live via `useAuth.js`'s own top-level member-doc subscription — don't open a second listener on data you already have).
 
+## Scenario: durable arrow aggregation and idempotent retry
+
+### 1. Scope / Trigger
+
+`addRoundArrows` is called after scored rounds across battle and practice modes. Direct writes per round are forbidden on this hot path: update the member-scoped local counter immediately, then aggregate official-account progress into durable operations.
+
+### 2. Signatures
+
+```js
+addRoundArrows(memberId, count) -> Promise<void>
+flushPendingArrowOperations(memberId?) -> Promise<{ synced, pending }>
+subscribeTodayArrowCount(memberId, callback) -> unsubscribe
+initializeTodayArrowCount(memberId) -> Promise<number>
+```
+
+Firestore marker: `arrowRoundOperations/{operationId}` contains immutable ownership, count, device/sequence identity, and creation metadata. No collection query or composite index is required.
+
+### 3. Contracts
+
+- Local daily keys include both `memberId` and an `Asia/Taipei` `YYYY-MM-DD` date.
+- An official member's pending operation has a stable device ID plus monotonically increasing sequence; retry never creates a new operation ID.
+- Flush occurs at 12 pending arrows, 10 seconds, session finalization, profile initialization, class end, and page hide.
+- One transaction checks the marker, then updates lifetime arrows, excavation fields, any cached active arrow goal, and creates the marker. If the marker exists, the operation is already complete.
+- Remove a local operation only after transaction success. Re-read local storage during cleanup so an operation queued while a flush was in flight is not overwritten.
+- Guest/kid lookup is cached briefly; lookup failure is fail-closed and must not enqueue an official write.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Invalid member/count | No local or server mutation |
+| Guest/kid member | Local daily display only |
+| Account-type lookup fails | Keep display update; do not enqueue official progress |
+| Marker already exists | Treat as successful retry; do not increment again |
+| Transaction/network failure | Keep the durable local operation for retry |
+| Concurrent flush calls | Share one member flight |
+| New operation arrives during flush | Preserve it when completed entries are removed |
+| Malformed local-storage payload | Recover as an empty queue without crashing the app |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: Twenty three-arrow rounds normally produce about five 12-arrow operations instead of twenty member/goal write cycles.
+- **Base**: Firestore commits and the browser closes before local cleanup; the same operation retries, sees its marker, and is removed without a second increment.
+- **Bad**: Generate a new ID for every retry, or save the queue only in memory; this respectively duplicates progress or loses arrows after a crash.
+
+### 6. Tests Required
+
+- Build: `npm run build`.
+- Verify member/date key isolation and Taiwan midnight boundaries.
+- Verify same-tab custom events and cross-tab storage events unsubscribe cleanly.
+- Verify 12-arrow and 10-second thresholds plus all explicit flush points.
+- Verify marker replay leaves lifetime, excavation, and goal values unchanged.
+- Verify failed, other-member, and concurrently appended operations remain queued.
+- Verify Firestore rules allow marker `get`/owned `create` but reject list, update, and delete. Use the rules emulator when the project adds one; until then perform static review and deploy rules before client rollout.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+await updateDoc(memberRef, { totalArrowsAllTime: increment(count) });
+localStorage.removeItem(pendingKey); // a crash between these steps can replay the increment
+```
+
+#### Correct
+
+```js
+await runTransaction(db, async tx => {
+  const marker = await tx.get(operationRef);
+  if (marker.exists()) return;
+  tx.update(memberRef, aggregatedPatch);
+  tx.set(operationRef, immutableOperationMarker);
+});
+removeOnlyTheCompletedLocalOperation(operationId);
+```
+
+---
+
 ## Convention: `limit()` over server-side `where` filtering when it would require a new composite index
 
 **What**: `subscribePracticeLogs(memberId, callback, maxCount=300)` gained a `limit(maxCount)` cap. `WorldBossLobby.jsx`/`PartyLobby.jsx` pass `maxCount=60` and still filter by `source` client-side.

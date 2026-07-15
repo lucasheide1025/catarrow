@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
-  grantArrowMilestoneRewards, subscribeTodayPracticeLogs, checkAndGrantArrowMilestones,
+  grantArrowMilestoneRewards, checkAndGrantArrowMilestones, subscribeLocalTodayArrows, initializeTodayArrows,
 } from "../../lib/db";
 import { ALL_MILESTONES, getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
@@ -100,19 +100,11 @@ export default function DailyQuest({ onJoinParty }) {
     return () => unsub?.();
   }, [profile?.id]);
 
+  // 今日箭數：從 localStorage 讀取（addRoundArrows 每回合累加），取代 Firestore onSnapshot
   useEffect(() => {
-    if (!profile?.id) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    // 全模式都計入（不排除任何 source），讓「今日箭數」反映真實射箭量
-    const unsub = subscribeTodayPracticeLogs(profile.id, todayStr, logs => {
-      const count = logs.reduce(
-        (s, l) => s + (l.totalArrows ?? (Array.isArray(l.rounds) ? l.rounds.flat().length : 0)),
-        0
-      );
-      setTodayArrows(count);
-    });
-    return () => unsub?.();
-  }, [profile?.id]); // eslint-disable-line
+    initializeTodayArrows(profile.id).catch(() => {});
+    return subscribeLocalTodayArrows(profile.id, setTodayArrows);
+  }, [profile?.id]);
 
   async function handleCheckin() {
     if (!profile?.id || submitBusy) return;
