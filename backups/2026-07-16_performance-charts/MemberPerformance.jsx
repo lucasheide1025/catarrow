@@ -4,10 +4,6 @@ import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, c
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { TARGET_FACE_FORMATS } from "../../lib/targetFace";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
-import TrendLine from "../shared/charts/TrendLine";
-import BarChart from "../shared/charts/BarChart";
-import RadarChart, { computeRadarValues } from "../shared/charts/RadarChart";
-import ShotGroupOverlay from "../shared/charts/ShotGroupOverlay";
 
 const ALL = "all";
 const SOURCE_LABELS = { freePractice:"自主練習", monster:"一般打怪", party:"組隊戰鬥", partyBattle:"組隊戰鬥", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥", dailyMission:"每日任務", councilMission:"採集委託", guildMission:"公會任務", practice:"自主練習", competition:"賽事", certification:"檢定" };
@@ -131,10 +127,8 @@ function SessionDetail({ session, canCorrect = false, correctedBy, onCorrected }
   if (loading) return <div className="py-4"><Spinner /></div>;
   if (!ends.length) return <p className="py-3 text-xs" style={{ color:"var(--text-muted)" }}>此場尚未有可讀取的逐箭資料。</p>;
   const metrics = calculateSessionMetrics(ends);
-  const barData = ends.map(end => ({ label: `R${end.index}`, value: end.metrics?.total ?? 0 }));
   return <div className="mt-3 border-t pt-3" style={{ borderColor:"var(--border-subtle)" }}>
     <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>逐回合紀錄</div>
-    {barData.length > 0 && <Card className="p-2 mb-2"><BarChart data={barData} color="#60a5fa" /></Card>}
     <div className="flex flex-col gap-2">
       {ends.map(end => <div key={end.id} className="flex items-center gap-2 text-xs">
         <span className="w-10" style={{ color:"var(--text-muted)" }}>第 {end.index} 回</span>
@@ -175,7 +169,6 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [filters, setFilters] = useState({ period:"month", bow:ALL, distance:ALL, face:ALL, capture:ALL, arrows:ALL, source:ALL });
   const [selectedSessionId, setSelectedSessionId] = useState(null);
-  const [shotGroupSessions, setShotGroupSessions] = useState([]);
   const [sessionListLimit, setSessionListLimit] = useState(5);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [loadingFullHistory, setLoadingFullHistory] = useState(false);
@@ -200,30 +193,9 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   useEffect(() => {
     if (!canReviewMembers) { setMembers([]); return; }
     getMembers().then(setMembers).catch(() => setMembers([]));
-  }, [canReviewMembers]);  // ─── 載入箭群疊加資料（最近有靶面點擊的場次） ───
+  }, [canReviewMembers]);
   useEffect(() => {
-    if (!viewedMemberId || !sourceSessions.length) { setShotGroupSessions([]); return; }
-    let active = true;
-    const targetPlotSessions = sourceSessions
-      .filter(s => s.captureMode === "targetPlot")
-      .slice(0, 6);
-    if (!targetPlotSessions.length) { setShotGroupSessions([]); return; }
-    Promise.all(targetPlotSessions.map(s => getCachedShootingSessionEnds(s.id)))
-      .then(allEnds => {
-        if (!active) return;
-        const results = targetPlotSessions
-          .map((s, i) => ({
-            label: displayDate(s),
-            ends: allEnds[i],
-          }))
-          .filter(item => item.ends.some(end => (end.arrows || []).some(a => a.captureMode === "targetPlot")));
-        setShotGroupSessions(results);
-      })
-      .catch(() => { if (active) setShotGroupSessions([]); });
-    return () => { active = false; };
-  }, [viewedMemberId, sourceSessions]);
-
-  useEffect(() => { if (!viewedMemberId) { setSessions([]); setGames([]); setLoading(false); return; }
+    if (!viewedMemberId) { setSessions([]); setGames([]); setLoading(false); return; }
     let active = true; setLoading(true); setError("");
     Promise.all([getCachedShootingSessionSummaries(viewedMemberId), getCachedGamePerformanceSummaries(viewedMemberId), flushPendingShootingSessions(viewedMemberId)])
       .then(async ([cachedSessions, cachedGames]) => {
@@ -354,42 +326,13 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     });
     return { count:games.length, wins, totalDamage:damages.reduce((sum, value) => sum + value, 0), highestDamage:damages.length ? Math.max(...damages) : 0, byMode:[...byMode.values()].sort((a, b) => b.count - a.count), recent:[...games].sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)).slice(0, 10) };
   }, [games]);
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("overview"); // "overview" | "history" | "games" | "sync"
   const TABS = [
     { id:"overview", label:"📈 表現總覽" },
     { id:"history",  label:"📋 歷史紀錄" },
-    { id:"analysis", label:"📊 深度分析" },
     { id:"games",    label:"⚔️ 遊戲戰績" },
     { id:"sync",     label:"💻 同步設定" },
   ];
-
-  // ─── 圖表資料計算 ───
-  const trendData = useMemo(() => {
-    const sorted = [...comparableFiltered].sort((a, b) => sessionTimeMs(a) - sessionTimeMs(b));
-    if (sorted.length < 2) return { avgSeries: null, hitSeries: null, xSeries: null, stabilitySeries: null, fatigueSeries: null };
-    const avgData = sorted.map(s => ({ value: Number(sessionMetrics(s).averageArrow || 0), date: s.finalizedAt || s.createdAt }));
-    const hitData = sorted.map(s => ({ value: 1 - (Number(sessionMetrics(s).missRate || 0)), date: s.finalizedAt || s.createdAt }));
-    const xData = sorted.map(s => ({ value: Number(sessionMetrics(s).xRate || 0), date: s.finalizedAt || s.createdAt }));
-    const stabData = sorted.map(s => ({ value: Math.max(0, 1 - Math.min(1, (Number(sessionMetrics(s).endStdDev || 0) / 5))), date: s.finalizedAt || s.createdAt }));
-    const fatData = sorted.map(s => ({ value: Number(sessionMetrics(s).fatigueDelta || 0), date: s.finalizedAt || s.createdAt }));
-    const avgSeries = [{ label: "每箭平均", color: "#60a5fa", data: avgData }];
-    const hitSeries = [{ label: "命中率", color: "#34d399", data: hitData }];
-    const xSeries = [{ label: "X率", color: "#f59e0b", data: xData }];
-    const stabilitySeries = [{ label: "穩定性", color: "#a78bfa", data: stabData }];
-    const fatigueSeries = [{ label: "疲勞差", color: "#fb923c", data: fatData }];
-    return { avgSeries, hitSeries, xSeries, stabilitySeries, fatigueSeries };
-  }, [comparableFiltered]);
-
-  const radarDatasets = useMemo(() => {
-    if (exactArrows.length < 60) return [];
-    const recent = computeRadarValues(exactArrows.slice(0, 30));
-    const previous = computeRadarValues(exactArrows.slice(30, 60));
-    if (!recent || !previous) return [];
-    return [
-      { label: "近 30 箭", color: "#60a5fa", values: recent },
-      { label: "前 30 箭", color: "rgba(255,255,255,.3)", values: previous },
-    ];
-  }, [exactArrows]);
   if (loading) return <Spinner />;
   return <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
     <div><h2 className="text-xl font-black" style={{ color:"var(--text-primary)" }}>射手表現</h2><p className="mt-1 text-xs" style={{ color:"var(--text-secondary)" }}>真實射箭與遊戲結果分開保存、分開解讀。</p></div>
@@ -421,14 +364,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         <div className="mt-3 grid grid-cols-2 gap-2.5"><Stat label="近期待命中率" value={percent(1 - ((exactRecent.length ? exactRecent : shooting.recent)[0]?.missRate || 0))} note={`M 率 ${percent((exactRecent.length ? exactRecent : shooting.recent)[0]?.missRate)}`} tone="text-emerald-300" /><Stat label="近期 X 率" value={percent((exactRecent.length ? exactRecent : shooting.recent)[0]?.xRate)} note="以逐箭統計" tone="text-violet-300" /></div>
       </>}
       </section>
-      {/* ── 平均分趨勢圖 ── */}
-      {trendData.avgSeries && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📈 每箭平均趨勢</div><TrendLine series={trendData.avgSeries} yLabel="平均分" formatY={v => v.toFixed(2)} /></Card>}
-
       <section><ST>下一個訓練提示</ST><Card className="p-3"><div className="text-sm font-black text-amber-200">{trainingInsight.title}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{trainingInsight.text}</p><p className="mt-2 text-[10px]" style={{ color:"var(--text-muted)" }}>提示僅依此裝置的逐箭紀錄產生。</p></Card></section>
-
-      {/* ── 遊戲戰績摘要 ── */}
-      {game.count > 0 && <section><ST>⚔️ 遊戲摘要</ST><Card className="p-3"><div className="flex items-center gap-4"><div className="flex items-center gap-2"><span className="text-2xl">⚔️</span><div><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>場次</div><div className="font-black text-lg" style={{ color:"#a5b4fc" }}>{game.count}</div></div></div><div className="flex items-center gap-2"><span className="text-2xl">🏆</span><div><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>勝率</div><div className="font-black text-lg" style={{ color:"#34d399" }}>{percent(game.count ? game.wins / game.count : 0)}</div></div></div><div className="flex items-center gap-2"><span className="text-2xl">💥</span><div><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>總傷害</div><div className="font-black text-lg" style={{ color:"#fda4af" }}>{game.totalDamage.toLocaleString()}</div></div></div><div className="flex items-center gap-2"><span className="text-2xl">👑</span><div><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>最強</div><div className="font-black text-sm" style={{ color:"#fbbf24" }}>{(() => { const best = game.byMode.reduce((a, m) => !a || m.totalDamage > a.totalDamage ? m : a, null); return best ? (GAME_MODE_LABELS[best.mode] || best.mode).slice(0, 4) : "—"; })()}</div></div></div></div><button type="button" onClick={() => setTab("games")} className="mt-3 w-full rounded py-1.5 text-[11px] font-bold transition-all hover:bg-white/20" style={{ background:"rgba(99,102,241,0.15)", color:"#a5b4fc" }}>查看完整遊戲戰績 →</button></Card></section>}
-
       {filtered.length > 0 && <section><ST>近期場次</ST><div className="flex flex-col gap-2">{filtered.slice(0, 5).map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; const config = session.shootingConfig || {}; return <Card key={session.id} className="p-3"><button className="w-full text-left" onClick={() => setSelectedSessionId(isSelected ? null : session.id)}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{displayDate(session)} ・ {config.distanceM ?? "—"}m ・ {config.arrowsPerEnd || "—"}箭制</div></div><div className="text-right"><div className="text-lg font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div><div className="text-[11px]" style={{ color:"var(--text-muted)" }}>{metrics.totalScore || 0} 分 / {metrics.arrowCount || session.arrowCount} 箭</div></div></div><div className="mt-2 flex gap-3 text-[11px]" style={{ color:"var(--text-secondary)" }}><span>X {metrics.xCount || 0}</span><span>M {metrics.missCount || 0}</span><span>回合波動 {Number(metrics.endStdDev || 0).toFixed(2)}</span><span>後段差 {Number(metrics.fatigueDelta || 0).toFixed(2)}</span></div></button>{isSelected && <SessionDetail session={session} canCorrect={canCorrectTargetPlot} correctedBy={profile?.id} onCorrected={handleSessionCorrected} />}</Card>; })}</div></section>}
     </>}
 
@@ -440,174 +376,10 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       <section><ST>場次分析</ST>{!filtered.length ? <Empty icon="🏹" message="此條件下沒有符合的場次。" /> : <><div className="mb-2 flex items-center justify-between gap-2"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>顯示最近場次</span><div className="flex gap-1">{[5, 10, 20].map(count => <button key={count} type="button" onClick={() => setSessionListLimit(count)} className={`rounded px-2 py-1 text-[11px] font-bold ${sessionListLimit === count ? "bg-blue-500 text-white" : "bg-white/10"}`} style={sessionListLimit === count ? undefined : { color:"var(--text-secondary)" }}>{count} 場</button>)}</div></div><div className="flex flex-col gap-2">{visibleSessions.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; const config = session.shootingConfig || {}; return <Card key={session.id} className="p-3"><button className="w-full text-left" onClick={() => setSelectedSessionId(isSelected ? null : session.id)}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{displayDate(session)} ・ {config.bowType || "未記錄弓種"} ・ {config.distanceM ?? "—"}m ・ {config.targetFaceCode || "未記錄靶面"} ・ {config.arrowsPerEnd || "—"}箭制</div></div><div className="text-right"><div className="text-lg font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div><div className="text-[11px]" style={{ color:"var(--text-muted)" }}>{metrics.totalScore || 0} 分 / {metrics.arrowCount || session.arrowCount} 箭</div></div></div><div className="mt-2 flex gap-3 text-[11px]" style={{ color:"var(--text-secondary)" }}><span>X {metrics.xCount || 0}</span><span>M {metrics.missCount || 0}</span><span>回合波動 {Number(metrics.endStdDev || 0).toFixed(2)}</span><span>後段差 {Number(metrics.fatigueDelta || 0).toFixed(2)}</span></div></button>{isSelected && <SessionDetail session={session} canCorrect={canCorrectTargetPlot} correctedBy={profile?.id} onCorrected={handleSessionCorrected} />}</Card>; })}</div>{historicalSessions.length > 0 && <Card className="mt-3 p-3"><button type="button" onClick={() => setShowSessionHistory(value => !value)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>歷史紀錄</span><span className="text-xs text-blue-300">{showSessionHistory ? "收起" : `查看其餘 ${historicalSessions.length} 場`}</span></button>{showSessionHistory && <div className="mt-3 flex flex-col gap-2 border-t pt-3" style={{ borderColor:"var(--border-subtle)" }}>{historicalSessions.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; return <button key={session.id} type="button" onClick={() => setSelectedSessionId(isSelected ? null : session.id)} className="flex items-center justify-between gap-3 text-left text-xs"><div><div className="font-bold" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-0.5" style={{ color:"var(--text-muted)" }}>{displayDate(session)} ・ {session.shootingConfig?.distanceM ?? "—"}m ・ {metrics.arrowCount || session.arrowCount} 箭</div>{isSelected && <SessionDetail session={session} canCorrect={canCorrectTargetPlot} correctedBy={profile?.id} onCorrected={handleSessionCorrected} />}</div><div className="font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div></button>; })}</div>}</Card>}</>}</section>
     </>}
 
-    {/* ─── 📊 深度分析 ─── */}
-    {tab === "analysis" && <>
-      {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
-      {!comparableFiltered.length ? <Empty icon="📊" message="尚無足夠資料進行深度分析。" /> : <>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📈 每箭平均趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>逐場平均分變化，可觀察長期進步或衰退</p>
-          <TrendLine series={trendData.avgSeries} yLabel="平均分" formatY={v => v.toFixed(2)} />
-        </Card>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>✅ 命中率趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>每場命中率（1 - M率）變化</p>
-          <TrendLine series={trendData.hitSeries} yLabel="命中率" formatY={v => `${(v * 100).toFixed(0)}%`} />
-        </Card>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>⭐ X率趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>近中心箭（X）比例變化</p>
-          <TrendLine series={trendData.xSeries} yLabel="X率" formatY={v => `${(v * 100).toFixed(0)}%`} />
-        </Card>
-        {trendData.stabilitySeries && (
-          <Card className="p-3">
-            <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📊 穩定性趨勢</div>
-            <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>回合波動標準差的正規化指標（越高越穩定）</p>
-            <TrendLine series={trendData.stabilitySeries} yLabel="穩定性" formatY={v => (v * 100).toFixed(0)} />
-          </Card>
-        )}
-        {trendData.fatigueSeries && (
-          <Card className="p-3">
-            <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>⚡ 疲勞差趨勢</div>
-            <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>後段 vs 前段平均分差異；負值代表後段衰退，正值代表後段反而更好</p>
-            <TrendLine series={trendData.fatigueSeries} yLabel="疲勞差" formatY={v => v.toFixed(2)} />
-          </Card>
-        )}
-        {/* ── 雷達圖 ── */}
-        {radarDatasets.length === 2 && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>🎯 綜合能力雷達</div><p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>近 30 箭 vs 前 30 箭 多維度對比</p><div className="flex justify-center"><RadarChart datasets={radarDatasets} size={240} /></div></Card>}
-        {/* ── 箭群疊加 ── */}
-        {shotGroupSessions.length > 0 && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>🎯 多場箭群疊加</div><p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>最近 {shotGroupSessions.length} 場靶面點擊疊加，觀察群心漂移</p><div className="flex justify-center"><ShotGroupOverlay sessions={shotGroupSessions} size={220} /></div></Card>}
-      </>}
-    </>}
-
-    {/* ─── ⚔️ 遊戲戰績（RPG 風格） ─── */}
+    {/* ─── ⚔️ 遊戲戰績 ─── */}
     {tab === "games" && <>
       {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
-      {game.count === 0 ? <Empty icon="⚔️" message="尚未有新的遊戲戰績紀錄。" /> : <>
-
-        {/* ═══ 戰績總覽 RPG 三卡 ═══ */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* ① 戰鬥次數 */}
-          <Card className="p-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" style={{ background:"rgba(99,102,241,0.08)" }} />
-            <div className="text-[10px] uppercase tracking-widest" style={{ color:"var(--text-muted)" }}>BATTLES</div>
-            <div className="mt-1 flex items-end gap-2">
-              <span className="text-4xl font-black" style={{ color:"#a5b4fc" }}>{game.count}</span>
-              <span className="text-lg mb-1">⚔️</span>
-            </div>
-            <div className="mt-1 flex gap-3 text-xs">
-              <span className="font-bold" style={{ color:"#34d399" }}>{game.wins} 勝</span>
-              <span style={{ color:"var(--text-muted)" }}>{game.count - game.wins} 敗</span>
-            </div>
-            <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.08)" }}>
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width:`${game.count ? (game.wins/game.count)*100 : 0}%`, background:"linear-gradient(90deg, #34d399, #10b981)" }} />
-            </div>
-          </Card>
-          {/* ② 累計傷害 */}
-          <Card className="p-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" style={{ background:"rgba(244,63,94,0.08)" }} />
-            <div className="text-[10px] uppercase tracking-widest" style={{ color:"var(--text-muted)" }}>TOTAL DAMAGE</div>
-            <div className="mt-1 flex items-end gap-2">
-              <span className="text-3xl font-black" style={{ color:"#fda4af" }}>{game.totalDamage.toLocaleString()}</span>
-            </div>
-            <div className="mt-1 text-xs" style={{ color:"var(--text-muted)" }}>
-              最高單場 <span className="font-bold" style={{ color:"#fbbf24" }}>{game.highestDamage.toLocaleString()}</span>
-            </div>
-            <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.08)" }}>
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width:'100%', background:"linear-gradient(90deg, #f43f5e, #f59e0b)" }} />
-            </div>
-          </Card>
-          {/* ③ 勝率圓環 */}
-          <Card className="p-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" style={{ background:"rgba(52,211,153,0.08)" }} />
-            <div className="text-[10px] uppercase tracking-widest" style={{ color:"var(--text-muted)" }}>WIN RATE</div>
-            <div className="mt-1 flex items-center gap-3">
-              <svg viewBox="0 0 36 36" className="w-14 h-14 shrink-0">
-                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
-                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  fill="none" stroke="#34d399" strokeWidth="3" strokeLinecap="round"
-                  strokeDasharray={`${game.count ? (game.wins/game.count)*100 : 0}, 100`}
-                  style={{ transformOrigin:'50% 50%', transform:'rotate(-90deg)', transition:'stroke-dasharray .8s ease' }} />
-              </svg>
-              <span className="text-3xl font-black" style={{ color:"#34d399" }}>{percent(game.count ? game.wins / game.count : 0)}</span>
-            </div>
-          </Card>
-        </div>
-
-        {/* ═══ 各模式戰力條 ═══ */}
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>⚔️ 各模式戰力</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background:"rgba(244,63,94,0.15)", color:"#fda4af" }}>DAMAGE RANK</span>
-          </div>
-          <div className="flex flex-col gap-3">
-            {game.byMode.map((item, mi) => {
-              const maxDmg = Math.max(...game.byMode.map(m => m.totalDamage), 1);
-              const pct = (item.totalDamage / maxDmg) * 100;
-              const winPct = item.count ? (item.wins / item.count) * 100 : 0;
-              const colors = ['#f43f5e','#f59e0b','#34d399','#60a5fa','#a78bfa','#f472b6'];
-              const c = colors[mi % colors.length];
-              return <div key={item.mode}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>{GAME_MODE_LABELS[item.mode] || item.mode}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background:"rgba(255,255,255,0.06)", color:"var(--text-muted)" }}>
-                      {item.count} 場
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black" style={{ color }}>{item.totalDamage.toLocaleString()}</span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill={c} opacity="0.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                  </div>
-                </div>
-                <div className="h-3 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.06)" }}>
-                  <div className="h-full rounded-full transition-all duration-700"
-                    style={{ width:`${pct}%`, background:`linear-gradient(90deg, ${c}99, ${c})` }} />
-                </div>
-                <div className="mt-1 flex justify-between text-[10px]" style={{ color:"var(--text-muted)" }}>
-                  <span>勝率 {percent(winPct / 100)}</span>
-                  <span>最高單場 {item.highestDamage.toLocaleString()}</span>
-                </div>
-              </div>;
-            })}
-          </div>
-        </Card>
-
-        {/* ═══ 近戰傷害條形圖 ═══ */}
-        {game.recent.length >= 2 && <Card className="p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>📊 近戰傷害</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>BATTLE LOG</span>
-          </div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>最近 {game.recent.length} 場戰鬥傷害條形圖</p>
-          <BarChart data={game.recent.map(g => ({ label: (GAME_MODE_LABELS[g.mode] || g.mode || "?").slice(0,3) + (g.result === 'win' ? '✓' : '✗'), value: Number(g.totalDamage) || 0 }))} color="#f43f5e" />
-        </Card>}
-
-        {/* ═══ 成就徽章 ═══ */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(() => {
-            const b = [];
-            const bestMode = game.byMode.reduce((a, m) => !a || m.totalDamage > a.totalDamage ? m : a, null);
-            if (bestMode) b.push({ icon:"👑", label:"最強模式", value:GAME_MODE_LABELS[bestMode.mode]||bestMode.mode, color:"#f59e0b" });
-            if (game.highestDamage > 0) b.push({ icon:"💥", label:"單場最高", value:`${game.highestDamage.toLocaleString()} 傷害`, color:"#f43f5e" });
-            if (game.wins > 0) b.push({ icon:"🏆", label:"累計勝場", value:`${game.wins} 勝`, color:"#34d399" });
-            const bestWinRate = [...game.byMode].filter(m => m.count >= 2).sort((a, m2) => (m2.wins/m2.count) - (a.wins/a.count))[0];
-            if (bestWinRate) b.push({ icon:"🎯", label:"最高勝率", value:`${percent(bestWinRate.wins/bestWinRate.count)}`, color:"#a78bfa" });
-            return b.map((badge, i) => (
-              <Card key={i} className="p-3 text-center relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-0.5" style={{ background:`linear-gradient(90deg, transparent, ${badge.color}, transparent)` }} />
-                <div className="text-2xl mb-1">{badge.icon}</div>
-                <div className="text-[9px] uppercase tracking-wider" style={{ color:"var(--text-muted)" }}>{badge.label}</div>
-                <div className="mt-0.5 text-xs font-black" style={{ color:badge.color }}>{badge.value}</div>
-              </Card>
-            ));
-          })()}
-        </div>
-
-      </>}
+      {game.count === 0 ? <Empty icon="⚔️" message="尚未有新的遊戲戰績紀錄。" /> : <div className="flex flex-col gap-3"><div className="grid grid-cols-2 gap-3"><Stat label="完成戰鬥" value={game.count} note={`勝率 ${percent(game.count ? game.wins / game.count : 0)}`} tone="text-indigo-300" /><Stat label="累計傷害" value={game.totalDamage.toLocaleString()} note={`最高單場 ${game.highestDamage.toLocaleString()}`} tone="text-rose-300" /></div><Card className="p-3"><div className="text-xs font-bold" style={{ color:"var(--text-secondary)" }}>各模式戰績</div><div className="mt-2 flex flex-col divide-y" style={{ borderColor:"var(--border-subtle)" }}>{game.byMode.map(item => <div key={item.mode} className="flex items-center justify-between gap-3 py-2 text-xs"><div><div className="font-bold" style={{ color:"var(--text-primary)" }}>{GAME_MODE_LABELS[item.mode] || item.mode}</div><div className="mt-0.5" style={{ color:"var(--text-muted)" }}>{item.count} 場 ・ 勝率 {percent(item.wins / item.count)}</div></div><div className="text-right"><div className="font-black text-rose-300">{item.totalDamage.toLocaleString()}</div><div className="text-[10px]" style={{ color:"var(--text-muted)" }}>最高 {item.highestDamage.toLocaleString()}</div></div></div>)}</div></Card></div>}
       <GamePerformanceHistory games={games} />
     </>}
 
