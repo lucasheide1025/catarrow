@@ -60,7 +60,7 @@ test("uses a deterministic date-scoped mail ID for retry and reschedule isolatio
 });
 
 test("builds the allowlisted reminder template variables", () => {
-  assert.deepEqual(dayBeforeVariables({ memberName:"小明", date:"2026-07-16", startTime:"10:00", endTime:"11:00", planType:"單堂", participantCount:2, source:"online" }), {
-    studentName:"小明", date:"2026-07-16", startTime:"10:00", endTime:"11:00", planName:"單堂", participantCount:2, source:"online", bookingUrl:"https://student.catgroup.com.tw/",
+  assert.deepEqual(dayBeforeVariables({ memberName:"小明", date:"2026-07-16", startTime:"10:00", endTime:"11:00", planType:"general", participantCount:2, source:"online" }), {
+    studentName:"小明", date:"2026年7月16日", startTime:"上午10:00", endTime:"上午11:00", planName:"單人一般", participantCount:"2人", source:"學生線上約課", bookingUrl:"https://student.catgroup.com.tw/",
   });
 });

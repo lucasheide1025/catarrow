@@ -12,6 +12,7 @@ const {
   classifyBookingEvent, buildBookingMessages, normalizeEmail, normalizeConfig, validateConfig,
   customBookingTemplate, defaultTemplateFor, allowedTokensFor, memberContactEmail,
   bookingRecipientPlan, bookingMailId, renderTemplate,
+  bookingMailEnvelope,
 } = require("./bookingEmail");
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
 const {
@@ -119,9 +120,9 @@ exports.sendBookingEmailTest = onCall({ region: "asia-east1" }, async (request) 
   }
   const sample = {
     eventLabel: "新預約", studentName: "測試學生", contactEmail: "student@example.com",
-    date: "2026-07-20", startTime: "10:00", endTime: "11:00", planName: "單人一般",
-    participantCount: "1", source: "online", oldDate: "2026-07-19", oldStartTime: "09:00",
-    oldEndTime: "10:00", daysSinceLastClass: "14", lastClassDate: "2026-07-06",
+    date: "2026年7月20日", startTime: "上午10:00", endTime: "上午11:00", planName: "單人一般",
+    participantCount: "1人", source: "學生線上約課", oldDate: "2026年7月19日", oldStartTime: "上午9:00",
+    oldEndTime: "上午10:00", daysSinceLastClass: "14", lastClassDate: "2026年7月6日",
     bookingUrl: "https://student.catgroup.com.tw/",
   };
   const allowed = new Set(allowedTokensFor(templateId));
@@ -144,7 +145,7 @@ exports.sendBookingEmailTest = onCall({ region: "asia-east1" }, async (request) 
       recent: [...recent.map(value => Timestamp.fromMillis(value)), Timestamp.now()],
       updatedAt: FieldValue.serverTimestamp(),
     });
-    transaction.create(ref, {
+    transaction.create(ref, bookingMailEnvelope({
       to: recipient,
       message: {
         subject: `[測試] ${renderTemplate(template.subject, variables)}`,
@@ -152,7 +153,7 @@ exports.sendBookingEmailTest = onCall({ region: "asia-east1" }, async (request) 
       },
       createdAt: FieldValue.serverTimestamp(),
       bookingEmailTest: { templateId, requestedBy: request.auth.uid, requestId },
-    });
+    }));
     return true;
   });
   return { ok: true, recipient, queued };
@@ -255,7 +256,7 @@ exports.handleBookingEmail = onDocumentWritten({
     const snapshots = await transaction.getAll(...mailEntries.map(({ ref }) => ref));
     mailEntries.forEach(({ ref, data }, index) => {
       if (snapshots[index].exists) return;
-      transaction.create(ref, {
+      transaction.create(ref, bookingMailEnvelope({
         ...data,
         createdAt: FieldValue.serverTimestamp(),
         bookingNotification: {
@@ -263,7 +264,7 @@ exports.handleBookingEmail = onDocumentWritten({
           eventType,
           sourceEventId: event.id || null,
         },
-      });
+      }));
     });
   });
 
@@ -339,12 +340,12 @@ exports.processBookingInactivityReminders = onSchedule({
       }
       const sentCount = Math.max(0, Number(run.data()?.sentCount) || 0);
       if (sentCount >= config.dailyLimit) return "limit-reached";
-      transaction.create(mailRef, {
+      transaction.create(mailRef, bookingMailEnvelope({
         to: email,
         message: { subject: require("./bookingEmail").renderTemplate(template.subject, variables), text: require("./bookingEmail").renderTemplate(template.text, variables) },
         createdAt: FieldValue.serverTimestamp(),
         bookingInactivityReminder: { memberId:queue.memberId, completionCycleId:queue.completionCycleId },
-      });
+      }));
       transaction.update(docSnap.ref, { state:"sent", sentAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() });
       transaction.set(runRef, { sentCount:sentCount + 1, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
       return "queued";
@@ -397,7 +398,7 @@ exports.processBookingDayBeforeReminders = onSchedule({
       if (!freshRecipient.email) return "no-longer-eligible";
       const variables = dayBeforeVariables(freshBookingSnap.data());
       const template = config.templates.studentDayBefore;
-      transaction.create(mailRef, {
+      transaction.create(mailRef, bookingMailEnvelope({
         to: freshRecipient.email,
         message: {
           subject: renderTemplate(template.subject, variables),
@@ -407,9 +408,9 @@ exports.processBookingDayBeforeReminders = onSchedule({
         bookingDayBeforeReminder: {
           bookingId: candidateSnap.id,
           bookingDate: targetDate,
-          source: variables.source,
+          source: freshRecipient.source,
         },
-      });
+      }));
       return "queued";
     });
     if (result === "queued") queued += 1;

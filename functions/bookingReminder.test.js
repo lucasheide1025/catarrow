@@ -19,7 +19,9 @@ test("malformed Taipei dates, times, and member paths are excluded", () => {
 });
 test("mail id is deterministic and variables have a 14 day floor", () => {
   assert.equal(reminderMailId("m/1", "b/1"), reminderMailId("m/1", "b/1"));
-  assert.equal(inactivityVariables({ completedAt:new Date("2026-07-01T00:00:00Z") }, new Date("2026-07-15T00:00:00Z")).daysSinceLastClass, 14);
+  const variables = inactivityVariables({ completedAt:new Date("2026-07-01T00:00:00Z"), lastClassDate:"2026-07-01" }, new Date("2026-07-15T00:00:00Z"));
+  assert.equal(variables.daysSinceLastClass, 14);
+  assert.equal(variables.lastClassDate, "2026年7月1日");
 });
 test("future guard distinguishes a past slot today from a future slot", () => {
   assert.equal(isFutureConfirmedBooking({ status:"confirmed", date:"2026-07-15", startTime:"09:00" }, "2026-07-15", "10:00"), false);

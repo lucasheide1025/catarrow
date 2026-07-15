@@ -154,6 +154,28 @@ The seven booking Email templates live in `bookingEmailConfig/main` and contain 
 
 Template variables are per-template allowlists, not one global bucket. Unknown or malformed tokens are rejected on save, and missing/corrupt stored templates fall back to versioned backend defaults. Templates can never select recipients or inject arbitrary mail-document fields. Test sends use deterministic request IDs plus a server-side per-admin rate limiter; their documents must not affect booking or inactivity state.
 
+## Convention: booking Email copy is versioned and display values are localized
+
+Booking Email templates use a `copyVersion` migration boundary. When a stored
+`bookingEmailConfig/main` document is missing the current version, backend and
+admin UI normalization replace only its templates with the current safe
+defaults while preserving notification switches, limits, and coach recipients.
+Once saved at the current version, valid administrator custom templates are
+preserved. This prevents legacy default copy from remaining live without
+repeatedly overwriting intentional edits.
+
+Template variables must contain display values, never raw booking codes.
+Known plan and verified booking-source codes map to Traditional Chinese labels;
+unknown values fail closed to Chinese fallbacks. ISO dates, 24-hour times, and
+participant counts are formatted centrally for immediate messages, day-before
+reminders, inactivity reminders, and test previews.
+
+Every booking-related mail document—including immediate student/coach mail,
+day-before mail, inactivity mail, and test mail—must be created through the
+shared envelope helper so its top-level `from` is always
+`貓小隊室內射箭場 <broudes@gmail.com>`. Templates cannot control the sender or
+any recipient field.
+
 ## Convention: inactivity reminders use completion-cycle queues
 
 A transition into `bookings.status:"completed"` updates `bookingReminderQueue/{memberId}` with the completed booking ID as the cycle ID and a due time 14 days after the Taipei class end. Replayed completion events and older historical records must never reset a newer or already-sent cycle.

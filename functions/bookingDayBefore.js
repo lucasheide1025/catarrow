@@ -1,7 +1,11 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { normalizeBookingSource, normalizeEmail, safeMemberId, memberContactEmail } = require("./bookingEmail");
+const {
+  normalizeBookingSource, normalizeEmail, safeMemberId, memberContactEmail,
+  formatTaiwanDate, formatTaiwanTime, formatPlanName, formatParticipantCount,
+  formatSourceName,
+} = require("./bookingEmail");
 
 const BOOKING_URL = "https://student.catgroup.com.tw/";
 
@@ -48,12 +52,12 @@ function dayBeforeMailId(bookingId, bookingDate) {
 function dayBeforeVariables(booking = {}) {
   return {
     studentName: booking.memberName || "同學",
-    date: booking.date || "",
-    startTime: booking.startTime || "",
-    endTime: booking.endTime || "",
-    planName: booking.planType || "未指定",
-    participantCount: booking.participantCount || 1,
-    source: normalizeBookingSource(booking.source),
+    date: formatTaiwanDate(booking.date),
+    startTime: formatTaiwanTime(booking.startTime),
+    endTime: formatTaiwanTime(booking.endTime),
+    planName: formatPlanName(booking.planType),
+    participantCount: formatParticipantCount(booking.participantCount ?? 1),
+    source: formatSourceName(booking.source),
     bookingUrl: BOOKING_URL,
   };
 }

@@ -13,35 +13,49 @@ const BOOKING_SOURCES = Object.freeze([
   "walk_in",
 ]);
 
+const COPY_VERSION = 2;
+const BOOKING_EMAIL_FROM = "貓小隊室內射箭場 <broudes@gmail.com>";
+const PLAN_LABELS = Object.freeze({
+  general: "單人一般",
+  discount: "兒童／學生／敬老",
+  own_equipment: "自備器材",
+});
+const SOURCE_LABELS = Object.freeze({
+  online_public: "訪客線上預約",
+  online: "學生線上約課",
+  phone: "教練代為預約",
+  walk_in: "教練現場新增",
+});
+
 const DEFAULT_TEMPLATES = Object.freeze({
   confirmed: {
     studentSubject: "catGROUP 預約確認｜{{date}} {{startTime}}",
-    studentText: "{{studentName}} 您好，\n\n您的預約已確認。\n日期：{{date}}\n時間：{{startTime}}－{{endTime}}\n方案：{{planName}}\n\n如需異動，請回到預約頁面操作。",
-    coachSubject: "新預約｜{{studentName}}｜{{date}} {{startTime}}",
-    coachText: "事件：{{eventLabel}}\n學生：{{studentName}}\nEmail：{{contactEmail}}\n日期：{{date}}\n時間：{{startTime}}－{{endTime}}\n方案：{{planName}}\n人數：{{participantCount}}\n來源：{{source}}",
+    studentText: "{{studentName}} 您好，\n\n您的預約已確認。\n\n上課日期：{{date}}\n上課時間：{{startTime}}－{{endTime}}\n課程方案：{{planName}}\n上課人數：{{participantCount}}\n\n如需改期或取消，請回到預約頁面操作。",
+    coachSubject: "catGROUP 新增預約通知｜{{studentName}}｜{{date}} {{startTime}}",
+    coachText: "已為「{{studentName}}」新增預約。\n\n上課日期：{{date}}\n上課時間：{{startTime}}－{{endTime}}\n課程方案：{{planName}}\n上課人數：{{participantCount}}\n預約方式：{{source}}\n聯絡信箱：{{contactEmail}}\n\n請至 catGROUP 教練後台查看完整預約資料。",
   },
   rescheduled: {
     studentSubject: "catGROUP 預約改期完成｜{{date}} {{startTime}}",
-    studentText: "{{studentName}} 您好，\n\n您的預約已改期。\n原時段：{{oldDate}} {{oldStartTime}}－{{oldEndTime}}\n新時段：{{date}} {{startTime}}－{{endTime}}\n方案：{{planName}}",
-    coachSubject: "預約改期｜{{studentName}}｜{{date}} {{startTime}}",
-    coachText: "事件：{{eventLabel}}\n學生：{{studentName}}\nEmail：{{contactEmail}}\n原時段：{{oldDate}} {{oldStartTime}}－{{oldEndTime}}\n新時段：{{date}} {{startTime}}－{{endTime}}\n方案：{{planName}}\n人數：{{participantCount}}\n來源：{{source}}",
+    studentText: "{{studentName}} 您好，\n\n您的預約已完成改期。\n\n原上課時間：{{oldDate}} {{oldStartTime}}－{{oldEndTime}}\n新上課時間：{{date}} {{startTime}}－{{endTime}}\n課程方案：{{planName}}\n\n請依新的日期與時間前來上課。",
+    coachSubject: "catGROUP 預約改期通知｜{{studentName}}｜{{date}} {{startTime}}",
+    coachText: "「{{studentName}}」的預約已完成改期。\n\n原上課時間：{{oldDate}} {{oldStartTime}}－{{oldEndTime}}\n新上課時間：{{date}} {{startTime}}－{{endTime}}\n課程方案：{{planName}}\n上課人數：{{participantCount}}\n預約方式：{{source}}\n聯絡信箱：{{contactEmail}}\n\n請至 catGROUP 教練後台查看完整預約資料。",
   },
   cancelled: {
     studentSubject: "catGROUP 預約已取消｜{{date}} {{startTime}}",
-    studentText: "{{studentName}} 您好，\n\n您的預約已取消。\n日期：{{date}}\n時間：{{startTime}}－{{endTime}}\n方案：{{planName}}",
-    coachSubject: "預約取消｜{{studentName}}｜{{date}} {{startTime}}",
-    coachText: "事件：{{eventLabel}}\n學生：{{studentName}}\nEmail：{{contactEmail}}\n已取消：{{date}} {{startTime}}－{{endTime}}\n方案：{{planName}}\n人數：{{participantCount}}\n來源：{{source}}",
+    studentText: "{{studentName}} 您好，\n\n您的預約已取消。\n\n原上課日期：{{date}}\n原上課時間：{{startTime}}－{{endTime}}\n課程方案：{{planName}}\n\n若需要其他時段，歡迎重新預約。",
+    coachSubject: "catGROUP 預約取消通知｜{{studentName}}｜{{date}} {{startTime}}",
+    coachText: "「{{studentName}}」的預約已取消。\n\n原上課日期：{{date}}\n原上課時間：{{startTime}}－{{endTime}}\n課程方案：{{planName}}\n上課人數：{{participantCount}}\n預約方式：{{source}}\n聯絡信箱：{{contactEmail}}\n\n請至 catGROUP 教練後台查看完整預約資料。",
   },
 });
 
 const INACTIVITY_TEMPLATE = Object.freeze({
   studentSubject: "catGROUP｜好久不見，回來預約練習吧",
-  studentText: "{{studentName}} 您好，\n\n距離您上次完成課程已經 {{daysSinceLastClass}} 天。\n上次上課日期：{{lastClassDate}}\n\n期待再次與您一起練習！\n預約網址：{{bookingUrl}}",
+  studentText: "{{studentName}} 您好，\n\n距離您上次上課已經 {{daysSinceLastClass}} 天，好久不見！\n\n上次上課日期：{{lastClassDate}}\n\n期待再次與您一起練習，歡迎回來預約課程：\n{{bookingUrl}}",
 });
 
 const DAY_BEFORE_TEMPLATE = Object.freeze({
   studentSubject: "catGROUP｜明天上課提醒｜{{date}} {{startTime}}",
-  studentText: "{{studentName}} 您好，\n\n提醒您明天有預約課程。\n日期：{{date}}\n時間：{{startTime}}－{{endTime}}\n方案：{{planName}}\n人數：{{participantCount}}\n\n預約網址：{{bookingUrl}}",
+  studentText: "{{studentName}} 您好，\n\n提醒您明天有預約課程。\n\n上課日期：{{date}}\n上課時間：{{startTime}}－{{endTime}}\n課程方案：{{planName}}\n上課人數：{{participantCount}}\n\n請記得準時前來，期待與您見面！\n預約頁面：{{bookingUrl}}",
 });
 
 const TEMPLATE_DEFINITIONS = Object.freeze({
@@ -97,12 +111,15 @@ function normalizeConfig(input = {}) {
     ? [...new Set(input.coachBcc.map(normalizeEmail).filter(email => email && email !== coachTo))].slice(0, 10)
     : [...DEFAULT_COACH_BCC];
   const templates = {};
+  const acceptsStoredTemplates = input.copyVersion === COPY_VERSION;
   for (const templateId of Object.keys(TEMPLATE_DEFINITIONS)) {
     const fallback = defaultTemplateFor(templateId);
-    try { templates[templateId] = validateTemplate(templateId, input.templates?.[templateId] || fallback); }
+    const stored = acceptsStoredTemplates ? input.templates?.[templateId] : null;
+    try { templates[templateId] = validateTemplate(templateId, stored || fallback); }
     catch { templates[templateId] = fallback; }
   }
   return {
+    copyVersion: COPY_VERSION,
     enabled: input.enabled === true,
     inactivityEnabled: input.inactivityEnabled === true,
     dayBeforeEnabled: input.dayBeforeEnabled === true,
@@ -116,6 +133,7 @@ function normalizeConfig(input = {}) {
 
 function validateConfig(input = {}) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Error("Invalid config");
+  if (input.copyVersion !== COPY_VERSION) throw new Error(`Email copy version must be ${COPY_VERSION}`);
   if (typeof input.enabled !== "boolean" || typeof input.inactivityEnabled !== "boolean" || typeof input.dayBeforeEnabled !== "boolean") throw new Error("Invalid notification toggles");
   if (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 1 || input.dailyLimit > 50) throw new Error("Daily limit must be 1-50");
   if (!Number.isInteger(input.dayBeforeDailyLimit) || input.dayBeforeDailyLimit < 1 || input.dayBeforeDailyLimit > 100) throw new Error("Day-before daily limit must be 1-100");
@@ -126,7 +144,7 @@ function validateConfig(input = {}) {
   if (coachBcc.some(email => !email) || coachBcc.includes(coachTo)) throw new Error("Invalid coach BCC email");
   const templates = {};
   for (const templateId of Object.keys(TEMPLATE_DEFINITIONS)) templates[templateId] = validateTemplate(templateId, input.templates?.[templateId]);
-  return { enabled: input.enabled, inactivityEnabled: input.inactivityEnabled, dayBeforeEnabled: input.dayBeforeEnabled, dailyLimit: input.dailyLimit, dayBeforeDailyLimit: input.dayBeforeDailyLimit, coachTo, coachBcc, templates };
+  return { copyVersion: COPY_VERSION, enabled: input.enabled, inactivityEnabled: input.inactivityEnabled, dayBeforeEnabled: input.dayBeforeEnabled, dailyLimit: input.dailyLimit, dayBeforeDailyLimit: input.dayBeforeDailyLimit, coachTo, coachBcc, templates };
 }
 
 function customBookingTemplate(config, eventType) {
@@ -164,6 +182,41 @@ function normalizeEmail(value) {
 
 function normalizeBookingSource(value) {
   return BOOKING_SOURCES.includes(value) ? value : "unknown";
+}
+
+function formatPlanName(value) {
+  return PLAN_LABELS[value] || "未指定方案";
+}
+
+function formatSourceName(value) {
+  return SOURCE_LABELS[normalizeBookingSource(value)] || "其他方式";
+}
+
+function formatTaiwanDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof value === "string" ? value : "");
+  if (!match) return "日期未提供";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return "日期未提供";
+  return `${year}年${month}月${day}日`;
+}
+
+function formatTaiwanTime(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(typeof value === "string" ? value : "");
+  if (!match) return "時間未提供";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return "時間未提供";
+  const period = hour < 12 ? "上午" : "下午";
+  const displayHour = hour % 12 || 12;
+  return `${period}${displayHour}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatParticipantCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count > 0 && count <= 100 ? `${count}人` : "人數未提供";
 }
 
 function safeMemberId(value) {
@@ -211,6 +264,10 @@ function bookingMailId(bookingId, eventType, audience) {
   return `booking-${bookingId}-${eventType}-${audience}`;
 }
 
+function bookingMailEnvelope(data = {}) {
+  return { ...data, from: BOOKING_EMAIL_FROM };
+}
+
 function safeTemplateValue(value, fallback, maxLength) {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
@@ -228,15 +285,15 @@ function bookingVariables(eventType, booking, previousBooking = null) {
     eventLabel: { confirmed: "新預約", rescheduled: "改期", cancelled: "取消" }[eventType] || eventType,
     studentName: booking.memberName || "同學",
     contactEmail: normalizeEmail(booking.contactEmail) || "未提供",
-    date: booking.date || "",
-    startTime: booking.startTime || "",
-    endTime: booking.endTime || "",
-    planName: booking.planType || "未指定",
-    participantCount: booking.participantCount || 1,
-    source: normalizeBookingSource(booking.source),
-    oldDate: previousBooking?.date || "",
-    oldStartTime: previousBooking?.startTime || "",
-    oldEndTime: previousBooking?.endTime || "",
+    date: formatTaiwanDate(booking.date),
+    startTime: formatTaiwanTime(booking.startTime),
+    endTime: formatTaiwanTime(booking.endTime),
+    planName: formatPlanName(booking.planType),
+    participantCount: formatParticipantCount(booking.participantCount ?? 1),
+    source: formatSourceName(booking.source),
+    oldDate: formatTaiwanDate(previousBooking?.date),
+    oldStartTime: formatTaiwanTime(previousBooking?.startTime),
+    oldEndTime: formatTaiwanTime(previousBooking?.endTime),
   };
 }
 
@@ -266,6 +323,8 @@ function buildBookingMessages(eventType, booking, previousBooking = null, custom
 module.exports = {
   EVENT_TYPES,
   BOOKING_SOURCES,
+  COPY_VERSION,
+  BOOKING_EMAIL_FROM,
   DEFAULT_TEMPLATES,
   TEMPLATE_DEFINITIONS,
   DEFAULT_COACH_TO,
@@ -273,11 +332,17 @@ module.exports = {
   classifyBookingEvent,
   normalizeEmail,
   normalizeBookingSource,
+  formatPlanName,
+  formatSourceName,
+  formatTaiwanDate,
+  formatTaiwanTime,
+  formatParticipantCount,
   safeMemberId,
   memberContactEmail,
   studentRecipientDecision,
   bookingRecipientPlan,
   bookingMailId,
+  bookingMailEnvelope,
   renderTemplate,
   buildBookingMessages,
   allowedTokensFor,

@@ -7,6 +7,8 @@ const {
   normalizeConfig, validateConfig, defaultTemplateFor, customBookingTemplate,
   normalizeBookingSource, safeMemberId, memberContactEmail, studentRecipientDecision,
   bookingRecipientPlan, bookingMailId,
+  COPY_VERSION, BOOKING_EMAIL_FROM, bookingMailEnvelope, formatPlanName, formatSourceName,
+  formatTaiwanDate, formatTaiwanTime, formatParticipantCount,
 } = require("./bookingEmail");
 
 test("classifies a new confirmed booking", () => {
@@ -56,13 +58,13 @@ test("renders only simple allowlisted-shaped tokens without executing content", 
 
 test("builds reschedule messages with old and new slots", () => {
   const messages = buildBookingMessages("rescheduled", {
-    memberName: "小明", contactEmail: "student@example.com", date: "2026-07-20", startTime: "10:00", endTime: "11:00", planType: "單堂", participantCount: 1, source: "online",
+    memberName: "小明", contactEmail: "student@example.com", date: "2026-07-20", startTime: "10:00", endTime: "11:00", planType: "general", participantCount: 1, source: "online",
   }, { date: "2026-07-19", startTime: "09:00", endTime: "10:00" });
-  assert.match(messages.student.text, /2026-07-19 09:00/);
-  assert.match(messages.student.text, /2026-07-20 10:00/);
-  assert.match(messages.coach.text, /Email：student@example.com/);
-  assert.match(messages.coach.text, /事件：改期/);
-  assert.match(messages.coach.text, /來源：online/);
+  assert.match(messages.student.text, /2026年7月19日 上午9:00/);
+  assert.match(messages.student.text, /2026年7月20日 上午10:00/);
+  assert.match(messages.coach.text, /聯絡信箱：student@example.com/);
+  assert.doesNotMatch(messages.coach.text, /事件：/);
+  assert.match(messages.coach.text, /預約方式：學生線上約課/);
 });
 
 test("normalizes valid email and rejects invalid recipient values", () => {
@@ -79,11 +81,42 @@ test("maps every booking entry source without trusting unknown values", () => {
   assert.equal(normalizeBookingSource("client-forged"), "unknown");
 });
 
-test("coach template receives only a normalized booking source label", () => {
+test("coach template receives only a safe Chinese booking source label", () => {
   const messages = buildBookingMessages("confirmed", {
     memberName:"小明", contactEmail:"student@example.com", source:"client-forged",
   }, null, { coachText:"{{source}}" });
-  assert.equal(messages.coach.text, "unknown");
+  assert.equal(messages.coach.text, "其他方式");
+});
+
+test("formats booking values as safe natural Traditional Chinese", () => {
+  assert.equal(formatPlanName("general"), "單人一般");
+  assert.equal(formatPlanName("discount"), "兒童／學生／敬老");
+  assert.equal(formatPlanName("own_equipment"), "自備器材");
+  assert.equal(formatPlanName("secret-plan"), "未指定方案");
+  assert.equal(formatSourceName("online_public"), "訪客線上預約");
+  assert.equal(formatSourceName("online"), "學生線上約課");
+  assert.equal(formatSourceName("phone"), "教練代為預約");
+  assert.equal(formatSourceName("walk_in"), "教練現場新增");
+  assert.equal(formatSourceName("forged"), "其他方式");
+  assert.equal(formatTaiwanDate("2026-07-16"), "2026年7月16日");
+  assert.equal(formatTaiwanDate("2026-02-30"), "日期未提供");
+  assert.equal(formatTaiwanTime("00:05"), "上午12:05");
+  assert.equal(formatTaiwanTime("12:00"), "下午12:00");
+  assert.equal(formatTaiwanTime("23:45"), "下午11:45");
+  assert.equal(formatTaiwanTime("24:00"), "時間未提供");
+  assert.equal(formatParticipantCount(2), "2人");
+  assert.equal(formatParticipantCount("raw"), "人數未提供");
+});
+
+test("all eight defaults are natural Chinese and hide internal booking codes", () => {
+  const ids = ["studentConfirmed", "studentRescheduled", "studentCancelled", "studentInactive", "studentDayBefore", "coachConfirmed", "coachRescheduled", "coachCancelled"];
+  for (const id of ids) {
+    const template = defaultTemplateFor(id);
+    assert.ok(template.subject.length > 0, id);
+    assert.ok(template.text.length > 0, id);
+    assert.doesNotMatch(`${template.subject}\n${template.text}`, /\b(?:general|discount|own_equipment|online_public|walk_in)\b/, id);
+  }
+  assert.doesNotMatch(defaultTemplateFor("coachConfirmed").text, /^事件：/);
 });
 
 test("accepts only safe single-segment member document IDs", () => {
@@ -169,6 +202,7 @@ test("invalid custom template fields fall back to safe non-empty defaults", () =
 test("normalizes missing config to disabled safe defaults", () => {
   const config = normalizeConfig({});
   assert.equal(config.enabled, false);
+  assert.equal(config.copyVersion, COPY_VERSION);
   assert.equal(config.inactivityEnabled, false);
   assert.equal(config.dayBeforeEnabled, false);
   assert.equal(config.dailyLimit, 20);
@@ -199,6 +233,38 @@ test("keeps old stored config fail-closed for the new day-before reminder", () =
   assert.equal(config.dayBeforeEnabled, false);
   assert.equal(config.dayBeforeDailyLimit, 50);
   assert.doesNotThrow(() => validateConfig(config));
+});
+
+test("upgrades legacy stored templates while preserving operational settings", () => {
+  const config = normalizeConfig({
+    enabled:true, inactivityEnabled:true, dailyLimit:17,
+    coachTo:"coach@example.com",
+    templates:{ studentConfirmed:{ subject:"OLD", text:"OLD" } },
+  });
+  assert.equal(config.copyVersion, COPY_VERSION);
+  assert.equal(config.enabled, true);
+  assert.equal(config.dailyLimit, 17);
+  assert.equal(config.coachTo, "coach@example.com");
+  assert.deepEqual(config.templates.studentConfirmed, defaultTemplateFor("studentConfirmed"));
+});
+
+test("preserves valid version-two custom templates", () => {
+  const base = normalizeConfig({});
+  const config = normalizeConfig({
+    ...base,
+    copyVersion:COPY_VERSION,
+    templates:{ ...base.templates, studentConfirmed:{ subject:"自訂 {{date}}", text:"自訂內容 {{studentName}}" } },
+  });
+  assert.deepEqual(config.templates.studentConfirmed, { subject:"自訂 {{date}}", text:"自訂內容 {{studentName}}" });
+  assert.doesNotThrow(() => validateConfig(config));
+  assert.throws(() => validateConfig({ ...config, copyVersion:1 }), /copy version/);
+});
+
+test("uses the approved Chinese sender identity", () => {
+  assert.equal(BOOKING_EMAIL_FROM, "貓小隊室內射箭場 <broudes@gmail.com>");
+  assert.deepEqual(bookingMailEnvelope({ to:"student@example.com" }), {
+    to:"student@example.com", from:BOOKING_EMAIL_FROM,
+  });
 });
 
 test("enforces the same token whitelist shown for each template", () => {

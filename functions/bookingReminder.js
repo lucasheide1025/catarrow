@@ -1,4 +1,5 @@
 "use strict";
+const { formatTaiwanDate } = require("./bookingEmail");
 
 const REMINDER_DELAY_DAYS = 14;
 const BOOKING_URL = "https://student.catgroup.com.tw/";
@@ -40,7 +41,7 @@ function inactivityVariables(queue, now = new Date()) {
   return {
     studentName: queue.studentName || "同學",
     daysSinceLastClass: Math.max(REMINDER_DELAY_DAYS, Math.floor((now.getTime() - completedMs) / 86400000)),
-    lastClassDate: queue.lastClassDate || "",
+    lastClassDate: formatTaiwanDate(queue.lastClassDate),
     bookingUrl: BOOKING_URL,
   };
 }
