@@ -24,6 +24,7 @@ export default function BookingEmailSettings({ toast }) {
   const [config, setConfig] = useState(null);
   const [selectedId, setSelectedId] = useState("studentConfirmed");
   const [busy, setBusy] = useState("");
+  const [backfill, setBackfill] = useState({ candidates: [], cursor: "", nextCursor: "", done: false });
 
   useEffect(() => {
     getDoc(doc(db, "bookingEmailConfig", "main"))
@@ -82,23 +83,62 @@ export default function BookingEmailSettings({ toast }) {
     setBusy("");
   }
 
+  async function previewHistory(cursor = "") {
+    setBusy("preview");
+    try {
+      const result = await httpsCallable(functions, "previewBookingInactivityBackfill")({ cursor, limit: 20 });
+      setBackfill({ candidates: result.data.candidates || [], cursor, nextCursor: result.data.nextCursor || "", done: result.data.done === true });
+      toast(`找到 ${(result.data.candidates || []).filter(item => item.eligible).length} 位可加入提醒的學生`);
+    } catch (err) { toast(`預覽失敗：${err?.message || "未知錯誤"}`, "error"); }
+    setBusy("");
+  }
+
+  async function initializeHistory() {
+    const bookingIds = backfill.candidates.filter(item => item.eligible).map(item => item.bookingId);
+    if (!bookingIds.length) { toast("這一頁沒有可初始化的學生", "error"); return; }
+    if (!window.confirm(`確定將本頁 ${bookingIds.length} 位合格學生加入提醒佇列？這一步不會立即寄信。`)) return;
+    setBusy("initialize");
+    try {
+      const result = await httpsCallable(functions, "initializeBookingInactivityHistory")({ bookingIds });
+      toast(`已加入 ${result.data.initialized} 位；提醒開關仍由你控制`);
+      await previewHistory(backfill.cursor);
+    } catch (err) { toast(`初始化失敗：${err?.message || "未知錯誤"}`, "error"); setBusy(""); }
+  }
+
   if (!config) return <Spinner />;
 
   return (
     <div className="flex flex-col gap-4">
       <Card className="p-4 flex flex-col gap-3">
         <div className="font-bold text-white">通知設定</div>
+        <div className="text-xs text-amber-300">調整開關或每日上限後，必須按頁面最下方「儲存全部設定」才會生效。</div>
         <label className="flex items-center justify-between gap-3 text-sm text-slate-200">
           <span><b>預約狀態 Email</b><span className="block text-xs text-slate-500">開啟後，新預約、改期與取消會即時寄信</span></span>
           <input type="checkbox" className="w-5 h-5 accent-blue-500" checked={config.enabled} onChange={event => updateConfig({ enabled: event.target.checked })} />
         </label>
         <label className="flex items-center justify-between gap-3 text-sm text-slate-200">
-          <span><b>兩週未預約提醒</b><span className="block text-xs text-slate-500">排程功能完成並確認 dry-run 名單後再開啟</span></span>
+          <span><b>兩週未預約提醒</b><span className="block text-xs text-slate-500">每天台灣時間 10:00，僅處理已確認的佇列</span></span>
           <input type="checkbox" className="w-5 h-5 accent-blue-500" checked={config.inactivityEnabled} onChange={event => updateConfig({ inactivityEnabled: event.target.checked })} />
         </label>
         <Inp label="每日提醒上限（1–50）" type="number" min="1" max="50" value={config.dailyLimit} onChange={event => updateConfig({ dailyLimit: event.target.value })} />
         <Inp label="主要教練收件者（To）" type="email" value={config.coachTo} onChange={event => updateConfig({ coachTo: event.target.value })} />
         <Inp label="其他教練（BCC，以逗號分隔）" value={config.coachBcc.join(", ")} onChange={event => updateConfig({ coachBcc: event.target.value.split(",").map(value => value.trim()).filter(Boolean) })} />
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <div className="font-bold text-white">歷史學生 dry-run</div>
+        <div className="text-xs text-slate-400">每次最多讀取 20 筆已完成預約。預覽完全不寫入資料也不寄信；加入佇列後，只有在「兩週未預約提醒」已儲存為開啟時，才會於下一次每日排程分批寄送。</div>
+        <div className="flex flex-wrap gap-2">
+          <Btn v="secondary" size="sm" disabled={!!busy} onClick={() => previewHistory("")}>{busy === "preview" ? "讀取中…" : "從最新紀錄預覽"}</Btn>
+          {!!backfill.nextCursor && !backfill.done && <Btn v="secondary" size="sm" disabled={!!busy} onClick={() => previewHistory(backfill.nextCursor)}>下一批 20 筆</Btn>}
+          {backfill.candidates.length > 0 && <Btn v="primary" size="sm" disabled={!!busy || !backfill.candidates.some(item => item.eligible)} onClick={initializeHistory}>{busy === "initialize" ? "加入中…" : "將本頁合格者加入提醒佇列"}</Btn>}
+        </div>
+        {backfill.candidates.length > 0 && <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-white/5 text-slate-400"><tr><th className="p-2">學生</th><th className="p-2">最後上課</th><th className="p-2">Email</th><th className="p-2">判定</th></tr></thead>
+            <tbody>{backfill.candidates.map(item => <tr key={item.bookingId} className="border-t border-white/5"><td className="p-2 text-white">{item.studentName}</td><td className="p-2">{item.lastClassDate}</td><td className="p-2">{item.email || "—"}</td><td className={`p-2 ${item.eligible ? "text-emerald-400" : "text-slate-500"}`}>{item.reason}</td></tr>)}</tbody>
+          </table>
+        </div>}
       </Card>
 
       <Card className="p-4 flex flex-col gap-3">

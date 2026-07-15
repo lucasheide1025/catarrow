@@ -147,3 +147,13 @@ Invalid or missing student email skips only the student message; the coach messa
 The seven booking Email templates live in `bookingEmailConfig/main` and contain only plaintext `subject` and `text`. The admin UI may preview and request changes, but callable Functions re-check admin membership, token allowlists, Email addresses, lengths, toggles, and the 1-50 daily limit. Firestore clients may never write this config directly; only admins may read it.
 
 Template variables are per-template allowlists, not one global bucket. Unknown or malformed tokens are rejected on save, and missing/corrupt stored templates fall back to versioned backend defaults. Templates can never select recipients or inject arbitrary mail-document fields. Test sends use deterministic request IDs plus a server-side per-admin rate limiter; their documents must not affect booking or inactivity state.
+
+## Convention: inactivity reminders use completion-cycle queues
+
+A transition into `bookings.status:"completed"` updates `bookingReminderQueue/{memberId}` with the completed booking ID as the cycle ID and a due time 14 days after the Taipei class end. Replayed completion events and older historical records must never reset a newer or already-sent cycle.
+
+The daily 10:00 Asia/Taipei scheduler is fail-closed behind `bookingEmailConfig.inactivityEnabled`, reads at most 50 due queue documents, and queues no more than the configured `dailyLimit` (1–50). Before creating the deterministic `inactive-{memberId}-{completionCycleId}` mail document it rechecks a valid Email and future confirmed bookings. Clients cannot read or write reminder queues.
+
+The scheduler enforces the limit across overlapping invocations with `bookingReminderRuns/{YYYY-MM-DD}` (Taipei date) in the same transaction that creates the deterministic mail document and marks the queue sent. An existing mail document never increments this counter again. Clients cannot read or write these run counters.
+
+Historical initialization is never automatic. Admins first inspect a cursor-based dry-run of at most 20 completed bookings, then explicitly enqueue selected eligible booking IDs in a callable bounded to 50. The backend revalidates Email, age, latest completion, and future bookings; deployment alone therefore cannot send historical reminders.

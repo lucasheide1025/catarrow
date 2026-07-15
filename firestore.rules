@@ -111,6 +111,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 未預約提醒佇列包含 Email 與寄送狀態，只能由後端維護。
+    match /bookingReminderQueue/{document} {
+      allow read, write: if false;
+    }
+
+    // 每日寄送計數器用來跨排程執行強制每日上限，只能由後端維護。
+    match /bookingReminderRuns/{document} {
+      allow read, write: if false;
+    }
+
     // learnLogs：admin 全權，登入者可讀寫
     match /learnLogs/{logId} {
       allow read:   if isLoggedIn();
