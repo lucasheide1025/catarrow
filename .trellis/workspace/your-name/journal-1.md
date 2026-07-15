@@ -72,3 +72,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 完成預約 Email 通知系統
+
+**Date**: 2026-07-16
+**Task**: 完成預約 Email 通知系統
+**Branch**: `main`
+
+### Summary
+
+完成並部署預約確認、改期、取消、三位教練通知、後台範本、兩週未預約提醒、所有預約入口收件規則與課程前一天提醒。課前提醒每日 Asia/Taipei 10:00 執行，只處理 online_public/online，獨立開關與 1-100 安全上限；Functions 45/45、production build 通過。Firebase Functions 已部署，main 已推送觸發 Vercel。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0afd63b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
