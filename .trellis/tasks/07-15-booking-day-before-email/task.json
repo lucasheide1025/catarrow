@@ -1,9 +1,9 @@
 {
-  "id": "booking-email-notifications",
-  "name": "booking-email-notifications",
-  "title": "預約 Email 通知系統",
+  "id": "booking-day-before-email",
+  "name": "booking-day-before-email",
+  "title": "課程前一天 Email 提醒",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -18,14 +18,8 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "07-15-booking-status-emails",
-    "07-15-booking-inactivity-email",
-    "07-15-booking-email-templates",
-    "07-15-booking-email-entrypoints",
-    "07-15-booking-day-before-email"
-  ],
-  "parent": null,
+  "children": [],
+  "parent": "07-15-booking-email-notifications",
   "relatedFiles": [],
   "notes": "",
   "meta": {}

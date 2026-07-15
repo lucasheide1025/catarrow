@@ -11,9 +11,13 @@ const { parseCostSignal, shouldRaise } = require("./costSignal");
 const {
   classifyBookingEvent, buildBookingMessages, normalizeEmail, normalizeConfig, validateConfig,
   customBookingTemplate, defaultTemplateFor, allowedTokensFor, memberContactEmail,
-  bookingRecipientPlan, bookingMailId,
+  bookingRecipientPlan, bookingMailId, renderTemplate,
 } = require("./bookingEmail");
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
+const {
+  taipeiDateOffset, isDayBeforeCandidate, dayBeforeRecipientDecision,
+  dayBeforeMailId, dayBeforeVariables, boundedDayBeforeCandidates,
+} = require("./bookingDayBefore");
 
 initializeApp();
 
@@ -349,6 +353,83 @@ exports.processBookingInactivityReminders = onSchedule({
     if (result === "limit-reached") break;
   }
   logger.info("Booking inactivity reminder batch completed", { candidates:queueSnap.size, queued });
+});
+
+exports.processBookingDayBeforeReminders = onSchedule({
+  schedule: "0 10 * * *", timeZone: "Asia/Taipei", region: "asia-east1", retryCount: 0,
+}, async () => {
+  const db = getFirestore();
+  const configSnap = await db.doc("bookingEmailConfig/main").get();
+  const config = normalizeConfig(configSnap.exists ? configSnap.data() : {});
+  if (!config.dayBeforeEnabled) return;
+
+  const targetDate = taipeiDateOffset(new Date(), 1);
+  const queryLimit = config.dayBeforeDailyLimit + 1;
+  const bookingSnap = await db.collection("bookings")
+    .where("status", "==", "confirmed")
+    .where("date", "==", targetDate)
+    .limit(queryLimit)
+    .get();
+  const { candidates, overLimit } = boundedDayBeforeCandidates(bookingSnap.docs, config.dayBeforeDailyLimit);
+  let queued = 0;
+  let skipped = 0;
+
+  for (const candidateSnap of candidates) {
+    const booking = candidateSnap.data();
+    if (!isDayBeforeCandidate(booking, targetDate)) {
+      skipped += 1;
+      continue;
+    }
+
+    const mailRef = db.doc(`mail/${dayBeforeMailId(candidateSnap.id, targetDate)}`);
+    const result = await db.runTransaction(async transaction => {
+      const [freshBookingSnap, mailSnap] = await transaction.getAll(candidateSnap.ref, mailRef);
+      if (mailSnap.exists) return "already-queued";
+      if (!freshBookingSnap.exists || !isDayBeforeCandidate(freshBookingSnap.data(), targetDate)) return "no-longer-eligible";
+      let freshRecipient = dayBeforeRecipientDecision(freshBookingSnap.data());
+      if (freshRecipient.shouldLookupMember) {
+        const memberSnap = await transaction.get(db.doc(`members/${freshRecipient.memberId}`));
+        freshRecipient = dayBeforeRecipientDecision(
+          freshBookingSnap.data(),
+          memberSnap.exists ? memberSnap.data() : {},
+        );
+      }
+      if (!freshRecipient.email) return "no-longer-eligible";
+      const variables = dayBeforeVariables(freshBookingSnap.data());
+      const template = config.templates.studentDayBefore;
+      transaction.create(mailRef, {
+        to: freshRecipient.email,
+        message: {
+          subject: renderTemplate(template.subject, variables),
+          text: renderTemplate(template.text, variables),
+        },
+        createdAt: FieldValue.serverTimestamp(),
+        bookingDayBeforeReminder: {
+          bookingId: candidateSnap.id,
+          bookingDate: targetDate,
+          source: variables.source,
+        },
+      });
+      return "queued";
+    });
+    if (result === "queued") queued += 1;
+    else skipped += 1;
+  }
+
+  if (overLimit) {
+    logger.warn("Booking day-before reminder limit reached; remaining bookings were not scanned", {
+      targetDate,
+      dailyLimit: config.dayBeforeDailyLimit,
+      observedAtLeast: bookingSnap.size,
+    });
+  }
+  logger.info("Booking day-before reminder batch completed", {
+    targetDate,
+    scanned: candidates.length,
+    queued,
+    skipped,
+    overLimit,
+  });
 });
 
 exports.previewBookingInactivityBackfill = onCall({ region:"asia-east1" }, async request => {

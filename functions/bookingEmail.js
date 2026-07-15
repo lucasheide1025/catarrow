@@ -39,11 +39,17 @@ const INACTIVITY_TEMPLATE = Object.freeze({
   studentText: "{{studentName}} 您好，\n\n距離您上次完成課程已經 {{daysSinceLastClass}} 天。\n上次上課日期：{{lastClassDate}}\n\n期待再次與您一起練習！\n預約網址：{{bookingUrl}}",
 });
 
+const DAY_BEFORE_TEMPLATE = Object.freeze({
+  studentSubject: "catGROUP｜明天上課提醒｜{{date}} {{startTime}}",
+  studentText: "{{studentName}} 您好，\n\n提醒您明天有預約課程。\n日期：{{date}}\n時間：{{startTime}}－{{endTime}}\n方案：{{planName}}\n人數：{{participantCount}}\n\n預約網址：{{bookingUrl}}",
+});
+
 const TEMPLATE_DEFINITIONS = Object.freeze({
   studentConfirmed: { eventType: "confirmed", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
   studentRescheduled: { eventType: "rescheduled", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "oldDate", "oldStartTime", "oldEndTime", "date", "startTime", "endTime", "planName"] },
   studentCancelled: { eventType: "cancelled", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "date", "startTime", "endTime", "planName"] },
   studentInactive: { eventType: "inactive", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "daysSinceLastClass", "lastClassDate", "bookingUrl"] },
+  studentDayBefore: { eventType: "dayBefore", audience: "student", subjectField: "studentSubject", textField: "studentText", tokens: ["studentName", "date", "startTime", "endTime", "planName", "participantCount", "source", "bookingUrl"] },
   coachConfirmed: { eventType: "confirmed", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
   coachRescheduled: { eventType: "rescheduled", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "oldDate", "oldStartTime", "oldEndTime", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
   coachCancelled: { eventType: "cancelled", audience: "coach", subjectField: "coachSubject", textField: "coachText", tokens: ["eventLabel", "studentName", "contactEmail", "date", "startTime", "endTime", "planName", "participantCount", "source"] },
@@ -54,7 +60,11 @@ const DEFAULT_COACH_BCC = Object.freeze(["chobitsgl1@gmail.com", "beluga0109@gma
 function defaultTemplateFor(templateId) {
   const definition = TEMPLATE_DEFINITIONS[templateId];
   if (!definition) return null;
-  const source = definition.eventType === "inactive" ? INACTIVITY_TEMPLATE : DEFAULT_TEMPLATES[definition.eventType];
+  const source = definition.eventType === "inactive"
+    ? INACTIVITY_TEMPLATE
+    : definition.eventType === "dayBefore"
+      ? DAY_BEFORE_TEMPLATE
+      : DEFAULT_TEMPLATES[definition.eventType];
   return { subject: source[definition.subjectField], text: source[definition.textField] };
 }
 
@@ -95,7 +105,9 @@ function normalizeConfig(input = {}) {
   return {
     enabled: input.enabled === true,
     inactivityEnabled: input.inactivityEnabled === true,
+    dayBeforeEnabled: input.dayBeforeEnabled === true,
     dailyLimit: Number.isInteger(input.dailyLimit) && input.dailyLimit >= 1 && input.dailyLimit <= 50 ? input.dailyLimit : 20,
+    dayBeforeDailyLimit: Number.isInteger(input.dayBeforeDailyLimit) && input.dayBeforeDailyLimit >= 1 && input.dayBeforeDailyLimit <= 100 ? input.dayBeforeDailyLimit : 50,
     coachTo,
     coachBcc,
     templates,
@@ -104,8 +116,9 @@ function normalizeConfig(input = {}) {
 
 function validateConfig(input = {}) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Error("Invalid config");
-  if (typeof input.enabled !== "boolean" || typeof input.inactivityEnabled !== "boolean") throw new Error("Invalid notification toggles");
+  if (typeof input.enabled !== "boolean" || typeof input.inactivityEnabled !== "boolean" || typeof input.dayBeforeEnabled !== "boolean") throw new Error("Invalid notification toggles");
   if (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 1 || input.dailyLimit > 50) throw new Error("Daily limit must be 1-50");
+  if (!Number.isInteger(input.dayBeforeDailyLimit) || input.dayBeforeDailyLimit < 1 || input.dayBeforeDailyLimit > 100) throw new Error("Day-before daily limit must be 1-100");
   const coachTo = normalizeEmail(input.coachTo);
   if (!coachTo) throw new Error("Invalid primary coach email");
   if (!Array.isArray(input.coachBcc) || input.coachBcc.length > 10) throw new Error("Invalid coach BCC list");
@@ -113,7 +126,7 @@ function validateConfig(input = {}) {
   if (coachBcc.some(email => !email) || coachBcc.includes(coachTo)) throw new Error("Invalid coach BCC email");
   const templates = {};
   for (const templateId of Object.keys(TEMPLATE_DEFINITIONS)) templates[templateId] = validateTemplate(templateId, input.templates?.[templateId]);
-  return { enabled: input.enabled, inactivityEnabled: input.inactivityEnabled, dailyLimit: input.dailyLimit, coachTo, coachBcc, templates };
+  return { enabled: input.enabled, inactivityEnabled: input.inactivityEnabled, dayBeforeEnabled: input.dayBeforeEnabled, dailyLimit: input.dailyLimit, dayBeforeDailyLimit: input.dayBeforeDailyLimit, coachTo, coachBcc, templates };
 }
 
 function customBookingTemplate(config, eventType) {

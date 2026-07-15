@@ -170,14 +170,18 @@ test("normalizes missing config to disabled safe defaults", () => {
   const config = normalizeConfig({});
   assert.equal(config.enabled, false);
   assert.equal(config.inactivityEnabled, false);
+  assert.equal(config.dayBeforeEnabled, false);
   assert.equal(config.dailyLimit, 20);
+  assert.equal(config.dayBeforeDailyLimit, 50);
   assert.equal(config.coachTo, "broudes@gmail.com");
   assert.deepEqual(config.templates.studentInactive, defaultTemplateFor("studentInactive"));
+  assert.deepEqual(config.templates.studentDayBefore, defaultTemplateFor("studentDayBefore"));
 });
 
 test("rejects unknown tokens and invalid limits", () => {
   const config = normalizeConfig({});
   assert.throws(() => validateConfig({ ...config, dailyLimit: 51 }), /Daily limit/);
+  assert.throws(() => validateConfig({ ...config, dayBeforeDailyLimit: 101 }), /Day-before daily limit/);
   assert.throws(() => validateConfig({
     ...config,
     templates: { ...config.templates, studentConfirmed: { subject: "{{password}}", text: "內容" } },
@@ -186,6 +190,15 @@ test("rejects unknown tokens and invalid limits", () => {
     ...config,
     templates: { ...config.templates, studentConfirmed: { subject: "{{studentName", text: "內容" } },
   }), /invalid token/);
+});
+
+test("keeps old stored config fail-closed for the new day-before reminder", () => {
+  const config = normalizeConfig({ enabled:true, inactivityEnabled:true, dailyLimit:20 });
+  assert.equal(config.enabled, true);
+  assert.equal(config.inactivityEnabled, true);
+  assert.equal(config.dayBeforeEnabled, false);
+  assert.equal(config.dayBeforeDailyLimit, 50);
+  assert.doesNotThrow(() => validateConfig(config));
 });
 
 test("enforces the same token whitelist shown for each template", () => {

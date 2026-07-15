@@ -163,3 +163,13 @@ The daily 10:00 Asia/Taipei scheduler is fail-closed behind `bookingEmailConfig.
 The scheduler enforces the limit across overlapping invocations with `bookingReminderRuns/{YYYY-MM-DD}` (Taipei date) in the same transaction that creates the deterministic mail document and marks the queue sent. An existing mail document never increments this counter again. Clients cannot read or write these run counters.
 
 Historical initialization is never automatic. Admins first inspect a cursor-based dry-run of at most 20 completed bookings, then explicitly enqueue selected eligible booking IDs in a callable bounded to 50. The backend revalidates Email, age, latest completion, and future bookings; deployment alone therefore cannot send historical reminders.
+
+## Convention: day-before reminders are bounded and student-self-service only
+
+The daily scheduler runs at 10:00 in `Asia/Taipei` and computes tomorrow from the Taiwan calendar, not the runtime's ambient timezone or an approximate server-local date. It queries only tomorrow's confirmed bookings, reads at most `dayBeforeDailyLimit + 1` documents, sends at most the configured 1–100 limit, and never paginates after the safety cap. The extra document only signals a structured over-limit warning.
+
+Only normalized `online_public` and `online` sources are eligible. Public bookings use only their booking-snapshot Email and must never read a member document. Authenticated `online` bookings may perform at most one safe `members/{memberId}` fallback read when the snapshot Email is invalid. `phone`, `walk_in`, and unknown sources never receive this reminder, even if they contain an Email or member ID, and no coach message is created.
+
+Eligibility and any member fallback are re-read inside the same Firestore transaction that creates the mail document. This matters because transactions can retry and a booking can be cancelled or rescheduled after the query. Mail IDs are deterministic and scoped by booking ID plus booking date, so overlapping schedules and retries cannot enqueue duplicates while a rescheduled replacement remains independently eligible on its new date.
+
+`dayBeforeEnabled` is an independent fail-closed switch, defaulting to false, and `dayBeforeDailyLimit` defaults to 50. The plaintext `studentDayBefore` template follows the same admin-only validation, preview, and test-send path as other booking templates. Older stored config documents must normalize these missing fields to their safe defaults before validation or display.

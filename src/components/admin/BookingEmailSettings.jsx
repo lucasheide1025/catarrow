@@ -51,6 +51,7 @@ export default function BookingEmailSettings({ toast }) {
   function validate() {
     if (!config.coachTo.trim() || config.coachBcc.some(email => !email.trim())) return "請填寫有效的教練 Email";
     if (!Number.isInteger(Number(config.dailyLimit)) || Number(config.dailyLimit) < 1 || Number(config.dailyLimit) > 50) return "每日上限必須是 1 到 50";
+    if (!Number.isInteger(Number(config.dayBeforeDailyLimit)) || Number(config.dayBeforeDailyLimit) < 1 || Number(config.dayBeforeDailyLimit) > 100) return "課前一天提醒上限必須是 1 到 100";
     for (const [id, template] of Object.entries(config.templates)) {
       if (!template.subject.trim() || template.subject.trim().length > 200) return `${BOOKING_EMAIL_TEMPLATE_META[id].label}主旨須為 1–200 字`;
       if (!template.text.trim() || template.text.trim().length > 10000) return `${BOOKING_EMAIL_TEMPLATE_META[id].label}內文須為 1–10000 字`;
@@ -65,7 +66,7 @@ export default function BookingEmailSettings({ toast }) {
     if (error) { toast(error, "error"); return; }
     setBusy("save");
     try {
-      await httpsCallable(functions, "saveBookingEmailConfig")({ ...config, dailyLimit: Number(config.dailyLimit) });
+      await httpsCallable(functions, "saveBookingEmailConfig")({ ...config, dailyLimit: Number(config.dailyLimit), dayBeforeDailyLimit: Number(config.dayBeforeDailyLimit) });
       toast("Email 設定已儲存 ✓");
     } catch (err) { toast(`儲存失敗：${err?.message || "未知錯誤"}`, "error"); }
     setBusy("");
@@ -77,7 +78,7 @@ export default function BookingEmailSettings({ toast }) {
     setBusy("test");
     try {
       const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const result = await httpsCallable(functions, "sendBookingEmailTest")({ requestId, templateId: selectedId, config: { ...config, dailyLimit: Number(config.dailyLimit) } });
+      const result = await httpsCallable(functions, "sendBookingEmailTest")({ requestId, templateId: selectedId, config: { ...config, dailyLimit: Number(config.dailyLimit), dayBeforeDailyLimit: Number(config.dayBeforeDailyLimit) } });
       toast(result.data.queued ? `測試信已送往 ${result.data.recipient} ✓` : "這封測試信已經送出");
     } catch (err) { toast(`測試信失敗：${err?.message || "未知錯誤"}`, "error"); }
     setBusy("");
@@ -121,6 +122,11 @@ export default function BookingEmailSettings({ toast }) {
           <input type="checkbox" className="w-5 h-5 accent-blue-500" checked={config.inactivityEnabled} onChange={event => updateConfig({ inactivityEnabled: event.target.checked })} />
         </label>
         <Inp label="每日提醒上限（1–50）" type="number" min="1" max="50" value={config.dailyLimit} onChange={event => updateConfig({ dailyLimit: event.target.value })} />
+        <label className="flex items-center justify-between gap-3 text-sm text-slate-200">
+          <span><b>課前一天提醒</b><span className="block text-xs text-slate-500">每天台灣時間 10:00，提醒隔日自行預約的訪客與學籍學生；教練代約不寄</span></span>
+          <input type="checkbox" className="w-5 h-5 accent-blue-500" checked={config.dayBeforeEnabled} onChange={event => updateConfig({ dayBeforeEnabled: event.target.checked })} />
+        </label>
+        <Inp label="課前一天提醒上限（1–100）" type="number" min="1" max="100" value={config.dayBeforeDailyLimit} onChange={event => updateConfig({ dayBeforeDailyLimit: event.target.value })} />
         <Inp label="主要教練收件者（To）" type="email" value={config.coachTo} onChange={event => updateConfig({ coachTo: event.target.value })} />
         <Inp label="其他教練（BCC，以逗號分隔）" value={config.coachBcc.join(", ")} onChange={event => updateConfig({ coachBcc: event.target.value.split(",").map(value => value.trim()).filter(Boolean) })} />
       </Card>
