@@ -335,6 +335,8 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
 
       tx.update(oldBookingRef, {
         status: "cancelled",
+        // 讓後端通知觸發器辨識這是改期鏈結，不誤寄一封「取消」信。
+        rescheduledTo: newBookingRef.id,
         cancelledAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

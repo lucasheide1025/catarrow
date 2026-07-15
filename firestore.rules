@@ -472,14 +472,34 @@ service cloud.firestore {
       );
       allow create: if isAdmin() || (
         isLoggedIn() &&
-        get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid
+        get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid &&
+        (
+          request.resource.data.rescheduledFrom == null ||
+          (
+            request.resource.data.rescheduledFrom is string &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledFrom)).data.rescheduledTo == bookingId &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledFrom)).data.memberId == request.resource.data.memberId &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledFrom)).data.status == "cancelled"
+          )
+        )
       );
       // 學生只能改自己預約的 status（取消用；改期是「新建一筆 + 把舊那筆標記 cancelled」，
       // 不是直接改日期時段），不能亂改別人的或改金額/時段以外的欄位。
       allow update: if isAdmin() || (
         isLoggedIn() &&
         get(/databases/$(database)/documents/members/$(resource.data.memberId)).data.uid == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt", "checkinId"])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "cancelledAt", "checkinId", "rescheduledTo"]) &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["rescheduledTo"]) ||
+          (
+            resource.data.status == "confirmed" &&
+            request.resource.data.status == "cancelled" &&
+            request.resource.data.rescheduledTo is string &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledTo)).data.rescheduledFrom == bookingId &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledTo)).data.memberId == resource.data.memberId &&
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.rescheduledTo)).data.status == "confirmed"
+          )
+        )
       );
       allow delete: if false; // 一律用 status 標記，不真的刪除文件
     }

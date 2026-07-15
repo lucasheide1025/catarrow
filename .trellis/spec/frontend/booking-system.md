@@ -133,3 +133,11 @@ Walk-in visitors use `source:"walk_in"`, `memberId:null`, a manually entered pho
 AdminBooking checkout for an official student requires the same-day checkin to have `classEnded:true`. If that checkin already references a billing record, repair the booking linkage instead of opening another checkout. Walk-in, public guest, and guest/kid accounts bypass this class-end gate.
 
 Admin calendar loading also repairs legacy partial failures by matching date-range billing records through `bookingId` or `checkinId`. Completion fallback must never return success when no booking was linked; use checkin creation time and nearest same-day unbilled booking to resolve ambiguous records.
+
+## Convention: booking Email events use verified bidirectional reschedule links
+
+Booking confirmation, reschedule, and cancellation emails are created only by the backend Firestore trigger. Mail documents use deterministic IDs per booking/event/audience and transaction create semantics, so event retries and concurrent delivery cannot enqueue duplicates. A missing or disabled `bookingEmailConfig/main` is a fail-closed rollout gate.
+
+Reschedule classification requires both links written atomically: the old cancelled booking has `rescheduledTo = newBookingId`, and the new confirmed booking has `rescheduledFrom = oldBookingId`. Firestore Rules use `getAfter()` to verify the two documents have the same member and reciprocal IDs in the same transaction; the Cloud Function independently re-reads and validates the relationship. Never suppress a cancellation merely because an unverified client value named `rescheduledTo` exists.
+
+Invalid or missing student email skips only the student message; the coach message remains eligible. Email delivery failure must never roll back or mutate the already-successful booking transaction.
