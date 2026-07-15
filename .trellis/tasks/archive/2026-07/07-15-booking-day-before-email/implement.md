@@ -6,7 +6,7 @@
 - [x] 在 Email 後台加入獨立開關、1–100 上限、範本編輯／預覽／測試能力。
 - [x] 測試來源矩陣、日期邊界、取消／改期、無效 Email、防重寄、舊 config 與上限。
 - [x] 執行 Functions tests、語法檢查、前台 build 與 diff check。
-- [ ] 更新 booking spec，提交後只部署新增／受影響 Functions，再推送 main。
+- [x] 更新 booking spec，提交後只部署新增／受影響 Functions，再推送 main。
 
 ## Validation
 

@@ -9,6 +9,8 @@
 - `07-15-booking-status-emails`：預約建立、改期、取消的事件通知。
 - `07-15-booking-inactivity-email`：超過兩週未預約的回訪提醒。
 - `07-15-booking-email-templates`：教練後台調整郵件主旨與內容。
+- `07-15-booking-email-entrypoints`：驗證訪客、學生與教練手動建立課程的通知收件規則。
+- `07-15-booking-day-before-email`：每天台灣時間 10:00 寄送隔日學生課程提醒。
 
 ## Confirmed Facts
 
@@ -31,13 +33,19 @@
 
 ## Acceptance Criteria
 
-- [ ] 建立、改期、取消各有正確郵件內容與一次性投遞保護。
-- [ ] 兩週未預約判斷依實際預約／上課資料，而非 `lastBookingAt` 誤判。
-- [ ] 已有未來 confirmed 預約者不收到回訪提醒。
-- [ ] 所有寄信寫入均由後端 Admin SDK 執行。
-- [ ] 成本有界：排程不做無界全站掃描，且同一學生不會每日重寄。
+- [x] 建立、改期、取消各有正確郵件內容與一次性投遞保護。
+- [x] 兩週未預約判斷依實際預約／上課資料，而非 `lastBookingAt` 誤判。
+- [x] 已有未來 confirmed 預約者不收到回訪提醒。
+- [x] 所有寄信寫入均由後端 Admin SDK 執行。
+- [x] 成本有界：排程不做無界全站掃描，且同一學生不會每日重寄。
 
 ## Scope Decision
 
 - 兩週提醒不以帳號類型篩選；有 `memberId`、有效 Email、曾完成上課且符合時間條件者均可收到。
 - `memberId:null` 的現場散客不寄。
+
+## Completion Record — 2026-07-16
+
+預約 Email 通知系統已完成開發、測試與正式部署。涵蓋預約確認、改期、取消、三位教練通知、兩週未預約提醒、課程前一天提醒、後台範本／開關／寄送上限，以及訪客、學籍學生、教練代約與現場散客的來源邊界。
+
+課前一天提醒正式版本為 commit `0afd63b`；Functions 測試 45/45、Node 語法檢查、production build 與 diff check 均通過。Firebase 已部署 `processBookingDayBeforeReminders`、`saveBookingEmailConfig`、`sendBookingEmailTest`，main 已推送並觸發 Vercel 正式發布。所有提醒均具 fail-closed 開關、確定性 mail ID 與有界讀取設計。
