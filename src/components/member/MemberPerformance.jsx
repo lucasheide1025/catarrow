@@ -357,11 +357,10 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   }, [games]);
   const [tab, setTab] = useState("overview");
   const TABS = [
-    { id:"overview", label:"📈 表現總覽" },
-    { id:"history",  label:"📋 歷史紀錄" },
+    { id:"overview", label:"📈 總覽" },
     { id:"analysis", label:"📊 深度分析" },
+    { id:"history",  label:"📋 歷史紀錄" },
     { id:"games",    label:"⚔️ 遊戲戰績" },
-    { id:"sync",     label:"💻 同步設定" },
   ];
 
   // ─── 圖表資料計算 ───
@@ -392,18 +391,20 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     ];
   }, [exactArrows]);
   if (loading) return <Spinner />;
-  return <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
+  return <div className="p-4 flex flex-col gap-4" style={{ minHeight:"100dvh", backgroundColor:"#0a0c14", backgroundImage:"linear-gradient(180deg, rgba(9,11,18,0.90), rgba(9,11,18,0.96)), url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
     <div><h2 className="text-xl font-black" style={{ color:"var(--text-primary)" }}>射手表現</h2><p className="mt-1 text-xs" style={{ color:"var(--text-secondary)" }}>真實射箭與遊戲結果分開保存、分開解讀。</p></div>
 
-    {/* ─── 分頁導覽 ─── */}
-    <div className="flex gap-1.5 flex-wrap">
-      {TABS.map(t => (
-        <button key={t.id} type="button" onClick={() => setTab(t.id)}
-          className={`shrink-0 rounded-lg px-3.5 py-2 text-xs font-bold transition-all ${tab === t.id
-            ? "bg-blue-600 text-white shadow-md"
-            : "bg-white/10 text-slate-300 hover:bg-white/20"}`}
-          style={tab === t.id ? {} : { color:"var(--text-secondary)" }}>{t.label}</button>
-      ))}
+    {/* ─── 分頁導覽（sticky 分段控制） ─── */}
+    <div className="sticky top-0 z-20 -mx-4 px-4 py-2" style={{ background:"rgba(9,11,18,0.85)", backdropFilter:"blur(8px)", WebkitBackdropFilter:"blur(8px)" }}>
+      <div className="flex gap-1.5 flex-wrap">
+        {TABS.map(t => (
+          <button key={t.id} type="button" onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold transition-all ${tab === t.id
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-white/8 hover:bg-white/15"}`}
+            style={tab === t.id ? {} : { color:"var(--text-secondary)" }}>{t.label}</button>
+        ))}
+      </div>
     </div>
 
     {/* ─── 📈 表現總覽 ─── */}
@@ -422,8 +423,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         <div className="mt-3 grid grid-cols-2 gap-2.5"><Stat label="近期待命中率" value={percent(1 - ((exactRecent.length ? exactRecent : shooting.recent)[0]?.missRate || 0))} note={`M 率 ${percent((exactRecent.length ? exactRecent : shooting.recent)[0]?.missRate)}`} tone="text-emerald-300" /><Stat label="近期 X 率" value={percent((exactRecent.length ? exactRecent : shooting.recent)[0]?.xRate)} note="以逐箭統計" tone="text-violet-300" /></div>
       </>}
       </section>
-      {/* ── 平均分趨勢圖 ── */}
-      {trendData.avgSeries && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📈 每箭平均趨勢</div><TrendLine series={trendData.avgSeries} yLabel="平均分" formatY={v => v.toFixed(2)} /></Card>}
+      {trendData.avgSeries && <button type="button" onClick={() => setTab("analysis")} className="w-full rounded-lg py-2 text-xs font-bold transition-all hover:bg-white/10" style={{ background:"rgba(96,165,250,0.12)", color:"#93c5fd" }}>📊 查看深度分析（趨勢圖表）→</button>}
 
       <section><ST>下一個訓練提示</ST><Card className="p-3"><div className="text-sm font-black text-amber-200">{trainingInsight.title}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{trainingInsight.text}</p><p className="mt-2 text-[10px]" style={{ color:"var(--text-muted)" }}>提示僅依此裝置的逐箭紀錄產生。</p></Card></section>
 
@@ -612,9 +612,8 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       <GamePerformanceHistory games={games} />
     </>}
 
-    {/* ─── 💻 同步設定 ─── */}
-    {tab === "sync" && <>
-      {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
+    {/* ─── 💻 本機資料與同步（併入歷史紀錄分頁底部） ─── */}
+    {tab === "history" && <>
       <section><ST>本機資料與同步</ST><Card className="p-3"><div className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{syncInfo?.local?.initialized ? "此裝置已儲存射手表現資料" : "此裝置尚未建立射手歷史資料"}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>平常只比對一筆同步摘要；版本相同時不會重新讀取全部射擊紀錄。新設備可主動下載最近三個月的場次與逐箭資料。</p><div className="mt-3 flex items-center justify-between gap-3"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>{transferProgress ? `下載 ${transferProgress.completed}／${transferProgress.total} 場` : `本機版本 ${syncInfo?.local?.revision ?? "—"} ・ 雲端版本 ${syncInfo?.cloud?.revision ?? "—"}`}</span><button type="button" onClick={transferRecentHistory} disabled={transferring} className="rounded bg-blue-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{transferring ? "建立中…" : "新設備：建立近 3 個月歷史資料"}</button></div></Card></section>
       <SessionHistoryBrowser sessions={filtered} />
     </>}
