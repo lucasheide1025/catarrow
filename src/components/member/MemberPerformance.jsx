@@ -15,6 +15,11 @@ const ALL = "all";
 const SOURCE_LABELS = { freePractice:"自主練習", monster:"一般打怪", party:"組隊戰鬥", partyBattle:"組隊戰鬥", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥", dailyMission:"每日任務", councilMission:"採集委託", guildMission:"公會任務", practice:"自主練習", competition:"賽事", certification:"檢定" };
 const GAME_MODE_LABELS = { monster:"一般打怪", party:"組隊戰鬥", partyBattle:"組隊戰鬥", dungeon:"地下城", worldBoss:"世界王", duel:"決鬥" };
 const PERIOD_OPTIONS = [["day", "日"], ["week", "週"], ["month", "月"], ["year", "年"], ["all", "全部"]];
+// 「近 N 箭」取樣視窗隨期間放大：期間越長、看越多箭，讓日/週/月/年真正拉開差異。
+// 每組最後一個數 = 該期間的逐箭載入上限（避免一次讀太多場次造成 IO 過重）。
+const PERIOD_TILES = { day:[30, 60, 90], week:[100, 200, 300], month:[200, 400, 600], year:[300, 600, 900], all:[300, 600, 1000] };
+function periodTiles(period) { return PERIOD_TILES[period] || PERIOD_TILES.all; }
+const MAX_SESSION_SCAN = 120; // 逐箭載入最多掃描的場次數，硬上限保護 IO
 const BOW_LABELS = { rental:"租借器材", recurve_bare:"裸弓", recurve_full:"反曲弓（全配）", compound:"複合弓", traditional:"傳統弓" };
 const TARGET_FACE_LABELS = Object.fromEntries(TARGET_FACE_FORMATS.map(format => [format.id, format.shortLabel || format.label]));
 
@@ -343,22 +348,28 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   }
   useEffect(() => {
     let active = true;
+    const tiles = periodTiles(filters.period);
+    const cap = tiles[tiles.length - 1];
     async function loadExactRecent() {
       const arrows = [];
+      let scanned = 0;
+      // 逐場循序讀取並在達到期間上限即停：只讀「必要」場次，避免一次拉全部歷史造成 IO 過重。
       for (const session of comparableFiltered) {
+        if (arrows.length >= cap || scanned >= MAX_SESSION_SCAN) break;
+        scanned += 1;
         const ends = await getCachedShootingSessionEnds(session.id);
+        if (!active) return;
         for (const end of [...ends].reverse()) for (const arrow of [...(end.arrows || [])].reverse()) {
           const recorded = arrow.captureMode === "targetPlot" ? arrow.recordedScore : arrow;
           if (Number.isFinite(Number(recorded?.score))) arrows.push({ score:Number(recorded.score), isX:Boolean(recorded.isX), isMiss:Boolean(recorded.isMiss), position:(arrow.captureMode === "targetPlot" && Number.isFinite(arrow.position?.x) && Number.isFinite(arrow.position?.y)) ? { x:arrow.position.x, y:arrow.position.y } : null });
-          if (arrows.length >= 90) break;
+          if (arrows.length >= cap) break;
         }
-        if (arrows.length >= 90) break;
       }
-      if (active) { setExactArrows(arrows); setExactRecent(arrows.length ? [30, 60, 90].map(target => buildExactRecent(arrows, target)) : []); }
+      if (active) { setExactArrows(arrows); setExactRecent(arrows.length ? tiles.map(target => buildExactRecent(arrows, target)) : []); }
     }
     loadExactRecent();
     return () => { active = false; };
-  }, [comparableFiltered]);
+  }, [comparableFiltered, filters.period]);
   const shooting = useMemo(() => {
     // The headline total is an activity total: it must include every real
     // session selected by the user, regardless of mode or shooting condition.
@@ -366,8 +377,8 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     const arrowCount = filtered.reduce((sum, session) => sum + (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0), 0);
     const comparableArrowCount = comparableFiltered.reduce((sum, session) => sum + (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0), 0);
     const best = comparableFiltered.reduce((current, session) => !current || (Number(sessionMetrics(session).averageArrow) || 0) > (Number(sessionMetrics(current).averageArrow) || 0) ? session : current, null);
-    return { arrowCount, comparableArrowCount, recent:[30, 60, 90].map(target => buildRecentApproximation(comparableFiltered, target)), bestAverage:best ? Number(sessionMetrics(best).averageArrow) || 0 : null };
-  }, [filtered, comparableFiltered]);
+    return { arrowCount, comparableArrowCount, recent:periodTiles(filters.period).map(target => buildRecentApproximation(comparableFiltered, target)), bestAverage:best ? Number(sessionMetrics(best).averageArrow) || 0 : null };
+  }, [filtered, comparableFiltered, filters.period]);
   const trainingInsight = useMemo(() => buildTrainingInsight(exactArrows), [exactArrows]);
   const diagnosis = useMemo(() => buildArcherDiagnosis({ arrows:exactArrows, sessions:comparableFiltered }), [exactArrows, comparableFiltered]);
   const coachSummary = useMemo(() => {
