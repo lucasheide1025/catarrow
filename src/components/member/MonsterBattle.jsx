@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
-import CatAnimator from "../cat/CatAnimator";
-import { useCatAnimationAccess } from "../../hooks/useCatAnimationAccess";
+import { useCatBuddyEvent } from "../cat/CatBuddyContext";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog,
@@ -120,6 +119,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
+  // 僅 kid（QR/一次性）才限制獎勵與功能；guest（有記憶的訪客）比照正式會員
+  const isLimitedAccount = false; // 訪客/兒童皆比照正式會員
   const { hasCat, catName, catId, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion(isGuest ? profile : null);
   const [phase, setPhase]           = useState("select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
@@ -175,9 +176,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [guestWonBefore,  setGuestWonBefore]   = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [skipCounter, setSkipCounter]   = useState(false);
-  const { visible: catAnimVisible, enabled: catAnimEnabled } = useCatAnimationAccess();
-  const [catAnimState, setCatAnimState] = useState("idle");
-  const catAnimTimeoutRef = useRef(null);
+  const emitCatEvent = useCatBuddyEvent();
   const catDefShieldRef = useRef(null); // { reduction, blockFull } — 貓貓防禦技能保護下回合
   const [catCurrentHP,  setCatCurrentHP]  = useState(0);
   const catCurrentHPRef = useRef(0);
@@ -323,9 +322,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setPhase("prebattle");
   }, [questContext?.monsterId, archerStats, phase, archerStyle]); // eslint-disable-line
 
-  // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
+    // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
   useEffect(() => {
-    if (isGuest) return;
+    if (isLimitedAccount) return;
     if (phase === "loot" || phase === "result" || phase === "select") {
       if (phase === "loot" || phase === "result") sessionStorage.removeItem("mb_battle_save");
       pendingPotionRef.current = []; // 離開戰鬥時清空未寫的藥水
@@ -343,15 +342,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }, [phase, monsterHP, archerHP, round]); // eslint-disable-line
 
   useEffect(() => {
-    if (isGuest) {
-      // 訪客/兒童共用同一組基礎數值——刻意不因 kidMode 拉高數值，
-      // 因為 archerStats 會餵給 calcArcherPower 決定配對怪物階級，
-      // 拉高數值反而會解鎖更強的 elite 怪物，讓兒童模式變得更難打（已驗證：65→121 戰力會跨過100門檻）。
-      // 兒童模式的「更好打」改用 UI 簡化（大按鈕/簡短文字）與家長協戰達成，不動戰鬥數值。
-      setArcherStats({ hp:100, atk:10, def:10 });
-      setDailyLeft(null);
-      return;
-    }
     if (!profile?.id) return;
 
     // ── sessionStorage 快取（同一 session 不重複讀）────────
@@ -388,10 +378,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
     return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
-  }, [profile?.id, isGuest]); // eslint-disable-line
+  }, [profile?.id]); // eslint-disable-line
 
   useEffect(() => {
-    if (isGuest || !profile || !certRecords) return;
+    if (isLimitedAccount || !profile || !certRecords) return;
     const { monsterDex: mDex, craftStats: cSt, chestStats: chSt, potionDex: pDex, duelStats: dSt, cardColl: cColl } = extraDexRef.current;
     const ds = computeDexStats({ member:profile, certification, certRecords, checkinCount:profile?.dailyQuestCount||0, granted:dexGrants, physicalMax:dexConfig.physicalMax, pointMax:dexConfig.pointMax, monsterDex:mDex, craftStats:cSt, chestStats:chSt, potionDex:pDex, duelStats:dSt, cardData:cColl });
     const stats = calcArcherStats({ member:profile, certification, certRecords, dexStats:ds });
@@ -399,12 +389,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }, [profile, certification, certRecords, dexGrants, isGuest]); // eslint-disable-line
 
   useEffect(() => {
-    if (isGuest || !profile?.id) return;
+    if (!profile?.id) return;
     return subscribeCardCollection(profile.id, data => {
       setCardColl(data);
       cardCollRef.current = data;
     });
-  }, [profile?.id, isGuest]); // eslint-disable-line
+  }, [profile?.id]); // eslint-disable-line
 
   // ✅ 射手數值就緒後，依戰力匹配6隻怪物
   useEffect(() => {
@@ -425,12 +415,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }, [log]);
 
-  function triggerCatAnim(state, duration = 1200) {
-    if (catAnimTimeoutRef.current) clearTimeout(catAnimTimeoutRef.current);
-    setCatAnimState(state);
-    catAnimTimeoutRef.current = setTimeout(() => { setCatAnimState("idle"); catAnimTimeoutRef.current = null; }, duration);
-  }
-
   function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
   function addLog(type, text) {
     // 支援兩種呼叫格式：addLog({type, text}) 或 addLog(type, text)
@@ -439,12 +423,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     if (entry.type === "hit" || entry.type === "hit_crit" || entry.type === "hit_organ") {
       triggerCatAction();
       if (entry.type === "hit_crit" || entry.type === "hit_organ") {
-        triggerCatAnim("happy", 1000);
+        emitCatEvent({ animation: "happy", duration: 1000, context: "encourage" });
       } else {
-        triggerCatAnim("attack", 800);
+        emitCatEvent({ animation: "attack", duration: 800, context: "encourage" });
       }
     } else if (entry.type === "miss") {
-      triggerCatAnim("miss", 700);
+      emitCatEvent({ animation: "miss", duration: 700, context: "lose" });
     }
   }
   function showFloatDmg(dmg, isCrit, isOrgan) {
@@ -552,7 +536,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   // 🧪 使用攜帶型藥水（回合開始喝）
   function useCarryPotion(potion) {
     if (potionUsedThisRound || processing) return;
-    if (!profile?.id || isGuest) return;
+    if (!profile?.id || isLimitedAccount) return;
     const count = potionInv[potion.id] || 0;
     if (count <= 0) return;
     sfxPotionDrink();
@@ -577,7 +561,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   function useThrowPotion(potion) {
     if (potionUsedThisRound || processing) return;
     if (potion.actionCost === "arrow" && arrows.length >= arrowsPerRound) return;
-    if (!profile?.id || isGuest) return;
+    if (!profile?.id || isLimitedAccount) return;
     const count = potionInv[potion.id] || 0;
     if (count <= 0) return;
     sfxTap();
@@ -612,7 +596,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     const pendingPotions = pendingPotionRef.current;
     if (pendingPotions.length > 0) {
       pendingPotionRef.current = [];
-      if (profile?.id && !isGuest) {
+      if (profile?.id && !isLimitedAccount) {
         usePotions(profile.id, pendingPotions).catch(()=>{});
         recordPotionUsed(profile.id, pendingPotions).catch(()=>{});
       }
@@ -814,7 +798,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   async function startBattle() {
     battleEndHandledRef.current = false;
     shootingPerformanceSavedRef.current = false;
-    battleSessionIdRef.current = profile?.id && !isGuest
+    battleSessionIdRef.current = profile?.id && !isLimitedAccount
       ? `monster_${profile.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       : null;
     // 記錄每日場次改成「背景執行、不 await」：這是一次 Firestore 寫入，網路偶爾很慢時
@@ -836,7 +820,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     const cardData = cardCollRef.current?.equipped ? cardCollRef.current : cardColl;
     const cardBonus = calcEquippedBonus(resolveEquippedCards(cardData));
     // 射手等級加成
-    const lvBon = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+    const lvBon = isLimitedAccount ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
     const bStats = {
       hp:  Math.round((baseStats.hp  + cardBonus.hp  + lvBon.hp)  * buffs.hpMult),
       atk: Math.round((baseStats.atk + cardBonus.atk + lvBon.atk) * buffs.atkMult),
@@ -880,8 +864,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setMonsterHP(monStartHP);
     // 貓貓 HP 重置
     if (hasCat) { catCurrentHPRef.current = catMaxHP; setCatCurrentHP(catMaxHP); }
-    // 貓貓動畫重置
-    setCatAnimState("idle");
     const initDist = distanceMode==="dynamic" ? DISTANCE_START : selectedDistance;
     setRound(1); setDistance(initDist);
     setAllArrows([]); setRoundScores([]); setBattleArrowPositions([]); sessionArrowsRef.current = 0;
@@ -910,11 +892,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   async function endBattle(result, finalArchHP, finalMonHP, lastRoundArr = null) {
-    // 🐱 貓貓勝利／戰敗動畫
+    // 🐱 貓貓勝利／戰敗動畫（透過 Context 通知全局 CatBuddy）
     if (result === "win") {
-      triggerCatAnim("victory", 2000);
+      emitCatEvent({ animation: "victory", duration: 2500, context: "victory" });
     } else if (result === "lose") {
-      triggerCatAnim("miss", 1500);
+      emitCatEvent({ animation: "miss", duration: 2000, context: "lose" });
     }
     try {
     const shootingProfile = shootingProfileRef.current
@@ -930,7 +912,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       result, finalMonsterHp:finalMonHP, totalDamage:totalDmgDealt,
       capturedEnds:completedPracticeRounds.map(scores => scores.map(label => ({ label:String(label) }))),
     });
-    if (isGuest && profile?.id) {
+    if (isLimitedAccount && profile?.id) {
       recordGuestBattleStats(profile.id, {
         mode: "monster",
         result,
@@ -948,7 +930,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       const { mainChest, potionChest } = makeChests(monster, mode);
       const chestCfg = CHEST_TYPES[mainChest.type] || CHEST_TYPES.wood;
 
-      if (isGuest || !profile?.id) {
+      if (isLimitedAccount || !profile?.id) {
         // 訪客：判斷是否第一次勝利（全域）
         const wonBefore = sessionStorage.getItem("guest_won_once");
         if (!wonBefore) {
@@ -999,7 +981,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
         // 金幣（必掉）
         const baseCoins = rollCoins(monster.tier, mode);
-        if (isGuest || !profile?.id) {
+        if (isLimitedAccount || !profile?.id) {
           const boost   = parseFloat(sessionStorage.getItem("guest_coin_boost") || "5");
           const total   = Math.round(baseCoins * boost);
           sessionStorage.removeItem("guest_coin_boost");
@@ -1025,7 +1007,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }
 
       // 戰鬥記錄
-      if (profile?.id && !isGuest) {
+      if (profile?.id && !isLimitedAccount) {
         const equipment  = profile?.equipment || [];
         const bowLabel   = Array.isArray(equipment) && equipment[0]?.label
           ? equipment[0].label : (typeof equipment === "string" ? equipment : "打怪練習");
@@ -1060,7 +1042,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }
 
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！激烈的戰鬥結束——你贏了！` });
-      if (!isGuest) {
+      if (!isLimitedAccount) {
         addLog({ type:"system", text:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
         if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
       }
@@ -1077,12 +1059,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         }).catch(() => {});
       }
 
-      if (!isGuest) {
+      if (!isLimitedAccount) {
         saveBond("monster");
         saveXP(CAT_TIER_XP[monster.tier] || 5).catch(() => {});
       }
-      // 經驗值：射手（主要）+ 貓貓；冒險者 XP 已取消（改由世界王/公會任務取得）
-      if (!isGuest && profile?.id) {
+          // 經驗值：射手（主要）+ 貓貓；冒險者 XP 已取消（改由世界王/公會任務取得）
+      if (!isLimitedAccount && profile?.id) {
         // 射手等級 XP
         const archerXP = MONSTER_TIER_XP[monster.tier] || 5;
         setGainedArcherXP(archerXP);
@@ -1098,7 +1080,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       playBattleSound("soft_fail", { monsterName: monster?.name, playerName: profile?.name, round });
       addLog({ type:"lose", text:`💀 不…被 ${monster.name} 擊倒了！世界漸漸變黑…下次一定要贏…！` });
       if (profile?.id) {
-        if (!isGuest && completedPracticeRounds.length > 0) {
+        if (!isLimitedAccount && completedPracticeRounds.length > 0) {
           addPracticeLog(profile.id, {
             date:new Date().toISOString().slice(0, 10),
             source:"monster",
@@ -1158,15 +1140,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
         <CatMsg msg={catMsg} onDone={clearCatMsg}/>
-        {/* 🐱 貓貓動畫（教練限定，可開關） */}
-        {hasCat && catAnimVisible && <div style={{
-          position:"fixed", right:12, bottom:180, zIndex:20,
-          pointerEvents:"none",
-          transition:"opacity .3s",
-        }}>
-          <CatAnimator catId={catId} animation={catAnimState} size={72} visible={catAnimVisible} enabled={catAnimEnabled} />
-        </div>}
-        {/* 任務模式橫幅 */}
+          {/* 任務模式橫幅 */}
         {questContext && qMon && (
           <div className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.25),rgba(37,99,235,0.18))", border:"1px solid rgba(124,58,237,0.4)" }}>
             <span className="text-purple-300 text-xs font-black">🎯 任務模式</span>
@@ -1190,32 +1164,32 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs tracking-widest text-purple-200 font-black">⚔️ 打怪模式</div>
             <div className="flex items-center gap-2 text-xs text-purple-200">
-              {!isGuest && <span style={{ color:"#f9a8d4", fontWeight:900 }}>⚔️ Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>}
+              {!isLimitedAccount && <span style={{ color:"#f9a8d4", fontWeight:900 }}>⚔️ Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>}
               <span>戰力 <span className="font-black text-white text-sm">{power}</span></span>
             </div>
           </div>
           {archerStats && (
             <div className="flex gap-2 text-xs flex-wrap">
               {(() => {
-                const lvBonus = isGuest ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
-                const cardBonus = isGuest ? { hp:0, atk:0, def:0 } : calcEquippedBonus(resolveEquippedCards(cardColl));
+                const lvBonus = isLimitedAccount ? { hp:0, atk:0, def:0 } : archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+                const cardBonus = isLimitedAccount ? { hp:0, atk:0, def:0 } : calcEquippedBonus(resolveEquippedCards(cardColl));
                 return (
                   <>
                     <span className="bg-white/15 px-2 py-0.5 rounded-full">❤️ {archerStats.hp + lvBonus.hp + cardBonus.hp}</span>
                     <span className="bg-white/15 px-2 py-0.5 rounded-full">⚔️ {archerStats.atk + lvBonus.atk + cardBonus.atk}</span>
                     <span className="bg-white/15 px-2 py-0.5 rounded-full">🛡️ {archerStats.def + lvBonus.def + cardBonus.def}</span>
-                    {!isGuest && (cardBonus.hp + cardBonus.atk + cardBonus.def) > 0 && (
+                    {!isLimitedAccount && (cardBonus.hp + cardBonus.atk + cardBonus.def) > 0 && (
                       <span className="bg-purple-500/30 px-2 py-0.5 rounded-full text-purple-200">🃏 卡牌+{cardBonus.hp+cardBonus.atk+cardBonus.def}</span>
                     )}
                   </>
                 );
               })()}
-              {!isGuest && dailyLeft!==null && (
+              {!isLimitedAccount && dailyLeft!==null && (
                 <span className={`px-2 py-0.5 rounded-full font-bold ${dailyLeft>0?"bg-emerald-500/80":"bg-red-500/80"} text-white`}>
                   今日剩 {dailyLeft}/{dailyMax} 次
                 </span>
               )}
-              {isGuest && <span className="bg-amber-500/80 px-2 py-0.5 rounded-full font-bold text-white">⭐ 體驗</span>}
+              {isLimitedAccount && <span className="bg-amber-500/80 px-2 py-0.5 rounded-full font-bold text-white">⭐ 體驗</span>}
             </div>
           )}
         </div>
@@ -1227,7 +1201,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
         </div>
 
-        {!isGuest && showRestorePrompt && savedBattle && (
+        {!isLimitedAccount && showRestorePrompt && savedBattle && (
           <div style={{ background:"rgba(251,191,36,0.12)", border:"1px solid #fbbf24aa", borderRadius:12, padding:"12px 16px" }}>
             <div style={{ fontWeight:900, color:"#fbbf24", fontSize:13, marginBottom:4 }}>⚔️ 上次戰鬥被中斷</div>
             <div style={{ color:"#cbd5e1", fontSize:11, marginBottom:10 }}>
@@ -1254,7 +1228,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           </div>
         )}
 
-        {!isGuest && !questContext && dailyLeft===0 ? (
+        {!isLimitedAccount && !questContext && dailyLeft===0 ? (
           <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-3xl mb-2">😴</div>
             <div className="font-black text-red-400">今日挑戰次數已用完</div>
@@ -1625,8 +1599,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           {mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
           {mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
           {archerStats&&(()=>{
-            const _lvBon=isGuest?{hp:0,atk:0,def:0}:archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
-            const _cardBonus=isGuest?{hp:0,atk:0,def:0}:calcEquippedBonus(resolveEquippedCards(cardColl));
+            const _lvBon=isLimitedAccount?{hp:0,atk:0,def:0}:archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
+            const _cardBonus=isLimitedAccount?{hp:0,atk:0,def:0}:calcEquippedBonus(resolveEquippedCards(cardColl));
             const _fHp=archerStats.hp+_lvBon.hp+_cardBonus.hp;
             const _fAtk=archerStats.atk+_lvBon.atk+_cardBonus.atk;
             const _fDef=archerStats.def+_lvBon.def+_cardBonus.def;
@@ -1841,7 +1815,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           potions={availablePotions}
           onPotionUsed={(pid) => {
             setPotionInv(prev => ({ ...prev, [pid]: Math.max(0, (prev[pid] || 0) - 1) }));
-            if (profile?.id && !isGuest) recordPotionUsed?.(profile.id, [pid]).catch(() => {});
+            if (profile?.id && !isLimitedAccount) recordPotionUsed?.(profile.id, [pid]).catch(() => {});
           }}
           renderMonster={(size, mon) => <MonsterBattleImg id={mon?.id} icon={mon?.icon} size={size} />}
         />
@@ -1856,8 +1830,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       ? { done: questContext.killsSoFar ?? 0, need: questContext.killsNeeded ?? 1 }
       : null;
     // 直接從 monster.tier 計算，避免 state 時序問題
-    const lootArcherXP = !isGuest && monster?.tier ? (MONSTER_TIER_XP[monster.tier] || 5) : 0;
-    const lootCatXP    = !isGuest && hasCat && monster?.tier ? (CAT_TIER_XP[monster.tier] || 5) : 0;
+    const lootArcherXP = !isLimitedAccount && monster?.tier ? (MONSTER_TIER_XP[monster.tier] || 5) : 0;
+    const lootCatXP    = !isLimitedAccount && hasCat && monster?.tier ? (CAT_TIER_XP[monster.tier] || 5) : 0;
     const resultData = {
       monster: {
         id: monster?.id,
@@ -1944,11 +1918,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           </div>
         )}
         {/* === 戰鬥統計 + 戰利品面板 === */}
-        {!isGuest && (
+        {!isLimitedAccount && (
           <BattleResultPanel data={resultData} config={RESULT_CONFIG_SOLO} />
         )}
         {/* 經驗值顯示（打怪勝利） */}
-        {!isGuest && (gainedXP > 0 || lootArcherXP > 0 || lootCatXP > 0) && (
+        {!isLimitedAccount && (gainedXP > 0 || lootArcherXP > 0 || lootCatXP > 0) && (
           <div className="w-full rounded-xl px-4 py-2.5 flex flex-col gap-1.5" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.15),rgba(37,99,235,0.1))", border:"1px solid rgba(124,58,237,0.3)" }}>
             <div className="text-[10px] text-purple-300 font-bold mb-0.5">✨ 獲得經驗值</div>
             {gainedXP > 0 && (
@@ -1971,7 +1945,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             )}
           </div>
         )}
-        {isGuest && (droppedCoins > 0 || droppedMaterials.length > 0) && (
+        {isLimitedAccount && (droppedCoins > 0 || droppedMaterials.length > 0) && (
           <div className="w-full rounded-2xl p-4 flex flex-col gap-3"
             style={{ background:"linear-gradient(135deg,rgba(15,23,42,0.78),rgba(30,41,59,0.72))", border:"1px solid rgba(148,163,184,0.28)" }}>
             <div className="text-slate-200 font-black text-sm">🎒 本場獎勵已存入體驗角色</div>
@@ -1992,7 +1966,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           </div>
         )}
         {/* ── 掉落物顯示（怪物死亡後的戰利品）── */}
-        {(isGuest || !profile?.id) ? (
+        {(isLimitedAccount || !profile?.id) ? (
           /* 訪客掉落區 */
           loot ? (
             <div className="w-full" style={{ animation:"mb-drop .6s ease" }}>
@@ -2135,7 +2109,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   function persistMonsterShootingPerformance({ result, finalMonsterHp, totalDamage, capturedEnds }) {
-    if (shootingPerformanceSavedRef.current || isGuest || !profile?.id || !battleSessionIdRef.current) return;
+    if (shootingPerformanceSavedRef.current || isLimitedAccount || !profile?.id || !battleSessionIdRef.current) return;
     shootingPerformanceSavedRef.current = true;
     const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(profile.id);
     finalizeMonsterShootingSession({
@@ -2200,7 +2174,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     });
     if (result === "won") {
       // Guest vs member rewards
-      if (isGuest || !profile?.id) {
+      if (isLimitedAccount || !profile?.id) {
         const wonBefore = sessionStorage.getItem("guest_won_once");
         if (!wonBefore) {
           const guestLootItem = drawLoot(LOOT_TABLE_GUEST, monster?.id, monster?.tier);
@@ -2219,7 +2193,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }
 
       // Materials + coins
-      if (!isGuest && profile?.id) {
+      if (!isLimitedAccount && profile?.id) {
         const mats = (mode === "novice"
           ? rollMaterialDrops(monster)
           : rollMaterialDropsGuaranteed(monster, (mode === "veteran" || mode === "match") ? 2 : 1)
@@ -2236,7 +2210,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           setDroppedCard(card);
           addMonsterCard(profile.id, card).catch(() => {});
         }
-      } else if (isGuest || profile?.id) {
+      } else if (isLimitedAccount || profile?.id) {
         const mats = rollMaterialDrops(monster).filter(m => !m.id?.startsWith("frag_")).slice(0, 1);
         setDroppedMaterials(mats);
         if (profile?.id && mats.length > 0) addMaterials(profile.id, mats).catch(() => {});
@@ -2255,7 +2229,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }
 
       // Archer XP + cat bond
-      if (!isGuest) {
+      if (!isLimitedAccount) {
         const archerXP = MONSTER_TIER_XP[monster?.tier] || 5;
         setGainedArcherXP(archerXP);
         addArcherXP(profile.id, archerXP).catch(() => {});
@@ -2275,7 +2249,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           totalDamage: summary.totalDamage || 0, crits: summary.crits || 0,
           totalArrows: summary.arrows || 0,
         }).catch(() => {});
-        if (!isGuest && summary.arrows > 0) addPracticeLog(profile.id, {
+        if (!isLimitedAccount && summary.arrows > 0) addPracticeLog(profile.id, {
           date: new Date().toISOString().slice(0, 10), source: "monster",
           monsterName: monster?.name, monsterTier: monster?.tier, mode, battleMode, result: "win",
           rounds: [], total: 0, totalArrows: summary.arrows,
@@ -2287,7 +2261,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       if (questContext?.monsterId === monster?.id && onKillForQuest) onKillForQuest(monster?.id);
 
       // Milestone check
-      if (profile?.id && !isGuest) {
+      if (profile?.id && !isLimitedAccount) {
         import("../../lib/db").then(mod => {
           if (mod.checkAndGrantArrowMilestones) {
             mod.checkAndGrantArrowMilestones(profile.id, arrowsPerRound).then(res => {

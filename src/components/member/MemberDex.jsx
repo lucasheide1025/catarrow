@@ -2,12 +2,15 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, createNotification, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
+import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
 import { getDuelStats } from "../../lib/duelDb";
+import { subscribeMyCats } from "../../lib/catDb";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
+  TIERED_ACHIEVEMENTS, computeTierProgress, getUnlockedKeys,
   buildRoundAchievements, computeDexStats, buildCohortAchievement,
 } from "../../lib/achievementDex";
+import { seedSeenIfFirstRun, seedNotifiedIfFirstRun, getUnseenKeys, markSeen } from "../../lib/dexSeen";
 
 /* ─── 像素風 CSS ─────────────────────────────────────────── */
 const PIXEL_BADGE_STYLE = `
@@ -56,20 +59,8 @@ const PIXEL_BADGE_STYLE = `
 const rarityClass = r => ({ common:"rarity-common", uncommon:"rarity-uncommon", rare:"rarity-rare", epic:"rarity-epic", legendary:"rarity-legendary", mythic:"rarity-mythic" }[r] || "rarity-common");
 const rarityLabelColor = r => ({ common:"#64748b", uncommon:"#16a34a", rare:"#2563eb", epic:"#9333ea", legendary:"#d97706", mythic:"#dc2626" }[r] || "#64748b");
 
-// 紫色（epic）以上需要公告
-const ANNOUNCE_RARITIES = new Set(["epic", "legendary", "mythic"]);
-
-// 已提示過的成就 id，存 localStorage，跨 mount/重整都不重複
-function getShownIds(uid) {
-  try { return new Set(JSON.parse(localStorage.getItem(`dex_shown_${uid}`) || "[]")); }
-  catch { return new Set(); }
-}
-function saveShownIds(uid, ids) {
-  try { localStorage.setItem(`dex_shown_${uid}`, JSON.stringify([...ids])); } catch {}
-}
-
 /* ─── 主元件 ─────────────────────────────────────────────── */
-export default function MemberDex({ onBack }) {
+export default function MemberDex({ onBack, onDexViewed }) {
   const { profile } = useAuth();
   const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
@@ -81,14 +72,13 @@ export default function MemberDex({ onBack }) {
   const [potionDex,  setPotionDex]        = useState({});
   const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [duelStats,  setDuelStats]        = useState({});
+  const [cats,       setCats]             = useState([]);
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
-  // 成就提示佇列
-  const [toastQueue, setToastQueue]     = useState([]);
-  const [currentToast, setCurrentToast] = useState(null);
-  const [toastOut, setToastOut]         = useState(false);
-  const toastTimerRef = useRef(null);
+  // 進圖鑑時「當下還沒看過」的 key 快照（凍結），驅動 NEW 角標；看過即標記已看清紅點
+  const [newKeys, setNewKeys] = useState(() => new Set());
+  const snapshotDoneRef = useRef(false);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -101,65 +91,56 @@ export default function MemberDex({ onBack }) {
     const unsubChest   = subscribeChestStats(profile.id, setChestStats);
     const unsubPotion  = subscribePotionDex(profile.id, setPotionDex);
     const unsubCard    = subscribeCardCollection(profile.id, setCardData);
+    const unsubCats    = subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {})));
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); unsubCard(); };
+    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); unsubCard(); unsubCats && unsubCats(); };
   }, [profile?.id]);
 
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats };
+  // 卡片相關成就（card_collect / card_mythic / card_all6fam）的 check/getValue 讀的是
+  // cardCount / mythicCards / cardFamilies，這裡要從 cardData 推導出來，否則卡片格恆為 0
+  // （與 computeDexStats 內部同一套算法）。
+  const _cards        = cardData?.cards || {};
+  const cardCount     = Object.keys(_cards).length;
+  const mythicCards   = Object.values(_cards).filter(c => c.tier === "mythic").length;
+  const cardFamilies  = [...new Set(Object.values(_cards).map(c => c.family).filter(Boolean))];
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, cardCount, mythicCards, cardFamilies, duelStats, cats };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
   // 快取給首頁/我的頁面使用，避免重複讀取
   if (profile?.id) { try { sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify({ totalUnlocked: stats.totalUnlocked, totalAll: stats.totalAll, gold: stats.gold, silver: stats.silver, bronze: stats.bronze })); } catch {} }
 
-  // ── 偵測新解鎖，加入提示佇列 ──
-  // localStorage 記錄已提示過的成就，跨 mount/重整/換頁都不重複觸發
+  // ── 進圖鑑＝去看了：把「當下沒看過」的 key 凍結成 NEW 快照，然後全部標記已看（清紅點）──
+  // 提醒（toast/popup）由 App 層 MemberApp 負責，這裡只做「看過」清除與 NEW 高亮，兩者不重複。
   useEffect(() => {
     if (!profile?.id) return;
+    const keys = getUnlockedKeys(ctx);
+    // 首次基準：避免既有成就被誤判成新的（跟 App 層各自 idempotent，init flag 只跑一次）
+    seedSeenIfFirstRun(profile.id, keys);
+    seedNotifiedIfFirstRun(profile.id, keys);
+    if (!keys.length) return;                 // 資料還沒載入完，等有東西再快照
+    if (!snapshotDoneRef.current) {
+      snapshotDoneRef.current = true;
+      setNewKeys(new Set(getUnseenKeys(profile.id, keys)));  // 凍結這批「新」的
+    }
+    markSeen(profile.id, keys);               // 看過了 → 清紅點
+    onDexViewed && onDexViewed();             // 通知 App 層重算 nav 紅點
+  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats]); // eslint-disable-line
 
-    const allAuto = AUTO_ACHIEVEMENTS.map(a => ({ ...a, unlocked: a.check(ctx) }));
-    const shownIds = getShownIds(profile.id);
-
-    // 已解鎖但還沒提示過的
-    const newOnes = allAuto.filter(a => a.unlocked && !shownIds.has(a.id));
-    if (newOnes.length === 0) return;
-
-    // 先存起來，防止重複觸發
-    newOnes.forEach(a => shownIds.add(a.id));
-    saveShownIds(profile.id, shownIds);
-
-    setToastQueue(q => [...q, ...newOnes]);
-
-    // 個人通知：僅推給自己（不做全頻廣播）
-    newOnes.forEach(a => {
-      if (ANNOUNCE_RARITIES.has(a.rarity)) {
-        createNotification({
-          type: "achievement",
-          title: `🏅 新成就解鎖！`,
-          content: `【${a.name}】${a.desc}`,
-          targetMemberId: profile.id,
-          subjectMemberId: profile.id,
-          subjectInfo: { nickname: profile.nickname || profile.name, archerNo: profile.archerNo || "", item: a.name, level: a.rarity },
-        }, profile.id).catch(() => {});
-      }
-    });
-  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData]); // eslint-disable-line
-
-  // ── 從佇列取下一個 ──
-  useEffect(() => {
-    if (currentToast !== null) return;
-    if (toastQueue.length === 0) return;
-    const [next, ...rest] = toastQueue;
-    setToastQueue(rest);
-    setCurrentToast(next);
-    setToastOut(false);
-  }, [toastQueue, currentToast]); // eslint-disable-line
-
-  // ── 自動消失計時器（只依賴 currentToast，不被 toastQueue 變動取消）──
-  useEffect(() => {
-    if (!currentToast) return;
-    const t1 = setTimeout(() => setToastOut(true), 3000);
-    const t2 = setTimeout(() => { setCurrentToast(null); setToastOut(false); }, 3500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [currentToast]); // eslint-disable-line
+  // 某個格子是否為「新」（unlocked 且其 key 在快照內）。tiered 格子 id 對應 `${id}#*`
+  function isCellNew(a) {
+    if (!a.unlocked || newKeys.size === 0) return false;
+    if (newKeys.has(a.id)) return true;
+    const prefix = a.id + "#";
+    for (const k of newKeys) if (k.startsWith(prefix)) return true;
+    return false;
+  }
+  // 哪些分類含有「新」成就（給分類頁籤紅點）
+  const newCatSet = new Set();
+  newKeys.forEach(k => {
+    const id = k.includes("#") ? k.split("#")[0] : k;
+    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id);
+    const catId = t ? t.cat : AUTO_ACHIEVEMENTS.find(x => x.id === id)?.cat;
+    if (catId) newCatSet.add(catId);
+  });
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }
@@ -171,7 +152,35 @@ export default function MemberDex({ onBack }) {
       const ids = new Set(granted.filter(g => g.type === "special").map(g => g.id));
       return SPECIAL_GRANTS.map(a => ({ ...a, unlocked: ids.has(a.id) }));
     }
-    return AUTO_ACHIEVEMENTS.filter(a => a.cat === catId).map(a => ({ ...a, unlocked: a.check(ctx) }));
+    // 階段式成就：從 TIERED_ACHIEVEMENTS 過濾
+    const tieredForCat = TIERED_ACHIEVEMENTS.filter(t => t.cat === catId);
+    // 收集被階段式成就取代的舊成就 id
+    const replacedIds = new Set();
+    tieredForCat.forEach(t => (t.replacesIds || []).forEach(id => replacedIds.add(id)));
+
+    // 一般成就：排除已被階段式取代的
+    const flat = AUTO_ACHIEVEMENTS
+      .filter(a => a.cat === catId && !replacedIds.has(a.id))
+      .map(a => ({ ...a, unlocked: a.check(ctx) }));
+
+    // 階段式成就：加上 tierProgress
+    const tiered = tieredForCat.map(t => {
+      const prog = computeTierProgress(t, ctx);
+      const curTier = prog.currentTier || t.tiers[0];
+      return {
+        id: t.id,
+        cat: t.cat,
+        icon: curTier ? curTier.icon : t.icon,
+        name: t.name,
+        rarity: curTier ? curTier.rarity : t.tiers[0].rarity,
+        desc: t.desc,
+        unlocked: prog.currentTierIndex >= 0,
+        // 附加 tierProgress 供彈窗使用
+        tierProgress: prog,
+      };
+    });
+
+    return [...tiered, ...flat];
   }
 
   const cells   = cellsFor(cat);
@@ -207,8 +216,11 @@ export default function MemberDex({ onBack }) {
       <div className="flex gap-2 overflow-x-auto pb-1">
         {DEX_CATEGORIES.map(c => (
           <button key={c.id} onClick={() => setCat(c.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
+            className={`relative px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
             {c.label}
+            {newCatSet.has(c.id) && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-[#0f172a]" />
+            )}
           </button>
         ))}
       </div>
@@ -221,31 +233,32 @@ export default function MemberDex({ onBack }) {
           {cells.length === 0 && cat === "cohort" && (
             <div className="col-span-4 text-gray-400 text-sm text-center py-6">尚未設定加入日期，無法判定期數</div>
           )}
-          {cells.map(a => <DexCell key={a.id} a={a} onTap={() => setDetail(a)} />)}
+          {cells.map(a => <DexCell key={a.id} a={a} isNew={isCellNew(a)} onTap={() => setDetail(a)} />)}
         </div>
       )}
 
       {detail && <DexDetailModal a={detail} onClose={() => setDetail(null)} />}
-
-      {/* 成就解鎖提示 */}
-      {currentToast && <DexToast a={currentToast} out={toastOut} />}
     </div>
   );
 }
 
 /* ─── 像素風成就格 ────────────────────────────────────────── */
-function DexCell({ a, onTap }) {
+function DexCell({ a, onTap, isNew }) {
   const unlocked  = a.unlocked;
   const isHidden  = a.hidden && !unlocked;
   const isLegendary = (a.rarity === "legendary" || a.rarity === "mythic") && unlocked;
 
   return (
     <button onClick={onTap}
-      className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-transform active:scale-95"
+      className="relative flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-transform active:scale-95"
       style={{
         background: unlocked ? "#0f172a" : "rgba(255,255,255,0.05)",
         border: `1.5px solid ${unlocked ? (RARITY_STYLE[a.rarity]?.ring || "#94a3b8") : "rgba(255,255,255,0.12)"}`,
       }}>
+      {isNew && (
+        <span className="absolute -top-1 -right-1 z-10 px-1 rounded-md bg-red-500 text-white font-black leading-none"
+          style={{ fontSize: "8px", padding: "2px 3px" }}>NEW</span>
+      )}
       <div className={`px-badge ${unlocked ? rarityClass(a.rarity) : "locked"}`}>
         <div className={`px-tile ${unlocked ? "unlocked" : "locked"} ${isLegendary ? "legendary-shine" : ""}`}>
           {isHidden ? "❓" : a.icon}
@@ -319,38 +332,14 @@ function RoundGrid({ cells, catLabel, onTap }) {
   );
 }
 
-/* ─── 成就解鎖提示 Toast ──────────────────────────────────── */
-function DexToast({ a, out }) {
-  const rs    = RARITY_STYLE[a.rarity] || RARITY_STYLE.common;
-  const isEpicUp = ANNOUNCE_RARITIES.has(a.rarity);
-
-  return (
-    <div className={`fixed bottom-24 left-1/2 z-[90] -translate-x-1/2 ${out ? "dex-toast-out" : "dex-toast-in"}`}
-      style={{ width:"min(88vw,320px)" }}>
-      <div className="rounded-2xl p-4 flex items-center gap-3 shadow-2xl"
-        style={{
-          background: "linear-gradient(135deg,#0f172a,#1e293b)",
-          border: `2px solid ${rs.ring}`,
-          boxShadow: rs.glow || "none",
-        }}>
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-3xl"
-          style={{ background:"#1e293b", border:`2px solid ${rs.ring}` }}>
-          {a.icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div style={{ fontSize:"10px", fontWeight:700, color: rarityLabelColor(a.rarity), letterSpacing:"0.08em" }}>
-            {isEpicUp ? "🎉 成就解鎖！已公告" : "✅ 成就解鎖"}
-          </div>
-          <div className="font-black text-white text-sm truncate">{a.name}</div>
-          <div className="text-gray-400 truncate" style={{ fontSize:"11px" }}>{a.desc}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── 詳情彈窗 ───────────────────────────────────────────── */
 function DexDetailModal({ a, onClose }) {
+  // 階段式成就 → 進度條顯示
+  if (a.tierProgress) {
+    return <TieredDetailContent a={a} onClose={onClose} />;
+  }
+
+  // 一次性成就（原有邏輯）
   const unlocked = a.unlocked;
   const isHidden = a.hidden && !unlocked;
   const rs = RARITY_STYLE[a.rarity] || RARITY_STYLE.common;
@@ -397,6 +386,187 @@ function DexDetailModal({ a, onClose }) {
         {!unlocked && !isHidden && <div className="text-gray-400 text-sm mt-3">🔒 尚未解鎖</div>}
 
         <button onClick={onClose} className="mt-5 w-full py-2.5 rounded-xl bg-white/10 text-gray-300 font-bold border border-white/15">關閉</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── 階段式成就詳情彈窗（含進度條 + 里程碑列表）─────────── */
+function TieredDetailContent({ a, onClose }) {
+  const p = a.tierProgress; // computeTierProgress 的回傳值
+  const [milestonesOpen, setMilestonesOpen] = useState(true);
+
+  // 預設展開邏輯：全部完成時收起，其他展開
+  useEffect(() => {
+    setMilestonesOpen(!p.progress.isComplete);
+  }, [p.progress.isComplete]);
+
+  // 當前 tier 的稀有度樣式
+  const currentRarity = p.currentTier ? p.currentTier.rarity : (a.rarity || "common");
+  const rs = RARITY_STYLE[currentRarity] || RARITY_STYLE.common;
+  const currentIcon = p.currentTier ? p.currentTier.icon : a.icon;
+  const currentName = p.currentTier ? p.currentTier.name : "尚未解鎖";
+
+  // 激勵文字
+  function gapMessage() {
+    if (p.progress.isComplete) return "🎉 完美達成！全部里程碑已解鎖！";
+    if (!p.nextTier) return "🎯 繼續加油！";
+    const gap = p.progress.gap;
+    const name = p.nextTier.name;
+    if (gap <= 1) return `🔥 再 ${gap} 次！就差一步就能達成「${name}」！`;
+    if (gap <= 3) return `⚡ 再 ${gap} 次即可達成「${name}」！`;
+    if (gap <= 9) return `🎯 再 ${gap} 次就能解鎖「${name}」`;
+    return `🏹 繼續努力，離「${name}」還有 ${gap} 次`;
+  }
+
+  // 進度條漸層 class
+  const rarityProgressClass = ({
+    common:    "from-slate-400 to-slate-300",
+    uncommon:  "from-green-600 to-green-400",
+    rare:      "from-blue-600 to-blue-400",
+    epic:      "from-purple-600 to-purple-400",
+    legendary: "from-amber-600 to-yellow-400",
+    mythic:    "from-red-600 to-red-400",
+  })[currentRarity] || "from-slate-400 to-slate-300";
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="rounded-3xl p-6 w-full max-w-xs text-left"
+        style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* 圖示 + 名稱 + 稀有度 */}
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl flex-shrink-0"
+            style={{
+              background: p.currentTierIndex >= 0 ? "#0f172a" : "rgba(255,255,255,0.06)",
+              border: `2px solid ${p.currentTierIndex >= 0 ? rs.ring : "rgba(255,255,255,0.12)"}`,
+              boxShadow: p.currentTierIndex >= 0 ? rs.glow : "none",
+            }}>
+            {currentIcon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-black text-lg text-gray-100 truncate">{a.name}</div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-sm">{currentIcon}</span>
+              <span className="text-sm font-bold truncate" style={{ color: rarityLabelColor(currentRarity) }}>
+                {currentName}
+              </span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: rs.ring + "22", color: rarityLabelColor(currentRarity) }}>
+                {rs.label}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 進度條 */}
+        <div className="mb-3">
+          <div className="relative h-2.5 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full bg-gradient-to-r ${rarityProgressClass} transition-all duration-700 ease-out`}
+              style={{ width: `${p.progress.percent}%` }}
+            />
+            {/* 里程碑圓點標記 */}
+            {p.tiers.map((t, i) => {
+              const pct = ((t.count - 0) / (p.tiers[p.tiers.length - 1].count)) * 100;
+              const isDone = t.unlocked;
+              const isNext = t.isCurrent;
+              return (
+                <div
+                  key={i}
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 transition-all duration-300"
+                  style={{
+                    left: `${Math.min(100, pct)}%`,
+                    background: isDone ? rs.ring : "transparent",
+                    borderColor: isNext ? rs.ring : (isDone ? rs.ring : "rgba(255,255,255,0.2)"),
+                    boxShadow: isNext ? `0 0 8px ${rs.ring}` : "none",
+                    zIndex: isNext ? 3 : 1,
+                  }}
+                />
+              );
+            })}
+          </div>
+          {/* 進度數字 */}
+          <div className="flex justify-between mt-1.5 text-xs text-gray-400">
+            <span className="font-bold" style={{ color: rarityLabelColor(currentRarity) }}>
+              {p.progress.currentLabel}
+            </span>
+            {!p.progress.isComplete && (
+              <span className="text-gray-500">
+                / {p.progress.nextLabel}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 激勵文字 */}
+        <div className="text-sm font-bold text-center py-2 px-3 rounded-xl mb-3"
+          style={{
+            background: p.progress.isComplete
+              ? "rgba(34,197,94,0.12)"
+              : "rgba(59,130,246,0.10)",
+            color: p.progress.isComplete ? "#4ade80" : "#60a5fa",
+          }}>
+          {gapMessage()}
+        </div>
+
+        {/* 里程碑列表 — 展開/收起 */}
+        <button
+          onClick={() => setMilestonesOpen(o => !o)}
+          className="w-full flex items-center justify-between py-2 px-3 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-colors"
+        >
+          <span>
+            {milestonesOpen ? "▲" : "▼"} 里程碑列表（{p.unlockedCount}/{p.totalTiers}）
+          </span>
+          <span className="text-gray-500">{p.progress.isComplete ? "🎉" : "🏹"}</span>
+        </button>
+
+        {milestonesOpen && (
+          <div className="flex flex-col gap-1 mt-1 mb-2 pb-2 max-h-64 overflow-y-auto">
+            {p.tiers.map((t, i) => {
+              const isDone = t.unlocked;
+              const isNext = t.isCurrent;
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all duration-300"
+                  style={{
+                    background: isNext
+                      ? `rgba(59,130,246,0.12)`
+                      : isDone
+                        ? "rgba(34,197,94,0.06)"
+                        : "transparent",
+                    borderLeft: isNext ? `3px solid ${rs.ring}` : "3px solid transparent",
+                    opacity: isDone ? 1 : 0.6,
+                  }}>
+                  {/* 狀態圖示 */}
+                  <div className="w-5 text-center flex-shrink-0">
+                    {isNext ? "▶" : isDone ? "✅" : "🔒"}
+                  </div>
+                  {/* tier 圖示 */}
+                  <div className="text-lg flex-shrink-0">{t.icon}</div>
+                  {/* 名稱 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-200 text-xs truncate">{t.name}</div>
+                    <div className="text-gray-500 text-xs truncate">{t.desc}</div>
+                  </div>
+                  {/* 門檻 */}
+                  <div className="text-xs font-bold flex-shrink-0"
+                    style={{ color: isDone ? rarityLabelColor(t.rarity) : "#64748b" }}>
+                    {t.count}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 關閉按鈕 */}
+        <button onClick={onClose}
+          className="mt-3 w-full py-2.5 rounded-xl bg-white/10 text-gray-300 font-bold border border-white/15 hover:bg-white/20 transition-colors">
+          關閉
+        </button>
       </div>
     </div>
   );

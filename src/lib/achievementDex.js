@@ -8,6 +8,10 @@ import { POTIONS } from "./itemData";
 import { levelFromXP } from "./adventurerSystem";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "./dungeonCollectibles";
 import { WB_TROPHY_MAP } from "./worldBossData";
+import { getVillageLevel } from "./villageData";
+
+// 裝備品階順序（equipData.js：common→mythic），供裝備成就取「最高品階」用
+const EQUIP_GRADE_ORDER = ["common", "rare", "elite", "epic", "legend", "mythic"];
 
 export const RARITY_STYLE = {
   common:    { ring: "#cbd5e1", glow: "none",                              label: "普通" },
@@ -27,6 +31,7 @@ export const RANK_STYLE = {
 
 export const DEX_CATEGORIES = [
   { id: "start",    label: "🌱 啟程" },
+  { id: "practice", label: "🎯 練習" },
   { id: "cohort",   label: "🎓 期數" },
   { id: "cert",     label: "🎖️ 射手證" },
   { id: "level",    label: "🏹 檢定" },
@@ -35,11 +40,15 @@ export const DEX_CATEGORIES = [
   { id: "point",    label: "⭐ 積分賽" },
   { id: "special",  label: "✨ 特殊" },
   { id: "monster",  label: "👹 打怪" },
+  { id: "worldboss",label: "🐲 世界王" },
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製 & 藥水" },
   { id: "card",     label: "🃏 怪物卡" },
   { id: "guild",    label: "🏰 冒險者公會" },
   { id: "dungeon",  label: "🏚️ 地下城" },
+  { id: "cat",      label: "🐈 貓咪" },
+  { id: "village",  label: "🏘️ 貓貓村" },
+  { id: "equip",    label: "🛡️ 裝備" },
 ];
 
 // ── helpers ──────────────────────────────────────────────────
@@ -88,9 +97,11 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "checkin_25", cat: "start", icon: "🌟", name: "百練成鋼",   rarity: "rare",     desc: "累積報到 25 次",           check: c => (c.checkinCount || 0) >= 25 },
   { id: "checkin_30", cat: "start", icon: "💪", name: "風雨無阻",   rarity: "epic",     desc: "累積報到 30 次",           check: c => (c.checkinCount || 0) >= 30 },
   { id: "first_cert", cat: "start", icon: "🎯", name: "初試啼聲",   rarity: "common",   desc: "第一次參加年度檢定",       check: c => (c.certRecords || []).length >= 1 },
-  // 月卡（功能尚未實裝，check 先回傳 false）
-  { id: "card_first",  cat: "start", icon: "🪪", name: "月卡初啟",  rarity: "uncommon", desc: "第一次啟動月卡",           check: _c => false },
-  { id: "card_renew",  cat: "start", icon: "🔄", name: "月卡續射",  rarity: "rare",     desc: "月卡至少續約一次",         check: _c => false },
+  // 月卡（已實裝：member.monthlyCard）。card_first 可判定；card_renew 待續約計數器（Phase 4）
+  { id: "card_first",  cat: "start", icon: "🪪", name: "月卡初啟",  rarity: "uncommon", desc: "第一次啟動月卡",
+    check: c => !!(c.member?.monthlyCard?.startedAt || c.member?.monthlyCard?.active) },
+  { id: "card_renew",  cat: "start", icon: "🔄", name: "月卡續射",  rarity: "rare",     desc: "月卡至少續約一次",
+    check: c => (c.member?.monthlyCard?.renewCount || 0) >= 1 },
 
   // ══ 射手證 ══
   { id: "cert_blue",       cat: "cert", icon: "🎖️", name: "藍證射手",     rarity: "rare",
@@ -556,7 +567,7 @@ for (const item of Object.values(COLLECTIBLE_MAP)) {
 // ── 動態加入：世界王專屬收藏獎盃成就（尾刀+前三名，24隻×2=48個）────
 for (const t of Object.values(WB_TROPHY_MAP)) {
   AUTO_ACHIEVEMENTS.push({
-    id: `wb_trophy_${t.id}`, cat: "special", icon: t.icon,
+    id: `wb_trophy_${t.id}`, cat: "worldboss", icon: t.icon,
     name: t.name, rarity: t.kind === "lastHit" ? "mythic" : "legendary",
     desc: t.desc, hidden: true,
     riddle: t.kind === "lastHit" ? "終結牠的人，只有一個…" : "傷害的證明，刻在勳章上…",
@@ -685,16 +696,524 @@ export function buildCohortAchievement(joinDate) {
   };
 }
 
+// ── 階段式成就（TIERED） — 里程碑系統 ─────────────────────────
+// 每個階段式成就只佔 1 格，隨數值成長自動替換圖示、稀有度、名稱
+// 點擊後顯示進度條 + 里程碑列表
+
+export const TIERED_ACHIEVEMENTS = [
+  // ══ 啟程 — 累積報到 ══
+  {
+    id: "checkin", cat: "start", icon: "📍", name: "累積報到",
+    desc: "完成今日任務報到，累積次數",
+    replacesIds: ["checkin_1","checkin_5","checkin_10","checkin_15","checkin_20","checkin_25","checkin_30"],
+    getValue: c => c.checkinCount || 0,
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "📍", name: "初次報到",   desc: "完成第一次今日任務報到" },
+      { count: 5,  rarity: "common",   icon: "🌤️", name: "漸入佳境",   desc: "累積報到 5 次" },
+      { count: 10, rarity: "uncommon", icon: "🔥", name: "持之以恆",   desc: "累積報到 10 次" },
+      { count: 15, rarity: "uncommon", icon: "⚡", name: "勢如破竹",   desc: "累積報到 15 次" },
+      { count: 20, rarity: "rare",     icon: "💎", name: "鍛鍊有成",   desc: "累積報到 20 次" },
+      { count: 25, rarity: "rare",     icon: "🌟", name: "百練成鋼",   desc: "累積報到 25 次" },
+      { count: 30, rarity: "epic",     icon: "💪", name: "風雨無阻",   desc: "累積報到 30 次" },
+    ],
+  },
+
+  // ══ 打怪 — 累積擊殺場數 ══
+  {
+    id: "monster_kills", cat: "monster", icon: "👹", name: "累積擊殺",
+    desc: "累積擊敗怪物的總次數",
+    replacesIds: ["monster_first","monster_5","monster_10","monster_30"],
+    getValue: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "👹", name: "初入戰場",   desc: "第一次擊敗怪物" },
+      { count: 5,  rarity: "uncommon", icon: "⚔️", name: "身經百戰",   desc: "累積擊敗怪物 5 次" },
+      { count: 10, rarity: "rare",     icon: "🗡️", name: "殺伐決斷",   desc: "累積擊敗怪物 10 次" },
+      { count: 30, rarity: "epic",     icon: "🔱", name: "百戰老將",   desc: "累積擊敗怪物 30 次" },
+    ],
+  },
+
+  // ══ 打怪 — 頭目擊殺 ══
+  {
+    id: "monster_boss", cat: "monster", icon: "🌟", name: "頭目擊殺",
+    desc: "擊敗頭目（boss）級怪物的次數",
+    replacesIds: ["monster_mvp1","monster_mvp10"],
+    getValue: c => Object.entries(c.monsterDex || {}).filter(([id]) => id.endsWith("_5")).reduce((s, [, m]) => s + (m.wins || 0), 0),
+    tiers: [
+      { count: 1,  rarity: "rare",     icon: "🌟", name: "首殺頭目",   desc: "擊敗任意一隻頭目（boss）" },
+      { count: 10, rarity: "legendary",icon: "💥", name: "頭目獵人",   desc: "累積擊敗頭目（boss）10 次以上" },
+    ],
+  },
+
+  // ══ 煉製 — 藥水合成 ══
+  {
+    id: "brew", cat: "forge", icon: "🧪", name: "藥水合成",
+    desc: "累積合成藥水的次數",
+    replacesIds: ["brew_first","brew_5","brew_10"],
+    getValue: c => (c.craftStats?.potionsCrafted || 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "🧪", name: "初學煉金",   desc: "第一次合成藥水" },
+      { count: 5,  rarity: "uncommon", icon: "⚗️", name: "藥水調製師", desc: "累積合成藥水 5 瓶" },
+      { count: 10, rarity: "rare",     icon: "💊", name: "藥劑大師",   desc: "累積合成藥水 10 瓶" },
+    ],
+  },
+
+  // ══ 煉製 — 藥水使用 ══
+  {
+    id: "potion_usage", cat: "forge", icon: "🧪", name: "藥水使用",
+    desc: "累積在戰鬥中使用藥水的次數",
+    replacesIds: ["potion_any_1","potion_any_10","potion_any_30","potion_any_50"],
+    getValue: c => Object.values(c.potionDex?.used || {}).reduce((s, n) => s + n, 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "🧪", name: "初識藥水",   desc: "第一次在戰鬥中使用藥水" },
+      { count: 10, rarity: "uncommon", icon: "💊", name: "藥水依賴",   desc: "累積使用藥水 10 次" },
+      { count: 30, rarity: "rare",     icon: "⚗️", name: "藥水大戶",   desc: "累積使用藥水 30 次" },
+      { count: 50, rarity: "epic",     icon: "🔮", name: "藥水狂熱者", desc: "累積使用藥水 50 次" },
+    ],
+  },
+
+  // ══ 怪物卡 — 卡片收集 ══
+  {
+    id: "card_collect", cat: "card", icon: "🃏", name: "怪物卡收集",
+    desc: "收集不同種類的怪物卡",
+    replacesIds: ["card_1","card_5","card_10","card_15","card_20"],
+    getValue: c => (c.cardCount || 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "🃏", name: "初探怪窟",     desc: "收集第一張怪物卡" },
+      { count: 5,  rarity: "uncommon", icon: "🃏", name: "收藏家入門",   desc: "收集 5 種怪物卡" },
+      { count: 10, rarity: "rare",     icon: "🃏", name: "卡片達人",     desc: "收集 10 種怪物卡" },
+      { count: 15, rarity: "epic",     icon: "🃏", name: "卡片狂人",     desc: "收集 15 種怪物卡" },
+      { count: 20, rarity: "legendary",icon: "🃏", name: "怪物圖鑑家",   desc: "收集 20 種怪物卡" },
+    ],
+  },
+
+  // ══ 決鬥 — 累積勝場 ══
+  {
+    id: "duel_wins", cat: "duel", icon: "⚔️", name: "決鬥勝場",
+    desc: "決鬥模式中累積獲勝的次數",
+    replacesIds: ["duel_win1","duel_win5","duel_win10","duel_win25"],
+    getValue: c => (c.duelStats?.wins || 0),
+    tiers: [
+      { count: 1,  rarity: "uncommon", icon: "🏴", name: "初勝",       desc: "決鬥模式首次獲勝" },
+      { count: 5,  rarity: "rare",     icon: "⚔️", name: "百戰老將",   desc: "決鬥模式累積勝利 5 次" },
+      { count: 10, rarity: "epic",     icon: "🏆", name: "決鬥大師",   desc: "決鬥模式累積勝利 10 次" },
+      { count: 25, rarity: "epic",     icon: "👑", name: "決鬥王者",   desc: "決鬥模式累積勝利 25 次" },
+    ],
+  },
+
+  // ══ 地下城 — 收藏品拾獲 ══
+  {
+    id: "collectible_progress", cat: "dungeon", icon: "🎒", name: "收藏品拾獲",
+    desc: "在地下城中拾獲不同收藏品的數量",
+    replacesIds: ["collectible_first","collectible_10","collectible_60","collectible_150"],
+    getValue: c => Object.keys(c.member?.dungeonCollectibles || {}).length,
+    tiers: [
+      { count: 1,   rarity: "common",   icon: "🎒", name: "初次拾獲",       desc: "第一次在地下城拾獲收藏品" },
+      { count: 10,  rarity: "uncommon", icon: "🧳", name: "小有收穫",       desc: "累積拾獲 10 種不同收藏品" },
+      { count: 60,  rarity: "rare",     icon: "📦", name: "探險家的行囊",   desc: "累積拾獲 60 種不同收藏品" },
+      { count: 150, rarity: "epic",     icon: "🏺", name: "秘寶收藏家",     desc: "累積拾獲 150 種不同收藏品" },
+    ],
+  },
+];
+
+// ── 動態加入階段式成就（Phase 2：把巨量動態系列也合併成 1 格）──────────
+// 全部沿用上方 AUTO 生成用的常數（KILL_MILESTONES / CHEST_ACH_TYPES /
+// POTION_RARITY_MILESTONES / FAM_ICONS…），tiers 值刻意跟舊 AUTO 對齊，
+// 這樣 computeDexStats 換成用 tiered 里程碑計數後總數幾乎不變。
+// replacesIds 一定要列全對應的舊 AUTO id，cellsFor 才會把舊格濾掉。
+
+// 單一怪物擊殺次數（36 隻各 1 格，取代 kill_{id}_{5,10,25,50,100}）
+for (const monster of MONSTERS) {
+  TIERED_ACHIEVEMENTS.push({
+    id: `kill_${monster.id}`, cat: "monster", icon: monster.icon,
+    name: `${monster.name}剋星`,
+    desc: `累積擊敗「${monster.name}」的次數`,
+    replacesIds: KILL_MILESTONES.map(n => `kill_${monster.id}_${n}`),
+    getValue: c => (c.monsterDex?.[monster.id]?.wins || 0),
+    tiers: KILL_MILESTONES.map(n => ({
+      count: n, rarity: KILL_RARITIES[n], icon: KILL_ICONS[n],
+      name: `${monster.name}剋星 ×${n}`,
+      desc: `擊敗「${monster.name}」${n} 次`,
+    })),
+  });
+}
+
+// 開箱次數（7 種箱各 1 格，取代 chest_{type}_open_{1,5,10,20}）
+for (const ct of CHEST_ACH_TYPES) {
+  TIERED_ACHIEVEMENTS.push({
+    id: `chest_${ct.id}`, cat: "monster", icon: ct.icon,
+    name: `${ct.name}開啟`,
+    desc: `累積開啟${ct.name}的次數`,
+    replacesIds: CHEST_OPEN_MILESTONES.map(n => `chest_${ct.id}_open_${n}`),
+    getValue: c => (c.chestStats?.[ct.id] || 0),
+    tiers: CHEST_OPEN_MILESTONES.map(n => ({
+      count: n, rarity: CHEST_OPEN_RARITIES[n], icon: ct.icon,
+      name: n === 1 ? `初開${ct.name}` : `${ct.name} ×${n}`,
+      desc: n === 1 ? `第一次開啟${ct.name}` : `累積開啟${ct.name} ${n} 次`,
+    })),
+  });
+}
+
+// 每種藥水使用次數（每藥水 1 格，取代 potion_{id}_{count}）
+for (const potion of POTIONS.filter(item => !item.futureFeature)) {
+  const milestones = POTION_RARITY_MILESTONES[potion.rarity] || POTION_RARITY_MILESTONES.common;
+  TIERED_ACHIEVEMENTS.push({
+    id: `potion_${potion.id}`, cat: "forge", icon: potion.icon,
+    name: `${potion.name}使用`,
+    desc: `累積使用「${potion.name}」的次數`,
+    replacesIds: milestones.map(([count]) => `potion_${potion.id}_${count}`),
+    getValue: c => (c.potionDex?.used?.[potion.id] || 0),
+    tiers: milestones.map(([count, rarity, suffix]) => ({
+      count, rarity, icon: potion.icon,
+      name: `${potion.name} · ${suffix}`,
+      desc: `使用「${potion.name}」${count} 次`,
+    })),
+  });
+}
+
+// 各族討伐進度（6 族各 1 格，取代 dex_{fam}_t{1..6}）
+// ⚠️ 語意調整：舊版每格＝「擊敗該族第 N 級怪物」，非單調值套不進進度條；
+// 改為「擊破該族不同怪物的數量」(0~6)，單調遞增，符合里程碑模型。
+// 一族只有 fam_1..fam_6 共 6 隻、且 fam_6 為神話怪，要到 6 星必然打過神話怪。
+for (const fam of ["ghost","mountain","insect","workplace","exam","temple"]) {
+  TIERED_ACHIEVEMENTS.push({
+    id: `dex_${fam}`, cat: "monster", icon: FAM_ICONS[fam],
+    name: `${FAM_LABELS[fam]}討伐`,
+    desc: `擊破${FAM_LABELS[fam]}不同怪物的數量`,
+    replacesIds: [1,2,3,4,5,6].map(t => `dex_${fam}_t${t}`),
+    getValue: c => [1,2,3,4,5,6].filter(t => (c.monsterDex?.[`${fam}_${t}`]?.wins || 0) > 0).length,
+    tiers: [1,2,3,4,5,6].map((n, i) => ({
+      count: n, rarity: TIER_RARITIES_LIST[i], icon: FAM_ICONS[fam],
+      name: `${FAM_LABELS[fam]}${TIER_NAMES_LIST[i]}`,
+      desc: `擊破 ${n} 種${FAM_LABELS[fam]}怪物`,
+    })),
+  });
+}
+
+// ── Phase 3：跨系統新分類的階段式成就（練習/貓咪/貓村/裝備/決鬥歷練）──────
+// 全部讀 member 文件既有欄位或 ctx.cats（子集合，由前端注入），皆為單調累積值。
+
+TIERED_ACHIEVEMENTS.push(
+  // 🎯 練習 — 終身箭數（member.totalArrowsAllTime）
+  {
+    id: "arrows_total", cat: "practice", icon: "🎯", name: "累積練習箭數",
+    desc: "終身在系統內累積射出的箭數",
+    getValue: c => c.member?.totalArrowsAllTime || 0,
+    tiers: [
+      { count: 100,   rarity: "common",    icon: "🎯", name: "起手式",   desc: "累積射出 100 箭" },
+      { count: 500,   rarity: "common",    icon: "🏹", name: "漸上手",   desc: "累積射出 500 箭" },
+      { count: 1000,  rarity: "uncommon",  icon: "🔥", name: "千箭穿楊", desc: "累積射出 1,000 箭" },
+      { count: 3000,  rarity: "rare",      icon: "💪", name: "勤練不輟", desc: "累積射出 3,000 箭" },
+      { count: 6000,  rarity: "epic",      icon: "⚡", name: "箭術精湛", desc: "累積射出 6,000 箭" },
+      { count: 10000, rarity: "legendary", icon: "🌟", name: "萬箭大師", desc: "累積射出 10,000 箭" },
+      { count: 20000, rarity: "mythic",    icon: "👑", name: "箭道傳說", desc: "累積射出 20,000 箭" },
+    ],
+  },
+
+  // 🐈 貓咪（ctx.cats：cats 子集合陣列）
+  {
+    id: "cat_collect", cat: "cat", icon: "🐈", name: "集貓數",
+    desc: "收服的貓咪夥伴數量（共 9 隻）",
+    getValue: c => (c.cats || []).length,
+    tiers: [
+      { count: 1, rarity: "common",   icon: "🐱", name: "初識貓緣", desc: "收服第一隻貓咪" },
+      { count: 3, rarity: "uncommon", icon: "🐈", name: "貓群漸聚", desc: "收服 3 隻貓咪" },
+      { count: 6, rarity: "rare",     icon: "😺", name: "貓丁興旺", desc: "收服 6 隻貓咪" },
+      { count: 9, rarity: "epic",     icon: "👑", name: "九貓齊聚", desc: "收服全部 9 隻貓咪" },
+    ],
+  },
+  {
+    id: "cat_level", cat: "cat", icon: "⭐", name: "貓咪等級",
+    desc: "任一貓咪達到的最高等級",
+    getValue: c => (c.cats || []).reduce((m, x) => Math.max(m, levelFromXP(x.catXP || 0)), 0),
+    tiers: [
+      { count: 10,  rarity: "common",   icon: "⭐", name: "貓咪成長",   desc: "任一貓咪達到 Lv.10" },
+      { count: 30,  rarity: "uncommon", icon: "🌟", name: "獨當一面",   desc: "任一貓咪達到 Lv.30" },
+      { count: 60,  rarity: "rare",     icon: "💫", name: "身經百戰",   desc: "任一貓咪達到 Lv.60" },
+      { count: 100, rarity: "epic",     icon: "🔥", name: "貓中豪傑",   desc: "任一貓咪達到 Lv.100" },
+      { count: 150, rarity: "legendary",icon: "⚡", name: "傳說貓將",   desc: "任一貓咪達到 Lv.150" },
+      { count: 200, rarity: "mythic",   icon: "👑", name: "神話貓王",   desc: "任一貓咪達到滿等 Lv.200" },
+    ],
+  },
+  {
+    id: "cat_bond", cat: "cat", icon: "💛", name: "貓咪羈絆",
+    desc: "任一貓咪累積的最高羈絆值",
+    getValue: c => (c.cats || []).reduce((m, x) => Math.max(m, x.bond || 0), 0),
+    tiers: [
+      { count: 50,   rarity: "common",   icon: "💛", name: "漸生情誼", desc: "任一貓咪羈絆達 50" },
+      { count: 200,  rarity: "uncommon", icon: "💗", name: "形影不離", desc: "任一貓咪羈絆達 200" },
+      { count: 500,  rarity: "rare",     icon: "💖", name: "心有靈犀", desc: "任一貓咪羈絆達 500" },
+      { count: 1000, rarity: "epic",     icon: "💞", name: "生死之交", desc: "任一貓咪羈絆達 1,000" },
+    ],
+  },
+  {
+    id: "cat_story", cat: "cat", icon: "📖", name: "貓咪故事",
+    desc: "累積解鎖的貓咪故事章節數",
+    getValue: c => (c.cats || []).reduce((s, x) => s + (Array.isArray(x.unlockedChapters) ? x.unlockedChapters.length : 0), 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "📖", name: "翻開扉頁", desc: "解鎖第一段貓咪故事" },
+      { count: 5,  rarity: "uncommon", icon: "📚", name: "娓娓道來", desc: "累積解鎖 5 段故事" },
+      { count: 10, rarity: "rare",     icon: "📜", name: "貓生百態", desc: "累積解鎖 10 段故事" },
+      { count: 20, rarity: "epic",     icon: "🏆", name: "故事收藏家", desc: "累積解鎖 20 段故事" },
+    ],
+  },
+
+  // 🏘️ 貓貓村（member.village.buildings）
+  {
+    id: "village_level", cat: "village", icon: "🏘️", name: "村莊發展",
+    desc: "貓貓村的整體發展程度（各棟等級總和）",
+    getValue: c => getVillageLevel(c.member?.village?.buildings || {}),
+    tiers: [
+      { count: 12,  rarity: "common",   icon: "🏕️", name: "拓荒立村", desc: "村莊發展度達 12" },
+      { count: 30,  rarity: "uncommon", icon: "🏘️", name: "漸有規模", desc: "村莊發展度達 30" },
+      { count: 60,  rarity: "rare",     icon: "🏙️", name: "繁榮興盛", desc: "村莊發展度達 60" },
+      { count: 100, rarity: "epic",     icon: "🌆", name: "貓城崛起", desc: "村莊發展度達 100" },
+      { count: 150, rarity: "legendary",icon: "👑", name: "貓國之光", desc: "村莊發展度達 150" },
+    ],
+  },
+  {
+    id: "building_max", cat: "village", icon: "🏗️", name: "建築等級",
+    desc: "任一棟建築達到的最高等級（上限 20）",
+    getValue: c => {
+      const b = c.member?.village?.buildings || {};
+      return Object.values(b).reduce((m, lv) => Math.max(m, Number(lv) || 0), 0);
+    },
+    tiers: [
+      { count: 5,  rarity: "common",   icon: "🔨", name: "小有基礎", desc: "任一棟建築達 Lv.5" },
+      { count: 10, rarity: "uncommon", icon: "🏗️", name: "穩紮穩打", desc: "任一棟建築達 Lv.10" },
+      { count: 15, rarity: "rare",     icon: "🏛️", name: "精益求精", desc: "任一棟建築達 Lv.15" },
+      { count: 20, rarity: "epic",     icon: "👑", name: "登峰造極", desc: "任一棟建築達滿級 Lv.20" },
+    ],
+  },
+
+  // 🛡️ 裝備（member.rpgEquip）
+  {
+    id: "equip_slots", cat: "equip", icon: "🛡️", name: "裝備蒐羅",
+    desc: "已裝備的槽位數（共 6 槽）",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).filter(e => e && e.itemId).length,
+    tiers: [
+      { count: 1, rarity: "common",   icon: "🗡️", name: "初出茅廬", desc: "裝上第一件裝備" },
+      { count: 3, rarity: "uncommon", icon: "🛡️", name: "武裝待發", desc: "裝滿 3 個槽位" },
+      { count: 6, rarity: "rare",     icon: "⚔️", name: "全副武裝", desc: "6 個槽位全數裝滿" },
+    ],
+  },
+  {
+    id: "equip_plus", cat: "equip", icon: "✨", name: "衝裝強化",
+    desc: "任一件裝備達到的最高強化等級",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).reduce((m, e) => Math.max(m, Number(e?.plusLevel) || 0), 0),
+    tiers: [
+      { count: 1, rarity: "common",   icon: "✨", name: "初嘗強化", desc: "任一件裝備強化至 +1" },
+      { count: 2, rarity: "uncommon", icon: "💫", name: "越磨越利", desc: "任一件裝備強化至 +2" },
+      { count: 3, rarity: "rare",     icon: "🌟", name: "精工細琢", desc: "任一件裝備強化至 +3" },
+      { count: 4, rarity: "epic",     icon: "🔥", name: "極限突破", desc: "任一件裝備強化至 +4" },
+    ],
+  },
+  {
+    id: "equip_grade", cat: "equip", icon: "💠", name: "品階突破",
+    desc: "任一件裝備達到的最高品階",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).reduce((m, e) => {
+      const idx = EQUIP_GRADE_ORDER.indexOf(e?.grade);
+      return idx > m ? idx : m;
+    }, -1) + 1, // +1 讓「無裝備」為 0、common 為 1…mythic 為 6
+    tiers: [
+      { count: 2, rarity: "uncommon", icon: "🔷", name: "稀有之證", desc: "任一件裝備達稀有品階" },
+      { count: 3, rarity: "rare",     icon: "💠", name: "精英之器", desc: "任一件裝備達精英品階" },
+      { count: 4, rarity: "epic",     icon: "🟣", name: "史詩之作", desc: "任一件裝備達史詩品階" },
+      { count: 5, rarity: "legendary",icon: "🟠", name: "傳說鍛造", desc: "任一件裝備達傳說品階" },
+      { count: 6, rarity: "mythic",   icon: "🔴", name: "神話神兵", desc: "任一件裝備達神話品階" },
+    ],
+  },
+  {
+    id: "equip_mythic", cat: "equip", icon: "🔴", name: "神話裝備",
+    desc: "擁有神話品階裝備的件數",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).filter(e => e?.grade === "mythic").length,
+    tiers: [
+      { count: 1, rarity: "epic",      icon: "🔴", name: "神兵初現", desc: "擁有 1 件神話裝備" },
+      { count: 3, rarity: "legendary", icon: "🔥", name: "神兵在握", desc: "擁有 3 件神話裝備" },
+      { count: 6, rarity: "mythic",    icon: "👑", name: "神裝加身", desc: "6 槽全為神話裝備" },
+    ],
+  },
+  {
+    id: "equip_socket", cat: "equip", icon: "🕳️", name: "裝備打洞",
+    desc: "全身裝備打出的符文孔總數（每件至多 3 孔）",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).reduce((s, e) => s + (Array.isArray(e?.sockets) ? e.sockets.length : 0), 0),
+    tiers: [
+      { count: 1,  rarity: "uncommon", icon: "🕳️", name: "初鑿一孔", desc: "打出第一個符文孔" },
+      { count: 3,  rarity: "rare",     icon: "🔩", name: "孔道漸開", desc: "累積打出 3 個孔" },
+      { count: 6,  rarity: "epic",     icon: "⚙️", name: "千瘡百孔", desc: "累積打出 6 個孔" },
+      { count: 12, rarity: "legendary",icon: "🛠️", name: "孔孔到位", desc: "累積打出 12 個孔" },
+      { count: 18, rarity: "mythic",   icon: "👑", name: "洞徹全裝", desc: "6 槽全打滿 18 個孔" },
+    ],
+  },
+  {
+    id: "equip_rune", cat: "equip", icon: "🔮", name: "符文鑲嵌",
+    desc: "全身裝備已鑲嵌的符文總數",
+    getValue: c => Object.values(c.member?.rpgEquip || {}).reduce((s, e) => s + (Array.isArray(e?.sockets) ? e.sockets.filter(Boolean).length : 0), 0),
+    tiers: [
+      { count: 1,  rarity: "uncommon", icon: "🔮", name: "初嵌符文", desc: "鑲嵌第一顆符文" },
+      { count: 3,  rarity: "rare",     icon: "💎", name: "符力初成", desc: "鑲嵌 3 顆符文" },
+      { count: 6,  rarity: "epic",     icon: "✨", name: "符文加持", desc: "鑲嵌 6 顆符文" },
+      { count: 12, rarity: "legendary",icon: "👑", name: "符文大師", desc: "鑲嵌 12 顆符文" },
+    ],
+  },
+
+  // ⚔️ 決鬥歷練 — 總參與場次（與勝場成就互補）
+  {
+    id: "mode_duel", cat: "duel", icon: "🎮", name: "決鬥歷練",
+    desc: "累積參與決鬥的總場次（勝負不拘）",
+    getValue: c => (c.duelStats?.wins || 0) + (c.duelStats?.losses || 0) + (c.duelStats?.draws || 0),
+    tiers: [
+      { count: 1,  rarity: "common",   icon: "🎮", name: "初登決鬥場", desc: "第一次參與決鬥" },
+      { count: 5,  rarity: "uncommon", icon: "🤺", name: "決鬥常客",   desc: "累積參與決鬥 5 場" },
+      { count: 10, rarity: "rare",     icon: "⚔️", name: "沙場老手",   desc: "累積參與決鬥 10 場" },
+      { count: 25, rarity: "epic",     icon: "🏆", name: "百戰決鬥士", desc: "累積參與決鬥 25 場" },
+    ],
+  },
+);
+
+// ── Phase 3：跨系統的一次性（單次）成就（終局/收集完成）──────────
+AUTO_ACHIEVEMENTS.push(
+  { id: "cat_all9", cat: "cat", icon: "👑", name: "貓咪全收", rarity: "legendary", hidden: true,
+    riddle: "九條貓命，一個都不能少…", desc: "收服全部 9 隻貓咪",
+    check: c => (c.cats || []).length >= 9 },
+  { id: "village_allbuilt", cat: "village", icon: "🏰", name: "極盛之城", rarity: "mythic", hidden: true,
+    riddle: "九棟建築，全數登頂…", desc: "9 棟建築全部升到滿級 Lv.20",
+    check: c => {
+      const b = c.member?.village?.buildings || {};
+      const vals = Object.values(b);
+      return vals.length >= 9 && vals.every(lv => (Number(lv) || 0) >= 20);
+    } },
+  { id: "equip_full_mythic", cat: "equip", icon: "👑", name: "神裝完全體", rarity: "mythic", hidden: true,
+    riddle: "六神裝，皆臻極境…", desc: "6 槽全部為神話裝備且皆強化至 +4",
+    check: c => {
+      const es = Object.values(c.member?.rpgEquip || {}).filter(e => e && e.itemId);
+      return es.length >= 6 && es.every(e => e.grade === "mythic" && (Number(e.plusLevel) || 0) >= 4);
+    } },
+  { id: "equip_full_socket", cat: "equip", icon: "🔮", name: "符文全通", rarity: "legendary", hidden: true,
+    riddle: "十八孔，孔孔有靈…", desc: "6 槽全部打滿 3 孔並鑲滿符文",
+    check: c => {
+      const es = Object.values(c.member?.rpgEquip || {}).filter(e => e && e.itemId);
+      return es.length >= 6 && es.every(e => Array.isArray(e.sockets) && e.sockets.length >= 3 && e.sockets.every(Boolean));
+    } },
+);
+
+// ── computeTierProgress：計算階段式成就的當前進度 ────────────
+// @param {Object} tieredAch - TIERED_ACHIEVEMENTS 中的定義
+// @param {Object} ctx - 上下文（含 member, monsterDex 等）
+// @returns {Object|null} tierProgress
+//   回傳值包含 currentValue, currentTier, nextTier, progress, tiers[] 等
+export function computeTierProgress(tieredAch, ctx) {
+  const value = tieredAch.getValue(ctx);
+  const tiers = tieredAch.tiers;
+  if (!tiers || tiers.length === 0) return null;
+
+  // 從最高往低找，找到已達到的 tier
+  let currentTierIdx = -1;
+  for (let i = tiers.length - 1; i >= 0; i--) {
+    if (value >= tiers[i].count) { currentTierIdx = i; break; }
+  }
+
+  const nextTierIdx = currentTierIdx + 1;
+  const isComplete = nextTierIdx >= tiers.length;
+
+  // 進度百分比：以「當前 tier 門檻 → 下一個門檻」為區間
+  const prevThreshold = currentTierIdx >= 0 ? tiers[currentTierIdx].count : 0;
+  const nextThreshold = isComplete
+    ? tiers[tiers.length - 1].count
+    : tiers[nextTierIdx].count;
+  const range = nextThreshold - prevThreshold;
+  const progress = range > 0
+    ? Math.min(1, Math.max(0, (value - prevThreshold) / range))
+    : 1;
+
+  // 組裝里程碑列表（含 unlocked / isCurrent 狀態）
+  const tierList = tiers.map((t, i) => ({
+    ...t,
+    unlocked: i <= currentTierIdx,
+    isCurrent: i === nextTierIdx && !isComplete,
+  }));
+
+  return {
+    currentValue: value,
+    currentTierIndex: currentTierIdx,
+    currentTier: currentTierIdx >= 0 ? tiers[currentTierIdx] : null,
+    nextTier: isComplete ? null : tiers[nextTierIdx],
+    isComplete,
+    progress: {
+      current: value,
+      currentLabel: String(value),
+      next: nextThreshold,
+      nextLabel: String(nextThreshold),
+      percent: Math.round(progress * 100),
+      gap: isComplete ? 0 : nextThreshold - value,
+      isComplete,
+    },
+    tiers: tierList,
+    totalTiers: tiers.length,
+    unlockedCount: currentTierIdx + 1,
+  };
+}
+
+// 被階段式成就取代的舊 AUTO id（模組層級算一次）：這些改由 tiered 里程碑計數/顯示，
+// 統計與「已解鎖 key」都要跳過，避免同一系列被算兩次。
+export const REPLACED_BY_TIERED = new Set();
+TIERED_ACHIEVEMENTS.forEach(t => (t.replacesIds || []).forEach(id => REPLACED_BY_TIERED.add(id)));
+
+// ── getUnlockedKeys：回傳「目前已解鎖的成就 key」陣列 ────────────
+// 供 App 層即時偵測 + 紅點/NEW 高亮共用。
+//   單次成就 → key = id
+//   階段式成就 → 每達到一個里程碑 → key = `${id}#${里程碑index}`（逐階可個別提醒）
+// ctx 需含：member, cats, monsterDex, craftStats, chestStats, potionDex,
+//          cardCount/mythicCards/cardFamilies, duelStats, certification, certRecords, checkinCount
+export function getUnlockedKeys(ctx) {
+  const keys = [];
+  AUTO_ACHIEVEMENTS.forEach(a => {
+    if (REPLACED_BY_TIERED.has(a.id)) return;
+    try { if (a.check(ctx)) keys.push(a.id); } catch { /* 資料未就緒時忽略 */ }
+  });
+  TIERED_ACHIEVEMENTS.forEach(t => {
+    const prog = computeTierProgress(t, ctx);
+    if (!prog) return;
+    for (let i = 0; i <= prog.currentTierIndex; i++) keys.push(`${t.id}#${i}`);
+  });
+  return keys;
+}
+
+// ── describeKey：把 getUnlockedKeys 的 key 還原成可顯示的成就資訊 ──────
+export function describeKey(key) {
+  if (typeof key === "string" && key.includes("#")) {
+    const [id, idxStr] = key.split("#");
+    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id);
+    const tier = t?.tiers?.[Number(idxStr)];
+    if (t && tier) return { id: key, name: `${t.name}・${tier.name}`, desc: tier.desc, icon: tier.icon, rarity: tier.rarity };
+    return null;
+  }
+  const a = AUTO_ACHIEVEMENTS.find(x => x.id === key) || SPECIAL_GRANTS.find(x => x.id === key);
+  return a ? { id: a.id, name: a.name, desc: a.desc, icon: a.icon, rarity: a.rarity } : null;
+}
+
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats }) {
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats }) {
   const cards       = cardData?.cards || {};
   const cardCount   = Object.keys(cards).length;
   const mythicCards = Object.values(cards).filter(c => c.tier === "mythic").length;
   const cardFamilies = [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))];
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {} };
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {}, cats: cats || [] };
 
-  let autoUnlocked = 0;
-  AUTO_ACHIEVEMENTS.forEach(a => { if (a.check(ctx)) autoUnlocked++; });
+  let autoUnlocked = 0, autoTotal = 0;
+  AUTO_ACHIEVEMENTS.forEach(a => {
+    if (REPLACED_BY_TIERED.has(a.id)) return; // 已被 tiered 取代，跳過（下面用里程碑計）
+    autoTotal++;
+    if (a.check(ctx)) autoUnlocked++;
+  });
+
+  // 階段式成就：每個里程碑各算一格（totalTiers=總格、unlockedCount=已解鎖）
+  let tieredUnlocked = 0, tieredTotal = 0;
+  TIERED_ACHIEVEMENTS.forEach(t => {
+    const prog = computeTierProgress(t, ctx);
+    if (!prog) return;
+    tieredTotal    += prog.totalTiers;
+    tieredUnlocked += prog.unlockedCount;
+  });
 
   const grantedIds = new Set((granted || []).filter(g => g.type === "special").map(g => g.id || g.specialId));
   let specialUnlocked = 0;
@@ -704,8 +1223,8 @@ export function computeDexStats({ member, certification, certRecords, checkinCou
   const pointUnlocked    = (granted || []).filter(g => g.type === "point").length;
   const cohortUnlocked   = 1; // 期數格永遠亮著
 
-  const totalUnlocked = autoUnlocked + specialUnlocked + physicalUnlocked + pointUnlocked + cohortUnlocked;
-  const totalAll = AUTO_ACHIEVEMENTS.length + SPECIAL_GRANTS.length + (physicalMax || 0) + (pointMax || 0) + 1;
+  const totalUnlocked = autoUnlocked + tieredUnlocked + specialUnlocked + physicalUnlocked + pointUnlocked + cohortUnlocked;
+  const totalAll = autoTotal + tieredTotal + SPECIAL_GRANTS.length + (physicalMax || 0) + (pointMax || 0) + 1;
 
   let gold = 0, silver = 0, bronze = 0;
   (granted || []).forEach(g => {

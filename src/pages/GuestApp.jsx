@@ -12,6 +12,8 @@ import GuestShop       from "../components/member/GuestShop";
 import DungeonLobby    from "../components/dungeon/DungeonLobby";
 import EquipmentPage   from "../components/member/EquipmentPage";
 import GuestShareCard  from "../components/member/GuestShareCard";
+import CatBuddy from "../components/cat/CatBuddy";
+import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
 
 const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
@@ -277,6 +279,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   const immersiveBattle = (tab === "monster" && guestBattleImmersive) || (tab === "party" && partySubTab === "battle");
 
   return (
+    <CatBuddyProvider>
     <div className={`guest-stage ${isKid ? "kid" : "guest"} ${immersiveBattle ? "immersive" : ""}`}>
       {!immersiveBattle && <div className="guest-topbar">
         <div className="guest-topbar-inner">
@@ -389,7 +392,10 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
           onClose={() => setShowShareCard(false)}
         />
       )}
+
+      <CatBuddy />
     </div>
+    </CatBuddyProvider>
   );
 }
 

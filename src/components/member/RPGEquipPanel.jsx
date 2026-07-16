@@ -220,13 +220,13 @@ function UpgradeCelebration({ result, onClose }) {
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
-function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, runeInventory, memberId, readOnly, upgradeErr, nextMats }) {
+function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, runeInventory, memberId, readOnly, upgradeErr, nextMats, equipMaxGradeAllowed = 99 }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
   const isEmpty   = !equipped?.itemId;
   const grade     = equipped?.grade     || "common";
   const plus      = equipped?.plusLevel || 0;
   const idx       = gradeIdx(grade);
-  const isMax     = idx >= EQUIP_GRADES.length - 1 && plus >= 4;
+  const isMax     = idx >= (equipMaxGradeAllowed ?? (EQUIP_GRADES.length - 1)) && plus >= 4;
   const cost      = EQUIP_UPGRADE_COST[grade];
   const mats      = nextMats || {};
   const itemList  = (itemsMap || {})[slotDef.id] || [];
@@ -246,7 +246,8 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
   const keyOk   = !mats.keyItem || (inv[mats.keyItem.id] || 0) >= (mats.keyItem.count || 1);
   const sealCost = plus >= 4 && nextGrade ? (KING_SEAL_BREAKTHROUGH_COST[nextGrade] || 0) : 0;
   const sealsOk = kingSeals >= sealCost;
-  const canUpgrade = coinsOk && matsOk && keyOk && sealsOk;
+  const gradeTooHigh = (equipMaxGradeAllowed ?? 99) < (idx + (plus >= 4 ? 1 : 0));
+  const canUpgrade = !gradeTooHigh && coinsOk && matsOk && keyOk && sealsOk;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-0"
@@ -507,6 +508,10 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
   const [upgradeFx,       setUpgradeFx]       = useState(null);
   const [rawItems,        setRawItems]        = useState([]);
   const [matInv,          setMatInv]          = useState({});
+  // 訪客可裝備/更換品項，並可強化至稀有（含）以下；兒童維持唯讀
+  const isGuestEquipReadOnly = false; // 訪客/兒童皆可操作裝備
+
+  useEffect(() => subscribeEquipItems(setRawItems), []);
 
   useEffect(() => subscribeEquipItems(setRawItems), []);
   useEffect(() => {
@@ -678,7 +683,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
           kingSeals={profile?.kingSeals || 0}
           runeInventory={profile?.equipmentRuneInventory || {}}
           memberId={profile?.id}
-          readOnly={Boolean(guestProfile)}
+          readOnly={isGuestEquipReadOnly}
           upgradeErr={upgradeErr}
           nextMats={displayNextMats}
         />

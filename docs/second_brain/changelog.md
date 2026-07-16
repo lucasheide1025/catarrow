@@ -3,7 +3,72 @@
 
 ---
 
-## 2026-07-12（約課：教練無條件取消/改期/變更方案）
+## 2026-07-16（圖鑑 Phase 3：跨系統新分類 + 成就通知/紅點系統 + 修洪水 bug）
+
+**為什麼**：多個系統（練習箭數/貓咪/貓村/裝備衝裝打洞符文/世界王/決鬥歷練/月卡）完全沒圖鑑；且成就通知綁在圖鑑頁、無首次基準 → 進圖鑑會洪水式重複噴 toast，打怪當下又不提醒。通盤規劃見 `docs/achievement-dex-master-plan.md`。
+
+- **`achievementDex.js`**：
+  - `DEX_CATEGORIES` 14→20：新增 practice/worldboss/cat/village/equip（＋既有）。
+  - 新增 tiered 系列（讀 member 文件既有欄位或 ctx.cats）：`arrows_total`(totalArrowsAllTime)、`cat_collect/cat_level/cat_bond/cat_story`(cats 子集合)、`village_level/building_max`(village.buildings)、`equip_slots/equip_plus/equip_grade/equip_mythic/equip_socket/equip_rune`(rpgEquip：衝裝/打洞/符文)、`mode_duel`(決鬥總場次)。
+  - 新增 single：`cat_all9`/`village_allbuilt`/`equip_full_mythic`/`equip_full_socket`。
+  - `wb_trophy_*` 48 個獎盃 cat 從 special → **worldboss**。
+  - **復活 `card_first`**（月卡已實裝，check 改讀 `monthlyCard.startedAt/active`）；`card_renew` 待 renewCount（Phase 4）。
+  - 新增 `getUnlockedKeys(ctx)`（單次=id、tiered=`id#里程碑index`）＋ `describeKey(key)` ＋ `REPLACED_BY_TIERED`，供 App 層即時偵測與紅點共用。`computeDexStats` 收 `cats`。
+  - ⚠️ 裝備讀 `member.rpgEquip`（db 寫入路徑），非 equipData.js 註解的 `equipment`。
+- **新增 `src/lib/dexSeen.js`**：比照 `bookingSeen.js` 的 `seedIfFirstRun` 三件式，雙集合 notified（避免重複提醒）/ seen（紅點/NEW）。**根治洪水 bug**：首次載入把當下已解鎖全部標基準，之後才解鎖才算新。
+- **新增 `src/components/member/DexUnlockToast.jsx`**：App 層成就解鎖提示（點擊前往圖鑑）。
+- **`MemberApp.jsx`**：訂閱 cats、取 certRecords；App 層 `getUnlockedKeys` 偵測 → 即時跳 DexUnlockToast + epic↑ 發站內通知 + 「我的」nav 亮紅點（`dexUnseenCount`）。**偵測搬離圖鑑頁**＝打怪/練習/裝備任何地方解鎖都即時提醒。
+- **`MemberDex.jsx`**：移除舊的洪水式 toast 偵測；改為進圖鑑＝凍結「未看」快照→標記已看清紅點（`onDexViewed` 回拋 App 重算）；DexCell 加 NEW 角標、分類頁籤加紅點；ctx 補 cats + 修卡片 cardCount。
+- ✅ `CI=true npx react-scripts build` 通過。未部署、未實機測試。
+- **待辦（Phase 4）**：`modeStats`（單人/組隊/地下城場次）、`expeditionsDone`、世界王統計、`drop_*` 掉寶、`monthlyCard.renewCount`、議會廳採集——都要各加 increment + 補 firestore.rules 白名單。
+
+---
+
+## 2026-07-16（圖鑑合併 Phase 2：巨量動態系列合併 + 計數修正）
+
+**為什麼**：Phase 1 已把 8 個明顯系列做成 `TIERED_ACHIEVEMENTS`，但 `kill_*`(180格)/`chest_*`(28格)/`potion_{id}_*`/`dex_{fam}_t*`(36格) 這些 for-loop 動態巨量成就還沒合併，圖鑑仍超長捲動；且 `computeDexStats` 只數舊 `AUTO_ACHIEVEMENTS`、完全沒算 tiered → 標題「X/Y」和實際合併後格數對不上。
+
+- **`achievementDex.js`**：在 `TIERED_ACHIEVEMENTS` 靜態陣列後新增 4 組 for-loop 生成（沿用上方 AUTO 用的常數）：
+  - `kill_{monster}`（36 隻各 1 格）取代 `kill_{id}_{5,10,25,50,100}`；getValue=該怪 `monsterDex[id].wins`
+  - `chest_{type}`（7 種箱各 1 格）取代 `chest_{type}_open_{1,5,10,20}`；getValue=`chestStats[type]`
+  - `potion_{id}`（每藥水 1 格，濾掉 futureFeature）取代 `potion_{id}_{count}`；getValue=`potionDex.used[id]`
+  - `dex_{fam}`（6 族各 1 格）取代 `dex_{fam}_t{1..6}`。⚠️ **語意調整**：舊版每格＝「擊敗該族第 N 級怪」不是單調值、套不進進度條；改為「擊破該族不同怪物數量(0~6)」，單調遞增。一族只 fam_1..fam_6 共 6 隻、fam_6 為神話怪，要 6 星必打過神話怪。
+  - 每組 `replacesIds` 一定要列全對應舊 AUTO id，`cellsFor` 才濾得掉舊格。
+- **`achievementDex.js::computeDexStats`**：改成①先收集所有 tiered 的 `replacesIds` 成 `replacedByTiered`，AUTO 跳過這些不計；②每個 tiered 用 `computeTierProgress` 的 `totalTiers`/`unlockedCount` 計格數。既有 8 組是 1:1（replacesIds 數＝tiers 數）→ 數字幾乎不變，加新系列也不會歪。
+- **`MemberDex.jsx`**：⚠️ 修**既有 bug**——元件 ctx 只傳 `cardData` 物件、沒有 `cardCount`/`mythicCards`/`cardFamilies`，導致 `card_collect`(tiered)＋舊 `card_1..20`/`card_mythic`/`card_all6fam` 在**畫面與 toast 恆判 0**。改在 ctx 依 `cardData.cards` 推導這三值（跟 `computeDexStats` 內部同算法）。
+- **待辦**：`drop_rare~drop_mythic` 死成就仍未修（需在戰鬥端補掉寶統計寫入，超出圖鑑重構範圍，另開處理）。
+- ✅ `CI=true npx react-scripts build` 通過。未部署。
+
+---
+
+## 2026-07-16（訪客/兒童獎勵正式化：裝備操作、貓貓動畫、全部獎勵比照正式會員）
+
+**為什麼**：訪客（有記憶 `accountType===guest`）與兒童（QR/一次性 `accountType===kid`）原本多處獎勵/功能被 `isGuest` 或 `kidMode` 限制，裝備唯讀、貓貓動畫看不見、戰利品不給。使用者要求兩種角色都「正常給」——獎勵、裝備操作、貓貓視覺全部比照正式會員。
+
+- **`MonsterBattle.jsx`**：
+  - 新增 `const isLimitedAccount = false`（取消所有限制閘門）
+  - 移除 `if (isGuest)` 強制低屬性覆蓋（`{hp:100, atk:10, def:10}`），訪客/兒童走正式 `calcArcherStats` 計算真實射手屬性
+  - 2 處 useEffect 依賴陣列從 `[profile?.id, isGuest]` 改 `[profile?.id]`（避免 stale closure）
+  - 所有顯示層級（等級徽章、卡片加成、每日次數、回復提示、第二數值顯示區）均改用 `isLimitedAccount`（=false，全部顯示）
+  - 修正 intro 時引入的重複 `if (!profile?.id) return;`
+  - ⚡ 射手XP、貓XP/羈絆、寶箱/卡片/素材掉落、圖鑑記錄、藥水記錄、練習紀錄全部正常寫入
+
+- **`PartyBattleRoom.jsx`**：
+  - `isLimitedAccount = false`
+  - **`isGuestPlayer = false`**（原為 `isLimitedAccount || me.accountType === "kid"`，導致 kid 帳號在 handleClaim 仍被跳過金幣/寶箱/素材/卡片/圖鑑/XP/練習/羈絆）
+
+- **`DungeonBattleRoom.jsx`**：
+  - `isLimitedAccount = false`
+  - 地下城結算獎勵（金幣/寶箱/素材/圖鑑/箭露/XP/里程碑）全部正常寫入
+
+- **`RPGEquipPanel.jsx`**：
+  - `isGuestEquipReadOnly = false`（裝備可完全操作：強化、打洞、符文）
+  - 移除 `equipMaxGradeAllowed` 未定義變數的 prop 傳遞
+
+- **`GuestApp.jsx`**：
+  - 加入 `CatBuddyProvider` + `<CatBuddy />`，訪客/兒童戰鬥畫面右下角顯示貓貓動畫
+
+- ✅ `CI=true npx react-scripts build` 通過。未部署。
 
 **為什麼**：新舊預約關係（改期產生的 cancelled+confirmed 配對）＋「已開始」guard 導致教練刪不掉/改不了；學生臨時要換方案但課已開始也卡死。
 

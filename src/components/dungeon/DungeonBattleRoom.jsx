@@ -202,6 +202,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const isGuestMode = !!guestProfile || ["guest", "kid"].includes(profile?.accountType);
+  // 僅 kid（QR/一次性）才限制獎勵與功能；guest（有記憶訪客）比照正式會員
+  const isLimitedAccount = false; // 訪客/兒童皆比照正式會員
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catName: myCatName } = useCatCompanion(isGuestMode ? profile : null);
   const myId        = profile?.id;
   const bondSavedRef         = useRef(false);
@@ -236,7 +238,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     onBeforeSubmit: () => { sfxArrowShoot(); vibrate([10,10,10]); },
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
     onSubmitSuccess: (submittedArrows) => {
-      if (!isGuestMode && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
+      if (!isLimitedAccount && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
         addRoundArrows(myId, submittedArrows.length).catch(() => {});
       }
     },
@@ -427,17 +429,17 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // ── 訂閱玩家真正的藥水庫存（room.members.{id}.items 從來沒有被寫入過，是死欄位，
   //    比照 PartyBattleRoom.jsx 的正確寫法直接訂閱 potionInventory）─────────────
   useEffect(() => {
-    if (!myId || isGuestMode) return;
+    if (!myId || isLimitedAccount) return;
     const unsub = subscribePotions(myId, setPotionInv);
     return unsub;
-  }, [myId, isGuestMode]);
+  }, [myId, isLimitedAccount]);
 
   // ── 訂閱卡片收藏（只用來顯示世界王卡徽章，純視覺）───────────
   const [myCardColl, setMyCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
   useEffect(() => {
-    if (!myId || isGuestMode) return;
+    if (!myId || isLimitedAccount) return;
     return subscribeCardCollection(myId, setMyCardColl);
-  }, [myId, isGuestMode]);
+  }, [myId, isLimitedAccount]);
 
   // Must be derived before any conditional return: the shared BattleScreen
   // branch uses it while the room is active.
@@ -588,7 +590,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (count <= 0) return;
     setPotionUsedThisRound(true);
     const pot = getPotion(lv.id);
-    if (!pot || !myId || isGuestMode) {
+    if (!pot || !myId || isLimitedAccount) {
       setPotionUsedThisRound(false);
       return;
     }
@@ -614,7 +616,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       sfxCast();
       setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
       setPotionUsedThisRound(true);
-      if (myId && !isGuestMode) usePotions(myId, [p.id]).catch(() => {});
+      if (myId && !isLimitedAccount) usePotions(myId, [p.id]).catch(() => {});
       addArrow(p.id);
       setBottomTab("score");
       return;
@@ -624,7 +626,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       if (!applied.ok) { setPotionUsedThisRound(false); return; }
       sfxCast();
       setPotionInv(prev => ({ ...prev, [p.id]: (prev[p.id]||0) - 1 }));
-      if (myId && !isGuestMode) usePotions(myId, [p.id]).catch(() => {});
+      if (myId && !isLimitedAccount) usePotions(myId, [p.id]).catch(() => {});
       setBottomTab("score");
     });
   }
@@ -676,7 +678,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   // ── 各自領取獎勵（每人自己點自己的按鈕）─────────────────────
   function persistDungeonShootingPerformance(result) {
-    if (isGuestMode || !myId) return;
+    if (isLimitedAccount || !myId) return;
     const { capturedEnds } = getDungeonPracticeData(room?.log, myId, targetFmt);
     const totalDamage = (room?.log || []).reduce((sum, entry) => {
       const player = (entry.playerLog || []).find(item => item.id === myId);
@@ -704,7 +706,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       persistDungeonShootingPerformance(room?.result === "lose" ? "lose" : "win");
       // 遠征模式：個人金幣/寶箱由遠征系統統一發放。但「今日箭數練習紀錄 + 里程碑」是個人紀錄，
       // 仍要在這裡各自寫入——否則組隊地下城的今日箭數/里程碑不會增加（總箭數走 addRoundArrows 沒問題）。
-      if (myId && !isGuestMode) {
+      if (myId && !isLimitedAccount) {
         const { rounds: practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
@@ -732,7 +734,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       return;
     }
 
-    if (isGuestMode) {
+    if (isLimitedAccount) {
       const { rounds:guestRounds } = getDungeonPracticeData(room.log, myId, targetFmt);
       const guestScores = guestRounds.flat();
       const guestDmg = (room.log || []).reduce((sum, entry) => {
@@ -803,7 +805,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
       // 今日箭數里程碑（比照單人打怪；地下城原本漏了這步 → 里程碑不觸發）。
       // 今日箭數本身靠上面這筆 practiceLog 累計，里程碑則要另外呼叫 checkAndGrantArrowMilestones。
-      if (arrowCount > 0 && !isGuestMode) {
+      if (arrowCount > 0 && !isLimitedAccount) {
         import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
           checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
       }
@@ -1008,7 +1010,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
             <button onClick={async () => {
               // 儲存失敗紀錄
-              if (myId && !isGuestMode) {
+              if (myId && !isLimitedAccount) {
                 persistDungeonShootingPerformance("lose");
                 const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
                 if (practiceRounds.length > 0) {
@@ -1033,7 +1035,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                   }, myId).catch(() => {});
                   if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
                   // 今日箭數里程碑（失敗場也算射出的箭，比照單人打怪）
-                  if (arrowCount > 0 && !isGuestMode) {
+                  if (arrowCount > 0 && !isLimitedAccount) {
                     import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
                       checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
                   }
@@ -1566,7 +1568,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // Firestore 房間，讓單人地下城的回合結算、重連與戰鬥紀錄使用同一份資料。
   async function handleUnifiedBattlePotion(potionId) {
     const potion = getPotion(potionId);
-    if (!potion || !myId || isGuestMode) return;
+    if (!potion || !myId || isLimitedAccount) return;
     const applied = potion.kind === "carry"
       ? await applyDungeonCarryPotion(roomId, myId, potionId)
       : await applyDungeonUtilityPotion(roomId, myId, potionId);

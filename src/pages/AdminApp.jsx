@@ -5,6 +5,8 @@ import { subscribeResults, getRegistrations, subscribePendingCertResults, subscr
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
+import CatBuddy from "../components/cat/CatBuddy";
+import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
@@ -518,6 +520,7 @@ const adminNav = [
   if (archerMode) {
     return (
       <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",fontFamily:"sans-serif",overflow:"hidden"}}>
+        <CatBuddyProvider>
         <AdminCostControlBanner />
         {/* 版本更新提醒 */}
         {latestVersion && latestVersion !== APP_VERSION && (
@@ -715,6 +718,9 @@ const adminNav = [
           );
         })}
       </div>
+      {/* 🐱 全局貓貓伴侶（教練限定，可開關） */}
+      <CatBuddy />
+      </CatBuddyProvider>
       </div>
     );
   }
@@ -722,6 +728,7 @@ const adminNav = [
   // ── 後台模式（深藍主題）──────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"sans-serif"}}>
+      <CatBuddyProvider>
       <AdminCostControlBanner />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
@@ -869,6 +876,9 @@ const adminNav = [
           })}
         </div>
       </div>
+      {/* 🐱 全局貓貓伴侶（教練限定，可開關） */}
+      <CatBuddy />
+      </CatBuddyProvider>
     </div>
   );
 }

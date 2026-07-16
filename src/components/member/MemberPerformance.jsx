@@ -200,7 +200,30 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   useEffect(() => {
     if (!canReviewMembers) { setMembers([]); return; }
     getMembers().then(setMembers).catch(() => setMembers([]));
-  }, [canReviewMembers]);  // ─── 載入箭群疊加資料（最近有靶面點擊的場次） ───
+  }, [canReviewMembers]);
+  const sourceSessions = useMemo(() => sessions.filter(session => session.isRealShooting === true && session.countsToward?.performance !== false && ["finalized", "corrected"].includes(session.status) && (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0) > 0), [sessions]);
+  const filterOptions = useMemo(() => ({
+    bow:selectOptions(sourceSessions.map(item => item.shootingConfig?.bowType), "弓種", value => BOW_LABELS[value] || value),
+    distance:selectOptions(sourceSessions.map(item => item.shootingConfig?.distanceM), "距離"),
+    face:selectOptions(sourceSessions.map(item => item.shootingConfig?.targetFaceCode), "靶面", value => TARGET_FACE_LABELS[value] || value),
+    capture:[{ value:ALL, label:"全部輸入" }, { value:"scoreInput", label:"一般計分" }, { value:"targetPlot", label:"靶面點擊" }],
+    arrows:selectOptions(sourceSessions.map(item => item.shootingConfig?.arrowsPerEnd), "箭制"),
+    // Modes are a product taxonomy, not a side effect of whichever records
+    // happened to be cached on this device. Keep empty modes selectable.
+    source:[{ value:ALL, label:"全部模式" }, ...Object.keys(SOURCE_LABELS).map(value => ({ value, label:SOURCE_LABELS[value] }))],
+  }), [sourceSessions]);
+  const filtered = useMemo(() => sourceSessions.filter(item => {
+    const config = item.shootingConfig || {};
+    return sessionTimeMs(item) >= periodStartMs(filters.period) && (filters.bow === ALL || config.bowType === filters.bow) && (filters.distance === ALL || String(config.distanceM) === filters.distance) && (filters.face === ALL || config.targetFaceCode === filters.face) && (filters.capture === ALL || item.captureMode === filters.capture) && (filters.arrows === ALL || String(config.arrowsPerEnd) === filters.arrows) && (filters.source === ALL || item.source?.mode === filters.source);
+  }), [sourceSessions, filters]);
+  // Main coaching metrics must never average unlike shooting conditions.
+  // When no explicit condition filter is selected, use the newest comparable
+  // profile in the current period; the session list still shows every record.
+  const activePerformanceKey = useMemo(() => filtered.find(item => item.analysis?.comparable !== false && item.analysis?.performanceKey)?.analysis?.performanceKey || null, [filtered]);
+  const comparableFiltered = useMemo(() => activePerformanceKey ? filtered.filter(item => item.analysis?.performanceKey === activePerformanceKey) : [], [filtered, activePerformanceKey]);
+  const visibleSessions = useMemo(() => filtered.slice(0, sessionListLimit), [filtered, sessionListLimit]);
+  const historicalSessions = useMemo(() => filtered.slice(20), [filtered]);
+  // ─── 載入箭群疊加資料（最近有靶面點擊的場次） ───
   useEffect(() => {
     if (!viewedMemberId || !sourceSessions.length) { setShotGroupSessions([]); return; }
     let active = true;
@@ -285,28 +308,6 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     } catch (error) { setError("建立近三個月歷史資料失敗，請確認網路後再試。"); }
     finally { setTransferring(false); setTransferProgress(null); }
   }
-  const sourceSessions = useMemo(() => sessions.filter(session => session.isRealShooting === true && session.countsToward?.performance !== false && ["finalized", "corrected"].includes(session.status) && (Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0) > 0), [sessions]);
-  const filterOptions = useMemo(() => ({
-    bow:selectOptions(sourceSessions.map(item => item.shootingConfig?.bowType), "弓種", value => BOW_LABELS[value] || value),
-    distance:selectOptions(sourceSessions.map(item => item.shootingConfig?.distanceM), "距離"),
-    face:selectOptions(sourceSessions.map(item => item.shootingConfig?.targetFaceCode), "靶面", value => TARGET_FACE_LABELS[value] || value),
-    capture:[{ value:ALL, label:"全部輸入" }, { value:"scoreInput", label:"一般計分" }, { value:"targetPlot", label:"靶面點擊" }],
-    arrows:selectOptions(sourceSessions.map(item => item.shootingConfig?.arrowsPerEnd), "箭制"),
-    // Modes are a product taxonomy, not a side effect of whichever records
-    // happened to be cached on this device. Keep empty modes selectable.
-    source:[{ value:ALL, label:"全部模式" }, ...Object.keys(SOURCE_LABELS).map(value => ({ value, label:SOURCE_LABELS[value] }))],
-  }), [sourceSessions]);
-  const filtered = useMemo(() => sourceSessions.filter(item => {
-    const config = item.shootingConfig || {};
-    return sessionTimeMs(item) >= periodStartMs(filters.period) && (filters.bow === ALL || config.bowType === filters.bow) && (filters.distance === ALL || String(config.distanceM) === filters.distance) && (filters.face === ALL || config.targetFaceCode === filters.face) && (filters.capture === ALL || item.captureMode === filters.capture) && (filters.arrows === ALL || String(config.arrowsPerEnd) === filters.arrows) && (filters.source === ALL || item.source?.mode === filters.source);
-  }), [sourceSessions, filters]);
-  // Main coaching metrics must never average unlike shooting conditions.
-  // When no explicit condition filter is selected, use the newest comparable
-  // profile in the current period; the session list still shows every record.
-  const activePerformanceKey = useMemo(() => filtered.find(item => item.analysis?.comparable !== false && item.analysis?.performanceKey)?.analysis?.performanceKey || null, [filtered]);
-  const comparableFiltered = useMemo(() => activePerformanceKey ? filtered.filter(item => item.analysis?.performanceKey === activePerformanceKey) : [], [filtered, activePerformanceKey]);
-  const visibleSessions = useMemo(() => filtered.slice(0, sessionListLimit), [filtered, sessionListLimit]);
-  const historicalSessions = useMemo(() => filtered.slice(20), [filtered]);
   useEffect(() => {
     let active = true;
     async function loadExactRecent() {

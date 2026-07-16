@@ -175,6 +175,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catType, bondLv, catATK } = useCatCompanion(guestOverride || null);
   const myId = guestOverride?.id || authProfile?.id;
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
+  // 僅 kid（QR/一次性）才限制獎勵與功能；guest（有記憶訪客）比照正式會員
+  const isLimitedAccount = false; // 訪客/兒童皆比照正式會員
   const battleBgRef = useRef(null);
   const [arrows,          setArrows]          = useState([]);
   const [targetMode,      setTargetMode]      = useState(() => getBattleInputMode() === "target");
@@ -332,7 +334,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }, [room?.id, room?.members?.[myId]?.battleCosmetics, myId, profile?.rpgEquip, roomId, cardCollectionVersion]);
 
   useEffect(() => {
-    if (!room || !myId || isGuestMode || lossPracticeRecordedRef.current) return;
+    if (!room || !myId || isLimitedAccount || lossPracticeRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
     const { rounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
     if (!rounds.length) return;
@@ -366,7 +368,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       totalDamage:(room.log || []).reduce((sum, entry) => sum + ((entry.playerLog || []).find(player => player.id === myId)?.dmg || 0), 0),
       finalMonsterHp:room.monsterHP,
     }).catch(error => console.warn("party shooting performance dual-write failed", error));
-  }, [room?.status, isGuestMode]); // eslint-disable-line
+  }, [room?.status, isLimitedAccount]); // eslint-disable-line
 
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
   useEffect(() => {
@@ -398,9 +400,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
   useEffect(() => {
-    if (!myId || !isHost || isGuestMode) return;
+    if (!myId || !isHost || isLimitedAccount) return;
     checkPartyBattleLimit(myId).then(setPartyBattleLeft);
-  }, [myId, isHost, isGuestMode]); // eslint-disable-line
+  }, [myId, isHost, isLimitedAccount]); // eslint-disable-line
 
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
@@ -414,11 +416,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
     partyRecordedRef.current = true;
-    if (!isGuestMode && isHost) {
+    if (!isLimitedAccount && isHost) {
       recordPartyBattleSession(myId).catch(() => {});
       setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
     }
-  }, [room?.status, isGuestMode]); // eslint-disable-line
+  }, [room?.status, isLimitedAccount]); // eslint-disable-line
 
   // 訂閱藥水庫存
   useEffect(() => {
@@ -444,8 +446,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 需要等 cardCollectionVersion > 0 確保卡片資料已載入，才能寫入正確的卡片加成。
   // statsWaitingVersionRef 記錄已寫入的版本，避免同一版本重複寫入。
   useEffect(() => {
-    if (!room || !myId || room.status !== "waiting") return;
-    if (!isGuestMode && cardCollectionVersion === 0) return; // 卡片資料尚未載入
+    if (!room || !myId || room.status !== "waiting") return;      if (!isLimitedAccount && cardCollectionVersion === 0) return; // 卡片資料尚未載入
     if (statsWaitingVersionRef.current === cardCollectionVersion) return;
     const me = room.members?.[myId];
     if (!me) return;
@@ -602,7 +603,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 組隊敗場 → 記錄怪物圖鑑（勝場由 handleClaim 負責）
   useEffect(() => {
-    if (!room || !myId || isGuestMode || dexRecordedRef.current) return;
+    if (!room || !myId || isLimitedAccount || dexRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
     if (!room.monster?.id) return;
     dexRecordedRef.current = true;
@@ -611,12 +612,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return s + (p?.dmg || 0);
     }, 0);
     recordBattleDex(myId, room.monster.id, "lose", myDmg).catch(() => {});
-  }, [room?.status, isGuestMode]); // eslint-disable-line
+  }, [room?.status, isLimitedAccount]); // eslint-disable-line
 
   // 訪客/兒童組隊勝利：給低階持久獎勵，正式寶箱/排行/XP 仍不開放。
   useEffect(() => {
     if (!room || room.status !== "completed" || room.result !== "win") return;
-    if (!isGuestMode || !myId || guestPartyReward) return;
+    if (!isLimitedAccount || !myId || guestPartyReward) return;
     const already = sessionStorage.getItem("guest_won_once");
     if (already) {
       setGuestAlreadyWon(true);
@@ -644,7 +645,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       damage: myDmg,
       target: room.monster?.name || "組隊怪物",
     }).catch(() => {});
-  }, [room?.status, room?.result, isGuestMode, myId, guestPartyReward]); // eslint-disable-line
+  }, [room?.status, room?.result, isLimitedAccount, myId, guestPartyReward]); // eslint-disable-line
 
   // 提早計算（room 可能為 null，用 ?. 保安全，讓 useEffect 位於 early return 之前）
   const myChests  = room?.rewardPending?.[myId] || [];
@@ -711,7 +712,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myReady    = me.ready || false;
   // 角色以資料庫剛寫回的值為準，避免轉為後衛的第一輪仍送出前衛資料。
   const effectiveMyRole = me.role || myRole;
-  const isGuestPlayer = isGuestMode || ["guest", "kid"].includes(me.accountType);
+  const isGuestPlayer = false; // 訪客/兒童皆比照正式會員
   const allAliveReady = memberList.filter(m => m.alive !== false).length > 0
     && memberList.filter(m => m.alive !== false).every(m => m.ready);
   // 開戰後以房主寫入房間的靶紙格式為唯一來源，避免隊員各自使用 localStorage 設定。
@@ -813,17 +814,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
       const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg, { isGuest: isGuestPlayer });
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
-      if (!isGuestPlayer) {
+      if (!isLimitedAccount) {
         addCoins(myId, coins).catch(() => {});
         addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
         if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
         if (card)     addMonsterCard(myId, card).catch(() => {});
       }
-      if (!isGuestPlayer && !dexRecordedRef.current && room.monster?.id) {
+      if (!isLimitedAccount && !dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
-      if (myId && !isGuestPlayer) {
+      if (myId && !isLimitedAccount) {
         const { rounds:practiceRounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
@@ -1359,7 +1360,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {/* 勝利：領取寶箱 */}
         {won && (
           <div className="flex flex-col gap-3">
-            {isGuestPlayer ? (
+            {isLimitedAccount ? (
               <div className="flex flex-col gap-3">
                 {guestPartyReward ? (
                   <div className="bg-slate-800/70 border border-slate-600 rounded-2xl p-4 flex flex-col gap-3">
@@ -2002,7 +2003,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               onPartyRearChoice={setMyRearChoice}
               onPotionUsed={(pid) => {
                 const p = [...CARRY_POTIONS, ...THROW_POTIONS].find(x=>x.id===pid);
-                if (!p || !myId || isGuestMode || postSubmitted) return;
+                if (!p || !myId || isLimitedAccount || postSubmitted) return;
                 if (p.kind === "carry") {
                   applyPartyCarryPotion(roomId, myId, p).catch(()=>{});
                 } else {

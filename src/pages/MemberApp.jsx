@@ -1,15 +1,23 @@
 // src/pages/MemberApp.jsx
-import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
-  subscribeCertification, getDexConfig, subscribeDexGrants,
+  subscribeCertification, getDexConfig, subscribeDexGrants, getCertRecords, createNotification,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
   subscribeActiveGuildQuests,
   subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
   subscribeLocalTodayArrows, initializeTodayArrows,
   subscribeMaintenanceConfig, subscribeTierPermissions } from "../lib/db";
+import { subscribeMyCats } from "../lib/catDb";
+import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
+import { seedNotifiedIfFirstRun, getUnnotifiedKeys, markNotified, seedSeenIfFirstRun, countUnseen } from "../lib/dexSeen";
+import DexUnlockToast from "../components/member/DexUnlockToast";
+
+// 成就即時提醒用：稀有度排序（挑代表）＋需另發站內通知的稀有度
+const ACH_RARITY_RANK = { common:0, uncommon:1, rare:2, epic:3, legendary:4, mythic:5 };
+const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
@@ -20,6 +28,8 @@ import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { OverlayModal } from "../components/shared/UI";
 import { ProgressRing, CountUp } from "../components/shared/Widgets";
 import { sfxSwitch } from "../lib/sound";
+import CatBuddy from "../components/cat/CatBuddy";
+import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { certLevelStyle } from "../lib/constants";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
@@ -160,6 +170,10 @@ export default function MemberApp() {
   const [chestStats,    setChestStats]    = useState({});
   const [potionDex,     setPotionDex]     = useState({});
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
+  const [cats,          setCats]          = useState([]);   // 貓咪子集合（成就偵測用）
+  const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
+  const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
+  const [dexSeenTick,   setDexSeenTick]   = useState(0);    // 圖鑑看過後 bump，重算紅點
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
@@ -363,6 +377,7 @@ export default function MemberApp() {
     if (!profile?.id) return;
     getDexConfig().then(setDexConfig).catch(() => {});
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
+    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
     const u1 = subscribeCertification(profile.id, setCertification);
     const u2 = subscribeDexGrants(profile.id, setDexGrants);
     const u3 = subscribeMonsterDex(profile.id, setMonsterDex);
@@ -370,8 +385,56 @@ export default function MemberApp() {
     const u5 = subscribeChestStats(profile.id, setChestStats);
     const u6 = subscribePotionDex(profile.id, setPotionDex);
     const u7 = subscribeCardCollection(profile.id, setCardData);
-    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); };
+    const u8 = subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {})));
+    return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
   }, [profile?.id]); // eslint-disable-line
+
+  // ── 成就即時偵測（App 層，全站有效）──────────────────────────
+  // 打怪/練習/裝備任何地方解鎖成就都能即時跳提示 + 亮「我的」紅點，不再只在圖鑑頁才觸發。
+  const achCtx = useMemo(() => {
+    const cards = cardData?.cards || {};
+    return {
+      member: profile, certification, certRecords,
+      checkinCount: profile?.dailyQuestCount || 0,
+      monsterDex, craftStats, chestStats, potionDex, cardData,
+      cardCount: Object.keys(cards).length,
+      mythicCards: Object.values(cards).filter(c => c.tier === "mythic").length,
+      cardFamilies: [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))],
+      duelStats: duelStats || {}, cats,
+    };
+  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats]);
+
+  const unlockedKeys = useMemo(() => (profile?.id ? getUnlockedKeys(achCtx) : []), [achCtx, profile?.id]);
+
+  useEffect(() => {
+    const uid = profile?.id;
+    if (!uid || !unlockedKeys.length) return;
+    const firstRun = seedNotifiedIfFirstRun(uid, unlockedKeys); // 首次基準：既有成就不提醒（修洪水 bug）
+    seedSeenIfFirstRun(uid, unlockedKeys);
+    if (firstRun) { setDexSeenTick(t => t + 1); return; }
+    const fresh = getUnnotifiedKeys(uid, unlockedKeys);
+    if (!fresh.length) return;
+    markNotified(uid, fresh);
+    const infos = fresh.map(describeKey).filter(Boolean);
+    if (!infos.length) return;
+    const best = infos.slice().sort((a, b) => (ACH_RARITY_RANK[b.rarity] || 0) - (ACH_RARITY_RANK[a.rarity] || 0))[0];
+    setDexUnlockToast({ best, count: infos.length });
+    setDexSeenTick(t => t + 1); // 亮紅點
+    infos.filter(i => ACH_ANNOUNCE.has(i.rarity)).forEach(i => {
+      createNotification({
+        type: "achievement", title: "🏅 新成就解鎖！",
+        content: `【${i.name}】${i.desc}`,
+        targetMemberId: uid, subjectMemberId: uid,
+        subjectInfo: { nickname: profile.nickname || profile.name, archerNo: profile.archerNo || "", item: i.name, level: i.rarity },
+      }, uid).catch(() => {});
+    });
+  }, [unlockedKeys, profile?.id]); // eslint-disable-line
+
+  // 未看過的已解鎖成就數 → 「我的」紅點（dexSeenTick 變動時重算：進圖鑑看過會清）
+  const dexUnseenCount = useMemo(
+    () => (profile?.id ? countUnseen(profile.id, unlockedKeys) : 0),
+    [unlockedKeys, profile?.id, dexSeenTick],
+  );
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
@@ -527,6 +590,7 @@ export default function MemberApp() {
 
   return (
     <div style={{ height:"100dvh", display:"flex", flexDirection:"column", fontFamily:"sans-serif", overflow:"hidden", background:"#0f172a" }}>
+      <CatBuddyProvider>
 
       {/* 版本更新提醒 */}
       {needsUpdate && (
@@ -589,6 +653,11 @@ export default function MemberApp() {
       )}
 
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
+      {dexUnlockToast && (
+        <DexUnlockToast info={dexUnlockToast.best} count={dexUnlockToast.count}
+          onView={() => { setDexUnlockToast(null); setPage("dex"); }}
+          onClose={() => setDexUnlockToast(null)} />
+      )}
 
       {/* 📋 今日報到浮動視窗 */}
       <OverlayModal open={showCheckinPopup}>
@@ -751,7 +820,7 @@ export default function MemberApp() {
         {page==="achievements" && <MemberAchievements />}
         {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
-        {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} />}
+        {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} onDexViewed={()=>setDexSeenTick(t=>t+1)} />}
         {/* ── 冒險 Hub ── */}
         {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
         {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
@@ -824,7 +893,7 @@ export default function MemberApp() {
                 {/* key 換值讓 icon 在變 active 時重掛，重播 fx-bounce 彈跳 */}
                 <span key={active ? "on" : "off"} className={active ? "fx-bounce" : ""}
                   style={{ fontSize: active ? "20px" : "18px", display:"inline-block", transition:"font-size 0.15s ease", filter: active ? "none" : "grayscale(35%)", opacity: active ? 1 : 0.85 }}>{n.icon}</span>
-                {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog) && (
+                {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog || dexUnseenCount > 0) && (
                   <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block" }} />
                 )}
               </div>
@@ -833,6 +902,11 @@ export default function MemberApp() {
           );
         })}
       </div>
+
+      {/* 🐱 全局貓貓伴侶（教練限定，可開關） */}
+      <CatBuddy />
+
+      </CatBuddyProvider>
 
       {/* 戰鬥沉浸模式：顯示導覽列按鈕 */}
       {battleImmersive && !dungeonImmersive && (
