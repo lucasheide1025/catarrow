@@ -5,7 +5,6 @@ import { subscribeResults, getRegistrations, subscribePendingCertResults, subscr
 import { getDuelStats } from "../lib/duelDb";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
-import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
@@ -718,8 +717,8 @@ const adminNav = [
           );
         })}
       </div>
-      {/* 🐱 全局貓貓伴侶（教練限定，可開關） */}
-      <CatBuddy />
+      {/* 🐱 全局貓貓伴侶（教練限定）— 教練模式暫時關閉，日後復原把下一行取消註解即可 */}
+      {/* <CatBuddy /> */}
       </CatBuddyProvider>
       </div>
     );
@@ -876,8 +875,8 @@ const adminNav = [
           })}
         </div>
       </div>
-      {/* 🐱 全局貓貓伴侶（教練限定，可開關） */}
-      <CatBuddy />
+      {/* 🐱 全局貓貓伴侶（教練限定）— 教練模式暫時關閉，日後復原把下一行取消註解即可 */}
+      {/* <CatBuddy /> */}
       </CatBuddyProvider>
     </div>
   );
