@@ -4,6 +4,7 @@ import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, c
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { TARGET_FACE_FORMATS } from "../../lib/targetFace";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
+import { CountUp } from "../shared/Widgets";
 import TrendLine from "../shared/charts/TrendLine";
 import BarChart from "../shared/charts/BarChart";
 import RadarChart, { computeRadarValues } from "../shared/charts/RadarChart";
@@ -407,6 +408,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       </div>
     </div>
 
+    <div key={tab} className="flex flex-col gap-4 fx-fade-up">
     {/* ─── 📈 表現總覽 ─── */}
     {tab === "overview" && <>
       {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
@@ -493,7 +495,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
             <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" style={{ background:"rgba(99,102,241,0.08)" }} />
             <div className="text-[10px] uppercase tracking-widest" style={{ color:"var(--text-muted)" }}>BATTLES</div>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-4xl font-black" style={{ color:"#a5b4fc" }}>{game.count}</span>
+              <CountUp value={game.count} className="text-4xl font-black" style={{ color:"#a5b4fc" }} />
               <span className="text-lg mb-1">⚔️</span>
             </div>
             <div className="mt-1 flex gap-3 text-xs">
@@ -510,7 +512,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
             <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" style={{ background:"rgba(244,63,94,0.08)" }} />
             <div className="text-[10px] uppercase tracking-widest" style={{ color:"var(--text-muted)" }}>TOTAL DAMAGE</div>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-3xl font-black" style={{ color:"#fda4af" }}>{game.totalDamage.toLocaleString()}</span>
+              <CountUp value={game.totalDamage} className="text-3xl font-black" style={{ color:"#fda4af" }} />
             </div>
             <div className="mt-1 text-xs" style={{ color:"var(--text-muted)" }}>
               最高單場 <span className="font-bold" style={{ color:"#fbbf24" }}>{game.highestDamage.toLocaleString()}</span>
@@ -617,5 +619,6 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       <section><ST>本機資料與同步</ST><Card className="p-3"><div className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{syncInfo?.local?.initialized ? "此裝置已儲存射手表現資料" : "此裝置尚未建立射手歷史資料"}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>平常只比對一筆同步摘要；版本相同時不會重新讀取全部射擊紀錄。新設備可主動下載最近三個月的場次與逐箭資料。</p><div className="mt-3 flex items-center justify-between gap-3"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>{transferProgress ? `下載 ${transferProgress.completed}／${transferProgress.total} 場` : `本機版本 ${syncInfo?.local?.revision ?? "—"} ・ 雲端版本 ${syncInfo?.cloud?.revision ?? "—"}`}</span><button type="button" onClick={transferRecentHistory} disabled={transferring} className="rounded bg-blue-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{transferring ? "建立中…" : "新設備：建立近 3 個月歷史資料"}</button></div></Card></section>
       <SessionHistoryBrowser sessions={filtered} />
     </>}
+    </div>
   </div>;
 }
