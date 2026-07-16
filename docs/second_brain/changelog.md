@@ -3,6 +3,24 @@
 
 ---
 
+## 2026-07-16（射手表現改版：修 prod 崩潰 + 版面重構 + 深度分析 v2 診斷引擎）
+
+**為什麼**：射手表現「亂/醜」、遊戲戰績分頁 prod 崩潰、深度分析只是一堆圖表、日週月年差異極小。與 Codex 平行開發（Codex 負責 react-bits/地下城，交接文件 `.trellis/tasks/07-16-react-bits-homepage/claude-performance-handoff.md`：射手表現全歸 Claude、禁新增動畫依賴、CountUp 用現成 Widgets、吃 `.no-anim`/reduced-motion）。
+
+- **修 prod 崩潰**（遊戲戰績分頁）：`style={{ color }}` shorthand 用了未定義的 `color`（本意 `c`）。dev 各模組獨立 scope 沒事，**prod scope hoisting 併成同一 scope 後被 terser 綁到別模組未初始化的 `const` → `Cannot access 'ut' before initialization`（TDZ）**。改 `style={{ color:c }}`。madge 找不到（非 import 問題）。→ 這是 prod-only TDZ 的第二種成因。
+- **版面重構**：背景加深色遮罩救對比；分頁 5→4（總覽/深度分析/歷史/遊戲戰績，同步併入歷史底部）；sticky pill 分頁列；總覽移除與深度分析重複的趨勢圖。
+- **動畫**：分頁 `key={tab}`+`.fx-fade-up` 淡入；遊戲戰績數字用 `Widgets.jsx::CountUp`。零新依賴。
+- **深度分析 v2**：新增 `src/lib/archerDiagnosis.js` 純前端診斷引擎（6維：準度/群聚精密度/群心偏移/節奏穩定/後段耐力/近期趨勢，每維分數+評級+建議，總評挑最優先建議；門檻在檔頂 `TH` 供教練校正）。`exactArrows` 帶入靶面座標 `position`。`ShotGroupOverlay` 支援 4 疊加模式（分場/合併/前段vs後段/密度熱區）+ 近3/5/10場。
+- **期間取樣縮放**：近N箭視窗隨期間放大 日90/週300/月600/年900/全部1000（原本全部只算前90箭故差異極小）。加 `MAX_SESSION_SCAN=120` 場硬上限保護 IO。
+- **本機優先未破壞**：全走 `getCachedShootingSessionEnds`（`getDocsFromCache`，cache miss 回 []、**不打網路**）；唯一常態網路讀仍是 `getMemberPerformanceSync`。過去資料仍要手動載入。
+- **深色卡片禁淺灰字**：`var(--text-muted)`(#64748b) 33 處全改 `var(--text-secondary)`(#94a3b8)。
+- **教練檢視持久化**：`selectedMemberId` 存 localStorage（切走再回自動帶回）+ 檢視他人時橫幅「檢視中：學員名」+ 返回我自己。範圍決策=**A（只在唯讀檢視頁，動作類永遠教練本人）**。
+- ⚠️ **踩坑**：第 4 波用 `git add -A` 把 Codex 平行 WIP（react-bits/、dungeon/DungeonEventStage、expeditionDb、fxSettings、assets）一起 commit 上線（build 有過、無遺失，但半成品提前部署）。教訓：**多 agent 同 working tree 時只 `git add <自己的具體檔>`**。
+- ✅ 每波 `npm run build` 通過並實機驗證四分頁無 console 錯誤。已部署。
+- **待辦**：診斷 `TH` 門檻需教練用有靶面資料的學員校正；A 方案若要擴到其他唯讀頁（成就/戰績歷史）再逐頁加 `profileOverride`。
+
+---
+
 ## 2026-07-16（圖鑑 Phase 3：跨系統新分類 + 成就通知/紅點系統 + 修洪水 bug）
 
 **為什麼**：多個系統（練習箭數/貓咪/貓村/裝備衝裝打洞符文/世界王/決鬥歷練/月卡）完全沒圖鑑；且成就通知綁在圖鑑頁、無首次基準 → 進圖鑑會洪水式重複噴 toast，打怪當下又不提醒。通盤規劃見 `docs/achievement-dex-master-plan.md`。
