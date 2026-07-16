@@ -156,7 +156,7 @@ export default function DungeonSelectionPanel({
       {/* 地下城資訊卡片 */}
       <div className="rounded-2xl p-6 text-center"
         style={{
-          background:"linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(30,41,59,0.95) 50%)",
+          background:"#101827",
           border:"1px solid rgba(245,158,11,0.2)",
         }}>
         <div className="text-5xl mb-3">
@@ -225,7 +225,7 @@ export default function DungeonSelectionPanel({
         </div>
 
         <div className="rounded-xl px-4 py-3 flex items-center justify-between"
-          style={{ background:"linear-gradient(90deg,rgba(139,92,246,0.18),rgba(245,158,11,0.15))" }}>
+          style={{ background:"#172033", border:"1px solid rgba(251,191,36,.15)" }}>
           <span className="text-sm font-bold text-slate-200">地下城掉落倍率</span>
           <span className="text-xl font-black text-amber-300">×{rewardPreview?.multiplierMin || 1}~{rewardPreview?.multiplierMax || 3}（隨機）</span>
         </div>

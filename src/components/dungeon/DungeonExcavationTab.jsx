@@ -216,12 +216,11 @@ export default function DungeonExcavationTab({ profile }) {
       {/* ═══════════ ① 定時生成 ═══════════ */}
       <div className="rounded-2xl p-4 relative overflow-hidden"
         style={{
-          background: autoDigStatus.ready
-            ? "linear-gradient(135deg, rgba(251,191,36,0.18) 0%, rgba(30,41,59,0.95) 60%)"
-            : "linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(30,41,59,0.95) 60%)",
+          background: "#101827",
           border: autoDigStatus.ready
             ? "1px solid rgba(251,191,36,0.3)"
-            : "1px solid rgba(99,102,241,0.15)",
+            : "1px solid rgba(148,163,184,0.16)",
+          boxShadow:`inset 4px 0 ${autoDigStatus.ready ? "#fbbf24" : "#64748b"}, 0 12px 26px rgba(0,0,0,.24)`,
         }}>
         <div className="flex items-center gap-3 mb-3">
           <div className="text-3xl">{autoDigStatus.ready ? "⏰" : "⏳"}</div>
@@ -265,8 +264,9 @@ export default function DungeonExcavationTab({ profile }) {
       {/* ═══════════ ② 練箭/報到挖掘 ═══════════ */}
       <div className="rounded-2xl p-4 relative overflow-hidden"
         style={{
-          background: "linear-gradient(135deg, rgba(74,222,128,0.10) 0%, rgba(30,41,59,0.95) 50%)",
-          border: "1px solid rgba(74,222,128,0.15)",
+          background: "#101827",
+          border: "1px solid rgba(74,222,128,0.18)",
+          boxShadow:"inset 4px 0 #22c55e, 0 12px 26px rgba(0,0,0,.24)",
         }}>
         <div className="flex items-center gap-3 mb-3">
           <div className="text-3xl">⛏️</div>
@@ -351,8 +351,9 @@ export default function DungeonExcavationTab({ profile }) {
       {/* ═══════════ ③ 世界王卷軸 ═══════════ */}
       <div className="rounded-2xl p-4 relative overflow-hidden"
         style={{
-          background: "linear-gradient(135deg, rgba(251,146,60,0.10) 0%, rgba(30,41,59,0.95) 50%)",
-          border: "1px solid rgba(251,146,60,0.15)",
+          background: "#101827",
+          border: "1px solid rgba(251,146,60,0.18)",
+          boxShadow:"inset 4px 0 #fb923c, 0 12px 26px rgba(0,0,0,.24)",
         }}>
         <div className="flex items-center gap-3 mb-3">
           <div className="text-3xl">📜</div>

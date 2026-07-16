@@ -83,6 +83,7 @@ export default function MemberHome({
   potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0,
   todayCheckin,       // 今日報到（MemberApp/AdminApp 既有訂閱下傳；undefined=載入中, null=未報到）
   worldBoss = null,   // 世界王事件（MemberApp/AdminApp 既有訂閱下傳）
+  dexUnseenCount = 0,
 }) {
   const { profile } = useAuth();
   const { catHP, catATK, catDEF, hasCat } = useCatCompanion();
@@ -103,6 +104,7 @@ export default function MemberHome({
   // 進行中卡資料
   const [villageGoal, setVillageGoal]     = useState(null);
   const [nowMs, setNowMs]                 = useState(Date.now());
+  const [dungeonSeenTick, setDungeonSeenTick] = useState(0);
 
   // 村目標（重用 villageGoalDb 既有訂閱函式）
   useEffect(() => subscribeActiveGoal(setVillageGoal), []);
@@ -177,10 +179,10 @@ export default function MemberHome({
 
       <section style={{
         position:"relative", overflow:"hidden", padding:"18px 16px", borderRadius:"var(--r-md)",
-        background:"linear-gradient(135deg, rgba(14,116,144,.96), rgba(30,41,59,.96) 56%, rgba(15,23,42,.98))",
-        border:"1px solid rgba(103,232,249,.28)", boxShadow:"0 14px 30px rgba(8,47,73,.28)",
+        backgroundImage:"linear-gradient(90deg, rgba(3,10,20,.96) 0%, rgba(3,10,20,.83) 54%, rgba(3,10,20,.28) 100%), url(/ui/home/training.webp)",
+        backgroundSize:"cover", backgroundPosition:"center",
+        border:"1px solid rgba(251,191,36,.22)", boxShadow:"0 16px 34px rgba(0,0,0,.32)",
       }}>
-        <div style={{ position:"absolute", right:-34, top:-42, width:150, height:150, borderRadius:"50%", border:"1px solid rgba(103,232,249,.18)" }} />
         <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:12, alignItems:"flex-start" }}>
           <div style={{ minWidth:0 }}>
             <div style={{ color:"rgba(236,254,255,.72)", fontSize:11, fontWeight:800 }}>今日訓練狀態</div>
@@ -282,7 +284,7 @@ export default function MemberHome({
         const ringVal = nextDaily ? todayArrows - prevDailyArrows : 1;
         const ringMax = nextDaily ? nextDaily.arrows - prevDailyArrows : 1;
         return (
-          <Card className="p-4">
+          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(45,212,191,.2)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #14b8a6" }}>
             <SectionHeader icon="📋" title="今日狀態" action={
               <button onClick={() => onPageChange("training-hub")}
                 style={{ fontSize:11, color:"var(--text-accent)", fontWeight:700, background:"none", border:"none", cursor:"pointer", padding:0 }}>
@@ -326,7 +328,7 @@ export default function MemberHome({
           padding:"8px 12px", cursor:"pointer", textAlign:"left",
         });
         return (
-          <Card className="p-4">
+          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(251,191,36,.18)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #f59e0b" }}>
             <SectionHeader icon="⏳" title="進行中" />
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {wbActive && (
@@ -599,8 +601,9 @@ export default function MemberHome({
         const arrowdew  = profile?.village?.resources?.arrowdew || 0;
         const coins     = profile?.coins || 0;
         const gachaCoins = profile?.gachaCoins || 0;
+        const kingSeals = profile?.kingSeals || 0;
         return (
-          <Card className="p-4" style={{ background:"rgba(15,23,42,0.55)" }}>
+          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(96,165,250,.18)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #3b82f6" }}>
             {/* 等級標題列 */}
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
               <div>
@@ -616,7 +619,7 @@ export default function MemberHome({
             </div>
             {/* XP 進度條 */}
             <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:6, overflow:"hidden" }}>
-              <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#ec4899,#a855f7)", borderRadius:6, transition:"width 0.4s" }} />
+              <div style={{ height:"100%", width:`${pct}%`, background:"#f472b6", borderRadius:6, transition:"width 0.4s" }} />
             </div>
             <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:3, textAlign:"right" }}>
               {level >= MAX_ARCHER_LEVEL ? "已滿等" : `${current} / ${needed} XP`}
@@ -755,29 +758,60 @@ export default function MemberHome({
                 <span style={{ fontSize:11, fontWeight:700, color:"#86efac" }}>{todayArrows}</span>
                 <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>今日箭數</span>
               </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(251,191,36,0.1)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>👑</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#fde68a" }}>{kingSeals.toLocaleString()}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>王之印記</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(45,212,191,0.1)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
+                <span style={{ fontSize:16 }}>🧭</span>
+                <span style={{ fontSize:11, fontWeight:700, color:"#5eead4" }}>Lv.{adventurerLevel}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>冒險者等級</span>
+              </div>
             </div>
             {/* 收藏進度列 */}
             {(() => {
-              const dungeonOwned  = Object.keys(profile?.dungeonCollectibles || {}).length;
+              const dungeonKeys   = Object.keys(profile?.dungeonCollectibles || {});
+              const dungeonOwned  = dungeonKeys.length;
               const dungeonTotal  = Object.keys(COLLECTIBLE_MAP).length;
               const achOwned      = _ds.totalUnlocked;
               const achTotal      = _ds.totalAll;
               const ownedCatCards = profile?.catCards || {};
               const catOwned      = Object.keys(ownedCatCards).filter(id => (ownedCatCards[id] || 0) > 0).length;
               const catTotal      = CAT_CARDS.length;
+              const dungeonSeenKey = `dungeonDexSeen_${profile?.id || "guest"}`;
+              const dungeonInitKey = `dungeonDexSeenInit_${profile?.id || "guest"}`;
+              let dungeonUnseen = 0;
+              try {
+                if (!localStorage.getItem(dungeonInitKey)) {
+                  localStorage.setItem(dungeonSeenKey, JSON.stringify(dungeonKeys));
+                  localStorage.setItem(dungeonInitKey, "1");
+                } else {
+                  const seen = new Set(JSON.parse(localStorage.getItem(dungeonSeenKey) || "[]"));
+                  dungeonUnseen = dungeonKeys.filter(key => !seen.has(key)).length;
+                }
+              } catch { /* privacy mode: red dot gracefully unavailable */ }
+              void dungeonSeenTick;
               const cells = [
-                { icon:"🗺️", label:"地下城圖鑑", owned:dungeonOwned, total:dungeonTotal, color:"#a78bfa" },
-                { icon:"🎖️", label:"成就圖鑑",   owned:achOwned,    total:achTotal,    color:"#fbbf24" },
-                { icon:"🐱", label:"貓貓卡片",   owned:catOwned,    total:catTotal,    color:"#f472b6" },
+                { icon:"🗺️", label:"地下城圖鑑", owned:dungeonOwned, total:dungeonTotal, color:"#a78bfa", unread:dungeonUnseen, page:"dungeon", onOpen:() => {
+                  try { localStorage.setItem(dungeonSeenKey, JSON.stringify(dungeonKeys)); } catch {}
+                  sessionStorage.setItem("dungeon_initial_tab", "dex");
+                  setDungeonSeenTick(t => t + 1);
+                  onPageChange("dungeon");
+                } },
+                { icon:"🎖️", label:"成就圖鑑", owned:achOwned, total:achTotal, color:"#fbbf24", unread:dexUnseenCount, page:"dex" },
+                { icon:"🐱", label:"貓貓卡片", owned:catOwned, total:catTotal, color:"#f472b6", page:"cats" },
               ];
               return (
                 <div style={{ display:"flex", gap:10, marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.08)", flexWrap:"wrap" }}>
                   {cells.map(c => (
-                    <div key={c.label} style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(255,255,255,0.06)", borderRadius:8, padding:"4px 10px", minWidth:72, flex:1 }}>
+                    <button type="button" key={c.label} onClick={c.onOpen || (() => onPageChange(c.page))}
+                      style={{ position:"relative", display:"flex", flexDirection:"column", alignItems:"center", background:"#172033", border:"1px solid rgba(255,255,255,.09)", borderRadius:8, padding:"6px 10px", minWidth:72, flex:1, cursor:"pointer" }}>
+                      {c.unread > 0 && <span aria-label={`${c.unread} 個新項目`} style={{ position:"absolute", top:6, right:7, width:7, height:7, borderRadius:"50%", background:"#fb7185", boxShadow:"0 0 0 2px #172033, 0 0 8px #fb7185" }} />}
                       <span style={{ fontSize:14 }}>{c.icon}</span>
                       <span style={{ fontSize:11, fontWeight:900, color:c.color }}>{c.owned}<span style={{ fontSize:9, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/{c.total}</span></span>
                       <span style={{ fontSize:8, color:"rgba(255,255,255,0.4)", textAlign:"center" }}>{c.label}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               );
@@ -823,7 +857,7 @@ export default function MemberHome({
           {QUICK_LINKS.map(q => (
             <button key={q.page} onClick={() => onPageChange(q.page)}
               className="flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
-              style={{ minHeight:64, borderRadius:"var(--r-md)", border:"1px solid var(--glass-border)", background:"var(--glass-bg)", boxShadow:"var(--shadow-card)", cursor:"pointer" }}>
+              style={{ minHeight:64, borderRadius:"var(--r-md)", border:"1px solid rgba(148,163,184,.16)", background:"#111b2d", boxShadow:"0 8px 18px rgba(0,0,0,.2)", cursor:"pointer" }}>
               <span style={{ fontSize:20 }}>{q.icon}</span>
               <span style={{ fontSize:10, fontWeight:700, color:"var(--text-secondary)" }}>{q.label}</span>
             </button>

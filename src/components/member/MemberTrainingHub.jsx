@@ -3,12 +3,15 @@
 import { useState } from "react";
 import DailyQuest from "./DailyQuest";
 import { SectionHeader, HubTile } from "../shared/Widgets";
+import performanceImage from "../../assets/hub/performance.webp";
+import practiceImage from "../../assets/hub/practice.webp";
+import competitionImage from "../../assets/hub/competition.webp";
 
 // 入口常數陣列（accent 必須是 hex）
 const TRAINING_ITEMS = [
-  { page:"performance", icon:"🏹", title:"射手表現", desc:"真實射箭・進步分析", accent:"#14b8a6", badgeKey:"performance" },
-  { page:"practice", icon:"🎯", title:"自主練習",   desc:"記錄每一箭",     accent:"#3b82f6", badgeKey:"practice" },
-  { page:"comps",    icon:"🏆", title:"比賽 / 檢定", desc:"賽事與升級檢定", accent:"#d946ef", badgeKey:"comps" },
+  { page:"performance", title:"射手表現", desc:"真實射箭・進步分析", accent:"#14b8a6", badgeKey:"performance", image:performanceImage },
+  { page:"practice", title:"自主練習", desc:"記錄每一箭", accent:"#3b82f6", badgeKey:"practice", image:practiceImage },
+  { page:"comps", title:"比賽 / 檢定", desc:"賽事與升級檢定", accent:"#d946ef", badgeKey:"comps", image:competitionImage },
 ];
 
 export default function MemberTrainingHub({ onPageChange, onJoinParty, badges = {}, showPerformance = true }) {
@@ -40,6 +43,7 @@ export default function MemberTrainingHub({ onPageChange, onJoinParty, badges = 
             title={item.title}
             desc={item.desc}
             accent={item.accent}
+            image={item.image}
             badge={badges[item.badgeKey] || 0}
             onClick={() => onPageChange(item.page)} />
         ))}

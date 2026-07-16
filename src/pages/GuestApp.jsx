@@ -15,8 +15,9 @@ import GuestShareCard  from "../components/member/GuestShareCard";
 import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
-import SpotlightCard from "../components/react-bits/SpotlightCard";
 import FadeContent from "../components/react-bits/FadeContent";
+import practiceCardImage from "../assets/hub/practice.webp";
+import performanceCardImage from "../assets/hub/performance.webp";
 
 const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
 const MemberPerformance = lazy(() => import("../components/member/MemberPerformance"));
@@ -80,11 +81,12 @@ const GUEST_VISUAL_CSS = `
 .guest-chip-btn{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.12);color:white;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:1000;cursor:pointer}
 .guest-section-title{font-size:12px;color:#9fb3cc;font-weight:1000;letter-spacing:.08em;margin:22px 2px 11px}
 .guest-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.guest-action{min-height:168px;border:1px solid rgba(255,255,255,.1);background:rgba(15,23,42,.76);backdrop-filter:blur(14px);border-radius:22px;padding:16px;text-align:left;color:white;cursor:pointer;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
-.guest-action.feature{grid-column:span 2;min-height:148px;background:linear-gradient(135deg,rgba(14,165,233,.24),rgba(79,70,229,.22)),rgba(15,23,42,.8)}
+.guest-action{min-height:168px;border:1px solid rgba(255,255,255,.14);background-color:#0f172a;background-size:cover;background-position:center;border-radius:22px;padding:16px;text-align:left;color:white;cursor:pointer;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;gap:7px;box-shadow:0 16px 30px rgba(0,0,0,.3)}
+.guest-action:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,6,23,.02) 15%,rgba(2,6,23,.3) 46%,rgba(2,6,23,.96) 86%);pointer-events:none}
+.guest-action.feature{grid-column:span 2;min-height:168px}
 .guest-action-icon{width:48px;height:48px;border-radius:16px;display:grid;place-items:center;font-size:26px;flex:0 0 auto}
-.guest-action-title{display:block;font-size:18px;font-weight:1000;line-height:1.28;margin-top:2px;letter-spacing:0}
-.guest-action-desc{display:block;font-size:12px;line-height:1.72;color:#b6c8dd;margin-top:0;padding-right:16px;max-width:100%}
+.guest-action-title{position:relative;display:block;font-size:18px;font-weight:1000;line-height:1.28;margin-top:2px;letter-spacing:0;text-shadow:0 2px 8px #000}
+.guest-action-desc{position:relative;display:block;font-size:12px;line-height:1.55;color:#dbeafe;margin-top:0;padding-right:16px;max-width:100%}
 .guest-action-arrow{position:absolute;right:14px;bottom:12px;font-size:22px;color:#cbd5e1;font-weight:1000;line-height:1}
 .guest-quick-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
 .guest-mini{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.08);color:#e2e8f0;border-radius:16px;padding:13px;font-size:13px;font-weight:1000;cursor:pointer}
@@ -407,13 +409,13 @@ function GuestPanelLoading({ label }) {
 
 function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
   const cards = [
-    { id: "practice",  icon: "🏹", title: "自主練箭", desc: "逐箭記錄・靶面點擊・射手表現", tone: "#14b8a6", feature: true },
-    { id: "performance", icon: "📈", title: "射手表現", desc: "查看每場真實射箭紀錄", tone: "#0ea5e9" },
-    { id: "monster",   icon: "⚔️", title: isKid ? "出發打怪" : "單人冒險", desc: "T1-T2 怪物挑戰，熟悉正式戰鬥節奏", tone: "#f59e0b", feature: true },
-    { id: "party",     icon: "👥", title: isKid ? "大家一起打" : "一起打怪", desc: "用房號加入隊伍，團康活動一起推進", tone: "#4f46e5", feature: true },
-    { id: "dungeon",   icon: "🏰", title: "地下城探索", desc: "正式迷霧探索版本，低階 T1-T2 體驗", tone: "#7c3aed" },
-    { id: "worldboss", icon: "🌍", title: isKid ? "打大魔王" : "世界王活動", desc: "多人一起攻擊世界王，感受共同作戰", tone: "#0891b2" },
-    { id: "profile",   icon: "🎒", title: "我的角色", desc: "裝備、商店、紀念卡與進度保留", tone: "#16a34a" },
+    { id:"practice", title:"自主練箭", desc:"逐箭記錄・靶面點擊・射手表現", image:practiceCardImage, feature:true },
+    { id:"performance", title:"射手表現", desc:"查看每場真實射箭紀錄", image:performanceCardImage },
+    { id:"monster", title:isKid ? "出發打怪" : "單人冒險", desc:"T1-T2 怪物挑戰，熟悉正式戰鬥節奏", image:"/ui/cell-monster.webp", feature:true },
+    { id:"party", title:isKid ? "大家一起打" : "一起打怪", desc:"用房號加入隊伍，團康活動一起推進", image:"/ui/cell-party.webp", feature:true },
+    { id:"dungeon", title:"地下城探索", desc:"正式迷霧探索版本，低階 T1-T2 體驗", image:"/ui/home/adventure.webp" },
+    { id:"worldboss", title:isKid ? "打大魔王" : "世界王活動", desc:"多人一起攻擊世界王，感受共同作戰", image:"/ui/cell-worldboss.webp" },
+    { id:"profile", title:"我的角色", desc:"裝備、商店、紀念卡與進度保留", image:"/ui/home/inventory.webp" },
   ];
   return (
     <FadeContent>
@@ -444,14 +446,13 @@ function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
       <div className="guest-section-title">選擇活動</div>
       <div className="guest-action-grid">
         {cards.map(c => (
-          <SpotlightCard as="button" key={c.id} onClick={() => c.action ? c.action() : onGo(c.id)}
-            color={`${c.tone}2b`}
-            className={`guest-action ${c.feature ? "feature" : ""}`}>
-            <span className="guest-action-icon" style={{ background: `${c.tone}22`, color: c.tone }}>{c.icon}</span>
+          <button key={c.id} onClick={() => c.action ? c.action() : onGo(c.id)}
+            className={`guest-action ${c.feature ? "feature" : ""}`}
+            style={{ backgroundImage:`url(${c.image})` }}>
             <span className="guest-action-title">{c.title}</span>
             <span className="guest-action-desc">{c.desc}</span>
             <span className="guest-action-arrow">›</span>
-          </SpotlightCard>
+          </button>
         ))}
       </div>
 

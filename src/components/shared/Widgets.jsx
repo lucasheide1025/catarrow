@@ -83,19 +83,20 @@ export function Skeleton({ h = 16, w = "100%", className = "" }) {
 // <HubTile icon="⚔️" title="打怪" desc="單人戰鬥" badge={3} accent="#f59e0b" onClick={...} />
 // ⚠️ accent 必須是 6 碼 hex（內部以 `${accent}26` 疊 15% 透明度），不可傳 var(--xxx)
 export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b", image }) {
+  const Tile = image ? "button" : SpotlightCard;
   return (
-    <SpotlightCard as="button" onClick={onClick} color={`${accent}24`}
-      className="relative flex flex-col items-start gap-1 p-4 text-left transition-all active:scale-95 w-full"
+    <Tile {...(image ? {} : { as:"button", color:`${accent}24` })} onClick={onClick}
+      className={`relative flex flex-col items-start gap-1 overflow-hidden p-4 text-left transition-all active:scale-95 w-full ${image ? "justify-end" : ""}`}
       style={{
-        minHeight: 96,
+        minHeight: image ? 146 : 96,
         borderRadius: "var(--r-lg)",
-        border: "1px solid var(--glass-border)",
+        border: image ? "1px solid rgba(255,255,255,.14)" : "1px solid var(--glass-border)",
         backgroundImage: image
-          ? `linear-gradient(90deg, rgba(2,6,23,.86) 0%, rgba(2,6,23,.55) 55%, rgba(2,6,23,.18) 100%), url(${image})`
+          ? `linear-gradient(180deg, rgba(2,6,23,.02) 18%, rgba(2,6,23,.38) 50%, rgba(2,6,23,.96) 88%), url(${image})`
           : `linear-gradient(135deg, ${accent}26 0%, var(--glass-bg) 55%)`,
         backgroundSize: image ? "cover" : undefined,
-        backgroundPosition: image ? "center right" : undefined,
-        boxShadow: "var(--shadow-card)",
+        backgroundPosition: image ? "center" : undefined,
+        boxShadow: image ? "0 14px 28px rgba(0,0,0,.3)" : "var(--shadow-card)",
       }}>
       {badge > 0 && (
         <span className="absolute top-2 right-2 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center text-white"
@@ -103,10 +104,11 @@ export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b",
           {badge > 99 ? "99+" : badge}
         </span>
       )}
-      <span className="text-2xl leading-none">{icon}</span>
-      <span className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>{title}</span>
-      {desc && <span className="text-[11px] leading-tight" style={{ color: "var(--text-secondary)" }}>{desc}</span>}
-    </SpotlightCard>
+      {icon && <span className="text-2xl leading-none">{icon}</span>}
+      <span className="text-sm font-black mt-1 text-white drop-shadow-lg">{title}</span>
+      {desc && <span className={`text-[11px] leading-tight ${image ? "text-slate-200" : ""}`}
+        style={image ? undefined : { color:"var(--text-secondary)" }}>{desc}</span>}
+    </Tile>
   );
 }
 

@@ -64,8 +64,8 @@ export default function DungeonStorageTab({ profile, onSelectDungeon }) {
               <div key={`empty-${idx}`}
                 className="flex-1 min-w-0 rounded-2xl border flex flex-col items-center justify-center gap-2"
                 style={{
-                  background:"rgba(255,255,255,0.04)",
-                  borderColor:"rgba(255,255,255,0.1)",
+                  background:"#0b1220",
+                  borderColor:"rgba(148,163,184,0.18)",
                   padding:"20px 8px",
                 }}>
                 <div className="text-3xl">🕳️</div>
@@ -80,7 +80,7 @@ export default function DungeonStorageTab({ profile, onSelectDungeon }) {
           return (
             <div key={d.id}
               className="flex-1 min-w-0 rounded-2xl border overflow-hidden transition-all active:scale-[0.97]"
-              style={{ background:family.bg, borderColor:family.border }}>
+              style={{ background:"#121c2d", borderColor:family.border, boxShadow:`inset 0 3px ${diff?.color || "#94a3b8"}, 0 10px 22px rgba(0,0,0,.24)` }}>
               <button
                 onClick={() => onSelectDungeon(d)}
                 className="w-full text-left"

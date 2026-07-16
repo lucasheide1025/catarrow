@@ -23,6 +23,15 @@ import {
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { normalizeDungeonRunSettings } from "../../lib/dungeonRunSettings";
 import dungeonLobbyImage from "../../assets/dungeon/lobby-gate.webp";
+import excavationImage from "../../assets/dungeon/excavation.webp";
+import entranceImage from "../../assets/dungeon/entrance.webp";
+import codexImage from "../../assets/dungeon/codex.webp";
+
+const TAB_HERO = {
+  excavate: { image:excavationImage, eyebrow:"DISCOVERY", title:"挖掘探索", desc:"累積挖掘進度，揭露新的地下城線索" },
+  enter: { image:entranceImage, eyebrow:"EXPEDITION", title:"整備並進入地下城", desc:"從保存的遺跡中選擇目的地，確認隊伍設定" },
+  dex: { image:codexImage, eyebrow:"ARCHIVE", title:"探險圖鑑", desc:"查閱已發現的收藏品與探索紀錄" },
+};
 
 function restoreDungeonFromTeamRoom(room) {
   const settings = normalizeDungeonRunSettings(room);
@@ -42,7 +51,14 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
   const profile = guestProfile || authProfile;
   const myId = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
-  const [tab, setTab] = useState(isGuest ? "enter" : "excavate");
+  const [tab, setTab] = useState(() => {
+    if (isGuest) return "enter";
+    try {
+      const initial = sessionStorage.getItem("dungeon_initial_tab");
+      sessionStorage.removeItem("dungeon_initial_tab");
+      return initial === "dex" ? "dex" : "excavate";
+    } catch { return "excavate"; }
+  });
   const [expeditionStart, setExpeditionStart] = useState(null);
   // 進入地下城選單狀態
   const [selectedDungeon, setSelectedDungeon] = useState(null);
@@ -321,6 +337,20 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       </div>
 
       <main className="px-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+        {(() => {
+          const hero = TAB_HERO[tab] || TAB_HERO.enter;
+          return (
+            <section className="relative mb-4 min-h-[150px] overflow-hidden rounded-2xl border border-white/10 shadow-xl">
+              <img src={hero.image} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/62 to-slate-950/10" />
+              <div className="relative flex min-h-[150px] max-w-[72%] flex-col justify-end p-4">
+                <div className="text-[9px] font-black tracking-[0.22em] text-amber-300">{hero.eyebrow}</div>
+                <h2 className="mt-1 text-xl font-black text-white">{hero.title}</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-200">{hero.desc}</p>
+              </div>
+            </section>
+          );
+        })()}
         {reconnectRoom && (
           <section
             aria-labelledby="dungeon-reconnect-title"

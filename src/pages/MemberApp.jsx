@@ -795,7 +795,7 @@ export default function MemberApp() {
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
-            todayCheckin={todayCheckin} worldBoss={activeWorldBoss} />}
+            todayCheckin={todayCheckin} worldBoss={activeWorldBoss} dexUnseenCount={dexUnseenCount} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}
