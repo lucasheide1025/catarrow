@@ -560,7 +560,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black" style={{ color }}>{item.totalDamage.toLocaleString()}</span>
+                    <span className="text-xs font-black" style={{ color:c }}>{item.totalDamage.toLocaleString()}</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill={c} opacity="0.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                   </div>
                 </div>
