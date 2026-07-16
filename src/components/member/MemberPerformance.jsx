@@ -217,7 +217,9 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   const [overlayRange, setOverlayRange] = useState(5);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [loadingFullHistory, setLoadingFullHistory] = useState(false);
-  const [selectedMemberId, setSelectedMemberId] = useState("");
+  // 教練檢視的學員 id 存 localStorage：切走其他功能再回來會自動帶回，不必重選。
+  const [selectedMemberId, setSelectedMemberIdRaw] = useState(() => { try { return localStorage.getItem("perfViewMember") || ""; } catch { return ""; } });
+  const setSelectedMemberId = id => { setSelectedMemberIdRaw(id); try { id ? localStorage.setItem("perfViewMember", id) : localStorage.removeItem("perfViewMember"); } catch { /* storage 不可用時忽略 */ } };
   const canReviewMembers = !profileOverride && role === "admin";
   const viewedMemberId = canReviewMembers ? (selectedMemberId || profile?.id) : profile?.id;
   const canCorrectTargetPlot = Boolean(profile?.id) && (coachView || viewedMemberId === profile.id || role === "admin");
@@ -451,6 +453,15 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         ))}
       </div>
     </div>
+
+    {canReviewMembers && selectedMemberId && selectedMemberId !== profile?.id && (() => {
+      const m = members.find(x => x.id === selectedMemberId);
+      const name = m?.name || m?.nickname || "該學員";
+      return <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2" style={{ background:"rgba(245,158,11,0.15)", border:"1px solid rgba(245,158,11,0.35)" }}>
+        <span className="text-xs font-bold" style={{ color:"#fcd34d" }}>👁️ 教練檢視中：{name} 的資料（非你本人）</span>
+        <button type="button" onClick={() => setSelectedMemberId("")} className="shrink-0 rounded bg-white/10 px-2.5 py-1 text-[11px] font-bold" style={{ color:"var(--text-primary)" }}>返回我自己</button>
+      </div>;
+    })()}
 
     <div key={tab} className="flex flex-col gap-4 fx-fade-up">
     {/* ─── 📈 表現總覽 ─── */}
