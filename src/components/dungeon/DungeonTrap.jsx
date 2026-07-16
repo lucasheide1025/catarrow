@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { sfxCast, sfxSuccess, sfxCounter, sfxTap } from "../../lib/sound";
+import DungeonEventStage from "./DungeonEventStage";
 
 // 陷阱類型
 const TRAP_TYPES = [
@@ -235,8 +236,7 @@ export default function DungeonTrap({
   const diceEmoji = diceValue != null ? ["⚀","⚁","⚂","⚃","⚄","⚅"][diceValue - 1] : "🎲";
 
   return (
-    <div className="min-h-full flex flex-col text-white"
-      style={{ background:"linear-gradient(160deg,#1a0a0a,#2d0a0a)" }}>
+    <DungeonEventStage tone="trap">
       <style>{`
 @keyframes tf-flash { 0%,100%{opacity:1} 50%{opacity:0.2} }
 @keyframes tf-shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(3px)} }
@@ -249,7 +249,7 @@ export default function DungeonTrap({
       `}</style>
 
       {/* Header */}
-      <div className="shrink-0 text-center py-5 border-b border-red-500/20"
+      <div className="dungeon-stage-header shrink-0 text-center py-5 border-b border-red-500/20"
         style={animPhase === "entering" || animPhase === "trap_reveal" ? {animation:"tf-flash 0.4s ease infinite"} : {}}>
         <div className="text-5xl mb-1"
           style={animPhase === "trap_reveal" ? {animation:"tf-reveal 0.6s cubic-bezier(0.34,1.56,0.64,1) both"} : {}}>
@@ -268,7 +268,7 @@ export default function DungeonTrap({
       </div>
 
       {/* Main Content */}
-      <div className="px-5 py-8 flex flex-col items-center justify-center gap-5"
+      <div className="dungeon-stage-main px-5 py-8 flex flex-col items-center justify-center gap-5"
         style={animPhase === "trap_reveal" ? {animation:"tf-shake 0.5s ease"} : {}}>
 
         {/* Phase 1: Trap Reveal */}
@@ -441,6 +441,6 @@ export default function DungeonTrap({
           </button>
         )}
       </div>
-    </div>
+    </DungeonEventStage>
   );
 }

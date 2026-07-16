@@ -21,8 +21,11 @@ import {
   startTeamExpeditionRoom,
 } from "../../lib/expeditionTeamDb";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
+import { normalizeDungeonRunSettings } from "../../lib/dungeonRunSettings";
+import dungeonLobbyImage from "../../assets/dungeon/lobby-gate.webp";
 
 function restoreDungeonFromTeamRoom(room) {
+  const settings = normalizeDungeonRunSettings(room);
   return {
     id: room.dungeonSavedId || null,
     savedId: room.dungeonSavedId || null,
@@ -30,8 +33,7 @@ function restoreDungeonFromTeamRoom(room) {
     difficulty: room.dungeonDifficulty,
     isHidden: room.dungeonIsHidden || false,
     boss: room.dungeonBoss || null,
-    arrowsPerRound: room.arrowsPerRound || 6,
-    targetFmt: room.targetFmt || "full_110",
+    ...settings,
   };
 }
 
@@ -225,6 +227,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
   // 戰利品打一隻就已入袋，故不需還原整張地圖。
   function handleResumeSolo() {
     if (!soloRecovery || soloSettling) return;
+    const settings = normalizeDungeonRunSettings(soloRecovery);
     setSoloRecovery(null);
     setExpeditionStart({
       family: soloRecovery.family,
@@ -232,6 +235,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       isHidden: soloRecovery.isHidden,
       resumeFromFloor: soloRecovery.floorsCleared || 0,
       resumeHp: soloRecovery.hp || 0,
+      ...settings,
     });
   }
 
@@ -286,25 +290,31 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
         backgroundPosition:"center",
         touchAction:"pan-y",
       }}>
-      {/* Header */}
-      <div className="text-center py-8 relative">
+      {/* Illustrated expedition base — navigation and copy remain real DOM content. */}
+      <div className="relative mx-3 mt-3 min-h-[210px] overflow-hidden rounded-[28px] border border-amber-200/20 shadow-2xl">
+        <img src={dungeonLobbyImage} alt="" aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/10 via-slate-950/25 to-slate-950/95" />
         {onBack && (
-          <button onClick={onBack} className="absolute left-4 top-6 text-slate-300 text-sm font-bold hover:text-white">← 返回</button>
+          <button onClick={onBack} className="absolute left-3 top-3 z-10 min-h-11 rounded-full border border-white/20 bg-slate-950/70 px-4 text-sm font-bold text-white backdrop-blur-md">← 返回</button>
         )}
-        <div className="text-5xl mb-2">🏰</div>
-        <div className="text-2xl font-black">地下城</div>
-        <div className="text-sm text-slate-300 mt-1">挖掘探索，挑戰終極首領</div>
+        <div className="absolute inset-x-0 bottom-0 p-5 text-left">
+          <div className="mb-1 text-[10px] font-black tracking-[0.24em] text-amber-300">CAT SQUAD EXPEDITION</div>
+          <h1 className="text-3xl font-black text-white drop-shadow-lg">地下城遠征基地</h1>
+          <p className="mt-1 text-sm text-slate-200">整理裝備、挖掘遺跡，選擇下一場冒險</p>
+        </div>
       </div>
 
       {/* Tab */}
-      <div className="sticky top-0 z-20 px-4 pb-4"
-        style={{ background:"linear-gradient(180deg,rgba(15,23,42,0.96) 0%,rgba(15,23,42,0.86) 72%,transparent 100%)" }}>
-      <div className="flex bg-slate-600/90 rounded-2xl p-1 shadow-lg">
+      <div className="sticky top-0 z-20 px-4 py-3"
+        style={{ background:"linear-gradient(180deg,rgba(5,9,20,0.98) 0%,rgba(5,9,20,0.9) 78%,transparent 100%)" }}>
+      <div className={`grid ${isGuest ? "grid-cols-2" : "grid-cols-3"} gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-1.5 shadow-xl backdrop-blur-xl`}>
         {(isGuest ? ["enter","dex"] : ["excavate","enter","dex"]).map(t => (
           <button key={t} onClick={() => { setTab(t); if (t !== "enter") { setSelectedDungeon(null); setShowJoinPanel(false); } }}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${tab===t ? "bg-white/25 text-white" : "text-slate-300 hover:text-white"}`}
+            className={`min-h-12 rounded-xl px-2 py-2 text-xs font-black transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${tab===t ? "bg-amber-300 text-slate-950 shadow-lg" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}
             style={{ touchAction:"manipulation" }}>
-            {t==="excavate" ? "⛏️ 挖掘探索" : t==="enter" ? "🗺️ 進入地下城" : "🔮 圖鑑"}
+            <span className="block text-base" aria-hidden="true">{t==="excavate" ? "⛏️" : t==="enter" ? "🗺️" : "📚"}</span>
+            {t==="excavate" ? "挖掘探索" : t==="enter" ? "進入地下城" : "探險圖鑑"}
           </button>
         ))}
       </div>

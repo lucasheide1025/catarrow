@@ -7,6 +7,7 @@
 
 const KEY_SOUND = "fx_sound";
 const KEY_ANIM  = "fx_anim";
+const KEY_VIBRATION = "fx_vibration";
 
 function read(key) {
   try { return localStorage.getItem(key) !== "0"; } catch { return true; }
@@ -18,6 +19,11 @@ function write(key, on) {
 // ── 音效 ─────────────────────────────────────────────────────
 export function getSoundEnabled() { return read(KEY_SOUND); }
 export function setSoundEnabled(on) { write(KEY_SOUND, on); }
+
+// ── 震動 ─────────────────────────────────────────────────────
+// 與音效分開，讓使用者能在靜音時保留觸覺回饋。預設開啟。
+export function getVibrationEnabled() { return read(KEY_VIBRATION); }
+export function setVibrationEnabled(on) { write(KEY_VIBRATION, on); }
 
 // ── 動畫 ─────────────────────────────────────────────────────
 function prefersReducedMotion() {

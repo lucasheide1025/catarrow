@@ -225,13 +225,16 @@ export async function grantExpeditionRewards(memberId, rewards) {
  * 單人遠征進度持久化（斷線/重整後可復原或結算，見 dungeon 穩定性任務）
  * members/{memberId}.activeExpedition = { family, difficultyTier, isHidden, floorsCleared, startedAt } | 不存在
  */
-export async function setActiveExpeditionProgress(memberId, { family, difficultyTier, isHidden, floorsCleared, hp, maxHP }) {
+export async function setActiveExpeditionProgress(memberId, { family, difficultyTier, isHidden, floorsCleared, hp, maxHP, arrowsPerRound, targetFmt }) {
   if (!memberId) return { ok: false, reason: "缺少會員 id" };
   try {
     const data = { family, difficultyTier, isHidden: !!isHidden, floorsCleared, startedAt: serverTimestamp() };
     // 保存目前 HP 供「回到房間續玩」還原（不回滿，防重整刷血）；沒有就不寫
     if (Number.isFinite(hp))    data.hp    = Math.max(0, Math.round(hp));
     if (Number.isFinite(maxHP)) data.maxHP = Math.max(1, Math.round(maxHP));
+    const settings = normalizeDungeonRunSettings({ arrowsPerRound, targetFmt });
+    data.arrowsPerRound = settings.arrowsPerRound;
+    data.targetFmt = settings.targetFmt;
     await updateDoc(doc(db, "members", memberId), { activeExpedition: data });
     return { ok: true };
   } catch (e) {

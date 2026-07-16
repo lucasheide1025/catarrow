@@ -1,4 +1,11 @@
+import { useState } from "react";
 import { DUNGEON_TARGET_FORMATS } from "../../lib/dungeonRunSettings";
+import {
+  getSoundEnabled,
+  getVibrationEnabled,
+  setSoundEnabled,
+  setVibrationEnabled,
+} from "../../lib/fxSettings";
 
 export default function DungeonRunSettings({
   arrowsPerRound,
@@ -8,6 +15,21 @@ export default function DungeonRunSettings({
   disabled = false,
   readOnlyNote = "",
 }) {
+  const [soundEnabled, setSoundState] = useState(getSoundEnabled);
+  const [vibrationEnabled, setVibrationState] = useState(getVibrationEnabled);
+
+  function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    setSoundState(next);
+  }
+
+  function toggleVibration() {
+    const next = !vibrationEnabled;
+    setVibrationEnabled(next);
+    setVibrationState(next);
+  }
+
   return (
     <section className="rounded-2xl p-4 space-y-4"
       style={{ background:"rgba(99,102,241,0.09)", border:"1px solid rgba(129,140,248,0.24)" }}>
@@ -62,6 +84,31 @@ export default function DungeonRunSettings({
           })}
         </div>
       </fieldset>
+
+      <div className="grid grid-cols-2 gap-2" aria-label="地下城回饋設定">
+        <button type="button" onClick={toggleSound}
+          aria-pressed={soundEnabled}
+          className="min-h-11 rounded-xl px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-amber-300"
+          style={{
+            background:soundEnabled ? "rgba(245,158,11,0.16)" : "rgba(255,255,255,0.05)",
+            color:soundEnabled ? "#fde68a" : "#94a3b8",
+            border:`1px solid ${soundEnabled ? "rgba(251,191,36,0.45)" : "rgba(255,255,255,0.12)"}`,
+          }}>
+          <span className="block text-sm font-black">{soundEnabled ? "🔊 音效開啟" : "🔇 音效關閉"}</span>
+          <span className="block text-[10px] mt-0.5 opacity-75">可隨時調整</span>
+        </button>
+        <button type="button" onClick={toggleVibration}
+          aria-pressed={vibrationEnabled}
+          className="min-h-11 rounded-xl px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-cyan-300"
+          style={{
+            background:vibrationEnabled ? "rgba(34,211,238,0.13)" : "rgba(255,255,255,0.05)",
+            color:vibrationEnabled ? "#a5f3fc" : "#94a3b8",
+            border:`1px solid ${vibrationEnabled ? "rgba(34,211,238,0.4)" : "rgba(255,255,255,0.12)"}`,
+          }}>
+          <span className="block text-sm font-black">{vibrationEnabled ? "📳 震動開啟" : "📴 震動關閉"}</span>
+          <span className="block text-[10px] mt-0.5 opacity-75">依裝置支援</span>
+        </button>
+      </div>
 
       {readOnlyNote && (
         <p className="text-xs text-center text-slate-400">{readOnlyNote}</p>

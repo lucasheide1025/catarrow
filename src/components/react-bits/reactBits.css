@@ -1,0 +1,55 @@
+.rb-fade-content {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .42s ease var(--rb-fade-delay, 0ms), transform .42s ease var(--rb-fade-delay, 0ms);
+}
+
+.rb-fade-content.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.rb-spotlight-card {
+  --rb-spot-x: 50%;
+  --rb-spot-y: 18%;
+  position: relative;
+  isolation: isolate;
+}
+
+.rb-spotlight-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(220px circle at var(--rb-spot-x) var(--rb-spot-y), var(--rb-spot-color), transparent 72%);
+  opacity: .72;
+}
+
+.rb-spotlight-card > * {
+  z-index: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .rb-spotlight-card::before {
+    background: radial-gradient(180px circle at 82% 12%, var(--rb-spot-color), transparent 74%);
+    opacity: .55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rb-fade-content,
+  .rb-fade-content.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.no-anim .rb-fade-content,
+.no-anim .rb-fade-content.is-visible {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}

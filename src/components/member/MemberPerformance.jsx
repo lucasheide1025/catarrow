@@ -5,6 +5,7 @@ import { calculateSessionMetrics } from "../../lib/shootingPerformance";
 import { TARGET_FACE_FORMATS } from "../../lib/targetFace";
 import { Card, Empty, Spinner, ST } from "../shared/UI";
 import { CountUp } from "../shared/Widgets";
+import { buildArcherDiagnosis } from "../../lib/archerDiagnosis";
 import TrendLine from "../shared/charts/TrendLine";
 import BarChart from "../shared/charts/BarChart";
 import RadarChart, { computeRadarValues } from "../shared/charts/RadarChart";
@@ -82,6 +83,35 @@ function buildTrainingInsight(arrows) {
   if (missDelta >= 0.04) return { title:"先降低失箭", text:`近 30 箭 M 率 ${(recent.missRate * 100).toFixed(0)}%，比前一組增加 ${(missDelta * 100).toFixed(0)}%；下一輪優先放慢射擊節奏與確認出箭流程。` };
   if (averageDelta <= -0.2) return { title:"近期平均下降", text:`近 30 箭平均比前一組低 ${Math.abs(averageDelta).toFixed(2)}；建議先以穩定節奏完成一組，再調整瞄準。` };
   return { title:"近期表現持平", text:`近 30 箭平均 ${recent.average.toFixed(2)}，M 率 ${(recent.missRate * 100).toFixed(0)}%；可用下一組專注一致的射前流程。` };
+}
+const TIER_COLOR = { good:"#34d399", ok:"#fbbf24", warn:"#f87171" };
+const TIER_LABEL = { good:"良好", ok:"注意", warn:"待加強" };
+function DiagnosisReport({ diagnosis }) {
+  if (!diagnosis?.ready) return <Card className="p-4 text-sm" style={{ color:"var(--text-secondary)" }}>{diagnosis?.headline || "資料累積中，完成更多逐箭紀錄後即可產生狀態判斷。"}</Card>;
+  const { state, overallScore, headline, dimensions } = diagnosis;
+  return <>
+    <Card className="p-4">
+      <div className="flex items-center gap-3">
+        <div className="shrink-0 flex flex-col items-center justify-center rounded-xl px-3 py-2" style={{ background:"rgba(96,165,250,0.12)" }}>
+          <span className="text-2xl font-black" style={{ color:"#93c5fd" }}>{overallScore}</span>
+          <span className="text-[9px]" style={{ color:"var(--text-muted)" }}>綜合分</span>
+        </div>
+        <div><div className="text-sm font-black" style={{ color:"var(--text-primary)" }}>狀態：{state}</div><p className="mt-1 text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{headline}</p></div>
+      </div>
+    </Card>
+    <div className="flex flex-col gap-2">
+      {dimensions.map(d => (
+        <Card key={d.key} className="p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2"><span>{d.icon}</span><span className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{d.label}</span></div>
+            <div className="flex items-center gap-2"><span className="text-[11px]" style={{ color:"var(--text-muted)" }}>{d.value}</span><span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background:`${TIER_COLOR[d.tier]}22`, color:TIER_COLOR[d.tier] }}>{TIER_LABEL[d.tier]}</span></div>
+          </div>
+          <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.08)" }}><div className="h-full rounded-full transition-all duration-500" style={{ width:`${d.score}%`, background:TIER_COLOR[d.tier] }} /></div>
+          <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color:"var(--text-secondary)" }}>{d.advice}</p>
+        </Card>
+      ))}
+    </div>
+  </>;
 }
 function Stat({ label, value, note, tone = "text-blue-300" }) {
   return <Card className="p-3"><div className="text-xs" style={{ color:"var(--text-secondary)" }}>{label}</div><div className={`mt-1 text-2xl font-black ${tone}`}>{value}</div>{note && <div className="mt-1 text-[11px]" style={{ color:"var(--text-muted)" }}>{note}</div>}</Card>;
@@ -178,6 +208,8 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [shotGroupSessions, setShotGroupSessions] = useState([]);
   const [sessionListLimit, setSessionListLimit] = useState(5);
+  const [overlayMode, setOverlayMode] = useState("session");
+  const [overlayRange, setOverlayRange] = useState(5);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [loadingFullHistory, setLoadingFullHistory] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -230,7 +262,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     let active = true;
     const targetPlotSessions = sourceSessions
       .filter(s => s.captureMode === "targetPlot")
-      .slice(0, 6);
+      .slice(0, 10);
     if (!targetPlotSessions.length) { setShotGroupSessions([]); return; }
     Promise.all(targetPlotSessions.map(s => getCachedShootingSessionEnds(s.id)))
       .then(allEnds => {
@@ -317,7 +349,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         const ends = await getCachedShootingSessionEnds(session.id);
         for (const end of [...ends].reverse()) for (const arrow of [...(end.arrows || [])].reverse()) {
           const recorded = arrow.captureMode === "targetPlot" ? arrow.recordedScore : arrow;
-          if (Number.isFinite(Number(recorded?.score))) arrows.push({ score:Number(recorded.score), isX:Boolean(recorded.isX), isMiss:Boolean(recorded.isMiss) });
+          if (Number.isFinite(Number(recorded?.score))) arrows.push({ score:Number(recorded.score), isX:Boolean(recorded.isX), isMiss:Boolean(recorded.isMiss), position:(arrow.captureMode === "targetPlot" && Number.isFinite(arrow.position?.x) && Number.isFinite(arrow.position?.y)) ? { x:arrow.position.x, y:arrow.position.y } : null });
           if (arrows.length >= 90) break;
         }
         if (arrows.length >= 90) break;
@@ -337,6 +369,7 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     return { arrowCount, comparableArrowCount, recent:[30, 60, 90].map(target => buildRecentApproximation(comparableFiltered, target)), bestAverage:best ? Number(sessionMetrics(best).averageArrow) || 0 : null };
   }, [filtered, comparableFiltered]);
   const trainingInsight = useMemo(() => buildTrainingInsight(exactArrows), [exactArrows]);
+  const diagnosis = useMemo(() => buildArcherDiagnosis({ arrows:exactArrows, sessions:comparableFiltered }), [exactArrows, comparableFiltered]);
   const coachSummary = useMemo(() => {
     const byMode = new Map(); const byDistance = new Map();
     sourceSessions.forEach(session => { const arrows = Number(sessionMetrics(session).arrowCount ?? session.arrowCount) || 0; const mode = session.source?.mode || "unknown"; byMode.set(mode, (byMode.get(mode) || 0) + arrows); const distance = session.shootingConfig?.distanceM; if (distance != null) byDistance.set(distance, (byDistance.get(distance) || 0) + arrows); });
@@ -447,6 +480,19 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
     {tab === "analysis" && <>
       {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
       {!comparableFiltered.length ? <Empty icon="📊" message="尚無足夠資料進行深度分析。" /> : <>
+        {/* ── 射手狀態判斷 ── */}
+        <section><ST>射手狀態判斷</ST><div className="flex flex-col gap-2"><DiagnosisReport diagnosis={diagnosis} /></div></section>
+
+        {/* ── 靶面偏移分析（多種疊加模式） ── */}
+        {shotGroupSessions.length > 0 && <section><ST>靶面偏移分析</ST><Card className="p-3">
+          <div className="flex flex-wrap gap-1.5 mb-2">{[["session","分場分色"],["merged","全部合併"],["phase","前段/後段"],["heat","密度熱區"]].map(([m,l]) => <button key={m} type="button" onClick={() => setOverlayMode(m)} className={`rounded-full px-3 py-1 text-[11px] font-bold ${overlayMode===m ? "bg-blue-600 text-white" : "bg-white/10"}`} style={overlayMode===m?undefined:{ color:"var(--text-secondary)" }}>{l}</button>)}</div>
+          <div className="flex items-center gap-2 mb-2"><span className="text-[10px]" style={{ color:"var(--text-muted)" }}>疊加場數</span>{[3,5,10].map(n => <button key={n} type="button" onClick={() => setOverlayRange(n)} className={`rounded px-2 py-0.5 text-[10px] font-bold ${overlayRange===n ? "bg-emerald-500 text-white" : "bg-white/10"}`} style={overlayRange===n?undefined:{ color:"var(--text-secondary)" }}>近{n}場</button>)}</div>
+          <div className="flex justify-center"><ShotGroupOverlay sessions={shotGroupSessions.slice(0, overlayRange)} mode={overlayMode} size={230} /></div>
+          <p className="mt-2 text-[10px] text-center" style={{ color:"var(--text-muted)" }}>僅計入靶面點擊紀錄的場次（共 {shotGroupSessions.length} 場可用）</p>
+        </Card></section>}
+
+        {/* ── 趨勢圖表 ── */}
+        <div className="pt-1"><ST>趨勢圖表</ST></div>
         <Card className="p-3">
           <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📈 每箭平均趨勢</div>
           <p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>逐場平均分變化，可觀察長期進步或衰退</p>
@@ -478,8 +524,6 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         )}
         {/* ── 雷達圖 ── */}
         {radarDatasets.length === 2 && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>🎯 綜合能力雷達</div><p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>近 30 箭 vs 前 30 箭 多維度對比</p><div className="flex justify-center"><RadarChart datasets={radarDatasets} size={240} /></div></Card>}
-        {/* ── 箭群疊加 ── */}
-        {shotGroupSessions.length > 0 && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>🎯 多場箭群疊加</div><p className="text-[10px] mb-2" style={{ color:"var(--text-muted)" }}>最近 {shotGroupSessions.length} 場靶面點擊疊加，觀察群心漂移</p><div className="flex justify-center"><ShotGroupOverlay sessions={shotGroupSessions} size={220} /></div></Card>}
       </>}
     </>}
 

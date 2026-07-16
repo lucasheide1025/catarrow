@@ -1,47 +1,58 @@
 // src/components/shared/charts/ShotGroupOverlay.jsx
-// 多場箭群疊加 SVG 圖：將多場 targetPlot 座標畫在同一張靶面上，
-// 不同場次以不同顏色區分，顯示群心漂移軌跡。
+// 多場箭群疊加 SVG 圖。支援多種疊加模式：
+//   session 分場分色（各場不同色 + 群心漂移軌跡）
+//   merged  全部合併（單色，看整體群形與群心）
+//   phase   前段 vs 後段（每場前半/後半回合分色，看場內漂移）
+//   heat    密度熱區（落點越密越亮）
+// 座標為靶面正規化值（x 右+、y 下+，約 -1~1），僅 targetPlot 箭有值。
 
 import { useMemo } from "react";
 
-const S = 100; // viewBox 尺寸
-const CX = S / 2, CY = S / 2;
+const S = 100, CX = S / 2, CY = S / 2, K = (S / 2) * 0.88;
 const COLORS = ["#60a5fa", "#f59e0b", "#34d399", "#f472b6", "#a78bfa", "#fb923c", "#38bdf8", "#e879f9"];
+const px = x => CX + x * K, py = y => CY + y * K;
 
-export default function ShotGroupOverlay({ sessions = [], size = 200 }) {
-  const { layers, driftLine, counts } = useMemo(() => {
-    const layers = [];
-    const driftPoints = [];
-    let totalArrows = 0;
+function plotArrows(ends) {
+  return (ends || []).flatMap(end => (end.arrows || []))
+    .filter(a => a.captureMode === "targetPlot" && Number.isFinite(a.position?.x) && Number.isFinite(a.position?.y))
+    .map(a => ({ x: a.position.x, y: a.position.y }));
+}
+function centroid(pts) {
+  if (!pts.length) return null;
+  return { x: pts.reduce((s, p) => s + p.x, 0) / pts.length, y: pts.reduce((s, p) => s + p.y, 0) / pts.length };
+}
 
-    sessions.forEach((session, si) => {
-      const ends = session.ends || [];
-      const arrows = ends.flatMap(end => (end.arrows || []))
-        .filter(a => a.captureMode === "targetPlot" && Number.isFinite(a.position?.x) && Number.isFinite(a.position?.y));
-      if (!arrows.length) return;
-
-      const color = COLORS[si % COLORS.length];
-      const sumX = arrows.reduce((s, a) => s + a.position.x, 0);
-      const sumY = arrows.reduce((s, a) => s + a.position.y, 0);
-      const centerX = sumX / arrows.length;
-      const centerY = sumY / arrows.length;
-
-      layers.push({
-        arrows: arrows.map(a => ({
-          cx: CX + a.position.x * (S / 2 * 0.88),
-          cy: CY + a.position.y * (S / 2 * 0.88),
-        })),
-        center: { cx: CX + centerX * (S / 2 * 0.88), cy: CY + centerY * (S / 2 * 0.88) },
-        color,
-        label: session.label || `第 ${si + 1} 場`,
-        count: arrows.length,
+export default function ShotGroupOverlay({ sessions = [], size = 200, mode = "session" }) {
+  const { layers, drift, showHeat } = useMemo(() => {
+    // phase：每場依回合前半/後半拆成兩組再合併
+    if (mode === "phase") {
+      const front = [], back = [];
+      sessions.forEach(s => {
+        const ends = s.ends || [];
+        const mid = Math.ceil(ends.length / 2);
+        front.push(...plotArrows(ends.slice(0, mid)));
+        back.push(...plotArrows(ends.slice(mid)));
       });
-      driftPoints.push({ cx: CX + centerX * (S / 2 * 0.88), cy: CY + centerY * (S / 2 * 0.88), color, label: session.label || `第 ${si + 1} 場` });
-      totalArrows += arrows.length;
+      const layers = [];
+      if (front.length) layers.push({ pts: front, center: centroid(front), color: "#60a5fa", label: `前段（${front.length}箭）` });
+      if (back.length) layers.push({ pts: back, center: centroid(back), color: "#fb923c", label: `後段（${back.length}箭）` });
+      return { layers, drift: layers.map(l => l.center).filter(Boolean), showHeat: false };
+    }
+    // merged / heat：所有箭合併成一組
+    if (mode === "merged" || mode === "heat") {
+      const all = sessions.flatMap(s => plotArrows(s.ends));
+      const layers = all.length ? [{ pts: all, center: centroid(all), color: COLORS[0], label: `全部（${all.length}箭）` }] : [];
+      return { layers, drift: [], showHeat: mode === "heat" };
+    }
+    // session（預設）：每場一色 + 群心漂移
+    const layers = [];
+    sessions.forEach((s, i) => {
+      const pts = plotArrows(s.ends);
+      if (!pts.length) return;
+      layers.push({ pts, center: centroid(pts), color: COLORS[i % COLORS.length], label: `${s.label || `第 ${i + 1} 場`}（${pts.length}箭）` });
     });
-
-    return { layers, driftLine: driftPoints, counts: { sessions: layers.length, arrows: totalArrows } };
-  }, [sessions]);
+    return { layers, drift: layers.map(l => l.center).filter(Boolean), showHeat: false };
+  }, [sessions, mode]);
 
   if (!layers.length) return <div className="text-xs text-slate-500 text-center py-8">尚無靶面座標資料</div>;
 
@@ -55,26 +66,27 @@ export default function ShotGroupOverlay({ sessions = [], size = 200 }) {
         <line x1={S * 0.06} x2={S * 0.94} y1={CY} y2={CY} stroke="rgba(255,255,255,.1)" strokeWidth="0.6" />
         <line x1={CX} x2={CX} y1={S * 0.06} y2={S * 0.94} stroke="rgba(255,255,255,.1)" strokeWidth="0.6" />
 
-        {/* 箭群落點 */}
+        {/* 落點 */}
         {layers.map((layer, li) => (
           <g key={li}>
-            {layer.arrows.map((a, ai) => (
-              <circle key={ai} cx={a.cx} cy={a.cy} r={1.8} fill={layer.color} opacity={0.6} />
-            ))}
+            {layer.pts.map((p, ai) => showHeat
+              ? <circle key={ai} cx={px(p.x)} cy={py(p.y)} r={6} fill="#f97316" opacity={0.12} />
+              : <circle key={ai} cx={px(p.x)} cy={py(p.y)} r={1.8} fill={layer.color} opacity={0.6} />
+            )}
           </g>
         ))}
 
-        {/* 群心漂移軌跡 */}
-        {driftLine.length > 1 && (
-          <polyline points={driftLine.map(p => `${p.cx},${p.cy}`).join(" ")}
+        {/* 群心漂移軌跡（session / phase） */}
+        {drift.length > 1 && (
+          <polyline points={drift.map(p => `${px(p.x)},${py(p.y)}`).join(" ")}
             fill="none" stroke="rgba(255,255,255,.4)" strokeWidth="1.5" strokeDasharray="3,2" />
         )}
 
         {/* 群心點 */}
-        {driftLine.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.cx} cy={p.cy} r={4} fill={p.color} stroke="#0f172a" strokeWidth="1.5" />
-            <circle cx={p.cx} cy={p.cy} r={1.5} fill="white" opacity={0.8} />
+        {!showHeat && layers.map((layer, i) => layer.center && (
+          <g key={`c${i}`}>
+            <circle cx={px(layer.center.x)} cy={py(layer.center.y)} r={4} fill={layer.color} stroke="#0f172a" strokeWidth="1.5" />
+            <circle cx={px(layer.center.x)} cy={py(layer.center.y)} r={1.5} fill="white" opacity={0.8} />
           </g>
         ))}
       </svg>
@@ -83,16 +95,18 @@ export default function ShotGroupOverlay({ sessions = [], size = 200 }) {
       <div className="flex flex-wrap gap-3 justify-center">
         {layers.map((layer, i) => (
           <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: "rgba(255,255,255,.6)" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: layer.color, display: "inline-block" }} />
-            {layer.label}（{layer.count}箭）
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: showHeat ? "#f97316" : layer.color, display: "inline-block" }} />
+            {layer.label}
           </div>
         ))}
       </div>
-      {driftLine.length > 1 && (
-        <p className="text-[10px]" style={{ color: "rgba(255,255,255,.35)" }}>
-          虛線 = 群心漂移軌跡
-        </p>
+      {mode === "phase" && drift.length > 1 && (
+        <p className="text-[10px]" style={{ color: "rgba(255,255,255,.35)" }}>虛線 = 前段→後段群心漂移（看場內偏移）</p>
       )}
+      {mode === "session" && drift.length > 1 && (
+        <p className="text-[10px]" style={{ color: "rgba(255,255,255,.35)" }}>虛線 = 各場群心漂移軌跡</p>
+      )}
+      {showHeat && <p className="text-[10px]" style={{ color: "rgba(255,255,255,.35)" }}>越亮＝落點越密集</p>}
     </div>
   );
 }

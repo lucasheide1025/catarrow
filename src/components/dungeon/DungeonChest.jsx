@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, ensureChestRoomLoot, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { createOrdinaryChestLoot } from "../../lib/dungeonChestLoot";
 import { sfxOpenChest, sfxCoinDrop } from "../../lib/sound";
+import DungeonEventStage from "./DungeonEventStage";
 
 // 粒子背景
 function Particles({ count = 16, color = "rgba(74,222,128" }) {
@@ -260,13 +261,7 @@ export default function DungeonChest({
   const allConfirmed = aliveIds.every(id => roomConfirms[id]);
 
   return (
-    <div className="min-h-full flex flex-col text-white"
-      style={{
-        background: isHidden
-          ? "linear-gradient(160deg,#1a0a2e,#2d1a4e)"
-          : "linear-gradient(160deg,#0a1a0a,#1a2e1a)",
-        position:"relative",
-      }}>
+    <DungeonEventStage tone="chest" className={isHidden ? "dungeon-event-stage--hidden" : ""}>
       <Particles count={isHidden ? 22 : 16} color={isHidden ? "rgba(168,85,247" : "rgba(74,222,128"} />
       {showRays && <LightRays />}
       {showFountain && <CoinFountain count={isHidden ? 16 : 10} />}
@@ -284,7 +279,7 @@ export default function DungeonChest({
       `}</style>
 
       {/* Header */}
-      <div className="shrink-0 text-center py-6 border-b" style={{
+      <div className="dungeon-stage-header shrink-0 text-center py-6 border-b" style={{
         borderColor: isHidden ? "rgba(168,85,247,0.2)" : "rgba(74,222,128,0.2)",
         animation: animPhase === "entering" ? "ch-pulse 0.8s ease infinite" : undefined,
       }}>
@@ -307,7 +302,7 @@ export default function DungeonChest({
       </div>
 
       {/* 寶箱內容 */}
-      <div className="flex flex-col items-center justify-center px-6 py-8 gap-6">
+      <div className="dungeon-stage-main flex flex-col items-center justify-center px-6 py-8 gap-6">
         {/* 開箱中動畫 */}
         {animPhase === "opening" && (
           <div className="text-center" style={{ perspective: 400 }}>
@@ -448,6 +443,6 @@ export default function DungeonChest({
           </button>
         )}
       </div>
-    </div>
+    </DungeonEventStage>
   );
 }

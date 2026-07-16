@@ -6,6 +6,7 @@ import { rollBattleLoot } from "../../lib/monsterRegistry";
 import { MONSTERS, TIER_ORDER } from "../../lib/monsterData";
 import { rollKingVaultReward } from "../../lib/kingVaultRewards";
 import { sfxCoinDrop, sfxGachaReveal } from "../../lib/sound";
+import DungeonEventStage from "./DungeonEventStage";
 
 // ── 粒子背景（金色） ────────────────────────────────────
 function GoldParticles({ count = 24 }) {
@@ -194,17 +195,13 @@ export default function DungeonTreasureRoom({
   `;
 
   return (
-    <div className="min-h-full flex flex-col text-white"
-      style={{
-        background:"linear-gradient(160deg,#1a0f00,#2d1a00)",
-        position:"relative",
-      }}>
+    <DungeonEventStage tone="chest">
       <style>{styles}</style>
       <GoldParticles count={30} />
       {showFountain && <CoinFountain count={24} />}
 
       {/* Header */}
-      <div className="shrink-0 text-center py-6 border-b border-amber-700/30"
+      <div className="dungeon-stage-header shrink-0 text-center py-6 border-b border-amber-700/30"
         style={{ animation:"tr-fade-in 0.6s ease both" }}>
         <div className="text-5xl mb-2"
           style={{ animation:"tr-glow 2s ease infinite, tr-float 3s ease infinite", display:"inline-block", padding:8 }}>
@@ -220,7 +217,7 @@ export default function DungeonTreasureRoom({
       </div>
 
       {/* Content */}
-      <div className="flex flex-col items-center justify-center px-6 py-8 gap-4">
+      <div className="dungeon-stage-main flex flex-col items-center justify-center px-6 py-8 gap-4">
 
         {/* 金幣獎勵 */}
         {loot && phase === "fountain" && (
@@ -252,7 +249,7 @@ export default function DungeonTreasureRoom({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-amber-700/30">
+      <div className="dungeon-stage-footer shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-amber-700/30">
         {phase === "cards" ? (
           <button onClick={handleCardNext}
             className="w-full py-4 rounded-2xl font-black text-base shadow-lg active:scale-[0.98]"
@@ -282,6 +279,6 @@ export default function DungeonTreasureRoom({
           </div>
         )}
       </div>
-    </div>
+    </DungeonEventStage>
   );
 }

@@ -15,6 +15,8 @@ import GuestShareCard  from "../components/member/GuestShareCard";
 import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
+import SpotlightCard from "../components/react-bits/SpotlightCard";
+import FadeContent from "../components/react-bits/FadeContent";
 
 const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
 const MemberPerformance = lazy(() => import("../components/member/MemberPerformance"));
@@ -414,7 +416,7 @@ function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
     { id: "profile",   icon: "🎒", title: "我的角色", desc: "裝備、商店、紀念卡與進度保留", tone: "#16a34a" },
   ];
   return (
-    <div>
+    <FadeContent>
       <div className={`guest-hero ${isKid ? "kid" : ""}`}>
         <div className="guest-hero-kicker">CATARROW {isKid ? "KID CAMP" : "TRIAL QUEST"}</div>
         <div className="guest-hero-title">{isKid ? "今天一起打怪、探險、打大王" : "用正式玩法進入低階冒險"}</div>
@@ -442,13 +444,14 @@ function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
       <div className="guest-section-title">選擇活動</div>
       <div className="guest-action-grid">
         {cards.map(c => (
-          <button key={c.id} onClick={() => c.action ? c.action() : onGo(c.id)}
+          <SpotlightCard as="button" key={c.id} onClick={() => c.action ? c.action() : onGo(c.id)}
+            color={`${c.tone}2b`}
             className={`guest-action ${c.feature ? "feature" : ""}`}>
             <span className="guest-action-icon" style={{ background: `${c.tone}22`, color: c.tone }}>{c.icon}</span>
             <span className="guest-action-title">{c.title}</span>
             <span className="guest-action-desc">{c.desc}</span>
             <span className="guest-action-arrow">›</span>
-          </button>
+          </SpotlightCard>
         ))}
       </div>
 
@@ -463,7 +466,7 @@ function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
       <div className="guest-note" style={{ marginTop: 10 }}>
         💡 訪客與兒童模式開放低階多人活動；正式會員可解鎖高階地下城、完整世界王獎勵與長期成就。
       </div>
-    </div>
+    </FadeContent>
   );
 }
 

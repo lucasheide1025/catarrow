@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { confirmDungeonEvent } from "../../lib/dungeonDb";
 import { sfxBuff, sfxDebuff, sfxSuccess, sfxTap } from "../../lib/sound";
+import DungeonEventStage from "./DungeonEventStage";
 
 const TYPE_STYLE = {
   buff:    "border-emerald-400/50 bg-emerald-900/30 text-emerald-300",
@@ -102,8 +103,7 @@ export default function DungeonEvent({
       : "前方傳來難以辨識的動靜……";
 
   return (
-    <div className="min-h-full flex flex-col text-white"
-      style={{ background:"linear-gradient(160deg,#1a1a2e,#16213e)" }}>
+    <DungeonEventStage tone="event">
 
       <style>{`
 @keyframes e-card-in { 0%{opacity:0;transform:scale(0.9) rotate(-2deg)} 100%{opacity:1;transform:scale(1) rotate(0)} }
@@ -113,7 +113,7 @@ export default function DungeonEvent({
       `}</style>
 
       {/* Header */}
-      <div className="shrink-0 text-center py-5 border-b border-white/10">
+      <div className="dungeon-stage-header shrink-0 text-center py-5 border-b border-white/10">
         <div className="text-3xl mb-1">{hasResult ? "✨" : "❓"}</div>
         <div className="text-xl font-black" style={{ color:"#fde68a" }}>
           {hasResult ? "事件結果" : "神秘事件"}
@@ -121,7 +121,7 @@ export default function DungeonEvent({
       </div>
 
       {/* Event card */}
-      <div className="flex items-center justify-center px-6 py-8" style={{animation:"e-card-in 0.5s ease"}}>
+      <div className="dungeon-stage-main flex items-center justify-center px-6 py-8" style={{animation:"e-card-in 0.5s ease"}}>
         <div className={`w-full max-w-sm rounded-3xl border-2 p-8 text-center ${style}`}
           style={{
             animation: hasResult ? "e-result-in 0.4s ease" : "e-glow 3s ease infinite",
@@ -164,7 +164,7 @@ export default function DungeonEvent({
       )}
 
       {/* Footer */}
-      <div className="shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-white/10 space-y-3">
+      <div className="dungeon-stage-footer shrink-0 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-3 border-t border-white/10 space-y-3">
         {/* Bug #7: 結果 phase 結束後顯示「繼續探索」 */}
         {resultReady && isHost ? (
           <button onClick={handleContinue} disabled={loading}
@@ -201,6 +201,6 @@ export default function DungeonEvent({
           </button>
         )}
       </div>
-    </div>
+    </DungeonEventStage>
   );
 }

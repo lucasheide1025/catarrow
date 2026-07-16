@@ -2,6 +2,7 @@
 // 儀表板/導覽用小元件 — token 驅動、深色原生（2026-07 UI 改版）
 // ⚠️ 本檔不從 UI.jsx import / re-export 任何常數（避免循環 import）
 import { useEffect, useRef, useState } from "react";
+import SpotlightCard from "../react-bits/SpotlightCard";
 
 // ─── 區塊標題列 ────────────────────────────────────────────
 // <SectionHeader icon="🏹" title="今日訓練" action={<button>更多</button>} />
@@ -83,7 +84,7 @@ export function Skeleton({ h = 16, w = "100%", className = "" }) {
 // ⚠️ accent 必須是 6 碼 hex（內部以 `${accent}26` 疊 15% 透明度），不可傳 var(--xxx)
 export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b", image }) {
   return (
-    <button onClick={onClick}
+    <SpotlightCard as="button" onClick={onClick} color={`${accent}24`}
       className="relative flex flex-col items-start gap-1 p-4 text-left transition-all active:scale-95 w-full"
       style={{
         minHeight: 96,
@@ -105,7 +106,7 @@ export function HubTile({ icon, title, desc, badge, onClick, accent = "#f59e0b",
       <span className="text-2xl leading-none">{icon}</span>
       <span className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>{title}</span>
       {desc && <span className="text-[11px] leading-tight" style={{ color: "var(--text-secondary)" }}>{desc}</span>}
-    </button>
+    </SpotlightCard>
   );
 }
 

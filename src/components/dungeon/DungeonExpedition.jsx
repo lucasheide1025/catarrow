@@ -358,8 +358,9 @@ export default function DungeonExpedition({
     setActiveExpeditionProgress(myId, {
       family, difficultyTier, isHidden, floorsCleared,
       hp: playerState?.hp, maxHP: playerState?.maxHP,
+      arrowsPerRound, targetFmt,
     }).catch(() => {});
-  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP]);
+  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt]);
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 可變怪物佇列（每場戰鬥消耗一隻）

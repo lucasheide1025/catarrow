@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
 import { sfxPotionDrink, sfxBuff, sfxSuccess, sfxTap } from "../../lib/sound";
+import DungeonEventStage from "./DungeonEventStage";
 
 const REST_OPTIONS = [
   { id: "heal",   icon: "💤", title: "恢復全體血量", desc: "全體隊員恢復 50~100% 隨機最大血量",   color: "#4ade80" },
@@ -223,8 +224,7 @@ export default function DungeonRest({
   const canVote = (animPhase === "open" || animPhase === "voting") && !myChoice;
 
   return (
-    <div className="min-h-full flex flex-col text-white"
-      style={{ background:"linear-gradient(160deg,#1a0a2e,#2d1a4e)", position:"relative" }}>
+    <DungeonEventStage tone="rest">
       <Particles count={22} />
       {showHealEffect && <HealEffect optionId={healOptionId} />}
 
@@ -252,7 +252,7 @@ export default function DungeonRest({
       ))}
 
       {/* Header */}
-      <div className="shrink-0 text-center py-6 border-b border-purple-500/20"
+      <div className="dungeon-stage-header shrink-0 text-center py-6 border-b border-purple-500/20"
         style={animPhase === "entering" ? {animation:"r-pulse 0.8s ease infinite"} : {}}>
         <div className="text-5xl mb-2" style={{ animation: animPhase === "open" ? "r-glow 2s ease infinite" : undefined, display:"inline-block", borderRadius:"50%", padding:8 }}>
           🏕️
@@ -288,7 +288,7 @@ export default function DungeonRest({
       </div>
 
       {/* 投票 / 效果區域 */}
-      <div className="px-5 py-6 space-y-4">
+      <div className="dungeon-stage-main px-5 py-6 space-y-4">
         {(animPhase === "open" || animPhase === "voting") && !allConfirmed && (
           <div className="text-center text-sm text-purple-200/70 mb-1 font-semibold" style={{ animation:"r-fade 0.5s ease both" }}>
             🗳️ {myChoice ? "已投票，等待隊友…" : "全員投票選擇方式"}
@@ -407,6 +407,6 @@ export default function DungeonRest({
           <div className="text-center text-emerald-400 text-sm py-2 font-bold">✅ 已投票，等待隊友…</div>
         )}
       </div>
-    </div>
+    </DungeonEventStage>
   );
 }

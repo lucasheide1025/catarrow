@@ -113,14 +113,14 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       tx.update(roomRef, { [`members.${memberId}`]: member });
       return data;
     });
+    const settings = normalizeDungeonRunSettings(roomData);
     return { ok: true, roomId: roomDoc.id, dungeon: {
       family: roomData.dungeonFamily,
       difficulty: roomData.dungeonDifficulty,
       isHidden: roomData.dungeonIsHidden,
       savedId: roomData.dungeonSavedId,
       boss: roomData.dungeonBoss || null,
-      arrowsPerRound: roomData.arrowsPerRound || 6,
-      targetFmt: roomData.targetFmt || "full_110",
+      ...settings,
     }, hostId: roomData.hostId, hostName: roomData.hostName };
   } catch (e) {
     return { ok: false, reason: e.message };

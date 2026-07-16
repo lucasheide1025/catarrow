@@ -2,7 +2,7 @@
 // 真實 mp3 音效（/sounds/*.mp3）+ Web Audio API 合成（其餘）
 // 全域開關：fxSettings.getSoundEnabled() — ctx() 單點閘門，關閉時所有合成音效靜音
 
-import { getSoundEnabled } from "./fxSettings";
+import { getSoundEnabled, getVibrationEnabled } from "./fxSettings";
 
 // ── mp3 播放輔助 ──────────────────────────────────────────────
 const _sfxCache = {};
@@ -42,7 +42,7 @@ if (typeof window !== "undefined") {
 }
 
 export function vibrate(pattern = 30) {
-  if (!getSoundEnabled()) return; // 震動跟隨音效開關
+  if (!getVibrationEnabled()) return;
   try { if (_gestured && navigator?.vibrate) navigator.vibrate(pattern); } catch {}
 }
 
