@@ -211,12 +211,23 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
     // The history record is only a snapshot. Confirm claimability against the
     // current event document before exposing an action that might be rejected.
-    getLatestWorldBossKill()
-      .then(async kill => {
-        if (!kill?.eventId || !kill.participants?.[myId] || kill.participants[myId].claimed) return null;
-        const preview = await previewWorldBossKillReward(myId, kill.eventId);
-        return preview.ok ? kill : null;
-      })
+    // Fallback：歷史快照可能不存在（結算沒被任何瀏覽器觸發過），
+    // 若目前最新事件本身就是 defeated，直接用事件文件判定可領，不依賴歷史。
+    (async () => {
+      const kill = await getLatestWorldBossKill().catch(() => null);
+      let candidate = (kill?.eventId && kill.participants?.[myId] && !kill.participants[myId].claimed)
+        ? kill : null;
+      if (!candidate && event?.status === "defeated"
+          && event.participants?.[myId] && !event.participants[myId].claimed && !event.participants[myId].isGuest) {
+        candidate = {
+          eventId: event.id, bossKey: event.bossKey, bossData: event.bossData,
+          participants: event.participants, lastHitBy: event.lastHitBy || null,
+        };
+      }
+      if (!candidate) return null;
+      const preview = await previewWorldBossKillReward(myId, candidate.eventId);
+      return preview.ok ? candidate : null;
+    })()
       .then(kill => { if (!cancelled) setPendingEvent(kill); })
       .catch(() => { if (!cancelled) setPendingEvent(null); });
 
@@ -245,6 +256,12 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       setMyReward(result);
       setRewardPreview(null);
       setPendingEvent(current => current?.eventId === eventId ? null : current);
+    } else if (result.reason === "already_claimed") {
+      // 別台裝置已領過：收掉入口,避免一直顯示可領
+      setRewardPreview({ eventId, error: "此獎勵已在其他裝置領取過" });
+      setPendingEvent(current => current?.eventId === eventId ? null : current);
+    } else {
+      setRewardPreview({ eventId, error: result.reason || "領取失敗，請稍後再試" });
     }
   }
 
@@ -564,8 +581,17 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       <div className="shrink-0 px-4 pt-3"
         style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 90%, transparent)" }}>
         {isDefeated ? (
-          <div className="w-full py-4 rounded-2xl font-black text-base text-center text-amber-300 border border-amber-400/30 bg-amber-500/10">
-            ☠️ Boss 已被擊倒 · 等待教練開啟新 Boss
+          <div className="space-y-2">
+            {pendingEvent?.eventId === event.id && !myReward && (
+              <button onClick={() => claimPendingReward(event.id)}
+                className="w-full py-4 rounded-2xl font-black text-base text-slate-900 shadow-xl transition-all active:scale-95"
+                style={{ background: "linear-gradient(135deg,#fbbf24,#f59e0b)" }}>
+                🎁 領取擊殺獎勵
+              </button>
+            )}
+            <div className="w-full py-4 rounded-2xl font-black text-base text-center text-amber-300 border border-amber-400/30 bg-amber-500/10">
+              ☠️ Boss 已被擊倒 · 等待教練開啟新 Boss
+            </div>
           </div>
         ) : (
           <div style={{display:"flex",gap:8}}>

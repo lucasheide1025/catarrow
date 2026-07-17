@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
-import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP } from "../../lib/worldBossDb";
+import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP, distributeWorldBossRewards } from "../../lib/worldBossDb";
 import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
@@ -850,7 +850,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     if (res.ok) {
       if (res.defeated) {
         playBattleSound("victory_cheer", {});
-        // 發放擊殺獎勵（防重複由 rewardDistributed flag 保護）
+        // 結算定案 + 寫入歷史快照（防重複由 rewardDistributed flag 保護）。
+        // 沒有這步,Lobby 的 getLatestWorldBossKill 查不到歷史 → 領取入口不會出現。
+        distributeWorldBossRewards(event.id).catch(() => {});
         setDeathKiller(myName);
         setDeathFinishArrow(_finishArrow);
         setShowDeathAnim(true);
