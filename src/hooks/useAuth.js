@@ -54,7 +54,16 @@ export function AuthProvider({ children }) {
 
       const isAdmin   = adminSnap.exists();
       const adminData = isAdmin ? adminSnap.data() : null;
-      let   memberDoc = memberSnap.empty ? null : memberSnap.docs[0];
+      // 同一人可能同時有正式與訪客兩筆文件（已有正式帳號的學生又從官網註冊過）。
+      // 一律優先取正式帳號，否則會落到下方的訪客分支被擋在登入畫面外。
+      const pickOfficialFirst = docs => {
+        if (!docs?.length) return null;
+        return docs.find(d => {
+          const t = d.data()?.accountType;
+          return t !== "guest" && t !== "kid";
+        }) || docs[0];
+      };
+      let   memberDoc = memberSnap.empty ? null : pickOfficialFirst(memberSnap.docs);
 
       // uid 欄位缺失時，用 email 備用查詢（教練與一般會員都適用）
       if (!memberDoc) {
@@ -69,7 +78,7 @@ export function AuthProvider({ children }) {
             getDocs(query(collection(db, "members"), where("email", "==", value)))));
           const hit = snaps.find(snap => !snap.empty);
           if (hit) {
-            memberDoc = hit.docs[0];
+            memberDoc = pickOfficialFirst(hit.docs); // 同上：正式帳號優先於訪客文件
             // 自動補寫 uid（下次登入直接命中）並順手把 email 正規化成小寫，收斂舊資料
             updateDoc(doc(db, "members", memberDoc.id), {
               uid: fbUser.uid,

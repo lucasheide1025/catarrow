@@ -49,18 +49,23 @@ describe("generateRandomMats 產生的需求", () => {
     expect(meta.tierIndex).toBe(6);
   });
   test("關鍵防呆：擴充關閉時完全不要求王素材（否則正式環境拿不到素材會卡死精煉）", () => {
+    const bossNotes = ["小王素材", "大王素材"];
     for (const grade of ["epic", "legend", "mythic"]) {
       for (const level of [0, 1, 2, 3, 4]) {
         const mats = generateRandomMats(grade, level, { expansionEnabled: false, expansionMaterials: EXPANSION_MATERIALS });
-        expect(mats.materials.some(m => m.note)).toBe(false);
-        expect(mats.materials.length).toBe(2);
+        expect(mats.materials.some(m => bossNotes.includes(m.note))).toBe(false);
+        expect(mats.materials.length).toBe(6); // 該階 4 種 + 下一階 2 種
       }
     }
   });
-  test("一般材料與關鍵材料的既有結構不變", () => {
+  test("需求組成為該階 4 種 + 下一階 2 種（王素材另計）", () => {
     const mats = generateRandomMats("legend", 0, withExpansion);
-    expect(mats.materials[0].count).toBeGreaterThan(0);
-    expect(mats.materials[1].count).toBeGreaterThan(0);
-    expect(mats.keyItem.note).toBe("升級關鍵素材");
+    const current = mats.materials.filter(m => m.tierRole === "current");
+    const next = mats.materials.filter(m => m.tierRole === "next");
+    expect(current).toHaveLength(4);
+    expect(next).toHaveLength(2);
+    expect(new Set(mats.materials.map(m => m.id)).size).toBe(mats.materials.length); // 不重複
+    expect(current.every(m => m.count > 0) && next.every(m => m.count > 0)).toBe(true);
+    expect(mats.keyItem).toBeNull(); // keyItem 已停用，下一階素材併入 materials
   });
 });

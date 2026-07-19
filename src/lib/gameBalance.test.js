@@ -17,18 +17,29 @@ describe("chest and equipment balance", () => {
     expect(openChestContents({ type: "potion" }).potions).toHaveLength(1);
   });
 
-  test("RPG equipment material curve is increased by 50 percent and invalidates old rolls", () => {
+  test("精煉需求改為該階 4 種 + 下一階 2 種，舊格式一律失效並重算", () => {
     expect([0, 1, 2, 3, 4].map(matCountsFor)).toEqual([
-      { mainA: 6, mainB: 5, key: 2 },
-      { mainA: 8, mainB: 6, key: 2 },
-      { mainA: 12, mainB: 8, key: 5 },
-      { mainA: 15, mainB: 11, key: 5 },
-      { mainA: 20, mainB: 14, key: 6 },
+      { current: 6,  next: 2 },
+      { current: 8,  next: 2 },
+      { current: 12, next: 5 },
+      { current: 15, next: 5 },
+      { current: 20, next: 6 },
     ]);
+    // 舊格式（2 種該階 + keyItem）→ 視為過期，開啟裝備時會自動重算（等同重置舊需求清單）
     expect(isMatsCurveCurrent({
-      materials: [{ count: 4 }, { count: 3 }],
-      keyItem: { count: 1 },
+      materials: [{ count: 6 }, { count: 5 }],
+      keyItem: { count: 2 },
     }, 0)).toBe(false);
+    // 新格式（4 + 2）→ 視為最新，不重算
+    const fresh = {
+      materials: [
+        ...Array.from({ length: 4 }, () => ({ count: 6, tierRole: "current" })),
+        ...Array.from({ length: 2 }, () => ({ count: 2, tierRole: "next", note: "下一階素材" })),
+      ],
+      keyItem: null,
+    };
+    expect(isMatsCurveCurrent(fresh, 0)).toBe(true);
+    expect(isMatsCurveCurrent(fresh, 3)).toBe(false); // 數量與該 plusLevel 不符 → 重算
   });
 
   test("cat equipment uses cumulative enhancement and matching material tiers", () => {

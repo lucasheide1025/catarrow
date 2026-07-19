@@ -42,12 +42,17 @@ const _GRADE_MAT_TIER = {
 // 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
 // 每個 plusLevel 的三種材料數量：mainA=主族、mainB=副族（同 tier）、key=關鍵素材（高一階 tier）。
 // 2026-07-12：在前一版曲線上增加 50%，零碎數量無條件進位。
+// 2026-07-19 使用者指示：需求種類由「該階 2 種 + 下一階 1 種」改為「該階 4 種 + 下一階 2 種」。
+// 六族剛好全用上（4 + 2 = 6），每種的數量沿用原本隨 plusLevel 遞增的曲線。
+export const CURRENT_TIER_KINDS = 4;
+export const NEXT_TIER_KINDS = 2;
+
 const _PLUS_MAT_COUNTS = {
-  0: { mainA: 6,  mainB: 5,  key: 2 },
-  1: { mainA: 8,  mainB: 6,  key: 2 },
-  2: { mainA: 12, mainB: 8,  key: 5 },
-  3: { mainA: 15, mainB: 11, key: 5 },
-  4: { mainA: 20, mainB: 14, key: 6 },
+  0: { current: 6,  next: 2 },
+  1: { current: 8,  next: 2 },
+  2: { current: 12, next: 5 },
+  3: { current: 15, next: 5 },
+  4: { current: 20, next: 6 },
 };
 
 export function matCountsFor(plusLevel) {
@@ -56,11 +61,17 @@ export function matCountsFor(plusLevel) {
 
 // 已存的 nextMats 數量是否符合「目前這條曲線」。用來偵測舊格式（舊的固定 3/2/1）並觸發重算。
 // 只比對數量不比對家族——家族本來就隨機、不該當作判斷依據。
+// 判斷已存的 nextMats 是否符合「目前這條曲線」。不符就會重算並存回（等同自動重置舊需求清單）。
+// 新格式：materials 內含 4 種該階 + 2 種下一階（下一階以 tierRole:"next" 標記），不再使用 keyItem。
 export function isMatsCurveCurrent(nextMats, plusLevel) {
   const mats = nextMats?.materials;
-  if (!Array.isArray(mats) || mats.length < 2 || !nextMats?.keyItem) return false;
+  if (!Array.isArray(mats)) return false;
+  if (nextMats?.keyItem) return false; // 舊格式（materials 2 種 + keyItem）→ 一律重算
+  const current = mats.filter(m => m?.tierRole !== "next" && !m?.note);
+  const next = mats.filter(m => m?.tierRole === "next");
+  if (current.length !== CURRENT_TIER_KINDS || next.length !== NEXT_TIER_KINDS) return false;
   const c = matCountsFor(plusLevel);
-  return mats[0]?.count === c.mainA && mats[1]?.count === c.mainB && nextMats.keyItem?.count === c.key;
+  return current.every(m => m.count === c.current) && next.every(m => m.count === c.next);
 }
 
 // ── 高階精煉的王素材門檻（economy-loot-catalog §6，2026-07-19）──────────
@@ -93,9 +104,14 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   if (!tiers) return null;
   const c = matCountsFor(plusLevel);
   const shuffled = [..._FAMILIES].sort(() => Math.random() - 0.5);
+  // 該階 4 種（不同族）＋ 下一階 2 種（不同族）；六族恰好用完，不會重複。
   const materials = [
-    { id: `${shuffled[0]}_${tiers.main}`, count: c.mainA },
-    { id: `${shuffled[1]}_${tiers.main}`, count: c.mainB },
+    ...shuffled.slice(0, CURRENT_TIER_KINDS).map(family => ({
+      id: `${family}_${tiers.main}`, count: c.current, tierRole: "current",
+    })),
+    ...shuffled.slice(CURRENT_TIER_KINDS, CURRENT_TIER_KINDS + NEXT_TIER_KINDS).map(family => ({
+      id: `${family}_${tiers.key}`, count: c.next, tierRole: "next", note: "下一階素材",
+    })),
   ];
 
   // 王素材門檻只在擴充開啟時加入：王素材唯一來源是地下城王房（同一個 flag 之後），
@@ -119,10 +135,8 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
     }
   }
 
-  return {
-    materials,
-    keyItem: { id: `${shuffled[2]}_${tiers.key}`, count: c.key, note: "升級關鍵素材" },
-  };
+  // keyItem 停用（下一階素材已併入 materials）；保留欄位為 null 讓舊呼叫端不會壞。
+  return { materials, keyItem: null };
 }
 
 // ── 裝備品項資料表 ───────────────────────────────────────────

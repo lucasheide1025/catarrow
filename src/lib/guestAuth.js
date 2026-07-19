@@ -106,7 +106,7 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
 // 或能登入完整的學生 App（LoginPage/useAuth.js 走的是完全獨立的登入邏輯）。
 
 export async function registerGuestWithPassword(name, email, phone, password) {
-  const trimmedEmail = (email || "").trim();
+  const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
   // ⚠️ 2026-07-11 修復 Missing or insufficient permissions（見下方重大 bug 說明）
@@ -153,9 +153,12 @@ export async function registerGuestWithPassword(name, email, phone, password) {
       where("email", "==", trimmedEmail),
       limit(5)
     ));
+    // ⚠️ 沒有 accountType 欄位的 = 教練用 createMember 建立的正式學員（該函式不寫此欄位）。
+    // 原本寫成 `t && t !== "guest"`，導致舊正式學員被判定成「非正式」而放行，
+    // 於是已有正式帳號的學生從官網註冊後會多出一筆訪客帳號，登入時被訪客分支擋住。
     const hasOfficial = dupCheck.docs.some(d => {
       const t = d.data()?.accountType;
-      return t && t !== "guest" && t !== "kid";
+      return t !== "guest" && t !== "kid";
     });
     if (hasOfficial) {
       return { ok: false, reason: "這個 Email 已經是正式學員／教練帳號，請直接用「登入」或用主系統登入" };
@@ -195,7 +198,7 @@ export async function registerGuestWithPassword(name, email, phone, password) {
 }
 
 export async function loginGuestWithPassword(email, password) {
-  const trimmedEmail = (email || "").trim();
+  const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
   // ⚠️ 2026-07-11 修復 Missing or insufficient permissions：跟 registerGuestWithPassword
@@ -245,7 +248,9 @@ export async function loginGuestWithPassword(email, password) {
         const fallbackSnap = await getDocs(fallbackQ);
         officialDoc = fallbackSnap.docs.find(d => {
           const t = d.data()?.accountType;
-          return t && t !== "guest" && t !== "kid";
+          // 沒有 accountType = 教練建立的正式學員（createMember 不寫此欄位），必須算正式帳號，
+          // 否則下方會替已有正式帳號的學生補建一筆 guest 文件，害他登入主系統時被訪客分支擋掉。
+          return t !== "guest" && t !== "kid";
         });
       }
       if (officialDoc) {
@@ -354,7 +359,7 @@ export async function signInWithGoogle() {
 //   • usedTempApp=false（主 App 無人登入）：會寫 uid，因為這時 uid 是真正的訪客 Google UID，
 //     而且 Firestore 規則的 guest/kid create 分支需要 uid == request.auth.uid 才會放行。
 export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google", usedTempApp = true }) {
-  const trimmedEmail = (email || "").trim();
+  const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail)           return { ok: false, reason: "缺少 Email" };
   if (!phone || !phone.trim()) return { ok: false, reason: "請留下電話，方便有狀況時聯絡你" };
   try {

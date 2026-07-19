@@ -1293,7 +1293,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         family:  room.monster?.family || "ghost",
         variant: "normal",
       },
-      drops: { coins: 0, materials: [], chest: false, goldChest: false, card: null, arrowDew: 0 },
+      // 與單人打怪同步：戰利品照樣顯示在結算面板（原本全部關掉，只靠下方另一套寶箱 UI，
+      // 導致組隊的結算畫面和訊息跟單人差很多）。實際入袋仍由下方「確認領取寶箱」流程負責。
+      drops: {
+        coins:     previewReward?.coins || 0,
+        material:  previewReward?.material || null,
+        materials: previewReward?.material ? [previewReward.material] : [],
+        chest:     myChests.length > 0,
+        goldChest: myChests.some(c => c?.kind === "coin" || c?.type === "coin"),
+        card:      previewReward?.card || null,
+        arrowDew:  previewReward?.arrowDew || 0,
+      },
       stats: {
         dmgDealt:       myLogStats.dmg,
         dmgTaken:       myLogStats.ctr,
