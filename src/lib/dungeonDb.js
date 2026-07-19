@@ -518,7 +518,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     // Step 4：事件額外效果
     const totalDmg = Object.values(allData).reduce((s, p) => s + p.totalDmg, 0) + catTotalDmg;
     if (eff.extraDmg)  monsterHP = Math.max(0, monsterHP - eff.extraDmg);
-    if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
+    // ⚠️ 已經被打死的怪不能被事件回血救活（實測：哥布林 364 HP 被打到 0，
+    // 事件回血 +25 讓牠復活，玩家得再送一次分數才擊倒）。
+    // 治療只對還活著的怪生效 —— 招牌技能的護盾（Step 2.5）本來就有這道保護，這裡漏了。
+    if (eff.monsterHP && monsterHP > 0) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
 
     // Step 5：計算後衛治癒（池子 = maxHP × 15% × 命中分數%，均分給全體存活隊友，不包含自己；
     //         刻意比舊版固定 25%maxHP 更低、且看命中率，避免補血變成無腦選項）

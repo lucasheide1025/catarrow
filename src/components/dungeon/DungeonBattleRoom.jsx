@@ -912,6 +912,19 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     const won = isPathSelectWin || room?.result === "win";
     if (won && !bondSavedRef.current) { bondSavedRef.current = true; saveBond("dungeon"); }
 
+    // 遠征模式的勝利結算一律交給 DungeonKillResult（2026-07-19 使用者要求只保留新版）。
+    // 舊的「房間通關！」/「地下城通關！」畫面會先擋在這裡，玩家因此連看兩次結算。
+    // 這裡只顯示過場，等 path_select 的自動 returnToMapAfterBattle 把狀態推進到
+    // map_explore，上層（ExpeditionBattleRoom / TeamBattleRoom）就會接手顯示新結算頁。
+    if (expeditionMode && won) {
+      return (
+        <div className="h-[100dvh] flex flex-col items-center justify-center gap-3 bg-[#0a0a0f] text-white/50">
+          <div style={{ fontSize:44 }}>✨</div>
+          <div style={{ fontSize:14 }}>整理戰利品…</div>
+        </div>
+      );
+    }
+
     if (!won) {
       // 失敗結算畫面
       const floorsCleared = (room.currentFloor || 1) - 1;
@@ -1469,7 +1482,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         partyMonsterMaxHp={room.monsterMaxHP || room.monster?.hp || 0}
         partyResult={resolvedBattleResult}
         onConfirmPartyResult={handleConfirmDungeonResolution}
-        autoConfirmPartyResult={!expeditionMode}
+        // 一律自動確認：BattleScreen 那個「怪物已擊敗・確認戰鬥結算」覆蓋層是第三個
+        // 結算畫面，房主控制已經移到 DungeonKillResult 的「下一步」，不需要再攔一次。
+        autoConfirmPartyResult={true}
         allies={memberList.filter(m => m.id !== myId).map(m => ({ id:m.id, name:m.name, avatarId:m.avatarId || null, catId:m.catId || "diandian", catName:m.catName, hp:m.hp || 0, maxHp:m.maxHP || 1, maxHP:m.maxHP || 1, atk:m.atk || 0, def:m.def || 0, ready:!!m.ready, done:!!m.ready, alive:m.alive !== false, role:m.role || "front", isFront:(m.role || "front") === "front", battleCosmetics:m.battleCosmetics || null }))}
         cat={battleCatId ? {
           catId: battleCatId,

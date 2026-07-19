@@ -206,6 +206,9 @@ function ExpeditionBattleRoom({
     <DungeonBattleRoom
       roomId={roomId}
       isMapMode={true}
+      // 少了這個旗標，DungeonBattleRoom 會走舊的「房間通關！」結算畫面，
+      // 玩家就會先看一次舊結算、再看一次 DungeonKillResult（使用者實測回報的重複）
+      expeditionMode={true}
       onReturnToMap={() => {}}
       onExit={onAbandon}
       guestProfile={guestProfile}
