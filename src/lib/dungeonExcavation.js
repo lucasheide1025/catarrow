@@ -5,6 +5,26 @@
 import { doc, updateDoc, getDoc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
+import { drawDungeonBossEncounter } from "./dungeonExpansionMonsters";
+import { isMonsterExpansionEnabled } from "./monsterExpansionFeature";
+
+// ── 王房抽王統一入口（2026-07-19）──────────────────────────────
+// 舊 drawExpeditionBoss 是「找該族該階第一隻怪再套 boss 倍率」，完全沒過濾
+// isKing/encounter，王房的王其實是一隻被放大的雜怪。改走 drawDungeonBossEncounter：
+// Tn 只出 Tn 的王（小王 2 隻擇一 / 大王 1 隻），連 2 次小王後第 3 次保底大王。
+//
+// 回傳 { boss, miniStreak }。miniStreak 為 null 表示「不要寫回 Firestore」——
+// flag 關閉、該族該階沒有王（走舊 fallback）、或 forceKind 換難度重抽時都不推進計數。
+function rollExcavationBoss(difficulty, family, excavation, { forceKind = null } = {}) {
+  if (isMonsterExpansionEnabled()) {
+    const drawn = drawDungeonBossEncounter(difficulty, family, {
+      miniStreak: excavation?.miniBossStreak || 0,
+      forceKind,
+    });
+    if (drawn) return { boss: drawn.monster, miniStreak: forceKind ? null : drawn.miniStreak };
+  }
+  return { boss: drawExpeditionBoss(difficulty, family), miniStreak: null };
+}
 
 /**
  * 今日日期字串 YYYY-MM-DD
@@ -107,11 +127,12 @@ export async function claimAutoDig(memberId) {
     // 自動挖掘的難度：均等機率 1~6
     const difficulty = 1 + Math.floor(Math.random() * 6);
 
+    const rolled = rollExcavationBoss(difficulty, family, excavation);
     const result = {
       family,
       difficulty,
       isHidden: false,
-      boss: drawExpeditionBoss(difficulty, family),
+      boss: rolled.boss,
       revealedAt: Date.now(),
       fromAutoDig: true,
     };
@@ -120,6 +141,7 @@ export async function claimAutoDig(memberId) {
       "dungeonExcavation.pendingReveal": result,
       "dungeonExcavation.revealedAt": serverTimestamp(),
       "dungeonExcavation.autoDigNextAt": null,
+      ...(rolled.miniStreak === null ? {} : { "dungeonExcavation.miniBossStreak": rolled.miniStreak }),
     }).catch(() => {});
     _excavCache.delete(memberId);
 
@@ -321,17 +343,22 @@ export async function revealExcavation(memberId) {
     // 隱藏地下城一律是寶箱族專屬（不再有「隱藏幽冥系」這種組合）
     const family = isHidden ? "treasure" : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
 
+    // 隱藏地下城是寶箱族專屬王，不走族系抽王也不動小王保底計數
+    const rolled = isHidden
+      ? { boss: drawTreasureKing(difficulty), miniStreak: null }
+      : rollExcavationBoss(difficulty, family, excavation);
     const result = {
       family,
       difficulty,
       isHidden,
-      boss: isHidden ? drawTreasureKing(difficulty) : drawExpeditionBoss(difficulty, family),
+      boss: rolled.boss,
       revealedAt: Date.now(),
     };
 
     await updateDoc(doc(db, "members", memberId), {
       "dungeonExcavation.pendingReveal": result,
       "dungeonExcavation.revealedAt": serverTimestamp(),
+      ...(rolled.miniStreak === null ? {} : { "dungeonExcavation.miniBossStreak": rolled.miniStreak }),
     }).catch(() => {});
     _excavCache.delete(memberId);
 
@@ -367,7 +394,9 @@ export async function upgradeExcavationDifficulty(memberId) {
       "dungeonExcavation.pendingReveal": {
         ...pending,
         difficulty: newDifficulty,
-        boss: drawExpeditionBoss(newDifficulty, pending.family),
+        boss: rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
+          forceKind: pending.boss?.encounter || null,
+        }).boss,
       },
     });
     _excavCache.delete(memberId);
@@ -399,7 +428,9 @@ export async function downgradeExcavationDifficulty(memberId) {
       "dungeonExcavation.pendingReveal": {
         ...pending,
         difficulty: newDifficulty,
-        boss: drawExpeditionBoss(newDifficulty, pending.family),
+        boss: rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
+          forceKind: pending.boss?.encounter || null,
+        }).boss,
       },
     });
     _excavCache.delete(memberId);
@@ -481,7 +512,8 @@ export async function saveExcavation(memberId) {
       family: pending.family,
       difficulty: pending.difficulty,
       isHidden: pending.isHidden || false,
-      boss: pending.boss || drawExpeditionBoss(pending.difficulty, pending.family),
+      // pending 揭曉時就抽好王了，這裡只是防呆 fallback，不推進小王保底計數
+      boss: pending.boss || rollExcavationBoss(pending.difficulty, pending.family, excavation).boss,
       fromAutoDig: pending.fromAutoDig || false,
       fromWorldBoss: pending.fromWorldBoss || false,
       revealedAt: new Date().toISOString(),
@@ -612,12 +644,13 @@ export async function useDungeonScroll(memberId) {
     const family = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
     const difficulty = 1 + Math.floor(Math.random() * 6); // 隨機 1~6
 
+    const rolled = rollExcavationBoss(difficulty, family, excavation);
     const newDungeon = {
       id: `sc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       family,
       difficulty,
       isHidden: false,
-      boss: drawExpeditionBoss(difficulty, family),
+      boss: rolled.boss,
       fromWorldBoss: true,
       revealedAt: new Date().toISOString(),
     };
@@ -633,12 +666,14 @@ export async function useDungeonScroll(memberId) {
           pendingReveal: null, revealedAt: null, completed: false,
           savedDungeons: updatedSaved,
           scrolls: newScrolls,
+          ...(rolled.miniStreak === null ? {} : { miniBossStreak: rolled.miniStreak }),
         },
       }, { merge: true }).catch(() => {});
     } else {
       await updateDoc(doc(db, "members", memberId), {
         "dungeonExcavation.savedDungeons": updatedSaved,
         "dungeonExcavation.scrolls": newScrolls,
+        ...(rolled.miniStreak === null ? {} : { "dungeonExcavation.miniBossStreak": rolled.miniStreak }),
       }).catch(() => {});
     }
     _excavCache.delete(memberId);
@@ -690,8 +725,9 @@ export async function adminSetSavedDungeon(memberId, dungeonEntry, index = null)
 
     const preparedEntry = {
       ...dungeonEntry,
+      // 教練手動塞地下城：補王但不推進玩家的小王保底計數
       boss: dungeonEntry.boss
-        || drawExpeditionBoss(dungeonEntry.difficulty || 1, dungeonEntry.family),
+        || rollExcavationBoss(dungeonEntry.difficulty || 1, dungeonEntry.family, data.dungeonExcavation).boss,
     };
     let updated;
     if (index !== null && index >= 0 && index < saved.length) {

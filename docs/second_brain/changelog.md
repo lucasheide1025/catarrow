@@ -3,6 +3,21 @@
 
 ---
 
+## 2026-07-19（王房抽王正式接線：`dungeonExcavation.js`）
+
+**上一個 commit（96b5020）只加了 `drawDungeonBossEncounter` 函式沒接呼叫端，王房行為還是舊的。本次接線後才真正生效。**
+
+- **舊行為的 bug**：`drawExpeditionBoss` 是「找該族該階的**第一隻怪**再套 boss 倍率」，完全沒過濾 `isKing`/`encounter` —— T1 鬼怪王房實測抽到 `ghost_1`「好兄弟」，也就是**一隻被放大的雜怪**。
+- **新入口 `rollExcavationBoss(difficulty, family, excavation, { forceKind })`**（`dungeonExcavation.js` 頂部）：flag 開且抽得到王 → `drawDungeonBossEncounter`；否則原封不動 fallback 舊 `drawExpeditionBoss`。回傳 `{ boss, miniStreak }`，**`miniStreak === null` 代表不要寫回 Firestore**。
+- **7 個呼叫端分兩類**：
+  - **推進保底計數**（新地下城誕生）：`claimAutoDig`、`revealExcavation`、`useDungeonScroll`。
+  - **不推進**：`upgradeExcavationDifficulty` / `downgradeExcavationDifficulty`（換難度重抽，傳 `forceKind: pending.boss?.encounter` 保留大／小王身分）、`saveExcavation`（純防呆 fallback）、`adminSetSavedDungeon`（教練手動塞）。
+- **保底計數存 `members/{id}.dungeonExcavation.miniBossStreak`。**
+- **踩坑：升降級一定要 `forceKind`。** 不然玩家反覆「花金幣升級→免費降級」就能一直重抽王，把小王保底刷滿、無限拿大王素材（降級是免費的，這條白嫖路徑本來就存在）。`forceKind` 也因此**刻意不推進計數**。
+- **隱藏地下城（寶箱族）維持走 `drawTreasureKing`**，不進族系抽王也不動保底計數。
+- 不另存 `bossKind` 欄位 —— `toLegacyBattleMonster` 已把 `encounter` 帶進 boss 物件，直接讀 `boss.encounter`。
+- 驗收：53 suites / 373 tests 綠、build `Compiled successfully` 無警告。**尚未瀏覽器實跑**。
+
 ## 2026-07-19（修正：材料階級對應表整條推高一階）
 
 **使用者實測回報**「稀有的升級材料居然出現 T5 傳說材料」，並貼出實際需求（金幣 390 = 稀有；虎頭蜂刺／溪風蛇鱗 = **T2**、崩潰眼淚／林光花瓣 = **T3**）。

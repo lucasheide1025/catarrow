@@ -177,6 +177,16 @@ describe("王房抽王（Tn 只出 Tn 的王 + 小王保底）", () => {
     expect(seen.size).toBe(2);
   });
 
+  test("forceKind 換難度重抽：保留大／小王身分，只換階級", () => {
+    // 升降級用：T1 小王 → T3 也必須是小王，否則玩家反覆升降級就能刷出大王
+    const mini = drawDungeonBossEncounter(3, "ghost", { forceKind: "miniBoss", random: () => 0.1 });
+    expect(mini.kind).toBe("miniBoss");
+    expect(EXPANSION_MONSTER_BY_ID[mini.monster.id].tier).toBe(TIER_BY_DIFF[3]);
+    const boss = drawDungeonBossEncounter(3, "ghost", { forceKind: "boss", random: () => 0.9 });
+    expect(boss.kind).toBe("boss");
+    expect(EXPANSION_MONSTER_BY_ID[boss.monster.id].tier).toBe(TIER_BY_DIFF[3]);
+  });
+
   test("連續跑 300 次都不會連 3 次小王", () => {
     let streak = 0;
     let maxStreak = 0;

@@ -126,8 +126,11 @@ export function drawDungeonFallbackMonster(variant, difficulty, { family } = {})
 // 完全沒過濾 isKing/encounter，所以王房的王其實是一隻被放大的雜怪。
 export const MINI_BOSS_PITY = 3;
 
+// forceKind："boss" / "miniBoss" —— 指定就跳過機率與保底，只在該類池子裡重抽。
+// 用於「同一座地下城換難度」（金幣強化／免費降級）：王要換成新階的，但大王還是
+// 大王、小王還是小王，否則玩家反覆升降級就能把保底計數刷滿。
 export function drawDungeonBossEncounter(difficulty, family, options = {}) {
-  const { miniStreak = 0, random = Math.random } = options;
+  const { miniStreak = 0, random = Math.random, forceKind = null } = options;
   const normalizedFamily = FAMILY_ALIASES[family] || family;
   const tierPool = getDungeonTierPool(difficulty);
   const poolOf = kind => EXPANSION_MONSTERS.filter(monster =>
@@ -140,7 +143,9 @@ export function drawDungeonBossEncounter(difficulty, family, options = {}) {
   if (!bossPool.length && !miniPool.length) return null;
 
   const pityReached = miniStreak >= MINI_BOSS_PITY - 1;
-  const useBoss = bossPool.length > 0 && (pityReached || !miniPool.length || random() < 0.5);
+  const useBoss = forceKind
+    ? (forceKind === "boss" ? bossPool.length > 0 : !miniPool.length)
+    : bossPool.length > 0 && (pityReached || !miniPool.length || random() < 0.5);
   const pool = useBoss ? bossPool : miniPool;
   const selected = pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
   return {
