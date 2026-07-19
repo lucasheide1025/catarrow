@@ -63,7 +63,6 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
                 <div style={{ marginTop: 4 }}>重複張數：{view.duplicates || 0}</div>
                 {(() => {
                   const stat = getCardStat(view);
-                  if (!stat) return <div style={{ marginTop: 4, color: "#a5b4fc" }}>選擇屬性後顯示裝備效果</div>;
                   const bonus = calcCardBonus(view.tier, view.stars || 1);
                   const next = (view.stars || 1) < 5 ? calcCardBonus(view.tier, (view.stars || 1) + 1) : null;
                   return <div style={{ marginTop: 4, color: "#6ee7b7", fontWeight: 800 }}>
@@ -105,11 +104,9 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
 
         {/* 動作（實際邏輯由 Codex 接線;無 callback 時停用） */}
         {owned && (<>
-          {((view.tier === "mythic" || view.statMode === "choose") && !view.chosenStat) && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginTop:16 }}>
-              {["hp","atk","def"].map(stat => <button key={stat} type="button" onClick={() => onPickStat?.(view, stat)} style={{padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,.14)",background:"rgba(99,102,241,.18)",color:"#e0e7ff",fontWeight:900}}>{stat.toUpperCase()}</button>)}
-            </div>
-          )}
+          {/* 自選屬性已移除（使用者拍板 2026-07-19）：屬性一律由卡片本身寫死，
+              同一張卡在任何玩家身上效果都相同，方便平衡與說明。舊資料殘留的
+              chosenStat 由 getCardStat 直接忽略，不需要遷移。 */}
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
             <button type="button" disabled={!onEquip} onClick={() => onEquip && onEquip(view)}
               style={{ flex: 1, padding: 12, borderRadius: 12, fontWeight: 800, fontSize: 14, border: "1px solid rgba(255,255,255,.15)", background: onEquip ? "#6366f1" : "rgba(255,255,255,.06)", color: onEquip ? "#fff" : "#475569" }}>

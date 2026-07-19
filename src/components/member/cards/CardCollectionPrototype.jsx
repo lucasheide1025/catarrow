@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   CARD_CATALOG, FAMILIES, TIERS, matchL1, getGroup, mergeOwned,
 } from "./cardCatalog";
-import { canUpgradeStar } from "../../../lib/monsterCards";
+import { canUpgradeStar, getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "../../../lib/monsterCards";
 import { WB_CARDS } from "../../../lib/worldBossCards";
 import { seedSeenIfFirstRun, isUnseen, markSeen, countUnseen } from "./cardSeen";
 import CardFilterBar from "./CardFilterBar";
@@ -150,26 +150,53 @@ export default function CardCollectionPrototype({ memberId, collection = {}, col
         }
       `}</style>
 
-      {/* 🎽 已裝備列（普通 10＋世界王 3;點卡可直接卸下/檢視） */}
+      {/* 🎽 已裝備：HP / ATK / DEF / 世界王 四個獨立區塊，各自有上限（使用者拍板 2026-07-19）。
+          分區塊而不是混在一起，是為了讓「哪一格還有空位」一眼看得出來 —— 之前 10 格混排，
+          玩家根本不知道自己 HP 卡是不是裝滿了。 */}
       {(() => {
         const equippedItems = (collection?.equipped || []).map(item => typeof item === "string" ? { key: item, source: "monster" } : item);
-        if (!equippedItems.length) return null;
         const views = equippedItems.map(item => {
-          if (item.source === "wb") return wbViews(collection).find(v => v.cardId === item.key);
+          if (item.source === "wb") {
+            const view = wbViews(collection).find(v => v.cardId === item.key);
+            return view ? { ...view, _slot: "wb" } : null;
+          }
           const entry = CARD_CATALOG.find(c => c.monsterId === item.key);
-          return entry ? mergeOwned(entry, collection) : null;
+          if (!entry) return null;
+          const merged = mergeOwned(entry, collection);
+          return { ...merged, _slot: getCardStat(merged) };
         }).filter(Boolean);
-        const monsterCount = equippedItems.filter(i => i.source !== "wb").length;
-        const wbCount = equippedItems.length - monsterCount;
+
+        const SECTIONS = [
+          { slot: "hp",  label: "❤️ HP",  color: "#6ee7b7", max: maxEquippedForStat("hp") },
+          { slot: "atk", label: "⚔️ ATK", color: "#fdba74", max: maxEquippedForStat("atk") },
+          { slot: "def", label: "🛡️ DEF", color: "#93c5fd", max: maxEquippedForStat("def") },
+          { slot: "wb",  label: "👑 世界王", color: "#fcd34d", max: MAX_WB_EQUIPPED },
+        ];
+
         return (
-          <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 900, color: "#6ee7b7", margin: 0 }}>🎽 裝備中</h3>
-              <span style={{ fontSize: 11, color: "#64748b" }}>普通 {monsterCount}/10 · 世界王 {wbCount}/3</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", maxWidth: 830, gap: 8 }}>
-              {views.map(view => <CardMiniCell key={`eq-${view.monsterId}`} view={view} onOpen={setSelected} />)}
-            </div>
+          <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 900, color: "#6ee7b7", margin: 0 }}>🎽 裝備中</h3>
+            {SECTIONS.map(sec => {
+              const list = views.filter(v => v._slot === sec.slot);
+              const full = list.length >= sec.max;
+              return (
+                <div key={sec.slot} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: sec.color }}>{sec.label}</span>
+                    <span style={{ fontSize: 11, color: full ? "#fca5a5" : "#64748b" }}>
+                      {list.length}/{sec.max}{full ? "（已滿）" : ""}
+                    </span>
+                  </div>
+                  {list.length ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", maxWidth: 830, gap: 8 }}>
+                      {list.map(view => <CardMiniCell key={`eq-${sec.slot}-${view.monsterId || view.cardId}`} view={view} onOpen={setSelected} />)}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: "#475569", padding: "6px 0" }}>尚未裝備</div>
+                  )}
+                </div>
+              );
+            })}
           </section>
         );
       })()}
