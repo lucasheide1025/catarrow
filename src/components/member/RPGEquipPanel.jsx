@@ -567,7 +567,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
       setDisplayNextMats(equip.nextMats);
     } else if (equip?.itemId) {
       // 舊資料/舊曲線格式 或 首次裝備：依目前曲線重算並存回 Firestore（一次性收斂）
-      const mats = generateRandomMats(equip.grade || "common", equip.plusLevel || 0);
+      const mats = generateRandomMats(equip.grade || "common", equip.plusLevel || 0, { inventory: matInv });
       setDisplayNextMats(mats);
       pendingMatsSaveRef.current = saveEquipNextMats(profile.id, slotDef.id, mats);
     } else {
@@ -583,7 +583,7 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
     } else {
       await equipItem(profile.id, activeSlot.id, itemId);
       // 首次裝備：產生初始隨機材料需求（common +0）
-      const mats = generateRandomMats("common", 0);
+      const mats = generateRandomMats("common", 0, { inventory: matInv });
       await saveEquipNextMats(profile.id, activeSlot.id, mats);
     }
     setActiveSlot(null);

@@ -58,6 +58,22 @@ function normalMaterialPool(tierIndex, expansionEnabled, expansionMaterials) {
   return _FAMILIES.map(family => `${family}_m${tierIndex}`);
 }
 
+// 從材料池挑出「玩家持有最多」的那一種。完全沒有庫存時回 null（交回純隨機）。
+// 同樣持有量時隨機挑一個，避免每次都固定同一種、看起來像壞掉。
+function pickMostHeldId(pool, inventory) {
+  if (!inventory) return null;
+  let best = 0;
+  let ties = [];
+  for (const id of pool) {
+    const owned = Math.max(0, Number(inventory[id]) || 0);
+    if (owned <= 0) continue;
+    if (owned > best) { best = owned; ties = [id]; }
+    else if (owned === best) ties.push(id);
+  }
+  if (!ties.length) return null;
+  return ties[Math.floor(Math.random() * ties.length)];
+}
+
 // 升級材料需求：同一品級內隨 plusLevel 遞增（曲線），避免「+0 跟 +4 一樣便宜」秒升。
 // 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
 // 每個 plusLevel 的三種材料數量：mainA=主族、mainB=副族（同 tier）、key=關鍵素材（高一階 tier）。
@@ -163,26 +179,36 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   if (!kinds) return null;
 
   // 預設值直接取真實模組，呼叫端不必傳（漏傳會讓功能靜默失效）；options 只給測試覆寫用。
+  // inventory：玩家目前的材料庫存 { materialId: 數量 }，用來保底（見下方）。
   const {
     expansionEnabled = isMonsterExpansionEnabled(),
     expansionMaterials = EXPANSION_MATERIALS,
+    inventory = null,
   } = options;
 
   // ⚠️ 每個 tier 各自從自己的池子洗牌抽，不能共用同一份洗好的清單再切片：
   // 精英以上要 4+3+1 = 8 種。不同 tier 的材料 id 本來就不同，跨 tier 不會撞 id。
-  const pickIds = (tierIndex, n) =>
-    [...normalMaterialPool(tierIndex, expansionEnabled, expansionMaterials)]
-      .sort(() => Math.random() - 0.5)
-      .slice(0, n);
+  //
+  // guarantee：該階材料改用「保底」抽法（使用者指定）。每階有 21 種候選但一次只要 4 種，
+  // 純隨機常常整組都是玩家手上沒有的，進度感直接歸零。因此固定讓第一種是玩家
+  // 「持有最多」的材料，剩下的才隨機——至少永遠有一格看得到進度。
+  const pickIds = (tierIndex, n, guarantee = false) => {
+    const pool = normalMaterialPool(tierIndex, expansionEnabled, expansionMaterials);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const mostHeld = guarantee ? pickMostHeldId(pool, inventory) : null;
+    if (!mostHeld) return shuffled.slice(0, n);
+    // 保底那一種要從隨機清單剔除，否則會出現重複 id
+    return [mostHeld, ...shuffled.filter(id => id !== mostHeld)].slice(0, n);
+  };
 
   const roleSpecs = [
-    { role: "current", tier: tiers.main,  kinds: kinds.current, count: c.current, note: null },
+    { role: "current", tier: tiers.main,  kinds: kinds.current, count: c.current, note: null, guarantee: true },
     { role: "next",    tier: tiers.next,  kinds: kinds.next,    count: c.next,    note: "下一階素材" },
     { role: "next2",   tier: tiers.next2, kinds: kinds.next2,   count: c.next2,   note: "再下一階素材" },
   ];
   const materials = roleSpecs.flatMap(spec => {
     if (!spec.tier || spec.kinds <= 0) return [];
-    return pickIds(spec.tier, spec.kinds).map(id => ({
+    return pickIds(spec.tier, spec.kinds, spec.guarantee).map(id => ({
       id,
       count: spec.count,
       tierRole: spec.role,

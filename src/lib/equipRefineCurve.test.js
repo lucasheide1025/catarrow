@@ -132,6 +132,41 @@ describe("材料需求依品級分級", () => {
     });
   });
 
+  test("保底：該階材料一定包含玩家持有最多的那一種", () => {
+    const opts2 = { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS };
+    // T3 = 精英的該階。挑一個冷門材料塞滿庫存，看它是否每次都被要求
+    const t3 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 3);
+    const hoarded = t3[t3.length - 1].id;
+    const inventory = { [hoarded]: 999, [t3[0].id]: 5 };
+    for (let i = 0; i < 60; i += 1) {
+      const mats = generateRandomMats("elite", 0, { ...opts2, inventory });
+      const current = mats.materials.filter(m => m.tierRole === "current");
+      expect(current.some(m => m.id === hoarded)).toBe(true);
+      expect(new Set(current.map(m => m.id)).size).toBe(current.length); // 保底不得造成重複
+    }
+  });
+
+  test("保底只作用在該階，下一階仍維持隨機（否則難度會被玩家囤貨架空）", () => {
+    const t4 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 4);
+    const hoarded = t4[t4.length - 1].id;
+    const inventory = { [hoarded]: 999 };
+    const seenNext = new Set();
+    for (let i = 0; i < 60; i += 1) {
+      generateRandomMats("elite", 0, { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS, inventory })
+        .materials.filter(m => m.tierRole === "next").forEach(m => seenNext.add(m.id));
+    }
+    expect(seenNext.size).toBeGreaterThan(3); // 有在變動，不是每次都固定那一種
+  });
+
+  test("庫存全空或沒傳 inventory 時退回純隨機，不會壞掉", () => {
+    const base = { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS };
+    expect(generateRandomMats("elite", 0, base).materials).toHaveLength(8);
+    expect(generateRandomMats("elite", 0, { ...base, inventory: {} }).materials).toHaveLength(8);
+    // 庫存是負值（歷史髒資料）也不能被當成「持有最多」
+    const dirty = { inventory: { ghost_m3: -5 }, ...base };
+    expect(generateRandomMats("elite", 0, dirty).materials).toHaveLength(8);
+  });
+
   test("整個品級的材料總量：普通最輕、神話最重", () => {
     const totalFor = grade => {
       let sum = 0;

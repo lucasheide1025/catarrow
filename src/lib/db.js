@@ -4197,9 +4197,6 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
     const memRef = doc(db, C.members, memberId);
     const matRef = doc(db, C_MATERIALS, memberId);
 
-    // 升級完成後產生下一輪隨機材料（材料需求隨 newPlusLevel 遞增，見 equipData.generateRandomMats 曲線）
-    const newNextMats = generateRandomMats(newGrade, newPlusLevel);
-
     // ⚠️ 扣款一律走 transaction＋伺服器當下值重驗證。
     // 舊寫法「client 資料驗證 + 盲目 increment(-n)」在多分頁/快取過期/連點時會把庫存扣成負數。
     await runTransaction(db, async transaction => {
@@ -4216,6 +4213,11 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
       };
       for (const req of (mats.materials || [])) consume(req.id, req.count);
       if (mats.keyItem) consume(mats.keyItem.id, mats.keyItem.count);
+
+      // 下一輪材料需求要在「扣完之後」才算，並把當下庫存傳進去做保底：
+      // 用扣除前的庫存會讓保底挑到剛剛被扣光的那種，玩家看到的「持有最多」是假的。
+      const newNextMats = generateRandomMats(newGrade, newPlusLevel, { inventory: items });
+
       transaction.set(matRef, { items, updatedAt: serverTimestamp() }, { merge: true });
       transaction.update(memRef, {
         coins: increment(-cost.gold),
