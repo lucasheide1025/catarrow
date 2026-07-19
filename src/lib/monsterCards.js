@@ -99,15 +99,64 @@ export const SLAYER_BASE_PCT = Object.freeze({
 });
 export const SLAYER_PCT_PER_STAR = 2;
 
+// ── 族系相剋循環（2026-07-19 使用者拍板：用現有卡片做，不另外發新卡）──────
+// 七族連成一個環，每族剋下一族：
+//   西方怪物 → 鬼怪 → 考試 → 職場 → 寶藏 → 毒蟲 → 山林 →（回到西方怪物）
+// 卡片是「加傷」還是「減傷」由它本來的屬性決定，不另外存資料：
+//   ATK 卡 → 對「它剋的那一族」加傷（進攻型）
+//   HP/DEF 卡 → 對「剋它的那一族」減傷（防禦型，抵抗天敵）
+// 這樣 252 張卡不用改任何資料就全部有剋制效果，而且效果可從卡面直接推理出來。
+export const SLAYER_CYCLE = Object.freeze([
+  "temple", "ghost", "exam", "workplace", "treasure", "insect", "mountain",
+]);
+
+function cycleNeighbor(family, step) {
+  const index = SLAYER_CYCLE.indexOf(family);
+  if (index < 0) return null;
+  const size = SLAYER_CYCLE.length;
+  return SLAYER_CYCLE[(index + step + size) % size];
+}
+
+// 這一族剋誰
+export function familyPreysOn(family) { return cycleNeighbor(family, 1); }
+// 誰剋這一族（天敵）
+export function familyPreyedBy(family) { return cycleNeighbor(family, -1); }
+
 export function getCardSlayerEffect(card) {
-  const slayer = card?.slayer;
-  if (!slayer?.targetFamily) return null;
+  if (!card) return null;
   const base = SLAYER_BASE_PCT[card.tier] ?? SLAYER_BASE_PCT.common;
   const stars = Math.max(1, card.stars || 1);
+  const pct = base + (stars - 1) * SLAYER_PCT_PER_STAR;
+
+  // 卡片資料若明確寫了 slayer 就以它為準（保留未來做特殊卡的空間）
+  const explicit = card.slayer;
+  if (explicit?.targetFamily) {
+    return { targetFamily: explicit.targetFamily, mode: explicit.mode === "reduce" ? "reduce" : "bonus", pct };
+  }
+
+  // 世界王卡不參與族系相剋（它們本來就有自己的被動加成）
+  if (card.tier === "worldboss") return null;
+
+  const stat = getCardStat(card);
+  const targetFamily = stat === "atk" ? familyPreysOn(card.family) : familyPreyedBy(card.family);
+  if (!targetFamily) return null;
+  return { targetFamily, mode: stat === "atk" ? "bonus" : "reduce", pct };
+}
+
+// 依「本場怪物族系」把卡片加成攤平成戰鬥端直接可用的百分比。
+// 注意單位：familyDamage*Pct 是整數百分比（12 = 12%），而 dmgBonusPct/dmgReducePct
+// 是小數（0.03 = 3%，世界王卡被動），所以族系那份要除以 100 才能相加。
+export const MAX_DAMAGE_REDUCE_PCT = 0.8; // 減傷封頂，避免堆到完全免疫
+
+export function resolveBattleBonus(bonus, monsterFamily) {
+  const family = resolveFamilyModifiers(bonus, monsterFamily);
   return {
-    targetFamily: slayer.targetFamily,
-    mode: slayer.mode === "reduce" ? "reduce" : "bonus",
-    pct: base + (stars - 1) * SLAYER_PCT_PER_STAR,
+    dmgBonusPct: (bonus?.dmgBonusPct || 0) + family.damageBonusPct / 100,
+    dmgReducePct: Math.min(
+      MAX_DAMAGE_REDUCE_PCT,
+      (bonus?.dmgReducePct || 0) + family.damageReducePct / 100,
+    ),
+    healBonusPct: bonus?.healBonusPct || 0,
   };
 }
 

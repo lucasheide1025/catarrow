@@ -41,8 +41,19 @@ describe("屬性一律寫死，忽略自選", () => {
 describe("族系剋制卡", () => {
   const slayerCard = { family: "temple", tier: "elite", stars: 1, slayer: { targetFamily: "ghost", mode: "bonus" } };
 
-  test("沒有 slayer 欄位的卡不是剋制卡", () => {
-    expect(getCardSlayerEffect({ family: "ghost", tier: "elite" })).toBeNull();
+  // 2026-07-19 改版：改用「現有卡片」做剋制，效果由族系相剋循環＋卡片屬性推導，
+  // 不再需要每張卡另外寫 slayer 資料。世界王卡不參與（它們有自己的被動）。
+  test("一般卡即使沒寫 slayer 也會依族系循環自動帶剋制效果", () => {
+    const effect = getCardSlayerEffect({ family: "ghost", tier: "elite", stars: 1 });
+    expect(effect).toMatchObject({ targetFamily: "exam", mode: "bonus" });
+  });
+  test("HP/DEF 卡是防禦型：對天敵減傷", () => {
+    // 考試族是 def 卡，天敵是鬼怪族（鬼怪 → 考試）
+    expect(getCardSlayerEffect({ family: "exam", tier: "elite", stars: 1 }))
+      .toMatchObject({ targetFamily: "ghost", mode: "reduce" });
+  });
+  test("世界王卡不參與族系相剋", () => {
+    expect(getCardSlayerEffect({ tier: "worldboss", stat: "atk", family: "ghost" })).toBeNull();
   });
   test("剋制強度隨星級成長", () => {
     const one = getCardSlayerEffect(slayerCard).pct;
