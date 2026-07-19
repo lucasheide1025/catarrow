@@ -14,8 +14,33 @@ import { addPartyCombatStatus, applyPartyStatusesForRound, buildPartyAbilityPrev
 import { buildPartyExpansionReward } from "./partyRewardEngine";
 import { getPartyChallengeProfile } from "./monsterExpansionAdapter";
 import { makeCoinChest } from "./lootTable";
+import { stripUndefinedDeep } from "./firestoreSafeWrite";
 
 const PARTY = "partyRooms";
+
+// 技能發動的戰鬥訊息（左上角訊息列）。玩家原本只看到怪物「做了什麼」卻不知道結果，
+// 這裡把「技能名 → 破解程度 → 實際後果」寫成一句話，權威端產生確保雙端一致。
+const BREAK_TEXT = {
+  full:    "🛡️ 完全破解，技能無效",
+  major:   "💪 高分破解，威力大幅削弱",
+  partial: "👍 部分破解，效果減半",
+  none:    "💢 未能破解，全額生效",
+};
+
+function buildAbilityMessage({ monsterName, ability, targetName }) {
+  const name = ability?.resolved?.name || ability?.scheduled?.name || "技能";
+  const target = targetName ? `鎖定 ${targetName}` : "全隊";
+  const level = ability?.resolved?.outcome?.level;
+  const parts = [`⚡ ${monsterName} 發動「${name}」（${target}）`];
+  if (level) parts.push(BREAK_TEXT[level] || BREAK_TEXT.none);
+  const statuses = ability?.resolved?.statuses || [];
+  if (statuses.length) {
+    parts.push(`附加 ${statuses.map(s => s.name || s.id).join("、")}`);
+  }
+  if ((ability?.resolved?.selfShieldMaxHpPct || 0) > 0) parts.push("怪物展開護盾");
+  if ((ability?.resolved?.delayedMult || 0) > 0) parts.push("蓄力中，下回合追加攻擊");
+  return parts.join(" ｜ ");
+}
 
 // Keep the event selected before score entry so every player sees the same
 // conditions and the server can resolve the exact same effect after reload.
@@ -267,7 +292,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       }
     }
 
-    await updateDoc(doc(db, PARTY, roomId), {
+    await updateDoc(doc(db, PARTY, roomId), stripUndefinedDeep({
       ...membersUpdate,
       // ⚠️ 每個欄位都必須有預設值：Firestore 不接受 undefined，只要一個欄位是 undefined
       // 整筆寫入就會被拒絕（invalid-argument / HTTP 400），表現為「點開始戰鬥沒反應」。
@@ -309,7 +334,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       consumableEffects: {},
       status: "active",
       monsterAbilityPreview: null,
-    });
+    }));
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
@@ -820,7 +845,15 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHPAfter:  monsterHP,
       counterRound:    !skipAllCtr,
       demotedMembers,
-      ...(partyAbility?.scheduled ? { monsterAbility:partyAbility } : {}),
+      ...(partyAbility?.scheduled ? {
+        monsterAbility:partyAbility,
+        // 給左上角戰鬥訊息用的一行敘述（權威端產生，雙端看到的文字才會一致）
+        abilityMessage: buildAbilityMessage({
+          monsterName: room.monster?.name || "怪物",
+          ability: partyAbility,
+          targetName: partyAbility.targetId ? (members[partyAbility.targetId]?.name || "隊友") : null,
+        }),
+      } : {}),
       statusTicks:Object.fromEntries(aliveIds.filter(id => statusRoundByMember[id]?.ticks?.length).map(id => [id, statusRoundByMember[id].ticks])),
     };
 
@@ -841,20 +874,22 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       ? buildPartyAbilityPreview({ monster:room.monster, round:round + 1, members:nextMembers })
       : null;
 
-    await updateDoc(doc(db, PARTY, roomId), {
+    await updateDoc(doc(db, PARTY, roomId), stripUndefinedDeep({
       ...memberUpdates,
       monsterHP,
       round: round + 1,
       log: arrayUnion(logEntry),
       result,
       status: newStatus,
-      roundEvent: newStatus === "active" ? makeRoundEvent() : null,
+      // 2026-07-19：組隊比照單人（07-18 已停用）取消每回合突發事件。
+      // makeRoundEvent 保留供未來正式事件系統使用，但不再於每回合擲骰。
+      roundEvent: null,
       monsterAbilityPreview: nextAbilityPreview,
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
       processing: false,
-    });
+    }));
 
     return { ok: true, won: result === "win", lost: result === "lose" };
   } catch (e) {

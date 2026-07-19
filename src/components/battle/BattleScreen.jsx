@@ -301,6 +301,8 @@ function battleReducer(state, action) {
       }
       return{...state,playerHp:n,phase:n<=0?PHASE.LOST:state.phase,messages:[...state.messages,`🏹 第${state.round}回合：${state.roundDmg} 傷害（${state.roundCrits} 爆擊）`,`💥 怪物反擊：${state.pendingCounter} 傷害`,...extraMsgs]};}
     case"PARTY_COUNTER_HIT":{const n=Math.max(0,state.playerHp-(action.dmg||0));return{...state,playerHp:n,messages:[...state.messages,`💥 怪物反擊：${action.dmg||0} 傷害`]};}
+    // 權威端已把技能結果組成一行敘述（partyDb.buildAbilityMessage），這裡只負責推進訊息列
+    case"PUSH_MESSAGE":{if(!action.text)return state;return{...state,messages:[...state.messages,action.text]};}
     case"CARRY_BUFF":{const{atkAdd,defAdd,heal,shieldHp,buffMsgs,name}=action;return{...state,playerAtk:state.playerAtk+(atkAdd||0),playerDef:state.playerDef+(defAdd||0),playerHp:Math.min(state.playerMaxHp,state.playerHp+(heal||0)),potionShield:Math.max(state.potionShield||0,shieldHp||0),messages:[...state.messages,...(buffMsgs||[`⚗️ ${name||"藥水"} 效果發動！`])]};}
     case"THROW_DMG":{const shield=state.monsterShield||0;const absorbed=Math.min(shield,action.dmg||0);const dmg=(action.dmg||0)-absorbed;const nhp=Math.max(0,state.monsterHp-dmg);return{...state,monsterShield:shield-absorbed,monsterHp:nhp,phase:nhp<=0?PHASE.VICTORY_ANIM:state.phase,messages:[...state.messages,action.msg||`🔪 投擲傷害：${dmg}`]};}
     case"DEBUFF_MONSTER":{const{monAtkPct,monDefPct,msg}=action;return{...state,monsterAtk:monAtkPct?Math.max(1,Math.round(state.monsterAtk*(1-monAtkPct/100))):state.monsterAtk,monsterDef:monDefPct?Math.max(0,Math.round(state.monsterDef*(1-monDefPct/100))):state.monsterDef,messages:[...state.messages,msg||`🧴 怪物被削弱！`]};}
@@ -435,17 +437,39 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   // room log 的 ability 欄位轉成與單人相同的 skillFx 形狀，共用同一組蓋版 UI。
   const seenPartyAbilityKey = useRef(null);
   useEffect(() => {
-    const ability = partyResolution?.ability;
-    if (!ability?.resolvedKey || seenPartyAbilityKey.current === ability.resolvedKey) return undefined;
-    seenPartyAbilityKey.current = ability.resolvedKey;
-    setSkillFx({
-      name: ability.name,
-      outcome: { level: ability.breakLevel },
-      statuses: ability.statusesByMember?.[partyPlayerId] || [],
-      selfShieldMaxHpPct: ability.monsterEffect?.shieldHp > 0 ? 1 : 0,
-      delayedMult: ability.monsterEffect?.delayedMult || 0,
-      partyDamage: ability.damageByMember?.[partyPlayerId] || 0,
-    });
+    // 兩種來源：地下城（partyResolution.ability，已在權威端算好每人傷害）
+    //           組隊打怪（partyResolution.monsterAbility = { scheduled, resolved, targetId }）
+    const dungeon = partyResolution?.ability;
+    const party = partyResolution?.monsterAbility;
+    const resolvedKey = dungeon?.resolvedKey || party?.resolved?.resolvedKey;
+    if (!resolvedKey || seenPartyAbilityKey.current === resolvedKey) return undefined;
+    seenPartyAbilityKey.current = resolvedKey;
+
+    // 組隊打怪的技能傷害是「乘進本回合反擊」的，沒有獨立數字；
+    // 直接取本回合我實際被扣的血當作看得見的損害，玩家才知道技能造成了什麼。
+    const myCounter = (partyResolution?.playerLog || []).find(p => p.id === partyPlayerId)?.ctr || 0;
+    const info = dungeon ? {
+      name: dungeon.name,
+      outcome: { level: dungeon.breakLevel },
+      statuses: dungeon.statusesByMember?.[partyPlayerId] || [],
+      selfShieldMaxHpPct: dungeon.monsterEffect?.shieldHp > 0 ? 1 : 0,
+      delayedMult: dungeon.monsterEffect?.delayedMult || 0,
+      partyDamage: dungeon.damageByMember?.[partyPlayerId] || 0,
+    } : {
+      name: party.resolved?.name || party.scheduled?.name || "怪物技能",
+      summary: party.scheduled?.summary || null,
+      outcome: party.resolved?.outcome || null,
+      statuses: party.resolved?.statuses || [],
+      selfShieldMaxHpPct: party.resolved?.selfShieldMaxHpPct || 0,
+      delayedMult: party.resolved?.delayedMult || 0,
+      // 只有被鎖定的人才顯示傷害；未被鎖定者本回合的扣血來自一般反擊
+      partyDamage: (!party.targetId || party.targetId === partyPlayerId) ? myCounter : 0,
+    };
+    setSkillFx(info);
+    // 同步寫進左上角戰鬥訊息列，讓玩家事後也能回看這回合怪物做了什麼
+    if (partyResolution?.abilityMessage) {
+      dispatch({ type:"PUSH_MESSAGE", text:partyResolution.abilityMessage });
+    }
     const timer = setTimeout(() => setSkillFx(null), 2600);
     return () => clearTimeout(timer);
   }, [partyResolution, partyPlayerId]);
@@ -545,13 +569,18 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
     return()=>clearTimeout(timer);
   },[partyMode,partyResult,completedPartyResolutionKey,partyResolutionKey,partyIsHost,onConfirmPartyResult,monster?.name,partyRound,autoConfirmPartyResult]);
 
+  // 技能預告是「下一回合」的資訊，必須等本回合演出完全結束才亮，否則會蓋在動畫上搶戲。
+  // 兩道閘門：①本回合逐段演出播完（completedPartyResolutionKey 追上 partyResolutionKey）；
+  //          ②技能發動蓋版（skillFx）已收掉。兩者都過了才等於「回合真的結束、下一回合開始前」。
   useEffect(()=>{
     if(!partyMode||!partyAbilityPreview)return;
+    if(partyResolutionKey>0&&completedPartyResolutionKey!==partyResolutionKey)return;
+    if(skillFx)return;
     const key=`${partyAbilityPreview.round}:${partyAbilityPreview.skillId}:${partyAbilityPreview.targetId||"team"}`;
     if(seenPartyAbilityPreview.current===key)return;
     seenPartyAbilityPreview.current=key;
     setPartyAbilityTelegraph({...partyAbilityPreview,key});
-  },[partyMode,partyAbilityPreview]);
+  },[partyMode,partyAbilityPreview,partyResolutionKey,completedPartyResolutionKey,skillFx]);
 
   // ─── 回合前事件 🎲 ───
   // 2026-07-18 使用者指示：取消每回合突發事件（此為改版時的「示意」佔位彈窗,ROUND_EVENTS 保留資料供未來正式事件系統使用）
@@ -1140,6 +1169,7 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
         <div style={{fontSize:19,fontWeight:900,color:"#ffe4e6",marginTop:2}}>{partyAbilityTelegraph.enhanced?"強化・":""}{partyAbilityTelegraph.name}</div>
         {partyAbilityTelegraph.targetId?<div style={{fontSize:12,color:"#fecdd3",marginTop:8}}>鎖定目標：{partyMembers.find(member=>member.id===partyAbilityTelegraph.targetId)?.name||"存活前衛"}</div>:<div style={{fontSize:12,color:"#cbd5e1",marginTop:8}}>全隊共同破解此技能</div>}
         {partyAbilityTelegraph.summary&&<div style={{fontSize:12,color:"#d8deeb",lineHeight:1.55,marginTop:8}}>{partyAbilityTelegraph.summary}</div>}
+        {partyAbilityTelegraph.counterSummary&&<div style={{fontSize:11,color:"#94a3b8",lineHeight:1.45,marginTop:6}}>🔍 破解方式：{partyAbilityTelegraph.counterSummary}</div>}
         <div style={{fontSize:11,color:"#6ee7b7",fontWeight:900,lineHeight:1.5,marginTop:9,padding:"9px",borderRadius:9,background:"rgba(16,185,129,.14)",border:"1px solid rgba(52,211,153,.35)"}}>🎯 {getBreakRuleText()}</div>
         <button onClick={()=>setPartyAbilityTelegraph(null)} style={{width:"100%",marginTop:14,padding:10,border:0,borderRadius:10,background:"linear-gradient(135deg,#fb7185,#e11d48)",color:"#fff",fontSize:13,fontWeight:900,cursor:"pointer"}}>了解，隊伍開始射擊</button>
       </div>
@@ -1151,6 +1181,7 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
         <div className="fx-fade-up" style={{maxWidth:340,width:"100%",padding:"12px 16px",borderRadius:14,textAlign:"center",background:"rgba(4,7,13,.92)",border:`2px solid ${tone.c}`,boxShadow:`0 0 24px ${tone.c}55`}}>
           <div style={{fontSize:15,fontWeight:900,color:"#f5d0fe"}}>⚡ {battle.monsterName} 發動「{skillFx.name||"技能"}」</div>
           <div style={{fontSize:12,fontWeight:900,color:tone.c,marginTop:4}}>{tone.t}</div>
+          {skillFx.summary&&<div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.5,marginTop:5}}>{skillFx.summary}</div>}
           {skillFx.partyDamage>0&&<div style={{fontSize:12,fontWeight:900,color:"#fca5a5",marginTop:3}}>💥 你受到 {skillFx.partyDamage} 傷害</div>}
           {(skillFx.statuses?.length?skillFx.statuses:skillFx.status?[skillFx.status]:[]).map((st,i)=>(
             <div key={i} style={{fontSize:11,color:"#fca5a5",marginTop:2}}>🌀 {st.name||st.id}{typeof st.strength==="number"?` -${st.strength}%`:""}（{st.duration||1} 回合）</div>
