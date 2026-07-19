@@ -116,3 +116,37 @@ export function drawDungeonFallbackMonster(variant, difficulty, { family } = {})
     : drawMixedMonsterPool(1, variant, difficulty);
   return legacy[0] || null;
 }
+
+// ── 王房抽王（2026-07-19 使用者拍板規格）────────────────────────
+// Tn 地下城的王房只出 Tn 的王：小王（每族每階 2 隻，隨機）或大王（1 隻）。
+// 保底：連續 2 次小王後，第 3 次必定出大王 —— 否則玩家可能一直刷不到
+// 大王素材，高階精煉直接卡死。
+//
+// ⚠️ 舊的 drawExpeditionBoss 是「找該族該階的第一隻怪再套 boss 倍率」，
+// 完全沒過濾 isKing/encounter，所以王房的王其實是一隻被放大的雜怪。
+export const MINI_BOSS_PITY = 3;
+
+export function drawDungeonBossEncounter(difficulty, family, options = {}) {
+  const { miniStreak = 0, random = Math.random } = options;
+  const normalizedFamily = FAMILY_ALIASES[family] || family;
+  const tierPool = getDungeonTierPool(difficulty);
+  const poolOf = kind => EXPANSION_MONSTERS.filter(monster =>
+    monster.family === normalizedFamily
+    && tierPool.includes(monster.tier)
+    && monster.encounter === kind,
+  );
+  const bossPool = poolOf("boss");
+  const miniPool = poolOf("miniBoss");
+  if (!bossPool.length && !miniPool.length) return null;
+
+  const pityReached = miniStreak >= MINI_BOSS_PITY - 1;
+  const useBoss = bossPool.length > 0 && (pityReached || !miniPool.length || random() < 0.5);
+  const pool = useBoss ? bossPool : miniPool;
+  const selected = pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
+  return {
+    monster: { ...toLegacyBattleMonster(selected), variant: "boss" },
+    kind: useBoss ? "boss" : "miniBoss",
+    // 抽到大王就把連續小王計數歸零，抽到小王則累加
+    miniStreak: useBoss ? 0 : miniStreak + 1,
+  };
+}
