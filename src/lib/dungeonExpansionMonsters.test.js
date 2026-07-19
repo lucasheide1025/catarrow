@@ -103,3 +103,30 @@ describe("flag 分流", () => {
     expect(floor.boss).toBeTruthy();
   });
 });
+
+// 使用者回報「單人／組隊打怪會刷出小王大王」後補的護欄。
+// 王怪只該從王房取得，任何一般抽怪路徑都不得產出 isKing 怪物。
+describe("舊池不得刷出王怪", () => {
+  const { MONSTERS, drawMixedMonsterPool, drawMatchedMonsters } = require("./monsterData");
+  const kingIds = new Set(MONSTERS.filter(m => m.isKing).map(m => m.id));
+
+  test("清單裡確實有王怪（否則這個測試等於沒測）", () => {
+    expect(kingIds.size).toBeGreaterThan(0);
+  });
+
+  test("drawMixedMonsterPool 全階級都不會抽到王怪", () => {
+    for (let tier = 1; tier <= 6; tier += 1) {
+      for (let round = 0; round < 40; round += 1) {
+        drawMixedMonsterPool(6, "normal", tier).filter(Boolean)
+          .forEach(monster => expect(kingIds.has(monster.id)).toBe(false));
+      }
+    }
+  });
+
+  test("單人打怪清單不會出現王怪", () => {
+    for (let power = 0; power < 400; power += 40) {
+      drawMatchedMonsters(power).filter(Boolean)
+        .forEach(monster => expect(kingIds.has(monster.id)).toBe(false));
+    }
+  });
+});

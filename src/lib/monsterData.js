@@ -603,13 +603,14 @@ export function drawMatchedMonsters(archerPower) {
 
   families.forEach(family => {
     // 篩選該族在可出現階級內的怪物
+    // ⚠️ 必須排除 isKing：王怪只該從王房取得，不該出現在一般打怪清單
     const candidates = MONSTERS.filter(m =>
-      m.family === family && tierPool.includes(m.tier)
+      m.family === family && tierPool.includes(m.tier) && !m.isKing
     );
     let monster;
     if (candidates.length === 0) {
       // fallback：取該族最低階
-      const fallback = MONSTERS.filter(m => m.family === family)
+      const fallback = MONSTERS.filter(m => m.family === family && !m.isKing)
         .sort((a,b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
       if (fallback.length === 0) return;
       monster = fallback[0];
@@ -651,12 +652,15 @@ export function drawMixedMonsterPool(count, variant, tier) {
       const treasureMonster = treasurePool[Math.floor(Math.random() * treasurePool.length)];
       if (treasureMonster) return applyVariant(treasureMonster, variant);
     }
+    // ⚠️ 必須排除 isKing：小王/大王只該出現在王房。
+    // 舊寫法只有上面的寶箱族彩蛋有擋 isKing，這條主線沒擋，導致一般樓層
+    // 有機率刷出王怪（使用者實際回報：單人／組隊打怪都會遇到）。
     const candidates = MONSTERS.filter(m =>
-      m.family === family && m.tier === tierKey
+      m.family === family && m.tier === tierKey && !m.isKing
     );
     let monster;
     if (candidates.length === 0) {
-      const fallback = MONSTERS.filter(m => m.family === family)
+      const fallback = MONSTERS.filter(m => m.family === family && !m.isKing)
         .sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
       monster = fallback[0] || MONSTERS.find(m => m.family === family);
     } else {
