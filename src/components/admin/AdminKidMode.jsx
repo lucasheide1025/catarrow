@@ -338,7 +338,12 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
   //    正確做法是沿用既有 uid 與 email，只補學籍欄位。
   // ② QR 碼匿名訪客（resolveGuestSession → signInAnonymously）→ 沒有任何登入憑證，
   //    不設一組 email/password 的話，轉正後學生根本無法登入，所以仍要填。
-  const hasOwnLogin = !!(account.hasPassword && (account.email || account.contactRaw));
+  //
+  // 2026-07-19 使用者確認：實務上現存的訪客帳號都是官網註冊來的（QR 臨時帳號只是玩玩、
+  // 不會轉正），所以判斷刻意放寬 —— email 欄位或 hasPassword 任一成立就走沿用路徑。
+  // 只用 hasPassword 的話，早期資料若缺這個欄位會被誤判成匿名帳號，又繞回建帳號、
+  // 又撞信箱重複。QR 匿名帳號不會寫 email 欄位（只有 contactRaw），仍能正確分流。
+  const hasOwnLogin = !!(account.email || account.hasPassword);
   const existingEmail = (account.email || account.contactRaw || "").trim();
 
   async function save() {
@@ -404,8 +409,9 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
             </div>
           ) : (
             <>
-              <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl px-3 py-2 text-slate-300 text-xs mb-3">
-                這是 QR 碼匿名帳號，沒有登入憑證。請設定一組信箱與密碼，學生之後才能登入。
+              <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl px-3 py-2 text-slate-300 text-xs mb-3 leading-relaxed">
+                這是 QR 碼臨時帳號，沒有登入憑證，通常不需要轉正式。
+                <div className="text-slate-400 mt-1">若確定要轉，請設定一組信箱與密碼，學生之後才能登入。</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {f("email", "電子信箱", "email")}
