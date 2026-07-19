@@ -1,0 +1,78 @@
+#!/bin/sh
+# .githooks/pre-commit — 機密檔案防堵（2026-07-19）
+#
+# 為什麼需要這個：.gitignore 只能擋「未被追蹤」的新檔案。以下兩種情況它完全無效：
+#   ① git add -f 強制加入
+#   ② 檔案已經被追蹤過（之後的每次修改都照樣進得去）
+# 這個 hook 檢查的是「即將被提交的內容」，所以兩種情況都擋得住。
+#
+# 啟用方式（每台機器 clone 後跑一次）：
+#   git config core.hooksPath .githooks
+#
+# 真的需要強行提交時：git commit --no-verify（請先確定你知道自己在做什麼）
+
+fail=0
+
+note() {
+  if [ "$fail" -eq 0 ]; then
+    echo ""
+    echo "🚫 提交被擋下：偵測到機密內容"
+    echo "───────────────────────────────────────────────"
+  fi
+  fail=1
+  echo "$1"
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+# ── ① 檔名黑名單 ────────────────────────────────────────────
+for file in $staged; do
+  case "$file" in
+    serviceAccountKey*.json|*/serviceAccountKey*.json)
+      note "  ✗ $file  ← Firebase 服務帳戶金鑰（可繞過所有 Firestore Rules）" ;;
+    firebase-adminsdk*.json|*/firebase-adminsdk*.json)
+      note "  ✗ $file  ← Firebase Admin SDK 金鑰" ;;
+    *credentials*.json|*-service-account*.json)
+      note "  ✗ $file  ← 疑似服務帳戶憑證" ;;
+    *.pem|*.p12|*.pfx|*.key)
+      note "  ✗ $file  ← 私鑰／憑證檔" ;;
+    id_rsa|id_rsa.*|*/id_rsa|*/id_rsa.*)
+      note "  ✗ $file  ← SSH 私鑰" ;;
+    .env|.env.local|.env.*.local|.env.*.txt|*/.env|*/.env.local|*/.env.*.txt)
+      note "  ✗ $file  ← 環境變數檔" ;;
+  esac
+done
+
+# ── ② 內容掃描：改名躲過黑名單也擋得住 ──────────────────────
+# 只掃暫存區的內容（不是工作目錄），避免誤判尚未 add 的檔案。
+for file in $staged; do
+  # 二進位檔（圖片等）跳過，省時且不會有誤判
+  if git diff --cached --numstat -- "$file" | grep -q '^-	-	'; then
+    continue
+  fi
+  content=$(git show ":$file" 2>/dev/null) || continue
+
+  if printf '%s' "$content" | grep -q "BEGIN [A-Z ]*PRIVATE KEY"; then
+    note "  ✗ $file  ← 內含 PRIVATE KEY 區塊"
+  elif printf '%s' "$content" | grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"'; then
+    note "  ✗ $file  ← 內含 service_account 憑證結構"
+  elif printf '%s' "$content" | grep -qE '"private_key"[[:space:]]*:[[:space:]]*"-----BEGIN'; then
+    note "  ✗ $file  ← 內含 private_key 欄位"
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "───────────────────────────────────────────────"
+  echo "處理方式："
+  echo "  1. 從暫存區移除：git restore --staged <檔案>"
+  echo "  2. 確認它在 .gitignore 裡"
+  echo "  3. 若該檔已被追蹤過：git rm --cached <檔案>"
+  echo ""
+  echo "⚠️ 若金鑰曾經被推上遠端，改 .gitignore 沒有用 ——"
+  echo "   必須到 Google Cloud Console 撤銷並重新產生金鑰。"
+  echo ""
+  exit 1
+fi
+
+exit 0

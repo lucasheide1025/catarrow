@@ -1,9 +1,24 @@
 node_modules/
 build/
+
+# ── 機密檔案（另有 .githooks/pre-commit 硬擋，gitignore 只是第一道）──────
+# ⚠️ gitignore 擋不住兩種情況：① git add -f 強制加入 ② 檔案「已經」被追蹤。
+# 真正的防線是 pre-commit hook，見 .githooks/pre-commit。
+.env
 .env.local
 .env.*.local
-.DS_Store.tmp.driveupload/ 
-serviceAccountKey.json
+.env.*.txt
+serviceAccountKey*.json
+firebase-adminsdk*.json
+*credentials*.json
+*-service-account*.json
+*.pem
+*.p12
+*.pfx
+id_rsa*
+*.key
+!public/**/*.key
+.DS_Store.tmp.driveupload/
 .tmp.driveupload/
 backup_*.json
 restore.js

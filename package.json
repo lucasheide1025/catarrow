@@ -16,7 +16,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test"
+    "test": "react-scripts test",
+    "prepare": "git config core.hooksPath .githooks || exit 0"
   },
   "browserslist": {
     "production": [
