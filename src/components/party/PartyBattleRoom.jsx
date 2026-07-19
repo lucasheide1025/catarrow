@@ -730,6 +730,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return a.id < b.id ? -1 : 1;
     });
   const me         = members[myId] || {};
+  // 怪物技能的 atkDown/defDown 會即時反映在戰鬥面板上（扣完的數值），異常到期後自動復原。
+  // 只寫百分比玩家無感，所以這裡直接把面板數字改成受影響後的實際值。
+  const myEffectiveStats = (() => {
+    const baseAtk = me?.atk || 10;
+    const baseDef = me?.def || 10;
+    let atkMult = 1;
+    let defMult = 1;
+    for (const status of me?.combatStatuses || []) {
+      if (!status || (status.duration || 0) <= 0) continue;
+      if (status.id === "atkDown") atkMult *= Math.max(0, 1 - (status.strength || 0) / 100);
+      if (status.id === "defDown") defMult *= Math.max(0, 1 - (status.strength || 0) / 100);
+    }
+    return {
+      atk: Math.round(baseAtk * atkMult),
+      def: Math.round(baseDef * defMult),
+      baseAtk, baseDef,
+      atkDebuffed: atkMult < 1,
+      defDebuffed: defMult < 1,
+    };
+  })();
   const aliveCount = memberList.filter(m => m.alive).length;
   const myReady    = me.ready || false;
   // 角色以資料庫剛寫回的值為準，避免轉為後衛的第一輪仍送出前衛資料。
@@ -2042,8 +2062,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               player={{
                 name: profile?.nickname || profile?.name || me?.name || "Player",
                 lv: me?.level || 1,
-                atk: me?.atk || 10,
-                def: me?.def || 10,
+                atk: myEffectiveStats.atk,
+                def: myEffectiveStats.def,
                 hp: me?.hp || 100,
                 maxHp: me?.maxHP || 100,
                 cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",
@@ -2155,8 +2175,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             player={{
               name: profile?.nickname || profile?.name || me?.name || "Player",
               lv: me?.level || 1,
-              atk: me?.atk || 10,
-              def: me?.def || 10,
+              atk: myEffectiveStats.atk,
+              def: myEffectiveStats.def,
               hp: me?.hp || 100,
               maxHp: me?.maxHP || 100,
               cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",

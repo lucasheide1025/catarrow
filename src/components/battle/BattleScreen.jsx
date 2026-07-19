@@ -1183,9 +1183,16 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
           <div style={{fontSize:12,fontWeight:900,color:tone.c,marginTop:4}}>{tone.t}</div>
           {skillFx.summary&&<div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.5,marginTop:5}}>{skillFx.summary}</div>}
           {skillFx.partyDamage>0&&<div style={{fontSize:12,fontWeight:900,color:"#fca5a5",marginTop:3}}>💥 你受到 {skillFx.partyDamage} 傷害</div>}
-          {(skillFx.statuses?.length?skillFx.statuses:skillFx.status?[skillFx.status]:[]).map((st,i)=>(
-            <div key={i} style={{fontSize:11,color:"#fca5a5",marginTop:2}}>🌀 {st.name||st.id}{typeof st.strength==="number"?` -${st.strength}%`:""}（{st.duration||1} 回合）</div>
-          ))}
+          {/* 附加狀態要寫出「實際扣了幾點」，只給百分比玩家無感 */}
+          {(skillFx.statuses?.length?skillFx.statuses:skillFx.status?[skillFx.status]:[]).map((st,i)=>{
+            const pct=typeof st.strength==="number"?st.strength:null;
+            const base=st.id==="atkDown"?battle.playerAtk:st.id==="defDown"?battle.playerDef:st.id==="poison"?battle.playerMaxHp:null;
+            const points=pct!==null&&Number.isFinite(base)?Math.round(base*pct/100):null;
+            const suffix=points>0?(st.id==="poison"?`，每回合 -${points} HP`:`，-${points} 點`):"";
+            return <div key={i} style={{fontSize:11,color:"#fca5a5",marginTop:2}}>
+              🌀 {st.name||st.id}{pct!==null?` -${pct}%`:""}{suffix}（{st.duration||1} 回合）
+            </div>;
+          })}
           {skillFx.selfShieldMaxHpPct>0&&<div style={{fontSize:11,color:"#93c5fd",marginTop:2}}>🛡 怪物獲得護盾</div>}
           {skillFx.delayedMult>0&&<div style={{fontSize:11,color:"#fdba74",marginTop:2}}>⏳ 蓄力中：下回合追加攻擊！</div>}
           {skillFx.monsterHealMaxHpPct>0&&<div style={{fontSize:11,color:"#86efac",marginTop:2}}>💚 怪物回復 {skillFx.monsterHealMaxHpPct}% 最大生命</div>}

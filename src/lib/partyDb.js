@@ -27,15 +27,36 @@ const BREAK_TEXT = {
   none:    "💢 未能破解，全額生效",
 };
 
-function buildAbilityMessage({ monsterName, ability, targetName }) {
+// 異常狀態轉成「玩家看得懂的實際數字」。只寫百分比玩家無感，要換算成實際扣了幾點。
+const STATUS_LABEL = { atkDown:"攻擊力下降", defDown:"防禦力下降", poison:"中毒" };
+
+function describeStatus(status, targetStats) {
+  const label = status.name || STATUS_LABEL[status.id] || status.id;
+  const pct = typeof status.strength === "number" ? status.strength : null;
+  const rounds = status.duration || 1;
+  if (pct === null) return `${label}（${rounds} 回合）`;
+  // 換算實際點數：atkDown 看 ATK、defDown 看 DEF、poison 看最大 HP
+  const base = status.id === "atkDown" ? targetStats?.atk
+    : status.id === "defDown" ? targetStats?.def
+    : status.id === "poison" ? targetStats?.maxHP
+    : null;
+  const points = Number.isFinite(base) ? Math.round(base * pct / 100) : null;
+  const pointText = points > 0
+    ? (status.id === "poison" ? `每回合 -${points} HP` : `-${points} 點`)
+    : null;
+  return `${label} -${pct}%${pointText ? `（${pointText}）` : ""}・${rounds} 回合`;
+}
+
+function buildAbilityMessage({ monsterName, ability, targetName, targetStats }) {
   const name = ability?.resolved?.name || ability?.scheduled?.name || "技能";
   const target = targetName ? `鎖定 ${targetName}` : "全隊";
   const level = ability?.resolved?.outcome?.level;
   const parts = [`⚡ ${monsterName} 發動「${name}」（${target}）`];
   if (level) parts.push(BREAK_TEXT[level] || BREAK_TEXT.none);
   const statuses = ability?.resolved?.statuses || [];
+  // 完全破解時 statuses 已被引擎清空，這裡自然不會有多餘訊息
   if (statuses.length) {
-    parts.push(`附加 ${statuses.map(s => s.name || s.id).join("、")}`);
+    parts.push(`附加 ${statuses.map(s => describeStatus(s, targetStats)).join("、")}`);
   }
   if ((ability?.resolved?.selfShieldMaxHpPct || 0) > 0) parts.push("怪物展開護盾");
   if ((ability?.resolved?.delayedMult || 0) > 0) parts.push("蓄力中，下回合追加攻擊");
@@ -852,6 +873,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
           monsterName: room.monster?.name || "怪物",
           ability: partyAbility,
           targetName: partyAbility.targetId ? (members[partyAbility.targetId]?.name || "隊友") : null,
+          // 用被鎖定者的數值換算實際點數；全隊技能取房主當代表值（各人 ATK 相近，僅供顯示）
+          targetStats: members[partyAbility.targetId || room.hostId] || null,
         }),
       } : {}),
       statusTicks:Object.fromEntries(aliveIds.filter(id => statusRoundByMember[id]?.ticks?.length).map(id => [id, statusRoundByMember[id].ticks])),
