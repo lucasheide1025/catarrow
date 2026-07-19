@@ -20,6 +20,15 @@ const displayedPartyEventTokens = new Set();
 import { sfxTap } from "../../lib/sound";
 import { TargetFaceInput } from "../shared/TargetFaceOverlay";
 import { getTargetScoreLabels } from "../../lib/targetFace";
+import { getMonsterScheduledAbility } from "../../lib/monsterSkillSchedule";
+import { mergeCombatStatus, resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
+import { getSpecializationEffect } from "../../lib/equipmentSpecializationEngine";
+import { getEquipSpecializations } from "../../lib/equipSpecializationDb";
+import { addRoundArrows, subscribeCardCollection } from "../../lib/db";
+import { getBreakRuleText } from "../../lib/combatSkillEngine";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+import { useAuth } from "../../hooks/useAuth";
+import { createBattleScreenSnapshot, restoreBattleScreenSnapshot } from "../../lib/battleScreenSnapshot";
 
 function StatGlyph({ type, color }) {
   const path = type === "hp" ? <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.4A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /> : type === "atk" ? <><path d="m14 5 5 5-9 9-5-5 9-9Z" /><path d="m4 20 3-3" /></> : <><path d="M12 3 19 6v5c0 4.5-3 7-7 10-4-3-7-5.5-7-10V6l7-3Z" /><path d="M9 12h6M12 9v6" /></>;
@@ -137,7 +146,21 @@ const initBattle = {
   monsterName:"", monsterFamily:"", battleMode:"score", unlockedParts:new Set(),
   playerHp:0, playerMaxHp:0, playerAtk:0, playerDef:0, roundDmg:0, roundCrits:0, totalDmgAllRounds:0,
   counterDmg:0, pendingCounter:0, potionShield:0, messages:[], lastArrowDmg:0, lastArrowCrit:false, lastArrowPart:"",
+  activeStatuses:[], lastAbilityResolution:null,
+  // 招牌技能戰場狀態（signatureAbilityEngine）：怪物護盾/減傷、延遲攻擊、風險標記/挑戰加成
+  monsterShield:0, monsterReducePct:0, monsterReduceRound:0, pendingDelayedMult:0, hqMarkPct:0, nextRoundDmgBuffPct:0,
+  // 裝備專精（每 slot 一條啟用）：{ weapon:{trackId,level}|null, armor:..., accessory:... }
+  equipSpec:null, monsterBossTagged:false,
+  // 卡片天賦+族系套裝彙總（cardTalents.calcCardCombatEffects;null=未載入/訪客）
+  cardFx:null,
 };
+
+function effectivePlayerStat(state, stat) {
+  const base = stat === "atk" ? state.playerAtk : state.playerDef;
+  const statusId = stat === "atk" ? "atkDown" : "defDown";
+  const reduction = (state.activeStatuses || []).find(status => status.id === statusId)?.strength || 0;
+  return Math.max(0, base * (1 - reduction / 100));
+}
 
 function computeUnlocked(arrows) {
   const set = new Set();
@@ -151,14 +174,49 @@ function battleReducer(state, action) {
     case"START":{
       const{monster,diff,battleMode}=action;
       const mMaxHp=Math.round((monster.maxHp ?? monster.hp)*diff.hp);const mHp=Math.min(mMaxHp,Math.round(monster.hp*diff.hp));const mAtk=Math.round(monster.atk*diff.atk);const mDef=Math.round(monster.def*diff.def);
-      return{...initBattle,phase:PHASE.INTRO,battleMode:battleMode||"score",monsterHp:mHp,monsterMaxHp:mHp,monsterAtk:mAtk,monsterDef:mDef,monsterName:monster.name,monsterFamily:monster.family,playerHp:action.playerHp||action.playerMaxHp||initBattle.playerHp,playerMaxHp:action.playerMaxHp||initBattle.playerMaxHp,playerAtk:action.playerAtk||initBattle.playerAtk,playerDef:action.playerDef||initBattle.playerDef,messages:[action.hideMonsterStats?`⚔️ 戰鬥開始！對上 ${monster.name}`:`⚔️ 戰鬥開始！對上 ${monster.name}（HP:${mHp} ATK:${mAtk} DEF:${mDef}）`,battleMode==="zombie"?"🧟 殭屍靶模式：分數決定命中部位，高部位倍率最高 ×3.0！":"🎯 分數靶模式：每箭依環數計算傷害。"]};
+      // 飾品「營養」：開場加最大 HP（equipmentSpecializationEngine）
+      const equipSpec=action.equipSpec||null;
+      const nutritionHp=equipSpec?.accessory?.trackId==="nutrition"?getSpecializationEffect("nutrition",equipSpec.accessory.level).maxHpFlat:0;
+      const basePlayerMaxHp=(action.playerMaxHp||initBattle.playerMaxHp);
+      const basePlayerHp=action.playerHp||action.playerMaxHp||initBattle.playerHp;
+      // 卡片天賦/套裝：威嚇/破防（常駐壓怪物面板）、開場護盾
+      const cardFx=action.cardFx||null;
+      const fxAtk=cardFx?.monsterAtkDownPct?Math.max(1,Math.round(mAtk*(1-cardFx.monsterAtkDownPct/100))):mAtk;
+      const fxDef=cardFx?.monsterDefDownPct?Math.max(0,Math.round(mDef*(1-cardFx.monsterDefDownPct/100))):mDef;
+      const openShield=cardFx?.openingShieldPct?Math.round((basePlayerMaxHp+nutritionHp)*cardFx.openingShieldPct/100):0;
+      return{...initBattle,phase:PHASE.INTRO,battleMode:battleMode||"score",monsterHp:mHp,monsterMaxHp:mHp,monsterAtk:fxAtk,monsterDef:fxDef,monsterName:monster.name,monsterFamily:monster.family,playerHp:basePlayerHp+nutritionHp,playerMaxHp:basePlayerMaxHp+nutritionHp,playerAtk:action.playerAtk||initBattle.playerAtk,playerDef:action.playerDef||initBattle.playerDef,potionShield:openShield,
+      equipSpec,cardFx,monsterBossTagged:!!(monster.bossTagged||(monster.encounter&&monster.encounter!=="normal")),
+      messages:[action.hideMonsterStats?`⚔️ 戰鬥開始！對上 ${monster.name}`:`⚔️ 戰鬥開始！對上 ${monster.name}（HP:${mHp} ATK:${mAtk} DEF:${mDef}）`,battleMode==="zombie"?"🧟 殭屍靶模式：分數決定命中部位，高部位倍率最高 ×3.0！":"🎯 分數靶模式：每箭依環數計算傷害。"]};
     }
     case"SCORE_ARROW":{
       if(state.arrowIdx>=action.arrowsPerRound)return state;
       const{score,battleMode,displayLabel}=action;const isX=score==="X";const numScore=isX?10:(score==="M"?0:score);const isZombie=battleMode==="zombie";
       let part=null,partMult=1.0,newUnlocked=new Set(state.unlockedParts||[]);
       if(isZombie){part=resolveHitPart(numScore,newUnlocked,isX);if(part){partMult=part.mult;if(part.id==="chest"){newUnlocked.add("chest");newUnlocked.add("heart");newUnlocked.add("lung");}if(part.id==="belly"){newUnlocked.add("belly");newUnlocked.add("kidney");}if(part.id==="groin"){newUnlocked.add("groin");newUnlocked.add("balls");}}}
-      const dmg=action.previewDamage===false?0:calcStandardArrowDmg(numScore,state.playerAtk,state.monsterDef,partMult,score);const isCrit=action.previewDamage===false?false:(isZombie?(part&&part.mult>=1.8):isX);
+      // 武器專精「破甲」：無視怪物防禦 X%（傷害公式吃 effDef）
+      const wSpec=state.equipSpec?.weapon;
+      let monDef=state.monsterDef;
+      if(wSpec?.trackId==="armorBreak")monDef=Math.max(0,monDef*(1-getSpecializationEffect("armorBreak",wSpec.level).defenseIgnorePct/100));
+      // 卡片天賦「穿甲」與專精破甲疊加
+      if(state.cardFx?.armorPiercePct)monDef=Math.max(0,monDef*(1-state.cardFx.armorPiercePct/100));
+      let dmg=action.previewDamage===false?0:calcStandardArrowDmg(numScore,effectivePlayerStat(state,"atk"),monDef,partMult,score);
+      let extraCrit=false;
+      if(dmg>0){
+        // 武器專精「精準」（高品質命中）/「獵王」（王類）
+        if(wSpec?.trackId==="precision"&&(isX||numScore>=8))dmg=Math.round(dmg*(1+getSpecializationEffect("precision",wSpec.level).highQualityDamagePct/100));
+        if(wSpec?.trackId==="bossHunter"&&state.monsterBossTagged)dmg=Math.round(dmg*(1+getSpecializationEffect("bossHunter",wSpec.level).bossDamagePct/100));
+        // 卡片天賦/套裝：傷害/高品質/對王加成、連擊爆擊率
+        const fx=state.cardFx;
+        if(fx?.damagePct)dmg=Math.round(dmg*(1+fx.damagePct/100));
+        if(fx?.hqDamagePct&&(isX||numScore>=8))dmg=Math.round(dmg*(1+fx.hqDamagePct/100));
+        if(fx?.bossDamagePct&&state.monsterBossTagged)dmg=Math.round(dmg*(1+fx.bossDamagePct/100));
+        if(fx?.critRatePct&&!isX&&numScore>0&&Math.random()<fx.critRatePct/100){extraCrit=true;dmg=Math.round(dmg*1.3);}
+        // 招牌自身減傷（期限內）→ 高品質標記加成（8環+/X）→ 挑戰完成加成
+        if(state.monsterReducePct&&(state.monsterReduceRound||0)>=state.round)dmg=Math.max(1,Math.round(dmg*(1-state.monsterReducePct/100)));
+        if(state.hqMarkPct&&(isX||numScore>=8))dmg=Math.round(dmg*(1+state.hqMarkPct/100));
+        if(state.nextRoundDmgBuffPct)dmg=Math.round(dmg*(1+state.nextRoundDmgBuffPct/100));
+      }
+      const isCrit=action.previewDamage===false?false:(isZombie?(part&&part.mult>=1.8):(isX||extraCrit));
       const newArrows=[...state.arrows,{score,displayLabel:displayLabel||score,dmg,isCrit,part:isZombie?part:null}];
       return{...state,arrows:newArrows,arrowIdx:state.arrowIdx+1,unlockedParts:isZombie?newUnlocked:(state.unlockedParts||new Set()),lastArrowDmg:dmg,lastArrowCrit:isCrit,lastArrowPart:isZombie&&part?`${part.icon} ${part.name} ×${part.mult}`:(numScore===0?"脫靶":(isX?"X環":`${numScore}環`))};
     }
@@ -168,23 +226,91 @@ function battleReducer(state, action) {
     }
     case"SUBMIT_ROUND":{
       const{skipCounter,counterReduce}=action;const totalDmg=state.arrows.reduce((s,a)=>s+a.dmg,0);const crits=state.arrows.filter(a=>a.isCrit).length;
-      const shieldAbsorb=Math.min(state.potionShield||0,state.monsterAtk*2);const rawCounter=skipCounter===true?0:calcStandardCounter(state.monsterAtk,state.playerDef);
-      const pendingCounter=Math.max(0,Math.round(rawCounter*(1-(counterReduce||0)/100)-shieldAbsorb));
-      return{...state,roundDmg:totalDmg,roundCrits:crits,totalDmgAllRounds:(state.totalDmgAllRounds||0)+totalDmg,pendingCounter,counterDmg:pendingCounter,phase:PHASE.PROCESSING};
+      const reso=action.abilityResolution||null;
+      // 多重狀態合併（同名刷新/最多3種/同能力40% cap 由 mergeCombatStatus 保證）;lowerStatDown 動態挑較低能力（天平裁界）
+      const aSpec=state.equipSpec?.armor;
+      const immunityEffect=aSpec?.trackId==="immunity"?getSpecializationEffect("immunity",aSpec.level):null;
+      const fxSubmit=state.cardFx||{};
+      const incomingList=(reso?.statuses&&reso.statuses.length?reso.statuses:(reso?.status?[reso.status]:[])).map(st=>{
+        let next=st;
+        if(next.id==="lowerStatDown"){const stat=state.playerAtk<=state.playerDef?"atk":"def";next={...next,id:`${stat}Down`,stat};}
+        // 防具專精「免疫」：先降強度、再縮回合、最低 1 回合（PRD 順序）
+        if(immunityEffect)next={...next,
+          strength:typeof next.strength==="number"?Math.max(0,Math.round(next.strength*(1-immunityEffect.statusStrengthReductionPct/100)*10)/10):next.strength,
+          duration:Math.max(1,(next.duration||1)-immunityEffect.statusDurationReduction)};
+        // 鬼怪套裝：異常強度/持續再削（cardTalents）
+        if(fxSubmit.statusStrengthReductionPct&&typeof next.strength==="number")next={...next,strength:Math.max(0,Math.round(next.strength*(1-fxSubmit.statusStrengthReductionPct/100)*10)/10)};
+        if(fxSubmit.statusDurationReduction)next={...next,duration:Math.max(1,(next.duration||1)-fxSubmit.statusDurationReduction)};
+        return next;
+      });
+      let activeStatuses=state.activeStatuses||[];
+      for(const st of incomingList){
+        activeStatuses=mergeCombatStatus(activeStatuses,st);
+        activeStatuses=activeStatuses.map(status=>status.id===st.id?{...status,expiresAfterRound:state.round+(status.duration||1)}:status);
+      }
+      const poison=(state.activeStatuses||[]).find(status=>status.id==="poison"&&(status.expiresAfterRound||0)>=state.round);
+      // 毒蟲套裝：毒傷減免（50=減半,100=免疫）
+      const poisonMult=Math.max(0,1-(fxSubmit.poisonResistPct||0)/100);
+      const poisonDamage=poison?Math.min(Math.max(0,state.playerHp-1),Math.ceil(state.playerMaxHp*(poison.strength||0)/100*poisonMult)):0;
+      const statusState={...state,activeStatuses};
+      // 反擊：招牌有傷害積木時「取代」標準反擊（含穿甲/破盾;倍率已含破解減幅）
+      const effDef=effectivePlayerStat(statusState,"def");
+      const skillMult=reso?.skillDamageMult||0;
+      const baseCounter=skipCounter===true?0:calcStandardCounter(state.monsterAtk,skillMult>0?effDef*(1-(reso?.pierceDefPct||0)/100):effDef);
+      const rawCounter=skillMult>0?Math.round(baseCounter*skillMult):baseCounter;
+      // 上回合延遲攻擊（倍率已含當時破解減幅）本回合落地
+      const delayedExtra=state.pendingDelayedMult?Math.round(calcStandardCounter(state.monsterAtk,effDef)*state.pendingDelayedMult):0;
+      const shieldBase=Math.min(state.potionShield||0,state.monsterAtk*2);
+      const shieldAbsorb=Math.round(shieldBase*(1-(skillMult>0?(reso?.pierceShieldPct||0):0)/100));
+      // 防具專精「堅韌」（常駐減傷）/「守勢」（HP≤35% 時減傷）：套在破解減幅之後、護盾之前（PRD 19 順序）
+      let armorReducePct=0;
+      if(aSpec?.trackId==="tenacity")armorReducePct=getSpecializationEffect("tenacity",aSpec.level).finalDamageReductionPct;
+      else if(aSpec?.trackId==="guard"&&state.playerMaxHp>0&&state.playerHp/state.playerMaxHp<=0.35)armorReducePct=getSpecializationEffect("guard",aSpec.level).finalDamageReductionPct;
+      armorReducePct=Math.min(80,armorReducePct+(fxSubmit.damageReductionPct||0)); // 卡片天賦「堅盾」疊加
+      const armoredCounter=Math.round(rawCounter*(1-armorReducePct/100));
+      const armoredDelayed=Math.round(delayedExtra*(1-armorReducePct/100));
+      const pendingCounter=Math.max(0,Math.round(armoredCounter*(1-(counterReduce||0)/100)-shieldAbsorb))+armoredDelayed;
+      // 有限反射：本回合玩家輸出 n%,單次上限最大HP 15%,不致死
+      const reflectDamage=reso?.selfReflectPct?Math.min(Math.round(totalDmg*reso.selfReflectPct/100),Math.round(state.playerMaxHp*0.15)):0;
+      // 怪物自身效果（護盾/減傷,完全破解時 resolver 已歸零）
+      const monsterShield=reso?.selfShieldMaxHpPct?Math.max(state.monsterShield||0,Math.round(state.monsterMaxHp*reso.selfShieldMaxHpPct/100)):(state.monsterShield||0);
+      const keepReduce=(state.monsterReduceRound||0)>state.round;
+      const monsterReducePct=reso?.selfReductionPct||(keepReduce?state.monsterReducePct:0);
+      const monsterReduceRound=reso?.selfReductionPct?state.round+(reso.selfReductionDuration||1):(keepReduce?state.monsterReduceRound:0);
+      const monsterHeal=reso?.monsterHealMaxHpPct?Math.round(state.monsterMaxHp*reso.monsterHealMaxHpPct/100):0;
+      return{...state,playerHp:Math.max(1,state.playerHp-poisonDamage-reflectDamage),monsterHp:Math.min(state.monsterMaxHp,state.monsterHp+monsterHeal),activeStatuses,lastAbilityResolution:reso,roundDmg:totalDmg,roundCrits:crits,totalDmgAllRounds:(state.totalDmgAllRounds||0)+totalDmg,pendingCounter,counterDmg:pendingCounter,
+        pendingDelayedMult:reso?.delayedMult||0,monsterShield,monsterReducePct,monsterReduceRound,
+        hqMarkPct:reso?.hqMarkPct||0,nextRoundDmgBuffPct:reso?.challenge?.damageBuffPct||0,
+        phase:PHASE.PROCESSING};
     }
-    case"HIT_MONSTER":return{...state,monsterHp:Math.max(0,state.monsterHp-(action.dmg||0))};
+    case"HIT_MONSTER":{const shield=state.monsterShield||0;const absorbed=Math.min(shield,action.dmg||0);return{...state,monsterShield:shield-absorbed,monsterHp:Math.max(0,state.monsterHp-((action.dmg||0)-absorbed))};}
     case"MONSTER_DIED":return{...state,phase:PHASE.VICTORY_ANIM,messages:[...state.messages,`💀 ${state.monsterName} 被擊倒！`,`🏹 第${state.round}回合：${state.roundDmg} 傷害（${state.roundCrits} 爆擊）`]};
-    case"APPLY_COUNTER":{const n=Math.max(0,state.playerHp-(state.pendingCounter||0));return{...state,playerHp:n,phase:n<=0?PHASE.LOST:state.phase,messages:[...state.messages,`🏹 第${state.round}回合：${state.roundDmg} 傷害（${state.roundCrits} 爆擊）`,`💥 怪物反擊：${state.pendingCounter} 傷害`]};}
+    case"APPLY_COUNTER":{
+      let n=Math.max(0,state.playerHp-(state.pendingCounter||0));
+      const extraMsgs=[];
+      // 飾品專精「睡飽」：回合末回復;倒地不觸發（不可復活）
+      const acc=state.equipSpec?.accessory;
+      if(n>0&&acc?.trackId==="wellRested"){
+        const heal=getSpecializationEffect("wellRested",acc.level).endRoundHeal;
+        if(heal>0){n=Math.min(state.playerMaxHp,n+heal);extraMsgs.push(`😴 睡飽專精：回復 ${heal} HP`);}
+      }
+      // 卡片天賦「汲取」/山林套裝：回合末回復（倒地不觸發）
+      if(n>0&&state.cardFx?.endRoundHeal){
+        const heal=Math.round(state.cardFx.endRoundHeal);
+        if(heal>0){n=Math.min(state.playerMaxHp,n+heal);extraMsgs.push(`🌿 卡片加護：回復 ${heal} HP`);}
+      }
+      return{...state,playerHp:n,phase:n<=0?PHASE.LOST:state.phase,messages:[...state.messages,`🏹 第${state.round}回合：${state.roundDmg} 傷害（${state.roundCrits} 爆擊）`,`💥 怪物反擊：${state.pendingCounter} 傷害`,...extraMsgs]};}
     case"PARTY_COUNTER_HIT":{const n=Math.max(0,state.playerHp-(action.dmg||0));return{...state,playerHp:n,messages:[...state.messages,`💥 怪物反擊：${action.dmg||0} 傷害`]};}
     case"CARRY_BUFF":{const{atkAdd,defAdd,heal,shieldHp,buffMsgs,name}=action;return{...state,playerAtk:state.playerAtk+(atkAdd||0),playerDef:state.playerDef+(defAdd||0),playerHp:Math.min(state.playerMaxHp,state.playerHp+(heal||0)),potionShield:Math.max(state.potionShield||0,shieldHp||0),messages:[...state.messages,...(buffMsgs||[`⚗️ ${name||"藥水"} 效果發動！`])]};}
-    case"THROW_DMG":{const dmg=action.dmg;const nhp=Math.max(0,state.monsterHp-dmg);return{...state,monsterHp:nhp,phase:nhp<=0?PHASE.VICTORY_ANIM:state.phase,messages:[...state.messages,action.msg||`🔪 投擲傷害：${dmg}`]};}
+    case"THROW_DMG":{const shield=state.monsterShield||0;const absorbed=Math.min(shield,action.dmg||0);const dmg=(action.dmg||0)-absorbed;const nhp=Math.max(0,state.monsterHp-dmg);return{...state,monsterShield:shield-absorbed,monsterHp:nhp,phase:nhp<=0?PHASE.VICTORY_ANIM:state.phase,messages:[...state.messages,action.msg||`🔪 投擲傷害：${dmg}`]};}
     case"DEBUFF_MONSTER":{const{monAtkPct,monDefPct,msg}=action;return{...state,monsterAtk:monAtkPct?Math.max(1,Math.round(state.monsterAtk*(1-monAtkPct/100))):state.monsterAtk,monsterDef:monDefPct?Math.max(0,Math.round(state.monsterDef*(1-monDefPct/100))):state.monsterDef,messages:[...state.messages,msg||`🧴 怪物被削弱！`]};}
     case"HEAL":{const h=Math.min(state.playerMaxHp,state.playerHp+(action.amount||0));return{...state,playerHp:h,messages:[...state.messages,`💚 回復 ${action.amount} HP`]};}
     case"START_PLAYING":return{...state,phase:PHASE.PLAYING};
     case"SHOW_WON":return{...state,phase:PHASE.WON};
     case"NEXT_PHASE":return state.phase===PHASE.PROCESSING?{...state,phase:PHASE.ROUND_RES}:state;
-    case"NEXT_ROUND":return{...state,phase:PHASE.PLAYING,round:state.round+1,arrowIdx:0,arrows:[],roundDmg:0,roundCrits:0,counterDmg:0,lastArrowDmg:0,lastArrowCrit:false,lastArrowPart:""};
+    case"NEXT_ROUND":{const nextRound=state.round+1;return{...state,phase:PHASE.PLAYING,round:nextRound,arrowIdx:0,arrows:[],roundDmg:0,roundCrits:0,counterDmg:0,lastArrowDmg:0,lastArrowCrit:false,lastArrowPart:"",lastAbilityResolution:null,activeStatuses:(state.activeStatuses||[]).filter(status=>(status.expiresAfterRound||0)>=nextRound)};}
     case"SYNC_EXTERNAL":return{...state,playerHp:action.playerHp,playerMaxHp:action.playerMaxHp,playerAtk:action.playerAtk,playerDef:action.playerDef,monsterHp:action.monsterHp,monsterMaxHp:action.monsterMaxHp,monsterAtk:action.monsterAtk,monsterDef:action.monsterDef};
+    case"RESTORE_SNAPSHOT":return{...initBattle,...action.battle};
     case"EXTERNAL_MESSAGE":return{...state,messages:[...state.messages,action.message].slice(-4)};
     case"RESET":return{...initBattle,playerHp:action.playerHp||initBattle.playerHp,playerMaxHp:action.playerMaxHp||initBattle.playerMaxHp,playerAtk:action.playerAtk||initBattle.playerAtk,playerDef:action.playerDef||initBattle.playerDef};
     default:return state;
@@ -221,19 +347,46 @@ function partyEventEffectText(event) {
 const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const {
     player, monster, battleMode="score", scoreInput="keypad", targetFormat="full_110", difficulty={hp:1,atk:1,def:1}, hideMonsterStats=false,
-    arrowsPerRound=6, allies=[], cat=null, potions=[], bgImage, onBattleEnd, onShootingAbandon, onPotionUsed,
+    arrowsPerRound=6, allies=[], cat=null, potions=[], bgImage, onBattleEnd, onShootingAbandon, onPotionUsed, hideStandaloneResult=false,
     autoStart=false, scoringMode=false, onSubmit, fullScreen=false, renderMonster, renderPlayer,
     partyMode=false, partySubmitted=false, partyRound, partyRoundEvent=null, partyEventToken=null, onLeaveBattle,
     partyRole, partyRearChoice, onPartyRearChoice,
     partyMembers=[], partyIsHost=false, partyProcessing=false, onForceSkipMember,
     partyAllReady=false, partyReadyCountdown=0, onConfirmPartyRound,
-    partyResolution=null, partyResolutionKey=0, partyPlayerId, partyMonsterMaxHp=0,
+    partyResolution=null, partyResolutionKey=0, partyPlayerId, partyMonsterMaxHp=0, partyAbilityPreview=null,
     partyResult=null, onConfirmPartyResult, autoConfirmPartyResult=false,
-    externalBattle=false, externalRoundKey=0, externalLocked=false, externalDemo=null,
+    externalBattle=false, externalRoundKey=0, externalLocked=false, externalDemo=null, battleId=null,
+    initialBattleSnapshot=null, onBattleSnapshot,
   } = props;
 
   // ─── 內部狀態 ───
   const [battle, dispatch] = useReducer(battleReducer, initBattle);
+
+  // 裝備專精：載入每個 slot 的啟用專精（訪客/未解鎖＝null,全程無感）
+  const { profile: authedProfile } = useAuth();
+  const [equipSpec, setEquipSpec] = useState(null);
+  // 卡片天賦＋族系套裝彙總（裝備卡變動即重算）
+  const [cardFx, setCardFx] = useState(null);
+  useEffect(() => {
+    if (!authedProfile?.id) { setCardFx(null); return undefined; }
+    return subscribeCardCollection(authedProfile.id, collection => {
+      try { setCardFx(calcCardCombatEffectsFromCollection(collection)); } catch { setCardFx(null); }
+    });
+  }, [authedProfile?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!authedProfile?.id) { setEquipSpec(null); return undefined; }
+    getEquipSpecializations(authedProfile.id).then(spec => {
+      if (cancelled) return;
+      const pick = slot => {
+        const trackId = spec[slot].activeTrackId;
+        const level = trackId ? spec[slot].tracks[trackId]?.level || 0 : 0;
+        return trackId && level > 0 ? { trackId, level } : null;
+      };
+      setEquipSpec({ weapon: pick("weapon"), armor: pick("armor"), accessory: pick("accessory") });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [authedProfile?.id]);
   const [animStep, setAnimStep] = useState(-1);
   const [teamFx, setTeamFx] = useState([]);
   const [roundEvent, setRoundEvent] = useState(null);
@@ -254,6 +407,8 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const [showPartyKnockdown, setShowPartyKnockdown] = useState(false);
   const [showPartyDefeat, setShowPartyDefeat] = useState(false);
   const [partyHistory, setPartyHistory] = useState([]);
+  const [partyAbilityTelegraph, setPartyAbilityTelegraph] = useState(null);
+  const seenPartyAbilityPreview = useRef(null);
   // Raw archery capture is deliberately separate from the combat reducer.
   // It is only returned to the caller when this battle completes.
   const shootingEndsRef = useRef([]);
@@ -266,6 +421,36 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const seenPartyRoundEvent = useRef(null);
   const confirmedPartyLossKey = useRef(0);
   const autoConfirmedPartyResultKey = useRef(0);
+  const [soloAbilityTelegraph, setSoloAbilityTelegraph] = useState(null);
+  // 技能「發動結算」演出：SUBMIT_ROUND 後顯示 2.6 秒（名稱+破解結果+附加效果）
+  const [skillFx, setSkillFx] = useState(null);
+  useEffect(() => {
+    const reso = battle.lastAbilityResolution;
+    if (!reso) return undefined;
+    setSkillFx(reso);
+    const t = setTimeout(() => setSkillFx(null), 2600);
+    return () => clearTimeout(t);
+  }, [battle.lastAbilityResolution]);
+  // 組隊/地下城：技能由權威端（processDungeonRound）結算，成員端只播演出。
+  // room log 的 ability 欄位轉成與單人相同的 skillFx 形狀，共用同一組蓋版 UI。
+  const seenPartyAbilityKey = useRef(null);
+  useEffect(() => {
+    const ability = partyResolution?.ability;
+    if (!ability?.resolvedKey || seenPartyAbilityKey.current === ability.resolvedKey) return undefined;
+    seenPartyAbilityKey.current = ability.resolvedKey;
+    setSkillFx({
+      name: ability.name,
+      outcome: { level: ability.breakLevel },
+      statuses: ability.statusesByMember?.[partyPlayerId] || [],
+      selfShieldMaxHpPct: ability.monsterEffect?.shieldHp > 0 ? 1 : 0,
+      delayedMult: ability.monsterEffect?.delayedMult || 0,
+      partyDamage: ability.damageByMember?.[partyPlayerId] || 0,
+    });
+    const timer = setTimeout(() => setSkillFx(null), 2600);
+    return () => clearTimeout(timer);
+  }, [partyResolution, partyPlayerId]);
+  const resolvedSoloAbilityKeys = useRef(new Set());
+  const restoredInitialSnapshot = useRef(false);
 
   // ─── 貓貓計算 ───
   const hasCat = !!cat;
@@ -324,6 +509,14 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   },[partyMode,isPlaying,partyRound,partyRoundEvent?.id]);
 
   useEffect(()=>{
+    if(partyMode||!isPlaying||!battleId||!monster?.signatureSkillId){setSoloAbilityTelegraph(null);return;}
+    const scheduled=getMonsterScheduledAbility(monster,battle.round);
+    if(!scheduled){setSoloAbilityTelegraph(null);return;}
+    const key=`${battleId}:${battle.round}:${scheduled.skillId}`;
+    if(!resolvedSoloAbilityKeys.current.has(key))setSoloAbilityTelegraph({...scheduled,key,round:battle.round});
+  },[partyMode,isPlaying,battleId,monster,battle.round]);
+
+  useEffect(()=>{
     if(!partyMode || partyResult!=="win" || completedPartyResolutionKey!==partyResolutionKey) return;
     setShowPartyKnockdown(true);
     playBattleSound("victory_fanfare",{monsterName:monster?.name||"怪物",round:partyRound||1,roundDmg:partyResolution?.totalDmg||0});
@@ -352,8 +545,17 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
     return()=>clearTimeout(timer);
   },[partyMode,partyResult,completedPartyResolutionKey,partyResolutionKey,partyIsHost,onConfirmPartyResult,monster?.name,partyRound,autoConfirmPartyResult]);
 
+  useEffect(()=>{
+    if(!partyMode||!partyAbilityPreview)return;
+    const key=`${partyAbilityPreview.round}:${partyAbilityPreview.skillId}:${partyAbilityPreview.targetId||"team"}`;
+    if(seenPartyAbilityPreview.current===key)return;
+    seenPartyAbilityPreview.current=key;
+    setPartyAbilityTelegraph({...partyAbilityPreview,key});
+  },[partyMode,partyAbilityPreview]);
+
   // ─── 回合前事件 🎲 ───
-  useEffect(()=>{if(partyMode||externalBattle||!isPlaying)return;if(Math.random()<0.6){const ev=ROUND_EVENTS[Math.floor(Math.random()*ROUND_EVENTS.length)];setRoundEvent(ev);if(ev.heal)dispatch({type:"HEAL",amount:ev.heal});}},[partyMode,externalBattle,isPlaying,battle.round,dispatch]);
+  // 2026-07-18 使用者指示：取消每回合突發事件（此為改版時的「示意」佔位彈窗,ROUND_EVENTS 保留資料供未來正式事件系統使用）
+  useEffect(()=>{ void ROUND_EVENTS; void setRoundEvent; },[partyMode,externalBattle,isPlaying,battle.round,dispatch]);
 
   // ─── 擊倒動畫 ⏱ ───
   useEffect(()=>{if(!isVictoryAnim)return;playBattleSound("victory_fanfare",{monsterName:battle.monsterName,round:battle.round,roundDmg:battle.roundDmg});const t=setTimeout(()=>{playBattleSound("victory_cheer",{});dispatch({type:"SHOW_WON"});},3000);return()=>clearTimeout(t);},[isVictoryAnim,dispatch,battle.monsterName,battle.round,battle.roundDmg]);
@@ -438,6 +640,20 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
           }
         }
       }
+      const ability=partyResolution.monsterAbility;
+      if(ability?.scheduled){
+        const breakLabels={full:"完全破解",major:"大幅破解",partial:"部分破解",none:"破解失敗"};
+        const outcome=ability.resolved?.outcome?.level;
+        const target=partyMembers.find(member=>member.id===ability.targetId);
+        const status=ability.resolved?.status;
+        const statusLabels={poison:"中毒",atkDown:"攻擊弱化",defDown:"防禦弱化"};
+        const detail=ability.resolved
+          ? `${target?`目標：${target.name}・`:""}${breakLabels[outcome]||"技能已結算"}${status?`・附加 ${statusLabels[status.id]||status.id} ${status.duration} 回合`:"・異常效果已取消"}`
+          : (ability.reason==="signature_effect_not_structured"?"招牌技能已展示；個別效果將依正式技能資料啟用。":"技能已結算");
+        setPartyHistory(prev=>[...prev,`⚡ ${ability.scheduled.name}・${breakLabels[outcome]||"發動"}`].slice(-4));
+        setPartyPhase({type:"ability",title:`${ability.scheduled.enhanced?"強化・":""}${ability.scheduled.name}`,detail,icon:"⚡"});
+        await delay(2200);
+      }
       for(const fallen of partyResolution.demotedMembers||[]){
         if(cancelled)return;
         setPartyHistory(prev=>[...prev,`🛡️ ${fallen.name} 被擊倒，轉為後衛`].slice(-4));
@@ -510,12 +726,14 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const catBattleCry=useMemo(()=>{if(!hasCat)return "";const cries=CAT_BATTLE_CRIES[skillGroup]||CAT_BATTLE_CRIES.heal;return cries[Math.floor(Math.random()*cries.length)];},[hasCat,skillGroup]);
 
   // ─── handleStartBattle（必須在 useImperativeHandle 之前，避免 TDZ）───
-  const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
+  const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];resolvedSoloAbilityKeys.current.clear();setSoloAbilityTelegraph(null);dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
 
   // ─── 回呼 ───
   const handleScore=useCallback((input)=>{if(!isScoring)return;const landing=typeof input==="object"?input:null;const label=landing?.label??input;const normalized=scoreToValue(label,targetFormat);const score=label==="X"?"X":normalized===0?"M":String(normalized);sfxTap();currentShootingEndRef.current.push({label,landing});dispatch({type:"SCORE_ARROW",score,displayLabel:label,battleMode,arrowsPerRound,previewDamage:!partyMode});},[isScoring,battleMode,arrowsPerRound,partyMode,targetFormat]);
   const handleUndo=useCallback(()=>{if(!isScoring)return;currentShootingEndRef.current.pop();dispatch({type:"UNDO_ARROW"});},[isScoring]);
-  const handleSubmit=useCallback(()=>{if(!isScoring||battle.arrows.length<arrowsPerRound)return;if(partyMode&&partyRole==="rear"&&!partyRearChoice)return;const rawEnd=currentShootingEndRef.current.slice();if(rawEnd.length)shootingEndsRef.current.push(rawEnd);currentShootingEndRef.current=[];if(onSubmit){onSubmit(battle.arrows.map(a=>{const s=a.score;return s==="X"?10:s==="M"?0:Number(s)||0;}));if(partyMode)return;if(externalBattle){dispatch({type:"START_PLAYING"});return;}dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);return;}dispatch({type:"SUBMIT_ROUND",skipCounter:skipBigRound,counterReduce:counterReducePct,arrowsPerRound});},[isScoring,battle.arrows.length,skipBigRound,counterReducePct,arrowsPerRound,onSubmit,partyMode,partyRole,partyRearChoice,externalBattle,player?.hp,player?.maxHp,player?.atk,player?.def]);
+  const handleSubmit=useCallback(()=>{if(!isScoring||battle.arrows.length<arrowsPerRound)return;if(partyMode&&partyRole==="rear"&&!partyRearChoice)return;const rawEnd=currentShootingEndRef.current.slice();if(rawEnd.length)shootingEndsRef.current.push(rawEnd);currentShootingEndRef.current=[];if(onSubmit){onSubmit(battle.arrows.map(a=>{const s=a.score;return s==="X"?10:s==="M"?0:Number(s)||0;}));if(partyMode)return;if(externalBattle){dispatch({type:"START_PLAYING"});return;}dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);return;}/* 單機 standalone 路徑：每回合送出即累積箭數（今日+終身;MonsterBattle 舊 submitRound 已不在此流程） */
+if(authedProfile?.id&&battle.arrows.length){addRoundArrows(authedProfile.id,battle.arrows.length,{accountType:authedProfile?.accountType||"official"}).catch(()=>{});}
+let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability=resolveSoloMonsterAbility({battleId,monster,round:battle.round,arrows:battle.arrows.map(a=>a.score),targetFmt:targetFormat,monsterHpRatio:battle.monsterMaxHp>0?battle.monsterHp/battle.monsterMaxHp:1});const key=ability.resolved?.resolvedKey||soloAbilityTelegraph?.key;if(key&&!resolvedSoloAbilityKeys.current.has(key)){resolvedSoloAbilityKeys.current.add(key);abilityResolution=ability.resolved?{...ability.resolved,name:ability.resolved.name||ability.scheduled?.name||"怪物技能"}:null;}}setSoloAbilityTelegraph(null);dispatch({type:"SUBMIT_ROUND",skipCounter:skipBigRound,counterReduce:counterReducePct,arrowsPerRound,abilityResolution});},[isScoring,battle.arrows,battle.round,battle.monsterHp,battle.monsterMaxHp,skipBigRound,counterReducePct,arrowsPerRound,onSubmit,partyMode,partyRole,partyRearChoice,externalBattle,player?.hp,player?.maxHp,player?.atk,player?.def,battleId,monster,soloAbilityTelegraph,targetFormat,authedProfile?.id]);
   const handleNextRound=useCallback(()=>{dispatch({type:"NEXT_ROUND"});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);},[]);
   const handleReset=useCallback(()=>{dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);setCatCurrentHP(0);setCatMsg(null);setCatSkillActive(null);setRoundEvent(null);setTeamFx([]);},[player?.hp,player?.maxHp,player?.atk,player?.def]);
   const handleLeave=useCallback(()=>{const didLeave=onLeaveBattle?.();if(didLeave===false)return;const shootingEnds=[...shootingEndsRef.current.map(end=>end.slice())];if(currentShootingEndRef.current.length)shootingEnds.push(currentShootingEndRef.current.slice());onShootingAbandon?.({shootingEnds,arrowScores:shootingEnds.flat().map(arrow=>arrow.label),rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,monsterHp:battle.monsterHp});},[onShootingAbandon,onLeaveBattle,battle]);
@@ -524,7 +742,43 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   useImperativeHandle(ref,()=>({startBattle:handleStartBattle}),[handleStartBattle]);
 
   // ─── 自動啟動（MonsterBattle 等外部元件用）───
-  useEffect(()=>{if(autoStart)handleStartBattle();},[autoStart]);
+  useEffect(()=>{
+    if(!initialBattleSnapshot || restoredInitialSnapshot.current) return;
+    restoredInitialSnapshot.current=true;
+    try{
+      const restored=restoreBattleScreenSnapshot(initialBattleSnapshot);
+      resolvedSoloAbilityKeys.current=new Set(restored.resolvedAbilityKeys);
+      shootingEndsRef.current=restored.shootingEnds;
+      currentShootingEndRef.current=[];
+      dispatch({type:"RESTORE_SNAPSHOT",battle:restored.battle});
+    }catch(error){
+      console.warn("Unable to restore battle screen snapshot",error);
+      handleStartBattle();
+    }
+  },[initialBattleSnapshot,handleStartBattle]);
+
+  // 自動開場：每隻怪只觸發一次。
+  // handleStartBattle 的依賴含 monster/difficulty，而呼叫端（DungeonBattleRoom 等）是用行內物件字面值傳的，
+  // 父層每次 render 都會產生新參考 → 若直接依賴它，父層一 re-render 就重新 dispatch START，
+  // 畫面會不斷跳回 VS 開場（無限迴圈）。改用怪物 id 當閘門，換怪時才會重新開場。
+  const autoStartedForRef=useRef(null);
+  useEffect(()=>{
+    if(!autoStart||initialBattleSnapshot)return;
+    const key=monster?.id??"default";
+    if(autoStartedForRef.current===key)return;
+    autoStartedForRef.current=key;
+    handleStartBattle();
+  },[autoStart,initialBattleSnapshot,handleStartBattle,monster?.id]);
+
+  useEffect(()=>{
+    if(partyMode||externalBattle||!battleId||!onBattleSnapshot) return;
+    if(![PHASE.PLAYING,PHASE.SCORING,PHASE.ROUND_RES].includes(battle.phase)) return;
+    onBattleSnapshot(createBattleScreenSnapshot({
+      battle,
+      resolvedAbilityKeys:[...resolvedSoloAbilityKeys.current],
+      shootingEnds:shootingEndsRef.current,
+    }));
+  },[battle,battleId,onBattleSnapshot,partyMode,externalBattle]);
 
   // A caller may start below full HP (opening throw potions) while retaining
   // the selected difficulty's original maximum HP. Preserve both values.
@@ -879,6 +1133,45 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
       </div>
     </div>}
 
+    {partyAbilityTelegraph&&isPlaying&&<div style={{position:"absolute",inset:0,zIndex:14,background:"rgba(4,7,13,.72)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div role="dialog" aria-modal="true" aria-label="組隊怪物技能預告" style={{width:"100%",maxWidth:310,textAlign:"center",background:"linear-gradient(180deg,#30172a,#0b1220)",border:"1px solid rgba(251,113,133,.62)",borderRadius:18,padding:"20px 17px",boxShadow:"0 20px 60px rgba(0,0,0,.65),0 0 34px rgba(244,63,94,.2)"}}>
+        <div style={{fontSize:11,fontWeight:900,color:"#fda4af",letterSpacing:".12em"}}>第 {partyAbilityTelegraph.round} 回合・隊伍技能預告</div>
+        <div style={{fontSize:38,marginTop:5}}>⚡</div>
+        <div style={{fontSize:19,fontWeight:900,color:"#ffe4e6",marginTop:2}}>{partyAbilityTelegraph.enhanced?"強化・":""}{partyAbilityTelegraph.name}</div>
+        {partyAbilityTelegraph.targetId?<div style={{fontSize:12,color:"#fecdd3",marginTop:8}}>鎖定目標：{partyMembers.find(member=>member.id===partyAbilityTelegraph.targetId)?.name||"存活前衛"}</div>:<div style={{fontSize:12,color:"#cbd5e1",marginTop:8}}>全隊共同破解此技能</div>}
+        {partyAbilityTelegraph.summary&&<div style={{fontSize:12,color:"#d8deeb",lineHeight:1.55,marginTop:8}}>{partyAbilityTelegraph.summary}</div>}
+        <div style={{fontSize:11,color:"#6ee7b7",fontWeight:900,lineHeight:1.5,marginTop:9,padding:"9px",borderRadius:9,background:"rgba(16,185,129,.14)",border:"1px solid rgba(52,211,153,.35)"}}>🎯 {getBreakRuleText()}</div>
+        <button onClick={()=>setPartyAbilityTelegraph(null)} style={{width:"100%",marginTop:14,padding:10,border:0,borderRadius:10,background:"linear-gradient(135deg,#fb7185,#e11d48)",color:"#fff",fontSize:13,fontWeight:900,cursor:"pointer"}}>了解，隊伍開始射擊</button>
+      </div>
+    </div>}
+
+    {/* 💥 技能發動結算演出（破解結果一目了然） */}
+    {skillFx&&(()=>{const lv=skillFx.outcome?.level;const tone=lv==="full"?{c:"#34d399",t:"🛡️ 完全破解！技能無效"}:lv==="major"?{c:"#38bdf8",t:"💪 高分破解！大幅削弱"}:lv==="partial"?{c:"#fbbf24",t:"👍 部分破解！效果減半"}:{c:"#f87171",t:"💢 未破解，全額生效"};
+      return <div style={{position:"absolute",left:8,right:8,top:"18%",zIndex:14,pointerEvents:"none",display:"flex",justifyContent:"center"}}>
+        <div className="fx-fade-up" style={{maxWidth:340,width:"100%",padding:"12px 16px",borderRadius:14,textAlign:"center",background:"rgba(4,7,13,.92)",border:`2px solid ${tone.c}`,boxShadow:`0 0 24px ${tone.c}55`}}>
+          <div style={{fontSize:15,fontWeight:900,color:"#f5d0fe"}}>⚡ {battle.monsterName} 發動「{skillFx.name||"技能"}」</div>
+          <div style={{fontSize:12,fontWeight:900,color:tone.c,marginTop:4}}>{tone.t}</div>
+          {skillFx.partyDamage>0&&<div style={{fontSize:12,fontWeight:900,color:"#fca5a5",marginTop:3}}>💥 你受到 {skillFx.partyDamage} 傷害</div>}
+          {(skillFx.statuses?.length?skillFx.statuses:skillFx.status?[skillFx.status]:[]).map((st,i)=>(
+            <div key={i} style={{fontSize:11,color:"#fca5a5",marginTop:2}}>🌀 {st.name||st.id}{typeof st.strength==="number"?` -${st.strength}%`:""}（{st.duration||1} 回合）</div>
+          ))}
+          {skillFx.selfShieldMaxHpPct>0&&<div style={{fontSize:11,color:"#93c5fd",marginTop:2}}>🛡 怪物獲得護盾</div>}
+          {skillFx.delayedMult>0&&<div style={{fontSize:11,color:"#fdba74",marginTop:2}}>⏳ 蓄力中：下回合追加攻擊！</div>}
+          {skillFx.monsterHealMaxHpPct>0&&<div style={{fontSize:11,color:"#86efac",marginTop:2}}>💚 怪物回復 {skillFx.monsterHealMaxHpPct}% 最大生命</div>}
+        </div>
+      </div>;})()}
+    {soloAbilityTelegraph&&isPlaying&&<div style={{position:"absolute",inset:0,zIndex:13,background:"rgba(4,7,13,.68)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div role="dialog" aria-modal="true" aria-label="怪物技能預告" style={{width:"100%",maxWidth:300,textAlign:"center",background:"linear-gradient(180deg,#241633,#0b1220)",border:"1px solid rgba(192,132,252,.58)",borderRadius:18,padding:"20px 17px",boxShadow:"0 20px 60px rgba(0,0,0,.62),0 0 34px rgba(168,85,247,.2)"}}>
+        <div style={{fontSize:11,fontWeight:900,color:"#c4b5fd",letterSpacing:".12em"}}>第 {soloAbilityTelegraph.round} 回合・技能預告</div>
+        <div style={{fontSize:38,marginTop:5}}>⚡</div>
+        <div style={{fontSize:19,fontWeight:900,color:"#f5d0fe",marginTop:2}}>{soloAbilityTelegraph.enhanced?"強化・":""}{soloAbilityTelegraph.name}</div>
+        {soloAbilityTelegraph.summary&&<div style={{fontSize:12,color:"#d8deeb",lineHeight:1.55,marginTop:8}}>{soloAbilityTelegraph.summary}</div>}
+        {soloAbilityTelegraph.counterSummary&&<div style={{fontSize:10,color:"#94a3b8",lineHeight:1.45,marginTop:8}}>技能演出：{soloAbilityTelegraph.counterSummary}</div>}
+        <div style={{fontSize:11,color:"#6ee7b7",fontWeight:900,lineHeight:1.5,marginTop:8,padding:"9px",borderRadius:9,background:"rgba(16,185,129,.14)",border:"1px solid rgba(52,211,153,.35)"}}>🎯 {getBreakRuleText()}</div>
+        <button onClick={()=>setSoloAbilityTelegraph(null)} style={{width:"100%",marginTop:14,padding:10,border:0,borderRadius:10,background:"linear-gradient(135deg,#c084fc,#8b5cf6)",color:"#160b24",fontSize:13,fontWeight:900,cursor:"pointer"}}>了解，開始射擊</button>
+      </div>
+    </div>}
+
     {/* 回合前事件 */}
     {roundEvent&&isPlaying&&(<div onClick={()=>setRoundEvent(null)} style={{position:"absolute",inset:0,zIndex:11,background:"rgba(4,7,13,.5)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:260,textAlign:"center",background:"linear-gradient(180deg,#141f36,#0c1424)",border:`1px solid ${roundEvent.color}66`,borderRadius:18,padding:"22px 18px",boxShadow:`0 20px 60px rgba(0,0,0,.6), 0 0 34px ${roundEvent.color}33`,animation:"pop .26s cubic-bezier(.2,.9,.3,1)"}}>
@@ -902,13 +1195,14 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
             <div style={{width:1,background:"rgba(255,255,255,.1)"}}/>
             <div><div style={{fontSize:10,color:"#9fb0cf",fontWeight:700}}>反擊</div><div style={{fontSize:24,fontWeight:900,color:"#ff7a7a",fontVariantNumeric:"tabular-nums"}}>-{battle.counterDmg}</div></div>
           </div>
+          {battle.lastAbilityResolution&&<div style={{marginTop:10,padding:"8px 10px",borderRadius:9,background:"rgba(168,85,247,.12)",border:"1px solid rgba(192,132,252,.3)",fontSize:11,color:"#e9d5ff"}}>⚡ 技能破解：{{full:"完全破解",major:"大幅破解",partial:"部分破解",none:"破解失敗"}[battle.lastAbilityResolution.outcome?.level]||"已結算"}{battle.lastAbilityResolution.status?`・${battle.lastAbilityResolution.status.id==="poison"?"毒素":battle.lastAbilityResolution.status.id==="atkDown"?"攻擊降低":"防禦降低"} ${battle.lastAbilityResolution.status.strength}%`:"・異常已取消"}</div>}
         </div>
         <button onClick={handleNextRound} style={{width:"100%",padding:13,borderRadius:11,background:"linear-gradient(135deg,#f7c65a,#e79a1e)",color:"#241400",fontSize:16,fontWeight:900,border:"none",cursor:"pointer",letterSpacing:".06em"}}>下一回合 ➡️</button>
       </div>
     </div>)}
 
     {/* ── 勝利 ── */}
-    {isWon&&(<div style={{position:"absolute",inset:0,zIndex:10,background:"rgba(4,7,13,.74)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    {isWon&&!hideStandaloneResult&&(<div style={{position:"absolute",inset:0,zIndex:10,background:"rgba(4,7,13,.74)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{width:"100%",maxWidth:280,background:"linear-gradient(180deg,#0f2a1e,#0a1f14)",border:"1px solid rgba(74,222,128,.35)",borderRadius:18,padding:"28px 20px",boxShadow:"0 20px 60px rgba(0,0,0,.6), 0 0 40px rgba(74,222,128,.15)",animation:"pop .24s cubic-bezier(.2,.9,.3,1)",textAlign:"center"}}>
         <div style={{fontSize:48,marginBottom:10}}>🏆</div>
         <div style={{fontSize:22,fontWeight:900,color:"#4ade80",marginBottom:6}}>戰鬥勝利！</div>

@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "purpose": "C4 卡片 UI 機器可讀分類 schema（研究草案）",
+    "dataModel": { "owned": "member.cards:{[monsterId]}", "wb": "member.wbCards:{[bossKey]}", "equipped": "member.equipped:[{key,source}]" },
+    "catalogSource": "衍生自 MONSTERS/roster，不冗存;未取得=剪影(不發圖片請求)"
+  },
+  "l1Categories": [
+    { "id": "all",      "label": "全部",   "match": "*" },
+    { "id": "normal",   "label": "一般怪", "match": { "encounter": "normal" } },
+    { "id": "miniBoss", "label": "小王",   "match": { "encounter": "miniBoss" } },
+    { "id": "bigBoss",  "label": "大王",   "match": { "encounter": "bigBoss" } },
+    { "id": "worldboss","label": "世界王", "match": { "source": "wb" } }
+  ],
+  "l2Filters": {
+    "family": { "type": "enum", "values": ["ghost","mountain","insect","workplace","exam","temple","treasure"], "labels": ["鬼怪","山林","毒蟲","職場","考試","西方","寶箱"] },
+    "tier":   { "type": "enum", "values": ["common","rare","elite","fierce","boss","mythic"], "labels": ["T1","T2","T3","T4","T5","T6"] },
+    "owned":  { "type": "tri", "values": ["all","owned","unowned"] },
+    "upgradable": { "type": "bool", "desc": "duplicates 足夠升下一星" },
+    "isNew":  { "type": "bool", "desc": "未讀紅點(cardSeen 差集)" }
+  },
+  "browseFlow": "family → tier → 顯示該「族系×Tier」組(3 normal + 2 miniBoss + 1 bigBoss ≤6 卡),不同時渲染 252",
+  "miniCardFields": {
+    "required": ["artOrSilhouette", "name(或???未取得)", "tierColorFrame", "encounterBadge"],
+    "ownedOnly": ["starRow", "upgradableDot"],
+    "stateBadges": ["newRedDot"],
+    "excluded": ["hp","atk","def","lore","duplicates"]
+  },
+  "detailFields": [
+    "art", "family", "tier", "encounter", "rarityFrame",
+    "hp", "atk", "def", "signatureOrEffect", "lore",
+    "stars", "duplicates", "upgradeCost", "upgradeButton",
+    "equip/unequip", "chosenStat(mythic|wb)",
+    "dexRecord(wins/losses/winRate)", "source(取得來源)"
+  ],
+  "newDot": {
+    "store": "cardSeen.js (比照 dexSeen.js)：localStorage 雙集合 notified/seen + 可選 Firestore 鏡像",
+    "seed": "seedIfFirstRun 把當下已擁有卡標基準(防首次進頁洪水)",
+    "clearOn": ["開卡 detail", "展開所屬 族系×Tier 組"],
+    "aggregate": "L1/L2 籤顯示聚合未讀數"
+  },
+  "lazyImages": {
+    "groupGate": "只掛載當前選定組的卡(≤6-36)",
+    "imgAttrs": { "loading": "lazy", "decoding": "async" },
+    "unownedSilhouette": "CSS 灰階/blur 佔位,不發圖片請求",
+    "artKey": "/cards/monsters/{monsterId}.webp",
+    "fallbackChain": ["/cards/monsters/{id}.webp", "/monsters-battle/{id}.webp", "/monsters/{id}.webp", "emoji"],
+    "cleanup": "切換組時 abort 未完成/失敗請求",
+    "virtualList": false
+  },
+  "componentSplit": {
+    "dir": "src/components/member/cards/",
+    "components": ["CardCollectionPage", "CardFilterBar", "EquippedCardsPanel", "CardGroupGrid", "CardMiniCell", "CardDetailModal"],
+    "newLibs": ["cardCatalog.js (衍生252目錄)", "cardSeen.js (紅點)"],
+    "keepLibs": ["monsterCards.js", "worldBossCards.js"]
+  },
+  "disposition": {
+    "keep": ["monsterCards.js", "worldBossCards.js", "db card fns", "MonsterArt/WorldBossArt fallback", "Gacha isNew"],
+    "refactor": ["CardCollection.jsx → 拆進 cards/;分類 屬性→遭遇;加剪影/分組/懶載入/紅點;卡改 <button>"],
+    "deprecate": ["扁平一次全渲染已擁有卡 grid", "純屬性 CATEGORY_TABS(屬性降為 L2)"]
+  },
+  "migration": {
+    "existingIdsPreserved": 60,
+    "newCardsAsCatalogSilhouette": true,
+    "noSchemaWrite": "encounter/family/tier 衍生不冗存;不改卡ID、不使已裝備卡失效",
+    "normalize": "owned card 補 {duplicates,stars,chosenStat?} 預設;wb 沿用 normalizeWorldBossCard"
+  }
+}

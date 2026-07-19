@@ -1,0 +1,30 @@
+{
+  "id": "monster-specialization-expansion",
+  "name": "monster-specialization-expansion",
+  "title": "怪物、王房、專精與跨模式戰鬥經濟擴充",
+  "description": "規劃並實作 T1-T6 怪物生態、大小王技能與素材、裝備專精、同級材料轉換、傳說神話成本及世界王強力攻擊。",
+  "status": "in_progress",
+  "scope": "solo-party-dungeon-worldboss-combat-and-economy",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-07-16",
+  "completedAt": null,
+  "relatedFiles": [
+    "src/lib/monsterData.js",
+    "src/lib/monsterRegistry.js",
+    "src/lib/monsterConfig.js",
+    "src/lib/equipData.js",
+    "src/components/member/MonsterBattle.jsx",
+    "src/lib/partyDb.js",
+    "src/components/dungeon/DungeonBattleRoom.jsx",
+    "src/lib/dungeonDb.js",
+    "src/lib/worldBossData.js",
+    "src/lib/worldBossDb.js"
+  ],
+  "notes": "User explicitly requested full discussion and detailed settings before any implementation or installation. Trellis Python CLI is unavailable; artifacts are maintained manually.",
+  "children": [
+    "07-18-dungeon-expansion-wiring"
+  ]
+}

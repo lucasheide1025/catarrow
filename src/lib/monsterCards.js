@@ -30,7 +30,9 @@ export const TIER_CARD_BONUS = {
 export const STAR_UPGRADE_COST = [1, 2, 3, 4, 5];
 
 // 裝備上限：怪物卡 HP/ATK/DEF 各自最多 3 張（取代舊的「總共5張」設計）
-export const MAX_EQUIPPED_PER_STAT = 3;
+export const MAX_EQUIPPED_PER_STAT = 3; // 舊規則（保留常數避免外部引用炸掉,已不再限制）
+// 2026-07-18 使用者指示：普通卡不分屬性,總量上限 10 張;世界王卡維持 3 張
+export const MAX_MONSTER_EQUIPPED = 10;
 // 世界王卡：獨立的裝備欄位，最多 3 張（不分屬性，跟怪物卡的 9 格完全分開算）
 export const MAX_WB_EQUIPPED = 3;
 

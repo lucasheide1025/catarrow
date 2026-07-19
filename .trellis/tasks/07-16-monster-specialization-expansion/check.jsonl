@@ -1,0 +1,11 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend quality checklist"}
+{"file":".trellis/spec/frontend/dungeon-system.md","reason":"Verify dungeon and reconnect invariants"}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"Verify equipment migration and specialization behavior"}
+{"file":".trellis/spec/frontend/cat-companion.md","reason":"Verify companion ordering and idempotency"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"Verify loot, chest and conversion transactions"}
+{"file":".trellis/spec/frontend/firestore-cost-optimization.md","reason":"Review Firestore read/write cost regressions"}
+{"file":".trellis/spec/frontend/guest-kid-mode.md","reason":"Review child safety and guest access"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run full package quality checks"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review catalog and resolver data contracts"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check cross-mode consistency"}
+{"file":".trellis/tasks/07-16-monster-specialization-expansion/research/current-combat-and-loot-map.md","reason":"Compare against current system and migration risks"}

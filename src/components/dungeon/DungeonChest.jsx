@@ -109,11 +109,16 @@ function ItemReveal({ item, delay = 0, isHidden = false }) {
           display:"flex", alignItems:"center", justifyContent:"center", gap:10,
           padding:"0 14px",
         }}>
-          <span style={{ fontSize:32, filter:"drop-shadow(0 0 8px rgba(251,191,36,0.4))" }}>{item.icon}</span>
-          <div style={{ textAlign:"left" }}>
-            <div style={{ fontSize:14, fontWeight:900, color: isHidden ? "#c084fc" : "#fbbf24" }}>{item.name}</div>
-            <div style={{ fontSize:10, color:"#94a3b8" }}>{item.desc || "收藏品"}</div>
-            <div style={{ fontSize:9, color: isHidden ? "#a855f7" : "#a78bfa", marginTop:2, fontWeight:700 }}>
+          <span style={{ flexShrink:0, fontSize:32, filter:"drop-shadow(0 0 8px rgba(251,191,36,0.4))" }}>{item.icon}</span>
+          {/* flex:1 + minWidth:0 缺一不可：中文每個字之間都可斷行，min-content 寬度＝一個字，
+              被壓縮時整串名稱會變成直排（使用者回報「擠成一團」）。nowrap+ellipsis 再保一層。 */}
+          <div style={{ flex:1, minWidth:0, textAlign:"left" }}>
+            <div style={{ fontSize:14, fontWeight:900, color: isHidden ? "#c084fc" : "#fbbf24",
+              whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.name}</div>
+            <div style={{ fontSize:10, color:"#94a3b8",
+              whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.desc || "收藏品"}</div>
+            <div style={{ fontSize:9, color: isHidden ? "#a855f7" : "#a78bfa", marginTop:2, fontWeight:700,
+              whiteSpace:"nowrap" }}>
               {isHidden ? "✦ 隱藏獎勵" : "🔮 收藏品"}
             </div>
           </div>
@@ -362,7 +367,7 @@ export default function DungeonChest({
         {/* 全部完成 */}
         {animPhase === "reveal" && (
           currentReward ? (
-            <div key={currentReward.key} className="flex flex-col items-center gap-3" style={{ animation:"ch-item-slide 0.45s ease both" }}>
+            <div key={currentReward.key} className="flex flex-col items-center gap-3 w-full" style={{ animation:"ch-item-slide 0.45s ease both" }}>
               <ItemReveal item={{ icon:currentReward.icon, name:currentReward.name, desc:currentReward.desc }} delay={60} isHidden={isHidden} />
               {currentReward.kind === "coins" && <div className="text-3xl font-black" style={{ color:"#fbbf24" }}>+{currentReward.amount}</div>}
               <div className="text-xs font-bold" style={{ color:isHidden ? "#c084fc" : "#86efac" }}>獎勵 {rewardIndex + 1} / {rewardQueue.length}</div>

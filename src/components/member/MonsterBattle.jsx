@@ -1,5 +1,5 @@
 // src/components/member/MonsterBattle.jsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
@@ -30,6 +30,11 @@ import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, ro
 import LootBox from "./LootBox";
 import { EventType } from "../../battle/BattleEvents";
 import { processMonsterRound } from "../../battle/BattleEngine";
+import { resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
+import { calcStandardCounter } from "../../lib/damage";
+import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+import { SOLO_CHALLENGE_LEVELS, applyChallengeLevel } from "../../lib/monsterExpansionAdapter";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
 import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
@@ -46,6 +51,10 @@ import BattleScreen from "../battle/BattleScreen";
 import { playBattleSound } from "../../lib/battleSound";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import { getBattleBackgroundUrl } from "../../lib/battleAssets";;
+import { createMonsterBattleSnapshot, normalizeMonsterBattleSnapshot } from "../../lib/monsterBattleSnapshot";
+import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
+import { buildSoloExpansionReward } from "../../lib/soloRewardEngine";
+import { claimMonsterBattleReward, flushPendingMonsterBattleRewards } from "../../lib/monsterRewardDb";
 
 // 向後相容 alias（逐步取代為直接使用 labelToValue / calcArrowStats）
 const arrowLabelToVal = labelToValue;
@@ -142,6 +151,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   // 匹配怪物（6族各1隻）
   const [matchedMonsters, setMatchedMonsters] = useState([]);
   const [pickedMonster, setPickedMonster]     = useState(null);
+  // 挑戰強度（方案A）：玩家進場自選,取代隨機變體;記住上次選擇
+  const [challengeLevel, setChallengeLevel]   = useState(() => localStorage.getItem("mb_challenge_level") || "standard");
 
   const [archerHP, setArcherHP]         = useState(100);
   const [monsterHP, setMonsterHP]       = useState(0);
@@ -213,6 +224,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     } catch { return null; }
   });
   const [showRestorePrompt, setShowRestorePrompt] = useState(() => !!savedBattle);
+  const [battleRuntimeSnapshot, setBattleRuntimeSnapshot] = useState(null);
+  const handleBattleRuntimeSnapshot = useCallback((snapshot) => setBattleRuntimeSnapshot(snapshot), []);
   // ⚗️ 藥劑與 📦 寶箱
   const [potionInv, setPotionInv]             = useState({});
   const [selectedPotions, setSelectedPotions] = useState([]);
@@ -239,6 +252,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const extraDexRef = useRef({}); // monsterDex/craftStats/... 不放 dep array，用 ref 同步最新值
   extraDexRef.current = { monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl };
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => {
+    if (profile?.id && !isLimitedAccount) flushPendingMonsterBattleRewards(profile.id).catch(() => {});
+  }, [profile?.id, isLimitedAccount]);
 
   useEffect(() => {
     const immersivePhases = new Set(["battle_intro", "battle", "monster_die", "loot", "result"]);
@@ -331,15 +347,18 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       return;
     }
     if (phase !== "battle") return;
-    const save = {
+    const save = createMonsterBattleSnapshot({
       ts: Date.now(),
       monster, mode, battleMode, monsterHP, archerHP,
       round, roundScores, selectedDistance, distanceMode, battleStats,
+      arrowsPerRound, targetFmt, targetMode,
+      battleSessionId: battleSessionIdRef.current,
+      runtimeSnapshot: battleRuntimeSnapshot,
       activeCarryBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
       log: log.slice(-8),
-    };
+    });
     try { sessionStorage.setItem("mb_battle_save", JSON.stringify(save)); } catch {}
-  }, [phase, monsterHP, archerHP, round]); // eslint-disable-line
+  }, [phase, monsterHP, archerHP, round, arrowsPerRound, targetFmt, targetMode, battleRuntimeSnapshot]); // eslint-disable-line
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -400,12 +419,18 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   useEffect(() => {
     if (!archerStats) return;
     const power = calcArcherPower(archerStats);
-    const matched = drawMatchedMonsters(power);
-    setMatchedMonsters(matched);
+    let cancelled = false;
+    setMatchedMonsters(drawMatchedMonsters(power));
+    if (isMonsterExpansionEnabled()) {
+      import("../../lib/monsterExpansionAdapter").then(({ drawExpansionSoloMonsters }) => {
+        if (!cancelled) setMatchedMonsters(drawExpansionSoloMonsters(power));
+      }).catch(error => console.warn("monster expansion matcher unavailable", error));
+    }
     // 只在選怪階段才重置選取；任務模式已由 questInitDone 鎖定，不能清空
     if (!questInitDone.current && (phaseRef.current === "select" || phaseRef.current === "event_select")) {
       setPickedMonster(null);
     }
+    return () => { cancelled = true; };
   }, [archerStats]);
 
   // 記住最後選定的怪物（profile 更新時 pickedMonster 可能被清空，用 ref 保存以便再挑戰）
@@ -454,6 +479,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const dispatchRef = useRef(null);
   const controllerRef = useRef(null);
   const randomEventResolveRef = useRef(null); // 等玩家確認隨機事件彈窗再繼續
+  const abilityNonceRef = useRef(Date.now());          // 每場戰鬥的技能 once-only 基底
+  const resolvedAbilityKeysRef = useRef(new Set());    // 已結算技能 key（防動畫重播重複扣血）
   const sessionArrowsRef = useRef(0); // 本場 session 累積箭數（供跨回合里程碑計算）
   if (!dispatchRef.current) {
     dispatchRef.current = createDispatch(
@@ -486,9 +513,17 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   function rerollMonsters() {
     if (!archerStats) return;
     const power = calcArcherPower(archerStats);
-    const matched = drawMatchedMonsters(power);
-    setMatchedMonsters(matched);
     setPickedMonster(null);
+    if (!isMonsterExpansionEnabled()) {
+      setMatchedMonsters(drawMatchedMonsters(power));
+      return;
+    }
+    import("../../lib/monsterExpansionAdapter").then(({ drawExpansionSoloMonsters }) => {
+      setMatchedMonsters(drawExpansionSoloMonsters(power));
+    }).catch(error => {
+      console.warn("monster expansion reroll unavailable", error);
+      setMatchedMonsters(drawMatchedMonsters(power));
+    });
   }
 
   function enterEventMode() {
@@ -646,6 +681,51 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     }
     if (catCtx) catCurrentHPRef.current = catCtx.catCurrentHP;
 
+    // ── 2.5 怪物技能結算（招牌/共用;MonsterBattle 自有流程,BattleEngine 不含技能）──
+    // 傷害=標準反擊×技能倍率（已含破解減幅）;ATK 減益立即掛到下一回合;once-only key 防重複。
+    if (monster?.signatureSkillId) {
+      if (round === 1) { abilityNonceRef.current = Date.now(); resolvedAbilityKeysRef.current.clear(); }
+      const hpRatio = (monster.hp || 1) > 0 ? Math.max(0, (finalState?.monsterHP ?? monsterHP) / monster.hp) : 1;
+      const ability = resolveSoloMonsterAbility({
+        battleId: `mb:${monster.id}:${abilityNonceRef.current}`,
+        monster, round,
+        arrows: arrows.map(a => a?.label ?? a?.score ?? a),
+        targetFmt, monsterHpRatio: hpRatio,
+      });
+      const resolved = ability?.resolved;
+      if (resolved?.resolvedKey && !resolvedAbilityKeysRef.current.has(resolved.resolvedKey)) {
+        resolvedAbilityKeysRef.current.add(resolved.resolvedKey);
+        const lv = resolved.outcome?.level;
+        const breakText = lv === "full" ? "🛡️ 完全破解！技能無效"
+          : lv === "major" ? "💪 高分破解！大幅削弱"
+          : lv === "partial" ? "👍 部分破解！效果減半" : "💢 未破解，全額生效";
+        addLog({ type:"counter_crit", text:`⚡ ${monster.name} 發動「${resolved.name || ability.scheduled?.name || "技能"}」！${breakText}` });
+        if (resolved.skillDamageMult > 0) {
+          const skillDmg = Math.max(0, Math.round(calcStandardCounter(monster.atk || 10, bSt.def || 0) * resolved.skillDamageMult));
+          if (skillDmg > 0) {
+            setArcherHP(h => Math.max(1, h - skillDmg));
+            showFloatCounterDmg(skillDmg, lv === "none");
+            addLog({ type:"counter", text:`💥 技能傷害：-${skillDmg} HP` });
+          }
+        }
+        for (const st of (resolved.statuses || [])) {
+          if (st.id === "atkDown" && typeof st.strength === "number") {
+            const drop = Math.round((bSt.atk || 10) * st.strength / 100);
+            setArcherATKMod(m => m - drop);
+            addLog({ type:"debuff", text:`🌀 ${st.name || "虛弱"}：ATK -${st.strength}%（下一回合）` });
+          } else if (st.id === "poison" && typeof st.strength === "number") {
+            const poisonDmg = Math.max(1, Math.round((bSt.hp || 100) * st.strength / 100));
+            setArcherHP(h => Math.max(1, h - poisonDmg));
+            addLog({ type:"debuff", text:`🕷️ 中毒：-${poisonDmg} HP（毒不致死）` });
+          } else {
+            addLog({ type:"debuff", text:`🌀 附加「${st.name || st.id}」（${st.duration || 1} 回合）` });
+          }
+        }
+        if (resolved.selfShieldMaxHpPct > 0) addLog({ type:"buff", text:`🛡 ${monster.name} 展開護盾！` });
+        if (resolved.delayedMult > 0) addLog({ type:"buff", text:`⏳ ${monster.name} 正在蓄力，下回合追加攻擊！` });
+      }
+    }
+
     // ── 3. 事件驅動 via RoundController ───────────────
     addLog({ type:"system", text:`── 第 ${round} 回合，距離 ${distance}米 ──` });
     await delay(400);
@@ -769,10 +849,22 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   function restoreBattle(s) {
+    s = normalizeMonsterBattleSnapshot(s);
     setMonster(s.monster);
     setBattleBg(pickBg(s.monster?.family));
-    setMode("student");
+    setMode(s.mode || "student");
     setBattleMode(s.battleMode || "score");
+    setArrowsPerRound([3, 6].includes(s.arrowsPerRound) ? s.arrowsPerRound : 6);
+    if (["full_110", "half_610", "field_16"].includes(s.targetFmt)) {
+      setTargetFmt(s.targetFmt);
+      setBattleTargetFmt(s.targetFmt);
+    }
+    if (typeof s.targetMode === "boolean") {
+      setTargetMode(s.targetMode);
+      setBattleInputMode(s.targetMode ? "target" : "button");
+    }
+    battleSessionIdRef.current = s.battleSessionId || battleSessionIdRef.current;
+    setBattleRuntimeSnapshot(s.runtimeSnapshot || null);
     setMonsterHP(s.monsterHP);
     setArcherHP(s.archerHP);
     setRound(s.round || 1);
@@ -796,6 +888,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   async function startBattle() {
+    setBattleRuntimeSnapshot(null);
     battleEndHandledRef.current = false;
     shootingPerformanceSavedRef.current = false;
     battleSessionIdRef.current = profile?.id && !isLimitedAccount
@@ -841,16 +934,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     });
     if (throwSkip === "big") setSkipBigRound(true);
 
-    // 怪物倍率：新手/學生HP×1；老手/賽事HP×1.5+ATK×1.25+DEF×1.25
-    const modeHPMult  = (mode==="veteran" || mode==="match") ? 1.5 : 1.0;
-    const modeATKMult = (mode==="veteran" || mode==="match") ? 1.25 : 1;
-    const modeDEFMult = (mode==="veteran" || mode==="match") ? 1.25 : 1;
-    const boosted = {
-      ...pickedMonster,
-      hp:  Math.round(pickedMonster.hp  * modeHPMult),
-      atk: Math.round(pickedMonster.atk * modeATKMult),
-      def: Math.round(pickedMonster.def * modeDEFMult),
-    };
+    // 挑戰強度（方案A）：輕鬆×0.8/標準×1.0/挑戰×1.2,取代舊模式倍率與隨機變體
+    const boosted = applyChallengeLevel(pickedMonster, challengeLevel);
     // 敵方削弱藥劑（在老手增幅之後套用）
     const boostedMonster = {
       ...boosted,
@@ -1254,21 +1339,25 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
                   <button key={m.id} onClick={()=>setPickedMonster(m)}
                     className="rounded-2xl p-4 text-left transition-all active:scale-95 relative overflow-hidden"
                     style={{ background:isPicked?"rgba(109,40,217,0.3)":"rgba(255,255,255,0.05)", border:`2px solid ${isPicked?"#7c3aed":"rgba(255,255,255,0.1)"}` }}>
-                    {/* 族別標籤 */}
-                    <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full"
-                      style={{ background:family.color+"33", color:family.color }}>
-                      {family.icon} {family.label}
-                    </div>
-                    {/* 難度標籤：弱化/普通/強悍 */}
-                    {m.variant && (
-                      <div className="absolute top-10 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full"
-                        style={{
-                          background: m.variant === 'weak' ? 'rgba(34,197,94,0.25)' : m.variant === 'strong' ? 'rgba(239,68,68,0.25)' : 'rgba(234,179,8,0.25)',
-                          color: m.variant === 'weak' ? '#22c55e' : m.variant === 'strong' ? '#ef4444' : '#eab308',
-                        }}>
-                        {m.variant === 'weak' ? '🟢 弱化' : m.variant === 'strong' ? '🔴 強悍' : '🟡 普通'}
+                    {/* 族別標籤 ＋ 招牌技能名 */}
+                    <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                      <div className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background:family.color+"33", color:family.color }}>
+                        {family.icon} {family.label}
                       </div>
-                    )}
+                      {m.signatureName && (
+                        <div className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background:"rgba(196,181,253,.18)", color:"#c4b5fd" }}>
+                          ⚡ {m.signatureName}
+                        </div>
+                      )}
+                    </div>
+                    {/* HP/ATK/DEF 數值（取代舊變體標籤,讓玩家直接看強度） */}
+                    <div className="absolute top-16 right-2 flex flex-col items-end gap-0.5 text-[10px] font-black tabular-nums">
+                      <span style={{ color:"#4ade80" }}>❤️ {m.hp}</span>
+                      <span style={{ color:"#fb923c" }}>⚔️ {m.atk}</span>
+                      <span style={{ color:"#60a5fa" }}>🛡️ {m.def}</span>
+                    </div>
                     <div className="mb-2"><MonsterBattleImg id={m.id} icon={m.icon} size={112}/></div>
                     <div className="font-black text-slate-100 text-sm pr-14">{m.name}</div>
                     <div className="text-xs mt-0.5 font-bold px-1.5 py-0.5 rounded-full inline-block"
@@ -1317,10 +1406,31 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
                       </div>
                     </div>
                   )}
+                  {/* 挑戰強度選擇（方案A）：明確告知數值與掉落差異 */}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-2.5">
+                    <div className="flex gap-2">
+                      {Object.values(SOLO_CHALLENGE_LEVELS).map(level => (
+                        <button key={level.id}
+                          onClick={() => { setChallengeLevel(level.id); localStorage.setItem("mb_challenge_level", level.id); }}
+                          className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${
+                            challengeLevel === level.id
+                              ? level.id === "hard" ? "bg-rose-600 text-white border-rose-500"
+                                : level.id === "easy" ? "bg-emerald-600 text-white border-emerald-500"
+                                : "bg-blue-600 text-white border-blue-500"
+                              : "bg-white/8 text-slate-400 border-white/15"
+                          }`}>
+                          {level.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-center text-[11px] font-bold text-amber-300">
+                      {(SOLO_CHALLENGE_LEVELS[challengeLevel] || SOLO_CHALLENGE_LEVELS.standard).desc}
+                    </div>
+                  </div>
                   <button onClick={()=>{ setMonster(pickedMonster); setBattleBg(pickBg(pickedMonster.family)); setPhase(defs ? "prebattle" : "mode"); }}
                     className="w-full py-4 rounded-2xl font-black text-lg text-white"
                     style={{ background:"linear-gradient(90deg,#7c3aed,#2563eb)", animation:"mb-glow 2s ease infinite" }}>
-                    ⚔️ 挑戰 {pickedMonster.name}！
+                    ⚔️ 挑戰 {pickedMonster.name}！（{(SOLO_CHALLENGE_LEVELS[challengeLevel] || SOLO_CHALLENGE_LEVELS.standard).label.slice(2)}）
                   </button>
                 </>
               );
@@ -1595,6 +1705,13 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           </div>
           <div className="text-2xl font-black mb-1">{pickedMonster.name}</div>
           <div className="text-purple-200 text-sm mb-4">{pickedMonster.desc}</div>
+          {pickedMonster.signatureSkillId && (
+            <div className="w-full text-left rounded-xl p-3 mb-3" style={{background:"rgba(15,23,42,.55)",border:"1px solid rgba(251,191,36,.35)"}}>
+              <div className="text-amber-300 text-xs font-black mb-1">⚡ 招牌技能情報・{pickedMonster.signatureName}</div>
+              <div className="text-slate-200 text-xs leading-relaxed">{pickedMonster.signatureSummary}</div>
+              {pickedMonster.counterSummary && <div className="text-emerald-300 text-xs mt-1.5">破解提示：{pickedMonster.counterSummary}</div>}
+            </div>
+          )}
           {mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強，HP基礎 200，加成無上限</div>}
           {mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
           {mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
@@ -1769,6 +1886,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           >⛶</button>
         )}
         <BattleScreen
+          battleId={battleSessionIdRef.current}
+          initialBattleSnapshot={battleRuntimeSnapshot}
+          onBattleSnapshot={handleBattleRuntimeSnapshot}
           player={{
             name: profile?.name || "射手",
             catId: playerCatId,
@@ -1791,6 +1911,13 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             tier: monster?.tier,
             variant: monster?.variant,
             icon: monster?.icon,
+            encounter: monster?.encounter,
+            role: monster?.role,
+            signatureSkillId: monster?.signatureSkillId,
+            signatureName: monster?.signatureName,
+            signatureSummary: monster?.signatureSummary,
+            counterSummary: monster?.counterSummary,
+            commonSkillIds: monster?.commonSkillIds,
           }}
           battleMode="score"
           scoreInput={targetMode ? "target" : "keypad"}
@@ -1801,6 +1928,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           cat={hasCat ? { catId, catName, type: "allround", catXP: 0, bond: 0 } : null}
           bgImage={battleBg}
           onBattleEnd={handleMBBattleEnd}
+          hideStandaloneResult
           onShootingAbandon={handleMBShootingAbandon}
           onLeaveBattle={() => {
             if (!window.confirm("確定要離開戰鬥嗎？本場未完成的進度不會保留。")) return false;
@@ -1810,7 +1938,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             else setPhase("select");
             return true;
           }}
-          autoStart
+          autoStart={!battleRuntimeSnapshot}
           fullScreen
           potions={availablePotions}
           onPotionUsed={(pid) => {
@@ -1847,6 +1975,13 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         materials: droppedMaterials,
         chest: wonChests.some(ch => ch.type !== "coin_chest"),
         goldChest: !!droppedCoinChest,
+        // 寶箱明細（面板直接顯示取得了什麼箱）
+        chestList: wonChests.map(ch => ({ icon: (CHEST_TYPES[ch.type] || CHEST_TYPES.wood).icon, name: (CHEST_TYPES[ch.type] || CHEST_TYPES.wood).name })),
+        coinChestName: droppedCoinChest ? `${droppedCoinChest.name || "金幣寶箱"}` : null,
+        // 經驗值合併進戰利品欄
+        adventurerXP: gainedXP || 0,
+        archerXP: lootArcherXP || 0,
+        catXP: lootCatXP || 0,
         card: droppedCard,
         arrowDew: 0,
         specialItem: null,
@@ -1921,30 +2056,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         {!isLimitedAccount && (
           <BattleResultPanel data={resultData} config={RESULT_CONFIG_SOLO} />
         )}
-        {/* 經驗值顯示（打怪勝利） */}
-        {!isLimitedAccount && (gainedXP > 0 || lootArcherXP > 0 || lootCatXP > 0) && (
-          <div className="w-full rounded-xl px-4 py-2.5 flex flex-col gap-1.5" style={{ background:"linear-gradient(90deg,rgba(124,58,237,0.15),rgba(37,99,235,0.1))", border:"1px solid rgba(124,58,237,0.3)" }}>
-            <div className="text-[10px] text-purple-300 font-bold mb-0.5">✨ 獲得經驗值</div>
-            {gainedXP > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-purple-300">⚔️ 冒險者 XP</span>
-                <span className="text-white font-black text-sm">+{gainedXP}</span>
-              </div>
-            )}
-            {lootArcherXP > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-amber-300">🏹 射手等級 XP</span>
-                <span className="text-white font-black text-sm">+{lootArcherXP}</span>
-              </div>
-            )}
-            {lootCatXP > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-pink-300">🐱 貓貓 XP</span>
-                <span className="text-white font-black text-sm">+{lootCatXP}</span>
-              </div>
-            )}
-          </div>
-        )}
+        {/* 經驗值已合併進 BattleResultPanel 戰利品欄（2026-07-18 使用者指示） */}
         {isLimitedAccount && (droppedCoins > 0 || droppedMaterials.length > 0) && (
           <div className="w-full rounded-2xl p-4 flex flex-col gap-3"
             style={{ background:"linear-gradient(135deg,rgba(15,23,42,0.78),rgba(30,41,59,0.72))", border:"1px solid rgba(148,163,184,0.28)" }}>
@@ -1995,28 +2107,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               <div className="text-slate-500 text-xs mt-1">成為正式射手才能獲得更多獎勵！</div>
             </div>
           ) : null
-        ) : (
-          /* 射手掉落區：即時掉落已由 BattleResultPanel 顯示，此處只保留寶箱入背包 */
-          wonChests.length > 0 ? (
-            <div className="w-full flex flex-col gap-2">
-              {wonChests.map((ch, idx) => {
-                const cc = CHEST_TYPES[ch.type] || CHEST_TYPES.wood;
-                return (
-                  <div key={idx} className="rounded-xl p-3 border-2 flex items-center gap-3"
-                    style={{ background:cc.color+"15", borderColor:cc.color+"66" }}>
-                    <div className="text-4xl" style={{ animation:"mb-chest 1.5s ease infinite" }}>{cc.icon}</div>
-                    <div className="flex-1">
-                      <div className="font-black text-sm" style={{ color:cc.color }}>
-                        獲得「{cc.name}」！{ch.type==="cat"?" 🎉 Lucky！":""}
-                      </div>
-                      <div className="text-slate-400 text-xs mt-0.5">已放進背包，到「🎒 背包」頁開箱</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null
-        )}
+        ) : null /* 寶箱明細已併入 BattleResultPanel 戰利品欄,底部提醒卡移除（2026-07-18 使用者指示） */}
 
         <button onClick={()=>setShowBattleCard(true)}
           className="w-full py-3 rounded-xl font-black text-white"
@@ -2141,7 +2232,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   // BattleScreen callback: handle battle end -> full loot/XP/rewards
-  function handleMBBattleEnd(result, summary = {}) {
+  async function handleMBBattleEnd(result, summary = {}) {
     if (battleEndHandledRef.current) return;
     battleEndHandledRef.current = true;
     // Sync battle stats from BattleScreen summary
@@ -2189,26 +2280,73 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         const { mainChest, potionChest } = makeChests(monster, mode);
         const mainChests = [mainChest, potionChest].filter(Boolean);
         setWonChests(mainChests);
-        addChests(profile.id, [...mainChests]).catch(() => {});
+        // 機率金幣寶箱：依挑戰強度（輕鬆20%/標準50%/挑戰必掉）
+        const coinChestChance = (SOLO_CHALLENGE_LEVELS[monster?.challengeLevel || challengeLevel] || SOLO_CHALLENGE_LEVELS.standard).coinChestChance;
+        const coinChest = Math.random() < coinChestChance ? makeCoinChest(monster?.tier, "打怪掉落") : null;
+        if (coinChest) setDroppedCoinChest(coinChest);
+        addChests(profile.id, [...mainChests, ...(coinChest ? [coinChest] : [])]).catch(() => {});
       }
 
-      // Materials + coins
+      // Materials + coins（掉落全查挑戰強度表:SOLO_CHALLENGE_LEVELS）
+      const rewardLevel = SOLO_CHALLENGE_LEVELS[monster?.challengeLevel || challengeLevel] || SOLO_CHALLENGE_LEVELS.standard;
       if (!isLimitedAccount && profile?.id) {
-        const mats = (mode === "novice"
-          ? rollMaterialDrops(monster)
-          : rollMaterialDropsGuaranteed(monster, (mode === "veteran" || mode === "match") ? 2 : 1)
-        ).filter(m => !m.id?.startsWith("frag_"));
-        setDroppedMaterials(mats);
-        if (mats.length > 0) addMaterials(profile.id, mats).catch(() => {});
+        // 職場/寶箱套裝：打怪金幣加成（cardTalents）
+        const coinFx = calcCardCombatEffectsFromCollection(cardCollRef.current || {});
+        const baseCoins = Math.round(rollCoins(monster?.tier, mode) * rewardLevel.coinMult * (1 + (coinFx.coinBonusPct || 0) / 100));
+        const expansionReward = buildSoloExpansionReward({
+          battleId:battleSessionIdRef.current,
+          memberId:profile.id,
+          monster,
+          materialQty:rewardLevel.materialQty,
+          cardChance:rewardLevel.cardChance,
+        });
+        if (expansionReward) {
+          const displayMaterials = expansionReward.materials.map(material => ({
+            ...material,
+            // 中文名從素材目錄查（adapter 只帶 materialId,舊寫法會露出原始 id）
+            name:EXPANSION_MATERIAL_BY_ID[material.id]?.name || monster?.materialName || material.id,
+          }));
+          try {
+            // 卡片與素材提示必須以 callable 已確認、已寫入的結果為準。
+            // 不可先顯示前端隨機結果，否則會出現「畫面說拿到卡、收藏卻沒有」的假提示。
+            const claimResult = await claimMonsterBattleReward({
+              battleId:battleSessionIdRef.current,
+              memberId:profile.id,
+              rewardType:"solo_hunt",
+              materials:expansionReward.materials,
+              coins:0,
+              card:expansionReward.card,
+              metadata:{ mode, challengeLevel:monster?.challengeLevel || challengeLevel, monsterId:monster.id, catalogVersion:1, source:"solo" },
+            });
+            const trustedReward = claimResult?.reward || {};
+            setDroppedCoins(Math.max(0, Number(trustedReward.coins) || 0));
+            const trustedMaterials = Object.entries(trustedReward.materialTotals || {}).map(([id, quantity]) => ({
+              id, quantity,
+              name:EXPANSION_MATERIAL_BY_ID[id]?.name || monster?.materialName || id,
+            }));
+            setDroppedMaterials(trustedMaterials.length ? trustedMaterials : displayMaterials);
+            setDroppedCard(trustedReward.card || null);
+          } catch (error) {
+            // claim 已排入本機重試佇列；未經伺服器確認前不可宣稱取得卡片。
+            setDroppedMaterials([]);
+            setDroppedCard(null);
+            setDroppedCoins(0);
+            console.warn("solo expansion reward claim deferred", error);
+          }
+        } else {
+          const mats = (mode === "novice"
+            ? rollMaterialDrops(monster)
+            : rollMaterialDropsGuaranteed(monster, (mode === "veteran" || mode === "match") ? 2 : 1)
+          ).filter(m => !m.id?.startsWith("frag_"));
+          setDroppedMaterials(mats);
+          if (mats.length > 0) addMaterials(profile.id, mats).catch(() => {});
+          addCoins(profile.id, baseCoins).catch(() => {});
 
-        const baseCoins = rollCoins(monster?.tier, mode);
-        setDroppedCoins(baseCoins);
-        addCoins(profile.id, baseCoins).catch(() => {});
-
-        const card = rollCardDrop(monster);
-        if (card) {
-          setDroppedCard(card);
-          addMonsterCard(profile.id, card).catch(() => {});
+          const card = rollCardDrop(monster);
+          if (card) {
+            setDroppedCard(card);
+            addMonsterCard(profile.id, card).catch(() => {});
+          }
         }
       } else if (isLimitedAccount || profile?.id) {
         const mats = rollMaterialDrops(monster).filter(m => !m.id?.startsWith("frag_")).slice(0, 1);

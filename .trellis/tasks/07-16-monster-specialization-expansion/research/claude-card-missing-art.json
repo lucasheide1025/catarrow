@@ -1,0 +1,1737 @@
+{
+  "generatedAt": "2026-07-16",
+  "note": "掃 public/cards/monsters + public/monsters-battle + public/monsters;missing=三處皆無實圖。供 Codex 批次生成,C4 不生成圖片。",
+  "total": 252,
+  "physicallyPresent": 60,
+  "missingCount": 192,
+  "missing": [
+    {
+      "monsterId": "ghost_t1_normal_a",
+      "artKey": "ghost_t1_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "common"
+    },
+    {
+      "monsterId": "ghost_t1_normal_b",
+      "artKey": "ghost_t1_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "common"
+    },
+    {
+      "monsterId": "ghost_t1_mini_a",
+      "artKey": "ghost_t1_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "common"
+    },
+    {
+      "monsterId": "ghost_t1_mini_b",
+      "artKey": "ghost_t1_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "common"
+    },
+    {
+      "monsterId": "ghost_t1_boss",
+      "artKey": "ghost_t1_boss",
+      "expectedPath": "/cards/monsters/ghost_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "common"
+    },
+    {
+      "monsterId": "ghost_t2_normal_a",
+      "artKey": "ghost_t2_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "ghost_t2_normal_b",
+      "artKey": "ghost_t2_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "ghost_t2_mini_a",
+      "artKey": "ghost_t2_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "ghost_t2_mini_b",
+      "artKey": "ghost_t2_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "ghost_t2_boss",
+      "artKey": "ghost_t2_boss",
+      "expectedPath": "/cards/monsters/ghost_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "ghost_t3_normal_a",
+      "artKey": "ghost_t3_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "ghost_t3_normal_b",
+      "artKey": "ghost_t3_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "ghost_t3_mini_a",
+      "artKey": "ghost_t3_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "ghost_t3_mini_b",
+      "artKey": "ghost_t3_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "ghost_t3_boss",
+      "artKey": "ghost_t3_boss",
+      "expectedPath": "/cards/monsters/ghost_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "ghost_t4_normal_a",
+      "artKey": "ghost_t4_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "ghost_t4_normal_b",
+      "artKey": "ghost_t4_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "ghost_t4_mini_a",
+      "artKey": "ghost_t4_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "ghost_t4_mini_b",
+      "artKey": "ghost_t4_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "ghost_t4_boss",
+      "artKey": "ghost_t4_boss",
+      "expectedPath": "/cards/monsters/ghost_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "ghost_t5_normal_a",
+      "artKey": "ghost_t5_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "ghost_t5_normal_b",
+      "artKey": "ghost_t5_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "ghost_t5_mini_a",
+      "artKey": "ghost_t5_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "ghost_t5_mini_b",
+      "artKey": "ghost_t5_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "ghost_t5_boss",
+      "artKey": "ghost_t5_boss",
+      "expectedPath": "/cards/monsters/ghost_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "ghost_t6_normal_a",
+      "artKey": "ghost_t6_normal_a",
+      "expectedPath": "/cards/monsters/ghost_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "ghost_t6_normal_b",
+      "artKey": "ghost_t6_normal_b",
+      "expectedPath": "/cards/monsters/ghost_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "ghost",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "ghost_t6_mini_a",
+      "artKey": "ghost_t6_mini_a",
+      "expectedPath": "/cards/monsters/ghost_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "ghost_t6_mini_b",
+      "artKey": "ghost_t6_mini_b",
+      "expectedPath": "/cards/monsters/ghost_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "ghost",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "ghost_t6_boss",
+      "artKey": "ghost_t6_boss",
+      "expectedPath": "/cards/monsters/ghost_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "ghost",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "mountain_t1_normal_a",
+      "artKey": "mountain_t1_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "common"
+    },
+    {
+      "monsterId": "mountain_t1_normal_b",
+      "artKey": "mountain_t1_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "common"
+    },
+    {
+      "monsterId": "mountain_t1_mini_a",
+      "artKey": "mountain_t1_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "common"
+    },
+    {
+      "monsterId": "mountain_t1_mini_b",
+      "artKey": "mountain_t1_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "common"
+    },
+    {
+      "monsterId": "mountain_t1_boss",
+      "artKey": "mountain_t1_boss",
+      "expectedPath": "/cards/monsters/mountain_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "common"
+    },
+    {
+      "monsterId": "mountain_t2_normal_a",
+      "artKey": "mountain_t2_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "mountain_t2_normal_b",
+      "artKey": "mountain_t2_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "mountain_t2_mini_a",
+      "artKey": "mountain_t2_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "mountain_t2_mini_b",
+      "artKey": "mountain_t2_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "mountain_t2_boss",
+      "artKey": "mountain_t2_boss",
+      "expectedPath": "/cards/monsters/mountain_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "mountain_t3_normal_a",
+      "artKey": "mountain_t3_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "mountain_t3_normal_b",
+      "artKey": "mountain_t3_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "mountain_t3_mini_a",
+      "artKey": "mountain_t3_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "mountain_t3_mini_b",
+      "artKey": "mountain_t3_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "mountain_t3_boss",
+      "artKey": "mountain_t3_boss",
+      "expectedPath": "/cards/monsters/mountain_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "mountain_t4_normal_a",
+      "artKey": "mountain_t4_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "mountain_t4_normal_b",
+      "artKey": "mountain_t4_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "mountain_t4_mini_a",
+      "artKey": "mountain_t4_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "mountain_t4_mini_b",
+      "artKey": "mountain_t4_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "mountain_t4_boss",
+      "artKey": "mountain_t4_boss",
+      "expectedPath": "/cards/monsters/mountain_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "mountain_t5_normal_a",
+      "artKey": "mountain_t5_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "mountain_t5_normal_b",
+      "artKey": "mountain_t5_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "mountain_t5_mini_a",
+      "artKey": "mountain_t5_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "mountain_t5_mini_b",
+      "artKey": "mountain_t5_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "mountain_t5_boss",
+      "artKey": "mountain_t5_boss",
+      "expectedPath": "/cards/monsters/mountain_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "mountain_t6_normal_a",
+      "artKey": "mountain_t6_normal_a",
+      "expectedPath": "/cards/monsters/mountain_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "mountain_t6_normal_b",
+      "artKey": "mountain_t6_normal_b",
+      "expectedPath": "/cards/monsters/mountain_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "mountain",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "mountain_t6_mini_a",
+      "artKey": "mountain_t6_mini_a",
+      "expectedPath": "/cards/monsters/mountain_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "mountain_t6_mini_b",
+      "artKey": "mountain_t6_mini_b",
+      "expectedPath": "/cards/monsters/mountain_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "mountain",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "mountain_t6_boss",
+      "artKey": "mountain_t6_boss",
+      "expectedPath": "/cards/monsters/mountain_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "mountain",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "insect_t1_normal_a",
+      "artKey": "insect_t1_normal_a",
+      "expectedPath": "/cards/monsters/insect_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "common"
+    },
+    {
+      "monsterId": "insect_t1_normal_b",
+      "artKey": "insect_t1_normal_b",
+      "expectedPath": "/cards/monsters/insect_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "common"
+    },
+    {
+      "monsterId": "insect_t1_mini_a",
+      "artKey": "insect_t1_mini_a",
+      "expectedPath": "/cards/monsters/insect_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "common"
+    },
+    {
+      "monsterId": "insect_t1_mini_b",
+      "artKey": "insect_t1_mini_b",
+      "expectedPath": "/cards/monsters/insect_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "common"
+    },
+    {
+      "monsterId": "insect_t1_boss",
+      "artKey": "insect_t1_boss",
+      "expectedPath": "/cards/monsters/insect_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "common"
+    },
+    {
+      "monsterId": "insect_t2_normal_a",
+      "artKey": "insect_t2_normal_a",
+      "expectedPath": "/cards/monsters/insect_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "insect_t2_normal_b",
+      "artKey": "insect_t2_normal_b",
+      "expectedPath": "/cards/monsters/insect_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "insect_t2_mini_a",
+      "artKey": "insect_t2_mini_a",
+      "expectedPath": "/cards/monsters/insect_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "insect_t2_mini_b",
+      "artKey": "insect_t2_mini_b",
+      "expectedPath": "/cards/monsters/insect_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "insect_t2_boss",
+      "artKey": "insect_t2_boss",
+      "expectedPath": "/cards/monsters/insect_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "insect_t3_normal_a",
+      "artKey": "insect_t3_normal_a",
+      "expectedPath": "/cards/monsters/insect_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "insect_t3_normal_b",
+      "artKey": "insect_t3_normal_b",
+      "expectedPath": "/cards/monsters/insect_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "insect_t3_mini_a",
+      "artKey": "insect_t3_mini_a",
+      "expectedPath": "/cards/monsters/insect_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "insect_t3_mini_b",
+      "artKey": "insect_t3_mini_b",
+      "expectedPath": "/cards/monsters/insect_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "insect_t3_boss",
+      "artKey": "insect_t3_boss",
+      "expectedPath": "/cards/monsters/insect_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "insect_t4_normal_a",
+      "artKey": "insect_t4_normal_a",
+      "expectedPath": "/cards/monsters/insect_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "insect_t4_normal_b",
+      "artKey": "insect_t4_normal_b",
+      "expectedPath": "/cards/monsters/insect_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "insect_t4_mini_a",
+      "artKey": "insect_t4_mini_a",
+      "expectedPath": "/cards/monsters/insect_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "insect_t4_mini_b",
+      "artKey": "insect_t4_mini_b",
+      "expectedPath": "/cards/monsters/insect_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "insect_t4_boss",
+      "artKey": "insect_t4_boss",
+      "expectedPath": "/cards/monsters/insect_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "insect_t5_normal_a",
+      "artKey": "insect_t5_normal_a",
+      "expectedPath": "/cards/monsters/insect_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "insect_t5_normal_b",
+      "artKey": "insect_t5_normal_b",
+      "expectedPath": "/cards/monsters/insect_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "insect_t5_mini_a",
+      "artKey": "insect_t5_mini_a",
+      "expectedPath": "/cards/monsters/insect_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "insect_t5_mini_b",
+      "artKey": "insect_t5_mini_b",
+      "expectedPath": "/cards/monsters/insect_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "insect_t5_boss",
+      "artKey": "insect_t5_boss",
+      "expectedPath": "/cards/monsters/insect_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "insect_t6_normal_a",
+      "artKey": "insect_t6_normal_a",
+      "expectedPath": "/cards/monsters/insect_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "insect_t6_normal_b",
+      "artKey": "insect_t6_normal_b",
+      "expectedPath": "/cards/monsters/insect_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "insect",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "insect_t6_mini_a",
+      "artKey": "insect_t6_mini_a",
+      "expectedPath": "/cards/monsters/insect_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "insect_t6_mini_b",
+      "artKey": "insect_t6_mini_b",
+      "expectedPath": "/cards/monsters/insect_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "insect",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "insect_t6_boss",
+      "artKey": "insect_t6_boss",
+      "expectedPath": "/cards/monsters/insect_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "insect",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "workplace_t1_normal_a",
+      "artKey": "workplace_t1_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "common"
+    },
+    {
+      "monsterId": "workplace_t1_normal_b",
+      "artKey": "workplace_t1_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "common"
+    },
+    {
+      "monsterId": "workplace_t1_mini_a",
+      "artKey": "workplace_t1_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "common"
+    },
+    {
+      "monsterId": "workplace_t1_mini_b",
+      "artKey": "workplace_t1_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "common"
+    },
+    {
+      "monsterId": "workplace_t1_boss",
+      "artKey": "workplace_t1_boss",
+      "expectedPath": "/cards/monsters/workplace_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "common"
+    },
+    {
+      "monsterId": "workplace_t2_normal_a",
+      "artKey": "workplace_t2_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "workplace_t2_normal_b",
+      "artKey": "workplace_t2_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "workplace_t2_mini_a",
+      "artKey": "workplace_t2_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "workplace_t2_mini_b",
+      "artKey": "workplace_t2_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "workplace_t2_boss",
+      "artKey": "workplace_t2_boss",
+      "expectedPath": "/cards/monsters/workplace_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "workplace_t3_normal_a",
+      "artKey": "workplace_t3_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "workplace_t3_normal_b",
+      "artKey": "workplace_t3_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "workplace_t3_mini_a",
+      "artKey": "workplace_t3_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "workplace_t3_mini_b",
+      "artKey": "workplace_t3_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "workplace_t3_boss",
+      "artKey": "workplace_t3_boss",
+      "expectedPath": "/cards/monsters/workplace_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "workplace_t4_normal_a",
+      "artKey": "workplace_t4_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "workplace_t4_normal_b",
+      "artKey": "workplace_t4_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "workplace_t4_mini_a",
+      "artKey": "workplace_t4_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "workplace_t4_mini_b",
+      "artKey": "workplace_t4_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "workplace_t4_boss",
+      "artKey": "workplace_t4_boss",
+      "expectedPath": "/cards/monsters/workplace_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "workplace_t5_normal_a",
+      "artKey": "workplace_t5_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "workplace_t5_normal_b",
+      "artKey": "workplace_t5_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "workplace_t5_mini_a",
+      "artKey": "workplace_t5_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "workplace_t5_mini_b",
+      "artKey": "workplace_t5_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "workplace_t5_boss",
+      "artKey": "workplace_t5_boss",
+      "expectedPath": "/cards/monsters/workplace_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "workplace_t6_normal_a",
+      "artKey": "workplace_t6_normal_a",
+      "expectedPath": "/cards/monsters/workplace_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "workplace_t6_normal_b",
+      "artKey": "workplace_t6_normal_b",
+      "expectedPath": "/cards/monsters/workplace_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "workplace",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "workplace_t6_mini_a",
+      "artKey": "workplace_t6_mini_a",
+      "expectedPath": "/cards/monsters/workplace_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "workplace_t6_mini_b",
+      "artKey": "workplace_t6_mini_b",
+      "expectedPath": "/cards/monsters/workplace_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "workplace",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "workplace_t6_boss",
+      "artKey": "workplace_t6_boss",
+      "expectedPath": "/cards/monsters/workplace_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "workplace",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "exam_t1_normal_a",
+      "artKey": "exam_t1_normal_a",
+      "expectedPath": "/cards/monsters/exam_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "common"
+    },
+    {
+      "monsterId": "exam_t1_normal_b",
+      "artKey": "exam_t1_normal_b",
+      "expectedPath": "/cards/monsters/exam_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "common"
+    },
+    {
+      "monsterId": "exam_t1_mini_a",
+      "artKey": "exam_t1_mini_a",
+      "expectedPath": "/cards/monsters/exam_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "common"
+    },
+    {
+      "monsterId": "exam_t1_mini_b",
+      "artKey": "exam_t1_mini_b",
+      "expectedPath": "/cards/monsters/exam_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "common"
+    },
+    {
+      "monsterId": "exam_t1_boss",
+      "artKey": "exam_t1_boss",
+      "expectedPath": "/cards/monsters/exam_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "common"
+    },
+    {
+      "monsterId": "exam_t2_normal_a",
+      "artKey": "exam_t2_normal_a",
+      "expectedPath": "/cards/monsters/exam_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "exam_t2_normal_b",
+      "artKey": "exam_t2_normal_b",
+      "expectedPath": "/cards/monsters/exam_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "exam_t2_mini_a",
+      "artKey": "exam_t2_mini_a",
+      "expectedPath": "/cards/monsters/exam_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "exam_t2_mini_b",
+      "artKey": "exam_t2_mini_b",
+      "expectedPath": "/cards/monsters/exam_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "exam_t2_boss",
+      "artKey": "exam_t2_boss",
+      "expectedPath": "/cards/monsters/exam_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "exam_t3_normal_a",
+      "artKey": "exam_t3_normal_a",
+      "expectedPath": "/cards/monsters/exam_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "exam_t3_normal_b",
+      "artKey": "exam_t3_normal_b",
+      "expectedPath": "/cards/monsters/exam_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "exam_t3_mini_a",
+      "artKey": "exam_t3_mini_a",
+      "expectedPath": "/cards/monsters/exam_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "exam_t3_mini_b",
+      "artKey": "exam_t3_mini_b",
+      "expectedPath": "/cards/monsters/exam_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "exam_t3_boss",
+      "artKey": "exam_t3_boss",
+      "expectedPath": "/cards/monsters/exam_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "exam_t4_normal_a",
+      "artKey": "exam_t4_normal_a",
+      "expectedPath": "/cards/monsters/exam_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "exam_t4_normal_b",
+      "artKey": "exam_t4_normal_b",
+      "expectedPath": "/cards/monsters/exam_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "exam_t4_mini_a",
+      "artKey": "exam_t4_mini_a",
+      "expectedPath": "/cards/monsters/exam_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "exam_t4_mini_b",
+      "artKey": "exam_t4_mini_b",
+      "expectedPath": "/cards/monsters/exam_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "exam_t4_boss",
+      "artKey": "exam_t4_boss",
+      "expectedPath": "/cards/monsters/exam_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "exam_t5_normal_a",
+      "artKey": "exam_t5_normal_a",
+      "expectedPath": "/cards/monsters/exam_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "exam_t5_normal_b",
+      "artKey": "exam_t5_normal_b",
+      "expectedPath": "/cards/monsters/exam_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "exam_t5_mini_a",
+      "artKey": "exam_t5_mini_a",
+      "expectedPath": "/cards/monsters/exam_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "exam_t5_mini_b",
+      "artKey": "exam_t5_mini_b",
+      "expectedPath": "/cards/monsters/exam_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "exam_t5_boss",
+      "artKey": "exam_t5_boss",
+      "expectedPath": "/cards/monsters/exam_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "exam_t6_normal_a",
+      "artKey": "exam_t6_normal_a",
+      "expectedPath": "/cards/monsters/exam_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "exam_t6_normal_b",
+      "artKey": "exam_t6_normal_b",
+      "expectedPath": "/cards/monsters/exam_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "exam",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "exam_t6_mini_a",
+      "artKey": "exam_t6_mini_a",
+      "expectedPath": "/cards/monsters/exam_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "exam_t6_mini_b",
+      "artKey": "exam_t6_mini_b",
+      "expectedPath": "/cards/monsters/exam_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "exam",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "exam_t6_boss",
+      "artKey": "exam_t6_boss",
+      "expectedPath": "/cards/monsters/exam_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "exam",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "temple_t1_normal_a",
+      "artKey": "temple_t1_normal_a",
+      "expectedPath": "/cards/monsters/temple_t1_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "common"
+    },
+    {
+      "monsterId": "temple_t1_normal_b",
+      "artKey": "temple_t1_normal_b",
+      "expectedPath": "/cards/monsters/temple_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "common"
+    },
+    {
+      "monsterId": "temple_t1_mini_a",
+      "artKey": "temple_t1_mini_a",
+      "expectedPath": "/cards/monsters/temple_t1_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "common"
+    },
+    {
+      "monsterId": "temple_t1_mini_b",
+      "artKey": "temple_t1_mini_b",
+      "expectedPath": "/cards/monsters/temple_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "common"
+    },
+    {
+      "monsterId": "temple_t1_boss",
+      "artKey": "temple_t1_boss",
+      "expectedPath": "/cards/monsters/temple_t1_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "common"
+    },
+    {
+      "monsterId": "temple_t2_normal_a",
+      "artKey": "temple_t2_normal_a",
+      "expectedPath": "/cards/monsters/temple_t2_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "temple_t2_normal_b",
+      "artKey": "temple_t2_normal_b",
+      "expectedPath": "/cards/monsters/temple_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "temple_t2_mini_a",
+      "artKey": "temple_t2_mini_a",
+      "expectedPath": "/cards/monsters/temple_t2_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "temple_t2_mini_b",
+      "artKey": "temple_t2_mini_b",
+      "expectedPath": "/cards/monsters/temple_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "temple_t2_boss",
+      "artKey": "temple_t2_boss",
+      "expectedPath": "/cards/monsters/temple_t2_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "temple_t3_normal_a",
+      "artKey": "temple_t3_normal_a",
+      "expectedPath": "/cards/monsters/temple_t3_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "temple_t3_normal_b",
+      "artKey": "temple_t3_normal_b",
+      "expectedPath": "/cards/monsters/temple_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "temple_t3_mini_a",
+      "artKey": "temple_t3_mini_a",
+      "expectedPath": "/cards/monsters/temple_t3_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "temple_t3_mini_b",
+      "artKey": "temple_t3_mini_b",
+      "expectedPath": "/cards/monsters/temple_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "temple_t3_boss",
+      "artKey": "temple_t3_boss",
+      "expectedPath": "/cards/monsters/temple_t3_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "temple_t4_normal_a",
+      "artKey": "temple_t4_normal_a",
+      "expectedPath": "/cards/monsters/temple_t4_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "temple_t4_normal_b",
+      "artKey": "temple_t4_normal_b",
+      "expectedPath": "/cards/monsters/temple_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "temple_t4_mini_a",
+      "artKey": "temple_t4_mini_a",
+      "expectedPath": "/cards/monsters/temple_t4_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "temple_t4_mini_b",
+      "artKey": "temple_t4_mini_b",
+      "expectedPath": "/cards/monsters/temple_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "temple_t4_boss",
+      "artKey": "temple_t4_boss",
+      "expectedPath": "/cards/monsters/temple_t4_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "temple_t5_normal_a",
+      "artKey": "temple_t5_normal_a",
+      "expectedPath": "/cards/monsters/temple_t5_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "temple_t5_normal_b",
+      "artKey": "temple_t5_normal_b",
+      "expectedPath": "/cards/monsters/temple_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "temple_t5_mini_a",
+      "artKey": "temple_t5_mini_a",
+      "expectedPath": "/cards/monsters/temple_t5_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "temple_t5_mini_b",
+      "artKey": "temple_t5_mini_b",
+      "expectedPath": "/cards/monsters/temple_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "temple_t5_boss",
+      "artKey": "temple_t5_boss",
+      "expectedPath": "/cards/monsters/temple_t5_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "temple_t6_normal_a",
+      "artKey": "temple_t6_normal_a",
+      "expectedPath": "/cards/monsters/temple_t6_normal_a.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "temple_t6_normal_b",
+      "artKey": "temple_t6_normal_b",
+      "expectedPath": "/cards/monsters/temple_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "temple",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "temple_t6_mini_a",
+      "artKey": "temple_t6_mini_a",
+      "expectedPath": "/cards/monsters/temple_t6_mini_a.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "temple_t6_mini_b",
+      "artKey": "temple_t6_mini_b",
+      "expectedPath": "/cards/monsters/temple_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "temple",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "temple_t6_boss",
+      "artKey": "temple_t6_boss",
+      "expectedPath": "/cards/monsters/temple_t6_boss.webp",
+      "existingFlag": false,
+      "encounter": "boss",
+      "family": "temple",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "treasure_t1_normal_b",
+      "artKey": "treasure_t1_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t1_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "common"
+    },
+    {
+      "monsterId": "treasure_t1_mini_b",
+      "artKey": "treasure_t1_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t1_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "common"
+    },
+    {
+      "monsterId": "treasure_t2_normal_b",
+      "artKey": "treasure_t2_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t2_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "treasure_t2_mini_b",
+      "artKey": "treasure_t2_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t2_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "rare"
+    },
+    {
+      "monsterId": "treasure_t3_normal_b",
+      "artKey": "treasure_t3_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t3_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "treasure_t3_mini_b",
+      "artKey": "treasure_t3_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t3_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "elite"
+    },
+    {
+      "monsterId": "treasure_t4_normal_b",
+      "artKey": "treasure_t4_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t4_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "treasure_t4_mini_b",
+      "artKey": "treasure_t4_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t4_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "fierce"
+    },
+    {
+      "monsterId": "treasure_t5_normal_b",
+      "artKey": "treasure_t5_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t5_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "treasure_t5_mini_b",
+      "artKey": "treasure_t5_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t5_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "boss"
+    },
+    {
+      "monsterId": "treasure_t6_normal_b",
+      "artKey": "treasure_t6_normal_b",
+      "expectedPath": "/cards/monsters/treasure_t6_normal_b.webp",
+      "existingFlag": false,
+      "encounter": "normal",
+      "family": "treasure",
+      "tier": "mythic"
+    },
+    {
+      "monsterId": "treasure_t6_mini_b",
+      "artKey": "treasure_t6_mini_b",
+      "expectedPath": "/cards/monsters/treasure_t6_mini_b.webp",
+      "existingFlag": false,
+      "encounter": "miniBoss",
+      "family": "treasure",
+      "tier": "mythic"
+    }
+  ]
+}

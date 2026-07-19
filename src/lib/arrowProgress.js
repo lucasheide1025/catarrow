@@ -48,16 +48,20 @@ export function subscribeLocalTodayArrows(memberId, callback) {
 
 // Intentionally not async: local mileage is committed before account/cloud work begins.
 export function createRoundArrowRecorder({ identifyLocalOnly, enqueueOfficial, afterEnqueue }) {
-  return function recordRoundArrows(memberId, count) {
+  return function recordRoundArrows(memberId, count, options = {}) {
     const normalizedCount = Number(count);
     const localTotal = incrementLocalTodayArrows(memberId, normalizedCount);
     if (localTotal === null) return Promise.resolve();
-    return Promise.resolve()
-      .then(() => identifyLocalOnly(memberId))
-      .then(localOnly => {
-        if (localOnly) return undefined;
-        const operation = enqueueOfficial(memberId, normalizedCount);
-        return afterEnqueue(memberId, operation);
-      });
+    // 呼叫端已知帳號類型時直接判斷（同步、零網路）——避免 async 身分檢查在網路不穩時
+    // 「保守失敗」把正式射手的箭靜默降級成純本機,造成挖掘/終身箭數永久卡住。
+    const knownType = options.accountType;
+    const resolveLocalOnly = knownType
+      ? Promise.resolve(knownType === "guest" || knownType === "kid")
+      : Promise.resolve().then(() => identifyLocalOnly(memberId));
+    return resolveLocalOnly.then(localOnly => {
+      if (localOnly) return undefined;
+      const operation = enqueueOfficial(memberId, normalizedCount);
+      return afterEnqueue(memberId, operation);
+    });
   };
 }

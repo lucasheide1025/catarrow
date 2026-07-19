@@ -1,0 +1,2522 @@
+[
+  {
+    "id": "ghost_m1_a",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "好兄弟·幼素材",
+    "forMonster": "ghost_1_na"
+  },
+  {
+    "id": "ghost_m1",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "好兄弟素材",
+    "forMonster": "ghost_1"
+  },
+  {
+    "id": "ghost_m1_b",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "好兄弟·猛素材",
+    "forMonster": "ghost_1_nb"
+  },
+  {
+    "id": "ghost_km1_a",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·見習",
+    "forMonster": "ghost_1_ma"
+  },
+  {
+    "id": "ghost_km1_b",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·見習",
+    "forMonster": "ghost_1_mb"
+  },
+  {
+    "id": "ghost_bm1",
+    "family": "ghost",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·見習",
+    "forMonster": "ghost_1_bk"
+  },
+  {
+    "id": "ghost_m2_a",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔神仔·幼素材",
+    "forMonster": "ghost_2_na"
+  },
+  {
+    "id": "ghost_m2",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔神仔素材",
+    "forMonster": "ghost_2"
+  },
+  {
+    "id": "ghost_m2_b",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔神仔·猛素材",
+    "forMonster": "ghost_2_nb"
+  },
+  {
+    "id": "ghost_km2_a",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·初階",
+    "forMonster": "ghost_2_ma"
+  },
+  {
+    "id": "ghost_km2_b",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·初階",
+    "forMonster": "ghost_2_mb"
+  },
+  {
+    "id": "ghost_bm2",
+    "family": "ghost",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·初階",
+    "forMonster": "ghost_2_bk"
+  },
+  {
+    "id": "ghost_m3_a",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "林投姐·幼素材",
+    "forMonster": "ghost_3_na"
+  },
+  {
+    "id": "ghost_m3",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "林投姐素材",
+    "forMonster": "ghost_3"
+  },
+  {
+    "id": "ghost_m3_b",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "林投姐·猛素材",
+    "forMonster": "ghost_3_nb"
+  },
+  {
+    "id": "ghost_km3_a",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·精銳",
+    "forMonster": "ghost_3_ma"
+  },
+  {
+    "id": "ghost_km3_b",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·精銳",
+    "forMonster": "ghost_3_mb"
+  },
+  {
+    "id": "ghost_bm3",
+    "family": "ghost",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·精銳",
+    "forMonster": "ghost_3_bk"
+  },
+  {
+    "id": "ghost_m4_a",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "城隍爺·幼素材",
+    "forMonster": "ghost_4_na"
+  },
+  {
+    "id": "ghost_m4",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "城隍爺素材",
+    "forMonster": "ghost_4"
+  },
+  {
+    "id": "ghost_m4_b",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "城隍爺·猛素材",
+    "forMonster": "ghost_4_nb"
+  },
+  {
+    "id": "ghost_km4_a",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·強權",
+    "forMonster": "ghost_4_ma"
+  },
+  {
+    "id": "ghost_km4_b",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·強權",
+    "forMonster": "ghost_4_mb"
+  },
+  {
+    "id": "ghost_bm4",
+    "family": "ghost",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·強權",
+    "forMonster": "ghost_4_bk"
+  },
+  {
+    "id": "ghost_m5_a",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "十八王公·幼素材",
+    "forMonster": "ghost_5_na"
+  },
+  {
+    "id": "ghost_m5",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "十八王公素材",
+    "forMonster": "ghost_5"
+  },
+  {
+    "id": "ghost_m5_b",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "十八王公·猛素材",
+    "forMonster": "ghost_5_nb"
+  },
+  {
+    "id": "ghost_km5_a",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·王階",
+    "forMonster": "ghost_5_ma"
+  },
+  {
+    "id": "ghost_km5_b",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·王階",
+    "forMonster": "ghost_5_mb"
+  },
+  {
+    "id": "ghost_bm5",
+    "family": "ghost",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·王階",
+    "forMonster": "ghost_5_bk"
+  },
+  {
+    "id": "ghost_m6_a",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "地獄閻羅·幼素材",
+    "forMonster": "ghost_6_na"
+  },
+  {
+    "id": "ghost_m6",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "地獄閻羅素材",
+    "forMonster": "ghost_6"
+  },
+  {
+    "id": "ghost_m6_b",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "地獄閻羅·猛素材",
+    "forMonster": "ghost_6_nb"
+  },
+  {
+    "id": "ghost_km6_a",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "巡夜燈使之印·傳說",
+    "forMonster": "ghost_6_ma"
+  },
+  {
+    "id": "ghost_km6_b",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "星霧影衛之印·傳說",
+    "forMonster": "ghost_6_mb"
+  },
+  {
+    "id": "ghost_bm6",
+    "family": "ghost",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "鎮界靈將之核·傳說",
+    "forMonster": "ghost_6_bk"
+  },
+  {
+    "id": "mountain_m1_a",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山豬精·幼素材",
+    "forMonster": "mountain_1_na"
+  },
+  {
+    "id": "mountain_m1",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山豬精素材",
+    "forMonster": "mountain_1"
+  },
+  {
+    "id": "mountain_m1_b",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山豬精·猛素材",
+    "forMonster": "mountain_1_nb"
+  },
+  {
+    "id": "mountain_km1_a",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·見習",
+    "forMonster": "mountain_1_ma"
+  },
+  {
+    "id": "mountain_km1_b",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·見習",
+    "forMonster": "mountain_1_mb"
+  },
+  {
+    "id": "mountain_bm1",
+    "family": "mountain",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·見習",
+    "forMonster": "mountain_1_bk"
+  },
+  {
+    "id": "mountain_m2_a",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "百步蛇·幼素材",
+    "forMonster": "mountain_2_na"
+  },
+  {
+    "id": "mountain_m2",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "百步蛇素材",
+    "forMonster": "mountain_2"
+  },
+  {
+    "id": "mountain_m2_b",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "百步蛇·猛素材",
+    "forMonster": "mountain_2_nb"
+  },
+  {
+    "id": "mountain_km2_a",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·初階",
+    "forMonster": "mountain_2_ma"
+  },
+  {
+    "id": "mountain_km2_b",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·初階",
+    "forMonster": "mountain_2_mb"
+  },
+  {
+    "id": "mountain_bm2",
+    "family": "mountain",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·初階",
+    "forMonster": "mountain_2_bk"
+  },
+  {
+    "id": "mountain_m3_a",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山魈·幼素材",
+    "forMonster": "mountain_3_na"
+  },
+  {
+    "id": "mountain_m3",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山魈素材",
+    "forMonster": "mountain_3"
+  },
+  {
+    "id": "mountain_m3_b",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "山魈·猛素材",
+    "forMonster": "mountain_3_nb"
+  },
+  {
+    "id": "mountain_km3_a",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·精銳",
+    "forMonster": "mountain_3_ma"
+  },
+  {
+    "id": "mountain_km3_b",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·精銳",
+    "forMonster": "mountain_3_mb"
+  },
+  {
+    "id": "mountain_bm3",
+    "family": "mountain",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·精銳",
+    "forMonster": "mountain_3_bk"
+  },
+  {
+    "id": "mountain_m4_a",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "霧社巨石精·幼素材",
+    "forMonster": "mountain_4_na"
+  },
+  {
+    "id": "mountain_m4",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "霧社巨石精素材",
+    "forMonster": "mountain_4"
+  },
+  {
+    "id": "mountain_m4_b",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "霧社巨石精·猛素材",
+    "forMonster": "mountain_4_nb"
+  },
+  {
+    "id": "mountain_km4_a",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·強權",
+    "forMonster": "mountain_4_ma"
+  },
+  {
+    "id": "mountain_km4_b",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·強權",
+    "forMonster": "mountain_4_mb"
+  },
+  {
+    "id": "mountain_bm4",
+    "family": "mountain",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·強權",
+    "forMonster": "mountain_4_bk"
+  },
+  {
+    "id": "mountain_m5_a",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人巨熊·幼素材",
+    "forMonster": "mountain_5_na"
+  },
+  {
+    "id": "mountain_m5",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人巨熊素材",
+    "forMonster": "mountain_5"
+  },
+  {
+    "id": "mountain_m5_b",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人巨熊·猛素材",
+    "forMonster": "mountain_5_nb"
+  },
+  {
+    "id": "mountain_km5_a",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·王階",
+    "forMonster": "mountain_5_ma"
+  },
+  {
+    "id": "mountain_km5_b",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·王階",
+    "forMonster": "mountain_5_mb"
+  },
+  {
+    "id": "mountain_bm5",
+    "family": "mountain",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·王階",
+    "forMonster": "mountain_5_bk"
+  },
+  {
+    "id": "mountain_m6_a",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡蛟·幼素材",
+    "forMonster": "mountain_6_na"
+  },
+  {
+    "id": "mountain_m6",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡蛟素材",
+    "forMonster": "mountain_6"
+  },
+  {
+    "id": "mountain_m6_b",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡蛟·猛素材",
+    "forMonster": "mountain_6_nb"
+  },
+  {
+    "id": "mountain_km6_a",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "石角守衛之印·傳說",
+    "forMonster": "mountain_6_ma"
+  },
+  {
+    "id": "mountain_km6_b",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "森風獵手之印·傳說",
+    "forMonster": "mountain_6_mb"
+  },
+  {
+    "id": "mountain_bm6",
+    "family": "mountain",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "雲嶺龍王之核·傳說",
+    "forMonster": "mountain_6_bk"
+  },
+  {
+    "id": "insect_m1_a",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟑螂兵·幼素材",
+    "forMonster": "insect_1_na"
+  },
+  {
+    "id": "insect_m1",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟑螂兵素材",
+    "forMonster": "insect_1"
+  },
+  {
+    "id": "insect_m1_b",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟑螂兵·猛素材",
+    "forMonster": "insect_1_nb"
+  },
+  {
+    "id": "insect_km1_a",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·見習",
+    "forMonster": "insect_1_ma"
+  },
+  {
+    "id": "insect_km1_b",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·見習",
+    "forMonster": "insect_1_mb"
+  },
+  {
+    "id": "insect_bm1",
+    "family": "insect",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·見習",
+    "forMonster": "insect_1_bk"
+  },
+  {
+    "id": "insect_m2_a",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "虎頭蜂·幼素材",
+    "forMonster": "insect_2_na"
+  },
+  {
+    "id": "insect_m2",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "虎頭蜂素材",
+    "forMonster": "insect_2"
+  },
+  {
+    "id": "insect_m2_b",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "虎頭蜂·猛素材",
+    "forMonster": "insect_2_nb"
+  },
+  {
+    "id": "insect_km2_a",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·初階",
+    "forMonster": "insect_2_ma"
+  },
+  {
+    "id": "insect_km2_b",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·初階",
+    "forMonster": "insect_2_mb"
+  },
+  {
+    "id": "insect_bm2",
+    "family": "insect",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·初階",
+    "forMonster": "insect_2_bk"
+  },
+  {
+    "id": "insect_m3_a",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蜈蚣精·幼素材",
+    "forMonster": "insect_3_na"
+  },
+  {
+    "id": "insect_m3",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蜈蚣精素材",
+    "forMonster": "insect_3"
+  },
+  {
+    "id": "insect_m3_b",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蜈蚣精·猛素材",
+    "forMonster": "insect_3_nb"
+  },
+  {
+    "id": "insect_km3_a",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·精銳",
+    "forMonster": "insect_3_ma"
+  },
+  {
+    "id": "insect_km3_b",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·精銳",
+    "forMonster": "insect_3_mb"
+  },
+  {
+    "id": "insect_bm3",
+    "family": "insect",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·精銳",
+    "forMonster": "insect_3_bk"
+  },
+  {
+    "id": "insect_m4_a",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蠍王·幼素材",
+    "forMonster": "insect_4_na"
+  },
+  {
+    "id": "insect_m4",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蠍王素材",
+    "forMonster": "insect_4"
+  },
+  {
+    "id": "insect_m4_b",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蠍王·猛素材",
+    "forMonster": "insect_4_nb"
+  },
+  {
+    "id": "insect_km4_a",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·強權",
+    "forMonster": "insect_4_ma"
+  },
+  {
+    "id": "insect_km4_b",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·強權",
+    "forMonster": "insect_4_mb"
+  },
+  {
+    "id": "insect_bm4",
+    "family": "insect",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·強權",
+    "forMonster": "insect_4_bk"
+  },
+  {
+    "id": "insect_m5_a",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蛛后·幼素材",
+    "forMonster": "insect_5_na"
+  },
+  {
+    "id": "insect_m5",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蛛后素材",
+    "forMonster": "insect_5"
+  },
+  {
+    "id": "insect_m5_b",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蛛后·猛素材",
+    "forMonster": "insect_5_nb"
+  },
+  {
+    "id": "insect_km5_a",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·王階",
+    "forMonster": "insect_5_ma"
+  },
+  {
+    "id": "insect_km5_b",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·王階",
+    "forMonster": "insect_5_mb"
+  },
+  {
+    "id": "insect_bm5",
+    "family": "insect",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·王階",
+    "forMonster": "insect_5_bk"
+  },
+  {
+    "id": "insect_m6_a",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟲神·幼素材",
+    "forMonster": "insect_6_na"
+  },
+  {
+    "id": "insect_m6",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟲神素材",
+    "forMonster": "insect_6"
+  },
+  {
+    "id": "insect_m6_b",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "蟲神·猛素材",
+    "forMonster": "insect_6_nb"
+  },
+  {
+    "id": "insect_km6_a",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "甲衛騎士之印·傳說",
+    "forMonster": "insect_6_ma"
+  },
+  {
+    "id": "insect_km6_b",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "毒翼斥候之印·傳說",
+    "forMonster": "insect_6_mb"
+  },
+  {
+    "id": "insect_bm6",
+    "family": "insect",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "萬翼蟲皇之核·傳說",
+    "forMonster": "insect_6_bk"
+  },
+  {
+    "id": "workplace_m1_a",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "實習生·幼素材",
+    "forMonster": "workplace_1_na"
+  },
+  {
+    "id": "workplace_m1",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "實習生素材",
+    "forMonster": "workplace_1"
+  },
+  {
+    "id": "workplace_m1_b",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "實習生·猛素材",
+    "forMonster": "workplace_1_nb"
+  },
+  {
+    "id": "workplace_km1_a",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·見習",
+    "forMonster": "workplace_1_ma"
+  },
+  {
+    "id": "workplace_km1_b",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·見習",
+    "forMonster": "workplace_1_mb"
+  },
+  {
+    "id": "workplace_bm1",
+    "family": "workplace",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·見習",
+    "forMonster": "workplace_1_bk"
+  },
+  {
+    "id": "workplace_m2_a",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "主管·幼素材",
+    "forMonster": "workplace_2_na"
+  },
+  {
+    "id": "workplace_m2",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "主管素材",
+    "forMonster": "workplace_2"
+  },
+  {
+    "id": "workplace_m2_b",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "主管·猛素材",
+    "forMonster": "workplace_2_nb"
+  },
+  {
+    "id": "workplace_km2_a",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·初階",
+    "forMonster": "workplace_2_ma"
+  },
+  {
+    "id": "workplace_km2_b",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·初階",
+    "forMonster": "workplace_2_mb"
+  },
+  {
+    "id": "workplace_bm2",
+    "family": "workplace",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·初階",
+    "forMonster": "workplace_2_bk"
+  },
+  {
+    "id": "workplace_m3_a",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "經理·幼素材",
+    "forMonster": "workplace_3_na"
+  },
+  {
+    "id": "workplace_m3",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "經理素材",
+    "forMonster": "workplace_3"
+  },
+  {
+    "id": "workplace_m3_b",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "經理·猛素材",
+    "forMonster": "workplace_3_nb"
+  },
+  {
+    "id": "workplace_km3_a",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·精銳",
+    "forMonster": "workplace_3_ma"
+  },
+  {
+    "id": "workplace_km3_b",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·精銳",
+    "forMonster": "workplace_3_mb"
+  },
+  {
+    "id": "workplace_bm3",
+    "family": "workplace",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·精銳",
+    "forMonster": "workplace_3_bk"
+  },
+  {
+    "id": "workplace_m4_a",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "總監·幼素材",
+    "forMonster": "workplace_4_na"
+  },
+  {
+    "id": "workplace_m4",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "總監素材",
+    "forMonster": "workplace_4"
+  },
+  {
+    "id": "workplace_m4_b",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "總監·猛素材",
+    "forMonster": "workplace_4_nb"
+  },
+  {
+    "id": "workplace_km4_a",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·強權",
+    "forMonster": "workplace_4_ma"
+  },
+  {
+    "id": "workplace_km4_b",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·強權",
+    "forMonster": "workplace_4_mb"
+  },
+  {
+    "id": "workplace_bm4",
+    "family": "workplace",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·強權",
+    "forMonster": "workplace_4_bk"
+  },
+  {
+    "id": "workplace_m5_a",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "執行長·幼素材",
+    "forMonster": "workplace_5_na"
+  },
+  {
+    "id": "workplace_m5",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "執行長素材",
+    "forMonster": "workplace_5"
+  },
+  {
+    "id": "workplace_m5_b",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "執行長·猛素材",
+    "forMonster": "workplace_5_nb"
+  },
+  {
+    "id": "workplace_km5_a",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·王階",
+    "forMonster": "workplace_5_ma"
+  },
+  {
+    "id": "workplace_km5_b",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·王階",
+    "forMonster": "workplace_5_mb"
+  },
+  {
+    "id": "workplace_bm5",
+    "family": "workplace",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·王階",
+    "forMonster": "workplace_5_bk"
+  },
+  {
+    "id": "workplace_m6_a",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "董事長·幼素材",
+    "forMonster": "workplace_6_na"
+  },
+  {
+    "id": "workplace_m6",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "董事長素材",
+    "forMonster": "workplace_6"
+  },
+  {
+    "id": "workplace_m6_b",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "董事長·猛素材",
+    "forMonster": "workplace_6_nb"
+  },
+  {
+    "id": "workplace_km6_a",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "工坊監督之印·傳說",
+    "forMonster": "workplace_6_ma"
+  },
+  {
+    "id": "workplace_km6_b",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "契約執行官之印·傳說",
+    "forMonster": "workplace_6_mb"
+  },
+  {
+    "id": "workplace_bm6",
+    "family": "workplace",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "黃金契約王之核·傳說",
+    "forMonster": "workplace_6_bk"
+  },
+  {
+    "id": "exam_m1_a",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "小考·幼素材",
+    "forMonster": "exam_1_na"
+  },
+  {
+    "id": "exam_m1",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "小考素材",
+    "forMonster": "exam_1"
+  },
+  {
+    "id": "exam_m1_b",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "小考·猛素材",
+    "forMonster": "exam_1_nb"
+  },
+  {
+    "id": "exam_km1_a",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·見習",
+    "forMonster": "exam_1_ma"
+  },
+  {
+    "id": "exam_km1_b",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·見習",
+    "forMonster": "exam_1_mb"
+  },
+  {
+    "id": "exam_bm1",
+    "family": "exam",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·見習",
+    "forMonster": "exam_1_bk"
+  },
+  {
+    "id": "exam_m2_a",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "段考·幼素材",
+    "forMonster": "exam_2_na"
+  },
+  {
+    "id": "exam_m2",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "段考素材",
+    "forMonster": "exam_2"
+  },
+  {
+    "id": "exam_m2_b",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "段考·猛素材",
+    "forMonster": "exam_2_nb"
+  },
+  {
+    "id": "exam_km2_a",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·初階",
+    "forMonster": "exam_2_ma"
+  },
+  {
+    "id": "exam_km2_b",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·初階",
+    "forMonster": "exam_2_mb"
+  },
+  {
+    "id": "exam_bm2",
+    "family": "exam",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·初階",
+    "forMonster": "exam_2_bk"
+  },
+  {
+    "id": "exam_m3_a",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "模擬考·幼素材",
+    "forMonster": "exam_3_na"
+  },
+  {
+    "id": "exam_m3",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "模擬考素材",
+    "forMonster": "exam_3"
+  },
+  {
+    "id": "exam_m3_b",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "模擬考·猛素材",
+    "forMonster": "exam_3_nb"
+  },
+  {
+    "id": "exam_km3_a",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·精銳",
+    "forMonster": "exam_3_ma"
+  },
+  {
+    "id": "exam_km3_b",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·精銳",
+    "forMonster": "exam_3_mb"
+  },
+  {
+    "id": "exam_bm3",
+    "family": "exam",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·精銳",
+    "forMonster": "exam_3_bk"
+  },
+  {
+    "id": "exam_m4_a",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "學測·幼素材",
+    "forMonster": "exam_4_na"
+  },
+  {
+    "id": "exam_m4",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "學測素材",
+    "forMonster": "exam_4"
+  },
+  {
+    "id": "exam_m4_b",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "學測·猛素材",
+    "forMonster": "exam_4_nb"
+  },
+  {
+    "id": "exam_km4_a",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·強權",
+    "forMonster": "exam_4_ma"
+  },
+  {
+    "id": "exam_km4_b",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·強權",
+    "forMonster": "exam_4_mb"
+  },
+  {
+    "id": "exam_bm4",
+    "family": "exam",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·強權",
+    "forMonster": "exam_4_bk"
+  },
+  {
+    "id": "exam_m5_a",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "指考·幼素材",
+    "forMonster": "exam_5_na"
+  },
+  {
+    "id": "exam_m5",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "指考素材",
+    "forMonster": "exam_5"
+  },
+  {
+    "id": "exam_m5_b",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "指考·猛素材",
+    "forMonster": "exam_5_nb"
+  },
+  {
+    "id": "exam_km5_a",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·王階",
+    "forMonster": "exam_5_ma"
+  },
+  {
+    "id": "exam_km5_b",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·王階",
+    "forMonster": "exam_5_mb"
+  },
+  {
+    "id": "exam_bm5",
+    "family": "exam",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·王階",
+    "forMonster": "exam_5_bk"
+  },
+  {
+    "id": "exam_m6_a",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "國考·幼素材",
+    "forMonster": "exam_6_na"
+  },
+  {
+    "id": "exam_m6",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "國考素材",
+    "forMonster": "exam_6"
+  },
+  {
+    "id": "exam_m6_b",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "國考·猛素材",
+    "forMonster": "exam_6_nb"
+  },
+  {
+    "id": "exam_km6_a",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "卷軸考官之印·傳說",
+    "forMonster": "exam_6_ma"
+  },
+  {
+    "id": "exam_km6_b",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "算式守門員之印·傳說",
+    "forMonster": "exam_6_mb"
+  },
+  {
+    "id": "exam_bm6",
+    "family": "exam",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "試煉大賢者之核·傳說",
+    "forMonster": "exam_6_bk"
+  },
+  {
+    "id": "temple_m1_a",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "哥布林·幼素材",
+    "forMonster": "temple_1_na"
+  },
+  {
+    "id": "temple_m1",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "哥布林素材",
+    "forMonster": "temple_1"
+  },
+  {
+    "id": "temple_m1_b",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "哥布林·猛素材",
+    "forMonster": "temple_1_nb"
+  },
+  {
+    "id": "temple_km1_a",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·見習",
+    "forMonster": "temple_1_ma"
+  },
+  {
+    "id": "temple_km1_b",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·見習",
+    "forMonster": "temple_1_mb"
+  },
+  {
+    "id": "temple_bm1",
+    "family": "temple",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·見習",
+    "forMonster": "temple_1_bk"
+  },
+  {
+    "id": "temple_m2_a",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "獸人·幼素材",
+    "forMonster": "temple_2_na"
+  },
+  {
+    "id": "temple_m2",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "獸人素材",
+    "forMonster": "temple_2"
+  },
+  {
+    "id": "temple_m2_b",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "獸人·猛素材",
+    "forMonster": "temple_2_nb"
+  },
+  {
+    "id": "temple_km2_a",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·初階",
+    "forMonster": "temple_2_ma"
+  },
+  {
+    "id": "temple_km2_b",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·初階",
+    "forMonster": "temple_2_mb"
+  },
+  {
+    "id": "temple_bm2",
+    "family": "temple",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·初階",
+    "forMonster": "temple_2_bk"
+  },
+  {
+    "id": "temple_m3_a",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人魔·幼素材",
+    "forMonster": "temple_3_na"
+  },
+  {
+    "id": "temple_m3",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人魔素材",
+    "forMonster": "temple_3"
+  },
+  {
+    "id": "temple_m3_b",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "食人魔·猛素材",
+    "forMonster": "temple_3_nb"
+  },
+  {
+    "id": "temple_km3_a",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·精銳",
+    "forMonster": "temple_3_ma"
+  },
+  {
+    "id": "temple_km3_b",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·精銳",
+    "forMonster": "temple_3_mb"
+  },
+  {
+    "id": "temple_bm3",
+    "family": "temple",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·精銳",
+    "forMonster": "temple_3_bk"
+  },
+  {
+    "id": "temple_m4_a",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "巨龍·幼素材",
+    "forMonster": "temple_4_na"
+  },
+  {
+    "id": "temple_m4",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "巨龍素材",
+    "forMonster": "temple_4"
+  },
+  {
+    "id": "temple_m4_b",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "巨龍·猛素材",
+    "forMonster": "temple_4_nb"
+  },
+  {
+    "id": "temple_km4_a",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·強權",
+    "forMonster": "temple_4_ma"
+  },
+  {
+    "id": "temple_km4_b",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·強權",
+    "forMonster": "temple_4_mb"
+  },
+  {
+    "id": "temple_bm4",
+    "family": "temple",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·強權",
+    "forMonster": "temple_4_bk"
+  },
+  {
+    "id": "temple_m5_a",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡魔·幼素材",
+    "forMonster": "temple_5_na"
+  },
+  {
+    "id": "temple_m5",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡魔素材",
+    "forMonster": "temple_5"
+  },
+  {
+    "id": "temple_m5_b",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "惡魔·猛素材",
+    "forMonster": "temple_5_nb"
+  },
+  {
+    "id": "temple_km5_a",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·王階",
+    "forMonster": "temple_5_ma"
+  },
+  {
+    "id": "temple_km5_b",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·王階",
+    "forMonster": "temple_5_mb"
+  },
+  {
+    "id": "temple_bm5",
+    "family": "temple",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·王階",
+    "forMonster": "temple_5_bk"
+  },
+  {
+    "id": "temple_m6_a",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔王·幼素材",
+    "forMonster": "temple_6_na"
+  },
+  {
+    "id": "temple_m6",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔王素材",
+    "forMonster": "temple_6"
+  },
+  {
+    "id": "temple_m6_b",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "魔王·猛素材",
+    "forMonster": "temple_6_nb"
+  },
+  {
+    "id": "temple_km6_a",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "城堡先鋒之印·傳說",
+    "forMonster": "temple_6_ma"
+  },
+  {
+    "id": "temple_km6_b",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "符文法衛之印·傳說",
+    "forMonster": "temple_6_mb"
+  },
+  {
+    "id": "temple_bm6",
+    "family": "temple",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "天穹龍皇之核·傳說",
+    "forMonster": "temple_6_bk"
+  },
+  {
+    "id": "treasure_m1_a",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分寶箱怪素材",
+    "forMonster": "treasure_1_real"
+  },
+  {
+    "id": "treasure_m1",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "寶箱怪素材",
+    "forMonster": "treasure_1"
+  },
+  {
+    "id": "treasure_m1_b",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "normal",
+    "convertible": true,
+    "name": "寶箱怪·猛素材",
+    "forMonster": "treasure_1_nb"
+  },
+  {
+    "id": "treasure_km1_a",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·見習",
+    "forMonster": "treasure_king_small_1"
+  },
+  {
+    "id": "treasure_km1_b",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·見習",
+    "forMonster": "treasure_1_mb"
+  },
+  {
+    "id": "treasure_bm1",
+    "family": "treasure",
+    "tier": "common",
+    "tierIndex": 1,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·見習",
+    "forMonster": "treasure_king_big_1"
+  },
+  {
+    "id": "treasure_m2_a",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分黃金寶箱怪素材",
+    "forMonster": "treasure_2_real"
+  },
+  {
+    "id": "treasure_m2",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "黃金寶箱怪素材",
+    "forMonster": "treasure_2"
+  },
+  {
+    "id": "treasure_m2_b",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "normal",
+    "convertible": true,
+    "name": "黃金寶箱怪·猛素材",
+    "forMonster": "treasure_2_nb"
+  },
+  {
+    "id": "treasure_km2_a",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·初階",
+    "forMonster": "treasure_king_small_2"
+  },
+  {
+    "id": "treasure_km2_b",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·初階",
+    "forMonster": "treasure_2_mb"
+  },
+  {
+    "id": "treasure_bm2",
+    "family": "treasure",
+    "tier": "rare",
+    "tierIndex": 2,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·初階",
+    "forMonster": "treasure_king_big_2"
+  },
+  {
+    "id": "treasure_m3_a",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分鑽石寶箱怪素材",
+    "forMonster": "treasure_3_real"
+  },
+  {
+    "id": "treasure_m3",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "鑽石寶箱怪素材",
+    "forMonster": "treasure_3"
+  },
+  {
+    "id": "treasure_m3_b",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "normal",
+    "convertible": true,
+    "name": "鑽石寶箱怪·猛素材",
+    "forMonster": "treasure_3_nb"
+  },
+  {
+    "id": "treasure_km3_a",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·精銳",
+    "forMonster": "treasure_king_small_3"
+  },
+  {
+    "id": "treasure_km3_b",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·精銳",
+    "forMonster": "treasure_3_mb"
+  },
+  {
+    "id": "treasure_bm3",
+    "family": "treasure",
+    "tier": "elite",
+    "tierIndex": 3,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·精銳",
+    "forMonster": "treasure_king_big_3"
+  },
+  {
+    "id": "treasure_m4_a",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分祕銀寶箱怪素材",
+    "forMonster": "treasure_4_real"
+  },
+  {
+    "id": "treasure_m4",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "祕銀寶箱怪素材",
+    "forMonster": "treasure_4"
+  },
+  {
+    "id": "treasure_m4_b",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "normal",
+    "convertible": true,
+    "name": "祕銀寶箱怪·猛素材",
+    "forMonster": "treasure_4_nb"
+  },
+  {
+    "id": "treasure_km4_a",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·強權",
+    "forMonster": "treasure_king_small_4"
+  },
+  {
+    "id": "treasure_km4_b",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·強權",
+    "forMonster": "treasure_4_mb"
+  },
+  {
+    "id": "treasure_bm4",
+    "family": "treasure",
+    "tier": "fierce",
+    "tierIndex": 4,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·強權",
+    "forMonster": "treasure_king_big_4"
+  },
+  {
+    "id": "treasure_m5_a",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分遠古寶箱怪素材",
+    "forMonster": "treasure_5_real"
+  },
+  {
+    "id": "treasure_m5",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "遠古寶箱怪素材",
+    "forMonster": "treasure_5"
+  },
+  {
+    "id": "treasure_m5_b",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "normal",
+    "convertible": true,
+    "name": "遠古寶箱怪·猛素材",
+    "forMonster": "treasure_5_nb"
+  },
+  {
+    "id": "treasure_km5_a",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·王階",
+    "forMonster": "treasure_king_small_5"
+  },
+  {
+    "id": "treasure_km5_b",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·王階",
+    "forMonster": "treasure_5_mb"
+  },
+  {
+    "id": "treasure_bm5",
+    "family": "treasure",
+    "tier": "boss",
+    "tierIndex": 5,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·王階",
+    "forMonster": "treasure_king_big_5"
+  },
+  {
+    "id": "treasure_m6_a",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "安分神話寶箱巨像素材",
+    "forMonster": "treasure_6_real"
+  },
+  {
+    "id": "treasure_m6",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "神話寶箱巨像素材",
+    "forMonster": "treasure_6"
+  },
+  {
+    "id": "treasure_m6_b",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "normal",
+    "convertible": true,
+    "name": "神話寶箱巨像·猛素材",
+    "forMonster": "treasure_6_nb"
+  },
+  {
+    "id": "treasure_km6_a",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "秘庫守衛之印·傳說",
+    "forMonster": "treasure_king_small_6"
+  },
+  {
+    "id": "treasure_km6_b",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "miniBoss",
+    "convertible": false,
+    "name": "寶石魔偶之印·傳說",
+    "forMonster": "treasure_6_mb"
+  },
+  {
+    "id": "treasure_bm6",
+    "family": "treasure",
+    "tier": "mythic",
+    "tierIndex": 6,
+    "kind": "bigBoss",
+    "convertible": false,
+    "name": "王冠寶庫王之核·傳說",
+    "forMonster": "treasure_king_big_6"
+  }
+]

@@ -29,7 +29,7 @@ const TYPE_HINTS = {
 };
 
 // ── 頂部玩家狀態列（HP / 金幣 / buff）───────────────────
-function PlayerStatusBar({ playerState, coins }) {
+function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
   const hp = playerState?.hp ?? 0;
   const maxHP = playerState?.maxHP || 1;
   const pct = Math.max(0, Math.min(1, hp / maxHP));
@@ -57,6 +57,13 @@ function PlayerStatusBar({ playerState, coins }) {
             ))}
           </div>
         </div>
+        {/* 本圖寶箱倍率（出圖時擲定,整場固定）——收進狀態列，不再用浮動角標 */}
+        {lootMult > 1 && (
+          <div style={{ flexShrink:0, padding:"3px 8px", borderRadius:999, fontSize:10, fontWeight:900,
+            background:"rgba(120,53,15,.92)", border:"1px solid #fbbf24", color:"#fcd34d" }}>
+            🎲 寶箱 ×{lootMult}
+          </div>
+        )}
         <div style={{ flexShrink:0, fontSize:12, fontWeight:900, color:"#fbbf24" }}>
           💰 {coins.toLocaleString()}
         </div>
@@ -68,7 +75,7 @@ function PlayerStatusBar({ playerState, coins }) {
 // ── 第 1、2 層：5×5 迷霧格子地圖 ────────────────────────
 export function GridMapStage({
   gridFloor, playerPos, visitedIds, floorIndex,
-  playerState, coins, onCellClick, onDescend, onRetreat,
+  playerState, coins, lootMult, onCellClick, onDescend, onRetreat,
   canControl = true,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
@@ -125,7 +132,7 @@ export function GridMapStage({
         </button>
       </div>
 
-      <PlayerStatusBar playerState={playerState} coins={coins} />
+      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
 
       {/* Map */}
       <div style={{ padding:"14px 8px 10px", display:"flex", justifyContent:"center", alignItems:"flex-start", overflowX:"auto", overflowY:"visible" }}>
@@ -262,7 +269,7 @@ export function GridMapStage({
 // ── 第 3 層：A/B/C 分支王關 ─────────────────────────────
 export function BranchStage({
   branchFloor, branchChoice, branchSeq, branchStep,
-  playerState, coins, onChoose, onEnterNext, onRetreat,
+  playerState, coins, lootMult, onChoose, onEnterNext, onRetreat,
   canControl = true,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
@@ -298,7 +305,7 @@ export function BranchStage({
         </button>
       </div>
 
-      <PlayerStatusBar playerState={playerState} coins={coins} />
+      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
 
       {!branchChoice ? (
         // ── 選路 ──

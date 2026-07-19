@@ -9,6 +9,8 @@ import {
 import { GRADE_PREFIX } from "../../lib/equipData";
 import RPGEquipPanel from "./RPGEquipPanel";
 import EquipmentRunePanel from "./EquipmentRunePanel";
+import EquipSpecializationPanel from "./EquipSpecializationPanel";
+import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 
 export default function EquipmentPage({ onPageChange, guestProfile }) {
   const { profile: authProfile } = useAuth();
@@ -17,6 +19,7 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
   const bonus     = calcEquipBonus(equipment);
   const equipped  = EQUIP_SLOT_DEFS.filter(s => equipment[s.id]?.itemId).length;
   const completionPct = Math.round(equipped / EQUIP_SLOT_DEFS.length * 100);
+  const expansionEnabled = isMonsterExpansionEnabled();
   const statCards = [
     { icon:"⚔️", label:"攻擊加成", short:"ATK", val:bonus.atkBonus, color:"#fb923c", bg:"rgba(249,115,22,0.12)" },
     { icon:"🛡️", label:"防禦加成", short:"DEF", val:bonus.defBonus, color:"#60a5fa", bg:"rgba(59,130,246,0.12)" },
@@ -98,6 +101,9 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
 
       {/* 品級說明 */}
         <EquipmentRunePanel profile={profile} readOnly={Boolean(guestProfile)} />
+
+        {/* 裝備專精（訪客不顯示;DLC Phase 7） */}
+        {!guestProfile && expansionEnabled ? <EquipSpecializationPanel /> : null}
 
       <section className="mt-1">
         <h2 className="text-xs text-slate-400 font-bold mb-2">品級基礎加成</h2>

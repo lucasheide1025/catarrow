@@ -4,6 +4,7 @@
 
 import { drawMaterial, MATERIALS } from "./monsterMaterials";
 import { MONSTERS } from "./monsterData";
+import { EXPANSION_MATERIALS } from "./monsterExpansionCatalog";
 
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
@@ -213,6 +214,8 @@ export const RAID_POTIONS = POTIONS.filter(p => p.kind === "raid");
 // ── 材料分層開箱設定 ─────────────────────────────────────
 // RARITY_ORDER[0]=tier1(普通) … [4]=tier5(傳說)
 const RARITY_ORDER = ["common","uncommon","rare","epic","legendary"];
+// 怪物 tier 詞彙（T1~T6）——與上面的 legacy 稀有度是兩套不同名稱，"rare" 在兩邊意義不同，勿混用
+const MONSTER_TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];
 
 // 每種寶箱開出的材料層數 + 每層最多幾個
 const CHEST_TIER_CFG = {
@@ -220,8 +223,24 @@ const CHEST_TIER_CFG = {
   iron:   { tierCount:2, maxPerTier:2 },
   gold:   { tierCount:3, maxPerTier:3 },
   epic:   { tierCount:4, maxPerTier:4 },
-  mythic: { tierCount:5, maxPerTier:5 },
+  mythic: { tierCount:6, maxPerTier:5 },
 };
+
+const EXPANSION_KINDS_BY_CHEST = {
+  wood:new Set(["normal"]),
+  iron:new Set(["normal"]),
+  gold:new Set(["normal","miniBoss"]),
+  epic:new Set(["normal","miniBoss"]),
+  mythic:new Set(["normal","miniBoss","boss"]),
+};
+
+export function getExpansionChestMaterialPool(chestType, family, tierIndex) {
+  const kinds = EXPANSION_KINDS_BY_CHEST[chestType];
+  if (!kinds) return [];
+  return EXPANSION_MATERIALS.filter(material =>
+    material.family === family && material.tierIndex === tierIndex && kinds.has(material.kind),
+  );
+}
 
 // 藥水箱抽表（權重越高越容易出現）
 const POTION_CHEST_TABLE = [
@@ -247,7 +266,7 @@ const POTION_CHEST_TABLE = [
   { id:"throw_hunter_mark",     weight:1 },
 ];
 
-const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
+const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple","treasure"];
 
 // ── 卡包抽卡（36 隻怪，按稀有度加權）─────────────────────
 const CARD_TIER_WEIGHT = { common:50, rare:25, elite:15, fierce:7, boss:2.5, mythic:0.5 };
@@ -326,11 +345,19 @@ export function openChestContents(chest) {
     ? chest.family
     : ALL_FAMILIES[Math.floor(Math.random() * ALL_FAMILIES.length)];
 
+  // 擴充素材的 Tier 以「寶箱來源怪物的 tier」為準（economy-loot-catalog：先依來源鎖定 maxTier,
+  // 禁止對 126 種平抽造成低 Tier 污染）。注意 chest.tier 用的是怪物 tier 詞彙
+  // （common/rare/elite/fierce/boss/mythic），與 legacy 的 RARITY_ORDER 不同套,不可混用索引。
+  const sourceTierIndex = MONSTER_TIER_ORDER.indexOf(chest.tier) + 1; // 0 = 寶箱未帶來源 tier
+
   // 按稀有度分層抽材料：每層隨機 1~maxPerTier 個
   const materials = [];
   for (let t = 0; t < tierCfg.tierCount; t++) {
     const rarity = RARITY_ORDER[t];
-    const pool = MATERIALS.filter(m => m.family === family && m.rarity === rarity);
+    const legacyPool = MATERIALS.filter(m => m.family === family && m.rarity === rarity);
+    // 有來源 tier 就固定抽該 Tier（打 T2 怪不會掉 T1 素材）;沒有才沿用舊的逐層擴散
+    const expansionPool = getExpansionChestMaterialPool(chest.type, family, sourceTierIndex || (t + 1));
+    const pool = [...legacyPool, ...expansionPool];
     if (!pool.length) continue;
     const mat   = pool[Math.floor(Math.random() * pool.length)];
     const count = Math.floor(Math.random() * tierCfg.maxPerTier) + 1;

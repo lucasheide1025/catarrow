@@ -39,6 +39,9 @@ import { BattleResultPanel } from "../shared/BattleResultPanel";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
+import { normalizePartyBattleSettings } from "../../lib/partyBattleSettings";
+import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
+import { SOLO_CHALLENGE_LEVELS, getPartyChallengeProfile } from "../../lib/monsterExpansionAdapter";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
@@ -183,6 +186,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [targetPending,   setTargetPending]   = useState(false);
   const [targetFmt,       setTargetFmt]       = useState(getBattleTargetFmt);
   const [setupMonster,    setSetupMonster]    = useState(null);
+  // 挑戰強度（方案A）：房主選,全房生效;記住上次選擇
+  const [challengeLevel,  setChallengeLevel]  = useState(() => localStorage.getItem("party_challenge_level") || "standard");
+  useEffect(() => { localStorage.setItem("party_challenge_level", challengeLevel); }, [challengeLevel]);
 
   // ── 統一 Firestore 回合生命週期 ────────────────────────────
   const {
@@ -208,10 +214,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     onSubmitSuccess: (submittedArrows) => {
       setPostSubmitted(true);
       if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
-        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+        addRoundArrows(myId, submittedArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
       }
     },
   });
+
+  const lockedBattleSettings = normalizePartyBattleSettings(room, {
+    targetFormat: targetFmt,
+    targetInputMode: targetMode ? "target" : "button",
+  });
+  const activeTargetFmt = lockedBattleSettings.targetFormat;
+  const activeTargetMode = lockedBattleSettings.targetInputMode === "target";
 
   const setupMode = "student";
   const [starting,        setStarting]        = useState(false);
@@ -336,7 +349,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!room || !myId || isLimitedAccount || lossPracticeRecordedRef.current) return;
     if (room.status !== "completed" || room.result !== "lose") return;
-    const { rounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
+    const { rounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, activeTargetFmt);
     if (!rounds.length) return;
     lossPracticeRecordedRef.current = true;
     const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
@@ -351,7 +364,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       bowType:shootingProfile.bowType,
       distance:shootingProfile.distance,
       battleDistance:room.distance || null,
-      targetFormat:targetFmt,
+      targetFormat:activeTargetFmt,
       inputMode:arrowPositions.length ? "target" : "button",
       role:room.members?.[myId]?.role || "front",
       teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
@@ -363,7 +376,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       lossPracticeRecordedRef.current = false;
     });
     finalizeGameShootingSession({ sessionId:`party_${roomId}_${myId}`, memberId:myId, capturedEnds,
-      shootingProfile, targetFormat:targetFmt, arrowsPerEnd:room?.arrowsPerRound || ARROWS_PER_ROUND,
+      shootingProfile, targetFormat:activeTargetFmt, arrowsPerEnd:lockedBattleSettings.arrowsPerRound,
       result:"lose", sourceMode:"party", monster:room.monster,
       totalDamage:(room.log || []).reduce((sum, entry) => sum + ((entry.playerLog || []).find(player => player.id === myId)?.dmg || 0), 0),
       finalMonsterHp:room.monsterHP,
@@ -409,7 +422,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
     const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
-    setDrawnMonsters(drawMatchedMonsters(power));
+    let cancelled = false;
+    if (isMonsterExpansionEnabled()) {
+      import("../../lib/monsterExpansionAdapter").then(({ drawExpansionSoloMonsters }) => {
+        if (!cancelled) setDrawnMonsters(drawExpansionSoloMonsters(power));
+      });
+    } else {
+      setDrawnMonsters(drawMatchedMonsters(power));
+    }
+    return () => { cancelled = true; };
   }, [isHost, room?.status]); // eslint-disable-line
 
   // 戰鬥開始時只扣房主的進場次數（其他隊員不扣）
@@ -632,7 +653,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const p = (entry.playerLog || []).find(p => p.id === myId);
       return s + (p?.dmg || 0);
     }, 0);
-    const { rounds } = getPartyPracticeData(room.log, myId, targetFmt);
+    const { rounds } = getPartyPracticeData(room.log, myId, activeTargetFmt);
     const scoreList = rounds.flat();
     setGuestPartyReward({ coins, material });
     addCoins(myId, coins).catch(() => {});
@@ -649,16 +670,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
   // 提早計算（room 可能為 null，用 ?. 保安全，讓 useEffect 位於 early return 之前）
   const myChests  = room?.rewardPending?.[myId] || [];
+  const myExpansionReward = room?.expansionRewardPending?.[myId] || null;
   const myClaimed = (room?.rewardClaimed || []).includes(myId);
 
   // 寶箱出現時預先 roll 金幣 + 掉落物，讓玩家看到等待中的獎勵
   useEffect(() => {
     if (!myChests.length || myClaimed || previewReward || !room) return;
     const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
-    const material = rollMaterialDrop(room.monster);
-    const card     = rollCardDrop(room.monster);
+    const material = myExpansionReward?.material || rollMaterialDrop(room.monster);
+    const card     = myExpansionReward ? myExpansionReward.card : rollCardDrop(room.monster);
     setPreviewReward({ coins, material, card });
-  }, [myChests.length, myClaimed]); // eslint-disable-line
+  }, [myChests.length, myClaimed, myExpansionReward?.rewardKey]); // eslint-disable-line
 
   // 自動領取寶箱（previewReward 準備好後立即入庫，無需手動點擊）
   useEffect(() => {
@@ -716,13 +738,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const allAliveReady = memberList.filter(m => m.alive !== false).length > 0
     && memberList.filter(m => m.alive !== false).every(m => m.ready);
   // 開戰後以房主寫入房間的靶紙格式為唯一來源，避免隊員各自使用 localStorage 設定。
-  const activeTargetFmt = room.targetFormat || targetFmt;
-
   function addArrow(label, landing) {
-    if (arrows.length >= (room?.arrowsPerRound || ARROWS_PER_ROUND) || myReady || postSubmitted) return;
+    if (arrows.length >= lockedBattleSettings.arrowsPerRound || myReady || postSubmitted) return;
     shootingProfileRef.current ||= loadBattleShootingProfile(myId);
     const rawScore = SCORE_MAP[label] ?? 0;
-    const score = (targetFmt === "field_16" && rawScore > 0)
+    const score = (activeTargetFmt === "field_16" && rawScore > 0)
       ? Math.min(rawScore + 5, 10)
       : rawScore;
     sfxTap(); vibrate(8);
@@ -733,7 +753,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         nx:landing.nx,
         ny:landing.ny,
         faceIndex:landing.faceIndex || 0,
-        targetFormat:landing.targetFormat || targetFmt,
+        targetFormat:landing.targetFormat || activeTargetFmt,
       } : {}),
     }]);
   }
@@ -760,7 +780,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   }
 
   async function handleSubmit() {
-    if (arrows.length < (room?.arrowsPerRound || ARROWS_PER_ROUND) || postSubmitted || myReady || submitting) return;
+    if (arrows.length < lockedBattleSettings.arrowsPerRound || postSubmitted || myReady || submitting) return;
     if (effectiveMyRole === "rear" && !myRearChoice) return;
     const ok = await fsHandleSubmit(arrows, effectiveMyRole, myRearChoice);
     if (ok) setArrows([]);
@@ -777,7 +797,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }
     setStartError("");
     setStarting(true);
-    await startPartyBattle(roomId, room, setupMonster, setupMode, "preset", 18, targetFmt, pickBg(setupMonster.family));
+    await startPartyBattle(roomId, { ...room, challengeLevel }, setupMonster, setupMode, "preset", 18, targetFmt, pickBg(setupMonster.family), targetMode ? "target" : "button");
     setStarting(false);
   }
   async function handleLeave() {
@@ -807,8 +827,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       // 使用預覽時已 roll 好的值，保持顯示一致
       const reward   = previewReward || {};
       const coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
-      const material = reward.material ?? rollMaterialDrop(room.monster);
-      const card     = reward.card     ?? rollCardDrop(room.monster);
+      const material = reward.material ?? myExpansionReward?.material ?? rollMaterialDrop(room.monster);
+      const card     = myExpansionReward ? myExpansionReward.card : (reward.card ?? rollCardDrop(room.monster));
       const monsterTier = room.monster?.tier || "common";
       const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
       const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
@@ -817,7 +837,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       if (!isLimitedAccount) {
         addCoins(myId, coins).catch(() => {});
         addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
-        if (material) addMaterials(myId, [{ id: material.id }]).catch(() => {});
+        if (material) addMaterials(myId, Array.from({ length:Math.max(1, material.quantity || 1) }, () => ({ id:material.id }))).catch(() => {});
         if (card)     addMonsterCard(myId, card).catch(() => {});
       }
       if (!isLimitedAccount && !dexRecordedRef.current && room.monster?.id) {
@@ -825,7 +845,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
       }
       if (myId && !isLimitedAccount) {
-        const { rounds:practiceRounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, targetFmt);
+        const { rounds:practiceRounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, activeTargetFmt);
         if (practiceRounds.length > 0) {
           const arrowCount = practiceRounds.flat().length;
           const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
@@ -838,7 +858,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             bowType:shootingProfile.bowType,
             distance:shootingProfile.distance,
             battleDistance:room.distance || null,
-            targetFormat:targetFmt,
+            targetFormat:activeTargetFmt,
             inputMode:arrowPositions.length ? "target" : "button",
             role:room.members?.[myId]?.role || "front",
             teamMembers:Object.entries(room.members || {}).map(([id, member]) => ({
@@ -857,7 +877,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             ...(arrowPositions.length ? { arrowPositions } : {}),
           }, myId).catch(() => {});
           finalizeGameShootingSession({ sessionId:`party_${roomId}_${myId}`, memberId:myId, capturedEnds,
-            shootingProfile, targetFormat:targetFmt, arrowsPerEnd:room?.arrowsPerRound || ARROWS_PER_ROUND,
+            shootingProfile, targetFormat:activeTargetFmt, arrowsPerEnd:lockedBattleSettings.arrowsPerRound,
             result:"win", sourceMode:"party", monster:room.monster, totalDamage:myDmg, finalMonsterHp:room.monsterHP,
           }).catch(error => console.warn("party shooting performance dual-write failed", error));
           if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
@@ -899,10 +919,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
-  function handleRedrawMonsters() {
+  async function handleRedrawMonsters() {
     const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
-    setDrawnMonsters(drawMatchedMonsters(power));
+    if (isMonsterExpansionEnabled()) {
+      const { drawExpansionSoloMonsters } = await import("../../lib/monsterExpansionAdapter");
+      setDrawnMonsters(drawExpansionSoloMonsters(power));
+    } else {
+      setDrawnMonsters(drawMatchedMonsters(power));
+    }
     setSetupMonster(null);
   }
 
@@ -1052,6 +1077,33 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
+            {/* 挑戰強度（方案A,房主選;人數加成即時顯示） */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-2.5">
+              <div className="flex gap-2">
+                {Object.values(SOLO_CHALLENGE_LEVELS).map(level => (
+                  <button key={level.id} onClick={() => setChallengeLevel(level.id)}
+                    className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${
+                      challengeLevel === level.id
+                        ? level.id === "hard" ? "bg-rose-600 text-white border-rose-500"
+                          : level.id === "easy" ? "bg-emerald-600 text-white border-emerald-500"
+                          : "bg-blue-600 text-white border-blue-500"
+                        : "bg-white/8 text-slate-400 border-white/15"
+                    }`}>
+                    {level.label}
+                  </button>
+                ))}
+              </div>
+              {(() => {
+                const profile = getPartyChallengeProfile(challengeLevel, memberList.length || 1);
+                return (
+                  <div className="mt-2 text-center text-[11px] font-bold leading-relaxed text-amber-300">
+                    👥 {profile.memberCount} 人：怪物強度 ×{profile.monsterStatMult}
+                    {profile.extra > 0 && <span className="text-rose-300">（含人數 +{profile.monsterBonusPct}%）</span>}
+                    <br/>每人：素材 ×{profile.materialQty}｜掉卡 {Math.round(profile.cardChance * 100)}%｜金幣寶箱 {Math.round(profile.coinChestChance * 100)}%
+                  </div>
+                );
+              })()}
+            </div>
             {/* 貓貓虛擬夥伴提示 */}
             {hasCat && memberList.length < 2 && (
               <div className="bg-purple-900/40 border border-purple-500/40 rounded-xl px-3 py-2 text-purple-300 text-xs font-bold text-center">
@@ -1142,6 +1194,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           </div>
           <div style={{ fontSize:14, color:"#94a3b8", textAlign:"center", marginTop:4 }}>
             {room.monster?.icon} {room.monster?.name} 已被消滅
+            {room.challengeProfile && (
+              <div style={{ fontSize:11, fontWeight:900, color:"#fbbf24", marginTop:4 }}>
+                {room.challengeProfile.label}｜👥{room.challengeProfile.memberCount}人 怪物×{room.challengeProfile.monsterStatMult}
+                ｜素材×{room.challengeProfile.materialQty}｜掉卡 {Math.round((room.challengeProfile.cardChance || 0) * 100)}%
+              </div>
+            )}
           </div>
         </div>
 
@@ -1989,12 +2047,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 atk: room.monster?.atk,
                 def: room.monster?.def,
                 tier: room.monster?.tier,
+                tierIndex: room.monster?.tierIndex,
+                encounter: room.monster?.encounter,
+                signatureSkillId: room.monster?.signatureSkillId,
+                signatureName: room.monster?.signatureName,
+                signatureSummary: room.monster?.signatureSummary,
+                commonSkillIds: room.monster?.commonSkillIds,
               }}
-              battleMode={targetMode ? "zombie" : "score"}
-              scoreInput={targetMode ? "target" : "keypad"}
+              battleMode={activeTargetMode ? "zombie" : "score"}
+              scoreInput={activeTargetMode ? "target" : "keypad"}
               targetFormat={activeTargetFmt}
               difficulty={{hp:1, atk:1, def:1}}
-              arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
+              arrowsPerRound={lockedBattleSettings.arrowsPerRound}
               bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
               onSubmit={handlePartyScoringSubmit}
               partyMode
@@ -2100,12 +2164,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               tier: room.monster?.tier,
               variant: room.monster?.variant,
               icon: room.monster?.icon,
+              tierIndex: room.monster?.tierIndex,
+              encounter: room.monster?.encounter,
+              signatureSkillId: room.monster?.signatureSkillId,
+              signatureName: room.monster?.signatureName,
+              signatureSummary: room.monster?.signatureSummary,
+              commonSkillIds: room.monster?.commonSkillIds,
             }}
             battleMode="score"
-            scoreInput={targetMode ? "target" : "keypad"}
+            scoreInput={activeTargetMode ? "target" : "keypad"}
             targetFormat={activeTargetFmt}
             difficulty={{hp:1, atk:1, def:1}}
-            arrowsPerRound={room?.arrowsPerRound || ARROWS_PER_ROUND}
+            arrowsPerRound={lockedBattleSettings.arrowsPerRound}
             bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
             autoStart
             fullScreen
@@ -2130,10 +2200,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               level: m.level || 1,
               hp: m.hp || 0,
               maxHp: m.maxHP || 0,
+              combatStatuses: m.combatStatuses || [],
               battleCosmetics: m.battleCosmetics || null,
               isSelf: m.id === myId,
             }))}
             partyIsHost={isHost}
+            partyAbilityPreview={room?.monsterAbilityPreview || null}
             partyProcessing={!!room.processing}
             onForceSkipMember={handleForceSkip}
             partyAllReady={allReady || allAliveReady}

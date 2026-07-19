@@ -12,6 +12,7 @@ const ADVENTURE_ITEMS = [
   { page:"worldboss", icon:"🌍",  title:"世界王",     desc:"全員挑戰",  accent:"#ef4444", badgeKey:"worldboss" },
   { page:"duel",      icon:"🎯",  title:"玩家決鬥",   desc:"1v1 對戰",  accent:"#6366f1", badgeKey:"duel" },
   { page:"guild",     icon:"🏛️", title:"冒險者公會", desc:"",          accent:"#f59e0b", badgeKey:"guild" },
+  { page:"handbook",  icon:"📖",  title:"怪物手冊",   desc:"全怪物設定", accent:"#0ea5e9", badgeKey:"handbook" },
 ];
 
 export default function MemberAdventureHub({ onPageChange, badges = {} }) {

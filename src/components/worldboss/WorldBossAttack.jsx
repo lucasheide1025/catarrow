@@ -10,6 +10,8 @@ import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBo
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { getParticipantBonus, simulateBotRound, drawRandomBot, BOSS_QUOTES } from "../../lib/worldBossData";
+import { getWorldBossSkillConfig } from "../../lib/worldBossSkillData";
+import { getWorldBossScheduledStrike, getWorldBossTelegraph, resolveWorldBossStrike } from "../../lib/worldBossStrikeEngine";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossBattleCard from "./WorldBossBattleCard";
 import CatMsg from "../cat/CatMsg";
@@ -377,6 +379,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [potionShield, setPotionShield] = useState(_hasSave ? (_saved.potionShield || 0) : 0);
   const [nextCounterReducePct, setNextCounterReducePct] = useState(_hasSave ? (_saved.nextCounterReducePct || 0) : 0);
 
+  // ── 世界王 R2/R4 強攻（PRD 11-21;結算走 worldBossStrikeEngine,once-only + 重連一致）──
+  const strikeConfig = getWorldBossSkillConfig(event.bossKey);
+  const [sortieId] = useState(() => _saved?.sortieId || `wb:${event.id}:${_storageOwnerId}:${Date.now()}`);
+  const [resolvedStrikeKeys, setResolvedStrikeKeys] = useState(_hasSave ? (_saved.resolvedStrikeKeys || []) : []);
+  // 強攻附加的玩家減益,只作用「下一回合」：{ atkDownPct, defDownPct, healDownPct, dealtDownPct, dotMaxHpPct }
+  const [strikeDebuffs, setStrikeDebuffs] = useState(_hasSave ? (_saved.strikeDebuffs || {}) : {});
+  const [pendingTelegraph, setPendingTelegraph] = useState(_hasSave ? (_saved.pendingTelegraph || null) : null);
+
   useEffect(() => {
     if (isGuest || !profile?.id) return undefined;
     return subscribePotions(profile.id, setPotionInv);
@@ -585,15 +595,19 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     let crits = 0;
     let localBossHP = bossHP; // 本地追蹤 HP，迴圈中用此計算
     const carryBuffs = calcPotionBuffs(Object.values(activeCarryBuffs).map(entry => entry.id));
-    const effectiveATK = Math.round(baseATK * (carryBuffs.atkMult || 1));
-    const playerDmgMult = (carryBuffs.dmgMult || 1) * (1 + sortieDmgPct / 100);
+    // 強攻減益只作用本回合（上一回合 R2/R4 強攻附加;PRD 22-26）
+    const atkDebuffMult   = 1 - (strikeDebuffs.atkDownPct   || 0) / 100;
+    const dealtDebuffMult = 1 - (strikeDebuffs.dealtDownPct || 0) / 100;
+    const healDebuffMult  = 1 - (strikeDebuffs.healDownPct  || 0) / 100;
+    const effectiveATK = Math.round(baseATK * (carryBuffs.atkMult || 1) * atkDebuffMult);
+    const playerDmgMult = (carryBuffs.dmgMult || 1) * (1 + sortieDmgPct / 100) * dealtDebuffMult;
 
     // 取出其他隊員列表（所有曾參戰者，不限今日）
     const teammates = companions;
     const rearTeammates = teammates.filter(teammate => teammate.role === "rear");
     const frontTeammates = teammates.filter(teammate => teammate.role === "front");
     const rearBoost = rearTeammates.length > 0 && Math.random() < 0.5 ? 0.05 : 0;
-    const rearHeal = rearBoost === 0 && rearTeammates.length > 0 ? Math.round(baseHP * 0.05) : 0;
+    const rearHeal = rearBoost === 0 && rearTeammates.length > 0 ? Math.round(baseHP * 0.05 * healDebuffMult) : 0;
 
     // ── 1. 預先計算所有事件 ─────────────────────────────────
     const events = [];
@@ -748,11 +762,42 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
     addTimer(() => {
       setAnimBossCharge(false);
-      const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1));
+      const defDebuffMult = 1 - (strikeDebuffs.defDownPct || 0) / 100;
+      const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1) * defDebuffMult);
       const rawPlayerCdmg = Math.round(wbCounter(boss.atk || 100, effectiveDef, wbDmgReducePct) * (1 - nextCounterReducePct / 100));
-      const playerCounter = resolvePlayerCounter({ arrows:fullArrows, baseDamage:rawPlayerCdmg, maxHP:baseHP });
-      const absorbed = Math.min(potionShield, playerCounter.damage);
-      const cdmg = playerCounter.damage - absorbed;
+
+      // ── R2/R4 強攻：以本回合射箭破解,走 worldBossStrikeEngine（PRD 14-19）──
+      const roundNumber = nextRounds.length;
+      const scheduledStrike = getWorldBossScheduledStrike(strikeConfig, roundNumber);
+      let strikeResult = null;
+      if (scheduledStrike) {
+        strikeResult = resolveWorldBossStrike({
+          sortieId, round: roundNumber, bossKey: event.bossKey, skill: scheduledStrike,
+          arrows: fullArrows.filter(a => !a.consumableId).map(a => a.label),
+          targetFmt,
+          baseCounterDamage: rawPlayerCdmg,
+          playerHp: myHP, playerMaxHp: baseHP,
+          shield: potionShield,
+          resolvedSkillKeys: resolvedStrikeKeys,
+        });
+        if (!strikeResult?.ok) strikeResult = null; // 資料異常時退回標準反擊,不擋戰鬥
+      }
+      let cdmg, absorbed, counterHitText;
+      if (strikeResult) {
+        cdmg = strikeResult.damage; // 已含倍率/破解減幅/護盾;R2 保 1、R4 可歸零
+        absorbed = Math.max(0, potionShield - strikeResult.shieldRemaining);
+        counterHitText = `「${scheduledStrike.name}」`;
+      } else {
+        const playerCounter = resolvePlayerCounter({ arrows:fullArrows, baseDamage:rawPlayerCdmg, maxHP:baseHP });
+        absorbed = Math.min(potionShield, playerCounter.damage);
+        cdmg = playerCounter.damage - absorbed;
+        counterHitText = playerCounter.part.name;
+      }
+      const nextResolvedKeys = strikeResult && !strikeResult.alreadyResolved
+        ? [...resolvedStrikeKeys, strikeResult.resolvedKey]
+        : resolvedStrikeKeys;
+      if (nextResolvedKeys !== resolvedStrikeKeys) setResolvedStrikeKeys(nextResolvedKeys);
+
       const companionCounterDmgs = Object.fromEntries(companions.map(companion => [companion.id, Math.round(wbCounter(boss.atk || 100, companion.def, wbDmgReducePct) * (1 - nextCounterReducePct / 100))]));
       const totalCounterDmg = cdmg + Object.values(companionCounterDmgs).reduce((sum, damage) => sum + damage, 0);
       setPotionShield(current => Math.max(0, current - absorbed));
@@ -762,26 +807,59 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       const ownQuotes = BOSS_QUOTES[event?.bossKey];
       const pool   = (ownQuotes && !isLast) ? ownQuotes : (isLast ? BOSS_FINAL_TAUNTS : BOSS_TAUNTS);
       const [icon, text] = pool[Math.floor(Math.random() * pool.length)];
+      const strikeIcon = strikeResult ? (roundNumber === 4 ? "☄️" : "⚡") : icon;
+      // 破解評語（結算與演出分離：alreadyResolved 只播演出）
+      const breakLabel = strikeResult && strikeResult.outcome ? ({
+        full: "🛡️ 完全破解！毫髮無傷", major: "💪 高分破解！傷害大減",
+        partial: "👍 部分破解！傷害減輕", none: "💢 未能破解，全額承受",
+      })[strikeResult.outcome.level] : "";
 
       setCounterDmg(totalCounterDmg);
-      setBossAttackIcon(icon);
-      setBossAttackText(text);
-      setBattleDemo({ key:`${roundIdx}:counter:${Date.now()}`, type:"counter", damage:cdmg, message:`${icon} 世界王命中玩家${playerCounter.part.name}：-${cdmg} HP` });
+      setBossAttackIcon(strikeIcon);
+      setBossAttackText(strikeResult ? `${scheduledStrike.name}！` : text);
+      setBattleDemo({ key:`${roundIdx}:counter:${Date.now()}`, type:"counter", damage:cdmg, message:`${strikeIcon} 世界王${strikeResult ? "發動" : "命中玩家"}${counterHitText}：-${cdmg} HP` });
       setSubPhase("counterAttack");
       setAnimBossAttackDown(true);
-      if (isLast) { sfxCounterCrit(); vibrate(50); } else { sfxCounter(); vibrate(20); }
-      setDmgLog(prev => [...prev, `${icon} ${text} 命中玩家${playerCounter.part.name}，造成 ${cdmg} 傷害！`]);
+      if (isLast || (strikeResult && roundNumber === 4)) { sfxCounterCrit(); vibrate(50); } else { sfxCounter(); vibrate(20); }
+      setDmgLog(prev => [...prev,
+        strikeResult
+          ? `${strikeIcon} ${boss.name} 發動強攻「${scheduledStrike.name}」，造成 ${cdmg} 傷害！${breakLabel}`
+          : `${icon} ${text} 命中玩家${counterHitText}，造成 ${cdmg} 傷害！`,
+      ]);
+      if (strikeResult?.status) {
+        setDmgLog(prev => [...prev, `🌀 附加「${strikeResult.status.name || strikeResult.status.effect}」：下一回合生效`]);
+      }
 
       addTimer(() => {
         setAnimBossAttackDown(false);
-        const regen = Math.round(baseHP * (carryBuffs.regenPct || 0) / 100);
-        const nextMyHP  = Math.min(baseHP, Math.max(0, myHP - cdmg) + regen);
+        // 睡飽回復吃治療減益（大娘/毒雲/白卷,PRD 22/26）
+        const regen = Math.round(baseHP * (carryBuffs.regenPct || 0) / 100 * healDebuffMult);
+        // 蜂毒（上回合附加）：本回合結算,毒不致死（最低留 1 HP）
+        const poisonPct = strikeDebuffs.dotMaxHpPct || 0;
+        const poisonDmg = poisonPct > 0 ? Math.max(1, Math.round(baseHP * poisonPct / 100)) : 0;
+        let afterCounter = Math.max(0, myHP - cdmg);
+        if (poisonDmg > 0 && afterCounter > 0) {
+          const afterPoison = Math.max(1, afterCounter - poisonDmg);
+          setDmgLog(prev => [...prev, `🕷️ 蜂毒發作：-${afterCounter - afterPoison} HP`]);
+          afterCounter = afterPoison;
+        }
+        // R4 擊倒後,睡飽等回合末回復不可復活（PRD 18/127）
+        const knockedOut = strikeResult?.knockedOut === true;
+        const nextMyHP = knockedOut ? 0 : Math.min(baseHP, afterCounter + regen);
         const nextCompHPs = {};
         companions.forEach(c => { nextCompHPs[c.id] = Math.max(0, (companionHPs[c.id] ?? c.hp) - (companionCounterDmgs[c.id] || 0)); });
         setMyHP(nextMyHP);
         setCompanionHPs(nextCompHPs);
         setAnimPlayerHit(true);
         setTimeout(() => setAnimPlayerHit(false), 650);
+
+        // 下一回合的減益（本次強攻附加;非強攻回合歸零）與 R1/R3 末預告（PRD 12）
+        const nextDebuffs = strikeResult?.status
+          ? { [strikeResult.status.effect]: strikeResult.status.strength }
+          : {};
+        const telegraph = getWorldBossTelegraph(strikeConfig, roundNumber);
+        setStrikeDebuffs(nextDebuffs);
+        setPendingTelegraph(telegraph);
 
         addTimer(() => {
           const playerDied = nextMyHP <= 0;
@@ -790,7 +868,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             setSubPhase("done");
             submitAttack(nextRounds, playerDied);
           } else {
-            // 中途記憶：反擊結算後，下一回合開始前儲存
+            // 中途記憶：反擊結算後，下一回合開始前儲存（含強攻 once-only/預告/減益）
             try {
               localStorage.setItem(_saveKey, JSON.stringify({
                 eventId: event.id, memberId: _storageOwnerId, roundIdx: nextRounds.length,
@@ -798,6 +876,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 localBossHP, companionHPs: nextCompHPs,
                 activeCarryBuffs, raidUsed, sortieDmgPct, botDmgPct,
                 potionShield:Math.max(0, potionShield - absorbed), nextCounterReducePct:0,
+                sortieId, resolvedStrikeKeys: nextResolvedKeys,
+                strikeDebuffs: nextDebuffs, pendingTelegraph: telegraph,
               }));
             } catch { /**/ }
             setArrows([]);
@@ -1162,6 +1242,19 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             </div>
           </div>
         )}
+        {/* ⚡ R2/R4 強攻預告（R1/R3 末設定,重連自 save 還原;PRD 12）*/}
+        {subPhase === "shooting" && pendingTelegraph && (
+          <div style={{ position:"absolute", top:8, left:8, right:8, zIndex:60, pointerEvents:"none",
+            padding:"8px 12px", borderRadius:12, textAlign:"center",
+            background: pendingTelegraph.isFinisher ? "rgba(76,5,25,.92)" : "rgba(66,32,6,.92)",
+            border: `1.5px solid ${pendingTelegraph.isFinisher ? "#f43f5e" : "#fbbf24"}`,
+            boxShadow: `0 0 18px ${pendingTelegraph.isFinisher ? "rgba(244,63,94,.35)" : "rgba(251,191,36,.3)"}` }}>
+            <div style={{ fontSize:12, fontWeight:900, color: pendingTelegraph.isFinisher ? "#fda4af" : "#fcd34d" }}>
+              {pendingTelegraph.isFinisher ? "☄️ 終結技預告" : "⚡ 強攻預告"}：「{pendingTelegraph.name}」
+            </div>
+            <div style={{ fontSize:10, color:"#e2e8f0", marginTop:2, lineHeight:1.5 }}>{pendingTelegraph.counterText}</div>
+          </div>
+        )}
         <BattleScreen
           fullScreen
           autoStart
@@ -1376,6 +1469,18 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               )}
             </BattleLogPanel>
         </div>
+
+        {/* ⚡ R2/R4 強攻預告（R1/R3 末設定,重連自 save 還原;PRD 12） */}
+        {subPhase === "shooting" && pendingTelegraph && (
+          <div style={{ margin:"4px 6px", padding:"8px 10px", borderRadius:10,
+            background: pendingTelegraph.isFinisher ? "rgba(244,63,94,.14)" : "rgba(251,191,36,.12)",
+            border: `1.5px solid ${pendingTelegraph.isFinisher ? "#f43f5e" : "#fbbf24"}` }}>
+            <div style={{ fontSize:12, fontWeight:900, color: pendingTelegraph.isFinisher ? "#fda4af" : "#fcd34d" }}>
+              {pendingTelegraph.isFinisher ? "☄️ 終結技預告" : "⚡ 強攻預告"}：「{pendingTelegraph.name}」
+            </div>
+            <div style={{ fontSize:10, color:"#e2e8f0", marginTop:2, lineHeight:1.5 }}>{pendingTelegraph.counterText}</div>
+          </div>
+        )}
 
         {subPhase === "shooting" && !scoringReady && <ConsumablesBar />}
 

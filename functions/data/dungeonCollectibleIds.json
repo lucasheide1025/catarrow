@@ -1,0 +1,260 @@
+{
+  "ghost": {
+    "common": [
+      "shadow_stone",
+      "bone_fragment",
+      "ghost_dust",
+      "dark_candle",
+      "soul_thread",
+      "withered_flower",
+      "cemetery_soil",
+      "ghost_tear",
+      "rusty_chain",
+      "old_tombstone",
+      "night_feather",
+      "pale_cloth",
+      "cold_breath",
+      "lost_ring",
+      "hollow_mask",
+      "haunted_mirror",
+      "bone_dust",
+      "grave_moss",
+      "shadow_thorn",
+      "phantom_coin"
+    ],
+    "rare": [
+      "void_crystal",
+      "lich_essence",
+      "spirit_gem",
+      "death_mask",
+      "phantom_core",
+      "banshee_tear",
+      "wraith_cloak",
+      "soul_crystal",
+      "nether_flame",
+      "undead_seal"
+    ],
+    "boss": [
+      "shadow_crown",
+      "lich_scepter",
+      "void_eye",
+      "death_bell",
+      "necro_tome"
+    ]
+  },
+  "mountain": {
+    "common": [
+      "rough_stone",
+      "mountain_herb",
+      "cave_moss",
+      "quartz_chip",
+      "dried_root",
+      "eagle_feather",
+      "mountain_water",
+      "lichen_piece",
+      "stalactite_shard",
+      "mountain_berry",
+      "cave_crystal",
+      "wind_stone",
+      "goat_horn",
+      "pine_cone",
+      "granite_dust",
+      "snow_crystal",
+      "mountain_clay",
+      "fossil_fragment",
+      "creek_pebble",
+      "root_crystal"
+    ],
+    "rare": [
+      "ore_crystal",
+      "peak_core",
+      "ruby_shard",
+      "mithril_dust",
+      "ancient_stone",
+      "thunder_stone",
+      "glacier_tear",
+      "earth_essence",
+      "dragon_tooth",
+      "geode_heart"
+    ],
+    "boss": [
+      "summit_gem",
+      "mountain_throne",
+      "peak_essence",
+      "titan_heart",
+      "storm_crown"
+    ]
+  },
+  "insect": {
+    "common": [
+      "insect_shell",
+      "silk_thread",
+      "wing_scale",
+      "chitin_shard",
+      "antenna_tip",
+      "cocoon_fiber",
+      "honey_drop",
+      "compound_lens",
+      "molt_skin",
+      "beetle_shell",
+      "cricket_leg",
+      "firefly_dust",
+      "spider_web",
+      "leaf_bite",
+      "pupa_casing",
+      "mushroom_spore",
+      "clay_cell",
+      "beetle_horn",
+      "aphid_wax",
+      "worm_silk"
+    ],
+    "rare": [
+      "wing_dust",
+      "queen_pheromone",
+      "royal_jelly",
+      "mantis_claw",
+      "beetle_gem",
+      "hive_resin",
+      "scorpion_venom",
+      "silk_core",
+      "swarm_crystal",
+      "ancient_amber"
+    ],
+    "boss": [
+      "queen_crystal",
+      "hive_core",
+      "ancient_silk",
+      "insect_throne",
+      "primordial_egg"
+    ]
+  },
+  "workplace": {
+    "common": [
+      "memo_paper",
+      "coffee_bean",
+      "staple",
+      "id_card",
+      "sticky_note",
+      "broken_pen",
+      "lunch_box",
+      "desk_plant",
+      "business_card",
+      "keyboard_key",
+      "paper_clip",
+      "old_nameplate",
+      "broken_clock",
+      "printer_ink",
+      "mouse_pad",
+      "meeting_agenda",
+      "empty_mug",
+      "report_draft",
+      "badge_ribbon",
+      "locker_key"
+    ],
+    "rare": [
+      "boss_seal",
+      "overtime_crystal",
+      "vip_card",
+      "gold_pen",
+      "secret_folder",
+      "performance_medal",
+      "midnight_memo",
+      "signed_contract",
+      "insider_report",
+      "coffee_thermos"
+    ],
+    "boss": [
+      "gold_badge",
+      "ceo_key",
+      "annual_report",
+      "black_card",
+      "corp_seal"
+    ]
+  },
+  "exam": {
+    "common": [
+      "exam_paper",
+      "pencil_stub",
+      "eraser",
+      "cheat_note",
+      "correction_tape",
+      "ruler",
+      "compass",
+      "textbook_corner",
+      "lunch_crumbs",
+      "school_badge",
+      "torn_paper",
+      "ink_blot",
+      "pencil_shavings",
+      "countdown_cal",
+      "memo_book",
+      "calc_battery",
+      "highlighter_cap",
+      "absent_note",
+      "locker_key2",
+      "exam_schedule"
+    ],
+    "rare": [
+      "answer_key",
+      "study_crystal",
+      "perfect_score",
+      "teacher_seal",
+      "honor_roll",
+      "scholarship_letter",
+      "midnight_coffee",
+      "library_key",
+      "mock_exam_set",
+      "proctor_pass"
+    ],
+    "boss": [
+      "diploma",
+      "exam_god_seal",
+      "knowledge_core",
+      "final_transcript",
+      "wisdom_crown"
+    ]
+  },
+  "temple": {
+    "common": [
+      "stone_tablet",
+      "incense_ash",
+      "offering_coin",
+      "prayer_bead",
+      "temple_flower",
+      "candle_wax",
+      "bell_fragment",
+      "bamboo_slip",
+      "jade_chip",
+      "incense_stick",
+      "lantern_paper",
+      "sand_mandala",
+      "temple_nail",
+      "spirit_tablet",
+      "offering_fruit",
+      "gold_leaf",
+      "rope_charm",
+      "altar_cloth",
+      "sacred_water",
+      "wooden_plaque"
+    ],
+    "rare": [
+      "relic_fragment",
+      "divine_jade",
+      "sacred_flame",
+      "oracle_bone",
+      "celestial_map",
+      "holy_seal",
+      "prayer_crystal",
+      "divine_water",
+      "ancient_idol",
+      "heavenly_thread"
+    ],
+    "boss": [
+      "oracle_staff",
+      "divine_crown",
+      "eternal_flame",
+      "god_contract",
+      "celestial_orb"
+    ]
+  }
+}

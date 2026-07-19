@@ -1,0 +1,117 @@
+{
+  "_meta": {
+    "source": "PRD lines 26-53 (共用技能/積木/排程/異常契約)",
+    "note": "唯讀研究草案；數值直接取自 PRD 分段規格。resolver 由 Codex 實作，本表只定義輸入/輸出契約。",
+    "tierSegments": { "t12": ["common", "rare"], "t34": ["elite", "fierce"], "t56": ["boss", "mythic"] }
+  },
+
+  "targets": {
+    "self":   { "desc": "作用怪物自身", "partyScale": 1.0 },
+    "single": { "desc": "作用主要反擊目標／前衛", "partyScale": 1.0 },
+    "party":  { "desc": "作用全體有效成員；基礎效果約單體版 50%", "partyScale": 0.5 }
+  },
+
+  "statusContracts": {
+    "maxConcurrentDifferent": 3,
+    "sameStatusRefreshesNotStacks": true,
+    "sameAbilityTotalReductionCapPct": 40,
+    "maxDurationByTier": { "t12": 1, "t34": 2, "t56": 3 },
+    "dotMinKeepHp": 1,
+    "immunitySpecPipeline": "先降異常強度 → 再縮回合 → 最低仍保留 1 回合",
+    "clearedAtBattleEnd": true,
+    "dungeonCrossRoomStatus": "戰鬥異常不帶入下一房；事件/商店增益走不同 namespace"
+  },
+
+  "schedules": {
+    "normal":    { "shared": 1, "signature": 1, "pattern": "R2=招牌, R4=共用, 之後每隔2回合交替" },
+    "miniBoss":  { "shared": 2, "signature": 1, "pattern": "R2=招牌, R4=共用A, R6=共用B, R8後循環且招牌至少間隔4回合" },
+    "bigBoss":   { "shared": 2, "signature": 1, "phasePassive": 1, "pattern": "R2=招牌, R4=共用A, R6=招牌強化, R8=共用B; HP70%/40% 更新階段被動(不立即攻擊)" },
+    "worldBoss": { "pattern": "獨立系統:個人出戰 R2=強攻(1.6x), R4=終結(2.2x可擊倒); R1/R3末預告下回合; 見 PRD 11-20" },
+    "rules": ["每回合最多1個主動技能", "回復/再生不得連續施放", "貓咪階段擊倒→取消排定技能", "排程建立時鎖定,重連不重抽", "危險技能先預告破解條件"]
+  },
+
+  "sharedAbilities": [
+    { "id": "charge", "name": "蓄力", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "下一次反擊傷害提升", "valueByTier": { "t12": 0.25, "t34": 0.30, "t56": 0.35 },
+      "tierBounds": "T1-T6", "durationRule": "維持到下次反擊", "resolverIO": { "in": ["nextCounterBase"], "out": ["counterMult"] } },
+
+    { "id": "armor", "name": "護甲", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "受到玩家傷害減免", "valueByTier": { "t12": 0.15, "t34": 0.20, "t56": 0.25 },
+      "tierBounds": "T1-T6", "durationRule": "byTier", "resolverIO": { "in": ["incomingDmg"], "out": ["reducedDmg"] } },
+
+    { "id": "heal", "name": "回復", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "回復自身最大HP百分比", "valueByTier": { "t12": 0.05, "t34": 0.07, "t56": 0.09 },
+      "tierBounds": "T1-T6", "cap": "一般怪每場最多一次;不得連續施放", "resolverIO": { "in": ["maxHp", "curHp"], "out": ["newHp"] } },
+
+    { "id": "berserk", "name": "狂暴", "target": "self", "trigger": "hpBelow40", "telegraph": true,
+      "effect": "HP≤40% 時 ATK 提升", "valueByTier": { "t12": 0.10, "t34": 0.15, "t56": 0.20 },
+      "tierBounds": "T1-T6", "durationRule": "持續至HP回升>40%", "resolverIO": { "in": ["monsterAtk", "hpPct"], "out": ["monsterAtk"] } },
+
+    { "id": "weakpoint", "name": "弱點姿態", "target": "single", "trigger": "scheduled", "telegraph": true,
+      "effect": "玩家高品質命中傷害+25%;未破解則怪物下次反擊+20%", "value": { "hqDmgBonus": 0.25, "unbrokenCounterBonus": 0.20 },
+      "tierBounds": "T1-T6", "counter": "以高品質命中破解", "resolverIO": { "in": ["hqHitCount", "scorePct"], "out": ["hqDmgBonus", "counterBonus"] } },
+
+    { "id": "poison", "name": "毒素", "target": "single", "trigger": "scheduled", "telegraph": true,
+      "effect": "每回合扣玩家最大HP百分比", "valueByTier": { "t12": 0.02, "t34": 0.03, "t56": 0.04 },
+      "tierBounds": "T1-T6", "durationRule": "byTier", "cap": "最低保留玩家1HP,不可毒死", "resolverIO": { "in": ["playerMaxHp", "playerHp"], "out": ["playerHp"] } },
+
+    { "id": "weaken", "name": "虛弱", "target": "single", "trigger": "scheduled", "telegraph": true,
+      "effect": "降低玩家攻擊", "valueByTier": { "t12": 0.10, "t34": 0.15, "t56": 0.20 },
+      "tierBounds": "T1-T6", "durationRule": "byTier", "cap": "同能力(ATK)總減幅上限40%", "resolverIO": { "in": ["playerAtk"], "out": ["playerAtk"] } },
+
+    { "id": "shock", "name": "震盪", "target": "single", "trigger": "scheduled", "telegraph": true,
+      "effect": "降低玩家防禦", "valueByTier": { "t12": 0.10, "t34": 0.15, "t56": 0.20 },
+      "tierBounds": "T1-T6", "durationRule": "byTier", "cap": "同能力(DEF)總減幅上限40%", "resolverIO": { "in": ["playerDef"], "out": ["playerDef"] } },
+
+    { "id": "purify", "name": "淨化", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "清除自身承受的玩家減益", "cap": "每3回合最多一次",
+      "tierBounds": "T3-T6", "note": "T1-T2 不配置", "resolverIO": { "in": ["monsterDebuffs"], "out": ["monsterDebuffs"] } },
+
+    { "id": "stance", "name": "戰鬥姿態", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "在攻擊姿態(ATK+15%)與防禦姿態(減傷15%)間切換", "value": { "atkUp": 0.15, "dmgReduce": 0.15 },
+      "tierBounds": "T1-T6", "durationRule": "維持至下次切換", "resolverIO": { "in": ["stanceState"], "out": ["atkMult", "dmgReduce"] } },
+
+    { "id": "reflect", "name": "有限反射", "target": "single", "trigger": "onPlayerHit", "telegraph": true,
+      "effect": "反射玩家部分傷害", "valueByTier": { "t12": null, "t34": 0.08, "t56": 0.10 },
+      "tierBounds": "T3-T6", "note": "T1-T2 不配置", "cap": "單次最多扣玩家最大HP15%;不可擊倒玩家", "resolverIO": { "in": ["playerDmgDealt", "playerMaxHp"], "out": ["reflectDmg"] } },
+
+    { "id": "regen", "name": "可中斷再生", "target": "self", "trigger": "scheduled", "telegraph": true,
+      "effect": "連續兩回合各回復最大HP百分比", "valueByTier": { "t12": null, "t34": 0.06, "t56": 0.08 },
+      "tierBounds": "T3-T6", "note": "T1-T2 不配置(值 t12 僅列參考4%)", "counter": "當回合2次高品質命中可中斷", "durationRule": "2回合", "resolverIO": { "in": ["maxHp", "curHp", "hqHitCount"], "out": ["newHp", "interrupted"] } }
+  ],
+
+  "effectBlocks": [
+    { "id": "damageMult", "desc": "傷害倍率", "params": ["mult"] },
+    { "id": "multiHit", "desc": "多段", "params": ["hits", "perHitMult"] },
+    { "id": "armorPierce", "desc": "穿甲(忽略防禦%)", "params": ["ignoreDefPct"] },
+    { "id": "lifesteal", "desc": "吸血", "params": ["pctOfDamage"] },
+    { "id": "shield", "desc": "護盾", "params": ["pctMaxHp", "duration"] },
+    { "id": "heal", "desc": "回復", "params": ["pctMaxHp"] },
+    { "id": "dot", "desc": "持續傷害", "params": ["pctMaxHpPerRound", "duration"] },
+    { "id": "statDown", "desc": "能力降低", "params": ["stat", "pct", "duration"] },
+    { "id": "mark", "desc": "標記", "params": ["effectId", "duration"] },
+    { "id": "bind", "desc": "束縛", "params": ["duration"] },
+    { "id": "cleanse", "desc": "淨化", "params": ["scope"] },
+    { "id": "scoreBreak", "desc": "分數破解門檻", "params": ["thresholds"] },
+    { "id": "hqHitBreak", "desc": "高品質命中破解", "params": ["requiredHqHits"] },
+    { "id": "hpPhaseBoost", "desc": "HP階段強化", "params": ["hpPct", "boost"] },
+    { "id": "delayedBurst", "desc": "延遲爆發", "params": ["delayRounds", "mult"] }
+  ],
+
+  "signatureSchema": {
+    "note": "252 隻各有唯一招牌 sig_{monsterId};底層由1~3個 effectBlocks 組合,不為每隻建獨立 resolver。",
+    "fields": ["id", "monsterId", "name", "target", "telegraph", "trigger", "blocks[1..3]", "counter", "tierScaledParams"],
+    "blockCountByEncounter": { "normal": "1-2", "miniBoss": "2", "bigBoss": "2-3(可含delayedBurst/hpPhaseBoost)" },
+    "generatedBy": "generate-signatures.js（讀 roster draft + familyThemes 產出 signature-catalog-draft.json）"
+  },
+
+  "familySignatureThemes": {
+    "ghost":     { "theme": "靈體/迷惑", "coreBlocks": ["mark", "dot"], "bossBlocks": ["delayedBurst", "statDown"] },
+    "mountain":  { "theme": "巨力/堅守", "coreBlocks": ["damageMult", "shield"], "bossBlocks": ["hpPhaseBoost", "armorPierce"] },
+    "insect":    { "theme": "毒/多段", "coreBlocks": ["multiHit", "dot"], "bossBlocks": ["dot", "bind"] },
+    "workplace": { "theme": "壓力/削弱", "coreBlocks": ["statDown", "mark"], "bossBlocks": ["statDown", "delayedBurst"] },
+    "exam":      { "theme": "考驗/分數破解", "coreBlocks": ["scoreBreak", "damageMult"], "bossBlocks": ["hqHitBreak", "delayedBurst"] },
+    "temple":    { "theme": "魔法/穿甲", "coreBlocks": ["armorPierce", "damageMult"], "bossBlocks": ["hpPhaseBoost", "multiHit"] },
+    "treasure":  { "theme": "守財/護盾", "coreBlocks": ["shield", "heal"], "bossBlocks": ["shield", "reflect"] }
+  }
+}

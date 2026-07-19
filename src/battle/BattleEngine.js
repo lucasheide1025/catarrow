@@ -123,9 +123,9 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
   const scorePlus  = ctx.archerStats.scorePlus || 0;
 
   // ── Phase 0：隨機事件（回合最先發生，ATK 加成才能影響當回合箭傷）──
-  // 事件 popup 在動畫播放序列裡排第一個，玩家看到後才播箭矢動畫，
-  // 符合「隨機事件先顯示 → 玩家回合 → 貓貓回合 → 怪物回合」的設計。
-  if (shouldTriggerEvent()) {
+  // 2026-07-18 使用者指示：單人打怪取消每回合突發事件 → 預設關閉,
+  // 呼叫端明確傳 ctx.allowRandomEvents === true 才會擲骰。
+  if (ctx.allowRandomEvents === true && shouldTriggerEvent()) {
     const ev = drawRandomEvent();
     events.push(createRandomEvent(ev));
     const ef = ev.effect || {};

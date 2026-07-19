@@ -67,7 +67,8 @@ const MemberInventoryHub = lazy(() => import("../components/member/MemberInvento
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
 const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
-const CardCollection     = lazy(() => import("../components/member/CardCollection"));
+const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
+const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
 const CatVillage         = lazy(() => import("../components/member/CatVillage"));
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
@@ -79,7 +80,6 @@ const PartyBattleRoom    = lazy(() => import("../components/party/PartyBattleRoo
 const DuelLobby          = lazy(() => import("../components/duel/DuelLobby"));
 const DuelRoom           = lazy(() => import("../components/duel/DuelRoom"));
 const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby"));
-const DungeonController  = lazy(() => import("../components/dungeon/DungeonController"));
 const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
 const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
 const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
@@ -158,7 +158,7 @@ export default function AdminApp() {
     return (s && VALID_PAGES.has(s)) ? s : "hub-member";
   });
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
-  const dungeonImmersive = page === "dungeon" || page === "dungeon-room";
+  const dungeonImmersive = page === "dungeon";
   const [memberSub, setMemberSub]   = useState(null);
   const [eventsSub, setEventsSub]   = useState(null);
   const [itemsSub,  setItemsSub]    = useState(null);
@@ -363,51 +363,6 @@ export default function AdminApp() {
     setPage("duel");
   }
 
-  const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("admin_dungeon_room") || "null"); } catch { return null; } })();
-  // 服務端存檔備案：若 sessionStorage 沒有但 profile.activeDungeon 有，則使用它
-  const _savedDungeonFallback = (!_savedDungeon?.roomId && profile?.activeDungeon?.roomId)
-    ? { roomId: profile.activeDungeon.roomId }
-    : null;
-  const _initialDungeonRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId || null;
-  const [dungeonRoomId, setDungeonRoomId] = useState(_initialDungeonRoomId);
-  // 載入時驗證 sessionStorage / activeDungeon 中的地下城房間是否仍有效
-  useEffect(() => {
-    const checkRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId;
-    if (!checkRoomId) return;
-    let cancelled = false;
-    import("../lib/dungeonDb").then(({ checkDungeonRoomExists, setActiveDungeon }) => {
-      checkDungeonRoomExists(checkRoomId).then(res => {
-        if (cancelled) return;
-        if (!res.exists) {
-          sessionStorage.removeItem("admin_dungeon_room");
-          setDungeonRoomId(null);
-        } else if (_savedDungeonFallback && !_savedDungeon?.roomId) {
-          // 從 activeDungeon 恢復：同步寫回 sessionStorage
-          sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId: checkRoomId }));
-          setDungeonRoomId(checkRoomId);
-        }
-      });
-      if (_savedDungeonFallback) {
-        setActiveDungeon(profile?.id, checkRoomId).catch(() => {});
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line
-  function handleEnterDungeonRoom(roomId) {
-    setDungeonRoomId(roomId);
-    sessionStorage.setItem("admin_dungeon_room", JSON.stringify({ roomId }));
-    setPage("dungeon-room");
-  }
-  function handleLeaveDungeon(options = {}) {
-    if (options?.preserve === false) {
-      sessionStorage.removeItem("admin_dungeon_room");
-      setDungeonRoomId(null);
-      import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
-        clearActiveDungeon(profile?.id).catch(() => {})
-      );
-    }
-    setPage("home");
-  }
 
   // 記住當前頁面 + 射手模式（重整後留在原地）
   useEffect(() => { sessionStorage.setItem("admin_page", page); }, [page]);
@@ -510,7 +465,7 @@ const adminNav = [
     { id:"booking",       icon:"📅", label:"約課"  },
     { id:"profile",       icon:"👤", label:"我的"  },
   ];
-  const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
+  const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
   const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice","performance"];
   const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
@@ -609,12 +564,6 @@ const adminNav = [
             ⚔️ 決鬥進行中 — 點此回到戰場
           </button>
         )}
-        {dungeonRoomId && page !== "dungeon-room" && (
-          <button onClick={() => setPage("dungeon-room")}
-            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#7c3aed,#1e1b4b)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
-            🏰 地下城進行中 — 點此回到地下城
-          </button>
-        )}
         {/* 頁面內容（深藍覆寫） */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden" }} className="content-area">
         <Suspense fallback={<div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.25)", fontSize:13 }}>載入中…</div>}>
@@ -658,6 +607,7 @@ const adminNav = [
           {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")}/>}
           {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")}/>}
           {page==="cards"       && <CardCollection />}
+          {page==="handbook"    && <MonsterHandbook onBack={() => setPage("adventure-hub")} />}
           {page==="monster"     && <MonsterBattle
             onBack={() => {
               if (fromGuild) { setFromGuild(false); setPage("guild"); }
@@ -676,11 +626,6 @@ const adminNav = [
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
           {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} />}
-          {page==="dungeon-room" && dungeonRoomId && (
-            <div style={{ position:"fixed", inset:0, zIndex:60 }}>
-              <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
-            </div>
-          )}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} key={gachaInitTab} />}

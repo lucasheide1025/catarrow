@@ -4,10 +4,12 @@
 // 第 3 層：入口 → A/B/C 三選一（鎖定）→ 3 功能房 → 休息 → 王 → 寶箱
 // HP / buff 全程跨房間、跨樓層持續；功能房走「本地單人模式」不寫 Firestore
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { drawFloorMonsters, drawMixedMonsterPool, drawExpeditionBoss } from "../../lib/monsterData";
+import { drawExpeditionBoss } from "../../lib/monsterData";
+import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
+import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
@@ -43,9 +45,11 @@ import {
   addArrowdew,
   addChests,
   addCoins,
+  addArcherXP,
   addMaterials,
   grantKingVaultReward,
 } from "../../lib/db";
+import { rollDungeonKillReward, getDungeonDewMultiplier } from "../../lib/dungeonKillRewards";
 import {
   buildExpeditionParty,
   collectBattleStats,
@@ -59,6 +63,7 @@ import {
   sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter, sfxError,
 } from "../../lib/sound";
 import DungeonBattleRoom from "./DungeonBattleRoom";
+import KillLootToast from "./KillLootToast";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
 import DungeonShop from "./DungeonShop";
 import DungeonTrap from "./DungeonTrap";
@@ -67,6 +72,8 @@ import DungeonChest from "./DungeonChest";
 import DungeonRest from "./DungeonRest";
 import DungeonTreasureRoom from "./DungeonTreasureRoom";
 import { GridMapStage, BranchStage } from "./DungeonStages";
+
+const DungeonBossRewardRoom = lazy(() => import("./DungeonBossRewardRoom"));
 
 // ── 樓層名稱 ────────────────────────────────────────────
 const FLOOR_LABELS = [
@@ -117,7 +124,11 @@ function ExpeditionBattleRoom({
         setError(res.reason);
         setLoading(false);
       }
-    })();
+    })().catch(failure => {
+      if (cancelled) return;
+      setError(failure?.message || "無法取得王房戰鬥資格");
+      setLoading(false);
+    });
     return () => { cancelled = true; };
   }, []); // eslint-disable-line
 
@@ -140,7 +151,7 @@ function ExpeditionBattleRoom({
         setBattleDone(true);
         timerRef.current = setTimeout(async () => {
           await cleanupExpeditionRoom(roomId).catch(() => {});
-          onDoneRef.current({ won, member: me, battle: data });
+          onDoneRef.current({ won, member: me, battle: { id:roomId, ...data } });
         }, delay);
       };
 
@@ -298,6 +309,10 @@ export default function DungeonExpedition({
   const isFromStorage = excavation?.fromStorage === true;
   const savedId = excavation?.savedId;
   const family = excavation?.family || "ghost";
+  const expansionRunIdRef = useRef(
+    excavation?.expansionRunId
+      || `${myId || "guest"}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
+  );
   // 訪客/兒童：不信任上游傳入的 boss 物件（可能是封頂前抽出的），一律用已封頂的 difficultyTier 重新抽王，
   // 確保王關戰鬥本身也真的被夾住，不只是樓層怪物池／獎勵倍率（design.md §3 的「兩層都要夾」）
   // useMemo 鎖定同一場遠征內的王身份，避免每次 render 都重抽（family/difficultyTier 不變就不重算）
@@ -305,7 +320,26 @@ export default function DungeonExpedition({
     () => (isGuest ? drawExpeditionBoss(difficultyTier, family) : null),
     [isGuest, difficultyTier, family],
   );
-  const fixedBoss = isGuest ? guestFixedBoss : (excavation?.boss || null);
+  const [expansionBossEncounter, setExpansionBossEncounter] = useState(
+    excavation?.bossEncounter || null,
+  );
+  useEffect(() => {
+    if (!isMonsterExpansionEnabled()) return undefined;
+    let cancelled = false;
+    import("../../lib/dungeonBossEncounter").then(({ createLockedDungeonBossEncounter }) => {
+      if (cancelled) return;
+      setExpansionBossEncounter(createLockedDungeonBossEncounter({
+        runId:expansionRunIdRef.current,
+        roomId:"floor-3-boss",
+        family,
+        difficultyTier,
+        lockedEncounter:excavation?.bossEncounter || null,
+      }));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [excavation?.bossEncounter, family, difficultyTier]);
+  const fixedBoss = expansionBossEncounter?.monsterSnapshot
+    || (isGuest ? guestFixedBoss : (excavation?.boss || null));
   const isHidden = excavation?.isHidden || false;
   const arrowsPerRound = excavation?.arrowsPerRound === 3 ? 3 : 6;
   const targetFmt = excavation?.targetFmt || "full_110";
@@ -346,6 +380,17 @@ export default function DungeonExpedition({
   const [floorsCleared, setFloorsCleared] = useState(0);
   const [wonLast, setWonLast] = useState(false);
   const [resultRewards, setResultRewards] = useState(null);
+  // 出圖時決定的寶箱掉落倍數（1~3,整場固定;與組隊遠征同規格）
+  const [runLootMult] = useState(() => 1 + Math.floor(Math.random() * 3));
+  // 每場擊殺的掉落明細提示（4.5 秒後自動消失）
+  const [killToast, setKillToast] = useState(null);
+  useEffect(() => {
+    if (!killToast) return undefined;
+    const timer = setTimeout(() => setKillToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, [killToast]);
+  const [bossRewardClaim, setBossRewardClaim] = useState(null);
+  const [bossRewardRetry, setBossRewardRetry] = useState(null);
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
   const [playerState, setPlayerState] = useState(null);
   // 整趟遠征已買過的「一次性商店效果」（atk_mult/def_mult/revival）→ 商店據此鎖定，防跨商店堆疊
@@ -359,8 +404,10 @@ export default function DungeonExpedition({
       family, difficultyTier, isHidden, floorsCleared,
       hp: playerState?.hp, maxHP: playerState?.maxHP,
       arrowsPerRound, targetFmt,
+      expansionRunId: expansionRunIdRef.current,
+      bossEncounter: expansionBossEncounter,
     }).catch(() => {});
-  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt]);
+  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt, expansionBossEncounter]);
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 可變怪物佇列（每場戰鬥消耗一隻）
@@ -376,7 +423,7 @@ export default function DungeonExpedition({
     setPendingRoom(null);
     floorModsRef.current = { ...nextFloorModsRef.current };
     nextFloorModsRef.current = {};
-    const monsters = drawFloorMonsters(fi, difficultyTier, {
+    const monsters = drawDungeonFloorMonsters(fi, difficultyTier, {
       family,
       fixedBoss,
     });
@@ -420,12 +467,14 @@ export default function DungeonExpedition({
   const showResult = useCallback((won, cleared) => {
     setWonLast(won);
     setFloorsCleared(cleared);
-    setResultRewards(calculateExpeditionRewards({
+    const baseRewards = calculateExpeditionRewards({
       difficultyTier,
       floorsCleared: cleared,
       won,
       family,
-    }));
+    });
+    // 箭露：基準 × 難度倍率 × 5（與組隊遠征同規格,dungeonKillRewards）
+    setResultRewards({ ...baseRewards, arrowDew: Math.round((baseRewards.arrowDew || 0) * getDungeonDewMultiplier(difficultyTier)) });
     setPhase("result");
   }, [difficultyTier, family, myId]); // eslint-disable-line
 
@@ -580,7 +629,7 @@ export default function DungeonExpedition({
       let mon = r.type === "elite_battle" ? monsterPool.elite
         : r.type === "boss_battle" ? monsterPool.boss
         : (monsterQueueRef.current.shift()
-          || drawMixedMonsterPool(1, fallbackVariant, Math.max(1, difficultyTier))[0]);
+          || drawDungeonFallbackMonster(fallbackVariant, Math.max(1, difficultyTier), { family }));
       if (!mon) {
         // 空房間：直接視為完成
         if (floorIndex < 2) markRoomCleared(r.id);
@@ -650,7 +699,15 @@ export default function DungeonExpedition({
   }, [branchSeq, branchStep, enterRoom]);
 
   // ── 戰鬥結束 ────────────────────────────────────────────
-  const handleBattleDone = useCallback(({ won, member, battle }) => {
+  const claimBossReward = useCallback(async ({ battleId, monsterId }) => {
+    const { createDungeonBossRewardClaim } = await import("../../lib/dungeonBossRewardDb");
+    const claim = await createDungeonBossRewardClaim({ battleId, memberId:myId, monsterId });
+    setBossRewardClaim(claim);
+    setBossRewardRetry(null);
+    finishPendingRoom();
+  }, [myId, finishPendingRoom]);
+
+  const handleBattleDone = useCallback(async ({ won, member, battle }) => {
     // 戰後同步 HP/buff（用 ?? 避免 0 被復活）
     if (member) {
       setPlayerState(prev => prev ? {
@@ -674,17 +731,52 @@ export default function DungeonExpedition({
       showResult(false, Math.max(floorsCleared, floorIndex));
       return;
     }
-    const killLoot = createExpeditionKillLoot(battle?.monster || pendingRoom?.monster);
+    const killedMonster = battle?.monster || pendingRoom?.monster;
+    const killLoot = createExpeditionKillLoot(killedMonster, runLootMult);
     if (killLoot.chests.length > 0) {
       addChests(myId, killLoot.chests).catch(() => {});
       setRunLoot(previous => mergeExpeditionLoot(previous, killLoot));
+    }
+    // 每殺金幣（Tier 級距×5）＋射手 XP 即時入帳（王房獎勵另有 envelope,不重複——只對一般/精英房發）
+    let killCoins = 0;
+    let killArcherXP = 0;
+    if (killedMonster && !isGuest && !["miniBoss", "boss"].includes(killedMonster.encounter)) {
+      const kill = rollDungeonKillReward(killedMonster, { eliteMult: pendingRoom?.type === "elite_battle" ? 1.5 : 1 });
+      if (kill) {
+        killCoins = kill.coins;
+        killArcherXP = kill.archerXP;
+        addCoins(myId, kill.coins).catch(() => {});
+        addArcherXP(myId, kill.archerXP).catch(() => {});
+      }
+    }
+    // 掉落明細提示（使用者要求：直接看到掉了什麼、有幾個）
+    if (killLoot.chests.length > 0 || killCoins > 0) {
+      setKillToast({
+        monsterName: killedMonster?.name || "",
+        chests: killLoot.chests,
+        coins: killCoins,
+        archerXP: killArcherXP,
+        lootMult: runLootMult,
+      });
     }
     setRunStats(previous => mergeExpeditionStats(
       previous,
       collectBattleStats(battle?.log),
     ));
+    const defeatedMonster = battle?.monster || pendingRoom?.monster;
+    if (defeatedMonster?.expansionVersion === 1
+      && ["miniBoss", "boss"].includes(defeatedMonster.encounter)
+      && battle?.id) {
+      try {
+        await claimBossReward({ battleId:battle.id, monsterId:defeatedMonster.id });
+      } catch (error) {
+        setBossRewardRetry({ battleId:battle.id, monsterId:defeatedMonster.id, error:error?.message || "王房獎勵同步失敗" });
+        setPhase("boss_reward_retry");
+      }
+      return;
+    }
     finishPendingRoom();
-  }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult]);
+  }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult, claimBossReward, runLootMult, isGuest]);
 
   const handleAbandon = useCallback(() => {
     if (!isFromStorage) abandonExcavation(myId).catch(() => {});
@@ -825,33 +917,41 @@ export default function DungeonExpedition({
 
   if (phase === "grid" && gridFloor && playerState) {
     return (
-      <GridMapStage
-        gridFloor={gridFloor}
-        playerPos={playerPos}
-        visitedIds={visitedIds}
-        floorIndex={floorIndex}
-        playerState={playerState}
-        coins={coins}
-        onCellClick={handleCellClick}
-        onDescend={handleDescend}
-        onRetreat={handleAbandon}
-      />
+      <>
+        <GridMapStage
+          gridFloor={gridFloor}
+          playerPos={playerPos}
+          visitedIds={visitedIds}
+          floorIndex={floorIndex}
+          playerState={playerState}
+          coins={coins}
+          lootMult={runLootMult}
+          onCellClick={handleCellClick}
+          onDescend={handleDescend}
+          onRetreat={handleAbandon}
+        />
+        {killToast && <KillLootToast {...killToast} />}
+      </>
     );
   }
 
   if (phase === "branch" && branchFloor && playerState) {
     return (
-      <BranchStage
-        branchFloor={branchFloor}
-        branchChoice={branchChoice}
-        branchSeq={branchSeq}
-        branchStep={branchStep}
-        playerState={playerState}
-        coins={coins}
-        onChoose={handleChooseBranch}
-        onEnterNext={handleBranchNext}
-        onRetreat={handleAbandon}
-      />
+      <>
+        <BranchStage
+          branchFloor={branchFloor}
+          branchChoice={branchChoice}
+          branchSeq={branchSeq}
+          branchStep={branchStep}
+          playerState={playerState}
+          coins={coins}
+          lootMult={runLootMult}
+          onChoose={handleChooseBranch}
+          onEnterNext={handleBranchNext}
+          onRetreat={handleAbandon}
+        />
+        {killToast && <KillLootToast {...killToast} />}
+      </>
     );
   }
 
@@ -901,7 +1001,34 @@ export default function DungeonExpedition({
   }
 
   // 寶藏房（第 3 層終點）
+  if (phase === "boss_reward_retry" && bossRewardRetry) {
+    return (
+      <main className="min-h-[100dvh] bg-slate-950 px-5 text-white flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-3xl border border-rose-400/30 bg-slate-900 p-6 text-center">
+          <div className="text-4xl" aria-hidden="true">📜</div>
+          <h1 className="mt-3 text-xl font-black">戰利品尚未同步</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">戰鬥結果已保留，請重新同步；不會重複計算或遺失保底。</p>
+          <div role="alert" className="mt-3 text-xs text-rose-300">{bossRewardRetry.error}</div>
+          <button type="button" onClick={() => claimBossReward(bossRewardRetry).catch(error => setBossRewardRetry(current => ({ ...current, error:error?.message || "同步失敗" })))}
+            className="mt-5 min-h-12 w-full rounded-2xl bg-amber-300 font-black text-slate-950">重新同步獎勵</button>
+        </div>
+      </main>
+    );
+  }
+
   if (phase === "treasure") {
+    if (bossRewardClaim?.envelope) {
+      return (
+        <Suspense fallback={<div className="min-h-[100dvh] bg-slate-950 text-slate-400 flex items-center justify-center">正在整理王房戰利品…</div>}>
+          <DungeonBossRewardRoom
+            claimId={bossRewardClaim.claimId}
+            envelope={bossRewardClaim.envelope}
+            memberId={myId}
+            onComplete={() => { sfxVictory(); showResult(true, 3); }}
+          />
+        </Suspense>
+      );
+    }
     return (
       <DungeonTreasureRoom
         difficultyTier={difficultyTier}
@@ -914,6 +1041,8 @@ export default function DungeonExpedition({
 
   if (phase === "battle" && pendingRoom?.monster && playerState) {
     return (
+      <>
+      {/* 掉落倍率改顯示在樓層畫面的頂端狀態列（PlayerStatusBar），戰鬥中不再放浮動角標 */}
       <ExpeditionBattleRoom
         key={pendingRoom.id}
         memberData={{
@@ -937,6 +1066,7 @@ export default function DungeonExpedition({
         onAbandon={handleAbandon}
         guestProfile={isGuest ? profile : undefined}
       />
+      </>
     );
   }
 

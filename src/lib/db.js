@@ -15,7 +15,7 @@ import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
-import { getCardStat, MAX_EQUIPPED_PER_STAT, MAX_WB_EQUIPPED } from "./monsterCards";
+import { getCardStat, MAX_MONSTER_EQUIPPED, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
@@ -632,7 +632,9 @@ async function isGuestOrKidMember(memberId) {
     const snap = await getDoc(doc(db, C.members, memberId));
     const type = snap.exists() ? snap.data()?.accountType : null;
     const isGuestOrKid = !snap.exists() || type === "guest" || type === "kid";
-    memberAccountTypeCache.set(memberId, { isGuestOrKid, checkedAt:Date.now() });
+    // 只快取「成功讀到文件」的判定——讀不到時的保守結果不可快取 5 分鐘,
+    // 否則整段時間的正式箭數都被靜默降級成本機（挖掘卡住事故根因之一）
+    if (snap.exists()) memberAccountTypeCache.set(memberId, { isGuestOrKid, checkedAt:Date.now() });
     return isGuestOrKid;
   } catch (error) {
     // Fail closed: an unavailable identity check must never turn a guest/kid
@@ -896,6 +898,10 @@ async function applyArrowOperation(operation) {
     if ((await transaction.get(operationRef)).exists()) return;
     const memberSnap = await transaction.get(memberRef);
     if (!memberSnap.exists()) throw new Error("Member not found");
+    // 村莊目標文件可能已被刪除/結束——先在交易內確認存在,否則跳過,
+    // 不能讓它炸掉整筆箭數同步（會造成挖掘/終身箭數永遠卡住且無聲失敗）。
+    const goalRef = goal?.id && goal.goalType === "total_arrows" ? doc(db, "villageGoals", goal.id) : null;
+    const goalSnap = goalRef ? await transaction.get(goalRef) : null;
     const current = memberSnap.data().dungeonExcavation || {};
     const patch = { totalArrowsAllTime:increment(operation.count) };
     if ((Number(current.progress) || 0) < 100) {
@@ -905,11 +911,16 @@ async function applyArrowOperation(operation) {
       patch["dungeonExcavation.dailyArrowsUsed"] = current.lastActiveDate === today ? (Number(current.dailyArrowsUsed) || 0) + operation.count : operation.count;
     }
     transaction.update(memberRef, patch);
-    if (goal?.id && goal.goalType === "total_arrows") transaction.update(doc(db, "villageGoals", goal.id), {
+    if (goalSnap?.exists()) transaction.update(goalRef, {
       currentValue:increment(operation.count), [`participants.${operation.memberId}.contributed`]:increment(operation.count),
     });
     transaction.set(operationRef, { memberId:operation.memberId, arrowCount:operation.count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
   });
+}
+// 供 UI 顯示「待同步箭數」筆數（同步卡住時使用者才看得見,可手動重試 flushPendingArrowProgress）
+export function getPendingArrowOperationCount(memberId) {
+  if (!memberId) return 0;
+  try { return readArrowOperations(memberId).length; } catch { return 0; }
 }
 export async function flushPendingArrowProgress(memberId) {
   if (!memberId) return { synced:0, pending:0 };
@@ -922,11 +933,12 @@ export async function flushPendingArrowProgress(memberId) {
     const items = readArrowOperations(memberId).map(item => ({ ...item, sealed:true }));
     saveArrowOperations(memberId, items);
     let synced = 0;
+    let lastError = null;
     for (const item of items) {
       try { await applyArrowOperation(item); synced += 1; saveArrowOperations(memberId, readArrowOperations(memberId).filter(saved => saved.id !== item.id)); }
-      catch (error) { console.warn("flushPendingArrowProgress:", error?.message); break; }
+      catch (error) { lastError = error?.message || String(error); console.warn("flushPendingArrowProgress:", lastError); break; }
     }
-    return { synced, pending:readArrowOperations(memberId).length };
+    return { synced, pending:readArrowOperations(memberId).length, lastError };
   })().finally(() => arrowFlushFlights.delete(memberId));
   arrowFlushFlights.set(memberId, flight);
   return flight;
@@ -946,8 +958,10 @@ const recordRoundArrows = createRoundArrowRecorder({
     return undefined;
   },
 });
-export function addRoundArrows(memberId, count) {
-  return recordRoundArrows(memberId, count);
+// options.accountType：呼叫端已知帳號類型時傳入（"official"/"guest"/"kid"）,
+// 跳過脆弱的 async 身分讀取（讀取失敗會把正式箭數靜默降級成本機,2026-07-18 學生挖掘卡 72 事故）
+export function addRoundArrows(memberId, count, options) {
+  return recordRoundArrows(memberId, count, options);
 }
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {
@@ -2707,11 +2721,11 @@ export async function addMaterials(memberId, mats) {
  
 // 訂閱玩家材料庫存（即時）
 export function subscribeMaterials(memberId, callback) {
-  getDoc(doc(db, C_MATERIALS, memberId)).then(
+  return onSnapshot(
+    doc(db, C_MATERIALS, memberId),
     snap => callback(snap.exists() ? (snap.data().items || {}) : {}),
-    err  => { console.warn("subscribeMaterials:", err.message); callback({}); }
+    err => { console.warn("subscribeMaterials:", err.message); callback({}); },
   );
-  return () => {};
 }
  
 // 即時訂閱打怪紀錄
@@ -3504,15 +3518,10 @@ export async function equipCard(memberId, key, source = "monster") {
       return { ok: true };
     }
 
-    // 怪物卡：HP/ATK/DEF 各自最多 3 張
-    const stat = getCardStat(targetCard);
-    const sameStatCount = equipped.filter(e => {
-      if (e.source === "wb") return false;
-      const c = resolveEquippedCard(e, cards, wbCards);
-      return c && getCardStat(c) === stat;
-    }).length;
-    if (sameStatCount >= MAX_EQUIPPED_PER_STAT) {
-      return { ok: false, reason: `${stat.toUpperCase()} 分類已達上限（${MAX_EQUIPPED_PER_STAT}張），請先卸下同分類的卡` };
+    // 怪物卡：不分屬性,總量最多 10 張（2026-07-18 使用者指示）
+    const monsterCount = equipped.filter(e => e.source !== "wb").length;
+    if (monsterCount >= MAX_MONSTER_EQUIPPED) {
+      return { ok: false, reason: `普通卡欄位已達上限（${MAX_MONSTER_EQUIPPED}張），請先卸下一張` };
     }
 
     await setDoc(ref, { equipped: [...equipped, { key, source }], updatedAt: serverTimestamp() }, { merge: true });
@@ -4181,30 +4190,35 @@ export async function upgradeEquipSlot(memberId, slotId, clientData = {}) {
     const memRef = doc(db, C.members, memberId);
     const matRef = doc(db, C_MATERIALS, memberId);
 
-    // 扣材料（用隨機 nextMats）
-    const matUpdates = { updatedAt: serverTimestamp() };
-    for (const req of (mats.materials || [])) {
-      matUpdates[`items.${req.id}`] = increment(-req.count);
-    }
-    if (mats.keyItem) {
-      matUpdates[`items.${mats.keyItem.id}`] = increment(-mats.keyItem.count);
-    }
-
     // 升級完成後產生下一輪隨機材料（材料需求隨 newPlusLevel 遞增，見 equipData.generateRandomMats 曲線）
     const newNextMats = generateRandomMats(newGrade, newPlusLevel);
 
-    // 材料 + 會員（金幣＋裝備＋nextMats）兩個文件同時寫入
-    await Promise.all([
-      updateDoc(matRef, matUpdates).catch(() => setDoc(matRef, matUpdates, { merge: true })),
-      updateDoc(memRef, {
+    // ⚠️ 扣款一律走 transaction＋伺服器當下值重驗證。
+    // 舊寫法「client 資料驗證 + 盲目 increment(-n)」在多分頁/快取過期/連點時會把庫存扣成負數。
+    await runTransaction(db, async transaction => {
+      const [memSnap, matSnap] = await Promise.all([transaction.get(memRef), transaction.get(matRef)]);
+      if (!memSnap.exists()) throw new Error("找不到會員資料");
+      const serverCoins = memSnap.data().coins || 0;
+      if (serverCoins < cost.gold) throw new Error(`金幣不足（需 ${cost.gold}）`);
+      if (sealCost > 0 && (memSnap.data().kingSeals || 0) < sealCost) throw new Error(`王之印記不足（需 ${sealCost}）`);
+      const items = matSnap.exists() ? { ...(matSnap.data().items || {}) } : {};
+      const consume = (id, count) => {
+        const owned = Math.max(0, Number(items[id]) || 0); // 歷史負值視為 0
+        if (owned < count) throw new Error(`材料不足（需 ${id} ×${count}）`);
+        items[id] = owned - count;
+      };
+      for (const req of (mats.materials || [])) consume(req.id, req.count);
+      if (mats.keyItem) consume(mats.keyItem.id, mats.keyItem.count);
+      transaction.set(matRef, { items, updatedAt: serverTimestamp() }, { merge: true });
+      transaction.update(memRef, {
         coins: increment(-cost.gold),
         [`rpgEquip.${slotId}.plusLevel`]: newPlusLevel,
         [`rpgEquip.${slotId}.grade`]:     newGrade,
         [`rpgEquip.${slotId}.nextMats`]:  newNextMats,
         ...(sealCost > 0 ? { kingSeals: increment(-sealCost) } : {}),
         updatedAt: serverTimestamp(),
-      }),
-    ]);
+      });
+    });
 
     return { ok: true, upgraded, newGrade, newPlusLevel };
   } catch (e) {

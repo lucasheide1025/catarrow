@@ -16,11 +16,11 @@ import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { calcDungeonCounter } from "../../lib/damage";
-import { recordBattleDex, addCoins, addMaterials, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
+import { recordBattleDex, addCoins, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP, archerLevelFromXP } from "../../lib/archerLevel";
 import { addCatXP, addCatBond } from "../../lib/catDb";
 import { CAT_DUNGEON_FLOOR_XP } from "../../lib/catLevel";
-import { rollCoins, rollMaterialDrop, rollMaterialDrops, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
+import { rollCoins, openCoinChest, floorToMonsterTier, makeCoinChest } from "../../lib/lootTable";
 import { rollFamilyDrop, rollBossDrops, getFirstClearTrophy, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { addCollectibles } from "../../lib/dungeonDb";
 import {
@@ -239,7 +239,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     onSubmitError: (reason) => { console.warn("[DungeonSubmit]", reason); },
     onSubmitSuccess: (submittedArrows) => {
       if (!isLimitedAccount && myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
-        addRoundArrows(myId, submittedArrows.length).catch(() => {});
+        addRoundArrows(myId, submittedArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
       }
     },
   });
@@ -758,7 +758,6 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     }
     persistDungeonShootingPerformance("win");
     const goldMult      = room?.nextFloorModifiers?.goldMult || 1;
-    const baseMaterials = rollMaterialDrops(room?.monster);
     const totalFloors   = isMapMode
       ? (isBossRoom ? (_generatedFloors?.length || _dungeonForRoom?.floorCount || 1) : 1)
       : (room.totalFloors || 7);
@@ -769,8 +768,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     const memberChests = Array.from({ length: totalFloors }, (_, i) =>
       makeCoinChest(floorToMonsterTier(i + 1), `地下城第${i + 1}層`)
     );
+    // 遠征（單人＋組隊）不直接掉素材，只給寶箱（2026-07-19 使用者拍板）：
+    // 素材一律從寶箱開出，掉落來源單一化。王房的專屬獎勵 envelope 不受此規則影響。
     if (memberChests.length > 0) await addChests(myId, memberChests).catch(() => {});
-    if (baseMaterials.length > 0) await addMaterials(myId, baseMaterials).catch(() => {});
     if (room.monster?.id) await recordBattleDex(myId, room.monster.id).catch(() => {});
 
     // 練習紀錄 + 箭露 + XP
@@ -795,9 +795,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         })),
         rewards:{
           coins:baseCoins,
-          materials:baseMaterials.map(material => ({
-            id:material.id, name:material.name || material.id,
-          })),
+          materials:[], // 遠征不直接掉素材，素材一律從寶箱開出（2026-07-19）
           chests:memberChests.map(chest => ({ type:chest.type, name:chest.name })),
         },
         ...(arrowPositions.length ? { arrowPositions } : {}),
@@ -853,7 +851,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
       // 只有房主呼叫，觸發 Firestore status→map_explore，全員跟著路由
       await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
     } else {
-      // 非房主：顯示等待房主畫面，DungeonController 訂閱 status 變化後自動路由
+      // 非房主：顯示等待房主畫面，遠征元件訂閱 status 變化後自動路由
       setLocalClaimed(true);
     }
   }
@@ -1081,7 +1079,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         const previewTierXP = MONSTER_TIER_XP[tier] || DUNGEON_FLOOR_XP;
         claimLootRef.current = {
           coins:      Math.round(rollCoins(tier, 1) * gm * rewardMult * (isBossRoom ? 2 : 1)),
-          materials:  rollMaterialDrops(room.monster),
+          materials:  [], // 遠征不掉素材，只給寶箱（與實際入帳一致，避免面板顯示拿不到的東西）
           archerXP:   Math.round(tf * previewTierXP * rewardMult),
           catXP:      profile?.equippedCat?.catId ? Math.round(tf * CAT_DUNGEON_FLOOR_XP * rewardMult) : 0,
           chestCount: tf,

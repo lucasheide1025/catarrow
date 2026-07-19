@@ -20,6 +20,7 @@ import {
   DIFFICULTY_REWARD_MULT, DYNAMIC_DIFFICULTY,
 } from "./dungeonData";
 import { createOrdinaryChestLoot } from "./dungeonChestLoot";
+import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from "./dungeonAbilityRound";
 
 const D = "dungeonRooms";
 
@@ -45,55 +46,6 @@ const DEFAULT_MEMBER = (name, extraData = {}) => ({
   displayGroup: "front", // "front" | "rear" — 視覺分排（回合結束後才移動）
   rearChoice: null,      // "heal" | "dmg" | null
 });
-
-// ── 建立房間 ──────────────────────────────────────────────────
-export async function createDungeonRoom(hostId, hostName, hostAtk = 10, extraData = {}) {
-  try {
-    const code = genCode();
-    const ref  = await addDoc(collection(db, D), {
-      code, hostId,
-      status: "waiting",
-      length: "standard", totalFloors: 7,
-      currentFloor: 0,
-      mode: "student",
-      arrowsPerRound: 6,
-      targetFmt: "full_110",
-      hostAtk,
-      result: null,
-      members: { [hostId]: DEFAULT_MEMBER(hostName, extraData) },
-      monster: null, monsterHP: 0, monsterMaxHP: 0,
-      round: 1, log: [],
-      processing: false,
-      pathOptions: null, chosenPath: null,
-      shopItems: [], shopPurchases: {},
-      currentEvent: null,
-      nextFloorModifiers: {},
-      createdAt: serverTimestamp(),
-    });
-    return { ok:true, roomId:ref.id, code };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// ── 加入房間（用邀請碼）──────────────────────────────────────
-export async function joinDungeonRoom(code, memberId, memberName, extraData = {}) {
-  try {
-    const snap = await getDocs(
-      query(collection(db, D),
-        where("code", "==", code.toUpperCase()),
-        where("status", "==", "waiting"))
-    );
-    if (snap.empty) return { ok:false, reason:"找不到此邀請碼，或地下城已開始" };
-    const roomDoc = snap.docs[0];
-    const members = roomDoc.data().members || {};
-    if (Object.keys(members).length >= 8)
-      return { ok:false, reason:"地下城最多 8 人" };
-    // 新模型：開場全員前衛，無上限。第一次陣亡自動復活 50% HP 轉後衛
-    await updateDoc(doc(db, D, roomDoc.id), {
-      [`members.${memberId}`]: { ...DEFAULT_MEMBER(memberName, extraData), role: "front", displayGroup: "front" },
-    });
-    return { ok:true, roomId:roomDoc.id };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
 
 // ── 即時訂閱 ──────────────────────────────────────────────────
 export function subscribeDungeonRoom(roomId, cb) {
@@ -182,78 +134,6 @@ export async function applyDungeonUtilityPotion(roomId, memberId, potionId) {
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-// ── 房主開啟第一層 ────────────────────────────────────────────
-export async function startDungeonFloor(roomId, room, monster, mode, length, totalFloors) {
-  try {
-    const memberIds   = Object.keys(room.members || {});
-    const ms          = MODE_SCALE[mode] || MODE_SCALE.student;
-    const memberCount = memberIds.length;
-    const currentFloor = 1;
-    const fi = 0; // floor index = currentFloor - 1
-    // 房主強度縮放：hostAtk / 12 決定怪物難度基底（0.7 ~ 2.0x）
-    const hostAtk      = room.hostAtk || 10;
-    const hostScale    = Math.max(0.8, Math.min(1.4, hostAtk / 18));
-    // 人數 scaling：每多 1 人 → 怪物 HP+50% / ATK+15% / DEF+15%
-    const extraMembers  = memberCount - 1;
-    const monHPMult     = 1.0 + extraMembers * 0.5;
-    const monAtkMult    = 1.0 + extraMembers * 0.15;
-    const monDefMult    = 1.0 + extraMembers * 0.15;
-    // 深度 scaling：越深層怪物越強
-    const floorScale    = FLOOR_STAT_SCALE[fi] ?? 1.0;
-    const tierOffset    = FLOOR_TIER_OFFSET[fi] ?? 0;
-    const floorTier     = Math.min(9, (monster.tier || 1) + tierOffset);
-    const rewardMult    = (1.0 + extraMembers * 0.2) * (FLOOR_REWARD_SCALE[fi] ?? 1.0);  // +20%/人 × 深度
-    const scaledHP      = Math.round(monster.hp * ms.hp * monHPMult * hostScale * floorScale);
-    const diffReward    = 1.0; // 起始層
-
-    // 分配初始合約（後續每層 advanceDungeonFloor 會重新抽選）
-    const contracts = assignContracts(memberIds);
-    const upd = {};
-    for (const mid of memberIds) {
-      const m = room.members[mid] || {};
-      upd[`members.${mid}.arrows`]   = [];
-      upd[`members.${mid}.ready`]    = false;
-      upd[`members.${mid}.alive`]    = true;
-      upd[`members.${mid}.revived`]  = false;
-      upd[`members.${mid}.contract`] = contracts[mid];
-      if (!m.maxHP) {
-        upd[`members.${mid}.hp`]    = 500;
-        upd[`members.${mid}.maxHP`] = 500;
-        upd[`members.${mid}.def`]   = 10;
-      }
-    }
-
-    // 初始化動態難度追蹤
-    const initPerf = {
-      totalDeaths: 0,
-      totalRounds: 0,
-      totalCtrHits: 0,
-      difficultyAdjust: 0,  // 累積難度偏移（正=更難，負=更簡單）
-      rewardAdjust: 0,      // 累積獎勵偏移
-      floorLog: [],
-    };
-
-    await updateDoc(doc(db, D, roomId), {
-      ...upd,
-      status: "active", length, totalFloors, currentFloor, mode,
-      monster: {
-        id: monster.id, name: monster.name, icon: monster.icon,
-        hp:  Math.round(monster.hp  * ms.hp  * hostScale * floorScale),
-        atk: Math.round(monster.atk * ms.atk * hostScale * monAtkMult * floorScale),
-        def: Math.round(monster.def * ms.def * monDefMult * floorScale),
-        tier: floorTier, family: monster.family,
-      },
-      monsterHP: scaledHP, monsterMaxHP: scaledHP,
-      rewardMult,
-      diffReward,
-      floorPerformance: initPerf,
-      round: 1, log: [], result: null, processing: false,
-      pathOptions: null, chosenPath: null, nextFloorModifiers: {},
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
 // ── 送出箭分 ─────────────────────────────────────────────────
 export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice = null) {
   try {
@@ -325,15 +205,23 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         atkBuffPctForFront += (scorePct * 0.25) / frontIds.length;
       }
     }
+    // 上一回合怪物技能掛的異常（atkDown/defDown）在這回合生效（dungeonAbilityRound）
+    const abilityStatuses = { ...(room.abilityStatuses || {}) };
+    // 怪物自身減傷（技能 selfReduction）：本回合生效，回合末 duration -1
+    const monsterAbilityStateBefore = room.monsterAbilityState || null;
+    const monsterReduceMult = (monsterAbilityStateBefore?.reductionDuration || 0) > 0
+      ? Math.max(0, 1 - (monsterAbilityStateBefore.reductionPct || 0) / 100)
+      : 1;
     for (const id of aliveIds) {
       const m          = members[id];
       const isRear     = members[id].role === "rear";
       const rearHeal   = isRear && m.rearChoice === "heal";
       const rearBuff   = isRear && !rearHeal;
+      const statusMods = getStatusStatMods(abilityStatuses[id]);
       const effectiveAtk = isRear
         ? 0
-        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0));
+        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100));
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0)) * monsterReduceMult;
       const contract     = m.contract || { type:"standard", param:null };
       const damageItems  = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows  = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
@@ -370,6 +258,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         rearHeal,
         rearBuff,
         scorePct: isRear ? (rearScorePct[id] ?? 0) : 0,
+        validSubmission:members[id].skipped !== true && (members[id].arrows || []).length > 0,
       };
     }
 
@@ -538,6 +427,64 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
+    // ── Step 2.5：怪物招牌/共用技能（每回合一次，權威端結算;母任務 PRD §39）──
+    // 破解採全隊聚合（PRD §44）;flag off 或舊 60 隻怪無 signatureSkillId → plan 為 null，完全跳過。
+    // 冪等：resolvedKey 含 roomId+round，log 已有同 key 就不重複結算（host 重試/重連保護）。
+    let abilityPlan = null;
+    if (monsterHP > 0) {
+      const monsterMaxHPNow = room.monsterMaxHP || room.monster?.hp || 0;
+      const candidatePlan = planDungeonRoundAbility({
+        battleId: `dungeon:${roomId}`,
+        monster: room.monster,
+        round,
+        participants: aliveIds.map(id => ({
+          id,
+          name: members[id].name,
+          role: members[id].role || "front",
+          alive: memberHPNow[id] > 0,
+          hp: memberHPNow[id],
+          maxHP: members[id].maxHP || 100,
+          def: Math.round((members[id].def || 10) * (members[id].buffs?.defMult || 1) * (members[id].potionBuffs?.defMult || 1)
+            * (1 - getStatusStatMods(abilityStatuses[id]).defPct / 100)),
+          // 破解率只看計分箭：藥水箭在傷害路徑本來就被濾掉，這裡若算進去會變成 0 分箭拖累破解
+          arrows: (members[id].arrows || [])
+            .filter(arrow => !getPotion(arrow?.label || arrow))
+            .map(arrow => arrow?.label ?? arrow?.score ?? arrow),
+          validSubmission: allData[id]?.validSubmission,
+        })),
+        monsterAtk: Math.round((room.monster?.atk || 10) * (mods.monsterAtkMult || 1)),
+        monsterHpRatio: monsterMaxHPNow > 0 ? Math.max(0, monsterHP / monsterMaxHPNow) : 1,
+        calcCounter: (monsterAtk, def) => calcCtrFn(monsterAtk, def, 0),
+        existingStatuses: abilityStatuses,
+        targetFmt: room.targetFmt || "full_110",
+      });
+      const alreadyResolved = (room.log || []).some(entry => entry?.ability?.resolvedKey === candidatePlan?.resolvedKey);
+      if (candidatePlan && !alreadyResolved) {
+        abilityPlan = candidatePlan;
+        const abilityLog = [];
+        for (const [id, damage] of Object.entries(abilityPlan.damageByMember)) {
+          if (!(damage > 0)) continue;
+          memberHPNow[id] = Math.max(1, (memberHPNow[id] || 0) - damage);
+          abilityLog.push({
+            id, name: members[id]?.name || "射手", dmg: 0, ctr: damage, arrowBreakdown: [],
+            message: `⚡ ${room.monster?.name || "怪物"} 發動「${abilityPlan.name}」，${members[id]?.name || "射手"} 受到 ${damage} 傷害！`,
+          });
+        }
+        for (const [id, statuses] of Object.entries(abilityPlan.statusesByMember)) abilityStatuses[id] = statuses;
+        if (abilityPlan.monsterEffect.shieldHp > 0) monsterHP += abilityPlan.monsterEffect.shieldHp;
+        miniRounds.push({
+          miniRound: "ability", isCounter: false, isAbility: true,
+          ability: {
+            name: abilityPlan.name, skillId: abilityPlan.skillId, enhanced: abilityPlan.enhanced,
+            breakRatio: abilityPlan.breakRatio, breakLevel: abilityPlan.breakLevel,
+            targetMode: abilityPlan.targetMode, targetIds: abilityPlan.targetIds,
+            monsterEffect: abilityPlan.monsterEffect,
+          },
+          playerLog: abilityLog, totalDmg: 0, monsterHPAfter: monsterHP,
+        });
+      }
+    }
+
     // 大回合末：唯一一次怪物反擊（所有箭矢 + 貓貓攻擊後）
     if (!skipAllCtr && monsterHP > 0) {
       const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
@@ -590,6 +537,20 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       for (const tid of targets) receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
     }
 
+    // Step 5a2：怪物技能異常 tick（毒扣血不致死，所有異常 duration -1）
+    const statusTick = tickDungeonStatuses(
+      abilityStatuses,
+      Object.fromEntries(aliveIds.map(id => [id, memberHPNow[id]])),
+      Object.fromEntries(aliveIds.map(id => [id, members[id].maxHP || 100])),
+    );
+    for (const [id, hp] of Object.entries(statusTick.memberHP)) memberHPNow[id] = hp;
+    const abilityStatusesAfter = statusTick.statuses;
+    const monsterAbilityStateAfter = abilityPlan?.monsterEffect.reductionDuration > 0
+      ? { reductionPct: abilityPlan.monsterEffect.reductionPct, reductionDuration: abilityPlan.monsterEffect.reductionDuration }
+      : (monsterAbilityStateBefore?.reductionDuration > 0
+        ? { ...monsterAbilityStateBefore, reductionDuration: monsterAbilityStateBefore.reductionDuration - 1 }
+        : null);
+
     // Step 5b：更新成員 HP（含復活符 + 前後衛死亡邏輯）
     // 先快照各人的顯示分組（動畫播放期間讓客戶端知道回合開始前的位置）
     const displayGroupsBefore = Object.fromEntries(
@@ -631,6 +592,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       memberUpd[`members.${id}.potionBuffs.shield`] = potionShieldNow[id] || 0;
       memberUpd[`members.${id}.arrows`]    = [];
       memberUpd[`members.${id}.ready`]     = false;
+      memberUpd[`members.${id}.skipped`]   = false;
+      if (allData[id]?.validSubmission) {
+        memberUpd[`members.${id}.validRounds`] = (Number(m.validRounds) || 0) + 1;
+      }
       if (isRear) memberUpd[`members.${id}.rearChoice`] = null; // 每回合清除後衛選擇
     }
 
@@ -652,6 +617,19 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       counterRound: !skipAllCtr,
       lastHit: lastHitInfo,
       displayGroupsBefore, // 回合開始前各人的視覺分組（客戶端動畫用）
+      // 怪物技能：成員端 BattleScreen 靠這個欄位播技能演出（沒出招就不寫，維持舊 log 形狀）
+      ...(abilityPlan ? {
+        ability: {
+          resolvedKey: abilityPlan.resolvedKey,
+          name: abilityPlan.name, skillId: abilityPlan.skillId, enhanced: abilityPlan.enhanced,
+          breakRatio: abilityPlan.breakRatio, breakLevel: abilityPlan.breakLevel,
+          targetMode: abilityPlan.targetMode, targetIds: abilityPlan.targetIds,
+          damageByMember: abilityPlan.damageByMember,
+          statusesByMember: abilityPlan.statusesByMember,
+          monsterEffect: abilityPlan.monsterEffect,
+          poisonDamage: statusTick.poisonDamage,
+        },
+      } : {}),
     };
 
     // Step 7：動態難度追蹤 + 調整
@@ -753,6 +731,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
+      abilityStatuses: abilityStatusesAfter,
+      monsterAbilityState: monsterAbilityStateAfter,
       ...(pendingDungeonNextStatus === "path_select"
         ? { pathOptions: generatePathOptions(), chosenPath: null }
         : {}),
@@ -927,102 +907,12 @@ export async function confirmDungeonEvent(roomId, room) {
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-// ── 進入下一層（房主呼叫）────────────────────────────────────
-export async function advanceDungeonFloor(roomId, room, nextMonster) {
-  try {
-    const currentFloor = (room.currentFloor || 0) + 1;
-    const fi           = Math.min(currentFloor - 1, FLOOR_STAT_SCALE.length - 1); // currentFloor 是 1-based，陣列是 0-based
-    const mode         = room.mode || "student";
-    const ms           = MODE_SCALE[mode] || MODE_SCALE.student;
-    const mods         = room.nextFloorModifiers || {};
-    const chosenPath   = room.pathOptions?.[room.chosenPath || "A"];
-    const eliteBoost   = chosenPath?.eliteBoost || 1.0;
-    const memberIds    = Object.keys(room.members || {});
-    const perf         = room.floorPerformance || { totalDeaths:0, totalRounds:0, totalCtrHits:0, difficultyAdjust:0, rewardAdjust:0, floorLog:[] };
-
-    const hostAtk   = room.hostAtk || 10;
-    const hostScale = Math.max(0.8, Math.min(1.4, hostAtk / 18)); // 與 startDungeonFloor 一致
-    // 套用動態難度調整（由 processDungeonRound 寫入 nextFloorModifiers）
-    const dynHpMult  = mods.dynamicHpMult || 1;
-    const dynAtkMult = mods.dynamicAtkMult || 1;
-    const dynDefMult = mods.dynamicDefMult || 1;
-    const hpMult     = (1.0 + (memberIds.length - 1) * 0.5) * eliteBoost * (mods.monsterHpMult || 1) * dynHpMult;
-    const atkMult    = eliteBoost * (mods.monsterAtkMult || 1) * dynAtkMult;
-    // 深度 scaling：越深層怪物越強
-    const floorScale = FLOOR_STAT_SCALE[fi] ?? 1.0;
-    const scaledHP   = Math.round(nextMonster.hp  * ms.hp  * hpMult * hostScale * floorScale);
-    const scaledAtk  = Math.round(nextMonster.atk * ms.atk * atkMult * hostScale * floorScale);
-    const scaledDef  = Math.round(nextMonster.def * ms.def * floorScale * dynDefMult);
-    // 深度獎勵 scaling
-    const floorReward = FLOOR_REWARD_SCALE[fi] ?? 1.0;
-    const baseReward  = (1.0 + (memberIds.length - 1) * 0.2);
-    // 動態難度獎勵調整
-    const dynamicReward = perf.rewardAdjust || 0;
-    const newRewardMult = Math.max(0.5, baseReward * floorReward * (1 + dynamicReward));
-
-    // tier offset：深度遞增
-    const tierOffset = FLOOR_TIER_OFFSET[fi] ?? 0;
-    const floorTier  = Math.min(9, (nextMonster.tier || 1) + tierOffset);
-
-    // 每換一層怪物就重新抽任務
-    const aliveIds = memberIds.filter(id => room.members[id]?.alive);
-    const upd = {};
-    for (const id of aliveIds) {
-      upd[`members.${id}.arrows`]        = [];
-      upd[`members.${id}.ready`]         = false;
-      upd[`members.${id}.contract`]      = rerollContract();
-      upd[`members.${id}.contractReset`] = false;
-    }
-    // 換樓層：樓層級增益（buffs：事件/商人）與戰鬥級增益（potionBuffs：藥水）全部歸零。
-    // 例如一樓踩到雙倍傷害/喝藥水，進二樓時全員恢復正常值。全員都重置（含當層陣亡者）。
-    for (const id of memberIds) {
-      upd[`members.${id}.buffs`] = { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false };
-      upd[`members.${id}.potionBuffs`] = { atkMult: 1, defMult: 1, dmgMult: 1 };
-    }
-
-    await updateDoc(doc(db, D, roomId), {
-      ...upd,
-      currentFloor,
-      consumableEffects: {},
-      monster: {
-        id: nextMonster.id, name: nextMonster.name, icon: nextMonster.icon,
-        hp:  Math.round(nextMonster.hp  * ms.hp),
-        atk: scaledAtk, def: scaledDef,
-        tier: floorTier, family: nextMonster.family,
-      },
-      monsterHP: scaledHP, monsterMaxHP: scaledHP,
-      rewardMult: newRewardMult,
-      round: 1, log: [], result: null,
-      status: "active", processing: false,
-      pathOptions: null, chosenPath: null,
-      shopItems: [], shopPurchases: {},
-      currentEvent: null,
-      nextFloorModifiers: {},
-      // 保留 floorPerformance（跨樓層累積）
-      floorPerformance: perf,
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
 // ── 結算金幣（2x 地下城加成，房主替所有人呼叫）──────────────
 export async function claimDungeonReward(memberId, baseCoins, goldMult = 1, options = {}) {
   try {
     const totalCoins = Math.round(baseCoins * 3 * goldMult); // 地下城固定 3x
     if (!["guest", "kid"].includes(options.accountType)) await addCoins(memberId, totalCoins);
     return { ok:true, coins:totalCoins };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// ── 離開房間 ─────────────────────────────────────────────────
-export async function leaveDungeonRoom(roomId, memberId, isHost) {
-  try {
-    if (isHost) {
-      await updateDoc(doc(db, D, roomId), { status:"completed", result:"lose" });
-    } else {
-      await updateDoc(doc(db, D, roomId), { [`members.${memberId}.alive`]: false });
-    }
-    return { ok:true };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
@@ -1034,173 +924,6 @@ export async function clearDungeonProcessing(roomId) {
 // ══════════════════════════════════════════════════════════════
 // ▼▼▼  新版地圖模式函式（Phase 2）  ▼▼▼
 // ══════════════════════════════════════════════════════════════
-
-// 初始化地圖探索（開始時房主呼叫）— 隨機生成全部樓層並存入 Firestore
-export async function initDungeonMapRun(roomId, dungeonId, hostId) {
-  try {
-    const generatedFloors = generateDungeonFloors(dungeonId);
-    const startRoomId     = generatedFloors[0]?.startRoomId || "f0c0r0";
-    await updateDoc(doc(db, D, roomId), {
-      status:           "map_explore",
-      mapDungeonId:     dungeonId,
-      mapFloorIndex:    0,
-      mapCurrentRoomId: startRoomId,
-      mapExploredIds:   [startRoomId],
-      mapClearedIds:    [],
-      mapLoot:          {},
-      mapVoteProposal:  null,
-      mapVotes:         {},
-      generatedFloors,
-    });
-    if (hostId) markDungeonUsed(hostId).catch(() => {});
-    return { ok:true };
-  } catch (e) { console.error("[initDungeonMapRun]", e); return { ok:false, reason:e.message }; }
-}
-
-// 保存地圖探索進度（房主移動後呼叫）
-export async function saveMapExploration(roomId, { floorIndex, currentRoomId, exploredIds, clearedIds }) {
-  try {
-    await updateDoc(doc(db, D, roomId), {
-      mapFloorIndex:    floorIndex,
-      mapCurrentRoomId: currentRoomId,
-      mapExploredIds:   [...exploredIds],
-      mapClearedIds:    [...clearedIds],
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// 提案移動（房主）：開始投票，所有成員看到目標房間
-export async function proposeMapMove(roomId, targetRoomId) {
-  try {
-    await updateDoc(doc(db, D, roomId), {
-      mapVoteProposal: { targetRoomId, proposedAt: serverTimestamp() },
-      mapVotes: {},
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// 投票（成員）
-export async function castMapVote(roomId, memberId, targetRoomId) {
-  try {
-    await updateDoc(doc(db, D, roomId), {
-      [`mapVotes.${memberId}`]: targetRoomId,
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// 解析投票（房主 30 秒後呼叫）：票數最多的房間勝，平手由 hostId 決定
-export async function resolveMapVote(roomId, room, hostVoteRoomId) {
-  try {
-    const votes   = room.mapVotes || {};
-    const tally   = {};
-    for (const v of Object.values(votes)) tally[v] = (tally[v] || 0) + 1;
-    // 找票數最多的，平手選 hostVote
-    let winner = hostVoteRoomId;
-    let best   = 0;
-    for (const [roomId_, count] of Object.entries(tally)) {
-      if (count > best) { best = count; winner = roomId_; }
-    }
-    const prevExplored = room.mapExploredIds || [];
-    const newExplored  = prevExplored.includes(winner) ? prevExplored : [...prevExplored, winner];
-    await updateDoc(doc(db, D, roomId), {
-      mapCurrentRoomId: winner,
-      mapExploredIds:   newExplored,
-      mapVoteProposal:  null,
-      mapVotes:         {},
-    });
-    return { ok:true, winner };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// 進入下一層（房主）— 接受 generatedFloors 陣列或舊格式 dungeon 物件
-export async function advanceMapFloor(roomId, dungeonOrFloors, nextFloorIndex) {
-  try {
-    const floors    = Array.isArray(dungeonOrFloors) ? dungeonOrFloors : dungeonOrFloors?.floors;
-    const nextFloor = floors?.[nextFloorIndex];
-    if (!nextFloor) return { ok:false, reason:"no next floor" };
-    await updateDoc(doc(db, D, roomId), {
-      mapFloorIndex:    nextFloorIndex,
-      mapCurrentRoomId: nextFloor.startRoomId,
-      mapExploredIds:   [nextFloor.startRoomId],
-      mapVoteProposal:  null,
-      mapVotes:         {},
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-// 進入戰鬥房（房主）：設定怪物合約 + 切換到 active 狀態
-export async function enterMapCombatRoom(roomId, room, roomMeta, options = {}) {
-  try {
-    const { monster = null, formationMap = {}, totalFloors = 1 } = options;
-    const contract = roomMeta?.contract
-      ? { type: roomMeta.contract, param: roomMeta.contractParam ?? null }
-      : { type:"standard", param:null };
-    const memberIds = Object.keys(room.members || {});
-    const floorIndex = room.mapFloorIndex ?? 0;
-    const fi = Math.min(floorIndex, FLOOR_STAT_SCALE.length - 1);
-    const floorScale = FLOOR_STAT_SCALE[fi] ?? 1.0;
-    const rewardScale = FLOOR_REWARD_SCALE[fi] ?? 1.0;
-
-    const upd = {};
-    for (const id of memberIds) {
-      const m = room.members[id] || {};
-      upd[`members.${id}.contract`]  = contract;
-      upd[`members.${id}.arrows`]    = [];
-      upd[`members.${id}.ready`]     = false;
-      upd[`members.${id}.revived`]   = false; // 每間房間重置復活旗標
-      // 上一間死亡的成員進新房間復活（帶 30% HP）
-      if (!m.alive) {
-        upd[`members.${id}.alive`] = true;
-        upd[`members.${id}.hp`]    = Math.max(1, Math.round((m.maxHP || 100) * 0.3));
-      }
-      if (formationMap[id]) upd[`members.${id}.formation`] = formationMap[id];
-    }
-
-    // 遠征開始前已鎖定，進入每個戰鬥房時只沿用房間設定。
-    const apr = [3, 6].includes(room.arrowsPerRound) ? room.arrowsPerRound : 6;
-
-  // Boss 房間加成：套用 bossModifier 到怪物數值
-    const bossMod = roomMeta?.bossModifier || null;
-    const finalMonster = bossMod && monster ? {
-      ...monster,
-      hp:  Math.round((monster.hp  || 100) * (bossMod.hp  || 1) * floorScale),
-      atk: Math.round((monster.atk || 10)  * (bossMod.atk || 1) * floorScale),
-      def: Math.round((monster.def || 5)   * (bossMod.def || 1) * floorScale),
-    } : (monster ? {
-      ...monster,
-      hp:  Math.round((monster.hp  || 100) * floorScale),
-      atk: Math.round((monster.atk || 10)  * floorScale),
-      def: Math.round((monster.def || 5)   * floorScale),
-    } : null);
-    const monsterHP = finalMonster?.hp || 100;
-    const baseReward = 1.0 + Math.max(0, memberIds.length - 1) * 0.2;
-    const rewardMult = baseReward * rewardScale;
-
-    await updateDoc(doc(db, D, roomId), {
-      ...upd,
-      monster:             finalMonster,
-      monsterHP:           monsterHP,
-      monsterMaxHP:        monsterHP,
-      arrowsPerRound:      apr,
-      status:              "active",
-      activeRoomContract:  contract,
-      rewardMult,
-      round:               1,
-      log:                 [],
-      result:              null,
-      processing:          false,
-      totalFloors:         totalFloors,
-      currentFloor:        floorIndex + 1,
-      // 標記 Boss 房間以利結算獎勵判斷
-      ...(bossMod ? { isBossRoom: true } : {}),
-    });
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
 
 // 戰鬥結束後返回地圖（房主）
 export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedIds, clearRoom = true) {
@@ -1218,80 +941,9 @@ export async function returnToMapAfterBattle(roomId, clearedRoomId, prevClearedI
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-// 提議戰鬥（房主）：寫入 mapPendingRoom，讓非房主也能看到即將進入的房間資訊
-export async function proposeMapBattle(roomId, roomData) {
-  try {
-    await updateDoc(doc(db, D, roomId), { mapPendingRoom: roomData || null });
-    return { ok: true };
-  } catch (e) { return { ok: false, reason: e.message }; }
-}
-
-// 清除戰鬥提議（確認進入戰鬥或撤退時呼叫）
-export async function clearMapPendingRoom(roomId) {
-  try {
-    await updateDoc(doc(db, D, roomId), { mapPendingRoom: deleteField() });
-    return { ok: true };
-  } catch (e) { return { ok: false, reason: e.message }; }
-}
-
 // ══════════════════════════════════════════════════════════════
 // ▼▼▼  隱藏房間系統  ▼▼▼
 // ══════════════════════════════════════════════════════════════
-
-// 房主進入一個可觸發隱藏房間的房間後，呼叫此函式檢查是否有隱藏房間
-// 若有，會將新的隱藏房間寫入 generatedFloors（只對當前樓層寫入）
-// 回傳 { found: true, hiddenRoom } 或 { found: false }
-export async function tryDiscoverHiddenRoom(roomId, room, floorIndex, currentRoomId) {
-  try {
-    const floors = room?.generatedFloors || [];
-    const floor  = floors[floorIndex];
-    if (!floor) return { found: false };
-    // 檢查是否已有隱藏房間在該樓層
-    const hasHidden = floor.rooms.some(r => r.type === "hidden");
-    if (hasHidden) return { found: false }; // 每層最多一個隱藏房間
-    const tier = room.mapDungeonId ? _dungeonTier(room.mapDungeonId) : 1;
-    const result = rollHiddenRoomDiscovery(floor, currentRoomId, tier);
-    if (!result) return { found: false };
-    // 將新房間寫入 generatedFloors（更新 Firestore 中該樓層的 rooms 陣列）
-    const updatedRooms = [...floor.rooms, result];
-    const updatedConnections = [...(floor.connections || [])];
-    // 連接隱藏房間到當前房間
-    updatedConnections.push({ a: currentRoomId, b: result.id });
-    // 更新到 Firestore
-    await updateDoc(doc(db, D, roomId), {
-      [`generatedFloors.${floorIndex}.rooms`]: updatedRooms,
-      [`generatedFloors.${floorIndex}.connections`]: updatedConnections,
-    });
-    return { found: true, hiddenRoom: result };
-  } catch (e) {
-    return { found: false, reason: e.message };
-  }
-}
-
-// 進入隱藏房間（房主呼叫）— 類似寶箱房間，但獎勵更豐
-// 獎勵由 DungeonChest 元件在玩家點擊確認時個別發放（避免重複給幣）
-export async function enterHiddenRoom(roomId, room, roomMeta) {
-  try {
-    const family = (room?.mapDungeonId || "ghost").split("_")[0] || "ghost";
-    const chestLoot = createOrdinaryChestLoot({
-      family,
-      difficultyTier: room?.expeditionDifficulty || room?.dungeonDifficulty || 1,
-      hidden: true,
-    });
-    // 切換到寶箱模式顯示獎勵（DungeonChest 會讀 hiddenRoomLoot 發放獎勵）
-    await updateDoc(doc(db, D, roomId), {
-      status: "chest",
-      activeRoomId: roomMeta?.id || null,
-      roomConfirms: {},
-      roomChoices:  {},
-      hiddenRoomLoot: { ...chestLoot, found: true },
-      chestLoot,
-    });
-    return { ok: true, coins: chestLoot.coins };
-  } catch (e) {
-    return { ok: false, reason: e.message };
-  }
-}
 
 // A normal chest must be generated by the host once, then every client reads the same payload.
 export async function ensureChestRoomLoot(roomId, hostId, proposedLoot) {
@@ -1316,19 +968,6 @@ export async function ensureChestRoomLoot(roomId, hostId, proposedLoot) {
 export { _dungeonTier };
 function _dungeonTier(dungeonId) {
   return { normal:1, advanced:3, hard:4, hell:5 }[dungeonId?.split("_")[1]] || 1;
-}
-
-// ══════════════════════════════════════════════════════════════
-// ▼▼▼  累積地圖戰利品  ▼▼▼
-export async function addMapLoot(roomId, prevLoot, newItems) {
-  try {
-    const merged = { ...prevLoot };
-    for (const [k, v] of Object.entries(newItems)) {
-      merged[k] = (merged[k] || 0) + v;
-    }
-    await updateDoc(doc(db, D, roomId), { mapLoot: merged });
-    return { ok:true, loot: merged };
-  } catch (e) { return { ok:false, reason:e.message }; }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1389,62 +1028,9 @@ export async function checkDungeonFirstClear(dungeonId) {
   }
 }
 
-// ── 檢查房間是否仍有效（MemberApp/AdminApp 載入時驗證，避免跳到已結束的房間）───
-// 完成的地城（status=completed with result）視為無效
-// 不存在的房間也視為無效
-// 這樣 sessionStorage 的舊 roomId 就不會讓玩家卡在無限載入
-export async function checkDungeonRoomExists(roomId) {
-  try {
-    const snap = await getDocs(query(collection(db, D), where("__name__", "==", roomId)));
-    if (snap.empty) return { ok: false, exists: false, reason: "room_not_found" };
-    const data = snap.docs[0].data();
-    if (data.status === "completed" && data.result) return { ok: false, exists: false, reason: "completed" };
-    const validStatuses = ["waiting", "map_explore", "active", "shop", "rest", "trap", "event", "chest", "path_select", "floor_transition"];
-    if (!validStatuses.includes(data.status)) return { ok: false, exists: false, reason: "stale_status" };
-    return { ok: true, exists: true };
-  } catch (e) { return { ok: false, exists: false, reason: e.message }; }
-}
-
 // ══════════════════════════════════════════════════════════════
 // ▼▼▼  會員地下城狀態管理（斷線重連 / 防重複加入）▼▼▼
 // ══════════════════════════════════════════════════════════════
-
-// 設定該成員當前正在進行的地下城（寫入 members/{memberId}.activeDungeon）
-export async function setActiveDungeon(memberId, roomId) {
-  try {
-    await updateDoc(doc(db, "members", memberId), {
-      activeDungeon: { roomId, joinedAt: serverTimestamp() },
-    });
-    return { ok: true };
-  } catch (e) { return { ok: false, reason: e.message }; }
-}
-
-// 清除該成員的 activeDungeon（離開/完成地下城時呼叫）
-export async function clearActiveDungeon(memberId) {
-  try {
-    await updateDoc(doc(db, "members", memberId), {
-      activeDungeon: deleteField(),
-    });
-    return { ok: true };
-  } catch (e) { return { ok: false, reason: e.message }; }
-}
-
-// 檢查該 member 是否已經在進行中的地下城（用於防重複加入）
-export async function checkMemberActiveDungeon(memberId) {
-  try {
-    const snap = await getDocs(query(collection(db, "members"), where("__name__", "==", memberId)));
-    if (snap.empty) return { ok: true, inDungeon: false };
-    const active = snap.docs[0].data()?.activeDungeon;
-    if (!active?.roomId) return { ok: true, inDungeon: false };
-    const roomSnap = await getDocs(query(collection(db, D), where("__name__", "==", active.roomId)));
-    if (roomSnap.empty) return { ok: true, inDungeon: false };
-    const data = roomSnap.docs[0].data();
-    if (data.status === "completed" && data.result) return { ok: true, inDungeon: false };
-    const validStatuses = ["waiting", "map_explore", "active", "shop", "rest", "trap", "event", "chest", "path_select", "floor_transition"];
-    if (!validStatuses.includes(data.status)) return { ok: true, inDungeon: false };
-    return { ok: true, inDungeon: true, roomId: active.roomId };
-  } catch (e) { return { ok: false, inDungeon: false, reason: e.message }; }
-}
 
 // 訂閱最新一筆廣播（MemberApp/AdminApp 用）
 export function subscribeLatestBroadcast(callback) {
@@ -1469,30 +1055,6 @@ export async function getDungeonFirstClearStats() {
 // ──────────────────────────────────────────────────────────────
 
 const STALE_MS = 2 * 60 * 60 * 1000;
-
-export function subscribeOpenDungeonRooms(callback) {
-  const q = query(collection(db, D), where("status", "==", "waiting"));
-  return onSnapshot(q, snap => {
-    const cutoff = Date.now() - STALE_MS;
-    const rooms = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(r => !r.createdAt || r.createdAt.toMillis() > cutoff)
-      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-    callback(rooms);
-  }, () => callback([]));
-}
-
-export async function cleanupStaleDungeonRooms() {
-  try {
-    const cutoff = Date.now() - STALE_MS;
-    const snap = await getDocs(query(collection(db, D), where("status", "==", "waiting")));
-    const stale = snap.docs.filter(d => {
-      const t = d.data().createdAt?.toMillis?.();
-      return t && t < cutoff;
-    });
-    await Promise.all(stale.map(d => deleteDoc(d.ref)));
-  } catch (_) {}
-}
 
 // ══════════════════════════════════════════════════════════════
 // ▼▼▼  地下城收藏品  ▼▼▼

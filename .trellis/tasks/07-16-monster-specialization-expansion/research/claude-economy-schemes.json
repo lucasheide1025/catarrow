@@ -1,0 +1,182 @@
+{
+  "version": "schemes-v1",
+  "schemes": {
+    "A": {
+      "label": "保守調整",
+      "dailyBulkPerTier": {
+        "T1": {
+          "singleOnly": 20,
+          "partyOnly": 25,
+          "both": 45
+        },
+        "T2": {
+          "singleOnly": 40,
+          "partyOnly": 50,
+          "both": 90
+        },
+        "T3": {
+          "singleOnly": 60,
+          "partyOnly": 75,
+          "both": 135
+        },
+        "T4": {
+          "singleOnly": 80,
+          "partyOnly": 100,
+          "both": 180
+        },
+        "T5": {
+          "singleOnly": 100,
+          "partyOnly": 125,
+          "both": 225
+        },
+        "T6": {
+          "singleOnly": 140,
+          "partyOnly": 175,
+          "both": 315
+        }
+      },
+      "targetFarmT1_600": {
+        "singleDays": 30,
+        "partyDays": 72
+      },
+      "cards": {
+        "singlePerDay": 1,
+        "partyPerDay": 1.3,
+        "maxOneCardDays_both": 6.7
+      },
+      "specTimes": {
+        "normal": {
+          "threeSpecs_mo": 9.9,
+          "nineSpecs_mo": 29.7,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        },
+        "high": {
+          "threeSpecs_mo": 6.4,
+          "nineSpecs_mo": 19.1,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        }
+      },
+      "dominanceVerdict": "⚠️ 組隊bulk較高,但單人targeting有獨立價值→不支配"
+    },
+    "B": {
+      "label": "明確分工",
+      "dailyBulkPerTier": {
+        "T1": {
+          "singleOnly": 25,
+          "partyOnly": 25,
+          "both": 50
+        },
+        "T2": {
+          "singleOnly": 50,
+          "partyOnly": 50,
+          "both": 100
+        },
+        "T3": {
+          "singleOnly": 75,
+          "partyOnly": 75,
+          "both": 150
+        },
+        "T4": {
+          "singleOnly": 100,
+          "partyOnly": 100,
+          "both": 200
+        },
+        "T5": {
+          "singleOnly": 125,
+          "partyOnly": 125,
+          "both": 250
+        },
+        "T6": {
+          "singleOnly": 175,
+          "partyOnly": 175,
+          "both": 350
+        }
+      },
+      "targetFarmT1_600": {
+        "singleDays": 24,
+        "partyDays": 72
+      },
+      "cards": {
+        "singlePerDay": 1,
+        "partyPerDay": 1.5,
+        "maxOneCardDays_both": 6
+      },
+      "specTimes": {
+        "normal": {
+          "threeSpecs_mo": 9,
+          "nineSpecs_mo": 27,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        },
+        "high": {
+          "threeSpecs_mo": 5.8,
+          "nineSpecs_mo": 17.4,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        }
+      },
+      "dominanceVerdict": "⚠️ 組隊bulk較高,但單人targeting有獨立價值→不支配"
+    },
+    "C": {
+      "label": "強化targeting",
+      "dailyBulkPerTier": {
+        "T1": {
+          "singleOnly": 25,
+          "partyOnly": 25,
+          "both": 50
+        },
+        "T2": {
+          "singleOnly": 40,
+          "partyOnly": 50,
+          "both": 90
+        },
+        "T3": {
+          "singleOnly": 55,
+          "partyOnly": 75,
+          "both": 130
+        },
+        "T4": {
+          "singleOnly": 70,
+          "partyOnly": 100,
+          "both": 170
+        },
+        "T5": {
+          "singleOnly": 85,
+          "partyOnly": 125,
+          "both": 210
+        },
+        "T6": {
+          "singleOnly": 115,
+          "partyOnly": 175,
+          "both": 290
+        }
+      },
+      "targetFarmT1_600": {
+        "singleDays": 24,
+        "partyDays": 72
+      },
+      "cards": {
+        "singlePerDay": 1,
+        "partyPerDay": 1.7,
+        "maxOneCardDays_both": 5.6
+      },
+      "specTimes": {
+        "normal": {
+          "threeSpecs_mo": 9.4,
+          "nineSpecs_mo": 28.3,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        },
+        "high": {
+          "threeSpecs_mo": 6.1,
+          "nineSpecs_mo": 18.2,
+          "threeBind": "一般素材",
+          "nineBind": "一般素材"
+        }
+      },
+      "dominanceVerdict": "⚠️ 組隊bulk較高,但單人targeting有獨立價值→不支配"
+    }
+  }
+}

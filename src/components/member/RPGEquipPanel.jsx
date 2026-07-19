@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials, setEquipSocketRune, trySocketEquip } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
+import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent, KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
 import EquipmentIcon from "../shared/EquipmentIcon";
@@ -219,6 +220,21 @@ function UpgradeCelebration({ result, onClose }) {
   );
 }
 
+// 材料中繼資料查詢：先查 legacy MATERIALS，查不到再查擴充素材清冊。
+// 沒有這層的話，擴充素材（mat_ghost_t5_mini_a 之類）會直接把原始 id 顯示給玩家。
+function resolveMatMeta(id) {
+  const legacy = MATERIALS.find(x => x.id === id);
+  if (legacy) return legacy;
+  const expansion = EXPANSION_MATERIAL_BY_ID[id];
+  if (!expansion) return null;
+  return {
+    id: expansion.id,
+    name: expansion.name,
+    icon: expansion.kind === "boss" ? "👑" : expansion.kind === "miniBoss" ? "🔱" : "🧱",
+    rarity: null,
+  };
+}
+
 // ── 裝備選擇 Modal ─────────────────────────────────────────
 function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, runeInventory, memberId, readOnly, upgradeErr, nextMats, equipMaxGradeAllowed = 99 }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
@@ -385,15 +401,16 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
 
                     {/* 一般材料（來自 nextMats）*/}
                     {(mats.materials || []).map(m => {
-                      const mat  = MATERIALS.find(x => x.id === m.id);
+                      const mat  = resolveMatMeta(m.id);
                       const has  = inv[m.id] || 0;
                       const ok   = has >= m.count;
-                      const nameColor = RARITY_CONFIG[mat?.rarity]?.color || "#9ca3af";
+                      const nameColor = RARITY_CONFIG[mat?.rarity]?.color || (m.note ? "#fbbf24" : "#9ca3af");
                       return (
                         <div key={m.id} className="flex items-center gap-1.5 mb-1">
-                          <span>{mat?.icon || "🪨"}</span>
+                          <span>{mat?.icon || (m.note ? "👑" : "🪨")}</span>
                           <span style={{ color: nameColor }} className="font-bold text-[11px]">
                             {mat?.name || m.id}
+                            {m.note && <span className="ml-1 text-[9px] text-amber-400/80">（{m.note}）</span>}
                           </span>
                           <span className="ml-auto font-black"
                             style={{ color: ok ? "#86efac" : "#f87171" }}>
@@ -407,7 +424,7 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
 
                     {/* 關鍵材料（來自 nextMats）*/}
                     {mats.keyItem && (() => {
-                      const mat  = MATERIALS.find(x => x.id === mats.keyItem.id);
+                      const mat  = resolveMatMeta(mats.keyItem.id);
                       const has  = inv[mats.keyItem.id] || 0;
                       const ok   = has >= mats.keyItem.count;
                       const nameColor = RARITY_CONFIG[mat?.rarity]?.color || "#fbbf24";

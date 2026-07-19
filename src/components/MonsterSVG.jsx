@@ -1,6 +1,6 @@
 // src/components/MonsterSVG.jsx — 36 隻怪物 SVG 插圖
 // 使用方式：<MonsterSVG id="ghost_1" size={80} />
-import { useState, memo } from "react";
+import { useEffect, useState, memo } from "react";
 import { getBattleMonsterSources } from "../lib/battleAssets";
 
 // ── 變體光暈效果（弱化=藍光、強化=紅橙光）───────────────
@@ -1072,6 +1072,10 @@ export function MonsterImage({ id, name, size = 80, className = "", variant }) {
   const [sourceIndex, setSourceIndex] = useState(0);
   const sources = getBattleMonsterSources(id);
 
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [id]);
+
   if (sourceIndex >= sources.length) {
     return (
       <span className={className} role="img" aria-label={name || "怪物"} style={{
@@ -1102,6 +1106,10 @@ export function MonsterImage({ id, name, size = 80, className = "", variant }) {
 export function MonsterBattleImg({ id, name, icon, size = 160, variant }) {
   const [sourceIndex, setSourceIndex] = useState(0);
   const sources = getBattleMonsterSources(id);
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [id]);
 
   if (sourceIndex >= sources.length) {
     return <MonsterImage id={id} name={name} size={size} variant={variant}/>;

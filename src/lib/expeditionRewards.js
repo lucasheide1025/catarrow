@@ -50,9 +50,12 @@ function makeExpeditionCoinChest(monster, index) {
   };
 }
 
-export function createExpeditionKillLoot(monster) {
+export function createExpeditionKillLoot(monster, lootMult) {
   if (!monster) return emptyExpeditionLoot();
-  const dropCount = rollExpeditionDropMultiplier();
+  // 出圖時決定的固定倍數（1~3;未傳則沿用每殺隨機,向後相容）
+  const dropCount = Number.isFinite(lootMult)
+    ? Math.max(1, Math.min(3, Math.round(lootMult)))
+    : rollExpeditionDropMultiplier();
   const materialChests = Array.from(
     { length: dropCount },
     (_, index) => makeMaterialChest(monster, index),

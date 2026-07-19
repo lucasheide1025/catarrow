@@ -175,24 +175,42 @@ function DropsSection({ drops, config }) {
             <div key={i} style={S.row}>
               <span>{m.icon}</span>
               <span style={S.label}>素材</span>
-              <span style={S.value}>{m.name}</span>
+              <span style={S.value}>{m.name}{(m.quantity || 1) > 1 ? ` ×${m.quantity}` : ""}</span>
             </div>
           ))}
         </div>
       )}
-      {config.showChest && drops.chest && (
+      {config.showChest && drops.chestList?.length > 0 ? (
+        drops.chestList.map((chest, i) => (
+          <div key={i} style={S.row}>
+            <span>{chest.icon || "📦"}</span>
+            <span style={S.label}>寶箱</span>
+            <span style={{ ...S.value, color: "#a3e635" }}>{chest.name || "寶箱"}</span>
+          </div>
+        ))
+      ) : (config.showChest && drops.chest && (
         <div style={S.row}>
           <span>📦</span>
           <span style={S.label}>普通寶箱</span>
           <span style={{ ...S.value, color: "#a3e635" }}>獲得！</span>
         </div>
-      )}
+      ))}
       {config.showGoldChest && drops.goldChest && (
         <div style={S.row}>
           <span>🎁</span>
           <span style={S.label}>金幣寶箱</span>
-          <span style={S.gold}>獲得！</span>
+          <span style={S.gold}>{drops.coinChestName || "獲得！"}</span>
         </div>
+      )}
+      {/* 經驗值（合併進戰利品欄） */}
+      {drops.adventurerXP > 0 && (
+        <div style={S.row}><span>⚔️</span><span style={S.label}>冒險者 XP</span><span style={{ ...S.value, color: "#c084fc" }}>+{drops.adventurerXP}</span></div>
+      )}
+      {drops.archerXP > 0 && (
+        <div style={S.row}><span>🏹</span><span style={S.label}>射手 XP</span><span style={{ ...S.value, color: "#fbbf24" }}>+{drops.archerXP}</span></div>
+      )}
+      {drops.catXP > 0 && (
+        <div style={S.row}><span>🐱</span><span style={S.label}>貓貓 XP</span><span style={{ ...S.value, color: "#f9a8d4" }}>+{drops.catXP}</span></div>
       )}
       {config.showCard && drops.card && (
         <div style={S.row}>

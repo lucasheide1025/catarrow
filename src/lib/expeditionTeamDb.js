@@ -13,6 +13,8 @@ import {
   mergeExpeditionStats,
 } from "./expeditionRewards";
 import { normalizeDungeonRunSettings } from "./dungeonRunSettings";
+import { isMonsterExpansionEnabled } from "./monsterExpansionFeature";
+import { getDungeonDewMultiplier } from "./dungeonKillRewards";
 
 const D = "dungeonRooms";
 
@@ -27,6 +29,16 @@ export async function createTeamExpeditionRoom({
     if (!hostId || !dungeon) return { ok: false, reason: "參數錯誤" };
     const code = genCode();
     const settings = normalizeDungeonRunSettings(dungeon);
+    const expansionRunId = `team:${hostId}:${Date.now()}:${code}`;
+    const bossEncounter = isMonsterExpansionEnabled()
+      ? (await import("./dungeonBossEncounter")).createLockedDungeonBossEncounter({
+          runId:expansionRunId,
+          roomId:"floor-3-boss",
+          family:dungeon.family,
+          difficultyTier:dungeon.difficulty,
+          lockedEncounter:dungeon.bossEncounter || null,
+        })
+      : null;
     const member = {
       name: hostName,
       accountType: memberData?.accountType || "official",
@@ -51,12 +63,19 @@ export async function createTeamExpeditionRoom({
     const ref = await addDoc(collection(db, D), {
       code, hostId, hostName,
       status: "expedition_waiting",
+      // 出圖時決定的掉落倍數（1~3,固定整場;只影響中途擊殺寶箱,不影響王房/獎勵房/結算）
+      lootMult: 1 + Math.floor(Math.random() * 3),
       expeditionTeamMode: true,
       dungeonFamily: dungeon.family,
       dungeonDifficulty: dungeon.difficulty,
       dungeonIsHidden: dungeon.isHidden || false,
       dungeonSavedId: dungeon.id || null,
-      dungeonBoss: dungeon.boss || null,
+      dungeonBoss: bossEncounter?.monsterSnapshot || dungeon.boss || null,
+      ...(bossEncounter ? {
+        expansionRunId,
+        runVersion:bossEncounter.runVersion,
+        bossEncounter,
+      } : {}),
       arrowsPerRound: settings.arrowsPerRound,
       targetFmt: settings.targetFmt,
       members: { [hostId]: member },
@@ -120,6 +139,8 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       isHidden: roomData.dungeonIsHidden,
       savedId: roomData.dungeonSavedId,
       boss: roomData.dungeonBoss || null,
+      expansionRunId: roomData.expansionRunId || null,
+      bossEncounter: roomData.bossEncounter || null,
       ...settings,
     }, hostId: roomData.hostId, hostName: roomData.hostName };
   } catch (e) {
@@ -255,11 +276,15 @@ export async function createTeamExpeditionBattleRoom({
     const settings = normalizeDungeonRunSettings({ arrowsPerRound, targetFmt });
 
     const floorScale = [1.0, 1.05, 1.2][Math.min(floorIndex, 2)] || 1.0;
+    // 組隊遠征人數加成（2026-07-18 使用者規格）：怪物強度 +10%/額外隊員,要顯示（partyBonusPct 存進房間）
+    const partyBonusPct = Math.max(0, (members.length - 1)) * 10;
+    const partyScale = 1 + partyBonusPct / 100;
     const finalMonster = {
       ...monster,
-      hp:  Math.round((monster.hp || 100) * floorScale),
-      atk: Math.round((monster.atk || 10) * floorScale),
-      def: Math.round((monster.def || 5) * floorScale),
+      hp:  Math.round((monster.hp || 100) * floorScale * partyScale),
+      atk: Math.round((monster.atk || 10) * floorScale * partyScale),
+      def: Math.round((monster.def || 5) * floorScale * partyScale),
+      partyBonusPct,
     };
 
     if (!hostId || !members.some(m => m.memberId === hostId)) {
@@ -276,6 +301,7 @@ export async function createTeamExpeditionBattleRoom({
         alive: m.alive !== false,
         ready: false,
         arrows: [],
+        validRounds: 0,
         contract: { type: "standard", param: null },
         buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
         revived: false,
@@ -416,8 +442,9 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
       const totalCoins = isGuestMember
         ? Math.min(rawCoins, Math.max(20, (data.dungeonDifficulty || 1) * 50))
         : rawCoins;
-      const totalArrowDew = isGuestMember ? 0 : ((rewards.arrowDew || 0)
-        + (data.expeditionResult.loot?.bonusArrowDew || 0));
+      // 箭露：基準 × 難度倍率 × 5（使用者拍板;dungeonKillRewards.getDungeonDewMultiplier）
+      const totalArrowDew = isGuestMember ? 0 : Math.round(((rewards.arrowDew || 0)
+        + (data.expeditionResult.loot?.bonusArrowDew || 0)) * getDungeonDewMultiplier(data.dungeonDifficulty));
       const chests = isGuestMember ? [] : cloneExpeditionChests(
         data.expeditionResult.loot?.chests || [],
         memberId,

@@ -1,0 +1,158 @@
+{
+  "version": "v2",
+  "assumptions": {
+    "dailyLimits": {
+      "single": 5,
+      "party": 5,
+      "dungeon": 1
+    },
+    "activeDaysPerWeek": {
+      "light": 2.5,
+      "normal": 4.5,
+      "high": 7
+    },
+    "singleDropMult": 3,
+    "partyPerMember": 5,
+    "dungeonNormalMatMult": 5,
+    "avgVariant": "normal",
+    "equipSlotsForFullMythic": 10,
+    "chestPolicy": "gap-filler-only (normal mats); NOT modeled as primary source",
+    "miniKingPerBossRun": 0.7,
+    "bigKingPerBossRun": 0.34,
+    "goldPerSingleHunt": 300,
+    "goldPerPartyHunt": 300,
+    "goldPerDungeonRun": 3000
+  },
+  "specTotalCost": {
+    "T1": 1984.542421875,
+    "T2": 1389.33828125,
+    "T3": 892.830953125,
+    "T4": 583.4600624999999,
+    "T5": 341.688109375,
+    "T6": 172.24815625,
+    "miniKing": 7.1240468749999994,
+    "bigKing": 2.58,
+    "gold": 280811.0390625
+  },
+  "onePieceLegendToMythic": {
+    "miniKing": 7,
+    "bigKing": 7,
+    "gold": 210000
+  },
+  "results": {
+    "light": {
+      "只打地下城": {
+        "oneSpecL10_mo": 59.4,
+        "threeSpecs_mo": 178.2,
+        "nineSpecs_mo": 534.7,
+        "onePieceMythic_mo": 6.5,
+        "fullMythic10_mo": 64.7,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+單人": {
+        "oneSpecL10_mo": 14.9,
+        "threeSpecs_mo": 44.6,
+        "nineSpecs_mo": 133.7,
+        "onePieceMythic_mo": 4.3,
+        "fullMythic10_mo": 43.1,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+組隊": {
+        "oneSpecL10_mo": 9.9,
+        "threeSpecs_mo": 29.7,
+        "nineSpecs_mo": 89.1,
+        "onePieceMythic_mo": 4.3,
+        "fullMythic10_mo": 43.1,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "三模式全打滿": {
+        "oneSpecL10_mo": 6.6,
+        "threeSpecs_mo": 19.8,
+        "nineSpecs_mo": 59.4,
+        "onePieceMythic_mo": 3.2,
+        "fullMythic10_mo": 32.3,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      }
+    },
+    "normal": {
+      "只打地下城": {
+        "oneSpecL10_mo": 33,
+        "threeSpecs_mo": 99,
+        "nineSpecs_mo": 297.1,
+        "onePieceMythic_mo": 3.6,
+        "fullMythic10_mo": 35.9,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+單人": {
+        "oneSpecL10_mo": 8.3,
+        "threeSpecs_mo": 24.8,
+        "nineSpecs_mo": 74.3,
+        "onePieceMythic_mo": 2.4,
+        "fullMythic10_mo": 24,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+組隊": {
+        "oneSpecL10_mo": 5.5,
+        "threeSpecs_mo": 16.5,
+        "nineSpecs_mo": 49.5,
+        "onePieceMythic_mo": 2.4,
+        "fullMythic10_mo": 24,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "三模式全打滿": {
+        "oneSpecL10_mo": 3.7,
+        "threeSpecs_mo": 11,
+        "nineSpecs_mo": 33,
+        "onePieceMythic_mo": 1.8,
+        "fullMythic10_mo": 18,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      }
+    },
+    "high": {
+      "只打地下城": {
+        "oneSpecL10_mo": 21.2,
+        "threeSpecs_mo": 63.7,
+        "nineSpecs_mo": 191,
+        "onePieceMythic_mo": 2.3,
+        "fullMythic10_mo": 23.1,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+單人": {
+        "oneSpecL10_mo": 5.3,
+        "threeSpecs_mo": 15.9,
+        "nineSpecs_mo": 47.7,
+        "onePieceMythic_mo": 1.5,
+        "fullMythic10_mo": 15.4,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "地下城+組隊": {
+        "oneSpecL10_mo": 3.5,
+        "threeSpecs_mo": 10.6,
+        "nineSpecs_mo": 31.8,
+        "onePieceMythic_mo": 1.5,
+        "fullMythic10_mo": 15.4,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      },
+      "三模式全打滿": {
+        "oneSpecL10_mo": 2.4,
+        "threeSpecs_mo": 7.1,
+        "nineSpecs_mo": 21.2,
+        "onePieceMythic_mo": 1.2,
+        "fullMythic10_mo": 11.5,
+        "bind_spec": "一般素材",
+        "bind_fullMythic": "金幣"
+      }
+    }
+  }
+}

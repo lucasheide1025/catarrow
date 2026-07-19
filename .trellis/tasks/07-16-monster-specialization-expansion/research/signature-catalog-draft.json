@@ -1,0 +1,4442 @@
+[
+  {
+    "id": "sig_ghost_1_na",
+    "monsterId": "ghost_1_na",
+    "name": "好兄弟·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_1",
+    "monsterId": "ghost_1",
+    "name": "好兄弟·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_1_nb",
+    "monsterId": "ghost_1_nb",
+    "name": "好兄弟·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_1_ma",
+    "monsterId": "ghost_1_ma",
+    "name": "見習·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_1_mb",
+    "monsterId": "ghost_1_mb",
+    "name": "見習·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_1_bk",
+    "monsterId": "ghost_1_bk",
+    "name": "見習·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2_na",
+    "monsterId": "ghost_2_na",
+    "name": "魔神仔·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2",
+    "monsterId": "ghost_2",
+    "name": "魔神仔·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2_nb",
+    "monsterId": "ghost_2_nb",
+    "name": "魔神仔·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2_ma",
+    "monsterId": "ghost_2_ma",
+    "name": "初階·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2_mb",
+    "monsterId": "ghost_2_mb",
+    "name": "初階·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_2_bk",
+    "monsterId": "ghost_2_bk",
+    "name": "初階·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3_na",
+    "monsterId": "ghost_3_na",
+    "name": "林投姐·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3",
+    "monsterId": "ghost_3",
+    "name": "林投姐·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3_nb",
+    "monsterId": "ghost_3_nb",
+    "name": "林投姐·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3_ma",
+    "monsterId": "ghost_3_ma",
+    "name": "精銳·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3_mb",
+    "monsterId": "ghost_3_mb",
+    "name": "精銳·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_3_bk",
+    "monsterId": "ghost_3_bk",
+    "name": "精銳·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4_na",
+    "monsterId": "ghost_4_na",
+    "name": "城隍爺·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4",
+    "monsterId": "ghost_4",
+    "name": "城隍爺·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4_nb",
+    "monsterId": "ghost_4_nb",
+    "name": "城隍爺·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4_ma",
+    "monsterId": "ghost_4_ma",
+    "name": "強權·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4_mb",
+    "monsterId": "ghost_4_mb",
+    "name": "強權·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_4_bk",
+    "monsterId": "ghost_4_bk",
+    "name": "強權·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5_na",
+    "monsterId": "ghost_5_na",
+    "name": "十八王公·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5",
+    "monsterId": "ghost_5",
+    "name": "十八王公·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5_nb",
+    "monsterId": "ghost_5_nb",
+    "name": "十八王公·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5_ma",
+    "monsterId": "ghost_5_ma",
+    "name": "王階·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5_mb",
+    "monsterId": "ghost_5_mb",
+    "name": "王階·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_5_bk",
+    "monsterId": "ghost_5_bk",
+    "name": "王階·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6_na",
+    "monsterId": "ghost_6_na",
+    "name": "地獄閻羅·幼·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6",
+    "monsterId": "ghost_6",
+    "name": "地獄閻羅·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6_nb",
+    "monsterId": "ghost_6_nb",
+    "name": "地獄閻羅·猛·絕技",
+    "family": "ghost",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6_ma",
+    "monsterId": "ghost_6_ma",
+    "name": "傳說·巡夜燈使·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6_mb",
+    "monsterId": "ghost_6_mb",
+    "name": "傳說·星霧影衛·絕技",
+    "family": "ghost",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_ghost_6_bk",
+    "monsterId": "ghost_6_bk",
+    "name": "傳說·鎮界靈將·絕技",
+    "family": "ghost",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "mark",
+      "delayedBurst",
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1_na",
+    "monsterId": "mountain_1_na",
+    "name": "山豬精·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1",
+    "monsterId": "mountain_1",
+    "name": "山豬精·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1_nb",
+    "monsterId": "mountain_1_nb",
+    "name": "山豬精·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1_ma",
+    "monsterId": "mountain_1_ma",
+    "name": "見習·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1_mb",
+    "monsterId": "mountain_1_mb",
+    "name": "見習·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_1_bk",
+    "monsterId": "mountain_1_bk",
+    "name": "見習·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2_na",
+    "monsterId": "mountain_2_na",
+    "name": "百步蛇·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2",
+    "monsterId": "mountain_2",
+    "name": "百步蛇·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2_nb",
+    "monsterId": "mountain_2_nb",
+    "name": "百步蛇·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2_ma",
+    "monsterId": "mountain_2_ma",
+    "name": "初階·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2_mb",
+    "monsterId": "mountain_2_mb",
+    "name": "初階·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_2_bk",
+    "monsterId": "mountain_2_bk",
+    "name": "初階·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3_na",
+    "monsterId": "mountain_3_na",
+    "name": "山魈·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3",
+    "monsterId": "mountain_3",
+    "name": "山魈·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3_nb",
+    "monsterId": "mountain_3_nb",
+    "name": "山魈·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3_ma",
+    "monsterId": "mountain_3_ma",
+    "name": "精銳·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3_mb",
+    "monsterId": "mountain_3_mb",
+    "name": "精銳·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_3_bk",
+    "monsterId": "mountain_3_bk",
+    "name": "精銳·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4_na",
+    "monsterId": "mountain_4_na",
+    "name": "霧社巨石精·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4",
+    "monsterId": "mountain_4",
+    "name": "霧社巨石精·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4_nb",
+    "monsterId": "mountain_4_nb",
+    "name": "霧社巨石精·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4_ma",
+    "monsterId": "mountain_4_ma",
+    "name": "強權·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4_mb",
+    "monsterId": "mountain_4_mb",
+    "name": "強權·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_4_bk",
+    "monsterId": "mountain_4_bk",
+    "name": "強權·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5_na",
+    "monsterId": "mountain_5_na",
+    "name": "食人巨熊·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5",
+    "monsterId": "mountain_5",
+    "name": "食人巨熊·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5_nb",
+    "monsterId": "mountain_5_nb",
+    "name": "食人巨熊·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5_ma",
+    "monsterId": "mountain_5_ma",
+    "name": "王階·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5_mb",
+    "monsterId": "mountain_5_mb",
+    "name": "王階·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_5_bk",
+    "monsterId": "mountain_5_bk",
+    "name": "王階·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6_na",
+    "monsterId": "mountain_6_na",
+    "name": "惡蛟·幼·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6",
+    "monsterId": "mountain_6",
+    "name": "惡蛟·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6_nb",
+    "monsterId": "mountain_6_nb",
+    "name": "惡蛟·猛·絕技",
+    "family": "mountain",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6_ma",
+    "monsterId": "mountain_6_ma",
+    "name": "傳說·石角守衛·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6_mb",
+    "monsterId": "mountain_6_mb",
+    "name": "傳說·森風獵手·絕技",
+    "family": "mountain",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_mountain_6_bk",
+    "monsterId": "mountain_6_bk",
+    "name": "傳說·雲嶺龍王·絕技",
+    "family": "mountain",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "damageMult",
+      "hpPhaseBoost",
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1_na",
+    "monsterId": "insect_1_na",
+    "name": "蟑螂兵·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1",
+    "monsterId": "insect_1",
+    "name": "蟑螂兵·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1_nb",
+    "monsterId": "insect_1_nb",
+    "name": "蟑螂兵·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1_ma",
+    "monsterId": "insect_1_ma",
+    "name": "見習·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1_mb",
+    "monsterId": "insect_1_mb",
+    "name": "見習·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_1_bk",
+    "monsterId": "insect_1_bk",
+    "name": "見習·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2_na",
+    "monsterId": "insect_2_na",
+    "name": "虎頭蜂·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2",
+    "monsterId": "insect_2",
+    "name": "虎頭蜂·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2_nb",
+    "monsterId": "insect_2_nb",
+    "name": "虎頭蜂·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2_ma",
+    "monsterId": "insect_2_ma",
+    "name": "初階·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2_mb",
+    "monsterId": "insect_2_mb",
+    "name": "初階·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_2_bk",
+    "monsterId": "insect_2_bk",
+    "name": "初階·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3_na",
+    "monsterId": "insect_3_na",
+    "name": "蜈蚣精·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3",
+    "monsterId": "insect_3",
+    "name": "蜈蚣精·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3_nb",
+    "monsterId": "insect_3_nb",
+    "name": "蜈蚣精·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3_ma",
+    "monsterId": "insect_3_ma",
+    "name": "精銳·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3_mb",
+    "monsterId": "insect_3_mb",
+    "name": "精銳·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_3_bk",
+    "monsterId": "insect_3_bk",
+    "name": "精銳·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4_na",
+    "monsterId": "insect_4_na",
+    "name": "蠍王·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4",
+    "monsterId": "insect_4",
+    "name": "蠍王·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4_nb",
+    "monsterId": "insect_4_nb",
+    "name": "蠍王·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4_ma",
+    "monsterId": "insect_4_ma",
+    "name": "強權·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4_mb",
+    "monsterId": "insect_4_mb",
+    "name": "強權·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_4_bk",
+    "monsterId": "insect_4_bk",
+    "name": "強權·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5_na",
+    "monsterId": "insect_5_na",
+    "name": "蛛后·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5",
+    "monsterId": "insect_5",
+    "name": "蛛后·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5_nb",
+    "monsterId": "insect_5_nb",
+    "name": "蛛后·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5_ma",
+    "monsterId": "insect_5_ma",
+    "name": "王階·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5_mb",
+    "monsterId": "insect_5_mb",
+    "name": "王階·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_5_bk",
+    "monsterId": "insect_5_bk",
+    "name": "王階·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6_na",
+    "monsterId": "insect_6_na",
+    "name": "蟲神·幼·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6",
+    "monsterId": "insect_6",
+    "name": "蟲神·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6_nb",
+    "monsterId": "insect_6_nb",
+    "name": "蟲神·猛·絕技",
+    "family": "insect",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6_ma",
+    "monsterId": "insect_6_ma",
+    "name": "傳說·甲衛騎士·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6_mb",
+    "monsterId": "insect_6_mb",
+    "name": "傳說·毒翼斥候·絕技",
+    "family": "insect",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_insect_6_bk",
+    "monsterId": "insect_6_bk",
+    "name": "傳說·萬翼蟲皇·絕技",
+    "family": "insect",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "multiHit",
+      "dot",
+      "bind"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1_na",
+    "monsterId": "workplace_1_na",
+    "name": "實習生·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1",
+    "monsterId": "workplace_1",
+    "name": "實習生·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1_nb",
+    "monsterId": "workplace_1_nb",
+    "name": "實習生·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1_ma",
+    "monsterId": "workplace_1_ma",
+    "name": "見習·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1_mb",
+    "monsterId": "workplace_1_mb",
+    "name": "見習·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_1_bk",
+    "monsterId": "workplace_1_bk",
+    "name": "見習·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2_na",
+    "monsterId": "workplace_2_na",
+    "name": "主管·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2",
+    "monsterId": "workplace_2",
+    "name": "主管·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2_nb",
+    "monsterId": "workplace_2_nb",
+    "name": "主管·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2_ma",
+    "monsterId": "workplace_2_ma",
+    "name": "初階·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2_mb",
+    "monsterId": "workplace_2_mb",
+    "name": "初階·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_2_bk",
+    "monsterId": "workplace_2_bk",
+    "name": "初階·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3_na",
+    "monsterId": "workplace_3_na",
+    "name": "經理·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3",
+    "monsterId": "workplace_3",
+    "name": "經理·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3_nb",
+    "monsterId": "workplace_3_nb",
+    "name": "經理·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3_ma",
+    "monsterId": "workplace_3_ma",
+    "name": "精銳·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3_mb",
+    "monsterId": "workplace_3_mb",
+    "name": "精銳·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_3_bk",
+    "monsterId": "workplace_3_bk",
+    "name": "精銳·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4_na",
+    "monsterId": "workplace_4_na",
+    "name": "總監·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4",
+    "monsterId": "workplace_4",
+    "name": "總監·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4_nb",
+    "monsterId": "workplace_4_nb",
+    "name": "總監·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4_ma",
+    "monsterId": "workplace_4_ma",
+    "name": "強權·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4_mb",
+    "monsterId": "workplace_4_mb",
+    "name": "強權·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_4_bk",
+    "monsterId": "workplace_4_bk",
+    "name": "強權·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5_na",
+    "monsterId": "workplace_5_na",
+    "name": "執行長·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5",
+    "monsterId": "workplace_5",
+    "name": "執行長·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5_nb",
+    "monsterId": "workplace_5_nb",
+    "name": "執行長·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5_ma",
+    "monsterId": "workplace_5_ma",
+    "name": "王階·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5_mb",
+    "monsterId": "workplace_5_mb",
+    "name": "王階·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_5_bk",
+    "monsterId": "workplace_5_bk",
+    "name": "王階·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6_na",
+    "monsterId": "workplace_6_na",
+    "name": "董事長·幼·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6",
+    "monsterId": "workplace_6",
+    "name": "董事長·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6_nb",
+    "monsterId": "workplace_6_nb",
+    "name": "董事長·猛·絕技",
+    "family": "workplace",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6_ma",
+    "monsterId": "workplace_6_ma",
+    "name": "傳說·工坊監督·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6_mb",
+    "monsterId": "workplace_6_mb",
+    "name": "傳說·契約執行官·絕技",
+    "family": "workplace",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "mark"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_workplace_6_bk",
+    "monsterId": "workplace_6_bk",
+    "name": "傳說·黃金契約王·絕技",
+    "family": "workplace",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "statDown",
+      "delayedBurst"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1_na",
+    "monsterId": "exam_1_na",
+    "name": "小考·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1",
+    "monsterId": "exam_1",
+    "name": "小考·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1_nb",
+    "monsterId": "exam_1_nb",
+    "name": "小考·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1_ma",
+    "monsterId": "exam_1_ma",
+    "name": "見習·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1_mb",
+    "monsterId": "exam_1_mb",
+    "name": "見習·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_1_bk",
+    "monsterId": "exam_1_bk",
+    "name": "見習·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2_na",
+    "monsterId": "exam_2_na",
+    "name": "段考·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2",
+    "monsterId": "exam_2",
+    "name": "段考·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2_nb",
+    "monsterId": "exam_2_nb",
+    "name": "段考·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2_ma",
+    "monsterId": "exam_2_ma",
+    "name": "初階·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2_mb",
+    "monsterId": "exam_2_mb",
+    "name": "初階·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_2_bk",
+    "monsterId": "exam_2_bk",
+    "name": "初階·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3_na",
+    "monsterId": "exam_3_na",
+    "name": "模擬考·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3",
+    "monsterId": "exam_3",
+    "name": "模擬考·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3_nb",
+    "monsterId": "exam_3_nb",
+    "name": "模擬考·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3_ma",
+    "monsterId": "exam_3_ma",
+    "name": "精銳·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3_mb",
+    "monsterId": "exam_3_mb",
+    "name": "精銳·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_3_bk",
+    "monsterId": "exam_3_bk",
+    "name": "精銳·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4_na",
+    "monsterId": "exam_4_na",
+    "name": "學測·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4",
+    "monsterId": "exam_4",
+    "name": "學測·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4_nb",
+    "monsterId": "exam_4_nb",
+    "name": "學測·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4_ma",
+    "monsterId": "exam_4_ma",
+    "name": "強權·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4_mb",
+    "monsterId": "exam_4_mb",
+    "name": "強權·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_4_bk",
+    "monsterId": "exam_4_bk",
+    "name": "強權·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5_na",
+    "monsterId": "exam_5_na",
+    "name": "指考·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5",
+    "monsterId": "exam_5",
+    "name": "指考·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5_nb",
+    "monsterId": "exam_5_nb",
+    "name": "指考·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5_ma",
+    "monsterId": "exam_5_ma",
+    "name": "王階·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5_mb",
+    "monsterId": "exam_5_mb",
+    "name": "王階·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_5_bk",
+    "monsterId": "exam_5_bk",
+    "name": "王階·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6_na",
+    "monsterId": "exam_6_na",
+    "name": "國考·幼·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6",
+    "monsterId": "exam_6",
+    "name": "國考·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6_nb",
+    "monsterId": "exam_6_nb",
+    "name": "國考·猛·絕技",
+    "family": "exam",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6_ma",
+    "monsterId": "exam_6_ma",
+    "name": "傳說·卷軸考官·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6_mb",
+    "monsterId": "exam_6_mb",
+    "name": "傳說·算式守門員·絕技",
+    "family": "exam",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_exam_6_bk",
+    "monsterId": "exam_6_bk",
+    "name": "傳說·試煉大賢者·絕技",
+    "family": "exam",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "scoreBreak",
+      "hqHitBreak",
+      "delayedBurst"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "scoreBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1_na",
+    "monsterId": "temple_1_na",
+    "name": "哥布林·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1",
+    "monsterId": "temple_1",
+    "name": "哥布林·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1_nb",
+    "monsterId": "temple_1_nb",
+    "name": "哥布林·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1_ma",
+    "monsterId": "temple_1_ma",
+    "name": "見習·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1_mb",
+    "monsterId": "temple_1_mb",
+    "name": "見習·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_1_bk",
+    "monsterId": "temple_1_bk",
+    "name": "見習·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2_na",
+    "monsterId": "temple_2_na",
+    "name": "獸人·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2",
+    "monsterId": "temple_2",
+    "name": "獸人·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2_nb",
+    "monsterId": "temple_2_nb",
+    "name": "獸人·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2_ma",
+    "monsterId": "temple_2_ma",
+    "name": "初階·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2_mb",
+    "monsterId": "temple_2_mb",
+    "name": "初階·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_2_bk",
+    "monsterId": "temple_2_bk",
+    "name": "初階·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3_na",
+    "monsterId": "temple_3_na",
+    "name": "食人魔·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3",
+    "monsterId": "temple_3",
+    "name": "食人魔·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3_nb",
+    "monsterId": "temple_3_nb",
+    "name": "食人魔·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3_ma",
+    "monsterId": "temple_3_ma",
+    "name": "精銳·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3_mb",
+    "monsterId": "temple_3_mb",
+    "name": "精銳·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_3_bk",
+    "monsterId": "temple_3_bk",
+    "name": "精銳·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4_na",
+    "monsterId": "temple_4_na",
+    "name": "巨龍·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4",
+    "monsterId": "temple_4",
+    "name": "巨龍·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4_nb",
+    "monsterId": "temple_4_nb",
+    "name": "巨龍·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4_ma",
+    "monsterId": "temple_4_ma",
+    "name": "強權·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4_mb",
+    "monsterId": "temple_4_mb",
+    "name": "強權·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_4_bk",
+    "monsterId": "temple_4_bk",
+    "name": "強權·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5_na",
+    "monsterId": "temple_5_na",
+    "name": "惡魔·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5",
+    "monsterId": "temple_5",
+    "name": "惡魔·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5_nb",
+    "monsterId": "temple_5_nb",
+    "name": "惡魔·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5_ma",
+    "monsterId": "temple_5_ma",
+    "name": "王階·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5_mb",
+    "monsterId": "temple_5_mb",
+    "name": "王階·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_5_bk",
+    "monsterId": "temple_5_bk",
+    "name": "王階·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6_na",
+    "monsterId": "temple_6_na",
+    "name": "魔王·幼·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6",
+    "monsterId": "temple_6",
+    "name": "魔王·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6_nb",
+    "monsterId": "temple_6_nb",
+    "name": "魔王·猛·絕技",
+    "family": "temple",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6_ma",
+    "monsterId": "temple_6_ma",
+    "name": "傳說·城堡先鋒·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6_mb",
+    "monsterId": "temple_6_mb",
+    "name": "傳說·符文法衛·絕技",
+    "family": "temple",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "damageMult"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_temple_6_bk",
+    "monsterId": "temple_6_bk",
+    "name": "傳說·天穹龍皇·絕技",
+    "family": "temple",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "armorPierce",
+      "hpPhaseBoost",
+      "multiHit"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_1_real",
+    "monsterId": "treasure_1_real",
+    "name": "安分寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_1",
+    "monsterId": "treasure_1",
+    "name": "寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_1_nb",
+    "monsterId": "treasure_1_nb",
+    "name": "寶箱怪·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_1",
+    "monsterId": "treasure_king_small_1",
+    "name": "見習·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_1_mb",
+    "monsterId": "treasure_1_mb",
+    "name": "見習·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_1",
+    "monsterId": "treasure_king_big_1",
+    "name": "見習·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_2_real",
+    "monsterId": "treasure_2_real",
+    "name": "安分黃金寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_2",
+    "monsterId": "treasure_2",
+    "name": "黃金寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_2_nb",
+    "monsterId": "treasure_2_nb",
+    "name": "黃金寶箱怪·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_2",
+    "monsterId": "treasure_king_small_2",
+    "name": "初階·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_2_mb",
+    "monsterId": "treasure_2_mb",
+    "name": "初階·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_2",
+    "monsterId": "treasure_king_big_2",
+    "name": "初階·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t12",
+    "intensityMult": 1,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_3_real",
+    "monsterId": "treasure_3_real",
+    "name": "安分鑽石寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_3",
+    "monsterId": "treasure_3",
+    "name": "鑽石寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_3_nb",
+    "monsterId": "treasure_3_nb",
+    "name": "鑽石寶箱怪·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_3",
+    "monsterId": "treasure_king_small_3",
+    "name": "精銳·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_3_mb",
+    "monsterId": "treasure_3_mb",
+    "name": "精銳·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_3",
+    "monsterId": "treasure_king_big_3",
+    "name": "精銳·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_4_real",
+    "monsterId": "treasure_4_real",
+    "name": "安分祕銀寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_4",
+    "monsterId": "treasure_4",
+    "name": "祕銀寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_4_nb",
+    "monsterId": "treasure_4_nb",
+    "name": "祕銀寶箱怪·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_4",
+    "monsterId": "treasure_king_small_4",
+    "name": "強權·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_4_mb",
+    "monsterId": "treasure_4_mb",
+    "name": "強權·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_4",
+    "monsterId": "treasure_king_big_4",
+    "name": "強權·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t34",
+    "intensityMult": 1.35,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_5_real",
+    "monsterId": "treasure_5_real",
+    "name": "安分遠古寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_5",
+    "monsterId": "treasure_5",
+    "name": "遠古寶箱怪·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_5_nb",
+    "monsterId": "treasure_5_nb",
+    "name": "遠古寶箱怪·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_5",
+    "monsterId": "treasure_king_small_5",
+    "name": "王階·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_5_mb",
+    "monsterId": "treasure_5_mb",
+    "name": "王階·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_5",
+    "monsterId": "treasure_king_big_5",
+    "name": "王階·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_6_real",
+    "monsterId": "treasure_6_real",
+    "name": "安分神話寶箱巨像·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_6",
+    "monsterId": "treasure_6",
+    "name": "神話寶箱巨像·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_6_nb",
+    "monsterId": "treasure_6_nb",
+    "name": "神話寶箱巨像·猛·絕技",
+    "family": "treasure",
+    "encounter": "normal",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_small_6",
+    "monsterId": "treasure_king_small_6",
+    "name": "傳說·秘庫守衛·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_6_mb",
+    "monsterId": "treasure_6_mb",
+    "name": "傳說·寶石魔偶·絕技",
+    "family": "treasure",
+    "encounter": "miniBoss",
+    "target": "single",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "heal"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  },
+  {
+    "id": "sig_treasure_king_big_6",
+    "monsterId": "treasure_king_big_6",
+    "name": "傳說·王冠寶庫王·絕技",
+    "family": "treasure",
+    "encounter": "bigBoss",
+    "target": "party",
+    "telegraph": true,
+    "trigger": "scheduled",
+    "blocks": [
+      "shield",
+      "reflect"
+    ],
+    "tierSegment": "t56",
+    "intensityMult": 1.7,
+    "counter": "hqHitBreak",
+    "_todo": "數值/文案待 Codex/使用者潤色;積木參數由 resolver 依 intensityMult 套 Tier"
+  }
+]

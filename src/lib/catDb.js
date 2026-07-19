@@ -1,7 +1,7 @@
 // src/lib/catDb.js — 貓貓陪練系統 Firestore 操作
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc,
-  onSnapshot, serverTimestamp, arrayUnion, increment,
+  onSnapshot, serverTimestamp, arrayUnion, increment, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { CAT_IDS, CATS, drawRandomCat } from "./catData";
@@ -178,6 +178,19 @@ export async function addCatXP(memberId, catId, amount) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
+// ── 歷史負值一次性修復（舊 increment(-n) 競態造成;讀到就地歸零）──
+export async function repairNegativeVillageResources(memberId, resources = {}) {
+  const updates = {};
+  for (const [key, value] of Object.entries(resources)) {
+    if (Number(value) < 0) updates[`village.resources.${key}`] = 0;
+  }
+  if (!Object.keys(updates).length) return { ok: true, repaired: 0 };
+  try {
+    await updateDoc(doc(db, "members", memberId), updates);
+    return { ok: true, repaired: Object.keys(updates).length };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 鍛造貓咪裝備 ─────────────────────────────────────────────
 // deductMap: { [resourceKey]: amount }（正數，函式內轉成 increment(-n)）
 export async function upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap = {}) {
@@ -186,13 +199,21 @@ export async function upgradeCatEquip(memberId, catId, slotId, newGrade, newPlus
     const equipField = `equip.${slotId}`;
     const equipValue = { grade: newGrade, plusLevel: newPlusLevel };
 
-    // 扣除村莊資源
-    const resUpdates = {};
-    for (const [key, amount] of Object.entries(deductMap)) {
-      if (amount > 0) resUpdates[`village.resources.${key}`] = increment(-amount);
-    }
-    if (Object.keys(resUpdates).length > 0) {
-      await updateDoc(memberRef, resUpdates);
+    // 扣除村莊資源：transaction 內用伺服器當下值驗證＋扣到 0 為底
+    // （舊寫法盲目 increment(-n),多分頁/連點會把資源扣成負數）
+    if (Object.entries(deductMap).some(([, amount]) => amount > 0)) {
+      await runTransaction(db, async transaction => {
+        const snap = await transaction.get(memberRef);
+        const resources = snap.data()?.village?.resources || {};
+        const resUpdates = {};
+        for (const [key, amount] of Object.entries(deductMap)) {
+          if (amount <= 0) continue;
+          const owned = Math.max(0, Number(resources[key]) || 0);
+          if (owned < amount) throw new Error(`資源不足（${key} 需 ${amount}）`);
+          resUpdates[`village.resources.${key}`] = owned - amount;
+        }
+        transaction.update(memberRef, resUpdates);
+      });
     }
 
     // 更新貓咪裝備

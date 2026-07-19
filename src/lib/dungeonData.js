@@ -48,13 +48,6 @@ export const DUNGEON_EVENTS = [
   { id:"wish_well",     icon:"🤞", title:"許願井",     desc:"許願成功！隨機一名成員獲得雙倍傷害加成",         type:"buff",    effect:{ type:"atk_buff_one",      value:2.0  } },
 ];
 
-// ── 地下城長度 ────────────────────────────────────────────────
-export const DUNGEON_LENGTHS = {
-  short:    { label:"短途（5層）",  icon:"⚡", totalFloors:5  },
-  standard: { label:"標準（7層）",  icon:"⚔️", totalFloors:7  },
-  long:     { label:"長征（10層）", icon:"🏆", totalFloors:10 },
-};
-
 // ── 路線類型 ─────────────────────────────────────────────────
 export const PATH_TYPES = {
   shop_normal:  { label:"商店補給",  icon:"🛒", preContent:"shop",  eliteBoost:1.0, desc:"先逛商店再繼續"   },

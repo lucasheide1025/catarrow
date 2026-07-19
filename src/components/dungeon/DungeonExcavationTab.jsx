@@ -14,6 +14,34 @@ import {
   upgradeExcavationDifficulty,
   useDungeonScroll,
 } from "../../lib/dungeonExcavation";
+import { getPendingArrowOperationCount, flushPendingArrowProgress } from "../../lib/db";
+
+// 待同步箭數橫幅：pending>0 才顯示;點擊立即重試同步（挖掘/終身箭數卡住的救援入口）
+function PendingArrowSyncBanner({ myId }) {
+  const [pending, setPending] = useState(() => getPendingArrowOperationCount(myId));
+  const [busy, setBusy] = useState(false);
+  const [lastError, setLastError] = useState("");
+  useEffect(() => {
+    const timer = setInterval(() => setPending(getPendingArrowOperationCount(myId)), 4000);
+    return () => clearInterval(timer);
+  }, [myId]);
+  if (!pending) return null;
+  return (
+    <button disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        const result = await flushPendingArrowProgress(myId).catch(error => ({ lastError: error?.message || String(error), pending: getPendingArrowOperationCount(myId) }));
+        setPending(getPendingArrowOperationCount(myId));
+        setLastError(result?.pending > 0 ? (result?.lastError || (result?.blocked ? "成本防護暫停中" : "")) : "");
+        setBusy(false);
+      }}
+      className="w-full rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2.5 text-left active:scale-95">
+      <div className="text-xs font-black text-amber-300">⚠️ 有 {pending} 回合箭數尚未同步（挖掘進度可能暫停累積）</div>
+      <div className="text-[10px] text-amber-200/70 mt-0.5">{busy ? "同步中…" : "點擊立即重試同步"}</div>
+      {lastError && <div className="text-[10px] text-rose-300 mt-1">同步失敗原因：{lastError}（截圖給教練）</div>}
+    </button>
+  );
+}
 
 const FAMILY_LABEL = {
   ghost:     { emoji:"👻", label:"幽冥系" },
@@ -212,6 +240,9 @@ export default function DungeonExcavationTab({ profile }) {
 
   return (
     <div className="space-y-4 pb-4">
+
+      {/* ⚠️ 待同步箭數（同步卡住時可見+手動重試;正常時不顯示） */}
+      <PendingArrowSyncBanner myId={myId} />
 
       {/* ═══════════ ① 定時生成 ═══════════ */}
       <div className="rounded-2xl p-4 relative overflow-hidden"

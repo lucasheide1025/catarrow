@@ -1,10 +1,13 @@
 // src/components/dungeon/TeamExpeditionBattle.jsx
 // 組隊遠征戰鬥管理器 — 三層戰鬥流程 + DungeonBattleRoom 整合 + 獎勵結算
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { drawFloorMonsters, drawMixedMonsterPool } from "../../lib/monsterData";
+import { useAuth } from "../../hooks/useAuth";
+import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
+import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
+import { bossRewardBlocksAdvance, isEligibleForBossReward } from "../../lib/bossRewardAdvance";
 import {
   DUNGEON_SHOP_ITEMS,
   drawDungeonEvent,
@@ -46,20 +49,23 @@ import DungeonTrap from "./DungeonTrap";
 import DungeonChest from "./DungeonChest";
 import DungeonRest from "./DungeonRest";
 import { GridMapStage, BranchStage } from "./DungeonStages";
+import KillLootToast from "./KillLootToast";
 
-function attachGridMonsters(gridFloor, floorIndex, difficulty, plan) {
+const DungeonBossRewardRoom = lazy(() => import("./DungeonBossRewardRoom"));
+
+function attachGridMonsters(gridFloor, floorIndex, difficulty, plan, family) {
   const queue = [...(plan.monsters || [])];
   const fallbackVariant = floorIndex === 0 ? "weak" : "normal";
   return {
     ...gridFloor,
     rooms: gridFloor.rooms.map(room => {
       if (room.type === "elite_battle") {
-        return { ...room, monster: plan.elite || drawMixedMonsterPool(1, "strong", difficulty)[0] };
+        return { ...room, monster: plan.elite || drawDungeonFallbackMonster("strong", difficulty, { family }) };
       }
       if (room.type !== "battle") return room;
       return {
         ...room,
-        monster: queue.shift() || drawMixedMonsterPool(1, fallbackVariant, difficulty)[0],
+        monster: queue.shift() || drawDungeonFallbackMonster(fallbackVariant, difficulty, { family }),
       };
     }),
   };
@@ -72,13 +78,14 @@ function stripMapStateGrid(state) {
 }
 
 function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
-  const plan = drawFloorMonsters(floorIndex, difficulty, { family, fixedBoss });
+  const plan = drawDungeonFloorMonsters(floorIndex, difficulty, { family, fixedBoss });
   if (floorIndex < 2) {
     const gridFloor = attachGridMonsters(
       generateGridFloor(floorIndex, difficulty),
       floorIndex,
       difficulty,
       plan,
+      family,
     );
     const start = gridFloor.rooms.find(room => room.type === "entrance");
     return {
@@ -102,7 +109,7 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
       {
         ...branch,
         rooms: branch.rooms.map(room => room.type === "battle"
-          ? { ...room, monster: drawMixedMonsterPool(1, "strong", difficulty)[0] }
+          ? { ...room, monster: drawDungeonFallbackMonster("strong", difficulty, { family }) }
           : room),
       },
     ])),
@@ -122,7 +129,7 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
 }
 
 // ── 戰鬥房間包裝元件（監聽戰況 + 清理房間）───────────────
-function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile }) {
+function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootMult = 1 }) {
   const [loading, setLoading] = useState(true);
   const [battleDone, setBattleDone] = useState(false);
   const terminalHandledRef = useRef(false);
@@ -131,28 +138,86 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile }) {
   const isHostRef = useRef(isHost);
   onDoneRef.current = onDone;
   isHostRef.current = isHost;
+  // ── 每場擊殺即時入帳（使用者規格：打死立刻給,不等結算）────────
+  const { profile: battleProfile } = useAuth();
+  const [killReward, setKillReward] = useState(null);
+  const battleMonsterRef = useRef(null);
+  const killClaimedRef = useRef(false);
+  const claimMyKillReward = useCallback(monster => {
+    // 2026-07-18 使用者規格：地下城中途擊殺「不掉單怪素材」——
+    // 改為 材料寶箱+金幣寶箱 必掉,數量 = 出圖時決定的 1~3 倍（teamRoom.lootMult）。
+    // 王/小王不走此路（王房 envelope 不變）;素材取得回歸「難度=Tier」的王房與寶箱。
+    if (!monster || guestProfile || killClaimedRef.current) return;
+    if (monster.encounter && monster.encounter !== "normal") return;
+    const memberId = battleProfile?.id;
+    if (!memberId) return;
+    const onceKey = `exp_kill_${roomId}_${memberId}`;
+    if (sessionStorage.getItem(onceKey)) return; // 重連/重播防重複入帳
+    killClaimedRef.current = true;
+    sessionStorage.setItem(onceKey, "1");
+    (async () => {
+      const [{ makeChests }, { makeCoinChest }, dbMod, { rollDungeonKillReward }] = await Promise.all([
+        import("../../lib/itemData"), import("../../lib/lootTable"), import("../../lib/db"), import("../../lib/dungeonKillRewards"),
+      ]);
+      const mult = Math.max(1, Math.min(3, Math.round(lootMult) || 1));
+      const chests = [];
+      for (let i = 0; i < mult; i++) {
+        const { mainChest } = makeChests(monster, "student");
+        if (mainChest) chests.push(mainChest);
+        chests.push(makeCoinChest(monster.tier, "地下城掉落"));
+      }
+      await dbMod.addChests(memberId, chests);
+      // 每殺金幣（Tier 級距×5）＋射手/貓 XP 即時入帳
+      const kill = rollDungeonKillReward(monster);
+      if (kill) {
+        dbMod.addCoins(memberId, kill.coins).catch(() => {});
+        dbMod.addArcherXP(memberId, kill.archerXP).catch(() => {});
+      }
+      setKillReward({
+        monsterName: monster.name,
+        chests,                                   // 實際掉落的寶箱，交給 KillLootToast 逐項列出
+        coins: kill?.coins || 0,
+        archerXP: kill?.archerXP || 0,
+        lootMult: mult,
+      });
+      setTimeout(() => setKillReward(null), 4500);
+    })().catch(() => { killClaimedRef.current = false; sessionStorage.removeItem(onceKey); });
+  }, [roomId, guestProfile, battleProfile?.id, lootMult]);
 
   useEffect(() => {
     if (!roomId) return;
     terminalHandledRef.current = false;
+    killClaimedRef.current = false;
     setBattleDone(false);
     setLoading(false);
     const unsub = onSnapshot(doc(db, "dungeonRooms", roomId), (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        // 戰鬥房已被 host 清除（勝利結算後）。若本端還沒走到終局（快照時序落後）,
+        // 就地標記完成 → 回遠征結果畫面領獎,而不是被彈出房間（使用者回報的「被踢」bug）。
+        if (!terminalHandledRef.current) {
+          terminalHandledRef.current = true;
+          setBattleDone(true);
+          claimMyKillReward(battleMonsterRef.current); // 落後端也要拿到本場擊殺獎勵
+        }
+        return;
+      }
       const data = snap.data();
+      if (data.monster) battleMonsterRef.current = data.monster;
       const finishBattle = (payload, delay) => {
         if (terminalHandledRef.current) return;
         terminalHandledRef.current = true;
         setBattleDone(true);
+        if (payload.won) claimMyKillReward(data.monster || battleMonsterRef.current); // 每位隊員各自即時入帳
         if (!isHostRef.current) return;
         timerRef.current = setTimeout(async () => {
           const handled = await onDoneRef.current?.({
             ...payload,
             members: data.members || {},
-            battle: data,
+            battle: { id:roomId, ...data },
           });
           if (handled !== false) {
-            await cleanupExpeditionRoom(roomId).catch(() => {});
+            // 寬限 8 秒才刪戰鬥房：讓所有隊員先收到 completed+win 快照走完勝利轉場
+            setTimeout(() => cleanupExpeditionRoom(roomId).catch(() => {}), 8000);
           }
         }, delay);
       };
@@ -195,14 +260,20 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile }) {
   }
 
   return (
-    <DungeonBattleRoom
-      roomId={roomId}
-      isMapMode={true}
-      expeditionMode={true}
-      guestProfile={guestProfile}
-      onReturnToMap={() => {}}
-      onExit={onAbandon}
-    />
+    <>
+      <DungeonBattleRoom
+        key={roomId}
+        roomId={roomId}
+        isMapMode={true}
+        expeditionMode={true}
+        guestProfile={guestProfile}
+        onReturnToMap={() => {}}
+        onExit={onAbandon}
+      />
+      {/* 掉落倍率改顯示在樓層畫面的頂端狀態列（PlayerStatusBar），戰鬥中不再放浮動角標 */}
+      {/* 🎁 每場擊殺即時入帳：直接列出掉了哪種寶箱、各幾個（與單人端共用同一元件） */}
+      {killReward && <KillLootToast {...killReward} />}
+    </>
   );
 }
 
@@ -252,6 +323,10 @@ export default function TeamExpeditionBattle({
   const [wonLast, setWonLast] = useState(false);
   const [result, setResult] = useState(null);
   const [flowError, setFlowError] = useState("");
+  const [bossRewardClaim, setBossRewardClaim] = useState(null);
+  const [bossRewardLoading, setBossRewardLoading] = useState(false);
+  const [bossRewardError, setBossRewardError] = useState("");
+  const [bossChoiceComplete, setBossChoiceComplete] = useState(false);
   const prevRoomIdRef = useRef(null);
   const floorStartingRef = useRef(false);
 
@@ -413,6 +488,7 @@ export default function TeamExpeditionBattle({
 
     floorStartingRef.current = true;
     setFlowError("");
+    try {
     const res = await createTeamExpeditionBattleRoom({
       members,
       hostId: teamRoom.hostId,
@@ -439,7 +515,6 @@ export default function TeamExpeditionBattle({
         await cleanupExpeditionRoom(res.roomId).catch(() => {});
         setFlowError(`無法同步戰鬥房：${updateResult.reason}`);
         setPhase("loading");
-        floorStartingRef.current = false;
         return;
       }
       setCurrentRoomId(res.roomId);
@@ -447,7 +522,16 @@ export default function TeamExpeditionBattle({
     } else {
       setFlowError(`無法建立戰鬥房：${res.reason}`);
     }
-    floorStartingRef.current = false;
+    } catch (error) {
+      // 例外若沒被接住，下面的 finally 仍會解鎖；但一定要讓錯誤現形，
+      // 否則使用者只會看到「點開始戰鬥沒反應」而無從得知原因。
+      console.error("[startRoomBattle]", error);
+      setFlowError(`開始戰鬥失敗：${error?.message || error}`);
+    } finally {
+      // 這個旗標若卡在 true，之後所有房間點擊都會靜默失效（無錯誤、無反應）。
+      // 因此無論成功、失敗或丟例外都必須解鎖。
+      floorStartingRef.current = false;
+    }
   }, [isHost, teamRoom, teamRoomId, dungeonDifficulty, floorIndex, profile]);
 
   useEffect(() => {
@@ -538,6 +622,14 @@ export default function TeamExpeditionBattle({
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
       currentBattleRoomId: null,
       expeditionMapState: stripMapStateGrid(nextMapState),
+      ...(pendingRoom?.type === "boss_battle" && battle?.monster?.expansionVersion === 1 ? {
+        bossRewardBattleId:battle.id,
+        bossRewardMonsterId:battle.monster.id,
+        bossRewardEligibleMemberIds:Object.entries(battleMembers || {})
+          .filter(([, member]) => (Number(member?.validRounds) || 0) > 0)
+          .map(([memberId]) => memberId),
+        bossRewardChoiceClaims:{},
+      } : {}),
     });
     if (!saved.ok) {
       setFlowError(`無法返回探索地圖：${saved.reason}`);
@@ -715,6 +807,41 @@ export default function TeamExpeditionBattle({
     onAbandon?.();
   }, [myId, myName, dungeonDifficulty, isHost, teamRoomId, teamRoom, onAbandon]);
 
+  const prepareMyBossReward = useCallback(async () => {
+    if (bossRewardLoading || !teamRoom?.bossRewardBattleId || !teamRoom?.bossRewardMonsterId) return;
+    // 防禦性 validRounds gate：未達本場有效回合者不可領取（render 端已擋,這裡再保險一層）
+    if (!isEligibleForBossReward({ eligibleMemberIds: teamRoom.bossRewardEligibleMemberIds, memberId: myId })) {
+      setBossRewardError("未達本場有效回合，無法領取王房獎勵");
+      return;
+    }
+    setBossRewardLoading(true);
+    setBossRewardError("");
+    try {
+      const { createDungeonBossRewardClaim } = await import("../../lib/dungeonBossRewardDb");
+      const claim = await createDungeonBossRewardClaim({
+        battleId:teamRoom.bossRewardBattleId,
+        memberId:myId,
+        monsterId:teamRoom.bossRewardMonsterId,
+      });
+      setBossRewardClaim(claim);
+    } catch (error) {
+      setBossRewardError(error?.message || "無法同步個人王房獎勵");
+    } finally {
+      setBossRewardLoading(false);
+    }
+  }, [bossRewardLoading, teamRoom?.bossRewardBattleId, teamRoom?.bossRewardMonsterId, myId]);
+
+  const completeMyBossChoices = useCallback(async () => {
+    setBossChoiceComplete(true);
+    const result = await updateTeamExpeditionRoom(teamRoomId, {
+      [`bossRewardChoiceClaims.${myId}`]:true,
+    });
+    if (!result.ok) {
+      setBossChoiceComplete(false);
+      setBossRewardError(result.reason || "無法同步領取狀態");
+    }
+  }, [teamRoomId, myId]);
+
   // ── 輔助：組隊房間載入中 ────────────────────────────────
   if (!teamRoom) {
     return (
@@ -857,6 +984,50 @@ export default function TeamExpeditionBattle({
   }
 
   if (mapState?.phase === "treasure") {
+    const eligibleIds = teamRoom.bossRewardEligibleMemberIds || [];
+    const expansionRewardActive = Boolean(teamRoom.bossRewardBattleId && teamRoom.bossRewardMonsterId);
+    if (expansionRewardActive) {
+      const eligible = eligibleIds.includes(myId);
+      const claimedByMe = bossChoiceComplete || teamRoom.bossRewardChoiceClaims?.[myId] === true;
+      // 「是否可前進」抽成純函式（bossRewardAdvance）；含本機樂觀已領狀態。
+      // 用 blocksAdvance：等所有合格隊員完成,但空名單(0 合格,理論罕見)不卡死。
+      const effectiveClaims = { ...(teamRoom.bossRewardChoiceClaims || {}), ...(bossChoiceComplete ? { [myId]: true } : {}) };
+      const allClaimed = !bossRewardBlocksAdvance({ eligibleMemberIds: eligibleIds, choiceClaims: effectiveClaims });
+      if (!eligible) {
+        return (
+          <div className="min-h-[100dvh] bg-slate-950 px-6 text-white flex items-center justify-center text-center">
+            <div className="max-w-sm"><div className="text-4xl">🛡️</div><h1 className="mt-3 text-xl font-black">本次未達領獎資格</h1><p className="mt-2 text-sm leading-6 text-slate-400">需在 BOSS 戰開始前加入，並至少完成一個有效射箭回合。</p></div>
+          </div>
+        );
+      }
+      if (claimedByMe) {
+        return (
+          <div className="min-h-[100dvh] bg-slate-950 px-6 text-white flex items-center justify-center text-center">
+            <div className="w-full max-w-sm rounded-3xl border border-cyan-400/20 bg-slate-900 p-6">
+              <div className="text-4xl">✅</div><h1 className="mt-3 text-xl font-black">個人戰利品已領取</h1>
+              <p className="mt-2 text-sm text-slate-400">{allClaimed ? "全隊已完成選擇，可以前往遠征報告。" : "等待其他合格隊員完成選擇；斷線隊員可重連後繼續。"}</p>
+              {isHost && allClaimed ? <button type="button" className="mt-5 min-h-12 w-full rounded-2xl bg-amber-300 font-black text-slate-950" onClick={() => publishResult(true, 3, teamRoom.expeditionLoot, teamRoom.expeditionStats, teamRoom.members)}>帶領隊伍查看遠征報告</button> : null}
+            </div>
+          </div>
+        );
+      }
+      if (bossRewardClaim?.envelope) {
+        return (
+          <Suspense fallback={<div className="min-h-[100dvh] bg-slate-950 text-slate-400 flex items-center justify-center">正在整理個人戰利品…</div>}>
+            <DungeonBossRewardRoom claimId={bossRewardClaim.claimId} envelope={bossRewardClaim.envelope} memberId={myId} onComplete={completeMyBossChoices} />
+          </Suspense>
+        );
+      }
+      return (
+        <div className="min-h-[100dvh] bg-slate-950 px-6 text-white flex items-center justify-center text-center">
+          <div className="w-full max-w-sm rounded-3xl border border-amber-400/20 bg-slate-900 p-6">
+            <div className="text-4xl">🏆</div><h1 className="mt-3 text-xl font-black">個人王房獎勵</h1><p className="mt-2 text-sm leading-6 text-slate-400">每位合格隊員都有自己的固定獎勵與選箱，不會被隊長代領。</p>
+            {bossRewardError ? <div role="alert" className="mt-3 text-sm text-rose-300">{bossRewardError}</div> : null}
+            <button type="button" disabled={bossRewardLoading} onClick={prepareMyBossReward} className="mt-5 min-h-12 w-full rounded-2xl bg-amber-300 font-black text-slate-950 disabled:opacity-50">{bossRewardLoading ? "正在同步…" : "開啟我的戰利品"}</button>
+          </div>
+        </div>
+      );
+    }
     if (!isHost && !teamRoom.expeditionTreasureLoot) {
       return (
         <div className="h-[100dvh] flex items-center justify-center bg-[#0a0a0f] text-white/50">
@@ -894,6 +1065,7 @@ export default function TeamExpeditionBattle({
         onDone={isHost ? handleFloorDone : undefined}
         onAbandon={handleAbandon}
         guestProfile={isGuestMode ? profile : undefined}
+        lootMult={teamRoom?.lootMult || 1}
       />
     );
   }

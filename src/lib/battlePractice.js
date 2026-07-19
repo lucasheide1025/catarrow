@@ -10,6 +10,18 @@ export const BATTLE_BOW_OPTIONS = [
 export const BATTLE_DISTANCE_OPTIONS = [5, 10, 13.5, 15, 18, 20, 30, 50, 70];
 
 const PROFILE_VERSION = 2;
+
+// ── 高品質命中（跨靶紙正規化的唯一權威定義） ─────────────────
+// 10 分制靶（全環/三聯）高分 = ≥8；其餘靶（如 field_16 的 X、1-5 環）= maxScore - 1。
+// 武器「精準」專精、弱點姿態、再生中斷等所有需要「高品質命中」判定之處,
+// 一律呼叫這兩個函式,禁止各自 inline 門檻（PRD 128：不可寫死 9 分）。
+export function highQualityThreshold(targetFormat = "full_110") {
+  const format = getTargetFaceFormat(targetFormat);
+  return format.maxScore >= 10 ? 8 : Math.max(format.minScore, format.maxScore - 1);
+}
+export function isHighQualityHit(score, targetFormat = "full_110") {
+  return Number(score) >= highQualityThreshold(targetFormat);
+}
 const DEFAULT_PROFILE = {
   version:PROFILE_VERSION,
   bowType:"recurve_bare",
@@ -106,7 +118,7 @@ export function analyzeBattlePractice(rounds, targetFormat = "full_110", arrowPo
   const misses = scores.filter(score => score === 0).length;
   const xCount = arrows.filter(arrow => arrow.isX).length;
   const tenCount = arrows.filter(arrow => !arrow.isX && arrow.score === 10).length;
-  const highThreshold = format.maxScore >= 10 ? 8 : Math.max(format.minScore, format.maxScore - 1);
+  const highThreshold = highQualityThreshold(targetFormat);
   const highCount = scores.filter(score => score >= highThreshold).length;
   const variance = scores.reduce((sum, score) => sum + (score - average) ** 2, 0) / count;
   const stdDev = Math.sqrt(variance);

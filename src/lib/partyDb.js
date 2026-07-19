@@ -10,6 +10,10 @@ import { CHEST_TYPES, makeChests, calcPotionBuffs, getPotion } from "./itemData"
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import { resolveConsumable } from "./consumableSystem";
 import { resolvePlayerCounter } from "./damage";
+import { addPartyCombatStatus, applyPartyStatusesForRound, buildPartyAbilityPreview, resolvePartyMonsterAbility } from "./partyMonsterAbilityEngine";
+import { buildPartyExpansionReward } from "./partyRewardEngine";
+import { getPartyChallengeProfile } from "./monsterExpansionAdapter";
+import { makeCoinChest } from "./lootTable";
 
 const PARTY = "partyRooms";
 
@@ -227,17 +231,19 @@ const MODE_SCALE = {
 };
 
 // ── Battle：房主設定怪物 & 開始 ───────────────────────────────
-export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance, targetFormat = "full_110", battleBackground = "") {
+export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance, targetFormat = "full_110", battleBackground = "", targetInputMode = "button") {
   try {
     const memberIds = Object.keys(room.members || {});
     const playerCount = memberIds.length;
     const ms         = MODE_SCALE[mode] || MODE_SCALE.student;
     const extraMembers = playerCount - 1;
-    const hpMult     = genPartyHPMult(playerCount); // 1 + extraMembers*0.5
-    const monAtkMult = 1.0 + extraMembers * 0.15;   // ATK+15%/人
-    const monDefMult = 1.0 + extraMembers * 0.15;   // DEF+15%/人
     const rewardMult = 1.0 + extraMembers * 0.2;    // 金幣/XP+20%/人
-    // 先套模式倍率，再套人數倍率
+    // 挑戰強度（方案A,房主選）×人數加成（+10%/額外人,使用者規格,會顯示在房間）
+    const challengeProfile = getPartyChallengeProfile(room.challengeLevel || "standard", playerCount);
+    const hpMult     = challengeProfile.monsterStatMult;
+    const monAtkMult = challengeProfile.monsterStatMult;
+    const monDefMult = challengeProfile.monsterStatMult;
+    // 先套模式基準（組隊 HP×2 步調）,再套 挑戰×人數 倍率
     const scaledHP = Math.round(monster.hp * ms.hp * hpMult);
 
     // 從 archerStats 計算每人初始 hp（這裡給預設值，實際由各 client 補寫自己的 stats）
@@ -250,6 +256,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       membersUpdate[`members.${mid}.alive`]  = true;
       membersUpdate[`members.${mid}.role`] = "front";
       membersUpdate[`members.${mid}.rearChoice`] = null;
+      membersUpdate[`members.${mid}.combatStatuses`] = [];
       membersUpdate[`members.${mid}.potionBuffs`] = { atkMult:1, defMult:1, dmgMult:1, families:{}, shield:0, regenPct:0 };
       // hp/atk/def 留給各 client 用 updateBattleMemberStats 寫入
       if (!m.maxHP) {
@@ -263,14 +270,28 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
     await updateDoc(doc(db, PARTY, roomId), {
       ...membersUpdate,
       monster: { id: monster.id, name: monster.name, icon: monster.icon,
-                 hp:  Math.round(monster.hp  * ms.hp),
+                 hp:  scaledHP,
                  atk: Math.round(monster.atk * ms.atk * monAtkMult),
                  def: Math.round(monster.def * ms.def * monDefMult),
-                 tier: monster.tier, family: monster.family },
+                 tier: monster.tier, tierIndex:monster.tierIndex, family: monster.family,
+                 encounter:monster.encounter, signatureSkillId:monster.signatureSkillId,
+                 signatureName:monster.signatureName, signatureSummary:monster.signatureSummary,
+                 commonSkillIds:monster.commonSkillIds || [], expansionVersion:monster.expansionVersion || 0 },
+      monsterMaterialId: monster.materialId || null,
+      monsterCardId: monster.cardId || monster.id,
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
       hpMult, rewardMult,
+      // 供全房 UI 顯示：強度檔位＋人數加成明細
+      challengeLevel: room.challengeLevel || "standard",
+      challengeProfile: {
+        label: challengeProfile.label, memberCount: challengeProfile.memberCount,
+        monsterBonusPct: challengeProfile.monsterBonusPct, monsterStatMult: challengeProfile.monsterStatMult,
+        materialQty: challengeProfile.materialQty, cardChance: challengeProfile.cardChance,
+        coinChestChance: challengeProfile.coinChestChance,
+      },
       mode, distanceMode, distance, targetFormat, battleBackground,
+      targetInputMode: targetInputMode === "target" ? "target" : "button",
       round: 1,
       // 第一回合只做 VS 進場與射擊，不插入回合事件。
       roundEvent: null,
@@ -279,6 +300,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       processing: false,
       consumableEffects: {},
       status: "active",
+      monsterAbilityPreview: null,
     });
     return { ok: true };
   } catch (e) {
@@ -462,6 +484,10 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     const round    = room.round || 1;
     const arrowsPerRound = room.arrowsPerRound || 6;
+    const partyAbility = room.monster?.expansionVersion === 1
+      ? resolvePartyMonsterAbility({ roomId, monster:room.monster, round, members:room.members || {}, targetFmt: room.targetFormat || "full_110" })
+      : null;
+    const statusRoundByMember = Object.fromEntries(Object.entries(room.members || {}).map(([id, member]) => [id, applyPartyStatusesForRound(member)]));
 
     // 前後衛分類（undefined / "front" 都算前衛）
     const frontIds = aliveIds.filter(id => (members[id].role || "front") === "front");
@@ -514,7 +540,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         };
         continue;
       }
-      const buffedAtk = Math.max(1, Math.round((m.baseAtk || m.atk || 10) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * eventAtkMult));
+      const buffedAtk = Math.max(1, Math.round((m.baseAtk || m.atk || 10) * (statusRoundByMember[id]?.atkMultiplier || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * eventAtkMult));
       const damageItems = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
       const directDmg = damageItems.reduce((sum, arrow) => sum + (resolveConsumable(arrow?.label || arrow, {
@@ -562,12 +588,15 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     ];
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
+    if (partyAbility?.resolved?.monsterHealMaxHpPct) {
+      monsterHP = Math.min(room.monsterMaxHP || monsterHP, monsterHP + Math.round((room.monsterMaxHP || monsterHP) * partyAbility.resolved.monsterHealMaxHpPct / 100));
+    }
     if (eff.extraDmg) monsterHP = Math.max(0, monsterHP - eff.extraDmg);
     if (eff.monsterHP) monsterHP = Math.max(0, monsterHP + eff.monsterHP);
     const memberHPNow = {};
     // 若 hp 尚未寫入（stats 還沒到位），預設用 maxHP；避免誤判為陣亡
     for (const id of aliveIds) {
-      const currentHp = members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500);
+      const currentHp = statusRoundByMember[id]?.hp ?? (members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500));
       const adjustedHp = currentHp + (eff.archerHP || 0) + (eff.healArcher || 0);
       memberHPNow[id] = Math.max(0, Math.min(members[id].maxHP || adjustedHp, adjustedHp));
     }
@@ -673,9 +702,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       const ctrLog = [];
       for (const id of ctrTargets) {
         const mem = members[id];
-        const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (mem?.potionBuffs?.defMult || 1));
+        const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (statusRoundByMember[id]?.defMultiplier || 1) * (mem?.potionBuffs?.defMult || 1));
         const ctrCrit = Math.random() < 0.1;
-        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0, ctrCrit) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const abilityTargetsMember = !partyAbility?.targetId || partyAbility.targetId === id;
+        const skillMult = abilityTargetsMember && partyAbility?.resolved?.skillDamageMult > 0 ? partyAbility.resolved.skillDamageMult : 1;
+        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0, ctrCrit) * skillMult * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit = resolvePlayerCounter({ arrows:mem?.arrows || [], baseDamage:rawCtr, maxHP:mem?.maxHP || memberHPNow[id] });
         const absorbed = Math.min(mem?.potionBuffs?.shield || 0, counterHit.damage);
         const ctr = counterHit.damage - absorbed;
@@ -755,6 +786,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         liveAfter++;
       }
       memberUpdates[`members.${id}.hp`] = hp;
+      const incomingStatus = partyAbility?.targetId === id ? partyAbility?.resolved?.status : null;
+      memberUpdates[`members.${id}.combatStatuses`] = addPartyCombatStatus(statusRoundByMember[id]?.remainingStatuses || [], incomingStatus);
       if (members[id]?.potionBuffs?.regenPct && hp > 0) memberUpdates[`members.${id}.hp`] = Math.min(members[id]?.maxHP || 9999, hp + Math.round((members[id]?.maxHP || 100) * members[id].potionBuffs.regenPct / 100));
     }
 
@@ -779,6 +812,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHPAfter:  monsterHP,
       counterRound:    !skipAllCtr,
       demotedMembers,
+      ...(partyAbility?.scheduled ? { monsterAbility:partyAbility } : {}),
+      statusTicks:Object.fromEntries(aliveIds.filter(id => statusRoundByMember[id]?.ticks?.length).map(id => [id, statusRoundByMember[id].ticks])),
     };
 
     // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會打不死怪又不算輸而卡死（2026-07-12）。
@@ -789,6 +824,14 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     const newStatus = result === "win" || result === "lose" ? "pending_confirm"
                     : "active";
+    const nextMembers = Object.fromEntries(Object.entries(members).map(([id, member]) => [id, {
+      ...member,
+      alive: memberUpdates[`members.${id}.alive`] ?? member.alive,
+      role: memberUpdates[`members.${id}.role`] ?? member.role,
+    }]));
+    const nextAbilityPreview = newStatus === "active" && room.monster?.expansionVersion === 1
+      ? buildPartyAbilityPreview({ monster:room.monster, round:round + 1, members:nextMembers })
+      : null;
 
     await updateDoc(doc(db, PARTY, roomId), {
       ...memberUpdates,
@@ -798,6 +841,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       result,
       status: newStatus,
       roundEvent: newStatus === "active" ? makeRoundEvent() : null,
+      monsterAbilityPreview: nextAbilityPreview,
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
@@ -815,15 +859,34 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
 // ── Battle：房主勝利後為所有人存入待領獎勵 ───────────────────
 export async function storeBattleRewards(roomId, memberIds, monster, mode = "student") {
   try {
+    const roomSnap = await getDoc(doc(db, PARTY, roomId));
+    if (!roomSnap.exists()) return { ok:false, reason:"room not found" };
+    const room = roomSnap.data();
+    if (room.rewardPending) return { ok:true, alreadyStored:true };
     const rewardPending = {};
+    const expansionRewardPending = {};
     for (const member of memberIds) {
       const mid = typeof member === "string" ? member : member.id;
       const isGuest = typeof member === "object" && ["guest", "kid"].includes(member.accountType);
       if (isGuest) continue; // 訪客/兒童不拿正式寶箱，避免衝擊正式經濟
+      // 挑戰強度×人數加成（素材/掉卡/金幣寶箱依人數提升,使用者規格）
+      const profile = room.challengeProfile
+        || getPartyChallengeProfile(room.challengeLevel || "standard", memberIds.length);
       const { mainChest, bonusChest, potionChest } = makeChests(monster, mode);
-      rewardPending[mid] = [mainChest, bonusChest, potionChest].filter(Boolean);
+      const coinChest = Math.random() < (profile.coinChestChance ?? 0.5) ? makeCoinChest(monster.tier, "組隊掉落") : null;
+      rewardPending[mid] = [mainChest, bonusChest, potionChest, coinChest].filter(Boolean);
+      const participated = (room.log || []).some(entry => (entry.playerLog || []).some(player => player.id === mid && (player.arrowBreakdown || []).length > 0));
+      if (participated) {
+        const expansionMonster = { ...monster, materialId:room.monsterMaterialId || monster.materialId, cardId:room.monsterCardId || monster.cardId };
+        const expansionReward = buildPartyExpansionReward({
+          roomId, memberId:mid, monster:expansionMonster,
+          materialQty: profile.materialQty ?? 5,
+          cardChance: profile.cardChance ?? 0.3,
+        });
+        if (expansionReward) expansionRewardPending[mid] = expansionReward;
+      }
     }
-    await updateDoc(doc(db, PARTY, roomId), { rewardPending });
+    await updateDoc(doc(db, PARTY, roomId), { rewardPending, expansionRewardPending });
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
@@ -875,6 +938,7 @@ export async function resetPartyRoom(roomId, memberIds) {
       log:           [],
       processing:    false,
       rewardPending: null,
+      expansionRewardPending: null,
       rewardClaimed: [],
     });
     return { ok: true };

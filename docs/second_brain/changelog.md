@@ -3,7 +3,205 @@
 
 ---
 
-## 2026-07-16（射手表現改版：修 prod 崩潰 + 版面重構 + 深度分析 v2 診斷引擎）
+## 2026-07-19（武器精煉套入新素材消耗 + 寶箱卡片排版修正）
+
+- **精煉成本**（economy-loot-catalog §6）：傳說金幣 6500→**12000**、神話 13000→**30000**;新增王素材門檻 `bossMatRequirementFor()`——史詩+4 突破小王×1;傳說 0/1/2/3 各需小王 1/1/2/2、+4 突破大王×1;神話 0/1/2/3 各需大王 1/1/2/2。素材 Tier 取目前品級對應階（epic=T4、legend=T5、mythic=T6）。
+- **關鍵防呆**：王素材唯一來源是地下城王房（在 `monsterExpansionV1` flag 之後）。若不跟著 flag 走，flag 關閉的正式環境玩家將**無從取得素材、高階精煉直接卡死**——因此 `generateRandomMats` 只在擴充開啟時加入王素材需求，並有測試守住。
+- **相容**：新需求掛在 `generateRandomMats` 產生的 `nextMats` 內，db.js 的扣除迴圈不必改;已存的舊 `nextMats` 自然可依舊制完成一次（符合規格「更新前已顯示的可依舊制完成一次」）。
+- **UI**：`RPGEquipPanel` 新增 `resolveMatMeta()`——原本只查 legacy `MATERIALS`，擴充素材會露出原始 id（`mat_ghost_t5_mini_a`）。現在查不到會回退擴充清冊，並對王素材標示 🔱／👑 與「小王素材／大王素材」註記。
+- **寶箱卡片排版**（使用者截圖回報「擠成一團」）：翻牌卡正反面都是 `position:absolute`，對外不貢獻寬度，在 `items-center` 的 flex 容器裡整張卡塌成近 0 寬 → 中文因每字皆可斷行，min-content 寬度＝一個字，名稱變直排。修法：外層補 `w-full` 讓 `width:100%` 有依據（根源），文字容器再加 `flex:1 + minWidth:0 + nowrap/ellipsis` 兩層保險。
+- **組隊「開始戰鬥沒反應」防護**：`startRoomBattle` 的 `floorStartingRef` 若因中途例外沒重置，之後**所有房間點擊都會靜默失效**（無錯誤、無反應）。改為 try/catch/finally，保證解鎖並把錯誤顯示到 `flowError`。根因仍待使用者提供 console 錯誤。
+- 驗證：48 suites / 313 tests 綠 + build 無警告 + `no-undef` 專項掃描乾淨。
+
+## 2026-07-19（遠征掉落明細顯示 + 倍率角標收進頂欄）
+
+- **新 `KillLootToast.jsx`**（單人／組隊共用）：每場擊殺後直接列出掉了**哪種寶箱、各幾個**（走 `summarizeExpeditionChests`，與結算畫面同一套敘述，避免兩處說法不一致）＋金幣／XP。
+  - 單人端原本**完全沒有**每殺回饋（只有最後結算才看得到），現已補上（掛在 grid／branch 樓層畫面）。
+  - 組隊端原本只顯示籠統的「材料寶箱 ×N」，改為列出實際寶箱明細。
+- **「🎲 本圖寶箱 ×N」改放頂端狀態列**（使用者指示）：原本是戰鬥畫面右上角的 `position:fixed` 浮動角標，改成 `PlayerStatusBar` 內的 pill（HP 條與金幣之間），單人／組隊兩端一致。
+
+## 2026-07-19（遠征取消直接掉素材，改為只給寶箱）
+
+**使用者拍板**：遠征單人＋組隊一律**不直接掉素材**，素材只能從寶箱開出（掉落來源單一化）。
+
+- `DungeonBattleRoom` 勝利結算移除 `rollMaterialDrops` → `addMaterials` 這條路（此元件現在只有遠征單人／組隊在用，舊地下城模式已刪，所以影響範圍剛好等於需求範圍）。
+- 結算面板預覽的 `materials` 一併改為 `[]`，避免顯示實際拿不到的東西（`BattleResultPanel` 本來就有 `length > 0` 防護，空陣列自動隱藏區塊）。
+- 清掉因此變成孤兒的 import：`addMaterials`、`rollMaterialDrops`、`rollMaterialDrop`（最後這個是先前就沒用到的）。
+- **不受影響（刻意保留）**：①王房專屬獎勵 envelope（王素材／選擇箱，走 Cloud Function）;②組隊結算的 `kingVault.materials`（王房寶庫）;③寶藏房 `handleTreasureLoot` 的收藏品;④單人打怪 `MonsterBattle` 的掉落（不是遠征）。
+- 驗證：47 suites / 304 tests 綠 + build 過。
+
+## 2026-07-18（🐛 修 VS 畫面狂跳 + 寶箱掉錯 Tier 素材）
+
+**使用者實測回報**：①一進地下城戰鬥，VS 開場畫面不斷重跳（伴隨 Firestore commit 400）;②打靈路巡衛（鬼怪 T2）掉出路邊供品（鬼怪 T1 素材）。
+
+- **VS 狂跳（根因）**：`BattleScreen` 的自動開場 effect 依賴 `handleStartBattle`，而它的依賴含 `monster`／`difficulty`——呼叫端 `DungeonBattleRoom` 是用**行內物件字面值**傳的，父層每次 render 都產生新參考 → effect 每次 render 重跑 → `dispatch START` 把 phase 打回 INTRO。`case "START"` 又永遠回傳全新 state、沒有任何防護，於是形成無限迴圈。修法：新增 `autoStartedForRef`，以**怪物 id 當閘門**，換怪才重新開場。
+- **組隊端補 `key={roomId}`**：`TeamExpeditionBattle` 沒給 DungeonBattleRoom key，元件實例會跨戰鬥房沿用 → 閘門 ref 不會重置，連續兩場同種怪會開不了場。加 key 讓每房重新掛載（與單人端 `key={pendingRoom.id}` 一致）。
+- **寶箱掉錯 Tier（根因）**：`itemData.openChestContents` 開箱時 `for (t=0..tierCount)` 從 **T1 逐層往上抽**，完全沒用寶箱自己的 `tier` 欄位 → 打 T2 怪的 iron 箱會抽到 T1 素材。修法：以 `chest.tier` 反查來源 Tier，有帶就固定抽該 Tier（沒帶的舊寶箱/商店箱維持逐層擴散，不影響）。
+- **踩坑（重要）**：`RARITY_ORDER`（legacy 稀有度 common/uncommon/rare/epic/legendary）與**怪物 tier**（common/rare/elite/fierce/boss/mythic）是**兩套不同詞彙**，`"rare"` 在前者是 T3、後者是 T2，**索引不可互用**。新增 `MONSTER_TIER_ORDER` 常數區分。
+- 驗證：47 suites / 304 tests 綠 + build 過;新增迴圈與寶箱 Tier 的回歸測試。
+- **未解**：Firestore commit 400 尚未取得完整錯誤訊息。已排除技能結算資料（252 隻全掃無 undefined/NaN/巢狀陣列）與擴充怪物件本身。推測是迴圈造成的重複寫入所致，修好迴圈後需回頭確認是否消失。
+
+## 2026-07-18（🗑️ 移除舊地下城模式（房間制/地圖探索））
+
+**為什麼**：地下城早已全面改用「遠征」流程（DungeonLobby → DungeonExpedition／TeamExpeditionBattle，固定 3 層）。舊的房間制/地圖探索模式已無任何 UI 入口（`createDungeonRoom` 零呼叫端、`handleEnterDungeonRoom` 只有定義沒人呼叫），只剩重整還原的殘留路徑，屬死碼。
+
+- **刪檔（7）**：`DungeonController.jsx`、`DungeonExplore.jsx`、`DungeonMap.jsx`（舊模式三元件孤島）＋ 4 個無人 import 的備份檔 `DungeonBattleRoom/MonsterBattle/PartyBattleRoom/WorldBossAttack.legacy.jsx`。
+- **MemberApp／AdminApp**：移除 `DungeonController` lazy import 與預載、`dungeon-room` 分頁與路由、`dungeonRoomId` state、sessionStorage 還原邏輯（`dungeon_room`／`admin_dungeon_room`）、「🏰 地下城進行中」浮動按鈕、`handleEnterDungeonRoom`／`handleLeaveDungeon`。
+- **`dungeonDb.js`（1603→1165 行）**：刪 23 個零引用函式——建房（createDungeonRoom/joinDungeonRoom/startDungeonFloor）、地圖模式整組（initDungeonMapRun/saveMapExploration/proposeMapMove/castMapVote/resolveMapVote/advanceMapFloor/enterMapCombatRoom/proposeMapBattle/clearMapPendingRoom/tryDiscoverHiddenRoom/enterHiddenRoom/addMapLoot）、advanceDungeonFloor、leaveDungeonRoom、subscribeOpenDungeonRooms、cleanupStaleDungeonRooms、activeDungeon 系列（checkDungeonRoomExists/setActiveDungeon/clearActiveDungeon/checkMemberActiveDungeon）。
+- **`dungeonData.js`**：刪 `DUNGEON_LENGTHS`（短途5/標準7/長征10 — 舊長度制，遠征固定 3 層）。
+- **保留（仍是活的，別誤刪）**：`DungeonBattleRoom` 及其 `isMapMode` 分支——**遠征就是傳 `isMapMode={true}`**，`returnToMapAfterBattle`／`ensureChestRoomLoot`／`selectDungeonPath`／`purchaseDungeonItem`／`confirmDungeonEvent`／`claimDungeonReward`／`clearDungeonProcessing`／`setDungeonMemberRole` 都仍有 live 呼叫端。`DungeonShop/Event/Rest/Trap/Chest` 為遠征共用。
+- **踩坑**：用腳本批次刪函式時，`function f(a, extraData = {})` 的**預設參數大括號會被誤判成函式主體起點**，導致切錯位置留下 `) {` 孤兒區塊（4 處）。括號配對要從簽章的右括號之後才開始找 `{`。
+- 驗證：46 suites / 298 tests 綠 + build 過;bundle 769.16 → 764.64 kB。
+
+## 2026-07-18（🔥 地下城接線：中途樓層擴充怪物池 + 招牌技能引擎）
+
+**為什麼**：252 隻擴充怪先前只接到「單人打怪」與地下城「王房」;地下城中途樓層還在抽舊 60 隻表，且整個地下城戰鬥完全沒有招牌技能（技能結算只在 standalone BattleScreen 跑，partyMode 提前 return）。
+
+- **`dungeonExpansionMonsters.js`（新）**：難度→Tier 對映**普通=T1-2、進階=T4、困難=T5、地獄=T6**;只抽 `encounter==="normal"`（王只在 BOSS 房生成，PRD §151-152）;family 別名正規化（forest→mountain 等）;treasure 族同規則。唯一接線入口 `drawDungeonFloorMonsters`／`drawDungeonFallbackMonster`，**flag off 或抽不到就 fallback 舊 `drawFloorMonsters`**（回退安全）。接線點：DungeonExpedition（startFloor＋補怪）、TeamExpeditionBattle（樓層計畫＋grid/branch 補怪）。
+- **踩坑**：擴充王快照數值已含錨點倍率（PRD §67），第3層**不可**再套舊版 `applyVariant(boss)` 的 ×2/×1.6，否則王被二次放大——改成只貼 `variant:"boss"` 標籤供 UI 光暈。
+- **`dungeonAbilityRound.js`（新，純函式）**：地下城技能回合規劃。破解採**全隊聚合**（實得分合計 ÷ 最高可能得分合計，PRD §44）;目標依 encounter 推導（招牌技能表無 target 欄位）——**大王=全隊（×0.5）、一般怪/小王=單體且不點名後衛**;技能傷害不致死（最低留 1 HP）;倒地/未提交者不入分母。
+- **`soloMonsterAbilityEngine`**：主體改為 `resolveTeamMonsterAbility`(submissions 陣列)，`resolveSoloMonsterAbility` 變成長度 1 的包裝——**兩路徑共用同一實作，避免規則分歧**。
+- **`processDungeonRound` Step 2.5**：host 權威端每回合結算一次（玩家＋貓咪攻擊後、反擊前，HP 比例正確供大王 70%/40% 階段被動）;冪等靠 `dungeon:{roomId}` + round 的 resolvedKey，**log 已有同 key 就跳過**（host 重試/重連保護）。異常存 `abilityStatuses`（下回合 atkDown/defDown 生效、回合末毒 tick 不致死）、怪物盾/減傷存 `monsterAbilityState`。
+- **踩坑**：破解率的箭要**濾掉藥水箭**——傷害路徑本來就用 `getPotion` 濾，若不濾，丟藥水會被當 0 分箭拖累破解率（懲罰用道具）。
+- **UI**：成員端 `BattleScreen` 從 `partyResolution.ability` 轉成既有 skillFx 形狀，共用同一組蓋版演出（四色破解＋自己受到的傷害＋附加異常）。
+- 驗證：46 suites / 298 tests 綠 + build 過;含全 7 族 × 4 難度 × 3 樓層的整合煙霧測試（抽怪不出王、技能結算不爆）。
+- **層數規格取消**（使用者拍板）：地下城**固定 3 層**（第1層探索／第2層精英／第3層分支+王房），手冊原本寫的「層數 4/5/6/7」是未實作的舊構想，已從 `scripts/generate-monster-handbook.py` 移除並重生成手冊。
+
+
+## 2026-07-18（🔍 組隊地下城兩 bug 調查中——下個 session 接手）
+
+**使用者回報**：①之前每場打死怪立刻有獎勵領取畫面,現在不見了;②最終 boss 打到剩 ~100 HP 突然被踢出房間、回不去。
+
+**已盤點的事實**（TeamExpeditionBattle.jsx）：
+- 獎勵鏈已改為新 claim 系統：王房走 `createDungeonBossRewardClaim`（dungeonBossRewardDb → monsterRewardClaims/dungeonBossChoiceClaims,rules 已貼）;一般怪場的獎勵在 room 結算,疑似改版後**中途樓層的每場獎勵畫面被拿掉/靜默化**（待確認 DungeonBattleRoom victory 面板路徑）。
+- 被踢疑點：166-176 行,最終層 battle room `completed+win` → `finishBattle` 立即轉場;若成員 snapshot 較慢或 host `cleanupExpeditionRoom` 先刪 battle room,成員端 battle room snapshot 變 null → 被彈出;teamRoom status 已 completed → 無法 rejoin。另 `bossRewardEligibleMemberIds` gate 可能誤判(未達 validRounds 者直接沒有獎勵路徑)。
+- 「剩100多HP被踢」很可能不是 HP 事件,而是**另一位成員先打死 boss**（總傷同步差）→ host 端結算/清房搶跑。
+
+**下一步**（新 session 開工清單）：
+1. 重現：兩人房打到最終 boss,觀察 host/成員兩端的 room/battleRoom snapshot 順序。
+2. 檢查 `cleanupExpeditionRoom` 呼叫時機是否早於成員端 finishBattle;必要時延遲清房/改 tombstone。
+3. 找回每場擊殺的獎勵顯示（DungeonBattleRoom victory → claim 結果面板）。
+4. rejoin 防線：status completed 但自己 unclaimed → 允許進入領獎畫面。
+
+
+## 2026-07-18（卡片個性系統：族系套裝 + 招牌天賦,方向1+2）
+
+**為什麼**：252 張卡效果只有 HP/ATK/DEF+N,重疊嚴重。使用者選定方向1（套裝）+2（天賦）。
+
+- **`cardTalents.js`（新）**：①`FAMILY_SET_BONUSES` 七族套裝,同族怪物卡 2/4 張兩階（鬼怪異常-1回合/-20%強度、山林回合末回復、毒蟲毒傷減半→免疫、職場/寶箱金幣+%、考試高品質+%、西方對王+%）;②招牌天賦**零手工**：從 signatureEffectCatalog 積木自動映射（穿甲/破盾/連擊/蓄勁/護體/堅盾/荊棘/威嚇/破防/汲取/淬毒/精研/挑戰者/蠻力）,Tier 放大 ×1/×1.5/×2,彙總各鍵有 cap。世界王卡不參與。
+- **戰鬥接線（BattleScreen）**：subscribeCardCollection→`calcCardCombatEffectsFromCollection`→START 帶入;威嚇/破防壓怪物面板、開場護盾、傷害/高品質/對王加成、連擊爆擊（×1.3）、穿甲疊專精、堅盾疊反擊減傷、鬼怪套裝削異常、毒蟲套裝縮毒傷、回合末回復。金幣加成接 MonsterBattle rollCoins。
+- **UI**：DetailSheet 加「天賦：…」行;收藏頁標頭加套裝狀態 pills（未觸發顯示提示）。
+- 驗證：42 suites / 265 tests 綠 + build 過。
+
+
+## 2026-07-18（掉落素材顯示原始 id 修正）
+
+- 打怪掉落顯示 `mat_exam_t5_normal_b`：`MonsterBattle` 掉落顯示層用 `monster.materialName`（adapter 只帶 `materialId`,欄位不存在）→ fallback 露出原始 id。改從 `monsterEconomyCatalog.MATERIAL_BY_ID` 查中文名。
+- 驗證：261 tests 綠 + build 過。
+
+
+## 2026-07-18（突發事件真兇＝示意彈窗;箭數累積補進 standalone BattleScreen）
+
+- **突發事件真兇**：不是 randomEvents——是 BattleScreen 改版留的「回合開始前・特殊事件」**示意佔位**（ROUND_EVENTS,每回合 60% 機率）。已停用擲骰（資料保留供未來正式事件系統）。
+- **架構釐清（重要）**：單人 RPG 打怪目前跑 **standalone BattleScreen**（MonsterBattle 1866 行,無 onSubmit）——舊 `submitRound`（含 addRoundArrows/引擎流程）是死路;技能結算/skillFx 在此路徑本來就會跑（battleId 有傳）。上一輪插在 MonsterBattle 2.5 的結算是死路程式（無害,留給舊 target 模式）。
+- **箭數不累積**：standalone 路徑沒人呼叫 addRoundArrows → 在 BattleScreen handleSubmit 本地分支補上（每回合送出累積今日+終身;external 模式由各自元件記,不會重複計）。
+- 驗證：261 tests 綠 + build 過。
+
+
+## 2026-07-18（🔥 單人打怪技能真正接進 MonsterBattle 自有流程）
+
+**踩坑（重要）**：RPG 打怪不是走 BattleScreen 的 local reducer——`MonsterBattle.jsx` 有整套自有回合流程（processMonsterRound + RoundController + 自有 log/HP state）。前一輪把技能結算/skillFx 接在 BattleScreen SUBMIT_ROUND,在 external/onSubmit 路徑**根本不會執行** → 玩家只看得到預告、沒有任何實際效果。
+- 修法：`MonsterBattle` 引擎呼叫後插入「2.5 技能結算」——`resolveSoloMonsterAbility`（battleId=`mb:{id}:{nonce}`,once-only ref 防重複）;傷害=`calcStandardCounter×skillDamageMult`（保 1 HP）＋浮動傷害數字;atkDown 立掛 `archerATKMod`;毒=最大HP% 單次（不致死）;其餘異常/護盾/蓄力寫入戰鬥 log（type counter_crit/debuff/buff）。
+- 隨機事件 gate（`ctx.allowRandomEvents`）確認唯一來源在 BattleEngine;使用者若仍看到 → 請硬重整（Ctrl+Shift+R）。
+- 驗證：261 tests 綠 + build 過。
+
+
+## 2026-07-18（卡片頁二輪 UX：已裝備列/小卡效果行/大立繪/設定介紹）
+
+- 收藏頁頂部新增「🎽 裝備中」列（普通 n/10・世界王 n/3,點卡直接開詳情卸下）。
+- 小卡星星下直接顯示效果行（❤️/⚔️/🛡️ +N;神話未選屬性顯示「待選屬性」）。wbViews 補 `stat` 欄位讓固定屬性王卡效果正確。
+- 詳情面板立繪改滿寬大圖（maxWidth 280 置中）。
+- 詳情新增設定介紹區塊：舊 60 隻用 monsterData 原 desc（斜體引言）;擴充怪顯示「⚡招牌技能」與「🎯破解方式」（catalog signatureSummary/counterSummary）。
+- 驗證：261 tests 綠 + build 過。
+
+
+## 2026-07-18（卡片頁 UX 補強：5欄大卡/裝備中標示/效果與升星判斷）
+
+- 網格 `minmax(150px,1fr)`+maxWidth 830 → 桌機一排最多約 5 張（使用者指示）;CardGroupSection 同步。
+- `CardMiniCell`：裝備中 → 綠框+光暈+「裝備中」角標。
+- `CardDetailSheet`：新增裝備效果行（`getCardStat`+`calcCardBonus`,顯示目前加成與升星後數值;神話/教練王未選屬性提示）;升星鈕真判斷 `canUpgradeStar`（顯示 重複 n/需求;滿星/王卡不可升星文案）;星數旁顯示 ✓ 裝備中。
+- 驗證：261 tests 綠 + build 過。
+
+
+## 2026-07-18（單人打怪：關閉突發事件 + 技能發動演出;卡片裝備規則 10+3）
+
+- **突發事件預設關閉**：`BattleEngine` Phase 0 改 `ctx.allowRandomEvents === true` 才擲骰（使用者指示取消每回合突發事件;要開回來只要呼叫端傳 flag）。
+- **技能發動演出**：`BattleScreen` 新增 `skillFx` 蓋版——SUBMIT_ROUND 後 2.6 秒顯示「⚡ 怪物發動『技能名』」＋破解結果四色（完全破解綠/高分藍/部分黃/未破解紅）＋附加異常/怪物護盾/蓄力提示。共用技能名稱從 `ability.scheduled.name` 補進 resolution。原本只有 log 文字看不出有沒有發動。
+- **卡片裝備規則**（使用者指示）：普通卡撤銷「每屬性3張」→ **不分屬性總量10張**;世界王卡維持3張。`monsterCards.MAX_MONSTER_EQUIPPED=10`,`db.equipCard` 改總量檢查。裝備/升星入口在點卡後的 DetailSheet（有判斷已裝備/可升星）。
+- 驗證：261 tests 綠 + build 過。
+
+## 2026-07-17（🔥 庫存負數根因修復 + 卡片收藏改單一大網格）
+
+**症狀**：專精面板 T4×-85、貓貓村資源也出現負數。
+**根因**：多處扣款「用 client 傳入資料驗證 → 盲目 `increment(-n)`」——多分頁（Firestore 退回 memory cache）/資料過期/連點時直接扣穿成負數。主要元兇：`db.js upgradeEquipSlot`（裝備強化,吃 materialInventory）與 `catDb.upgradeCatEquip`（村莊資源）。
+- **修法**：兩處改 `runTransaction` 內讀伺服器當下值重新驗證、扣到 0 為底;歷史負值視為 0。
+- **一次性修復**：素材面板載入時把 materialInventory 負值歸零寫回;MemberApp 登入時 `repairNegativeVillageResources` 歸零村莊資源負值。`summarizeMaterialsForSpec` 顯示端也 clamp。
+- **仍有同 pattern 的站點**（db.js 2928 藥水/4395/4663 村莊、符文 4292/4312）——之後建議統一收成 safe-deduct helper,先修最常用兩處。
+- **卡片收藏**：使用者回報桌機仍一排一卡＋未取得無剪影——真因是彙總視圖「一個族系×Tier一節,每節只有1-2張」的直向長列,且依原效能設計不畫未取得。改成**單一大網格**（auto-fill 104px 小卡）顯示全部符合篩選的卡,未取得＝暗化 SVG 剪影（零網路請求,最多 252 格）。
+- 驗證：261 tests 綠 + build 過。
+
+## 2026-07-17（DLC 收 Codex 尾：專精入戰鬥 + 大王階段被動 + 素材轉換 UI。未部署）
+
+**為什麼**：使用者指示把 Codex 原負責範圍收完。缺口盤點：專精效果沒進戰鬥、PRD 54 階段被動沒做、新素材轉換沒 UI、孤兒 CardCollection.jsx、44 張卡圖（無圖片生成能力,做不了,SVG 佔位頂著）。
+
+- **專精效果入 BattleScreen**：`useAuth`+`getEquipSpecializations` 載入每 slot 啟用專精 → START 帶入 state。武器：破甲(SCORE_ARROW 傷害公式吃 effDef)/精準(8環+/X 加成)/獵王(`monsterBossTagged`);防具：堅韌/守勢(HP≤35%)套在破解減幅後、護盾前(PRD 19 順序),免疫先降強度再縮回合最低1;飾品：營養(開場加最大HP)/睡飽(APPLY_COUNTER 回合末回復,倒地不觸發)。應援(貓加成)未接——solo 貓傷害路徑分散,另批。
+- **大王階段被動（PRD 54）**：42 隻大王 counterSummary 尾句「70% HP…，40% HP…」8 類詞彙全解析（`parsePhasePassives`,validator 保證 42/42）;resolver 依 `monsterHpRatio`（≤70% 啟動、≤40% 疊加）修正護盾/傷害/減傷/反射/狀態幅度/延遲段/穿盾,不追加攻擊;solo 從 battle state 帶 HP 比例、party 從 room.monster。
+- **素材轉換**：`materialConversionDb.convertMaterials`（transaction,金幣+庫存驗證後一次扣寫）;`ExpansionMaterialsPanel` 掛素材頁 materials tab——庫存清單（點選來源）、同Tier轉換（T1-3 3:1/T4-5 4:1/T6 5:1）/同族升階（5:1,T6 禁止）、批量+即時成本預覽。
+- 刪孤兒 `CardCollection.jsx`（已無引用,build 驗證）。
+- **Codex 仍欠**：44 張卡圖（temple T6×3/treasure×11/workplace×30）;箱池 expansion 更新（Phase 7 第一項）未查證完。
+- 驗證：41 suites / 261 tests 綠 + CI build 過。
+- **🔥 追修：單機打怪刷不出新怪的真因**——`monsterExpansionFeature.js` 第一行還吃 `REACT_APP_MONSTER_EXPANSION_V1==="true"` 環境變數,沒設=永遠關（我先前只看 grep 節選誤判「預設開」）。修法：localStorage `monsterExpansionV1` 支援 `"on"` 強制開/`"off"` 強制關,否則看環境變數;已建 `.env.development.local` 設 true（本機重啟後預設開）,使用者瀏覽器已設 "on" 並實測刷出新怪。**正式部署時 Vercel 要加同名環境變數**（或屆時把 ENV 預設翻正）。
+
+**為什麼**：招牌技能一直停在「文字摘要」（引擎回 `signature_effect_not_structured`），PRD 33-34 要求積木化＋共用 resolver。摘要是腳本照模式生成的 → 直接寫解析器結構化,不再手抄 252 筆。
+
+- **`signatureEffectCatalog.js`（新）**：252 條 `signatureSummary` → 1~3 效果積木（damage/multi-hit/pierce/delayedBurst/playerStatus/selfShield/selfReduction/selfReflect/hqMark/challenge），module load 一次解析;`validateSignatureEffects()` 保證 252/252 全解析、基準與遭遇類型一致（解析器一次過,因摘要模式固定）。Tier 數值帶 `TIER_SKILL_ATK_MULT` 照 monster-skill-catalog。
+- **`signatureAbilityEngine.js`（新）**：共用 resolver。回傳**倍率**（`skillDamageMult`＝Tier基準×積木×強化版×破解減幅）而非絕對值,各模式 adapter 用自己的反擊公式乘——符合 PRD 34「adapter 只給上下文」。穿甲/破盾/自身效果依 `statusMultiplier` 縮放（≥70% 破解歸零）;挑戰=達標箭數過半（城隍判令語意）;大王 R6 強化版 `SIGNATURE_ENHANCED_MULT=1.1`（PRD 未給數值,集中常數可調）。
+- **PRD 51 落地**：`mergeCombatStatus` 加同能力（atk/def）總減幅 40% cap（跨異常 clamp 進場強度）;同名刷新不疊加、最多 3 種維持原樣。
+- **接線**：solo/party 引擎招牌分支改走 resolver（party 預設 single 目標）;BattleScreen reducer——多狀態合併、技能傷害**取代**該回合標準反擊（含穿甲/破盾）、延遲攻擊下回合落地、反射（上限最大HP15%不致死）、怪物護盾（HIT_MONSTER/THROW_DMG 吸收）、怪物自身減傷（ADD_ARROW 期限內生效）、hqMark/挑戰加成套用到下一回合箭傷。
+- **卡片收藏頁**：`CardGroupSection` grid 從固定 3 欄改 `auto-fill minmax(104px,1fr)` + maxWidth 720——手機仍 3 欄,桌機小卡橫向多張不再放大成巨卡（使用者回報）。
+- **單機打怪沒看到新怪**：接線本來就完整（`MonsterBattle` 417/508 行,flag 預設開）——是**正式站還沒部署 DLC**;本機 localhost 有效。
+- **裝備專精 UI（Phase 7,新）**：`EquipSpecializationPanel.jsx` 掛在裝備頁（訪客隱藏）——9 條專精解鎖(🪙10,000)/升級(金幣+同Tier一般素材彙總+Lv8起王素材)/成功率與連敗pity(＋15pp,3連敗必成)/啟用切換/現在與下一級效果文字。持久化 `equipSpecializationDb.js` → 新 collection `equipSpecializations/{memberId}`（design.md §8 shape）,全 transaction 驗證後一次扣寫。**⚠️ 規則新增了 equipSpecializations 區塊,必須手動貼 firestore.rules 到 Console 才能寫入**。素材消耗設計決策：40/35/25 主次拆分視為配方描述,實際從玩家該 Tier 全部一般素材彙總扣（多的先扣）,不指定家族。戰鬥端 applyWeapon/Armor/AccessorySpecialization 效果接線**還沒做**（另批）。
+- 驗證：41 suites / 259 tests 綠 + CI build 過（含專精 UI 後再跑一輪）。
+
+## 2026-07-17（DLC Phase 6：世界王 R2/R4 強攻全接線，未部署）
+
+**為什麼**：怪物專精擴充案 Phase 6。引擎切片（`worldBossStrikeEngine`）上上輪已好，這輪補資料與 UI 接線。**只在本機，未 commit**（DLC 整批之後一起上）。
+
+- **`src/lib/worldBossSkillData.js`（新）**：24 王 × R2/R4 技能資料，PRD 22-26 逐條落地（六族 1.3x/1.8x、教練貓王 1.6x/2.2x；穿甲 `armorPiercePct`／破盾 `shieldPiercePct`／減益 status：`atkDownPct`/`defDownPct`/`healDownPct`/`dealtDownPct`/`dotMaxHpPct`，多段演出 `hits`）。貓王 R4 名稱 PRD 未給,自創（月下終舞/家法降臨…）。
+- **引擎擴充**：`validateWorldBossSkillConfig` 依 `bossClass`（prime/family）驗倍率；穿甲/破盾入結算,並依 PRD 24「部分破解同步降低穿甲破盾強度」用 `statusMultiplier` 縮放（70-84% 破解會直接歸零副效果）。
+- **`WorldBossAttack.jsx` 接線**：`finishRound` 反擊段,R2/R4 改走 `resolveWorldBossStrike`（R2 保 1 HP、R4 可擊倒且睡飽 regen 不復活）；減益只作用下一回合（ATK/DEF/對王傷害/治療量/蜂毒,蜂毒不致死保 1）；R1/R3 末 `getWorldBossTelegraph` 設預告 → 全螢幕 BattleScreen 分支頂部橫幅（**注意：1276 行第二個 `if (phase==="battle")` 是不可達舊版面,別把 UI 加在那**）；`sortieId`/`resolvedStrikeKeys`/`strikeDebuffs`/`pendingTelegraph` 全部進中途記憶 localStorage,重連一致、once-only 不重複扣血。
+- 驗證：39 suites / 246 tests 綠（含 24 王完整性 6 測 + 穿甲破盾縮放 3 測）+ CI build 過。實戰 UI 驗收待有 active 王時本機打一場。
+
+## 2026-07-17（世界王：擊倒後看不到領取畫面 → 三洞齊補，已單獨部署）
+
+**為什麼**：正式站回報「王被擊倒後有人看不到領取畫面」。commit `0b69b7d`（只含世界王兩檔，DLC WIP 未動）。
+
+- **根因1（主因）**：新版 `WorldBossAttack.jsx` 擊倒時**漏呼叫** `distributeWorldBossRewards`（legacy 版有、新版只剩一行註解）→ `worldBossHistory` 快照從未建立 → Lobby 的 `pendingEvent` 靠 `getLatestWorldBossKill()` 讀歷史，永遠 null → KillScreen 的領取區塊（`canClaim`）與「上次獎勵」按鈕都不出現。教練有在後台手動按過結算的場次才看得到 → 造成「有人看得到、有人看不到」。
+- **根因2**：KillScreen 每分頁只自動彈一次（sessionStorage `wb_kill_seen_`），且王還是最新事件時「上次獎勵」按鈕被 `event.id !== pendingEvent.eventId` 條件藏住 → 錯過那一眼（或 pendingEvent 還在網路載入中就關掉）整個 session 無入口。
+- **根因3**：`claimPendingReward` 失敗靜默（`result.ok=false` 無任何 UI）。
+- **修法**：① 擊倒時補回 `distributeWorldBossRewards(event.id)`；② `pendingEvent` 加事件文件 fallback——最新事件是 defeated 且我參戰未領就直接可領，不依賴歷史（同時救回舊場次）；③ defeated 期間底部常駐「🎁 領取擊殺獎勵」按鈕（點了重開 KillScreen 走原領取流程）；④ 失敗顯示原因、`already_claimed` 收掉入口。
+- 驗證：全套 237 tests 綠 + CI build 過；本機教練帳號開世界王頁正常（教練非參戰者故無按鈕，符合預期）。
+- 踩坑：CRA 的 eslint 沒裝 `react-hooks/exhaustive-deps` 規則,寫 disable 註解反而 build fail。
+
+## 2026-07-17（卡片收藏頁：全族/全 Tier 顯示持有卡彙總 + 世界王強攻引擎驗收）
+
+**為什麼**：使用者回報「卡片系統沒讀玩家持有卡」。實查資料層是通的（`subscribeCardCollection` → `cardCollections/{memberId}`，標頭已收藏數正確），真正問題是 `CardCollectionPrototype` 原設計**必須選定「族系×Tier」才渲染卡片**——切「全族」或「全 Tier」整個清單空白，看起來像沒讀到。
+
+- **`CardCollectionPrototype.jsx`**：新增 `aggregateSections`——未選定單一分組時，彙總顯示**已持有**的卡（依族系×Tier 分節，沿用 CardGroupSection）。只渲染持有卡（數量小），252 張未取得剪影仍須點進分組才畫，效能設計不變。
+- 預設 `family`/`tier` 從 `ghost`/`common` 改為 `""`（全族/全 Tier）→ 進頁第一眼就是「我的持有卡總覽」。
+- 踩坑提醒：`全族` chip 是 `onFamily(null)`，判斷一律用 falsy（`!family`），不要 `=== "all"`。
+- **世界王強攻引擎**（上次限流中斷的切片）：`src/lib/worldBossStrikeEngine.js` + 測試其實已完整，本次驗收 9/9 綠。全套 38 suites / 237 tests 綠。
+- C7 卡圖進度：208/252 已部署，缺 44（temple T6×3、treasure_b×11、workplace×30），缺圖由 `CardArt.jsx` SVG 佔位自動頂替，Codex 流量回來再補圖即可。
 
 **為什麼**：射手表現「亂/醜」、遊戲戰績分頁 prod 崩潰、深度分析只是一堆圖表、日週月年差異極小。與 Codex 平行開發（Codex 負責 react-bits/地下城，交接文件 `.trellis/tasks/07-16-react-bits-homepage/claude-performance-handoff.md`：射手表現全歸 Claude、禁新增動畫依賴、CountUp 用現成 Widgets、吃 `.no-anim`/reduced-motion）。
 

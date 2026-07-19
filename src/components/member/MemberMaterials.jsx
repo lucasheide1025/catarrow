@@ -8,6 +8,8 @@ import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/it
 import { useToast } from "../shared/UI";
 import { sfxBuff, sfxEpic, sfxSuccess, sfxCast, sfxCoinDrop } from "../../lib/sound";
 import Confetti from "../shared/Confetti";
+import ExpansionMaterialsPanel from "./ExpansionMaterialsPanel";
+import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 
 const FAMILY_CONFIG = {
   ghost:     { label: "鬼怪族",    icon: "👻", color: "#7c3aed" },
@@ -315,6 +317,10 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
       {tab === "materials" && (
         <div className="flex flex-col gap-4">
 
+          {/* 冒險素材（DLC：materialInventory,轉換＋專精升級共用庫存） */}
+          {isMonsterExpansionEnabled() ? <ExpansionMaterialsPanel items={inventory} /> : null}
+
+          {!isMonsterExpansionEnabled() && <>
           {/* 升級說明 */}
           <div className="bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2 text-amber-300 text-xs leading-relaxed">
             💡 集滿 <b>5 個</b>同一種材料，就能升級成 <b>1 個</b>更高階的材料！
@@ -434,6 +440,7 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
               })}
             </div>
           )}
+          </>}
         </div>
       )}
 

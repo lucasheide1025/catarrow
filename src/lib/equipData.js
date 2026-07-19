@@ -1,3 +1,6 @@
+import { EXPANSION_MATERIALS } from "./monsterExpansionCatalog";
+import { isMonsterExpansionEnabled } from "./monsterExpansionFeature";
+
 // src/lib/equipData.js — 裝備品項定義（真實品牌）
 // 每個欄位有多種品牌選擇，外觀不同但同品級加成相同
 // 玩家裝備存在 member.equipment[slotId] = { itemId, grade, plusLevel }
@@ -7,13 +10,14 @@
 // ── 升級材料需求表 ───────────────────────────────────────────
 // 只保留金幣費用；材料需求改由 generateRandomMats() 動態產生並存入 Firestore
 // 金幣費用（2026-07-11 在曲線基礎上整體 +30%，抑制升級速度）
+// 傳說/神話金幣依 economy-loot-catalog §6「現有裝備精煉新增門檻」提高（2026-07-19）
 export const EQUIP_UPGRADE_COST = {
   common: { gold: 130   },
   rare:   { gold: 390   },
   elite:  { gold: 1040  },
   epic:   { gold: 2600  },
-  legend: { gold: 6500  },
-  mythic: { gold: 13000 },
+  legend: { gold: 12000 },
+  mythic: { gold: 30000 },
 };
 
 // 稀有+4突破到精英起，品階突破必須消耗王房取得的王之印記。
@@ -59,16 +63,64 @@ export function isMatsCurveCurrent(nextMats, plusLevel) {
   return mats[0]?.count === c.mainA && mats[1]?.count === c.mainB && nextMats.keyItem?.count === c.key;
 }
 
-export function generateRandomMats(grade, plusLevel = 0) {
+// ── 高階精煉的王素材門檻（economy-loot-catalog §6，2026-07-19）──────────
+// 史詩+4→傳說0：小王×1；傳說 0→1/1→2/2→3/3→4：小王 1/1/2/2；
+// 傳說+4→神話0：大王×1；神話 0→1/1→2/2→3/3→4：大王 1/1/2/2。
+// 素材 Tier 取「目前品級」對應階（epic=T4、legend=T5、mythic=T6），與 _GRADE_MAT_TIER 一致。
+const _GRADE_TIER_INDEX = { common:1, rare:2, elite:3, epic:4, legend:5, mythic:6 };
+
+export function bossMatRequirementFor(grade, plusLevel = 0) {
+  const level = Math.max(0, Math.min(4, plusLevel || 0));
+  if (grade === "epic")   return level === 4 ? { kind:"miniBoss", count:1 } : null;
+  if (grade === "legend") return level === 4 ? { kind:"boss", count:1 }
+    : { kind:"miniBoss", count:[1, 1, 2, 2][level] };
+  if (grade === "mythic") return level === 4 ? null // 神話+4 已是頂點，無下一階
+    : { kind:"boss", count:[1, 1, 2, 2][level] };
+  return null;
+}
+
+// 從擴充素材清冊挑一個符合 家族/階級/種類 的王素材；挑不到回傳 null（呼叫端會略過）
+function pickBossMaterialId(family, tierIndex, kind, expansionMaterials) {
+  const pool = expansionMaterials.filter(material =>
+    material.family === family && material.tierIndex === tierIndex && material.kind === kind,
+  );
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)].id;
+}
+
+export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   const tiers = _GRADE_MAT_TIER[grade];
   if (!tiers) return null;
   const c = matCountsFor(plusLevel);
   const shuffled = [..._FAMILIES].sort(() => Math.random() - 0.5);
+  const materials = [
+    { id: `${shuffled[0]}_${tiers.main}`, count: c.mainA },
+    { id: `${shuffled[1]}_${tiers.main}`, count: c.mainB },
+  ];
+
+  // 王素材門檻只在擴充開啟時加入：王素材唯一來源是地下城王房（同一個 flag 之後），
+  // 若在 flag 關閉時就要求，玩家將無從取得，高階精煉會直接卡死。
+  // 預設值直接取真實模組，呼叫端不必傳（漏傳會讓功能靜默失效）；options 只給測試覆寫用。
+  const {
+    expansionEnabled = isMonsterExpansionEnabled(),
+    expansionMaterials = EXPANSION_MATERIALS,
+  } = options;
+  if (expansionEnabled) {
+    const requirement = bossMatRequirementFor(grade, plusLevel);
+    if (requirement) {
+      const bossId = pickBossMaterialId(shuffled[0], _GRADE_TIER_INDEX[grade], requirement.kind, expansionMaterials);
+      if (bossId) {
+        materials.push({
+          id: bossId,
+          count: requirement.count,
+          note: requirement.kind === "boss" ? "大王素材" : "小王素材",
+        });
+      }
+    }
+  }
+
   return {
-    materials: [
-      { id: `${shuffled[0]}_${tiers.main}`, count: c.mainA },
-      { id: `${shuffled[1]}_${tiers.main}`, count: c.mainB },
-    ],
+    materials,
     keyItem: { id: `${shuffled[2]}_${tiers.key}`, count: c.key, note: "升級關鍵素材" },
   };
 }

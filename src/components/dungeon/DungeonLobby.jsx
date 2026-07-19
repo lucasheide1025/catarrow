@@ -42,6 +42,8 @@ function restoreDungeonFromTeamRoom(room) {
     difficulty: room.dungeonDifficulty,
     isHidden: room.dungeonIsHidden || false,
     boss: room.dungeonBoss || null,
+    expansionRunId: room.expansionRunId || null,
+    bossEncounter: room.bossEncounter || null,
     ...settings,
   };
 }
@@ -251,6 +253,8 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       isHidden: soloRecovery.isHidden,
       resumeFromFloor: soloRecovery.floorsCleared || 0,
       resumeHp: soloRecovery.hp || 0,
+      expansionRunId: soloRecovery.expansionRunId || null,
+      bossEncounter: soloRecovery.bossEncounter || null,
       ...settings,
     });
   }

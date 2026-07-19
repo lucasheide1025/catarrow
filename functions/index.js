@@ -15,12 +15,104 @@ const {
   bookingMailEnvelope,
 } = require("./bookingEmail");
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
+const { buildTrustedMonsterReward } = require("./monsterReward");
+const { buildDungeonBossEnvelope, validateChoices } = require("./dungeonBossReward");
 const {
   taipeiDateOffset, isDayBeforeCandidate, dayBeforeRecipientDecision,
   dayBeforeMailId, dayBeforeVariables, boundedDayBeforeCandidates,
 } = require("./bookingDayBefore");
 
 initializeApp();
+
+exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
+  let reward;
+  try { reward = buildTrustedMonsterReward(request.data); }
+  catch (error) { throw new HttpsError("invalid-argument", error.message); }
+
+  const db = getFirestore();
+  const memberRef = db.doc(`members/${reward.memberId}`);
+  const claimRef = db.doc(`monsterRewardClaims/${reward.claimId}`);
+  const inventoryRef = db.doc(`materialInventory/${reward.memberId}`);
+  const cardRef = db.doc(`cardCollections/${reward.memberId}`);
+  return db.runTransaction(async transaction => {
+    const [memberSnap, claimSnap, inventorySnap, cardSnap] = await transaction.getAll(memberRef, claimRef, inventoryRef, cardRef);
+    if (!memberSnap.exists) throw new HttpsError("not-found", "member_not_found");
+    const member = memberSnap.data();
+    const ownsMember = member.uid === request.auth.uid || (request.auth.token.email && member.email === request.auth.token.email);
+    if (!ownsMember) throw new HttpsError("permission-denied", "reward_owner_mismatch");
+    if (claimSnap.exists) return { ok:true, duplicate:true, claimId:reward.claimId, reward:claimSnap.data().reward };
+    const items = { ...(inventorySnap.data()?.items || {}) };
+    for (const [materialId, quantity] of Object.entries(reward.materialTotals)) items[materialId] = Math.max(0, Number(items[materialId]) || 0) + quantity;
+    transaction.set(inventoryRef, { items, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    if (reward.coins > 0) transaction.update(memberRef, { coins:FieldValue.increment(reward.coins), updatedAt:FieldValue.serverTimestamp() });
+    if (reward.card) {
+      const collection = cardSnap.data() || {};
+      const cards = { ...(collection.cards || {}) };
+      const existing = cards[reward.card.monsterId];
+      cards[reward.card.monsterId] = existing
+        ? { ...existing, duplicates:(existing.duplicates || 0) + 1 }
+        : { ...reward.card, stars:1, duplicates:0, chosenStat:null, ts:Date.now() };
+      transaction.set(cardRef, { cards, wbCards:collection.wbCards || {}, equipped:collection.equipped || [], updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    }
+    const publicReward = { coins:reward.coins, materialTotals:reward.materialTotals, card:reward.card };
+    transaction.create(claimRef, {
+      battleId:reward.battleId, memberId:reward.memberId, rewardType:reward.rewardType,
+      materialTotals:reward.materialTotals, coins:reward.coins, cardId:reward.card?.monsterId || null,
+      metadata:{ mode:reward.mode, monsterId:reward.monsterId, catalogVersion:reward.catalogVersion, source:"callable" },
+      reward:publicReward, claimedAt:FieldValue.serverTimestamp(),
+    });
+    return { ok:true, duplicate:false, claimId:reward.claimId, reward:publicReward };
+  });
+});
+
+exports.createDungeonBossRewardClaim = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
+  const battleId=String(request.data?.battleId||""), memberId=String(request.data?.memberId||""), monsterId=String(request.data?.monsterId||"");
+  if (!battleId || !memberId || !monsterId || [battleId,memberId,monsterId].some(value=>value.includes("/")||value.length>240)) throw new HttpsError("invalid-argument","invalid_dungeon_reward_identity");
+  const claimId=[battleId,memberId,"dungeonBoss"].map(encodeURIComponent).join("~");
+  const db=getFirestore(), memberRef=db.doc(`members/${memberId}`), claimRef=db.doc(`monsterRewardClaims/${claimId}`), inventoryRef=db.doc(`materialInventory/${memberId}`), cardRef=db.doc(`cardCollections/${memberId}`);
+  return db.runTransaction(async transaction=>{
+    const [memberSnap,claimSnap,inventorySnap,cardSnap]=await transaction.getAll(memberRef,claimRef,inventoryRef,cardRef);
+    if(!memberSnap.exists) throw new HttpsError("not-found","member_not_found");
+    const member=memberSnap.data();
+    if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email))) throw new HttpsError("permission-denied","reward_owner_mismatch");
+    if(claimSnap.exists) return {ok:true,duplicate:true,claimId,envelope:claimSnap.data().envelope};
+    const progress=member.dungeonBossCardProgress?.[monsterId]||{};
+    let envelope;
+    try{envelope=buildDungeonBossEnvelope({battleId,memberId,monsterId,firstDefeat:!(Number(progress.defeats)>0),cardMisses:Math.max(0,Math.floor(Number(progress.misses)||0))});}
+    catch(error){throw new HttpsError("invalid-argument",error.message);}
+    const materialTotals={};
+    [envelope.fixedReward.bossMaterial,...envelope.fixedReward.generalMaterials].forEach(item=>{materialTotals[item.materialId]=(materialTotals[item.materialId]||0)+item.quantity;});
+    const items={...(inventorySnap.data()?.items||{})}; Object.entries(materialTotals).forEach(([id,qty])=>{items[id]=Math.max(0,Number(items[id])||0)+qty;});
+    transaction.set(inventoryRef,{items,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    transaction.update(memberRef,{coins:FieldValue.increment(envelope.fixedReward.coins),kingSeals:FieldValue.increment(envelope.fixedReward.bossMarks),[`equipmentRuneFragments.${envelope.fixedReward.runeFragment.type}`]:FieldValue.increment(envelope.fixedReward.runeFragment.count),[`dungeonBossCardProgress.${monsterId}`]:{defeats:(Number(progress.defeats)||0)+1,misses:envelope.cardResult.nextMisses,lastBattleId:battleId},updatedAt:FieldValue.serverTimestamp()});
+    if(envelope.card){const collection=cardSnap.data()||{},cards={...(collection.cards||{})},existing=cards[envelope.card.monsterId];cards[envelope.card.monsterId]=existing?{...existing,duplicates:(existing.duplicates||0)+1}:{...envelope.card,stars:1,duplicates:0,chosenStat:null,ts:Date.now()};transaction.set(cardRef,{cards,wbCards:collection.wbCards||{},equipped:collection.equipped||[],updatedAt:FieldValue.serverTimestamp()},{merge:true});}
+    transaction.create(claimRef,{battleId,memberId,rewardType:"dungeonBoss",materialTotals,coins:envelope.fixedReward.coins,cardId:envelope.card?.monsterId||null,metadata:{mode:"dungeon",monsterId,catalogVersion:envelope.catalogVersion,source:"callable"},envelope,choiceStatus:"pending",claimedAt:FieldValue.serverTimestamp()});
+    return {ok:true,duplicate:false,claimId,envelope};
+  });
+});
+
+exports.claimDungeonBossChoices = onCall({region:"asia-east1"},async request=>{
+  if(!request.auth?.uid) throw new HttpsError("unauthenticated","請先登入");
+  const claimId=String(request.data?.claimId||""),memberId=String(request.data?.memberId||""),selectedOptionIds=Array.isArray(request.data?.selectedOptionIds)?request.data.selectedOptionIds.map(String):[];
+  if(!claimId||!memberId||claimId.includes("/")||memberId.includes("/")) throw new HttpsError("invalid-argument","invalid_dungeon_choice_identity");
+  const db=getFirestore(),fixedRef=db.doc(`monsterRewardClaims/${claimId}`),choiceRef=db.doc(`dungeonBossChoiceClaims/${claimId}`),memberRef=db.doc(`members/${memberId}`),inventoryRef=db.doc(`materialInventory/${memberId}`);
+  return db.runTransaction(async transaction=>{
+    const [fixedSnap,choiceSnap,memberSnap,inventorySnap]=await transaction.getAll(fixedRef,choiceRef,memberRef,inventoryRef);
+    if(choiceSnap.exists)return{ok:true,duplicate:true,selectedOptionIds:choiceSnap.data().selectedOptionIds||[]};
+    if(!fixedSnap.exists||!memberSnap.exists)throw new HttpsError("not-found","dungeon_boss_reward_not_found");
+    const member=memberSnap.data(),fixed=fixedSnap.data();
+    if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email))||fixed.memberId!==memberId)throw new HttpsError("permission-denied","dungeon_choice_owner_mismatch");
+    if(!validateChoices(fixed.envelope,selectedOptionIds))throw new HttpsError("invalid-argument","invalid_dungeon_boss_choices");
+    const selected=fixed.envelope.choiceOptions.filter(option=>selectedOptionIds.includes(option.id)),materialTotals={},collectibleTotals={};let coins=0;
+    selected.forEach(option=>{if(option.type==="material")(option.reward.materials||[]).forEach(item=>{materialTotals[item.materialId]=(materialTotals[item.materialId]||0)+item.quantity;});else if(option.type==="coins")coins+=option.reward.coins||0;else if(option.type==="exploration"&&option.reward.itemId)collectibleTotals[option.reward.itemId]=(collectibleTotals[option.reward.itemId]||0)+option.reward.quantity;});
+    if(Object.keys(materialTotals).length){const items={...(inventorySnap.data()?.items||{})};Object.entries(materialTotals).forEach(([id,qty])=>{items[id]=Math.max(0,Number(items[id])||0)+qty;});transaction.set(inventoryRef,{items,updatedAt:FieldValue.serverTimestamp()},{merge:true});}
+    transaction.update(memberRef,{...(coins?{coins:FieldValue.increment(coins)}:{}),...Object.fromEntries(Object.entries(collectibleTotals).map(([id,qty])=>[`dungeonCollectibles.${id}`,FieldValue.increment(qty)])),updatedAt:FieldValue.serverTimestamp()});
+    transaction.create(choiceRef,{memberId,battleId:fixed.battleId,fixedClaimId:claimId,selectedOptionIds,materialTotals,collectibleTotals,coins,claimedAt:FieldValue.serverTimestamp()});
+    return{ok:true,duplicate:false,selectedOptionIds,materialTotals,collectibleTotals,coins};
+  });
+});
 
 exports.handleCostSignal = onMessagePublished({
   topic: "firestore-cost-signals",

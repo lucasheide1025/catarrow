@@ -1,0 +1,13 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend pre-development checklist and package conventions"}
+{"file":".trellis/spec/frontend/dungeon-system.md","reason":"Dungeon room, run, reward and reconnect invariants"}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"Equipment refinement and specialization compatibility"}
+{"file":".trellis/spec/frontend/cat-companion.md","reason":"Companion turn order, damage and support behavior"}
+{"file":".trellis/spec/frontend/inventory-shop-system.md","reason":"Materials, chests, shop and atomic inventory operations"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Authoritative state and reconnect-safe updates"}
+{"file":".trellis/spec/frontend/firestore-cost-optimization.md","reason":"Avoid excessive reads/writes in party combat and reward persistence"}
+{"file":".trellis/spec/frontend/guest-kid-mode.md","reason":"Student/guest child-safe interaction constraints"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"UI component and responsive implementation rules"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required validation and quality gates"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Combat, persistence, inventory and UI cross-layer consistency"}
+{"file":".trellis/tasks/07-16-monster-specialization-expansion/research/current-combat-and-loot-map.md","reason":"Current implementation map and known migration risks"}
+{"file":".trellis/tasks/07-16-monster-specialization-expansion/research/ability-balance-notes.md","reason":"Skill balance constraints and resolver recommendations"}

@@ -12,6 +12,15 @@ service cloud.firestore {
     function isLoggedIn() {
       return request.auth != null;
     }
+    function ownsMember(memberId) {
+      return isLoggedIn()
+        && exists(/databases/$(database)/documents/members/$(memberId))
+        && (
+          get(/databases/$(database)/documents/members/$(memberId)).data.uid == request.auth.uid
+          || (request.auth.token.email != null
+            && get(/databases/$(database)/documents/members/$(memberId)).data.email == request.auth.token.email)
+        );
+    }
 
     // admins 集合：本人可讀自己的（登入時判斷身份用），禁止寫入
     match /admins/{uid} {
@@ -46,7 +55,7 @@ service cloud.firestore {
                     "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
                     "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
                     "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals", "equipmentRuneFragments", "equipmentRuneInventory",
-                    "activeExpedition", "expeditions"])
+                    "activeExpedition", "dungeonBossCardProgress", "expeditions"])
       ) || (
         isLoggedIn() && resource.data.accountType in ["guest", "kid"]
       );
@@ -252,6 +261,7 @@ service cloud.firestore {
           get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.uid == request.auth.uid
           || (request.auth.token.email != null
             && get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.email == request.auth.token.email)
+          || get(/databases/$(database)/documents/members/$(request.resource.data.memberId)).data.accountType in ["guest", "kid"]
         );
       allow update, delete: if false;
     }
@@ -340,7 +350,27 @@ service cloud.firestore {
 
     // 遊戲背包（素材/寶箱/藥水/碎片）：登入者可讀寫
     match /materialInventory/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
+    }
+    // 裝備專精（design.md §8）：解鎖/升級/切換,transaction 內驗證金幣與素材
+    match /equipSpecializations/{docId} {
+      allow read, write: if isAdmin() || ownsMember(docId);
+    }
+    // 新版怪物獎勵冪等憑證。正式上線前仍須把獎勵數值計算移至
+    // 可信任的 server/callable 邊界；此規則只限制憑證歸屬與不可修改。
+    match /monsterRewardClaims/{claimId} {
+      // `get` must also permit a missing document so a transaction can test
+      // whether this claim id already exists before creating it.
+      allow get: if isLoggedIn();
+      allow list: if false;
+      allow create: if false;
+      allow update, delete: if false;
+    }
+    match /dungeonBossChoiceClaims/{claimId} {
+      allow get: if isLoggedIn();
+      allow list: if false;
+      allow create: if false;
+      allow update, delete: if false;
     }
     match /chestInventory/{docId} {
       allow read, write: if isLoggedIn();

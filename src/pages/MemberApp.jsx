@@ -10,7 +10,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
   subscribeLocalTodayArrows, initializeTodayArrows,
   subscribeMaintenanceConfig, subscribeTierPermissions } from "../lib/db";
-import { subscribeMyCats } from "../lib/catDb";
+import { subscribeMyCats, repairNegativeVillageResources } from "../lib/catDb";
 import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
 import { seedNotifiedIfFirstRun, getUnnotifiedKeys, markNotified, seedSeenIfFirstRun, countUnseen } from "../lib/dexSeen";
 import DexUnlockToast from "../components/member/DexUnlockToast";
@@ -61,7 +61,8 @@ const MemberInventoryHub = lazy(() => import("../components/member/MemberInvento
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
 const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
-const CardCollection     = lazy(() => import("../components/member/CardCollection"));
+const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
+const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
@@ -75,13 +76,12 @@ const PartyBattleRoom    = lazy(() => import("../components/party/PartyBattleRoo
 const DuelLobby          = lazy(() => import("../components/duel/DuelLobby"));
 const DuelRoom           = lazy(() => import("../components/duel/DuelRoom"));
 const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby"));
-const DungeonController  = lazy(() => import("../components/dungeon/DungeonController"));
 const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
 const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
 const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
-const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","dungeon-room","worldboss","guild","monsterdex"];
+const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice","performance"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
@@ -92,7 +92,6 @@ const NAV_PRELOADS = {
     import("../components/member/MemberAdventureHub");
     import("../components/member/MonsterBattle");
     import("../components/dungeon/DungeonLobby");
-    import("../components/dungeon/DungeonController");
   },
   "training-hub": () => {
     import("../components/member/MemberTrainingHub");
@@ -106,7 +105,7 @@ const NAV_PRELOADS = {
   "inventory-hub": () => {
     import("../components/member/MemberInventoryHub");
     import("../components/member/MemberMaterials");
-    import("../components/member/CardCollection");
+    import("../components/member/CardCollectionModern");
     import("../components/member/CoinShop");
   },
   "profile": () => {
@@ -139,7 +138,7 @@ export default function MemberApp() {
   // 找回仍屬於此玩家的遠征房，否則玩家只能手動再進地下城大廳才看得到續接。
   const [teamDungeonRecovery, setTeamDungeonRecovery] = useState(null);
   // 地下城（含組隊遠征）不顯示全站導覽，避免誤觸後離開進度中的房間。
-  const dungeonImmersive = page === "dungeon" || page === "dungeon-room";
+  const dungeonImmersive = page === "dungeon";
   const hideGlobalChrome = battleImmersive || dungeonImmersive;
   const [partyRoomId,   setPartyRoomId]   = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("party_room"))?.roomId || null; } catch { return null; }
@@ -206,6 +205,8 @@ export default function MemberApp() {
   // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
     if (!profile?.id) return;
+    // 歷史負值一次性修復（村莊資源被舊 increment(-n) 競態扣成負數）
+    if (profile.village?.resources) repairNegativeVillageResources(profile.id, profile.village.resources).catch(() => {});
     const unsub = subscribeMyCheckin(profile.id, c => {
       setTodayCheckin(c);
       // 未報到且今天還沒彈過 → 彈出視窗
@@ -464,13 +465,6 @@ export default function MemberApp() {
     setPage("duel");
   }
 
-  const _savedDungeon = (() => { try { return JSON.parse(sessionStorage.getItem("dungeon_room") || "null"); } catch { return null; } })();
-  // 服務端存檔備案：若 sessionStorage 沒有但 profile.activeDungeon 有，則使用它
-  const _savedDungeonFallback = (!_savedDungeon?.roomId && profile?.activeDungeon?.roomId)
-    ? { roomId: profile.activeDungeon.roomId }
-    : null;
-  const _initialDungeonRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId || null;
-  const [dungeonRoomId, setDungeonRoomId] = useState(_initialDungeonRoomId);
   useEffect(() => {
     if (!profile?.id) return undefined;
     let cancelled = false;
@@ -483,46 +477,6 @@ export default function MemberApp() {
     });
     return () => { cancelled = true; };
   }, [profile?.id]);
-  // 載入時驗證 sessionStorage / activeDungeon 中的地下城房間是否仍有效
-  // 若房間已結束或不存在，自動清除，避免玩家卡在無限載入
-  useEffect(() => {
-    const checkRoomId = _savedDungeon?.roomId || _savedDungeonFallback?.roomId;
-    if (!checkRoomId) return;
-    let cancelled = false;
-    import("../lib/dungeonDb").then(({ checkDungeonRoomExists, setActiveDungeon }) => {
-      checkDungeonRoomExists(checkRoomId).then(res => {
-        if (cancelled) return;
-        if (!res.exists) {
-          sessionStorage.removeItem("dungeon_room");
-          setDungeonRoomId(null);
-        } else if (_savedDungeonFallback && !_savedDungeon?.roomId) {
-          // 從 activeDungeon 恢復：同步寫回 sessionStorage
-          sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId: checkRoomId }));
-          setDungeonRoomId(checkRoomId);
-        }
-      });
-      // 若使用 activeDungeon 備案，確保服務端記錄仍存在
-      if (_savedDungeonFallback) {
-        setActiveDungeon(profile?.id, checkRoomId).catch(() => {});
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line
-  function handleEnterDungeonRoom(roomId) {
-    setDungeonRoomId(roomId);
-    sessionStorage.setItem("dungeon_room", JSON.stringify({ roomId }));
-    setPage("dungeon-room");
-  }
-  function handleLeaveDungeon(options = {}) {
-    if (options?.preserve === false) {
-      sessionStorage.removeItem("dungeon_room");
-      setDungeonRoomId(null);
-      import("../lib/dungeonDb").then(({ clearActiveDungeon }) =>
-        clearActiveDungeon(profile?.id).catch(() => {})
-      );
-    }
-    setPage("adventure-hub");
-  }
 
   // 線上約課分頁：正式開放給所有已登入學生，教練/管理員在射手模式也可使用。
   const canSeeBooking = !!profile?.id || role === "admin";
@@ -769,12 +723,6 @@ export default function MemberApp() {
             ⚔️ 決鬥進行中 — 點此回到戰場
           </button>
         )}
-        {dungeonRoomId && page !== "dungeon-room" && (
-          <button onClick={() => setPage("dungeon-room")}
-            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#7c3aed,#1e1b4b)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
-            🏰 地下城進行中 — 點此回到地下城
-          </button>
-        )}
         {teamDungeonRecovery && page !== "dungeon" && (
           <button
             onClick={() => setPage("dungeon")}
@@ -828,6 +776,7 @@ export default function MemberApp() {
         {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
         {page==="performance"   && <MemberPerformance />}
 
+        {page==="handbook"    && <MonsterHandbook onBack={() => setPage("adventure-hub")} />}
         {page==="monster"     && <MonsterBattle
           onBack={() => {
             if (fromGuild) { setFromGuild(false); setPage("guild"); }
@@ -852,11 +801,6 @@ export default function MemberApp() {
           key={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
         {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} autoReconnectRoomId={teamDungeonRecovery?.id || null} />}
-        {page==="dungeon-room" && dungeonRoomId && (
-          <div style={{ position:"fixed", inset:0, zIndex:60 }}>
-            <DungeonController roomId={dungeonRoomId} onExit={handleLeaveDungeon} />
-          </div>
-        )}
         {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
