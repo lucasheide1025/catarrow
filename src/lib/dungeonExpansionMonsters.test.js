@@ -11,15 +11,15 @@ function seq(values) {
 }
 
 describe("地下城難度→Tier 對映", () => {
-  test("普通=T1-2、進階=T4、困難=T5、地獄=T6", () => {
+  test("連續對映：普通=T1-2、進階=T2-3、困難=T3-4、地獄=T4-5", () => {
     expect(getDungeonTierPool(1)).toEqual(["common", "rare"]);
-    expect(getDungeonTierPool(2)).toEqual(["fierce"]);
-    expect(getDungeonTierPool(3)).toEqual(["boss"]);
-    expect(getDungeonTierPool(4)).toEqual(["mythic"]);
+    expect(getDungeonTierPool(2)).toEqual(["rare", "elite"]);
+    expect(getDungeonTierPool(3)).toEqual(["elite", "fierce"]);
+    expect(getDungeonTierPool(4)).toEqual(["fierce", "boss"]);
   });
   test("超界 clamp：0→普通、6→地獄", () => {
     expect(getDungeonTierPool(0)).toEqual(["common", "rare"]);
-    expect(getDungeonTierPool(6)).toEqual(["mythic"]);
+    expect(getDungeonTierPool(6)).toEqual(["fierce", "boss"]);
   });
 });
 
@@ -33,16 +33,16 @@ describe("中途樓層擴充抽怪", () => {
       expect(monster.bossTagged).toBe(false);
     }
   });
-  test("地獄難度抽 T6；舊 family 別名（forest→mountain）可用", () => {
+  test("地獄難度抽 T4-5；舊 family 別名（forest→mountain）可用", () => {
     const monster = drawExpansionDungeonMonster("strong", 4, { family: "forest" });
     expect(monster.family).toBe("mountain");
-    expect(monster.tier).toBe("mythic");
+    expect(["fierce", "boss"]).toContain(monster.tier);
   });
   test("treasure 族同規則", () => {
     const monster = drawExpansionDungeonMonster("weak", 2, { family: "treasure" });
     expect(monster.family).toBe("treasure");
     expect(monster.encounter).toBe("normal");
-    expect(monster.tier).toBe("fierce");
+    expect(["rare", "elite"]).toContain(monster.tier);
   });
   test("弱化/強悍變體實際改動三圍", () => {
     const weak = drawExpansionDungeonMonster("weak", 1, { family: "ghost", random: seq([0, 0.5]) });
@@ -64,7 +64,8 @@ describe("樓層組合", () => {
   });
   test("第2層：普通怪＋強悍精英", () => {
     const floor = drawExpansionDungeonFloorMonsters(1, 3, { family: "exam" });
-    expect(floor.monsters.every(monster => monster.variant === "normal" && monster.tier === "boss")).toBe(true);
+    // 難度 3（困難）= T3-T4
+    expect(floor.monsters.every(monster => monster.variant === "normal" && ["elite", "fierce"].includes(monster.tier))).toBe(true);
     expect(floor.elite.variant).toBe("strong");
     expect(floor.boss).toBeNull();
   });
@@ -87,9 +88,9 @@ describe("flag 分流", () => {
   test("flag on 中途樓層全為擴充 normal 怪（含保留舊 id 的既有怪）", () => {
     window.localStorage.setItem("monsterExpansionV1", "on");
     const floor = drawDungeonFloorMonsters(1, 4, { family: "insect" });
-    expect(floor.monsters.every(monster => monster.expansionVersion === 1 && monster.encounter === "normal" && monster.tier === "mythic")).toBe(true);
+    expect(floor.monsters.every(monster => monster.expansionVersion === 1 && monster.encounter === "normal" && ["fierce", "boss"].includes(monster.tier))).toBe(true);
     expect(floor.elite.expansionVersion).toBe(1);
-    expect(floor.elite.tier).toBe("mythic");
+    expect(["fierce", "boss"]).toContain(floor.elite.tier);
   });
   test("flag on 但第3層缺鎖定王 → 整層 fallback 舊路徑（王房不可空）", () => {
     window.localStorage.setItem("monsterExpansionV1", "on");

@@ -15,11 +15,16 @@ const FAMILY_ALIASES = Object.freeze({
   exam: "exam", western: "temple", temple: "temple", treasure: "treasure",
 });
 
+// ⚠️ 2026-07-19 修正：舊表是 普通=T1-2、進階=T4、困難=T5、地獄=T6，有兩個問題：
+//   1. T3（精英）整階從來不會出現，而且從 T2 直接跳到 T4，中間斷層。
+//   2. 難度 4 直接給 mythic(T6)，但畫面把難度標成「T4」→ 學生在「T4 地下城」
+//      第一層就遇到神話階級的怪（使用者實際回報）。
+// 改成連續、每階都用得到，且難度編號不會低於它會刷出的最低階級：
 export const DUNGEON_DIFFICULTY_TIER_POOL = Object.freeze({
-  1: ["common", "rare"],   // 普通 = T1-2
-  2: ["fierce"],           // 進階 = T4
-  3: ["boss"],             // 困難 = T5
-  4: ["mythic"],           // 地獄 = T6
+  1: ["common", "rare"],   // 普通 = T1-T2
+  2: ["rare", "elite"],    // 進階 = T2-T3
+  3: ["elite", "fierce"],  // 困難 = T3-T4
+  4: ["fierce", "boss"],   // 地獄 = T4-T5
 });
 
 export function getDungeonTierPool(difficulty) {
