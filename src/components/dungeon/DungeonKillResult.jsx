@@ -95,6 +95,10 @@ export default function DungeonKillResult({
   waitingLabel = "等待房主繼續…",
   continueLabel = "下一步",
   onContinue,
+  // 嵌入模式：只輸出內容區塊，不套全屏背景、不畫底部按鈕。
+  // 打怪結算頁本身已經有標題、任務進度、分享卡與再戰按鈕，整頁取代會把那些一起丟掉，
+  // 所以那邊改用 embedded 只換掉「戰鬥統計＋戰利品」那一段。
+  embedded = false,
 }) {
   const selfPerf = useMemo(
     () => gradeArcheryPerformance(self?.arrows, { targetFmt }),
@@ -113,28 +117,34 @@ export default function DungeonKillResult({
   const chestSummary = chestRows || summarizeExpeditionChests(chests);
   const isSolo = allyPerfs.length === 0;
 
-  return (
-    <div style={{
+  const outerStyle = embedded
+    ? { width:"100%", color:"#fff" }
+    : {
       minHeight:"100dvh", overflowY:"auto", padding:"28px 18px 40px", color:"#fff",
       background: isBoss
         ? "linear-gradient(160deg,#1a1206 0%,#2e1f06 50%,#1a1206 100%)"
         : "linear-gradient(160deg,#06140d 0%,#0f2e1a 50%,#06140d 100%)",
-    }}>
-      <div style={{ maxWidth:460, margin:"0 auto" }}>
-        {/* 標題 */}
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:52 }}>{isBoss ? "👑" : "⚔️"}</div>
-          <div style={{ fontSize:22, fontWeight:900, color: isBoss ? "#fbbf24" : "#4ade80", marginTop:4 }}>
-            {isBoss ? "王房攻略成功！" : "擊倒成功！"}
+    };
+
+  return (
+    <div style={outerStyle}>
+      <div style={{ maxWidth:embedded ? "100%" : 460, margin:"0 auto" }}>
+        {/* 標題：嵌入模式交給外層畫（打怪頁本來就有自己的擊倒標題） */}
+        {!embedded && (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:52 }}>{isBoss ? "👑" : "⚔️"}</div>
+            <div style={{ fontSize:22, fontWeight:900, color: isBoss ? "#fbbf24" : "#4ade80", marginTop:4 }}>
+              {isBoss ? "王房攻略成功！" : "擊倒成功！"}
+            </div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:2 }}>{monster?.name || "怪物"}</div>
+            {lootMult > 1 && (
+              <div style={{ fontSize:11, color:"#fcd34d", marginTop:4 }}>🎲 本圖 {lootMult} 倍掉落</div>
+            )}
           </div>
-          <div style={{ fontSize:13, color:"#94a3b8", marginTop:2 }}>{monster?.name || "怪物"}</div>
-          {lootMult > 1 && (
-            <div style={{ fontSize:11, color:"#fcd34d", marginTop:4 }}>🎲 本圖 {lootMult} 倍掉落</div>
-          )}
-        </div>
+        )}
 
         {/* 戰鬥數據 */}
-        <div style={{ display:"flex", gap:8, marginTop:20 }}>
+        <div style={{ display:"flex", gap:8, marginTop:embedded ? 0 : 20 }}>
           <StatTile label="造成傷害" value={self?.dmgDealt ?? 0} color="#f87171" />
           <StatTile label="承受傷害" value={self?.dmgTaken ?? 0} color="#fb923c" />
           <StatTile label="爆擊次數" value={self?.crits ?? 0} color="#fbbf24" />
@@ -273,8 +283,8 @@ export default function DungeonKillResult({
           )}
         </div>
 
-        {/* 底部 */}
-        <div style={{ marginTop:24, textAlign:"center" }}>
+        {/* 底部：嵌入模式不畫，外層自己有返回／再戰按鈕 */}
+        <div style={{ marginTop:24, textAlign:"center", display: embedded ? "none" : "block" }}>
           {canContinue ? (
             <button type="button" onClick={onContinue}
               style={{

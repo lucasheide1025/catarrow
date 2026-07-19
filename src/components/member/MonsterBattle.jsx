@@ -46,7 +46,7 @@ import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { BattleStatCard } from "../shared/SharedBattleComponents";
 import { labelToValue, HALF_SCORES, calcArrowStats } from "../../lib/score";
-import { BattleResultPanel, RESULT_CONFIG_SOLO } from "../shared/BattleResultPanel";
+import DungeonKillResult from "../dungeon/DungeonKillResult";
 import BattleScreen from "../battle/BattleScreen";
 import { playBattleSound } from "../../lib/battleSound";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
@@ -2052,9 +2052,36 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             </div>
           </div>
         )}
-        {/* === 戰鬥統計 + 戰利品面板 === */}
+        {/* === 戰鬥統計 + 戰利品（2026-07-19 改用與地下城同一套結算元件）===
+            使用者要求打怪與地下城看起來是同一個系統。用 embedded 模式只換掉這一段，
+            外層的擊倒標題、任務進度、分享卡與再戰按鈕都保留。
+            ⚠️ 打怪特有的卡片與指定素材一定要傳進去 —— 那是這個模式的重頭戲。 */}
         {!isLimitedAccount && (
-          <BattleResultPanel data={resultData} config={RESULT_CONFIG_SOLO} />
+          <DungeonKillResult
+            embedded
+            monster={monster}
+            self={{
+              id: profile?.id,
+              name: profile?.nickname || profile?.name || "我",
+              arrows: allArrows,
+              dmgDealt: totalDmgDealt,
+              dmgTaken: totalDmgRecvd,
+              crits: critCount,
+            }}
+            materials={droppedMaterials.map(mat => ({
+              id: mat.id, name: mat.name || mat.id, icon: mat.icon, count: mat.count || 1,
+            }))}
+            card={droppedCard}
+            chestRows={resultData.drops.chestList.map((chest, index) => ({
+              key: `${chest.name}-${index}`, icon: chest.icon, name: chest.name, count: 1,
+            }))}
+            coins={droppedCoins}
+            archerXP={resultData.drops.archerXP}
+            adventurerXP={resultData.drops.adventurerXP}
+            catXP={resultData.drops.catXP}
+            catName={catName}
+            targetFmt={targetFmt}
+          />
         )}
         {/* 經驗值已合併進 BattleResultPanel 戰利品欄（2026-07-18 使用者指示） */}
         {isLimitedAccount && (droppedCoins > 0 || droppedMaterials.length > 0) && (
