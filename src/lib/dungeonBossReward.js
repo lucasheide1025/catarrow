@@ -48,7 +48,23 @@ export function buildDungeonBossRewardEnvelope({
       roll:seededRoll(`${rewardKey}:${monsterId}:choice:${type}`),
     });
     if (type === "exploration") {
-      const pool = FAMILY_COLLECTIBLES[monster.family]?.[reward.rarity] || [];
+      // ⚠️ 寶箱族（treasure）沒有專屬收藏品池 —— FAMILY_COLLECTIBLES 只定義了六個
+      // 一般族系。寶箱王房因此會 throw missing_collectible_pool，玩家完全領不到獎勵
+      // （使用者實測）。缺池時退到「所有族的同稀有度合併池」，語意上也說得通：
+      // 寶箱族本來就是什麼都有。
+      // 再往下退一層稀有度：superRare 目前整個合併池是空的（尚未有該階收藏品），
+      // 只靠族系 fallback 仍會 throw。
+      const poolFor = rarity => {
+        const own = FAMILY_COLLECTIBLES[monster.family]?.[rarity] || [];
+        return own.length ? own : Object.values(FAMILY_COLLECTIBLES).flatMap(entry => entry?.[rarity] || []);
+      };
+      let pool = poolFor(reward.rarity);
+      if (!pool.length) {
+        for (const fallbackRarity of ["boss", "rare", "common"]) {
+          pool = poolFor(fallbackRarity);
+          if (pool.length) break;
+        }
+      }
       if (!pool.length) throw new Error(`missing_collectible_pool:${monster.family}:${reward.rarity}`);
       reward.itemId = pool[Math.floor(seededRoll(`${rewardKey}:${monsterId}:collectible`) * pool.length)].id;
     }
