@@ -92,6 +92,20 @@ describe("擴充池分流", () => {
     const floor = drawDungeonFloorMonsters(1, 4, { family: "insect" });
     expect(floor.monsters.every(monster => monster.expansionVersion === 1)).toBe(true);
   });
+  // 實測 bug：T2 神廟第 3 層因為 fixedBoss 為 null，整層被打回舊 drawFloorMonsters，
+  // 跑出爛主管（職場）＋虎頭蜂（昆蟲）＋魔神仔（幽冥）三族混雜。
+  test("第3層即使缺王也只補王，不得把整層打回跨族舊表", () => {
+    for (let index = 0; index < 20; index += 1) {
+      const floor = drawDungeonFloorMonsters(2, 2, { family:"temple", fixedBoss:null });
+      const all = [...floor.monsters, floor.elite, floor.boss].filter(Boolean);
+      expect(all.length).toBeGreaterThan(0);
+      all.forEach(monster => {
+        expect(monster.family).toBe("temple");
+        expect(monster.tier).toBe("rare");
+      });
+    }
+  });
+
   test("中途樓層全為擴充 normal 怪（含保留舊 id 的既有怪）", () => {
     window.localStorage.setItem("monsterExpansionV1", "on");
     const floor = drawDungeonFloorMonsters(1, 4, { family: "insect" });

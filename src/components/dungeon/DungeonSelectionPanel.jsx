@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { drawExpeditionBoss, TIER_LABEL } from "../../lib/monsterData";
+import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { getExpeditionRewardPreview } from "../../lib/expeditionRewards";
 import DungeonRunSettings from "./DungeonRunSettings";
 import {
@@ -36,9 +37,14 @@ export default function DungeonSelectionPanel({
 
   const diff = getExcavationDifficulty(dungeon.difficulty);
   const family = FAMILY_LABEL[dungeon.family] || { emoji:"🏰", label:"未知族系" };
+  // 預覽的王必須跟遠征第 3 層打到的同一隻：兩端都走 resolveDungeonBossEncounter。
+  // 不能只讀 dungeon.boss —— 舊地下城那個欄位存的是接線前抽的雜怪（實測顯示狼人，
+  // 進去卻打到銀盾城堡先鋒）。dungeon.boss 只留作最後的防呆。
   const boss = useMemo(
-    () => dungeon.boss || drawExpeditionBoss(dungeon.difficulty, dungeon.family),
-    [dungeon.boss, dungeon.difficulty, dungeon.family],
+    () => resolveDungeonBossEncounter(dungeon)?.monsterSnapshot
+      || dungeon.boss
+      || drawExpeditionBoss(dungeon.difficulty, dungeon.family),
+    [dungeon],
   );
   const rewardPreview = useMemo(() => getExpeditionRewardPreview(boss), [boss]);
   const bossTier = TIER_LABEL[boss?.tier];

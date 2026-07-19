@@ -1,8 +1,39 @@
 import {
   createLockedDungeonBossEncounter,
+  resolveDungeonBossEncounter,
   DUNGEON_EXPANSION_RUN_VERSION,
   isLockedDungeonBossEncounter,
 } from "./dungeonBossEncounter";
+
+// 預覽（DungeonSelectionPanel）與實戰（DungeonExpedition）都呼叫 resolveDungeonBossEncounter。
+// 實測 bug：預覽顯示狼人（舊表 T3 雜怪）、進去打到銀盾城堡先鋒（正確 T2 小王）。
+describe("預覽與實戰解析出同一隻王", () => {
+  test("同一個地下城物件永遠推導出同一隻王", () => {
+    const dungeon = { id:"d123", family:"temple", difficulty:2 };
+    const first = resolveDungeonBossEncounter(dungeon);
+    for (let index = 0; index < 20; index += 1) {
+      expect(resolveDungeonBossEncounter(dungeon).monsterId).toBe(first.monsterId);
+    }
+    expect(["miniBoss", "boss"]).toContain(first.monsterSnapshot.encounter);
+    expect(first.monsterSnapshot.tier).toBe("rare");
+  });
+
+  test("沒有 bossRunId 的舊地下城也能靠 id 推導（順手修好舊資料）", () => {
+    const legacy = { id:"old-slot-1", family:"ghost", difficulty:3, boss:{ id:"ghost_3", name:"林投姐" } };
+    const resolved = resolveDungeonBossEncounter(legacy);
+    expect(resolved).not.toBeNull();
+    expect(["miniBoss", "boss"]).toContain(resolved.monsterSnapshot.encounter);
+    expect(resolved.monsterSnapshot.id).not.toBe("ghost_3");
+  });
+
+  test("已存的 bossEncounter 原封不動沿用，不重抽", () => {
+    const locked = createLockedDungeonBossEncounter({
+      runId:"fixed", roomId:"floor-3-boss", family:"exam", difficultyTier:4,
+    });
+    const resolved = resolveDungeonBossEncounter({ id:"other-id", family:"exam", difficulty:4, bossEncounter:locked });
+    expect(resolved).toBe(locked);
+  });
+});
 
 describe("dungeon boss encounter locking", () => {
   test("draws only one of the two mini bosses or the single boss for the family and tier", () => {

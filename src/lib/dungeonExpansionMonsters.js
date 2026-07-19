@@ -97,8 +97,14 @@ export function drawDungeonFloorMonsters(floorIndex, difficulty, options = {}) {
   if (isMonsterExpansionEnabled()) {
     const result = drawExpansionDungeonFloorMonsters(floorIndex, difficulty, options);
     const needsElite = floorIndex >= 1;
-    const needsBoss = floorIndex === 2;
-    if (result.monsters.length && (!needsElite || result.elite) && (!needsBoss || result.boss)) {
+    if (result.monsters.length && (!needsElite || result.elite)) {
+      // ⚠️ 王缺席時只補王，**不要**把整層雜怪也打回舊表。
+      // 舊 drawFloorMonsters 是跨族跨階的，實測 T2 神廟第 3 層因為 fixedBoss 為 null
+      // 就跑出爛主管（職場）＋虎頭蜂（昆蟲）＋魔神仔（幽冥）三族混雜。
+      // 王缺席是上游的問題（見 DungeonExpedition 的 fixedBoss），不該波及整層。
+      if (floorIndex === 2 && !result.boss) {
+        return { ...result, boss: drawExpansionDungeonMonster("strong", difficulty, options) };
+      }
       return result;
     }
   }

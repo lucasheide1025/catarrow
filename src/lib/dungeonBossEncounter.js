@@ -51,6 +51,41 @@ export function isLockedDungeonBossEncounter(value) {
     && ["miniBoss", "boss"].includes(value?.encounter);
 }
 
+// ── 預覽端與戰鬥端共用的王解析入口（2026-07-19）──────────────────
+// 選擇畫面顯示的王，必須跟遠征第 3 層打到的王是同一隻。做法是兩邊都呼叫
+// 這支，用「同一個地下城 → 同一個 runId → 同一隻王」的決定性推導。
+//
+// ⚠️ 踩過的坑：曾經預覽讀 dungeon.boss、戰鬥另外用隨機 runId 現算，結果
+// 預覽顯示狼人（還是舊表 T3 雜怪）、進去打到銀盾城堡先鋒（正確的 T2 小王）。
+//
+// runId 優先序刻意包含 id / revealedAt：接線前產生的舊地下城沒有 bossRunId，
+// 但只要 id 穩定，預覽與戰鬥就仍會推到同一隻王（等於順手修好舊資料）。
+export function resolveDungeonBossRunId(dungeon) {
+  if (!dungeon) return null;
+  return dungeon.expansionRunId
+    || dungeon.bossRunId
+    || dungeon.id
+    || (dungeon.revealedAt ? `excav:${dungeon.family}:${dungeon.revealedAt}` : null);
+}
+
+// 回傳鎖定的 encounter；已存 bossEncounter 就原封不動沿用，否則依 runId 現算。
+// 抽不到（例如寶箱族湊不齊王池）回 null，由呼叫端自行 fallback。
+export function resolveDungeonBossEncounter(dungeon, { difficultyTier } = {}) {
+  if (isLockedDungeonBossEncounter(dungeon?.bossEncounter)) return dungeon.bossEncounter;
+  const runId = resolveDungeonBossRunId(dungeon);
+  if (!runId) return null;
+  try {
+    return createLockedDungeonBossEncounter({
+      runId,
+      roomId: "floor-3-boss",
+      family: dungeon.family,
+      difficultyTier: difficultyTier ?? dungeon.difficulty,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function createLockedDungeonBossEncounter({
   runId,
   roomId = "boss",

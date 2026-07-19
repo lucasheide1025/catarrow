@@ -9,7 +9,7 @@ import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { drawExpeditionBoss } from "../../lib/monsterData";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
-import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
+import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
@@ -320,24 +320,17 @@ export default function DungeonExpedition({
     () => (isGuest ? drawExpeditionBoss(difficultyTier, family) : null),
     [isGuest, difficultyTier, family],
   );
-  const [expansionBossEncounter, setExpansionBossEncounter] = useState(
-    excavation?.bossEncounter || null,
+  // ⚠️ 這裡以前是 dynamic import + useEffect 非同步設 state，結果 startFloor 常在王
+  // 算好之前就跑了：fixedBoss 是 null → 第 3 層整層 fallback 舊表（跨族跨階雜怪），
+  // 而王本身也退回 excavation.boss 的舊值。改成同步 useMemo，fixedBoss 永不缺席。
+  // 與選擇畫面共用 resolveDungeonBossEncounter，確保預覽與實戰是同一隻王。
+  // 刻意「不」注入 expansionRunIdRef：那顆對舊地下城是隨機值，注入後預覽端永遠算不出
+  // 同一隻王。交給 resolveDungeonBossRunId 依 bossRunId → id → revealedAt 推導，
+  // 兩端拿到的是同一個 dungeon 物件，結果必然一致。
+  const expansionBossEncounter = useMemo(
+    () => resolveDungeonBossEncounter({ ...(excavation || {}), family }, { difficultyTier }),
+    [excavation, family, difficultyTier],
   );
-  useEffect(() => {
-    if (!isMonsterExpansionEnabled()) return undefined;
-    let cancelled = false;
-    import("../../lib/dungeonBossEncounter").then(({ createLockedDungeonBossEncounter }) => {
-      if (cancelled) return;
-      setExpansionBossEncounter(createLockedDungeonBossEncounter({
-        runId:expansionRunIdRef.current,
-        roomId:"floor-3-boss",
-        family,
-        difficultyTier,
-        lockedEncounter:excavation?.bossEncounter || null,
-      }));
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [excavation?.bossEncounter, family, difficultyTier]);
   const fixedBoss = expansionBossEncounter?.monsterSnapshot
     || (isGuest ? guestFixedBoss : (excavation?.boss || null));
   const isHidden = excavation?.isHidden || false;
