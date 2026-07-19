@@ -375,6 +375,10 @@ export default function DungeonExpedition({
   const [resultRewards, setResultRewards] = useState(null);
   // 出圖時決定的寶箱掉落倍數（1~3,整場固定;與組隊遠征同規格）
   const [runLootMult] = useState(() => 1 + Math.floor(Math.random() * 3));
+  // 探索途中每殺即時入帳的金幣／射手 XP 累計。
+  // ⚠️ 以前這兩個數字只餵給 4.5 秒的 killToast 就丟掉，結算頁因此只顯示通關獎勵，
+  // 玩家實際入帳的卻是「通關獎勵 + 沿路擊殺」，數字對不上（使用者實測回報）。
+  const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
   // 每場擊殺的掉落明細提示（4.5 秒後自動消失）
   const [killToast, setKillToast] = useState(null);
   useEffect(() => {
@@ -740,6 +744,12 @@ export default function DungeonExpedition({
         killArcherXP = kill.archerXP;
         addCoins(myId, kill.coins).catch(() => {});
         addArcherXP(myId, kill.archerXP).catch(() => {});
+        // 累計起來給結算頁：這些是「已入帳」的部分，結算頁只是把它列出來，不再發一次
+        setKillTotals(previous => ({
+          coins: previous.coins + kill.coins,
+          archerXP: previous.archerXP + kill.archerXP,
+          kills: previous.kills + 1,
+        }));
       }
     }
     // 掉落明細提示（使用者要求：直接看到掉了什麼、有幾個）
@@ -1073,6 +1083,7 @@ export default function DungeonExpedition({
         difficultyTier={difficultyTier}
         isHidden={isHidden}
         rewards={resultRewards}
+        killTotals={killTotals}
         loot={runLoot}
         party={buildExpeditionParty({
           [myId]: {

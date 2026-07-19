@@ -160,6 +160,9 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
   // ── 每場擊殺即時入帳（使用者規格：打死立刻給,不等結算）────────
   const { profile: battleProfile } = useAuth();
   const [killReward, setKillReward] = useState(null);
+  // 沿路擊殺的累計（單人遠征同規格）。以前這兩個數字只餵給 4.5 秒的 toast 就丟掉，
+  // 結算頁因此只顯示通關獎勵，跟玩家實際入帳的金額對不上。
+  const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
   const battleMonsterRef = useRef(null);
   const killClaimedRef = useRef(false);
   const claimMyKillReward = useCallback(monster => {
@@ -191,6 +194,12 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
       if (kill) {
         dbMod.addCoins(memberId, kill.coins).catch(() => {});
         dbMod.addArcherXP(memberId, kill.archerXP).catch(() => {});
+        // 累計給結算頁：這些是「已入帳」的部分，結算頁只列出來，不再發一次
+        setKillTotals(previous => ({
+          coins: previous.coins + kill.coins,
+          archerXP: previous.archerXP + kill.archerXP,
+          kills: previous.kills + 1,
+        }));
       }
       setKillReward({
         monsterName: monster.name,
@@ -898,6 +907,7 @@ export default function TeamExpeditionBattle({
         difficultyTier={dungeonDifficulty}
         isHidden={dungeonIsHidden}
         rewards={rewards}
+        killTotals={killTotals}
         loot={result?.loot}
         party={result?.party}
         boss={result?.boss || dungeonBoss}

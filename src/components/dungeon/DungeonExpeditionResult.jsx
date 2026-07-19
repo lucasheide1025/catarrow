@@ -21,7 +21,8 @@ export default function DungeonExpeditionResult({
   family,
   difficultyTier,
   isHidden,
-  rewards,        // { coins, arrowDew, archerXP }
+  rewards,        // { coins, arrowDew, archerXP } — 通關獎勵，按下領取才發放
+  killTotals,     // { coins, archerXP, kills } — 沿路擊殺，戰鬥當下就已入帳
   loot,
   party,
   boss,
@@ -35,7 +36,17 @@ export default function DungeonExpeditionResult({
   const diff = getExcavationDifficulty(difficultyTier);
   const familyMeta = FAMILY_LABEL[family] || { emoji:"🏰", label:"地下城" };
   const chestSummary = summarizeExpeditionChests(loot?.chests);
-  const totalCoins = (rewards?.coins || 0) + (loot?.bonusCoins || 0);
+  // 獎勵有兩份來源，之前結算頁只算了通關獎勵，玩家實際拿到的比顯示的多：
+  // ① 沿路擊殺 —— 每殺一隻當下就 addCoins/addArcherXP 入帳了（killTotals）
+  // ② 通關獎勵 —— 按下「領取獎勵」才由 grantExpeditionRewards 發放（rewards）
+  // 這裡把兩份都列出來並加總，數字才跟玩家實際到手的一致。
+  const clearCoins = (rewards?.coins || 0) + (loot?.bonusCoins || 0);
+  const clearArcherXP = rewards?.archerXP || 0;
+  const killCoins = killTotals?.coins || 0;
+  const killArcherXP = killTotals?.archerXP || 0;
+  const totalCoins = clearCoins + killCoins;
+  const totalArcherXP = clearArcherXP + killArcherXP;
+  const hasKillRewards = killCoins > 0 || killArcherXP > 0;
   const totalArrowDew = (rewards?.arrowDew || 0) + (loot?.bonusArrowDew || 0);
   const partyMembers = party?.members || [];
   const totalDamage = partyMembers.reduce((sum, member) => sum + (member.dmgDealt || 0), 0);
@@ -158,7 +169,7 @@ export default function DungeonExpeditionResult({
         animation: phase === "rewards" ? "er-fade 0.5s 0.2s both" : "none",
       }}>
         <span style={{ fontSize:13, fontWeight:700, color:"#fbbf24" }}>
-          ⚔️ 冒險經驗 +{rewards?.archerXP || 0}
+          ⚔️ 冒險經驗 +{totalArcherXP}
         </span>
       </div>
 
@@ -197,13 +208,33 @@ export default function DungeonExpeditionResult({
             </div>
             <div className="rounded-xl p-3 bg-black/20">
               <div className="text-slate-400">射手經驗</div>
-              <div className="text-lg font-black text-violet-300">+{rewards?.archerXP || 0}</div>
+              <div className="text-lg font-black text-violet-300">+{totalArcherXP}</div>
             </div>
             <div className="rounded-xl p-3 bg-black/20">
               <div className="text-slate-400">擊敗怪物</div>
-              <div className="text-lg font-black text-rose-300">{loot?.defeated?.length || 0} 隻</div>
+              <div className="text-lg font-black text-rose-300">
+                {loot?.defeated?.length || killTotals?.kills || 0} 隻
+              </div>
             </div>
           </div>
+
+          {/* 金幣／經驗的來源拆解：讓「總計」對得上玩家實際到手的數字 */}
+          {hasKillRewards && (
+            <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">🗡️ 沿路擊殺 <span className="text-slate-500">（戰鬥當下已入帳）</span></span>
+                <span className="font-bold text-slate-200">
+                  🪙 {killCoins}　⚔️ {killArcherXP}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">🏁 通關獎勵 <span className="text-slate-500">（按下領取後發放）</span></span>
+                <span className="font-bold text-slate-200">
+                  🪙 {clearCoins}　⚔️ {clearArcherXP}
+                </span>
+              </div>
+            </div>
+          )}
           {chestSummary.length > 0 && (
             <div className="mt-3 space-y-2">
               {chestSummary.map(item => (
