@@ -21,11 +21,14 @@ export default function EquipmentRunePanel({ profile, readOnly = false }) {
   };
   const combine = async rune => {
     const result = await run(`combine-${rune.id}`, () => combineEquipmentRune(profile.id, rune.id));
-    if (result?.ok) notify(result.success ? `合成成功：${label(result.nextRune)}` : "合成失敗：主符文已保留，材料符文與金幣已消耗");
+    // 文案要跟實際扣除一致：兩枚都是材料，失敗不會保留任何一枚（2026-07-19 規格）
+    if (result?.ok) notify(result.success
+      ? `合成成功：${label(result.nextRune)}`
+      : "合成失敗：兩枚材料符文與金幣已消耗");
   };
 
   return <section className="mt-4 rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-950/45 to-slate-950 p-4 shadow-xl">
-    <div className="flex items-start justify-between gap-3"><div><h2 className="text-sm font-black text-violet-100">🔮 裝備符文</h2><p className="mt-1 text-[11px] text-slate-400">王房碎片製作初階符文；兩枚相同未鑲嵌符文可逐階合成。</p></div><div className="rounded-lg border border-amber-300/25 bg-amber-400/10 px-2 py-1 text-[11px] font-black text-amber-200">👑 {profile?.kingSeals || 0}</div></div>
+    <div className="flex items-start justify-between gap-3"><div><h2 className="text-sm font-black text-violet-100">🔮 裝備符文</h2><p className="mt-1 text-[11px] text-slate-400">王房碎片製作初階符文；兩枚相同未鑲嵌符文可逐階合成（兩枚都會消耗，失敗不返還）。</p></div><div className="rounded-lg border border-amber-300/25 bg-amber-400/10 px-2 py-1 text-[11px] font-black text-amber-200">👑 {profile?.kingSeals || 0}</div></div>
     {notice && <div role="status" className="mt-3 rounded-xl border border-violet-300/20 bg-violet-400/10 px-3 py-2 text-xs font-bold text-violet-100">{notice}</div>}
     <div className="mt-4 grid grid-cols-2 gap-2">{Object.entries(EQUIPMENT_RUNE_TYPES).map(([type, meta]) => {
       const rune = EQUIPMENT_RUNES[`equipment_${type}_t1`]; const enabled = (fragments[type] || 0) >= rune.fragmentCost && (profile?.coins || 0) >= rune.goldCost;

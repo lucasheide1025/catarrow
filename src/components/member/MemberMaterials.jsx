@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, openChestsBulk, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -185,39 +185,32 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     setOpenAllBusy(true);
     const snap = [...chests];
     setOpenAllProgress({ done: 0, total: snap.length });
+    // ⚠️ 2026-07-19 改為批次：舊版是迴圈逐箱呼叫 openChest，每箱 1 次讀 ＋ 3~6 次
+    // 序列化寫入，開 30 箱就是 200 多次 Firestore 往返，畫面看起來就是卡住。
+    // 現在改成「本地全部開完 → 彙總 → 每個 collection 只寫一次」。
     let totalCoins = 0;
     let failed = 0;
-    const openedIds = new Set();
-    const allMats = [], allFrags = [], allPotions = [], allCards = [];
+    let openedIds = new Set();
+    let allMats = [], allFrags = [], allPotions = [], allCards = [];
     try {
-      for (let i = 0; i < snap.length; i++) {
-        const chest = snap[i];
-        const isCoin = chest.type === "coin";
-        // ⚠️ 單箱失敗不能中斷整批：以前這裡沒有 try/catch，任何一箱拋錯（網路瞬斷、
-        // 該箱已被另一台裝置開掉、權限問題）就會讓迴圈直接死掉，後面的 setOpenAllBusy(false)
-        // 永遠跑不到，畫面就永久卡在「開箱中 X / Y」。
-        try {
-          const contents = isCoin ? null : openChestContents(chest);
-          const res = await openChest(profile.id, chest.id, contents);
-          if (res?.ok) {
-            openedIds.add(chest.id);
-            if (isCoin) totalCoins += (res.coins || 0);
-            if (!isCoin && contents) {
-              allMats.push(...(contents.materials || []));
-              allFrags.push(...(contents.fragments || []));
-              allPotions.push(...(contents.potions || []));
-              allCards.push(...(contents.cards || []));
-              updateChestOpenStats(profile.id, chest.type).catch(() => {});
-            }
-          } else {
-            failed += 1;
-          }
-        } catch (error) {
-          failed += 1;
-          console.warn("openAllChests:", chest?.id, error?.message);
-        }
-        setOpenAllProgress({ done: i + 1, total: snap.length });
+      // 批次期間無法逐箱回報進度，直接顯示總數讓使用者知道正在處理
+      setOpenAllProgress({ done: 0, total: snap.length });
+      const res = await openChestsBulk(profile.id, snap, openChestContents);
+      if (res?.ok) {
+        totalCoins = res.coins || 0;
+        failed = res.failed || 0;
+        openedIds = new Set(res.opened || []);
+        allMats = res.materials || [];
+        allFrags = res.fragments || [];
+        allPotions = res.potions || [];
+        allCards = res.cards || [];
+      } else {
+        failed = snap.length;
       }
+      setOpenAllProgress({ done: snap.length, total: snap.length });
+    } catch (error) {
+      failed = snap.length;
+      console.warn("openAllChests:", error?.message);
     } finally {
       // 不管中途發生什麼，busy 一定要解除，否則按鈕永久鎖死
       setOpenAllBusy(false);

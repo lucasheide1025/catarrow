@@ -2833,6 +2833,115 @@ export function subscribeChests(memberId, callback) {
   return () => {};
 }
  
+/**
+ * 一次開多個寶箱：本地全部開完 → 彙總 → 每個 collection 只寫一次。
+ *
+ * ⚠️ 為什麼需要這支：舊的「全部開箱」是迴圈呼叫 openChest，每一箱都要
+ * 1 次 getDoc ＋ 3~6 次序列化寫入（背包、材料、藥水、碎片、金幣、開箱統計）。
+ * 開 30 箱就是 200 多次 Firestore 往返，畫面看起來就是卡住不動（使用者實測）。
+ * 改成批次後，不論開幾箱都只有固定幾次寫入。
+ *
+ * 特殊箱（咪咪箱抽貓、貓貓箱碎片）有各自的抽取流程，仍逐一走 openChest，
+ * 但那類數量少，不會造成卡頓。
+ *
+ * @param {string} memberId
+ * @param {Array} chests 要開的寶箱物件（需含 id/type）
+ * @param {(chest)=>object} contentsOf 產生單箱內容的函式（openChestContents）
+ * @returns {{ ok, opened, failed, coins, materials, potions, fragments, cards, catResults }}
+ */
+export async function openChestsBulk(memberId, chests, contentsOf) {
+  if (!memberId || !chests?.length) return { ok: false, reason: "參數錯誤" };
+  try {
+    const chestRef = doc(db, C_CHESTS, memberId);
+    const chestSnap = await getDoc(chestRef);
+    const list = chestSnap.exists() ? (chestSnap.data().chests || []) : [];
+    const byId = new Map(list.map(chest => [chest.id, chest]));
+
+    // ── 1. 先在本地把所有箱子開完，只彙總、不寫入 ──
+    const openedIds = new Set();
+    const specials = [];              // 咪咪箱／貓貓箱等需要各自流程的
+    const materials = [], potions = [], fragments = [], cards = [];
+    const openStats = {};
+    let coins = 0;
+    let failed = 0;
+
+    for (const target of chests) {
+      const chest = byId.get(target?.id);
+      if (!chest) { failed += 1; continue; }   // 已被其他裝置開掉
+      if (chest.type === "coin") {
+        const min = chest.min || 20, max = chest.max || 50;
+        coins += min + Math.floor(Math.random() * (max - min + 1));
+        openStats.coin = (openStats.coin || 0) + 1;
+        openedIds.add(chest.id);
+        continue;
+      }
+      const contents = contentsOf?.(chest) || null;
+      if (contents?.isMimiBox || chest.type === "mimi_box" || chest.type === "cat_box") {
+        specials.push({ chest, contents });
+        continue;
+      }
+      materials.push(...(contents?.materials || []));
+      potions.push(...(contents?.potions || []).map(potion => ({ id: potion.id, count: 1 })));
+      fragments.push(...(contents?.fragments || []));
+      cards.push(...(contents?.cards || []));
+      coins += contents?.coins || 0;
+      if (chest.type) openStats[chest.type] = (openStats[chest.type] || 0) + 1;
+      openedIds.add(chest.id);
+    }
+
+    // ── 2. 一次寫回：背包先移除已開的，避免中途失敗造成重複開 ──
+    if (openedIds.size) {
+      await setDoc(chestRef, {
+        chests: list.filter(chest => !openedIds.has(chest.id)),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+
+    // 各庫存各寫一次（addMaterials/addPotions/addFragments 內部都是讀改寫單一文件）
+    await Promise.all([
+      materials.length ? addMaterials(memberId, materials) : null,
+      potions.length   ? addPotions(memberId, potions)     : null,
+      fragments.length ? addFragments(memberId, fragments) : null,
+      coins > 0        ? addCoins(memberId, coins)         : null,
+    ].filter(Boolean)).catch(() => {});
+
+    // 開箱統計：一次 updateDoc 帶所有類型的 increment
+    const statEntries = Object.entries(openStats);
+    if (statEntries.length) {
+      await updateDoc(doc(db, C_CHEST_STATS, memberId), {
+        ...Object.fromEntries(statEntries.map(([type, count]) => [`opens.${type}`, increment(count)])),
+        updatedAt: serverTimestamp(),
+      }).catch(async () => {
+        await setDoc(doc(db, C_CHEST_STATS, memberId), {
+          opens: Object.fromEntries(statEntries),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch(() => {});
+      });
+    }
+
+    // 卡片有 duplicates／星級邏輯，仍逐張處理（一次開箱最多幾張，不會卡）
+    for (const card of cards) await addMonsterCard(memberId, card, null).catch(() => {});
+
+    // ── 3. 特殊箱各自走原本的流程 ──
+    const catResults = [];
+    for (const { chest, contents } of specials) {
+      const res = await openChest(memberId, chest.id, contents).catch(() => ({ ok: false }));
+      if (res?.ok) { openedIds.add(chest.id); if (res.catResult) catResults.push(res.catResult); }
+      else failed += 1;
+    }
+
+    return {
+      ok: true,
+      opened: [...openedIds],
+      failed,
+      coins, materials, potions, fragments, cards, catResults,
+    };
+  } catch (e) {
+    console.warn("openChestsBulk:", e?.message);
+    return { ok: false, reason: "系統忙碌中，請稍後再試" };
+  }
+}
+
 // 開箱：移除寶箱 + 把抽出的內容寫進材料/藥劑/碎片庫存
 // contents = { materials:[材料物件], potions:[藥劑物件], fragments:[碎片物件] }
 export async function openChest(memberId, chestId, contents) {
@@ -4342,7 +4451,11 @@ export async function craftEquipmentRune(memberId, runeId) {
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-// 合成會消耗一枚同階符文作為材料；主符文永遠保留，失敗時只損失材料與金幣。
+// 合成需要兩枚同階未鑲嵌符文，**兩枚都是材料**：
+//   成功 → 扣兩枚、產出一枚高階（手上只留合成出來的那顆）
+//   失敗 → 一樣扣兩枚與金幣，什麼都拿不到
+// ⚠️ 2026-07-19 修正：舊版檢查要兩枚卻只 increment(-1)（設計是「主符文永遠保留」），
+// 導致合成出 T2 之後手上還留著一顆 T1 —— 使用者實測回報這不是預期行為。
 export async function combineEquipmentRune(memberId, runeId) {
   const sourceRune = getEquipmentRune(runeId);
   const nextRune = getNextEquipmentRune(runeId);
@@ -4360,7 +4473,7 @@ export async function combineEquipmentRune(memberId, runeId) {
       const success = Math.random() < successRate;
       const update = {
         coins: increment(-goldCost),
-        [`equipmentRuneInventory.${sourceRune.id}`]: increment(-1),
+        [`equipmentRuneInventory.${sourceRune.id}`]: increment(-2),
         updatedAt: serverTimestamp(),
       };
       if (success) update[`equipmentRuneInventory.${nextRune.id}`] = increment(1);
