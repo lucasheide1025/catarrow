@@ -29,30 +29,62 @@ export const KING_SEAL_BREAKTHROUGH_COST = {
 // 升級完成後呼叫，產生下一次的材料需求（六族隨機交叉）
 // 結果存入 member.rpgEquip[slotId].nextMats，確保同一次升級材料不變
 const _FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+// 每個品級吃「該階 / 下一階 / 再下一階」三種 tier 的材料。
+// 傳說的再下一階（T7）與神話的下一階都不存在（T7~T9 只顯示不實裝），故留 null，
+// 對應的 kinds 也設為 0 —— 神話改成吃滿六族該階材料來維持重量。
 const _GRADE_MAT_TIER = {
-  common: { main: "m1", key: "m2" },
-  rare:   { main: "m2", key: "m3" },
-  elite:  { main: "m3", key: "m4" },
-  epic:   { main: "m4", key: "m5" },
-  legend: { main: "m5", key: "m6" },
-  mythic: { main: "m6", key: "m6" },
+  common: { main: "m1", next: null, next2: null },
+  rare:   { main: "m2", next: "m3", next2: "m4" },
+  elite:  { main: "m3", next: "m4", next2: "m5" },
+  epic:   { main: "m4", next: "m5", next2: "m6" },
+  legend: { main: "m5", next: "m6", next2: null },
+  mythic: { main: "m6", next: null, next2: null },
 };
 
 // 升級材料需求：同一品級內隨 plusLevel 遞增（曲線），避免「+0 跟 +4 一樣便宜」秒升。
 // 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
 // 每個 plusLevel 的三種材料數量：mainA=主族、mainB=副族（同 tier）、key=關鍵素材（高一階 tier）。
 // 2026-07-12：在前一版曲線上增加 50%，零碎數量無條件進位。
-// 2026-07-19 使用者指示：需求種類由「該階 2 種 + 下一階 1 種」改為「該階 4 種 + 下一階 2 種」。
-// 六族剛好全用上（4 + 2 = 6），每種的數量沿用原本隨 plusLevel 遞增的曲線。
-export const CURRENT_TIER_KINDS = 4;
-export const NEXT_TIER_KINDS = 2;
+// 2026-07-19 改版：材料需求改為「依品級分級」，不再所有品級共用同一張表。
+// 舊版每個品級都要 284 個材料 —— 普通裝跟神話裝一樣重，只有金幣差 230 倍，
+// 對新學生太硬、對老玩家太鬆。新規格（使用者拍板）：
+//   普通    2 種該階，無下一階，突破到稀有不需突破材料      → 合計 122
+//   稀有    3 種該階 + 2 種下一階，+3 起再加 1 種再下一階   → 合計 228
+//   精英以上 4 種該階 + 3 種下一階 + 1 種再下一階            → 合計 313
+//   傳說/神話 因為 T7 未實裝而遞減種類，神話改吃滿六族      → 304 / 366
+const _GRADE_MAT_KINDS = {
+  common: { current: 2, next: 0, next2: 0 },
+  rare:   { current: 3, next: 2, next2: 1 },
+  elite:  { current: 4, next: 3, next2: 1 },
+  epic:   { current: 4, next: 3, next2: 1 },
+  legend: { current: 4, next: 3, next2: 0 },
+  mythic: { current: 6, next: 0, next2: 0 },
+};
 
+// 稀有的「再下一階」只在 +3 以上才要求（使用者指定的門檻）
+const _NEXT2_MIN_PLUS = { rare: 3 };
+
+export function matKindsFor(grade, plusLevel = 0) {
+  const kinds = _GRADE_MAT_KINDS[grade];
+  if (!kinds) return null;
+  const tiers = _GRADE_MAT_TIER[grade];
+  const level = Math.max(0, Math.min(4, plusLevel || 0));
+  const minPlus = _NEXT2_MIN_PLUS[grade] || 0;
+  return {
+    current: kinds.current,
+    // tier 不存在就沒得要求，避免產生玩家無從取得的材料 id
+    next:  tiers?.next  ? kinds.next : 0,
+    next2: tiers?.next2 && level >= minPlus ? kinds.next2 : 0,
+  };
+}
+
+// 每一「種」材料要幾個，隨 plusLevel 遞增
 const _PLUS_MAT_COUNTS = {
-  0: { current: 6,  next: 2 },
-  1: { current: 8,  next: 2 },
-  2: { current: 12, next: 5 },
-  3: { current: 15, next: 5 },
-  4: { current: 20, next: 6 },
+  0: { current: 6,  next: 2, next2: 1 },
+  1: { current: 8,  next: 3, next2: 1 },
+  2: { current: 12, next: 4, next2: 2 },
+  3: { current: 15, next: 5, next2: 2 },
+  4: { current: 20, next: 6, next2: 3 },
 };
 
 export function matCountsFor(plusLevel) {
@@ -63,15 +95,21 @@ export function matCountsFor(plusLevel) {
 // 只比對數量不比對家族——家族本來就隨機、不該當作判斷依據。
 // 判斷已存的 nextMats 是否符合「目前這條曲線」。不符就會重算並存回（等同自動重置舊需求清單）。
 // 新格式：materials 內含 4 種該階 + 2 種下一階（下一階以 tierRole:"next" 標記），不再使用 keyItem。
-export function isMatsCurveCurrent(nextMats, plusLevel) {
+export function isMatsCurveCurrent(nextMats, grade, plusLevel) {
   const mats = nextMats?.materials;
   if (!Array.isArray(mats)) return false;
-  if (nextMats?.keyItem) return false; // 舊格式（materials 2 種 + keyItem）→ 一律重算
-  const current = mats.filter(m => m?.tierRole !== "next" && !m?.note);
-  const next = mats.filter(m => m?.tierRole === "next");
-  if (current.length !== CURRENT_TIER_KINDS || next.length !== NEXT_TIER_KINDS) return false;
+  if (nextMats?.keyItem) return false; // 舊格式（materials + keyItem）→ 一律重算
+  const kinds = matKindsFor(grade, plusLevel);
+  if (!kinds) return false;
+  // 新格式每一筆都標了 tierRole（王素材是 "boss"，不列入種類檢查）。
+  // 沒標的是舊資料 → 直接判定為過期，讓它重算收斂。
+  if (mats.some(m => !m?.tierRole)) return false;
+  const byRole = role => mats.filter(m => m.tierRole === role);
+  const groups = { current: byRole("current"), next: byRole("next"), next2: byRole("next2") };
   const c = matCountsFor(plusLevel);
-  return current.every(m => m.count === c.current) && next.every(m => m.count === c.next);
+  return ["current", "next", "next2"].every(role =>
+    groups[role].length === kinds[role] && groups[role].every(m => m.count === c[role]),
+  );
 }
 
 // ── 高階精煉的王素材門檻（economy-loot-catalog §6，2026-07-19）──────────
@@ -103,16 +141,27 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   const tiers = _GRADE_MAT_TIER[grade];
   if (!tiers) return null;
   const c = matCountsFor(plusLevel);
-  const shuffled = [..._FAMILIES].sort(() => Math.random() - 0.5);
-  // 該階 4 種（不同族）＋ 下一階 2 種（不同族）；六族恰好用完，不會重複。
-  const materials = [
-    ...shuffled.slice(0, CURRENT_TIER_KINDS).map(family => ({
-      id: `${family}_${tiers.main}`, count: c.current, tierRole: "current",
-    })),
-    ...shuffled.slice(CURRENT_TIER_KINDS, CURRENT_TIER_KINDS + NEXT_TIER_KINDS).map(family => ({
-      id: `${family}_${tiers.key}`, count: c.next, tierRole: "next", note: "下一階素材",
-    })),
+  const kinds = matKindsFor(grade, plusLevel);
+  if (!kinds) return null;
+
+  // ⚠️ 每個 tier 各自洗牌，不能共用同一份洗好的六族清單再切片：
+  // 精英以上要 4+3+1 = 8 種，超過六族會切爆。不同 tier 的材料 id 本來就不同，
+  // 所以同一族在不同 tier 重複出現是正常的、也不會撞 id。
+  const pickFamilies = n => [..._FAMILIES].sort(() => Math.random() - 0.5).slice(0, n);
+  const roleSpecs = [
+    { role: "current", tier: tiers.main,  kinds: kinds.current, count: c.current, note: null },
+    { role: "next",    tier: tiers.next,  kinds: kinds.next,    count: c.next,    note: "下一階素材" },
+    { role: "next2",   tier: tiers.next2, kinds: kinds.next2,   count: c.next2,   note: "再下一階素材" },
   ];
+  const materials = roleSpecs.flatMap(spec => {
+    if (!spec.tier || spec.kinds <= 0) return [];
+    return pickFamilies(spec.kinds).map(family => ({
+      id: `${family}_${spec.tier}`,
+      count: spec.count,
+      tierRole: spec.role,
+      ...(spec.note ? { note: spec.note } : {}),
+    }));
+  });
 
   // 王素材門檻只在擴充開啟時加入：王素材唯一來源是地下城王房（同一個 flag 之後），
   // 若在 flag 關閉時就要求，玩家將無從取得，高階精煉會直接卡死。
@@ -124,11 +173,13 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   if (expansionEnabled) {
     const requirement = bossMatRequirementFor(grade, plusLevel);
     if (requirement) {
-      const bossId = pickBossMaterialId(shuffled[0], _GRADE_TIER_INDEX[grade], requirement.kind, expansionMaterials);
+      const bossFamily = pickFamilies(1)[0];
+      const bossId = pickBossMaterialId(bossFamily, _GRADE_TIER_INDEX[grade], requirement.kind, expansionMaterials);
       if (bossId) {
         materials.push({
           id: bossId,
           count: requirement.count,
+          tierRole: "boss",
           note: requirement.kind === "boss" ? "大王素材" : "小王素材",
         });
       }

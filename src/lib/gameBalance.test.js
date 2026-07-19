@@ -17,29 +17,27 @@ describe("chest and equipment balance", () => {
     expect(openChestContents({ type: "potion" }).potions).toHaveLength(1);
   });
 
-  test("精煉需求改為該階 4 種 + 下一階 2 種，舊格式一律失效並重算", () => {
+  test("精煉需求改為依品級分級，舊格式一律失效並重算", () => {
     expect([0, 1, 2, 3, 4].map(matCountsFor)).toEqual([
-      { current: 6,  next: 2 },
-      { current: 8,  next: 2 },
-      { current: 12, next: 5 },
-      { current: 15, next: 5 },
-      { current: 20, next: 6 },
+      { current: 6,  next: 2, next2: 1 },
+      { current: 8,  next: 3, next2: 1 },
+      { current: 12, next: 4, next2: 2 },
+      { current: 15, next: 5, next2: 2 },
+      { current: 20, next: 6, next2: 3 },
     ]);
-    // 舊格式（2 種該階 + keyItem）→ 視為過期，開啟裝備時會自動重算（等同重置舊需求清單）
+    // 舊格式（未標 tierRole / 帶 keyItem）→ 視為過期，開啟裝備時會自動重算
     expect(isMatsCurveCurrent({
       materials: [{ count: 6 }, { count: 5 }],
       keyItem: { count: 2 },
-    }, 0)).toBe(false);
-    // 新格式（4 + 2）→ 視為最新，不重算
+    }, "common", 0)).toBe(false);
+    // 新格式：普通 = 2 種該階，無下一階
     const fresh = {
-      materials: [
-        ...Array.from({ length: 4 }, () => ({ count: 6, tierRole: "current" })),
-        ...Array.from({ length: 2 }, () => ({ count: 2, tierRole: "next", note: "下一階素材" })),
-      ],
+      materials: Array.from({ length: 2 }, () => ({ count: 6, tierRole: "current" })),
       keyItem: null,
     };
-    expect(isMatsCurveCurrent(fresh, 0)).toBe(true);
-    expect(isMatsCurveCurrent(fresh, 3)).toBe(false); // 數量與該 plusLevel 不符 → 重算
+    expect(isMatsCurveCurrent(fresh, "common", 0)).toBe(true);
+    expect(isMatsCurveCurrent(fresh, "common", 3)).toBe(false); // 數量與該 plusLevel 不符 → 重算
+    expect(isMatsCurveCurrent(fresh, "elite", 0)).toBe(false);  // 精英要 4+3+1，種類不符 → 重算
   });
 
   test("cat equipment uses cumulative enhancement and matching material tiers", () => {

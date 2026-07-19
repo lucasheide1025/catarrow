@@ -1,5 +1,5 @@
 // src/components/member/RPGEquipPanel.jsx — RPG 裝備面板
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials, setEquipSocketRune, trySocketEquip } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
@@ -525,6 +525,10 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
   const [upgradeFx,       setUpgradeFx]       = useState(null);
   const [rawItems,        setRawItems]        = useState([]);
   const [matInv,          setMatInv]          = useState({});
+  // openSlot 重算材料需求是非同步寫入。若玩家一開面板就馬上升級，那筆寫入可能
+  // 「晚於」升級交易才落地，把升級後產生的新需求覆蓋回舊的 —— 表現就是精煉沒
+  // 吃到新材料。升級前先等這筆寫入完成，race 就消失。
+  const pendingMatsSaveRef = useRef(null);
   // 訪客可裝備/更換品項，並可強化至稀有（含）以下；兒童維持唯讀
   const isGuestEquipReadOnly = false; // 訪客/兒童皆可操作裝備
 
@@ -559,13 +563,13 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
     const equip = equipment[slotDef.id];
     setActiveSlot(slotDef);
     setUpgradeErr("");
-    if (equip?.nextMats && isMatsCurveCurrent(equip.nextMats, equip.plusLevel || 0)) {
+    if (equip?.nextMats && isMatsCurveCurrent(equip.nextMats, equip.grade || "common", equip.plusLevel || 0)) {
       setDisplayNextMats(equip.nextMats);
     } else if (equip?.itemId) {
       // 舊資料/舊曲線格式 或 首次裝備：依目前曲線重算並存回 Firestore（一次性收斂）
       const mats = generateRandomMats(equip.grade || "common", equip.plusLevel || 0);
       setDisplayNextMats(mats);
-      saveEquipNextMats(profile.id, slotDef.id, mats);
+      pendingMatsSaveRef.current = saveEquipNextMats(profile.id, slotDef.id, mats);
     } else {
       setDisplayNextMats(null);
     }
@@ -600,6 +604,11 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
     const currentItem = (itemsMap[slotDef.id] || []).find(item => item.id === currentEquip?.itemId);
     setUpgrading(true);
     setUpgradeErr("");
+    // 先確保 openSlot 那筆材料需求寫入已落地，避免它覆蓋升級後的新需求
+    if (pendingMatsSaveRef.current) {
+      await pendingMatsSaveRef.current;
+      pendingMatsSaveRef.current = null;
+    }
     const result = await upgradeEquipSlot(profile.id, slotDef.id, {
       equip:    currentEquip,
       coins:    profile.coins || 0,
