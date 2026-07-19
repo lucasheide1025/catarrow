@@ -5,11 +5,15 @@ export const EQUIPMENT_RUNE_TYPES = {
   cat: { name: "貓靈符文", icon: "🐱", stat: "all" },
 };
 
+// 2026-07-19 使用者拍板：加成改為「階級 × 1%」的線性曲線。
+// 舊值是 4/7/11/16%，光 T2 就 +7%、T4 高達 +16%，而貓靈符文（stat:"all"）三圍全加，
+// 等於一顆 T4 貓靈就給 atk/def/hp 各 +16% —— 相對怪物數值太強，使用者要求壓下來。
+// ⚠️ 要調符文強度就改這裡的 bonus，不要去動 getEquipmentRuneBonus 的疊加方式。
 export const EQUIPMENT_RUNE_TIERS = [
-  { tier: 1, name: "初階", bonus: 0.04, fragmentCost: 10, goldCost: 300 },
-  { tier: 2, name: "進階", bonus: 0.07, fragmentCost: 16, goldCost: 900 },
-  { tier: 3, name: "高階", bonus: 0.11, fragmentCost: 24, goldCost: 2400 },
-  { tier: 4, name: "王級", bonus: 0.16, fragmentCost: 36, goldCost: 6000 },
+  { tier: 1, name: "初階", bonus: 0.01, fragmentCost: 10, goldCost: 300 },
+  { tier: 2, name: "進階", bonus: 0.02, fragmentCost: 16, goldCost: 900 },
+  { tier: 3, name: "高階", bonus: 0.03, fragmentCost: 24, goldCost: 2400 },
+  { tier: 4, name: "王級", bonus: 0.04, fragmentCost: 36, goldCost: 6000 },
 ];
 
 export const EQUIPMENT_RUNES = Object.fromEntries(
