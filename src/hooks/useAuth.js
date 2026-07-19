@@ -15,6 +15,8 @@ let pendingGoogleCred = null;
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
+  // 為什麼登入了卻沒有身份："no-member" | "guest-account" | "query-failed"，供畫面顯示明確原因
+  const [profileError, setProfileError] = useState(null);
   const [profile, setProfile]         = useState(null);
   const [role, setRole]               = useState(null);
   const [loading, setLoading]         = useState(true);
@@ -24,6 +26,7 @@ export function AuthProvider({ children }) {
 
     const authUnsub = onAuthStateChanged(auth, async (fbUser) => {
       if (profileUnsub) { profileUnsub(); profileUnsub = null; }
+      setProfileError(null);
 
       if (!fbUser) {
         setCurrentUser(null); setProfile(null); setRole(null);
@@ -43,6 +46,7 @@ export function AuthProvider({ children }) {
         ]);
       } catch (e) {
         console.warn("登入查詢失敗，嘗試只查 members：", e.message);
+        setProfileError("query-failed");
         adminSnap = { exists: () => false };
         try { memberSnap = await getDocs(memberQuery); }
         catch { memberSnap = { empty: true, docs: [] }; }
@@ -84,6 +88,7 @@ export function AuthProvider({ children }) {
         // 不經過 useAuth.js。如果讓 useAuth 設了 profile，會導致「登入過訪客帳號後
         // 切回學籍系統，無論如何都會變成訪客帳號」（2026-07-11 回報）。
         if (mData.accountType === "guest" || mData.accountType === "kid") {
+          setProfileError("guest-account");
           setRole(null);
           setProfile(null);
           setCurrentUser(fbUser);
@@ -103,6 +108,7 @@ export function AuthProvider({ children }) {
         setProfile({ id: fbUser.uid, uid: fbUser.uid, ...adminData, isAdmin: true });
       } else {
         console.warn("⚠️ Auth 有此帳號，但 members 找不到對應文件！");
+        setProfileError(previous => previous || "no-member");
         setProfile(null);
       }
       setLoading(false);
@@ -235,7 +241,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, profile, role, loading, login, resetPassword, loginWithGoogle, linkGoogleWithPassword, logout }}>
+    <AuthContext.Provider value={{ currentUser, profile, role, loading, profileError, login, resetPassword, loginWithGoogle, linkGoogleWithPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );
