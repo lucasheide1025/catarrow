@@ -15,20 +15,25 @@ const FAMILY_ALIASES = Object.freeze({
   exam: "exam", western: "temple", temple: "temple", treasure: "treasure",
 });
 
-// ⚠️ 2026-07-19 修正：舊表是 普通=T1-2、進階=T4、困難=T5、地獄=T6，有兩個問題：
-//   1. T3（精英）整階從來不會出現，而且從 T2 直接跳到 T4，中間斷層。
-//   2. 難度 4 直接給 mythic(T6)，但畫面把難度標成「T4」→ 學生在「T4 地下城」
-//      第一層就遇到神話階級的怪（使用者實際回報）。
-// 改成連續、每階都用得到，且難度編號不會低於它會刷出的最低階級：
+// 2026-07-19 全面改版（使用者拍板）：地下城**不再跨階生怪**，Tn 只出該族的 Tn 怪。
+// 樓層之間的難度差異由「變體」表現（第1層弱化→第2層普通→第3層強悍），
+// 小王／大王只在最終王房出現。
+//
+// 為什麼以前要跨階：舊設計每族每階只有 1 隻怪，不跨階就會整層都是同一隻。
+// 現在擴充清冊每族每階有 3 隻 normal 怪，池子夠深，跨階已無必要 —— 而且跨階
+// 正是「標示 T4 的地下城第一層跑出神話怪」的元凶。
 export const DUNGEON_DIFFICULTY_TIER_POOL = Object.freeze({
-  1: ["common", "rare"],   // 普通 = T1-T2
-  2: ["rare", "elite"],    // 進階 = T2-T3
-  3: ["elite", "fierce"],  // 困難 = T3-T4
-  4: ["fierce", "boss"],   // 地獄 = T4-T5
+  1: ["common"],   // T1
+  2: ["rare"],     // T2
+  3: ["elite"],    // T3
+  4: ["fierce"],   // T4
+  5: ["boss"],     // T5
+  6: ["mythic"],   // T6
 });
+export const MAX_DUNGEON_TIER = 6;
 
 export function getDungeonTierPool(difficulty) {
-  const level = Math.max(1, Math.min(4, Math.floor(Number(difficulty) || 1)));
+  const level = Math.max(1, Math.min(MAX_DUNGEON_TIER, Math.floor(Number(difficulty) || 1)));
   return DUNGEON_DIFFICULTY_TIER_POOL[level];
 }
 
