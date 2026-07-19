@@ -1,7 +1,9 @@
 // src/components/member/ArrowMilestonePopup.jsx
 // 設計原則：不干擾戰鬥。小里程碑用頂部 toast banner；120箭才用全螢幕慶祝。
 import { useState, useEffect } from "react";
-import { getWarmMessage, getBigMessage, FINAL_MILESTONE_ARROWS, REST_MESSAGE } from "../../lib/arrowMilestone";
+import {
+  getWarmMessage, getBigMessage, FINAL_MILESTONE_ARROWS, REST_MESSAGE, describeMilestoneRewards,
+} from "../../lib/arrowMilestone";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { COIN_CHEST_TIERS } from "../../lib/lootTable";
 import { getVillagePack } from "../../lib/villagePack";
@@ -20,28 +22,9 @@ function RewardRow({ label, icon, count }) {
   );
 }
 
-// 把 rewards 攤平成「圖示＋名稱＋數量」清單，小 banner 與大彈窗共用同一份敘述，
-// 避免兩處說法不一致（寶箱名稱一律取自 CHEST_TYPES / COIN_CHEST_TIERS 的定義）
-function rewardRowsOf(rewards = {}) {
-  const rows = [];
-  if (rewards.gachaCoins) rows.push({ key:"gacha", icon:"🎰", label:"扭蛋幣", count:rewards.gachaCoins });
-  if (rewards.arrowdew)   rows.push({ key:"dew",   icon:"💧", label:"箭露",   count:rewards.arrowdew });
-  if (rewards.chestType && rewards.chestCount) {
-    const info = CHEST_TYPES[rewards.chestType];
-    rows.push({ key:"chest", icon:info?.icon || "📦", label:info?.name || "寶箱", count:rewards.chestCount });
-  }
-  if (rewards.coinTier && rewards.coinChestCount) {
-    const info = COIN_CHEST_TIERS[rewards.coinTier];
-    rows.push({ key:"coin", icon:info?.icon || "🪙", label:info?.name || "金幣寶箱", count:rewards.coinChestCount });
-  }
-  if (rewards.mimiBoxes) rows.push({ key:"mimi", icon:"😺", label:"咪咪箱", count:rewards.mimiBoxes });
-  if (rewards.catBoxes)  rows.push({ key:"cat",  icon:"🐱", label:"貓貓箱", count:rewards.catBoxes });
-  if (rewards.packTier && rewards.packCount) {
-    const pack = getVillagePack(rewards.packTier);
-    rows.push({ key:"pack", icon:pack.icon, label:pack.name, count:rewards.packCount });
-  }
-  return rows;
-}
+// 敘述來源統一在 arrowMilestone.describeMilestoneRewards（下課頁的 MilestoneBoard 也用同一支）
+const rewardRowsOf = (rewards = {}) =>
+  describeMilestoneRewards(rewards, { CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack });
 
 // 建築包開出的材料明細（領取時就地開包，這裡只負責顯示）
 function PackMaterials({ rolledPack }) {

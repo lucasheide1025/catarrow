@@ -58,6 +58,36 @@ export const ALL_MILESTONES = [
 export const FINAL_MILESTONE_ARROWS = 480;
 export const REST_MESSAGE = "你該休息了 🌙 今天的練習已經非常充足，讓身體記住這份手感吧。";
 
+/**
+ * 里程碑獎勵的「唯一敘述來源」：回傳 [{ key, icon, label, count }]。
+ *
+ * ⚠️ 獎勵至少有三個地方要顯示（下課頁的 MilestoneBoard、達成時的小 banner、
+ * 大關的全螢幕彈窗）。以前各寫各的，改獎勵表時只更新了彈窗，下課頁就只剩
+ * 「+1抽獎幣 +1貓箱」——使用者實測抓到。新增獎勵一律改這裡，三處自動同步。
+ *
+ * 寶箱名稱刻意取自 CHEST_TYPES / COIN_CHEST_TIERS 定義，不要自己寫死字串。
+ */
+export function describeMilestoneRewards(rewards, { CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack } = {}) {
+  const rows = [];
+  if (rewards?.gachaCoins) rows.push({ key:"gacha", icon:"🎰", label:"扭蛋幣", count:rewards.gachaCoins });
+  if (rewards?.arrowdew)   rows.push({ key:"dew",   icon:"💧", label:"箭露",   count:rewards.arrowdew });
+  if (rewards?.chestType && rewards?.chestCount) {
+    const info = CHEST_TYPES?.[rewards.chestType];
+    rows.push({ key:"chest", icon:info?.icon || "📦", label:info?.name || "寶箱", count:rewards.chestCount });
+  }
+  if (rewards?.coinTier && rewards?.coinChestCount) {
+    const info = COIN_CHEST_TIERS?.[rewards.coinTier];
+    rows.push({ key:"coin", icon:info?.icon || "🪙", label:info?.name || "金幣寶箱", count:rewards.coinChestCount });
+  }
+  if (rewards?.mimiBoxes) rows.push({ key:"mimi", icon:"😺", label:"咪咪箱", count:rewards.mimiBoxes });
+  if (rewards?.catBoxes)  rows.push({ key:"cat",  icon:"🐱", label:"貓貓箱", count:rewards.catBoxes });
+  if (rewards?.packTier && rewards?.packCount) {
+    const pack = getVillagePack?.(rewards.packTier);
+    rows.push({ key:"pack", icon:pack?.icon || "🧱", label:pack?.name || `T${rewards.packTier} 建築包`, count:rewards.packCount });
+  }
+  return rows;
+}
+
 // 傳入今日舊箭數、新箭數，回傳中間跨越的里程碑（每個門檻只算一次）
 export function getMilestonesReached(oldTotal, newTotal) {
   if (newTotal <= oldTotal || newTotal <= 0) return [];

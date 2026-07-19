@@ -5,7 +5,10 @@ import {
   subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
   grantArrowMilestoneRewards, checkAndGrantArrowMilestones, subscribeLocalTodayArrows, initializeTodayArrows,
 } from "../../lib/db";
-import { ALL_MILESTONES, getRewardsForMilestone } from "../../lib/arrowMilestone";
+import { ALL_MILESTONES, getRewardsForMilestone, describeMilestoneRewards } from "../../lib/arrowMilestone";
+import { CHEST_TYPES } from "../../lib/itemData";
+import { COIN_CHEST_TIERS } from "../../lib/lootTable";
+import { getVillagePack } from "../../lib/villagePack";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
 
@@ -26,10 +29,11 @@ function MilestoneBoard({ todayArrows }) {
         {ALL_MILESTONES.map(ms => {
           const unlocked = todayArrows >= ms.arrows;
           const rewards = getRewardsForMilestone(ms);
-          const rewardText = [
-            rewards.gachaCoins ? `+${rewards.gachaCoins}抽獎幣` : "",
-            rewards.catBoxes   ? `+${rewards.catBoxes}貓箱`     : "",
-          ].filter(Boolean).join(" ");
+          // 走與彈窗相同的敘述來源，避免像先前那樣只列出抽獎幣與貓箱、
+          // 漏掉箭露／寶箱／金幣寶箱／建築包（使用者實測抓到）
+          const rewardText = describeMilestoneRewards(rewards, {
+            CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack,
+          }).map(row => `${row.icon}${row.count}`).join(" ");
           return (
             <div key={ms.arrows} style={{
               display: "flex", alignItems: "center", gap: 8,

@@ -1,6 +1,9 @@
 import {
   ALL_MILESTONES, getMilestonesReached, getRewardsForMilestone, FINAL_MILESTONE_ARROWS,
+  describeMilestoneRewards,
 } from "./arrowMilestone";
+import { CHEST_TYPES } from "./itemData";
+import { COIN_CHEST_TIERS } from "./lootTable";
 import { openVillagePack, openVillagePacks, getVillagePack } from "./villagePack";
 
 describe("練箭里程碑（2026-07-19 改版：每 30 箭一階，共 16 階）", () => {
@@ -69,6 +72,46 @@ describe("練箭里程碑（2026-07-19 改版：每 30 箭一階，共 16 階）
     expect(getMilestonesReached(0, 95).map(ms => ms.arrows)).toEqual([30, 60, 90]);
     expect(getMilestonesReached(90, 95)).toHaveLength(0);
     expect(getMilestonesReached(100, 100)).toHaveLength(0);
+  });
+});
+
+// 獎勵至少有三處要顯示（下課頁清單、達成 banner、大關彈窗）。以前各寫各的，
+// 改獎勵表時只更新了彈窗，下課頁就只剩「+1抽獎幣 +1貓箱」——使用者實測抓到。
+describe("獎勵敘述單一來源 describeMilestoneRewards", () => {
+  const describe30 = () => describeMilestoneRewards(
+    getRewardsForMilestone(ALL_MILESTONES.find(ms => ms.arrows === 30)),
+    { CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack },
+  );
+
+  test("一般階列出全部五項，不只抽獎幣", () => {
+    const keys = describe30().map(row => row.key);
+    expect(keys).toEqual(["gacha", "dew", "chest", "coin", "pack"]);
+  });
+
+  test("箭露 30 有被列出（先前漏掉的欄位）", () => {
+    const dew = describe30().find(row => row.key === "dew");
+    expect(dew.count).toBe(30);
+  });
+
+  test("寶箱名稱取自定義表而非寫死字串", () => {
+    const rows = describe30();
+    expect(rows.find(row => row.key === "chest").label).toBe(CHEST_TYPES.wood.name);
+    expect(rows.find(row => row.key === "coin").label).toBe(COIN_CHEST_TIERS.common.name);
+  });
+
+  test("大關會多出咪咪箱與貓貓箱", () => {
+    const rows = describeMilestoneRewards(
+      getRewardsForMilestone(ALL_MILESTONES.find(ms => ms.arrows === 480)),
+      { CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack },
+    );
+    expect(rows.map(row => row.key)).toContain("mimi");
+    expect(rows.map(row => row.key)).toContain("cat");
+  });
+
+  test("沒傳定義表時不會炸，改用預設圖示與名稱", () => {
+    const rows = describeMilestoneRewards(getRewardsForMilestone(ALL_MILESTONES[0]));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every(row => row.label && row.icon)).toBe(true);
   });
 });
 
