@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-07-19（DLC 全面安裝：移除 flag + 收掉重複的抽王實作）
+
+**使用者實測王房連三次抽到雜怪**（後台新增 → 林投姐 `ghost_3`／卷軸 → 骷髏劍士 `temple_2`，都是**舊 60 隻表的 id**、`encounter:"normal"`）。追下去發現兩件事：
+
+**① 根因是 flag，不是抽王壞掉。** `DungeonExpedition.jsx:327` 的 `if (!isMonsterExpansionEnabled()) return undefined;` 一旦 flag 為 false，整條擴充路徑直接 early return，`fixedBoss` 退回 `excavation.boss` 的舊值 —— **畫面上完全看不出差別**，只是王變成雜怪。測試裝置殘留的 `localStorage("monsterExpansionV1")="off"` 或 Vercel 環境變數都可能觸發。
+→ **flag 整個移除**：`isMonsterExpansionEnabled()` 恆回 `true`，`syncMonsterExpansionFlagFromUrl()` 變 no-op（兩個 export 保留，12 處呼叫端不動，else 分支成 dead code 待清）。測試改成守「殘留的 off 再也關不掉」。
+
+**② 我自己造成的重複實作（已收）。** 前一個 commit 在 `dungeonExpansionMonsters.js` 加了 `drawDungeonBossEncounter` 並接進 `dungeonExcavation.js`，**但 7/18 就已經有 `createLockedDungeonBossEncounter` 在做同一件事**，而且戰鬥端讀的是後者。兩套並存 = 選擇畫面預覽一隻王、進去打另一隻。
+→ 刪掉 `drawDungeonBossEncounter` 與其測試，`rollExcavationBoss` 改為複用 `createLockedDungeonBossEncounter`，並把整筆 encounter 存進地下城物件的 **`bossEncounter`** 欄位；戰鬥端 `DungeonExpedition.jsx:336` 會把它當 `lockedEncounter` 傳回引擎、命中即原封不動沿用 → **預覽與實戰保證同一隻**。
+→ 地下城物件新增三個欄位：`boss`（快照，預覽用）、`bossEncounter`（鎖定王）、`bossRunId`（穩定種子）。
+
+**踩過的坑 / 設計決策：**
+- **升降級沿用同一個 `bossRunId`**。王因此是決定性的：升上去再降回來拿到原本那隻。降級免費，不鎖 runId 就能無限重抽刷大王素材。（前一版用 `forceKind` 保留大小王身分，改用 runId 後更乾淨，`forceKind` 已移除。）
+- **`rollExcavationBoss` 的 try/catch 是靜默 fallback**：某族某階湊不齊「2 小王 + 1 大王」就安靜退回舊 `drawExpeditionBoss` 抽雜怪。新增測試「六族 × 六階都湊得齊王池」整表釘死。
+- **`saveExcavation` 要把 `bossEncounter`/`bossRunId` 一起搬進儲存槽**，否則遠征時重抽，又變成預覽/實戰不一致。
+- **既有資料不會自動修**：儲存槽裡接線前產生的地下城，`boss` 已寫死在 Firestore，仍是雜怪。打完或放棄才會汰換。
+- **教訓**：接線前要先查「戰鬥端實際從哪裡取這個值」，而不是照著上一個 commit 的敘述往下接。差點多做一整套平行系統。
+
+驗收：53 suites / 365 tests 綠、build `Compiled successfully` 無警告。
+
 ## 2026-07-19（王房抽王正式接線：`dungeonExcavation.js`）
 
 **上一個 commit（96b5020）只加了 `drawDungeonBossEncounter` 函式沒接呼叫端，王房行為還是舊的。本次接線後才真正生效。**

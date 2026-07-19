@@ -5,25 +5,46 @@
 import { doc, updateDoc, getDoc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
-import { drawDungeonBossEncounter } from "./dungeonExpansionMonsters";
-import { isMonsterExpansionEnabled } from "./monsterExpansionFeature";
+import { createLockedDungeonBossEncounter } from "./dungeonBossEncounter";
 
 // ── 王房抽王統一入口（2026-07-19）──────────────────────────────
 // 舊 drawExpeditionBoss 是「找該族該階第一隻怪再套 boss 倍率」，完全沒過濾
-// isKing/encounter，王房的王其實是一隻被放大的雜怪。改走 drawDungeonBossEncounter：
-// Tn 只出 Tn 的王（小王 2 隻擇一 / 大王 1 隻），連 2 次小王後第 3 次保底大王。
+// isKing/encounter，王房的王其實是一隻被放大的雜怪（實測 ghost_3 林投姐、
+// temple_2 骷髏劍士）。改走 createLockedDungeonBossEncounter：Tn 只出 Tn 的王
+// （小王 2 隻擇一 / 大王 1 隻），連續小王後保底大王。
 //
-// 回傳 { boss, miniStreak }。miniStreak 為 null 表示「不要寫回 Firestore」——
-// flag 關閉、該族該階沒有王（走舊 fallback）、或 forceKind 換難度重抽時都不推進計數。
-function rollExcavationBoss(difficulty, family, excavation, { forceKind = null } = {}) {
-  if (isMonsterExpansionEnabled()) {
-    const drawn = drawDungeonBossEncounter(difficulty, family, {
-      miniStreak: excavation?.miniBossStreak || 0,
-      forceKind,
+// ⚠️ 刻意複用戰鬥端（DungeonExpedition）那顆引擎，而不是另寫一套抽王：
+// 地下城物件把整筆 encounter 存進 bossEncounter 欄位後，戰鬥端會直接沿用
+// （isLockedDungeonBossEncounter 命中就不重算），所以「選擇畫面預覽的王」與
+// 「實際打到的王」保證是同一隻。各抽各的必然對不上。
+//
+// runId 用地下城自己的穩定 id：同一座地下城的王因此是決定性的，玩家反覆
+// 「花金幣升級 → 免費降級」也只會在各難度固定的王之間切換，無法重抽刷王。
+const BOSS_ROOM_ID = "floor-3-boss";
+
+function rollExcavationBoss(difficulty, family, excavation, { runId } = {}) {
+  try {
+    const encounter = createLockedDungeonBossEncounter({
+      runId: runId || `excav:${family}:${Date.now()}`,
+      roomId: BOSS_ROOM_ID,
+      family,
+      difficultyTier: difficulty,
+      consecutiveNonBoss: excavation?.miniBossStreak || 0,
     });
-    if (drawn) return { boss: drawn.monster, miniStreak: forceKind ? null : drawn.miniStreak };
+    return {
+      boss: encounter.monsterSnapshot,
+      bossEncounter: encounter,
+      miniStreak: encounter.nextConsecutiveNonBoss,
+    };
+  } catch {
+    // 該族該階湊不齊「2 小王 + 1 大王」時引擎會 throw（例如寶箱族）→ 退回舊路徑
+    return { boss: drawExpeditionBoss(difficulty, family), bossEncounter: null, miniStreak: null };
   }
-  return { boss: drawExpeditionBoss(difficulty, family), miniStreak: null };
+}
+
+// 地下城的穩定 runId：升降級要沿用同一個，王才不會被反覆重抽
+function makeBossRunId(family) {
+  return `excav:${family}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /**
@@ -127,12 +148,15 @@ export async function claimAutoDig(memberId) {
     // 自動挖掘的難度：均等機率 1~6
     const difficulty = 1 + Math.floor(Math.random() * 6);
 
-    const rolled = rollExcavationBoss(difficulty, family, excavation);
+    const bossRunId = makeBossRunId(family);
+    const rolled = rollExcavationBoss(difficulty, family, excavation, { runId: bossRunId });
     const result = {
       family,
       difficulty,
       isHidden: false,
       boss: rolled.boss,
+      bossEncounter: rolled.bossEncounter,
+      bossRunId,
       revealedAt: Date.now(),
       fromAutoDig: true,
     };
@@ -344,14 +368,17 @@ export async function revealExcavation(memberId) {
     const family = isHidden ? "treasure" : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
 
     // 隱藏地下城是寶箱族專屬王，不走族系抽王也不動小王保底計數
+    const bossRunId = makeBossRunId(family);
     const rolled = isHidden
-      ? { boss: drawTreasureKing(difficulty), miniStreak: null }
-      : rollExcavationBoss(difficulty, family, excavation);
+      ? { boss: drawTreasureKing(difficulty), bossEncounter: null, miniStreak: null }
+      : rollExcavationBoss(difficulty, family, excavation, { runId: bossRunId });
     const result = {
       family,
       difficulty,
       isHidden,
       boss: rolled.boss,
+      bossEncounter: rolled.bossEncounter,
+      bossRunId,
       revealedAt: Date.now(),
     };
 
@@ -389,14 +416,18 @@ export async function upgradeExcavationDifficulty(memberId) {
     if (coins < cost) return { ok: false, reason: `金幣不足` };
 
     const newDifficulty = currentDiff + 1;
+    // 沿用同一個 bossRunId：新難度的王是決定性的，升上去再降回來會拿到原本那隻，
+    // 不能靠反覆升降級重抽（降級免費，否則就是無限刷王）
+    const upgraded = rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
+      runId: pending.bossRunId,
+    });
     await updateDoc(doc(db, "members", memberId), {
       coins: increment(-cost),
       "dungeonExcavation.pendingReveal": {
         ...pending,
         difficulty: newDifficulty,
-        boss: rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
-          forceKind: pending.boss?.encounter || null,
-        }).boss,
+        boss: upgraded.boss,
+        bossEncounter: upgraded.bossEncounter,
       },
     });
     _excavCache.delete(memberId);
@@ -424,13 +455,15 @@ export async function downgradeExcavationDifficulty(memberId) {
     if (currentDiff <= 1) return { ok: false, reason: "已是最低難度" };
 
     const newDifficulty = currentDiff - 1;
+    const downgraded = rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
+      runId: pending.bossRunId, // 同上：沿用 runId，降級不能當作重抽王的手段
+    });
     await updateDoc(doc(db, "members", memberId), {
       "dungeonExcavation.pendingReveal": {
         ...pending,
         difficulty: newDifficulty,
-        boss: rollExcavationBoss(newDifficulty, pending.family, data.dungeonExcavation, {
-          forceKind: pending.boss?.encounter || null,
-        }).boss,
+        boss: downgraded.boss,
+        bossEncounter: downgraded.bossEncounter,
       },
     });
     _excavCache.delete(memberId);
@@ -513,7 +546,11 @@ export async function saveExcavation(memberId) {
       difficulty: pending.difficulty,
       isHidden: pending.isHidden || false,
       // pending 揭曉時就抽好王了，這裡只是防呆 fallback，不推進小王保底計數
-      boss: pending.boss || rollExcavationBoss(pending.difficulty, pending.family, excavation).boss,
+      boss: pending.boss
+        || rollExcavationBoss(pending.difficulty, pending.family, excavation, { runId: pending.bossRunId }).boss,
+      // 王的身分必須跟著進儲存槽，否則遠征時會重抽，變成「預覽一隻、打到另一隻」
+      bossEncounter: pending.bossEncounter || null,
+      bossRunId: pending.bossRunId || null,
       fromAutoDig: pending.fromAutoDig || false,
       fromWorldBoss: pending.fromWorldBoss || false,
       revealedAt: new Date().toISOString(),
@@ -644,13 +681,16 @@ export async function useDungeonScroll(memberId) {
     const family = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
     const difficulty = 1 + Math.floor(Math.random() * 6); // 隨機 1~6
 
-    const rolled = rollExcavationBoss(difficulty, family, excavation);
+    const bossRunId = makeBossRunId(family);
+    const rolled = rollExcavationBoss(difficulty, family, excavation, { runId: bossRunId });
     const newDungeon = {
       id: `sc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       family,
       difficulty,
       isHidden: false,
       boss: rolled.boss,
+      bossEncounter: rolled.bossEncounter,
+      bossRunId,
       fromWorldBoss: true,
       revealedAt: new Date().toISOString(),
     };
@@ -723,11 +763,17 @@ export async function adminSetSavedDungeon(memberId, dungeonEntry, index = null)
     const data = snap.data();
     const saved = data.dungeonExcavation?.savedDungeons || [];
 
+    // 教練手動塞地下城：一樣要抽真正的王並存下 bossEncounter，
+    // 否則遠征時戰鬥端會自行重抽，教練看到的和玩家打到的不是同一隻
+    const bossRunId = dungeonEntry.bossRunId || makeBossRunId(dungeonEntry.family);
+    const adminRolled = dungeonEntry.boss
+      ? { boss: dungeonEntry.boss, bossEncounter: dungeonEntry.bossEncounter || null }
+      : rollExcavationBoss(dungeonEntry.difficulty || 1, dungeonEntry.family, data.dungeonExcavation, { runId: bossRunId });
     const preparedEntry = {
       ...dungeonEntry,
-      // 教練手動塞地下城：補王但不推進玩家的小王保底計數
-      boss: dungeonEntry.boss
-        || rollExcavationBoss(dungeonEntry.difficulty || 1, dungeonEntry.family, data.dungeonExcavation).boss,
+      boss: adminRolled.boss,
+      bossEncounter: adminRolled.bossEncounter,
+      bossRunId,
     };
     let updated;
     if (index !== null && index >= 0 && index < saved.length) {

@@ -978,25 +978,38 @@ grantExpeditionRewards(memberId, rewards)
 // GuestDungeonSimple.jsx 已刪除（舊固定3層+固定王簡化版，跳過持久化，跟正式系統無關聯）
 ```
 
-### 王房抽王（2026-07-19 接線完成）
+### 王房抽王（2026-07-19 定案：全系統只有一套）
 
 ```js
-// src/lib/dungeonExpansionMonsters.js
-drawDungeonBossEncounter(difficulty, family, { miniStreak, forceKind, random })
-//   → { monster, kind:"boss"|"miniBoss", miniStreak } | null
-//   Tn 只出 Tn 的王（小王每族每階 2 隻 / 大王 1 隻），連 2 次小王第 3 次保底大王（MINI_BOSS_PITY=3）
-//   forceKind：跳過機率與保底，只在該類池子重抽 —— 換難度專用
+// 唯一的抽王引擎：src/lib/dungeonBossEncounter.js
+createLockedDungeonBossEncounter({ runId, roomId, family, difficultyTier, consecutiveNonBoss, lockedEncounter })
+//   → { encounter:"miniBoss"|"boss", monsterSnapshot, nextConsecutiveNonBoss, ... }（Object.freeze）
+//   Tn 只出 Tn 的王（小王每族每階 2 隻 / 大王 1 隻），連續小王後保底大王
+//   seeded by runId+roomId ⇒ 同一場遠征重整不會換王
+//   lockedEncounter 命中 isLockedDungeonBossEncounter() 就原封不動回傳（不重算）
 
-// src/lib/dungeonExcavation.js（唯一呼叫入口，勿直接呼上面那支）
-rollExcavationBoss(difficulty, family, excavation, { forceKind }) → { boss, miniStreak }
-//   miniStreak === null ⇒ 不要寫回 Firestore（flag 關／抽不到王走舊 fallback／forceKind）
+// 生成端：src/lib/dungeonExcavation.js::rollExcavationBoss(difficulty, family, excavation, { runId })
+//   → { boss, bossEncounter, miniStreak }；地下城物件存 boss / bossEncounter / bossRunId 三個欄位
 //   保底計數欄位：members/{id}.dungeonExcavation.miniBossStreak
-//   大／小王身分讀 boss.encounter，沒有另存 bossKind 欄位
 
-// ⚠️ 升降級（upgrade/downgradeExcavationDifficulty）務必傳 forceKind: pending.boss?.encounter，
-//    否則「花錢升級→免費降級」可無限重抽王、刷滿保底白嫖大王素材。
-// ⚠️ 訪客路徑（GuestDungeonEntry.jsx / DungeonExpedition.jsx fixedBoss）仍走舊 drawExpeditionBoss，尚未接。
+// 戰鬥端：DungeonExpedition.jsx:341
+//   fixedBoss = expansionBossEncounter?.monsterSnapshot || (isGuest ? guestFixedBoss : excavation?.boss)
+//   L336 把 excavation.bossEncounter 當 lockedEncounter 傳進去 ⇒ 沿用生成時那筆，不重抽
 ```
+
+**⚠️ 絕對不要再寫第二套抽王。** 2026-07-19 曾在 `dungeonExpansionMonsters.js` 加了
+`drawDungeonBossEncounter`，忘了 7/18 就已有 `createLockedDungeonBossEncounter`，
+結果變成「選擇畫面預覽一隻王、實際打到另一隻」。已刪除，統一走上面這條。
+
+**⚠️ 升降級沿用同一個 `bossRunId`**（`upgrade`/`downgradeExcavationDifficulty`）：
+王因此是決定性的，升上去再降回來得到原本那隻。降級免費，不鎖 runId 就是無限刷王。
+
+**⚠️ `rollExcavationBoss` 的 try/catch 是靜默 fallback**：某族某階湊不齊「2 小王+1 大王」
+時會安靜退回舊 `drawExpeditionBoss`（抽到雜怪），畫面看不出異狀。
+`dungeonBossEncounter.test.js` 有「六族 × 六階都湊得齊王池」整表釘死，別刪。
+
+**⚠️ 訪客路徑**（`GuestDungeonEntry.jsx` / `DungeonExpedition.jsx` 的 `guestFixedBoss`）
+仍走舊 `drawExpeditionBoss`，尚未接。
 
 ⚠️ 踩坑提醒：
 - **凡是被拉進訪客渲染樹、內部自己呼叫 `useAuth()` 的子元件，都要單獨補 `guestProfile`**——不能只改最外層容器。這次 `RPGEquipPanel.jsx`/`DungeonDex.jsx` 一開始都漏了（各自獨立 `useAuth()`），這不只是「訪客看不到資料」，是「教練裝置被小朋友掃碼共用」情境下**會顯示教練自己的裝備/圖鑑**（`auth.currentUser` 仍是教練），比空白畫面更難發現。**check agent 複查時又追出 `DungeonBattleRoom.jsx` 也是同一個漏洞**（它是 `DungeonExpedition.jsx` 內 `ExpeditionBattleRoom` 包裝元件實際渲染的戰鬥核心，`isGuest`/`guestProfile` 傳到 `DungeonExpedition` 就停了，沒有再往下傳進 `<DungeonBattleRoom>`），已補上 `guestProfile` 參數並在 `ExpeditionBattleRoom`/主元件呼叫處逐層往下傳——教訓是 grep `useAuth()` 要沿著「整條 render 呼叫鏈」（含同檔案內的本地 wrapper component）追到最底層，不能只看容器元件層級。

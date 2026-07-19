@@ -83,14 +83,16 @@ describe("樓層組合", () => {
   });
 });
 
-describe("flag 分流", () => {
+// 2026-07-19：DLC 全面安裝，flag 已移除（恆為 on）。
+// 原本的「flag off 走舊表」測試連同開關一起刪掉——現在關不掉就是規格。
+describe("擴充池分流", () => {
   afterEach(() => window.localStorage.removeItem("monsterExpansionV1"));
-  test("flag off 走舊表（不含擴充 id）", () => {
+  test("殘留的 localStorage off 不再能把中途樓層打回舊表", () => {
     window.localStorage.setItem("monsterExpansionV1", "off");
-    const floor = drawDungeonFloorMonsters(0, 1, { family: "ghost" });
-    expect(floor.monsters.every(monster => !/_t[1-6]_/.test(monster.id))).toBe(true);
+    const floor = drawDungeonFloorMonsters(1, 4, { family: "insect" });
+    expect(floor.monsters.every(monster => monster.expansionVersion === 1)).toBe(true);
   });
-  test("flag on 中途樓層全為擴充 normal 怪（含保留舊 id 的既有怪）", () => {
+  test("中途樓層全為擴充 normal 怪（含保留舊 id 的既有怪）", () => {
     window.localStorage.setItem("monsterExpansionV1", "on");
     const floor = drawDungeonFloorMonsters(1, 4, { family: "insect" });
     expect(floor.monsters.every(monster => monster.expansionVersion === 1 && monster.encounter === "normal" && monster.tier === "fierce")).toBe(true);
@@ -128,73 +130,5 @@ describe("舊池不得刷出王怪", () => {
       drawMatchedMonsters(power).filter(Boolean)
         .forEach(monster => expect(kingIds.has(monster.id)).toBe(false));
     }
-  });
-});
-
-describe("王房抽王（Tn 只出 Tn 的王 + 小王保底）", () => {
-  const { drawDungeonBossEncounter, MINI_BOSS_PITY } = require("./dungeonExpansionMonsters");
-  const { EXPANSION_MONSTER_BY_ID } = require("./monsterExpansionCatalog");
-  const FAMS = ["ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure"];
-  const TIER_BY_DIFF = { 1: "common", 2: "rare", 3: "elite", 4: "fierce", 5: "boss", 6: "mythic" };
-
-  test("王房一定是小王或大王，且階級等於地下城階級", () => {
-    FAMS.forEach(family => {
-      for (let d = 1; d <= 6; d += 1) {
-        for (let r = 0; r < 20; r += 1) {
-          const result = drawDungeonBossEncounter(d, family, { miniStreak: 0 });
-          expect(result).not.toBeNull();
-          const meta = EXPANSION_MONSTER_BY_ID[result.monster.id];
-          expect(["miniBoss", "boss"]).toContain(meta.encounter);
-          expect(meta.family).toBe(family);
-          expect(meta.tier).toBe(TIER_BY_DIFF[d]);
-        }
-      }
-    });
-  });
-
-  test("連續 2 次小王後，第 3 次必定是大王", () => {
-    // random 固定回 0.9（>0.5 → 平常會選小王），保底仍必須強制出大王
-    const forced = drawDungeonBossEncounter(1, "ghost", { miniStreak: MINI_BOSS_PITY - 1, random: () => 0.9 });
-    expect(forced.kind).toBe("boss");
-    expect(forced.miniStreak).toBe(0); // 出大王後計數歸零
-  });
-
-  test("抽到小王會累加計數，抽到大王歸零", () => {
-    const mini = drawDungeonBossEncounter(1, "ghost", { miniStreak: 0, random: () => 0.9 });
-    expect(mini.kind).toBe("miniBoss");
-    expect(mini.miniStreak).toBe(1);
-    const boss = drawDungeonBossEncounter(1, "ghost", { miniStreak: 1, random: () => 0.1 });
-    expect(boss.kind).toBe("boss");
-    expect(boss.miniStreak).toBe(0);
-  });
-
-  test("小王每族每階有 2 隻，會隨機出不同隻", () => {
-    const seen = new Set();
-    for (let r = 0; r < 60; r += 1) {
-      const result = drawDungeonBossEncounter(1, "ghost", { miniStreak: 0 });
-      if (result.kind === "miniBoss") seen.add(result.monster.id);
-    }
-    expect(seen.size).toBe(2);
-  });
-
-  test("forceKind 換難度重抽：保留大／小王身分，只換階級", () => {
-    // 升降級用：T1 小王 → T3 也必須是小王，否則玩家反覆升降級就能刷出大王
-    const mini = drawDungeonBossEncounter(3, "ghost", { forceKind: "miniBoss", random: () => 0.1 });
-    expect(mini.kind).toBe("miniBoss");
-    expect(EXPANSION_MONSTER_BY_ID[mini.monster.id].tier).toBe(TIER_BY_DIFF[3]);
-    const boss = drawDungeonBossEncounter(3, "ghost", { forceKind: "boss", random: () => 0.9 });
-    expect(boss.kind).toBe("boss");
-    expect(EXPANSION_MONSTER_BY_ID[boss.monster.id].tier).toBe(TIER_BY_DIFF[3]);
-  });
-
-  test("連續跑 300 次都不會連 3 次小王", () => {
-    let streak = 0;
-    let maxStreak = 0;
-    for (let r = 0; r < 300; r += 1) {
-      const result = drawDungeonBossEncounter(3, "exam", { miniStreak: streak });
-      streak = result.miniStreak;
-      maxStreak = Math.max(maxStreak, streak);
-    }
-    expect(maxStreak).toBeLessThanOrEqual(MINI_BOSS_PITY - 1);
   });
 });
