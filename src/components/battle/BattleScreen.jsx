@@ -683,6 +683,13 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
         setPartyPhase({type:"ability",title:`${ability.scheduled.enhanced?"強化・":""}${ability.scheduled.name}`,detail,icon:"⚡"});
         await delay(2200);
       }
+      // 演出期間的血量是前端逐箭累減、還套了 Math.max(0,…) 算出來的，只是動畫用的估計值。
+      // 權威端（processDungeonRound）可能在玩家傷害之後才加上護盾（monsterHP += shieldHp），
+      // 兩邊因此會分岔：畫面顯示 0、實際 HP 還有剩 → 玩家以為打死了，卻被要求再送一次分數。
+      // 演出結束時一律以權威端的 monsterHPAfter 為準，護盾回血也才看得見。
+      if(!cancelled && Number.isFinite(partyResolution.monsterHPAfter)){
+        setPartyMonsterHp(partyResolution.monsterHPAfter);
+      }
       for(const fallen of partyResolution.demotedMembers||[]){
         if(cancelled)return;
         setPartyHistory(prev=>[...prev,`🛡️ ${fallen.name} 被擊倒，轉為後衛`].slice(-4));
