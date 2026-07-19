@@ -348,7 +348,9 @@ export async function createTeamExpeditionBattleRoom({
 
     return { ok: true, roomId: ref.id };
   } catch (e) {
-    return { ok: false, reason: e.message };
+    // 同 updateTeamExpeditionRoom：帶出錯誤碼，才分得清資料格式(invalid-argument)與權限(permission-denied)
+    console.error("[createTeamExpeditionBattleRoom]", e?.code, e?.message);
+    return { ok: false, reason: `${e?.code || "error"}: ${e?.message || e}` };
   }
 }
 
@@ -358,7 +360,10 @@ export async function updateTeamExpeditionRoom(roomId, fields) {
     await updateDoc(doc(db, D, roomId), fields);
     return { ok: true };
   } catch (e) {
-    return { ok: false, reason: e.message };
+    // 帶出 Firestore 的錯誤碼（invalid-argument / permission-denied…）：
+    // 只有 e.message 時常看不出是資料格式問題還是權限問題。
+    console.error("[updateTeamExpeditionRoom]", e?.code, e?.message, Object.keys(fields || {}));
+    return { ok: false, reason: `${e?.code || "error"}: ${e?.message || e}` };
   }
 }
 

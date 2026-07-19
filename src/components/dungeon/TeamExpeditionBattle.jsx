@@ -53,6 +53,25 @@ import KillLootToast from "./KillLootToast";
 
 const DungeonBossRewardRoom = lazy(() => import("./DungeonBossRewardRoom"));
 
+// 錯誤浮動橫幅：flowError 原本只在主 render 尾端顯示，但地圖/分支畫面會提早 return，
+// 導致「點了沒反應、也看不到任何錯誤」。改成蓋在畫面上方，任何階段都看得到。
+function FlowErrorBanner({ message, onDismiss }) {
+  if (!message) return null;
+  return (
+    <div style={{ position:"fixed", left:12, right:12, top:12, zIndex:99, display:"flex", justifyContent:"center" }}>
+      <div style={{ maxWidth:420, width:"100%", padding:"10px 14px", borderRadius:14,
+        background:"rgba(69,10,10,.96)", border:"1.5px solid #f87171", boxShadow:"0 0 22px rgba(248,113,113,.35)" }}>
+        <div style={{ fontSize:12, fontWeight:900, color:"#fecaca" }}>⚠️ {message}</div>
+        <button type="button" onClick={onDismiss}
+          style={{ marginTop:6, padding:"4px 10px", borderRadius:8, fontSize:11, fontWeight:700,
+            background:"rgba(248,113,113,.18)", color:"#fecaca", border:"1px solid rgba(248,113,113,.4)", cursor:"pointer" }}>
+          關閉
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function attachGridMonsters(gridFloor, floorIndex, difficulty, plan, family) {
   const queue = [...(plan.monsters || [])];
   const fallbackVariant = floorIndex === 0 ? "weak" : "normal";
@@ -927,35 +946,43 @@ export default function TeamExpeditionBattle({
 
   if (mapState?.phase === "grid" && mapState.gridFloor) {
     return (
-      <GridMapStage
-        gridFloor={mapState.gridFloor}
-        playerPos={mapState.playerPos}
-        visitedIds={new Set(mapState.visitedIds || [])}
-        floorIndex={floorIndex}
-        playerState={playerState}
-        coins={profile?.coins || 0}
-        onCellClick={handleCellClick}
-        onDescend={handleDescend}
-        onRetreat={handleAbandon}
-        canControl={isHost}
-      />
+      <>
+        <GridMapStage
+          gridFloor={mapState.gridFloor}
+          playerPos={mapState.playerPos}
+          visitedIds={new Set(mapState.visitedIds || [])}
+          floorIndex={floorIndex}
+          playerState={playerState}
+          coins={profile?.coins || 0}
+          lootMult={teamRoom?.lootMult || 1}
+          onCellClick={handleCellClick}
+          onDescend={handleDescend}
+          onRetreat={handleAbandon}
+          canControl={isHost}
+        />
+        <FlowErrorBanner message={flowError} onDismiss={() => setFlowError("")} />
+      </>
     );
   }
 
   if (mapState?.phase === "branch" && mapState.branchFloor) {
     return (
-      <BranchStage
-        branchFloor={mapState.branchFloor}
-        branchChoice={mapState.branchChoice}
-        branchSeq={branchSeq}
-        branchStep={mapState.branchStep || 0}
-        playerState={playerState}
-        coins={profile?.coins || 0}
-        onChoose={handleChooseBranch}
-        onEnterNext={handleBranchNext}
-        onRetreat={handleAbandon}
-        canControl={isHost}
-      />
+      <>
+        <BranchStage
+          branchFloor={mapState.branchFloor}
+          branchChoice={mapState.branchChoice}
+          branchSeq={branchSeq}
+          branchStep={mapState.branchStep || 0}
+          playerState={playerState}
+          coins={profile?.coins || 0}
+          lootMult={teamRoom?.lootMult || 1}
+          onChoose={handleChooseBranch}
+          onEnterNext={handleBranchNext}
+          onRetreat={handleAbandon}
+          canControl={isHost}
+        />
+        <FlowErrorBanner message={flowError} onDismiss={() => setFlowError("")} />
+      </>
     );
   }
 
