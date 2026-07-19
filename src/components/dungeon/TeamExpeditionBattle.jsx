@@ -38,6 +38,7 @@ import {
 import {
   buildExpeditionParty,
   collectBattleStats,
+  collectBattleArrows,
   createExpeditionKillLoot,
 } from "../../lib/expeditionRewards";
 import DungeonBattleRoom from "./DungeonBattleRoom";
@@ -49,7 +50,7 @@ import DungeonTrap from "./DungeonTrap";
 import DungeonChest from "./DungeonChest";
 import DungeonRest from "./DungeonRest";
 import { GridMapStage, BranchStage } from "./DungeonStages";
-import KillLootToast from "./KillLootToast";
+import DungeonKillResult from "./DungeonKillResult";
 
 const DungeonBossRewardRoom = lazy(() => import("./DungeonBossRewardRoom"));
 
@@ -163,6 +164,9 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
   // 沿路擊殺的累計（單人遠征同規格）。以前這兩個數字只餵給 4.5 秒的 toast 就丟掉，
   // 結算頁因此只顯示通關獎勵，跟玩家實際入帳的金額對不上。
   const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
+  // 勝利後停留的單場結算畫面；advanceRef 存房主的「推進到下一房」動作，按下一步才執行
+  const [killResultView, setKillResultView] = useState(null);
+  const advanceRef = useRef(null);
   const battleMonsterRef = useRef(null);
   const killClaimedRef = useRef(false);
   const claimMyKillReward = useCallback(monster => {
@@ -201,14 +205,15 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
           kills: previous.kills + 1,
         }));
       }
+      // ⚠️ 不要自動清空：這筆現在是 DungeonKillResult 的資料來源（以前只餵 4.5 秒的
+      // 浮動提示才需要自動收）。清早了，結算畫面上的寶箱與金幣會憑空消失。
       setKillReward({
         monsterName: monster.name,
-        chests,                                   // 實際掉落的寶箱，交給 KillLootToast 逐項列出
+        chests,
         coins: kill?.coins || 0,
         archerXP: kill?.archerXP || 0,
         lootMult: mult,
       });
-      setTimeout(() => setKillReward(null), 4500);
     })().catch(() => { killClaimedRef.current = false; sessionStorage.removeItem(onceKey); });
   }, [roomId, guestProfile, battleProfile?.id, lootMult]);
 
@@ -236,8 +241,8 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
         terminalHandledRef.current = true;
         setBattleDone(true);
         if (payload.won) claimMyKillReward(data.monster || battleMonsterRef.current); // 每位隊員各自即時入帳
-        if (!isHostRef.current) return;
-        timerRef.current = setTimeout(async () => {
+
+        const advance = async () => {
           const handled = await onDoneRef.current?.({
             ...payload,
             members: data.members || {},
@@ -247,7 +252,23 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
             // 寬限 8 秒才刪戰鬥房：讓所有隊員先收到 completed+win 快照走完勝利轉場
             setTimeout(() => cleanupExpeditionRoom(roomId).catch(() => {}), 8000);
           }
-        }, delay);
+        };
+
+        // 勝利：全員先停在單場結算畫面（使用者規格）。房主按「下一步」才推進，
+        // 隊員端會因為房主推進後的房間快照變化而自動離開，不必各自按。
+        // 失敗維持原本的自動流程 —— 失敗畫面有自己的轉場，硬塞結算頁只會擋路。
+        if (payload.won) {
+          setKillResultView({
+            monster: data.monster || battleMonsterRef.current,
+            members: data.members || {},
+            log: data.log || [],
+            targetFmt: data.targetFmt || "full_110",
+          });
+          if (isHostRef.current) advanceRef.current = advance;
+          return;
+        }
+        if (!isHostRef.current) return;
+        timerRef.current = setTimeout(advance, delay);
       };
       // 全滅 = 失敗
       if (data.status === "completed" && data.result === "lose") {
@@ -279,6 +300,43 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
     );
   }
 
+  if (killResultView) {
+    const myId = battleProfile?.id;
+    const stats = collectBattleStats(killResultView.log);
+    const arrowsByMember = collectBattleArrows(killResultView.log);
+    const memberEntry = id => killResultView.members?.[id] || {};
+    const toEntry = id => ({
+      id,
+      name: memberEntry(id).name || "隊友",
+      arrows: arrowsByMember[id] || [],
+      dmgDealt: stats[id]?.dmgDealt || 0,
+      dmgTaken: stats[id]?.dmgTaken || 0,
+      crits: stats[id]?.crits || 0,
+    });
+    const allyIds = Object.keys(killResultView.members || {}).filter(id => id !== myId);
+    return (
+      <DungeonKillResult
+        monster={killResultView.monster}
+        self={{ ...toEntry(myId), name: memberEntry(myId).name || "我" }}
+        allies={allyIds.map(toEntry)}
+        chests={killReward?.chests || []}
+        coins={killReward?.coins || 0}
+        archerXP={killReward?.archerXP || 0}
+        lootMult={lootMult}
+        targetFmt={killResultView.targetFmt || "full_110"}
+        canContinue={isHost}
+        waitingLabel="等待房主繼續…"
+        onContinue={() => {
+          const advance = advanceRef.current;
+          advanceRef.current = null;
+          setKillResultView(null);
+          setKillReward(null);
+          advance?.();
+        }}
+      />
+    );
+  }
+
   if (battleDone) {
     return (
       <div className="h-[100dvh] flex items-center justify-center text-white/40 bg-[#0a0a0f]">
@@ -287,21 +345,17 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
     );
   }
 
+  // 擊殺掉落不再用 4.5 秒浮動提示，改由 DungeonKillResult 完整列出（與單人端一致）
   return (
-    <>
-      <DungeonBattleRoom
-        key={roomId}
-        roomId={roomId}
-        isMapMode={true}
-        expeditionMode={true}
-        guestProfile={guestProfile}
-        onReturnToMap={() => {}}
-        onExit={onAbandon}
-      />
-      {/* 掉落倍率改顯示在樓層畫面的頂端狀態列（PlayerStatusBar），戰鬥中不再放浮動角標 */}
-      {/* 🎁 每場擊殺即時入帳：直接列出掉了哪種寶箱、各幾個（與單人端共用同一元件） */}
-      {killReward && <KillLootToast {...killReward} />}
-    </>
+    <DungeonBattleRoom
+      key={roomId}
+      roomId={roomId}
+      isMapMode={true}
+      expeditionMode={true}
+      guestProfile={guestProfile}
+      onReturnToMap={() => {}}
+      onExit={onAbandon}
+    />
   );
 }
 
