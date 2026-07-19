@@ -15,7 +15,7 @@ import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
-import { getCardStat, MAX_MONSTER_EQUIPPED, MAX_WB_EQUIPPED } from "./monsterCards";
+import { getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { addCatBond, addCatXP } from "./catDb";
@@ -3506,12 +3506,7 @@ export async function equipCard(memberId, key, source = "monster") {
 
     const targetCard = source === "wb" ? normalizeWorldBossCard(key, wbCards[key]) : cards[key];
     if (!targetCard) return { ok: false, reason: "找不到卡片" };
-    if (targetCard.statMode === "choose" && !targetCard.chosenStat) {
-      return { ok: false, reason: "請先為這張王卡選擇屬性" };
-    }
-    if (targetCard.tier === "mythic" && !targetCard.chosenStat) {
-      return { ok: false, reason: "請先為這張神話卡選擇屬性" };
-    }
+    // 2026-07-19：移除「自選屬性」，卡片屬性一律寫死，因此不再需要先選屬性才能裝備。
 
     // 世界王卡：獨立欄位，最多 3 張，不分屬性
     if (source === "wb") {
@@ -3523,10 +3518,17 @@ export async function equipCard(memberId, key, source = "monster") {
       return { ok: true };
     }
 
-    // 怪物卡：不分屬性,總量最多 10 張（2026-07-18 使用者指示）
-    const monsterCount = equipped.filter(e => e.source !== "wb").length;
-    if (monsterCount >= MAX_MONSTER_EQUIPPED) {
-      return { ok: false, reason: `普通卡欄位已達上限（${MAX_MONSTER_EQUIPPED}張），請先卸下一張` };
+    // 怪物卡：2026-07-19 起改回依屬性分槽（HP 5 張、ATK/DEF 各 3 張），四區各自獨立計算。
+    const targetStat = getCardStat(targetCard);
+    const sameStatCount = equipped
+      .filter(e => e.source !== "wb")
+      .map(e => cards[e.key])
+      .filter(card => card && getCardStat(card) === targetStat)
+      .length;
+    const statLimit = maxEquippedForStat(targetStat);
+    if (sameStatCount >= statLimit) {
+      const label = { hp: "HP", atk: "ATK", def: "DEF" }[targetStat] || targetStat;
+      return { ok: false, reason: `${label} 卡片欄位已達上限（${statLimit} 張），請先卸下一張` };
     }
 
     await setDoc(ref, { equipped: [...equipped, { key, source }], updatedAt: serverTimestamp() }, { merge: true });
