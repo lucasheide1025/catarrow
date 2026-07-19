@@ -35,7 +35,8 @@ import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
-import { BattleResultPanel } from "../shared/BattleResultPanel";
+import DungeonKillResult from "../dungeon/DungeonKillResult";
+import { collectBattleArrows } from "../../lib/expeditionRewards";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
@@ -1281,17 +1282,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const myArrowBreakdown = (room.log || []).flatMap(entry =>
       (entry.playerLog || []).find(p => p.id === myId)?.arrowBreakdown || []
     );
-    const partyScoreBreakdown = {};
-    for (const a of myArrowBreakdown) {
-      const key = a.label === "X" ? "X" : (!a.label || a.label === "M") ? "M" : String(a.label);
-      partyScoreBreakdown[key] = (partyScoreBreakdown[key] || 0) + 1;
-    }
-    const partyAvgScore = myArrowBreakdown.length
-      ? parseFloat((myArrowBreakdown.reduce((s, a) => {
-          const v = a.label === "X" ? 10 : a.label === "M" ? 0 : Number(a.label) || 0;
-          return s + v;
-        }, 0) / myArrowBreakdown.length).toFixed(1))
-      : 0;
+    // 註：分數分佈與均分已改由 DungeonKillResult 內部的 archeryGrade 計算，
+    // 原本手算的 partyScoreBreakdown / partyAvgScore 連同 partyResultData 一併移除。
 
     // 我的個人戰績（從 statsMap 取，statsMap 在後面才 build，先從 log 直接算）
     const myLogStats = (room.log || []).reduce((acc, entry) => {
@@ -1304,48 +1296,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return acc;
     }, { dmg: 0, ctr: 0, crits: 0 });
 
-    const partyResultData = {
-      monster: {
-        id:      room.monster?.id     || "party_monster",
-        name:    room.monster?.name   || "怪物",
-        icon:    room.monster?.icon   || "👾",
-        tier:    room.monster?.tier   || "common",
-        family:  room.monster?.family || "ghost",
-        variant: "normal",
-      },
-      // 與單人打怪同步：戰利品照樣顯示在結算面板（原本全部關掉，只靠下方另一套寶箱 UI，
-      // 導致組隊的結算畫面和訊息跟單人差很多）。實際入袋仍由下方「確認領取寶箱」流程負責。
-      drops: {
-        coins:     previewReward?.coins || 0,
-        material:  previewReward?.material || null,
-        materials: previewReward?.material ? [previewReward.material] : [],
-        chest:     myChests.length > 0,
-        goldChest: myChests.some(c => c?.kind === "coin" || c?.type === "coin"),
-        card:      previewReward?.card || null,
-        arrowDew:  previewReward?.arrowDew || 0,
-      },
-      stats: {
-        dmgDealt:       myLogStats.dmg,
-        dmgTaken:       myLogStats.ctr,
-        avgScore:       partyAvgScore,
-        arrowCount:     myArrowBreakdown.length,
-        roundCount:     room.log?.length || 0,
-        critCount:      myLogStats.crits,
-        scoreBreakdown: partyScoreBreakdown,
-      },
-    };
 
-    // 只顯示統計（戰績表和掉落已有獨立 UI）
-    const partyStatsConfig = {
-      showMonsterInfo:    true,
-      showDmgDealt:       true,
-      showDmgTaken:       true,
-      showAvgScore:       true,
-      showArrowCount:     true,
-      showRoundCount:     true,
-      showCritCount:      true,
-      showScoreBreakdown: true,
-    };
+    // 隊友的箭序列（結算頁的射箭評價與 MVP 要用；傷害統計走下面的 statsMap）
+    const partyArrowsByMember = collectBattleArrows(room.log);
 
     // 從戰鬥 log 彙總各人數據
     const statsMap = {};
@@ -1361,6 +1314,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     memberList.forEach(m => {
       if (!statsMap[m.id]) statsMap[m.id] = { name: m.name, dmgDealt: 0, dmgRecvd: 0, crits: 0 };
     });
+    // 結算頁的隊伍評價與 MVP 已改由 DungeonKillResult 呈現（依射箭表現，不是傷害排名，
+    // 否則後衛與補師永遠拿不到）。但**戰績分享卡**仍吃這份傷害排名的 statsList / mvpId，
+    // 所以計算保留 —— 分享卡秀的是戰鬥貢獻，跟結算頁的射箭評價是兩件事。
     const statsList = Object.entries(statsMap).map(([id, s]) => ({
       id, ...s,
       maxHP: members[id]?.maxHP || 0,
@@ -1368,21 +1324,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       def:   members[id]?.def   || 0,
     })).sort((a, b) => b.dmgDealt - a.dmgDealt);
     const mvpId = statsList[0]?.dmgDealt > 0 ? statsList[0].id : null;
-
-    // 加入隊伍成員到 partyResultData（含 MVP / 存活狀態）
-    partyResultData.party = {
-      leaderId: room.hostId,
-      members: statsList.map(s => ({
-        id:       s.id,
-        name:     s.name,
-        dmgDealt: s.dmgDealt ?? 0,
-        crits:    s.crits    ?? 0,
-        alive:    members[s.id]?.alive !== false,
-        isMvp:    s.id === mvpId && won,
-      })),
-    };
-    partyStatsConfig.showPartyMembers = true;
-    partyStatsConfig.showPartyLeader  = true;
 
     return (
       <div className={`min-h-screen flex flex-col px-4 py-6 gap-4 max-w-lg mx-auto overflow-y-auto ${
@@ -1396,8 +1337,48 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           color={won ? "amber" : "red"}
         />
 
-        {/* 戰鬥詳情：統一用 BattleResultPanel（含隊伍成員 + 個人分數統計） */}
-        <BattleResultPanel data={partyResultData} config={partyStatsConfig} />
+        {/* 戰鬥詳情：2026-07-19 改用與地下城／單人打怪同一套結算元件（使用者要求整個系統一致）。
+            embedded 模式只換掉統計與戰利品區塊，外層標題、戰鬥紀錄、領取寶箱流程都保留。
+            ⚠️ 組隊打怪的卡片與指定素材務必傳入 —— 那是這個模式的重頭戲。
+            隊友評價的箭序列從 room.log 取，MVP 由 archeryGrade 依射箭表現決定
+            （不再用傷害排名的 mvpId，那會讓後衛永遠拿不到）。 */}
+        <DungeonKillResult
+          embedded
+          monster={room.monster}
+          self={{
+            id: myId,
+            name: members[myId]?.name || profile?.nickname || profile?.name || "我",
+            arrows: myArrowBreakdown.map(arrow => arrow?.label ?? arrow?.score ?? arrow),
+            dmgDealt: myLogStats.dmg,
+            dmgTaken: myLogStats.ctr,
+            crits: myLogStats.crits,
+          }}
+          allies={memberList
+            .filter(member => member.id !== myId)
+            .map(member => ({
+              id: member.id,
+              name: statsMap[member.id]?.name || member.name || "隊友",
+              arrows: (partyArrowsByMember[member.id] || []),
+            }))}
+          materials={previewReward?.material ? [{
+            id: previewReward.material.id,
+            name: previewReward.material.name || previewReward.material.id,
+            icon: previewReward.material.icon,
+            count: previewReward.material.count || 1,
+          }] : []}
+          card={previewReward?.card || null}
+          chestRows={myChests.map((chest, index) => {
+            const info = CHEST_TYPES[chest?.type] || CHEST_TYPES.wood;
+            return {
+              key: `${chest?.type || "chest"}-${index}`,
+              icon: chest?.icon || info.icon,
+              name: chest?.name || info.name,
+              count: 1,
+            };
+          })}
+          coins={previewReward?.coins || 0}
+          targetFmt={room.targetFmt || "full_110"}
+        />
 
         {/* 完整戰鬥紀錄（可展開）*/}
         {(room.log || []).length > 0 && (
