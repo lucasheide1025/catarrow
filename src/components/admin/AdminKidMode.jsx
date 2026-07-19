@@ -330,8 +330,36 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
+  // 訪客有兩種，轉正式的處理完全不同：
+  // ① 官網預約註冊（registerGuestWithPassword）→ 已經有真的 Firebase Auth
+  //    email/password 帳號（member 文件有 email + hasPassword）。
+  //    這種**不能再建帳號** —— 用同一個 email 去 createUserWithEmailAndPassword 必然
+  //    撞 auth/email-already-in-use，轉正因此永遠失敗（使用者實測回報的「信箱帳號重複」）。
+  //    正確做法是沿用既有 uid 與 email，只補學籍欄位。
+  // ② QR 碼匿名訪客（resolveGuestSession → signInAnonymously）→ 沒有任何登入憑證，
+  //    不設一組 email/password 的話，轉正後學生根本無法登入，所以仍要填。
+  const hasOwnLogin = !!(account.hasPassword && (account.email || account.contactRaw));
+  const existingEmail = (account.email || account.contactRaw || "").trim();
+
   async function save() {
-    if (!form.email || !form.password || !form.name) { setErr("請填寫信箱、密碼、姓名"); return; }
+    if (!form.name) { setErr("請填寫姓名"); return; }
+
+    // ── ① 已有自己的登入憑證：原地轉正，不碰 Firebase Auth ──
+    if (hasOwnLogin) {
+      setSaving(true);
+      setErr("");
+      try {
+        const { email: _email, password: _password, ...rest } = form;
+        await convertGuestToOfficial(account.id, { ...rest, email: existingEmail }, account.uid, operatorId);
+        toast("已轉為正式會員 🐱");
+        onClose();
+      } catch (e) { setErr(e.message); }
+      setSaving(false);
+      return;
+    }
+
+    // ── ② 匿名訪客：必須建立一組登入憑證 ──
+    if (!form.email || !form.password) { setErr("這個帳號沒有登入憑證，請設定信箱與密碼"); return; }
     setSaving(true);
     setErr("");
     // 用第二個 Firebase App 建立帳號，避免切換主要登入身份（比照 AddMemberModal）
@@ -344,7 +372,11 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
       await convertGuestToOfficial(account.id, { ...rest, email }, cred.user.uid, operatorId);
       toast("已轉為正式會員 🐱");
       onClose();
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      setErr(e?.code === "auth/email-already-in-use"
+        ? "這個信箱已經有帳號了。若就是這位學生本人的帳號，請改用他原本的登入信箱，或先確認是否已經轉正過。"
+        : e.message);
+    }
     finally { deleteApp(tmpApp).catch(() => {}); }
     setSaving(false);
   }
@@ -362,10 +394,25 @@ function ConvertModal({ account, onClose, operatorId, toast }) {
         </div>
         <div>
           <div className="text-slate-400 text-xs font-bold mb-3">🔑 登入資訊</div>
-          <div className="grid grid-cols-2 gap-3">
-            {f("email", "電子信箱", "email")}
-            {f("password", "初始密碼", "password")}
-          </div>
+          {hasOwnLogin ? (
+            // 已經有自己的帳密：沿用即可，不要再讓教練設一組（會撞 email 重複）
+            <div className="bg-emerald-900/20 border border-emerald-400/30 rounded-xl px-3 py-2.5 text-emerald-200 text-xs leading-relaxed">
+              ✅ 這個帳號已經有自己的登入信箱：<span className="font-black">{existingEmail}</span>
+              <div className="text-emerald-300/70 mt-1">
+                轉正後沿用原本的信箱與密碼登入，不需要重新設定，遊戲資料也完整保留。
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl px-3 py-2 text-slate-300 text-xs mb-3">
+                這是 QR 碼匿名帳號，沒有登入憑證。請設定一組信箱與密碼，學生之後才能登入。
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {f("email", "電子信箱", "email")}
+                {f("password", "初始密碼", "password")}
+              </div>
+            </>
+          )}
         </div>
         <div>
           <div className="text-slate-400 text-xs font-bold mb-3">👤 基本資料</div>
