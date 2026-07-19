@@ -77,8 +77,14 @@ export default function DungeonKillResult({
   self,                    // { id, name, arrows, dmgDealt, dmgTaken, crits }
   allies = [],             // 其他隊友，結構同 self（單人遠征傳空陣列）
   chests = [],
+  // 打怪模式（單人／組隊）特有：指定素材與卡片掉落。
+  // 地下城中途擊殺不掉單怪素材（2026-07-18 規格），所以這兩個在地下城一律為空。
+  materials = [],          // [{ id, name, icon, count }]
+  card = null,             // { id, name, icon } —— 掉卡是打怪的重頭戲，單獨一區呈現
+  chestRows = null,        // 已格式化的寶箱列（打怪端傳），有值時取代 chests 的彙總
   coins = 0,
   archerXP = 0,
+  adventurerXP = 0,        // 冒險者等級 XP（打怪模式才有）
   catXP = 0,
   catName,
   lootMult = 1,
@@ -103,7 +109,8 @@ export default function DungeonKillResult({
     [self, allies, targetFmt],
   );
   const advice = useMemo(() => buildArcheryAdvice(selfPerf, { targetFmt }), [selfPerf, targetFmt]);
-  const chestSummary = summarizeExpeditionChests(chests);
+  // 打怪端已經有格式化好的寶箱列就直接用，否則走地下城的彙總邏輯
+  const chestSummary = chestRows || summarizeExpeditionChests(chests);
   const isSolo = allyPerfs.length === 0;
 
   return (
@@ -160,8 +167,28 @@ export default function DungeonKillResult({
           <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
             {coins > 0 && <StatTile label="金幣" value={`+${coins}`} color="#fcd34d" />}
             {archerXP > 0 && <StatTile label="射手 XP" value={`+${archerXP}`} color="#c4b5fd" />}
+            {adventurerXP > 0 && <StatTile label="冒險 XP" value={`+${adventurerXP}`} color="#93c5fd" />}
             {catXP > 0 && <StatTile label={`${catName || "貓貓"} XP`} value={`+${catXP}`} color="#fda4af" />}
           </div>
+
+          {/* 指定素材（打怪模式特有；地下城中途擊殺不掉單怪素材） */}
+          {materials.length > 0 && (
+            <div style={{ marginTop:10, display:"flex", flexWrap:"wrap", gap:6 }}>
+              {materials.map((material, index) => (
+                <span key={`${material.id || material.name}-${index}`} style={{
+                  display:"inline-flex", alignItems:"center", gap:5,
+                  padding:"6px 10px", borderRadius:10, background:"rgba(0,0,0,.25)",
+                  fontSize:12, color:"#e2e8f0",
+                }}>
+                  <span style={{ fontSize:15 }}>{material.icon || "🧩"}</span>
+                  {material.name}
+                  {(material.count || 1) > 1 && (
+                    <span style={{ fontWeight:900, color:"#fcd34d" }}>×{material.count}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
           {chestSummary.length > 0 && (
             <div style={{ marginTop:10, display:"flex", flexDirection:"column", gap:5 }}>
               {chestSummary.map(item => (
@@ -177,6 +204,21 @@ export default function DungeonKillResult({
               ))}
             </div>
           )}
+          {/* 掉卡是打怪的重頭戲，單獨一區並給紫色高亮，不要混在寶箱列裡被略過 */}
+          {card && (
+            <div style={{
+              marginTop:10, padding:"10px 12px", borderRadius:12,
+              background:"rgba(167,139,250,.12)", border:"1px solid rgba(167,139,250,.35)",
+              display:"flex", alignItems:"center", gap:10,
+            }}>
+              <span style={{ fontSize:22 }}>{card.icon || "🃏"}</span>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:10, fontWeight:900, color:"#c4b5fd", letterSpacing:".08em" }}>NEW CARD</div>
+                <div style={{ fontSize:13, fontWeight:900, color:"#ede9fe" }}>{card.name || "怪物卡"}</div>
+              </div>
+            </div>
+          )}
+
           {bossDrops.length > 0 && (
             <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid rgba(255,255,255,.08)" }}>
               <div style={{ fontSize:11, fontWeight:700, color:"#fbbf24", marginBottom:5 }}>👑 王房掉落</div>
