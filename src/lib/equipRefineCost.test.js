@@ -54,18 +54,18 @@ describe("generateRandomMats 產生的需求", () => {
       for (const level of [0, 1, 2, 3, 4]) {
         const mats = generateRandomMats(grade, level, { expansionEnabled: false, expansionMaterials: EXPANSION_MATERIALS });
         expect(mats.materials.some(m => bossNotes.includes(m.note))).toBe(false);
-        // 種類數依品級：史詩 4+3+1、傳說 4+3（T7 未實裝）、神話 6（無更高階）
-        expect(mats.materials.length).toBe({ epic: 8, legend: 7, mythic: 6 }[grade]);
+        // 種類數依品級：史詩/傳說 4+3+1、神話 5+3（T7 未實裝）
+        expect(mats.materials.length).toBe({ epic: 8, legend: 8, mythic: 8 }[grade]);
       }
     }
   });
-  test("傳說的需求組成為該階 4 種 + 下一階 3 種（T7 未實裝，王素材另計）", () => {
+  test("傳說的需求組成為該階 4 種 + 下一階 3 種 + 再下一階 1 種（王素材另計）", () => {
     const mats = generateRandomMats("legend", 0, withExpansion);
     const current = mats.materials.filter(m => m.tierRole === "current");
     const next = mats.materials.filter(m => m.tierRole === "next");
     expect(current).toHaveLength(4);
     expect(next).toHaveLength(3);
-    expect(mats.materials.filter(m => m.tierRole === "next2")).toHaveLength(0);
+    expect(mats.materials.filter(m => m.tierRole === "next2")).toHaveLength(1);
     expect(new Set(mats.materials.map(m => m.id)).size).toBe(mats.materials.length); // 不重複
     expect(current.every(m => m.count > 0) && next.every(m => m.count > 0)).toBe(true);
     expect(mats.keyItem).toBeNull(); // keyItem 已停用，下一階素材併入 materials

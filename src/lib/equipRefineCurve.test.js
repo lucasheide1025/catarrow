@@ -69,10 +69,33 @@ describe("材料需求依品級分級", () => {
     });
   });
 
-  test("神話沒有更高階材料，改吃滿六族該階", () => {
+  test("神話沒有 T7，改 5 種該階 + 3 種下一階", () => {
     const mats = generateRandomMats("mythic", 0, opts);
-    expect(kindCount(mats, "current")).toBe(6);
-    expect(kindCount(mats, "next")).toBe(0);
+    expect(kindCount(mats, "current")).toBe(5);
+    expect(kindCount(mats, "next")).toBe(3);
+    expect(kindCount(mats, "next2")).toBe(0);
+  });
+
+  // 使用者實測回報「稀有居然要高階材料」後補的護欄：對應表曾被整條推高一階。
+  test("材料階級照字面規格：稀有吃 T1/T2/T3，精英吃 T2/T3/T4", () => {
+    const tiersOf = (grade, plus, role) =>
+      generateRandomMats(grade, plus, opts).materials
+        .filter(m => m.tierRole === role)
+        .map(m => Number(/_m([1-6])$/.exec(m.id)?.[1] ?? /_t([1-6])_/.exec(m.id)?.[1]));
+
+    expect(tiersOf("common", 0, "current").every(t => t === 1)).toBe(true);
+    expect(tiersOf("rare", 0, "current").every(t => t === 1)).toBe(true);
+    expect(tiersOf("rare", 0, "next").every(t => t === 2)).toBe(true);
+    expect(tiersOf("rare", 3, "next2").every(t => t === 3)).toBe(true);
+    expect(tiersOf("elite", 0, "current").every(t => t === 2)).toBe(true);
+    expect(tiersOf("elite", 0, "next2").every(t => t === 4)).toBe(true);
+    expect(tiersOf("mythic", 0, "current").every(t => t === 5)).toBe(true);
+    // 稀有絕對不該碰到 T4 以上（T5 是傳說稀有度的材料）
+    ["current", "next", "next2"].forEach(role => {
+      for (let plus = 0; plus <= 4; plus += 1) {
+        tiersOf("rare", plus, role).forEach(t => expect(t).toBeLessThanOrEqual(3));
+      }
+    });
   });
 
   test("不會產生 T7 以上的材料 id（那些 tier 未實裝、玩家拿不到）", () => {
@@ -134,10 +157,10 @@ describe("材料需求依品級分級", () => {
 
   test("保底：該階材料一定包含玩家持有最多的那一種", () => {
     const opts2 = { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS };
-    // T3 = 精英的該階。挑一個冷門材料塞滿庫存，看它是否每次都被要求
-    const t3 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 3);
-    const hoarded = t3[t3.length - 1].id;
-    const inventory = { [hoarded]: 999, [t3[0].id]: 5 };
+    // T2 = 精英的該階。挑一個冷門材料塞滿庫存，看它是否每次都被要求
+    const t2 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 2);
+    const hoarded = t2[t2.length - 1].id;
+    const inventory = { [hoarded]: 999, [t2[0].id]: 5 };
     for (let i = 0; i < 60; i += 1) {
       const mats = generateRandomMats("elite", 0, { ...opts2, inventory });
       const current = mats.materials.filter(m => m.tierRole === "current");
@@ -147,8 +170,9 @@ describe("材料需求依品級分級", () => {
   });
 
   test("保底只作用在該階，下一階仍維持隨機（否則難度會被玩家囤貨架空）", () => {
-    const t4 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 4);
-    const hoarded = t4[t4.length - 1].id;
+    // T3 = 精英的下一階
+    const t3 = EXPANSION_MATERIALS.filter(m => m.kind === "normal" && m.tierIndex === 3);
+    const hoarded = t3[t3.length - 1].id;
     const inventory = { [hoarded]: 999 };
     const seenNext = new Set();
     for (let i = 0; i < 60; i += 1) {
@@ -181,8 +205,8 @@ describe("材料需求依品級分級", () => {
     expect(totalFor("rare")).toBe(228);
     expect(totalFor("elite")).toBe(313);
     expect(totalFor("epic")).toBe(313);
-    expect(totalFor("legend")).toBe(304);
-    expect(totalFor("mythic")).toBe(366);
+    expect(totalFor("legend")).toBe(313);
+    expect(totalFor("mythic")).toBe(365);
     // 普通比舊版的 284 輕很多 —— 新學生不會一開始就卡死
     expect(totalFor("common")).toBeLessThan(284);
   });

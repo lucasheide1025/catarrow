@@ -222,9 +222,17 @@ function UpgradeCelebration({ result, onClose }) {
 
 // 材料中繼資料查詢：先查 legacy MATERIALS，查不到再查擴充素材清冊。
 // 沒有這層的話，擴充素材（mat_ghost_t5_mini_a 之類）會直接把原始 id 顯示給玩家。
+// 從材料 id 反推階級（T1~T6）。舊 id 是 `${family}_m${N}`，擴充 id 是 `mat_${family}_t${N}_...`。
+// 顯示出來讓玩家（和我們）能一眼核對需求階級對不對 —— 之前對應表被推高一階，
+// 就是因為畫面只有名字、沒有階級，錯了好幾天才被發現。
+function matTierIndex(id) {
+  const m = /_m([1-6])$/.exec(id) || /_t([1-6])_/.exec(id);
+  return m ? Number(m[1]) : null;
+}
+
 function resolveMatMeta(id) {
   const legacy = MATERIALS.find(x => x.id === id);
-  if (legacy) return legacy;
+  if (legacy) return { ...legacy, tierIndex: matTierIndex(id) };
   const expansion = EXPANSION_MATERIAL_BY_ID[id];
   if (!expansion) return null;
   return {
@@ -232,6 +240,7 @@ function resolveMatMeta(id) {
     name: expansion.name,
     icon: expansion.kind === "boss" ? "👑" : expansion.kind === "miniBoss" ? "🔱" : "🧱",
     rarity: null,
+    tierIndex: expansion.tierIndex ?? matTierIndex(id),
   };
 }
 
@@ -408,6 +417,11 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       return (
                         <div key={m.id} className="flex items-center gap-1.5 mb-1">
                           <span>{mat?.icon || (m.note ? "👑" : "🪨")}</span>
+                          {mat?.tierIndex && (
+                            <span className="text-[9px] font-black px-1 rounded bg-slate-700 text-slate-300 shrink-0">
+                              T{mat.tierIndex}
+                            </span>
+                          )}
                           <span style={{ color: nameColor }} className="font-bold text-[11px]">
                             {mat?.name || m.id}
                             {m.note && <span className="ml-1 text-[9px] text-amber-400/80">（{m.note}）</span>}

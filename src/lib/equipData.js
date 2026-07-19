@@ -32,15 +32,20 @@ export const KING_SEAL_BREAKTHROUGH_COST = {
 const _FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
 
 // 每個品級吃「該階 / 下一階 / 再下一階」三個 tier 的材料，值是 tierIndex（1~6）。
-// 傳說的再下一階（T7）與神話的下一階都不存在（T7~T9 只顯示不實裝），故留 null，
-// 對應的 kinds 也設為 0 —— 神話改成吃滿該階材料來維持重量。
+//
+// ⚠️ 2026-07-19 修正：原本把使用者規格裡的「T1/T2」解讀成相對的「該階/下一階」，
+// 整條對應表因此被往上推一階 —— 稀有在吃 T2/T3、精英在吃 T3/T4/T5（T5 是傳說
+// 稀有度的材料）。使用者實測後回報不合理，改回**字面**規格：
+//   「普通 2組T1；稀有 3組T1+2組T2，+3 起加 1組T3；後面以此類推」
+// 也就是主階 = 普通T1、稀有T1、精英T2、史詩T3、傳說T4、神話T5，每級再往上兩階。
+// 神話沒有 T7（未實裝）→ next2 為 null，改多吃一種該階材料補足重量。
 const _GRADE_MAT_TIER = {
   common: { main: 1, next: null, next2: null },
-  rare:   { main: 2, next: 3,    next2: 4 },
-  elite:  { main: 3, next: 4,    next2: 5 },
-  epic:   { main: 4, next: 5,    next2: 6 },
-  legend: { main: 5, next: 6,    next2: null },
-  mythic: { main: 6, next: null, next2: null },
+  rare:   { main: 1, next: 2,    next2: 3 },
+  elite:  { main: 2, next: 3,    next2: 4 },
+  epic:   { main: 3, next: 4,    next2: 5 },
+  legend: { main: 4, next: 5,    next2: 6 },
+  mythic: { main: 5, next: 6,    next2: null },
 };
 
 // 某個 tier 可用的一般材料 id 池。
@@ -81,17 +86,17 @@ function pickMostHeldId(pool, inventory) {
 // 2026-07-19 改版：材料需求改為「依品級分級」，不再所有品級共用同一張表。
 // 舊版每個品級都要 284 個材料 —— 普通裝跟神話裝一樣重，只有金幣差 230 倍，
 // 對新學生太硬、對老玩家太鬆。新規格（使用者拍板）：
-//   普通    2 種該階，無下一階，突破到稀有不需突破材料      → 合計 122
-//   稀有    3 種該階 + 2 種下一階，+3 起再加 1 種再下一階   → 合計 228
-//   精英以上 4 種該階 + 3 種下一階 + 1 種再下一階            → 合計 313
-//   傳說/神話 因為 T7 未實裝而遞減種類，神話改吃滿六族      → 304 / 366
+//   普通       2 種該階，無下一階，突破到稀有不需突破材料      → 合計 122
+//   稀有       3 種該階 + 2 種下一階，+3 起再加 1 種再下一階   → 合計 228
+//   精英/史詩/傳說 4 種該階 + 3 種下一階 + 1 種再下一階         → 合計 313
+//   神話       沒有 T7（未實裝），改 5 種該階 + 3 種下一階     → 合計 365
 const _GRADE_MAT_KINDS = {
   common: { current: 2, next: 0, next2: 0 },
   rare:   { current: 3, next: 2, next2: 1 },
   elite:  { current: 4, next: 3, next2: 1 },
   epic:   { current: 4, next: 3, next2: 1 },
-  legend: { current: 4, next: 3, next2: 0 },
-  mythic: { current: 6, next: 0, next2: 0 },
+  legend: { current: 4, next: 3, next2: 1 },
+  mythic: { current: 5, next: 3, next2: 0 },
 };
 
 // 稀有的「再下一階」只在 +3 以上才要求（使用者指定的門檻）
