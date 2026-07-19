@@ -118,6 +118,18 @@ describe("射箭建議", () => {
     expect(tight.join()).toMatch(/集中/);
   });
 
+  test("均分接近滿環時建議增長距離（不是換小靶面）", () => {
+    const tenRing = buildArcheryAdvice(gradeArcheryPerformance(["10", "9", "10", "X"]));
+    expect(tenRing.join()).toMatch(/增長距離/);
+    // 原野靶滿分只有 5，門檻若寫死 9 分就永遠觸發不了
+    const fieldArrows = ["5", "5", "X", "4"];
+    const field = buildArcheryAdvice(
+      gradeArcheryPerformance(fieldArrows, { targetFmt:"field_16" }),
+      { targetFmt:"field_16" },
+    );
+    expect(field.join()).toMatch(/增長距離/);
+  });
+
   test("最多三條，且沒有箭時給引導語", () => {
     expect(buildArcheryAdvice(gradeArcheryPerformance(["5", "6", "7", "8"])).length).toBeLessThanOrEqual(3);
     expect(buildArcheryAdvice(null)[0]).toMatch(/沒有計分箭/);

@@ -158,10 +158,13 @@ export function pickArcheryMvp(members, { targetFmt = "full_110" } = {}) {
  * 規則式射箭建議（不呼叫外部 API：免費、離線、即時）。
  * 依命中率／穩定性／高分率各自的弱點挑句子，最多回三條。
  */
-export function buildArcheryAdvice(performance) {
+export function buildArcheryAdvice(performance, { targetFmt = "full_110" } = {}) {
   if (!performance || !performance.arrowCount) return ["這場沒有計分箭，先累積幾支再看分析。"];
   const advice = [];
   const { hitRate, stability, highRate, avgScore } = performance;
+  // 門檻用「滿環的 9 成」而不是寫死 9 分：原野靶滿分只有 5，寫死的話永遠觸發不了。
+  const maxScore = getTargetFaceFormat(targetFmt)?.maxScore || 10;
+  const masteryScore = maxScore * 0.9;
 
   if (hitRate < 0.7) advice.push("脫靶偏多，先把節奏放慢、確認撒放前的滿弓停頓。");
   else if (hitRate < 0.9) advice.push("命中率不錯，剩下的脫靶多半來自趕拍，注意每支之間的呼吸重置。");
@@ -173,6 +176,7 @@ export function buildArcheryAdvice(performance) {
   if (highRate < 0.3) advice.push("高分環佔比偏低，練習時把目標放在「多一支進 9 環」而不是拚 X。");
   else if (highRate >= 0.6) advice.push("高分環佔比很高，維持現在的節奏就好。");
 
-  if (avgScore >= 9) advice.push("均分已達 9 環以上，可以開始挑戰更小的靶面。");
+  // 均分接近滿環 = 這個距離已經吃透了，下一步是把距離拉長（不是換小靶面）
+  if (avgScore >= masteryScore) advice.push("均分接近滿環，這個距離已經穩了，可以考慮往後增長距離。");
   return advice.slice(0, 3);
 }

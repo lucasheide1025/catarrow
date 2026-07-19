@@ -170,6 +170,26 @@ export function collectBattleStats(log) {
   return stats;
 }
 
+/**
+ * 從戰鬥 log 收集每位成員的箭序列（給射箭評價用）。
+ * 回傳 { [memberId]: ["10","X","M",…] }。
+ * 藥水箭在 arrowBreakdown 裡沒有計分 label，交給 archeryGrade 自行濾除。
+ */
+export function collectBattleArrows(log) {
+  const byMember = {};
+  for (const round of log || []) {
+    for (const player of round.playerLog || []) {
+      if (!player?.id) continue;
+      const arrows = (player.arrowBreakdown || [])
+        .map(arrow => arrow?.label ?? arrow?.score ?? arrow)
+        .filter(value => value != null);
+      if (!arrows.length) continue;
+      byMember[player.id] = [...(byMember[player.id] || []), ...arrows];
+    }
+  }
+  return byMember;
+}
+
 export function mergeExpeditionStats(base = {}, addition = {}) {
   const merged = { ...base };
   for (const [id, stat] of Object.entries(addition || {})) {

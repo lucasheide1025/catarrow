@@ -53,6 +53,7 @@ import { rollDungeonKillReward, getDungeonDewMultiplier } from "../../lib/dungeo
 import {
   buildExpeditionParty,
   collectBattleStats,
+  collectBattleArrows,
   createExpeditionKillLoot,
   emptyExpeditionLoot,
   mergeExpeditionLoot,
@@ -63,7 +64,7 @@ import {
   sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter, sfxError,
 } from "../../lib/sound";
 import DungeonBattleRoom from "./DungeonBattleRoom";
-import KillLootToast from "./KillLootToast";
+import DungeonKillResult from "./DungeonKillResult";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
 import DungeonShop from "./DungeonShop";
 import DungeonTrap from "./DungeonTrap";
@@ -379,13 +380,9 @@ export default function DungeonExpedition({
   // ⚠️ 以前這兩個數字只餵給 4.5 秒的 killToast 就丟掉，結算頁因此只顯示通關獎勵，
   // 玩家實際入帳的卻是「通關獎勵 + 沿路擊殺」，數字對不上（使用者實測回報）。
   const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
-  // 每場擊殺的掉落明細提示（4.5 秒後自動消失）
-  const [killToast, setKillToast] = useState(null);
-  useEffect(() => {
-    if (!killToast) return undefined;
-    const timer = setTimeout(() => setKillToast(null), 4500);
-    return () => clearTimeout(timer);
-  }, [killToast]);
+  // 一般怪擊倒後的單場結算畫面（使用者規格：不要只彈 4.5 秒小提示，要看完整數據）。
+  // 有值時蓋住整個畫面，按「下一步」才 finishPendingRoom() 繼續跑房間。
+  const [killResult, setKillResult] = useState(null);
   const [bossRewardClaim, setBossRewardClaim] = useState(null);
   const [bossRewardRetry, setBossRewardRetry] = useState(null);
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
@@ -752,20 +749,8 @@ export default function DungeonExpedition({
         }));
       }
     }
-    // 掉落明細提示（使用者要求：直接看到掉了什麼、有幾個）
-    if (killLoot.chests.length > 0 || killCoins > 0) {
-      setKillToast({
-        monsterName: killedMonster?.name || "",
-        chests: killLoot.chests,
-        coins: killCoins,
-        archerXP: killArcherXP,
-        lootMult: runLootMult,
-      });
-    }
-    setRunStats(previous => mergeExpeditionStats(
-      previous,
-      collectBattleStats(battle?.log),
-    ));
+    const battleStats = collectBattleStats(battle?.log);
+    setRunStats(previous => mergeExpeditionStats(previous, battleStats));
     const defeatedMonster = battle?.monster || pendingRoom?.monster;
     if (defeatedMonster?.expansionVersion === 1
       && ["miniBoss", "boss"].includes(defeatedMonster.encounter)
@@ -778,7 +763,23 @@ export default function DungeonExpedition({
       }
       return;
     }
-    finishPendingRoom();
+    // 一般／精英怪：先停在單場結算畫面，玩家按「下一步」才進下一個房間。
+    // 以前是直接 finishPendingRoom()，戰果只靠 4.5 秒的 toast 帶過（使用者要求改掉）。
+    setKillResult({
+      monster: killedMonster,
+      chests: killLoot.chests,
+      coins: killCoins,
+      archerXP: killArcherXP,
+      lootMult: runLootMult,
+      self: {
+        id: myId,
+        name: profile?.nickname || profile?.name || "我",
+        arrows: collectBattleArrows(battle?.log)[myId] || [],
+        dmgDealt: battleStats[myId]?.dmgDealt || 0,
+        dmgTaken: battleStats[myId]?.dmgTaken || 0,
+        crits: battleStats[myId]?.crits || 0,
+      },
+    });
   }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult, claimBossReward, runLootMult, isGuest]);
 
   const handleAbandon = useCallback(() => {
@@ -893,6 +894,23 @@ export default function DungeonExpedition({
 
   // ── 渲染 ────────────────────────────────────────────────
 
+  // 單場擊殺結算：優先於所有 phase 畫面（此時 phase 還停在 battle）。
+  // 按「下一步」才收掉並 finishPendingRoom() 進下一個房間。
+  if (killResult) {
+    return (
+      <DungeonKillResult
+        monster={killResult.monster}
+        self={killResult.self}
+        chests={killResult.chests}
+        coins={killResult.coins}
+        archerXP={killResult.archerXP}
+        lootMult={killResult.lootMult}
+        targetFmt={targetFmt}
+        onContinue={() => { setKillResult(null); finishPendingRoom(); }}
+      />
+    );
+  }
+
   if (phase === "entry_error") {
     return (
       <div className="h-[100dvh] flex flex-col items-center justify-center gap-4 px-6 text-white"
@@ -933,7 +951,6 @@ export default function DungeonExpedition({
           onDescend={handleDescend}
           onRetreat={handleAbandon}
         />
-        {killToast && <KillLootToast {...killToast} />}
       </>
     );
   }
@@ -953,7 +970,6 @@ export default function DungeonExpedition({
           onEnterNext={handleBranchNext}
           onRetreat={handleAbandon}
         />
-        {killToast && <KillLootToast {...killToast} />}
       </>
     );
   }
