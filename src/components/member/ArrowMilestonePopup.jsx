@@ -1,7 +1,11 @@
 // src/components/member/ArrowMilestonePopup.jsx
 // 設計原則：不干擾戰鬥。小里程碑用頂部 toast banner；120箭才用全螢幕慶祝。
 import { useState, useEffect } from "react";
-import { getWarmMessage, getBigMessage } from "../../lib/arrowMilestone";
+import { getWarmMessage, getBigMessage, FINAL_MILESTONE_ARROWS, REST_MESSAGE } from "../../lib/arrowMilestone";
+import { CHEST_TYPES } from "../../lib/itemData";
+import { COIN_CHEST_TIERS } from "../../lib/lootTable";
+import { getVillagePack } from "../../lib/villagePack";
+import { RESOURCE_NAMES } from "../../lib/villageData";
 import { sfxLevelUp, sfxVictoryFanfare } from "../../lib/sound";
 import Confetti from "../shared/Confetti";
 
@@ -12,6 +16,49 @@ function RewardRow({ label, icon, count }) {
       <span className="text-xl">{icon}</span>
       <span className="text-white font-bold text-sm flex-1">{label}</span>
       <span className="text-yellow-300 font-black text-sm">×{count}</span>
+    </div>
+  );
+}
+
+// 把 rewards 攤平成「圖示＋名稱＋數量」清單，小 banner 與大彈窗共用同一份敘述，
+// 避免兩處說法不一致（寶箱名稱一律取自 CHEST_TYPES / COIN_CHEST_TIERS 的定義）
+function rewardRowsOf(rewards = {}) {
+  const rows = [];
+  if (rewards.gachaCoins) rows.push({ key:"gacha", icon:"🎰", label:"扭蛋幣", count:rewards.gachaCoins });
+  if (rewards.arrowdew)   rows.push({ key:"dew",   icon:"💧", label:"箭露",   count:rewards.arrowdew });
+  if (rewards.chestType && rewards.chestCount) {
+    const info = CHEST_TYPES[rewards.chestType];
+    rows.push({ key:"chest", icon:info?.icon || "📦", label:info?.name || "寶箱", count:rewards.chestCount });
+  }
+  if (rewards.coinTier && rewards.coinChestCount) {
+    const info = COIN_CHEST_TIERS[rewards.coinTier];
+    rows.push({ key:"coin", icon:info?.icon || "🪙", label:info?.name || "金幣寶箱", count:rewards.coinChestCount });
+  }
+  if (rewards.mimiBoxes) rows.push({ key:"mimi", icon:"😺", label:"咪咪箱", count:rewards.mimiBoxes });
+  if (rewards.catBoxes)  rows.push({ key:"cat",  icon:"🐱", label:"貓貓箱", count:rewards.catBoxes });
+  if (rewards.packTier && rewards.packCount) {
+    const pack = getVillagePack(rewards.packTier);
+    rows.push({ key:"pack", icon:pack.icon, label:pack.name, count:rewards.packCount });
+  }
+  return rows;
+}
+
+// 建築包開出的材料明細（領取時就地開包，這裡只負責顯示）
+function PackMaterials({ rolledPack }) {
+  const materials = rolledPack?.materials;
+  if (!materials || !Object.keys(materials).length) return null;
+  return (
+    <div className="bg-white/10 rounded-2xl px-3 py-2.5">
+      <div className="text-white/70 text-[11px] font-bold mb-1.5">
+        🏗️ 建築包開出（已存入貓貓村）
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(materials).map(([key, amount]) => (
+          <span key={key} className="text-[11px] font-bold text-white bg-black/25 rounded-lg px-2 py-1">
+            {RESOURCE_NAMES[key] || key} ×{amount}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -30,11 +77,8 @@ export function SmallMilestonePopup({ milestone, rewards, onClose }) {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
 
-  // 獎勵摘要字串
-  const parts = [];
-  if (rewards.catBoxes)  parts.push(`🐱×${rewards.catBoxes}`);
-  if (rewards.mimiBoxes) parts.push(`😺×${rewards.mimiBoxes}`);
-  if (rewards.gachaCoins) parts.push(`🪙×${rewards.gachaCoins}`);
+  // 獎勵摘要字串（與大彈窗共用同一份敘述來源）
+  const parts = rewardRowsOf(rewards).map(row => `${row.icon}×${row.count}`);
 
   return (
     <div
@@ -83,33 +127,29 @@ export function BigMilestonePopup({ milestone, rewards, onClose }) {
         {/* 煙火動畫文字 */}
         <div className="text-center mb-4">
           <div className="text-5xl mb-2 animate-bounce">🏆</div>
-          <div className="text-white font-black text-2xl">百箭勇者！</div>
+          <div className="text-white font-black text-2xl">{milestone.label || "里程碑達成！"}</div>
           <div className="text-white/90 font-bold text-base mt-1">
             今日累積 {milestone.arrows} 支箭！
-            {milestone.multiple > 1 && <span className="text-yellow-200"> × {milestone.multiple}</span>}
-          </div>
-          <div className="flex justify-center gap-1 mt-2">
-            {Array.from({ length: Math.min(milestone.multiple, 5) }).map((_, i) => (
-              <span key={i} className="text-xl">⭐</span>
-            ))}
           </div>
         </div>
 
-        {/* 獎勵 */}
-        <div className="flex flex-col gap-2 mb-4">
-          <RewardRow label="貓貓箱" icon="🐱" count={rewards.catBoxes} />
-          <RewardRow label="咪咪箱（自動開啟）" icon="😺" count={rewards.mimiBoxes} />
-          <RewardRow label="扭蛋幣" icon="🪙" count={rewards.gachaCoins} />
+        {/* 獎勵：全部走同一份敘述來源，寶箱名稱直接取自定義表 */}
+        <div className="flex flex-col gap-2 mb-3">
+          {rewardRowsOf(rewards).map(row => (
+            <RewardRow key={row.key} label={row.label} icon={row.icon} count={row.count} />
+          ))}
         </div>
 
-        {/* 圖鑑記錄提示 */}
-        <div className="bg-white/20 rounded-2xl px-4 py-2 mb-4 text-center">
-          <span className="text-white/80 text-xs">📖 百箭成就已記入圖鑑</span>
+        {/* 建築包開出的材料 */}
+        <div className="mb-4">
+          <PackMaterials rolledPack={milestone.rolledPack} />
         </div>
 
-        {/* 暖心話語 */}
+        {/* 暖心話語；最後一階改成「你該休息了」 */}
         <div className="bg-white/10 rounded-2xl px-4 py-3 mb-4">
-          <p className="text-white/90 text-sm text-center leading-relaxed">{msg}</p>
+          <p className="text-white/90 text-sm text-center leading-relaxed">
+            {milestone.arrows >= FINAL_MILESTONE_ARROWS ? REST_MESSAGE : msg}
+          </p>
         </div>
 
         <button

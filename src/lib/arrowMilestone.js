@@ -1,18 +1,62 @@
 // src/lib/arrowMilestone.js
 // 固定門檻：每天每個門檻只觸發一次，不循環
+// 2026-07-19 使用者改版：改成每 30 箭一階、共 16 階（30~480）。
+// 每階固定給 轉蛋幣×1 ＋ 箭露 30，另外依段落給寶箱與建築包：
+//   30/60/90    木寶箱   ×1、金幣木寶箱   ×1、T1 建築包 ×1
+//   120         咪咪箱×1、木寶箱   ×5、金幣木寶箱   ×5、T1 建築包 ×5
+//   150/180/210 鐵寶箱   ×1、金幣鐵寶箱   ×1、T2 建築包 ×1
+//   240         咪咪箱×1、貓貓箱×1、鐵寶箱×5、金幣鐵寶箱×5、T2 建築包 ×5
+//   270/300/330 黃金寶箱 ×1、金幣黃金寶箱 ×1、T3 建築包 ×1
+//   360         咪咪箱×1、貓貓箱×1、黃金寶箱×5、金幣黃金寶箱×5、T3 建築包 ×5
+//   390/420/450 神話寶箱 ×1、金幣神話寶箱 ×1、T4 建築包 ×1
+//   480         咪咪箱×1、貓貓箱×1、神話寶箱×5、金幣神話寶箱×5、T4 建築包 ×5
+// 480 之後不再有門檻 —— 使用者規格「你該休息了」，由 REST_MESSAGE 呈現。
+const ARROWDEW_PER_MILESTONE = 30;
+
+// chestType：材料寶箱類型（itemData.CHEST_TYPES）
+// coinTier：金幣寶箱階級（lootTable.COIN_CHEST_TIERS）——「金幣黃金寶箱」對應
+//   fierce（金幣金寶箱）、神話對應 mythic（金幣傳說寶箱），這兩階最貼近使用者的說法
+const STEP_WOOD   = { chestType:"wood",   coinTier:"common", packTier:1 };
+const STEP_IRON   = { chestType:"iron",   coinTier:"rare",   packTier:2 };
+const STEP_GOLD   = { chestType:"gold",   coinTier:"fierce", packTier:3 };
+const STEP_MYTHIC = { chestType:"mythic", coinTier:"mythic", packTier:4 };
+
+// 一般階：各 ×1；大關（每段第 4 階）：各 ×5 並附咪咪箱／貓貓箱
+const normalStep = (arrows, step, label) => ({
+  arrows, label, ...step,
+  chestCount:1, coinChestCount:1, packCount:1, mimiBoxes:0, catBoxes:0,
+});
+// type:"big" 會讓前台走全螢幕慶祝（BigMilestonePopup）。
+// ⚠️ 舊版資料表沒有任何一筆帶 type，所以那個慶祝畫面實際上從來沒被觸發過 ——
+// 現在四個大關（120/240/360/480）才會全螢幕，其餘走頂部 toast，不干擾練習節奏。
+const bigStep = (arrows, step, label, catBoxes = 1) => ({
+  arrows, label, type:"big", ...step,
+  chestCount:5, coinChestCount:5, packCount:5, mimiBoxes:1, catBoxes,
+});
+
 export const ALL_MILESTONES = [
-  { arrows:   6, catBoxes: 0, label: "6箭！" },
-  { arrows:  12, catBoxes: 0, label: "12箭！" },
-  { arrows:  24, catBoxes: 0, label: "24箭！" },
-  { arrows:  30, catBoxes: 0, label: "30箭！" },
-  { arrows:  60, catBoxes: 0, label: "60箭！" },
-  { arrows:  90, catBoxes: 0, label: "90箭！" },
-  { arrows: 120, catBoxes: 1, label: "120箭！百箭勇者！" },
-  { arrows: 150, catBoxes: 0, label: "150箭！" },
-  { arrows: 180, catBoxes: 0, label: "180箭！" },
-  { arrows: 200, catBoxes: 0, label: "200箭！" },
-  { arrows: 240, catBoxes: 1, label: "240箭！超人射手！" },
+  normalStep(30,  STEP_WOOD,   "30箭！開始了！"),
+  normalStep(60,  STEP_WOOD,   "60箭！"),
+  normalStep(90,  STEP_WOOD,   "90箭！"),
+  // 120 是第一個大關，使用者規格只給咪咪箱（貓貓箱從 240 起才有）
+  bigStep(120,    STEP_WOOD,   "120箭！百箭勇者！", 0),
+  normalStep(150, STEP_IRON,   "150箭！"),
+  normalStep(180, STEP_IRON,   "180箭！"),
+  normalStep(210, STEP_IRON,   "210箭！"),
+  bigStep(240,    STEP_IRON,   "240箭！超人射手！"),
+  normalStep(270, STEP_GOLD,   "270箭！"),
+  normalStep(300, STEP_GOLD,   "300箭！三百之壁！"),
+  normalStep(330, STEP_GOLD,   "330箭！"),
+  bigStep(360,    STEP_GOLD,   "360箭！黃金射手！"),
+  normalStep(390, STEP_MYTHIC, "390箭！"),
+  normalStep(420, STEP_MYTHIC, "420箭！"),
+  normalStep(450, STEP_MYTHIC, "450箭！"),
+  bigStep(480,    STEP_MYTHIC, "480箭！神話級的一天！"),
 ];
+
+// 最後一個門檻之後就該收工了（使用者規格）
+export const FINAL_MILESTONE_ARROWS = 480;
+export const REST_MESSAGE = "你該休息了 🌙 今天的練習已經非常充足，讓身體記住這份手感吧。";
 
 // 傳入今日舊箭數、新箭數，回傳中間跨越的里程碑（每個門檻只算一次）
 export function getMilestonesReached(oldTotal, newTotal) {
@@ -21,7 +65,18 @@ export function getMilestonesReached(oldTotal, newTotal) {
 }
 
 export function getRewardsForMilestone(ms) {
-  return { gachaCoins: 1, catBoxes: ms.catBoxes || 0 };
+  return {
+    gachaCoins: 1,
+    arrowdew: ARROWDEW_PER_MILESTONE,
+    mimiBoxes: ms.mimiBoxes || 0,
+    catBoxes: ms.catBoxes || 0,
+    chestType: ms.chestType || null,
+    chestCount: ms.chestCount || 0,
+    coinTier: ms.coinTier || null,
+    coinChestCount: ms.coinChestCount || 0,
+    packTier: ms.packTier || null,
+    packCount: ms.packCount || 0,
+  };
 }
 
 const WARM_MESSAGES = [

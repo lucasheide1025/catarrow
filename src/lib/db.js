@@ -8,7 +8,7 @@ import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS } from "./itemData";
 import { migratePotionInventory } from "./consumableSystem";
-import { makeCoinChest } from "./lootTable";
+import { makeCoinChest, COIN_CHEST_TIERS } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
 import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
@@ -18,6 +18,7 @@ import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequiremen
 import { getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
+import { openVillagePacks } from "./villagePack";
 import { addCatBond, addCatXP } from "./catDb";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
@@ -4481,20 +4482,44 @@ export async function grantArrowMilestoneRewards(memberId, milestones) {
 
   for (const ms of toGrant) {
     const r = getRewardsForMilestone(ms);
+    const from = `練箭里程碑（${ms.arrows}箭）`;
+    const stamp = Date.now();
+    const chests = [];
+    const mkChest = (type, index, extra = {}) => ({
+      id: `arrow_${type}_${memberId}_${ms.arrows}_${index}_${stamp}`,
+      type, family: "practice", tier: "common", from, ts: stamp + index, ...extra,
+    });
 
-    // 貓貓箱（存入 chestInventory）
-    if ((r.catBoxes || 0) > 0) {
-      const chests = Array.from({ length: r.catBoxes }, (_, i) => ({
-        id: `arrow_cat_${memberId}_${ms.arrows}_${i}_${Date.now()}`,
-        type: "cat_box", family: "practice", tier: "common",
-        from: `練箭里程碑（${ms.arrows}箭）`, ts: Date.now(),
-      }));
-      await addChests(memberId, chests).catch(() => {});
+    // 材料寶箱（木／鐵／黃金／神話）
+    for (let i = 0; i < (r.chestCount || 0); i += 1) {
+      if (r.chestType) chests.push(mkChest(r.chestType, i, { tier: r.coinTier || "common" }));
     }
+    // 金幣寶箱：固定階級，不能用 makeCoinChest（那支會依怪物 tier 隨機滾階）
+    for (let i = 0; i < (r.coinChestCount || 0); i += 1) {
+      const info = COIN_CHEST_TIERS[r.coinTier] || COIN_CHEST_TIERS.common;
+      chests.push(mkChest("coin", 100 + i, {
+        coinTier: r.coinTier || "common", family: "coin",
+        name: info.name, icon: info.icon,
+      }));
+    }
+    // 咪咪箱（隨機貓咪夥伴）與貓貓箱（章碎片）
+    for (let i = 0; i < (r.mimiBoxes || 0); i += 1) chests.push(mkChest("mimi_box", 200 + i));
+    for (let i = 0; i < (r.catBoxes  || 0); i += 1) chests.push(mkChest("cat_box",  300 + i));
+    if (chests.length) await addChests(memberId, chests).catch(() => {});
 
-    // 扭蛋幣 + 標記今日已發
     const updates = { [`arrowMilestoneDone.${ms.arrows}`]: today };
     if ((r.gachaCoins || 0) > 0) updates.gachaCoins = increment(r.gachaCoins);
+    // 箭露走村莊資源（與其他箭露來源同一個欄位）
+    if ((r.arrowdew || 0) > 0) updates["village.resources.arrowdew"] = increment(r.arrowdew);
+    // 建築包：領取時就地開包並直接入帳材料，不另外做一套背包道具 UI；
+    // 開出的內容會回傳給前台在里程碑彈窗上逐項顯示。
+    if (r.packTier && (r.packCount || 0) > 0) {
+      const rolled = openVillagePacks(r.packTier, r.packCount);
+      for (const [key, amount] of Object.entries(rolled)) {
+        if (amount > 0) updates[`village.resources.${key}`] = increment(amount);
+      }
+      ms.rolledPack = { tier: r.packTier, count: r.packCount, materials: rolled };
+    }
     await updateDoc(doc(db, C.members, memberId), updates).catch(() => {});
   }
 }
