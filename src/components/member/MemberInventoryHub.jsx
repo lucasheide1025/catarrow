@@ -12,7 +12,7 @@ import companionsImage from "../../assets/hub/companions.webp";
 
 const CATEGORIES = [
   { tab:"chests", title:"戰利品", desc:"寶箱・卡包・未開啟獎勵", accent:"#f59e0b", image:lootImage },
-  { tab:"potions", title:"消耗品", desc:"回復・強化・投擲道具", accent:"#22c55e", image:potionsImage },
+  { tab:"potions", title:"藥水", desc:"攜帶型・投擲型・討伐型", accent:"#22c55e", image:potionsImage },
   { tab:"materials", title:"怪物素材", desc:"裝備強化・素材升級", accent:"#a855f7", image:materialsImage },
   { tab:"fragments", title:"徽章碎片", desc:"收集進度・合成徽章", accent:"#ec4899", image:fragmentsImage },
   { tab:"special", title:"特殊道具", desc:"活動券・任務道具", accent:"#6366f1", image:specialImage },

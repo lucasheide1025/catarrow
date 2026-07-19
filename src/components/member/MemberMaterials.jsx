@@ -24,6 +24,34 @@ const FAMILY_ORDER = ["ghost", "mountain", "insect", "workplace", "exam", "templ
 const TIER_ORDER   = ["common", "rare", "elite", "fierce", "boss", "mythic", "all"];
 const RARITY_ORDER = ["legendary", "rare", "uncommon", "common"];
 
+// 藥水分類：與貓貓村製作頁（CatVillage）使用同一組分類與名稱，避免兩邊歸類不一致。
+const POTION_GROUPS = [
+  { id:"carry", icon:"💊", label:"攜帶型", hint:"立即生效" },
+  { id:"throw", icon:"💣", label:"投擲型", hint:"占用 1 箭" },
+  { id:"raid",  icon:"👑", label:"討伐型", hint:"限世界王" },
+];
+
+// 開箱結果的材料縮圖：優先用道具圖（public/items/monster-materials/{id}.webp，共 167 張），
+// 沒有對應圖檔就退回該素材的 emoji，避免出現破圖。
+function MaterialThumb({ material }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = !failed && material?.id;
+  return (
+    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg"
+      style={{ background:"rgba(2,6,23,0.5)" }}>
+      {showImage && (
+        <img src={`/items/monster-materials/${material.id}.webp`} alt=""
+          className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      )}
+      {!showImage && (
+        <span className="absolute inset-0 flex items-center justify-center text-2xl" aria-hidden="true">
+          {material?.icon || "🪨"}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function MemberMaterials({ onBack, onGoVillage }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
@@ -304,7 +332,7 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
         <button onClick={() => setTab("potions")}
           className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all
             ${tab === "potions" ? "bg-green-500 text-white" : "bg-white/10 text-gray-400"}`}>
-          🧪 消耗品
+          🧪 藥水
         </button>
         <button onClick={() => setTab("special")}
           className={`flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-black transition-colors
@@ -528,10 +556,19 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
                 {openResult.materials?.length > 0 && (
                   <div className="mb-3">
                     <div className="text-purple-300 text-xs font-bold mb-2">🧪 獲得材料</div>
-                    <div className="flex gap-2 flex-wrap">
+                    {/* 小卡網格：每張＝道具圖 + 名稱 + 數量。
+                        用 auto-fill + minmax 讓一列能放幾張由容器寬度決定（手機自動變少），
+                        不必寫任何斷點。 */}
+                    <div style={{ display:"grid", gap:8,
+                      gridTemplateColumns:"repeat(auto-fill, minmax(84px, 1fr))" }}>
                       {openResult.materials.map((m, i) => (
-                        <div key={i} className="text-xs bg-purple-500/15 text-purple-300 px-3 py-1.5 rounded-full font-bold">
-                          {m.icon} {m.name}{m.count > 1 ? ` ×${m.count}` : ""}
+                        <div key={i}
+                          className="flex flex-col items-center gap-1 rounded-xl px-2 py-2"
+                          style={{ background:"rgba(168,85,247,0.12)", border:"1px solid rgba(168,85,247,0.25)" }}>
+                          <MaterialThumb material={m} />
+                          <div className="w-full truncate text-center text-[10px] font-bold text-purple-200"
+                            title={m.name}>{m.name}</div>
+                          <div className="text-sm font-black text-purple-100">×{m.count || 1}</div>
                         </div>
                       ))}
                     </div>
@@ -652,32 +689,52 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
       {tab === "potions" && (
         <div className="flex flex-col gap-3">
           <div className="bg-green-500/10 border border-green-400/30 rounded-xl px-3 py-2 text-green-300 text-xs leading-relaxed">
-            每回合最多使用 1 個消耗品；攜帶型立即生效，投擲型會占用 1 箭。
+            每回合最多使用 1 瓶藥水；攜帶型立即生效，投擲型會占用 1 箭，討伐型限世界王使用。
           </div>
           {potionLoading ? (
             <div className="text-center py-6 text-gray-400 text-sm">載入中…</div>
           ) : POTIONS.some(p => (potions[p.id] || 0) > 0) ? (
-            <div className="grid grid-cols-2 gap-2.5">
-              {POTIONS.filter(p => (potions[p.id] || 0) > 0).map(potion => (
-                <article key={potion.id} className="min-h-36 rounded-2xl border border-green-400/25 bg-green-500/10 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-3xl" aria-hidden="true">{potion.icon}</span>
-                    <span className="rounded-full bg-green-400/15 px-2 py-0.5 text-xs font-black text-green-300">
-                      ×{potions[potion.id]}
-                    </span>
-                  </div>
-                  <h3 className="mt-3 break-words text-sm font-black text-gray-100">{potion.name}</h3>
-                  <div className="mt-1 text-[10px] font-bold text-green-300">
-                    {potion.kind === "throw" ? "投擲型・占用 1 箭" : "攜帶型・立即生效"}
-                  </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{potion.effectText}</p>
-                </article>
-              ))}
+            /* 分類方式與貓貓村製作頁一致（攜帶／投擲／討伐），玩家兩邊看到的歸類不會打架 */
+            <div className="flex flex-col gap-4">
+              {POTION_GROUPS.map(group => {
+                const owned = POTIONS.filter(p => p.kind === group.id && (potions[p.id] || 0) > 0);
+                if (!owned.length) return null;
+                return (
+                  <section key={group.id}>
+                    <div className="mb-1.5 flex items-center justify-between px-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-green-300">
+                        <span aria-hidden="true">{group.icon}</span>
+                        <span>{group.label}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-500">{group.hint}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {owned.map(potion => (
+                        <article key={potion.id} className="min-h-36 rounded-2xl border border-green-400/25 bg-green-500/10 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-3xl" aria-hidden="true">{potion.icon}</span>
+                            <span className="rounded-full bg-green-400/15 px-2 py-0.5 text-xs font-black text-green-300">
+                              ×{potions[potion.id]}
+                            </span>
+                          </div>
+                          <h3 className="mt-3 break-words text-sm font-black text-gray-100">{potion.name}</h3>
+                          {potion.level ? (
+                            <div className="mt-1 inline-block rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] font-black text-amber-300">
+                              Lv.{potion.level}
+                            </div>
+                          ) : null}
+                          <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{potion.effectText}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-white/15 py-10 text-center text-sm text-gray-500">
               <div className="mb-2 text-4xl" aria-hidden="true">🧪</div>
-              目前沒有消耗品
+              目前沒有藥水
             </div>
           )}
           {onGoVillage ? (

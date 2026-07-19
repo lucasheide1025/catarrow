@@ -6,9 +6,19 @@ function commonAction(monster, index) {
   return ability ? { type: "common", skillId, name: ability.name, enhanced: false } : null;
 }
 
+// ⚠️ 每個欄位都要有預設值：這個物件會被寫進 Firestore（組隊的 monsterAbilityPreview），
+// 只要一個是 undefined 整筆寫入就會被拒絕（Unsupported field value: undefined）。
+// 房間文件裡的怪物是精簡過的快照，不保證帶齊 signatureSummary / counterSummary。
 function signatureAction(monster, enhanced = false) {
   if (!monster.signatureSkillId) return null;
-  return { type: "signature", skillId: monster.signatureSkillId, name: monster.signatureName, summary: monster.signatureSummary, counterSummary: monster.counterSummary, enhanced };
+  return {
+    type: "signature",
+    skillId: monster.signatureSkillId,
+    name: monster.signatureName ?? null,
+    summary: monster.signatureSummary ?? null,
+    counterSummary: monster.counterSummary ?? null,
+    enhanced,
+  };
 }
 
 export function getMonsterScheduledAbility(monster, round) {

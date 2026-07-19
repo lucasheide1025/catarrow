@@ -1,4 +1,7 @@
-const ENV_FLAG = process.env.REACT_APP_MONSTER_EXPANSION_V1 === "true";
+// 2026-07-19：DLC 全面開放，預設啟用。
+// 仍保留關閉手段：環境變數設 "false"、或該裝置用 ?expansion=off / localStorage 覆寫，
+// 萬一上線後發現問題可以立刻關掉單一裝置或整個環境，不必回退版本。
+const ENV_FLAG = process.env.REACT_APP_MONSTER_EXPANSION_V1 !== "false";
 
 export const MONSTER_EXPANSION_FLAG_KEY = "monsterExpansionV1";
 

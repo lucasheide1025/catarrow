@@ -6,10 +6,15 @@ import {
 
 afterEach(() => window.localStorage.removeItem(MONSTER_EXPANSION_FLAG_KEY));
 
-test("monster expansion stays disabled unless the build explicitly enables it", () => {
-  expect(process.env.REACT_APP_MONSTER_EXPANSION_V1).not.toBe("true");
-  expect(isMonsterExpansionEnabled()).toBe(false);
+test("DLC 預設啟用（2026-07-19 全面開放）", () => {
+  expect(isMonsterExpansionEnabled()).toBe(true);
   expect(MONSTER_EXPANSION_FLAG_KEY).toBe("monsterExpansionV1");
+});
+
+test("仍可用 localStorage 個別關閉（出事時的逃生門）", () => {
+  window.localStorage.setItem(MONSTER_EXPANSION_FLAG_KEY, "off");
+  expect(isMonsterExpansionEnabled()).toBe(false);
+  window.localStorage.removeItem(MONSTER_EXPANSION_FLAG_KEY);
 });
 
 describe("網址參數開關（手機測試用）", () => {

@@ -8,6 +8,7 @@
 import { MONSTERS } from "./monsterData";
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 import { toLegacyBattleMonster } from "./monsterExpansionAdapter";
+import { getMonsterScheduledAbility } from "./monsterSkillSchedule";
 
 function buildMonsterPayload(monster, scaledHP = 100) {
   return {
@@ -47,5 +48,39 @@ describe("組隊打怪寫入的怪物欄位不得有 undefined", () => {
 
   test("極端情況：只有 id/name 的殘缺怪物也不能產生 undefined", () => {
     expect(undefinedFields(buildMonsterPayload({ id: "x", name: "殘缺" }))).toEqual([]);
+  });
+});
+
+// monsterAbilityPreview 也會寫進 partyRooms，同樣不能有 undefined。
+// 房間裡的怪物是精簡快照，不保證帶齊 signatureSummary / counterSummary。
+describe("技能預告寫入的欄位不得有 undefined", () => {
+  const deepUndefined = (obj, path = "") => {
+    if (obj === undefined) return [path];
+    if (obj === null || typeof obj !== "object") return [];
+    return Object.entries(obj).flatMap(([k, v]) => deepUndefined(v, path ? `${path}.${k}` : k));
+  };
+
+  test("房間快照缺 summary/counterSummary 時仍安全", () => {
+    const snapshot = {
+      id: "ghost_t1_normal_a", name: "提燈小靈",
+      signatureSkillId: "sig_ghost_t1_normal_a", signatureName: "引燈閃身",
+      commonSkillIds: ["common_weaken"], tierIndex: 1, encounter: "normal",
+      // 刻意不給 signatureSummary / counterSummary
+    };
+    for (const round of [2, 4, 6, 8]) {
+      const preview = getMonsterScheduledAbility(snapshot, round);
+      if (!preview) continue;
+      expect(deepUndefined(preview)).toEqual([]);
+    }
+  });
+
+  test("完整的擴充怪也不會有 undefined", () => {
+    for (const monster of EXPANSION_MONSTERS.slice(0, 60)) {
+      const view = toLegacyBattleMonster(monster);
+      for (const round of [2, 4, 6]) {
+        const preview = getMonsterScheduledAbility(view, round);
+        if (preview) expect(deepUndefined(preview)).toEqual([]);
+      }
+    }
   });
 });

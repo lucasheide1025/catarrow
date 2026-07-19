@@ -283,6 +283,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
                  signatureSkillId: monster.signatureSkillId || null,
                  signatureName: monster.signatureName || null,
                  signatureSummary: monster.signatureSummary || null,
+                 counterSummary: monster.counterSummary || null, // 技能預告要顯示破解方式
                  commonSkillIds:monster.commonSkillIds || [], expansionVersion:monster.expansionVersion || 0 },
       monsterMaterialId: monster.materialId || null,
       monsterCardId: monster.cardId || monster.id,
