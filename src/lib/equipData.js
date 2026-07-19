@@ -28,18 +28,35 @@ export const KING_SEAL_BREAKTHROUGH_COST = {
 // ── 隨機材料生成 ─────────────────────────────────────────────
 // 升級完成後呼叫，產生下一次的材料需求（六族隨機交叉）
 // 結果存入 member.rpgEquip[slotId].nextMats，確保同一次升級材料不變
+// 擴充關閉時的後備材料池（舊的六族 × 六階 = 36 種）
 const _FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
-// 每個品級吃「該階 / 下一階 / 再下一階」三種 tier 的材料。
+
+// 每個品級吃「該階 / 下一階 / 再下一階」三個 tier 的材料，值是 tierIndex（1~6）。
 // 傳說的再下一階（T7）與神話的下一階都不存在（T7~T9 只顯示不實裝），故留 null，
-// 對應的 kinds 也設為 0 —— 神話改成吃滿六族該階材料來維持重量。
+// 對應的 kinds 也設為 0 —— 神話改成吃滿該階材料來維持重量。
 const _GRADE_MAT_TIER = {
-  common: { main: "m1", next: null, next2: null },
-  rare:   { main: "m2", next: "m3", next2: "m4" },
-  elite:  { main: "m3", next: "m4", next2: "m5" },
-  epic:   { main: "m4", next: "m5", next2: "m6" },
-  legend: { main: "m5", next: "m6", next2: null },
-  mythic: { main: "m6", next: null, next2: null },
+  common: { main: 1, next: null, next2: null },
+  rare:   { main: 2, next: 3,    next2: 4 },
+  elite:  { main: 3, next: 4,    next2: 5 },
+  epic:   { main: 4, next: 5,    next2: 6 },
+  legend: { main: 5, next: 6,    next2: null },
+  mythic: { main: 6, next: null, next2: null },
 };
+
+// 某個 tier 可用的一般材料 id 池。
+// 擴充開啟時走完整清冊：7 族 × 每族每階 3 種 = 每階 21 種可選。
+// 舊寫法是寫死 `${family}_m${tier}`，只認得六族各 1 種（全清冊 252 種裡只用到 36 種），
+// 導致寶藏族整族、以及每族每階另外 2 種材料玩家打得到卻永遠用不掉。
+function normalMaterialPool(tierIndex, expansionEnabled, expansionMaterials) {
+  if (expansionEnabled) {
+    const pool = expansionMaterials
+      .filter(material => material.kind === "normal" && material.tierIndex === tierIndex)
+      .map(material => material.id);
+    if (pool.length) return pool;
+  }
+  // 後備：擴充關閉（或清冊缺該階）時退回舊的六族材料，避免產生玩家拿不到的 id
+  return _FAMILIES.map(family => `${family}_m${tierIndex}`);
+}
 
 // 升級材料需求：同一品級內隨 plusLevel 遞增（曲線），避免「+0 跟 +4 一樣便宜」秒升。
 // 掉落率刻意不動（保留打怪掉寶的即時回饋，學生多巴胺），改用墊高「消耗」來拉長升級節奏。
@@ -128,10 +145,11 @@ export function bossMatRequirementFor(grade, plusLevel = 0) {
   return null;
 }
 
-// 從擴充素材清冊挑一個符合 家族/階級/種類 的王素材；挑不到回傳 null（呼叫端會略過）
-function pickBossMaterialId(family, tierIndex, kind, expansionMaterials) {
+// 從擴充素材清冊挑一個符合 階級/種類 的王素材；挑不到回傳 null（呼叫端會略過）。
+// 不再先鎖定家族再挑 —— 舊寫法先從六族抽一族，寶藏族的王素材永遠不會被選中。
+function pickBossMaterialId(tierIndex, kind, expansionMaterials) {
   const pool = expansionMaterials.filter(material =>
-    material.family === family && material.tierIndex === tierIndex && material.kind === kind,
+    material.tierIndex === tierIndex && material.kind === kind,
   );
   if (!pool.length) return null;
   return pool[Math.floor(Math.random() * pool.length)].id;
@@ -144,10 +162,19 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   const kinds = matKindsFor(grade, plusLevel);
   if (!kinds) return null;
 
-  // ⚠️ 每個 tier 各自洗牌，不能共用同一份洗好的六族清單再切片：
-  // 精英以上要 4+3+1 = 8 種，超過六族會切爆。不同 tier 的材料 id 本來就不同，
-  // 所以同一族在不同 tier 重複出現是正常的、也不會撞 id。
-  const pickFamilies = n => [..._FAMILIES].sort(() => Math.random() - 0.5).slice(0, n);
+  // 預設值直接取真實模組，呼叫端不必傳（漏傳會讓功能靜默失效）；options 只給測試覆寫用。
+  const {
+    expansionEnabled = isMonsterExpansionEnabled(),
+    expansionMaterials = EXPANSION_MATERIALS,
+  } = options;
+
+  // ⚠️ 每個 tier 各自從自己的池子洗牌抽，不能共用同一份洗好的清單再切片：
+  // 精英以上要 4+3+1 = 8 種。不同 tier 的材料 id 本來就不同，跨 tier 不會撞 id。
+  const pickIds = (tierIndex, n) =>
+    [...normalMaterialPool(tierIndex, expansionEnabled, expansionMaterials)]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, n);
+
   const roleSpecs = [
     { role: "current", tier: tiers.main,  kinds: kinds.current, count: c.current, note: null },
     { role: "next",    tier: tiers.next,  kinds: kinds.next,    count: c.next,    note: "下一階素材" },
@@ -155,8 +182,8 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
   ];
   const materials = roleSpecs.flatMap(spec => {
     if (!spec.tier || spec.kinds <= 0) return [];
-    return pickFamilies(spec.kinds).map(family => ({
-      id: `${family}_${spec.tier}`,
+    return pickIds(spec.tier, spec.kinds).map(id => ({
+      id,
       count: spec.count,
       tierRole: spec.role,
       ...(spec.note ? { note: spec.note } : {}),
@@ -165,16 +192,10 @@ export function generateRandomMats(grade, plusLevel = 0, options = {}) {
 
   // 王素材門檻只在擴充開啟時加入：王素材唯一來源是地下城王房（同一個 flag 之後），
   // 若在 flag 關閉時就要求，玩家將無從取得，高階精煉會直接卡死。
-  // 預設值直接取真實模組，呼叫端不必傳（漏傳會讓功能靜默失效）；options 只給測試覆寫用。
-  const {
-    expansionEnabled = isMonsterExpansionEnabled(),
-    expansionMaterials = EXPANSION_MATERIALS,
-  } = options;
   if (expansionEnabled) {
     const requirement = bossMatRequirementFor(grade, plusLevel);
     if (requirement) {
-      const bossFamily = pickFamilies(1)[0];
-      const bossId = pickBossMaterialId(bossFamily, _GRADE_TIER_INDEX[grade], requirement.kind, expansionMaterials);
+      const bossId = pickBossMaterialId(_GRADE_TIER_INDEX[grade], requirement.kind, expansionMaterials);
       if (bossId) {
         materials.push({
           id: bossId,

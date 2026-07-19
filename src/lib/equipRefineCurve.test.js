@@ -3,6 +3,7 @@
 import { PREVIEW_GRADES, previewGradeBonus } from "./equipGradeCurve";
 import { EQUIP_GRADES, getEquipSlotBonus } from "./constants";
 import { generateRandomMats, matKindsFor, matCountsFor } from "./equipData";
+import { EXPANSION_MATERIALS } from "./monsterExpansionCatalog";
 
 const OBTAINABLE = ["common", "rare", "elite", "epic", "legend", "mythic"];
 
@@ -81,6 +82,53 @@ describe("材料需求依品級分級", () => {
           expect(m.id).not.toMatch(/_m[789]$/);
         });
       }
+    });
+  });
+
+  test("擴充開啟時取用完整清冊：7 族 × 每階 3 種，不再只認舊的六族各 1 種", () => {
+    const withExpansion = { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS };
+    const seen = new Set();
+    // 隨機抽樣，跑夠多次把整池掃出來
+    for (let i = 0; i < 400; i += 1) {
+      OBTAINABLE.forEach(grade => {
+        for (let plus = 0; plus <= 4; plus += 1) {
+          generateRandomMats(grade, plus, withExpansion).materials
+            .filter(m => m.tierRole !== "boss")
+            .forEach(m => seen.add(m.id));
+        }
+      });
+    }
+    const allNormal = EXPANSION_MATERIALS.filter(m => m.kind === "normal").map(m => m.id);
+    expect(allNormal).toHaveLength(126);
+    // 126 種一般材料應該全部有機會被要求（含寶藏族，以及每族每階另外 2 種）
+    allNormal.forEach(id => expect(seen.has(id)).toBe(true));
+    // 第 7 族（寶藏族）舊寫法完全碰不到，這裡明確確認它有進來
+    const familyOf = Object.fromEntries(EXPANSION_MATERIALS.map(m => [m.id, m.family]));
+    expect([...seen].some(id => familyOf[id] === "treasure")).toBe(true);
+  });
+
+  test("王素材也涵蓋全部 7 族（舊寫法先鎖六族，寶藏族永遠抽不到）", () => {
+    const withExpansion = { expansionEnabled: true, expansionMaterials: EXPANSION_MATERIALS };
+    const bossFamilies = new Set();
+    const metaById = Object.fromEntries(EXPANSION_MATERIALS.map(m => [m.id, m]));
+    for (let i = 0; i < 400; i += 1) {
+      ["epic", "legend", "mythic"].forEach(grade => {
+        for (let plus = 0; plus <= 4; plus += 1) {
+          generateRandomMats(grade, plus, withExpansion).materials
+            .filter(m => m.tierRole === "boss")
+            .forEach(m => bossFamilies.add(metaById[m.id].family));
+        }
+      });
+    }
+    expect(bossFamilies.size).toBe(7);
+  });
+
+  test("擴充關閉時退回舊的六族材料，不會產生玩家拿不到的 id", () => {
+    const off = { expansionEnabled: false, expansionMaterials: EXPANSION_MATERIALS };
+    OBTAINABLE.forEach(grade => {
+      generateRandomMats(grade, 0, off).materials.forEach(m => {
+        expect(m.id).toMatch(/^(ghost|mountain|insect|workplace|exam|temple)_m[1-6]$/);
+      });
     });
   });
 
