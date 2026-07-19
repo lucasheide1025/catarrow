@@ -36,6 +36,7 @@ import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { BattleHPBar, BattleArrowSlots, BattleStatusTags, BattleResultHeader, BattleLogPanel } from "../shared/SharedBattleComponents";
 import DungeonKillResult from "../dungeon/DungeonKillResult";
+import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { collectBattleArrows } from "../../lib/expeditionRewards";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
@@ -249,6 +250,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [guestPartyReward, setGuestPartyReward] = useState(null);
   const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
   const [previewReward,   setPreviewReward]   = useState(null); // 領取前預覽
+  const [claimedCoinChests, setClaimedCoinChests] = useState([]); // 領取當下產生的金幣寶箱（結算頁要顯示）
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [cheerMsg,        setCheerMsg]        = useState("");
   const [scoringReady,    setScoringReady]    = useState(false);
@@ -853,6 +855,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       const monsterTier = room.monster?.tier || "common";
       const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
       const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
+      // 金幣寶箱是「領取當下」才產生的，不在 myChests（那是戰鬥掉落的箱子）。
+      // 不存起來的話結算頁就完全看不到它 —— 使用者實測「沒有顯示金幣寶箱掉落」。
+      setClaimedCoinChests([coinChest, bonusChest].filter(Boolean));
       const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg, { isGuest: isGuestPlayer });
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
       if (!isLimitedAccount) {
@@ -1360,19 +1365,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               name: statsMap[member.id]?.name || member.name || "隊友",
               arrows: (partyArrowsByMember[member.id] || []),
             }))}
+          /* ⚠️ 擴充獎勵的素材只有 { id, quantity } —— 沒有 name、沒有 icon，
+             而且數量欄位叫 quantity 不是 count。直接讀 name/count 會變成畫面上
+             印出 mat_ghost_t1_normal_a 且數量顯示 ×1（實際掉 5 個），
+             使用者實測抓到。名稱一律回 MATERIAL_BY_ID 查。 */
           materials={previewReward?.material ? [{
             id: previewReward.material.id,
-            name: previewReward.material.name || previewReward.material.id,
+            name: EXPANSION_MATERIAL_BY_ID[previewReward.material.id]?.name
+              || previewReward.material.name
+              || previewReward.material.id,
             icon: previewReward.material.icon,
-            count: previewReward.material.count || 1,
+            count: previewReward.material.quantity ?? previewReward.material.count ?? 1,
           }] : []}
           card={previewReward?.card || null}
-          chestRows={myChests.map((chest, index) => {
-            const info = CHEST_TYPES[chest?.type] || CHEST_TYPES.wood;
+          /* 金幣寶箱的 type 是 "coin"，不在 CHEST_TYPES 裡 —— 直接查表會 fallback
+             成「木寶箱」，金幣寶箱因此在畫面上消失。它自己帶 name/icon，優先用。 */
+          chestRows={[...myChests, ...claimedCoinChests].map((chest, index) => {
+            const isCoinChest = chest?.type === "coin";
+            const info = isCoinChest ? null : (CHEST_TYPES[chest?.type] || CHEST_TYPES.wood);
             return {
               key: `${chest?.type || "chest"}-${index}`,
-              icon: chest?.icon || info.icon,
-              name: chest?.name || info.name,
+              icon: chest?.icon || info?.icon || "🪙",
+              name: chest?.name || info?.name || "金幣寶箱",
               count: 1,
             };
           })}
