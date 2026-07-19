@@ -55,13 +55,22 @@ export function AuthProvider({ children }) {
       // uid 欄位缺失時，用 email 備用查詢（教練與一般會員都適用）
       if (!memberDoc) {
         try {
-          const emailSnap = await getDocs(
-            query(collection(db, "members"), where("email", "==", fbUser.email))
-          );
-          if (!emailSnap.empty) {
-            memberDoc = emailSnap.docs[0];
-            // 自動補寫 uid，下次登入直接命中
-            updateDoc(doc(db, "members", memberDoc.id), { uid: fbUser.uid }).catch(() => {});
+          // ⚠️ Firestore 的 == 是大小寫敏感的，而 fbUser.email 一定是小寫。
+          // 舊資料若把 email 存成 "Abc@x.com"（建立學員時只有 trim、沒轉小寫），
+          // 只比對單一字串會查不到人 → setProfile(null) → 使用者「登入成功卻進不去」
+          // （後台看得到登入紀錄，畫面卻被打回登入頁）。因此同時比對原字串與小寫版本。
+          const rawEmail = fbUser.email || "";
+          const candidates = [...new Set([rawEmail, rawEmail.toLowerCase()])].filter(Boolean);
+          const snaps = await Promise.all(candidates.map(value =>
+            getDocs(query(collection(db, "members"), where("email", "==", value)))));
+          const hit = snaps.find(snap => !snap.empty);
+          if (hit) {
+            memberDoc = hit.docs[0];
+            // 自動補寫 uid（下次登入直接命中）並順手把 email 正規化成小寫，收斂舊資料
+            updateDoc(doc(db, "members", memberDoc.id), {
+              uid: fbUser.uid,
+              ...(rawEmail ? { email: rawEmail.toLowerCase() } : {}),
+            }).catch(() => {});
           }
         } catch (e) { console.warn("email 備用查詢失敗：", e.message); }
       }
@@ -172,18 +181,26 @@ export function AuthProvider({ children }) {
       ]);
       hasMember = adminSnap.exists() || !memberSnap.empty;
       if (!hasMember && email) {
-        const emailSnap = await getDocs(query(collection(db, "members"), where("email", "==", email)));
-        hasMember = !emailSnap.empty;
+        // email 比對必須不分大小寫：Google 回傳的是全小寫，但教練建立學員時只有 trim()、
+        // 沒有轉小寫（見 db.createMember 註解）。若只比對原字串，"Illia@x.com" 這種
+        // 開頭大寫的舊資料會查不到人，導致合法學員被誤判成孤兒帳號。
+        const candidates = [...new Set([email, email.toLowerCase()])];
+        const snaps = await Promise.all(candidates.map(value =>
+          getDocs(query(collection(db, "members"), where("email", "==", value)))));
+        hasMember = snaps.some(snap => !snap.empty);
       }
     } catch (e) {
-      // 查詢失敗 → 不確定有沒有會員，寧可不刪，照常放行交給 onAuthStateChanged 處理
-      console.warn("Google 登入會員檢查失敗，跳過孤兒清理：", e?.message);
+      // 查詢失敗 → 不確定有沒有會員，照常放行交給 onAuthStateChanged 處理
+      console.warn("Google 登入會員檢查失敗：", e?.message);
       return cred.user;
     }
 
     if (!hasMember) {
-      try { await cred.user.delete(); }        // 剛登入屬 recent auth，可直接刪自己
-      catch { await signOut(auth); }           // 萬一刪除失敗，至少登出不留登入狀態
+      // ⚠️ 2026-07-19：這裡原本會呼叫 cred.user.delete() 直接刪掉 Firebase Auth 帳號。
+      // 那是不可逆操作，而上面的 email 比對只要有任何誤判（大小寫不符、members.uid 尚未綁定、
+      // 教練用不同 email 建檔），合法學員的帳號就會被永久刪除，症狀是「密碼沒改過卻登入不了」
+      // （signInWithPassword 回 400）。改為只登出、不刪除——誤判最多是擋一次登入，可以救回來。
+      await signOut(auth).catch(() => {});
       const err = new Error("此 Google 帳號尚未建立學員資料");
       err.code = "auth/no-member-profile";
       throw err;

@@ -21,7 +21,7 @@ const PUBLIC_BOOKING_TOKEN = "3345b3d554e6";
 // 2026-07-09 改版：訪客/兒童帳號改用信箱/電話跨次接續（見 guestAuth.js），
 // 不再是 token+3小時過期的一次性連結，舊的 GuestRoute/GuestBattle 已整個淘汰。
 function AppRoutes() {
-  const { role, loading } = useAuth();
+  const { role, loading, currentUser, logout } = useAuth();
   const [searchParams] = useSearchParams();
 
   if (searchParams.get("kid"))   return <GuestApp accountType="kid"   sessionSourceId={searchParams.get("kid") === "1" ? null : searchParams.get("kid")} />;
@@ -33,6 +33,29 @@ function AppRoutes() {
       <Spinner />
     </div>
   );
+  // Auth 登入成功、但 members 查無對應學員資料（email 對不上、uid 未綁定，或帳號類型為訪客/兒童）。
+  // 原本這種情況會靜默彈回登入頁，使用者只看到「密碼對了卻進不去」而毫無線索，
+  // 教練端也難以判斷。改為明確說明並附上帳號 email，方便教練直接比對學員資料。
+  if (!role && currentUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6 text-center">
+        <div className="max-w-sm">
+          <div className="text-5xl">🔍</div>
+          <h1 className="mt-4 text-xl font-black text-slate-100">登入成功，但查不到學員資料</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            這個帳號已通過驗證，但系統找不到對應的學員檔案。請把下面這個 Email 提供給教練確認學員資料設定。
+          </p>
+          <p className="mt-3 break-all rounded-xl bg-slate-800/70 px-3 py-2 text-sm font-bold text-amber-300">
+            {currentUser.email || "（此帳號無 Email）"}
+          </p>
+          <button type="button" onClick={() => logout?.()}
+            className="mt-5 min-h-11 w-full rounded-2xl bg-slate-700 px-4 font-black text-slate-100">
+            返回登入畫面
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!role)            return <LoginPage />;
   if (role === "admin") return <AdminApp />;
   return <MemberApp />;

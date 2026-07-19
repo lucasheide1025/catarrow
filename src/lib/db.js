@@ -667,6 +667,9 @@ export async function createMember(data, operatorId) {
   if (!uid) throw new Error("uid is required");
   await setDoc(doc(db, C.members, uid), {
     ...data,
+    // email 一律存小寫：Firestore 的 == 查詢是大小寫敏感的，而 Google/Auth 回傳的 email 都是小寫。
+    // 若這裡存了大寫開頭，登入時的 members 比對會查不到人（曾導致合法帳號被誤判為孤兒）。
+    ...(data.email ? { email: String(data.email).trim().toLowerCase() } : {}),
     fatCat: { gold: 0, silver: 0, bronze: 0 },
     score: { gold: 0, silver: 0, bronze: 0 },
     achievement: { black: 0, gold: 0, silver: 0 },
@@ -687,6 +690,8 @@ export async function updateMember(id, data, operatorId) {
   const updateData = { updatedAt: serverTimestamp() };
 const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo", "archerNoDate", "joinDate", "note", "equipment", "armorSets", "accessorySets", "fatCat", "score", "achievement", "eventPoints", "shareSlogan", "rpgEquip", "avatarId"];
   safeFields.forEach(field => { if (data[field] !== undefined) updateData[field] = data[field]; });
+  // 與 createMember 一致：email 一律存小寫，避免登入時的大小寫敏感比對查不到人
+  if (updateData.email) updateData.email = String(updateData.email).trim().toLowerCase();
   await updateDoc(doc(db, C.members, id), updateData);
   await writeAuditLog("UPDATE", id, "member", before, updateData, operatorId);
 }
