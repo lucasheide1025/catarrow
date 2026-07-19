@@ -2072,9 +2072,19 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               id: mat.id, name: mat.name || mat.id, icon: mat.icon, count: mat.count || 1,
             }))}
             card={droppedCard}
-            chestRows={resultData.drops.chestList.map((chest, index) => ({
-              key: `${chest.name}-${index}`, icon: chest.icon, name: chest.name, count: 1,
-            }))}
+            /* ⚠️ 金幣寶箱是獨立的 droppedCoinChest，不在 chestList 裡 ——
+               漏掉它會變成「實際有領到金幣寶箱，結算頁卻沒列出」（使用者實測抓到）。 */
+            chestRows={[
+              ...resultData.drops.chestList.map((chest, index) => ({
+                key: `${chest.name}-${index}`, icon: chest.icon, name: chest.name, count: 1,
+              })),
+              ...(droppedCoinChest ? [{
+                key: "coin-chest",
+                icon: droppedCoinChest.icon || "🪙",
+                name: droppedCoinChest.name || "金幣寶箱",
+                count: 1,
+              }] : []),
+            ]}
             coins={droppedCoins}
             archerXP={resultData.drops.archerXP}
             adventurerXP={resultData.drops.adventurerXP}

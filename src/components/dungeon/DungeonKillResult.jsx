@@ -192,9 +192,8 @@ export default function DungeonKillResult({
                 }}>
                   <span style={{ fontSize:15 }}>{material.icon || "🧩"}</span>
                   {material.name}
-                  {(material.count || 1) > 1 && (
-                    <span style={{ fontWeight:900, color:"#fcd34d" }}>×{material.count}</span>
-                  )}
+                  {/* 數量一律顯示，×1 也要寫出來 —— 只寫名稱的話玩家看不出到底拿到幾個 */}
+                  <span style={{ fontWeight:900, color:"#fcd34d" }}>×{material.count || 1}</span>
                 </span>
               ))}
             </div>

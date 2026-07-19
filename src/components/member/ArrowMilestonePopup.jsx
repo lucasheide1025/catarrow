@@ -104,7 +104,10 @@ export function BigMilestonePopup({ milestone, rewards, onClose }) {
       style={{ background: "rgba(0,0,0,0.85)" }}>
       {confetti && <Confetti onDone={() => setConfetti(false)} />}
       <div
-        className={`w-full max-w-sm mx-4 rounded-3xl bg-gradient-to-b from-yellow-500 to-orange-600 p-6 shadow-2xl
+        /* ⚠️ 一定要能捲動：獎勵改版後這張卡多了寶箱列與建築包材料，內容一長，
+           「太棒了！！」按鈕就會被推出畫面，而彈窗蓋住整個畫面又點不到下面的東西 ——
+           使用者實測就是卡死在這裡。 */
+        className={`w-full max-w-sm mx-4 max-h-[90dvh] overflow-y-auto rounded-3xl bg-gradient-to-b from-yellow-500 to-orange-600 p-6 shadow-2xl
           transition-all duration-500 ${show ? "opacity-100 scale-100" : "opacity-0 scale-90"}`}>
 
         {/* 煙火動畫文字 */}
