@@ -3,6 +3,29 @@
 
 ---
 
+## 2026-07-19（三連修：預覽王≠實戰王 / 第3層跨族雜怪 / 結算少算一份獎勵）
+
+**① 預覽王 ≠ 實戰王，和 ② 第 3 層跨族雜怪，是同一個 race condition。**
+使用者實測 T2 神廟：選擇畫面顯示**狼人**（`temple_3`，舊表 T3 `normal` 雜怪），進去打到**銀盾城堡先鋒**（`temple_t2_mini_a`，正確的 T2 小王）；且第 3 層跑出爛主管（職場）＋虎頭蜂（昆蟲）＋魔神仔（幽冥）三族混雜。
+
+- **根因**：`DungeonExpedition` 用 **dynamic import + useEffect** 非同步算王，`startFloor` 常在王算好之前就跑 → `fixedBoss` 是 null。而 `drawDungeonFloorMonsters` 第 3 層一旦缺王，就把**整層**（連雜怪）打回舊 `drawFloorMonsters` —— 舊邏輯是跨族跨階的。王本身也退回 `excavation.boss` 的舊值，所以預覽是雜怪。
+- **修法**：
+  1. `dungeonBossEncounter.js` 新增 `resolveDungeonBossEncounter` / `resolveDungeonBossRunId`，**預覽端與戰鬥端共用同一支**。runId 優先序 `expansionRunId → bossRunId → id → revealedAt`：接線前產生的舊地下城沒有 `bossRunId`，但 `id` 穩定，因此兩端仍推到同一隻王（**順手修好舊資料**）。
+  2. `DungeonExpedition`：dynamic import 改同步 `useMemo`，`fixedBoss` 不再缺席。**刻意不注入 `expansionRunIdRef`** —— 那顆對舊地下城是隨機值，注入後預覽端永遠算不出同一隻王。
+  3. `drawDungeonFloorMonsters`：第 3 層缺王時**只補王**，不再把整層打回跨族舊表。王缺席是上游問題，不該波及整層。
+
+**③ 結算頁少算一份獎勵**（使用者：「結算顯示的經驗值跟正式的有出入」）。不是重複發放，是獎勵有**兩個來源**而結算頁只顯示一份：
+- **沿路擊殺** — 每殺一隻當下就 `addCoins`/`addArcherXP` 入帳
+- **通關獎勵** — 按下「領取獎勵」才由 `grantExpeditionRewards` 發放
+
+前者的數字以前只餵給 4.5 秒的 `killToast` 就丟掉，**沒累積到任何 state**。單人（`DungeonExpedition`）與組隊（`TeamExpeditionBattle`）是各自獨立、但一模一樣的漏法，兩邊都補 `killTotals` 累計。兩者本來就共用 `DungeonExpeditionResult`，改一次版式同步。結算頁新增「來源拆解列」標明哪份已入帳、哪份按領取才發，避免看起來像發兩次。
+
+**踩過的坑：**
+- **非同步算關鍵資料 = race**。王是整層生成的輸入，卻用 dynamic import 晚一拍給，下游只好 fallback。這種「缺資料就整批退回舊邏輯」的設計會把小延遲放大成全面錯誤 —— fallback 的粒度要跟缺的東西一致。
+- **診斷要看 id 不要看名字**：`ghost_3` / `temple_2` 這種舊表 id 一眼就能認出走了舊路徑，比對名字快得多。
+
+驗收：53 suites / 369 tests 綠、build 無警告。
+
 ## 2026-07-19（DLC 全面安裝：移除 flag + 收掉重複的抽王實作）
 
 **使用者實測王房連三次抽到雜怪**（後台新增 → 林投姐 `ghost_3`／卷軸 → 骷髏劍士 `temple_2`，都是**舊 60 隻表的 id**、`encounter:"normal"`）。追下去發現兩件事：
