@@ -186,28 +186,46 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     const snap = [...chests];
     setOpenAllProgress({ done: 0, total: snap.length });
     let totalCoins = 0;
+    let failed = 0;
+    const openedIds = new Set();
     const allMats = [], allFrags = [], allPotions = [], allCards = [];
-    for (let i = 0; i < snap.length; i++) {
-      const chest = snap[i];
-      const isCoin = chest.type === "coin";
-      const contents = isCoin ? null : openChestContents(chest);
-      const res = await openChest(profile.id, chest.id, contents);
-      if (res.ok) {
-        if (isCoin) totalCoins += (res.coins || 0);
-        if (!isCoin && contents) {
-          allMats.push(...(contents.materials || []));
-          allFrags.push(...(contents.fragments || []));
-          allPotions.push(...(contents.potions || []));
-          allCards.push(...(contents.cards || []));
-          updateChestOpenStats(profile.id, chest.type).catch(() => {});
+    try {
+      for (let i = 0; i < snap.length; i++) {
+        const chest = snap[i];
+        const isCoin = chest.type === "coin";
+        // ⚠️ 單箱失敗不能中斷整批：以前這裡沒有 try/catch，任何一箱拋錯（網路瞬斷、
+        // 該箱已被另一台裝置開掉、權限問題）就會讓迴圈直接死掉，後面的 setOpenAllBusy(false)
+        // 永遠跑不到，畫面就永久卡在「開箱中 X / Y」。
+        try {
+          const contents = isCoin ? null : openChestContents(chest);
+          const res = await openChest(profile.id, chest.id, contents);
+          if (res?.ok) {
+            openedIds.add(chest.id);
+            if (isCoin) totalCoins += (res.coins || 0);
+            if (!isCoin && contents) {
+              allMats.push(...(contents.materials || []));
+              allFrags.push(...(contents.fragments || []));
+              allPotions.push(...(contents.potions || []));
+              allCards.push(...(contents.cards || []));
+              updateChestOpenStats(profile.id, chest.type).catch(() => {});
+            }
+          } else {
+            failed += 1;
+          }
+        } catch (error) {
+          failed += 1;
+          console.warn("openAllChests:", chest?.id, error?.message);
         }
+        setOpenAllProgress({ done: i + 1, total: snap.length });
       }
-      setOpenAllProgress({ done: i + 1, total: snap.length });
+    } finally {
+      // 不管中途發生什麼，busy 一定要解除，否則按鈕永久鎖死
+      setOpenAllBusy(false);
+      setOpenAllProgress(null);
     }
     sfxEpic();
-    setOpenAllBusy(false);
-    setOpenAllProgress(null);
-    setChests([]);
+    // 只移除真的開成功的，失敗的留在清單裡讓玩家重試（以前是無條件清空，失敗的箱子會憑空消失）
+    setChests(previous => previous.filter(chest => !openedIds.has(chest.id)));
     // 全部開完後重新讀取材料/藥水/碎片
     refreshMaterials(profile.id, setInventory);
     refreshPotions(profile.id, setPotions);
@@ -222,7 +240,8 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
     };
     setOpenResult({
       bulk: true,
-      count: snap.length,
+      count: openedIds.size,
+      failed,
       coins: totalCoins,
       materials: groupById(allMats),
       fragments: groupById(allFrags),
@@ -479,7 +498,8 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
             📦 打怪獲勝後寶箱會存入背包，點「開箱！」取得材料、藥劑或章碎片！
           </div>
           {chests.length > 1 && !openAllBusy && !openingChest && (
-            <button onClick={doOpenAllChests}
+            // 一定要 catch：doOpenAllChests 是 async，未捕捉的 rejection 會讓畫面卡在 busy
+            <button onClick={() => { doOpenAllChests().catch(() => setOpenAllBusy(false)); }}
               className="w-full py-3 rounded-2xl font-black text-white text-sm bg-gradient-to-r from-amber-500 to-orange-500 active:scale-95 transition-all shadow-lg">
               🎁 全部開箱（{chests.length} 個）
             </button>
@@ -533,6 +553,11 @@ export default function MemberMaterials({ onBack, onGoVillage }) {
                 onClick={e => e.stopPropagation()}>
                 <div className="text-center font-black text-xl mb-4 text-gray-100">
                   {openResult.bulk ? `🎁 全開 ${openResult.count} 個寶箱！` : "🎁 開箱結果！"}
+                  {openResult.bulk && openResult.failed > 0 && (
+                    <div className="mt-1 text-xs font-bold text-amber-300">
+                      ⚠️ 有 {openResult.failed} 個沒開成功，已留在背包可再試一次
+                    </div>
+                  )}
                 </div>
                 {openResult.coins > 0 && (
                   <div className="mb-3 text-center">
