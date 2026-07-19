@@ -351,10 +351,22 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // mode has no legacy path selector: return the host to the expedition map
   // immediately so the team controller can sync HP/loot and open the next
   // room.  This also prevents the legacy dungeon result screen from flashing.
+  //
+  // ⚠️ 這裡改成呼叫 handleClaimSelf() 而不是只做 returnToMapAfterBattle：
+  // 遠征勝利畫面已改為過場（結算交給 DungeonKillResult），原本掛在「領取獎勵並回地圖」
+  // 按鈕上的 handleClaimSelf 因此再也沒人觸發 —— 射箭表現寫入、今日練習紀錄、箭數
+  // 里程碑、貓貓 XP/羈絆全部停止記錄。這些是道館的核心資料，每打一場就少一場。
+  // handleClaimSelf 的遠征分支本身就會在 isHost 時 returnToMapAfterBattle，
+  // 所以這裡不必再各做一次；非房主則走 setLocalClaimed(true)。
+  const expeditionClaimedRef = useRef(false);
   useEffect(() => {
-    if (!expeditionMode || !isMapMode || !isHost || room?.status !== "path_select") return;
-    returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
-  }, [expeditionMode, isMapMode, isHost, room?.status, roomId]);
+    if (!expeditionMode || !isMapMode) return;
+    const won = room?.status === "path_select"
+      || (room?.status === "completed" && room?.result === "win");
+    if (!won || expeditionClaimedRef.current) return;
+    expeditionClaimedRef.current = true;
+    handleClaimSelf();
+  }, [expeditionMode, isMapMode, room?.status, room?.result]); // eslint-disable-line
 
   // ── 進場戰鬥動畫（只在戰鬥剛開始時顯示一次）────────────
   // showEntryAnim 預設 true 防止首次渲染閃爍，
@@ -724,6 +736,20 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           }, myId).catch(() => {});
           import("../../lib/db").then(({ checkAndGrantArrowMilestones }) =>
             checkAndGrantArrowMilestones(myId, arrowCount)).catch(() => {});
+        }
+      }
+      // 貓貓 XP／羈絆：遠征模式一直沒發（舊程式碼把它放在這個 early return 之後，
+      // 只有已移除的房間制會走到）。射手 XP 不在這裡補 —— 遠征已由每殺
+      // rollDungeonKillReward ＋ 通關獎勵發過，再發一次會重複。
+      // 依怪物 tier 縮放，比照打怪模式的既有設定（common 起跳，王/神話更高）。
+      if (myId && !isLimitedAccount && room?.result !== "lose") {
+        const catId = profile?.equippedCat?.catId;
+        if (catId) {
+          const tierKey = room?.monster?.tier || "common";
+          const tierScale = (MONSTER_TIER_XP[tierKey] || DUNGEON_FLOOR_XP) / (MONSTER_TIER_XP.common || 5);
+          const catGain = Math.max(1, Math.round(CAT_DUNGEON_FLOOR_XP * tierScale));
+          addCatXP(myId, catId, catGain).catch(() => {});
+          addCatBond(myId, catId, "dungeon").catch(() => {});
         }
       }
       if (isHost) {
