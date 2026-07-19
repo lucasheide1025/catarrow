@@ -269,13 +269,20 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 
     await updateDoc(doc(db, PARTY, roomId), {
       ...membersUpdate,
-      monster: { id: monster.id, name: monster.name, icon: monster.icon,
+      // ⚠️ 每個欄位都必須有預設值：Firestore 不接受 undefined，只要一個欄位是 undefined
+      // 整筆寫入就會被拒絕（invalid-argument / HTTP 400），表現為「點開始戰鬥沒反應」。
+      // 舊的 60 隻怪沒有 tierIndex / encounter / signature* 這些擴充欄位，一律補 null。
+      monster: { id: monster.id, name: monster.name, icon: monster.icon || "👾",
                  hp:  scaledHP,
                  atk: Math.round(monster.atk * ms.atk * monAtkMult),
                  def: Math.round(monster.def * ms.def * monDefMult),
-                 tier: monster.tier, tierIndex:monster.tierIndex, family: monster.family,
-                 encounter:monster.encounter, signatureSkillId:monster.signatureSkillId,
-                 signatureName:monster.signatureName, signatureSummary:monster.signatureSummary,
+                 tier: monster.tier || "common",
+                 tierIndex: monster.tierIndex ?? null,
+                 family: monster.family || null,
+                 encounter: monster.encounter || null,
+                 signatureSkillId: monster.signatureSkillId || null,
+                 signatureName: monster.signatureName || null,
+                 signatureSummary: monster.signatureSummary || null,
                  commonSkillIds:monster.commonSkillIds || [], expansionVersion:monster.expansionVersion || 0 },
       monsterMaterialId: monster.materialId || null,
       monsterCardId: monster.cardId || monster.id,
