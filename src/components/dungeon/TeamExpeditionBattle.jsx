@@ -257,11 +257,16 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
         if (payload.won) {
           const myArrows = collectBattleArrows(data.log)[battleProfile?.id] || [];
           if (myArrows.length) onArrowsCollected?.(myArrows);
+          const killedMonster = data.monster || battleMonsterRef.current;
           setKillResultView({
-            monster: data.monster || battleMonsterRef.current,
+            monster: killedMonster,
             members: data.members || {},
             log: data.log || [],
             targetFmt: data.targetFmt || "full_110",
+            // 王／小王：走金色主題，按鈕導向個人戰利品領取。
+            // 王的掉落明細由 DungeonBossRewardRoom 呈現（envelope 此刻還沒 claim，
+            // 這裡拿不到內容），所以這頁只給戰鬥數據、命中分析與評價。
+            isBoss: ["miniBoss", "boss"].includes(killedMonster?.encounter),
           });
           if (isHostRef.current) advanceRef.current = advance;
           return;
@@ -323,7 +328,10 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
         archerXP={killReward?.archerXP || 0}
         lootMult={lootMult}
         targetFmt={killResultView.targetFmt || "full_110"}
-        canContinue={isHost}
+        isBoss={killResultView.isBoss}
+        continueLabel={killResultView.isBoss ? "前往戰利品房 →" : "下一步"}
+        // 王房每位隊員各自領取自己的戰利品，不必等房主，所以王關人人都能按下一步
+        canContinue={isHost || killResultView.isBoss}
         waitingLabel="等待房主繼續…"
         onContinue={() => {
           const advance = advanceRef.current;
