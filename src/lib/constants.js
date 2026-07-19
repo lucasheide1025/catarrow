@@ -1,5 +1,3 @@
-import { gradeCurveBonus } from "./equipGradeCurve";
-
 // ─── 年度檢定預設分數 ──────────────────────────────────────
 export const CERT_DEFAULT_SCORES = {
   recurve_full: { 入門:60, 初級:90, 中級:108, 進階:126, 精英:144 },
@@ -214,14 +212,19 @@ export const EQUIP_SLOT_DEFS = [
 ];
 
 // 計算裝備對戰鬥屬性的加成
-// 2026-07-19：改用 equipGradeCurve 的凸曲線（品級步長遞增＋突破跳兩步），
-// 取代舊的「每品 +5、每級 +1」直線。理由與逐格數值見 equipGradeCurve.js。
-// HP 欄位再乘 5。
+// 品級基底：普通=1, 稀有=6, 精英=11, 史詩=16, 傳說=21, 神話=26（每品+5）
+// plusLevel 直接疊加：slot bonus = gradeBase + plusLevel
+// HP 欄位再乘 5
+//
+// ⚠️ 這條公式刻意維持直線，不要改成凸曲線。曾試算過把神話+4 從 30 拉到 59，
+// ATK 四格合計會變 236，但怪物防禦最高只有 200 出頭 —— 平衡直接崩掉。
+// 要調精煉難度請改 equipData.js 的材料需求曲線。
 export function getEquipSlotBonus(slotOrStat, equipment) {
   if (!equipment?.grade) return 0;
+  const gradeIdx = EQUIP_GRADES.findIndex(g => g.id === equipment.grade);
+  if (gradeIdx < 0) return 0;
   const stat = typeof slotOrStat === "string" ? slotOrStat : slotOrStat?.stat;
-  const rawBonus = gradeCurveBonus(equipment.grade, equipment.plusLevel || 0);
-  if (!rawBonus) return 0;
+  const rawBonus = (gradeIdx * 5 + 1) + (equipment.plusLevel || 0);
   return stat === "hp" ? rawBonus * 5 : rawBonus;
 }
 

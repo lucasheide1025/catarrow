@@ -1,60 +1,44 @@
-// 裝備品級曲線改版（2026-07-19）
-import { GRADE_CURVE, PREVIEW_GRADES, gradeCurveBonus, breakthroughGain } from "./equipGradeCurve";
+// 精煉材料難度曲線改版（2026-07-19）
+// 只調「材料需求」，加成公式維持不動 —— 見下方護欄測試。
+import { PREVIEW_GRADES, previewGradeBonus } from "./equipGradeCurve";
 import { EQUIP_GRADES, getEquipSlotBonus } from "./constants";
 import { generateRandomMats, matKindsFor, matCountsFor } from "./equipData";
 
 const OBTAINABLE = ["common", "rare", "elite", "epic", "legend", "mythic"];
 
-describe("加成曲線", () => {
-  test("每個品級的 +0→+4 數值符合設計表", () => {
-    const table = OBTAINABLE.map(g => [gradeCurveBonus(g, 0), gradeCurveBonus(g, 4)]);
-    expect(table).toEqual([[1, 5], [7, 11], [13, 17], [21, 29], [33, 41], [47, 59]]);
-  });
-
-  test("沒有任何玩家被削弱：逐格都 ≥ 舊公式 (品級index×5+1)+plusLevel", () => {
+describe("護欄：品級加成公式不得變動", () => {
+  test("維持 (品級index × 5 + 1) + plusLevel，HP ×5", () => {
     OBTAINABLE.forEach((grade, gradeIdx) => {
       for (let plus = 0; plus <= 4; plus += 1) {
-        expect(gradeCurveBonus(grade, plus)).toBeGreaterThanOrEqual(gradeIdx * 5 + 1 + plus);
+        const expected = gradeIdx * 5 + 1 + plus;
+        expect(getEquipSlotBonus("atk", { grade, plusLevel: plus })).toBe(expected);
+        expect(getEquipSlotBonus("hp",  { grade, plusLevel: plus })).toBe(expected * 5);
       }
     });
   });
 
-  test("品級突破的跳幅 = 新品級的 2 個步長，且越高階跳越大", () => {
-    const gains = [];
-    for (let i = 0; i < OBTAINABLE.length - 1; i += 1) {
-      const from = OBTAINABLE[i], to = OBTAINABLE[i + 1];
-      expect(breakthroughGain(from, to)).toBe(GRADE_CURVE[to].step * 2);
-      gains.push(breakthroughGain(from, to));
-    }
-    expect(gains).toEqual([...gains].sort((a, b) => a - b)); // 單調遞增
-  });
-
-  test("突破的獲益大於品級內單升一級，玩家才有理由突破", () => {
-    expect(breakthroughGain("mythic", "ancient")).toBeGreaterThan(GRADE_CURVE.mythic.step);
-  });
-
-  test("HP 欄位 ×5，ATK/DEF 不變", () => {
-    const equip = { grade: "mythic", plusLevel: 4 };
-    expect(getEquipSlotBonus("atk", equip)).toBe(59);
-    expect(getEquipSlotBonus("hp", equip)).toBe(59 * 5);
+  test("神話+4 仍是 30，不得因精煉改版而膨脹（怪物防禦上限只有 200 出頭）", () => {
+    expect(getEquipSlotBonus("atk", { grade: "mythic", plusLevel: 4 })).toBe(30);
+    // ATK 四格合計上限
+    expect(getEquipSlotBonus("atk", { grade: "mythic", plusLevel: 4 }) * 4).toBe(120);
   });
 
   test("未知品級回 0，不會讓面板炸掉", () => {
     expect(getEquipSlotBonus("atk", { grade: "nope", plusLevel: 2 })).toBe(0);
-    expect(gradeCurveBonus(undefined)).toBe(0);
   });
 });
 
 describe("T7~T9 只顯示不實裝", () => {
-  test("上古/天啟/永恆 有數值但不在可取得品級內", () => {
+  test("上古/天啟/永恆 不在可取得品級內，玩家升不上去", () => {
     PREVIEW_GRADES.forEach(g => {
-      expect(GRADE_CURVE[g.id]).toBeDefined();
       expect(EQUIP_GRADES.some(x => x.id === g.id)).toBe(false);
     });
+    expect(EQUIP_GRADES[EQUIP_GRADES.length - 1].id).toBe("mythic");
   });
 
-  test("神話仍是可升級的最高品級，不會意外升進上古", () => {
-    expect(EQUIP_GRADES[EQUIP_GRADES.length - 1].id).toBe("mythic");
+  test("預覽數值沿用同一條直線，接在神話後面不會斷層", () => {
+    expect(previewGradeBonus("ancient", 0)).toBe(31);   // 神話+4 = 30
+    expect(previewGradeBonus("eternal", 4)).toBe(45);
   });
 });
 
