@@ -386,6 +386,8 @@ export default function DungeonExpedition({
   // 一般怪擊倒後的單場結算畫面（使用者規格：不要只彈 4.5 秒小提示，要看完整數據）。
   // 有值時蓋住整個畫面，按「下一步」才 finishPendingRoom() 繼續跑房間。
   const [killResult, setKillResult] = useState(null);
+  // 整場遠征累積的箭（跨房間、跨樓層），供最終結算的射箭表現分析使用
+  const [runArrows, setRunArrows] = useState([]);
   const [bossRewardClaim, setBossRewardClaim] = useState(null);
   const [bossRewardRetry, setBossRewardRetry] = useState(null);
   // 玩家持續狀態（HP / buff 跨房間、跨樓層帶著走）
@@ -701,8 +703,23 @@ export default function DungeonExpedition({
     const claim = await createDungeonBossRewardClaim({ battleId, memberId:myId, monsterId });
     setBossRewardClaim(claim);
     setBossRewardRetry(null);
-    finishPendingRoom();
-  }, [myId, finishPendingRoom]);
+    return claim;
+  }, [myId]);
+
+  // 王房固定獎勵攤平成掉落清單，給結算畫面逐項列出（含卡片）
+  const bossDropsFromEnvelope = useCallback((envelope) => {
+    const fixed = envelope?.fixedReward;
+    if (!fixed) return [];
+    const drops = [];
+    if (fixed.bossMaterial?.quantity > 0) {
+      drops.push({ id:"bossMaterial", name:fixed.bossMaterial.name || "王怪素材", icon:"💎", count:fixed.bossMaterial.quantity });
+    }
+    if (fixed.bossMarks > 0) drops.push({ id:"bossMarks", name:"王之印記", icon:"🏅", count:fixed.bossMarks });
+    if (fixed.runeFragment?.count > 0) drops.push({ id:"rune", name:"符文碎片", icon:"🔮", count:fixed.runeFragment.count });
+    if (fixed.coins > 0) drops.push({ id:"coins", name:`金幣 ${fixed.coins.toLocaleString()}`, icon:"🪙", count:1 });
+    if (envelope.card) drops.push({ id:"card", name:`怪物卡・${envelope.card.name}`, icon:"🃏", kind:"card", count:1 });
+    return drops;
+  }, []);
 
   const handleBattleDone = useCallback(async ({ won, member, battle }) => {
     // 戰後同步 HP/buff（用 ?? 避免 0 被復活）
@@ -754,12 +771,34 @@ export default function DungeonExpedition({
     }
     const battleStats = collectBattleStats(battle?.log);
     setRunStats(previous => mergeExpeditionStats(previous, battleStats));
+    // 整場射箭表現要用（結算頁的 X~M 分佈、命中率、評價）：把每一場的箭接起來
+    const battleArrows = collectBattleArrows(battle?.log)[myId] || [];
+    if (battleArrows.length) setRunArrows(previous => [...previous, ...battleArrows]);
     const defeatedMonster = battle?.monster || pendingRoom?.monster;
     if (defeatedMonster?.expansionVersion === 1
       && ["miniBoss", "boss"].includes(defeatedMonster.encounter)
       && battle?.id) {
       try {
-        await claimBossReward({ battleId:battle.id, monsterId:defeatedMonster.id });
+        const claim = await claimBossReward({ battleId:battle.id, monsterId:defeatedMonster.id });
+        // 王也要走單場結算（使用者規格：「擊倒王時也一樣」），按下一步才進補給箱領獎房
+        setKillResult({
+          monster: defeatedMonster,
+          isBoss: true,
+          bossDrops: bossDropsFromEnvelope(claim?.envelope),
+          chests: killLoot.chests,
+          coins: 0,          // 王房獎勵走 envelope，不重複發每殺金幣／XP
+          archerXP: 0,
+          lootMult: runLootMult,
+          continueLabel: "前往戰利品房 →",
+          self: {
+            id: myId,
+            name: profile?.nickname || profile?.name || "我",
+            arrows: collectBattleArrows(battle?.log)[myId] || [],
+            dmgDealt: battleStats[myId]?.dmgDealt || 0,
+            dmgTaken: battleStats[myId]?.dmgTaken || 0,
+            crits: battleStats[myId]?.crits || 0,
+          },
+        });
       } catch (error) {
         setBossRewardRetry({ battleId:battle.id, monsterId:defeatedMonster.id, error:error?.message || "王房獎勵同步失敗" });
         setPhase("boss_reward_retry");
@@ -783,7 +822,7 @@ export default function DungeonExpedition({
         crits: battleStats[myId]?.crits || 0,
       },
     });
-  }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult, claimBossReward, runLootMult, isGuest]);
+  }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult, claimBossReward, bossDropsFromEnvelope, runLootMult, isGuest]);
 
   const handleAbandon = useCallback(() => {
     if (!isFromStorage) abandonExcavation(myId).catch(() => {});
@@ -908,6 +947,9 @@ export default function DungeonExpedition({
         coins={killResult.coins}
         archerXP={killResult.archerXP}
         lootMult={killResult.lootMult}
+        isBoss={killResult.isBoss}
+        bossDrops={killResult.bossDrops}
+        continueLabel={killResult.continueLabel || "下一步"}
         targetFmt={targetFmt}
         onContinue={() => { setKillResult(null); finishPendingRoom(); }}
       />
@@ -1103,6 +1145,8 @@ export default function DungeonExpedition({
         isHidden={isHidden}
         rewards={resultRewards}
         killTotals={killTotals}
+        runArrows={runArrows}
+        targetFmt={targetFmt}
         loot={runLoot}
         party={buildExpeditionParty({
           [myId]: {

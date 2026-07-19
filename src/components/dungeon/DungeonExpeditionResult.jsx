@@ -1,10 +1,13 @@
 // src/components/dungeon/DungeonExpeditionResult.jsx
 // 遠征獎勵結算畫面 — 動畫式顯示獎勵明細
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { summarizeExpeditionChests } from "../../lib/expeditionRewards";
 import { BattleResultPanel, RESULT_CONFIG_DUNGEON } from "../shared/BattleResultPanel";
+import {
+  gradeArcheryPerformance, pickArcheryMvp, buildArcheryAdvice, GRADE_STYLE,
+} from "../../lib/archeryGrade";
 
 const FAMILY_LABEL = {
   ghost:     { emoji:"👻", label:"幽冥系" },
@@ -23,6 +26,9 @@ export default function DungeonExpeditionResult({
   isHidden,
   rewards,        // { coins, arrowDew, archerXP } — 通關獎勵，按下領取才發放
   killTotals,     // { coins, archerXP, kills } — 沿路擊殺，戰鬥當下就已入帳
+  runArrows,      // 整場遠征累積的箭，用來做射箭表現分析與評價
+  allyArrows,     // [{ id, name, arrows }] 組隊時的隊友箭序列（單人不傳）
+  targetFmt = "full_110",
   loot,
   party,
   boss,
@@ -48,6 +54,27 @@ export default function DungeonExpeditionResult({
   const totalArcherXP = clearArcherXP + killArcherXP;
   const hasKillRewards = killCoins > 0 || killArcherXP > 0;
   const totalArrowDew = (rewards?.arrowDew || 0) + (loot?.bonusArrowDew || 0);
+
+  // ── 整場射箭表現（使用者規格：單純計算射箭成果，與遊戲數值無關）──
+  const runPerf = useMemo(
+    () => gradeArcheryPerformance(runArrows, { targetFmt }),
+    [runArrows, targetFmt],
+  );
+  const runAdvice = useMemo(() => buildArcheryAdvice(runPerf, { targetFmt }), [runPerf, targetFmt]);
+  const allyPerfs = useMemo(
+    () => (allyArrows || []).map(ally => ({ ...ally, performance: gradeArcheryPerformance(ally.arrows, { targetFmt }) })),
+    [allyArrows, targetFmt],
+  );
+  const runMvp = useMemo(() => pickArcheryMvp(
+    [{ id:"__self", name:"我", arrows:runArrows }, ...(allyArrows || [])],
+    { targetFmt },
+  ), [runArrows, allyArrows, targetFmt]);
+  const gradeStyle = GRADE_STYLE[runPerf.grade] || GRADE_STYLE.E;
+  const arrowRows = Object.entries(runPerf.distribution || {})
+    .sort((a, b) => {
+      const order = label => (label === "X" ? 999 : label === "M" ? -1 : Number(label) || 0);
+      return order(b[0]) - order(a[0]);
+    });
   const partyMembers = party?.members || [];
   const totalDamage = partyMembers.reduce((sum, member) => sum + (member.dmgDealt || 0), 0);
   const totalDamageTaken = partyMembers.reduce((sum, member) => sum + (member.dmgTaken || 0), 0);
@@ -260,6 +287,82 @@ export default function DungeonExpeditionResult({
             </div>
           )}
         </div>
+
+        {/* ── 整場射箭表現（使用者規格：打了多少箭、X~M 各多少、命中率、偏差、建議）── */}
+        {runPerf.arrowCount > 0 && (
+          <div className="rounded-2xl p-4"
+            style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)" }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-base font-black text-white">🎯 整場射箭表現</div>
+              <span style={{
+                display:"inline-flex", alignItems:"center", justifyContent:"center",
+                minWidth:38, height:34, padding:"0 10px", borderRadius:10,
+                fontSize:16, fontWeight:900, color:gradeStyle.color,
+                background:`${gradeStyle.color}1f`, border:`1.5px solid ${gradeStyle.color}66`,
+              }}>{gradeStyle.label}</span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-sm">
+              <div className="rounded-xl p-2 bg-black/20 text-center">
+                <div className="text-lg font-black text-white">{runPerf.arrowCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">總箭數</div>
+              </div>
+              <div className="rounded-xl p-2 bg-black/20 text-center">
+                <div className="text-lg font-black text-emerald-300">{Math.round(runPerf.hitRate * 100)}%</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">命中率</div>
+              </div>
+              <div className="rounded-xl p-2 bg-black/20 text-center">
+                <div className="text-lg font-black text-sky-300">{Math.round(runPerf.stability * 100)}%</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">穩定性</div>
+              </div>
+              <div className="rounded-xl p-2 bg-black/20 text-center">
+                <div className="text-lg font-black text-violet-300">{runPerf.avgScore}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">均分</div>
+              </div>
+            </div>
+
+            {/* X~M 各多少 */}
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {arrowRows.map(([label, count]) => (
+                <div key={label} className="flex items-center gap-1 rounded-lg px-2 py-1 bg-black/25">
+                  <span className="text-xs font-black"
+                    style={{ color: label === "M" ? "#f87171" : label === "X" ? "#fbbf24" : "#93c5fd" }}>
+                    {label}
+                  </span>
+                  <span className="text-xs text-slate-300">×{count}</span>
+                </div>
+              ))}
+            </div>
+
+            {runAdvice.length > 0 && (
+              <div className="mt-3 pt-3 space-y-1" style={{ borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+                {runAdvice.map((line, index) => (
+                  <div key={index} className="text-xs text-slate-300">💡 {line}</div>
+                ))}
+              </div>
+            )}
+
+            {/* 隊友評價與 MVP：組隊才有 */}
+            {allyPerfs.length > 0 && (
+              <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+                <div className="text-xs font-bold text-slate-400 mb-1">隊伍評價（只計射箭表現）</div>
+                {[{ id:"__self", name:"我", performance:runPerf }, ...allyPerfs].map(member => {
+                  const style = GRADE_STYLE[member.performance.grade] || GRADE_STYLE.E;
+                  return (
+                    <div key={member.id} className="flex items-center gap-2 rounded-xl px-3 py-2 bg-black/20">
+                      <span className="text-xs font-black" style={{ color:style.color }}>{style.label}</span>
+                      <span className="text-xs text-slate-200">{member.name}</span>
+                      {runMvp?.id === member.id && (
+                        <span className="text-[10px] font-black text-amber-300 bg-amber-400/15 px-1.5 py-0.5 rounded">MVP</span>
+                      )}
+                      <span className="ml-auto text-[11px] text-slate-500">{member.performance.score} 分</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <BattleResultPanel
           data={reportData}

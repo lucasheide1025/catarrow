@@ -149,7 +149,7 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
 }
 
 // ── 戰鬥房間包裝元件（監聽戰況 + 清理房間）───────────────
-function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootMult = 1 }) {
+function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootMult = 1, onArrowsCollected, onKillRewardCollected }) {
   const [loading, setLoading] = useState(true);
   const [battleDone, setBattleDone] = useState(false);
   const terminalHandledRef = useRef(false);
@@ -163,7 +163,6 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
   const [killReward, setKillReward] = useState(null);
   // 沿路擊殺的累計（單人遠征同規格）。以前這兩個數字只餵給 4.5 秒的 toast 就丟掉，
   // 結算頁因此只顯示通關獎勵，跟玩家實際入帳的金額對不上。
-  const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
   // 勝利後停留的單場結算畫面；advanceRef 存房主的「推進到下一房」動作，按下一步才執行
   const [killResultView, setKillResultView] = useState(null);
   const advanceRef = useRef(null);
@@ -198,12 +197,10 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
       if (kill) {
         dbMod.addCoins(memberId, kill.coins).catch(() => {});
         dbMod.addArcherXP(memberId, kill.archerXP).catch(() => {});
-        // 累計給結算頁：這些是「已入帳」的部分，結算頁只列出來，不再發一次
-        setKillTotals(previous => ({
-          coins: previous.coins + kill.coins,
-          archerXP: previous.archerXP + kill.archerXP,
-          kills: previous.kills + 1,
-        }));
+        // 累計給結算頁：這些是「已入帳」的部分，結算頁只列出來，不再發一次。
+        // ⚠️ 必須往上報給 TeamExpeditionBattle —— 結算頁在那一層 render，
+        //    累計狀態放在這個子元件裡它讀不到（曾經因此跨 scope 引用而爆 ReferenceError）。
+        onKillRewardCollected?.({ coins: kill.coins, archerXP: kill.archerXP });
       }
       // ⚠️ 不要自動清空：這筆現在是 DungeonKillResult 的資料來源（以前只餵 4.5 秒的
       // 浮動提示才需要自動收）。清早了，結算畫面上的寶箱與金幣會憑空消失。
@@ -258,6 +255,8 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
         // 隊員端會因為房主推進後的房間快照變化而自動離開，不必各自按。
         // 失敗維持原本的自動流程 —— 失敗畫面有自己的轉場，硬塞結算頁只會擋路。
         if (payload.won) {
+          const myArrows = collectBattleArrows(data.log)[battleProfile?.id] || [];
+          if (myArrows.length) onArrowsCollected?.(myArrows);
           setKillResultView({
             monster: data.monster || battleMonsterRef.current,
             members: data.members || {},
@@ -405,6 +404,10 @@ export default function TeamExpeditionBattle({
   const [wonLast, setWonLast] = useState(false);
   const [result, setResult] = useState(null);
   const [flowError, setFlowError] = useState("");
+  // 整場遠征累積的箭（本端玩家自己的），供最終結算的射箭表現分析
+  const [runArrows, setRunArrows] = useState([]);
+  // 沿路擊殺的累計（戰鬥當下已入帳，結算頁只是列出來）
+  const [killTotals, setKillTotals] = useState({ coins:0, archerXP:0, kills:0 });
   const [bossRewardClaim, setBossRewardClaim] = useState(null);
   const [bossRewardLoading, setBossRewardLoading] = useState(false);
   const [bossRewardError, setBossRewardError] = useState("");
@@ -962,6 +965,8 @@ export default function TeamExpeditionBattle({
         isHidden={dungeonIsHidden}
         rewards={rewards}
         killTotals={killTotals}
+        runArrows={runArrows}
+        targetFmt={teamRoom?.targetFmt || "full_110"}
         loot={result?.loot}
         party={result?.party}
         boss={result?.boss || dungeonBoss}
@@ -1157,6 +1162,13 @@ export default function TeamExpeditionBattle({
         onAbandon={handleAbandon}
         guestProfile={isGuestMode ? profile : undefined}
         lootMult={teamRoom?.lootMult || 1}
+        // 整場射箭表現與擊殺獎勵都要各自累積：handleFloorDone 只有房主會跑，隊員得靠這兩條回報
+        onArrowsCollected={arrows => setRunArrows(previous => [...previous, ...arrows])}
+        onKillRewardCollected={({ coins, archerXP }) => setKillTotals(previous => ({
+          coins: previous.coins + coins,
+          archerXP: previous.archerXP + archerXP,
+          kills: previous.kills + 1,
+        }))}
       />
     );
   }
