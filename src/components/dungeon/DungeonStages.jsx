@@ -242,7 +242,7 @@ function RoomTile({ room, x, y, z, isCurrent, clickable, fog, onClick, muted = f
 }
 
 // 鏡頭視窗：overflow:hidden 視窗 + 可平移 world 層；focus(世界 px) 對齊視窗中心（自動跟隨）
-function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false, children }) {
+function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false, family = "ghost", children }) {
   const ref = useRef(null);
   const [vw, setVw] = useState(0);
   useEffect(() => {
@@ -268,7 +268,7 @@ function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false
       {/* 背景層（固定，不隨鏡頭移動；缺圖則透出父層漸層） */}
       <div style={{
         position:"absolute", inset:0,
-        backgroundImage:`url(${ASSET_BASE}/map_bg_${family}.webp), url(${ASSET_BASE}/map_bg.webp)`,
+        backgroundImage:`url(${ASSET_BASE}/map_bg_${family || "ghost"}.webp), url(${ASSET_BASE}/map_bg.webp)`,
         backgroundSize:"cover", backgroundPosition:"center", opacity:0.9,
       }} />
       {/* 中央可動面板：夾住 2.5D 內容（overflow 裁切）+ 深色底把地圖區跟背景區隔 */}
@@ -366,7 +366,7 @@ function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl,
   });
 
   return (
-    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} height={380}>
+    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} height={380} family={family}>
       {/* 橋（立繪之下） */}
       <svg width={worldW} height={worldH} style={{ position:"absolute", left:0, top:0, pointerEvents:"none" }}>
         {bridges.map(b => {
@@ -616,7 +616,7 @@ function DungeonBranchView({ branchFloor, branchChoice, branchSeq, branchStep, c
   const focus = cc(curPos.col, curPos.row);
 
   return (
-    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} fit={!chosen} height={380}>
+    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} fit={!chosen} height={380} family={family}>
       {/* 連接線 */}
       <svg width={worldW} height={worldH} style={{ position:"absolute", left:0, top:0, pointerEvents:"none" }}>
         {links.map(([a, b, k], i) => {
