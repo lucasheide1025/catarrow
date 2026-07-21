@@ -1362,9 +1362,10 @@ function formatResKey(key) {
 
 // ── 鍛造面板 ─────────────────────────────────────────────────
 function ForgePanel({ profile, resources, myCats }) {
-  const [forging,   setForging]   = useState(false);
-  const [forgeMsg,  setForgeMsg]  = useState(null);
-  const [switching, setSwitching] = useState(false);
+  const [forging,           setForging]           = useState(false);
+  const [activeForgingSlot, setActiveForgingSlot] = useState(null);
+  const [forgeMsg,          setForgeMsg]          = useState(null);
+  const [switching,         setSwitching]         = useState(false);
 
   const equippedCat = profile?.equippedCat;
   if (!equippedCat?.catId) {
@@ -1388,7 +1389,7 @@ function ForgePanel({ profile, resources, myCats }) {
   const typeColor = { attack:"#ef4444", defense:"#3b82f6", allround:"#22c55e" }[equippedCat.type] || "#22c55e";
 
   async function handleForge(slotId) {
-    if (forging || !profile?.id) return;
+    if (forging || activeForgingSlot || !profile?.id) return;
     const slotData = equip[slotId] || { grade: "普通", plusLevel: 0 };
     const cost = calcForgeCost(slotId, slotData.grade, slotData.plusLevel);
     if (!cost) return;
@@ -1413,8 +1414,15 @@ function ForgePanel({ profile, resources, myCats }) {
     }
 
     setForging(true);
+    setActiveForgingSlot(slotId);
+    if (typeof sfxVillageExchange === "function") sfxVillageExchange();
+
+    // 播放 700ms 的鐵鎚敲擊火花鍛造動畫
+    await new Promise(resolve => setTimeout(resolve, 700));
+
     const res = await upgradeCatEquip(profile.id, catId, slotId, newGrade, newPlusLevel, cost);
     setForging(false);
+    setActiveForgingSlot(null);
 
     if (res.ok) {
       sfxSuccess();
@@ -1496,6 +1504,21 @@ function ForgePanel({ profile, resources, myCats }) {
         </div>
       )}
 
+      {/* 鍛造動畫 Keyframes */}
+      <style>{`
+        @keyframes forgeHammer {
+          0% { transform: rotate(0deg) translate(0, 0); }
+          30% { transform: rotate(-30deg) translate(-2px, -5px); }
+          70% { transform: rotate(15deg) translate(1px, 2px); }
+          100% { transform: rotate(0deg) translate(0, 0); }
+        }
+        @keyframes forgeSpark {
+          0% { transform: scale(0.6); opacity: 0; }
+          40% { transform: scale(1.4); opacity: 1; }
+          100% { transform: scale(0.8); opacity: 0; }
+        }
+      `}</style>
+
       {/* 裝備格 */}
       {CAT_EQUIP_SLOTS.map(slot => {
         const slotData = equip[slot.id] || { grade: "普通", plusLevel: 0 };
@@ -1517,9 +1540,34 @@ function ForgePanel({ profile, resources, myCats }) {
 
         return (
           <div key={slot.id} style={{
+            position: "relative",
             background: gradeBg, borderRadius:12, padding:"12px 14px", marginBottom:9,
             border:`1.5px solid ${gradeColor}44`, display:"flex", alignItems:"center", gap:10,
+            overflow: "hidden",
           }}>
+            {/* Forging Animation Overlay */}
+            {activeForgingSlot === slot.id && (
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(92,61,46,0.88)",
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+                zIndex: 20,
+              }}>
+                <div style={{ position: "relative", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 28, animation: "forgeHammer 0.35s infinite ease-in-out", transformOrigin: "bottom right" }}>🔨</div>
+                  <div style={{ fontSize: 20, position: "absolute", right: 0, top: 0, animation: "forgeSpark 0.35s infinite ease-in-out" }}>💥</div>
+                </div>
+                <span style={{ color: "#FFF8F0", fontSize: 13, fontWeight: 900, letterSpacing: 1.5, textShadow: "0 1px 3px rgba(0,0,0,0.5)" }}>
+                  鍛造中...
+                </span>
+              </div>
+            )}
+
             <div style={{ width:44, height:44, borderRadius:10, overflow:"hidden", border:`1.5px solid ${gradeColor}66`, flexShrink:0, background:"#fff", boxShadow:"0 2px 6px rgba(0,0,0,0.12)" }}>
               <img
                 src={slot.image}
@@ -1617,9 +1665,8 @@ const POTION_CRAFT_GROUPS = {
   ],
 };
 
-function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCrafted, battleExchange }) {
+function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCrafted }) {
   const [tab, setTab] = useState("carry");
-  const [panelMode, setPanelMode] = useState("craft"); // "craft" | "exchange"
   const [craftMode, setCraftMode] = useState(1);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -1665,174 +1712,139 @@ function PotionCraftingPanel({ resources, potionInventory, coins, memberId, onCr
 
   return (
     <div>
-      {/* 行動端分頁切換 */}
-      <div className="flex lg:hidden rounded-xl overflow-hidden mb-4 p-1 bg-white/70 border border-[#E0CDB5]">
-        <button
-          onClick={() => setPanelMode("craft")}
-          className={`flex-1 py-2 text-xs font-black rounded-lg transition-colors ${
-            panelMode === "craft" ? "bg-[#5C3D2E] text-white shadow" : "text-[#9B7B6A]"
-          }`}
-        >
-          🧪 藥水製作
-        </button>
-        <button
-          onClick={() => setPanelMode("exchange")}
-          className={`flex-1 py-2 text-xs font-black rounded-lg transition-colors ${
-            panelMode === "exchange" ? "bg-[#5C3D2E] text-white shadow" : "text-[#9B7B6A]"
-          }`}
-        >
-          🔄 材料升降階與兌換
-        </button>
+      <div className="text-xs font-bold mb-3" style={{ color: C.mid }}>🧪 藥水製作</div>
+      <div className="text-[10px] mb-3" style={{ color: C.muted }}>
+        消耗村莊資源 + 金幣來合成藥水，合成後到背包使用。
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* 左欄：藥水製作 */}
-        <div className={`lg:col-span-7 ${panelMode === "craft" ? "block" : "hidden lg:block"}`}>
-          <div className="text-xs font-bold mb-3" style={{ color: C.mid }}>🧪 藥水製作</div>
-          <div className="text-[10px] mb-3" style={{ color: C.muted }}>
-            消耗村莊資源 + 金幣來合成藥水，合成後到背包使用。
-          </div>
+      {/* 即時訊息 */}
+      {msg && (
+        <div className="rounded-xl px-4 py-2 mb-3 text-xs font-bold text-center"
+          style={{ background: msg.startsWith("✅") ? "rgba(90,158,80,0.15)" : "rgba(192,83,58,0.12)",
+            border: `1px solid ${msg.startsWith("✅") ? "#5A9E50" : "#C0533A"}`,
+            color: msg.startsWith("✅") ? "#3D7A3A" : "#9B3A20" }}>
+          {msg}
+        </div>
+      )}
 
-          {/* 即時訊息 */}
-          {msg && (
-            <div className="rounded-xl px-4 py-2 mb-3 text-xs font-bold text-center"
-              style={{ background: msg.startsWith("✅") ? "rgba(90,158,80,0.15)" : "rgba(192,83,58,0.12)",
-                border: `1px solid ${msg.startsWith("✅") ? "#5A9E50" : "#C0533A"}`,
-                color: msg.startsWith("✅") ? "#3D7A3A" : "#9B3A20" }}>
-              {msg}
+      {/* 頁籤：攜帶型 vs 投擲型 */}
+      <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
+        {[["carry","💊 攜帶型"],["throw","💣 投擲型"],["raid","👑 討伐型"]].map(([id, lb]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className="flex-1 py-2 text-[11px] font-bold transition-colors"
+            style={{
+              background: tab === id ? C.brown : "rgba(255,255,255,0.5)",
+              color: tab === id ? "#FFF8F0" : C.mid,
+            }}>
+            {lb}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-1.5 mb-3" role="group" aria-label="製作次數">
+        {[[1,"製作 1 次"],[5,"製作 5 次"],["max","最大數量"]].map(([value, label]) => (
+          <button key={value} onClick={() => setCraftMode(value)}
+            className="flex-1 min-h-11 px-2 py-2 rounded-lg text-[11px] font-bold transition-colors"
+            style={{ background: craftMode === value ? C.sage : "rgba(255,255,255,0.55)", color: craftMode === value ? "white" : C.mid, border:`1px solid ${C.border}` }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 金幣顯示 */}
+      <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl"
+        style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 18 }}>🪙</span>
+        <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(coins || 0).toLocaleString()}</span>
+        <span className="text-[10px]" style={{ color: C.muted }}>金幣</span>
+      </div>
+
+      {/* 依用途分區 */}
+      <div className="flex flex-col gap-4">
+        {potionGroups.map(group => (
+          <section key={group.id}>
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-black" style={{ color:C.brown }}>
+                <span aria-hidden="true">{group.icon}</span>
+                <span>{group.label}</span>
+              </div>
+              <span className="text-[10px] font-bold" style={{ color:C.muted }}>{group.items.length} 種</span>
             </div>
-          )}
-
-          {/* 頁籤：攜帶型 vs 投擲型 */}
-          <div className="flex rounded-xl overflow-hidden mb-3" style={{ border: `1px solid ${C.border}` }}>
-            {[["carry","💊 攜帶型"],["throw","💣 投擲型"],["raid","👑 討伐型"]].map(([id, lb]) => (
-              <button key={id} onClick={() => setTab(id)}
-                className="flex-1 py-2 text-[11px] font-bold transition-colors"
-                style={{
-                  background: tab === id ? C.brown : "rgba(255,255,255,0.5)",
-                  color: tab === id ? "#FFF8F0" : C.mid,
-                }}>
-                {lb}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-1.5 mb-3" role="group" aria-label="製作次數">
-            {[[1,"製作 1 次"],[5,"製作 5 次"],["max","最大數量"]].map(([value, label]) => (
-              <button key={value} onClick={() => setCraftMode(value)}
-                className="flex-1 min-h-11 px-2 py-2 rounded-lg text-[11px] font-bold transition-colors"
-                style={{ background: craftMode === value ? C.sage : "rgba(255,255,255,0.55)", color: craftMode === value ? "white" : C.mid, border:`1px solid ${C.border}` }}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* 金幣顯示 */}
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl"
-            style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 18 }}>🪙</span>
-            <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(coins || 0).toLocaleString()}</span>
-            <span className="text-[10px]" style={{ color: C.muted }}>金幣</span>
-          </div>
-
-          {/* 依用途分區 */}
-          <div className="flex flex-col gap-4">
-            {potionGroups.map(group => (
-              <section key={group.id}>
-                <div className="flex items-center justify-between mb-1.5 px-0.5">
-                  <div className="flex items-center gap-1.5 text-xs font-black" style={{ color:C.brown }}>
-                    <span aria-hidden="true">{group.icon}</span>
-                    <span>{group.label}</span>
-                  </div>
-                  <span className="text-[10px] font-bold" style={{ color:C.muted }}>{group.items.length} 種</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-stretch">
-                  {group.items.map(p => {
-                    const havePotion = potionInventory?.[p.id] || 0;
-                    const maxCrafts = calculateMaxCrafts(p, resources, coins);
-                    const executions = craftMode === "max" ? maxCrafts : craftMode;
-                    const canCraft = executions > 0 && maxCrafts >= executions;
-                    const costMultiplier = Math.max(1, executions);
-                    const totalGold = (p.gold || 0) * costMultiplier;
-                    return (
-                      <div key={p.id} className="rounded-lg p-2 min-w-0 h-full flex flex-col"
-                        style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
-                        <div className="flex items-start gap-1.5 mb-1.5 min-w-0">
-                          <ConsumableArt item={p} size={36} />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[11px] leading-tight font-black break-words" style={{ color:C.brown }}>{p.name}</div>
-                            <div className="flex flex-wrap items-center gap-1 mt-1">
-                              {RARITY_COLORS[p.rarity] && (
-                                <span className="text-[9px] leading-none font-bold px-1 py-0.5 rounded"
-                                  style={{ background: RARITY_COLORS[p.rarity].bg, color: RARITY_COLORS[p.rarity].text }}>
-                                  {RARITY_COLORS[p.rarity].label}
-                                </span>
-                              )}
-                              <span className="text-[9px] font-black" style={{ color:havePotion > 0 ? C.sage : C.muted }}>持有 {havePotion}</span>
-                            </div>
-                          </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-stretch">
+              {group.items.map(p => {
+                const havePotion = potionInventory?.[p.id] || 0;
+                const maxCrafts = calculateMaxCrafts(p, resources, coins);
+                const executions = craftMode === "max" ? maxCrafts : craftMode;
+                const canCraft = executions > 0 && maxCrafts >= executions;
+                const costMultiplier = Math.max(1, executions);
+                const totalGold = (p.gold || 0) * costMultiplier;
+                return (
+                  <div key={p.id} className="rounded-lg p-2 min-w-0 h-full flex flex-col"
+                    style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+                    <div className="flex items-start gap-1.5 mb-1.5 min-w-0">
+                      <ConsumableArt item={p} size={36} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] leading-tight font-black break-words" style={{ color:C.brown }}>{p.name}</div>
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {RARITY_COLORS[p.rarity] && (
+                            <span className="text-[9px] leading-none font-bold px-1 py-0.5 rounded"
+                              style={{ background: RARITY_COLORS[p.rarity].bg, color: RARITY_COLORS[p.rarity].text }}>
+                              {RARITY_COLORS[p.rarity].label}
+                            </span>
+                          )}
+                          <span className="text-[9px] font-black" style={{ color:havePotion > 0 ? C.sage : C.muted }}>持有 {havePotion}</span>
                         </div>
-                        <div className="text-[10px] leading-snug font-bold min-h-7 mb-1" style={{ color:C.sage }}>{p.effectText}</div>
-                        <div className="text-[9px] leading-snug mb-2 min-h-6" style={{
-                          color:C.muted, display:"-webkit-box", WebkitLineClamp:2,
-                          WebkitBoxOrient:"vertical", overflow:"hidden",
-                        }}>{p.desc}</div>
-                        {p.futureFeature && (
-                          <div className="text-[9px] leading-tight font-bold mb-2 px-1.5 py-1 rounded" style={{ color:"#9a5b08", background:"rgba(212,147,58,0.10)" }}>
-                            預備道具・尚未開放使用
-                          </div>
-                        )}
-                        <div className="flex flex-col gap-1 mb-2">
-                          {p.recipe.map(r => {
-                            const have = Math.floor(resources?.[r.id] || 0);
-                            const need = r.count * costMultiplier;
-                            const ok = have >= need;
-                            const resEmoji = RES_EMOJI[r.id.split("_t")[0]] || "📦";
-                            return (
-                              <div key={r.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold min-w-0"
-                                style={{ background: ok ? "rgba(90,158,80,0.10)" : "rgba(192,83,58,0.08)",
-                                  color: ok ? C.sage : "#C0533A" }}>
-                                <span className="truncate min-w-0">{resEmoji} {formatResKey(r.id)}</span>
-                                <span className="shrink-0">{need}/{have}</span>
-                              </div>
-                            );
-                          })}
-                          <div className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold"
-                            style={{ background: (coins || 0) >= totalGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
-                              color: (coins || 0) >= totalGold ? "#D4933A" : "#C0533A" }}>
-                            <span>🪙 金幣</span><span>{totalGold}</span>
-                          </div>
-                        </div>
-                        <button
-                          disabled={!canCraft || busy}
-                          onClick={() => handleCraft(p)}
-                          className="w-full min-h-11 mt-auto px-1 py-2 rounded-lg text-[10px] leading-tight font-bold active:scale-95 transition-all"
-                          style={{
-                            background: canCraft ? "linear-gradient(135deg,#7CBF70,#5A9E50)" : C.lockBd,
-                            color: canCraft ? "white" : C.muted,
-                            boxShadow: canCraft ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
-                            cursor: canCraft ? "pointer" : "default",
-                          }}>
-                          {busy ? "製作中…" : canCraft ? `製作 ×${executions * (p.craftYield || 1)}` : "材料不足"}
-                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
-
-        {/* 右欄：材料升降階與兌換 */}
-        <div className={`lg:col-span-5 ${panelMode === "exchange" ? "block" : "hidden lg:block"} bg-white/70 border border-[#E0CDB5] rounded-2xl py-3 shadow-sm sticky top-4`}>
-          <MarketExchangePanel
-            resources={resources}
-            memberId={memberId}
-            onDone={onCrafted}
-            battleExchange={battleExchange}
-          />
-        </div>
+                    </div>
+                    <div className="text-[10px] leading-snug font-bold min-h-7 mb-1" style={{ color:C.sage }}>{p.effectText}</div>
+                    <div className="text-[9px] leading-snug mb-2 min-h-6" style={{
+                      color:C.muted, display:"-webkit-box", WebkitLineClamp:2,
+                      WebkitBoxOrient:"vertical", overflow:"hidden",
+                    }}>{p.desc}</div>
+                    {p.futureFeature && (
+                      <div className="text-[9px] leading-tight font-bold mb-2 px-1.5 py-1 rounded" style={{ color:"#9a5b08", background:"rgba(212,147,58,0.10)" }}>
+                        預備道具・尚未開放使用
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-1 mb-2">
+                      {p.recipe.map(r => {
+                        const have = Math.floor(resources?.[r.id] || 0);
+                        const need = r.count * costMultiplier;
+                        const ok = have >= need;
+                        const resEmoji = RES_EMOJI[r.id.split("_t")[0]] || "📦";
+                        return (
+                          <div key={r.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold min-w-0"
+                            style={{ background: ok ? "rgba(90,158,80,0.10)" : "rgba(192,83,58,0.08)",
+                              color: ok ? C.sage : "#C0533A" }}>
+                            <span className="truncate min-w-0">{resEmoji} {formatResKey(r.id)}</span>
+                            <span className="shrink-0">{need}/{have}</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center justify-between gap-1 px-1.5 py-1 rounded text-[9px] font-bold"
+                        style={{ background: (coins || 0) >= totalGold ? "rgba(212,147,58,0.12)" : "rgba(192,83,58,0.08)",
+                          color: (coins || 0) >= totalGold ? "#D4933A" : "#C0533A" }}>
+                        <span>🪙 金幣</span><span>{totalGold}</span>
+                      </div>
+                    </div>
+                    <button
+                      disabled={!canCraft || busy}
+                      onClick={() => handleCraft(p)}
+                      className="w-full min-h-11 mt-auto px-1 py-2 rounded-lg text-[10px] leading-tight font-bold active:scale-95 transition-all"
+                      style={{
+                        background: canCraft ? "linear-gradient(135deg,#7CBF70,#5A9E50)" : C.lockBd,
+                        color: canCraft ? "white" : C.muted,
+                        boxShadow: canCraft ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
+                        cursor: canCraft ? "pointer" : "default",
+                      }}>
+                      {busy ? "製作中…" : canCraft ? `製作 ×${executions * (p.craftYield || 1)}` : "材料不足"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );
@@ -1849,6 +1861,7 @@ const VILLAGE_SECONDARY_NAV = {
   workshop: [
     { id:"forge", label:"裝備鍛造" },
     { id:"potioncraft", label:"藥水製作" },
+    { id:"exchange", label:"材料兌換" },
   ],
   trade: [
     { id:"gacha", label:"貓咪扭蛋" },
@@ -1858,7 +1871,7 @@ const VILLAGE_SECONDARY_NAV = {
 
 function getVillagePrimaryTab(tab) {
   if (tab === "council") return "tasks";
-  if (tab === "forge" || tab === "potioncraft") return "workshop";
+  if (tab === "forge" || tab === "potioncraft" || tab === "exchange") return "workshop";
   if (tab === "gacha" || tab === "cardmarket") return "trade";
   return "village";
 }
@@ -2055,11 +2068,24 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
             potionInventory={potionInventory}
             coins={profile?.coins || 0}
             memberId={profile?.id}
-            battleExchange={battleExchange}
             onCrafted={() => {
               setLocalVillage(null);
               sfxVillageExchange();
             }}
+          />
+        </div>
+      )}
+
+      {tab === "exchange" && (
+        <div className="px-4 py-3">
+          <MarketExchangePanel
+            resources={resources}
+            memberId={profile?.id}
+            onDone={() => {
+              setLocalVillage(null);
+              sfxVillageExchange();
+            }}
+            battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
           />
         </div>
       )}
