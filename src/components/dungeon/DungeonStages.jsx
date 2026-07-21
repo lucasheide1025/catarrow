@@ -21,6 +21,7 @@ const TYPE_HINTS = {
   boss_battle:"王者的氣息…",
   shop:"行腳商人在此擺攤。",
   event:"神秘的力量在流動。",
+  general_event:"遇到幸運奇遇事件！",
   trap:"腳下傳來喀嚓聲…",
   chest:"閃閃發亮的寶箱！",
   rest:"安全的休息點。",
@@ -34,7 +35,8 @@ const TYPE_LABELS = {
   elite_battle: "精英",
   boss_battle: "首領",
   shop: "商店",
-  event: "事件",
+  event: "特殊事件",
+  general_event: "一般事件",
   trap: "陷阱",
   chest: "寶箱",
   rest: "休息",
@@ -437,7 +439,7 @@ export function GridMapStage({
     : standingRoom?.type === "chest" ? "📦 開啟寶箱"
     : standingRoom?.type === "shop" ? "🛒 進入商店"
     : standingRoom?.type === "rest" ? "💤 進入休息區"
-    : standingRoom?.type === "event" ? "✨ 進入事件"
+    : (standingRoom?.type === "event" || standingRoom?.type === "general_event") ? "✨ 進入事件"
     : standingRoom?.type === "trap" ? "⚠️ 進入"
     : "🚪 進入房間";
 

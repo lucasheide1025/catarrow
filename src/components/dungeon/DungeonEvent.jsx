@@ -1,6 +1,7 @@
 // src/components/dungeon/DungeonEvent.jsx — 事件揭示（一般事件與特殊二選一事件）
 import { useState, useEffect } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { drawDungeonEvent } from "../../lib/dungeonData";
 import { sfxBuff, sfxDebuff, sfxSuccess, sfxTap } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
 
@@ -12,14 +13,16 @@ const TYPE_STYLE = {
 };
 
 export default function DungeonEvent({
-  roomId, room, memberId, isHost,
+  roomId, room, memberId, isHost, event: propEvent,
   localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [loading, setLoading] = useState(false);
   const [selectedChoiceIdx, setSelectedChoiceIdx] = useState(null);
   const [resolved, setResolved] = useState(false);
 
-  const ev = room?.roomResolution || room?.currentEvent;
+  const rawEv = propEvent || room?.roomResolution || room?.currentEvent || room?.event || room?.pendingRoom?.event;
+  const validEv = (rawEv?.desc ? rawEv : (rawEv?.event?.desc ? rawEv.event : null));
+  const ev = validEv || drawDungeonEvent(room?.type === "event" ? "special" : "general");
 
   // 揭示音效
   useEffect(() => {
