@@ -68,7 +68,7 @@ export default function AdminGiveTool() {
   const [fixSaving,  setFixSaving]  = useState(false);
 
   useEffect(() => {
-    getDocs(query(collection(db, "members"), limit(50)))
+    getDocs(collection(db, "members"))
       .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         // 按照登入順序降序排列（最新登入排在最前面）
