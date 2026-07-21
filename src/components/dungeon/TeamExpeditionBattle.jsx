@@ -760,7 +760,11 @@ export default function TeamExpeditionBattle({
       sharedRoomFields.shopItems = preparedRoom.shopItems;
     }
     if (room.type === "event") {
-      preparedRoom.event = drawDungeonEvent();
+      preparedRoom.event = drawDungeonEvent("special");
+      sharedRoomFields.currentEvent = preparedRoom.event;
+    }
+    if (room.type === "general_event") {
+      preparedRoom.event = drawDungeonEvent("general");
       sharedRoomFields.currentEvent = preparedRoom.event;
     }
     await updateTeamExpeditionRoom(teamRoomId, {
@@ -773,18 +777,21 @@ export default function TeamExpeditionBattle({
     });
   }, [isHost, startRoomBattle, teamRoomId, dungeonFamily]);
 
+  // 兩段式：點格子只移動+揭露（同步位置），不立刻進場；進入事件改由「進入」按鈕
   const handleCellClick = useCallback(async room => {
     if (!isHost || !mapState?.playerPos || !isAdjacent(room.pos, mapState.playerPos)) return;
     const visitedIds = mapState.visitedIds?.includes(room.id)
       ? mapState.visitedIds
       : [...(mapState.visitedIds || []), room.id];
-    const positionedState = {
-      ...mapState,
-      playerPos: room.pos,
-      visitedIds,
-    };
-    await enterExplorationRoom(room, positionedState);
-  }, [isHost, mapState, enterExplorationRoom]);
+    const positionedState = { ...mapState, playerPos: room.pos, visitedIds };
+    await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
+  }, [isHost, mapState, teamRoomId]);
+
+  // 站在未清除事件房，房主按「進入」才觸發（enterExplorationRoom 用當前 mapState 當定位）
+  const handleEnterRoom = useCallback(async room => {
+    if (!isHost || !room) return;
+    await enterExplorationRoom(room, mapState);
+  }, [isHost, enterExplorationRoom, mapState]);
 
   const handleDescend = useCallback(async () => {
     if (!isHost || floorIndex >= 2) return;
@@ -1033,9 +1040,12 @@ export default function TeamExpeditionBattle({
           coins={profile?.coins || 0}
           lootMult={teamRoom?.lootMult || 1}
           onCellClick={handleCellClick}
+          onEnterRoom={handleEnterRoom}
           onDescend={handleDescend}
           onRetreat={handleAbandon}
           canControl={isHost}
+          difficulty={dungeonDifficulty}
+          family={dungeonFamily}
         />
         <FlowErrorBanner message={flowError} onDismiss={() => setFlowError("")} />
       </>
@@ -1057,6 +1067,8 @@ export default function TeamExpeditionBattle({
           onEnterNext={handleBranchNext}
           onRetreat={handleAbandon}
           canControl={isHost}
+          difficulty={dungeonDifficulty}
+          family={dungeonFamily}
         />
         <FlowErrorBanner message={flowError} onDismiss={() => setFlowError("")} />
       </>

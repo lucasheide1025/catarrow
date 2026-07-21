@@ -508,39 +508,79 @@ export default function DungeonExpedition({
   const applyEventEffect = useCallback((ev) => {
     const eff = ev?.effect || {};
     const r2 = v => Math.round(v * 100) / 100;
+
+    // 1. 代價 (Cost)
+    if (ev?.cost) {
+      if (ev.cost.hp) {
+        setPlayerState(p => ({ ...p, hp: Math.max(1, Math.round(p.hp - p.maxHP * ev.cost.hp)) }));
+      }
+      if (ev.cost.gold) {
+        addCoins(myId, -ev.cost.gold).catch(() => {});
+      }
+    }
+
+    // 2. 隨機效果池 (Random)
+    let finalEff = eff;
+    if (eff.random && Array.isArray(eff.random)) {
+      finalEff = eff.random[Math.floor(Math.random() * eff.random.length)];
+    }
+
+    // 3. 屬性修正 (限制在 ±10% 範圍)
+    if (finalEff.hp) {
+      (finalEff.hp > 0 ? sfxBuff : sfxDebuff)();
+      setPlayerState(p => ({
+        ...p,
+        hp: Math.max(1, Math.min(p.maxHP, Math.round(p.hp + p.maxHP * finalEff.hp))),
+      }));
+    }
+    if (finalEff.atk) {
+      (finalEff.atk > 0 ? sfxBuff : sfxDebuff)();
+      setPlayerState(p => ({
+        ...p,
+        buffs: { ...p.buffs, atkMult: r2((p.buffs?.atkMult || 1) * (1 + finalEff.atk)) },
+      }));
+    }
+    if (finalEff.def) {
+      (finalEff.def > 0 ? sfxBuff : sfxDebuff)();
+      setPlayerState(p => ({
+        ...p,
+        buffs: { ...p.buffs, defMult: r2((p.buffs?.defMult || 1) * (1 + finalEff.def)) },
+      }));
+    }
+    if (finalEff.dmg) {
+      (finalEff.dmg > 0 ? sfxBuff : sfxDebuff)();
+      setPlayerState(p => ({
+        ...p,
+        buffs: { ...p.buffs, dmgMult: r2((p.buffs?.dmgMult || 1) * (1 + finalEff.dmg)) },
+      }));
+    }
+    if (finalEff.gold) {
+      (finalEff.gold > 0 ? sfxCoinDrop : sfxDebuff)();
+      addCoins(myId, finalEff.gold).catch(() => {});
+    }
+
+    // 舊相容 (Legacy type-based events)
     switch (eff.type) {
       case "hp_restore_all":
         sfxBuff();
-        setPlayerState(p => ({ ...p, hp: Math.min(p.maxHP, Math.round(p.hp + p.maxHP * eff.value)) }));
+        setPlayerState(p => ({ ...p, hp: Math.min(p.maxHP, Math.round(p.hp + p.maxHP * Math.min(0.1, eff.value))) }));
         break;
       case "atk_debuff_all":
       case "atk_buff_one":
         (eff.value >= 1 ? sfxBuff : sfxDebuff)();
-        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, atkMult: r2((p.buffs.atkMult || 1) * eff.value) } }));
+        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, atkMult: r2((p.buffs?.atkMult || 1) * Math.min(1.1, Math.max(0.9, eff.value))) } }));
         break;
       case "def_mult_all":
         sfxBuff();
-        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, defMult: r2((p.buffs.defMult || 1) * eff.value) } }));
+        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, defMult: r2((p.buffs?.defMult || 1) * Math.min(1.1, Math.max(0.9, eff.value))) } }));
         break;
       case "dmg_mult_all":
         (eff.value >= 1 ? sfxBuff : sfxDebuff)();
-        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, dmgMult: r2((p.buffs.dmgMult || 1) * eff.value) } }));
+        setPlayerState(p => ({ ...p, buffs: { ...p.buffs, dmgMult: r2((p.buffs?.dmgMult || 1) * Math.min(1.1, Math.max(0.9, eff.value))) } }));
         break;
       case "gold_bonus":
         sfxCoinDrop();
         addCoins(myId, eff.value).catch(() => {});
-        break;
-      case "monster_hp_mult":
-        nextFloorModsRef.current.monsterHpMult = eff.value; // 「下一層怪物」
-        break;
-      case "monster_atk_mult":
-        floorModsRef.current.monsterAtkMult = eff.value; // 「本層怪物」
-        break;
-      case "gold_mult":
-        floorModsRef.current.goldMult = eff.value;
-        break;
-      case "skip_counter":
-        floorModsRef.current.skipCounter = true; // 保留欄位（單人戰鬥房暫不支援）
         break;
       default:
         break;
@@ -654,7 +694,10 @@ export default function DungeonExpedition({
       r.shopItems = shuffled.slice(0, 5).map(i => i.id);
     }
     if (r.type === "event") {
-      r.event = drawDungeonEvent();
+      r.event = drawDungeonEvent("special");
+    }
+    if (r.type === "general_event") {
+      r.event = drawDungeonEvent("general");
     }
     setPendingRoom(r);
     setPhase("func_room");

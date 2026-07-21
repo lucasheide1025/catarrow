@@ -3,6 +3,70 @@
 
 ---
 
+## 2026-07-21（地下城 2.5D 立繪地圖重做 + 兩段式移動 + 王 fix + ComfyUI 生圖管線）
+
+**① 地下城地圖改「等角 2.5D 立繪」（取代 Gemini 斜角 SVG 版）。**
+- `DungeonStages.jsx`：`RoomTile`(iso x/y/z 定位、族系圖→共用圖→empty→SVG fallback、迷霧 brightness 0.2 + 問號、玩家用 `player_logo.webp`)、`MapViewport`(中央面板 overflow 裁切+深色底、鏡頭 transform 跟隨、fit 縮放給分支選路)、`DungeonMapView`(iso 排列 `HALF_W=78/HALF_H=45`、房間石板路含通往迷霧房)、`DungeonBranchView`(第 3 層 iso)。
+- 常數：`TILE_W=84`、`HALF_W=78`、`HALF_H=45`（格子大小/菱形錯位，改這幾個就能調版面）。
+- **移除** use25D 平面切換 + 舊 flat SVG（永遠 2.5D，兩層一致）。
+- **為什麼**：使用者要正向/等角 2.5D + 族系文明特色；斜角薄卡片被否決。
+
+**② 第 1-2 層兩段式移動（跟第 3 層一致）。**
+- `DungeonExpedition.handleCellClick` 只移動+揭露；`GridMapStage` 底部「進入」按鈕才 `enterRoom`；站上未清除房 `locked` 鎖移動（樓梯例外）。
+- **組隊安全**：`locked = canEnter && !!onEnterRoom`、按鈕 gate `onEnterRoom`——組隊沒傳 onEnterRoom 就不鎖、維持即點即進（GridMapStage 單人/組隊共用，勿讓組隊卡死）。
+
+**③ 王房打到雜兵 fix（連帶修獎勵三選一 + 結算頁）。**
+- `enterRoom` 王房改用 `fixedBoss || monsterPool.boss`（與 DungeonSelectionPanel 預覽同源 resolveDungeonBossEncounter）；`dungeonExpansionMonsters.js` 王缺席時優先 `tagExpansionBoss(options.fixedBoss)` 才 fallback 隨機。
+- **為什麼**：`fixedBoss` 為 null 時舊碼補「隨機 strong 雜兵」；打到假王 → 沒觸發王獎勵 → 結算頁走錯路徑（連鎖）。
+
+**④ ComfyUI 本機生圖管線（重大，可重用）→ 見 memory [[comfyui_art_pipeline]]。**
+- 房間立繪全自動：`scripts/gen-dungeon-tiles.py`（ComfyUI API 生成→rembg 去背→512 WebP→`public/assets/dungeon/`）。
+- 目前只有幽冥系專屬（`room_ghost_<type>`）+ 共用（`room_<type>`）；其餘 6 族之後各生獨立。
+
+**踩過的坑：**
+- **物件 prompt 太小 → 物件消失**：STYLE_OBJECT 寫「小到 1/3」會讓寶箱等物件被模型畫沒；改「MEDIUM-SIZED 明顯」才穩。
+- **幽靈貓抽卡**：DreamShaper Turbo 愛畫實體有腳貓；要「經典圓床單幽靈身體 + 加貓耳 + 波浪裙襬、負面詞 legs/feet/pikachu」才會對，且每張是 seed 抽卡（裙襬/貓耳不一定同時中）。
+- **ComfyUI 卡住**：長時間連續生成偶爾 1 個 job 卡在 running、system_stats timeout；POST `/interrupt` 解卡。
+- **dev server 被 `| head` 關掉**：`npm start | head` 會因管線關閉觸發 SIGPIPE 結束；背景跑 dev server 不要接管線。
+- **瀏覽器邊寫檔邊讀**：批次覆寫圖片時瀏覽器抓到半成品會退到 fallback；硬重整 Ctrl+Shift+R 解。
+
+---
+
+## 2026-07-20（地下城 2.5D 視覺重構 & 七族六級風格化樣式 & 全模組 UI 種族變換）
+
+**① 地下城探索地圖 2.5D 視覺重構。**
+- **改了什麼**：將 `GridMapStage` 地圖從二維「平面方格」重構為 2.5D「懸浮等角視角（Isometric）微縮地下城地圖」，並根據使用者的設計概念圖進行深度美術優化：
+  1. **坐標與間距調整 (Isometric Spacing Fix)**：為了解決平台擠在一起重合的問題，將平台繪製尺寸（`TILE_W = 56`, `TILE_H = 32`）與投影移動步長（`PROJ_W = 84`, `PROJ_H = 48`，對應為 `HALF_W_proj = 42`, `HALF_H_proj = 24`）進行解耦。這在縮小平台本體（使微縮感更精緻）的同時，拉開了 28px 的水平與 16px 的垂直間隙，給懸空橋樑留出空間，完全重現了概念圖中懸空島嶼錯落有致的空間美感。
+  2. **3D 平台側面與頂面**：SVG 繪製頂面鑽形 (Rhombus) 以及左/右兩個可視側面厚度（厚度 10px + 難度*2），形成具有立體感的懸浮石板平台。
+  3. **微縮裝飾物與標籤膠囊**：
+     * **房型裝飾 (DungeonTileDecorations)**：精細化戰鬥房的雙角火把點綴、休息區柴木藍焰、商店小遮雨棚、寶箱黃金光圈與階梯石拱門。
+     * **標籤膠囊 (Pill Labels)**：在每個已探索房間的圖示下方，加入圓角半透明黑底的標籤膠囊（顯示「戰鬥」、「營地」、「商店」、「休息」、「寶箱」等文字），完美重現概念圖中的精緻遊戲質感。
+  4. **移動動畫**：利用 CSS Transition 動態平移 locator pin `<g>` 元件，過渡時間為 320ms，並在跨樓層/大跨度移動時進行「無縫瞬移（禁用 Transition）」，效果非常順滑且完全不佔 CPU/GPU。
+  5. **未探索迷霧與呼吸效果**：用半透明紫色 SVG 面板覆蓋未探索格子，並配合 CSS `opacity` 與 `transform` 呼吸動畫，營造緩慢流動的迷霧感。
+  6. **通道與實木/石造橋樑**：連接相鄰的已探索格子，在下方繪製陰影與石造基座，表面覆蓋 `strokeDasharray` 木紋/石板橫條鋪面，使其看起來像懸空吊橋或懸空石板路，未完全通行的橋樑顯示虛線且降低透明度。
+  7. **懸浮深淵松林背景 (Forest Canyon Background)**：在 SVG 中定義了 `pine-tree` 松樹形狀，並在懸浮格子群的四周（左上、右上、左下、右下）以不同比例和極低透明度渲染松樹剪影，與背景融為一體，營造深邃幽暗的深谷氣氛。
+  8. **新舊版地圖切換**：在 Header 新增「💎 2.5D / 🗺️ 平面」切換按鈕，切換時將狀態 `use25D` 儲存於 `localStorage`，確保隨時可切換回舊版防呆。
+
+- **為什麼**：升級遊戲的視覺品質（從平面 Emoji 按鈕到微縮立體模型），同時**完全不修改任何核心邏輯**，減少 Bug 發生率，並給予玩家更高品質的手機遠征體驗。
+
+**② 七大種族主題特色 + 6 種難度等級結構樣式。**
+- **改了什麼**：
+  1. **七族主題化與全 UI 變換**：擴充 `FAMILY_STYLES` 設定，針對 `ghost` (幽冥), `mountain` (山嶺), `insect` (昆蟲), `workplace` (職場), `exam` (考試), `temple` (神廟), `treasure` (寶箱) 類配對專屬顏色，且**整個 UI 介面都會隨之變換**：
+     * **背景深淵**：外層 container 背景在 2.5D 模式下，會由原本的冷黑漸層轉變為各具種族偏光特色的魔幻深淵漸層（如幽冥系為紫靛漸層、考試系為暗紅漸層）。
+     * **Header 與卡片**：Header 標題、狀態列與底部卡片的文字、邊框、Glassmorphism 背景均融入該種族偏光。
+     * **主行動按鈕**：底部「前往下一層」或「挑戰 Boss」按鈕，由傳統橘黃漸層變更為種族的主題漸層（如幽冥系變更為藍紫漸層，考試系變更為火紅漸層），並加上對應主題色的發光陰影（Box Shadow）。
+     * **第 3 層分支王關連動**：第 3 層的 `BranchStage` 同步新增 `difficulty` 與 `family` 參數，其實體選路按鈕、行進路線卡片與前前進按鈕全部自動換膚，實現一致的主題沉浸感。
+  2. **6 種難度結構化**：平台的厚度隨著難度（1~6）增加（`10 + difficulty * 2`，由 12px 遞增至 22px），並且在 T3+ 地面繪製石板裂紋，T5+ 繪製角落符文，增強高難度關卡的沉重與史詩感。
+- **為什麼**：讓不同難度與不同種族的地下城在地圖視覺上呈現出完全不同的氛圍，增強遊戲探索的沉浸感與挑戰感。
+
+**踩過的坑：**
+- **參數傳遞與 scope 限制**：原本 `GridMapStage` 的 Prop 沒帶 `difficulty` 與 `family`。我們需要在呼叫端（`DungeonExpedition.jsx` 與 `TeamExpeditionBattle.jsx`）將這兩個變數傳進去（後者對應為 `dungeonDifficulty` 與 `dungeonFamily`）。如果沒傳，則預設 fallback 到 `difficulty = 1` 與 `family = "ghost"`。
+- **移動滑行穿幫**：如果不對跨樓層或大跨度移動進行處理，定位針會從上一個位置橫越整個螢幕滑行到新起點。我們用 `useRef` 紀錄 `prevPos` 與 `prevFloor`，凡是距離大於 1 或樓層改變，均設置 `transitionEnabled = false` 瞬移，下一拍再重新啟用 Transition，完美解決穿幫問題。
+- **點擊 hitbox 覆蓋**：2.5D 多邊形容易因為上下重疊導致點擊區域交叉。我們在 clickable 的外圈也繪製了一個等角的 hover polygon 來引導點擊，確保點擊 Hitbox 精準地落在鑽面上。
+- **透明度色彩切除**：在 JSX 中使用 `rgba` 合成顏色時，若以字串裁切（如 `theme.primary.slice(1)`）並轉換成 RGB 數值，必須確保傳入值為標準 6 碼 Hex 格式。我們在程式碼中使用標準 `FAMILY_STYLES` 設定，以確保轉換穩健，並對非 2.5D 模式進行防禦性 Fallback。
+
+---
+
 ## 2026-07-19（三連修：預覽王≠實戰王 / 第3層跨族雜怪 / 結算少算一份獎勵）
 
 **① 預覽王 ≠ 實戰王，和 ② 第 3 層跨族雜怪，是同一個 race condition。**

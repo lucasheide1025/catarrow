@@ -103,15 +103,127 @@ All regions are transformed together; no body part scales independently. Visual 
 5. Resolve each arrow through the zombie hit-map and archetype rule table; persist descriptive body-state outcomes rather than a numerical HP value.
 6. Apply kill, stagger, knockback, limb destruction, armour penetration, and noise events.
 7. Move surviving zombies. An ordinary zombie rolls a 1–3m advance each round, modified by persisted knockback and slow status. Zombies may exist beyond the 10m player-visible / physical-target range (encounters can begin at 3m to beyond 20m); retain them in a controlled off-field queue. Allocate a zombie to a physical target slot only when it is below 10m and an empty slot exists. While no slot is empty, clamp each queued zombie at 10.1m minimum; when a slot opens, admit the closest queued zombie, which cannot move or attack during that admission round. This prevents a sudden multi-zombie rush or a near-zero-distance ambush on entry.
-8. For every survivor zombie now at 0m, iterate its persisted `threatOrderMemberIds` from `threatCursor`. Before each imminent attack, open the required 15-second rescue event: every main archer and remote sniper may submit one arrow, resolved through the normal body-part rules. If the attack is prevented, skip its attack resolution; otherwise continue.
+8. For every survivor zombie now at 0m, iterate its persisted `threatOrderMemberIds` from `threatCursor`. Before each imminent attack, there is a **50% chance** to open a 15-second rescue event: every main archer and remote sniper may submit one arrow, resolved through the normal body-part rules with text + animation presentation. If the attack is prevented, skip its attack resolution; otherwise continue.
 9. If the zombie remains alive and its rescue window did not prevent the attack, attack the current living survivor. First roll the matching armour's level-based chance to fully block the attack; only a failed block applies infection and any armour-durability consequence. Persist the result in attack logs.
 10. If it remains alive, advance to the next living survivor and repeat steps 8–9. End only when the zombie is killed/stopped by an effect that prevents attack, or no living survivor remains. The UI must announce the current target as the cursor advances.
 11. Advance combat effects once per resolved game round, but advance infection at map-node progression (not each combat round) so players have time for treatment or extraction decisions. Medicines may delay or cure infection and are the only action that resets the consecutive-suffered-attack counter; successful armour blocks and map-node progression do not reset it. Three consecutive suffered zombie attacks immediately force the persisted fully-infected state, which preserves the player as a remaining-consciousness support teammate: their normal body effects are halved and they gain a score-based interference action. Hunger/thirst and other effects use their individually configured cadence.
 12. Persist one event log plus next state atomically; render it client-side. The current `eventLogId`/`resolutionId` is the only central-display playback source.
 
+## Armor system (5-tier, confirmed)
+
+Armor positions: helmet, chestplate, gauntlets, boots. Each piece has:
+- `tier`: 1–5 (common → legendary)
+- `blockRate`: base block percentage (T1=40%, T2=55%, T3=70%, T4=82%, T5=92%)
+- `durability`: base max durability (T1=3, T2=5, T3=8, T4=12, T5=16)
+- `slots`: enhancement slot count (T1=0, T2=1, T3=1, T4=2, T5=2)
+- `enhancements`: items found in exploration/boss drops, each adds bonuses (+blockRate, +durability, special resistances)
+- `currentDurability`: decremented by 1 on each successful block; when 0, armor piece is disabled
+
+`block()` resolves: if random < blockRate → attack fully blocked (no damage/infection). Otherwise → infection roll + durability penalty.
+
+## Accessory system (confirmed)
+
+- Slot count grows with base level (starts at 1)
+- 3 uses per expedition per accessory
+- Confirmed accessory types: drone (amplifies non-head effects), radio (intel prediction), reserve team (temp supplies)
+
+## Weapon/arrow types (all 5 in Phase 2, confirmed)
+
+| Type | Effect | Carry limit |
+|------|--------|-------------|
+| Threshold-reduction arrow | Lowers non-head kill threshold (e.g. 3 chest→2) | 3–5 per expedition |
+| Knockback arrow | Increases knockback distance | 3–5 per expedition |
+| Penetration arrow | Passes through first zombie to hit the next | 3–5 per expedition |
+| Explosive arrow | 3m AoE blast | 3–5 per expedition |
+| Silent arrow | Lowers noise (stealth benefits) | 3–5 per expedition |
+
+Normal arrows: unlimited carry.
+
+## Backpack weight system (confirmed)
+
+`baseCapacity = 20kg` (initial, grows with base level + player level)
+
+| Item | Weight |
+|------|--------|
+| Food | 1kg |
+| Water | 1kg |
+| Medical item | 0.5kg |
+| Normal arrows (10) | 1kg |
+| Special arrow (1) | 0.5kg |
+| Tool | 2–3kg |
+
+## Fully infected support role (confirmed)
+
+- Mark Target ability: shoot a zombie → marks it → teammates deal increased damage/effects for a duration
+- Curable with experimental serum (restores to normal survivor)
+- Standard body effects halved (2 head hits, 6 torso hits)
+
+## Base building system (confirmed)
+
+- Aligned with cat village: **10 levels per building**, 9 shared materials
+- All 9 buildings Phase 4:
+  1. Growing Room (food supply)
+  2. Water Purification Station (water supply)
+  3. Expedition Supply Team (async material return)
+  4. Medical Room (medical kits, suppressants, serums)
+  5. Equipment Workbench (craft/upgrade accessories)
+  6. Armor Repair Station (repair armor durability)
+  7. Radio Tower (remote intel prediction)
+  8. Scout Station (map reveal + intel accuracy)
+  9. Rescue Team (post-wipe gear recovery)
+
+## Encounter rates per zone (confirmed)
+
+| Zone | Base encounter rate | Special zombie | Elite | BOSS |
+|------|-------------------|----------------|-------|------|
+| Safe (🟢) | 0% | ❌ | ❌ | ❌ |
+| Normal (🟡) | 20% | Low | ❌ | ❌ |
+| Danger (🟠) | 40% | ✅ | Low | ❌ |
+| High-risk (🔴) | 60% | Higher | Few | Warning event |
+| Restricted (⚫) | 80% | ✅ | ✅ | Very high |
+
+## Extraction types (5 types, confirmed)
+
+1. 🎲 Random extraction point — requires item trigger
+2. ✅ Guaranteed extraction endpoint — guaranteed on every map
+3. ⚡ Rapid extraction — safe-phase only, loses 30% carried supplies
+4. 🔑 Special extraction — requires specific conditions (fuel, key, etc.)
+5. 🤝 NPC rescue — free extraction after completing quest
+
 ## Cross-world bridge
 
 `crossWorldEffectId` is owned by zombie rewards. The bridge has a finite allowlist such as `dungeon_reward_coin_bonus`, `dungeon_existing_buff`, or `dungeon_material_grant`. It may use verified dungeon concepts (existing buff multiplier, existing reward, chest/material grant, `skip_counter` only if deliberately approved); it must reject unknown IDs. No zombie item directly mutates a dungeon member's stats. BOSS-exclusive rewards are high-value materials/research artifacts gated by the BOSS clear; they may only cross worlds through this adapter.
+
+**Cross-world effects**: deferred to Phase 4 for decision. Currently keep `crossWorldEffectId` placeholder interface only.
+
+## Economy
+
+- **Shared economy with dungeon**: zombie mode uses the same coin + material system (no separate currency)
+- Individual extraction: supplies stay with team, equally divided (not 15% penalty)
+
+## BOSS common interface (confirmed)
+
+```ts
+type BOSSArchetype = {
+  id: string;
+  name: string;
+  map: string;           // map it belongs to
+  phases: BOSSPhase[];   // multi-phase behavior
+  visibleWeakPoints: string[];
+  specialAttacks: string[];
+  clearedFlag: boolean;  // persists after kill
+  rewards: string[];     // exclusive materials/research
+};
+
+type BOSSPhase = {
+  name: string;            // e.g. "armored", "enraged", "weakened"
+  condition: string;       // trigger condition (e.g. "HP < 50%")
+  behavior: string;        // what the BOSS does differently
+  specialTarget?: string;  // unique target mechanics
+};
+```
+
+First BOSS prototype: **Giant Zombie King** (multi-phase: armored → enraged → weakened).
 
 ## Risks and mitigations
 

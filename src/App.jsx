@@ -9,6 +9,7 @@ import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
 import PublicBookingApp from "./pages/PublicBookingApp";
+import ZombieGame   from "./zombie/ZombieGame";
 import { initGoalTracker } from "./lib/villageGoalDb";
 import { CostControlProvider } from "./hooks/useCostControl";
 
@@ -27,6 +28,7 @@ function AppRoutes() {
   if (searchParams.get("kid"))   return <GuestApp accountType="kid"   sessionSourceId={searchParams.get("kid") === "1" ? null : searchParams.get("kid")} />;
   if (searchParams.get("guest")) return <GuestApp accountType="guest" />;
   if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;
+  if (searchParams.has("zombie")) return <ZombieGame />;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">

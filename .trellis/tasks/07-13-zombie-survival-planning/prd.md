@@ -46,6 +46,10 @@ Plan (without implementing) an independent, physical-archery zombie survival mod
 - [x] Product owner resolved the MVP source-of-truth policy for physical hits.
 - [x] Product owner defined the ordinary-zombie body-part baseline, start-distance range, host-confirmed round loop, large-map direction, and 5+3 venue roles.
 - [x] Original proposal, core-design philosophy, and later confirmed decisions are reconciled into a phased source of truth.
+- [x] **A區：殭屍類型與戰鬥（6 題）** — 重裝殭屍（6箭/1-2m/破甲衝撞）、疾行殭屍（2-4m/頭2次）、遠程殭屍（自動干擾/高危區以上/1箭脆皮）、救援箭（50%觸發）、BOSS（完整欄位+巨型殭屍王）
+- [x] **B區：防具、裝備與物品（4 題）** — 五級防具制+強化插槽、5種武器箭具、配件隨基地成長、20kg初始背包
+- [x] **C區：地圖、事件、撤離與經濟（5 題）** — 各區遭遇率（20/40/60/80%）、5種撤離類型、6類隨機事件、個別撤離物資歸隊伍均分、共用地下城經濟
+- [x] **D區：長期內容與跨世界（3 題）** — 基地10級制+9材料+9建築全上、完全感染=弱點標記+血清可治癒、跨世界Phase4決定
 - [ ] Product owner reviews the planning artifacts before any implementation task is started.
 
 ## Confirmed round-control policy

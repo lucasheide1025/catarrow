@@ -66,9 +66,16 @@ export function generatePathOptions() {
   };
 }
 
+import { GENERAL_EVENTS, SPECIAL_EVENTS } from "./dungeonEventPool";
+
 // ── 抽取隨機事件 ─────────────────────────────────────────────
-export function drawDungeonEvent() {
-  return DUNGEON_EVENTS[Math.floor(Math.random() * DUNGEON_EVENTS.length)];
+export function drawDungeonEvent(type = "special") {
+  if (type === "general") {
+    const ev = GENERAL_EVENTS[Math.floor(Math.random() * GENERAL_EVENTS.length)];
+    return { ...ev, type: "general" };
+  }
+  const ev = SPECIAL_EVENTS[Math.floor(Math.random() * SPECIAL_EVENTS.length)];
+  return { ...ev, type: "special" };
 }
 
 // ── 隨機分配任務（地下城開始時一次，之後持續到購買重置為止）──
@@ -286,38 +293,46 @@ export const EXCAVATION_FLOOR_CONFIG = [
   {
     // 第1層：探索層
     label:"第1層 · 探索層",
-    desc:"少量怪物、大量事件、陷阱、商人",
-    monsterCount: { min:2, max:3 },
+    desc:"廣闊探索地圖，無負面一般事件、寶箱與陷阱",
     monsterVariant: "weak",
     tierOffset: -1,  // Tier 降一級
     roomTypes: {
-      events:  { weight:35, label:"事件" },
-      traps:   { weight:25, label:"陷阱" },
-      merchants:{ weight:20, label:"商人" },
-      monsters:{ weight:20, label:"怪物" },
+      monsters:       { weight:10, label:"弱化怪物" },
+      merchants:      { weight:10, label:"行腳商人" },
+      rest:           { weight:10, label:"休息區" },
+      traps:          { weight:20, label:"陷阱！" },
+      events:         { weight:10, label:"特殊事件" },
+      chests:         { weight:20, label:"發現寶箱" },
+      general_events: { weight:20, label:"一般事件" },
     },
   },
   {
     // 第2層：戰鬥層
     label:"第2層 · 戰鬥層",
-    desc:"怪物增加、陷阱寶箱、少量事件商人",
-    monsterCount: { min:3, max:4 },
+    desc:"戰鬥密度增加，包含普通怪物與豐富事件",
     monsterVariant: "normal",  // 30% 機率變強悍
     tierOffset: 0,
     hasStrongChance: 0.3,
     roomTypes: {
-      monsters:{ weight:40, label:"怪物" },
-      traps:   { weight:25, label:"陷阱" },
-      chests:  { weight:20, label:"寶箱" },
-      events:  { weight:10, label:"事件" },
-      merchants:{ weight:5,  label:"商人" },
+      monsters:       { weight:20, label:"普通怪物" },
+      merchants:      { weight:10, label:"行腳商人" },
+      rest:           { weight:10, label:"休息區" },
+      traps:          { weight:10, label:"陷阱！" },
+      events:         { weight:10, label:"特殊事件" },
+      chests:         { weight:20, label:"發現寶箱" },
+      general_events: { weight:20, label:"一般事件" },
     },
   },
   {
-    // 第3層：王關層（固定流程）
+    // 第3層：王關層（三分支：固定商人+休息 + 3隨機抽）
     label:"第3層 · 王關",
-    desc:"精英 → 休息 → 商人 → Boss → 獎勵",
-    fixedSequence: true,
+    desc:"三分支路線 → 固執強敵與休息補給 → Boss",
+    roomTypes: {
+      monsters:       { weight:30, label:"菁英怪" },
+      traps:          { weight:30, label:"險惡陷阱" },
+      events:         { weight:30, label:"特殊事件" },
+      general_events: { weight:10, label:"一般事件" },
+    },
   },
 ];
 

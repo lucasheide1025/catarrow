@@ -31,12 +31,26 @@ function StatPills({ hp, atk, def }) {
   );
 }
 
+const FAMILY_NAME_MAP = {
+  ghost:     "👻 鬼怪族",
+  mountain:  "🏔️ 山林族",
+  insect:    "🦂 毒蟲族",
+  workplace: "💼 職場族",
+  exam:      "📝 考試族",
+  temple:    "🏰 西方神殿族",
+  treasure:  "📦 寶箱族",
+  worldboss: "🌍 世界王",
+};
+
 function MonsterCard({ monster }) {
   const talent = getCardTalent({ monsterId: monster.id, tierIndex: monster.tierIndex, source: "monster" });
   const mult = TIER_SKILL_MULT[monster.tierIndex]?.[monster.encounter];
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[.04] p-3">
       <div className="flex items-center gap-2 flex-wrap">
+        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+          {FAMILY_NAME_MAP[monster.family] || monster.family}・T{monster.tierIndex || monster.tier || 1}
+        </span>
         <span className="font-black text-sm text-slate-100">{monster.name}</span>
         {monster.title && <span className="text-[10px] text-slate-400">「{monster.title}」</span>}
         <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"

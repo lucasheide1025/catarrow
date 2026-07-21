@@ -1,5 +1,6 @@
 node_modules/
 build/
+backups/
 
 # ── 機密檔案（另有 .githooks/pre-commit 硬擋，gitignore 只是第一道）──────
 # ⚠️ gitignore 擋不住兩種情況：① git add -f 強制加入 ② 檔案「已經」被追蹤。

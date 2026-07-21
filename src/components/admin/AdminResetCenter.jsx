@@ -1,5 +1,7 @@
-// src/components/admin/AdminResetCenter.jsx — 重置中心（地下城 + 打怪次數 + 世界王 + 報到）
-import { useState, useEffect } from "react";
+// src/components/admin/AdminResetCenter.jsx — 重置中心（含地下城解鎖給予 + 報到取消排序）
+import { useState, useEffect, useMemo } from "react";
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 import {
   getMembers,
   resetDungeonUsed, resetAllDungeonUsed,
@@ -13,8 +15,24 @@ import {
 } from "../../lib/worldBossDb";
 import { deleteAllDungeonRooms } from "../../lib/dungeonDb";
 import { deleteAllPartyRooms } from "../../lib/partyDb";
+import { fmtDT } from "../../lib/constants";
+import { Card, Btn, Modal, Spinner } from "../shared/UI";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+function getLoginTime(m) {
+  const ts = m.lastLoginAt || m.lastCheckinAt || m.lastBookingAt || m.updatedAt || m.createdAt;
+  if (!ts) return 0;
+  return ts?.toMillis ? ts.toMillis() : new Date(ts).getTime();
+}
+
+const DUNGEON_REGIONS = [
+  { id: "oasis",    name: "🏝️ 綠洲遺跡", difficulties: ["normal", "advanced", "hard", "hell"] },
+  { id: "forest",   name: "🌲 密林深處", difficulties: ["normal", "advanced", "hard", "hell"] },
+  { id: "tomb",     name: "🗿 古墓迷宮", difficulties: ["normal", "advanced", "hard", "hell"] },
+  { id: "volcano",  name: "🌋 火山地窟", difficulties: ["normal", "advanced", "hard", "hell"] },
+  { id: "tundra",   name: "❄️ 冰原雪嶺", difficulties: ["normal", "advanced", "hard", "hell"] },
+];
 
 export default function AdminResetCenter() {
   const [members,  setMembers]  = useState([]);
@@ -29,16 +47,30 @@ export default function AdminResetCenter() {
   const [tab,      setTab]      = useState("checkin");
   const [wbEvent,  setWbEvent]  = useState(null);
 
+  // 地下城指定給予 State
+  const [selDungeonMember, setSelDungeonMember] = useState(null);
+  const [scrollGrantQty, setScrollGrantQty]     = useState("");
+  const [grantRegion, setGrantRegion]           = useState("oasis");
+  const [grantFloor, setGrantFloor]             = useState(5);
+  const [grantingDungeon, setGrantingDungeon]   = useState(false);
+
   const today = todayStr();
 
   useEffect(() => {
     getMembers().then(list => {
-      setMembers(list.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+      // 按照登入順序降序排列（最新登入排在前面）
+      list.sort((a, b) => getLoginTime(b) - getLoginTime(a));
+      setMembers(list);
       setLoading(false);
     });
     const unsub = subscribeActiveWorldBoss(setWbEvent);
     return () => unsub();
   }, []);
+
+  // 按登入順序排序的成員列表
+  const sortedMembers = useMemo(() => {
+    return [...members].sort((a, b) => getLoginTime(b) - getLoginTime(a));
+  }, [members]);
 
   // ── 地下城重置 ───────────────────────────────────────────
   async function handleResetDungeonOne(id, name) {
@@ -57,6 +89,42 @@ export default function AdminResetCenter() {
     setBusyD("");
   }
 
+  // ── 地下城給予/解鎖進度 ─────────────────────────────────
+  async function handleGrantDungeonScrolls() {
+    const qty = Number(scrollGrantQty);
+    if (!selDungeonMember || !scrollGrantQty || isNaN(qty) || qty <= 0) {
+      setMsg("❌ 請選擇射手與有效數額");
+      return;
+    }
+    setGrantingDungeon(true);
+    try {
+      await updateDoc(doc(db, "members", selDungeonMember.id), {
+        dungeonScrollCount: increment(qty),
+      });
+      setMembers(prev => prev.map(m => m.id === selDungeonMember.id ? { ...m, dungeonScrollCount: (m.dungeonScrollCount || 0) + qty } : m));
+      setMsg(`✅ 已成功為 ${selDungeonMember.name || selDungeonMember.nickname} 給予 地下城卷軸 × ${qty}`);
+      setScrollGrantQty("");
+    } catch (e) {
+      setMsg("❌ 給予失敗：" + e.message);
+    }
+    setGrantingDungeon(false);
+  }
+
+  async function handleGrantDungeonFloorUnlock() {
+    if (!selDungeonMember) { setMsg("❌ 請先選擇射手"); return; }
+    setGrantingDungeon(true);
+    try {
+      const fieldKey = `dungeonProgress.${grantRegion}.maxFloor`;
+      await updateDoc(doc(db, "members", selDungeonMember.id), {
+        [fieldKey]: Number(grantFloor),
+      });
+      setMsg(`✅ 已將 ${selDungeonMember.name || selDungeonMember.nickname} 之 ${grantRegion} 解鎖層數調至 ${grantFloor} 層`);
+    } catch (e) {
+      setMsg("❌ 解鎖失敗：" + e.message);
+    }
+    setGrantingDungeon(false);
+  }
+
   // ── 打怪次數重置 ─────────────────────────────────────────
   async function handleResetMonsterOne(id, name) {
     setBusyM(id); setMsg("");
@@ -72,15 +140,14 @@ export default function AdminResetCenter() {
     setBusyM("");
   }
 
-  // ── 報到次數重置 ─────────────────────────────────────────
+  // ── 報到取消與次數重置 ───────────────────────────────────
   async function handleResetCheckinOne(id, name) {
     setBusyK(id); setMsg("");
     try {
-      // 先強制結束此人今日未下課的報到
       await forceEndTodayCheckins();
       await resetCheckinCount(id);
       setMembers(prev => prev.map(m => m.id === id ? { ...m, dailyQuestCount: 0 } : m));
-      setMsg(`✅ ${name} 報到累積次數已歸零`);
+      setMsg(`✅ ${name} 今日報到已取消且累積次數已歸零`);
     } catch (e) { setMsg("❌ 失敗：" + (e?.message || "")); }
     setBusyK("");
   }
@@ -129,20 +196,6 @@ export default function AdminResetCenter() {
   }
 
   // ── 房間清除 ────────────────────────────────────────────────
-  async function handleDeleteDungeonRooms() {
-    if (!window.confirm("確定刪除所有地下城房間？此操作無法復原，所有進行中的地下城都會中斷。")) return;
-    setBusyR("dungeon"); setMsg("");
-    const n = await deleteAllDungeonRooms();
-    setMsg(`✅ 已刪除 ${n} 個地下城房間`);
-    setBusyR("");
-  }
-  async function handleDeletePartyRooms() {
-    if (!window.confirm("確定刪除所有組隊房間？此操作無法復原，所有進行中的組隊戰都會中斷。")) return;
-    setBusyR("party"); setMsg("");
-    const n = await deleteAllPartyRooms();
-    setMsg(`✅ 已刪除 ${n} 個組隊房間`);
-    setBusyR("");
-  }
   async function handleDeleteAllRooms() {
     if (!window.confirm("確定刪除所有房間（地下城 + 組隊）？所有進行中的戰鬥都會中斷。")) return;
     setBusyR("all"); setMsg("");
@@ -151,219 +204,291 @@ export default function AdminResetCenter() {
     setBusyR("");
   }
 
-  const dungeonUsedToday = members.filter(m => m.lastDungeonDate === today);
-  const dungeonFree      = members.filter(m => m.lastDungeonDate !== today);
+  const dungeonUsedToday = sortedMembers.filter(m => m.lastDungeonDate === today);
+  const dungeonFree      = sortedMembers.filter(m => m.lastDungeonDate !== today);
 
-  // 世界王今日出戰名單（從 event.participants 取）
   const wbParts     = Object.entries(wbEvent?.participants || {});
-  const wbAttToday  = wbParts.filter(([, p]) => p.lastAttackedDate === today);
-  const wbNotToday  = wbParts.filter(([, p]) => p.lastAttackedDate !== today);
 
   return (
-    <div className="p-4 max-w-lg mx-auto space-y-4">
-      <h2 className="font-black text-xl text-gray-800">🔄 重置中心</h2>
+    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5 text-slate-100">
+      <div className="font-black text-xl text-white flex items-center gap-2">
+        🔄 系統重置與地下城給予中心
+      </div>
 
       {/* 分頁 */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
         {[
-          { id: "checkin",  label: "📍 報到" },
-          { id: "dungeon",  label: "🏰 地下城" },
-          { id: "monster",  label: "⚔️ 打怪" },
-          { id: "worldboss", label: "🌍 世界王" },
-          { id: "council",  label: "🏛️ 議會廳" },
-          { id: "rooms",    label: "🚪 房間" },
+          { id: "checkin",      label: "📍 報到取消" },
+          { id: "dungeonGrant", label: "🏰 地下城給予" },
+          { id: "dungeon",      label: "🏰 地下城重置" },
+          { id: "monster",      label: "⚔️ 打怪" },
+          { id: "worldboss",    label: "🌍 世界王" },
+          { id: "council",      label: "🏛️ 議會廳" },
+          { id: "rooms",        label: "🚪 房間" },
         ].map(t => (
-          <button key={t.id} onClick={() => { setTab(t.id); setMsg(""); }}
-            className={`py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); setMsg(""); }}
+            className={`py-2 px-1 rounded-xl text-xs font-bold border transition ${
+              tab === t.id
+                ? "bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20"
+                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
+            }`}
+          >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* 訊息 */}
+      {/* 訊息提示 */}
       {msg && (
-        <div className={`p-3 rounded-xl text-sm font-bold ${msg.startsWith("✅") ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+        <div className={`p-3.5 rounded-xl text-xs font-bold ${
+          msg.startsWith("✅")
+            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+            : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+        }`}>
           {msg}
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400 text-sm">載入中…</div>
+        <div className="text-center py-12 text-slate-500 text-xs">載入成員列表中…</div>
       ) : (
         <>
-          {/* ── 報到次數 ────────────────────────────────── */}
+          {/* ── 1. 取消報到（按照登入順序排列） ───────────────── */}
           {tab === "checkin" && (
             <div className="space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-xs text-amber-700 leading-relaxed">
-                點「全員重置」會先<b>強制結束</b>今日所有仍在上課中（忘記點下課）的報到，再把所有人的累積報到次數歸零。<br/>
-                重置個人時也會先執行強制下課。
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-300 leading-relaxed">
+                已按<b>最新登入時間排序</b>。點擊「取消報到/歸零」會先強制結束該成員今日進行中的報到，並將累積次數清零。
               </div>
+
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500">
-                  累積次數最高：<span className="font-bold text-indigo-600">{Math.max(0, ...members.map(m => m.dailyQuestCount || 0))}</span> 次
+                <div className="text-xs text-slate-400">
+                  共 {sortedMembers.length} 位射手（最新登入排在最前方）
                 </div>
-                <button onClick={handleResetCheckinAll} disabled={!!busyK}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
-                  {busyK === "all" ? "重置中…" : "全員重置"}
-                </button>
+                <Btn v="warn" size="sm" onClick={handleResetCheckinAll} disabled={!!busyK}>
+                  {busyK === "all" ? "重置中…" : "⚡ 全員報到歸零"}
+                </Btn>
               </div>
-              {members.map(m => (
-                <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                  <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
-                  <span className="text-xs text-indigo-600 font-bold">{m.dailyQuestCount || 0} 次</span>
-                  <button onClick={() => handleResetCheckinOne(m.id, m.name)} disabled={!!busyK}
-                    className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:opacity-40">
-                    {busyK === m.id ? "…" : "歸零"}
-                  </button>
-                </div>
-              ))}
+
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {sortedMembers.map(m => {
+                  const lastTime = getLoginTime(m);
+                  return (
+                    <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-white">{m.nickname || m.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {m.archerNo ? `CA-${String(m.archerNo).padStart(4,"0")}` : ""}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          報到次數：<span className="text-indigo-400 font-bold">{m.dailyQuestCount || 0} 次</span>
+                          ・最新登入：{lastTime ? fmtDT(lastTime) : "未有紀錄"}
+                        </div>
+                      </div>
+
+                      <Btn
+                        v="secondary"
+                        size="sm"
+                        onClick={() => handleResetCheckinOne(m.id, m.name || m.nickname)}
+                        disabled={!!busyK}
+                      >
+                        {busyK === m.id ? "…" : "取消報到/歸零"}
+                      </Btn>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* ── 地下城 ─────────────────────────────────── */}
+          {/* ── 2. 地下城指定給予與解鎖 ───────────────────────── */}
+          {tab === "dungeonGrant" && (
+            <Card className="p-5 bg-slate-800/90 border-slate-700/80 space-y-5">
+              <div className="text-sm font-black text-amber-400 flex items-center gap-1.5">
+                🏰 地下城卷軸給予與指定進度解鎖
+              </div>
+
+              {/* 選擇射手 */}
+              <div>
+                <label className="text-xs font-bold text-slate-400 mb-1.5 block">
+                  1. 選擇射手（按最新登入時間排序）
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  {sortedMembers.map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setSelDungeonMember(m)}
+                      className={`p-2 rounded-xl text-xs font-bold border transition text-left ${
+                        selDungeonMember?.id === m.id
+                          ? "bg-amber-600/20 border-amber-500 text-amber-300"
+                          : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="truncate text-white">{m.nickname || m.name}</div>
+                      <div className="text-[10px] text-slate-500 font-normal">
+                        卷軸：{m.dungeonScrollCount || 0} 張
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 給予卷軸 */}
+              <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/70 space-y-3">
+                <div className="text-xs font-bold text-slate-300">給予地下城探索卷軸</div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    placeholder="輸入給予張數…"
+                    value={scrollGrantQty}
+                    onChange={e => setScrollGrantQty(e.target.value)}
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <Btn v="warn" size="sm" onClick={handleGrantDungeonScrolls} disabled={!selDungeonMember || grantingDungeon}>
+                    {grantingDungeon ? "給予中…" : "🎁 給予卷軸"}
+                  </Btn>
+                </div>
+              </div>
+
+              {/* 解鎖指定地區樓層 */}
+              <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/70 space-y-3">
+                <div className="text-xs font-bold text-slate-300">指定地區層數直接解鎖</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-1">地區選擇</span>
+                    <select
+                      value={grantRegion}
+                      onChange={e => setGrantRegion(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs"
+                    >
+                      {DUNGEON_REGIONS.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-1">最高解鎖層數 (1~10)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={grantFloor}
+                      onChange={e => setGrantFloor(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+                <Btn v="primary" size="sm" onClick={handleGrantDungeonFloorUnlock} disabled={!selDungeonMember || grantingDungeon} className="w-full">
+                  🔓 強制解鎖指定地下城層數
+                </Btn>
+              </div>
+            </Card>
+          )}
+
+          {/* ── 3. 地下城次數重置 ────────────────────────────── */}
           {tab === "dungeon" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500">
-                  今日已使用 <span className="font-bold text-rose-600">{dungeonUsedToday.length}</span> 人 ／
-                  未使用 <span className="font-bold text-emerald-600">{dungeonFree.length}</span> 人
+                <div className="text-xs text-slate-400">
+                  今日已使用 <span className="font-bold text-rose-400">{dungeonUsedToday.length}</span> 人
                 </div>
-                <button onClick={handleResetDungeonAll} disabled={!!busyD}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
-                  {busyD === "all" ? "重置中…" : "全員重置"}
-                </button>
+                <Btn v="warn" size="sm" onClick={handleResetDungeonAll} disabled={!!busyD}>
+                  {busyD === "all" ? "重置中…" : "全員地下城重置"}
+                </Btn>
               </div>
-              {dungeonUsedToday.length > 0 && (
-                <>
-                  <div className="text-xs font-bold text-rose-500">🔒 今日已使用</div>
-                  {dungeonUsedToday.map(m => (
-                    <div key={m.id} className="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5">
-                      <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
-                      <button onClick={() => handleResetDungeonOne(m.id, m.name)} disabled={!!busyD}
-                        className="px-3 py-1 rounded-lg bg-rose-600 text-white text-xs font-black disabled:opacity-40">
-                        {busyD === m.id ? "…" : "重置"}
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-              {dungeonFree.length > 0 && (
-                <>
-                  <div className="text-xs font-bold text-emerald-600 mt-2">✅ 可使用</div>
-                  {dungeonFree.map(m => (
-                    <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 opacity-60">
-                      <span className="flex-1 text-sm text-gray-600">{m.name}</span>
-                      <span className="text-xs text-emerald-600 font-bold">可使用</span>
-                    </div>
-                  ))}
-                </>
-              )}
+              {dungeonUsedToday.map(m => (
+                <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">{m.name || m.nickname}</span>
+                  <Btn v="danger" size="sm" onClick={() => handleResetDungeonOne(m.id, m.name)} disabled={!!busyD}>
+                    {busyD === m.id ? "…" : "重置次數"}
+                  </Btn>
+                </Card>
+              ))}
             </div>
           )}
 
-          {/* ── 打怪次數 ────────────────────────────────── */}
+          {/* ── 4. 打怪次數重置 ─────────────────────────────── */}
           {tab === "monster" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500">手動重置個別射手的今日打怪次數</div>
-                <button onClick={handleResetMonsterAll} disabled={!!busyM}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
-                  {busyM === "all" ? "重置中…" : "全員重置"}
-                </button>
+                <div className="text-xs text-slate-400">重置射手的今日打怪次數</div>
+                <Btn v="warn" size="sm" onClick={handleResetMonsterAll} disabled={!!busyM}>
+                  {busyM === "all" ? "重置中…" : "全員打怪次數重置"}
+                </Btn>
               </div>
-              {members.map(m => (
-                <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                  <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
-                  <button onClick={() => handleResetMonsterOne(m.id, m.name)} disabled={!!busyM}
-                    className="px-3 py-1 rounded-lg bg-orange-500 text-white text-xs font-black disabled:opacity-40">
+              {sortedMembers.map(m => (
+                <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">{m.name || m.nickname}</span>
+                  <Btn v="secondary" size="sm" onClick={() => handleResetMonsterOne(m.id, m.name)} disabled={!!busyM}>
                     {busyM === m.id ? "…" : "重置"}
-                  </button>
-                </div>
+                  </Btn>
+                </Card>
               ))}
             </div>
           )}
 
-          {/* ── 議會廳 ──────────────────────────────────── */}
+          {/* ── 5. 議會廳次數重置 ────────────────────────────── */}
           {tab === "council" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500">重置後可立即再進行採集任務（每日上限 5 次）</div>
-                <button onClick={handleResetCouncilAll} disabled={!!busyC}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
-                  {busyC === "all" ? "重置中…" : "全員重置"}
-                </button>
+                <div className="text-xs text-slate-400">重置後可立即再進行採集（每日上限 5 次）</div>
+                <Btn v="warn" size="sm" onClick={handleResetCouncilAll} disabled={!!busyC}>
+                  {busyC === "all" ? "重置中…" : "全員議會廳重置"}
+                </Btn>
               </div>
-              {members.map(m => (
-                <div key={m.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                  <span className="flex-1 text-sm font-semibold text-gray-800">{m.name}</span>
-                  <button onClick={() => handleResetCouncilOne(m.id, m.name)} disabled={!!busyC}
-                    className="px-3 py-1 rounded-lg bg-amber-600 text-white text-xs font-black disabled:opacity-40">
+              {sortedMembers.map(m => (
+                <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">{m.name || m.nickname}</span>
+                  <Btn v="secondary" size="sm" onClick={() => handleResetCouncilOne(m.id, m.name)} disabled={!!busyC}>
                     {busyC === m.id ? "…" : "重置"}
-                  </button>
-                </div>
+                  </Btn>
+                </Card>
               ))}
             </div>
           )}
 
-          {/* ── 世界王 ──────────────────────────────────── */}
+          {/* ── 6. 世界王重置 ───────────────────────────────── */}
           {tab === "worldboss" && (
             <div className="space-y-3">
               {!wbEvent ? (
-                <div className="text-center py-8 text-gray-400 text-sm">目前沒有活躍的世界王活動</div>
+                <div className="text-center py-8 text-slate-500 text-xs">目前沒有活躍的世界王活動</div>
               ) : (
                 <>
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2 text-xs text-indigo-700 font-bold">
+                  <div className="bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-3 text-xs text-indigo-300 font-bold">
                     🌍 {wbEvent.bossData?.name}｜累計參戰 {wbEvent.totalParticipants || 0} 人
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500">重置後可再次出戰（保留參戰紀錄）</div>
-                    <button onClick={handleResetWBAll} disabled={!!busyWB || wbParts.length === 0}
-                      className="px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-black disabled:opacity-40">
-                      {busyWB === "all" ? "重置中…" : "全員重置"}
-                    </button>
-                  </div>
-                  {wbParts.length === 0 ? (
-                    <div className="text-center py-4 text-gray-400 text-sm">尚無人參戰</div>
-                  ) : (
-                    wbParts.map(([id, p]) => (
-                      <div key={id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold text-gray-800">{p.name}</div>
-                          <div className="text-xs text-gray-400">累積傷害 {(p.totalDmg || 0).toLocaleString()}</div>
-                        </div>
-                        <button onClick={() => handleResetWBOne(id, p.name)} disabled={!!busyWB}
-                          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:opacity-40">
-                          {busyWB === id ? "…" : "重置次數"}
-                        </button>
+                  {wbParts.map(([id, p]) => (
+                    <Card key={id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{p.name}</div>
+                        <div className="text-xs text-slate-400">累積傷害 {(p.totalDmg || 0).toLocaleString()}</div>
                       </div>
-                    ))
-                  )}
+                      <Btn v="secondary" size="sm" onClick={() => handleResetWBOne(id, p.name)} disabled={!!busyWB}>
+                        {busyWB === id ? "…" : "重置次數"}
+                      </Btn>
+                    </Card>
+                  ))}
                 </>
               )}
             </div>
           )}
-          {/* ── 房間清除 ────────────────────────────────── */}
+
+          {/* ── 7. 房間清除 ─────────────────────────────────── */}
           {tab === "rooms" && (
-            <div className="space-y-3">
-              <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-2 text-xs text-rose-700 leading-relaxed">
-                ⚠️ 刪除房間後，所有正在進行的戰鬥都會<b>立即中斷</b>。<br/>
-                用於清除卡住的殘留房間，不影響會員的資料與獎勵。
+            <Card className="p-4 bg-slate-800/90 border-slate-700/80 space-y-3">
+              <div className="text-xs text-rose-400 leading-relaxed">
+                ⚠️ 刪除房間後，所有正在進行的地下城或組隊戰鬥都會<b>立即中斷</b>。
               </div>
-              <button onClick={handleDeleteAllRooms} disabled={!!busyR}
-                className="w-full py-3 rounded-xl bg-rose-600 text-white text-sm font-black disabled:opacity-40">
+              <Btn v="danger" onClick={handleDeleteAllRooms} disabled={!!busyR} className="w-full py-3 font-black">
                 {busyR === "all" ? "刪除中…" : "🚪 刪除所有房間（地下城 + 組隊）"}
-              </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={handleDeleteDungeonRooms} disabled={!!busyR}
-                  className="py-2.5 rounded-xl bg-slate-700 text-white text-sm font-black disabled:opacity-40">
-                  {busyR === "dungeon" ? "刪除中…" : "🏰 只清地下城"}
-                </button>
-                <button onClick={handleDeletePartyRooms} disabled={!!busyR}
-                  className="py-2.5 rounded-xl bg-slate-700 text-white text-sm font-black disabled:opacity-40">
-                  {busyR === "party" ? "刪除中…" : "⚔️ 只清組隊"}
-                </button>
-              </div>
-            </div>
+              </Btn>
+            </Card>
           )}
         </>
       )}

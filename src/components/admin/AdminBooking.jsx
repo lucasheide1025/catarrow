@@ -483,7 +483,6 @@ function RangeBlockModal({ initialDate, bookingsBySlot, onClose, onDone, toast }
   );
 }
 
-// ─── 時段詳情 Modal：清單、封鎖切換、標記付款方式、取消/改期、＋新增預約 ──
 function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast }) {
   const { profile } = useAuth();
   const [busy, setBusy] = useState(false);
@@ -492,7 +491,6 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   const [editTarget, setEditTarget] = useState(null);
   const [checkoutTarget, setCheckoutTarget] = useState(null);
 
-  // 這一格目前人數的新/舊生拆分，直接從這一格的實際預約清單算（清單已含跨時段進來的3小時預約）
   const newCount = bookings.reduce((sum, b) => sum + (b.isNewStudent ? (b.participantCount || 1) : 0), 0);
   const returningCount = bookings.reduce((sum, b) => sum + (!b.isNewStudent ? (b.participantCount || 1) : 0), 0);
   const totalPeople = newCount + returningCount;
@@ -508,7 +506,6 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     onChanged();
   }
 
-  // 教練後台一律 force：可無條件取消任何一筆（已開始/已結帳也能）。破壞性動作先二次確認。
   async function handleCancel(b) {
     const started = bookingHasStarted(b);
     const done = b.status === "completed";
@@ -540,9 +537,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     onChanged();
   }
 
-  async function openCheckout(booking) {
-    if (booking.source === "walk_in" || booking.source === "online_public" || !booking.memberId) {
-      setCheckoutTarget(booking);
+  async function openCheckout(booking, force = false) {
+    if (force || booking.source === "walk_in" || booking.source === "online_public" || !booking.memberId) {
+      setCheckoutTarget({ ...booking, isForce: !!force });
       return;
     }
     setBusy(true);
@@ -562,7 +559,8 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
       const checkinSnap = await getDoc(doc(db, "checkins", checkinId));
       const checkin = checkinSnap.exists() ? checkinSnap.data() : null;
       if (!checkin?.classEnded) {
-        toast("此學生尚未按下課，暫時不能結帳", "error");
+        toast("此學生尚未按下課，暫時不能一般結帳（已自動啟用「⚡ 強制結帳」模式）", "warn");
+        setCheckoutTarget({ ...booking, checkinId, isForce: true });
         return;
       }
       let existingBillingId = checkin.billingRecordId || null;
@@ -628,7 +626,10 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                   {b.billingRecordId ? (
                     <span className="text-emerald-400 text-xs font-bold">✅ 已結帳</span>
                   ) : (
-                    <Btn v="success" size="sm" onClick={() => openCheckout(b)} disabled={busy}>💰 結帳</Btn>
+                    <div className="flex gap-1.5 items-center">
+                      <Btn v="success" size="sm" onClick={() => openCheckout(b, false)} disabled={busy}>💰 結帳</Btn>
+                      <Btn v="warn" size="sm" onClick={() => openCheckout(b, true)} disabled={busy} title="跳過下課限制強制結帳">⚡ 強制結帳</Btn>
+                    </div>
                   )}
                   {b.status !== "cancelled" && (
                     <Btn v="secondary" size="sm" onClick={() => setEditTarget(b)} disabled={busy}>✏️ 修改</Btn>
@@ -680,7 +681,6 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   );
 }
 
-// ─── 修改預約 Modal（可改截止時間/時數、方案、人數）──────────────────
 function EditBookingModal({ booking, onClose, onDone, toast }) {
   const [startTime, setStartTime] = useState(booking.startTime || "10:00");
   const [planType, setPlanType] = useState(booking.planType || "general");
@@ -783,11 +783,6 @@ function EditBookingModal({ booking, onClose, onDone, toast }) {
   );
 }
 
-
-// ─── 結帳：把預約轉成一筆會計系統記錄（07-10-booking-billing-integration）──
-// 方案/日期/付款方式全部從這筆預約自動帶入，教練仍可在送出前修改任何一項。
-// 送出＝呼叫既有 addBillingRecord()，寫進跟 BillingSystem.jsx「記帳」分頁同一個 collection，
-// 不另外做一套記帳資料——這樣會計系統的清單/報表/CSV匯出自動就看得到這筆。
 function CheckoutModal({ booking, onClose, onDone, toast }) {
   const defaultPlan = BOOKING_TO_BILLING_PLAN[booking.planType]?.[booking.durationHours || 1] || "單一";
   const [plan, setPlan]           = useState(defaultPlan);
@@ -795,16 +790,15 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const [payMethod, setPayMethod] = useState("現金");
   const [date, setDate]           = useState(booking.date);
   const [note, setNote]           = useState("");
+  const [isForce, setIsForce]     = useState(!!booking.isForce);
   const [submitting, setSubmitting] = useState(false);
   const [createdBillingId, setCreatedBillingId] = useState(null);
-  const [priceOverride, setPriceOverride] = useState(null); // null=用自動帶入的金額；有值=教練手動改的實收金額
+  const [priceOverride, setPriceOverride] = useState(null);
 
   const participantCount = booking.participantCount || 1;
-  // 07-10-booking-ui-polish-headcount：N人的預約結帳金額要乘上人數，早鳥折扣則維持每筆固定折額
-  // （不隨人數翻倍，這是刻意的簡化：折扣是給「這一次預約」的優惠，不是每人各自折）。
   const basePrice  = (BILLING_PLANS.find(p => p.id === plan)?.price ?? 0) * participantCount;
   const autoFinal  = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
-  const finalPrice = priceOverride != null ? priceOverride : autoFinal; // 手動覆寫優先，否則用自動帶入
+  const finalPrice = priceOverride != null ? priceOverride : autoFinal;
 
   async function handleSubmit() {
     if (submitting) return;
@@ -817,17 +811,30 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
           memberName: booking.memberName || "顧客", memberId:booking.memberId ?? null,
           plan, basePrice, discount:discount ? EARLY_BIRD_DISC : 0, finalPrice, paymentMethod:payMethod,
           year:y, month:m, day:d, date,
-          note:note.trim() || `線上約課結帳（預約 ${booking.id}）`,
-          createdBy:"", createdByName:"教練（線上約課結帳）",
+          note:note.trim() || `${isForce ? "線上約課【強制結帳】" : "線上約課結帳"}（預約 ${booking.id}）`,
+          createdBy:"", createdByName:isForce ? "教練（強制結帳）" : "教練（線上約課結帳）",
           bookingId:booking.id, checkinId:booking.checkinId || null,
         });
         billingId = ref.id;
         setCreatedBillingId(billingId);
       }
-      await updateDoc(doc(db, "bookings", booking.id), { paymentMethod: PAY_METHOD_CODE[payMethod] || "cash", updatedAt:serverTimestamp() });
-      const linked = await completeBookingFromCheckin(booking.id, booking.checkinId || null, billingId);
-      if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
-      toast(`✓ 已結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
+
+      if (isForce) {
+        await updateDoc(doc(db, "bookings", booking.id), {
+          paymentMethod: PAY_METHOD_CODE[payMethod] || "cash",
+          billingRecordId: billingId,
+          status: "completed",
+          completedAt: serverTimestamp(),
+          completionSource: "forced_checkout",
+          updatedAt: serverTimestamp(),
+        });
+        toast(`⚡ 已強制完成結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
+      } else {
+        await updateDoc(doc(db, "bookings", booking.id), { paymentMethod: PAY_METHOD_CODE[payMethod] || "cash", updatedAt:serverTimestamp() });
+        const linked = await completeBookingFromCheckin(booking.id, booking.checkinId || null, billingId);
+        if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
+        toast(`✓ 已結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
+      }
       onDone();
     } catch (e) {
       toast("結帳失敗：" + (e?.message || ""), "error");

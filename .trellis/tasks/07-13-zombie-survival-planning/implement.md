@@ -17,23 +17,38 @@
 ## Phase 2 — survival and multiplayer depth
 
 1. Add equipment durability, infection state machine, suppression/serum items, supplies, and 4–8 target slots.
-2. Add fast, armored, and ranged archetypes through declarative rule tables.
-3. Add multiplayer supply sharing and non-linear encounter scaling.
+2. Add fast (2-4m/round, head×2, chest×6), armored (1-2m/round, chest×6, charge attack at 0m), and ranged (auto-interfere once/round, 1 chest arrow kill, high-risk+ only) archetypes through declarative rule tables.
+3. All 5 weapon/arrow types: threshold-reduction, knockback, penetration, explosive (3m AoE), silent. Normal arrows unlimited, special arrows 3-5 limit each.
+4. 5-tier armor system (T1–T5) with enhancement slots. Accessory system with base-level-gated slot count (start 1), 3 uses per expedition.
+5. Backpack weight system: 20kg initial capacity, item weights assigned.
+6. Rescue arrows: 50% trigger rate, text+animation presentation.
+7. Add multiplayer supply sharing and non-linear encounter scaling.
 
 ## Phase 3 — exploration and extraction
 
-1. Add isolated flat large-map persistence with safety, normal, danger, high-risk, and restricted zones. Each zone owns an encounter profile for ordinary/special/elite/BOSS eligibility, queue size/distance, events, and resources. Add a data-driven random-event system with multiple variants per category: supplies, intelligence/misinformation, environmental interference, NPC rescue, wandering hordes, and changing extraction conditions. Its modifiers may affect stochastic success rates, supplies, intelligence, zombie distance, queue admission, and extraction conditions without faking hit coordinates. Add searchable locations (including shops, hospitals, and fuel stations), resource events, backpack capacity, node-based food/water consumption plus extra consumption per battle, random extraction points, a guaranteed extraction endpoint, a 30%-carried-supplies-penalty rapid-extraction option available from non-combat large-map states, and a return-to-origin action that can still roll wandering-zombie encounters.
-2. Implement extraction reward claiming atomically and failure/partial-extraction outcomes.
+1. Add isolated flat large-map persistence with safety, normal, danger, high-risk, and restricted zones. Encounter rates (per node): normal 20%, danger 40%, high-risk 60%, restricted 80%.
+2. Each zone owns an encounter profile for ordinary/special/elite/BOSS eligibility, queue size/distance, events, and resources.
+3. Add a data-driven random-event system with all 6 categories: supplies, intelligence/misinformation, environmental interference, NPC rescue, wandering hordes, and changing extraction conditions. Each with multiple variants. Event modifiers may affect stochastic success rates, supplies, intelligence, zombie distance, queue admission, and extraction conditions without faking hit coordinates.
+4. Add 5 extraction types: random point (item-triggered), guaranteed endpoint, rapid extraction (30% supplies loss), special extraction (condition-based), NPC rescue (quest reward).
+5. Add searchable locations (including shops, hospitals, and fuel stations), resource events, backpack capacity (20kg base), node-based food/water consumption plus extra consumption per battle.
+6. Implement extraction reward claiming atomically and failure/partial-extraction outcomes.
+7. Individual extraction: supplies stay with team, equally divided.
 
 ## Phase 4 — base and bridges
 
-1. Add base construction/resource loops that improve preparation rather than create invulnerability. Initial buildings: growing room for food, water-purification station for drinking water, and an asynchronous expedition-supply team that returns partial materials similarly to the existing cat expedition concept.
-2. Add reviewed `crossWorldEffectId` catalogue and a unit-tested allowlisted dungeon adapter.
+1. Add all 9 base buildings with 10-level progression (aligned with cat village: same 9 materials, mix-and-match upgrade):
+   - Growing Room, Water Purification Station, Expedition Supply Team
+   - Medical Room, Equipment Workbench, Armor Repair Station
+   - Radio Tower, Scout Station, Rescue Team
+2. Building functions improve preparation (food, water, medical, gear, intel, recovery) without causing invulnerability.
+3. Add reviewed `crossWorldEffectId` catalogue and a unit-tested allowlisted dungeon adapter. Cross-world effects deferred to Phase 4 decision.
 
 ## Phase 5 — content
 
-1. Add elite/BOSS archetypes, random events, richer maps, story chapters, and extensible fully-infected support roles.
-2. Add a read-only central display route that subscribes to the persisted round event log and plays the shared battle sequence after the host resolves a round.
+1. Add elite/BOSS archetypes (first BOSS = Giant Zombie King, multi-phase: armored→enraged→weakened). Random events, richer maps, story chapters.
+2. Add fully-infected support role: Mark Target interference ability (shoot zombie → marks → teammates deal increased damage/effects), curable with experimental serum.
+3. Add a read-only central display route that subscribes to the persisted round event log and plays the shared battle sequence after the host resolves a round.
+4. BOSS common interface: visible weak points, multi-phase behavior, special attacks, cleared flag, exclusive rewards.
 
 ## Verification gates
 

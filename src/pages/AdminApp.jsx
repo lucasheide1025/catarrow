@@ -37,6 +37,7 @@ const AdminGuildQuests   = lazy(() => import("../components/admin/AdminGuildQues
 const AdminStoryManager  = lazy(() => import("../components/admin/AdminStoryManager"));
 const AdminArchery       = lazy(() => import("../components/admin/AdminArchery"));
 const AdminVillageManager= lazy(() => import("../components/admin/AdminVillageManager"));
+const AdminVillageGoals  = lazy(() => import("../components/admin/AdminVillageGoals"));
 const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon"));
 const AdminBattleTest   = lazy(() => import("../components/admin/AdminBattleTest"));
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
@@ -158,7 +159,7 @@ export default function AdminApp() {
   // 選單次級分頁狀態 (Option A)
   const [dailySub,  setDailySub]  = useState("booking"); // "booking" | "review" | "monthlycard"
   const [mfSub,     setMfSub]     = useState("members"); // "members" | "guests" | "kidmode" | "learn" | "messages"
-  const [eventsSub, setEventsSub] = useState("comps");   // "comps" | "guild" | "worldboss" | "battlesetting" | "items" | "village" | "story"
+  const [eventsSub, setEventsSub] = useState("villagegoal"); // "villagegoal" | "worldboss" | "items" | "village" | "story"
   const [sysSub,    setSysSub]    = useState("givetool");// "givetool" | "tierperms" | "archery" | "reset" | "testing"
 
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
@@ -795,21 +796,13 @@ const adminNav = [
 
         {page === "game-events" && (
           <>
-            <button onClick={() => setEventsSub("comps")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "comps" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
-              🏆 賽事管理
-            </button>
-            <button onClick={() => setEventsSub("guild")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "guild" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
-              📜 公會任務
+            <button onClick={() => setEventsSub("villagegoal")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "villagegoal" ? "bg-gradient-to-r from-amber-600 to-yellow-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
+              🎯 村目標
             </button>
             <button onClick={() => setEventsSub("worldboss")}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "worldboss" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
               👑 世界王
-            </button>
-            <button onClick={() => setEventsSub("battlesetting")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "battlesetting" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
-              ⚔️ 魔王對戰
             </button>
             <button onClick={() => setEventsSub("items")}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "items" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
@@ -869,10 +862,8 @@ const adminNav = [
         {page === "members-finance" && mfSub === "messages"  && <AdminMessages />}
 
         {/* 3. 遊戲與活動 */}
-        {page === "game-events" && eventsSub === "comps"         && <AdminCompetitions />}
-        {page === "game-events" && eventsSub === "guild"         && <AdminGuildQuests />}
+        {page === "game-events" && eventsSub === "villagegoal"   && <AdminVillageGoals />}
         {page === "game-events" && eventsSub === "worldboss"     && <AdminWorldBoss />}
-        {page === "game-events" && eventsSub === "battlesetting" && <AdminBattleEvent />}
         {page === "game-events" && eventsSub === "items"         && <AdminEquipItems />}
         {page === "game-events" && eventsSub === "village"       && <AdminVillageManager />}
         {page === "game-events" && eventsSub === "story"         && <AdminStoryManager />}

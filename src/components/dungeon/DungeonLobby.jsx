@@ -643,7 +643,11 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
                 // 訪客/兒童的地下城是 GuestDungeonEntry 就地生成，非儲存槽，不消耗/寫入 savedDungeons
                 fromStorage: !isGuest,
                 savedId: selectedDungeon.id,
-                boss: selectedDungeon.boss || boss || null,
+                id: selectedDungeon.id,        // resolveDungeonBossEncounter 需要 id 推導 runId（savedId 不吃）
+                bossRunId: selectedDungeon.bossRunId,
+                revealedAt: selectedDungeon.revealedAt,
+                // ⚠️ 優先用預覽算出的正確王；selectedDungeon.boss 是舊欄位的雜兵，只當最後防呆
+                boss: boss || selectedDungeon.boss || null,
                 arrowsPerRound,
                 targetFmt,
               });

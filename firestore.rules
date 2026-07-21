@@ -420,6 +420,25 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // zombieRooms：殭屍生存模式房間（Phase 0）
+    // Phase 0 使用寬鬆規則（比照 dungeonRooms/partyRooms），
+    // 後續 Phase 加入主機驗證與欄位層級控管。
+    // Phase 1+ 限制：只有房主可執行 startShooting / submitRound 等指令；
+    // 成員只能提交自己的箭矢記錄。
+    match /zombieRooms/{roomId} {
+      allow read, write: if isLoggedIn();
+
+      // 子集合：遭遇事件日誌
+      match /roundEvents/{eventId} {
+        allow read, write: if isLoggedIn();
+      }
+
+      // 子集合：已清除 BOSS 標記
+      match /clearedBosses/{bossId} {
+        allow read, write: if isLoggedIn();
+      }
+    }
+
     // worldBossEvents：世界大 Boss 活動，登入者可讀寫
     match /worldBossEvents/{eventId} {
       allow read, write: if isLoggedIn();

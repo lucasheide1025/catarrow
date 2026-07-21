@@ -1,7 +1,7 @@
 // src/lib/expeditionGrid.js
 // 遠征模式 5×5 格子樓層生成（單人 / 團隊共用，純函式無副作用）
-// 第 1、2 層：generateGridFloor — 隨機連通格子（含牆）+ 迷霧探索
-// 第 3 層：generateBranchFloor — 入口 → A/B/C 三選一 → 3 功能房 → 休息 → 王 → 寶箱
+// 第 1、2 層：generateGridFloor — 隨機連通格子（最大 25 格，戰鬥不連續）
+// 第 3 層：generateBranchFloor — 入口 → A/B/C 三選一 → 3 抽 + 固定商人 + 休息 → 王 → 寶箱
 
 import { EXCAVATION_FLOOR_CONFIG } from "./dungeonData";
 
@@ -9,14 +9,14 @@ export const GRID_SIZE = 5;
 
 // 權重表 key（EXCAVATION_FLOOR_CONFIG.roomTypes）→ 房間類型
 const WEIGHT_ROOM_MAP = {
-  monsters:  { type:"battle", label:"戰鬥遭遇" },
-  events:    { type:"event",  label:"神秘事件" },
-  traps:     { type:"trap",   label:"陷阱！"   },
-  merchants: { type:"shop",   label:"行腳商人" },
-  chests:    { type:"chest",  label:"發現寶箱" },
+  monsters:       { type: "battle",        label: "戰鬥遭遇" },
+  events:         { type: "event",         label: "特殊事件" },
+  general_events: { type: "general_event", label: "一般事件" },
+  traps:          { type: "trap",          label: "陷阱！" },
+  merchants:      { type: "shop",          label: "行腳商人" },
+  chests:         { type: "chest",         label: "發現寶箱" },
+  rest:           { type: "rest",          label: "休息區" },
 };
-
-// ── 工具 ─────────────────────────────────────────────────────
 
 function pickWeightedKey(weights) {
   const entries = Object.entries(weights);
@@ -56,8 +56,7 @@ export function getAdjacentPositions(pos) {
   ].filter(p => p.x >= 0 && p.x < GRID_SIZE && p.y >= 0 && p.y < GRID_SIZE);
 }
 
-// 生成樹式區域擴張：從隨機起點開始，每次從邊界隨機挑一格併入，
-// 保證所有格子連通（區域只透過相鄰格成長）
+// 生成樹式區域擴張：從隨機起點開始，每次從邊界隨機挑一格併入，保證所有格子連通
 function growRegion(targetCount) {
   const start = {
     x: Math.floor(Math.random() * GRID_SIZE),
@@ -101,11 +100,11 @@ function bfsFarthest(cells, start) {
   return farthest;
 }
 
-// ── 第 1、2 層：5×5 迷霧格子 ─────────────────────────────────
-// 回傳 { size, grid（5×5，roomId 或 null=牆）, rooms, startPos, stairsPos }
+// ── 第 1、2 層：5×5 迷霧格子（最大 25 格，戰鬥不連續） ─────────
 export function generateGridFloor(floorIndex, difficultyTier) {
   const config = EXCAVATION_FLOOR_CONFIG[Math.min(floorIndex, 1)] || EXCAVATION_FLOOR_CONFIG[0];
-  const roomCount = 11 + Math.floor(Math.random() * 3); // 11~13 間
+  // 地圖擴大：20 ~ 23 格 (接近 25 格滿版)
+  const roomCount = 20 + Math.floor(Math.random() * 4);
   const { start, cells } = growRegion(roomCount);
   const stairs = bfsFarthest(cells, start);
 
@@ -116,17 +115,51 @@ export function generateGridFloor(floorIndex, difficultyTier) {
     return k !== startKey && k !== stairsKey;
   });
 
-  // 房型清單：保底戰鬥（依 monsterCount）+ 第 2 層 1 精英 + 1 休息，其餘按權重
-  const mc = config.monsterCount || { min: 2, max: 3 };
-  const battleCount = mc.min + Math.floor(Math.random() * (mc.max - mc.min + 1));
+  // 根據權重隨機挑選房型
   const types = [];
-  for (let i = 0; i < battleCount; i++) types.push({ ...WEIGHT_ROOM_MAP.monsters });
-  if (floorIndex === 1) types.push({ type:"elite_battle", label:"精英怪" });
-  types.push({ type:"rest", label:"休息區" });
-  while (types.length < otherCells.length) {
-    types.push({ ...WEIGHT_ROOM_MAP[pickWeightedKey(config.roomTypes)] });
+  // 第 2 層保底 1 精英
+  if (floorIndex === 1) {
+    types.push({ type: "elite_battle", label: "精英怪" });
   }
-  const assigned = shuffle(types).slice(0, otherCells.length);
+  while (types.length < otherCells.length) {
+    const key = pickWeightedKey(config.roomTypes);
+    const meta = WEIGHT_ROOM_MAP[key] || WEIGHT_ROOM_MAP.general_events;
+    types.push({ ...meta });
+  }
+
+  let assigned = shuffle(types).slice(0, otherCells.length);
+
+  // 防呆與修復：戰鬥不連續 (避免兩間戰鬥房相鄰)
+  for (let i = 0; i < otherCells.length; i++) {
+    const c1 = otherCells[i];
+    const t1 = assigned[i]?.type;
+    if (t1 === "battle" || t1 === "elite_battle") {
+      // 檢查是否與任何已放置的相鄰戰鬥房衝突
+      const hasAdjacentBattle = otherCells.some((c2, j) => {
+        if (i === j) return false;
+        const t2 = assigned[j]?.type;
+        return (t2 === "battle" || t2 === "elite_battle") && isAdjacent(c1, c2);
+      });
+      if (hasAdjacentBattle) {
+        // 尋找一個非戰鬥房間進行交換
+        const swapIdx = assigned.findIndex((t, j) => {
+          if (j === i) return false;
+          if (t.type === "battle" || t.type === "elite_battle") return false;
+          // 交換後確保新位置也不與戰鬥相鄰
+          const targetCell = otherCells[j];
+          const neighborHasBattle = otherCells.some((c3, k) => {
+            if (k === j || k === i) return false;
+            const t3 = assigned[k]?.type;
+            return (t3 === "battle" || t3 === "elite_battle") && isAdjacent(targetCell, c3);
+          });
+          return !neighborHasBattle;
+        });
+        if (swapIdx !== -1) {
+          [assigned[i], assigned[swapIdx]] = [assigned[swapIdx], assigned[i]];
+        }
+      }
+    }
+  }
 
   const rooms = [
     {
@@ -164,8 +197,6 @@ export function generateGridFloor(floorIndex, difficultyTier) {
   };
 }
 
-// 組隊模式把 gridFloor 寫入 Firestore 前，剔除 grid（2D 陣列，Firestore 不支援巢狀陣列）。
-// grid 只是本地渲染輔助資料，下游（GridMapStage）只用 rooms 重建查找表，完全用不到它。
 export function stripGridForSync(gridFloor) {
   if (!gridFloor) return gridFloor;
   const { grid, ...rest } = gridFloor;
@@ -173,48 +204,49 @@ export function stripGridForSync(gridFloor) {
 }
 
 // ── 第 3 層：分支王關 ────────────────────────────────────────
-
 const BRANCH_META = {
-  A: { label:"左道 · 暗影迴廊", icon:"🌑" },
-  B: { label:"中道 · 石像大廳", icon:"🗿" },
-  C: { label:"右道 · 熔岩棧道", icon:"🌋" },
+  A: { label: "左道 · 暗影迴廊", icon: "🌑" },
+  B: { label: "中道 · 石像大廳", icon: "🗿" },
+  C: { label: "右道 · 熔岩棧道", icon: "🌋" },
 };
 
-const BRANCH_ROOM_POOL = [
-  { type:"battle", label:"戰鬥遭遇", weight:30 },
-  { type:"event",  label:"神秘事件", weight:20 },
-  { type:"trap",   label:"陷阱！",   weight:20 },
-  { type:"shop",   label:"神秘商人", weight:15 },
-  { type:"chest",  label:"發現寶箱", weight:15 },
-];
-
-function pickBranchRoom() {
-  const total = BRANCH_ROOM_POOL.reduce((s, r) => s + r.weight, 0);
-  let roll = Math.random() * total;
-  for (const r of BRANCH_ROOM_POOL) {
-    roll -= r.weight;
-    if (roll <= 0) return r;
-  }
-  return BRANCH_ROOM_POOL[0];
-}
-
-// 回傳 { entrance, branches:{A,B,C 各 rooms:[3 功能房 + 休息]}, boss, treasure }
+// 回傳 { entrance, branches:{A,B,C 各 rooms:[3 抽 + 固定商人 + 休息]}, boss, treasure }
 export function generateBranchFloor() {
+  const floor3Config = EXCAVATION_FLOOR_CONFIG[2]?.roomTypes || {
+    monsters: { weight: 30 },
+    traps: { weight: 30 },
+    events: { weight: 30 },
+    general_events: { weight: 10 },
+  };
+
   const branches = {};
   for (const key of ["A", "B", "C"]) {
-    const battleIdx = Math.floor(Math.random() * 3); // 每分支保底 1 戰鬥
-    const rooms = [];
+    const branchTypes = [
+      { type: "shop", label: "神秘商人" },
+      { type: "rest", label: "休息區" },
+    ];
+    // 3 格從權重抽
     for (let i = 0; i < 3; i++) {
-      const roll = i === battleIdx ? BRANCH_ROOM_POOL[0] : pickBranchRoom();
-      rooms.push({ id:`b${key}r${i}`, type:roll.type, label:roll.label, cleared:false });
+      const k = pickWeightedKey(floor3Config);
+      const meta = WEIGHT_ROOM_MAP[k] || WEIGHT_ROOM_MAP.monsters;
+      branchTypes.push({ ...meta });
     }
-    rooms.push({ id:`b${key}rest`, type:"rest", label:"休息區", cleared:false });
+
+    const assigned = shuffle(branchTypes);
+    const rooms = assigned.map((r, i) => ({
+      id: `b${key}r${i}`,
+      type: r.type,
+      label: r.label,
+      cleared: false,
+    }));
+
     branches[key] = { key, ...BRANCH_META[key], rooms };
   }
+
   return {
-    entrance: { id:"b_entrance", type:"entrance",    label:"王關入口", cleared:true },
+    entrance: { id: "b_entrance", type: "entrance", label: "王關入口", cleared: true },
     branches,
-    boss:     { id:"b_boss",     type:"boss_battle", label:"Boss",     cleared:false },
-    treasure: { id:"b_treasure", type:"treasure",    label:"寶藏房",   cleared:false },
+    boss: { id: "b_boss", type: "boss_battle", label: "Boss", cleared: false },
+    treasure: { id: "b_treasure", type: "treasure", label: "寶藏房", cleared: false },
   };
 }
