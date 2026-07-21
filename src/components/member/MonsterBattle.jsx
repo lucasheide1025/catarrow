@@ -15,6 +15,7 @@ import {
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { MONSTER_TIER_XP, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { CAT_TIER_XP } from "../../lib/catLevel";
+import { getMaterialPool } from "../../lib/monsterMaterials";
 import { getRewardsForMilestone } from "../../lib/arrowMilestone";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
@@ -1478,6 +1479,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             const tier   = TIER_LABEL[m.tier] || {};
             const family = FAMILIES[m.family] || {};
             const isPicked = pickedMonster?.id === m.id;
+            const dropMats = getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
+            const aXP = MONSTER_TIER_XP[m.tier] || 5;
+            const cXP = CAT_TIER_XP[m.tier] || 5;
             return (
               <button key={m.id} onClick={() => setPickedMonster(m)}
                 className="rounded-2xl p-4 text-left transition-all active:scale-95 relative overflow-hidden"
@@ -1494,6 +1498,18 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
                 </div>
                 <div className="flex gap-2 mt-1.5 text-xs text-slate-500">
                   <span>❤️{m.hp}</span><span>⚔️{m.atk}</span><span>🛡️{m.def}</span>
+                </div>
+                {/* 掉落材料 + XP 預覽 */}
+                {dropMats.length > 0 && (
+                  <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 mt-1.5 text-[10px] text-slate-400 leading-tight">
+                    {dropMats.map(mat => (
+                      <span key={mat.id}>{mat.icon}{mat.name}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2 mt-1 text-[10px] font-bold">
+                  <span style={{ color:"#f9a8d4" }}>⚔️XP+{aXP}</span>
+                  <span style={{ color:"#fcd34d" }}>🐱XP+{cXP}</span>
                 </div>
               </button>
             );

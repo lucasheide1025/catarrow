@@ -16,6 +16,7 @@ import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleS
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
+import { getMaterialPool } from "../../lib/monsterMaterials";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { getCatStatMult } from "../../lib/catData";
 import { WB_CARDS } from "../../lib/worldBossCards";
@@ -1031,6 +1032,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {drawnMonsters.map(m => {
                   const tier = TIER_LABEL[m.tier];
                   const fam  = FAMILIES[m.family];
+                  const dropMats = getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
+                  const aXP = MONSTER_TIER_XP[m.tier] || 5;
+                  const cXP = CAT_TIER_XP[m.tier] || 5;
                   return (
                     <button key={m.id} onClick={() => setSetupMonster(m)}
                       className={`text-left rounded-xl p-3 border-2 transition-all flex flex-col gap-1 ${
@@ -1054,6 +1058,18 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                           {m.variant === "weak" ? "🔵 弱化版" : "🔴 強化版"}
                         </span>
                       )}
+                      {/* 掉落材料 + XP 預覽 */}
+                      {dropMats.length > 0 && (
+                        <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-slate-400 leading-tight">
+                          {dropMats.map(mat => (
+                            <span key={mat.id}>{mat.icon}{mat.name}</span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2 text-[10px] font-bold">
+                        <span style={{ color:"#f9a8d4" }}>⚔️XP+{aXP}</span>
+                        <span style={{ color:"#fcd34d" }}>🐱XP+{cXP}</span>
+                      </div>
                     </button>
                   );
                 })}
