@@ -20,7 +20,7 @@ export function calcCatCombatStats(catData = {}, catIdOverride = null) {
     title: "標準配點",
     trait: "無額外個體修正",
   };
-  const bondMult = type === "allround" ? 1 + bondLv * 0.03 : 1 + bondLv * 0.05;
+  const bondMult = 1 + (Math.min(50, bondLv) / 50) * 0.5;
   const rawHP = base.hp + level.hp + equip.hpBonus;
   const rawATK = base.atk + bondLv + level.atk + equip.atkBonus;
   const rawDEF = base.def + level.def + equip.defBonus;

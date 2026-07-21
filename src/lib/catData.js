@@ -172,10 +172,11 @@ export const CAT_TYPES = {
   },
 };
 
-// ── 羈絆等級閾值 ──────────────────────────────────────────────
-// bond 數值 → 等級 1-10+
-export const BOND_THRESHOLDS = [0, 10, 25, 45, 70, 100, 140, 190, 250, 320, 400];
-// BOND_THRESHOLDS[i] = 到達第 i 等需要的羈絆值（0-indexed，level = index）
+// ── 羈絆等級閾值（1 ~ 50 級）─────────────────────────────────
+export const BOND_THRESHOLDS = Array.from({ length: 51 }, (_, i) => {
+  if (i === 0) return 0;
+  return Math.round(10 * i + 1.8 * i * i);
+});
 
 export function getBondLevel(bond) {
   let lv = 0;
@@ -183,7 +184,7 @@ export function getBondLevel(bond) {
     if (bond >= BOND_THRESHOLDS[i]) lv = i;
     else break;
   }
-  return lv; // 0–10
+  return Math.min(50, lv); // 0–50
 }
 
 export function getBondProgress(bond) {
