@@ -27,7 +27,7 @@ import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { OverlayModal } from "../components/shared/UI";
 import { ProgressRing, CountUp } from "../components/shared/Widgets";
-import { sfxSwitch } from "../lib/sound";
+import { sfxSwitch, sfxLevelUp } from "../lib/sound";
 import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { certLevelStyle } from "../lib/constants";
@@ -158,6 +158,37 @@ export default function MemberApp() {
   const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const lastBroadcastIdRef = useRef(null);
+
+  // ── 射手升級即時全局提醒機制 ──
+  const [levelUpInfo, setLevelUpInfo] = useState(null);
+  const lastLevelRef = useRef(null);
+
+  const currentLevel = useMemo(() => {
+    return archerLevelFromXP(profile?.archerXP || 0);
+  }, [profile?.archerXP]);
+
+  useEffect(() => {
+    if (profile?.archerXP === undefined) return;
+    if (lastLevelRef.current === null) {
+      lastLevelRef.current = currentLevel;
+      return;
+    }
+    if (currentLevel > lastLevelRef.current) {
+      const oldL = lastLevelRef.current;
+      lastLevelRef.current = currentLevel;
+      setLevelUpInfo({ oldLevel: oldL, newLevel: currentLevel });
+      if (typeof sfxLevelUp === "function") sfxLevelUp();
+    } else if (currentLevel < lastLevelRef.current) {
+      lastLevelRef.current = currentLevel;
+    }
+  }, [currentLevel, profile?.archerXP]);
+
+  useEffect(() => {
+    if (levelUpInfo) {
+      const timer = setTimeout(() => setLevelUpInfo(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [levelUpInfo]);
   const [latestVersion, setLatestVersion] = useState(null);
 
   const [certification, setCertification] = useState(null);
@@ -869,6 +900,57 @@ export default function MemberApp() {
           <span>▴</span>
           <span>顯示導覽列</span>
         </button>
+      )}
+      {/* 💥 簡易等級上升 (Level Up) 全局提醒畫面 */}
+      {levelUpInfo && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.75)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          animation: "fadeIn 0.3s ease-out",
+        }}>
+          {/* Keyframes style tag */}
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes scaleUp {
+              from { transform: scale(0.7); opacity: 0; }
+              to { transform: scale(1); opacity: 1; }
+            }
+          `}</style>
+          <div style={{
+            background: "linear-gradient(135deg, #5C3D2E, #3D251A)",
+            border: "3px solid #F59E0B",
+            boxShadow: "0 0 35px rgba(245, 158, 11, 0.6)",
+            borderRadius: 24,
+            padding: "32px 40px",
+            textAlign: "center",
+            maxWidth: 320,
+            animation: "scaleUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          }}>
+            <div style={{ fontSize: 60, marginBottom: 8, animation: "bounce 1s infinite" }}>🎉</div>
+            <div style={{ color: "#F59E0B", fontSize: 28, fontWeight: 900, textTransform: "uppercase", letterSpacing: 2, textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}>
+              LEVEL UP!
+            </div>
+            <div style={{ color: "#FFF8F0", fontSize: 16, fontWeight: 700, marginTop: 12 }}>
+              等級上升了！
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 16 }}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: "#9B7B6A" }}>Lv.{levelUpInfo.oldLevel}</span>
+              <span style={{ fontSize: 20, color: "#F59E0B" }}>➔</span>
+              <span style={{ fontSize: 24, fontWeight: 900, color: "#FFF8F0", textShadow: "0 0 8px rgba(245, 158, 11, 0.8)" }}>Lv.{levelUpInfo.newLevel}</span>
+            </div>
+            <div style={{ color: "#A0C898", fontSize: 11, fontWeight: 700, marginTop: 14 }}>
+              ✨ 每一級 +5 HP · 每 5 級 +1 ATK/DEF！
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

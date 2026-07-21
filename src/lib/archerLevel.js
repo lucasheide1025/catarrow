@@ -73,3 +73,52 @@ export const PARTY_BONUS_CHEST_CHANCE = 0.30;
 
 // 自主練習射手 XP（最低速率）
 export const PRACTICE_ARCHER_XP_PER_ARROW = 1;
+
+// ── 等級外觀樣式定義 (1 ~ 500) ──────────────────────────────
+export function getLevelStyle(level) {
+  const lv = Number(level) || 1;
+  if (lv < 100) {
+    return {
+      background: "linear-gradient(135deg, #9ca3af, #6b7280)",
+      color: "#ffffff",
+      border: "1px solid rgba(255,255,255,0.2)",
+      textShadow: "none",
+      boxShadow: "none",
+    };
+  }
+  if (lv < 200) {
+    return {
+      background: "linear-gradient(135deg, #2dd4bf, #0f766e)",
+      color: "#ffffff",
+      border: "1.5px solid #2dd4bf",
+      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+      boxShadow: "0 0 6px rgba(45, 212, 191, 0.3)",
+    };
+  }
+  if (lv < 300) {
+    return {
+      background: "linear-gradient(135deg, #fbbf24, #b45309)",
+      color: "#ffffff",
+      border: "1.5px solid #fbbf24",
+      boxShadow: "0 0 8px rgba(251, 191, 36, 0.4)",
+      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+    };
+  }
+  if (lv < 400) {
+    return {
+      background: "linear-gradient(135deg, #c084fc, #6b21a8)",
+      color: "#ffffff",
+      border: "1.5px solid #c084fc",
+      boxShadow: "0 0 10px rgba(192, 132, 252, 0.5)",
+      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+    };
+  }
+  return {
+    background: "linear-gradient(135deg, #f87171, #991b1b)",
+    color: "#ffffff",
+    border: "2px solid #ef4444",
+    boxShadow: "0 0 15px rgba(239, 68, 68, 0.7)",
+    textShadow: "0 1px 3px rgba(0,0,0,0.4)",
+    animation: "levelPulse 1.5s infinite alternate",
+  };
+}

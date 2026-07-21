@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { updateMember, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
-import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX } from "../../lib/archerLevel";
+import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX, getLevelStyle } from "../../lib/archerLevel";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle } from "../../lib/constants";
 import { WB_CARDS } from "../../lib/worldBossCards";
@@ -290,7 +290,18 @@ export default function MemberProfile({
             <ST>⚔️ 射手等級</ST>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
               <div>
-                <div style={{ fontSize:26, fontWeight:900, color:"#f472b6" }}>Lv. {level}</div>
+                <div style={{
+                  fontSize: 16,
+                  fontWeight: 900,
+                  padding: "3px 12px",
+                  borderRadius: "99px",
+                  boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
+                  display: "inline-block",
+                  marginBottom: 6,
+                  ...getLevelStyle(level)
+                }}>
+                  Lv. {level}
+                </div>
                 <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>/ {MAX_ARCHER_LEVEL} 級 · 已累積 {xp.toLocaleString()} XP</div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", gap:4, textAlign:"right", fontSize:12 }}>
@@ -299,15 +310,18 @@ export default function MemberProfile({
                 <span style={{ color:"#93c5fd" }}>🛡️ DEF +{bonus.def}</span>
               </div>
             </div>
-            <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:8, overflow:"hidden", marginBottom:4 }}>
+            <div style={{ background:"rgba(255,255,255,0.1)", borderRadius:6, height:8, overflow:"hidden", marginBottom:6 }}>
               <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#ec4899,#a855f7)", borderRadius:6, transition:"width 0.4s" }} />
             </div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", display:"flex", justifyContent:"space-between" }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", display:"flex", justifyContent:"space-between", marginBottom:8 }}>
               {level >= MAX_ARCHER_LEVEL
                 ? <span>已達滿等 🎉</span>
                 : <span>本級進度：{current} / {needed} XP</span>
               }
               <span>整體 {Math.round(xp / totalXPToMax * 100)}%</span>
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", borderTop:"1px solid rgba(255,255,255,0.1)", paddingTop:6, textAlign:"center" }}>
+              💡 等級加成規則：每一級 +5 HP，每 5 級增加 1 點 ATK 與 DEF！
             </div>
           </Card>
         );

@@ -16,6 +16,7 @@ import {
   CAT_EQUIP_MAX_PLUS, calcForgeCost, catEquipEnhancement,
 } from "../../lib/catData";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
+import { getLevelStyle } from "../../lib/archerLevel";
 import { sfxSuccess, sfxEpic, sfxTap, sfxVillageCollect, sfxVillageBuild, sfxVillageExchange } from "../../lib/sound";
 import {
   BUILDINGS, BUILDING_LIST, getVillageLevel, getBuildingStage,
@@ -1454,7 +1455,21 @@ function ForgePanel({ profile, resources, myCats }) {
             <span style={{ fontWeight:900, fontSize:16, color:C.brown }}>{name}</span>
             <span style={{ fontSize:10, fontWeight:700, padding:"1px 7px", borderRadius:99, background:`${typeColor}18`, color:typeColor, border:`1px solid ${typeColor}66` }}>{typeLabel}</span>
           </div>
-          <div style={{ fontSize:11, color:C.mid, marginBottom:5 }}>Lv.{xpProg.level} · 羈絆 {bondLevel}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6, flexWrap:"wrap" }}>
+            <span style={{
+              fontSize: "10px",
+              fontWeight: 900,
+              padding: "2px 8px",
+              borderRadius: "99px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+              display: "inline-flex",
+              alignItems: "center",
+              ...getLevelStyle(xpProg.level)
+            }}>
+              Lv.{xpProg.level}
+            </span>
+            <span style={{ fontSize:11, color:C.mid }}>· 羈絆 {bondLevel}</span>
+          </div>
           {/* XP 進度條 */}
           <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
             <div style={{ flex:1, height:5, background:C.border, borderRadius:99, overflow:"hidden" }}>

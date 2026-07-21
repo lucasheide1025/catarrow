@@ -12,6 +12,7 @@ import {
   catEquipEnhancement,
 } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
+import { getLevelStyle } from "../../lib/archerLevel";
 import CatSVG from "./CatSVG";
 
 // ── 羈絆條 ──────────────────────────────────────────────────
@@ -236,6 +237,8 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
 
   const combat = calcCatCombatStats({ ...catData, type: catFixedType }, catId);
   const { catLevel, catHP, catATK, catDEF, profile: buildProfile } = combat;
+  const levelHPBonus = (catLevel - 1) * 5;
+  const levelAtkDefBonus = Math.floor(catLevel / 5);
   const bondTierMult = catFixedType === "allround"
     ? 1 + bondLevel * 0.03
     : 1 + bondLevel * 0.05;
@@ -315,7 +318,21 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
 
           {/* 能力值 */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">⚔️ 目前能力值（Lv.{catLevel}）</div>
+            <div className="flex items-center justify-between mb-3.5">
+              <span className="text-xs text-slate-400 font-bold">⚔️ 目前能力值</span>
+              <span style={{
+                fontSize: "10px",
+                fontWeight: 900,
+                padding: "2px 8px",
+                borderRadius: "99px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                display: "inline-flex",
+                alignItems: "center",
+                ...getLevelStyle(catLevel)
+              }}>
+                Lv.{catLevel}
+              </span>
+            </div>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="bg-white/5 rounded-xl py-2">
                 <div className="text-base">❤️</div>
@@ -346,6 +363,9 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
               )}
               <div className="text-[10px] text-slate-600 mt-1 leading-relaxed">
                 {CAT_TYPES[catFixedType]?.desc}
+              </div>
+              <div className="mt-3.5 border-t border-white/10 pt-2.5 text-center text-[10px] text-slate-400">
+                💡 貓貓等級加成：HP +{levelHPBonus} / ATK +{levelAtkDefBonus} / DEF +{levelAtkDefBonus}
               </div>
             </div>
             <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3">
