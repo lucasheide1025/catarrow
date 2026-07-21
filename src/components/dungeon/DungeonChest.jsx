@@ -14,6 +14,7 @@ export default function DungeonChest({
   const [revealedCount, setRevealedCount] = useState(0);    // 1, 2, 3 逐一翻牌計數
   const [chosenIdx, setChosenIdx]   = useState(null);
   const [claiming, setClaiming]     = useState(false);
+  const [confirmedWait, setConfirmedWait] = useState(false);
   const [eggType, setEggType]       = useState("normal");   // normal | empty | mimic
   const chestSeedRef = useRef(null);
 
@@ -120,9 +121,6 @@ export default function DungeonChest({
         }
 
         setAnimPhase("done");
-        if (!localMode) {
-          await confirmNonCombatRoom(roomId, memberId, "opened");
-        }
       } finally {
         setClaiming(false);
       }
@@ -134,7 +132,9 @@ export default function DungeonChest({
       onLocalDone?.();
       return;
     }
-    if (onSharedDone) await onSharedDone();
+    setConfirmedWait(true);
+    await confirmNonCombatRoom(roomId, memberId, "opened");
+    if (isHost && onSharedDone) await onSharedDone();
   }
 
   return (
@@ -233,9 +233,14 @@ export default function DungeonChest({
             <button
               type="button"
               onClick={handleFinish}
-              className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
+              disabled={confirmedWait}
+              className={`w-full py-3.5 font-black rounded-2xl text-sm shadow-xl transition-all ${
+                confirmedWait
+                  ? "bg-slate-800 text-amber-300/80 border border-amber-500/30 cursor-wait animate-pulse"
+                  : "bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 active:scale-95"
+              }`}
             >
-              ➡️ 繼續探索下一關
+              {confirmedWait ? "✅ 已完成確認，等待其他隊友繼續…" : "➡️ 繼續探索下一關"}
             </button>
           </div>
         )}

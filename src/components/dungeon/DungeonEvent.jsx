@@ -39,6 +39,7 @@ export default function DungeonEvent({
   const [loading, setLoading] = useState(false);
   const [selectedChoiceIdx, setSelectedChoiceIdx] = useState(null);
   const [resolved, setResolved] = useState(false);
+  const [confirmedWait, setConfirmedWait] = useState(false);
   const [activeBadges, setActiveBadges] = useState([]);
 
   const rawEv = propEvent || room?.roomResolution || room?.currentEvent || room?.event || room?.pendingRoom?.event;
@@ -78,7 +79,9 @@ export default function DungeonEvent({
         return;
       }
 
-      await confirmNonCombatRoom(roomId, memberId, choice.label);
+      if (!localMode) {
+        // 僅紀錄選擇，不觸發已完成房間確認 (由 handleContinueNext / 按鈕推進時確認)
+      }
       setResolved(true);
     } finally {
       setLoading(false);
@@ -96,11 +99,7 @@ export default function DungeonEvent({
     try {
       if (localMode) {
         onLocalEffect?.({ type: "event", event: ev });
-        setResolved(true);
-        return;
       }
-
-      await confirmNonCombatRoom(roomId, memberId, "acknowledged");
       setResolved(true);
     } finally {
       setLoading(false);
@@ -112,9 +111,9 @@ export default function DungeonEvent({
       onLocalDone?.();
       return;
     }
+    setConfirmedWait(true);
     await confirmNonCombatRoom(roomId, memberId, "acknowledged");
     if (isHost && onSharedDone) await onSharedDone();
-    else if (!isHost && onSharedDone) await onSharedDone();
   }
 
   return (
@@ -194,10 +193,14 @@ export default function DungeonEvent({
               <button
                 type="button"
                 onClick={handleContinueNext}
-                disabled={loading}
-                className="w-full py-3.5 mt-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
+                disabled={loading || confirmedWait}
+                className={`w-full py-3.5 mt-3 font-black rounded-2xl text-sm shadow-xl transition-all ${
+                  confirmedWait
+                    ? "bg-slate-800 text-amber-300/80 border border-amber-500/30 cursor-wait animate-pulse"
+                    : "bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 active:scale-95"
+                }`}
               >
-                ➡️ 繼續探索下一關
+                {confirmedWait ? "✅ 已完成確認，等待其他隊友繼續…" : "➡️ 繼續探索下一關"}
               </button>
             </div>
           )}
