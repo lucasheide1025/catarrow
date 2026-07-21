@@ -1,4 +1,4 @@
-// src/components/dungeon/DungeonChest.jsx — 地下城寶箱房間（三選一 ＋ 彩蛋擬態怪/空寶箱）
+// src/components/dungeon/DungeonChest.jsx — 地下城寶箱房間（背面隱藏三選一 ＋ 逐一揭示 ＋ 狀態變化）
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom } from "../../lib/dungeonDb";
 import { createOrdinaryChestLoot } from "../../lib/dungeonChestLoot";
@@ -9,10 +9,12 @@ export default function DungeonChest({
   roomId, room, memberId, isHost,
   localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
-  const [animPhase, setAnimPhase] = useState("entering"); // entering | opening | choices | empty | done
-  const [chosenIdx, setChosenIdx] = useState(null);
-  const [claiming, setClaiming]   = useState(false);
-  const [eggType, setEggType]     = useState("normal"); // normal | empty | mimic
+  const [animPhase, setAnimPhase]   = useState("entering"); // entering | opening | choices | empty | done
+  const [cardState, setCardState]   = useState("hidden");   // hidden (背面) | revealing (逐一揭示中) | revealed (完成)
+  const [revealedCount, setRevealedCount] = useState(0);    // 1, 2, 3 逐一翻牌計數
+  const [chosenIdx, setChosenIdx]   = useState(null);
+  const [claiming, setClaiming]     = useState(false);
+  const [eggType, setEggType]       = useState("normal");   // normal | empty | mimic
   const chestSeedRef = useRef(null);
 
   const dungeonMapId = room?.mapDungeonId || "";
@@ -81,41 +83,50 @@ export default function DungeonChest({
         setAnimPhase("choices");
       }
       sfxCoinDrop();
-    }, 1500);
+    }, 1400);
 
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [eggType]);
 
-  async function handleSelectChoice(index) {
+  // 點擊選擇背面卡片 → 觸發逐一揭示動畫
+  async function handleSelectFaceDownCard(index) {
     if (chosenIdx !== null || claiming) return;
     setChosenIdx(index);
     setClaiming(true);
     sfxSuccess();
 
-    const selected = choices[index];
+    // 啟動逐一翻牌動效 (0.4s, 0.8s, 1.2s 逐一揭示 3 張卡片)
+    setCardState("revealing");
+    setTimeout(() => { setRevealedCount(1); sfxCoinDrop(); }, 300);
+    setTimeout(() => { setRevealedCount(2); sfxCoinDrop(); }, 700);
+    setTimeout(() => { setRevealedCount(3); sfxCoinDrop(); }, 1100);
 
-    try {
-      if (selected.type === "coins") {
-        if (localMode) onLocalEffect?.({ type: "coins", value: selected.value });
-        else {
-          const { addCoins } = await import("../../lib/db");
-          await addCoins(memberId, selected.value);
+    setTimeout(async () => {
+      setCardState("revealed");
+      const selected = choices[index];
+      try {
+        if (selected.type === "coins") {
+          if (localMode) onLocalEffect?.({ type: "coins", value: selected.value });
+          else {
+            const { addCoins } = await import("../../lib/db");
+            await addCoins(memberId, selected.value);
+          }
+        } else if (selected.type === "material" && selected.material) {
+          const { addMaterials } = await import("../../lib/db");
+          await addMaterials(memberId, [selected.material]);
+        } else if (selected.item) {
+          const { addCollectibles } = await import("../../lib/dungeonDb");
+          await addCollectibles(memberId, [{ itemId: selected.item.id, qty: 1 }]);
         }
-      } else if (selected.type === "material" && selected.material) {
-        const { addMaterials } = await import("../../lib/db");
-        await addMaterials(memberId, [selected.material]);
-      } else if (selected.item) {
-        const { addCollectibles } = await import("../../lib/dungeonDb");
-        await addCollectibles(memberId, [{ itemId: selected.item.id, qty: 1 }]);
-      }
 
-      setAnimPhase("done");
-      if (!localMode) {
-        await confirmNonCombatRoom(roomId, memberId, "opened");
+        setAnimPhase("done");
+        if (!localMode) {
+          await confirmNonCombatRoom(roomId, memberId, "opened");
+        }
+      } finally {
+        setClaiming(false);
       }
-    } finally {
-      setClaiming(false);
-    }
+    }, 1500);
   }
 
   async function handleFinish() {
@@ -133,56 +144,98 @@ export default function DungeonChest({
           {animPhase === "opening" ? "✨" : eggType === "empty" ? "🕳️" : "🎁"}
         </div>
         <div className="text-xl font-black text-amber-300">
-          {eggType === "empty" ? "空寶箱！" : "神秘寶箱（三選一）"}
+          {eggType === "empty" ? "空寶箱！" : "神秘寶箱（盲抽三選一）"}
         </div>
         <div className="text-xs text-slate-400 mt-1">
           {eggType === "empty"
             ? "裡面只有一個咬了一口的蘋果...空空如也！"
-            : "請點選您最心儀的一項戰利品！"}
+            : cardState === "hidden"
+            ? "三張寶箱卡皆已背面隱藏，請憑直覺選取一張！"
+            : cardState === "revealing"
+            ? "正在逐一揭示所有寶箱卡內容…"
+            : "恭喜獲得您選取的寶箱戰利品！"}
         </div>
       </div>
 
       <div className="dungeon-stage-main flex flex-col items-center justify-center p-6 space-y-4">
-        {/* 三選一卡片 */}
+        {/* 三選一背面隱藏/逐一揭示卡片區 */}
         {animPhase === "choices" && (
-          <div className="w-full max-w-md grid grid-cols-1 md:grid-cols-3 gap-3 animate-fade-in">
-            {choices.map((c, idx) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => handleSelectChoice(idx)}
-                className="p-4 rounded-2xl bg-slate-900 border border-amber-500/30 hover:border-amber-400 text-left transition transform hover:-translate-y-1 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="text-3xl mb-2">{c.icon}</div>
-                  <div className="font-black text-sm text-amber-300">{c.title}</div>
-                  <div className="text-xs text-slate-400 mt-1 leading-relaxed">{c.desc}</div>
+          <div className="w-full max-w-lg grid grid-cols-1 md:grid-cols-3 gap-3.5 animate-fade-in">
+            {choices.map((c, idx) => {
+              const isPicked = chosenIdx === idx;
+              const isRevealed = cardState === "revealed" || (cardState === "revealing" && revealedCount >= idx + 1);
+
+              return (
+                <div
+                  key={c.id}
+                  className={`relative rounded-3xl p-5 border text-left transition-all duration-500 flex flex-col justify-between min-h-[180px] shadow-2xl ${
+                    !isRevealed
+                      ? "bg-gradient-to-b from-slate-900 via-slate-950 to-amber-950/40 border-amber-500/40 cursor-pointer hover:border-amber-400 hover:scale-105 active:scale-95"
+                      : isPicked
+                      ? "bg-gradient-to-b from-amber-950/80 via-slate-900 to-slate-950 border-2 border-amber-400 shadow-amber-500/30 ring-2 ring-amber-400/40"
+                      : "bg-slate-900/90 border-slate-700/80 opacity-70"
+                  }`}
+                  onClick={() => !isRevealed && cardState === "hidden" && handleSelectFaceDownCard(idx)}
+                >
+                  {!isRevealed ? (
+                    /* 背面隱藏卡面 */
+                    <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-2">
+                      <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-2xl shadow-inner animate-pulse">
+                        ❓
+                      </div>
+                      <div>
+                        <div className="font-black text-sm text-amber-300">寶箱卡 #{idx + 1}</div>
+                        <div className="text-[10px] text-amber-200/60 mt-0.5">點擊盲抽揭示</div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* 正面揭示卡面 */
+                    <div className="h-full flex flex-col justify-between animate-fade-in">
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-2">
+                          <span className="text-3xl">{c.icon}</span>
+                          {isPicked && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-500 text-slate-950 shadow">
+                              ⭐ 你的選擇
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-black text-base text-amber-300">{c.title}</div>
+                        <div className="text-xs text-slate-300 mt-1 leading-relaxed">{c.desc}</div>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-white/10 text-[11px] font-black text-emerald-400">
+                        {isPicked ? "✨ 戰利品已領取" : "已揭示"}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] font-bold text-emerald-400">
-                  👉 點擊選擇此獎勵
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        {/* 空寶箱或選擇完成 */}
-        {(animPhase === "empty" || animPhase === "done") && (
-          <div className="w-full max-w-sm bg-slate-900/90 border border-slate-700 p-6 rounded-2xl text-center space-y-4 animate-fade-in">
-            <div className="text-4xl">
+        {/* 空寶箱或選擇完成後顯示繼續探索 */}
+        {(animPhase === "empty" || animPhase === "done") && cardState !== "revealing" && (
+          <div className="w-full max-w-sm bg-slate-900/95 border border-amber-500/40 p-6 rounded-3xl text-center space-y-4 animate-fade-in shadow-2xl backdrop-blur-md">
+            <div className="text-5xl">
               {animPhase === "empty" ? "🍎" : "🎉"}
             </div>
-            <div className="text-sm font-bold text-slate-200">
-              {animPhase === "empty"
-                ? "這是一隻餓鬼留下的空箱，什麼都沒拿到！"
-                : "已成功領取您選擇的戰利品！"}
+            <div>
+              <div className="text-base font-black text-amber-300">
+                {animPhase === "empty"
+                  ? "這是一隻餓鬼留下的空箱，什麼都沒拿到！"
+                  : "已成功揭示並領取戰利品！"}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                {animPhase === "empty" ? "收拾心情前進下一間房間吧。" : "戰利品已加入您的背包與個人資源庫。"}
+              </div>
             </div>
             <button
               type="button"
               onClick={handleFinish}
-              className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-sm shadow-md"
+              className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
             >
-              繼續探索
+              ➡️ 繼續探索下一關
             </button>
           </div>
         )}
