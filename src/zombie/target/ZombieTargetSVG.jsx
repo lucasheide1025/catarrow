@@ -153,7 +153,7 @@ export default function ZombieTargetSVG({
           preserveAspectRatio="xMidYMid meet"
           opacity={imgLoaded ? (alive ? 0.92 : 0.35) : 0}
           onLoad={() => setImgLoaded(true)}
-          onError={() => setImgLoaded(true)} {/* 圖片失敗時仍顯示點擊區，不卡死 */}
+          onError={() => setImgLoaded(true)}
           style={{
             transition: `opacity ${ANIM.normal}`,
             filter: alive ? "drop-shadow(0 0 8px rgba(0,0,0,0.5))" : "none",
@@ -205,7 +205,7 @@ export default function ZombieTargetSVG({
                 fill={fillColor}
                 stroke={isHovered ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.08)"}
                 strokeWidth={isHovered ? 2 : 0.5}
-                opacity={imgLoaded ? 1 : 0} {/* 載入中隱藏，只顯示 skeleton */}
+                opacity={imgLoaded ? 1 : 0}
                 style={{ transition: `fill ${ANIM.fast}, stroke ${ANIM.fast}, opacity ${ANIM.normal}` }}
                 onClick={() => handleClick(zone.id)}
                 onMouseEnter={() => handleMouseEnter(zone.id)}
