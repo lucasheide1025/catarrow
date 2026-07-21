@@ -6,10 +6,10 @@ import {
   equipCat, unequipCat, unlockChapter, addBlessing,
 } from "../../lib/catDb";
 import {
-  CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, getCatChapters,
+  CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, CAT_SKILL_GROUPS, CAT_BUILD_PROFILES, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
-  catEquipEnhancement,
+  catEquipEnhancement, calcCatSkillChance, calcCatSkillEffect,
 } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { getLevelStyle } from "../../lib/archerLevel";
@@ -239,9 +239,51 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
   const { catLevel, catHP, catATK, catDEF, profile: buildProfile } = combat;
   const levelHPBonus = (catLevel - 1) * 5;
   const levelAtkDefBonus = Math.floor(catLevel / 5);
-  const bondTierMult = catFixedType === "allround"
-    ? 1 + bondLevel * 0.03
-    : 1 + bondLevel * 0.05;
+  const bondTierMult = 1 + (bondLevel * 0.01);
+  const CAT_THEME_COLORS = {
+    baobao:   { hex: "#c084fc", rgb: "192, 132, 252" }, // 寶寶 - 紫色 (Purple)
+    daming:   { hex: "#f43f5e", rgb: "244, 63, 94" },  // 大娘 - 玫瑰粉 (Sakura/Rose)
+    diandian: { hex: "#64748b", rgb: "100, 116, 139" }, // 顛顛 - 鋼鐵灰 (Steel Gray)
+    gege:     { hex: "#10b981", rgb: "16, 185, 129" },  // 哥哥 - 翡翠綠 (Green)
+    haji:     { hex: "#06b6d4", rgb: "6, 182, 212" },   // 哈吉 - 青綠色 (Cyan)
+    meimei:   { hex: "#84cc16", rgb: "132, 204, 22" },  // 妹妹 - 萊姆綠 (Lime)
+    niuniu:   { hex: "#f97316", rgb: "249, 115, 22" },  // 妞妞 - 烈陽橘 (Orange)
+    xiaoan:   { hex: "#6366f1", rgb: "99, 102, 241" },  // 小安 - 靛藍色 (Indigo)
+    youyou:   { hex: "#0ea5e9", rgb: "14, 165, 233" },  // 悠悠 - 天空藍 (Sky Blue)
+  };
+
+  const themeColor = CAT_THEME_COLORS[catId] || { hex: "#6366f1", rgb: "99, 102, 241" };
+  const glowShadow = `0 0 25px rgba(${themeColor.rgb}, 0.5), inset 0 0 12px rgba(${themeColor.rgb}, 0.25)`;
+  const glowBorder = `3px solid ${themeColor.hex}`;
+
+  const skillGroup = CAT_SKILL_GROUPS[catId] || "heal";
+  const activeChance = calcCatSkillChance(catLevel, bondLevel, catId);
+  const activeChancePct = (activeChance * 100).toFixed(1);
+  const bl = bondLevel || 0;
+  const skillPower = CAT_BUILD_PROFILES[catId]?.skillPower || 1;
+
+  let activeSkillName = "";
+  let activeSkillDesc = "";
+  let activeSkillDetails = "";
+
+  if (skillGroup === "heal") {
+    activeSkillName = "💚 貓之治癒術 (Active Heal)";
+    const minHeal = Math.round((10 + catLevel * 0.5 + bl * 5) * 0.7 * skillPower);
+    const maxHeal = Math.round((10 + catLevel * 0.5 + bl * 5) * 1.0 * skillPower);
+    activeSkillDesc = "回合結束後，有機率為射手回復生命值。";
+    activeSkillDetails = `當前效果：回復 +${minHeal} ～ +${maxHeal} HP`;
+  } else if (skillGroup === "counter") {
+    activeSkillName = "🛡️ 喵喵盾格擋 (Active Block)";
+    const pct = Math.min(60, 10 + catLevel * 0.1 + bl * 2);
+    activeSkillDesc = "受到傷害時，有機率架起護盾，按比例直接減免該次受到的傷害。";
+    activeSkillDetails = `當前效果：該次受傷減免 +${pct.toFixed(0)}% 傷害`;
+  } else {
+    activeSkillName = "💥 喵喵爪擊 (Active Claw)";
+    const minDmg = Math.round((15 + catLevel * 0.7 + bl * 6) * 0.7 * skillPower);
+    const maxDmg = Math.round((15 + catLevel * 0.7 + bl * 6) * 1.0 * skillPower);
+    activeSkillDesc = "射手射擊後，有機率對敵人追加一次爪擊，造成物理傷害。";
+    activeSkillDetails = `當前效果：追加造成約 +${minDmg} ～ +${maxDmg} 點傷害`;
+  }
 
   async function handleEquip() {
     setUpdating(true);
@@ -265,6 +307,14 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
     setReadCh(prev => prev ? { ...prev, canUnlock: false } : null);
   }
 
+  const hudStyle = {
+    background: "rgba(15, 23, 42, 0.45)",
+    border: "1px solid rgba(99, 102, 241, 0.15)",
+    backdropFilter: "blur(8px)",
+    borderRadius: "20px",
+    padding: "16px",
+  };
+
   return (
     <>
       {readCh && (
@@ -278,215 +328,375 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
         />
       )}
 
-      <div className="relative h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-        <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
-          <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>
-          <span className="font-black text-lg flex-1">{cat?.name}</span>
-          {isEquipped && <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-1 rounded-full font-bold">裝備中</span>}
+      <div className="relative w-full bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-slate-100 flex flex-col" style={{ minHeight: "100%" }}>
+        {/* Header */}
+        <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-indigo-500/20 bg-slate-900/40 backdrop-blur-md">
+          <button onClick={onBack} className="text-slate-400 text-sm font-black hover:text-white transition-all">← 返回</button>
+          <span className="font-black text-lg flex-1 text-slate-200">{cat?.name}</span>
+          {isEquipped && <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full font-black shadow-[0_0_8px_rgba(99,102,241,0.2)]">陪練中 ⚔️</span>}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4 space-y-4">
-          {/* 貓咪展示 */}
-          <div className="flex items-center gap-5 bg-white/5 border border-white/10 rounded-2xl p-4">
-            <CatSVG catId={catId} size={80} deceased={cat?.isDeceased}/>
-            <div className="flex-1">
-              <div className="font-black text-xl">{cat?.name}</div>
-              <div className="text-xs text-slate-400 mb-1">{cat?.color}</div>
-              <div className="text-xs text-slate-300 leading-relaxed">{cat?.personality}</div>
-              {cat?.isDeceased && (
-                <div className="text-xs text-indigo-300 mt-1 font-bold">🌈 已化為天使</div>
-              )}
-            </div>
-          </div>
+        {/* 主體區 */}
+        <div className="p-4 w-full">
+          <style>{`
+            .rpg-layout {
+              display: flex;
+              gap: 20px;
+              align-items: flex-start;
+              width: 100%;
+            }
+            .rpg-left {
+              width: 440px;
+              flex-shrink: 0;
+              display: flex;
+              flex-direction: column;
+              gap: 16px;
+            }
+            .rpg-right {
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              gap: 16px;
+            }
+            @media (max-width: 850px) {
+              .rpg-layout {
+                flex-direction: column;
+              }
+              .rpg-left, .rpg-right {
+                width: 100%;
+              }
+            }
+            @keyframes card-shimmer {
+              0% { background-position: -200% 0; }
+              100% { background-position: 200% 0; }
+            }
+            .shimmer-card::after {
+              content: "";
+              position: absolute;
+              top: 0; left: 0; right: 0; bottom: 0;
+              background: linear-gradient(
+                110deg,
+                transparent 30%,
+                rgba(255, 255, 255, 0.05) 42%,
+                rgba(255, 255, 255, 0.15) 50%,
+                rgba(255, 255, 255, 0.05) 58%,
+                transparent 70%
+              );
+              background-size: 200% 100%;
+              animation: card-shimmer 3.5s infinite linear;
+              pointer-events: none;
+              mix-blend-mode: overlay;
+              z-index: 10;
+            }
+            .scale-on-hover {
+              transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+            }
+            .scale-on-hover:hover {
+              transform: scale(1.04) translateY(-3px);
+            }
+          `}</style>
 
-          {/* 裝備按鈕（貓咪展示下方） */}
-          <button onClick={handleEquip} disabled={updating}
-            className={`w-full py-4 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-40 ${
-              isEquipped
-                ? "bg-white/10 border border-white/20 text-slate-300"
-                : "text-white shadow-xl"
-            }`}
-            style={!isEquipped ? { background: `linear-gradient(135deg, #4f46e5, #7c3aed)` } : {}}>
-            {updating ? "處理中…" : isEquipped ? "卸下陪練" : `帶 ${cat?.name} 去冒險 🐱`}
-          </button>
-
-          {/* 羈絆 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <BondBar bond={catData?.bond || 0}/>
-            <div className="text-xs text-slate-500 mt-2">一起戰鬥可增加羈絆：打怪+1 地下城+2 組隊+2 世界王+3</div>
-          </div>
-
-          {/* 能力值 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3.5">
-              <span className="text-xs text-slate-400 font-bold">⚔️ 目前能力值</span>
-              <span style={{
-                fontSize: "10px",
-                fontWeight: 900,
-                padding: "2px 8px",
-                borderRadius: "99px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-                display: "inline-flex",
-                alignItems: "center",
-                ...getLevelStyle(catLevel)
-              }}>
-                Lv.{catLevel}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-white/5 rounded-xl py-2">
-                <div className="text-base">❤️</div>
-                <div className="text-xs font-black text-green-300">{catHP}</div>
-                <div className="text-[10px] text-slate-500">HP</div>
-              </div>
-              <div className="bg-white/5 rounded-xl py-2">
-                <div className="text-base">⚔️</div>
-                <div className="text-xs font-black text-red-300">{catATK}</div>
-                <div className="text-[10px] text-slate-500">ATK</div>
-              </div>
-              <div className="bg-white/5 rounded-xl py-2">
-                <div className="text-base">🛡️</div>
-                <div className="text-xs font-black text-blue-300">{catDEF}</div>
-                <div className="text-[10px] text-slate-500">DEF</div>
-              </div>
-            </div>
-            {/* 固定類型標示 */}
-            <div className="mt-3 text-center">
-              <span className="text-[10px] text-slate-500">戰鬥類型：</span>
-              <span className="text-xs font-black ml-1" style={{ color: CAT_TYPES[catFixedType]?.color }}>
-                {CAT_TYPES[catFixedType]?.icon} {CAT_TYPES[catFixedType]?.label}
-              </span>
-              {bondTierMult > 1.0 && (
-                <div className="text-[10px] text-amber-400 font-bold mt-1">
-                  ✨ 羈絆加成：主屬性 ×{bondTierMult.toFixed(2)}
+          <div className="rpg-layout">
+            
+            {/* ── 左欄：立繪、裝備 ── */}
+            <div className="rpg-left">
+              {/* 貓咪展示卡 - 改為精美橫向卡片與流光特效 */}
+              <div style={hudStyle} className="flex flex-row items-center gap-5 p-4 relative overflow-hidden">
+                {/* 左側：大立繪卡片 */}
+                <div className="shrink-0 relative group shimmer-card scale-on-hover" style={{
+                  width: 170, height: 220,
+                  borderRadius: "18px",
+                  border: glowBorder,
+                  background: "linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%)",
+                  boxShadow: glowShadow,
+                  overflow: "hidden",
+                  cursor: "pointer"
+                }}>
+                  {/* 動態流光特效背景 */}
+                  <div className="absolute inset-0 opacity-20 pointer-events-none mix-blend-color-dodge animate-pulse"
+                    style={{
+                      background: `radial-gradient(circle, ${themeColor.hex} 0%, transparent 80%)`
+                    }}
+                  />
+                  <img
+                    src={`/cards/worldboss/cat_${catId}.webp`}
+                    alt={cat?.name}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    style={{
+                      filter: cat?.isDeceased ? "grayscale(100%) opacity(60%)" : "none",
+                    }}
+                  />
                 </div>
-              )}
-              <div className="text-[10px] text-slate-600 mt-1 leading-relaxed">
-                {CAT_TYPES[catFixedType]?.desc}
-              </div>
-              <div className="mt-3.5 border-t border-white/10 pt-2.5 text-center text-[10px] text-slate-400">
-                💡 貓貓等級加成：HP +{levelHPBonus} / ATK +{levelAtkDefBonus} / DEF +{levelAtkDefBonus}
-              </div>
-            </div>
-            <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3">
-              <div className="text-xs font-black text-amber-200">
-                🎯 {buildProfile.title}
-              </div>
-              <div className="mt-1 text-[11px] leading-relaxed text-slate-300">
-                {buildProfile.trait}
-              </div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-center text-[10px]">
-                <div className="rounded-lg bg-black/20 py-1 text-emerald-300">HP ×{buildProfile.allocation.hp.toFixed(2)}</div>
-                <div className="rounded-lg bg-black/20 py-1 text-rose-300">ATK ×{buildProfile.allocation.atk.toFixed(2)}</div>
-                <div className="rounded-lg bg-black/20 py-1 text-sky-300">DEF ×{buildProfile.allocation.def.toFixed(2)}</div>
-              </div>
-            </div>
-          </div>
 
-          {/* 裝備強化 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs text-slate-400 font-bold">🏹 裝備強化</div>
-              {onOpenForge && (
-                <button onClick={onOpenForge}
-                  className="text-[10px] font-bold text-amber-300 border border-amber-400/30 px-2 py-1 rounded-lg active:scale-95">
-                  🔨 前往鍛造鋪
-                </button>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              {CAT_EQUIP_SLOTS.map(slot => {
-                const e     = catData?.equip?.[slot.id];
-                const gIdx  = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : 0;
-                const color = CAT_EQUIP_GRADE_COLORS[gIdx >= 0 ? gIdx : 0];
-                const bg    = CAT_EQUIP_GRADE_BG[gIdx >= 0 ? gIdx : 0];
-                const enhancement = catEquipEnhancement(e?.grade || "普通", e?.plusLevel || 0);
-                return (
-                  <div key={slot.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-t border-white/5"
-                    style={{ background: bg }}>
-                    <div className="w-7 h-7 rounded-md overflow-hidden border border-white/20 shrink-0 bg-white">
-                      <img
-                        src={slot.image}
-                        alt={slot.label}
-                        className="w-full h-full object-cover"
-                        onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
-                      />
-                      <span className="hidden w-full h-full items-center justify-center text-xs text-slate-800 font-bold">
-                        {slot.icon}
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-300 flex-1">{slot.label}</span>
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md text-white" style={{ background: color }}>
-                      +{enhancement}
-                    </span>
-                    <span className="text-[10px] font-bold" style={{ color }}>{e?.grade || "普通"} +{enhancement}</span>
+                {/* 右側：名字、類型、個性與說明 */}
+                <div className="flex-1 flex flex-col justify-center min-w-0">
+                  <div className="font-black text-2xl text-slate-100 flex items-center gap-2 tracking-wide">
+                    {cat?.name}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 技能 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">⚡ 陪練技能 / 成長加成</div>
-            <div className="space-y-1.5">
-              {CAT_TYPES[catFixedType]?.skills.map((sk, i) => {
-                const unlocked = bondLevel >= sk.bond;
-                const isCurrent = bondLevel === sk.bond;
-                // 羈絆里程碑技能效果標籤
-                const skillEffect = sk.isSkill && sk.bond > 0
-                  ? catFixedType === "attack"  ? `主屬性 ATK ×${(1 + sk.bond * 0.05).toFixed(2)}`
-                  : catFixedType === "defense" ? `主屬性 HP/DEF ×${(1 + sk.bond * 0.05).toFixed(2)}`
-                  : `全屬性 ×${(1 + sk.bond * 0.025).toFixed(2)}`
-                  : null;
-                return (
-                  <div key={i} className={`flex items-center gap-3 rounded-xl px-3 py-2 transition-all ${
-                    unlocked
-                      ? sk.isSkill
-                        ? "bg-indigo-500/15 border border-indigo-400/30"
-                        : isCurrent
-                          ? "bg-emerald-500/10 border border-emerald-400/20"
-                          : "bg-white/4"
-                      : "opacity-30"
-                  }`}>
-                    <span className="text-sm w-4 text-center">
-                      {unlocked ? (sk.isSkill ? "✨" : "✓") : "🔒"}
+                  
+                  {/* 類型標籤 */}
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <span className="text-[11px] font-black px-2.5 py-1 rounded-full border shadow-sm flex items-center gap-1.5"
+                      style={{
+                        borderColor: `rgba(${themeColor.rgb}, 0.4)`,
+                        backgroundColor: `rgba(${themeColor.rgb}, 0.15)`,
+                        color: themeColor.hex,
+                      }}>
+                      {CAT_TYPES[catFixedType]?.icon} {CAT_TYPES[catFixedType]?.label}
                     </span>
-                    <div className="flex-1">
-                      <div className={`font-bold text-xs ${sk.isSkill ? "text-indigo-200" : "text-slate-300"}`}>
-                        {sk.name}
-                      </div>
-                      {skillEffect && (
-                        <div className="text-[10px] font-black text-amber-300 mt-0.5">
-                          ⚔️ 技能效果：{skillEffect}
+                    <span className="text-[10px] text-slate-400 font-bold px-2 py-1 bg-slate-900/60 rounded-md border border-slate-700/40">
+                      {cat?.color}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 text-xs leading-relaxed text-slate-300 font-medium">
+                    <span className="text-[10px] text-indigo-400 font-bold block mb-1">🎭 性格特質</span>
+                    <span className="italic">「{cat?.personality}」</span>
+                  </div>
+
+                  {cat?.isDeceased && (
+                    <div className="mt-4 w-fit text-[10px] text-indigo-300 font-black bg-indigo-950/50 px-2.5 py-1 rounded-full border border-indigo-500/30 shadow-[0_0_8px_rgba(99,102,241,0.2)]">
+                      🌈 已化為天使夥伴
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 裝備按鈕 */}
+              <button onClick={handleEquip} disabled={updating}
+                className="w-full py-3.5 rounded-2xl font-black text-base transition-all active:scale-[0.98] disabled:opacity-40 shadow-lg"
+                style={{
+                  border: "1px solid rgba(99, 102, 241, 0.4)",
+                  background: isEquipped ? "rgba(30, 41, 59, 0.7)" : "linear-gradient(135deg, #4F46E5, #7C3AED)",
+                  color: "#FFFFFF",
+                  boxShadow: isEquipped ? "none" : "0 4px 15px rgba(99, 102, 241, 0.35)",
+                }}>
+                {updating ? "處理中…" : isEquipped ? "📯 卸下陪練" : `⚔️ 攜帶 ${cat?.name} 陪練`}
+              </button>
+
+              {/* 裝備強化列表 */}
+              <div style={hudStyle}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs text-slate-300 font-black flex items-center gap-1.5">
+                    <span>🏹 伴侶專屬裝備</span>
+                  </div>
+                  {onOpenForge && (
+                    <button onClick={onOpenForge}
+                      className="text-[10px] font-bold text-amber-300 border border-amber-400/30 px-2 py-1 rounded-lg active:scale-95 transition-all hover:bg-amber-400/10">
+                      🔨 前往鍛造鋪
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {CAT_EQUIP_SLOTS.map(slot => {
+                    const e     = catData?.equip?.[slot.id];
+                    const gIdx  = e ? CAT_EQUIP_GRADE_NAMES.indexOf(e.grade) : 0;
+                    const color = CAT_EQUIP_GRADE_COLORS[gIdx >= 0 ? gIdx : 0];
+                    const bg    = CAT_EQUIP_GRADE_BG[gIdx >= 0 ? gIdx : 0];
+                    const enhancement = catEquipEnhancement(e?.grade || "普通", e?.plusLevel || 0);
+                    return (
+                      <div key={slot.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-700/30 transition-all hover:bg-slate-800/40"
+                        style={{ background: bg || "rgba(30, 41, 59, 0.2)" }}>
+                        <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-700/60 shrink-0 bg-slate-950 flex items-center justify-center">
+                          <img
+                            src={slot.image}
+                            alt={slot.label}
+                            className="w-full h-full object-cover"
+                            onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
+                          />
+                          <span className="hidden w-full h-full items-center justify-center text-xs text-slate-400 font-bold">
+                            {slot.icon}
+                          </span>
                         </div>
-                      )}
-                      <div className="text-[11px] text-slate-400">{sk.desc}</div>
-                    </div>
-                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${
-                      unlocked ? "bg-white/10 text-slate-300" : "text-slate-600"
-                    }`}>
-                      Lv.{sk.bond}
-                    </span>
-                  </div>
-                );
-              })}
+                        <span className="text-xs text-slate-200 font-medium flex-1">{slot.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md text-white" style={{ background: color }}>
+                            +{enhancement}
+                          </span>
+                          <span className="text-[10px] font-bold" style={{ color }}>{e?.grade || "普通"}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
 
-          {/* 章節故事 */}
-          <div className="space-y-2">
-            <div className="text-xs text-slate-400 font-bold px-1">📖 冒險故事</div>
-            <ChapterList
-              catId={catId}
-              catData={catData}
-              bondLevel={bondLevel}
-              unlockedChs={unlockedChs}
-              onReadChapter={handleChapterRead}
-            />
+            {/* ── 右欄：狀態、技能、故事 ── */}
+            <div className="rpg-right">
+              {/* 羈絆 */}
+              <div style={hudStyle}>
+                <BondBar bond={catData?.bond || 0}/>
+                <div className="text-[10px] text-slate-400 mt-2.5 leading-normal border-t border-slate-700/30 pt-2 font-bold">
+                  💡 增加羈絆管道：野外戰鬥 +1 / 冒險地下城 +2 / 組隊大廳 +2 / 世界王挑戰 +3
+                </div>
+              </div>
+
+              {/* 屬性 */}
+              <div style={hudStyle}>
+                <div className="flex items-center justify-between mb-3.5 border-b border-indigo-500/10 pb-2">
+                  <span className="text-xs font-black text-slate-200">⚔️ 當前戰鬥能力值</span>
+                  <span style={{
+                    fontSize: "10px",
+                    fontWeight: 900,
+                    padding: "2px 8px",
+                    borderRadius: "99px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    ...getLevelStyle(catLevel)
+                  }}>
+                    Lv.{catLevel}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="bg-slate-900/60 border border-indigo-500/15 rounded-xl py-2.5 shadow-inner text-center">
+                    <div className="text-xl">❤️</div>
+                    <div className="text-sm font-black text-emerald-400 mt-1">{catHP}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">HP</div>
+                  </div>
+                  <div className="bg-slate-900/60 border border-indigo-500/15 rounded-xl py-2.5 shadow-inner text-center">
+                    <div className="text-xl">⚔️</div>
+                    <div className="text-sm font-black text-rose-400 mt-1">{catATK}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">ATK</div>
+                  </div>
+                  <div className="bg-slate-900/60 border border-indigo-500/15 rounded-xl py-2.5 shadow-inner text-center">
+                    <div className="text-xl">🛡️</div>
+                    <div className="text-sm font-black text-sky-400 mt-1">{catDEF}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">DEF</div>
+                  </div>
+                </div>
+                
+                <div className="mt-4 text-center text-[10px] text-slate-400 font-bold border-t border-indigo-500/10 pt-3">
+                  💡 貓貓等級加成：HP +{levelHPBonus} / ATK +{levelAtkDefBonus} / DEF +{levelAtkDefBonus}
+                </div>
+              </div>
+
+              {/* 固有配點與修正 */}
+              <div style={hudStyle} className="space-y-3">
+                <div className="flex items-center justify-between border-b border-indigo-500/10 pb-2">
+                  <span className="text-xs font-black text-slate-200">🏷️ 固有配點與修正</span>
+                  <span className="text-xs font-black" style={{ color: CAT_TYPES[catFixedType]?.color }}>
+                    {CAT_TYPES[catFixedType]?.icon} {CAT_TYPES[catFixedType]?.label}
+                  </span>
+                </div>
+                <div className="text-xs font-black text-amber-200 bg-slate-900/50 rounded-xl p-3 border border-indigo-500/20 shadow-sm">
+                  <div className="text-xs font-black">🎯 {buildProfile.title}</div>
+                  <div className="mt-1 text-[11px] text-slate-300 font-medium leading-relaxed">
+                    {buildProfile.trait}
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                    <div className="rounded-lg bg-black/35 py-1 text-emerald-300">HP ×{buildProfile.allocation.hp.toFixed(2)}</div>
+                    <div className="rounded-lg bg-black/35 py-1 text-rose-300">ATK ×{buildProfile.allocation.atk.toFixed(2)}</div>
+                    <div className="rounded-lg bg-black/35 py-1 text-sky-300">DEF ×{buildProfile.allocation.def.toFixed(2)}</div>
+                  </div>
+                </div>
+                {bondTierMult > 1.0 && (
+                  <div className="text-[11px] text-amber-300 font-bold text-center">
+                    ✨ 羈絆共鳴加成：貓貓主屬性能力提升 +{bondLevel}%（×{bondTierMult.toFixed(2)}）！
+                  </div>
+                )}
+                <div className="text-[10px] text-slate-500 leading-relaxed font-bold border-t border-indigo-500/10 pt-2 text-center">
+                  {CAT_TYPES[catFixedType]?.desc}
+                </div>
+              </div>
+
+              {/* 主動戰鬥技能說明 */}
+              <div style={hudStyle}>
+                <div className="text-xs font-black text-slate-200 mb-3 border-b border-indigo-500/10 pb-2">⚔️ 主動戰鬥技能</div>
+                <div className="bg-[#1E293B]/60 border border-indigo-500/25 rounded-xl p-3">
+                  <div className="text-xs font-black text-indigo-300">{activeSkillName}</div>
+                  <div className="text-[11px] text-slate-300 mt-1">{activeSkillDesc}</div>
+                  <div className="text-[11px] font-black text-amber-300 mt-2">{activeSkillDetails}</div>
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-700/60 pt-2 text-[10px] text-slate-400 font-bold">
+                    <span>目前觸發機率</span>
+                    <span className="text-indigo-200">{activeChancePct}%</span>
+                  </div>
+                  <div className="mt-2 text-[9px] text-slate-500 leading-normal border-t border-slate-700/30 pt-1.5">
+                    * 觸發率隨等級與羈絆成長（基礎 5% + 每級 0.05% + 每級羈絆 1%），上限 35%。個體天賦與特質會進一步調整觸發率與技能強度。
+                  </div>
+                </div>
+              </div>
+
+              {/* 技能樹 */}
+              <div style={hudStyle}>
+                <div className="text-xs font-black text-slate-200 mb-3 border-b border-indigo-500/10 pb-2">⚡ 羈絆里程碑效果</div>
+                <div className="space-y-2">
+                  {CAT_TYPES[catFixedType]?.skills.map((sk, i) => {
+                    const unlocked = bondLevel >= sk.bond;
+                    const isCurrent = bondLevel === sk.bond;
+
+                    // 計算並組裝實際機制效果文字
+                    let mechanicsText = "";
+                    if (sk.bond === 0) {
+                      mechanicsText = `🔓 核心解鎖：啟用貓咪的主動戰鬥技能，獲得初始基礎觸發機率！`;
+                    } else if (sk.isSkill) {
+                      const mult = sk.bond === 25 ? "1.25" : "1.50";
+                      const typeDesc = catFixedType === "attack"
+                        ? `攻擊型主屬性 (ATK) 修正提升至 ×${mult} 倍`
+                        : catFixedType === "defense"
+                          ? `防禦型主屬性 (HP/DEF) 修正提升至 ×${mult} 倍`
+                          : `全能型全屬性 (HP/ATK/DEF) 修正提升至 ×${mult} 倍`;
+                      mechanicsText = `🔥 里程碑突破：${typeDesc}！`;
+                    } else {
+                      const statDesc = catFixedType === "attack"
+                        ? "主動技能追加傷害額外成長"
+                        : catFixedType === "defense"
+                          ? "主動技能防禦減免率增長 +2%"
+                          : "主動技能治療效果增長 +5 HP";
+                      mechanicsText = `✨ 成長提升：${statDesc}，且技能基礎觸發率成長 +1%！`;
+                    }
+
+                    return (
+                      <div key={i} className={`flex items-start gap-3 rounded-xl px-3 py-2.5 border transition-all ${
+                        unlocked
+                          ? sk.isSkill
+                            ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-200"
+                            : isCurrent
+                              ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                              : "bg-slate-900/50 border-slate-700/60"
+                          : "opacity-35 bg-transparent border-dashed border-indigo-500/10"
+                      }`}>
+                        <span className="text-sm w-5 text-center font-bold mt-0.5">
+                          {unlocked ? (sk.isSkill ? "✨" : "✓") : "🔒"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-black text-xs ${sk.isSkill ? "text-indigo-300" : "text-slate-300"}`}>
+                            {sk.name} <span className="text-[10px] text-slate-500 font-bold ml-1">(羈絆等級 {sk.bond})</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1 leading-relaxed font-medium italic">「{sk.desc}」</div>
+                          <div className="text-[10px] font-black text-amber-300 mt-1.5 bg-slate-950/30 px-2.5 py-1 rounded border border-indigo-500/10 block w-fit">
+                            ⚔️ 戰鬥效果：{mechanicsText}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 shrink-0 ${
+                          unlocked ? "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20" : "text-slate-600"
+                        }`}>
+                          Lv.{sk.bond}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 冒險故事 */}
+              <div style={hudStyle}>
+                <div className="text-xs font-black text-slate-200 mb-3 border-b border-indigo-500/10 pb-2">📖 冒險故事</div>
+                <div className="space-y-2">
+                  <ChapterList
+                    catId={catId}
+                    catData={catData}
+                    bondLevel={bondLevel}
+                    unlockedChs={unlockedChs}
+                    onReadChapter={handleChapterRead}
+                  />
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </div>
-
       </div>
     </>
   );
@@ -557,7 +767,7 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
   }
 
   return (
-    <div className="h-[100dvh] overflow-hidden flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+    <div className="w-full bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col" style={{ minHeight: "100%" }}>
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
         {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
@@ -571,7 +781,7 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
         <span className="text-xs text-slate-400">{ownedCount} / {CAT_IDS.length} 隻</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6 space-y-4">
+      <div className="px-4 pt-4 pb-6 space-y-4 w-full">
         <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <h2 className="text-sm font-black text-white">九隻貓，九種配點</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">

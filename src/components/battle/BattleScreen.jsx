@@ -123,9 +123,21 @@ const CAT_INTRO_EFFECTS = {
 };
 
 const CAT_MSG_POOL = {
-  heal:[n=>`🐱 ${n} 用尾巴掃過你的傷口，癒合了！💚`,n=>`🐱 ${n} 叼來貓草葉，傷口在發光了 ✨`,n=>`🐱 ${n} 蹭了蹭你的腳，一股暖流湧上 🫶`],
-  atk:[n=>`🐱 ${n} 利爪出擊！追加傷害！⚡`,n=>`🐱 ${n} 目光如炬，找到了弱點 💥`,n=>`🐱 ${n} 撲了上去追加一擊！🎯`],
-  def:[n=>`🐱 ${n} 擋在你面前！減傷！🛡️`,n=>`🐱 ${n} 用腦袋頂開了攻擊！✨`,n=>`🐱 ${n} 發出嘶吼威嚇怪物！🐾`],
+  heal:[
+    (n, val)=>`🐱 ${n} 用尾巴掃過傷口！為你治癒了 +${val} HP！💚`,
+    (n, val)=>`🐱 ${n} 叼來貓草葉，為你治療了 +${val} HP！✨`,
+    (n, val)=>`🐱 ${n} 蹭了蹭你的腳，暖流湧上回復了 +${val} HP！🫶`
+  ],
+  atk:[
+    (n, val)=>`🐱 ${n} 利爪出擊！追加造成了 +${val} 傷害！⚡`,
+    (n, val)=>`🐱 ${n} 找到怪物弱點，額外痛擊 +${val} 傷害！💥`,
+    (n, val)=>`🐱 ${n} 撲上去飛撲猛抓，追加 +${val} 傷害！🎯`
+  ],
+  def:[
+    (n, val)=>`🐱 ${n} 擋在你面前！下回合反擊減免 -${val}%！🛡️`,
+    (n, val)=>`🐱 ${n} 頂開了攻擊，下回合反擊減免 -${val}%！✨`,
+    (n, val)=>`🐱 ${n} 發出嘶吼，威嚇怪物使反擊減免 -${val}%！🐾`
+  ],
 };
 
 const CAT_MAX_HP_FIXED = 300;
@@ -748,9 +760,9 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   useEffect(()=>{if(!isProcessing&&animStep!==-1)setAnimStep(-1);},[isProcessing,animStep]);
 
   // ─── 貓貓回合結束處理 ───
-  useEffect(()=>{if(!isRoundRes||!hasCat||!catId)return;let currentCatHP=catCurrentHP;if(battle.counterDmg>0&&currentCatHP>0){const catDmg=Math.max(0,Math.round(battle.counterDmg*0.35-catDEF*0.5));if(catDmg>0){currentCatHP=Math.max(0,currentCatHP-catDmg);setCatCurrentHP(currentCatHP);setCatMsg(currentCatHP<=0?`💔 ${catName} 承受了 ${catDmg} 傷害，倒地昏迷了... 😿`:`😿 ${catName} 被反擊波及，受到 ${catDmg} 傷害！（HP: ${currentCatHP}/${catMaxHP}）`);}}if(currentCatHP<=0){const t=setTimeout(()=>setCatMsg(null),3000);return()=>clearTimeout(t);}const catRoundDmg=Math.max(1,Math.round(catATK*0.8*(0.75+Math.random()*0.5)));const chance=calcCatSkillChance(catLevel,catBondLv,catId);if(Math.random()<chance){const effect=calcCatSkillEffect(skillGroup,catLevel,catBondLv,catId);if(skillGroup==="heal"&&effect.healed){dispatch({type:"HEAL",amount:effect.healed});showCatMsg(CAT_MSG_POOL.heal);}else if(skillGroup==="atk"&&effect.extraMult){const bonusDmg=Math.round(catRoundDmg*effect.extraMult);dispatch({type:"THROW_DMG",dmg:bonusDmg,msg:`🐱 ${catName} ⚡ 追加傷害 +${bonusDmg}（×${effect.extraMult.toFixed(1)}）！`});showCatMsg(CAT_MSG_POOL.atk);}else if(skillGroup==="def"&&effect.reduction){const pct=Math.min(60,Math.round(effect.reduction*100));setCounterReducePct(prev=>Math.min(70,prev+pct));showCatMsg(CAT_MSG_POOL.def);setCatSkillActive({type:"def",value:effect.reduction});}}const t=setTimeout(()=>{setCatMsg(null);setCatSkillActive(null);},3000);return()=>clearTimeout(t);},[isRoundRes]);
+  useEffect(()=>{if(!isRoundRes||!hasCat||!catId)return;let currentCatHP=catCurrentHP;if(battle.counterDmg>0&&currentCatHP>0){const catDmg=Math.max(0,Math.round(battle.counterDmg*0.35-catDEF*0.5));if(catDmg>0){currentCatHP=Math.max(0,currentCatHP-catDmg);setCatCurrentHP(currentCatHP);setCatMsg(currentCatHP<=0?`💔 ${catName} 承受了 ${catDmg} 傷害，倒地昏迷了... 😿`:`😿 ${catName} 被反擊波及，受到 ${catDmg} 傷害！（HP: ${currentCatHP}/${catMaxHP}）`);}}if(currentCatHP<=0){const t=setTimeout(()=>setCatMsg(null),3000);return()=>clearTimeout(t);}const catRoundDmg=Math.max(1,Math.round(catATK*0.8*(0.75+Math.random()*0.5)));const chance=calcCatSkillChance(catLevel,catBondLv,catId);if(Math.random()<chance){const effect=calcCatSkillEffect(skillGroup,catLevel,catBondLv,catId);if(skillGroup==="heal"&&effect.healed){dispatch({type:"HEAL",amount:effect.healed});showCatMsg(CAT_MSG_POOL.heal, effect.healed);}else if(skillGroup==="atk"&&effect.extraMult){const bonusDmg=Math.round(catRoundDmg*effect.extraMult);dispatch({type:"THROW_DMG",dmg:bonusDmg,msg:`🐱 ${catName} ⚡ 追加傷害 +${bonusDmg}（×${effect.extraMult.toFixed(1)}）！`});showCatMsg(CAT_MSG_POOL.atk, bonusDmg);}else if(skillGroup==="def"&&effect.reduction){const pct=Math.min(60,Math.round(effect.reduction*100));setCounterReducePct(prev=>Math.min(70,prev+pct));showCatMsg(CAT_MSG_POOL.def, pct);setCatSkillActive({type:"def",value:effect.reduction});}}const t=setTimeout(()=>{setCatMsg(null);setCatSkillActive(null);},3000);return()=>clearTimeout(t);},[isRoundRes]);
 
-  function showCatMsg(pool){const fn=pool[Math.floor(Math.random()*pool.length)];setCatMsg(fn(catName));}
+  function showCatMsg(pool, val){const fn=pool[Math.floor(Math.random()*pool.length)];setCatMsg(fn(catName, val));}
 
   const shownMonsterHp=partyMonsterHp??battle.monsterHp;
   const shownMonsterMaxHp=partyMode&&partyMonsterMaxHp>0?partyMonsterMaxHp:battle.monsterMaxHp;
