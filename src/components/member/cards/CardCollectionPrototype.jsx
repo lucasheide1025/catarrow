@@ -13,13 +13,21 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   CARD_CATALOG, FAMILIES, TIERS, matchL1, getGroup, mergeOwned,
 } from "./cardCatalog";
-import { canUpgradeStar, getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "../../../lib/monsterCards";
+import { FAMILY_STAT, canUpgradeStar, getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "../../../lib/monsterCards";
 import { WB_CARDS } from "../../../lib/worldBossCards";
 import { seedSeenIfFirstRun, isUnseen, markSeen, countUnseen } from "./cardSeen";
 import CardFilterBar from "./CardFilterBar";
 import CardGroupSection from "./CardGroupSection";
 import CardMiniCell from "./CardMiniCell";
 import CardDetailSheet from "./CardDetailSheet";
+
+function getCardStatType(view) {
+  const cardStat = getCardStat(view);
+  if (cardStat) return cardStat;
+  if (view.stat) return view.stat;
+  if (view.chosenStat) return view.chosenStat;
+  return FAMILY_STAT[view.family] || "atk";
+}
 
 // 世界王卡：從既有獨立來源衍生 view（不塞進怪物 catalog）
 function wbViews(collection) {
@@ -53,6 +61,7 @@ export default function CardCollectionPrototype({ memberId, collection = {}, col
   // 預設全族/全 Tier：進頁先看「我的持有卡」彙總,點選族系×Tier 才進完整分組
   const [family, setFamily] = useState("");
   const [tier, setTier] = useState("");
+  const [statFilter, setStatFilter] = useState("all"); // all | hp | atk | def
   const [ownedFilter, setOwnedFilter] = useState("all"); // all | owned | unowned
   const [upgradableOnly, setUpgradableOnly] = useState(false);
   const [newOnly, setNewOnly] = useState(false);
@@ -79,12 +88,16 @@ export default function CardCollectionPrototype({ memberId, collection = {}, col
 
   // 篩選共用述詞
   const passExtra = useCallback(view => {
+    if (statFilter && statFilter !== "all") {
+      const st = getCardStatType(view);
+      if (st !== statFilter) return false;
+    }
     if (ownedFilter === "owned" && !view.owned) return false;
     if (ownedFilter === "unowned" && view.owned) return false;
     if (upgradableOnly && !(view.owned && canUpgradeStar(view.stars, view.duplicates, view.tier))) return false;
     if (newOnly && !isNewFn(view)) return false;
     return true;
-  }, [ownedFilter, upgradableOnly, newOnly, isNewFn]);
+  }, [statFilter, ownedFilter, upgradableOnly, newOnly, isNewFn]);
 
   // 各 L1 未讀數（owned + unseen）
   const l1Unread = useMemo(() => {
@@ -202,9 +215,9 @@ export default function CardCollectionPrototype({ memberId, collection = {}, col
       })()}
 
       <CardFilterBar
-        l1={l1} family={family} tier={tier} ownedFilter={ownedFilter}
+        l1={l1} family={family} tier={tier} statFilter={statFilter} ownedFilter={ownedFilter}
         upgradableOnly={upgradableOnly} newOnly={newOnly} l1Unread={l1Unread}
-        onL1={setL1} onFamily={setFamily} onTier={setTier}
+        onL1={setL1} onFamily={setFamily} onTier={setTier} onStatFilter={setStatFilter}
         onOwned={setOwnedFilter} onUpgradable={setUpgradableOnly} onNew={setNewOnly}
       />
 

@@ -68,21 +68,6 @@ const LOCKED_ZONES = [
   { id: "balls", label: "要害", cx: 100, cy: 198, r: 5, unlockFrom: "groin", mult: 1.40, fill: "rgba(88,28,135,0.7)" },
 ];
 
-// ── 命中動畫標記 ─────────────────────────────────────────
-function HitMarker({ x, y, color, index }) {
-  return (
-    <g>
-      <circle cx={x} cy={y} r={6} fill="none" stroke={color} strokeWidth={1.5} opacity={0.6}>
-        <animate attributeName="r" from={6} to={12} dur="0.4s" fill="freeze" />
-        <animate attributeName="opacity" from={0.6} to={0} dur="0.4s" fill="freeze" />
-      </circle>
-      <circle cx={x} cy={y} r={3} fill={color} stroke="rgba(255,255,255,0.7)" strokeWidth={0.5}>
-        <animate attributeName="r" from={0} to={3} dur="0.2s" fill="freeze" />
-      </circle>
-    </g>
-  );
-}
-
 // ── ZombieTargetSVG ────────────────────────────────────────
 export default function ZombieTargetSVG({
   zombie, active = true, hits = {}, onHit,
@@ -105,6 +90,8 @@ export default function ZombieTargetSVG({
     onHit(partId);
     setTimeout(() => setClickedPart(null), 300);
   }, [active, onHit]);
+
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const archetypeId = zombie?.archetypeId || "normal";
   const archetypeColor = zombie?.color || "#6b7280";
@@ -158,17 +145,40 @@ export default function ZombieTargetSVG({
           style={{ transition: `all ${ANIM.fast}` }}
         />
 
-        {/* 🧟 背景：ComfyUI 生成的殭屍全圖 */}
+        {/* 🧟 背景：ComfyUI 生成的殭屍全圖（onLoad 後淡入） */}
         <image
           href={zombieImg}
+          crossOrigin="anonymous"
           x="5" y="5" width="190" height="250"
           preserveAspectRatio="xMidYMid meet"
-          opacity={alive ? 0.92 : 0.35}
+          opacity={imgLoaded ? (alive ? 0.92 : 0.35) : 0}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgLoaded(true)} {/* 圖片失敗時仍顯示點擊區，不卡死 */}
           style={{
             transition: `opacity ${ANIM.normal}`,
             filter: alive ? "drop-shadow(0 0 8px rgba(0,0,0,0.5))" : "none",
           }}
         />
+
+        {/* 載入中：SVG 輪廓佔位骨架（圖片載入後淡出） */}
+        {!imgLoaded && alive && (
+          <g style={{ opacity: 0.6 }}>
+            {BODY_ZONES.map(zone => (
+              <path key={zone.id} d={zone.d}
+                fill={zone.fill.replace("0.2", "0.35").replace("0.25", "0.4")}
+                stroke="rgba(255,255,255,0.12)"
+                strokeWidth={0.8}
+              />
+            ))}
+            {/* 中央脈衝文字 */}
+            <text x={100} y={130} textAnchor="middle"
+              fill="rgba(255,255,255,0.3)" fontSize={10} fontWeight={600}
+              letterSpacing={2}>
+              LOADING
+              <animate attributeName="opacity" values="0.3;0.1;0.3" dur="1.2s" repeatCount="indefinite" />
+            </text>
+          </g>
+        )}
 
         {/* 背景暗色覆蓋（讓透明點擊區更清晰） */}
         <rect x="5" y="5" width="190" height="250" rx={10}
@@ -195,7 +205,8 @@ export default function ZombieTargetSVG({
                 fill={fillColor}
                 stroke={isHovered ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.08)"}
                 strokeWidth={isHovered ? 2 : 0.5}
-                style={{ transition: `fill ${ANIM.fast}, stroke ${ANIM.fast}` }}
+                opacity={imgLoaded ? 1 : 0} {/* 載入中隱藏，只顯示 skeleton */}
+                style={{ transition: `fill ${ANIM.fast}, stroke ${ANIM.fast}, opacity ${ANIM.normal}` }}
                 onClick={() => handleClick(zone.id)}
                 onMouseEnter={() => handleMouseEnter(zone.id)}
                 onMouseLeave={handleMouseLeave}

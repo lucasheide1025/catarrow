@@ -1,6 +1,5 @@
 // src/components/member/cards/CardFilterBar.jsx
-// L1 遭遇分類籤 + L2 篩選 chip（族系 / Tier / 已取得 / 可升星 / 新取得）。
-// 純受控元件：所有狀態由 props 傳入,變更透過 callback。手機優先、可橫向捲動。
+// L1 遭遇分類籤 + 屬性標籤 (HP / ATK / DEF) + L2 篩選 chip（族系 / Tier / 已取得 / 可升星 / 新取得）。
 
 import { L1_CATEGORIES, FAMILIES, TIERS } from "./cardCatalog";
 
@@ -24,11 +23,27 @@ function Chip({ active, onClick, children, color = "#6366f1" }) {
 }
 
 export default function CardFilterBar({
-  l1, family, tier, ownedFilter, upgradableOnly, newOnly,
-  l1Unread = {}, onL1, onFamily, onTier, onOwned, onUpgradable, onNew,
+  l1, family, tier, statFilter, ownedFilter, upgradableOnly, newOnly,
+  l1Unread = {}, onL1, onFamily, onTier, onStatFilter, onOwned, onUpgradable, onNew,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* 屬性三大標籤 (HP / ATK / DEF) */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+        <Chip active={!statFilter || statFilter === "all"} onClick={() => onStatFilter("all")} color="#6366f1">
+          全屬性
+        </Chip>
+        <Chip active={statFilter === "hp"} onClick={() => onStatFilter("hp")} color="#10b981">
+          ❤️ HP 類卡片
+        </Chip>
+        <Chip active={statFilter === "atk"} onClick={() => onStatFilter("atk")} color="#f59e0b">
+          ⚔️ ATK 類卡片
+        </Chip>
+        <Chip active={statFilter === "def"} onClick={() => onStatFilter("def")} color="#3b82f6">
+          🛡️ DEF 類卡片
+        </Chip>
+      </div>
+
       {/* L1 遭遇 */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
         {L1_CATEGORIES.map(cat => {

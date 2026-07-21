@@ -22,12 +22,12 @@ const THEME = {
   },
 };
 
-// ── Archetype 資料 ──────────────────────────────────────
+// ── Archetype 資料（內含 ComfyUI 生成圖路徑） ────────────
 const ARCH_DATA = {
-  normal:  { icon:"🧟", color:"#6b7280", label:"普通殭屍" },
-  fast:    { icon:"💨", color:"#8b5cf6", label:"疾行殭屍" },
-  armored: { icon:"🛡️", color:"#f59e0b", label:"重裝殭屍" },
-  ranged:  { icon:"🎯", color:"#ef4444", label:"遠程殭屍" },
+  normal:  { icon:"🧟", img:"/assets/zombie/zombie_normal.webp",  color:"#6b7280", label:"普通殭屍" },
+  fast:    { icon:"💨", img:"/assets/zombie/zombie_fast.webp",    color:"#8b5cf6", label:"疾行殭屍" },
+  armored: { icon:"🛡️", img:"/assets/zombie/zombie_armored.webp", color:"#f59e0b", label:"重裝殭屍" },
+  ranged:  { icon:"🎯", img:"/assets/zombie/zombie_ranged.webp",  color:"#ef4444", label:"遠程殭屍" },
 };
 
 const ZONE_LABELS = {
@@ -607,6 +607,11 @@ function ZombieCard({ zombie, isFlashing, isFocused, onClick, compact }) {
     : zombie.distanceM <= 6 ? "#eab308"
     : COLORS.green;
 
+  // 取得 ComfyUI 生成圖路徑
+  const archData = ARCH_DATA[zombie.archetypeId] || ARCH_DATA.normal;
+  const zombieImg = archData.img;
+  const [imgLoaded, setImgLoaded] = useState(false);
+
   return (
     <div onClick={() => alive && onClick?.(zombie.id)}
       style={{
@@ -627,9 +632,26 @@ function ZombieCard({ zombie, isFlashing, isFocused, onClick, compact }) {
         whiteSpace:"nowrap",
         flexShrink:0,
       }}>
-      <span style={{ fontSize: compact ? 12 : 14, filter: isFlashing ? "brightness(1.5)" : "none", transition:"filter 0.1s" }}>
-        {alive ? zombie.icon : "💀"}
-      </span>
+      {/* ComfyUI 生成圖頭像（取代 Emoji） */}
+      {alive && imgLoaded ? (
+        <img src={zombieImg} alt={archData.label}
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgLoaded(false)}
+          style={{
+            width: compact ? 22 : 30,
+            height: compact ? 28 : 40,
+            objectFit:"cover",
+            borderRadius: 4,
+            filter: isFlashing ? "brightness(1.5)" : "none",
+            transition:"filter 0.1s",
+            imageRendering:"auto",
+          }}
+        />
+      ) : (
+        <span style={{ fontSize: compact ? 12 : 14, filter: isFlashing ? "brightness(1.5)" : "none", transition:"filter 0.1s" }}>
+          {alive ? zombie.icon : "💀"}
+        </span>
+      )}
       {!compact && (
         <span style={{ fontSize:9, fontWeight:600, color: alive ? COLORS.text : COLORS.textMuted }}>
           {alive ? zombie.name : "已擊殺"}
