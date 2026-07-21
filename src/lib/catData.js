@@ -333,7 +333,7 @@ export const CAT_FORGE_COSTS = {
     { tier: 1, amount:  80 },  // +7 → +8
     { tier: 1, amount: 100 },  // +8 → +9
   ],
-  gradeFurAmounts: [5, 10, 15, 25, 40],
+  gradeFurAmounts: [50, 120, 250, 450, 800],
 };
 
 // 計算升級所需材料（回傳 { [resourceKey]: amount }）
