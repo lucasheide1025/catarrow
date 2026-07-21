@@ -268,7 +268,7 @@ function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false
       {/* 背景層（固定，不隨鏡頭移動；缺圖則透出父層漸層） */}
       <div style={{
         position:"absolute", inset:0,
-        backgroundImage:`url(${ASSET_BASE}/map_bg.webp)`,
+        backgroundImage:`url(${ASSET_BASE}/map_bg_${family}.webp), url(${ASSET_BASE}/map_bg.webp)`,
         backgroundSize:"cover", backgroundPosition:"center", opacity:0.9,
       }} />
       {/* 中央可動面板：夾住 2.5D 內容（overflow 裁切）+ 深色底把地圖區跟背景區隔 */}

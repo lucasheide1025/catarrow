@@ -271,6 +271,10 @@ export default function ZombieMapIsometric({
         <marker id="arrow-head-boss" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
           <path d="M 0 0 L 10 5 L 0 10 z" fill={COLORS.accent} />
         </marker>
+        {/* 🗺️ 菱形裁切路徑 — 對應等角頂面形狀 */}
+        <clipPath id="diamond-clip">
+          <polygon points={`${HALF_W},0 ${TILE_W},${HALF_H} ${HALF_W},${TILE_H} 0,${HALF_H}`} />
+        </clipPath>
         {/* 互動動畫關鍵幀 */}
         <style>{`
           @keyframes iso-reachable-pulse {
@@ -515,8 +519,22 @@ export default function ZombieMapIsometric({
               />
             )}
 
-            {/* 節點內容圖示 */}
-            {!isHidden && (
+            {/* 🖼️ ComfyUI 生成環境圖塊（放在菱形頂面上） */}
+            {!isHidden && isFullyRevealed && node.mapTileId && (
+              <image
+                href={`/assets/zombie/map/map_${node.mapTileId}.webp`}
+                x={sx - HALF_W} y={sy - HALF_H}
+                width={TILE_W} height={TILE_H}
+                preserveAspectRatio="xMidYMid slice"
+                clipPath="url(#diamond-clip)"
+                opacity={isCurrent ? 1 : isReachable ? 0.85 : 0.65}
+                onError={(e) => { e.target.style.display = 'none'; }}
+                style={{ pointerEvents: "none", transition: "opacity 0.3s" }}
+              />
+            )}
+
+            {/* 節點 Emoji 回退（未完全揭示時顯示） */}
+            {!isHidden && !(isFullyRevealed && node.mapTileId) && (
               <text
                 x={sx} y={sy - 2}
                 textAnchor="middle" dominantBaseline="central"

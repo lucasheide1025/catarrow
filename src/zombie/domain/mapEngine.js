@@ -258,6 +258,7 @@ export function generateMap(options = {}) {
     isExtractionPoint: false,
     isSafeZone: true,
     combatChance: 0,
+    mapTileId: "start",
   };
 
   nodes.bridge = {
@@ -269,6 +270,7 @@ export function generateMap(options = {}) {
     extractionType: "conditional",
     isSafeZone: false,
     combatChance: 0.40,
+    mapTileId: "bridge",
   };
 
   nodes.military_base = {
@@ -282,6 +284,7 @@ export function generateMap(options = {}) {
     bossGuarded: true,
     combatChance: 0.75,
     lootHint: "軍用武器、防具、彈藥箱",
+    mapTileId: "military_base",
   };
 
   nodes.boss_room = {
@@ -293,6 +296,7 @@ export function generateMap(options = {}) {
     isSafeZone: false,
     bossGuarded: true,
     combatChance: 1.0,
+    mapTileId: "boss_room",
   };
 
   nodes.extraction_heli = {
@@ -304,6 +308,7 @@ export function generateMap(options = {}) {
     extractionType: "quick",
     isSafeZone: true,
     combatChance: 0,
+    mapTileId: "extraction_heli",
   };
 
   // ── 左分支隨機節點 ────────────────────────────────────
@@ -323,6 +328,7 @@ export function generateMap(options = {}) {
       isSafeZone: loc.isSafeZone,
       combatChance: loc.combatChance,
       lootHint: loc.lootHint,
+      mapTileId: loc.id,  // ComfyUI 生成圖對應 ID
     };
   });
 
@@ -341,6 +347,7 @@ export function generateMap(options = {}) {
       isSafeZone: loc.isSafeZone,
       combatChance: loc.combatChance,
       lootHint: loc.lootHint,
+      mapTileId: loc.id,  // ComfyUI 生成圖對應 ID
     };
   });
 
