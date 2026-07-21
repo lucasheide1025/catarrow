@@ -1089,7 +1089,8 @@ export default function DungeonExpedition({
       case "trap":
         return <DungeonTrap {...common} />;
       case "event":
-        return <DungeonEvent {...common} />;
+      case "general_event":
+        return <DungeonEvent {...common} event={pendingRoom?.event} />;
       case "chest":
         return <DungeonChest {...common} />;
       case "rest":
