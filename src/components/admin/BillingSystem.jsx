@@ -138,7 +138,34 @@ export default function BillingSystem({ profile }) {
     if (filterMode === "year") monthlyTotals[r.month] = (monthlyTotals[r.month] || 0) + (r.finalPrice || 0);
   });
 
-  // ── 匯出 CSV ──────────────────────────────�  // ─────────────────────────────────────────────────────────
+  // ── 匯出 CSV（清單／報表共用；含 UTF-8 BOM 讓 Excel 正確顯示中文）──
+  const exportCSV = () => {
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ["日期", "姓名", "方案", "付款方式", "折扣", "實收金額", "備註"];
+    const rows = displayedRecords.map(r => [
+      r.date, r.memberName, r.plan, r.paymentMethod,
+      r.discount || 0, r.finalPrice || 0, (r.note || "").replace(/[\r\n]+/g, " "),
+    ]);
+    const csv = [headers, ...rows, [], ["合計", "", "", "", "", grandTotal, ""]]
+      .map(row => row.map(esc).join(","))
+      .join("\r\n");
+    const scope = filterMode === "today" ? todayStr
+      : filterMode === "year" ? `${filterYear}`
+      : `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `會計記帳_${scope}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ fontFamily:"sans-serif", paddingBottom:"80px", color:"#f8fafc" }} className="bg-slate-900 min-h-screen">
 

@@ -92,55 +92,121 @@ function WorldBossCard({ bossKey }) {
 export default function MonsterHandbook({ onBack }) {
   const [family, setFamily] = useState("ghost");
   const [tier, setTier] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const q = searchQuery.trim().toLowerCase();
 
   const list = useMemo(() => {
+    if (q) return [];
     if (family === "worldboss") return [];
     const order = { normalA: 0, normalExisting: 1, normalB: 2, miniA: 3, miniB: 4, boss: 5 };
     return EXPANSION_MONSTERS
       .filter(m => m.family === family && m.tierIndex === tier)
       .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9));
-  }, [family, tier]);
+  }, [family, tier, q]);
 
   const wbKeys = useMemo(() => Object.keys(WORLD_BOSSES), []);
+
+  const searchResults = useMemo(() => {
+    if (!q) return null;
+    const matchedMonsters = EXPANSION_MONSTERS.filter(m => (
+      (m.name && m.name.toLowerCase().includes(q)) ||
+      (m.title && m.title.toLowerCase().includes(q)) ||
+      (m.signatureSummary && m.signatureSummary.toLowerCase().includes(q)) ||
+      (m.counterSummary && m.counterSummary.toLowerCase().includes(q)) ||
+      (m.material?.name && m.material.name.toLowerCase().includes(q)) ||
+      (m.family && m.family.toLowerCase().includes(q))
+    ));
+    const matchedBosses = wbKeys.filter(k => {
+      const b = WORLD_BOSSES[k];
+      const s = WORLD_BOSS_SKILLS[k];
+      return (
+        (b.name && b.name.toLowerCase().includes(q)) ||
+        (b.title && b.title.toLowerCase().includes(q)) ||
+        (b.desc && b.desc.toLowerCase().includes(q)) ||
+        (s?.r2Strike?.name && s.r2Strike.name.toLowerCase().includes(q)) ||
+        (s?.r4Finisher?.name && s.r4Finisher.name.toLowerCase().includes(q))
+      );
+    });
+    return { monsters: matchedMonsters, bosses: matchedBosses };
+  }, [q, wbKeys]);
 
   return (
     <div className="min-h-full text-white" style={{ background: "linear-gradient(180deg,#07101d,#0b1220)" }}>
       <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center gap-3">
         {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
-        <div>
+        <div className="flex-1">
           <h1 className="font-black text-base">📖 怪物手冊</h1>
           <div className="text-[10px] text-slate-500">{EXPANSION_MONSTERS.length} 隻怪物＋{wbKeys.length} 隻世界王的完整設定</div>
         </div>
       </div>
 
       <div className="px-4 pt-3 pb-8 space-y-3">
-        {/* 族系 */}
-        <div className="flex gap-1.5 flex-wrap">
-          {FAMILIES.map(f => (
-            <button key={f.id} onClick={() => setFamily(f.id)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-black border ${
-                family === f.id ? "bg-indigo-600 border-indigo-500 text-white" : "bg-white/5 border-white/10 text-slate-400"}`}>
-              {f.label}
+        {/* 全區搜尋輸入框 */}
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="🔍 搜尋怪物名稱、技能、掉落材料（例如：九尾、靈界令牌、毒液）..."
+            className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-indigo-500 transition"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs font-bold"
+            >
+              ✕ 清除
             </button>
-          ))}
+          )}
         </div>
-        {/* Tier（世界王不分 Tier） */}
-        {family !== "worldboss" && (
-          <div className="flex gap-1.5">
-            {[1, 2, 3, 4, 5, 6].map(t => (
-              <button key={t} onClick={() => setTier(t)}
-                className={`flex-1 rounded-lg py-1.5 text-[11px] font-black border ${
-                  tier === t ? "bg-emerald-600 border-emerald-500 text-white" : "bg-white/5 border-white/10 text-slate-400"}`}>
-                T{t}
-              </button>
-            ))}
-          </div>
+
+        {!q && (
+          <>
+            {/* 族系 */}
+            <div className="flex gap-1.5 flex-wrap">
+              {FAMILIES.map(f => (
+                <button key={f.id} onClick={() => setFamily(f.id)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-black border ${
+                    family === f.id ? "bg-indigo-600 border-indigo-500 text-white" : "bg-white/5 border-white/10 text-slate-400"}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {/* Tier（世界王不分 Tier） */}
+            {family !== "worldboss" && (
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5, 6].map(t => (
+                  <button key={t} onClick={() => setTier(t)}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-black border ${
+                      tier === t ? "bg-emerald-600 border-emerald-500 text-white" : "bg-white/5 border-white/10 text-slate-400"}`}>
+                    T{t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         <div className="space-y-2">
-          {family === "worldboss"
-            ? wbKeys.map(key => <WorldBossCard key={key} bossKey={key} />)
-            : list.map(monster => <MonsterCard key={monster.id} monster={monster} />)}
+          {q && searchResults ? (
+            <div>
+              <div className="text-xs text-indigo-400 font-bold mb-2">
+                搜尋「{searchQuery}」結果（共 {searchResults.monsters.length + searchResults.bosses.length} 筆）
+              </div>
+              {searchResults.monsters.length === 0 && searchResults.bosses.length === 0 && (
+                <div className="text-slate-500 text-xs py-8 text-center bg-white/5 rounded-2xl border border-white/10">
+                  找不到符合「{searchQuery}」的怪物或掉落物，換個關鍵字試試看！
+                </div>
+              )}
+              {searchResults.bosses.map(key => <WorldBossCard key={key} bossKey={key} />)}
+              {searchResults.monsters.map(monster => <MonsterCard key={monster.id} monster={monster} />)}
+            </div>
+          ) : (
+            family === "worldboss"
+              ? wbKeys.map(key => <WorldBossCard key={key} bossKey={key} />)
+              : list.map(monster => <MonsterCard key={monster.id} monster={monster} />)
+          )}
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/[.03] p-3 text-[10px] leading-relaxed text-slate-500">

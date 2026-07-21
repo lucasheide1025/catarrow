@@ -488,10 +488,40 @@ const GUIDE_SECTIONS = [
 
 export default function MemberGuide({ onBack }) {
   const [activeId, setActiveId] = useState(GUIDE_SECTIONS[0].id);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const q = searchQuery.trim().toLowerCase();
+
   const active = useMemo(
     () => GUIDE_SECTIONS.find(section => section.id === activeId) || GUIDE_SECTIONS[0],
     [activeId],
   );
+
+  const searchResults = useMemo(() => {
+    if (!q) return null;
+    const matches = [];
+    GUIDE_SECTIONS.forEach(sec => {
+      sec.blocks.forEach(blk => {
+        const matchingItems = blk.items?.filter(item => item.toLowerCase().includes(q)) || [];
+        const matchingTableRows = blk.table?.rows.filter(row => row.some(cell => String(cell).toLowerCase().includes(q))) || [];
+        if (
+          blk.heading.toLowerCase().includes(q) ||
+          sec.title.toLowerCase().includes(q) ||
+          matchingItems.length > 0 ||
+          matchingTableRows.length > 0
+        ) {
+          matches.push({
+            sectionTitle: sec.title,
+            sectionIcon: sec.icon,
+            heading: blk.heading,
+            items: matchingItems.length > 0 ? matchingItems : blk.items,
+            table: matchingTableRows.length > 0 ? { headers: blk.table.headers, rows: matchingTableRows } : (blk.heading.toLowerCase().includes(q) ? blk.table : null),
+          });
+        }
+      });
+    });
+    return matches;
+  }, [q]);
 
   return (
     <div className="p-4 flex flex-col gap-4 pb-8" style={{ minHeight: "100%" }}>
@@ -512,44 +542,86 @@ export default function MemberGuide({ onBack }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {GUIDE_SECTIONS.map(section => {
-          const activeTab = section.id === activeId;
-          return (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => setActiveId(section.id)}
-              className="active:scale-95 transition-transform"
-              style={{
-                minHeight: 72,
-                borderRadius: "var(--r-md)",
-                border: activeTab ? "1px solid rgba(34,211,238,0.65)" : "1px solid var(--glass-border)",
-                background: activeTab ? "rgba(8,145,178,0.22)" : "var(--glass-bg)",
-                boxShadow: "var(--shadow-card)",
-                padding: "8px 6px",
-              }}
-            >
-              <div style={{ fontSize: 21 }}>{section.icon}</div>
-              <div style={{ fontSize: 11, fontWeight: 900, color: activeTab ? "#a5f3fc" : "var(--text-secondary)", lineHeight: 1.25 }}>
-                {section.title}
-              </div>
-            </button>
-          );
-        })}
+      {/* 搜尋輸入框 */}
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="🔍 搜尋說明書（例如：打怪、地下城、精煉、藥水、月卡）..."
+          className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-cyan-500 transition"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs font-bold"
+          >
+            ✕ 清除
+          </button>
+        )}
       </div>
 
-      <article className="ui-card p-4 flex flex-col gap-4">
-        <header>
-          <div className="text-2xl mb-1">{active.icon}</div>
-          <h2 className="text-gray-100 font-black text-xl mb-1">{active.title}</h2>
-          <p className="text-gray-400 text-sm leading-relaxed">{active.summary}</p>
-        </header>
+      {!q && (
+        <div className="grid grid-cols-3 gap-2">
+          {GUIDE_SECTIONS.map(section => {
+            const activeTab = section.id === activeId;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setActiveId(section.id)}
+                className="active:scale-95 transition-transform"
+                style={{
+                  minHeight: 72,
+                  borderRadius: "var(--r-md)",
+                  border: activeTab ? "1px solid rgba(34,211,238,0.65)" : "1px solid var(--glass-border)",
+                  background: activeTab ? "rgba(8,145,178,0.22)" : "var(--glass-bg)",
+                  boxShadow: "var(--shadow-card)",
+                  padding: "8px 6px",
+                }}
+              >
+                <div style={{ fontSize: 21 }}>{section.icon}</div>
+                <div style={{ fontSize: 11, fontWeight: 900, color: activeTab ? "#a5f3fc" : "var(--text-secondary)", lineHeight: 1.25 }}>
+                  {section.title}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-        {active.blocks.map(block => (
-          <GuideBlock key={block.heading} block={block} />
-        ))}
-      </article>
+      {q && searchResults ? (
+        <div className="ui-card p-4 flex flex-col gap-4">
+          <div className="text-xs text-cyan-400 font-bold">
+            搜尋「{searchQuery}」結果（共 {searchResults.length} 區塊符合）
+          </div>
+          {searchResults.length === 0 && (
+            <div className="text-slate-500 text-xs py-8 text-center bg-white/5 rounded-2xl border border-white/10">
+              找不到符合「{searchQuery}」的說明，換個關鍵字試試看！
+            </div>
+          )}
+          {searchResults.map((match, idx) => (
+            <div key={idx} className="border-t border-white/10 pt-3 first:border-t-0 first:pt-0">
+              <div className="text-xs text-cyan-300 font-black mb-1">
+                {match.sectionIcon} {match.sectionTitle} › {match.heading}
+              </div>
+              <GuideBlock block={match} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <article className="ui-card p-4 flex flex-col gap-4">
+          <header>
+            <div className="text-2xl mb-1">{active.icon}</div>
+            <h2 className="text-gray-100 font-black text-xl mb-1">{active.title}</h2>
+            <p className="text-gray-400 text-sm leading-relaxed">{active.summary}</p>
+          </header>
+
+          {active.blocks.map(block => (
+            <GuideBlock key={block.heading} block={block} />
+          ))}
+        </article>
+      )}
 
       <div className="bg-amber-500/10 border border-amber-400/30 rounded-xl p-3">
         <div className="text-amber-200 text-xs leading-relaxed">
