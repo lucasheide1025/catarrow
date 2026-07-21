@@ -138,39 +138,23 @@ export default function BillingSystem({ profile }) {
     if (filterMode === "year") monthlyTotals[r.month] = (monthlyTotals[r.month] || 0) + (r.finalPrice || 0);
   });
 
-  // ── 匯出 CSV ──────────────────────────────────────────────
-  function exportCSV() {
-    const header = ["日期","姓名","方案","原價","折扣","實收","付款方式","備註","記帳教練"];
-    const rows   = displayedRecords.map(r => [
-      r.date, r.memberName, r.plan, r.basePrice, r.discount ?? 0,
-      r.finalPrice, r.paymentMethod, r.note || "", r.createdByName || "",
-    ]);
-    const csv  = [header, ...rows].map(r => r.join(",")).join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const a    = document.createElement("a");
-    a.href     = URL.createObjectURL(blob);
-    const suffix = filterMode==="today" ? `_${todayStr}` : filterMode==="month" ? `_${String(filterMonth).padStart(2,"0")}` : "";
-    a.download = `billing_${filterYear}${suffix}.csv`;
-    a.click();
-  }
-
-  // ─────────────────────────────────────────────────────────
+  // ── 匯出 CSV ──────────────────────────────�  // ─────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily:"sans-serif", paddingBottom:"80px" }}>
+    <div style={{ fontFamily:"sans-serif", paddingBottom:"80px", color:"#f8fafc" }} className="bg-slate-900 min-h-screen">
 
       {/* Header */}
-      <div style={{ background:"linear-gradient(90deg,#0f172a,#1e3a5f)", padding:"14px 16px" }}>
-        <div style={{ color:"white", fontSize:"15px", fontWeight:900 }}>💰 會計系統</div>
-        <div style={{ color:"rgba(255,255,255,.55)", fontSize:"12px" }}>收費記帳 · 方案管理</div>
+      <div style={{ background:"linear-gradient(135deg,#0f172a 0%,#1e293b 100%)", borderBottom:"1px solid rgba(255,255,255,0.08)", padding:"16px" }}>
+        <div style={{ color:"#f8fafc", fontSize:"16px", fontWeight:900 }}>💰 會計財務系統</div>
+        <div style={{ color:"#7dd3fc", fontSize:"12px", marginTop:"2px" }}>收費記帳 · 方案與營收明細</div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display:"flex", background:"white", borderBottom:"1px solid #e2e8f0" }}>
+      <div style={{ display:"flex", gap:"8px", padding:"10px 16px", background:"#0f172a", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
         {[{id:"add",label:"＋ 記帳"},{id:"records",label:"📋 清單"},{id:"report",label:"📊 報表"}].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ flex:1, padding:"10px", fontSize:"13px", fontWeight:700, border:"none", background:"none",
-              cursor:"pointer", color:tab===t.id?"#2563eb":"#64748b",
-              borderBottom:tab===t.id?"2px solid #2563eb":"2px solid transparent" }}>
+            style={{ flex:1, padding:"9px", fontSize:"13px", fontWeight:800, borderRadius:"10px", border: tab===t.id?"none":"1px solid rgba(255,255,255,0.12)",
+              cursor:"pointer", color:tab===t.id?"white":"#94a3b8",
+              background: tab===t.id ? "linear-gradient(90deg, #2563eb, #3b82f6)" : "rgba(30,41,59,0.7)" }}>
             {t.label}
           </button>
         ))}
@@ -181,7 +165,7 @@ export default function BillingSystem({ profile }) {
         <div style={{ padding:"16px", display:"flex", flexDirection:"column", gap:"14px" }}>
 
           {successMsg && (
-            <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", color:"#15803d", fontWeight:700 }}>
+            <div style={{ background:"rgba(34,197,94,0.15)", border:"1px solid rgba(34,197,94,0.4)", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", color:"#4ade80", fontWeight:700 }}>
               {successMsg}
             </div>
           )}
@@ -189,13 +173,13 @@ export default function BillingSystem({ profile }) {
           {/* 今日報到快選 */}
           {todayCheckins.length > 0 && (
             <div>
-              <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>今日報到 ({todayCheckins.length} 人)</div>
+              <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>今日報到 ({todayCheckins.length} 人)</div>
               <div style={{ display:"flex", flexWrap:"wrap", gap:"6px" }}>
                 {todayCheckins.map((c, i) => (
                   <button key={i} onClick={() => selectFromCheckin(c)}
-                    style={{ padding:"5px 12px", borderRadius:"20px", border:"1px solid #bfdbfe",
-                      background: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "#2563eb" : "#eff6ff",
-                      color: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "white" : "#1d4ed8",
+                    style={{ padding:"6px 12px", borderRadius:"20px", border:"1px solid rgba(59,130,246,0.4)",
+                      background: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "#2563eb" : "rgba(30,41,59,0.8)",
+                      color: memberQuery===(allMembers.find(m=>m.id===c.memberId)?.name||c.memberName) ? "white" : "#93c5fd",
                       fontSize:"13px", fontWeight:700, cursor:"pointer" }}>
                     {allMembers.find(m=>m.id===c.memberId)?.name || c.memberName}
                   </button>
@@ -206,36 +190,36 @@ export default function BillingSystem({ profile }) {
 
           {/* 姓名 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>射手姓名（或直接輸入）</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>射手姓名（或直接輸入）</div>
             <div style={{ position:"relative" }}>
               <div style={{ display:"flex", gap:"8px" }}>
                 <input value={memberQuery}
                   onChange={e => { setMemberQuery(e.target.value); setSelectedMember(null); }}
                   placeholder="搜尋現有會員或直接輸入姓名"
-                  style={{ flex:1, border:"1px solid #e2e8f0", borderRadius:"8px", padding:"9px 12px", fontSize:"14px", outline:"none" }}/>
+                  style={{ flex:1, background:"#1e293b", color:"#f8fafc", border:"1px solid #334155", borderRadius:"10px", padding:"10px 14px", fontSize:"14px", outline:"none" }}/>
                 {memberQuery && (
                   <button onClick={clearMember}
-                    style={{ padding:"0 12px", border:"1px solid #e2e8f0", borderRadius:"8px", background:"#f8fafc", cursor:"pointer", fontSize:"13px", color:"#64748b" }}>✕</button>
+                    style={{ padding:"0 14px", border:"1px solid #334155", borderRadius:"10px", background:"#1e293b", cursor:"pointer", fontSize:"13px", color:"#94a3b8" }}>✕</button>
                 )}
               </div>
               <button onClick={() => { setMemberQuery("訪客/團康"); setSelectedMember(null); setDiscount(false); }}
-                style={{ marginTop:"6px", padding:"4px 14px", borderRadius:"20px",
-                  border:"1px solid #e2e8f0", background:"#f8fafc",
-                  color:"#64748b", fontSize:"12px", fontWeight:700, cursor:"pointer" }}>
+                style={{ marginTop:"8px", padding:"5px 14px", borderRadius:"20px",
+                  border:"1px solid #334155", background:"#1e293b",
+                  color:"#cbd5e1", fontSize:"12px", fontWeight:700, cursor:"pointer" }}>
                 訪客/團康
               </button>
               {memberSuggestions.length > 0 && (
-                <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"white", border:"1px solid #e2e8f0", borderRadius:"8px", boxShadow:"0 4px 12px rgba(0,0,0,.1)", zIndex:50, overflow:"hidden", marginTop:"4px" }}>
+                <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#1e293b", border:"1px solid #334155", borderRadius:"10px", boxShadow:"0 8px 24px rgba(0,0,0,0.6)", zIndex:50, overflow:"hidden", marginTop:"4px" }}>
                   {memberSuggestions.map(m => (
                     <button key={m.id} onClick={() => selectMember(m)}
-                      style={{ display:"block", width:"100%", padding:"9px 14px", textAlign:"left", border:"none", borderBottom:"1px solid #f1f5f9", background:"none", cursor:"pointer", fontSize:"13px", color:"#1e293b" }}>
-                      <span style={{ fontWeight:700 }}>{m.name}</span>
+                      style={{ display:"block", width:"100%", padding:"10px 14px", textAlign:"left", border:"none", borderBottom:"1px solid rgba(255,255,255,0.06)", background:"none", cursor:"pointer", fontSize:"13px", color:"#f8fafc" }}>
+                      <span style={{ fontWeight:700, color:"#f8fafc" }}>{m.name}</span>
                       {m.nickname && m.nickname !== m.name && (
                         <span style={{ color:"#94a3b8", marginLeft:"5px", fontSize:"11px" }}>（{m.nickname}）</span>
                       )}
-                      <span style={{ color:"#94a3b8", marginLeft:"8px", fontSize:"11px" }}>#{m.archerNo}</span>
+                      <span style={{ color:"#60a5fa", marginLeft:"8px", fontSize:"11px" }}>#{m.archerNo}</span>
                       {m.archerNo && m.archerNo <= EARLY_BIRD_MAX && (
-                        <span style={{ marginLeft:"6px", background:"#fef9c3", color:"#854d0e", fontSize:"10px", padding:"1px 6px", borderRadius:"4px", fontWeight:700 }}>早鳥</span>
+                        <span style={{ marginLeft:"6px", background:"rgba(245,158,11,0.2)", color:"#fbbf24", border:"1px solid rgba(245,158,11,0.4)", fontSize:"10px", padding:"1px 6px", borderRadius:"4px", fontWeight:700 }}>早鳥</span>
                       )}
                     </button>
                   ))}
@@ -243,21 +227,21 @@ export default function BillingSystem({ profile }) {
               )}
             </div>
             {selectedMember && (
-              <div style={{ fontSize:"11px", color:"#2563eb", marginTop:"4px" }}>已連結會員 #{selectedMember.archerNo}</div>
+              <div style={{ fontSize:"11px", color:"#60a5fa", marginTop:"4px", fontWeight:700 }}>✓ 已連結會員 #{selectedMember.archerNo}</div>
             )}
           </div>
 
           {/* 方案 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>方案</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>選擇方案</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"8px" }}>
               {PLANS.map(p => (
                 <button key={p.id} onClick={() => setPlan(p.id)}
-                  style={{ padding:"10px 6px", borderRadius:"10px",
-                    border: plan===p.id ? "2px solid #2563eb" : "1px solid #e2e8f0",
-                    background: plan===p.id ? "#eff6ff" : "white", cursor:"pointer", textAlign:"center" }}>
-                  <div style={{ fontSize:"14px", fontWeight:900, color:plan===p.id?"#2563eb":"#1e293b" }}>{p.id}</div>
-                  <div style={{ fontSize:"11px", color:"#64748b" }}>NT${p.price}</div>
+                  style={{ padding:"12px 6px", borderRadius:"10px",
+                    border: plan===p.id ? "2px solid #3b82f6" : "1px solid #334155",
+                    background: plan===p.id ? "rgba(37,99,235,0.25)" : "#1e293b", cursor:"pointer", textAlign:"center" }}>
+                  <div style={{ fontSize:"15px", fontWeight:900, color:plan===p.id?"#60a5fa":"#f8fafc" }}>{p.id}</div>
+                  <div style={{ fontSize:"11px", color:plan===p.id?"#bfdbfe":"#94a3b8", marginTop:"2px" }}>NT${p.price}</div>
                 </button>
               ))}
             </div>
@@ -265,17 +249,17 @@ export default function BillingSystem({ profile }) {
 
           {/* 金額 + 折扣 */}
           {plan && (
-            <div style={{ background:"#f8fafc", borderRadius:"12px", padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"12px", padding:"14px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div>
-                <div style={{ fontSize:"11px", color:"#64748b" }}>實收金額</div>
-                <div style={{ fontSize:"26px", fontWeight:900, color:"#0f172a" }}>NT$ {finalPrice}</div>
-                {discount && <div style={{ fontSize:"11px", color:"#d97706" }}>早鳥折扣 -${EARLY_BIRD_DISC}</div>}
+                <div style={{ fontSize:"12px", color:"#94a3b8" }}>實收金額</div>
+                <div style={{ fontSize:"28px", fontWeight:900, color:"#38bdf8" }}>NT$ {finalPrice}</div>
+                {discount && <div style={{ fontSize:"11px", color:"#fbbf24" }}>早鳥折扣 -${EARLY_BIRD_DISC}</div>}
               </div>
               <button onClick={() => setDiscount(d => !d)}
-                style={{ padding:"7px 14px", borderRadius:"8px",
-                  border: discount ? "1px solid #fbbf24" : "1px solid #e2e8f0",
-                  background: discount ? "#fef9c3" : "white", cursor:"pointer",
-                  fontSize:"12px", fontWeight:700, color:"#854d0e" }}>
+                style={{ padding:"8px 14px", borderRadius:"10px",
+                  border: discount ? "1px solid rgba(245,158,11,0.5)" : "1px solid #334155",
+                  background: discount ? "rgba(245,158,11,0.2)" : "#0f172a", cursor:"pointer",
+                  fontSize:"12px", fontWeight:700, color: discount ? "#fcd34d" : "#94a3b8" }}>
                 {discount ? "✓ 早鳥 -$50" : "早鳥折扣"}
               </button>
             </div>
@@ -283,14 +267,14 @@ export default function BillingSystem({ profile }) {
 
           {/* 付款方式 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>付款方式</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>付款方式</div>
             <div style={{ display:"flex", gap:"8px" }}>
               {PAY_METHODS.map(m => (
                 <button key={m} onClick={() => setPayMethod(m)}
-                  style={{ flex:1, padding:"9px", borderRadius:"10px",
-                    border: payMethod===m ? "2px solid #2563eb" : "1px solid #e2e8f0",
-                    background: payMethod===m ? "#eff6ff" : "white", cursor:"pointer",
-                    fontWeight:700, fontSize:"13px", color:payMethod===m?"#2563eb":"#475569" }}>
+                  style={{ flex:1, padding:"10px", borderRadius:"10px",
+                    border: payMethod===m ? "2px solid #3b82f6" : "1px solid #334155",
+                    background: payMethod===m ? "#2563eb" : "#1e293b", cursor:"pointer",
+                    fontWeight:800, fontSize:"13px", color:payMethod===m?"white":"#cbd5e1" }}>
                   {m}
                 </button>
               ))}
@@ -299,25 +283,25 @@ export default function BillingSystem({ profile }) {
 
           {/* 日期 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>日期</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>日期</div>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"9px 12px", fontSize:"14px", outline:"none", width:"100%", boxSizing:"border-box" }}/>
+              style={{ background:"#1e293b", color:"#f8fafc", border:"1px solid #334155", borderRadius:"10px", padding:"10px 14px", fontSize:"14px", outline:"none", width:"100%", boxSizing:"border-box" }}/>
           </div>
 
           {/* 備註 */}
           <div>
-            <div style={{ fontSize:"12px", fontWeight:700, color:"#64748b", marginBottom:"6px" }}>備註（選填）</div>
+            <div style={{ fontSize:"12px", fontWeight:700, color:"#94a3b8", marginBottom:"6px" }}>備註（選填）</div>
             <input value={note} onChange={e => setNote(e.target.value)} placeholder="例：補繳、折扣說明…"
-              style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"9px 12px", fontSize:"14px", outline:"none", width:"100%", boxSizing:"border-box" }}/>
+              style={{ background:"#1e293b", color:"#f8fafc", border:"1px solid #334155", borderRadius:"10px", padding:"10px 14px", fontSize:"14px", outline:"none", width:"100%", boxSizing:"border-box" }}/>
           </div>
 
           <button onClick={handleSubmit}
             disabled={!memberQuery.trim() || !plan || submitting}
-            style={{ padding:"13px", borderRadius:"12px",
-              background:(!memberQuery.trim()||!plan||submitting)?"#e2e8f0":"#2563eb",
+            style={{ padding:"14px", borderRadius:"12px", marginTop:"6px",
+              background:(!memberQuery.trim()||!plan||submitting)?"#334155":"linear-gradient(90deg, #2563eb, #3b82f6)",
               color:(!memberQuery.trim()||!plan||submitting)?"#94a3b8":"white",
               border:"none", cursor:(!memberQuery.trim()||!plan||submitting)?"not-allowed":"pointer",
-              fontSize:"15px", fontWeight:900 }}>
+              fontSize:"15px", fontWeight:900, boxShadow: (!memberQuery.trim()||!plan||submitting) ? "none" : "0 4px 14px rgba(37,99,235,0.35)" }}>
             {submitting ? "記錄中…" : "確認記帳"}
           </button>
         </div>
@@ -331,50 +315,50 @@ export default function BillingSystem({ profile }) {
           <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
             <FilterBar filterMode={filterMode} setFilterMode={setFilterMode} filterYear={filterYear} setFilterYear={setFilterYear} filterMonth={filterMonth} setFilterMonth={setFilterMonth} />
             <button onClick={exportCSV}
-              style={{ marginLeft:"auto", padding:"7px 12px", border:"1px solid #d1fae5", borderRadius:"8px",
-                background:"#f0fdf4", color:"#15803d", cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
-              ↓ 匯出
+              style={{ marginLeft:"auto", padding:"8px 14px", border:"1px solid rgba(34,197,94,0.4)", borderRadius:"10px",
+                background:"rgba(34,197,94,0.15)", color:"#4ade80", cursor:"pointer", fontSize:"12px", fontWeight:800 }}>
+              ↓ 匯出 CSV
             </button>
           </div>
 
           {/* 合計 */}
-          <div style={{ background:"#eff6ff", borderRadius:"12px", padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontSize:"13px", color:"#2563eb", fontWeight:700 }}>共 {displayedRecords.length} 筆</div>
-            <div style={{ fontSize:"20px", fontWeight:900, color:"#1d4ed8" }}>NT$ {grandTotal.toLocaleString()}</div>
+          <div style={{ background:"linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%)", borderRadius:"14px", padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ fontSize:"13px", color:"#bfdbfe", fontWeight:700 }}>共 {displayedRecords.length} 筆明細</div>
+            <div style={{ fontSize:"22px", fontWeight:900, color:"#ffffff" }}>NT$ {grandTotal.toLocaleString()}</div>
           </div>
 
           {/* 清單 */}
           {displayedRecords.length === 0 ? (
-            <div style={{ textAlign:"center", color:"#94a3b8", padding:"40px 0", fontSize:"14px" }}>尚無記錄</div>
+            <div style={{ textAlign:"center", color:"#64748b", padding:"40px 0", fontSize:"14px" }}>尚無記帳記錄</div>
           ) : displayedRecords.map(r => (
-            <div key={r.id} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"12px 14px" }}>
+            <div key={r.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"14px", padding:"14px 16px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
                 <div>
-                  <div style={{ fontWeight:900, fontSize:"14px", color:"#1e293b" }}>{r.memberName}</div>
-                  <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", alignItems:"center", marginTop:"4px" }}>
-                    <span style={{ background:"#eff6ff", color:"#2563eb", fontSize:"11px", padding:"2px 8px", borderRadius:"6px", fontWeight:700 }}>{r.plan}</span>
-                    <span style={{ background:"#f1f5f9", color:"#475569", fontSize:"11px", padding:"2px 8px", borderRadius:"6px" }}>{r.paymentMethod}</span>
+                  <div style={{ fontWeight:900, fontSize:"15px", color:"#f8fafc" }}>{r.memberName}</div>
+                  <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", alignItems:"center", marginTop:"6px" }}>
+                    <span style={{ background:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)", fontSize:"11px", padding:"2px 8px", borderRadius:"6px", fontWeight:800 }}>{r.plan}</span>
+                    <span style={{ background:"#0f172a", color:"#cbd5e1", border:"1px solid #334155", fontSize:"11px", padding:"2px 8px", borderRadius:"6px" }}>{r.paymentMethod}</span>
                     <span style={{ color:"#94a3b8", fontSize:"11px" }}>{r.date}</span>
-                    {r.discount > 0 && <span style={{ background:"#fef9c3", color:"#854d0e", fontSize:"10px", padding:"2px 6px", borderRadius:"4px" }}>早鳥 -${r.discount}</span>}
+                    {r.discount > 0 && <span style={{ background:"rgba(245,158,11,0.2)", color:"#fbbf24", fontSize:"10px", padding:"2px 6px", borderRadius:"4px" }}>早鳥 -${r.discount}</span>}
                   </div>
-                  {r.note && <div style={{ fontSize:"11px", color:"#64748b", marginTop:"4px" }}>📝 {r.note}</div>}
+                  {r.note && <div style={{ fontSize:"12px", color:"#94a3b8", marginTop:"6px" }}>📝 {r.note}</div>}
                 </div>
                 <div style={{ textAlign:"right", flexShrink:0, marginLeft:"12px" }}>
-                  <div style={{ fontSize:"17px", fontWeight:900, color:"#0f172a" }}>NT$ {r.finalPrice}</div>
+                  <div style={{ fontSize:"18px", fontWeight:900, color:"#38bdf8" }}>NT$ {r.finalPrice}</div>
                   {deleteConfirm === r.id ? (
-                    <div style={{ display:"flex", gap:"6px", marginTop:"4px" }}>
+                    <div style={{ display:"flex", gap:"6px", marginTop:"6px" }}>
                       <button onClick={async () => { await deleteBillingRecord(r.id); setDeleteConfirm(null); }}
-                        style={{ fontSize:"11px", color:"#dc2626", background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:"6px", padding:"2px 8px", cursor:"pointer", fontWeight:700 }}>
+                        style={{ fontSize:"11px", color:"#ef4444", background:"rgba(239,68,68,0.15)", border:"1px solid rgba(239,68,68,0.4)", borderRadius:"6px", padding:"3px 8px", cursor:"pointer", fontWeight:800 }}>
                         確認刪除
                       </button>
                       <button onClick={() => setDeleteConfirm(null)}
-                        style={{ fontSize:"11px", color:"#64748b", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:"6px", padding:"2px 8px", cursor:"pointer" }}>
+                        style={{ fontSize:"11px", color:"#94a3b8", background:"#0f172a", border:"1px solid #334155", borderRadius:"6px", padding:"3px 8px", cursor:"pointer" }}>
                         取消
                       </button>
                     </div>
                   ) : (
                     <button onClick={() => setDeleteConfirm(r.id)}
-                      style={{ fontSize:"11px", color:"#94a3b8", background:"none", border:"none", cursor:"pointer", marginTop:"4px" }}>
+                      style={{ fontSize:"11px", color:"#64748b", background:"none", border:"none", cursor:"pointer", marginTop:"6px" }}>
                       刪除
                     </button>
                   )}
@@ -395,27 +379,27 @@ export default function BillingSystem({ profile }) {
           </div>
 
           {/* 總收入 */}
-          <div style={{ background:"linear-gradient(135deg,#1e3a5f,#2563eb)", borderRadius:"16px", padding:"20px", color:"white", textAlign:"center" }}>
-            <div style={{ fontSize:"12px", color:"rgba(255,255,255,.65)", marginBottom:"4px" }}>
-              {filterMode==="today" ? `${todayStr} 今日` : filterMode==="year" ? `${filterYear} 年` : `${filterYear} 年 ${filterMonth} 月`}　總收入
+          <div style={{ background:"linear-gradient(135deg,#0c4a6e 0%,#2563eb 100%)", borderRadius:"16px", padding:"20px", color:"white", textAlign:"center", border:"1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ fontSize:"12px", color:"#7dd3fc", marginBottom:"4px" }}>
+              {filterMode==="today" ? `${todayStr} 今日` : filterMode==="year" ? `${filterYear} 年` : `${filterYear} 年 ${filterMonth} 月`}　總營收
             </div>
-            <div style={{ fontSize:"34px", fontWeight:900 }}>NT$ {grandTotal.toLocaleString()}</div>
-            <div style={{ fontSize:"12px", color:"rgba(255,255,255,.55)", marginTop:"4px" }}>{records.length} 筆記錄</div>
+            <div style={{ fontSize:"34px", fontWeight:900, color:"#ffffff" }}>NT$ {grandTotal.toLocaleString()}</div>
+            <div style={{ fontSize:"12px", color:"#93c5fd", marginTop:"4px" }}>{displayedRecords.length} 筆交易明細</div>
           </div>
 
           {/* 按方案 */}
-          <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"14px" }}>
-            <div style={{ fontSize:"13px", fontWeight:900, color:"#1e293b", marginBottom:"10px" }}>按方案分析</div>
+          <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"14px", padding:"16px" }}>
+            <div style={{ fontSize:"14px", fontWeight:900, color:"#f8fafc", marginBottom:"12px" }}>按方案分析</div>
             {PLANS.map(p => {
-              const cnt = records.filter(r => r.plan === p.id).length;
+              const cnt = displayedRecords.filter(r => r.plan === p.id).length;
               const total = planTotals[p.id] || 0;
               return (
-                <div key={p.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid #f1f5f9" }}>
+                <div key={p.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                    <span style={{ background:"#eff6ff", color:"#2563eb", fontSize:"11px", padding:"2px 8px", borderRadius:"6px", fontWeight:700 }}>{p.id}</span>
+                    <span style={{ background:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)", fontSize:"11px", padding:"2px 8px", borderRadius:"6px", fontWeight:800 }}>{p.id}</span>
                     <span style={{ fontSize:"12px", color:"#94a3b8" }}>{cnt} 筆</span>
                   </div>
-                  <span style={{ fontWeight:700, fontSize:"14px", color: total ? "#0f172a" : "#cbd5e1" }}>
+                  <span style={{ fontWeight:800, fontSize:"14px", color: total ? "#38bdf8" : "#64748b" }}>
                     NT$ {total.toLocaleString()}
                   </span>
                 </div>
@@ -424,12 +408,12 @@ export default function BillingSystem({ profile }) {
           </div>
 
           {/* 按付款方式 */}
-          <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"14px" }}>
-            <div style={{ fontSize:"13px", fontWeight:900, color:"#1e293b", marginBottom:"10px" }}>按付款方式</div>
+          <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"14px", padding:"16px" }}>
+            <div style={{ fontSize:"14px", fontWeight:900, color:"#f8fafc", marginBottom:"12px" }}>按付款方式</div>
             {PAY_METHODS.map(m => (
-              <div key={m} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid #f1f5f9" }}>
-                <span style={{ fontSize:"13px", color:"#475569" }}>{m}</span>
-                <span style={{ fontWeight:700, fontSize:"14px", color: payTotals[m] ? "#0f172a" : "#cbd5e1" }}>
+              <div key={m} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+                <span style={{ fontSize:"13px", color:"#cbd5e1" }}>{m}</span>
+                <span style={{ fontWeight:800, fontSize:"14px", color: payTotals[m] ? "#38bdf8" : "#64748b" }}>
                   NT$ {(payTotals[m] || 0).toLocaleString()}
                 </span>
               </div>
@@ -438,12 +422,12 @@ export default function BillingSystem({ profile }) {
 
           {/* 各月（全年模式才顯示）*/}
           {filterMode === "year" && (
-            <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"14px" }}>
-              <div style={{ fontSize:"13px", fontWeight:900, color:"#1e293b", marginBottom:"10px" }}>各月收入</div>
+            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"14px", padding:"16px" }}>
+              <div style={{ fontSize:"14px", fontWeight:900, color:"#f8fafc", marginBottom:"12px" }}>各月收入</div>
               {Array.from({length:12},(_,i)=>i+1).map(m => (
-                <div key={m} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid #f1f5f9" }}>
-                  <span style={{ fontSize:"13px", color:"#475569" }}>{m} 月</span>
-                  <span style={{ fontWeight:700, fontSize:"14px", color: monthlyTotals[m] ? "#0f172a" : "#cbd5e1" }}>
+                <div key={m} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+                  <span style={{ fontSize:"13px", color:"#cbd5e1" }}>{m} 月</span>
+                  <span style={{ fontWeight:800, fontSize:"14px", color: monthlyTotals[m] ? "#38bdf8" : "#64748b" }}>
                     NT$ {(monthlyTotals[m] || 0).toLocaleString()}
                   </span>
                 </div>
@@ -452,9 +436,9 @@ export default function BillingSystem({ profile }) {
           )}
 
           <button onClick={exportCSV}
-            style={{ padding:"12px", borderRadius:"12px", background:"#f0fdf4", color:"#15803d",
-              border:"1px solid #86efac", cursor:"pointer", fontSize:"14px", fontWeight:700 }}>
-            ↓ 匯出 CSV
+            style={{ padding:"12px", borderRadius:"12px", background:"rgba(34,197,94,0.15)", color:"#4ade80",
+              border:"1px solid rgba(34,197,94,0.4)", cursor:"pointer", fontSize:"14px", fontWeight:800 }}>
+            ↓ 匯出完整 CSV 報表
           </button>
         </div>
       )}
@@ -464,14 +448,14 @@ export default function BillingSystem({ profile }) {
 
 function FilterBar({ filterMode, setFilterMode, filterYear, setFilterYear, filterMonth, setFilterMonth }) {
   const btnStyle = (active) => ({
-    padding:"7px 12px", border:"1px solid #e2e8f0", borderRadius:"8px",
-    background: active ? "#eff6ff" : "white", color: active ? "#2563eb" : "#64748b",
-    cursor:"pointer", fontSize:"12px", fontWeight:700,
+    padding:"7px 12px", border:"1px solid #334155", borderRadius:"8px",
+    background: active ? "#2563eb" : "#1e293b", color: active ? "white" : "#94a3b8",
+    cursor:"pointer", fontSize:"12px", fontWeight:800,
   });
   return (
     <>
       <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))}
-        style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
+        style={{ background:"#1e293b", color:"#f8fafc", border:"1px solid #334155", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
         {YEARS.map(y => <option key={y} value={y}>{y} 年</option>)}
       </select>
       {["today","month","year"].map(mode => (
@@ -481,7 +465,7 @@ function FilterBar({ filterMode, setFilterMode, filterYear, setFilterYear, filte
       ))}
       {filterMode === "month" && (
         <select value={filterMonth} onChange={e => setFilterMonth(Number(e.target.value))}
-          style={{ border:"1px solid #e2e8f0", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
+          style={{ background:"#1e293b", color:"#f8fafc", border:"1px solid #334155", borderRadius:"8px", padding:"7px 10px", fontSize:"13px", cursor:"pointer" }}>
           {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m} 月</option>)}
         </select>
       )}

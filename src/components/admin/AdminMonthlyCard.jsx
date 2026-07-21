@@ -179,8 +179,8 @@ export default function AdminMonthlyCard({ adminProfile }) {
   );
 
   return (
-    <div className="p-4 flex flex-col gap-4 max-w-lg mx-auto pb-8">
-      <div className="font-black text-xl text-gray-800">🎫 月卡管理</div>
+    <div className="p-4 flex flex-col gap-4 max-w-lg mx-auto pb-8 text-slate-100">
+      <div className="font-black text-xl text-slate-100">🎫 月卡管理</div>
 
       {/* 分頁 */}
       <div className="flex gap-2">
@@ -190,7 +190,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
           { id: "config",  label: "⚙️ 設定" },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+            className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-slate-800 text-slate-300 border-slate-700"}`}>
             {t.label}
             {t.badge > 0 && <span className="ml-1.5 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{t.badge}</span>}
           </button>
@@ -199,7 +199,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
 
       {/* 結果訊息 */}
       {msg && (
-        <div className={`p-3 rounded-xl text-sm font-bold ${msg.startsWith("✅") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+        <div className={`p-3 rounded-xl text-sm font-bold ${msg.startsWith("✅") ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/50" : "bg-red-950/80 text-red-300 border border-red-800/50"}`}>
           {msg}
         </div>
       )}
@@ -208,17 +208,17 @@ export default function AdminMonthlyCard({ adminProfile }) {
       {tab === "pending" && (
         <div className="flex flex-col gap-3">
           {pending.length === 0 && (
-            <div className="text-center text-gray-400 text-sm py-8">目前沒有待審核申請 🎉</div>
+            <div className="text-center text-slate-400 text-sm py-8">目前沒有待審核申請 🎉</div>
           )}
           {pending.map(req => (
-            <Card key={req.id} className="p-4 flex flex-col gap-3">
+            <Card key={req.id} className="p-4 flex flex-col gap-3 bg-slate-800/90 border-slate-700/80 text-slate-100">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="font-black text-gray-800">{req.memberName}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">申請使用 <span className="font-black text-blue-600">{req.hours} 小時</span></div>
-                  <div className="text-xs text-gray-400">{fmtDateTime(req.createdAt)}</div>
+                  <div className="font-black text-slate-100">{req.memberName}</div>
+                  <div className="text-xs text-slate-300 mt-0.5">申請使用 <span className="font-black text-blue-400">{req.hours} 小時</span></div>
+                  <div className="text-xs text-slate-400">{fmtDateTime(req.createdAt)}</div>
                 </div>
-                <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">⏳ 待審核</span>
+                <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-2 py-0.5 rounded-full">⏳ 待審核</span>
               </div>
               <div className="flex gap-2">
                 <Btn v="primary" className="flex-1" disabled={!!busy[req.id]}
@@ -240,7 +240,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
         <div className="flex flex-col gap-3">
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="搜尋射手…"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            className="w-full bg-slate-800 text-slate-100 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-slate-400" />
 
           {filteredMembers.map(m => {
             const card = m.monthlyCard;
@@ -249,29 +249,29 @@ export default function AdminMonthlyCard({ adminProfile }) {
             const active = card?.active && !expired;
             const showLog = !!expandLog[m.id];
             return (
-              <Card key={m.id} className="p-4 flex flex-col gap-3">
+              <Card key={m.id} className="p-4 flex flex-col gap-3 bg-slate-800/90 border-slate-700/80 text-slate-100">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-black text-gray-800">{m.nickname || m.name}</div>
+                    <div className="font-black text-slate-100">{m.nickname || m.name}</div>
                     {active ? (
                       <div className="flex flex-col gap-0.5 mt-1">
-                        <div className="text-sm text-blue-600 font-black">🎫 剩餘 {card.sessions} 次</div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-sm text-blue-400 font-black">🎫 剩餘 {card.sessions} 次</div>
+                        <div className="text-xs text-slate-300">
                           到期：{fmtDate(card.expiresAt)}
                           {days !== null && (
-                            <span className={`ml-1 font-bold ${days <= 7 ? "text-red-500" : "text-gray-400"}`}>
+                            <span className={`ml-1 font-bold ${days <= 7 ? "text-red-400" : "text-slate-400"}`}>
                               （剩 {days} 天）
                             </span>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-xs text-gray-400 mt-1">
+                      <div className="text-xs text-slate-400 mt-1">
                         {expired ? "⚠️ 月卡已到期" : "尚未購買月卡"}
                       </div>
                     )}
                   </div>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${active ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-slate-700 text-slate-400"}`}>
                     {active ? "有效" : "無效"}
                   </span>
                 </div>
@@ -288,7 +288,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
                   </Btn>
                   <button
                     onClick={() => setExpandLog(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
-                    className="text-xs text-gray-400 underline px-2">
+                    className="text-xs text-blue-400 underline px-2">
                     {showLog ? "收起" : "查看紀錄"}
                   </button>
                 </div>
@@ -297,7 +297,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
             );
           })}
           {filteredMembers.length === 0 && (
-            <div className="text-center text-gray-400 text-sm py-6">找不到射手</div>
+            <div className="text-center text-slate-400 text-sm py-6">找不到射手</div>
           )}
         </div>
       )}
@@ -305,46 +305,46 @@ export default function AdminMonthlyCard({ adminProfile }) {
       {/* ── 設定 tab ─────────────────────────────────────── */}
       {tab === "config" && (
         <div className="flex flex-col gap-4">
-          <Card className="p-4 flex flex-col gap-4">
-            <div className="font-black text-gray-700">月卡預設值</div>
+          <Card className="p-4 flex flex-col gap-4 bg-slate-800/90 border-slate-700/80 text-slate-100">
+            <div className="font-black text-slate-100">月卡預設值</div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500 font-bold">購買 / 續約次數</label>
+              <label className="text-xs text-slate-300 font-bold">購買 / 續約次數</label>
               <div className="flex items-center gap-3">
                 <button onClick={() => setCfg(c => ({ ...c, sessions: Math.max(1, c.sessions - 1) }))}
-                  className="w-9 h-9 rounded-full bg-gray-100 font-black text-lg">−</button>
-                <span className="flex-1 text-center font-black text-2xl text-blue-600">{cfg.sessions} 次</span>
+                  className="w-9 h-9 rounded-full bg-slate-700 text-slate-100 font-black text-lg">−</button>
+                <span className="flex-1 text-center font-black text-2xl text-blue-400">{cfg.sessions} 次</span>
                 <button onClick={() => setCfg(c => ({ ...c, sessions: Math.min(100, c.sessions + 1) }))}
-                  className="w-9 h-9 rounded-full bg-gray-100 font-black text-lg">+</button>
+                  className="w-9 h-9 rounded-full bg-slate-700 text-slate-100 font-black text-lg">+</button>
               </div>
               <div className="flex gap-2 mt-1">
                 {[8, 12, 16, 20].map(n => (
                   <button key={n} onClick={() => setCfg(c => ({ ...c, sessions: n }))}
-                    className={`flex-1 py-1 text-xs rounded-lg font-bold border transition-all ${cfg.sessions === n ? "bg-blue-600 text-white border-blue-600" : "bg-gray-100 text-gray-600 border-transparent"}`}>
+                    className={`flex-1 py-1 text-xs rounded-lg font-bold border transition-all ${cfg.sessions === n ? "bg-blue-600 text-white border-blue-600" : "bg-slate-700 text-slate-300 border-transparent"}`}>
                     {n}次
                   </button>
                 ))}
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500 font-bold">有效天數</label>
+              <label className="text-xs text-slate-300 font-bold">有效天數</label>
               <div className="flex items-center gap-3">
                 <button onClick={() => setCfg(c => ({ ...c, validDays: Math.max(1, c.validDays - 1) }))}
-                  className="w-9 h-9 rounded-full bg-gray-100 font-black text-lg">−</button>
-                <span className="flex-1 text-center font-black text-2xl text-blue-600">{cfg.validDays} 天</span>
+                  className="w-9 h-9 rounded-full bg-slate-700 text-slate-100 font-black text-lg">−</button>
+                <span className="flex-1 text-center font-black text-2xl text-blue-400">{cfg.validDays} 天</span>
                 <button onClick={() => setCfg(c => ({ ...c, validDays: Math.min(365, c.validDays + 1) }))}
-                  className="w-9 h-9 rounded-full bg-gray-100 font-black text-lg">+</button>
+                  className="w-9 h-9 rounded-full bg-slate-700 text-slate-100 font-black text-lg">+</button>
               </div>
               <div className="flex gap-2 mt-1">
                 {[30, 60, 90].map(n => (
                   <button key={n} onClick={() => setCfg(c => ({ ...c, validDays: n }))}
-                    className={`flex-1 py-1 text-xs rounded-lg font-bold border transition-all ${cfg.validDays === n ? "bg-blue-600 text-white border-blue-600" : "bg-gray-100 text-gray-600 border-transparent"}`}>
+                    className={`flex-1 py-1 text-xs rounded-lg font-bold border transition-all ${cfg.validDays === n ? "bg-blue-600 text-white border-blue-600" : "bg-slate-700 text-slate-300 border-transparent"}`}>
                     {n}天
                   </button>
                 ))}
               </div>
             </div>
             {cfgMsg && (
-              <div className={`text-sm font-bold ${cfgMsg.startsWith("✅") ? "text-emerald-600" : "text-red-500"}`}>
+              <div className={`text-sm font-bold ${cfgMsg.startsWith("✅") ? "text-emerald-400" : "text-red-400"}`}>
                 {cfgMsg}
               </div>
             )}
@@ -352,7 +352,7 @@ export default function AdminMonthlyCard({ adminProfile }) {
               {cfgBusy ? "儲存中…" : "💾 儲存設定"}
             </Btn>
           </Card>
-          <div className="text-xs text-gray-400 text-center">
+          <div className="text-xs text-slate-400 text-center">
             設定只影響之後的購買／續約，不影響已發的月卡
           </div>
         </div>
@@ -360,22 +360,22 @@ export default function AdminMonthlyCard({ adminProfile }) {
 
       {/* 贈次數 Modal */}
       {giftTarget && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4"
           onClick={() => setGiftTarget(null)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="font-black text-gray-800 text-lg mb-1">🎁 贈送免費次數</div>
-            <div className="text-gray-500 text-sm mb-4">{giftTarget.nickname || giftTarget.name}</div>
+          <div className="bg-slate-900 border border-slate-700 text-slate-100 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="font-black text-slate-100 text-lg mb-1">🎁 贈送免費次數</div>
+            <div className="text-slate-400 text-sm mb-4">{giftTarget.nickname || giftTarget.name}</div>
             <div className="flex items-center gap-3 mb-3">
               <button onClick={() => setGiftN(n => Math.max(1, n - 1))}
-                className="w-10 h-10 rounded-full bg-gray-100 font-black text-xl">−</button>
-              <span className="flex-1 text-center font-black text-2xl text-blue-600">{giftN} 次</span>
+                className="w-10 h-10 rounded-full bg-slate-800 text-slate-100 font-black text-xl">−</button>
+              <span className="flex-1 text-center font-black text-2xl text-blue-400">{giftN} 次</span>
               <button onClick={() => setGiftN(n => Math.min(100, n + 1))}
-                className="w-10 h-10 rounded-full bg-gray-100 font-black text-xl">+</button>
+                className="w-10 h-10 rounded-full bg-slate-800 text-slate-100 font-black text-xl">+</button>
             </div>
             <div className="flex gap-2 mb-4">
               {[1, 2, 4, 8].map(n => (
                 <button key={n} onClick={() => setGiftN(n)}
-                  className="flex-1 py-1.5 text-xs bg-gray-100 rounded-lg font-bold text-gray-600">
+                  className="flex-1 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg font-bold text-slate-200">
                   +{n}次
                 </button>
               ))}

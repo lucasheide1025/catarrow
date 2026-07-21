@@ -10,7 +10,7 @@ import { collection, getDoc, getDocs, doc, updateDoc, serverTimestamp, query, wh
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  createBooking, cancelBooking, rescheduleBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
+  createBooking, cancelBooking, rescheduleBooking, updateBooking, blockSlot, unblockSlot, setSlotRangeBlocked,
   completeBookingFromCheckin,
   bookingHasStarted,
   getBookingsForDateRange, getRecentBookings, LANE_CAPACITY,
@@ -489,6 +489,7 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
   const [checkoutTarget, setCheckoutTarget] = useState(null);
 
   // 這一格目前人數的新/舊生拆分，直接從這一格的實際預約清單算（清單已含跨時段進來的3小時預約）
@@ -553,9 +554,6 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
         setCheckoutTarget(booking);
         return;
       }
-      // 只比對目前登入教練本人的 member doc。舊作法讀取
-      // admins/{學生 uid}，但規則只准讀自己的 admin 文件，導致所有
-      // 正式學員的結帳檢查在此直接 Permission denied。
       if (booking.memberId === profile?.id) {
         setCheckoutTarget(booking);
         return;
@@ -632,6 +630,9 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
                   ) : (
                     <Btn v="success" size="sm" onClick={() => openCheckout(b)} disabled={busy}>💰 結帳</Btn>
                   )}
+                  {b.status !== "cancelled" && (
+                    <Btn v="secondary" size="sm" onClick={() => setEditTarget(b)} disabled={busy}>✏️ 修改</Btn>
+                  )}
                   {b.status === "completed"
                     ? <span className="text-emerald-400 text-xs font-bold">🏁 已完成課程</span>
                     : b.status === "confirmed" && <Btn v="ghost" size="sm" onClick={() => setRescheduleTarget(b)} disabled={busy}>{bookingHasStarted(b) ? "強制改期" : "改期"}</Btn>}
@@ -649,6 +650,11 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
       {createOpen && (
         <CreateBookingModal initialSlot={slot} onClose={() => setCreateOpen(false)}
           onDone={() => { setCreateOpen(false); onChanged(); }} toast={toast} />
+      )}
+
+      {editTarget && (
+        <EditBookingModal booking={editTarget} onClose={() => setEditTarget(null)}
+          onDone={() => { setEditTarget(null); onChanged(); }} toast={toast} />
       )}
 
       {rescheduleTarget && (
@@ -673,6 +679,110 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
     </Modal>
   );
 }
+
+// ─── 修改預約 Modal（可改截止時間/時數、方案、人數）──────────────────
+function EditBookingModal({ booking, onClose, onDone, toast }) {
+  const [startTime, setStartTime] = useState(booking.startTime || "10:00");
+  const [planType, setPlanType] = useState(booking.planType || "general");
+  const [durationHours, setDurationHours] = useState(booking.durationHours || 1);
+  const [participantCount, setParticipantCount] = useState(booking.participantCount || 1);
+  const [busy, setBusy] = useState(false);
+
+  const AVAILABLE_TIMES = Array.from({ length: 12 }, (_, i) => `${String(10 + i).padStart(2, "0")}:00`);
+  const startHour = Number((startTime || "10:00").split(":")[0]);
+  const durationOptions = [1, 2, 3].filter(d => startHour + d <= 22);
+  const newEndTime = computeEndTime(startTime, durationHours);
+
+  async function handleSubmit() {
+    setBusy(true);
+    const res = await updateBooking(
+      booking.id,
+      { startTime, planType, durationHours, endTime: newEndTime, participantCount },
+      { force: true }
+    );
+    setBusy(false);
+    if (!res.ok) {
+      toast(res.reason || "修改失敗", "error");
+      return;
+    }
+    toast("預約資料已更新 ✓");
+    onDone();
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`修改預約：${booking.memberName || "顧客"}`} wide>
+      <div className="flex flex-col gap-4">
+        <div className="text-slate-400 text-xs bg-white/5 p-3 rounded-xl border border-white/10">
+          日期：{booking.date} · 目前預定：{booking.startTime} ~ {booking.endTime}
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5 font-sans">開始時間（教練特權：可提早／調整開始時間）</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {AVAILABLE_TIMES.map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setStartTime(t)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 border transition ${
+                  startTime === t ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-500/20" : "border-slate-700 bg-slate-800 text-slate-300 hover:text-white"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5 font-sans">截止時間／課程時數</div>
+          <div className="flex gap-2">
+            {durationOptions.map(d => {
+              const endT = computeEndTime(startTime, d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDurationHours(d)}
+                  className={`flex-1 rounded-xl p-2.5 text-center border transition ${
+                    durationHours === d ? "border-blue-500 bg-blue-500/10 text-white font-bold" : "border-white/10 bg-white/5 text-slate-300"
+                  }`}
+                >
+                  <div className="text-sm font-bold">{endT} 截止</div>
+                  <div className="text-[11px] text-slate-400">({durationLabel(d)})</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5">預約方案</div>
+          <PlanDurationPicker planType={planType} durationHours={durationHours}
+            onChange={({ planType: pt, durationHours: dh }) => {
+              setPlanType(pt);
+              setDurationHours(dh);
+            }} />
+        </div>
+
+        <div>
+          <div className="text-slate-400 text-xs font-bold mb-1.5">人數</div>
+          <ParticipantCountPicker value={participantCount} onChange={setParticipantCount} />
+        </div>
+
+        <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-4 py-3">
+          <span className="text-emerald-300 text-sm font-bold">修改後總計金額</span>
+          <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
+        </div>
+
+        <Btn v="primary" onClick={handleSubmit} disabled={busy}>
+          {busy ? "儲存中…" : "確認修改"}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 
 // ─── 結帳：把預約轉成一筆會計系統記錄（07-10-booking-billing-integration）──
 // 方案/日期/付款方式全部從這筆預約自動帶入，教練仍可在送出前修改任何一項。

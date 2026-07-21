@@ -48,11 +48,12 @@ function ellipsize(ctx, text, maxWidth) {
   return t + "…";
 }
 
-// 一個人色牌上的字：🆕(新生) + 姓名 + ×人數(多人時)
-function chipLabel(b) {
+// 一個人色牌上的字：🆕(新生) + 姓名 + ×人數(多人時) + 跨時段時顯示時間範圍 (10:00–13:00)
+function chipLabel(b, slotTime) {
   const name = b.memberName || "顧客";
   const withCount = (b.participantCount || 1) > 1 ? `${name}×${b.participantCount}` : name;
-  return (b.isNewStudent ? "🆕" : "") + withCount;
+  const range = (b.durationHours || 1) > 1 ? ` (${b.startTime}–${b.endTime})` : "";
+  return (b.isNewStudent ? "🆕" : "") + withCount + range;
 }
 
 function drawDot(ctx, x, y, color) {
@@ -62,37 +63,64 @@ function drawDot(ctx, x, y, color) {
   ctx.fill();
 }
 
+const SLOT_ROW_H = 48; // 一個小時格的基準高度
+const PLAN_SHORT_LABEL = { general: "單人一般", discount: "兒童/學生/敬老", own_equipment: "自備器材" };
+
 // 把某天的 bookings 畫到 canvas；回傳這張圖的邏輯高度
 function drawCard(canvas, date, rows, scale) {
   const ctx = canvas.getContext("2d");
-  const contentW = W - PAD * 2 - TIME_COL;
 
-  // ── 依開始時段分組（rows 已依 startTime→姓名 排序，Map 插入順序即為時段順序）──
-  const order = [];
-  const map = new Map();
+  // ── 1. 收集當天所有有活動的小時格，按時間排序 ──
+  const activeHoursSet = new Set();
   rows.forEach(b => {
-    if (!map.has(b.startTime)) { map.set(b.startTime, []); order.push(b.startTime); }
-    map.get(b.startTime).push(b);
+    const startH = Number((b.startTime || "10:00").split(":")[0]);
+    const duration = b.durationHours || 1;
+    for (let i = 0; i < duration; i++) {
+      const h = startH + i;
+      activeHoursSet.add(`${String(h).padStart(2, "0")}:00`);
+    }
   });
 
-  // ── 版面量測（在設定 canvas 尺寸「之前」做，measureText 不依賴畫布大小）──
-  ctx.font = CHIP_FONT;
-  const groupData = order.map(time => {
-    const chips = [];
-    let x = 0, row = 0;
-    map.get(time).forEach(b => {
-      const label = ellipsize(ctx, chipLabel(b), contentW - 18);
-      const w = Math.ceil(ctx.measureText(label).width) + 18;
-      if (x > 0 && x + w > contentW) { row++; x = 0; } // 放不下就換行
-      chips.push({ label, isNew: !!b.isNewStudent, x, row, w });
-      x += w + CHIP_GAP;
-    });
-    const rowCount = (chips.length ? chips[chips.length - 1].row : 0) + 1;
-    return { time, chips, height: rowCount * CHIP_H + (rowCount - 1) * CHIP_GAP };
+  const order = Array.from(activeHoursSet).sort();
+
+  // ── 2. 為每個 hour 格計算 top Y 座標 ──
+  const slotY = {};
+  let curY = HEADER_H;
+  order.forEach(t => {
+    slotY[t] = curY;
+    curY += SLOT_ROW_H + SLOT_GAP;
   });
+
+  // ── 3. 為每筆預約配置不重疊的 lane (欄位) ──
+  const occupiedLanesAtHour = new Map();
+  const bPlacements = rows.map(b => {
+    const startH = Number((b.startTime || "10:00").split(":")[0]);
+    const duration = b.durationHours || 1;
+    const hours = Array.from({ length: duration }, (_, i) => startH + i);
+
+    let lane = 0;
+    while (hours.some(h => occupiedLanesAtHour.get(h)?.has(lane))) {
+      lane++;
+    }
+    hours.forEach(h => {
+      if (!occupiedLanesAtHour.has(h)) occupiedLanesAtHour.set(h, new Set());
+      occupiedLanesAtHour.get(h).add(lane);
+    });
+
+    const name = b.memberName || "顧客";
+    const title = (b.isNewStudent ? "🆕" : "") + ((b.participantCount || 1) > 1 ? `${name}×${b.participantCount}` : name);
+    return { booking: b, lane, title, duration, startH };
+  });
+
+  // 動態計算 Canvas 寬度 W，確保無論同時有多少筆預約（即使 8 人同時預約），欄位都不會爆框！
+  const maxLanes = Math.max(1, ...bPlacements.map(p => p.lane + 1));
+  const targetLaneW = maxLanes <= 2 ? 160 : maxLanes === 3 ? 120 : 105;
+  const contentW = Math.max(342, maxLanes * targetLaneW + (maxLanes - 1) * CHIP_GAP);
+  const W = contentW + PAD * 2 + TIME_COL;
+  const laneW = Math.floor((contentW - (maxLanes - 1) * CHIP_GAP) / maxLanes);
 
   const bodyH = rows.length
-    ? groupData.reduce((s, g) => s + g.height, 0) + SLOT_GAP * (groupData.length - 1)
+    ? (order.length * SLOT_ROW_H + (order.length - 1) * SLOT_GAP)
     : 52;
   const H = HEADER_H + bodyH + FOOTER_H + PAD;
 
@@ -119,7 +147,7 @@ function drawCard(canvas, date, rows, scale) {
   const d = new Date(date + "T00:00:00+08:00");
   ctx.fillStyle = "#ffffff";
   ctx.font = "900 28px system-ui, sans-serif";
-  const dateW = ctx.measureText(date).width; // 先在 28px 字級量好日期寬，別等切到 14px 才量（會量太窄）
+  const dateW = ctx.measureText(date).width;
   ctx.fillText(date, PAD, PAD + 46);
 
   const dowText = `週${DOW[d.getDay()]}`;
@@ -143,41 +171,72 @@ function drawCard(canvas, date, rows, scale) {
   ctx.fillStyle = "#94a3b8";
   ctx.fillText("舊生", ox + 10, lgy);
 
-  // ── Rows（時段分組）──────────────────────
-  let y = HEADER_H;
+  // ── Rows（時段與跨時段方框）──────────────────────
   if (!rows.length) {
-    roundRectPath(ctx, PAD, y, W - PAD * 2, 52, 12);
+    roundRectPath(ctx, PAD, HEADER_H, W - PAD * 2, 52, 12);
     ctx.fillStyle = "rgba(255,255,255,0.04)";
     ctx.fill();
     ctx.fillStyle = "#64748b";
     ctx.font = "700 16px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("今日尚無排定課程 🗒️", W / 2, y + 32);
+    ctx.fillText("今日尚無排定課程 🗒️", W / 2, HEADER_H + 32);
     ctx.textAlign = "left";
   } else {
-    groupData.forEach(g => {
-      // 時段標籤（對齊第一列色牌）
+    // 繪製時間軸標籤與隔線
+    order.forEach(t => {
+      const ty = slotY[t];
       ctx.fillStyle = "#e2e8f0";
-      ctx.font = "800 16px system-ui, sans-serif";
-      ctx.fillText(g.time, PAD, y + 20);
-      // 色牌
-      g.chips.forEach(c => {
-        const cx = PAD + TIME_COL + c.x;
-        const cy = y + c.row * (CHIP_H + CHIP_GAP);
-        const st = c.isNew ? NEW_STYLE : OLD_STYLE;
-        roundRectPath(ctx, cx, cy, c.w, CHIP_H, 8);
-        ctx.fillStyle = st.bg;
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = st.border;
-        ctx.stroke();
-        ctx.fillStyle = st.text;
-        ctx.font = CHIP_FONT;
-        ctx.fillText(c.label, cx + 9, cy + 20);
-      });
-      y += g.height + SLOT_GAP;
+      ctx.font = "800 15px system-ui, sans-serif";
+      ctx.fillText(t, PAD, ty + 28);
+
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.fillRect(PAD + TIME_COL, ty + SLOT_ROW_H + SLOT_GAP / 2, contentW, 1);
+    });
+
+    // 繪製跨時段連續方框
+    bPlacements.forEach(({ booking: b, lane, title, duration, startH }) => {
+      const startT = b.startTime;
+      const endH = startH + duration - 1;
+      const endT = `${String(endH).padStart(2, "0")}:00`;
+
+      const topY = slotY[startT];
+      const bottomY = (slotY[endT] || topY) + SLOT_ROW_H;
+      const blockH = bottomY - topY;
+
+      const leftX = PAD + TIME_COL + lane * (laneW + CHIP_GAP);
+      const st = b.isNewStudent ? NEW_STYLE : OLD_STYLE;
+
+      roundRectPath(ctx, leftX, topY, laneW, blockH, 10);
+      ctx.fillStyle = st.bg;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = st.border;
+      ctx.stroke();
+
+      // 第一行：姓名 + 人數 + 🆕
+      ctx.fillStyle = st.text;
+      ctx.font = "700 13px system-ui, sans-serif";
+      const displayTitle = ellipsize(ctx, title, laneW - 12);
+      ctx.fillText(displayTitle, leftX + 8, topY + 20);
+
+      // 第二行：時間起迄與總時數
+      if (blockH >= 40) {
+        ctx.font = "600 11px system-ui, sans-serif";
+        ctx.fillStyle = b.isNewStudent ? "rgba(253,230,138,0.85)" : "rgba(191,219,254,0.85)";
+        const timeRangeText = `${b.startTime}–${b.endTime}${duration > 1 ? ` (${duration}hr)` : ''}`;
+        ctx.fillText(ellipsize(ctx, timeRangeText, laneW - 12), leftX + 8, topY + 36);
+      }
+
+      // 第三行：方案名稱
+      if (blockH >= 70) {
+        ctx.font = "500 10px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        const planText = PLAN_SHORT_LABEL[b.planType] || b.planType || "";
+        ctx.fillText(ellipsize(ctx, planText, laneW - 12), leftX + 8, topY + 52);
+      }
     });
   }
+
 
   // ── Footer ─────────────────────────────
   const totalPeople = rows.reduce((s, b) => s + (b.participantCount || 1), 0);

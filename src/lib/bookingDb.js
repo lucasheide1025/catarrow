@@ -383,7 +383,100 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
   }
 }
 
+// ─── 修改預約（教練後台，可調整開始時間/方案/時數/結束時間/人數）─────────────────
+export async function updateBooking(bookingId, updates, options = {}) {
+  const { startTime, planType, durationHours, endTime, participantCount } = updates;
+  const bookingRef = doc(db, BOOKINGS, bookingId);
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(bookingRef);
+      if (!snap.exists()) throw new Error("BOOKING_NOT_FOUND");
+      const old = snap.data();
+      if (old.status === "cancelled") throw new Error("BOOKING_CANCELLED");
+
+      const newStartTime = startTime ?? old.startTime;
+      const newDuration = durationHours ?? (old.durationHours || 1);
+      const newPlan = planType ?? old.planType;
+      const newCount = participantCount ?? (old.participantCount || 1);
+      const [startH, startM] = newStartTime.split(":").map(Number);
+      const endH = startH + newDuration;
+      const mm = startM === 0 ? "00" : String(startM).padStart(2, "0");
+      const calcEnd = `${String(endH).padStart(2, "0")}:${mm}`;
+      const newEndTime = endTime ?? calcEnd;
+
+      const oldSlotKeys = (old.slotKeys && old.slotKeys.length) ? old.slotKeys : slotKeysFor(old.date, old.startTime, old.durationHours || 1);
+      const newSlotKeys = slotKeysFor(old.date, newStartTime, newDuration);
+      const oldCount = old.participantCount || 1;
+      const isNew = !!old.isNewStudent;
+
+      const allKeys = Array.from(new Set([...oldSlotKeys, ...newSlotKeys]));
+      const refByKey = {};
+      allKeys.forEach(k => { refByKey[k] = doc(db, SLOT_COUNTS, k); });
+
+      const snapPairs = await Promise.all(allKeys.map(async (k) => [k, await tx.get(refByKey[k])]));
+      const counterByKey = {};
+      snapPairs.forEach(([k, s]) => { counterByKey[k] = readCounter(s); });
+
+      // 容量與封鎖檢查
+      allKeys.forEach(k => {
+        const inOld = oldSlotKeys.includes(k);
+        const inNew = newSlotKeys.includes(k);
+        const oldContrib = inOld ? oldCount : 0;
+        const newContrib = inNew ? newCount : 0;
+        const delta = newContrib - oldContrib;
+
+        if (delta > 0 && !options.force) {
+          const c = counterByKey[k];
+          if (c.blocked) throw new Error(`SLOT_BLOCKED:${k}`);
+          if (c.count + delta > LANE_CAPACITY) throw new Error(`SLOT_FULL:${k}`);
+        }
+      });
+
+      // 更新受影響的 slot counts
+      allKeys.forEach(k => {
+        const inOld = oldSlotKeys.includes(k);
+        const inNew = newSlotKeys.includes(k);
+        const oldContrib = inOld ? oldCount : 0;
+        const newContrib = inNew ? newCount : 0;
+        const delta = newContrib - oldContrib;
+
+        if (delta !== 0) {
+          const c = counterByKey[k];
+          tx.set(refByKey[k], {
+            count: Math.max(0, c.count + delta),
+            blocked: c.blocked,
+            newCount: Math.max(0, c.newCount + (isNew ? delta : 0)),
+            returningCount: Math.max(0, c.returningCount + (isNew ? 0 : delta)),
+          }, { merge: true });
+        }
+      });
+
+      tx.update(bookingRef, {
+        startTime: newStartTime,
+        planType: newPlan,
+        durationHours: newDuration,
+        endTime: newEndTime,
+        participantCount: newCount,
+        slotKey: newSlotKeys[0],
+        slotKeys: newSlotKeys,
+        updatedAt: serverTimestamp(),
+      });
+    });
+    return { ok: true };
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.startsWith("SLOT_FULL")) return { ok: false, reason: "修改後的時段/人數已超過容量上限" };
+    if (msg.startsWith("SLOT_BLOCKED")) return { ok: false, reason: "修改後的時段教練暫停預約" };
+    if (msg === "BOOKING_NOT_FOUND") return { ok: false, reason: "找不到這筆預約" };
+    if (msg === "BOOKING_CANCELLED") return { ok: false, reason: "該預約已取消，無法修改" };
+    console.error("[updateBooking]", e);
+    return { ok: false, reason: "修改失敗：" + msg };
+  }
+}
+
 // ─── 暫停 / 恢復 特定時段（教練後台，全場封鎖）─────────────────
+
 // 單一文件單一欄位寫入，不需要 transaction。
 // 容量計數器欄位（count）由 createBooking/rescheduleBooking 的 readCounter() 安全預設值處理，
 // 這裡不用先讀再寫也不會壞（setDoc + merge 不會動到沒寫進 payload 的既有欄位）。
