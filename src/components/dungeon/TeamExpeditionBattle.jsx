@@ -1087,6 +1087,7 @@ export default function TeamExpeditionBattle({
       case "shop":
         return <DungeonShop {...common} memberData={{ ...myMember, id: myId, coins: profile?.coins || 0 }} />;
       case "event":
+      case "general_event":
         return <DungeonEvent {...common} />;
       case "trap":
         return <DungeonTrap {...common} />;
