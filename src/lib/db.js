@@ -3826,7 +3826,7 @@ export function subscribeMonthlyCardLogs(memberId, callback) {
 // clientCard: profile.monthlyCard — 從 client 傳入，避免 getDoc
 // hasPending: 從 subscribeMyMonthlyRequests 的現有資料判斷
 export async function submitMonthlyCardRequest(memberId, memberName, hours, clientCard = null, hasPending = false) {
-  if (!memberId || ![1, 2].includes(hours)) return { ok: false, reason: "參數錯誤" };
+  if (!memberId || ![1, 2, 3].includes(hours)) return { ok: false, reason: "參數錯誤" };
   try {
     if (hasPending) return { ok: false, reason: "已有待審核申請，請等待教練處理" };
     const card = clientCard;

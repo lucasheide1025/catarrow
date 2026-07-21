@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
   grantArrowMilestoneRewards, checkAndGrantArrowMilestones, subscribeLocalTodayArrows, initializeTodayArrows,
+  submitMonthlyCardRequest,
 } from "../../lib/db";
 import { ALL_MILESTONES, getRewardsForMilestone, describeMilestoneRewards } from "../../lib/arrowMilestone";
 import { CHEST_TYPES } from "../../lib/itemData";
@@ -29,8 +30,6 @@ function MilestoneBoard({ todayArrows }) {
         {ALL_MILESTONES.map(ms => {
           const unlocked = todayArrows >= ms.arrows;
           const rewards = getRewardsForMilestone(ms);
-          // 走與彈窗相同的敘述來源，避免像先前那樣只列出抽獎幣與貓箱、
-          // 漏掉箭露／寶箱／金幣寶箱／建築包（使用者實測抓到）
           const rewardText = describeMilestoneRewards(rewards, {
             CHEST_TYPES, COIN_CHEST_TIERS, getVillagePack,
           }).map(row => `${row.icon}${row.count}`).join(" ");
@@ -39,7 +38,6 @@ function MilestoneBoard({ todayArrows }) {
               display: "flex", alignItems: "center", gap: 8,
               opacity: unlocked ? 1 : 0.35,
             }}>
-              {/* 勾 / 圓 */}
               <div style={{
                 width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
                 background: unlocked ? "linear-gradient(135deg,#22c55e,#16a34a)" : "rgba(255,255,255,0.08)",
@@ -49,11 +47,9 @@ function MilestoneBoard({ todayArrows }) {
               }}>
                 {unlocked ? "✓" : ""}
               </div>
-              {/* 標籤 */}
               <div style={{ flex: 1, fontSize: 11, color: unlocked ? "#e2e8f0" : "#64748b", fontWeight: unlocked ? 700 : 400 }}>
                 {ms.label}
               </div>
-              {/* 獎勵 */}
               <div style={{ fontSize: 10, color: unlocked ? "#fbbf24" : "#475569", fontWeight: 700 }}>
                 {rewardText}
               </div>
@@ -61,7 +57,6 @@ function MilestoneBoard({ todayArrows }) {
           );
         })}
       </div>
-      {/* 進度條 */}
       {(() => {
         const nextMs = ALL_MILESTONES.find(m => m.arrows > todayArrows);
         if (!nextMs) return (
@@ -90,13 +85,20 @@ function MilestoneBoard({ todayArrows }) {
 
 export default function DailyQuest({ onJoinParty }) {
   const { profile } = useAuth();
-  const [checkin,       setCheckin]       = useState(undefined);
-  const [submitBusy,    setSubmitBusy]    = useState(false);
-  const [justSubmitted, setJustSubmitted] = useState(false);
-  const [classBusy,     setClassBusy]     = useState(false);
-  const [showConfirm,   setShowConfirm]   = useState(false);
-  const [todayArrows,   setTodayArrows]   = useState(0);
+  const [checkin,        setCheckin]        = useState(undefined);
+  const [submitBusy,     setSubmitBusy]     = useState(false);
+  const [justSubmitted,  setJustSubmitted]  = useState(false);
+  const [classBusy,      setClassBusy]      = useState(false);
+  const [showConfirm,    setShowConfirm]    = useState(false);
+  const [todayArrows,    setTodayArrows]    = useState(0);
   const [milestoneQueue, setMilestoneQueue] = useState([]);
+
+  // 月卡扣抵相關 State
+  const [wantUseMonthly, setWantUseMonthly] = useState(true);
+  const [monthlyHours,   setMonthlyHours]   = useState(1);
+
+  const monthlyCard = profile?.monthlyCard;
+  const isMonthlyActive = !!(monthlyCard?.active && (monthlyCard?.sessions > 0));
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -104,18 +106,25 @@ export default function DailyQuest({ onJoinParty }) {
     return () => unsub?.();
   }, [profile?.id]);
 
-  // 今日箭數：從 localStorage 讀取（addRoundArrows 每回合累加），取代 Firestore onSnapshot
   useEffect(() => {
-    initializeTodayArrows(profile.id).catch(() => {});
-    return subscribeLocalTodayArrows(profile.id, setTodayArrows);
+    initializeTodayArrows(profile?.id).catch(() => {});
+    return subscribeLocalTodayArrows(profile?.id, setTodayArrows);
   }, [profile?.id]);
+
+  // 當打開下課確認視窗時，自動抓取預約時數並帶入預設扣抵時數
+  useEffect(() => {
+    if (showConfirm) {
+      const detected = Math.min(3, Math.max(1, checkin?.durationHours || checkin?.bookingDuration || 1));
+      setMonthlyHours(detected);
+      setWantUseMonthly(isMonthlyActive);
+    }
+  }, [showConfirm, checkin, isMonthlyActive]);
 
   async function handleCheckin() {
     if (!profile?.id || submitBusy) return;
     setSubmitBusy(true);
     try {
       const { id } = await submitCheckin(profile.id, profile.name, profile.nickname);
-      // 教練自主報到 → 立即審核通過，不需等另一位教練
       if (profile.isAdmin) {
         await approveCheckin(id, profile.id).catch(() => {});
       }
@@ -129,6 +138,16 @@ export default function DailyQuest({ onJoinParty }) {
     setShowConfirm(false);
     setClassBusy(true); sfxSuccess();
     try {
+      // 若有月卡且勾選扣抵，同步送出月卡申請
+      if (isMonthlyActive && wantUseMonthly) {
+        await submitMonthlyCardRequest(
+          profile.id,
+          profile.nickname || profile.name || "射手",
+          monthlyHours,
+          monthlyCard
+        ).catch(() => {});
+      }
+
       await submitClassEnd(profile.id, checkin.id);
       if (todayArrows > 0) {
         addArrowdew(profile.id, todayArrows).catch(() => {});
@@ -142,13 +161,6 @@ export default function DailyQuest({ onJoinParty }) {
     setClassBusy(false);
   }
 
-  if (checkin === undefined) {
-    return (
-      <div style={{ color:"rgba(255,255,255,0.4)", fontSize:13, padding:"10px 0", textAlign:"center" }}
-        className="animate-pulse">載入中…</div>
-    );
-  }
-
   const status     = checkin?.status;
   const isActive   = status === "active" && !checkin?.classEnded;
   const isEnded    = !!checkin?.classEnded;
@@ -156,7 +168,6 @@ export default function DailyQuest({ onJoinParty }) {
   const isRejected = status === "rejected";
   const noCheckin  = !checkin || status === "cancelled";
 
-  // ── 報到按鈕 config ───────────────────────────────────────────
   let ciLabel, ciBg, ciColor, ciDisabled;
   if (submitBusy) {
     ciLabel = "送出中…"; ciBg = "#1e293b"; ciColor = "#94a3b8"; ciDisabled = true;
@@ -178,7 +189,6 @@ export default function DailyQuest({ onJoinParty }) {
     ciColor = "white"; ciDisabled = false;
   }
 
-  // ── 下課按鈕 config ───────────────────────────────────────────
   const canEndClass = isActive && !classBusy && !showConfirm;
 
   const BtnBase = {
@@ -198,7 +208,6 @@ export default function DailyQuest({ onJoinParty }) {
           onAllClose={() => setMilestoneQueue([])} />
       )}
 
-      {/* 今日箭數（任何狀態都顯示，讓射手即時看到累積進度） */}
       {todayArrows > 0 && !showConfirm && (
         <div style={{
           background: "rgba(59,130,246,0.08)",
@@ -212,7 +221,6 @@ export default function DailyQuest({ onJoinParty }) {
         </div>
       )}
 
-      {/* 兩按鈕並排 */}
       <div style={{ display:"flex", gap:8 }}>
         <button
           onClick={!ciDisabled ? handleCheckin : undefined}
@@ -232,7 +240,6 @@ export default function DailyQuest({ onJoinParty }) {
         </button>
       </div>
 
-      {/* 狀態訊息 */}
       {(justSubmitted || isPending) && (
         <div style={{ color:"#fbbf24", fontSize:12, fontWeight:700, textAlign:"center" }}>
           📣 已報到！請告知教練進行審核
@@ -244,7 +251,7 @@ export default function DailyQuest({ onJoinParty }) {
         </div>
       )}
 
-      {/* 下課確認（含里程碑全覽板） */}
+      {/* 下課確認（含月卡自動偵測扣抵 ＋ 里程碑全覽板） */}
       {showConfirm && (
         <div style={{ paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ color:"rgba(255,255,255,0.85)", fontSize:14, fontWeight:700, textAlign:"center", marginBottom:4 }}>
@@ -253,6 +260,52 @@ export default function DailyQuest({ onJoinParty }) {
           <div style={{ color:"rgba(255,255,255,0.5)", fontSize:12, textAlign:"center", marginBottom:4 }}>
             今日 {todayArrows} 箭的箭露將立即結算
           </div>
+
+          {/* 月卡扣抵偵測卡 */}
+          {isMonthlyActive && (
+            <div style={{
+              background: "rgba(245,158,11,0.12)",
+              border: "1px solid rgba(251,191,36,0.35)",
+              borderRadius: 12, padding: "10px 12px", marginTop: 8, marginBottom: 8,
+              display: "flex", flexDirection: "column", gap: 6, textAlign: "left",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ color: "#fcd34d", fontSize: 12, fontWeight: 800 }}>
+                  🎫 偵測到有效月卡（剩餘 {monthlyCard.sessions} 次）
+                </span>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", marginLeft: "auto" }}>
+                  <input
+                    type="checkbox"
+                    checked={wantUseMonthly}
+                    onChange={e => setWantUseMonthly(e.target.checked)}
+                    style={{ accentColor: "#f59e0b" }}
+                  />
+                  <span style={{ color: "#fef08a", fontSize: 11, fontWeight: 700 }}>申請月卡扣抵</span>
+                </label>
+              </div>
+              {wantUseMonthly && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, paddingTop: 4, borderTop: "1px solid rgba(251,191,36,0.2)" }}>
+                  <span style={{ color: "#cbd5e1" }}>申請扣抵時數：</span>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[1, 2, 3].map(h => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => setMonthlyHours(h)}
+                        style={{
+                          padding: "3px 9px", borderRadius: 6, fontSize: 11, fontWeight: 800, border: "none", cursor: "pointer",
+                          background: monthlyHours === h ? "#f59e0b" : "#334155",
+                          color: monthlyHours === h ? "#0f172a" : "#cbd5e1",
+                        }}
+                      >
+                        {h} 小時
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 里程碑全覽板 */}
           <MilestoneBoard todayArrows={todayArrows} />
