@@ -1357,7 +1357,7 @@ function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }
 
 // ── 資源鍵顯示名稱 ───────────────────────────────────────────
 function formatResKey(key) {
-  const BASE = { ore:"礦物",meat:"動物肉",driedfish:"小魚乾",melon:"瓜瓜",fish:"鮮魚",potion:"貓薄荷藥水",fur:"貓毛",arrowdew:"箭露" };
+  const BASE = { ore:"礦物",meat:"動物肉",driedfish:"小魚乾",melon:"瓜瓜",fish:"鮮魚",can:"貓罐頭",potion:"貓薄荷藥水",fur:"貓毛",arrowdew:"箭露" };
   const parts = key.split("_t");
   return parts[1] ? `${BASE[parts[0]] || parts[0]} T${parts[1]}` : (BASE[key] || key);
 }

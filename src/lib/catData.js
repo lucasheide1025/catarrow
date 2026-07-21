@@ -268,13 +268,15 @@ export const CAT_SKILL_GROUPS = {
   diandian: "def",
 };
 
-// ── 貓貓裝備欄位定義（5 格）───────────────────────────────
+// ── 貓貓裝備欄位定義（7 格：3 ATK / 3 DEF / 1 HP）─────────────────
 export const CAT_EQUIP_SLOTS = [
-  { id: "bow",     label: "弓",       icon: "🏹", stat: "atk", matKey: "ore"       },
-  { id: "arrow",   label: "箭",       icon: "🪃", stat: "atk", matKey: "meat"      },
-  { id: "armor",   label: "防具",     icon: "🛡️", stat: "def", matKey: "ore"       },
-  { id: "herbBag", label: "貓草包",   icon: "🌿", stat: "def", matKey: "driedfish" },
-  { id: "potion",  label: "貓草藥水", icon: "🍵", stat: "hp",  matKey: "potion"    },
+  { id: "bow",       label: "弓",       icon: "🏹", stat: "atk", matKey: "ore" },
+  { id: "arrow",     label: "箭",       icon: "🪃", stat: "atk", matKey: "melon" },
+  { id: "arrowhead", label: "箭頭",     icon: "🗡️", stat: "atk", matKey: "fish" },
+  { id: "armor",     label: "護胸",     icon: "🛡️", stat: "def", matKey: "meat" },
+  { id: "shoulder",  label: "肩甲",     icon: "🦺", stat: "def", matKey: "driedfish" },
+  { id: "herbBag",   label: "貓草包",   icon: "🌿", stat: "def", matKey: "can" },
+  { id: "potion",    label: "貓草藥水", icon: "🍵", stat: "hp",  matKey: "potion" },
 ];
 
 // 六品質：普通→稀有→精英→頭目→傳說→神話（史詩改為頭目/Boss）
@@ -303,7 +305,6 @@ export function catEquipLevel(grade, plusLevel) {
 }
 
 // 裝備加成 = (gradeIdx × 10 + 1) + plusLevel → ATK/DEF 直接加；HP × 5
-// 全滿（神話+9）每欄 = 60，ATK欄×2=120，DEF欄×2=120，HP欄×5=300
 export function calcCatEquipBonus(equip = {}) {
   let atkBonus = 0, defBonus = 0, hpBonus = 0;
   for (const s of CAT_EQUIP_SLOTS) {
@@ -319,21 +320,20 @@ export function calcCatEquipBonus(equip = {}) {
   return { atkBonus, defBonus, hpBonus };
 }
 
-// ── 鍛造費用表（×10 倍，適配長期掛機）────────────────────────
-// plusUpgrades[i] = 品質內升至下一級所需；實際材料 Tier 由目前品質決定。
+// ── 鍛造費用表（針對 9 隻貓咪 1~50 級平滑難度曲線）─────────────────
 export const CAT_FORGE_COSTS = {
   plusUpgrades: [
-    { tier: 1, amount:  30 },  // +0 → +1
-    { tier: 1, amount:  60 },  // +1 → +2
-    { tier: 1, amount: 100 },  // +2 → +3
-    { tier: 1, amount: 150 },  // +3 → +4
-    { tier: 1, amount: 200 },  // +4 → +5
-    { tier: 1, amount: 300 },  // +5 → +6
-    { tier: 1, amount: 450 },  // +6 → +7
-    { tier: 1, amount: 600 },  // +7 → +8
-    { tier: 1, amount: 800 },  // +8 → +9
+    { tier: 1, amount:   5 },  // +0 → +1
+    { tier: 1, amount:  10 },  // +1 → +2
+    { tier: 1, amount:  15 },  // +2 → +3
+    { tier: 1, amount:  20 },  // +3 → +4
+    { tier: 1, amount:  30 },  // +4 → +5
+    { tier: 1, amount:  45 },  // +5 → +6
+    { tier: 1, amount:  60 },  // +6 → +7
+    { tier: 1, amount:  80 },  // +7 → +8
+    { tier: 1, amount: 100 },  // +8 → +9
   ],
-  gradeFurAmounts: [10, 15, 20, 30, 50],
+  gradeFurAmounts: [5, 10, 15, 25, 40],
 };
 
 // 計算升級所需材料（回傳 { [resourceKey]: amount }）
@@ -347,10 +347,14 @@ export function calcForgeCost(slotId, currentGrade, currentPlus) {
 
   if (currentPlus < CAT_EQUIP_MAX_PLUS) {
     const { amount } = CAT_FORGE_COSTS.plusUpgrades[currentPlus];
-    return { [`${slot.matKey}_t${tier}`]: amount };
+    const scaledAmount = Math.max(1, Math.round(amount * Math.pow(1.3, gIdx)));
+    const matKeyName = slot.matKey === "potion" ? "potion" : `${slot.matKey}_t${tier}`;
+    return { [matKeyName]: scaledAmount };
   }
+  const breakMatKey = slot.matKey === "potion" ? "potion" : `${slot.matKey}_t${tier}`;
+  const breakAmount = Math.round(120 * Math.pow(1.4, gIdx));
   return {
-    [`${slot.matKey}_t${tier}`]: 1000,
+    [breakMatKey]: breakAmount,
     [`fur_t${tier}`]: CAT_FORGE_COSTS.gradeFurAmounts[gIdx],
   };
 }
