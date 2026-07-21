@@ -645,14 +645,16 @@ async function isGuestOrKidMember(memberId) {
   }
 }
 
-export async function getMembers() {
-  const snap = await getDocs(collection(db, C.members));
+export async function getMembers(limitCount = 50) {
+  const q = query(collection(db, C.members), limit(limitCount));
+  const snap = await getDocs(q);
   return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOfficial));
 }
 
-export function subscribeMembers(callback) {
+export function subscribeMembers(callback, limitCount = 50) {
+  const q = query(collection(db, C.members), limit(limitCount));
   return onSnapshot(
-    collection(db, C.members),
+    q,
     snap => callback(sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   );
 }

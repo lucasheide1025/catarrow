@@ -2,11 +2,8 @@
 // 「今日課表小卡」— 把某一天已排定的預約畫成一張 PNG 圖，教練可下載後貼到學生群組（LINE 等）。
 //
 // 版式（第三版・精簡）：依「開始時段」分組，同一時段的人併成同一列，每人一個小色牌，
-// 只顯示「姓名（人數）」＋以顏色/🆕 區分新生(琥珀)／舊生(藍)，不顯示方案、不顯示時數
-// （教練要的是「這時段有誰、是不是新生」，方案結帳時才需要）。
-//
-// 一律用 Canvas 2D 直接畫圖再 toBlob 匯出，不引入 html-to-image 之類套件（比照專案
-// Web Audio 音效 / SVG 怪物的零相依哲學，跨裝置最穩）。資料只吃某天已載好的 bookings 陣列。
+// 多人預約時依人數展開為獨立色牌格子（例：張三 (1/2)、張三 (2/2)），
+// 只顯示「姓名（人數）」＋以顏色/🆕 區分新生(琥珀)／舊生(藍)。
 import { useEffect, useRef, useState } from "react";
 import { Modal, Btn } from "../shared/UI";
 
@@ -18,17 +15,13 @@ const OLD_STYLE = { bg: "rgba(96,165,250,0.15)", border: "rgba(96,165,250,0.5)",
 // 場館名稱：之後要改招牌只改這裡
 const VENUE_NAME = "🎯 貓小隊射箭場";
 
-const W = 460;
 const PAD = 20;
 const HEADER_H = 98;
 const TIME_COL = 78;   // 左側時段標籤欄寬
-const CHIP_H = 30;
 const CHIP_GAP = 6;
 const SLOT_GAP = 12;   // 時段之間的間距
 const FOOTER_H = 30;
-const CHIP_FONT = "700 14px system-ui, 'Segoe UI', sans-serif";
 
-// Canvas 沒有跨瀏覽器保證的 roundRect，自己補一個路徑函式（OPPO 等舊 WebView 也吃得下）
 function roundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -40,20 +33,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// 超出寬度就截斷加「…」
 function ellipsize(ctx, text, maxWidth) {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let t = text;
   while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
   return t + "…";
-}
-
-// 一個人色牌上的字：🆕(新生) + 姓名 + ×人數(多人時) + 跨時段時顯示時間範圍 (10:00–13:00)
-function chipLabel(b, slotTime) {
-  const name = b.memberName || "顧客";
-  const withCount = (b.participantCount || 1) > 1 ? `${name}×${b.participantCount}` : name;
-  const range = (b.durationHours || 1) > 1 ? ` (${b.startTime}–${b.endTime})` : "";
-  return (b.isNewStudent ? "🆕" : "") + withCount + range;
 }
 
 function drawDot(ctx, x, y, color) {
@@ -107,12 +91,12 @@ function drawCard(canvas, date, rows, scale) {
       occupiedLanesAtHour.get(h).add(lane);
     });
 
-    const name = b.memberName || "顧客";
-    const title = (b.isNewStudent ? "🆕" : "") + ((b.participantCount || 1) > 1 ? `${name}×${b.participantCount}` : name);
+    const name = b.displayMemberName || b.memberName || "顧客";
+    const title = (b.isNewStudent ? "🆕 " : "") + name;
     return { booking: b, lane, title, duration, startH };
   });
 
-  // 動態計算 Canvas 寬度 W，確保無論同時有多少筆預約（即使 8 人同時預約），欄位都不會爆框！
+  // 動態計算 Canvas 寬度 W，確保多人展開後各格子不爆框
   const maxLanes = Math.max(1, ...bPlacements.map(p => p.lane + 1));
   const targetLaneW = maxLanes <= 2 ? 160 : maxLanes === 3 ? 120 : 105;
   const contentW = Math.max(342, maxLanes * targetLaneW + (maxLanes - 1) * CHIP_GAP);
@@ -124,7 +108,7 @@ function drawCard(canvas, date, rows, scale) {
     : 52;
   const H = HEADER_H + bodyH + FOOTER_H + PAD;
 
-  // ── 設定尺寸（會重置 ctx 狀態）→ 開始畫 ──
+  // ── 設定尺寸 ──
   canvas.width = W * scale;
   canvas.height = H * scale;
   canvas.style.width = "100%";
@@ -160,7 +144,7 @@ function drawCard(canvas, date, rows, scale) {
   ctx.fillStyle = "#bfdbfe";
   ctx.fillText(dowText, badgeX + 9, PAD + 39);
 
-  // 圖例：新生 / 舊生 顏色說明
+  // 圖例
   const lgy = PAD + 70;
   ctx.font = "600 12px system-ui, sans-serif";
   drawDot(ctx, PAD + 5, lgy - 4, NEW_STYLE.text);
@@ -171,7 +155,7 @@ function drawCard(canvas, date, rows, scale) {
   ctx.fillStyle = "#94a3b8";
   ctx.fillText("舊生", ox + 10, lgy);
 
-  // ── Rows（時段與跨時段方框）──────────────────────
+  // ── Rows ─────────────────────────────
   if (!rows.length) {
     roundRectPath(ctx, PAD, HEADER_H, W - PAD * 2, 52, 12);
     ctx.fillStyle = "rgba(255,255,255,0.04)";
@@ -182,7 +166,6 @@ function drawCard(canvas, date, rows, scale) {
     ctx.fillText("今日尚無排定課程 🗒️", W / 2, HEADER_H + 32);
     ctx.textAlign = "left";
   } else {
-    // 繪製時間軸標籤與隔線
     order.forEach(t => {
       const ty = slotY[t];
       ctx.fillStyle = "#e2e8f0";
@@ -193,7 +176,6 @@ function drawCard(canvas, date, rows, scale) {
       ctx.fillRect(PAD + TIME_COL, ty + SLOT_ROW_H + SLOT_GAP / 2, contentW, 1);
     });
 
-    // 繪製跨時段連續方框
     bPlacements.forEach(({ booking: b, lane, title, duration, startH }) => {
       const startT = b.startTime;
       const endH = startH + duration - 1;
@@ -213,13 +195,13 @@ function drawCard(canvas, date, rows, scale) {
       ctx.strokeStyle = st.border;
       ctx.stroke();
 
-      // 第一行：姓名 + 人數 + 🆕
+      // 第一行：姓名 (包含 1/2 人數標記)
       ctx.fillStyle = st.text;
       ctx.font = "700 13px system-ui, sans-serif";
       const displayTitle = ellipsize(ctx, title, laneW - 12);
       ctx.fillText(displayTitle, leftX + 8, topY + 20);
 
-      // 第二行：時間起迄與總時數
+      // 第二行：時間起迄
       if (blockH >= 40) {
         ctx.font = "600 11px system-ui, sans-serif";
         ctx.fillStyle = b.isNewStudent ? "rgba(253,230,138,0.85)" : "rgba(191,219,254,0.85)";
@@ -237,12 +219,10 @@ function drawCard(canvas, date, rows, scale) {
     });
   }
 
-
   // ── Footer ─────────────────────────────
-  const totalPeople = rows.reduce((s, b) => s + (b.participantCount || 1), 0);
   ctx.fillStyle = "#475569";
   ctx.font = "500 12px system-ui, sans-serif";
-  ctx.fillText(`共 ${totalPeople} 位 · 線上約課系統`, PAD, H - PAD + 4);
+  ctx.fillText(`共 ${rows.length} 人次 · 線上約課系統`, PAD, H - PAD + 4);
 
   return H;
 }
@@ -251,14 +231,29 @@ export default function BookingScheduleCard({ date, bookings, onClose }) {
   const canvasRef = useRef(null);
   const [busy, setBusy] = useState(false);
 
-  // 只留這一天、confirmed/completed，依開始時間排序（同時段內再依姓名穩定排序）
-  const rows = (bookings || [])
+  // 若一個帳號預約了多人 (participantCount > 1)，展開為獨立的相應個數格子！
+  const expandedRows = [];
+  (bookings || [])
     .filter(b => b.date === date && ["confirmed", "completed"].includes(b.status))
-    .sort((a, b) => a.startTime.localeCompare(b.startTime) || (a.memberName || "").localeCompare(b.memberName || ""));
+    .forEach(b => {
+      const count = Math.max(1, b.participantCount || 1);
+      for (let p = 0; p < count; p++) {
+        expandedRows.push({
+          ...b,
+          participantIndex: p,
+          displayMemberName: count > 1 ? `${b.memberName || "顧客"} (${p + 1}/${count})` : (b.memberName || "顧客"),
+        });
+      }
+    });
+
+  expandedRows.sort((a, b) =>
+    a.startTime.localeCompare(b.startTime) ||
+    (a.displayMemberName || "").localeCompare(b.displayMemberName || "")
+  );
 
   useEffect(() => {
-    if (canvasRef.current) drawCard(canvasRef.current, date, rows, Math.min(2, window.devicePixelRatio || 1) * 2);
-  }, [date, bookings, rows]);
+    if (canvasRef.current) drawCard(canvasRef.current, date, expandedRows, Math.min(2, window.devicePixelRatio || 1) * 2);
+  }, [date, bookings, expandedRows]);
 
   function download() {
     const canvas = canvasRef.current;
@@ -286,7 +281,7 @@ export default function BookingScheduleCard({ date, bookings, onClose }) {
           <canvas ref={canvasRef} className="block w-full" />
         </div>
         <div className="text-slate-500 text-xs leading-relaxed">
-          這張圖會顯示學生姓名與新／舊生，適合貼到自己的學生群組通知；請勿轉貼到不特定公開場合。
+          這張圖會顯示學生姓名與新／舊生（多人預約已自動展開為獨立格子），適合貼到自己的學生群組通知。
         </div>
         <Btn v="primary" onClick={download} disabled={busy}>
           {busy ? "產生中…" : "⬇ 下載 PNG 圖片"}

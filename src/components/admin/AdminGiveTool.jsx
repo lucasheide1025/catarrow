@@ -1,6 +1,6 @@
 // src/components/admin/AdminGiveTool.jsx — 獎品發放與道具微調工具
 import { useState, useEffect, useMemo } from "react";
-import { collection, getDocs, doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, updateDoc, increment, query, limit } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import { MATERIALS } from "../../lib/monsterMaterials";
@@ -68,7 +68,7 @@ export default function AdminGiveTool() {
   const [fixSaving,  setFixSaving]  = useState(false);
 
   useEffect(() => {
-    getDocs(collection(db, "members"))
+    getDocs(query(collection(db, "members"), limit(50)))
       .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         // 按照登入順序降序排列（最新登入排在最前面）

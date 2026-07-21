@@ -127,9 +127,40 @@ def cut_and_save(png_bytes, outpath):
     out.save(outpath, "WEBP", quality=90, method=6)
 
 
+BG_PROMPTS = {
+    "common":    "mysterious fantasy dungeon atmosphere, dark atmospheric cavern background, soft ambient glow, painterly mobile game art, no text, no ui, no focus object",
+    "ghost":     "Taiwanese folk temple at night, paper lanterns in dark mist, mysterious Taiwanese taoist atmosphere, dark purple and indigo ambient glow, painterly mobile game background",
+    "mountain":  "misty magical mountain peak at night, pine trees in fog, mossy rocks, dark emerald and teal ambient glow, painterly mobile game background",
+    "insect":    "glowing insect cavern hive, bioluminescent spores, honeycomb glow, dark deep green and gold ambient glow, painterly mobile game background",
+    "workplace": "stylized dystopian office ruins at night, soft neon signs in dark fog, dark blue and purple ambient glow, painterly mobile game background",
+    "exam":      "mysterious ancient library ruins, floating parchment and books in dark fog, dark crimson and bronze ambient glow, painterly mobile game background",
+    "temple":    "gothic stone cathedral cavern, lit candles and gothic arches in dark mist, dark violet and silver ambient glow, painterly mobile game background",
+    "treasure":  "golden vault cavern, glowing gold coin piles in dark mist, dark warm amber and gold ambient glow, painterly mobile game background",
+}
+
+def run_bg(family):
+    fname = f"map_bg.webp" if family == "common" else f"map_bg_{family}.webp"
+    outpath = os.path.abspath(os.path.join(OUTDIR, fname))
+    print(f"[{family}/BG] generating background...", flush=True)
+    pos = BG_PROMPTS.get(family, BG_PROMPTS["common"])
+    neg = "realistic, photorealistic, scary, horror, gore, blood, text, watermark, ui, people, mascot, character"
+    png = generate(pos, neg)
+    im = Image.open(io.BytesIO(png)).convert("RGB")
+    im = im.resize((1024, 1024), Image.LANCZOS)
+    im.save(outpath, "WEBP", quality=85)
+    print(f"  OK BG -> {outpath}", flush=True)
+
+
 def run(family, only_type=None):
     theme = FAMILIES[family]
     os.makedirs(OUTDIR, exist_ok=True)
+    # 若無指定單一房型，先生成族系專屬背景圖
+    if not only_type:
+        try:
+            run_bg(family)
+        except Exception as e:
+            print(f"  BG Error: {e}", flush=True)
+
     types = [only_type] if only_type else list(SUBJECTS.keys())
     for t in types:
         fname = f"room_{t}.webp" if family == "common" else f"room_{family}_{t}.webp"
@@ -150,7 +181,7 @@ def run(family, only_type=None):
 
 
 if __name__ == "__main__":
-    fam = sys.argv[1] if len(sys.argv) > 1 else "ghost"
+    fam = sys.argv[1] if len(sys.argv) > 1 else "all"
     typ = sys.argv[2] if len(sys.argv) > 2 else None
     fams = list(FAMILIES.keys()) if fam == "all" else [fam]
     for f in fams:
