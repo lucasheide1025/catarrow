@@ -112,8 +112,9 @@ export default function DungeonEvent({
       onLocalDone?.();
       return;
     }
-    if (onSharedDone) await onSharedDone();
-    else await resolveNonCombatRoom(roomId, room, memberId, room?.activeRoomId);
+    await confirmNonCombatRoom(roomId, memberId, "acknowledged");
+    if (isHost && onSharedDone) await onSharedDone();
+    else if (!isHost && onSharedDone) await onSharedDone();
   }
 
   return (

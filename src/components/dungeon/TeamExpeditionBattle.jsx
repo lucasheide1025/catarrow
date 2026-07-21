@@ -73,6 +73,58 @@ function FlowErrorBanner({ message, onDismiss }) {
   );
 }
 
+function TeamRoomVotingBar({ teamRoom, myId, isHost, onForceAdvance }) {
+  if (!teamRoom || !teamRoom.members) return null;
+
+  const members = Object.entries(teamRoom.members || {}).filter(([, m]) => m && m.alive !== false);
+  const confirms = teamRoom.roomConfirms || {};
+  const confirmedCount = members.filter(([id]) => confirms[id] === true || confirms[id] !== undefined).length;
+  const totalCount = members.length;
+
+  return (
+    <div className="bg-slate-950/90 border-b border-amber-500/30 px-4 py-2.5 backdrop-blur-md sticky top-0 z-50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs shadow-2xl">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 font-black text-amber-300">
+          <span>👥</span> 全員選擇進度：
+          <span className="font-mono text-emerald-400 font-black text-sm">
+            {confirmedCount} / {totalCount}
+          </span> 人
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {members.map(([id, m]) => {
+            const isDone = confirms[id] === true || confirms[id] !== undefined;
+            const isMe = id === myId;
+            return (
+              <span
+                key={id}
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border flex items-center gap-1 ${
+                  isDone
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                    : "bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse"
+                }`}
+              >
+                {m.name || "隊友"}{isMe ? "(你)" : ""}
+                <span>{isDone ? "✓ 已選" : "…選擇中"}</span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      {isHost && (
+        <button
+          type="button"
+          onClick={onForceAdvance}
+          className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black rounded-xl text-xs hover:brightness-110 shadow-lg active:scale-95 transition-all shrink-0"
+        >
+          ⚡ 房主強制結算前進
+        </button>
+      )}
+    </div>
+  );
+}
+
 function attachGridMonsters(gridFloor, floorIndex, difficulty, plan, family) {
   const queue = [...(plan.monsters || [])];
   const fallbackVariant = floorIndex === 0 ? "weak" : "normal";
@@ -848,6 +900,19 @@ export default function TeamExpeditionBattle({
     });
   }, [isHost, mapState, floorIndex, teamRoomId]);
 
+  // ── 全員投票完成自動推進（房主端監聽） ───────────────────────────
+  useEffect(() => {
+    if (!isHost || mapState?.phase !== "func_room" || !mapState?.pendingRoom) return;
+    const activeMembers = Object.entries(teamRoom?.members || {})
+      .filter(([, m]) => m && m.alive !== false);
+    if (activeMembers.length === 0) return;
+    const confirms = teamRoom?.roomConfirms || {};
+    const allConfirmed = activeMembers.every(([id]) => confirms[id] === true || confirms[id] !== undefined);
+    if (allConfirmed) {
+      finishFunctionRoom();
+    }
+  }, [isHost, mapState?.phase, mapState?.pendingRoom, teamRoom?.members, teamRoom?.roomConfirms, finishFunctionRoom]);
+
   // ── 領取獎勵 + 儲存紀錄 ──────────────────────────────────
   const handleFinish = useCallback(async () => {
     const rewards = result?.rewards;
@@ -1083,21 +1148,35 @@ export default function TeamExpeditionBattle({
       isHost,
       onSharedDone: finishFunctionRoom,
     };
-    switch (mapState.pendingRoom.type) {
-      case "shop":
-        return <DungeonShop {...common} memberData={{ ...myMember, id: myId, coins: profile?.coins || 0 }} />;
-      case "event":
-      case "general_event":
-        return <DungeonEvent {...common} event={mapState.pendingRoom?.event || teamRoom?.currentEvent} />;
-      case "trap":
-        return <DungeonTrap {...common} />;
-      case "chest":
-        return <DungeonChest {...common} />;
-      case "rest":
-        return <DungeonRest {...common} />;
-      default:
-        return null;
-    }
+    return (
+      <div className="relative min-h-screen flex flex-col">
+        <TeamRoomVotingBar
+          teamRoom={teamRoom}
+          myId={myId}
+          isHost={isHost}
+          onForceAdvance={finishFunctionRoom}
+        />
+        <div className="flex-1">
+          {(() => {
+            switch (mapState.pendingRoom.type) {
+              case "shop":
+                return <DungeonShop {...common} memberData={{ ...myMember, id: myId, coins: profile?.coins || 0 }} />;
+              case "event":
+              case "general_event":
+                return <DungeonEvent {...common} event={mapState.pendingRoom?.event || teamRoom?.currentEvent} />;
+              case "trap":
+                return <DungeonTrap {...common} />;
+              case "chest":
+                return <DungeonChest {...common} />;
+              case "rest":
+                return <DungeonRest {...common} />;
+              default:
+                return null;
+            }
+          })()}
+        </div>
+      </div>
+    );
   }
 
   if (mapState?.phase === "treasure") {
