@@ -6,7 +6,7 @@ import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
-import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL } from "../../lib/archerLevel";
+import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, getLevelStyle } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
@@ -189,8 +189,15 @@ export default function MemberHome({
             <div style={{ color:"#fff", fontSize:22, lineHeight:1.25, fontWeight:900, marginTop:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
               {profile?.nickname || profile?.name || "射手"}
             </div>
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
-              <span style={{ color:"#cffafe", fontSize:11, fontWeight:800, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:"1px solid rgba(103,232,249,.2)" }}>射手 Lv.{archerLevel}</span>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8, alignItems:"center" }}>
+              <span style={{
+                fontSize:11, fontWeight:900, padding:"3px 10px", borderRadius:999,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+                display: "inline-flex", alignItems: "center",
+                ...getLevelStyle(archerLevel)
+              }}>
+                🏹 射手 Lv.{archerLevel}
+              </span>
               <span style={{ color:"#e0f2fe", fontSize:11, fontWeight:800, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:"1px solid rgba(103,232,249,.2)" }}>冒險 Lv.{adventurerLevel}</span>
             </div>
           </div>
