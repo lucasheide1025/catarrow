@@ -103,7 +103,8 @@ export function drawDungeonFloorMonsters(floorIndex, difficulty, options = {}) {
       // 就跑出爛主管（職場）＋虎頭蜂（昆蟲）＋魔神仔（幽冥）三族混雜。
       // 王缺席是上游的問題（見 DungeonExpedition 的 fixedBoss），不該波及整層。
       if (floorIndex === 2 && !result.boss) {
-        return { ...result, boss: drawExpansionDungeonMonster("strong", difficulty, options) };
+        // 王缺席時優先用上游傳來的 fixedBoss（與預覽同源），真的沒有才補隨機 strong
+        return { ...result, boss: options.fixedBoss ? tagExpansionBoss(options.fixedBoss) : drawExpansionDungeonMonster("strong", difficulty, options) };
       }
       return result;
     }

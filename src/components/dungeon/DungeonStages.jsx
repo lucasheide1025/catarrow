@@ -5,7 +5,7 @@
 //       scope hoisting 下會觸發 "Cannot access X before initialization"（TDZ）——dev 正常、prod 才炸。
 //       抽成獨立小模組後，DungeonExpedition 與 TeamExpeditionBattle 都從這裡匯入，消除該風險。
 //       見第二大腦 memory：共用常數勿放 UI 元件再 re-export（循環／跨檔匯入坑）。
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { GRID_SIZE, isAdjacent } from "../../lib/expeditionGrid";
 
 const TYPE_ICONS = {
@@ -27,6 +27,268 @@ const TYPE_HINTS = {
   stairs:"通往更深處的階梯。",
   treasure:"傳說中的寶藏房！",
 };
+
+const TYPE_LABELS = {
+  entrance: "起點",
+  battle: "戰鬥",
+  elite_battle: "精英",
+  boss_battle: "首領",
+  shop: "商店",
+  event: "事件",
+  trap: "陷阱",
+  chest: "寶箱",
+  rest: "休息",
+  stairs: "階梯",
+  treasure: "寶藏"
+};
+
+const FAMILY_STYLES = {
+  ghost: {
+    label: "幽冥系",
+    primary: "#a78bfa",
+    secondary: "#6366f1",
+    fog: "#431407",
+    tileTop: "#4c3a6b",
+    tileFront: "#372658",
+    tileSide: "#2c1f44",
+    glow: "rgba(167, 139, 250, 0.6)",
+    textColor: "#c084fc",
+    details: "skeletal",
+    bgGradient: "linear-gradient(160deg,#0f0d1a,#1e173b,#0f0d1a)",
+    btnGradient: "linear-gradient(90deg,#a78bfa,#6366f1)",
+    panelBg: "rgba(45, 30, 75, 0.4)",
+    borderColor: "rgba(167, 139, 250, 0.28)"
+  },
+  mountain: {
+    label: "山嶺系",
+    primary: "#10b981",
+    secondary: "#047857",
+    fog: "#064e3b",
+    tileTop: "#1c2e24",
+    tileFront: "#101e16",
+    tileSide: "#0b150f",
+    glow: "rgba(16, 185, 129, 0.45)",
+    textColor: "#34d399",
+    details: "mossy",
+    bgGradient: "linear-gradient(160deg,#030504,#0f1f16,#030504)",
+    btnGradient: "linear-gradient(90deg,#10b981,#047857)",
+    panelBg: "rgba(20, 35, 25, 0.4)",
+    borderColor: "rgba(16, 185, 129, 0.18)"
+  },
+  insect: {
+    label: "昆蟲系",
+    primary: "#84cc16",
+    secondary: "#65a30d",
+    fog: "#3f6212",
+    tileTop: "#252d19",
+    tileFront: "#161b0f",
+    tileSide: "#10140b",
+    glow: "rgba(132, 204, 22, 0.45)",
+    textColor: "#a3e635",
+    details: "organic",
+    bgGradient: "linear-gradient(160deg,#040503,#18240f,#040503)",
+    btnGradient: "linear-gradient(90deg,#84cc16,#65a30d)",
+    panelBg: "rgba(25, 32, 20, 0.4)",
+    borderColor: "rgba(132, 204, 22, 0.18)"
+  },
+  workplace: {
+    label: "職場系",
+    primary: "#64748b",
+    secondary: "#475569",
+    fog: "#0f172a",
+    tileTop: "#1e293b",
+    tileFront: "#0f172a",
+    tileSide: "#0b0f19",
+    glow: "rgba(100, 116, 139, 0.45)",
+    textColor: "#94a3b8",
+    details: "office",
+    bgGradient: "linear-gradient(160deg,#060910,#142030,#060910)",
+    btnGradient: "linear-gradient(90deg,#64748b,#475569)",
+    panelBg: "rgba(25, 30, 40, 0.4)",
+    borderColor: "rgba(100, 116, 139, 0.18)"
+  },
+  exam: {
+    label: "考試系",
+    primary: "#ef4444",
+    secondary: "#b91c1c",
+    fog: "#450a0a",
+    tileTop: "#2c1717",
+    tileFront: "#1b0c0c",
+    tileSide: "#140808",
+    glow: "rgba(239, 68, 68, 0.45)",
+    textColor: "#f87171",
+    details: "paper",
+    bgGradient: "linear-gradient(160deg,#090505,#2c0c0c,#090505)",
+    btnGradient: "linear-gradient(90deg,#ef4444,#b91c1c)",
+    panelBg: "rgba(35, 20, 20, 0.4)",
+    borderColor: "rgba(239, 68, 68, 0.18)"
+  },
+  temple: {
+    label: "神廟系",
+    primary: "#eab308",
+    secondary: "#ca8a04",
+    fog: "#422006",
+    tileTop: "#332617",
+    tileFront: "#1f160e",
+    tileSide: "#16100a",
+    glow: "rgba(234, 179, 8, 0.45)",
+    textColor: "#facc15",
+    details: "ancient",
+    bgGradient: "linear-gradient(160deg,#090604,#33220e,#090604)",
+    btnGradient: "linear-gradient(90deg,#eab308,#ca8a04)",
+    panelBg: "rgba(35, 28, 20, 0.4)",
+    borderColor: "rgba(234, 179, 8, 0.18)"
+  },
+  treasure: {
+    label: "寶箱系",
+    primary: "#06b6d4",
+    secondary: "#0891b2",
+    fog: "#083344",
+    tileTop: "#182c35",
+    tileFront: "#0e1b21",
+    tileSide: "#0a1318",
+    glow: "rgba(6, 182, 212, 0.45)",
+    textColor: "#22d3ee",
+    details: "glittering",
+    bgGradient: "linear-gradient(160deg,#040810,#0d2535,#040810)",
+    btnGradient: "linear-gradient(90deg,#06b6d4,#0891b2)",
+    panelBg: "rgba(20, 32, 40, 0.4)",
+    borderColor: "rgba(6, 182, 212, 0.18)"
+  }
+};
+
+// ── 2.5D 立繪地圖共用常數與元件 ─────────────────────────────
+// 立體感全靠預渲染立繪的透視；程式只負責「貼到 2D 網格 + 列間重疊 + 依列 z-index」。
+const TILE_W = 84;
+const TILE_H = 84;
+// 等角(iso)排列的半寬/半高：相鄰格沿菱形對角錯位 → 前後交疊產生 2.5D 景深。
+// HALF 需大於平台半footprint 才有空隙（否則平台會重疊成一坨）。
+const HALF_W = 78;
+const HALF_H = 45;
+const ASSET_BASE = "/assets/dungeon";
+const EMPTY_SRC = `${ASSET_BASE}/room_empty.webp`;
+
+// 單一房間立繪：iso 座標定位(x,y,z)。只顯示立繪；迷霧=黑掉+問號；當前房=玩家釘。
+// 已拿掉：綠色可移動框、金色邊框、家族 tint 底色、✓ 標記。
+function RoomTile({ room, x, y, z, isCurrent, clickable, fog, onClick, muted = false, family }) {
+  const chain = useMemo(() => (
+    fog
+      ? [EMPTY_SRC]
+      : [
+          family && `${ASSET_BASE}/room_${family}_${room.type}.webp`,
+          `${ASSET_BASE}/room_${room.type}.webp`,
+          EMPTY_SRC,
+        ].filter(Boolean)
+  ), [fog, family, room.type]);
+  const [idx, setIdx] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setIdx(0); setImgFailed(false); }, [chain]);
+  const imgSrc = chain[Math.min(idx, chain.length - 1)];
+
+  const handleError = () => {
+    if (idx < chain.length - 1) setIdx(idx + 1);
+    else setImgFailed(true);
+  };
+
+  return (
+    <div
+      onClick={() => clickable && onClick(room)}
+      style={{
+        position:"absolute", left: x, top: y, width: TILE_W, height: TILE_H,
+        zIndex: z * 10 + (isCurrent ? 5 : 0),
+        cursor: clickable ? "pointer" : "default",
+        opacity: muted ? 0.35 : 1,
+        transition:"opacity 0.3s",
+      }}
+    >
+      {!imgFailed ? (
+        <img src={imgSrc} alt={room.label || room.type} draggable={false} onError={handleError}
+          style={{
+            width:"100%", height:"100%", objectFit:"contain",
+            filter: fog ? "brightness(0.2)" : "none",   // 迷霧：黑掉
+            userSelect:"none", pointerEvents:"none",
+          }} />
+      ) : (
+        <div style={{
+          position:"absolute", inset:"20% 14%",
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:34,
+          filter: fog ? "brightness(0.35)" : "none",
+        }}>
+          {fog ? "" : (TYPE_ICONS[room.type] || "❔")}
+        </div>
+      )}
+
+      {/* 迷霧「?」 */}
+      {fog && (
+        <div style={{
+          position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:30, fontWeight:900, color:"rgba(220,210,255,0.9)",
+          textShadow:"0 0 6px #000", pointerEvents:"none",
+        }}>?</div>
+      )}
+
+      {/* 當前房：玩家 LOGO 標記（小） */}
+      {isCurrent && (
+        <img src={`${ASSET_BASE}/player_logo.webp`} alt="你在這"
+          style={{
+            position:"absolute", left:"50%", top:"-8%", transform:"translateX(-50%)",
+            width:34, height:"auto",
+            animation:"pin-float 2s ease-in-out infinite", pointerEvents:"none",
+            filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.7))",
+          }} />
+      )}
+    </div>
+  );
+}
+
+// 鏡頭視窗：overflow:hidden 視窗 + 可平移 world 層；focus(世界 px) 對齊視窗中心（自動跟隨）
+function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false, children }) {
+  const ref = useRef(null);
+  const [vw, setVw] = useState(0);
+  useEffect(() => {
+    const measure = () => setVw(ref.current?.offsetWidth || 0);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  // 中央可動面板：2.5D 內容夾在裡面、超出即裁切（不會突破背景）
+  const panelW = vw > 0 ? vw * 0.92 : 0;
+  const panelH = height * 0.9;
+
+  // fit=true：縮放使整張世界塞進面板（分支選路用）；否則 1:1 跟隨 focus
+  const scale = fit && panelW > 0 ? Math.min((panelW - 16) / worldW, (panelH - 16) / worldH, 1) : 1;
+  const fx = fit ? worldW / 2 : focusX;
+  const fy = fit ? worldH / 2 : focusY;
+  const camX = panelW / 2 - fx * scale;
+  const camY = panelH / 2 - fy * scale;
+
+  return (
+    <div ref={ref} style={{ position:"relative", width:"100%", height, overflow:"hidden" }}>
+      {/* 背景層（固定，不隨鏡頭移動；缺圖則透出父層漸層） */}
+      <div style={{
+        position:"absolute", inset:0,
+        backgroundImage:`url(${ASSET_BASE}/map_bg.webp)`,
+        backgroundSize:"cover", backgroundPosition:"center", opacity:0.9,
+      }} />
+      {/* 中央可動面板：夾住 2.5D 內容（overflow 裁切）+ 深色底把地圖區跟背景區隔 */}
+      <div style={{
+        position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)",
+        width: panelW || "92%", height: panelH, borderRadius:28, overflow:"hidden",
+        background:"rgba(6,8,16,0.5)", boxShadow:"inset 0 0 60px 20px rgba(6,8,16,0.5)",
+      }}>
+        {/* 世界層（鏡頭平移 + 縮放） */}
+        <div style={{
+          position:"absolute", left:0, top:0, width: worldW, height: worldH,
+          transform:`translate(${camX}px, ${camY}px) scale(${scale})`, transformOrigin:"0 0",
+          transition:"transform 380ms cubic-bezier(0.25,0.46,0.45,0.94)", willChange:"transform",
+        }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── 頂部玩家狀態列（HP / 金幣 / buff）───────────────────
 function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
@@ -72,16 +334,85 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
   );
 }
 
+// ── 立繪版格子地圖（等角 2.5D + 鏡頭跟隨）─────────────────
+function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl, locked, family, isVisitedPos }) {
+  const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+  const ISO_OX = (GRID_SIZE - 1) * HALF_W;                 // 位移使負 x 進正
+  const worldW = (GRID_SIZE - 1) * 2 * HALF_W + TILE_W;
+  const worldH = (GRID_SIZE - 1) * 2 * HALF_H + TILE_H;
+
+  const isoXY = (col, row) => ({ x: (col - row) * HALF_W + ISO_OX, y: (col + row) * HALF_H });
+  const cellCenter = (col, row) => {
+    const p = isoXY(col, row);
+    return { cx: p.x + TILE_W / 2, cy: p.y + TILE_H * 0.5 };
+  };
+  const focus = playerPos ? cellCenter(playerPos.x, playerPos.y) : cellCenter(2, 2);
+
+  // 路：從已探索房間連到四方相鄰房間（含還沒走的迷霧房 → 讓玩家看到可走路線）
+  const roomByPos = {};
+  rooms.forEach(r => { roomByPos[`${r.pos.x},${r.pos.y}`] = r; });
+  const seen = new Set();
+  const bridges = [];
+  rooms.forEach(room => {
+    if (!visitedIds.has(room.id)) return;
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+      const nb = roomByPos[`${room.pos.x + dx},${room.pos.y + dy}`];
+      if (!nb) return;
+      const key = [room.id, nb.id].sort().join("|");
+      if (seen.has(key)) return;
+      seen.add(key);
+      bridges.push({ id: key, a: room.pos, b: nb.pos, full: visitedIds.has(nb.id) });
+    });
+  });
+
+  return (
+    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} height={380}>
+      {/* 橋（立繪之下） */}
+      <svg width={worldW} height={worldH} style={{ position:"absolute", left:0, top:0, pointerEvents:"none" }}>
+        {bridges.map(b => {
+          const p = cellCenter(b.a.x, b.a.y);
+          const q = cellCenter(b.b.x, b.b.y);
+          return (
+            <g key={b.id}>
+              <line x1={p.cx} y1={p.cy + 3} x2={q.cx} y2={q.cy + 3} stroke="rgba(0,0,0,0.4)" strokeWidth={8} strokeLinecap="round" />
+              <line x1={p.cx} y1={p.cy} x2={q.cx} y2={q.cy} stroke={theme.tileSide} strokeWidth={7} strokeLinecap="round" />
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* 房間立繪 */}
+      {rooms.map(room => {
+        const visited = visitedIds.has(room.id);
+        const fog = !visited && [
+          [room.pos.x + 1, room.pos.y], [room.pos.x - 1, room.pos.y],
+          [room.pos.x, room.pos.y + 1], [room.pos.x, room.pos.y - 1],
+        ].some(([nx, ny]) => isVisitedPos(nx, ny));
+        if (!visited && !fog) return null;
+        const isCurrent = playerPos && room.pos.x === playerPos.x && room.pos.y === playerPos.y;
+        // 站在未清除事件房(locked) → 鎖移動，必須先點「進入事件」
+        const clickable = canControl && !locked && isAdjacent(room.pos, playerPos);
+        const p = isoXY(room.pos.x, room.pos.y);
+        return (
+          <RoomTile key={room.id} room={room} x={p.x} y={p.y} z={room.pos.x + room.pos.y}
+            family={family} isCurrent={isCurrent} clickable={clickable} fog={fog} onClick={onCellClick} />
+        );
+      })}
+    </MapViewport>
+  );
+}
+
 // ── 第 1、2 層：5×5 迷霧格子地圖 ────────────────────────
 export function GridMapStage({
   gridFloor, playerPos, visitedIds, floorIndex,
-  playerState, coins, lootMult, onCellClick, onDescend, onRetreat,
+  playerState, coins, lootMult, onCellClick, onEnterRoom, onDescend, onRetreat,
   canControl = true,
+  difficulty = 1,
+  family = "ghost",
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
-  const CELL = 64;
-  const PAD = 12;
-  const W = CELL * GRID_SIZE + PAD * 2;
+  const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+
 
   const rooms = gridFloor?.rooms || [];
   const roomByPos = useMemo(() => {
@@ -97,16 +428,30 @@ export function GridMapStage({
 
   const standingRoom = playerPos ? roomByPos[`${playerPos.x},${playerPos.y}`] : null;
   const showStairs = standingRoom?.type === "stairs" && !standingRoom.cleared;
+  // 兩段式：站上未清除房間（非入口/樓梯）→ 顯示「進入」按鈕，再按才觸發事件
+  const canEnter = !!standingRoom && !standingRoom.cleared
+    && standingRoom.type !== "stairs" && standingRoom.type !== "entrance";
+  const enterLabel =
+    ["battle", "elite_battle", "boss_battle"].includes(standingRoom?.type) ? "⚔️ 進入戰鬥"
+    : standingRoom?.type === "treasure" ? "🏆 進入寶藏房"
+    : standingRoom?.type === "chest" ? "📦 開啟寶箱"
+    : standingRoom?.type === "shop" ? "🛒 進入商店"
+    : standingRoom?.type === "rest" ? "💤 進入休息區"
+    : standingRoom?.type === "event" ? "✨ 進入事件"
+    : standingRoom?.type === "trap" ? "⚠️ 進入"
+    : "🚪 進入房間";
 
   return (
     <div style={{
       minHeight:"100%",
-      background:"linear-gradient(160deg,#0a0a0f,#12091a,#0a0f0a)",
+      background: FAMILY_STYLES[family]?.bgGradient || "linear-gradient(160deg,#0f0d1a,#1e173b,#0f0d1a)",
       color:"white", display:"flex", flexDirection:"column",
     }}>
       <style>{`
 @keyframes gm-pulse{0%,100%{opacity:0.2}50%{opacity:0.85}}
 @keyframes gm-fade{0%{opacity:0;transform:translateY(12px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes pin-float{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+@keyframes fog-breath{0%,100%{opacity:0.65;}50%{opacity:0.45;}}
       `}</style>
 
       {/* Header */}
@@ -115,8 +460,11 @@ export function GridMapStage({
         borderBottom:"1px solid rgba(255,255,255,0.07)", background:"rgba(0,0,0,0.25)",
       }}>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24" }}>
-            🗺️ 第 {floorIndex + 1} 層 · 迷霧探索
+          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24", display:"flex", alignItems:"center", gap:6 }}>
+            <span>🗺️ {FAMILY_STYLES[family]?.label || "幽冥系"} T{difficulty}</span>
+            <span style={{ fontSize:11, padding:"2px 6px", borderRadius:4, background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.6)", fontWeight:700 }}>
+              第 {floorIndex + 1} 層
+            </span>
           </div>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>
             點擊相鄰格子移動 · 走過的房間可自由通行
@@ -135,65 +483,18 @@ export function GridMapStage({
       <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
 
       {/* Map */}
-      <div style={{ padding:"14px 8px 10px", display:"flex", justifyContent:"center", alignItems:"flex-start", overflowX:"auto", overflowY:"visible" }}>
-        <svg width={W} height={W} viewBox={`0 0 ${W} ${W}`} style={{ display:"block", maxWidth:"100%" }}>
-          {/* 背景格線（含牆格，僅隱約可見） */}
-          {Array.from({ length: GRID_SIZE }).flatMap((_, gy) =>
-            Array.from({ length: GRID_SIZE }).map((_, gx) => (
-              <rect key={`bg-${gx}-${gy}`}
-                x={PAD + gx * CELL + 4} y={PAD + gy * CELL + 4}
-                width={CELL - 8} height={CELL - 8} rx={10}
-                fill="rgba(255,255,255,0.015)" stroke="rgba(255,255,255,0.03)" strokeWidth={1} />
-            ))
-          )}
-          {rooms.map(room => {
-            const visited = visitedIds.has(room.id);
-            const fog = !visited && [
-              [room.pos.x + 1, room.pos.y], [room.pos.x - 1, room.pos.y],
-              [room.pos.x, room.pos.y + 1], [room.pos.x, room.pos.y - 1],
-            ].some(([nx, ny]) => isVisitedPos(nx, ny));
-            if (!visited && !fog) return null; // 迷霧之外：完全隱藏
-
-            const isCurrent = playerPos && room.pos.x === playerPos.x && room.pos.y === playerPos.y;
-            const clickable = canControl && isAdjacent(room.pos, playerPos);
-            const x = PAD + room.pos.x * CELL + 4;
-            const y = PAD + room.pos.y * CELL + 4;
-            const s = CELL - 8;
-            const cx = x + s / 2;
-
-            return (
-              <g key={room.id}
-                onClick={() => clickable && onCellClick(room)}
-                style={{ cursor: clickable ? "pointer" : "default" }}>
-                {clickable && !isCurrent && (
-                  <rect x={x - 3} y={y - 3} width={s + 6} height={s + 6} rx={12}
-                    fill="none" stroke="#22c55e" strokeWidth={2}
-                    style={{ animation:"gm-pulse 1.4s ease infinite" }} />
-                )}
-                <rect x={x} y={y} width={s} height={s} rx={10}
-                  fill={isCurrent ? "#1a1a2e" : visited ? "rgba(255,255,255,0.06)" : "#0d0d14"}
-                  stroke={isCurrent ? "#fbbf24" : visited ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.1)"}
-                  strokeWidth={isCurrent ? 2.5 : 1.2}
-                  strokeDasharray={!visited ? "4 3" : "none"} />
-                <text x={cx} y={y + s / 2 + 7} textAnchor="middle"
-                  fontSize={visited ? 22 : 18}
-                  opacity={!visited ? 0.5 : room.cleared && !isCurrent ? 0.45 : 1}
-                  style={{ userSelect:"none", pointerEvents:"none" }}>
-                  {visited ? (TYPE_ICONS[room.type] || "❔") : "❓"}
-                </text>
-                {visited && room.cleared && room.type !== "entrance" && !isCurrent && (
-                  <text x={x + s - 9} y={y + 14} fontSize={11} fontWeight="bold" fill="#4ade80"
-                    style={{ userSelect:"none", pointerEvents:"none" }}>✓</text>
-                )}
-                {isCurrent && (
-                  <text x={cx} y={y - 2} textAnchor="middle" fontSize={12}
-                    style={{ userSelect:"none", pointerEvents:"none" }}>📍</text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+        <div style={{ padding:"10px 0" }}>
+          <DungeonMapView
+            rooms={rooms}
+            playerPos={playerPos}
+            visitedIds={visitedIds}
+            onCellClick={onCellClick}
+            canControl={canControl}
+            locked={canEnter && !!onEnterRoom}
+            family={family}
+            isVisitedPos={isVisitedPos}
+          />
+        </div>
 
       {/* 底部：目前房間資訊 / 樓梯面板 */}
       <div style={{
@@ -211,7 +512,9 @@ export function GridMapStage({
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontWeight:900, fontSize:14 }}>{standingRoom?.label || "探索中"}</div>
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginTop:2 }}>
-              {showStairs ? "階梯就在腳下，要下去嗎？" : TYPE_HINTS[standingRoom?.type] || "點擊發亮的相鄰格子前進。"}
+              {showStairs ? "階梯就在腳下，要下去嗎？"
+                : canEnter ? (TYPE_HINTS[standingRoom?.type] || "站在此房間，按下方進入。")
+                : TYPE_HINTS[standingRoom?.type] || "點擊相鄰房間移動。"}
             </div>
           </div>
         </div>
@@ -223,6 +526,16 @@ export function GridMapStage({
               background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"white",
             }}>
             🪜 前往第 {floorIndex + 2} 層
+          </button>
+        )}
+        {canEnter && canControl && onEnterRoom && (
+          <button onClick={() => onEnterRoom?.(standingRoom)}
+            style={{
+              width:"100%", padding:"13px 0", borderRadius:14, border:"none",
+              fontWeight:900, fontSize:15, cursor:"pointer",
+              background: theme.btnGradient, color:"white", boxShadow:`0 4px 12px ${theme.primary}40`,
+            }}>
+            {enterLabel}
           </button>
         )}
         {!canControl && (
@@ -266,18 +579,113 @@ export function GridMapStage({
   );
 }
 
+// ── 第 3 層立繪版分支地圖（三條並排可見 + 單向 + 鏡頭跟隨）────
+const BRANCH_COL = { A: 0, B: 1, C: 2 };
+
+function DungeonBranchView({ branchFloor, branchChoice, branchSeq, branchStep, canControl, family, onChoose }) {
+  const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+  const ISO_OX = 5 * HALF_W;
+  const worldW = 6 * HALF_W + TILE_W;
+  const worldH = 7 * HALF_H + TILE_H;
+  const isoXY = (col, row) => ({ x: (col - row) * HALF_W + ISO_OX, y: (col + row) * HALF_H });
+  const cc = (col, row) => { const p = isoXY(col, row); return { cx: p.x + TILE_W / 2, cy: p.y + TILE_H * 0.5 }; };
+  const chosen = branchChoice;
+  const seq = branchSeq || [];
+
+  const ENTR = { col: 1, row: 0 }, BOSS = { col: 1, row: 5 }, TRE = { col: 1, row: 6 };
+  const curType = chosen ? seq[branchStep]?.type : "entrance";
+
+  let curPos = ENTR;
+  if (chosen) {
+    if (curType === "boss_battle") curPos = BOSS;
+    else if (curType === "treasure") curPos = TRE;
+    else curPos = { col: BRANCH_COL[chosen], row: branchStep + 1 };
+  }
+  const isAt = (p) => curPos.col === p.col && curPos.row === p.row;
+
+  // 連接線（entrance→各支線→boss→treasure）
+  const links = [];
+  ["A", "B", "C"].forEach(k => {
+    const col = BRANCH_COL[k];
+    links.push([ENTR, { col, row: 1 }, k]);
+    for (let i = 1; i <= 3; i++) links.push([{ col, row: i }, { col, row: i + 1 }, k]);
+    links.push([{ col, row: 4 }, BOSS, k]);
+  });
+  links.push([BOSS, TRE, null]);
+
+  const focus = cc(curPos.col, curPos.row);
+
+  return (
+    <MapViewport worldW={worldW} worldH={worldH} focusX={focus.cx} focusY={focus.cy} fit={!chosen} height={380}>
+      {/* 連接線 */}
+      <svg width={worldW} height={worldH} style={{ position:"absolute", left:0, top:0, pointerEvents:"none" }}>
+        {links.map(([a, b, k], i) => {
+          const p = cc(a.col, a.row), q = cc(b.col, b.row);
+          const muted = chosen && k && k !== chosen;
+          const active = chosen && k === chosen;
+          return (
+            <g key={i} opacity={muted ? 0.18 : 0.7}>
+              <line x1={p.cx} y1={p.cy} x2={q.cx} y2={q.cy} stroke={theme.tileSide} strokeWidth={8} strokeLinecap="round" />
+              <line x1={p.cx} y1={p.cy} x2={q.cx} y2={q.cy} stroke={theme.primary} strokeWidth={2.5} strokeLinecap="round"
+                opacity={0.6} strokeDasharray={active ? "none" : "4 5"} />
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* 入口 */}
+      <RoomTile room={branchFloor.entrance} x={isoXY(ENTR.col, ENTR.row).x} y={isoXY(ENTR.col, ENTR.row).y} z={ENTR.col + ENTR.row} family={family}
+        isCurrent={isAt(ENTR)} clickable={false} fog={false} onClick={() => {}} />
+
+      {/* 三條支線 */}
+      {["A", "B", "C"].map(k => {
+        const col = BRANCH_COL[k];
+        const b = branchFloor.branches[k];
+        const muted = chosen && k !== chosen;
+        return b.rooms.map((room0, idx) => {
+          const row = idx + 1;
+          let visited = false, fog = true, isCur = false, cleared = false, clickable = false;
+          let room = room0;
+          if (!chosen) {
+            clickable = canControl;          // 選路：三條皆可點
+          } else if (k === chosen) {
+            room = seq[idx] || room0;
+            if (idx < branchStep) { visited = true; fog = false; cleared = true; }
+            else if (idx === branchStep) { visited = true; fog = false; isCur = true; }
+          }
+          const p = isoXY(col, row);
+          return (
+            <RoomTile key={`${k}${idx}`} room={{ ...room, cleared }} x={p.x} y={p.y} z={col + row} family={family}
+              isCurrent={isCur} clickable={clickable} fog={fog} muted={muted}
+              onClick={() => !chosen && canControl && onChoose(k)} />
+          );
+        });
+      })}
+
+      {/* Boss / 寶藏（抵達才亮） */}
+      <RoomTile room={branchFloor.boss} x={isoXY(BOSS.col, BOSS.row).x} y={isoXY(BOSS.col, BOSS.row).y} z={BOSS.col + BOSS.row} family={family}
+        isCurrent={isAt(BOSS)} clickable={false} fog={!isAt(BOSS)} onClick={() => {}} />
+      <RoomTile room={branchFloor.treasure} x={isoXY(TRE.col, TRE.row).x} y={isoXY(TRE.col, TRE.row).y} z={TRE.col + TRE.row} family={family}
+        isCurrent={isAt(TRE)} clickable={false} fog={!isAt(TRE)} onClick={() => {}} />
+    </MapViewport>
+  );
+}
+
 // ── 第 3 層：A/B/C 分支王關 ─────────────────────────────
 export function BranchStage({
   branchFloor, branchChoice, branchSeq, branchStep,
   playerState, coins, lootMult, onChoose, onEnterNext, onRetreat,
   canControl = true,
+  difficulty = 1,
+  family = "ghost",
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
+  const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
 
   return (
     <div style={{
       minHeight:"100%",
-      background:"linear-gradient(160deg,#0f0a14,#1a0a0a)",
+      background: theme.bgGradient,
       color:"white", display:"flex", flexDirection:"column",
     }}>
       <style>{`
@@ -287,10 +695,15 @@ export function BranchStage({
 
       <div style={{
         padding:"12px 14px 8px", display:"flex", alignItems:"center", gap:8,
-        borderBottom:"1px solid rgba(255,255,255,0.07)", background:"rgba(0,0,0,0.25)",
+        borderBottom: `1px solid ${theme.borderColor}`, background:"rgba(0,0,0,0.25)",
       }}>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24" }}>👑 第 3 層 · 王關</div>
+          <div style={{ fontWeight:900, fontSize:16, color: theme.textColor, display:"flex", alignItems:"center", gap:6 }}>
+            <span>👑 {theme.label} T{difficulty}</span>
+            <span style={{ fontSize:11, padding:"2px 6px", borderRadius:4, background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.6)", fontWeight:700 }}>
+              第 3 層 · 王關
+            </span>
+          </div>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>
             {branchChoice ? `已選 ${branchFloor.branches[branchChoice].icon} ${branchFloor.branches[branchChoice].label}` : "三條岔路，選定後無法回頭"}
           </div>
@@ -307,79 +720,39 @@ export function BranchStage({
 
       <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
 
-      {!branchChoice ? (
-        // ── 選路 ──
-        <div style={{ padding:"18px 16px calc(7rem + env(safe-area-inset-bottom))", display:"flex", flexDirection:"column", gap:12, justifyContent:"center" }}>
-          <div style={{ textAlign:"center", marginBottom:6, animation:"bs-fade 0.4s ease both" }}>
-            <div style={{ fontSize:44 }}>🚪</div>
-            <div style={{ fontWeight:900, fontSize:17, marginTop:6 }}>王關入口</div>
-            <div style={{ fontSize:12, color:"#94a3b8", marginTop:4 }}>每條路各有 3 間未知房間與 1 處休息區</div>
+      {/* 2.5D 分支地圖（三條並排可見） */}
+      <div style={{ padding:"8px 0 0" }}>
+        <DungeonBranchView
+          branchFloor={branchFloor}
+          branchChoice={branchChoice}
+          branchSeq={branchSeq}
+          branchStep={branchStep}
+          canControl={canControl}
+          family={family}
+          onChoose={onChoose}
+        />
+      </div>
+
+      {/* 行動列 */}
+      <div style={{ padding:"12px 16px calc(7rem + env(safe-area-inset-bottom))" }}>
+        {!branchChoice ? (
+          <div style={{ textAlign:"center", fontSize:12, color:"#94a3b8", lineHeight:1.6 }}>
+            {canControl ? "👆 點選一條岔路前進（選定後無法回頭）" : "等待隊長選擇路線…"}
           </div>
-          {["A", "B", "C"].map((key, i) => {
-            const b = branchFloor.branches[key];
-            return (
-              <button key={key} onClick={() => canControl && onChoose(key)}
-                disabled={!canControl}
-                style={{
-                  display:"flex", alignItems:"center", gap:12, textAlign:"left",
-                  padding:"14px 16px", borderRadius:16, cursor:"pointer",
-                  background:"rgba(255,255,255,0.05)", color:"white",
-                  border:"1px solid rgba(251,191,36,0.2)",
-                  animation:`bs-fade 0.4s ease ${0.1 + i * 0.1}s both`,
-                }}>
-                <span style={{ fontSize:30 }}>{b.icon}</span>
-                <span style={{ flex:1, minWidth:0 }}>
-                  <span style={{ display:"block", fontWeight:900, fontSize:14 }}>{b.label}</span>
-                  <span style={{ display:"block", fontSize:11, color:"#94a3b8", marginTop:2 }}>❓ ❓ ❓ → 💤 → 👑 → 🏆</span>
-                </span>
-                <span style={{ fontSize:16, color:"#fbbf24" }}>▶</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        // ── 分支進度 ──
-        <div style={{ padding:"16px 16px calc(7rem + env(safe-area-inset-bottom))", display:"flex", flexDirection:"column" }}>
-          <div style={{ display:"flex", flexDirection:"column", gap:8, justifyContent:"center" }}>
-            {branchSeq.map((room, i) => {
-              const done = i < branchStep;
-              const current = i === branchStep;
-              const revealed = done || current || ["rest", "boss_battle", "treasure"].includes(room.type);
-              return (
-                <div key={room.id} style={{
-                  display:"flex", alignItems:"center", gap:12, padding:"11px 14px",
-                  borderRadius:14,
-                  background: current ? "rgba(251,191,36,0.1)" : "rgba(255,255,255,0.04)",
-                  border:`1px solid ${current ? "rgba(251,191,36,0.45)" : "rgba(255,255,255,0.07)"}`,
-                  opacity: done ? 0.55 : 1,
-                  animation: current ? "bs-glow 2s ease infinite" : undefined,
-                }}>
-                  <span style={{ fontSize:22 }}>
-                    {revealed ? (TYPE_ICONS[room.type] || "❔") : "❓"}
-                  </span>
-                  <span style={{ flex:1, fontWeight:800, fontSize:13 }}>
-                    {revealed ? room.label : "未知房間"}
-                  </span>
-                  <span style={{ fontSize:14 }}>
-                    {done ? "✅" : current ? "👉" : "🔒"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+        ) : (
           <button onClick={onEnterNext} disabled={!canControl}
             style={{
               width:"100%", padding:"14px 0", borderRadius:16, border:"none",
-              fontWeight:900, fontSize:15, cursor:"pointer", marginTop:12,
-              background:"linear-gradient(90deg,#f59e0b,#d97706)", color:"white",
+              fontWeight:900, fontSize:15, cursor: canControl ? "pointer" : "default", opacity: canControl ? 1 : 0.6,
+              background: theme.btnGradient, color:"white", boxShadow:`0 4px 12px ${theme.primary}40`,
             }}>
             {!canControl ? "等待隊長前進…"
               : branchSeq[branchStep]?.type === "boss_battle" ? "⚔️ 挑戰 Boss！"
               : branchSeq[branchStep]?.type === "treasure" ? "🏆 進入寶藏房！"
               : "🚪 進入下一間房"}
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {confirmExit && (
         <div style={{

@@ -626,7 +626,7 @@ export default function DungeonExpedition({
           ? "strong"
           : "normal";
       let mon = r.type === "elite_battle" ? monsterPool.elite
-        : r.type === "boss_battle" ? monsterPool.boss
+        : r.type === "boss_battle" ? (fixedBoss || monsterPool.boss)   // 王房用預覽同源的正確王，避免打到雜兵
         : (monsterQueueRef.current.shift()
           || drawDungeonFallbackMonster(fallbackVariant, Math.max(1, difficultyTier), { family }));
       if (!mon) {
@@ -658,7 +658,7 @@ export default function DungeonExpedition({
     }
     setPendingRoom(r);
     setPhase("func_room");
-  }, [monsterPool, difficultyTier, floorIndex, markRoomCleared]);
+  }, [monsterPool, fixedBoss, difficultyTier, floorIndex, markRoomCleared]);
 
   // ── 格子點擊移動 ────────────────────────────────────────
   const handleCellClick = useCallback((room) => {
@@ -670,10 +670,8 @@ export default function DungeonExpedition({
       next.add(room.id);
       return next;
     });
-    if (room.cleared) return;             // 已清除 → 自由通行、不再觸發
-    if (room.type === "stairs") return;   // 樓梯：站上後由底部面板確認下樓
-    enterRoom(room);
-  }, [playerPos, enterRoom]);
+    // 兩段式：點格子只移動 + 揭露房間；進入事件改由底部「進入」按鈕觸發（enterRoom）
+  }, [playerPos]);
 
   const handleDescend = useCallback(() => {
     sfxDoorOpen();
@@ -993,8 +991,11 @@ export default function DungeonExpedition({
           coins={coins}
           lootMult={runLootMult}
           onCellClick={handleCellClick}
+          onEnterRoom={enterRoom}
           onDescend={handleDescend}
           onRetreat={handleAbandon}
+          difficulty={difficultyTier}
+          family={family}
         />
       </>
     );
@@ -1014,6 +1015,8 @@ export default function DungeonExpedition({
           onChoose={handleChooseBranch}
           onEnterNext={handleBranchNext}
           onRetreat={handleAbandon}
+          difficulty={difficultyTier}
+          family={family}
         />
       </>
     );
