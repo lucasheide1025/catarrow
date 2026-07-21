@@ -270,13 +270,13 @@ export const CAT_SKILL_GROUPS = {
 
 // ── 貓貓裝備欄位定義（7 格：3 ATK / 3 DEF / 1 HP）─────────────────
 export const CAT_EQUIP_SLOTS = [
-  { id: "bow",       label: "弓",       icon: "🏹", stat: "atk", matKey: "ore" },
-  { id: "arrow",     label: "箭",       icon: "🪃", stat: "atk", matKey: "melon" },
-  { id: "arrowhead", label: "箭頭",     icon: "🗡️", stat: "atk", matKey: "fish" },
-  { id: "armor",     label: "護胸",     icon: "🛡️", stat: "def", matKey: "meat" },
-  { id: "shoulder",  label: "肩甲",     icon: "🦺", stat: "def", matKey: "driedfish" },
-  { id: "herbBag",   label: "貓草包",   icon: "🌿", stat: "def", matKey: "can" },
-  { id: "potion",    label: "貓草藥水", icon: "🍵", stat: "hp",  matKey: "potion" },
+  { id: "bow",       label: "弓",       icon: "🏹", image: "/assets/cat_equip/bow.jpg",       stat: "atk", matKey: "ore" },
+  { id: "arrow",     label: "箭",       icon: "🪃", image: "/assets/cat_equip/arrow.jpg",     stat: "atk", matKey: "melon" },
+  { id: "arrowhead", label: "箭頭",     icon: "🗡️", image: "/assets/cat_equip/arrowhead.jpg", stat: "atk", matKey: "fish" },
+  { id: "armor",     label: "護胸",     icon: "🛡️", image: "/assets/cat_equip/armor.jpg",     stat: "def", matKey: "meat" },
+  { id: "shoulder",  label: "肩甲",     icon: "🦺", image: "/assets/cat_equip/shoulder.jpg",  stat: "def", matKey: "driedfish" },
+  { id: "herbBag",   label: "貓草包",   icon: "🌿", image: "/assets/cat_equip/herbBag.jpg",   stat: "def", matKey: "can" },
+  { id: "potion",    label: "貓草藥水", icon: "🍵", image: "/assets/cat_equip/potion.jpg",    stat: "hp",  matKey: "potion" },
 ];
 
 // 六品質：普通→稀有→精英→頭目→傳說→神話（史詩改為頭目/Boss）

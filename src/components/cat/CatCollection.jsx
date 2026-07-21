@@ -384,7 +384,17 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
                 return (
                   <div key={slot.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-t border-white/5"
                     style={{ background: bg }}>
-                    <span className="text-sm w-5 text-center">{slot.icon}</span>
+                    <div className="w-7 h-7 rounded-md overflow-hidden border border-white/20 shrink-0 bg-white">
+                      <img
+                        src={slot.image}
+                        alt={slot.label}
+                        className="w-full h-full object-cover"
+                        onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
+                      />
+                      <span className="hidden w-full h-full items-center justify-center text-xs text-slate-800 font-bold">
+                        {slot.icon}
+                      </span>
+                    </div>
                     <span className="text-xs text-slate-300 flex-1">{slot.label}</span>
                     <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md text-white" style={{ background: color }}>
                       +{enhancement}

@@ -1522,7 +1522,17 @@ function ForgePanel({ profile, resources, myCats }) {
             background: gradeBg, borderRadius:12, padding:"12px 14px", marginBottom:9,
             border:`1.5px solid ${gradeColor}44`, display:"flex", alignItems:"center", gap:10,
           }}>
-            <div style={{ fontSize:26, width:38, textAlign:"center", flexShrink:0 }}>{slot.icon}</div>
+            <div style={{ width:44, height:44, borderRadius:10, overflow:"hidden", border:`1.5px solid ${gradeColor}66`, flexShrink:0, background:"#fff", boxShadow:"0 2px 6px rgba(0,0,0,0.12)" }}>
+              <img
+                src={slot.image}
+                alt={slot.label}
+                style={{ width:"100%", height:"100%", objectFit:"cover" }}
+                onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
+              />
+              <div style={{ display:"none", width:"100%", height:"100%", alignItems:"center", justifyContent:"center", fontSize:22 }}>
+                {slot.icon}
+              </div>
+            </div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
                 <span style={{ fontWeight:"bold", color:C.brown, fontSize:13 }}>{slot.label}</span>
