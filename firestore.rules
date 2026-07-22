@@ -7,7 +7,8 @@ service cloud.firestore {
 
     // 輔助函式
     function isAdmin() {
-      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isLoggedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
     function isLoggedIn() {
       return request.auth != null;
@@ -269,7 +270,7 @@ service cloud.firestore {
     // no raw arrows; clients compare this one small document before fetching
     // changed sessions into their persistent IndexedDB cache.
     match /memberPerformanceSync/{memberId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(memberId);
     }
     match /monsterDex/{docId} {
       allow read, write: if isLoggedIn();
@@ -373,24 +374,24 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /chestInventory/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
     match /potionInventory/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
     match /fragmentInventory/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
     match /chestStats/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
     match /potionDex/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
 
     // cardCollections：卡牌收集，登入者可讀寫
     match /cardCollections/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, write: if isAdmin() || ownsMember(docId);
     }
 
     // sysConfig：系統設定（版本號等），登入者可讀，admin 可寫
@@ -508,7 +509,138 @@ service cloud.firestore {
 
     // cardMarket：貓咪卡片市集，登入者可讀寫
     match /cardMarket/{docId} {
-      allow read, write: if isLoggedIn();
+      function listingEscrowDeltaIsValid() {
+        let sellerPath = /databases/$(database)/documents/members/$(request.resource.data.sellerId);
+        let before = get(sellerPath).data;
+        let after = getAfter(sellerPath).data;
+        let cardId = request.resource.data.cardId;
+        return before.catCards.get(cardId, 0) >= 2
+          && after.catCards.get(cardId, 0) == before.catCards.get(cardId, 0) - 1
+          && after.diff(before).affectedKeys().hasOnly(["catCards"])
+          && after.catCards.diff(before.catCards).affectedKeys().hasOnly([cardId]);
+      }
+
+      function cancelledCardReturnDeltaIsValid() {
+        let sellerPath = /databases/$(database)/documents/members/$(resource.data.sellerId);
+        let before = get(sellerPath).data;
+        let after = getAfter(sellerPath).data;
+        let cardId = resource.data.cardId;
+        return after.catCards.get(cardId, 0) == before.catCards.get(cardId, 0) + 1
+          && after.diff(before).affectedKeys().hasOnly(["catCards"])
+          && after.catCards.diff(before.catCards).affectedKeys().hasOnly([cardId]);
+      }
+
+      function sellerProceedsDeltaIsValid() {
+        let sellerPath = /databases/$(database)/documents/members/$(resource.data.sellerId);
+        let before = get(sellerPath).data;
+        let after = getAfter(sellerPath).data;
+        let paymentType = resource.data.priceType;
+        let price = resource.data.priceAmount;
+        return (
+          paymentType == "arrowdew"
+          && after.village.resources.arrowdew == before.village.resources.arrowdew + price
+          && after.diff(before).affectedKeys().hasOnly(["village"])
+          && after.village.diff(before.village).affectedKeys().hasOnly(["resources"])
+          && after.village.resources.diff(before.village.resources).affectedKeys().hasOnly(["arrowdew"])
+        ) || (
+          paymentType == "gachaToken"
+          && after.gachaCoins == before.gachaCoins + price
+          && after.diff(before).affectedKeys().hasOnly(["gachaCoins"])
+        ) || (
+          paymentType == "card"
+          && resource.data.offeredCardId is string
+          && after.catCards.get(resource.data.offeredCardId, 0)
+            == before.catCards.get(resource.data.offeredCardId, 0) + 1
+          && after.diff(before).affectedKeys().hasOnly(["catCards"])
+          && after.catCards.diff(before.catCards).affectedKeys().hasOnly([resource.data.offeredCardId])
+        );
+      }
+
+      function buyerAssetDeltaIsValid() {
+        let buyerPath = /databases/$(database)/documents/members/$(request.resource.data.buyerId);
+        let before = get(buyerPath).data;
+        let after = getAfter(buyerPath).data;
+        let cardId = resource.data.cardId;
+        let paymentType = resource.data.priceType;
+        let price = resource.data.priceAmount;
+        return after.catCards.get(cardId, 0) == before.catCards.get(cardId, 0) + 1
+          && (
+            (
+              paymentType == "arrowdew"
+              && after.village.resources.arrowdew == before.village.resources.arrowdew - price
+              && after.village.resources.arrowdew >= 0
+              && after.diff(before).affectedKeys().hasOnly(["catCards", "village"])
+              && after.catCards.diff(before.catCards).affectedKeys().hasOnly([cardId])
+              && after.village.diff(before.village).affectedKeys().hasOnly(["resources"])
+              && after.village.resources.diff(before.village.resources).affectedKeys().hasOnly(["arrowdew"])
+            )
+            || (
+              paymentType == "gachaToken"
+              && after.gachaCoins == before.gachaCoins - price
+              && after.gachaCoins >= 0
+              && after.diff(before).affectedKeys().hasOnly(["catCards", "gachaCoins"])
+              && after.catCards.diff(before.catCards).affectedKeys().hasOnly([cardId])
+            )
+            || (
+              paymentType == "card"
+              && request.resource.data.offeredCardId is string
+              && request.resource.data.offeredCardId != cardId
+              && after.catCards[request.resource.data.offeredCardId]
+                == before.catCards[request.resource.data.offeredCardId] - 1
+              && after.catCards[request.resource.data.offeredCardId] >= 1
+              && after.diff(before).affectedKeys().hasOnly(["catCards"])
+              && after.catCards.diff(before.catCards).affectedKeys().hasOnly([
+                cardId, request.resource.data.offeredCardId
+              ])
+            )
+          );
+      }
+      allow read: if isLoggedIn();
+      allow create: if isAdmin() || (
+        ownsMember(request.resource.data.sellerId)
+        && request.resource.data.status == "active"
+        && request.resource.data.sellerId is string
+        && request.resource.data.cardId is string
+        && request.resource.data.priceType in ["arrowdew", "gachaToken", "card"]
+        && request.resource.data.priceAmount is number
+        && request.resource.data.priceAmount > 0
+        && listingEscrowDeltaIsValid()
+      );
+      allow update: if isAdmin() || (
+        // Seller may cancel only an active listing without rewriting its identity/economy fields.
+        (
+          ownsMember(resource.data.sellerId)
+          && resource.data.status == "active"
+          && request.resource.data.status == "cancelled"
+          && cancelledCardReturnDeltaIsValid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+        )
+        // A buyer may transition an active listing to sold, but cannot change seller/card/price.
+        || (
+          resource.data.status == "active"
+          && request.resource.data.status == "sold"
+          && ownsMember(request.resource.data.buyerId)
+          && request.resource.data.buyerId != resource.data.sellerId
+          && request.resource.data.sellerClaimed == false
+          && buyerAssetDeltaIsValid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status", "buyerId", "buyerName", "soldAt", "sellerClaimed", "offeredCardId"
+          ])
+        )
+        // After sale, only the seller may mark proceeds claimed.
+        || (
+          ownsMember(resource.data.sellerId)
+          && resource.data.status == "sold"
+          && request.resource.data.status == "sold"
+          && resource.data.sellerClaimed == false
+          && request.resource.data.sellerClaimed == true
+          && sellerProceedsDeltaIsValid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "sellerClaimed", "sellerClaimedAt"
+          ])
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     // systemConfig：學生分級系統維護鎖／權限矩陣設定，登入者可讀，admin 可寫

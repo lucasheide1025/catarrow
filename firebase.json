@@ -1,9 +1,30 @@
 {
   "functions": {
-    "source": "functions"
+    "source": "functions",
+    "ignore": [
+      ".git",
+      ".firebase",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "node_modules",
+      "**/*.test.js",
+      "**/*.test.ts",
+      "**/__tests__/**",
+      "coverage"
+    ]
   },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
   }
 }

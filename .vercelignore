@@ -3,6 +3,9 @@
 .gemini
 .cursor
 .hooks
+.agents
+.githooks
+.specify
 
 # 排除文件
 token.pickle
@@ -20,6 +23,25 @@ scripts/
 image-prompts/
 docs/
 .trellis/
+specs/
+functions/
+website/
+backups/
+tmp/
+.staging/
+.vercel/
+.vercel-cli-cache/
+node_modules/
+
+# Firebase-only configuration and local maintenance utilities
+firebase.json
+firestore.rules
+firestore.indexes.json
+serviceAccountKey*.json
+firebase-adminsdk*.json
+test-*.js
+fix_*.py
+add_*.py
 
 # 排除本機分析/備份/建置產物
 build/
@@ -32,3 +54,4 @@ codebase-ui.zip
 backup_*.json
 restore.js
 backup.js
+.tmp-dev*

@@ -4,9 +4,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { onSnapshot, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { resolveGuestSession } from "../lib/guestAuth";
-import MonsterBattle   from "../components/member/MonsterBattle";
 import PartyLobby      from "../components/party/PartyLobby";
-import PartyBattleRoom from "../components/party/PartyBattleRoom";
 import WorldBossLobby  from "../components/worldboss/WorldBossLobby";
 import GuestShop       from "../components/member/GuestShop";
 import DungeonLobby    from "../components/dungeon/DungeonLobby";
@@ -21,6 +19,10 @@ import performanceCardImage from "../assets/hub/performance.webp";
 
 const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
 const MemberPerformance = lazy(() => import("../components/member/MemberPerformance"));
+const loadMonsterBattle = () => import("../components/member/MonsterBattle");
+const MonsterBattle = lazy(loadMonsterBattle);
+const loadPartyBattleRoom = () => import("../components/party/PartyBattleRoom");
+const PartyBattleRoom = lazy(loadPartyBattleRoom);
 
 function guestSessionKey(accountType, sessionSourceId) {
   return `guest_v2_profile_${accountType}_${sessionSourceId || "default"}`;
@@ -209,6 +211,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   }
 
   function handleEnterPartyRoom(roomId, _type, isHost) {
+    loadPartyBattleRoom();
     setPartyRoomId(roomId); setPartyIsHost(isHost); setPartySubTab("battle");
     sessionStorage.setItem(partySessionKey, JSON.stringify({ roomId, isHost: !!isHost, memberId: guestProfile.id }));
   }
@@ -320,13 +323,15 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         {tab === "performance" && <Suspense fallback={<GuestPanelLoading label="正在載入射手表現…" />}><MemberPerformance profileOverride={guestFullProfile || guestProfile} /></Suspense>}
         {tab === "monster" && (
           guestFullProfile ? (
-            <MonsterBattle
-              isGuest={true}
-              kidMode={isKid}
-              guestProfile={guestFullProfile}
-              onBack={() => setTab("home")}
-              onImmersiveChange={setGuestBattleImmersive}
-            />
+            <Suspense fallback={<GuestPanelLoading label="正在載入打怪系統…" />}>
+              <MonsterBattle
+                isGuest={true}
+                kidMode={isKid}
+                guestProfile={guestFullProfile}
+                onBack={() => setTab("home")}
+                onImmersiveChange={setGuestBattleImmersive}
+              />
+            </Suspense>
           ) : (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
               載入中…
@@ -373,13 +378,18 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
           <PartyLobby onEnterRoom={handleEnterPartyRoom} guestOverride={guestOverride} battleOnly={true} />
         )}
         {tab === "party" && partySubTab === "battle" && partyRoomId && (
-          <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} guestOverride={guestOverride} />
+          <Suspense fallback={<GuestPanelLoading label="正在載入組隊戰鬥…" />}>
+            <PartyBattleRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} guestOverride={guestOverride} />
+          </Suspense>
         )}
       </div>
 
       {!immersiveBattle && <div className="guest-bottom-nav">
         {TABS.map(n => (
-          <button key={n.id} onClick={() => setTab(n.id)} className={`guest-nav-btn ${tab === n.id ? "active" : ""}`}>
+          <button key={n.id} onClick={() => setTab(n.id)}
+            onMouseEnter={n.id === "monster" ? loadMonsterBattle : undefined}
+            onFocus={n.id === "monster" ? loadMonsterBattle : undefined}
+            className={`guest-nav-btn ${tab === n.id ? "active" : ""}`}>
             <span className="guest-nav-icon">{n.icon}</span>
             <span>{n.label}</span>
           </button>

@@ -916,6 +916,9 @@ async function applyArrowOperation(operation) {
       patch["dungeonExcavation.progress"] = Math.min(100, (Number(current.progress) || 0) + Math.min(operation.count, 100));
       patch["dungeonExcavation.dailyArrowsUsed"] = current.lastActiveDate === today ? (Number(current.dailyArrowsUsed) || 0) + operation.count : operation.count;
     }
+    if (current.assignedCatId && (Number(current.catDigProgress) || 0) < 100) {
+      patch["dungeonExcavation.catDigProgress"] = Math.min(100, (Number(current.catDigProgress) || 0) + (operation.count * 0.5));
+    }
     transaction.update(memberRef, patch);
     if (goalSnap?.exists()) transaction.update(goalRef, {
       currentValue:increment(operation.count), [`participants.${operation.memberId}.contributed`]:increment(operation.count),
@@ -5029,10 +5032,13 @@ export async function claimCardSaleProceeds(sellerId, listingId) {
     } else if (listing.priceType === 'card' && listing.offeredCardId) {
       updates[`catCards.${listing.offeredCardId}`] = increment(1);
     }
-    if (Object.keys(updates).length > 0) {
-      await updateDoc(doc(db, C.members, sellerId), updates);
+    if (Object.keys(updates).length === 0) {
+      return { ok: false, reason: 'invalid_proceeds' };
     }
-    await updateDoc(listingRef, { sellerClaimed: true, sellerClaimedAt: serverTimestamp() });
+    const batch = writeBatch(db);
+    batch.update(doc(db, C.members, sellerId), updates);
+    batch.update(listingRef, { sellerClaimed: true, sellerClaimedAt: serverTimestamp() });
+    await batch.commit();
     return { ok: true, proceeds };
   } catch (e) {
     return { ok: false, reason: e.message };

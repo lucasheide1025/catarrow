@@ -46,18 +46,18 @@ describe("chest and equipment balance", () => {
     expect(catEquipEnhancement("傳說", 9)).toBe(49);
     expect(catEquipEnhancement("神話", 0)).toBe(50);
 
-    expect(calcForgeCost("bow", "普通", 9)).toEqual({ ore_t1: 1000, fur_t1: 10 });
-    expect(calcForgeCost("bow", "稀有", 9)).toEqual({ ore_t2: 1000, fur_t2: 15 });
-    expect(calcForgeCost("bow", "精英", 9)).toEqual({ ore_t3: 1000, fur_t3: 20 });
-    expect(calcForgeCost("bow", "頭目", 9)).toEqual({ ore_t4: 1000, fur_t4: 30 });
-    expect(calcForgeCost("bow", "傳說", 9)).toEqual({ ore_t5: 1000, fur_t5: 50 });
+    expect(calcForgeCost("bow", "普通", 9)).toEqual({ ore_t1: 120, fur_t1: 50 });
+    expect(calcForgeCost("bow", "稀有", 9)).toEqual({ ore_t2: 168, fur_t2: 120 });
+    expect(calcForgeCost("bow", "精英", 9)).toEqual({ ore_t3: 235, fur_t3: 250 });
+    expect(calcForgeCost("bow", "頭目", 9)).toEqual({ ore_t4: 329, fur_t4: 450 });
+    expect(calcForgeCost("bow", "傳說", 9)).toEqual({ ore_t5: 461, fur_t5: 800 });
     expect(calcForgeCost("bow", "神話", 0)).toBeNull();
     expect(calcForgeCost("bow", "神話", 9)).toBeNull();
   });
 
   test("cat equipment regular upgrades use the current grade tier", () => {
-    expect(calcForgeCost("arrow", "普通", 0)).toEqual({ meat_t1: 30 });
-    expect(calcForgeCost("arrow", "稀有", 3)).toEqual({ meat_t2: 150 });
-    expect(calcForgeCost("arrow", "傳說", 8)).toEqual({ meat_t5: 800 });
+    expect(calcForgeCost("arrow", "普通", 0)).toEqual({ melon_t1: 5 });
+    expect(calcForgeCost("arrow", "稀有", 3)).toEqual({ melon_t2: 26 });
+    expect(calcForgeCost("arrow", "傳說", 8)).toEqual({ melon_t5: 286 });
   });
 });

@@ -1,6 +1,12 @@
 node_modules/
 build/
 backups/
+__pycache__/
+*.py[cod]
+.firebase-config/
+.firebase-emulators/
+.local-tools/
+firestore-debug.log
 
 # ── 機密檔案（另有 .githooks/pre-commit 硬擋，gitignore 只是第一道）──────
 # ⚠️ gitignore 擋不住兩種情況：① git add -f 強制加入 ② 檔案「已經」被追蹤。
@@ -33,3 +39,6 @@ nul
 .deploy-staging-source.zip
 .vercel-cli-cache/
 .tmp-dev-server*
+
+# Local image-generation review outputs (never deploy or commit)
+.staging/image-generation/
