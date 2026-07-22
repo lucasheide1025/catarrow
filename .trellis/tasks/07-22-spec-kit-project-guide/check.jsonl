@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "全域前端品質檢查入口"}
+{"file": ".trellis/spec/frontend/access-control-tiers.md", "reason": "檢查權限與資料邊界一致性"}
+{"file": ".trellis/spec/frontend/guest-kid-mode.md", "reason": "檢查身分模型敘述"}
+{"file": ".trellis/spec/frontend/firestore-cost-optimization.md", "reason": "檢查成本與即時監聽原則"}
