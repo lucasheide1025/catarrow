@@ -944,6 +944,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setResult({ ...res, playerDied });
     setSubmitting(false);
     processingRef.current = false;
+    setPhase("result");
     if (res.ok) {
       if (res.defeated) {
         playBattleSound("victory_cheer", {});
@@ -976,6 +977,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         }).catch(() => {});
         setCoins(c => c + coinsGain);
         setGuestActivityReward({ coins: coinsGain, catXP: catXpGain });
+      }
+      if (!isGuest && myId && res.dmg > 0) {
+        import("../../lib/villageGoalDb").then(m => m.contributeDamageToGoal(myId, res.dmg)).catch(() => {});
       }
       if (!isGuest && myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r =>

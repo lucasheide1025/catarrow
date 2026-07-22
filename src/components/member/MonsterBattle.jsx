@@ -2256,6 +2256,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   function persistMonsterShootingPerformance({ result, finalMonsterHp, totalDamage, capturedEnds }) {
     if (shootingPerformanceSavedRef.current || isLimitedAccount || !profile?.id || !battleSessionIdRef.current) return;
     shootingPerformanceSavedRef.current = true;
+    if (totalDamage > 0) {
+      import("../../lib/villageGoalDb").then(m => m.contributeDamageToGoal(profile.id, totalDamage)).catch(() => {});
+    }
     const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(profile.id);
     finalizeMonsterShootingSession({
       sessionId:battleSessionIdRef.current,
