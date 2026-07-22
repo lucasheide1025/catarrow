@@ -332,8 +332,12 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     .slice(0, 5);
 
   return (
-    <div className="h-[100dvh] min-h-0 overflow-hidden flex flex-col text-white"
-      style={{ background: `linear-gradient(180deg, ${boss.bg || "#0f172a"} 0%, #0f172a 100%)` }}>
+    <div className="h-[100dvh] min-h-0 overflow-hidden flex flex-col text-white select-none font-sans"
+      style={{
+        backgroundImage: `linear-gradient(180deg, rgba(7, 11, 22, 0.92) 0%, rgba(15, 23, 42, 0.97) 100%), url(/assets/dungeon/dungeon_team_lobby_bg.jpg)`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}>
 
       {showKillScreen && killEvent && (
         <KillScreen event={killEvent} myReward={myReward} rewardPreview={rewardPreview} canClaim={!isGuestMode && pendingEvent?.eventId === killEvent.id} onClaim={() => claimPendingReward(killEvent.id)} onClose={() => setShowKillScreen(false)}/>
@@ -341,38 +345,49 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       {replayIntro && event && (
         <WorldBossIntro event={event} onClose={() => setReplayIntro(false)}/>
       )}
-      {/* Header */}
-      <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-2">
-        {onBack && <button onClick={onBack} className="text-slate-400 text-sm font-bold">← 返回</button>}
-        <span className="font-black text-lg flex-1">🌍 世界大 Boss</span>
-        <div className="text-xs text-slate-400">
-          剩餘 <CountdownTimer endAt={event.endAt}/>
+
+      {/* 史詩殿堂頂部導覽 */}
+      <header className="shrink-0 flex items-center justify-between px-4 py-3 bg-slate-950/80 border-b border-amber-500/30 backdrop-blur-md sticky top-0 z-30 shadow-xl">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button onClick={onBack} className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition active:scale-95">
+              ←
+            </button>
+          )}
+          <div>
+            <div className="text-xs font-black text-amber-400 tracking-wider flex items-center gap-1.5">
+              <span>🔥</span> WORLD BOSS RAID 討伐殿堂
+            </div>
+            <div className="text-sm font-black text-white">{boss.name}</div>
+          </div>
         </div>
-      </div>
+        <div className="text-xs font-black text-amber-300 font-mono bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl shadow-inner flex items-center gap-1.5">
+          <span>⏳</span> 剩餘 <CountdownTimer endAt={event.endAt}/>
+        </div>
+      </header>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 space-y-4"
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-5"
         style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y" }}>
 
-        {/* Boss 展示區 */}
-        <div className="rounded-3xl overflow-hidden border border-white/10"
-          style={{ background:`linear-gradient(135deg, ${boss.bg}dd, #1e293b)` }}>
-          <div className="flex flex-col items-center pt-6 pb-4 gap-3">
-            {/* 像素圖 */}
-            <div className="relative">
+        {/* Boss 巨型史詩展台 */}
+        <div className="relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/50 p-6 shadow-2xl backdrop-blur-md">
+          <div className="flex flex-col items-center text-center gap-4 relative z-10">
+            {/* 像素圖與光環 */}
+            <div className="relative p-2 bg-rose-500/10 border border-rose-500/30 rounded-3xl shadow-inner">
               <WorldBossSVG
                 bossKey={event.bossKey}
                 currentHP={bossCurrentHP}
                 maxHP={bossMaxHP}
-                size={300}
+                size={280}
               />
               {/* 階段標籤 */}
               {(() => {
                 const ph = getBossPhase(bossCurrentHP, bossMaxHP);
                 const pl = PHASE_LABELS[ph];
                 return (
-                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-xs font-bold px-2 py-0.5 rounded-full border"
-                    style={{ color: pl.color, borderColor: pl.color, background: "#0f172a" }}>
+                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-xs font-black px-3 py-1 rounded-full border shadow-xl backdrop-blur-md"
+                    style={{ color: pl.color, borderColor: pl.color, background: "rgba(15,23,42,0.9)" }}>
                     {pl.label}
                   </div>
                 );
@@ -380,60 +395,63 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             </div>
 
             {/* 名稱 & 稱號 */}
-            <div className="text-center mt-2">
-              <div className="text-2xl font-black" style={{ color: boss.accent || "#f59e0b" }}>
+            <div className="mt-1">
+              <div className="text-2xl md:text-3xl font-black tracking-wide" style={{ color: boss.accent || "#f59e0b" }}>
                 {boss.name}
               </div>
               <div className="text-xs text-slate-400 mt-0.5">「{boss.title}」</div>
               <button onClick={() => setReplayIntro(true)}
-                className="mt-2 text-xs px-3 py-1 rounded-full border border-white/20 text-slate-400 bg-white/5 active:scale-95 transition-all">
+                className="mt-2.5 text-xs font-bold px-3.5 py-1 rounded-xl border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 transition-all">
                 ▶ 重播登場動畫
               </button>
             </div>
 
             {/* HP 條 */}
-            <div className="w-full px-4">
+            <div className="w-full max-w-lg mt-1">
               <HPBar current={bossCurrentHP} max={bossMaxHP}/>
             </div>
 
-            {/* 屬性列 */}
-            <div className="flex gap-4 text-center text-xs">
-              <div>
-                <div className="text-slate-500 mb-0.5">ATK</div>
-                <div className="font-black text-rose-400">{boss.atk}</div>
+            {/* 討伐面板統計 */}
+            <div className="grid grid-cols-4 gap-2 text-center text-xs w-full max-w-lg mt-2">
+              <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
+                <div className="text-slate-400 text-[10px] mb-0.5">ATK</div>
+                <div className="font-mono font-black text-rose-400">{boss.atk}</div>
               </div>
-              <div>
-                <div className="text-slate-500 mb-0.5">DEF</div>
-                <div className="font-black text-blue-400">{boss.def}</div>
+              <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
+                <div className="text-slate-400 text-[10px] mb-0.5">DEF</div>
+                <div className="font-mono font-black text-blue-400">{boss.def}</div>
               </div>
-              <div>
-                <div className="text-slate-500 mb-0.5">參戰人數</div>
-                <div className="font-black text-amber-300">{total} 人</div>
+              <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
+                <div className="text-slate-400 text-[10px] mb-0.5">參戰勇者</div>
+                <div className="font-mono font-black text-amber-300">{total} 人</div>
               </div>
-              <div>
-                <div className="text-slate-500 mb-0.5">加成</div>
-                <div className="font-black text-emerald-400">{bonus.label} ATK</div>
+              <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
+                <div className="text-slate-400 text-[10px] mb-0.5">全隊加成</div>
+                <div className="font-mono font-black text-emerald-400">{bonus.label}</div>
               </div>
             </div>
           </div>
         </div>
 
         {/* 描述 */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-300 italic leading-relaxed">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-3xl px-5 py-4 text-xs text-slate-300 italic leading-relaxed backdrop-blur-md shadow-lg">
           「{boss.desc}」
         </div>
 
         {/* 參戰者小圖示列（最多顯示 8 個 + 餘數） */}
         {partList.length > 0 && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-            <div className="text-xs text-slate-400 font-bold mb-3">⚔️ 參戰勇者（{total}人）</div>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="text-xs font-black text-amber-300 mb-3 flex items-center justify-between">
+              <span>⚔️ 全服共鬥參戰勇者 ({total}人)</span>
+              <span className="text-[11px] text-emerald-400 font-normal">全隊傷害加成 ×{(bonus.atkMult || 1).toFixed(2)}</span>
+            </div>
             <div className="flex gap-2 flex-wrap">
               {partList.slice(0, 8).map(([id, p]) => (
                 <ParticipantAvatar key={id} name={p.name} isGuest={p.isGuest}/>
               ))}
               {partList.length > 8 && (
                 <div className="flex flex-col items-center gap-0.5" style={{ minWidth: 36 }}>
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black border-2 border-white/20 bg-slate-700">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black border-2 border-white/20 bg-slate-800">
                     +{partList.length - 8}
                   </div>
                   <div className="text-[9px] text-slate-500">更多</div>
@@ -443,38 +461,40 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           </div>
         )}
 
-        {/* 本場活動榜：訪客/兒童模式依活動來源分組，避免和正式玩家排行混在一起 */}
+        {/* 本場活動榜 */}
         {activityTopDmg.length > 0 && (
-          <div className="bg-sky-500/10 border border-sky-400/30 rounded-2xl px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-sky-300 font-bold">🏕️ 本場活動榜</div>
+          <div className="bg-slate-900/80 border border-sky-500/30 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between mb-3 border-b border-sky-500/20 pb-2">
+              <div className="text-xs text-sky-300 font-black flex items-center gap-1.5">
+                <span>🏕️</span> 本場活動英雄榜
+              </div>
               <div className="text-[11px] text-sky-200/80 font-bold">{activityPartList.length} 人參戰</div>
             </div>
             <div className="space-y-2">
               {activityTopDmg.map((p, i) => (
-                <div key={p.id} className={`flex items-center gap-3 rounded-xl px-2 py-1 ${p.id === myId ? "bg-white/10" : ""}`}>
-                  <span className="text-sm w-5 text-center font-black"
+                <div key={p.id} className={`flex items-center gap-3 rounded-2xl p-2.5 transition-all ${p.id === myId ? "bg-sky-500/20 border border-sky-400/40" : "bg-slate-950/60"}`}>
+                  <span className="text-sm w-6 text-center font-black"
                     style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#94a3b8" : i === 2 ? "#cd7c2f" : "#38bdf8" }}>
                     {i + 1}
                   </span>
-                  <span className="flex-1 text-sm text-slate-200 truncate">{p.id === myId ? "你" : p.name}</span>
-                  <span className="text-sm font-black text-amber-300">{p.dmg.toLocaleString()}</span>
+                  <span className="flex-1 text-xs font-bold text-slate-100 truncate">{p.id === myId ? "你" : p.name}</span>
+                  <span className="text-xs font-mono font-black text-amber-300">{p.dmg.toLocaleString()}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* 傷害排行 */}
+        {/* 全體傷害排行 */}
         {topDmg.length > 0 && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-            <div className="text-xs text-slate-400 font-bold mb-2">
-              💥 {isGuestMode ? "全體世界王傷害排行" : "傷害排行"}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="text-xs text-amber-300 font-black mb-3 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+              <span>💥</span> {isGuestMode ? "全體世界王傷害排行" : "殿堂英雄傷害排行"}
             </div>
             <div className="space-y-2">
               {topDmg.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-3">
-                  <span className="text-sm w-5 text-center font-black"
+                <div key={p.id} className={`flex items-center gap-3 rounded-2xl p-2.5 ${p.id === myId ? "bg-amber-500/20 border border-amber-500/30" : "bg-slate-950/60"}`}>
+                  <span className="text-sm w-6 text-center font-black"
                     style={{ color: i === 0 ? "#fbbf24" : i === 1 ? "#94a3b8" : i === 2 ? "#cd7c2f" : "#475569" }}>
                     {i + 1}
                   </span>

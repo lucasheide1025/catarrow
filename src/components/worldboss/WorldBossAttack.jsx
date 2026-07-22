@@ -1085,108 +1085,81 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             </div>
           </div>
         )}
-        {/* 史詩殿堂頭部 */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-3 bg-slate-950/80 border-b border-amber-500/30 backdrop-blur-md z-30 shadow-xl">
-          <button onClick={() => setShowPrepExit(true)} className="text-slate-400 text-sm font-bold hover:text-white flex items-center gap-1">
-            ← 返回
-          </button>
-          <div className="text-center">
-            <div className="text-[10px] font-black text-amber-400 tracking-wider">🔥 WORLD BOSS RAID</div>
-            <div className="text-base font-black text-white">{boss.name} 討伐殿堂</div>
-          </div>
-          <span className="text-xs font-black text-amber-300 font-mono bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-xl">💰 {coins}</span>
+        <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
+          <button onClick={() => setShowPrepExit(true)} className="text-slate-400 text-sm font-bold">← 返回</button>
+          <span className="font-black text-lg flex-1">⚔️ 出戰準備</span>
+          <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-5">
-          {/* Boss 史詩橫幅 */}
-          <div className="relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/50 p-5 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center gap-4 relative z-10">
-              <div className="relative shrink-0 flex items-center justify-center w-24 h-24 rounded-2xl bg-rose-500/10 border border-rose-500/30 p-2 shadow-inner">
-                <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={84}/>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 border border-rose-500/40 text-rose-300">
-                    🔥 討伐目標
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 border border-amber-400/30 text-amber-300">
-                    ⚔️ 參戰 {event.totalParticipants || 0} 人
-                  </span>
-                </div>
-                <h2 className="text-xl font-black text-white truncate" style={{ color: boss.accent }}>
-                  {boss.name}
-                </h2>
-                <div className="text-xs text-slate-400 mt-0.5">「{boss.title}」</div>
-
-                {/* HP 血條 */}
-                <div className="mt-2.5 space-y-1">
-                  <div className="flex justify-between text-[11px] font-black">
-                    <span className="text-rose-300">BOSS 血量</span>
-                    <span className="font-mono text-amber-300">{event.bossCurrentHP?.toLocaleString()} / {event.bossMaxHP?.toLocaleString()} ({hpPct.toFixed(1)}%)</span>
-                  </div>
-                  <div className="h-3 rounded-full bg-slate-950 border border-rose-500/30 overflow-hidden p-0.5">
-                    <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-amber-500 via-rose-500 to-red-600 shadow-[0_0_10px_#ef4444]"
-                      style={{ width: `${hpPct}%` }} />
-                  </div>
-                </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-5 pt-4">
+          {/* Boss 預覽 */}
+          <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
+            <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={72}/>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-base" style={{ color: boss.accent }}>{boss.name}</div>
+              <div className="text-xs text-slate-400 mb-2">「{boss.title}」</div>
+              <MiniHP current={event.bossCurrentHP} max={event.bossMaxHP}/>
+              <div className="text-xs text-slate-500 mt-1 font-mono">
+                {event.bossCurrentHP?.toLocaleString()} / {event.bossMaxHP?.toLocaleString()} HP
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
-            <div className="text-xs font-black text-amber-300 mb-1 flex items-center gap-1.5">
-              <span>🏹</span> 實際距離與本場裝備
-            </div>
-            <div className="text-[11px] text-slate-400 mb-3">開始挑戰後會鎖定這組設定，並寫入本次射箭表現。</div>
+          <div className="bg-blue-950/45 border border-blue-400/35 rounded-2xl p-4">
+            <div className="text-sm font-black text-blue-100 mb-1">🏹 實際距離與本場裝備</div>
+            <div className="text-xs text-blue-200/70 mb-3">開始挑戰後會鎖定這組設定，並寫入本次射手表現。</div>
             <BattleShootingProfile memberId={myId} />
           </div>
 
-          {/* 屬性與加成 */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
-            <div className="text-xs font-black text-amber-300 mb-3 flex items-center gap-1.5">
-              <span>🛡️</span> 個人討伐能力值
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          {/* 戰鬥說明 */}
+          <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl px-4 py-3 text-xs text-rose-300 space-y-1 leading-relaxed">
+            <div className="font-black text-rose-200 mb-1">⚔️ 戰鬥流程</div>
+            <div>1. 每回合射 6 箭對 Boss 造成傷害</div>
+            <div>2. 每回合結束後 Boss 會進行反擊</div>
+            <div>3. 共 5 大回合，最終回合 Boss 全力攻擊</div>
+          </div>
+
+          {/* 我的屬性 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="text-xs text-slate-400 font-bold mb-3">你的屬性</div>
+            <div className="grid grid-cols-3 gap-3 text-center text-sm">
               {[["HP", baseHP, "#22c55e"], ["ATK", baseATK, "#f87171"], ["DEF", baseDEF, "#60a5fa"]].map(([k, v, c]) => (
-                <div key={k} className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
-                  <div className="text-slate-400 text-[10px] mb-0.5">{k}</div>
-                  <div className="font-black font-mono text-sm" style={{ color: c }}>{v}</div>
+                <div key={k}>
+                  <div className="text-slate-500 text-xs mb-0.5">{k}</div>
+                  <div className="font-black" style={{ color: c }}>{v}</div>
                 </div>
               ))}
             </div>
-            <div className="mt-3 text-center text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-2xl">
-              ⚡ 每位隊友 +15% ATK，共 {event.totalParticipants || 0} 人 → 戰力 ×{participantBonus.toFixed(2)}
+            <div className="mt-3 text-center text-xs text-amber-300">
+              ⚡ 每位隊友 +15% ATK，共 {event.totalParticipants || 0} 人 → ×{participantBonus.toFixed(2)} ATK
             </div>
           </div>
 
-          {/* 藥水選擇 */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
-            <div className="text-xs font-black text-amber-300 mb-3 flex items-center gap-1.5">
-              <span>💊</span> 戰鬥興奮劑藥水
-            </div>
+          {/* 藥水 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="text-xs text-slate-400 font-bold mb-3">💊 攻擊增幅藥水</div>
             <div className="grid grid-cols-2 gap-2">
               {POTIONS.map(p => (
                 <button key={p.id} onClick={() => { setPotion(p.id); if (p.id !== "none") sfxPotionDrink(); }}
                   disabled={p.cost > 0 && coins < p.cost}
-                  className={`p-2.5 rounded-2xl text-xs font-bold border transition-all disabled:opacity-30 flex flex-col justify-between text-left active:scale-95 ${potion === p.id ? "border-amber-400 bg-amber-500/20 shadow-[0_0_10px_rgba(251,191,36,0.3)]" : "border-slate-800 bg-slate-950/60 text-slate-300"}`}>
-                  <div className="font-black text-white">{p.label}</div>
-                  <div className="text-[11px] opacity-80 mt-1" style={{ color: p.color }}>{p.mult > 1 ? `傷害 ×${p.mult}` : "基礎輸出"}</div>
-                  {p.cost > 0 && <div className="text-[10px] text-amber-300 font-mono mt-1">💰 {p.cost}</div>}
+                  className={`py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 ${potion === p.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5 text-slate-300"}`}
+                  style={{ color: potion === p.id ? p.color : undefined }}>
+                  <div>{p.label}</div>
+                  <div className="opacity-70">{p.mult > 1 ? `傷害 ×${p.mult}` : "一般傷害"}</div>
+                  {p.cost > 0 && <div className="text-amber-300">💰 {p.cost}</div>}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 機器人傭兵 */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
-            <div className="text-xs font-black text-amber-300 mb-1 flex items-center gap-1.5">
-              <span>🤖</span> 招募 AI 戰術夥伴 ({bots.length}/5)
-            </div>
-            <div className="text-[11px] text-slate-400 mb-3">協助齊射，每位夥伴額外對 Boss 造成傷害</div>
+          {/* AI 機器人 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="text-xs text-slate-400 font-bold mb-1">🤖 雇用 AI 機器人</div>
+            <div className="text-xs text-slate-500 mb-3">每隻 100 金幣，同場一起對 Boss 造成傷害</div>
             {bots.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {bots.map((b, i) => (
-                  <span key={i} className="text-[11px] bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-0.5 text-slate-200">
+                  <span key={i} className="text-xs bg-white/10 rounded-full px-2 py-0.5 text-slate-300">
                     {b.icon} {b.label}
                   </span>
                 ))}
@@ -1194,23 +1167,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             )}
             <button onClick={handleHireBot}
               disabled={coins < 100 || hiring || bots.length >= 5}
-              className="w-full py-2.5 rounded-2xl text-xs font-black bg-gradient-to-r from-indigo-600 to-violet-600 border border-indigo-400/40 text-white disabled:opacity-30 active:scale-95 transition-all shadow-lg">
-              {hiring ? "招募中…" : bots.length >= 5 ? "夥伴已滿 (5位)" : `🤖 招募戰術夥伴 💰100`}
+              className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 disabled:opacity-30 active:scale-95 transition-all">
+              {hiring ? "雇用中…" : bots.length >= 5 ? "已達上限（5隻）" : `🤖 雇用機器人 💰100`}
             </button>
           </div>
 
-          {/* 靶面設定 */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
-            <div className="text-xs font-black text-amber-300 mb-3 flex items-center gap-1.5">
-              <span>🎯</span> 射擊靶面與操控方式
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
-              </div>
-              <div className="flex-1">
-                <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
-              </div>
+          {/* 計分方式設定 */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="text-xs text-slate-400 font-bold mb-3">🎯 計分方式</div>
+            <div className="flex flex-col gap-3">
+              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
           </div>
         </div>
