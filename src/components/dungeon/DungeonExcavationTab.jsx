@@ -398,20 +398,24 @@ export default function DungeonExcavationTab({ profile }) {
             <div className="grid grid-cols-1 gap-2.5">
               {Object.values(CAT_DIG_SPECIALTIES).map(cat => {
                 const isSelected = assignedCatId === cat.id;
-                // 檢查是否正處於遠征中（加強安全防護 e?.catId 防止 null 崩潰）
+                // 檢查是否正處於遠征中
                 const activeExpeditions = profile?.expeditions || {};
                 const inExpedition = Object.values(activeExpeditions).some(e => e && e.catId === cat.id);
+                // 檢查是否正在貓貓村建築物工作
+                const villageWorkers = profile?.village?.workers || {};
+                const inVillage = Object.values(villageWorkers).includes(cat.id);
+                const isBlocked = inExpedition || inVillage;
 
                 return (
                   <button
                     key={cat.id}
                     type="button"
-                    disabled={assigningCat || inExpedition}
+                    disabled={assigningCat || isBlocked}
                     onClick={() => handleSelectCat(cat.id)}
                     className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
                       isSelected
                         ? "bg-purple-900/60 border-purple-400 text-white ring-2 ring-purple-400/40"
-                        : inExpedition
+                        : isBlocked
                         ? "bg-slate-950/40 border-slate-800 text-slate-500 opacity-60 cursor-not-allowed"
                         : "bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-purple-950/40 hover:border-purple-500/30"
                     }`}
@@ -433,6 +437,11 @@ export default function DungeonExcavationTab({ profile }) {
                       {inExpedition && (
                         <div className="text-[10px] font-bold text-amber-400 mt-1">
                           ⚔️ 正在遠征中（無法同時挖掘）
+                        </div>
+                      )}
+                      {inVillage && (
+                        <div className="text-[10px] font-bold text-emerald-400 mt-1">
+                          🏘️ 正在貓貓村工作（無法同時挖掘）
                         </div>
                       )}
                     </div>

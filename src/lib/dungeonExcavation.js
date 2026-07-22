@@ -364,6 +364,13 @@ export async function assignDigCat(memberId, catId) {
       return { ok: false, reason: "這隻貓貓目前正在遠征中，無法同時指派為挖掘陪練貓！" };
     }
 
+    // 防呆：檢查貓貓是否已經在貓貓村建築物工作
+    const villageWorkers = data.village?.workers || {};
+    const villageWorkerCatIds = Object.values(villageWorkers).filter(Boolean);
+    if (villageWorkerCatIds.includes(catId)) {
+      return { ok: false, reason: "這隻貓貓目前正在貓貓村建築物工作，無法同時指派為挖掘陪練貓！" };
+    }
+
     await updateDoc(doc(db, "members", memberId), {
       "dungeonExcavation.assignedCatId": catId || null,
     });
