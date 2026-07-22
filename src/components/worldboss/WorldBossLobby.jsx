@@ -334,7 +334,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     .slice(0, 5);
 
   return (
-    <div className="h-[100dvh] min-h-0 overflow-hidden flex flex-col text-white select-none font-sans"
+    <div className="fixed inset-0 z-60 overflow-hidden flex flex-col text-white select-none font-sans"
       style={{
         backgroundImage: `linear-gradient(180deg, rgba(7, 11, 22, 0.92) 0%, rgba(15, 23, 42, 0.97) 100%), url(/assets/dungeon/dungeon_team_lobby_bg.jpg)`,
         backgroundSize: "cover",
