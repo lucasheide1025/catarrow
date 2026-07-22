@@ -628,7 +628,7 @@ const adminNav = [
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} key={gachaInitTab} />}
-          {page==="worldboss"   && <WorldBossLobby onBack={()=>setPage("adventure-hub")}/>}
+          {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
           {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
