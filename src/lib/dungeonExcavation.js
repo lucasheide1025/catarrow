@@ -359,7 +359,7 @@ export async function assignDigCat(memberId, catId) {
     
     // 防呆：檢查貓貓是否被常規遠征或組隊佔用
     const expeditions = data.expeditions || {};
-    const activeCatIds = Object.values(expeditions).map(e => e.catId).filter(Boolean);
+    const activeCatIds = Object.values(expeditions).filter(Boolean).map(e => e.catId);
     if (activeCatIds.includes(catId)) {
       return { ok: false, reason: "這隻貓貓目前正在遠征中，無法同時指派為挖掘陪練貓！" };
     }
