@@ -157,7 +157,9 @@ function ExpeditionBattleRoom({
       };
 
       // 檢測戰鬥結束
-      if (data.status === "completed" && data.result === "lose") {
+      if (data.status === "completed" && data.result === "win") {
+        finishBattle(true, 0);
+      } else if (data.status === "completed" && data.result === "lose") {
         finishBattle(false, 1500);
       } else if (data.status === "map_explore") {
         finishBattle(true, 300);
