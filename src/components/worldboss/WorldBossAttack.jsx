@@ -923,23 +923,28 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const _lastArrow     = _lastRound?.arrows?.[(_lastRound.arrows.length ?? 1) - 1];
     const _finishArrow   = _lastArrow?.label ?? null;
 
-    const res = await attackWorldBoss({
-      eventId:       event.id,
-      memberId:      myId,
-      memberName:    myName,
-      weapon,
-      roundResults:  rounds,
-      isGuest,
-      accountType:    profile?.accountType || (isGuest ? "guest" : "official"),
-      sessionSourceId: guestOverride?.currentSessionSourceId || profile?.lastSessionSourceId || profile?.sessionSourceId || null,
-      potionDmgMult: 1,
-      bots:          [],
-      memberAtk:     baseATK,
-      memberDef:     baseDEF,
-      memberHP:      baseHP,
-      killerStyle:   _killerStyle,
-      finishingArrow: _finishArrow,
-    });
+    let res;
+    try {
+      res = await attackWorldBoss({
+        eventId:       event.id,
+        memberId:      myId,
+        memberName:    myName,
+        weapon,
+        roundResults:  rounds,
+        isGuest,
+        accountType:    profile?.accountType || (isGuest ? "guest" : "official"),
+        sessionSourceId: guestOverride?.currentSessionSourceId || profile?.lastSessionSourceId || profile?.sessionSourceId || null,
+        potionDmgMult: 1,
+        bots:          [],
+        memberAtk:     baseATK,
+        memberDef:     baseDEF,
+        memberHP:      baseHP,
+        killerStyle:   _killerStyle,
+        finishingArrow: _finishArrow,
+      });
+    } catch (err) {
+      res = { ok: false, reason: err?.message || "網路錯誤" };
+    }
 
     setResult({ ...res, playerDied });
     setSubmitting(false);
@@ -1905,7 +1910,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <div className="text-slate-400 text-sm animate-pulse">結算中…</div>
           ) : result?.ok ? (
             <>
-              {result.defeated ? (
+              {result?.defeated ? (
                 <BattleResultHeader emoji="💥" title="BOSS 擊殺！" subtitle={event.announcement || "全域廣播：FIRST KILL！"} color="amber" />
               ) : result.playerDied ? (
                 <BattleResultHeader emoji="💀" title="陣亡…" subtitle={`你倒在了第 ${allRounds.length} 回合的反擊中`} color="red" />
@@ -1953,7 +1958,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                   {isGuest ? "世界王已被擊倒！體驗角色會保留參戰紀錄，但不領取正式擊殺大獎。" : "🎁 擊殺大獎已自動發放給所有參戰者！"}
                 </div>
               )}
-              {result.bossAlreadyDefeated && !result.defeated && (
+              {result?.bossAlreadyDefeated && !result?.defeated && (
                 <div className="w-full bg-indigo-500/10 border border-indigo-400/30 rounded-2xl p-4">
                   <div className="text-xs text-indigo-300 font-bold mb-1">⚔️ 尾刀遺憾</div>
                   <div className="text-xs text-slate-400 leading-relaxed">
