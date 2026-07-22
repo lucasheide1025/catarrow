@@ -5,7 +5,7 @@ import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
   exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing, claimCardSaleProceeds,
-  getVillageMarketConfig, setBuildingAllocation,
+  getVillageMarketConfig, setBuildingAllocation, assignVillageWorker,
   setDisplayVillageLv,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
@@ -23,7 +23,7 @@ import {
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, DEFAULT_VILLAGE,
   UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
-  getStageMultiplier, getMaxSlots, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
+  getWorkerCatMultiplier, getStageMultiplier, getMaxSlots, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
@@ -588,6 +588,65 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
   );
 }
 
+// ── 貓咪工作抱怨留言庫 ───────────────────────────────────────
+const CAT_WORK_COMPLAINTS = {
+  daming: [
+    "這裡的老大是我，怎麼還要我親自搬材料？",
+    "後輩們都在打盹，只有大娘在辛勤做工…",
+    "等本大娘工做完了，肉乾可不能少我的！",
+  ],
+  gege: [
+    "呼…雖然很累，但為了大家的糧食，哥哥得頂住！",
+    "這裡灰塵有點大，我的白毛都要變黃了啦…",
+    "射手大人，做完這輪可以撫摸一下我嗎？",
+  ],
+  meimei: [
+    "好想去箭場追飛箭喔！為什麼要我在這裡站崗啦！",
+    "工作好無聊喔～我可以在這裡翻滾打滾嗎？",
+    "嘿休！嘿休！我搬得比哥哥還快喔！",
+  ],
+  niuniu: [
+    "今天的產能進度落後了 0.5%，請大家提高效率！",
+    "本貓正在嚴格監視生產品質，不准偷懶！",
+    "一板一眼才是工作之道，偷工減料絕對不行！",
+  ],
+  haji: [
+    "喵嗚…好睏喔，可以在這個箱子上睡一下嗎？",
+    "這裡陽光真好，工作什麼的好像不重要了…",
+    "夢裡我已經把所有工作都做完了…睡吧…",
+  ],
+  baobao: [
+    "這裡沒有我的專屬弓袋，抱起來不舒服啦！",
+    "黏在射手身邊才是我的主業，工作只是兼職！",
+    "罐頭！罐頭！做完這工我要吃雙倍罐頭！",
+  ],
+  youyou: [
+    "慢慢來，比較快…急什麼急呢喵～",
+    "我的銳利眼神早已看穿這個建築的產能極限…",
+    "悠悠看著你呢，別想偷偷少算我的工資！",
+  ],
+  xiaoan: [
+    "這裡好黑好嚇人喔…爪子又在發抖了啦！",
+    "雖然我很害怕，但為了村莊我會堅守到最後的！",
+    "剛才那邊是不是有老鼠跑過去了？好恐怖…",
+  ],
+  diandian: [
+    "這座建築四周流動著奇妙的靈氣呢…",
+    "黑夜才是我的主場，白天工作真不習慣…",
+    "我看見產能神明在向我們招手了喵…",
+  ],
+};
+
+function getWorkerCatComplaint(catId, buildingId) {
+  const list = CAT_WORK_COMPLAINTS[catId] || [
+    "喵～今天也在努力幫村莊工作呢！",
+    "工資記得多給一罐罐頭喔！",
+  ];
+  // 使用 buildingId 與 catId 的字串雜湊，確保同一建築的留言固定或輪替
+  const charCodeSum = (buildingId + catId).split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  return list[charCodeSum % list.length];
+}
+
 // ── 建築卡片 ─────────────────────────────────────────────────
 // 產能分層顯示（資源 tier breakdown）
 function ProductionBreakdown({ buildingId, level, allocations }) {
@@ -628,11 +687,16 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
   );
 }
 
-function BuildingCard({ buildingId, level, resources, onClick, village, pendingCount }) {
+function BuildingCard({ buildingId, level, resources, onClick, village, pendingCount, myCats }) {
   const b     = BUILDINGS[buildingId];
   const stage = getBuildingStage(level);
   const check = canUpgrade(buildingId, { [buildingId]: level }, resources);
   const maxed = level >= 20;
+
+  const workerCatId = village?.workers?.[buildingId];
+  const workerCatData = workerCatId ? myCats?.[workerCatId] : null;
+  const workerCatInfo = workerCatId ? CATS[workerCatId] : null;
+  const workerMult = getWorkerCatMultiplier(workerCatData);
 
   const statusColor = maxed ? C.muted : check.ok ? C.sage : "#D4933A";
   const statusText  = maxed ? "MAX" : check.ok ? "可升級" : "缺材料";
@@ -690,11 +754,35 @@ function BuildingCard({ buildingId, level, resources, onClick, village, pendingC
       {/* 文字說明區域 */}
       <div className="p-3 flex-1 flex flex-col justify-between">
         <div>
-          <div className="text-sm font-black leading-tight flex items-center gap-1.5" style={{ color: C.brown }}>
-            <span>{b.emoji}</span>
-            <span>{b.name}</span>
+          <div className="text-sm font-black leading-tight flex items-center justify-between gap-1" style={{ color: C.brown }}>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span>{b.emoji}</span>
+              <span className="truncate">{b.name}</span>
+            </div>
+            {/* 駐紮貓咪顯示在建築物名稱右側 */}
+            {workerCatId && workerCatInfo && (
+              <div className="flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                <img src={`/cats/portraits/${workerCatId}.webp`} alt="" className="w-4 h-4 rounded-full object-cover" />
+                <span className="text-[10px] font-black text-amber-700">+{Math.round((workerMult - 1) * 100)}%</span>
+              </div>
+            )}
           </div>
-          <div className="mt-0.5 text-xs font-bold" style={{ color: C.mid }}>{b.resourceName}</div>
+          <div className="mt-0.5 text-xs font-bold flex items-center justify-between" style={{ color: C.mid }}>
+            <span>{b.resourceName}</span>
+            {workerCatInfo && (
+              <span className="text-[9px] font-bold text-amber-800/80">({workerCatInfo.name} 工作中)</span>
+            )}
+          </div>
+
+          {/* 貓咪工作抱怨留言氣泡 */}
+          {workerCatId && workerCatInfo && (
+            <div className="mt-2 p-1.5 rounded-xl text-[10px] font-bold leading-tight flex items-start gap-1"
+              style={{ background: "rgba(253,246,236,0.9)", border: "1px dashed rgba(217,119,6,0.3)", color: "#78350F" }}>
+              <span className="shrink-0 text-xs">💬</span>
+              <span className="italic line-clamp-2">"{getWorkerCatComplaint(workerCatId, buildingId)}"</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-2 pt-2 border-t border-amber-900/10 flex items-center justify-between">
@@ -1195,8 +1283,126 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
   );
 }
 
+// ── 貓咪駐紮工作設定 ─────────────────────────────────────────
+function WorkerCatSettings({ buildingId, village, myCats, memberId, profile, onSaved }) {
+  const currentWorkerId = village?.workers?.[buildingId] || null;
+  const currentWorkerData = currentWorkerId ? myCats?.[currentWorkerId] : null;
+  const currentWorkerInfo = currentWorkerId ? CATS[currentWorkerId] : null;
+  const currentMult = getWorkerCatMultiplier(currentWorkerData);
+
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // 取得已被其他建築駐紮的貓咪
+  const otherAssignedCatIds = new Set(
+    Object.entries(village?.workers || {})
+      .filter(([bId]) => bId !== buildingId)
+      .map(([, cId]) => cId)
+  );
+
+  // 其他系統佔用的貓咪 IDs (陪練裝備中, 探險中, 地下城挖掘中)
+  const equippedCatId     = profile?.equippedCat?.catId;
+  const dungeonAssignedId = profile?.dungeonExcavation?.assignedCatId;
+  const rawExpeditions    = profile?.expeditions || {};
+  const expeditions       = Object.keys(rawExpeditions).length > 0 ? rawExpeditions : (profile?.expedition ? { 0: profile.expedition } : {});
+  const onExpeditionCatIds = new Set(Object.values(expeditions).filter(Boolean).map(e => e.catId));
+
+  // 取得目前空閒可指派的貓咪 (排除了：其他建築駐紮、陪練裝備中、遠征中、地下城挖掘中)
+  const freeCats = Object.values(myCats || {}).filter(
+    c => !otherAssignedCatIds.has(c.catId) &&
+         c.catId !== equippedCatId &&
+         !onExpeditionCatIds.has(c.catId) &&
+         c.catId !== dungeonAssignedId
+  );
+
+  async function handleAssign(catId) {
+    if (saving || !memberId) return;
+    setSaving(true);
+    sfxTap();
+    await assignVillageWorker(memberId, buildingId, catId);
+    setSaving(false);
+    setEditing(false);
+    onSaved?.(buildingId, catId);
+  }
+
+  return (
+    <div className="mt-4" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold" style={{ color: C.mid }}>
+          🐾 貓咪駐紮工作 {currentWorkerInfo ? `(+${Math.round((currentMult - 1) * 100)}% 產能)` : "(暫無駐紮)"}
+        </div>
+        <button onClick={() => setEditing(e => !e)}
+          className="text-[10px] font-bold px-3 py-1 rounded-lg active:scale-95"
+          style={{ background: editing ? C.lockBd : C.sage, color: editing ? C.muted : "white" }}>
+          {editing ? "關閉" : currentWorkerInfo ? "⇄ 更換駐紮" : "＋ 派貓駐紮"}
+        </button>
+      </div>
+
+      {/* 當前駐紮狀態 */}
+      {!editing ? (
+        currentWorkerInfo ? (
+          <div className="flex items-center justify-between p-2.5 rounded-xl border transition-all"
+            style={{ background: "rgba(253,230,138,0.18)", borderColor: "rgba(245,158,11,0.3)" }}>
+            <div className="flex items-center gap-2">
+              <img src={`/cats/portraits/${currentWorkerId}.webp`} alt="" className="w-8 h-8 rounded-full object-cover border border-amber-400/50" />
+              <div>
+                <div className="text-xs font-black" style={{ color: C.brown }}>{currentWorkerInfo.name}</div>
+                <div className="text-[10px]" style={{ color: C.mid }}>Lv.{catLevelFromXP(currentWorkerData?.catXP || 0)} · 產能加成 +{Math.round((currentMult - 1) * 100)}%</div>
+              </div>
+            </div>
+            <button onClick={() => handleAssign(null)} disabled={saving}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 active:scale-95 border border-red-500/20">
+              {saving ? "處理中…" : "解除駐紮"}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center py-2.5 text-xs rounded-xl" style={{ background: "rgba(0,0,0,0.03)", color: C.muted }}>
+            尚未指派貓咪駐紮，派遣貓咪駐紮可提高該建築的產量產速！
+          </div>
+        )
+      ) : (
+        /* 選貓面板 */
+        <div className="space-y-2 pt-1">
+          <div className="text-[10px] font-bold text-slate-500">選擇要派往本建築工作的貓咪：</div>
+          {freeCats.length === 0 ? (
+            <div className="text-[11px] text-center p-3 text-slate-400 bg-black/5 rounded-xl">
+              😿 沒有空閒可指派的貓咪（全都在其他建築駐紮中）
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {freeCats.map(cat => {
+                const info = CATS[cat.catId];
+                const lv = catLevelFromXP(cat.catXP || 0);
+                const mult = getWorkerCatMultiplier(cat);
+                const isCurrent = cat.catId === currentWorkerId;
+                return (
+                  <button key={cat.catId}
+                    type="button"
+                    onClick={() => handleAssign(isCurrent ? null : cat.catId)}
+                    disabled={saving}
+                    className={`p-2 rounded-xl border flex items-center gap-2 text-left transition-all active:scale-95 ${
+                      isCurrent
+                        ? "bg-amber-500/20 border-amber-400 ring-1 ring-amber-400"
+                        : "bg-white/80 border-slate-200 hover:border-amber-400/50"
+                    }`}>
+                    <img src={`/cats/portraits/${cat.catId}.webp`} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-black truncate" style={{ color: C.brown }}>{info?.name || cat.catId}</div>
+                      <div className="text-[9px] font-bold text-amber-700">+{(Math.round((mult - 1) * 100))}% 產能 (Lv.{lv})</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, onVillageUpdate = null, village }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, onVillageUpdate = null, village, myCats, profile }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -1343,6 +1549,25 @@ function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrad
               onVillageUpdate(prev => {
                 const base = prev || village;
                 return { ...base, allocations: { ...(base?.allocations || {}), [bid]: newAlloc } };
+              });
+            }}
+          />
+
+          {/* ── 貓咪駐紮工作 ── */}
+          <WorkerCatSettings
+            buildingId={buildingId}
+            village={village}
+            myCats={myCats}
+            memberId={memberId}
+            profile={profile}
+            onSaved={(bid, catId) => {
+              if (typeof onVillageUpdate !== "function") return;
+              onVillageUpdate(prev => {
+                const base = prev || village;
+                const nextWorkers = { ...(base?.workers || {}) };
+                if (catId) nextWorkers[bid] = catId;
+                else delete nextWorkers[bid];
+                return { ...base, workers: nextWorkers };
               });
             }}
           />
@@ -2218,8 +2443,8 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   }, []);
 
   const { pending } = useMemo(
-    () => calcPendingResources(village),
-    [village, tick] // eslint-disable-line
+    () => calcPendingResources(village, { myCats }),
+    [village, myCats, tick] // eslint-disable-line
   );
 
   const lastCollectedMs = useMemo(() => getVillageLastCollectedMs(village?.lastCollectedAt), [village?.lastCollectedAt]);
@@ -2427,6 +2652,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
                           level={buildings[id] || 1}
                           resources={resources}
                           village={village}
+                          myCats={myCats}
                           onClick={() => { sfxTap(); setSelectedBuilding(id); }}
                         />
                       ) : (
@@ -2467,6 +2693,8 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           onExchangeDone={() => setLocalVillage(null)}
           onVillageUpdate={setLocalVillage}
           village={village}
+          myCats={myCats}
+          profile={profile}
         />
       )}
     </div>

@@ -1,3 +1,5 @@
+import { catLevelFromXP } from "./catLevel";
+
 // src/lib/villageData.js
 
 export const BUILDING_LIST = ['mine','farm','harbor','hunting','market','warehouse','alchemy','gacha','archery'];
@@ -225,6 +227,15 @@ export function getVillageLastCollectedMs(value, now = Date.now()) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, now) : now - 3600000;
 }
 
+// ── 計算建築駐紮貓咪的生產加乘倍率 ────────────────────────
+// 基礎產能加乘 = 1 + (貓咪等級 × 2%) + (羈絆等級 × 0.5%)
+export function getWorkerCatMultiplier(catData) {
+  if (!catData) return 1.0;
+  const catLevel = catLevelFromXP(catData.catXP || 0);
+  const bondLv = catData.bond ? Math.min(50, Math.floor(catData.bond / 10)) : 0;
+  return 1.0 + (catLevel * 0.02) + (bondLv * 0.005);
+}
+
 // ── 計算待採集資源（前端預覽用）───────────────────────────
 export function calcPendingResources(village, opts = {}) {
   const now = Date.now();
@@ -232,7 +243,8 @@ export function calcPendingResources(village, opts = {}) {
   const hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
   const buildings = village?.buildings || {};
   const allocations = village?.allocations || {};
-  // 貓貓圖鑑生產加乘（預留）：未實裝時 opts.catDexMult 為 undefined → 用預設 1.0
+  const workers = village?.workers || {};
+  const myCats = opts.myCats || {};
   const catDexMult = opts.catDexMult ?? CATDEX_PRODUCTION_MULT;
   const pending = {};
 
@@ -240,9 +252,16 @@ export function calcPendingResources(village, opts = {}) {
     if (!isBuildingUnlocked(id, buildings)) continue;
 
     const lv      = buildings[id] || 1;
-    const rate    = getProductionRate(id, lv);
+    const baseRate= getProductionRate(id, lv);
     const res     = BUILDINGS[id].resource;
     const maxTier = getBuildingStage(lv);
+
+    // 檢查是否有貓咪駐紮工作
+    const workerCatId = workers[id];
+    const workerCatData = workerCatId ? myCats[workerCatId] : null;
+    const workerMult = getWorkerCatMultiplier(workerCatData);
+
+    const rate = baseRate * workerMult;
 
     if (!TIERED_RESOURCES.has(res)) {
       // 非分層資源（箭露、扭蛋代幣）：直接累積速率 × 小時，保留小數

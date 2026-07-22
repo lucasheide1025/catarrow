@@ -4791,6 +4791,13 @@ export async function collectVillageResources(memberId, village) {
         }
       }
     }
+    // 若該建築有貓咪駐紮工作，給予極少量的貓咪經驗值（例如每小時 5 XP）
+    if (workerCatId && hours >= 0.1) {
+      var earnedCatXP = Math.floor(hours * 5);
+      if (earnedCatXP > 0) {
+        updates["cats." + workerCatId + ".catXP"] = increment(earnedCatXP);
+      }
+    }
   }
 
   await updateDoc(doc(db, C.members, memberId), updates);
@@ -5376,3 +5383,14 @@ export async function saveDailyGeneralSettings(settings, adminId) {
 }
 
 
+
+
+export async function assignVillageWorker(memberId, buildingId, catId) {
+  if (!memberId || !buildingId) return;
+  const fieldPath = 'village.workers.' + buildingId;
+  if (catId) {
+    await updateDoc(doc(db, C.members, memberId), { [fieldPath]: catId });
+  } else {
+    await updateDoc(doc(db, C.members, memberId), { [fieldPath]: deleteField() });
+  }
+}
