@@ -4721,6 +4721,7 @@ export async function collectVillageResources(memberId, village) {
   var buildings    = village?.buildings    || {};
   var allocations  = village?.allocations  || {};
   var collected    = {};
+  var workers      = village?.workers    || {};
   var updates      = { "village.lastCollectedAt": serverTimestamp() };
 
   for (var id of BUILDING_LIST) {
@@ -4796,6 +4797,7 @@ export async function collectVillageResources(memberId, village) {
       }
     }
     // 若該建築有貓咪駐紮工作，給予極少量的貓咪經驗值（例如每小時 5 XP）
+    var workerCatId = workers[id];
     if (workerCatId && hours >= 0.1) {
       var earnedCatXP = Math.floor(hours * 5);
       if (earnedCatXP > 0) {
