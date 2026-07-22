@@ -12,8 +12,9 @@ import CardCollectionPrototype from "./cards/CardCollectionPrototype";
 
 const EMPTY_COLLECTION = { cards:{}, wbCards:{}, equipped:[] };
 
-export default function CardCollectionModern() {
-  const { profile } = useAuth();
+export default function CardCollectionModern({ guestProfile }) {
+  const { profile:authProfile } = useAuth();
+  const profile=guestProfile||authProfile;
   const [collection, setCollection] = useState(EMPTY_COLLECTION);
   const [collectionReady, setCollectionReady] = useState(false);
   const [notice, setNotice] = useState("");

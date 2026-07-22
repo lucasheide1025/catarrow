@@ -34,31 +34,78 @@ service cloud.firestore {
     // 且「不要求 uid 對應本人」——因為訪客每次匿名重新登入 uid 都會變，要能跨次造訪接續回同一筆記錄。
     // 這是使用者已確認接受的安全取捨（訪客/兒童帳號沒有真實金流/隱私資料，安全等級刻意低於正式學籍）。
     match /members/{memberId} {
-      allow get:    if isAdmin()
-        || resource.data.uid   == request.auth.uid
-        || resource.data.email == request.auth.token.email
-        || (isLoggedIn() && resource.data.accountType in ["guest", "kid"]);
-      allow list:   if isLoggedIn();
+      function activeProfile() {
+        return resource.data.get("accountType", "official") != "kid"
+          || (resource.data.expiresAt is timestamp && request.time < resource.data.expiresAt);
+      }
+      function ownsProfile() {
+        return isLoggedIn() && (resource.data.uid == request.auth.uid
+          || (request.auth.token.email != null && resource.data.email == request.auth.token.email));
+      }
+      allow get: if isAdmin() || (ownsProfile() && activeProfile());
+      // Rules evaluate every potential query result. This permits owner-scoped
+      // uid/email queries and admin listings, while rejecting broad enumeration.
+      allow list: if isAdmin() || (ownsProfile() && activeProfile());
       allow create: if isAdmin() || (
-        isLoggedIn() &&
-        request.resource.data.accountType in ["guest", "kid"] &&
-        request.resource.data.uid == request.auth.uid
+        isLoggedIn()
+        && request.resource.data.accountType in ["guest", "kid"]
+        && request.resource.data.uid == request.auth.uid
+        && (request.resource.data.accountType != "kid" || (
+          request.resource.data.lifecycle == "qr-temporary"
+          && request.resource.data.coins == 500
+          && request.resource.data.starterCoinsGranted == true
+          && request.resource.data.keys().hasOnly([
+            "accountType", "lifecycle", "uid", "name", "nickname",
+            "sessionSourceId", "createdViaQR", "coins", "starterCoinsGranted",
+            "guestEquipmentSeeded", "rpgEquip", "unlockedEquipItems",
+            "createdAt", "lastLoginAt", "expiresAt"
+          ])
+          && request.resource.data.sessionSourceId is string
+          && request.resource.data.sessionSourceId.size() > 0
+          && (request.resource.data.sessionSourceId == "fixed-guest-qr" || (
+            exists(/databases/$(database)/documents/campSessions/$(request.resource.data.sessionSourceId))
+            && get(/databases/$(database)/documents/campSessions/$(request.resource.data.sessionSourceId)).data.active == true
+          ))
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.expiresAt > request.time
+          // 3h window instead of 2h to tolerate client/server clock skew
+          // (expiresAt is computed from client Date.now() + 2h, but evaluated
+          //  against server request.time).
+          && request.resource.data.expiresAt <= request.time + duration.value(3, 'h')
+          && request.resource.data.coins == 500
+          && request.resource.data.starterCoinsGranted == true
+          && request.resource.data.guestEquipmentSeeded == true
+          && request.resource.data.rpgEquip.keys().hasOnly(["bow"])
+          && request.resource.data.rpgEquip.bow.itemId == "bow_practice"
+          && request.resource.data.rpgEquip.bow.grade == "common"
+          && request.resource.data.rpgEquip.bow.plusLevel == 0
+          && request.resource.data.rpgEquip.bow.keys().hasOnly(["itemId", "grade", "plusLevel"])
+          && request.resource.data.unlockedEquipItems.keys().hasOnly(["bow_practice"])
+          && request.resource.data.unlockedEquipItems.bow_practice == true
+        ))
       );
       allow delete: if isAdmin();
       allow update: if isAdmin() || (
-        (resource.data.uid == request.auth.uid || resource.data.email == request.auth.token.email)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets", "uid",
-                    "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
-                    "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
-                    "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village",
-                    "bookingStats",
-                    "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
-                    "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
-                    "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals", "equipmentRuneFragments", "equipmentRuneInventory",
-                    "activeExpedition", "dungeonBossCardProgress", "expeditions"])
-      ) || (
-        isLoggedIn() && resource.data.accountType in ["guest", "kid"]
+        ownsProfile() && activeProfile()
+        && request.resource.data.get("uid", null) == resource.data.get("uid", null)
+        && request.resource.data.get("accountType", "official") == resource.data.get("accountType", "official")
+        && request.resource.data.get("expiresAt", null) == resource.data.get("expiresAt", null)
+        && request.resource.data.get("createdAt", null) == resource.data.get("createdAt", null)
+        && request.resource.data.get("lifecycle", null) == resource.data.get("lifecycle", null)
+        && request.resource.data.get("sessionSourceId", null) == resource.data.get("sessionSourceId", null)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
+          "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
+          "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
+          "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
+          "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
+          "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
+          "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
+          "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
+          "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
+          "name", "phone"
+        ])
       );
     }
 

@@ -91,10 +91,30 @@ const SUPPORT_MSGS = [
 
 // ── 藥水選項 ─────────────────────────────────────────────────
 const POTIONS = [
-  { id: "none",   label: "不使用",    mult: 1.0, cost: 0,   color: "#475569" },
-  { id: "small",  label: "小強心針",  mult: 1.2, cost: 50,  color: "#22c55e" },
-  { id: "medium", label: "中強心針",  mult: 1.5, cost: 120, color: "#3b82f6" },
-  { id: "large",  label: "大強心針",  mult: 2.0, cost: 250, color: "#f59e0b" },
+  { id: "none",   label: "不使用",     mult: 1.0, cost: 0,    color: "#475569" },
+  { id: "p_1.5",  label: "微光強化",   mult: 1.5, cost: 250,  color: "#22c55e" },
+  { id: "p_2.0",  label: "強效激發",   mult: 2.0, cost: 800,  color: "#3b82f6" },
+  { id: "p_2.5",  label: "狂暴衝擊",   mult: 2.5, cost: 1500, color: "#8b5cf6" },
+  { id: "p_3.0",  label: "極限突破",   mult: 3.0, cost: 2500, color: "#f59e0b" },
+  { id: "p_4.0",  label: "神話降臨",   mult: 4.0, cost: 4000, color: "#ef4444" },
+];
+
+const DEF_POTIONS = [
+  { id: "def_none", label: "不使用",   defMult: 1.0, cost: 0,    color: "#475569" },
+  { id: "def_1.5",  label: "鋼鐵壁壘", defMult: 1.5, cost: 250,  color: "#22c55e" },
+  { id: "def_2.0",  label: "金剛身軀", defMult: 2.0, cost: 800,  color: "#3b82f6" },
+  { id: "def_2.5",  label: "泰坦盾甲", defMult: 2.5, cost: 1500, color: "#8b5cf6" },
+  { id: "def_3.0",  label: "無敵力場", defMult: 3.0, cost: 2500, color: "#f59e0b" },
+  { id: "def_4.0",  label: "神聖結界", defMult: 4.0, cost: 4000, color: "#ef4444" },
+];
+
+const HP_POTIONS = [
+  { id: "hp_none",  label: "不使用",   hpMult: 1.0, cost: 0,    color: "#475569" },
+  { id: "hp_1.5",   label: "生命露水", hpMult: 1.5, cost: 250,  color: "#22c55e" },
+  { id: "hp_2.0",   label: "活力泉湧", hpMult: 2.0, cost: 800,  color: "#3b82f6" },
+  { id: "hp_2.5",   label: "巨人基因", hpMult: 2.5, cost: 1500, color: "#8b5cf6" },
+  { id: "hp_3.0",   label: "不死長生", hpMult: 3.0, cost: 2500, color: "#f59e0b" },
+  { id: "hp_4.0",   label: "血脈復甦", hpMult: 4.0, cost: 4000, color: "#ef4444" },
 ];
 
 // ── 小元件 ──────────────────────────────────────────────────
@@ -335,11 +355,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [potion,   setPotion]   = useState(() =>
     guestOverride ? (sessionStorage.getItem(_guestPotionKey) || sessionStorage.getItem(_guestPotionMemberKey) || "none") : "none"
   );
-  const [bots,     setBots]     = useState(() => {
-    const _selfId = guestOverride?.id || profile?.id;
-    return (event.participants || {})[_selfId]?.bots || [];
-  });
-  const [hiring,   setHiring]   = useState(false);
+  const [defPotion, setDefPotion] = useState("def_none");
+  const [hpPotion,  setHpPotion]  = useState("hp_none");
   const [coins,    setCoins]    = useState(() =>
     guestOverride
       ? (profile?.coins ?? parseInt(sessionStorage.getItem(_guestCoinsKey) || "500", 10))
@@ -554,10 +571,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   async function useWorldBossConsumable(item) {
     if (consumableUsedRound || subPhase !== "shooting" || (potionInv[item.id] || 0) <= 0) return;
     if (item.oncePerSortie && raidUsed[item.id]) return;
-    if (item.requiresBot && bots.length === 0) return;
+    if (item.requiresBot) return;
     if (item.actionCost === "arrow" && arrows.length >= ARROWS_PER) return;
     const resolved = resolveConsumable(item, {
-      mode:"worldboss", playerAtk:baseATK, enemyHp:bossHP, enemyMaxHp:event.bossMaxHP, botCount:bots.length,
+      mode:"worldboss", playerAtk:baseATK, enemyHp:bossHP, enemyMaxHp:event.bossMaxHP, botCount:0,
     });
     if (!resolved.ok) return;
 
@@ -634,7 +651,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     for (let i = 0; i < fullArrows.length; i++) {
       const a   = fullArrows[i];
       const raidHit = a.consumableId
-        ? resolveConsumable(a.consumableId, { mode:"worldboss", playerAtk:effectiveATK, enemyHp:localBossHP, enemyMaxHp:event.bossMaxHP, botCount:bots.length })
+        ? resolveConsumable(a.consumableId, { mode:"worldboss", playerAtk:effectiveATK, enemyHp:localBossHP, enemyMaxHp:event.bossMaxHP, botCount:0 })
         : null;
       const arrowHit = a.consumableId ? null : resolveStandardArrowHit(
         a, effectiveATK, boss.def, unlockedParts,
@@ -916,7 +933,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       accountType:    profile?.accountType || (isGuest ? "guest" : "official"),
       sessionSourceId: guestOverride?.currentSessionSourceId || profile?.lastSessionSourceId || profile?.sessionSourceId || null,
       potionDmgMult: 1,
-      bots,
+      bots:          [],
       memberAtk:     baseATK,
       memberDef:     baseDEF,
       memberHP:      baseHP,
@@ -1044,7 +1061,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         <div style={{ display:"flex", alignItems:"center", gap:6, overflowX:"auto" }}>
           <span style={{ fontSize:10, color:"#fbbf24", fontWeight:900, flexShrink:0 }}>消耗品</span>
           {worldBossConsumables.map(item => {
-            const disabled = consumableUsedRound || (item.oncePerSortie && raidUsed[item.id]) || (item.requiresBot && bots.length === 0) || (item.actionCost === "arrow" && arrows.length >= ARROWS_PER);
+            const disabled = consumableUsedRound || (item.oncePerSortie && raidUsed[item.id]) || item.requiresBot || (item.actionCost === "arrow" && arrows.length >= ARROWS_PER);
             return (
               <button key={item.id} disabled={disabled} onClick={() => useWorldBossConsumable(item)} title={`${item.name}：${item.effectText}`}
                 style={{ flexShrink:0, width:compact?64:68, minHeight:compact?44:48, borderRadius:8, border:`1px solid ${item.category === "raid" ? "#fbbf2466" : "#60a5fa55"}`, background:disabled?"rgba(255,255,255,0.03)":"rgba(251,191,36,0.09)", color:disabled?"#475569":"#e2e8f0", opacity:disabled ? 0.45 : 1, fontSize:9, fontWeight:800, padding:compact?"2px 3px":"3px" }}>
@@ -1073,11 +1090,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           <div style={{ position:"absolute", inset:0, zIndex:50, background:"rgba(0,0,0,0.88)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
             <div style={{ background:"#1e293b", border:"1px solid rgba(255,255,255,0.2)", borderRadius:24, padding:24, width:"100%", textAlign:"center" }}>
               <div style={{ fontSize:32, marginBottom:8 }}>⚠️</div>
-              <div style={{ fontSize:18, fontWeight:900, color:"white", marginBottom:8 }}>確定返回大廳？</div>
-              {bots.length > 0 && (
-                <div style={{ fontSize:12, color:"#fbbf24", marginBottom:8 }}>⚠️ 已雇用 {bots.length} 隻機器人，返回後再次進入仍可帶入</div>
-              )}
-              <div style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>今日挑戰次數不受影響，可隨時重新進入</div>
+              <div className="text-sm font-bold text-white mb-2">確定返回大廳？</div>
+              <div className="text-xs text-slate-400 mb-4">今日挑戰次數不受影響，可隨時重新進入</div>
               <div style={{ display:"flex", gap:12 }}>
                 <button onClick={() => setShowPrepExit(false)} style={{ flex:1, padding:"12px", borderRadius:12, background:"rgba(255,255,255,0.1)", color:"#e2e8f0", fontWeight:700, border:"none", cursor:"pointer" }}>取消</button>
                 <button onClick={onBack} style={{ flex:1, padding:"12px", borderRadius:12, background:"#475569", color:"white", fontWeight:900, border:"none", cursor:"pointer" }}>返回大廳</button>
@@ -1085,29 +1099,58 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             </div>
           </div>
         )}
-        <div className="shrink-0 flex items-center gap-3 px-4 pt-4 pb-3 border-b border-white/10">
-          <button onClick={() => setShowPrepExit(true)} className="text-slate-400 text-sm font-bold">← 返回</button>
-          <span className="font-black text-lg flex-1">⚔️ 出戰準備</span>
-          <span className="text-xs text-amber-300 font-mono">💰 {coins}</span>
+        {/* 史詩殿堂頭部 */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 bg-slate-950/85 border-b border-amber-500/30 backdrop-blur-md z-30 shadow-xl">
+          <button onClick={() => setShowPrepExit(true)} className="text-slate-400 text-sm font-bold hover:text-white flex items-center gap-1">
+            ← 返回
+          </button>
+          <div className="text-center">
+            <div className="text-[10px] font-black text-amber-400 tracking-wider flex items-center justify-center gap-1">
+              <span>🔥</span> WORLD BOSS RAID
+            </div>
+            <div className="text-base font-black text-white">{boss.name} 討伐殿堂</div>
+          </div>
+          <span className="text-xs font-black text-amber-300 font-mono bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-xl">💰 {coins}</span>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-5 pt-4">
-          {/* Boss 預覽 */}
-          <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
-            <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={72}/>
-            <div className="flex-1 min-w-0">
-              <div className="font-black text-base" style={{ color: boss.accent }}>{boss.name}</div>
-              <div className="text-xs text-slate-400 mb-2">「{boss.title}」</div>
-              <MiniHP current={event.bossCurrentHP} max={event.bossMaxHP}/>
-              <div className="text-xs text-slate-500 mt-1 font-mono">
-                {event.bossCurrentHP?.toLocaleString()} / {event.bossMaxHP?.toLocaleString()} HP
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-5 pb-24">
+          {/* Boss 史詩橫幅 */}
+          <div className="relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/50 p-5 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="relative shrink-0 flex items-center justify-center w-24 h-24 rounded-2xl bg-rose-500/10 border border-rose-500/30 p-2 shadow-inner">
+                <WorldBossSVG bossKey={event.bossKey} currentHP={event.bossCurrentHP} maxHP={event.bossMaxHP} size={84}/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 border border-rose-500/40 text-rose-300">
+                    🔥 討伐目標
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 border border-amber-400/30 text-amber-300">
+                    ⚔️ 參戰 {event.totalParticipants || 0} 人
+                  </span>
+                </div>
+                <h2 className="text-xl font-black text-white truncate" style={{ color: boss.accent }}>
+                  {boss.name}
+                </h2>
+                <div className="text-xs text-slate-400 mt-0.5">「{boss.title}」</div>
+
+                {/* HP 血條 */}
+                <div className="mt-2.5 space-y-1">
+                  <div className="flex justify-between text-[11px] font-black">
+                    <span className="text-rose-300">BOSS 血量</span>
+                    <span className="font-mono text-amber-300">{event.bossCurrentHP?.toLocaleString()} / {event.bossMaxHP?.toLocaleString()}</span>
+                  </div>
+                  <MiniHP current={event.bossCurrentHP} max={event.bossMaxHP}/>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-blue-950/45 border border-blue-400/35 rounded-2xl p-4">
-            <div className="text-sm font-black text-blue-100 mb-1">🏹 實際距離與本場裝備</div>
-            <div className="text-xs text-blue-200/70 mb-3">開始挑戰後會鎖定這組設定，並寫入本次射手表現。</div>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="text-xs font-black text-amber-300 mb-1 flex items-center gap-1.5">
+              <span>🏹</span> 實際距離與本場裝備
+            </div>
+            <div className="text-[11px] text-slate-400 mb-3">開始挑戰後會鎖定這組設定，並寫入本次射箭表現。</div>
             <BattleShootingProfile memberId={myId} />
           </div>
 
@@ -1119,99 +1162,151 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <div>3. 共 5 大回合，最終回合 Boss 全力攻擊</div>
           </div>
 
-          {/* 我的屬性 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">你的屬性</div>
-            <div className="grid grid-cols-3 gap-3 text-center text-sm">
+          {/* 屬性與加成 */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="text-xs font-black text-amber-300 mb-3 flex items-center gap-1.5">
+              <span>🛡️</span> 個人討伐能力值
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
               {[["HP", baseHP, "#22c55e"], ["ATK", baseATK, "#f87171"], ["DEF", baseDEF, "#60a5fa"]].map(([k, v, c]) => (
-                <div key={k}>
-                  <div className="text-slate-500 text-xs mb-0.5">{k}</div>
-                  <div className="font-black" style={{ color: c }}>{v}</div>
+                <div key={k} className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800">
+                  <div className="text-slate-400 text-[10px] mb-0.5">{k}</div>
+                  <div className="font-black font-mono text-sm" style={{ color: c }}>{v}</div>
                 </div>
               ))}
             </div>
-            <div className="mt-3 text-center text-xs text-amber-300">
-              ⚡ 每位隊友 +15% ATK，共 {event.totalParticipants || 0} 人 → ×{participantBonus.toFixed(2)} ATK
+            <div className="mt-3 text-center text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-2xl">
+              ⚡ 每位隊友 +15% ATK，共 {event.totalParticipants || 0} 人 → 戰力 ×{participantBonus.toFixed(2)}
             </div>
           </div>
 
-          {/* 藥水 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">💊 攻擊增幅藥水</div>
-            <div className="grid grid-cols-2 gap-2">
-              {POTIONS.map(p => (
-                <button key={p.id} onClick={() => { setPotion(p.id); if (p.id !== "none") sfxPotionDrink(); }}
-                  disabled={p.cost > 0 && coins < p.cost}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 ${potion === p.id ? "border-amber-400 bg-amber-400/20" : "border-white/10 bg-white/5 text-slate-300"}`}
-                  style={{ color: potion === p.id ? p.color : undefined }}>
-                  <div>{p.label}</div>
-                  <div className="opacity-70">{p.mult > 1 ? `傷害 ×${p.mult}` : "一般傷害"}</div>
-                  {p.cost > 0 && <div className="text-amber-300">💰 {p.cost}</div>}
-                </button>
-              ))}
+          {/* 戰術加購藥水櫃 */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl backdrop-blur-md space-y-4">
+            <div className="text-xs font-black text-amber-300 flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="flex items-center gap-1.5">💊 戰術加購藥水櫃</span>
+              <span className="text-[11px] text-slate-400 font-normal">多重藥水可同時採購加成</span>
             </div>
-          </div>
 
-          {/* AI 機器人 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-1">🤖 雇用 AI 機器人</div>
-            <div className="text-xs text-slate-500 mb-3">每隻 100 金幣，同場一起對 Boss 造成傷害</div>
-            {bots.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {bots.map((b, i) => (
-                  <span key={i} className="text-xs bg-white/10 rounded-full px-2 py-0.5 text-slate-300">
-                    {b.icon} {b.label}
-                  </span>
+            {/* 1. 攻擊加成藥水 (最高 4 倍) */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-rose-400 flex items-center justify-between">
+                <span>🔥 攻擊加成藥水 (倍率：1.5x / 2x / 2.5x / 3x / 4x)</span>
+                <span className="text-[10px] text-slate-400 font-mono">{POTIONS.find(p => p.id === potion)?.label}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {POTIONS.map(p => (
+                  <button key={p.id} onClick={() => { setPotion(p.id); if (p.id !== "none") sfxPotionDrink(); }}
+                    disabled={p.cost > 0 && coins < p.cost}
+                    className={`p-2 rounded-2xl text-xs font-bold border transition-all disabled:opacity-30 flex flex-col justify-between text-left active:scale-95 ${potion === p.id ? "border-rose-400 bg-rose-500/20 shadow-[0_0_10px_rgba(244,63,94,0.3)]" : "border-slate-800 bg-slate-950/60 text-slate-300"}`}>
+                    <div className="font-black text-white text-[11px] truncate">{p.label}</div>
+                    <div className="text-[11px] font-mono mt-0.5" style={{ color: p.color }}>{p.mult > 1 ? `ATK ×${p.mult.toFixed(1)}` : "基礎"}</div>
+                    {p.cost > 0 && <div className="text-[10px] text-amber-300 font-mono mt-0.5">💰 {p.cost}</div>}
+                  </button>
                 ))}
               </div>
-            )}
-            <button onClick={handleHireBot}
-              disabled={coins < 100 || hiring || bots.length >= 5}
-              className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 disabled:opacity-30 active:scale-95 transition-all">
-              {hiring ? "雇用中…" : bots.length >= 5 ? "已達上限（5隻）" : `🤖 雇用機器人 💰100`}
-            </button>
+            </div>
+
+            {/* 2. 防禦防護藥水 (倍率：1.5x / 2x / 2.5x / 3x / 4x) */}
+            <div className="space-y-2 pt-3 border-t border-slate-800/80">
+              <div className="text-xs font-bold text-blue-400 flex items-center justify-between">
+                <span>🛡️ 防禦加護藥水 (倍率：1.5x / 2x / 2.5x / 3x / 4x)</span>
+                <span className="text-[10px] text-slate-400 font-mono">{DEF_POTIONS.find(p => p.id === defPotion)?.label}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {DEF_POTIONS.map(p => (
+                  <button key={p.id} onClick={() => { setDefPotion(p.id); if (p.id !== "def_none") sfxPotionDrink(); }}
+                    disabled={p.cost > 0 && coins < p.cost}
+                    className={`p-2 rounded-2xl text-xs font-bold border transition-all disabled:opacity-30 flex flex-col justify-between text-left active:scale-95 ${defPotion === p.id ? "border-blue-400 bg-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.3)]" : "border-slate-800 bg-slate-950/60 text-slate-300"}`}>
+                    <div className="font-black text-white text-[11px] truncate">{p.label}</div>
+                    <div className="text-[11px] font-mono mt-0.5" style={{ color: p.color }}>{p.defMult > 1 ? `DEF ×${p.defMult.toFixed(1)}` : "基礎"}</div>
+                    {p.cost > 0 && <div className="text-[10px] text-amber-300 font-mono mt-0.5">💰 {p.cost}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. 血量極限藥水 (倍率：1.5x / 2x / 2.5x / 3x / 4x) */}
+            <div className="space-y-2 pt-3 border-t border-slate-800/80">
+              <div className="text-xs font-bold text-emerald-400 flex items-center justify-between">
+                <span>❤️ 生命上限藥水 (倍率：1.5x / 2x / 2.5x / 3x / 4x)</span>
+                <span className="text-[10px] text-slate-400 font-mono">{HP_POTIONS.find(p => p.id === hpPotion)?.label}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {HP_POTIONS.map(p => (
+                  <button key={p.id} onClick={() => { setHpPotion(p.id); if (p.id !== "hp_none") sfxPotionDrink(); }}
+                    disabled={p.cost > 0 && coins < p.cost}
+                    className={`p-2 rounded-2xl text-xs font-bold border transition-all disabled:opacity-30 flex flex-col justify-between text-left active:scale-95 ${hpPotion === p.id ? "border-emerald-400 bg-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "border-slate-800 bg-slate-950/60 text-slate-300"}`}>
+                    <div className="font-black text-white text-[11px] truncate">{p.label}</div>
+                    <div className="text-[11px] font-mono mt-0.5" style={{ color: p.color }}>{p.hpMult > 1 ? `HP ×${p.hpMult.toFixed(1)}` : "基礎"}</div>
+                    {p.cost > 0 && <div className="text-[10px] text-amber-300 font-mono mt-0.5">💰 {p.cost}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* 計分方式設定 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 font-bold mb-3">🎯 計分方式</div>
-            <div className="flex flex-col gap-3">
-              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
-              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
+          {/* 靶面設定 */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
+            <div className="text-xs font-black text-amber-300 mb-3 flex items-center gap-1.5">
+              <span>🎯</span> 射擊靶面與操控方式
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              </div>
+              <div className="flex-1">
+                <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="shrink-0 px-4 pt-3"
-          style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 80%, transparent)" }}>
-          {potionCost > 0 && !canAfford && (
-            <div className="text-center text-xs text-rose-400 mb-2">金幣不足，請選擇其他藥水</div>
-          )}
-          <button
-            onClick={async () => {
-              sfxCast();
-              if (potionDef?.cost > 0) {
-                if (isGuest) {
-                  const newC = Math.max(0, coins - potionDef.cost);
-                  sessionStorage.setItem(_guestCoinsKey, String(newC));
-                  setCoins(newC);
-                  if (myId) addCoins(myId, -potionDef.cost).catch(() => {});
-                } else {
-                  const { addCoins } = await import("../../lib/db");
-                  await addCoins(myId, -potionDef.cost).catch(() => {});
-                  setCoins(c => c - potionDef.cost);
-                }
-              }
-              sessionStorage.removeItem(_guestPotionKey);
-              sessionStorage.removeItem(_guestPotionMemberKey);
-              setPhase("battle");
-            }}
-            disabled={potionCost > 0 && !canAfford}
-            className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
-            style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
-            ⚔️ 開始挑戰（{TOTAL_ROUNDS} 回合 × {ARROWS_PER} 箭）
-          </button>
-        </div>
+        {/* 底部固定「開始挑戰」按鈕 */}
+        {(() => {
+          const p1 = POTIONS.find(p => p.id === potion)?.cost || 0;
+          const p2 = DEF_POTIONS.find(p => p.id === defPotion)?.cost || 0;
+          const p3 = HP_POTIONS.find(p => p.id === hpPotion)?.cost || 0;
+          const totalPotionCost = p1 + p2 + p3;
+          const canAffordAll = coins >= totalPotionCost;
+
+          return (
+            <div className="shrink-0 px-4 pt-3 sticky bottom-0 z-30 border-t border-slate-800/80 shadow-2xl backdrop-blur-md"
+              style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #070b16 95%, rgba(7,11,22,0.8) 100%)" }}>
+              {totalPotionCost > 0 && (
+                <div className="flex justify-between items-center text-xs px-1 mb-2 font-bold">
+                  <span className="text-slate-400">採購藥水小計</span>
+                  <span className={canAffordAll ? "text-amber-300 font-mono" : "text-rose-400 font-mono"}>
+                    💰 {totalPotionCost.toLocaleString()} 金幣 {!canAffordAll && "(金幣不足)"}
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  sfxCast();
+                  if (totalPotionCost > 0) {
+                    if (isGuest) {
+                      const newC = Math.max(0, coins - totalPotionCost);
+                      sessionStorage.setItem(_guestCoinsKey, String(newC));
+                      setCoins(newC);
+                      if (myId) addCoins(myId, -totalPotionCost).catch(() => {});
+                    } else {
+                      const { addCoins } = await import("../../lib/db");
+                      await addCoins(myId, -totalPotionCost).catch(() => {});
+                      setCoins(c => c - totalPotionCost);
+                    }
+                  }
+                  sessionStorage.removeItem(_guestPotionKey);
+                  sessionStorage.removeItem(_guestPotionMemberKey);
+                  setPhase("battle");
+                }}
+                disabled={totalPotionCost > 0 && !canAffordAll}
+                className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-2xl transition-all active:scale-95 disabled:opacity-40 border border-rose-400/40 flex items-center justify-center gap-2 wb-btn-anim"
+                style={{ background: `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
+                <span>🔥</span> 吹響號角！開始討伐（{TOTAL_ROUNDS} 回合 × {ARROWS_PER} 箭）
+              </button>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -1818,10 +1913,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
               <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1">
                 <div className="text-xs text-slate-400 font-bold mb-2">Boss 出戰報告</div>
-                {bots.length > 0 && (
-                  <BattleStatRow icon="🤖" label="機器人傷害" value={(result.dmg - totalPlayerDmg).toLocaleString()} valueColor="#818cf8" />
-                )}
-                <BattleStatRow icon="⚔️" label="本次總傷害（含機器人）" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" />
+                <BattleStatRow icon="⚔️" label="本次總傷害" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" />
                 <BattleStatRow icon="❤️" label="Boss 剩餘 HP" value={result.newHP?.toLocaleString()} valueColor="#cbd5e1" />
               </div>
 

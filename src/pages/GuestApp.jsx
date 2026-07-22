@@ -3,15 +3,14 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { onSnapshot, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { resolveGuestSession } from "../lib/guestAuth";
+import { resolveQrGuestSession, resolveWebsiteGuestSession } from "../lib/guestAuth";
+import { formatQrRemaining, getGuestEquipmentPageAction, getGuestNavTab, getQrTimeState } from "../lib/guestShellState";
 import PartyLobby      from "../components/party/PartyLobby";
 import WorldBossLobby  from "../components/worldboss/WorldBossLobby";
 import GuestShop       from "../components/member/GuestShop";
 import DungeonLobby    from "../components/dungeon/DungeonLobby";
 import EquipmentPage   from "../components/member/EquipmentPage";
 import GuestShareCard  from "../components/member/GuestShareCard";
-import CatBuddy from "../components/cat/CatBuddy";
-import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
 import FadeContent from "../components/react-bits/FadeContent";
 import practiceCardImage from "../assets/hub/practice.webp";
@@ -23,6 +22,9 @@ const loadMonsterBattle = () => import("../components/member/MonsterBattle");
 const MonsterBattle = lazy(loadMonsterBattle);
 const loadPartyBattleRoom = () => import("../components/party/PartyBattleRoom");
 const PartyBattleRoom = lazy(loadPartyBattleRoom);
+const MonsterHandbook = lazy(() => import("../components/member/MonsterHandbook"));
+const MemberMaterials = lazy(() => import("../components/member/MemberMaterials"));
+const CardCollectionModern = lazy(() => import("../components/member/CardCollectionModern"));
 
 function guestSessionKey(accountType, sessionSourceId) {
   return `guest_v2_profile_${accountType}_${sessionSourceId || "default"}`;
@@ -33,14 +35,10 @@ function guestPartySessionKey(accountType, sessionSourceId) {
 }
 
 const TABS = [
-  { id: "home",      icon: "🏠", label: "首頁" },
-  { id: "practice",  icon: "🏹", label: "練箭" },
-  { id: "performance", icon: "📈", label: "表現" },
-  { id: "monster",   icon: "⚔️", label: "打怪" },
-  { id: "party",     icon: "👥", label: "組隊" },
-  { id: "dungeon",   icon: "🏰", label: "地城" },
-  { id: "worldboss", icon: "🌍", label: "大王" },
-  { id: "profile",   icon: "🎒", label: "角色" },
+  { id: "home", icon: "🏠", label: "首頁" },
+  { id: "adventure", icon: "⚔️", label: "開始冒險" },
+  { id: "inventory", icon: "🎒", label: "背包" },
+  { id: "equipment", icon: "🛡️", label: "我的裝備" },
 ];
 
 const GUEST_VISUAL_CSS = `
@@ -70,7 +68,7 @@ const GUEST_VISUAL_CSS = `
 .guest-top-sub{font-size:11px;font-weight:800;color:#94a3b8;margin-top:1px}
 .guest-coin-pill{margin-left:auto;border:1px solid rgba(251,191,36,.34);background:rgba(251,191,36,.12);color:#fde68a;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:1000}
 .guest-top-actions{display:flex;align-items:center;gap:6px;margin-left:0}
-.guest-top-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:#dbeafe;border-radius:999px;padding:7px 9px;font-size:11px;font-weight:1000;cursor:pointer;white-space:nowrap}
+.guest-top-btn{min-width:44px;min-height:44px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:#dbeafe;border-radius:999px;padding:7px 9px;font-size:11px;font-weight:1000;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}
 .guest-top-btn.logout{color:#fecaca;border-color:rgba(248,113,113,.24);background:rgba(127,29,29,.16)}
 .guest-party-banner{position:relative;z-index:2;width:100%;border:0;background:#2563eb;color:white;padding:8px 16px;font-size:12px;font-weight:1000}
 .guest-hero{border:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,rgba(15,23,42,.92),rgba(30,64,175,.78));border-radius:26px;padding:18px;min-height:202px;position:relative;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.26)}
@@ -94,7 +92,7 @@ const GUEST_VISUAL_CSS = `
 .guest-mini{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.08);color:#e2e8f0;border-radius:16px;padding:13px;font-size:13px;font-weight:1000;cursor:pointer}
 .guest-note{border:1px solid rgba(125,211,252,.2);background:rgba(14,165,233,.1);border-radius:18px;padding:13px;color:#bae6fd;font-size:12px;line-height:1.65;font-weight:800}
 .guest-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(7,17,31,.9);backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,.1);padding:7px 8px max(7px,env(safe-area-inset-bottom));display:flex;gap:5px;justify-content:center}
-.guest-nav-btn{max-width:112px;flex:1;border:0;background:transparent;color:#64748b;border-radius:16px;padding:7px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:1000;cursor:pointer}
+.guest-nav-btn{max-width:112px;min-height:48px;flex:1;border:0;background:transparent;color:#64748b;border-radius:16px;padding:7px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:1000;cursor:pointer}
 .guest-nav-btn.active{background:rgba(255,255,255,.1);color:white}
 .guest-nav-icon{font-size:18px;line-height:1}
 .guest-profile-hero{border:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,#0f172a,#334155);border-radius:24px;padding:18px;color:white;position:relative;overflow:hidden}
@@ -104,7 +102,7 @@ const GUEST_VISUAL_CSS = `
 .guest-stat-head{display:flex;align-items:center;gap:8px;color:#9fb3cc;font-size:12px;font-weight:1000}
 .guest-stat-icon{width:32px;height:32px;border-radius:11px;display:grid;place-items:center}
 .guest-stat-value{font-size:24px;font-weight:1000;margin-top:9px;color:#f8fafc}
-@media (max-width:430px){.guest-topbar-inner{gap:8px}.guest-coin-pill{padding:7px 8px}.guest-top-btn{padding:7px 8px;font-size:10px}.guest-top-btn .full{display:none}}
+@media (max-width:430px){.guest-topbar-inner{gap:6px}.guest-mode-mark{width:38px;height:38px}.guest-coin-pill{padding:7px 8px}.guest-top-btn{padding:7px;font-size:10px}.guest-top-btn .full{display:none}}
 @media (max-width:380px){.guest-action{min-height:176px;padding:15px}.guest-action.feature{min-height:154px}.guest-action-title{font-size:17px}.guest-action-desc{font-size:11.5px;line-height:1.68;padding-right:12px}}
 @media (min-width:680px){.guest-action-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.guest-action.feature{grid-column:span 1}.guest-hero{min-height:230px}.guest-hero:after{width:240px;height:240px}.guest-hero-title{font-size:34px}}
 `;
@@ -118,7 +116,6 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
       return saved?.accountType === accountType ? saved : null;
     } catch { return null; }
   });
-  const [contact, setContact]   = useState("");
   const [nameInput, setNameInput] = useState("");
   const [busy, setBusy]         = useState(false);
   const [err, setErr]           = useState("");
@@ -130,6 +127,11 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   const [wbResult, setWbResult] = useState(null);
   const [showShareCard, setShowShareCard] = useState(false);
   const [guestBattleImmersive, setGuestBattleImmersive] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const [twoMinuteNotice, setTwoMinuteNotice] = useState(false);
 
   useEffect(() => {
     if (document.querySelector("[data-guest-visual-css]")) return;
@@ -160,9 +162,25 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   useEffect(() => {
     if (!guestProfile?.id) { setGuestFullProfile(null); return; }
     return onSnapshot(doc(db, "members", guestProfile.id), snap => {
-      setGuestFullProfile(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+      if (snap.exists()) {
+        setGuestFullProfile({ id: snap.id, ...snap.data() });
+        return;
+      }
+      sessionStorage.removeItem(sessionKey);
+      setGuestProfile(null);
+      setGuestFullProfile(null);
+    }, () => {
+      // Session storage is only a resume hint. Firestore ownership/expiry is
+      // authoritative, so a forged, stale or expired hint must fail closed.
+      if (accountType === "kid" && Number(guestProfile?.expiresAt || 0) <= Date.now()) {
+        setGuestFullProfile(null);
+        return;
+      }
+      sessionStorage.removeItem(sessionKey);
+      setGuestProfile(null);
+      setGuestFullProfile(null);
     });
-  }, [guestProfile?.id]);
+  }, [guestProfile?.id, guestProfile?.expiresAt, accountType, sessionKey]);
   const liveCoins = guestFullProfile?.coins ?? guestProfile?.coins ?? 0;
 
   useEffect(() => {
@@ -184,33 +202,76 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     setGuestBattleImmersive(false);
   }, [tab, partySubTab]);
 
-  // ── 讀取預填資料（從會員中心的 enterGuestGame 跨頁傳入）────────────────
+  // Same-tab hand-off hint from booking/member center. sessionStorage is not
+  // trusted as identity: resolveWebsiteGuestSession only resumes the current
+  // Firebase UID and treats this email as a consistency check.
   useEffect(() => {
+    if (accountType !== "guest" || guestProfile) return;
     const prefKey = 'guest_prefill';
-    try {
-      const pref = JSON.parse(sessionStorage.getItem(prefKey) || 'null');
-      if (pref) {
-        if (pref.email && !contact) setContact(pref.email);
-        if (pref.name && !nameInput) setNameInput(pref.name);
-        sessionStorage.removeItem(prefKey); // 用完即刪，避免下次進 GuestApp 又被預填
-      }
-    } catch { /* ignore */ }
-  }, []); // eslint-disable-line
+    let pref = null;
+    try { pref = JSON.parse(sessionStorage.getItem(prefKey) || 'null'); } catch { /* ignore */ }
+    sessionStorage.removeItem(prefKey);
+    if (!pref?.email) { setErr("這個預約連結缺少綁定資料，請回到會員中心重新取得連結。"); return; }
+    setBusy(true);
+    resolveWebsiteGuestSession(pref.email).then(res => {
+      if (!res.ok) { setErr(res.reason || "預約連結無法驗證，請重新取得連結。"); return; }
+      const profileObj = { id:res.id, name:res.name || pref.name || "訪客射手", accountType:"guest", coins:res.coins || 0 };
+      sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
+      setGuestProfile(profileObj);
+    }).finally(() => setBusy(false));
+  }, [accountType, guestProfile, sessionKey]);
 
   async function handleEnter() {
     setErr("");
-    if (!contact.trim()) { setErr("請輸入信箱或電話"); return; }
+    if (accountType !== "kid") return;
+    if (!nameInput.trim()) { setErr("請輸入射手暱稱"); return; }
     setBusy(true);
-    const res = await resolveGuestSession(contact.trim(), accountType, sessionSourceId);
+    const res = await resolveQrGuestSession(nameInput.trim(), sessionSourceId);
     setBusy(false);
     if (!res.ok) { setErr(res.reason || "登入失敗，請稍後再試"); return; }
     const finalName = res.isNew ? (nameInput.trim() || res.name) : (res.name || "訪客射手");
-    const profileObj = { id: res.id, name: finalName, accountType, coins: res.coins || 0 };
+    const profileObj = { id:res.id, name:finalName, accountType, coins:res.coins || 0,
+      expiresAt:res.expiresAt?.toMillis?.() || null, sessionSourceId };
     sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
     setGuestProfile(profileObj);
   }
 
+  useEffect(() => {
+    if (!guestProfile?.id) return;
+    const key = `guest_guide_seen_${guestProfile.id}`;
+    const storage = accountType === "kid" ? sessionStorage : localStorage;
+    if (!storage.getItem(key)) { setGuideStep(0); setShowGuide(true); }
+  }, [guestProfile?.id, accountType]);
+
+  useEffect(() => {
+    if (accountType !== "kid" || !guestProfile) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [accountType, guestProfile]);
+
+  const rawExpiry = guestFullProfile?.expiresAt?.toMillis?.() || guestProfile?.expiresAt || 0;
+  const qrTime = accountType === "kid" ? getQrTimeState(rawExpiry, now) : null;
+  useEffect(() => {
+    if (!qrTime?.notifyTwoMinutes || twoMinuteNotice || !guestProfile?.id) return;
+    const noticeKey = `guest_qr_2min_notice_${guestProfile.id}`;
+    if (sessionStorage.getItem(noticeKey)) return;
+    sessionStorage.setItem(noticeKey, "1");
+    setTwoMinuteNotice(true);
+  }, [qrTime?.notifyTwoMinutes, twoMinuteNotice, guestProfile?.id]);
+
+  useEffect(() => {
+    if (!twoMinuteNotice) return undefined;
+    const timer = setTimeout(() => setTwoMinuteNotice(false), 8000);
+    return () => clearTimeout(timer);
+  }, [twoMinuteNotice]);
+
+  function goTo(next) {
+    if (qrTime?.expired) return;
+    setTab(next);
+  }
+
   function handleEnterPartyRoom(roomId, _type, isHost) {
+    if (qrTime?.expired) return;
     loadPartyBattleRoom();
     setPartyRoomId(roomId); setPartyIsHost(isHost); setPartySubTab("battle");
     sessionStorage.setItem(partySessionKey, JSON.stringify({ roomId, isHost: !!isHost, memberId: guestProfile.id }));
@@ -237,40 +298,37 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   }
 
   const isKid = accountType === "kid";
-  const themeAccent = isKid ? "#f59e0b" : "#7c3aed";
   const themeGrad = isKid
     ? "linear-gradient(135deg,#f59e0b,#ef4444)"
     : "linear-gradient(135deg,#7c3aed,#2563eb)";
 
-  // ── 入口畫面：輸入信箱/電話 ──────────────────────────────
+  // QR guests choose only a nickname. Website guests enter through a trusted
+  // booking hand-off and never see a public contact lookup form.
   if (!guestProfile) {
     return (
       <div className={`guest-login ${isKid ? "kid" : "guest"}`}>
         <div className="guest-login-panel">
-          <div className="guest-login-badge">{isKid ? "KID CAMP ACCESS" : "GUEST ADVENTURE PASS"}</div>
+          <div className="guest-login-badge">{isKid ? "現場訪客模式" : "預約訪客通行證"}</div>
           <div className="guest-login-hero">
-            <h1 className="guest-login-title">{isKid ? "小小射手冒險場" : "貓小隊體驗冒險"}</h1>
+            <h1 className="guest-login-title">{isKid ? "設定射手暱稱" : "正在驗證預約資料"}</h1>
             <div className="guest-login-copy">
-              {isKid ? "輸入信箱或電話後開始活動，這台裝置換人也能保留每位孩子自己的進度。" : "用正式版的戰鬥、組隊、地下城與世界王流程體驗低階冒險。"}
+              {isKid ? "不需信箱或電話。兩小時內可以戰鬥、收集與強化，時間到後本次進度會失效。" : "此入口只接受會員中心提供的綁定資料，不會要求你再次輸入聯絡方式。"}
             </div>
           </div>
-          <input
-            value={contact} onChange={e => setContact(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") handleEnter(); }}
-            placeholder="信箱或電話"
-            className="guest-input"
-            autoFocus
-          />
-          <input
+          {isKid && <input
             value={nameInput} onChange={e => setNameInput(e.target.value)}
-            placeholder={isKid ? "小朋友的名字（選填）" : "射手名稱（選填）"}
+            onKeyDown={e => { if (e.key === "Enter") handleEnter(); }}
+            placeholder="射手暱稱"
             maxLength={10}
             className="guest-input"
-          />
+            autoFocus
+          />}
           {err && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{err}</div>}
-          <button onClick={handleEnter} disabled={busy} className="guest-primary" style={{ background: themeGrad }}>
-            {busy ? "登入中…" : "🚀 開始冒險"}
-          </button>
+          {isKid ? <button onClick={handleEnter} disabled={busy} className="guest-primary" style={{ background: themeGrad }}>
+            {busy ? "建立體驗中…" : "🚀 開始冒險"}
+          </button> : <button onClick={() => { window.location.href = "/"; }} className="guest-primary" style={{ background:themeGrad }}>
+            返回入口重新取得連結
+          </button>}
         </div>
       </div>
     );
@@ -285,8 +343,15 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
   };
   const immersiveBattle = (tab === "monster" && guestBattleImmersive) || (tab === "party" && partySubTab === "battle");
 
+  if (qrTime?.expired && !immersiveBattle) {
+    return <GuestExpiredScreen onRestart={() => {
+      sessionStorage.removeItem(sessionKey);
+      sessionStorage.removeItem(partySessionKey);
+      window.location.reload();
+    }} onBooking={() => { window.location.href = "/"; }} />;
+  }
+
   return (
-    <CatBuddyProvider>
     <div className={`guest-stage ${isKid ? "kid" : "guest"} ${immersiveBattle ? "immersive" : ""}`}>
       {!immersiveBattle && <div className="guest-topbar">
         <div className="guest-topbar-inner">
@@ -296,10 +361,14 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
             <div className="guest-top-sub">{guestProfile.name}</div>
           </div>
           <div className="guest-coin-pill">🪙 {liveCoins || 0}</div>
+          {isKid && <div className="guest-top-btn" role="status" aria-live="polite" aria-label={`體驗剩餘時間 ${formatQrRemaining(qrTime?.remainingMs || 0)}`} style={{ color:qrTime?.warning ? "#fdba74" : "#bae6fd" }}>
+            ⏱ {formatQrRemaining(qrTime?.remainingMs || 0)}
+          </div>}
           <div className="guest-top-actions">
-            <button className="guest-top-btn" onClick={handleGoMemberFront}>
+            <button className="guest-top-btn" aria-label="訪客模式說明" onClick={() => setShowHelp(true)}>?</button>
+            {!isKid && <button className="guest-top-btn" onClick={handleGoMemberFront}>
               會員<span className="full">中心</span>
-            </button>
+            </button>}
             <button className="guest-top-btn logout" onClick={handleLogout}>
               登出
             </button>
@@ -315,7 +384,9 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
       )}
 
       <div className="guest-content">
-        {tab === "home" && <GuestHome name={guestProfile.name} isKid={isKid} accent={themeAccent} onGo={setTab} onShareCard={() => setShowShareCard(true)} coins={liveCoins} wbResult={wbResult} />}
+        {tab === "home" && <GuestHomeV2 name={guestProfile.name} isKid={isKid} onGo={goTo} coins={liveCoins} profile={guestFullProfile} />}
+        {tab === "adventure" && <GuestAdventureHub onGo={goTo} />}
+        {tab === "inventory" && <GuestInventoryHub profile={guestFullProfile} onGo={goTo} />}
         {tab === "practice" && (guestFullProfile
           ? <Suspense fallback={<GuestPanelLoading label="正在載入練箭系統…" />}><MemberPractice profileOverride={guestFullProfile} isGuestMode /></Suspense>
           : <GuestPanelLoading label="正在載入練習資料…" />
@@ -328,7 +399,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
                 isGuest={true}
                 kidMode={isKid}
                 guestProfile={guestFullProfile}
-                onBack={() => setTab("home")}
+                onBack={() => goTo("adventure")}
                 onImmersiveChange={setGuestBattleImmersive}
               />
             </Suspense>
@@ -340,7 +411,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         )}
         {tab === "dungeon" && (
           guestFullProfile ? (
-            <DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} onBack={() => setTab("home")} />
+            <DungeonLobby guestProfile={guestFullProfile} isGuest tierCap={2} onBack={() => goTo("adventure")} />
           ) : (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
               載入中…
@@ -349,7 +420,10 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         )}
         {tab === "equipment" && (
           guestFullProfile ? (
-            <EquipmentPage guestProfile={guestFullProfile} onPageChange={page => { if (page === "coinshop") setTab("shop"); else setTab("home"); }} />
+            <EquipmentPage guestProfile={guestFullProfile} onPageChange={page => {
+              const action = getGuestEquipmentPageAction(page);
+              if (action) goTo(action);
+            }} />
           ) : (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
               載入中…
@@ -359,6 +433,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         {tab === "worldboss" && (
           <WorldBossLobby guestOverride={guestOverride} onBattleComplete={result => setWbResult(result)} />
         )}
+        {tab === "handbook" && <Suspense fallback={<GuestPanelLoading label="正在載入怪物手冊…" />}><MonsterHandbook onBack={() => goTo("adventure")} /></Suspense>}
         {tab === "shop" && <GuestShop memberId={guestProfile.id} />}
         {tab === "gacha" && (
           <GuestGachaPanel profile={guestFullProfile} isKid={isKid} onBack={() => setTab("profile")} />
@@ -386,10 +461,10 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
 
       {!immersiveBattle && <div className="guest-bottom-nav">
         {TABS.map(n => (
-          <button key={n.id} onClick={() => setTab(n.id)}
+          <button key={n.id} onClick={() => goTo(n.id)} aria-current={getGuestNavTab(tab) === n.id ? "page" : undefined}
             onMouseEnter={n.id === "monster" ? loadMonsterBattle : undefined}
             onFocus={n.id === "monster" ? loadMonsterBattle : undefined}
-            className={`guest-nav-btn ${tab === n.id ? "active" : ""}`}>
+            className={`guest-nav-btn ${getGuestNavTab(tab) === n.id ? "active" : ""}`}>
             <span className="guest-nav-icon">{n.icon}</span>
             <span>{n.label}</span>
           </button>
@@ -407,15 +482,129 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
         />
       )}
 
-      <CatBuddy />
+      {twoMinuteNotice && !qrTime?.expired && (
+        <div role="status" style={{ position:"fixed", left:16, right:16, bottom:88, zIndex:90, padding:12, borderRadius:14, background:"#9a3412", color:"white", textAlign:"center", fontWeight:900 }}>
+          體驗剩下約兩分鐘，正在進行的戰鬥仍可完成本回合。
+        </div>
+      )}
+      {showGuide && <GuestGuide step={guideStep} onStep={setGuideStep} onClose={() => {
+        const storage = isKid ? sessionStorage : localStorage;
+        storage.setItem(`guest_guide_seen_${guestProfile.id}`, "1"); setShowGuide(false);
+      }} />}
+      {showHelp && <GuestHelp isKid={isKid} onClose={() => setShowHelp(false)} />}
+
     </div>
-    </CatBuddyProvider>
   );
 }
 
 function GuestPanelLoading({ label }) {
   return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>{label}</div>;
 }
+
+function GuestHomeV2({ name, isKid, onGo, coins, profile }) {
+  const equipment = profile?.rpgEquip || {};
+  const equipped = EQUIP_SLOT_DEFS.filter(slot => equipment[slot.id]?.itemId).length;
+  return <FadeContent>
+    <div className={`guest-hero ${isKid ? "kid" : ""}`}>
+      <div className="guest-hero-kicker">{isKid ? "兩小時現場體驗" : "預約訪客冒險"}</div>
+      <div className="guest-hero-title">{name}，準備好繼續冒險了嗎？</div>
+      <div className="guest-hero-copy">挑戰六族 T1 怪物，取得金幣、寶箱與卡片，再回來強化裝備。</div>
+      <div className="guest-hero-actions"><button className="guest-chip-btn" onClick={() => onGo("adventure")}>開始冒險 →</button></div>
+    </div>
+    <div className="guest-stat-grid" style={{ marginTop:12 }}>
+      <GuestStatTile icon="🪙" label="持有金幣" value={coins} tone="#f59e0b" />
+      <GuestStatTile icon="🛡️" label="裝備完成度" value={`${equipped}/${EQUIP_SLOT_DEFS.length}`} tone="#4f46e5" />
+    </div>
+    <div className="guest-section-title">下一步</div>
+    <button className="guest-mini" style={{ width:"100%" }} onClick={() => onGo(equipped ? "adventure" : "equipment")}>
+      {equipped ? "繼續挑戰 T1 怪物" : "查看免費練習弓與基礎裝備"}
+    </button>
+    {!isKid && <div className="guest-note" style={{ marginTop:12 }}>預約訪客的私人資產與進度會在轉為正式會員時保留。</div>}
+  </FadeContent>;
+}
+
+function GuestAdventureHub({ onGo }) {
+  const adventures = [
+    ["monster", "⚔️", "單人打怪", "挑戰六族 T1 怪物"],
+    ["party", "👥", "組隊打怪", "和現場夥伴一起挑戰"],
+    ["dungeon", "🏰", "地下城", "探索 T1 地下城"],
+    ["worldboss", "🌍", "世界王", "加入正式活動，每場一次"],
+    ["handbook", "📖", "怪物手冊", "查看六族怪物設定"],
+  ];
+  return <div>
+    <div className="guest-profile-hero"><div style={{ position:"relative", zIndex:1 }}>
+      <div className="guest-hero-kicker">ADVENTURE</div><div style={{ fontSize:26, fontWeight:1000, marginTop:6 }}>開始冒險</div>
+      <div className="guest-hero-copy">一般玩法固定六族 T1；世界王接入正式活動。</div>
+    </div></div>
+    <div className="guest-action-grid" style={{ marginTop:14 }}>
+      {adventures.map(([id, icon, title, desc]) => <button key={id} className="guest-action" onClick={() => onGo(id)}
+        onMouseEnter={id === "monster" ? loadMonsterBattle : undefined} onFocus={id === "monster" ? loadMonsterBattle : undefined}>
+        <span className="guest-action-icon">{icon}</span><span className="guest-action-title">{title}</span>
+        <span className="guest-action-desc">{desc}</span><span className="guest-action-arrow">›</span>
+      </button>)}
+    </div>
+  </div>;
+}
+
+function GuestInventoryHub({ profile, onGo }) {
+  const [section,setSection]=useState("overview");
+  if(section==="items") return <Suspense fallback={<GuestPanelLoading label="正在載入背包…"/>}><MemberMaterials guestProfile={profile} onBack={()=>setSection("overview")}/></Suspense>;
+  if(section==="cards") return <Suspense fallback={<GuestPanelLoading label="正在載入卡片收藏…"/>}><div><button className="guest-mini" onClick={()=>setSection("overview")}>← 返回背包</button><CardCollectionModern guestProfile={profile}/></div></Suspense>;
+  const materials = profile?.materials || profile?.materialInventory || {};
+  const cards = profile?.catCards || {};
+  const materialCount = Object.values(materials).reduce((sum, value) => sum + (Number(value?.count ?? value) || 0), 0);
+  return <div>
+    <div className="guest-profile-hero"><div style={{ position:"relative", zIndex:1 }}>
+      <div className="guest-hero-kicker">INVENTORY</div><div style={{ fontSize:26, fontWeight:1000, marginTop:6 }}>背包</div>
+      <div className="guest-hero-copy">戰鬥獲得的寶箱、材料與 T1 卡片會集中在這裡。</div>
+    </div></div>
+    <div className="guest-stat-grid" style={{ marginTop:14 }}>
+      <GuestStatTile icon="📦" label="寶箱" value={profile?.chestCount || 0} tone="#0ea5e9" />
+      <GuestStatTile icon="🧩" label="材料" value={materialCount} tone="#10b981" />
+      <GuestStatTile icon="🃏" label="怪物卡片" value={Object.keys(cards).length} tone="#8b5cf6" />
+      <GuestStatTile icon="📖" label="怪物手冊" value="六族 T1" tone="#f59e0b" />
+    </div>
+    <div className="guest-quick-row"><button className="guest-mini" onClick={()=>setSection("items")}>開箱與查看材料</button><button className="guest-mini" onClick={()=>setSection("cards")}>卡片收藏／升星／裝備</button></div>
+    <button className="guest-mini" style={{ width:"100%", marginTop:12 }} onClick={() => onGo("handbook")}>查看怪物手冊</button>
+    <button className="guest-mini" style={{ width:"100%", marginTop:12 }} onClick={() => onGo("adventure")}>去冒險取得物品</button>
+  </div>;
+}
+
+function GuestGuide({ step, onStep, onClose }) {
+  const pages = [
+    ["⚔️", "選擇冒險", "單人、組隊、地下城與怪物手冊固定使用六族 T1 怪物。"],
+    ["🎁", "取得獎勵", "戰鬥可取得金幣、寶箱、材料與 T1 怪物卡片。"],
+    ["🛡️", "持續變強", "開箱、購買並強化裝備，再回去挑戰；右上角 ? 可重看說明。"],
+  ];
+  const page = pages[step] || pages[0];
+  return <div role="dialog" aria-modal="true" aria-labelledby="guest-guide-title" style={modalBackdrop}>
+    <div style={modalPanel}><div style={{ fontSize:52 }}>{page[0]}</div><h2 id="guest-guide-title">{page[1]}</h2><p style={{ color:"#cbd5e1", lineHeight:1.7 }}>{page[2]}</p>
+      <div style={{ display:"flex", gap:8 }}><button className="guest-mini" onClick={onClose}>跳過</button>
+        <button className="guest-primary" onClick={() => step < 2 ? onStep(step + 1) : onClose()}>{step < 2 ? "下一步" : "開始冒險"}</button></div>
+    </div>
+  </div>;
+}
+
+function GuestHelp({ isKid, onClose }) {
+  return <div role="dialog" aria-modal="true" aria-labelledby="guest-help-title" style={modalBackdrop}>
+    <div style={modalPanel}><h2 id="guest-help-title">訪客模式使用說明</h2>
+      <p>首頁查看狀態；開始冒險選擇玩法；背包整理獎勵；我的裝備負責穿戴與強化。</p>
+      <p>一般玩法限定六族 T1。市場、交換、公會與正式排行需正式會員。</p>
+      <p>{isKid ? "QR 體驗資料不承諾保留；到期後可重新掃描有效 QR，或前往官網預約。" : "預約訪客轉正式會員時，私人資產與個人進度會保留。"}</p>
+      <button className="guest-primary" onClick={onClose}>知道了</button>
+    </div>
+  </div>;
+}
+
+function GuestExpiredScreen({ onRestart, onBooking }) {
+  return <div className="guest-login"><div className="guest-login-panel"><div className="guest-login-hero">
+    <h1 className="guest-login-title">本次體驗時間已到</h1><div className="guest-login-copy">新的戰鬥、購買與強化已停止。請重新掃描管理員提供的有效 QR，或前往官網預約。</div>
+  </div><button className="guest-primary" onClick={onRestart}>重新掃描或開始新的體驗</button>
+    <button className="guest-mini" onClick={onBooking}>前往官網預約</button></div></div>;
+}
+
+const modalBackdrop = { position:"fixed", inset:0, zIndex:100, display:"grid", placeItems:"center", padding:20, background:"rgba(2,6,23,.82)" };
+const modalPanel = { width:"min(100%,390px)", padding:22, borderRadius:24, background:"#0f172a", border:"1px solid rgba(255,255,255,.16)", color:"white", boxShadow:"0 24px 80px #000" };
 
 function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
   const cards = [

@@ -17,12 +17,31 @@ const {
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
 const { buildTrustedMonsterReward } = require("./monsterReward");
 const { buildDungeonBossEnvelope, validateChoices } = require("./dungeonBossReward");
+const { GUEST_COMMON_EQUIPMENT, assertActiveGuest, starterPatch, purchasePatch } = require("./guestEquipment");
 const {
   taipeiDateOffset, isDayBeforeCandidate, dayBeforeRecipientDecision,
   dayBeforeMailId, dayBeforeVariables, boundedDayBeforeCandidates,
 } = require("./bookingDayBefore");
 
 initializeApp();
+
+exports.initializeGuestEquipment = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  const memberId=String(request.data?.memberId||""); if(!memberId||memberId.includes("/")) throw new HttpsError("invalid-argument","invalid_member");
+  const db=getFirestore(), ref=db.doc(`members/${memberId}`);
+  return db.runTransaction(async tx=>{ const snap=await tx.get(ref); if(!snap.exists) throw new HttpsError("not-found","member_not_found"); const member=snap.data();
+    if(member.uid!==request.auth.uid) throw new HttpsError("permission-denied","owner_mismatch");
+    try{assertActiveGuest(member,Date.now());}catch(e){throw new HttpsError("failed-precondition",e.message);}
+    const patch=starterPatch(member); if(patch) tx.update(ref,{...patch,updatedAt:FieldValue.serverTimestamp()});
+    return {ok:true,seeded:!!patch,catalog:GUEST_COMMON_EQUIPMENT}; });
+});
+exports.purchaseGuestEquipment = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  const memberId=String(request.data?.memberId||""),itemId=String(request.data?.itemId||""); if(!memberId||memberId.includes("/")) throw new HttpsError("invalid-argument","invalid_member");
+  const db=getFirestore(),ref=db.doc(`members/${memberId}`);
+  return db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw new HttpsError("not-found","member_not_found");const member=snap.data();
+    if(member.uid!==request.auth.uid)throw new HttpsError("permission-denied","owner_mismatch");try{assertActiveGuest(member,Date.now());const result=purchasePatch(member,itemId);tx.update(ref,{...result.patch,updatedAt:FieldValue.serverTimestamp()});return{ok:true,item:result.item};}catch(e){throw new HttpsError("failed-precondition",e.message);}});
+});
 
 exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request => {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");

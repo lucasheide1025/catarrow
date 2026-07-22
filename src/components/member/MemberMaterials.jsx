@@ -52,8 +52,9 @@ function MaterialThumb({ material }) {
   );
 }
 
-export default function MemberMaterials({ onBack, onGoVillage }) {
-  const { profile } = useAuth();
+export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
+  const { profile:authProfile } = useAuth();
+  const profile=guestProfile||authProfile;
   const { toast, ToastContainer } = useToast();
 
   // ── tab ──────────────────────────────────────────────────

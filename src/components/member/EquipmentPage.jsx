@@ -1,4 +1,5 @@
 // src/components/member/EquipmentPage.jsx — 裝備系統獨立頁面
+import { useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   EQUIP_GRADES,
@@ -11,8 +12,10 @@ import RPGEquipPanel from "./RPGEquipPanel";
 import EquipmentRunePanel from "./EquipmentRunePanel";
 import EquipSpecializationPanel from "./EquipSpecializationPanel";
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
+import GuestEquipmentShop from "./GuestEquipmentShop";
 
 export default function EquipmentPage({ onPageChange, guestProfile }) {
+  const guestShopRef = useRef(null);
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const equipment = profile?.rpgEquip || {};
@@ -20,6 +23,11 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
   const equipped  = EQUIP_SLOT_DEFS.filter(s => equipment[s.id]?.itemId).length;
   const completionPct = Math.round(equipped / EQUIP_SLOT_DEFS.length * 100);
   const expansionEnabled = isMonsterExpansionEnabled();
+  function goToShop() {
+    if (!guestProfile) { onPageChange?.("coinshop"); return; }
+    guestShopRef.current?.scrollIntoView({ behavior:"smooth", block:"start" });
+    guestShopRef.current?.focus({ preventScroll:true });
+  }
   const statCards = [
     { icon:"⚔️", label:"攻擊加成", short:"ATK", val:bonus.atkBonus, color:"#fb923c", bg:"rgba(249,115,22,0.12)" },
     { icon:"🛡️", label:"防禦加成", short:"DEF", val:bonus.defBonus, color:"#60a5fa", bg:"rgba(59,130,246,0.12)" },
@@ -73,9 +81,9 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
             ))}
           </div>
           {equipped === 0 && (
-            <button type="button" onClick={() => onPageChange?.("coinshop")}
+            <button type="button" onClick={goToShop}
               className="mt-4 min-h-11 w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-black text-slate-950 hover:bg-amber-400 focus-visible:ring-2 focus-visible:ring-amber-200">
-              前往金幣商店取得第一件裝備
+              {guestProfile ? "前往基礎裝備商店取得第一件裝備" : "前往金幣商店取得第一件裝備"}
             </button>
           )}
         </section>
@@ -95,9 +103,10 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
           <RPGEquipPanel
             showSummary={false}
             guestProfile={guestProfile}
-            onGoShop={onPageChange ? () => onPageChange("coinshop") : null}
+            onGoShop={goToShop}
           />
         </div>
+        {guestProfile ? <div ref={guestShopRef} tabIndex={-1} aria-label="基礎裝備商店" className="scroll-mt-20 focus:outline-none"><GuestEquipmentShop profile={profile} /></div> : null}
 
       {/* 品級說明 */}
         <EquipmentRunePanel profile={profile} readOnly={Boolean(guestProfile)} />

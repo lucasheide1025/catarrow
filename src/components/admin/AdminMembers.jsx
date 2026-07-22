@@ -271,10 +271,9 @@ export default function AdminMembers() {
 }
 
 // ── 訪客 QR Code Modal ────────────────────────────────────
-// 2026-07-09 改版：訪客帳號現在用信箱/電話跨次接續（見 guestAuth.js），
-// 不再需要每次教練手動產生單次有效token——固定連結貼一次QR就能長期使用。
+// 固定現場 QR 是兩小時臨時入口；網站預約訪客另走 ?guest=1，兩者不可混用。
 function GuestQRModal({ onClose, toast }) {
-  const url = `${window.location.origin}?guest=1`;
+  const url = `${window.location.origin}?kid=fixed-guest-qr`;
   const [copied, setCopied] = useState(false);
 
   async function copyUrl() {
@@ -292,7 +291,7 @@ function GuestQRModal({ onClose, toast }) {
       <div className="flex flex-col gap-4">
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-700 text-sm">
-          客人掃描後輸入信箱或電話即可開始體驗，無需登入。這組連結是固定的，可以印出來長期張貼在箭場，下次再來會自動接續上次的進度。
+          客人掃描後只需輸入射手暱稱即可開始兩小時體驗。這組入口碼固定，可長期張貼；每次建立的臨時訪客資產彼此獨立。
         </div>
 
         <div className="flex flex-col items-center gap-3">

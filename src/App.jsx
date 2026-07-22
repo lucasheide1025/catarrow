@@ -12,6 +12,7 @@ import PublicBookingApp from "./pages/PublicBookingApp";
 import ZombieGame   from "./zombie/ZombieGame";
 import { initGoalTracker } from "./lib/villageGoalDb";
 import { CostControlProvider } from "./hooks/useCostControl";
+import { resolveGuestEntry } from "./lib/guestEntryRoute";
 
 // 新生隱藏約課入口的 query 參數值（07-10-booking-system-student-pilot）——刻意用一串不易猜測、
 // 沒有規律的字串，不要改成 "booking"/"bk=1" 這種容易猜的形式。這個常數本身只在這裡使用一次，
@@ -25,8 +26,8 @@ function AppRoutes() {
   const { role, loading, currentUser, logout, profileError } = useAuth();
   const [searchParams] = useSearchParams();
 
-  if (searchParams.get("kid"))   return <GuestApp accountType="kid"   sessionSourceId={searchParams.get("kid") === "1" ? null : searchParams.get("kid")} />;
-  if (searchParams.get("guest")) return <GuestApp accountType="guest" />;
+  const guestEntry = resolveGuestEntry(searchParams);
+  if (guestEntry) return <GuestApp accountType={guestEntry.accountType} sessionSourceId={guestEntry.sessionSourceId} />;
   if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;
   if (searchParams.has("zombie")) return <ZombieGame />;
 

@@ -2,13 +2,16 @@
 // 訪客/兒童帳號的匿名登入 + 跨次造訪接續邏輯（見 .trellis/tasks/07-09-guest-kid-mode-overhaul）
 import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updatePassword } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 import {
-  collection, query, where, limit, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp,
+  collection, query, where, limit, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "./firebase";
+import { getQrExpiry } from "./guestContentPolicy";
 
 const C_MEMBERS = "members";
 const GUEST_STARTER_COINS = 500;
+export const FIXED_GUEST_QR_SOURCE = "fixed-guest-qr";
 
 // email 轉小寫去空白；電話只留數字
 export function normalizeContact(raw) {
@@ -36,7 +39,59 @@ export async function sha256(text) {
 // 修法：只有在 auth.currentUser 本來就是「匿名」時才能沿用；若目前是真實帳號登入中，
 // 一律開一個臨時的第二個 Firebase App 做獨立匿名登入（比照 AdminMembers.jsx 建會員帳號的既有模式），
 // 徹底跟主要登入身份隔開，絕不能把真實使用者的 uid 寫到別的 members 文件上。
+export async function resolveWebsiteGuestSession(contact, sessionSourceId = null) {
+  return resolveLegacyGuestSession(contact, "guest", sessionSourceId);
+}
+
+export async function resolveQrGuestSession(nickname, sessionSourceId) {
+  const cleanName = (nickname || "").trim();
+  if (!cleanName) return { ok:false, reason:"請輸入射手暱稱" };
+  if (!sessionSourceId) return { ok:false, reason:"訪客 QR 已失效，請重新掃描" };
+  let tmpApp = null;
+  try {
+    let workingAuth = auth;
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+      tmpApp = initializeApp(firebaseConfig, "guest_tmp_" + Date.now());
+      workingAuth = getAuth(tmpApp);
+    }
+    if (!workingAuth.currentUser) await signInAnonymously(workingAuth);
+    const workingDb = tmpApp ? getFirestore(tmpApp) : db;
+    const uid = workingAuth.currentUser.uid;
+    if (sessionSourceId !== FIXED_GUEST_QR_SOURCE) {
+      const campSession = await getDoc(doc(workingDb, "campSessions", sessionSourceId));
+      if (!campSession.exists() || campSession.data()?.active !== true) {
+        return { ok:false, reason:"這個訪客 QR 已停用，請向現場人員取得有效 QR" };
+      }
+    }
+    const expiresAt = Timestamp.fromDate(getQrExpiry());
+    const ref = await addDoc(collection(workingDb, C_MEMBERS), {
+      accountType:"kid", lifecycle:"qr-temporary", uid,
+      name:cleanName, nickname:cleanName, sessionSourceId, createdViaQR:sessionSourceId,
+      coins:GUEST_STARTER_COINS, starterCoinsGranted:true,
+      guestEquipmentSeeded:true,
+      rpgEquip:{ bow:{ itemId:"bow_practice", grade:"common", plusLevel:0 } },
+      unlockedEquipItems:{ bow_practice:true },
+      createdAt:serverTimestamp(), lastLoginAt:serverTimestamp(), expiresAt,
+    });
+    return { ok:true, id:ref.id, accountType:"kid", lifecycle:"qr-temporary", uid,
+      name:cleanName, nickname:cleanName, sessionSourceId, coins:GUEST_STARTER_COINS,
+      starterCoinsGranted:true, guestEquipmentSeeded:true,
+      rpgEquip:{ bow:{ itemId:"bow_practice", grade:"common", plusLevel:0 } },
+      unlockedEquipItems:{ bow_practice:true }, expiresAt, isNew:true };
+  } catch (e) {
+    return { ok:false, reason:e?.message || "訪客登入失敗，請稍後再試" };
+  } finally {
+    if (tmpApp) deleteApp(tmpApp).catch(() => {});
+  }
+}
+
 export async function resolveGuestSession(contact, accountType, sessionSourceId = null) {
+  return accountType === "kid"
+    ? resolveQrGuestSession(contact, sessionSourceId)
+    : resolveWebsiteGuestSession(contact, sessionSourceId);
+}
+
+async function resolveLegacyGuestSession(contact, accountType, sessionSourceId = null) {
   if (!contact) return { ok: false, reason: "請輸入信箱或電話" };
   if (accountType !== "guest" && accountType !== "kid") return { ok: false, reason: "帳號類型錯誤" };
 
@@ -49,13 +104,17 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
       workingAuth = getAuth(tmpApp);
     }
     if (!workingAuth.currentUser) await signInAnonymously(workingAuth);
+    const workingDb = tmpApp ? getFirestore(tmpApp) : db;
     const uid = workingAuth.currentUser.uid;
     const contactHash = await sha256(normalizeContact(contact));
 
+    // Security Rules intentionally prohibit contact-hash enumeration. A website
+    // guest may resume only through the anonymous identity already persisted by
+    // Firebase Auth; contact remains a consistency check, not an ownership proof.
     const q = query(
-      collection(db, C_MEMBERS),
+      collection(workingDb, C_MEMBERS),
       where("accountType", "==", accountType),
-      where("contactHash", "==", contactHash),
+      where("uid", "==", uid),
       limit(1)
     );
     const snap = await getDocs(q);
@@ -63,6 +122,9 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
     if (!snap.empty) {
       const existing = snap.docs[0];
       const data = existing.data();
+      if (data.contactHash !== contactHash) {
+        return { ok: false, reason: "此裝置的訪客身分與預約資料不符" };
+      }
       const starterPatch = data.starterCoinsGranted ? {} : {
         coins: (data.coins || 0) + GUEST_STARTER_COINS,
         starterCoinsGranted: true,
@@ -73,7 +135,7 @@ export async function resolveGuestSession(contact, accountType, sessionSourceId 
       return { ok: true, id: existing.id, ...data, ...starterPatch, uid, ...sessionPatch, isNew: false };
     }
 
-    const ref = await addDoc(collection(db, C_MEMBERS), {
+    const ref = await addDoc(collection(workingDb, C_MEMBERS), {
       accountType, contactHash, contactRaw: contact,
       sessionSourceId: sessionSourceId || null,
       lastSessionSourceId: sessionSourceId || null,
