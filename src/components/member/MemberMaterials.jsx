@@ -149,17 +149,31 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
     }
   }
 
+  // 新素材箱（family_mat/mini_boss_mat/boss_mat）使用 chest 物件自帶的 name/icon/color
+  // 舊型寶箱由 CHEST_TYPES 查表取得顯示資料
+  function chestLookup(ch) {
+    const base = CHEST_TYPES[ch.type];
+    if (!base) return CHEST_TYPES.wood;
+    return {
+      ...base,
+      name: ch.name || base.name,
+      icon: ch.icon || base.icon,
+      color: ch.color || base.color,
+    };
+  }
+
   async function doOpenChest(chest) {
     if (openingChest) return;
     const isCoin = chest.type === "coin";
     const cc = isCoin
       ? { icon: chest.icon || "🪙", color: chest.color || "#92400e", name: chest.name || "金幣寶箱" }
-      : (CHEST_TYPES[chest.type] || CHEST_TYPES.wood);
+      : chestLookup(chest);
     setOpeningChest(chest.id);
     setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name });
     sfxCast();
     const isBig = chest.coinTier === "fierce" || chest.coinTier === "boss" || chest.coinTier === "mythic"
-      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack" || chest.type === "mimi_box";
+      || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack" || chest.type === "mimi_box"
+      || chest.type === "boss_mat" || (chest.type === "family_mat" && (chest.tierIndex || 0) >= 4);
     setTimeout(isBig ? sfxEpic : sfxBuff, 700);
     await new Promise(r => setTimeout(r, 1600));
     const contents = isCoin ? null : openChestContents(chest);
@@ -516,7 +530,7 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
               const isCoin = ch.type === "coin";
               const cc = isCoin
                 ? { icon: ch.icon || "🪙", color: ch.color || "#92400e", name: ch.name || "金幣寶箱", desc: `開箱後獲得 ${ch.min ?? 20}–${ch.max ?? 50} 金幣` }
-                : (CHEST_TYPES[ch.type] || CHEST_TYPES.wood);
+                : chestLookup(ch);
               const isOpening = openingChest === ch.id;
               return (
                 <div key={ch.id || idx} className="bg-white/5 rounded-2xl p-4 border border-white/15 flex items-center gap-4">

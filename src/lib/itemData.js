@@ -30,6 +30,13 @@ export const CHEST_TYPES = {
                desc:"只有世界王才會掉落的稀世寶箱！開啟獲得大量金幣，並有機率開出這隻王的專屬卡片。" },
   mimi_box:  { id:"mimi_box",  name:"咪咪箱", icon:"😺", color:"#f43f5e", potionChance:0,
                desc:"神秘咪咪箱！開啟後隨機獲得一隻貓咪夥伴，已擁有全部時給羈絆經驗！" },
+  // ══ 新素材箱系統（2026-07-22）═══════════════════════════
+  family_mat: { id:"family_mat", name:"族系素材箱", icon:"📦", color:"#a16207", potionChance:0,
+                 desc:"打開獲得指定家族與階級的普通素材。" },
+  mini_boss_mat: { id:"mini_boss_mat", name:"小王素材箱", icon:"🔶", color:"#8b5cf6", potionChance:0,
+                    desc:"打開獲得小王階級的隨機素材（跨家族）。" },
+  boss_mat: { id:"boss_mat", name:"大王素材箱", icon:"🔴", color:"#ef4444", potionChance:0,
+               desc:"打開獲得大王階級的隨機素材（跨家族）。" },
 };
 
 // 怪物階級 → 寶箱種類機率
@@ -268,6 +275,63 @@ const POTION_CHEST_TABLE = [
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple","treasure"];
 
+// 家族中文名稱對照（新素材箱命名用）
+const FAMILY_NAMES = {
+  ghost: "幽冥", mountain: "山嶺", insect: "昆蟲",
+  workplace: "職場", exam: "考試", temple: "神廟", treasure: "寶箱",
+};
+
+// ── 新素材箱生成函式 ────────────────────────────────────
+
+// 族系素材箱：7 家族 × 6 階級 = 42 種，只開出同族同階的普通素材
+const FAMILY_CHEST_COLORS = ["#a16207","#65a30d","#0d9488","#2563eb","#7c3aed","#db2777"];
+export function makeFamilyMaterialChest(family, tierIndex, source = "掉落") {
+  const name = FAMILY_NAMES[family] || family;
+  const now = Date.now();
+  return {
+    id: `chest_fmat_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    type: "family_mat",
+    family,
+    tierIndex,
+    tier: ["common","rare","elite","fierce","boss","mythic"][tierIndex - 1] || "common",
+    from: source,
+    ts: now,
+    name: `${name}T${tierIndex}素材箱`,
+    icon: "📦",
+    color: FAMILY_CHEST_COLORS[(tierIndex - 1) % FAMILY_CHEST_COLORS.length],
+  };
+}
+
+// 小王素材箱：6 階級，跨家族混合開出該階級的小王素材
+export function makeMiniBossChest(tierIndex, source = "掉落") {
+  const now = Date.now();
+  return {
+    id: `chest_mboss_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    type: "mini_boss_mat",
+    tierIndex,
+    from: source,
+    ts: now,
+    name: `小王T${tierIndex}素材袋`,
+    icon: "🔶",
+    color: "#8b5cf6",
+  };
+}
+
+// 大王素材箱：6 階級，跨家族混合開出該階級的大王素材
+export function makeBossChest(tierIndex, source = "掉落") {
+  const now = Date.now();
+  return {
+    id: `chest_bboss_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    type: "boss_mat",
+    tierIndex,
+    from: source,
+    ts: now,
+    name: `大王T${tierIndex}素材袋`,
+    icon: "🔴",
+    color: "#ef4444",
+  };
+}
+
 // ── 卡包抽卡（36 隻怪，按稀有度加權）─────────────────────
 const CARD_TIER_WEIGHT = { common:50, rare:25, elite:15, fierce:7, boss:2.5, mythic:0.5 };
 const CARD_TIER_TOTAL  = Object.values(CARD_TIER_WEIGHT).reduce((a,b) => a+b, 0);
@@ -334,6 +398,58 @@ export function openChestContents(chest) {
     for (const entry of POTION_CHEST_TABLE) { r -= entry.weight; if (r <= 0) { potionId = entry.id; break; } }
     const potion = getPotion(potionId);
     return { materials: [], potions: potion ? [potion] : [], fragments: [] };
+  }
+
+  // ══ 新素材箱（2026-07-22）═══════════════════════════════
+  // 族系素材箱：只開出同家族同階級的普通素材
+  if (chest.type === "family_mat") {
+    const family = chest.family;
+    const tierIndex = chest.tierIndex;
+    if (!family || !tierIndex || !ALL_FAMILIES.includes(family)) {
+      return { materials: [], potions: [], fragments: [] };
+    }
+    const pool = EXPANSION_MATERIALS.filter(m =>
+      m.family === family && m.tierIndex === tierIndex && m.kind === "normal"
+    );
+    const count = 1 + Math.floor(Math.random() * Math.min(3, pool.length || 1));
+    const materials = [];
+    for (let i = 0; i < count; i++) {
+      if (!pool.length) break;
+      materials.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return { materials, potions: [], fragments: [] };
+  }
+
+  // 小王素材箱：跨家族混合開出該階級的小王素材（略多數量）
+  if (chest.type === "mini_boss_mat") {
+    const tierIndex = chest.tierIndex;
+    if (tierIndex == null || tierIndex < 1) return { materials: [], potions: [], fragments: [] };
+    const pool = EXPANSION_MATERIALS.filter(m =>
+      m.tierIndex === tierIndex && m.kind === "miniBoss"
+    );
+    const count = 2 + Math.floor(Math.random() * 3); // 2~4 個
+    const materials = [];
+    for (let i = 0; i < count; i++) {
+      if (!pool.length) break;
+      materials.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return { materials, potions: [], fragments: [] };
+  }
+
+  // 大王素材箱：跨家族混合開出該階級的大王素材（最多數量）
+  if (chest.type === "boss_mat") {
+    const tierIndex = chest.tierIndex;
+    if (tierIndex == null || tierIndex < 1) return { materials: [], potions: [], fragments: [] };
+    const pool = EXPANSION_MATERIALS.filter(m =>
+      m.tierIndex === tierIndex && m.kind === "boss"
+    );
+    const count = 3 + Math.floor(Math.random() * 4); // 3~6 個
+    const materials = [];
+    for (let i = 0; i < count; i++) {
+      if (!pool.length) break;
+      materials.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return { materials, potions: [], fragments: [] };
   }
 
   // 普通寶箱（wood / iron / gold / epic / mythic）
