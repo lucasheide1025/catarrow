@@ -171,13 +171,16 @@ function DropsSection({ drops, config }) {
       )}
       {config.showMaterial && drops.materials?.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
-          {drops.materials.map((m, i) => (
-            <div key={i} style={S.row}>
-              <span>{m.icon}</span>
-              <span style={S.label}>素材</span>
-              <span style={S.value}>{m.name}{(m.quantity || 1) > 1 ? ` ×${m.quantity}` : ""}</span>
-            </div>
-          ))}
+          {drops.materials.map((m, i) => {
+            const cnt = m.count ?? m.quantity ?? 1;
+            return (
+              <div key={i} style={S.row}>
+                <span>{m.icon}</span>
+                <span style={S.label}>素材</span>
+                <span style={S.value}>{m.name || m.id}{cnt > 1 ? ` ×${cnt}` : ""}</span>
+              </div>
+            );
+          })}
         </div>
       )}
       {config.showChest && drops.chestList?.length > 0 ? (

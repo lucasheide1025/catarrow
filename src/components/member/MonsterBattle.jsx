@@ -1057,10 +1057,21 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
         // 材料掉落（新手機率；學生/老手/賽事保證掉落；老手/賽事x2）
         const matMult = (mode==="veteran" || mode==="match") ? 2 : 1;
-        const mats = (mode==="novice"
+        const rawMats = (mode==="novice"
           ? rollMaterialDrops(monster)
           : rollMaterialDropsGuaranteed(monster, matMult)
         ).filter(m => !m.id?.startsWith("frag_"));
+
+        // 聚合同種類材料數量 (例如 3 份同一材料合為 count: 3)
+        const matMap = {};
+        for (const m of rawMats) {
+          if (!matMap[m.id]) {
+            matMap[m.id] = { ...m, count: 0 };
+          }
+          matMap[m.id].count += (m.count || m.quantity || 1);
+        }
+        const mats = Object.values(matMap);
+
         setDroppedMaterials(mats);
         if (mats.length > 0) {
           addMaterials(profile.id, mats).catch(() => {});
@@ -2391,10 +2402,18 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             console.warn("solo expansion reward claim deferred", error);
           }
         } else {
-          const mats = (mode === "novice"
+          const rawMats = (mode === "novice"
             ? rollMaterialDrops(monster)
             : rollMaterialDropsGuaranteed(monster, (mode === "veteran" || mode === "match") ? 2 : 1)
           ).filter(m => !m.id?.startsWith("frag_"));
+
+          const matMap = {};
+          for (const m of rawMats) {
+            if (!matMap[m.id]) matMap[m.id] = { ...m, count: 0 };
+            matMap[m.id].count += (m.count || m.quantity || 1);
+          }
+          const mats = Object.values(matMap);
+
           setDroppedMaterials(mats);
           if (mats.length > 0) addMaterials(profile.id, mats).catch(() => {});
           addCoins(profile.id, baseCoins).catch(() => {});
