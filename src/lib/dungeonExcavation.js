@@ -444,6 +444,7 @@ export async function revealCatExcavation(memberId) {
       "dungeonExcavation.catDigProgress": 0,
       "dungeonExcavation.pendingReveal": result,
       "dungeonExcavation.revealedAt": serverTimestamp(),
+      [`cats.${assignedCatId}.catXP`]: increment(150),
     }).catch(() => {});
     _excavCache.delete(memberId);
 
