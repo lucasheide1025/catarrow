@@ -1912,16 +1912,16 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <>
               {result?.defeated ? (
                 <BattleResultHeader emoji="💥" title="BOSS 擊殺！" subtitle={event.announcement || "全域廣播：FIRST KILL！"} color="amber" />
-              ) : result.playerDied ? (
+              ) : result?.playerDied ? (
                 <BattleResultHeader emoji="💀" title="陣亡…" subtitle={`你倒在了第 ${allRounds.length} 回合的反擊中`} color="red" />
               ) : (
-                <BattleResultHeader emoji="⚔️" title="出戰完成！" subtitle={`Boss 剩餘 ${result.newHP?.toLocaleString()} HP`} color="slate" />
+                <BattleResultHeader emoji="⚔️" title="出戰完成！" subtitle={`Boss 剩餘 ${result?.newHP?.toLocaleString() || '0'} HP`} color="slate" />
               )}
 
               <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1">
                 <div className="text-xs text-slate-400 font-bold mb-2">Boss 出戰報告</div>
-                <BattleStatRow icon="⚔️" label="本次總傷害" value={result.dmg?.toLocaleString()} valueColor="#fbbf24" />
-                <BattleStatRow icon="❤️" label="Boss 剩餘 HP" value={result.newHP?.toLocaleString()} valueColor="#cbd5e1" />
+                <BattleStatRow icon="⚔️" label="本次總傷害" value={result?.dmg?.toLocaleString()} valueColor="#fbbf24" />
+                <BattleStatRow icon="❤️" label="Boss 剩餘 HP" value={result?.newHP?.toLocaleString()} valueColor="#cbd5e1" />
               </div>
 
               {wbAllArrows.length > 0 && (
@@ -1929,16 +1929,14 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               )}
 
               {/* 每日出戰獎勵 */}
-              {result.dailyReward && (
+              {result?.dailyReward && (
                 <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>
-                  <BattleStatRow icon="💰" label="參與金幣" value={`+${result.dailyReward.coins}`} valueColor="#fbbf24" />
-                  {result.dailyReward.chest ? (
-                    <BattleStatRow icon="📦" label="傷害寶箱" value={result.dailyReward.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"} valueColor="#34d399" />
+                  <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>                    <BattleStatRow icon="💰" label="參與金幣" value={`+${result?.dailyReward?.coins || 0}`} valueColor="#fbbf24" />
+                  {result?.dailyReward?.chest ? (                      <BattleStatRow icon="📦" label="傷害寶箱" value={result?.dailyReward?.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"} valueColor="#34d399" />
                   ) : (
                     <div className="text-xs text-slate-500">傷害達 Boss HP 1% 可獲鐵寶箱，2.5% 可獲金寶箱</div>
                   )}
-                  <div className="text-xs text-slate-500">本次傷害佔 Boss HP {result.dailyReward.pct}%</div>
+                  <div className="text-xs text-slate-500">本次傷害佔 Boss HP {result?.dailyReward?.pct || 0}%</div>
                 </div>
               )}
 
@@ -1953,7 +1951,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 </div>
               )}
 
-              {result.defeated && (
+              {result?.defeated && (
                 <div className="w-full bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-amber-200 leading-relaxed">
                   {isGuest ? "世界王已被擊倒！體驗角色會保留參戰紀錄，但不領取正式擊殺大獎。" : "🎁 擊殺大獎已自動發放給所有參戰者！"}
                 </div>
