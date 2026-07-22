@@ -369,7 +369,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </header>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 min-h-0 overflow-y-auto no-wb-scrollbar p-4 md:p-6 space-y-5"
+      <div className="flex-1 min-h-0 overflow-y-auto no-wb-scrollbar p-4 md:p-6 space-y-5 pb-28"
         style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y", scrollbarWidth:"none" }}>
 
         {/* Boss 巨型史詩展台 */}
@@ -599,9 +599,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
       </div>
 
-      {/* 底部按鈕 */}
-      <div className="shrink-0 px-4 pt-3"
-        style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #0f172a 90%, transparent)" }}>
+      {/* 底部固定按鈕 */}
+      <div className="shrink-0 px-4 pt-3 sticky bottom-0 z-30 border-t border-slate-800/80 shadow-2xl backdrop-blur-md"
+        style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #070b16 95%, rgba(7,11,22,0.8) 100%)" }}>
         {isDefeated ? (
           <div className="space-y-2">
             {pendingEvent?.eventId === event.id && !myReward && (
