@@ -161,6 +161,14 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       @keyframes wb-screen-flash{0%,100%{opacity:0}20%{opacity:0.9}}
       @keyframes wb-death-text{0%{opacity:0;transform:scale(0.15) rotate(-18deg)}55%{transform:scale(1.08) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
       @keyframes wb-death-killer{0%{opacity:0;transform:translateY(24px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+      @keyframes wb-boss-float { 0%, 100% { transform: translateY(0px) scale(1); } 50% { transform: translateY(-8px) scale(1.02); } }
+      @keyframes wb-aura-pulse { 0%, 100% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.4), inset 0 0 15px rgba(245, 158, 11, 0.2); } 50% { box-shadow: 0 0 50px rgba(239, 68, 68, 0.8), inset 0 0 35px rgba(245, 158, 11, 0.5); } }
+      @keyframes wb-alert-flash { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.85; } }
+      @keyframes wb-btn-glow { 0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.6), 0 0 40px rgba(245, 158, 11, 0.3); } 50% { box-shadow: 0 0 35px rgba(239, 68, 68, 0.9), 0 0 60px rgba(245, 158, 11, 0.6); } }
+      .wb-boss-anim { animation: wb-boss-float 4.5s ease-in-out infinite; }
+      .wb-aura-anim { animation: wb-aura-pulse 3s infinite; }
+      .wb-alert-anim { animation: wb-alert-flash 2s ease-in-out infinite; }
+      .wb-btn-anim { animation: wb-btn-glow 2.5s infinite; }
       .no-wb-scrollbar::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
       .no-wb-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
     `;
@@ -374,10 +382,13 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y", scrollbarWidth:"none" }}>
 
         {/* Boss 巨型史詩展台 */}
-        <div className="relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/50 p-6 shadow-2xl backdrop-blur-md">
+        <div className="relative overflow-hidden rounded-3xl border border-rose-500/50 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/60 p-6 shadow-2xl backdrop-blur-md">
+          {/* 背景暴怒警報光圈 */}
+          <div className="absolute inset-0 bg-rose-600/10 pointer-events-none wb-alert-anim" />
+
           <div className="flex flex-col items-center text-center gap-4 relative z-10">
             {/* 像素圖與光環 */}
-            <div className="relative p-2 bg-rose-500/10 border border-rose-500/30 rounded-3xl shadow-inner">
+            <div className="relative p-3 bg-rose-500/10 border border-rose-500/40 rounded-3xl wb-aura-anim wb-boss-anim">
               <WorldBossSVG
                 bossKey={event.bossKey}
                 currentHP={bossCurrentHP}
@@ -389,8 +400,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 const ph = getBossPhase(bossCurrentHP, bossMaxHP);
                 const pl = PHASE_LABELS[ph];
                 return (
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-xs font-black px-3 py-1 rounded-full border shadow-xl backdrop-blur-md"
-                    style={{ color: pl.color, borderColor: pl.color, background: "rgba(15,23,42,0.9)" }}>
+                  <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-xs font-black px-3.5 py-1 rounded-full border shadow-2xl backdrop-blur-md flex items-center gap-1.5"
+                    style={{ color: pl.color, borderColor: pl.color, background: "rgba(7,11,22,0.95)" }}>
+                    <span className="w-2 h-2 rounded-full animate-ping" style={{ background: pl.color }} />
                     {pl.label}
                   </div>
                 );
@@ -621,9 +633,9 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           <button
             onClick={() => { if (attackedToday) return; sfxTap(); setInBattle(true); }}
             disabled={attackedToday}
-            className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-xl transition-all active:scale-95 disabled:opacity-40"
+            className={`w-full py-4 rounded-2xl font-black text-lg text-white shadow-2xl transition-all active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 border border-rose-400/30 ${!attackedToday ? "wb-btn-anim" : ""}`}
             style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
-            {attackedToday ? "✓ 今日已出戰" : "⚔️ 進入戰鬥"}
+            <span>⚔️</span> {attackedToday ? "✓ 今日已出戰" : "進入討伐戰鬥"}
           </button>
           {pendingEvent && !myReward && event?.id !== pendingEvent.eventId && <button onClick={() => claimPendingReward(pendingEvent.eventId)} style={{flex:"0 0 42%",padding:"10px 6px",border:0,borderRadius:12,background:"#fbbf24",color:"#422006",fontWeight:900,fontSize:11,whiteSpace:"nowrap"}}>🎁 上次獎勵</button>}
           </div>
