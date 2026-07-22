@@ -398,9 +398,9 @@ export default function DungeonExcavationTab({ profile }) {
             <div className="grid grid-cols-1 gap-2.5">
               {Object.values(CAT_DIG_SPECIALTIES).map(cat => {
                 const isSelected = assignedCatId === cat.id;
-                // 檢查是否正處於遠征中
+                // 檢查是否正處於遠征中（加強安全防護 e?.catId 防止 null 崩潰）
                 const activeExpeditions = profile?.expeditions || {};
-                const inExpedition = Object.values(activeExpeditions).some(e => e.catId === cat.id);
+                const inExpedition = Object.values(activeExpeditions).some(e => e && e.catId === cat.id);
 
                 return (
                   <button

@@ -2317,81 +2317,86 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
 
   async function handleSave(){
     setSaving(true);
-    const fmt=TARGET_FORMATS.find(f=>f.id===form.targetFormat)||TARGET_FORMATS[0];
-    const stats=calcStats(finishedRounds);
+    try {
+      const fmt=TARGET_FORMATS.find(f=>f.id===form.targetFormat)||TARGET_FORMATS[0];
+      const stats=calcStats(finishedRounds);
 
-    // 計算今日舊箭數（儲存前）
-    const todayStr=form.date || today();
-    const oldTodayArrows=logs
-      .filter(l=>l.date===todayStr)
-      .reduce((s,l)=>s+(l.totalArrows||0),0);
+      // 計算今日舊箭數（儲存前）
+      const todayStr=form.date || today();
+      const oldTodayArrows=logs
+        .filter(l=>l.date===todayStr)
+        .reduce((s,l)=>s+(l.totalArrows||0),0);
 
-    const practiceSessionId = `practice_${profile.id}_${Date.now()}`;
-    const practicePayload = {
-      date:form.date, bowType:form.bowType, distance:form.distance,
-      grantProgress:!isGuestMode,
-      targetFormat:form.targetFormat, arrowCount:form.arrowCount, roundCount:form.roundCount,
-      maxScore:fmt.max, hasMiss:true, rounds:finishedRounds,
-      total:stats.total, miss:stats.misses, totalArrows:stats.arrows,
-      avgPerArrow:stats.avgPerArrow,
-      avgPerRound:finishedRounds.length?+(stats.total/finishedRounds.length).toFixed(2):0,
-      note:form.note,
-      targetSpec:{
-        faceSizeCm:fmt.faceSizeCm || null,
-        scoring:`${fmt.min}-${fmt.max}`,
-        layout:fmt.layout || "single",
-      },
-      competition:(form.competitionMode || "off") === "off" ? null : {
-        ruleset:form.competitionMode,
-        secondsPerArrow:form.competitionMode === "wa40" ? 40 : 30,
-        preparationSeconds:10,
-        assistedCues:form.assistedCues !== false,
-      },
-      ...(sessionDetails?.roundTiming?.length ? { roundTiming:sessionDetails.roundTiming } : {}),
-      ...(sessionDetails?.match ? { match:sessionDetails.match } : {}),
-      ...(arrowPositions.length>0 ? { arrowPositions } : {}),
-    };
-    await addPracticeLog(profile.id, practicePayload, profile.id);
-    // The legacy log is the immediate UI confirmation path. The normalized
-    // session writes 1 parent + every completed end, so do it reliably in the
-    // background rather than holding a 120-arrow student on this screen.
-    finalizePracticeShootingSession({
-      sessionId:practiceSessionId,
-      memberId:profile.id,
-      rounds:finishedRounds,
-      arrowPositions,
-      shootingProfile:{ bowType:form.bowType, bowId:form.equipSetId, distance:form.distance },
-      targetFormat:form.targetFormat,
-      arrowsPerEnd:form.arrowCount,
-      timingMode:form.competitionMode || "off",
-    }).catch(error => console.warn("practice shooting session dual-write failed", error));
+      const practiceSessionId = `practice_${profile.id}_${Date.now()}`;
+      const practicePayload = {
+        date:form.date, bowType:form.bowType, distance:form.distance,
+        grantProgress:!isGuestMode,
+        targetFormat:form.targetFormat, arrowCount:form.arrowCount, roundCount:form.roundCount,
+        maxScore:fmt.max, hasMiss:true, rounds:finishedRounds,
+        total:stats.total, miss:stats.misses, totalArrows:stats.arrows,
+        avgPerArrow:stats.avgPerArrow,
+        avgPerRound:finishedRounds.length?+(stats.total/finishedRounds.length).toFixed(2):0,
+        note:form.note,
+        targetSpec:{
+          faceSizeCm:fmt.faceSizeCm || null,
+          scoring:`${fmt.min}-${fmt.max}`,
+          layout:fmt.layout || "single",
+        },
+        competition:(form.competitionMode || "off") === "off" ? null : {
+          ruleset:form.competitionMode,
+          secondsPerArrow:form.competitionMode === "wa40" ? 40 : 30,
+          preparationSeconds:10,
+          assistedCues:form.assistedCues !== false,
+        },
+        ...(sessionDetails?.roundTiming?.length ? { roundTiming:sessionDetails.roundTiming } : {}),
+        ...(sessionDetails?.match ? { match:sessionDetails.match } : {}),
+        ...(arrowPositions.length>0 ? { arrowPositions } : {}),
+      };
+      await addPracticeLog(profile.id, practicePayload, profile.id);
 
-    toast("練習紀錄已儲存 ✓");
-    clearPracticeRecovery(profile.id);
-    setSaving(false); setPhase("setup"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null);
-    setForm(current => ({ ...current, sessionDetails:null }));
+      finalizePracticeShootingSession({
+        sessionId:practiceSessionId,
+        memberId:profile.id,
+        rounds:finishedRounds,
+        arrowPositions,
+        shootingProfile:{ bowType:form.bowType, bowId:form.equipSetId, distance:form.distance },
+        targetFormat:form.targetFormat,
+        arrowsPerEnd:form.arrowCount,
+        timingMode:form.competitionMode || "off",
+      }).catch(error => console.warn("practice shooting session dual-write failed", error));
 
-    // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
-    const arrowCount = stats.arrows || 0;
+      toast("練習紀錄已儲存 ✓");
+      clearPracticeRecovery(profile.id);
+      setPhase("setup"); setFinishedRounds([]); setArrowPositions([]); setSessionDetails(null);
+      setForm(current => ({ ...current, sessionDetails:null }));
 
-    // 累加今日與總發射箭數
-    if (!isGuestMode && arrowCount > 0) addRoundArrows(profile.id, arrowCount).catch(() => {});
+      // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
+      const arrowCount = stats.arrows || 0;
 
-    // 射手 XP（最低速率：每發箭 1 XP）
-    if (!isGuestMode && arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});
-    // 貓貓 XP（每次儲存 2 XP）
-    const _prCatId = profile?.equippedCat?.catId;
-    if (!isGuestMode && _prCatId) addCatXP(profile.id, _prCatId, CAT_PRACTICE_XP).catch(() => {});
+      // 累加今日與總發射箭數
+      if (!isGuestMode && arrowCount > 0) addRoundArrows(profile.id, arrowCount).catch(() => {});
 
-    // 里程碑計算（下課後不觸發，避免重複結算）
-    const newTodayArrows=oldTodayArrows+arrowCount;
-    if (!isGuestMode && !classEndedRef.current) {
-      const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
-      if(milestones.length>0){
-        grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});
-        const queue=milestones.map(ms=>({ ms, rewards: getRewardsForMilestone(ms) }));
-        setMilestoneQueue(queue);
+      // 射手 XP（最低速率：每發箭 1 XP）
+      if (!isGuestMode && arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});
+      // 貓貓 XP（每次儲存 2 XP）
+      const _prCatId = profile?.equippedCat?.catId;
+      if (!isGuestMode && _prCatId) addCatXP(profile.id, _prCatId, CAT_PRACTICE_XP).catch(() => {});
+
+      // 里程碑計算（下課後不觸發，避免重複結算）
+      const newTodayArrows=oldTodayArrows+arrowCount;
+      if (!isGuestMode && !classEndedRef.current) {
+        const milestones=getMilestonesReached(oldTodayArrows, newTodayArrows);
+        if(milestones.length>0){
+          grantArrowMilestoneRewards(profile.id, milestones).catch(()=>{});
+          const queue=milestones.map(ms=>({ ms, rewards: getRewardsForMilestone(ms) }));
+          setMilestoneQueue(queue);
+        }
       }
+    } catch (err) {
+      console.error("儲存自主練習失敗:", err);
+      alert(`儲存失敗：${err?.message || "請檢查網路或權限後重試"}`);
+    } finally {
+      setSaving(false);
     }
   }
 

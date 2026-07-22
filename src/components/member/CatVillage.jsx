@@ -48,56 +48,138 @@ const C = {
 };
 
 const CAT_DAILY_QUOTES = {
-  daming:   ["今天要好好守護這個村莊！","你放心，老大我看著呢。","別偷懶，繼續採集！","村莊就交給我了，你去打怪吧。"],
-  gege:     ["早安！今天也一起加油喔！","有我在，什麼都不怕。","你最近進步很多喔。","來，先深呼吸，再出發。"],
-  meimei:   ["今天也有很多箭要射！","快快快，趕快去採集！","我剛剛看到一個大寶箱！","今天的天氣超適合升級！"],
-  niuniu:   ["規則就是規則，不能破例。","升級需求都確認過了嗎？","按照計畫走，不要亂。","效率，效率，還是效率。"],
-  haji:     ["……（瞌睡中）zZ","夢裡有好多魚乾……","等等，我再睡一下下。","箭場的風，最適合午睡了。"],
-  baobao:   ["你回來啦！我好想你！","弓袋裡好暖，能抱一下嗎？","今天要一起去採集嗎？","村莊有我陪，不孤單喔！"],
-  youyou:   ["慢慢走，才能看清楚路。","我看過了，這棟建築還能再升。","一步一步，終會到達頂點。","不用急，今天的任務剛剛好。"],
-  xiaoan:   ["（有一點點緊張……）","我、我會努力的！我不怕！","嚇了一跳，但還是繼續吧！","只要一起，就不害怕了。"],
-  diandian: ["村莊的靈氣今天特別旺……","我看見了什麼，但說不出口。","箭露在流動，感覺到了嗎？","黑夜裡，最清楚前路。"],
+  daming: [
+    "今天的村莊由老大我親自巡視，誰敢偷懶？",
+    "你放心去冒險，後方的後勤與村莊，老大我看著呢。",
+    "別偷懶，採集與升級都要按部就班！",
+    "村莊就交給我了，遇到硬骨頭怪物隨時叫我！",
+    "這座村莊每棵樹、每塊石頭，都是大家一起建起來的霸氣領域！",
+    "（滿意地看著村莊）哼，今天大家幹得還不錯！",
+  ],
+  gege: [
+    "早安！今天也一起溫柔且充滿力量地加油喔！",
+    "有我在，任何困難我們都能一步步解決。",
+    "你最近的進步大家都看在眼裡呢，真為你驕傲。",
+    "來，先深呼吸，調整好步調再出發吧。",
+    "不急不急，累了隨時可以回村莊喝口溫水歇歇腳。",
+    "貓村的大家都很喜歡你，加油！",
+  ],
+  meimei: [
+    "今天也有超多箭要射！快快快，衝呀！",
+    "快趕快去採集！我感覺今天大豐收機率超高！",
+    "哇！你剛剛看到那個飛過去的大寶箱了嗎？",
+    "今天的天氣太棒了，完全是升級建築的大吉日！",
+    "箭矢飛過去的聲音好聽死了！我們再射一輪吧！",
+    "快看快看！我又發現了一個好地方！",
+  ],
+  niuniu: [
+    "規則就是規則，建築升級與資源調配不能有半點誤差。",
+    "升級需求都仔細核對過了麼？沒有漏看材料吧？",
+    "按照既定計畫走，效率才是最優解。",
+    "一板一眼不是刻板，是確保全村萬無一失的標準。",
+    "數據顯示，我們現在的採集與生產效率正穩定上升。",
+    "請務必保持這個節奏，不可掉以輕心。",
+  ],
+  haji: [
+    "……（眼睛半睜）zZ 夢裡剛好夢到香噴噴的烤魚乾……",
+    "喵……箭場的微風暖洋洋的，最適合趴在靶架下打盹了……",
+    "等等……讓我再瞇五分鐘，就五分鐘……zZ",
+    "（小聲呼嚕）喵嗚……你在這裡啊……真安心……",
+    "天上的雲朵……看起來好像一團巨大的棉花糖貓草……",
+    "ふ啊……今天也是安靜又舒服的一天呢……",
+  ],
+  baobao: [
+    "你回來啦！我好想你好想你！快摸摸我！",
+    "弓袋裡又暖又軟，能讓我進去抱著睡一下嗎？",
+    "今天要去哪裡採集？帶我一起去好不好？",
+    "無論去哪裡冒險，貓村都有寶寶一直在等著你回來喔！",
+    "（蹭蹭你的手）今天辛苦了！有我是不是很治癒呀？",
+    "喵嗚～不管發生什麼事，我最喜歡你了！",
+  ],
+  youyou: [
+    "慢慢走，才能看清楚前方的路與風景。",
+    "我看過了，這棟建築的氣場正旺，還能再升一層。",
+    "一步一個腳印，終會到達最頂峰。",
+    "不用急躁，今天的任務量剛剛好，時間很充裕。",
+    "眼神放平，呼吸放緩，勝利自然會來到。",
+    "貓村的歷史，就是這樣一磚一瓦積累起來的。",
+  ],
+  xiaoan: [
+    "（有一點點緊張小聲說）我……我會努力的！我不怕！",
+    "剛、剛才有點被嚇到發抖，但我絕對不會退縮的！",
+    "只要大家在一起，再危險的地方我也可以鼓起勇氣！",
+    "爪子雖然在抖，但我會抓緊弓箭的！",
+    "謝、謝謝你一直照顧我！我會成為你的驕傲！",
+    "（加油打氣中）呼……吸……小安可以的！",
+  ],
+  diandian: [
+    "村莊周圍的靈氣今天特別旺盛……感覺到了嗎？",
+    "我看見了隱藏在風中的軌跡，但時機未到，尚不可言說。",
+    "箭露的流動與自然的韻律在共鳴……",
+    "黑夜越深沉，前方微光的軌跡就越清晰透徹。",
+    "萬物皆有靈，連每一支飛箭都有牠自己的靈魂。",
+    "（默默凝視天空）神秘的力量在守護著這片土地……",
+  ],
 };
 
 // ── 秘書貓 Header ─────────────────────────────────────────────
 function SecretaryCat({ cat }) {
   const catInfo = cat ? CATS[cat.catId] : null;
+  const [quoteIdx, setQuoteIdx] = useState(0);
+  const [isClicking, setIsClicking] = useState(false);
+
   if (!catInfo) return null;
   const bondLv = getBondLevel(cat.bond || 0);
   const quotes = CAT_DAILY_QUOTES[cat.catId] || ["今天也要加油喔！"];
-  const quote  = quotes[Math.floor(Date.now() / 86400000) % quotes.length];
+  const currentQuote = quotes[quoteIdx % quotes.length];
+
+  const handleCatClick = () => {
+    sfxTap();
+    setIsClicking(true);
+    setTimeout(() => setIsClicking(false), 200);
+    setQuoteIdx(prev => (prev + 1) % quotes.length);
+  };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5"
-      style={{ background: "rgba(255,255,255,0.72)", borderBottom: `1px solid ${C.border}` }}>
-      {/* 貓咪頭像 */}
-      <div style={{ position:"relative", width:46, height:46, flexShrink:0 }}>
+    <div className="flex items-center gap-3 px-4 py-3 shadow-sm transition-all"
+      style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.92), rgba(253,246,236,0.85))", borderBottom: `1px solid ${C.border}` }}>
+      {/* 貓咪頭像 (點擊可互動) */}
+      <div onClick={handleCatClick}
+        title="點擊與秘書貓互動"
+        className="cursor-pointer active:scale-90 transition-transform"
+        style={{ position:"relative", width:50, height:50, flexShrink:0 }}>
         <img
           src={`/cats/portraits/${cat.catId}.webp`}
           alt={catInfo.name}
-          style={{ width:46, height:46, borderRadius:"50%", objectFit:"cover",
-            border:`2px solid ${C.sage}`, background: catInfo.palette?.light || "#f5e6d0" }}
+          style={{ width:50, height:50, borderRadius:"50%", objectFit:"cover",
+            border:`2.5px solid ${C.sage}`, background: catInfo.palette?.light || "#f5e6d0",
+            boxShadow: isClicking ? "0 0 12px rgba(107,142,94,0.6)" : "0 2px 6px rgba(0,0,0,0.1)" }}
           onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
         />
-        <div style={{ display:"none", width:46, height:46, borderRadius:"50%",
+        <div style={{ display:"none", width:50, height:50, borderRadius:"50%",
           background: catInfo.palette?.light || "#f5e6d0",
-          alignItems:"center", justifyContent:"center", fontSize:22,
-          border:`2px solid ${C.sage}` }}>🐱</div>
+          alignItems:"center", justifyContent:"center", fontSize:24,
+          border:`2.5px solid ${C.sage}` }}>🐱</div>
         <div style={{
-          position:"absolute", bottom:-3, right:-3,
-          background: C.sage, borderRadius:8, padding:"1px 5px",
+          position:"absolute", bottom:-2, right:-2,
+          background: C.sage, borderRadius:10, padding:"1px 6px",
           fontSize:9, fontWeight:900, color:"white",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)"
         }}>Lv.{bondLv}</div>
       </div>
       {/* 文字 */}
-      <div className="flex-1 min-w-0">
-        <div className="font-black text-[11px]" style={{ color: C.muted }}>秘書貓</div>
-        <div className="font-black text-sm leading-tight" style={{ color: C.brown }}>{catInfo.name}</div>
+      <div className="shrink-0">
+        <div className="font-black text-[10px] uppercase tracking-wider" style={{ color: C.muted }}>秘書貓夥伴</div>
+        <div className="font-black text-sm leading-tight flex items-center gap-1" style={{ color: C.brown }}>
+          <span>{catInfo.name}</span>
+          <span className="text-[10px] text-emerald-600 font-normal">🐾</span>
+        </div>
       </div>
-      {/* 台詞氣泡 */}
-      <div className="flex-1 rounded-2xl px-3 py-2 text-[11px] italic leading-snug"
-        style={{ background:"rgba(255,255,255,0.85)", border:`1px solid ${C.border}`, color: C.mid, maxWidth:160 }}>
-        「{quote}」
+      {/* 台詞氣泡 (點擊可切換對話) */}
+      <div onClick={handleCatClick}
+        className="flex-1 rounded-2xl px-3 py-2 text-[11px] leading-snug cursor-pointer hover:bg-white transition-all shadow-sm active:scale-[0.99]"
+        style={{ background:"rgba(255,255,255,0.9)", border:`1.5px solid ${C.border}`, color: C.brown, minHeight: 40, display:"flex", alignItems:"center" }}>
+        <span>「{currentQuote}」</span>
       </div>
     </div>
   );
@@ -160,12 +242,14 @@ function PanoramaView({ villageLevel, displayLv, memberId }) {
   }
 
   return (
-    <div className="px-4 pt-4">
-      <div style={{
-        width:"100%", aspectRatio:"16 / 9", position:"relative", overflow:"hidden",
-        borderRadius:20, border:`1px solid ${C.border}`, boxShadow:C.shadow,
-        background:"#EDE0CE",
-      }}>
+    <div className="px-4 pt-3">
+      <div className="group relative w-full overflow-hidden rounded-3xl transition-all duration-300"
+        style={{
+          aspectRatio:"16 / 9",
+          border:`2px solid ${C.border}`,
+          boxShadow: "0 8px 24px rgba(92, 61, 46, 0.18)",
+          background:"#EDE0CE",
+        }}>
         <img
           src={imgSrc}
           alt={`村莊 Lv${showLv}`}
@@ -173,6 +257,13 @@ function PanoramaView({ villageLevel, displayLv, memberId }) {
           style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
           onError={() => { setHasError(true); }}
         />
+
+        {/* 沉浸光效 Overlay：暖陽晨光與頂部暗度漸層 */}
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          background: "linear-gradient(180deg, rgba(60,35,15,0.4) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.15) 100%), linear-gradient(45deg, rgba(251,191,36,0.1) 0%, transparent 60%)"
+        }} />
+
         <LevelBadge lv={showLv} actualLv={actualLv} onClick={() => setShowPicker(p => !p)} />
 
         {/* 等級切換器 */}
@@ -305,43 +396,80 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
 
   return (
     <>
-      <div className="px-4 py-3 flex items-center gap-3"
-        style={{ background: "rgba(255,255,255,0.6)", borderBottom: `1px solid ${C.border}` }}>
-        <div className="flex items-center gap-2 flex-1">
-          <img src="/ui/village/resource-arrowdew.webp" alt="箭露"
-            style={{ width: 22, height: 22, mixBlendMode: "multiply", objectFit: "contain" }}
-            onError={e => { e.target.style.display="none"; }} />
+      <div className="px-4 py-3 flex items-center justify-between gap-3 shadow-inner"
+        style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.85), rgba(253,246,236,0.95))", borderBottom: `1px solid ${C.border}` }}>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm" style={{ background:"rgba(107,142,94,0.15)", border:"1px solid rgba(107,142,94,0.3)" }}>
+            <span className="text-xl">💧</span>
+          </div>
           <div>
-            <div className="font-black text-sm" style={{ color: C.brown }}>{arrowdew.toLocaleString()}</div>
-            <div className="text-[10px]" style={{ color: C.muted }}>箭露</div>
+            <div className="font-black text-base leading-none" style={{ color: C.brown }}>{arrowdew.toLocaleString()}</div>
+            <div className="text-[10px] font-bold mt-0.5" style={{ color: C.muted }}>箭露總額</div>
           </div>
           {hasPending && pendingArrow > 0 && (
-            <div className="text-xs font-bold" style={{ color: C.sage }}>+{pendingArrow.toLocaleString()}</div>
+            <div className="text-xs font-black px-2 py-0.5 rounded-full animate-bounce" style={{ background: "rgba(34,197,94,0.15)", color: "#166534" }}>
+              +{pendingArrow.toLocaleString()}
+            </div>
           )}
         </div>
+
         <button
           onClick={onCollect}
           disabled={collecting || !hasPending}
-          className="px-4 py-2 rounded-xl font-black text-sm transition-all active:scale-95"
+          className={`px-5 py-2.5 rounded-2xl font-black text-sm transition-all active:scale-95 flex items-center gap-1.5 shrink-0 ${hasPending ? "animate-pulse shadow-md" : ""}`}
           style={{
             background: hasPending
-              ? "linear-gradient(135deg,#7CBF70,#5A9E50)"
+              ? "linear-gradient(135deg,#5A9E50,#3D7834)"
               : C.lockBd,
             color: hasPending ? "white" : C.muted,
             cursor: hasPending ? "pointer" : "default",
-            boxShadow: hasPending ? "0 2px 6px rgba(90,158,80,0.35)" : "none",
+            boxShadow: hasPending ? "0 4px 14px rgba(90,158,80,0.4)" : "none",
+            border: hasPending ? "1px solid rgba(255,255,255,0.4)" : "none",
           }}>
-          {collecting ? "採集中…" : hasPending ? "✦ 採集" : (timeStr ? `${timeStr}後` : "已採集")}
+          <span>✦</span>
+          <span>{collecting ? "採集中…" : hasPending ? "一鍵採集" : (timeStr ? `${timeStr}後` : "已採集")}</span>
         </button>
       </div>
-      <div className="px-4 py-2.5" style={{ background:"rgba(255,255,255,0.35)", borderBottom:`1px solid ${C.border}` }}>
-        <div className="flex justify-between gap-3 text-[10px] font-bold" style={{ color:C.mid }}>
-          <span>已累積：{elapsedStr}</span>
-          <span>距離滿 {MAX_COLLECT_HOURS} 小時：{timeStr || "已滿"}</span>
+      <div className="px-4 py-3" style={{ background:"rgba(255,255,255,0.45)", borderBottom:`1px solid ${C.border}` }}>
+        {/* 時間文字標示 */}
+        <div className="flex justify-between gap-3 text-xs font-bold mb-1.5" style={{ color: C.brown }}>
+          <span className="flex items-center gap-1">
+            <span>⏱️ 已累積：</span>
+            <span className="font-black text-emerald-700">{elapsedStr}</span>
+          </span>
+          <span className="text-[11px]" style={{ color: C.mid }}>
+            {timeStr ? `距離滿容量 (${MAX_COLLECT_HOURS}h)：還剩 ${timeStr}` : "⚡ 產能已滿 (24h)"}
+          </span>
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+
+        {/* 24 小時累積進度條 */}
+        {(() => {
+          const maxSec = MAX_COLLECT_HOURS * 3600;
+          const pct = Math.min(100, Math.max(0, Math.round((elapsedSec / maxSec) * 100)));
+          const isFull = pct >= 100;
+          return (
+            <div className="space-y-1 my-1.5">
+              <div className="h-2.5 w-full rounded-full overflow-hidden p-0.5" style={{ background: "rgba(0,0,0,0.08)", border: "1px solid rgba(107,142,94,0.2)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    background: isFull ? "linear-gradient(90deg, #F59E0B, #EF4444)" : "linear-gradient(90deg, #6B8E5E, #10B981)",
+                    boxShadow: isFull ? "0 0 8px rgba(245,158,11,0.6)" : "0 0 6px rgba(16,185,129,0.4)",
+                  }}
+                />
+              </div>
+              <div className="flex justify-end text-[10px] font-black" style={{ color: isFull ? "#D97706" : C.sage }}>
+                {isFull ? "容量 100% (請盡快採集)" : `累積容量 ${pct}%`}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 正在累積材料標籤 */}
+        <div className="mt-1 flex flex-wrap gap-1.5">
           {pendingItems.length ? pendingItems.map(item => (
-            <span key={item.key} className="rounded-full px-2 py-1 text-[10px] font-black" style={{ background:"rgba(107,142,94,.13)", color:C.sage, border:"1px solid rgba(107,142,94,.22)" }}>
+            <span key={item.key} className="rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background:"rgba(107,142,94,.13)", color:C.sage, border:"1px solid rgba(107,142,94,.22)" }}>
               {item.label} +{item.amount}
             </span>
           )) : <span className="text-[10px]" style={{ color:C.muted }}>材料正在累積中…</span>}
@@ -419,10 +547,9 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
   );
 }
 
-function BuildingCard({ buildingId, level, resources, onClick, village }) {
+function BuildingCard({ buildingId, level, resources, onClick, village, pendingCount }) {
   const b     = BUILDINGS[buildingId];
   const stage = getBuildingStage(level);
-  const rate  = getProductionRate(buildingId, level);
   const check = canUpgrade(buildingId, { [buildingId]: level }, resources);
   const maxed = level >= 20;
 
@@ -433,33 +560,72 @@ function BuildingCard({ buildingId, level, resources, onClick, village }) {
   return (
     <button
       onClick={onClick}
-      className="flex min-h-0 flex-col overflow-hidden rounded-2xl text-left transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-700"
-      style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
-      <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "#F5EBD8" }}>
+      className={`group flex min-h-0 flex-col overflow-hidden rounded-2xl text-left transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-700 relative ${check.ok ? "animate-pulse" : ""}`}
+      style={{
+        background: "linear-gradient(180deg, #FFFFFF 0%, #FDF6EC 100%)",
+        border: check.ok ? `2px solid #F59E0B` : `1.5px solid ${C.border}`,
+        boxShadow: check.ok ? "0 6px 20px rgba(245,158,11,0.3)" : "0 4px 12px rgba(92,61,46,0.08)"
+      }}>
+      {/* 建築圖片（乾淨原彩呈現，保留 hover 放大動畫） */}
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4/3", background: "#F5EBD8", overflow: "hidden" }}>
         <img
           src={imgSrc} alt={b.name}
           width="320" height="240" loading="lazy"
+          className="group-hover:scale-105 transition-transform duration-500"
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           onError={e => {
             e.target.style.display = "none";
             e.target.nextSibling.style.display = "flex";
           }}
         />
+
         <div style={{
           display: "none", position: "absolute", inset: 0,
           alignItems: "center", justifyContent: "center", fontSize: "36px",
         }}>{b.emoji}</div>
+
+        {/* 等級標籤 */}
         <div style={{
-          position: "absolute", top: 5, right: 5,
-          background: "rgba(60,35,15,0.60)", borderRadius: "8px",
-          padding: "1px 7px", color: "#FFF8F0", fontWeight: 900, fontSize: "10px",
-        }}>Lv.{level}</div>
+          position: "absolute", top: 6, right: 6,
+          background: "rgba(35, 20, 10, 0.75)", backdropFilter: "blur(4px)", borderRadius: "8px",
+          padding: "2px 8px", color: "#FFF8F0", fontWeight: 900, fontSize: "11px",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)"
+        }}>Lv.{level} (S{stage})</div>
+
+        {/* 可升級標籤 */}
+        {check.ok && (
+          <div style={{
+            position: "absolute", top: 6, left: 6,
+            background: "linear-gradient(135deg, #F59E0B, #EF4444)",
+            borderRadius: "8px", padding: "2px 8px", color: "#FFF",
+            fontWeight: 900, fontSize: "10px", boxShadow: "0 2px 6px rgba(245,158,11,0.5)",
+            border: "1px solid rgba(255,255,255,0.3)"
+          }}>
+            ⚡ 可升級
+          </div>
+        )}
       </div>
-      <div className="p-2.5">
-        <div className="text-sm font-black leading-tight" style={{ color: C.brown }}>{b.name}</div>
-        <div className="mt-1 text-xs" style={{ color: C.mid }}>{b.resourceName}</div>
-        <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} />
-        <div className="mt-2 text-xs font-bold" style={{ color: statusColor }}>● {statusText}</div>
+
+      {/* 文字說明區域 */}
+      <div className="p-3 flex-1 flex flex-col justify-between">
+        <div>
+          <div className="text-sm font-black leading-tight flex items-center gap-1.5" style={{ color: C.brown }}>
+            <span>{b.emoji}</span>
+            <span>{b.name}</span>
+          </div>
+          <div className="mt-0.5 text-xs font-bold" style={{ color: C.mid }}>{b.resourceName}</div>
+        </div>
+
+        <div className="mt-2 pt-2 border-t border-amber-900/10 flex items-center justify-between">
+          <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} />
+          <div className="text-[11px] font-black px-2 py-0.5 rounded-full"
+            style={{
+              background: maxed ? "rgba(0,0,0,0.05)" : check.ok ? "rgba(34,197,94,0.12)" : "rgba(212,147,58,0.12)",
+              color: statusColor
+            }}>
+            ● {statusText}
+          </div>
+        </div>
       </div>
     </button>
   );
@@ -1121,89 +1287,99 @@ const RES_EMOJI   = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', drie
 
 function ResourceRow({ resources, gachaCoins }) {
   const [showAll, setShowAll] = useState(false);
-  const hasTiered = TIERED_LIST.some(res =>
-    [1,2,3,4,5].some(t => (resources?.[`${res}_t${t}`] || 0) > 0)
-  );
+  const [activeTierTab, setActiveTierTab] = useState(1);
+
+  const TIER_BG = {
+    1: { bg: "rgba(120, 80, 50, 0.08)", color: "#784f32", border: "rgba(120, 80, 50, 0.2)" },
+    2: { bg: "rgba(34, 197, 94, 0.08)", color: "#166534", border: "rgba(34, 197, 94, 0.2)" },
+    3: { bg: "rgba(59, 130, 246, 0.08)", color: "#1e40af", border: "rgba(59, 130, 246, 0.2)" },
+    4: { bg: "rgba(147, 51, 234, 0.08)", color: "#6b21a8", border: "rgba(147, 51, 234, 0.2)" },
+    5: { bg: "rgba(245, 158, 11, 0.12)", color: "#b45309", border: "rgba(245, 158, 11, 0.3)" },
+  };
+
   return (
-    <section className="mx-4 mb-3 rounded-2xl px-4 py-3"
+    <section className="mx-4 mb-3 rounded-2xl px-4 py-3 shadow-sm"
       style={{ background:C.card, border:`1px solid ${C.border}`, boxShadow:C.shadow }}>
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-black" style={{ color:C.brown }}>村莊資源</h2>
+        <h2 className="text-sm font-black flex items-center gap-1.5" style={{ color:C.brown }}>
+          <span>📦</span> 村莊資源庫
+        </h2>
         <button type="button" onClick={() => setShowAll(value => !value)}
           aria-expanded={showAll}
-          className="min-h-10 rounded-xl px-3 text-xs font-black focus-visible:ring-2 focus-visible:ring-emerald-600"
-          style={{ background:"rgba(107,142,94,0.12)", color:C.sage }}>
-          {showAll ? "收合資源" : "查看全部"}
+          className="min-h-9 rounded-xl px-3 text-xs font-black transition-all focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-95"
+          style={{ background: showAll ? C.sage : "rgba(107,142,94,0.12)", color: showAll ? "#FFF" : C.sage }}>
+          {showAll ? "收合資源庫" : "查看 T1~T5 分級資源"}
         </button>
       </div>
-      {/* 特殊資源（扭蛋幣 + 貓草藥水 + 貓毛） */}
-      <div className="flex gap-3 mb-2 flex-wrap">
-        {/* 扭蛋幣 */}
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
-          <span style={{ fontSize:18 }}>🎰</span>
-          <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(gachaCoins || 0)}</span>
+
+      {/* 常駐核心資源（扭蛋幣 + 貓草藥水 + 貓毛） */}
+      <div className="flex gap-2 mb-2 flex-wrap">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl" style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.3)" }}>
+          <span style={{ fontSize:16 }}>🎰</span>
+          <span className="font-black text-xs" style={{ color: C.brown }}>{Math.floor(gachaCoins || 0)}</span>
           <span className="text-[10px]" style={{ color: C.muted }}>扭蛋幣</span>
         </div>
-        {/* 貓草藥水：永遠顯示 */}
-        {[1,2,3,4,5].some(t => (resources?.[`potion_t${t}`] || 0) > 0) ? (
-          [1,2,3,4,5].filter(t => (resources?.[`potion_t${t}`] || 0) > 0).map(t => (
-            <div key={t} className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
-              <span style={{ fontSize:18 }}>🍵</span>
-              <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(resources?.[`potion_t${t}`] || 0)}</span>
-              <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水 T{t}</span>
-            </div>
-          ))
-        ) : (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)", opacity:0.5 }}>
-            <span style={{ fontSize:18 }}>🍵</span>
-            <span className="font-black text-sm" style={{ color: C.muted }}>0</span>
-            <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水</span>
-          </div>
-        )}
-        {/* 貓毛：永遠顯示 */}
-        {[1,2,3,4,5].some(t => (resources?.[`fur_t${t}`] || 0) > 0) ? (
-          [1,2,3,4,5].filter(t => (resources?.[`fur_t${t}`] || 0) > 0).map(t => (
-            <div key={t} className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)" }}>
-              <span style={{ fontSize:18 }}>🐾</span>
-              <span className="font-black text-sm" style={{ color: C.brown }}>{Math.floor(resources?.[`fur_t${t}`] || 0)}</span>
-              <span className="text-[10px]" style={{ color: C.muted }}>貓毛 T{t}</span>
-            </div>
-          ))
-        ) : (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background:"rgba(0,0,0,0.04)", opacity:0.5 }}>
-            <span style={{ fontSize:18 }}>🐾</span>
-            <span className="font-black text-sm" style={{ color: C.muted }}>0</span>
-            <span className="text-[10px]" style={{ color: C.muted }}>貓毛</span>
-          </div>
-        )}
-      </div>
-      {/* 分 tier 一般材料 */}
-      {showAll && (hasTiered ? (
-        <div className="flex flex-col gap-1.5">
-          {TIERED_LIST.filter(r => !ALWAYS_SHOW.has(r)).map(res => {
-            const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) })).filter(x => x.count > 0);
-            if (!tiers.length) return null;
-            return (
-              <div key={res} className="flex items-center gap-2">
-                <div className="flex items-center gap-1 shrink-0" style={{ width: 68 }}>
-                  <span style={{ fontSize:15 }}>{RES_EMOJI[res]}</span>
-                  <span className="text-[11px]" style={{ color: C.mid }}>{RESOURCE_NAMES[res]}</span>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {tiers.map(({ t, count }) => (
-                    <div key={t} className="flex items-center gap-1 px-1.5 py-0.5 rounded-md" style={{ background:"rgba(0,0,0,0.06)" }}>
-                      <span className="text-[11px] font-bold" style={{ color:"#8B7355" }}>T{t}</span>
-                      <span className="text-[12px] font-black" style={{ color: C.brown }}>{count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl" style={{ background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)" }}>
+          <span style={{ fontSize:16 }}>🍵</span>
+          <span className="font-black text-xs" style={{ color: C.brown }}>
+            {[1,2,3,4,5].reduce((sum, t) => sum + Math.floor(resources?.[`potion_t${t}`] || 0), 0)}
+          </span>
+          <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水 (總計)</span>
         </div>
-      ) : (
-        <div className="text-[10px]" style={{ color: C.muted }}>採集後村莊材料將在此顯示</div>
-      ))}
+
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl" style={{ background:"rgba(168,85,247,0.1)", border:"1px solid rgba(168,85,247,0.25)" }}>
+          <span style={{ fontSize:16 }}>🐾</span>
+          <span className="font-black text-xs" style={{ color: C.brown }}>
+            {[1,2,3,4,5].reduce((sum, t) => sum + Math.floor(resources?.[`fur_t${t}`] || 0), 0)}
+          </span>
+          <span className="text-[10px]" style={{ color: C.muted }}>貓毛 (總計)</span>
+        </div>
+      </div>
+
+      {/* 展開：T1~T5 分級頁籤視圖 */}
+      {showAll && (
+        <div className="mt-3 pt-3 border-t border-amber-900/10 space-y-2">
+          {/* T1 ~ T5 頁籤列 */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {[1, 2, 3, 4, 5].map(t => {
+              const isActive = activeTierTab === t;
+              const cfg = TIER_BG[t];
+              return (
+                <button key={t} type="button" onClick={() => setActiveTierTab(t)}
+                  className="px-3 py-1 rounded-xl text-xs font-black transition-all shrink-0 active:scale-95"
+                  style={{
+                    background: isActive ? cfg.color : cfg.bg,
+                    color: isActive ? "#FFF" : cfg.color,
+                    border: `1px solid ${cfg.border}`
+                  }}>
+                  T{t} 階資源
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 當前選擇階級的資源列表 */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+            {TIERED_LIST.map(res => {
+              const count = Math.floor(resources?.[`${res}_t${activeTierTab}`] || 0);
+              const cfg = TIER_BG[activeTierTab];
+              return (
+                <div key={res} className="flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all"
+                  style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, opacity: count > 0 ? 1 : 0.4 }}>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span style={{ fontSize: 16 }}>{RES_EMOJI[res]}</span>
+                    <span className="text-xs font-bold truncate" style={{ color: C.brown }}>{RESOURCE_NAMES[res]}</span>
+                  </div>
+                  <span className="text-xs font-mono font-black" style={{ color: cfg.color }}>
+                    {count.toLocaleString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -2021,38 +2197,48 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   return (
     <div className="flex min-h-dvh flex-col overflow-x-hidden" style={{ background: C.bg }}>
 
-      {/* 頁籤 */}
+      {/* 頂部主功能導覽列（質感印章切換） */}
       <nav aria-label="貓貓村主要功能"
-        className="sticky top-0 z-30 grid shrink-0 grid-cols-4"
-        style={{ background:"rgba(253,246,236,0.96)", borderBottom:`1px solid ${C.border}`, backdropFilter:"blur(10px)" }}>
-        {VILLAGE_PRIMARY_NAV.map(item => (
-          <button key={item.id} type="button" onClick={() => setTab(item.defaultTab)}
-            aria-pressed={primaryTab === item.id}
-            className="min-h-14 px-1 py-2 text-sm font-black transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-700"
-            style={{
-              color: primaryTab === item.id ? C.brown : C.muted,
-              borderBottom: primaryTab === item.id ? `3px solid ${C.sage}` : "3px solid transparent",
-            }}>
-            <span aria-hidden="true" className="mr-1">{item.icon}</span>{item.label}
-          </button>
-        ))}
+        className="sticky top-0 z-30 flex shrink-0 items-center justify-around px-2 py-2 shadow-sm transition-all"
+        style={{ background:"rgba(253,246,236,0.96)", borderBottom:`1.5px solid ${C.border}`, backdropFilter:"blur(12px)" }}>
+        {VILLAGE_PRIMARY_NAV.map(item => {
+          const isActive = primaryTab === item.id;
+          return (
+            <button key={item.id} type="button" onClick={() => setTab(item.defaultTab)}
+              aria-pressed={isActive}
+              className={`flex-1 mx-1 min-h-[46px] py-1.5 px-2 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1 active:scale-95 ${isActive ? "shadow-md scale-[1.02]" : "hover:bg-amber-900/5"}`}
+              style={{
+                background: isActive ? "linear-gradient(135deg, #5C3D2E, #45291C)" : "rgba(255,255,255,0.6)",
+                color: isActive ? "#FFF8F0" : C.brown,
+                border: isActive ? "1.5px solid #784F32" : `1px solid ${C.border}`,
+              }}>
+              <span aria-hidden="true" className="text-base">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
+      {/* 子功能導覽列 */}
       {secondaryNav.length > 0 && (
         <nav aria-label={`${VILLAGE_PRIMARY_NAV.find(item => item.id === primaryTab)?.label || ""}子功能`}
-          className="mx-4 mt-3 grid grid-cols-2 gap-2 rounded-2xl p-1.5"
-          style={{ background:"rgba(255,255,255,0.62)", border:`1px solid ${C.border}` }}>
-          {secondaryNav.map(item => (
-            <button key={item.id} type="button" onClick={() => setTab(item.id)}
-              aria-pressed={tab === item.id}
-              className="min-h-11 rounded-xl px-3 text-sm font-black focus-visible:ring-2 focus-visible:ring-emerald-700"
-              style={{
-                background:tab === item.id ? C.brown : "transparent",
-                color:tab === item.id ? "#FFF8F0" : C.mid,
-              }}>
-              {item.label}
-            </button>
-          ))}
+          className="mx-4 mt-3 grid grid-cols-2 gap-2 rounded-2xl p-1.5 shadow-sm"
+          style={{ background:"rgba(255,255,255,0.75)", border:`1.5px solid ${C.border}` }}>
+          {secondaryNav.map(item => {
+            const isActive = tab === item.id;
+            return (
+              <button key={item.id} type="button" onClick={() => setTab(item.id)}
+                aria-pressed={isActive}
+                className={`min-h-11 rounded-xl px-3 text-xs sm:text-sm font-black transition-all active:scale-95 ${isActive ? "shadow-sm" : ""}`}
+                style={{
+                  background: isActive ? C.sage : "transparent",
+                  color: isActive ? "#FFF8F0" : C.brown,
+                  border: isActive ? "1px solid rgba(255,255,255,0.3)" : "none"
+                }}>
+                {item.label}
+              </button>
+            );
+          })}
         </nav>
       )}
 

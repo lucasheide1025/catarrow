@@ -1,7 +1,7 @@
 // src/components/member/ExpeditionPanel.jsx — 遠征隊派遣面板（3 槽位）
 import { useState, useEffect, useRef } from "react";
 import { subscribeMyCats } from "../../lib/catDb";
-import { CATS } from "../../lib/catData";
+import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { catLevelFromXP } from "../../lib/catLevel";
 import { startExpedition, collectExpedition } from "../../lib/db";
 import {
@@ -9,7 +9,7 @@ import {
   calcCatFullStats, catPowerMult,
 } from "../../lib/expeditionData";
 
-const TYPE_LABEL = { attack:"攻擊型", defense:"防禦型", allround:"治癒型" };
+const TYPE_LABEL = { attack:"⚔️ 攻擊型", defense:"🛡️ 防禦型", allround:"💚 治癒型" };
 const TYPE_COLOR = { attack:"#f87171", defense:"#60a5fa", allround:"#a78bfa" };
 const TIER_COLOR = ["","#9ca3af","#4ade80","#60a5fa","#a78bfa","#fbbf24"];
 
@@ -96,66 +96,102 @@ function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onColl
     return (
       <button
         onClick={() => onSelect(slotIdx)}
-        style={{
-          flex:1, minWidth:0,
-          background: isActive ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
-          border: `1.5px solid ${isActive ? "rgba(167,139,250,0.7)" : "rgba(255,255,255,0.1)"}`,
-          borderRadius:16, padding:"14px 8px", cursor:"pointer",
-          display:"flex", flexDirection:"column", alignItems:"center", gap:6,
-          transition:"all 0.15s",
-        }}>
-        <div style={{ fontSize:28 }}>🏕️</div>
-        <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontWeight:600 }}>遠征槽 {slotIdx+1}</div>
-        <div style={{ fontSize:10, color: isActive ? "#a78bfa" : "rgba(255,255,255,0.25)", fontWeight:800 }}>
-          {isActive ? "設定中…" : "空置"}
+        className={`flex-1 min-w-0 rounded-2xl p-3.5 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 border ${
+          isActive
+            ? "bg-purple-900/30 border-purple-400 shadow-[0_0_12px_rgba(167,139,250,0.3)] ring-2 ring-purple-400/40"
+            : "bg-slate-900/50 border-white/10 hover:border-purple-400/40 hover:bg-slate-800/50"
+        }`}>
+        <div className="text-3xl mb-0.5">🏕️</div>
+        <div className="text-xs font-black text-slate-300">探險槽 {slotIdx+1}</div>
+        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isActive ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-slate-400"}`}>
+          {isActive ? "設定中…" : "+ 點擊派遣"}
         </div>
       </button>
     );
   }
 
   const endsAt     = expedition.endsAt?.toMillis?.() || 0;
+  const startedAt  = expedition.startedAt?.toMillis?.() || (endsAt - (expedition.hours || 1) * 3600000);
+  const totalDuration = Math.max(1, endsAt - startedAt);
   const msLeft     = endsAt - now;
   const isDone     = msLeft <= 0;
+  const progressPct = isDone ? 100 : Math.min(100, Math.max(0, Math.round(((totalDuration - msLeft) / totalDuration) * 100)));
+
   const expMission = EXPEDITION_MISSIONS.find(m => m.tier === expedition.missionTier);
   const expCatInfo = CATS[expedition.catId];
   const catData    = myCats[expedition.catId];
   const catLv      = catData ? catLevelFromXP(catData.catXP || 0) : "?";
 
   return (
-    <div style={{
-      flex:1, minWidth:0,
-      background: isDone
-        ? "linear-gradient(135deg,#14532d,#166534)"
-        : "linear-gradient(135deg,#1c1f2e,#2a1a3e)",
-      border: `1.5px solid ${isDone ? "rgba(74,222,128,0.5)" : "rgba(167,139,250,0.3)"}`,
-      borderRadius:16, padding:"10px 8px",
-      display:"flex", flexDirection:"column", alignItems:"center", gap:4,
-    }}>
-      <img src={expMission?.image} alt={expMission?.label || "遠征任務"} style={{ width:48, height:48, objectFit:"contain" }} />
-      <img
-        src={`/cats/portraits/${expedition.catId}.webp`}
-        alt={expedition.catName}
-        style={{ width:36, height:36, borderRadius:"50%", objectFit:"cover", border:"1.5px solid rgba(167,139,250,0.5)" }}
-      />
-      <div style={{ fontSize:10, fontWeight:900, color:"white", textAlign:"center", lineHeight:1.2 }}>
+    <div className={`flex-1 min-w-0 rounded-2xl p-2.5 flex flex-col items-center gap-1.5 border transition-all shadow-md relative overflow-hidden ${
+      isDone
+        ? "bg-gradient-to-b from-emerald-950/80 to-slate-900/90 border-emerald-500/60 shadow-emerald-950/50"
+        : "bg-gradient-to-b from-slate-900/90 to-purple-950/60 border-purple-500/40 shadow-purple-950/50"
+    }`}>
+      {/* 背景行進微光線條 */}
+      {!isDone && (
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#a78bfa_1px,transparent_1px)] [background-size:8px_8px] pointer-events-none" />
+      )}
+
+      {/* 任務等級 Icon + 探險動畫標籤 */}
+      <div className="relative flex items-center justify-center">
+        <img src={expMission?.image} alt={expMission?.label || "遠征任務"} className="w-12 h-12 object-contain drop-shadow-md" />
+        {!isDone && (
+          <span className="absolute -top-1 -right-2 text-xs animate-bounce" title="探險進行中">
+            🐾
+          </span>
+        )}
+      </div>
+      
+      {/* 貓咪頭像 (探險中加入微呼吸邊框) */}
+      <div className="relative">
+        <img
+          src={`/cats/portraits/${expedition.catId}.webp`}
+          alt={expedition.catName}
+          className={`w-10 h-10 rounded-full object-cover border-2 shadow-sm ${
+            isDone ? "border-emerald-400" : "border-purple-400 animate-pulse"
+          }`}
+        />
+        <span className="absolute -bottom-1 -right-1 text-[9px] font-black bg-purple-900 text-purple-200 px-1 rounded-full border border-purple-400/40">
+          Lv.{catLv}
+        </span>
+      </div>
+
+      <div className="text-xs font-black text-white text-center truncate max-w-full leading-tight">
         {expCatInfo?.name || expedition.catName}
       </div>
-      <div style={{ fontSize:9, color:"rgba(255,255,255,0.5)" }}>Lv {catLv}</div>
-      <div style={{ fontSize:10, fontWeight:900, color: isDone ? "#4ade80" : "#fbbf24" }}>
-        {isDone ? "✓ 完成" : fmtCountdown(msLeft)}
+
+      {/* 即時探險進度條 */}
+      <div className="w-full space-y-1 my-0.5">
+        <div className="flex justify-between items-center text-[9px] font-bold">
+          <span className={isDone ? "text-emerald-400" : "text-purple-300"}>
+            {isDone ? "✓ 探險完成" : `探險中 ${progressPct}%`}
+          </span>
+          <span className="text-slate-400 font-mono">
+            {isDone ? "" : fmtCountdown(msLeft)}
+          </span>
+        </div>
+        <div className="h-2 w-full rounded-full overflow-hidden p-0.5 bg-black/40 border border-white/10">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${progressPct}%`,
+              background: isDone
+                ? "linear-gradient(90deg, #10B981, #34D399)"
+                : "linear-gradient(90deg, #8B5CF6, #EC4899)",
+              boxShadow: isDone ? "0 0 6px rgba(16,185,129,0.8)" : "0 0 6px rgba(167,139,250,0.8)",
+            }}
+          />
+        </div>
       </div>
+
+      {/* 領取按鈕 */}
       {isDone && (
         <button
           onClick={() => onCollect(slotIdx)}
           disabled={collecting}
-          style={{
-            marginTop:2, width:"100%", padding:"6px 0", borderRadius:10,
-            fontWeight:900, fontSize:10, border:"none",
-            background: collecting ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#4ade80,#16a34a)",
-            color: collecting ? "rgba(255,255,255,0.3)" : "#fff",
-            cursor: collecting ? "not-allowed" : "pointer",
-          }}>
-          {collecting ? "領取中" : "🎁 領取"}
+          className="w-full mt-1 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white shadow-md shadow-emerald-950/50 border border-emerald-300/40">
+          {collecting ? "領取中…" : "🎁 領取寶藏"}
         </button>
       )}
     </div>
@@ -176,15 +212,16 @@ export default function ExpeditionPanel({ profile }) {
   useEffect(() => {
     if (!profile?.id) return;
     return subscribeMyCats(profile.id, setMyCats);
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id]);
 
   useEffect(() => {
-    timerRef.current = setInterval(() => setNow(Date.now()), 30000);
+    timerRef.current = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerRef.current);
   }, []);
 
-  const villageRes    = profile?.village?.resources || {};
-  const equippedCatId = profile?.equippedCat?.catId;
+  const villageRes        = profile?.village?.resources || {};
+  const equippedCatId     = profile?.equippedCat?.catId;
+  const dungeonAssignedId = profile?.dungeonExcavation?.assignedCatId;
 
   // 向後兼容：支援舊的單一 expedition 欄位
   const rawExpeditions = profile?.expeditions || {};
@@ -197,9 +234,9 @@ export default function ExpeditionPanel({ profile }) {
     Object.values(expeditions).filter(Boolean).map(e => e.catId)
   );
 
-  // 可派遣：持有、非裝備中、非遠征中
+  // 可派遣：持有、非裝備中、非遠征中、非地下城挖掘中
   const availableCats = Object.values(myCats).filter(
-    c => c.catId !== equippedCatId && !onExpeditionCatIds.has(c.catId)
+    c => c.catId !== equippedCatId && !onExpeditionCatIds.has(c.catId) && c.catId !== dungeonAssignedId
   );
 
   const mission    = selectedTier ? EXPEDITION_MISSIONS.find(m => m.tier === selectedTier) : null;
@@ -274,10 +311,16 @@ export default function ExpeditionPanel({ profile }) {
         </div>
       )}
 
-      {/* 說明 */}
-      <div style={{ background:"rgba(167,139,250,0.07)", borderRadius:12, padding:"9px 13px", marginBottom:14, fontSize:11, color:"rgba(167,139,250,0.8)", border:"1px solid rgba(167,139,250,0.15)" }}>
-        可同時派遣最多 3 隻貓咪遠征。貓咪等級越高，帶回的素材越多。<br/>
-        <span style={{ color:"rgba(255,255,255,0.3)" }}>裝備中的貓咪不能派遣 · 射手消耗後不歸還</span>
+      {/* 說明提示卡 */}
+      <div className="rounded-2xl p-3 mb-3.5 bg-gradient-to-r from-purple-950/60 to-slate-900/80 border border-purple-400/20 text-xs text-purple-200/90 shadow-sm flex items-start gap-2.5">
+        <span className="text-xl shrink-0">🐾</span>
+        <div>
+          <div className="font-black text-purple-300">貓貓探險隊須知</div>
+          <div className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+            最多可同時派遣 3 隻貓咪去外頭探險帶回豐厚寶物！<br/>
+            <span className="text-amber-300/80">⚠️ 裝備中、正在地下城發掘或正在探險中的貓咪無法重複派遣。</span>
+          </div>
+        </div>
       </div>
 
       {/* 3 個槽位卡片 */}
@@ -299,45 +342,55 @@ export default function ExpeditionPanel({ profile }) {
 
       {/* 派遣設定表單（點空槽後展開） */}
       {activeSlot !== null && (
-        <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(167,139,250,0.2)", borderRadius:16, padding:"14px 12px" }}>
-          <div style={{ fontWeight:900, fontSize:13, color:"#a78bfa", marginBottom:12 }}>
-            遠征槽 {activeSlot+1} — 派遣設定
+        <div className="rounded-3xl p-4 bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-4 backdrop-blur-md">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div className="font-black text-sm text-purple-300 flex items-center gap-1.5">
+              <span>🚩</span> 探險槽 {activeSlot+1} — 派遣任務佈署
+            </div>
+            <button type="button" onClick={() => setActiveSlot(null)} className="text-xs text-slate-400 hover:text-white">✕ 關閉</button>
           </div>
 
           {/* Step 1：選貓 */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:800, color:"#a78bfa", marginBottom:8 }}>① 選擇領隊貓咪</div>
+          <div>
+            <div className="text-xs font-black text-purple-300 mb-2 flex items-center justify-between">
+              <span>① 選擇隊長貓咪</span>
+              <span className="text-[10px] text-slate-400">可派遣：{availableCats.length} 隻</span>
+            </div>
             {availableCats.length === 0 ? (
-              <div style={{ color:"rgba(255,255,255,0.3)", fontSize:12, padding:"12px", textAlign:"center", background:"rgba(255,255,255,0.04)", borderRadius:12 }}>
-                沒有可派遣的貓咪（裝備中或全在遠征中）
+              <div className="text-slate-400 text-xs p-4 text-center bg-black/30 rounded-2xl border border-white/5 space-y-1">
+                <div>😿 沒有空閒的貓咪可以派遣</div>
+                <div className="text-[10px] text-slate-500">（所有貓咪正在陪練、地下城發掘或探險中）</div>
               </div>
             ) : (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:8 }}>
+              <div className="grid grid-cols-3 gap-2">
                 {availableCats.map(cat => {
                   const info       = CATS[cat.catId];
+                  const realType   = CAT_TYPE_MAP[cat.catId] || cat.type || "allround";
                   const lv         = catLevelFromXP(cat.catXP || 0);
                   const isSelected = selectedCat === cat.catId;
                   return (
                     <button key={cat.catId}
+                      type="button"
                       onClick={() => setSelectedCat(isSelected ? null : cat.catId)}
-                      style={{
-                        background: isSelected ? "rgba(167,139,250,0.2)" : "rgba(255,255,255,0.05)",
-                        border: `1.5px solid ${isSelected ? "rgba(167,139,250,0.7)" : "rgba(255,255,255,0.1)"}`,
-                        borderRadius:14, padding:"10px 8px", cursor:"pointer",
-                        transition:"all 0.15s",
-                      }}>
+                      className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center gap-1 active:scale-95 relative overflow-hidden ${
+                        isSelected
+                          ? "bg-purple-900/60 border-purple-300 ring-2 ring-purple-400/50 shadow-lg shadow-purple-950/80"
+                          : "bg-slate-950/70 border-white/10 hover:border-purple-400/40 hover:bg-slate-800/50"
+                      }`}>
                       <img
                         src={`/cats/portraits/${cat.catId}.webp`}
                         alt={info?.name || cat.catId}
-                        style={{ width:44, height:44, borderRadius:"50%", objectFit:"cover", marginBottom:4 }}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-purple-400/50 shadow-md"
                       />
-                      <div style={{ fontWeight:900, fontSize:11, color:"white", marginBottom:2 }}>
+                      <div className="font-black text-xs text-white truncate max-w-full">
                         {info?.name || cat.catId}
                       </div>
-                      <div style={{ fontSize:10, color: TYPE_COLOR[cat.type] || "#9ca3af" }}>
-                        {TYPE_LABEL[cat.type] || "—"}
+                      <div className="text-[10px] font-black" style={{ color: TYPE_COLOR[realType] || "#9ca3af" }}>
+                        {TYPE_LABEL[realType] || "—"}
                       </div>
-                      <div style={{ fontSize:10, color:"#fbbf24", fontWeight:800 }}>Lv {lv}</div>
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Lv.{lv}
+                      </span>
                     </button>
                   );
                 })}
@@ -345,18 +398,22 @@ export default function ExpeditionPanel({ profile }) {
             )}
           </div>
 
-          {/* 選中貓咪資訊 */}
+          {/* 選中貓咪戰力數值與加成 */}
           {selCatData && selCatInfo && (
-            <div style={{ background:"rgba(167,139,250,0.08)", borderRadius:12, padding:"10px 13px", marginBottom:14, border:"1px solid rgba(167,139,250,0.2)", fontSize:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                <span style={{ color:"#a78bfa", fontWeight:800 }}>{selCatInfo.name}</span>
-                <span style={{ color:"rgba(255,255,255,0.4)" }}>Lv {selCatLevel}</span>
-                <span style={{ color:"#fbbf24", fontWeight:900, marginLeft:"auto" }}>× {catPowerMult(selCatStats.catATK).toFixed(2)} 獎勵加成</span>
+            <div className="rounded-2xl p-3 bg-purple-950/40 border border-purple-500/30 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-black text-purple-200">
+                  <span>🐾 {selCatInfo.name}</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Lv.{selCatLevel}</span>
+                </div>
+                <span className="text-[11px] font-black text-amber-300">
+                  × {catPowerMult(selCatStats.catATK).toFixed(2)} 探險獎勵倍率
+                </span>
               </div>
-              <div style={{ display:"flex", gap:10, fontSize:11 }}>
-                <span style={{ color:"#f87171" }}>⚔️ ATK {selCatStats.catATK}</span>
-                <span style={{ color:"#60a5fa" }}>🛡️ DEF {selCatStats.catDEF}</span>
-                <span style={{ color:"#4ade80" }}>❤️ HP {selCatStats.catHP}</span>
+              <div className="flex gap-3 text-[11px] font-bold pt-1 border-t border-purple-500/20">
+                <span className="text-red-400">⚔️ 攻擊 {selCatStats.catATK}</span>
+                <span className="text-blue-400">🛡️ 防禦 {selCatStats.catDEF}</span>
+                <span className="text-emerald-400">❤️ HP {selCatStats.catHP}</span>
               </div>
             </div>
           )}
