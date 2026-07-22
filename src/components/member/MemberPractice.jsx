@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, addRoundArrows, finalizePracticeShootingSession } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, addRoundArrows, finalizePracticeShootingSession, getLocalTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
 import { CAT_PRACTICE_XP } from "../../lib/catLevel";
@@ -2321,11 +2321,8 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
       const fmt=TARGET_FORMATS.find(f=>f.id===form.targetFormat)||TARGET_FORMATS[0];
       const stats=calcStats(finishedRounds);
 
-      // 計算今日舊箭數（儲存前）
-      const todayStr=form.date || today();
-      const oldTodayArrows=logs
-        .filter(l=>l.date===todayStr)
-        .reduce((s,l)=>s+(l.totalArrows||0),0);
+      // 計算今日舊箭數（儲存前，優先讀取本機即時正確里程數）
+      const oldTodayArrows = getLocalTodayArrows(profile.id);
 
       const practiceSessionId = `practice_${profile.id}_${Date.now()}`;
       const practicePayload = {
