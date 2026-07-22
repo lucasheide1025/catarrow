@@ -978,9 +978,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         setCoins(c => c + coinsGain);
         setGuestActivityReward({ coins: coinsGain, catXP: catXpGain });
       }
-      if (!isGuest && myId && res.dmg > 0) {
-        import("../../lib/villageGoalDb").then(m => m.contributeDamageToGoal(myId, res.dmg)).catch(() => {});
-      }
+      // 村目標傷害貢獻已移至 finalizeMonsterShootingSession 統一處理
       if (!isGuest && myId && rounds.length > 0) {
         const practiceRounds = rounds.map(r =>
           (r.arrows || []).map(arrow => scoreVal(arrow?.label ?? arrow))

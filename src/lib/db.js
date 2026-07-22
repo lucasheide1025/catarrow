@@ -232,6 +232,10 @@ export async function finalizeMonsterShootingSession(input) {
     if (input.__skipPendingQueue) throw error;
     console.warn("shooting session Firestore write deferred (queued in localStorage):", error?.message);
   }
+  // 貢獻打怪傷害到村目標（fire-and-forget，只在交易成功後觸發）
+  if (input.memberId && Number(input.totalDamage || 0) > 0) {
+    import("./villageGoalDb").then(m => m.contributeDamageToGoal(input.memberId, Number(input.totalDamage))).catch(() => {});
+  }
   return record.session.id;
 }
 
