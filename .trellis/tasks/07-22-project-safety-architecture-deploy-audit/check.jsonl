@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"全專案 Quality Check 入口"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"驗證報告建議符合品質規範"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"驗證目錄與移除候選結論"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"驗證跨層風險與依賴完整性"}

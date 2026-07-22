@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"全專案前端規範入口與品質檢查"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"評估目錄重整與檔案歸位"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"程式碼品質與審查基準"}
+{"file":".trellis/spec/frontend/firestore-cost-optimization.md","reason":"Firestore 成本與訂閱風險基準"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"重複邏輯與拆分判斷"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"前端、Functions、Rules 與部署跨層檢查"}
