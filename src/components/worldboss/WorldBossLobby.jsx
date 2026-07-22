@@ -161,6 +161,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       @keyframes wb-screen-flash{0%,100%{opacity:0}20%{opacity:0.9}}
       @keyframes wb-death-text{0%{opacity:0;transform:scale(0.15) rotate(-18deg)}55%{transform:scale(1.08) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
       @keyframes wb-death-killer{0%{opacity:0;transform:translateY(24px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+      .no-wb-scrollbar::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+      .no-wb-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
     `;
     document.head.appendChild(s);
     return () => s.remove();
@@ -367,8 +369,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       </header>
 
       {/* 可捲動主體 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-5"
-        style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y" }}>
+      <div className="flex-1 min-h-0 overflow-y-auto no-wb-scrollbar p-4 md:p-6 space-y-5"
+        style={{ WebkitOverflowScrolling:"touch", touchAction:"pan-y", scrollbarWidth:"none" }}>
 
         {/* Boss 巨型史詩展台 */}
         <div className="relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-slate-950 via-slate-900/90 to-rose-950/50 p-6 shadow-2xl backdrop-blur-md">
