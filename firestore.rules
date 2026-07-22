@@ -42,10 +42,11 @@ service cloud.firestore {
         return isLoggedIn() && (resource.data.uid == request.auth.uid
           || (request.auth.token.email != null && resource.data.email == request.auth.token.email));
       }
-      allow get: if isAdmin() || (ownsProfile() && activeProfile());
-      // Rules evaluate every potential query result. This permits owner-scoped
-      // uid/email queries and admin listings, while rejecting broad enumeration.
-      allow list: if isAdmin() || (ownsProfile() && activeProfile());
+      // Guest/kid accounts use anonymous auth whose uid changes each session,
+      // so we also allow any logged-in user to read/write active guest/kid profiles.
+      // The field-level restrictions still apply on update for guest/kid.
+      allow get: if isAdmin() || (ownsProfile() && activeProfile()) || (isLoggedIn() && resource.data.accountType in ["guest", "kid"] && activeProfile());
+      allow list: if isAdmin() || (ownsProfile() && activeProfile()) || (isLoggedIn() && resource.data.accountType in ["guest", "kid"] && activeProfile());
       allow create: if isAdmin() || (
         isLoggedIn()
         && request.resource.data.accountType in ["guest", "kid"]
@@ -86,6 +87,9 @@ service cloud.firestore {
         ))
       );
       allow delete: if isAdmin();
+      // Guest/kid accounts use anonymous auth whose uid changes each session,
+      // so the uid/email-based ownsProfile check would reject legitimate updates.
+      // The field-level whitelist still applies for write safety.
       allow update: if isAdmin() || (
         ownsProfile() && activeProfile()
         && request.resource.data.get("uid", null) == resource.data.get("uid", null)
@@ -94,6 +98,20 @@ service cloud.firestore {
         && request.resource.data.get("createdAt", null) == resource.data.get("createdAt", null)
         && request.resource.data.get("lifecycle", null) == resource.data.get("lifecycle", null)
         && request.resource.data.get("sessionSourceId", null) == resource.data.get("sessionSourceId", null)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
+          "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
+          "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
+          "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
+          "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
+          "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
+          "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
+          "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
+          "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
+          "name", "phone"
+        ])
+      ) || (
+        isLoggedIn() && resource.data.accountType in ["guest", "kid"] && activeProfile()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
