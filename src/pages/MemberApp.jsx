@@ -170,6 +170,7 @@ export default function MemberApp() {
   useEffect(() => {
     if (profile?.archerXP === undefined) return;
     if (lastLevelRef.current === null) {
+      // 第一次載入時記錄當前等級，避免第一次開啟網頁就誤跳升級視窗
       lastLevelRef.current = currentLevel;
       return;
     }
@@ -182,13 +183,6 @@ export default function MemberApp() {
       lastLevelRef.current = currentLevel;
     }
   }, [currentLevel, profile?.archerXP]);
-
-  useEffect(() => {
-    if (levelUpInfo) {
-      const timer = setTimeout(() => setLevelUpInfo(null), 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [levelUpInfo]);
   const [latestVersion, setLatestVersion] = useState(null);
 
   const [certification, setCertification] = useState(null);
@@ -946,9 +940,27 @@ export default function MemberApp() {
               <span style={{ fontSize: 20, color: "#F59E0B" }}>➔</span>
               <span style={{ fontSize: 24, fontWeight: 900, color: "#FFF8F0", textShadow: "0 0 8px rgba(245, 158, 11, 0.8)" }}>Lv.{levelUpInfo.newLevel}</span>
             </div>
-            <div style={{ color: "#A0C898", fontSize: 11, fontWeight: 700, marginTop: 14 }}>
+            <div style={{ color: "#A0C898", fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 20 }}>
               ✨ 每一級 +5 HP · 每 5 級 +1 ATK/DEF！
             </div>
+            <button
+              type="button"
+              onClick={() => setLevelUpInfo(null)}
+              style={{
+                width: "100%",
+                padding: "12px 24px",
+                background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                border: "1px solid #FFE399",
+                borderRadius: 16,
+                color: "#FFFFFF",
+                fontWeight: 900,
+                fontSize: 15,
+                cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(245, 158, 11, 0.4)",
+              }}
+              className="active:scale-95 transition-all hover:brightness-110">
+              🎉 太棒了！收下獎勵
+            </button>
           </div>
         </div>
       )}
