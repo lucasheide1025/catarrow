@@ -1,0 +1,6 @@
+{
+  "id": "07-22-guest-mode-ui-entry-gameplay",
+  "title": "Guest mode UI and entry-level gameplay",
+  "status": "planning",
+  "scope": "frontend, firestore, guest experience"
+}
