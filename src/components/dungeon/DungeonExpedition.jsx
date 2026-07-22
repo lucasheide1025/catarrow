@@ -396,17 +396,36 @@ export default function DungeonExpedition({
   const [boughtOneTime, setBoughtOneTime] = useState({});
 
   // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
-  // 一併保存目前 HP（隨 hp 變動即時更新），續玩時還原離開前的 HP，避免重整回滿血刷關。
+  // 完整保存目前地圖結構 (gridFloor, playerPos, visitedIds) 確保地圖絕不重置！
   useEffect(() => {
-    if (!myId) return;
-    setActiveExpeditionProgress(myId, {
+    if (!myId || phase === "intro" || phase === "consume" || phase === "entry_error") return;
+    const mapState = {
+      floorIndex,
+      gridFloor,
+      playerPos,
+      visitedIds: Array.from(visitedIds || []),
+      branchFloor,
+      branchChoice,
+      branchStep,
+    };
+    const payload = {
       family, difficultyTier, isHidden, floorsCleared,
       hp: playerState?.hp, maxHP: playerState?.maxHP,
       arrowsPerRound, targetFmt,
       expansionRunId: expansionRunIdRef.current,
       bossEncounter: expansionBossEncounter,
-    }).catch(() => {});
-  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt, expansionBossEncounter]);
+      mapState,
+    };
+
+    // 1. 同步寫入 localStorage 備份（瞬發）
+    try {
+      localStorage.setItem(`active_expedition_${myId || "guest"}`, JSON.stringify(payload));
+    } catch {}
+
+    // 2. 寫入雲端 Firestore
+    setActiveExpeditionProgress(myId, payload).catch(() => {});
+  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
+
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 可變怪物佇列（每場戰鬥消耗一隻）
@@ -417,7 +436,7 @@ export default function DungeonExpedition({
 
   const coins = profile?.coins ?? 0; // profile 為即時快照，addCoins 後自動更新
 
-  const startFloor = useCallback((fi) => {
+  const startFloor = useCallback((fi, restoredMapState = null) => {
     setFloorIndex(fi);
     setPendingRoom(null);
     floorModsRef.current = { ...nextFloorModsRef.current };
@@ -428,27 +447,38 @@ export default function DungeonExpedition({
     });
     setMonsterPool(monsters);
     monsterQueueRef.current = [...(monsters.monsters || [])];
-    if (fi < 2) {
-      const gen = generateGridFloor(fi, difficultyTier);
-      setGridFloor(gen);
-      setPlayerPos(gen.startPos);
-      setVisitedIds(new Set([gen.grid[gen.startPos.y][gen.startPos.x]]));
-      setBranchFloor(null);
+
+    if (restoredMapState && restoredMapState.floorIndex === fi && restoredMapState.gridFloor) {
+      // 成功還原已保存的地圖結構與狀態！
+      setGridFloor(restoredMapState.gridFloor);
+      setPlayerPos(restoredMapState.playerPos);
+      setVisitedIds(new Set(restoredMapState.visitedIds || []));
+      setBranchFloor(restoredMapState.branchFloor || null);
+      setBranchChoice(restoredMapState.branchChoice || null);
+      setBranchStep(restoredMapState.branchStep || 0);
+      setPhase(fi < 2 ? "grid" : "branch");
     } else {
-      setBranchFloor(generateBranchFloor());
-      setBranchChoice(null);
-      setBranchStep(0);
-      setGridFloor(null);
+      if (fi < 2) {
+        const gen = generateGridFloor(fi, difficultyTier);
+        setGridFloor(gen);
+        setPlayerPos(gen.startPos);
+        setVisitedIds(new Set([gen.grid[gen.startPos.y][gen.startPos.x]]));
+        setBranchFloor(null);
+      } else {
+        setBranchFloor(generateBranchFloor());
+        setBranchChoice(null);
+        setBranchStep(0);
+        setGridFloor(null);
+      }
+      setPhase("floor_intro");
     }
-    setPhase("floor_intro");
   }, [difficultyTier, family, fixedBoss]);
 
-  // 初始化玩家狀態 + 第一層
+  // 初始化玩家狀態 + 樓層/地圖還原
   useEffect(() => {
     if (phase === "intro" && cardReady) {
       const base = buildExpeditionMemberData(profile, cardBonus);
-      // 續玩：HP 用離開前保存的值（夾在 1~maxHP，避免回滿刷血）；全新開始才用滿血 base.hp。
-      const isResume = resumeFromFloor > 0 || resumeHp > 0;
+      const isResume = resumeFromFloor > 0 || resumeHp > 0 || excavation?.mapState;
       const startHp = isResume ? Math.max(1, Math.min(resumeHp || base.hp, base.maxHP)) : base.hp;
       setPlayerState({
         hp: startHp,
@@ -458,8 +488,9 @@ export default function DungeonExpedition({
         wbBonus: base.wbBonus,
         buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
       });
-      if (resumeFromFloor > 0) setFloorsCleared(resumeFromFloor);
-      startFloor(resumeFromFloor);
+      const targetFloor = excavation?.mapState?.floorIndex ?? resumeFromFloor;
+      if (targetFloor > 0) setFloorsCleared(targetFloor);
+      startFloor(targetFloor, excavation?.mapState || null);
     }
   }, [phase, startFloor, cardReady]); // eslint-disable-line
 
@@ -867,6 +898,7 @@ export default function DungeonExpedition({
 
   const handleAbandon = useCallback(() => {
     if (!isFromStorage) abandonExcavation(myId).catch(() => {});
+    try { localStorage.removeItem(`active_expedition_${myId || "guest"}`); } catch {}
     clearActiveExpeditionProgress(myId).catch(() => {});
     onAbandonProp?.();
   }, [myId, isFromStorage, onAbandonProp]);
@@ -1036,6 +1068,7 @@ export default function DungeonExpedition({
           onCellClick={handleCellClick}
           onEnterRoom={enterRoom}
           onDescend={handleDescend}
+          onSaveAndLeave={onAbandonProp}
           onRetreat={handleAbandon}
           difficulty={difficultyTier}
           family={family}

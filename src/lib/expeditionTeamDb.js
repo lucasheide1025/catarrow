@@ -29,16 +29,17 @@ export async function createTeamExpeditionRoom({
     if (!hostId || !dungeon) return { ok: false, reason: "參數錯誤" };
     const code = genCode();
     const settings = normalizeDungeonRunSettings(dungeon);
-    const expansionRunId = `team:${hostId}:${Date.now()}:${code}`;
-    const bossEncounter = isMonsterExpansionEnabled()
-      ? (await import("./dungeonBossEncounter")).createLockedDungeonBossEncounter({
-          runId:expansionRunId,
-          roomId:"floor-3-boss",
-          family:dungeon.family,
-          difficultyTier:dungeon.difficulty,
-          lockedEncounter:dungeon.bossEncounter || null,
-        })
-      : null;
+    const expansionRunId = dungeon.expansionRunId || `team:${hostId}:${Date.now()}:${code}`;
+    const bossEncounter = dungeon.bossEncounter
+      || (isMonsterExpansionEnabled()
+        ? (await import("./dungeonBossEncounter")).createLockedDungeonBossEncounter({
+            runId:expansionRunId,
+            roomId:"floor-3-boss",
+            family:dungeon.family,
+            difficultyTier:dungeon.difficulty,
+            lockedEncounter:dungeon.bossEncounter || null,
+          })
+        : null);
     const member = {
       name: hostName,
       accountType: memberData?.accountType || "official",
@@ -63,8 +64,8 @@ export async function createTeamExpeditionRoom({
     const ref = await addDoc(collection(db, D), {
       code, hostId, hostName,
       status: "expedition_waiting",
-      // 出圖時決定的掉落倍數（1~3,固定整場;只影響中途擊殺寶箱,不影響王房/獎勵房/結算）
-      lootMult: 1 + Math.floor(Math.random() * 3),
+      // 出圖時決定的掉落倍數（若為存檔續建，鎖定沿用原本抽到的 lootMult；全新創建則隨機 2~5 倍）
+      lootMult: dungeon.lootMult || (2 + Math.floor(Math.random() * 4)),
       expeditionTeamMode: true,
       dungeonFamily: dungeon.family,
       dungeonDifficulty: dungeon.difficulty,
@@ -78,6 +79,9 @@ export async function createTeamExpeditionRoom({
       } : {}),
       arrowsPerRound: settings.arrowsPerRound,
       targetFmt: settings.targetFmt,
+      initialFloorIndex: dungeon.savedFloorIndex || 0,
+      currentFloorIndex: dungeon.savedFloorIndex || 0,
+      ...(dungeon.savedMapState ? { expeditionMapState: dungeon.savedMapState } : {}),
       members: { [hostId]: member },
       createdAt: serverTimestamp(),
     });
@@ -234,6 +238,61 @@ export async function updateTeamExpeditionSettings(roomId, hostId, nextSettings)
     return { ok:true, ...settings };
   } catch (e) {
     return { ok:false, reason:e.message };
+  }
+}
+
+export async function saveTeamExpeditionProgress(roomId, hostId, floorIndex = 0) {
+  try {
+    const roomRef = doc(db, D, roomId);
+    const hostRef = doc(db, "members", hostId);
+    let result = { ok: false };
+    await runTransaction(db, async tx => {
+      const roomSnap = await tx.get(roomRef);
+      if (!roomSnap.exists()) throw new Error("房間不存在");
+      const roomData = roomSnap.data();
+      if (roomData.hostId !== hostId) throw new Error("只有房主可以保存組隊進度");
+
+      const savedProgress = {
+        family: roomData.dungeonFamily,
+        difficulty: roomData.dungeonDifficulty,
+        isHidden: roomData.dungeonIsHidden || false,
+        boss: roomData.dungeonBoss || null,
+        expansionRunId: roomData.expansionRunId || null,
+        bossEncounter: roomData.bossEncounter || null,
+        lootMult: roomData.lootMult || 2,
+        savedFloorIndex: floorIndex,
+        savedMapState: roomData.expeditionMapState || null,
+        savedAt: Date.now(),
+        arrowsPerRound: roomData.arrowsPerRound,
+        targetFmt: roomData.targetFmt,
+      };
+
+      tx.update(hostRef, {
+        teamSavedProgress: savedProgress,
+      });
+
+      tx.update(roomRef, {
+        status: "completed",
+        result: "disbanded_saved",
+        savedByHost: true,
+      });
+      result = { ok: true, savedProgress };
+    });
+    return result;
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+export async function clearTeamExpeditionSavedProgress(hostId) {
+  try {
+    const hostRef = doc(db, "members", hostId);
+    await updateDoc(hostRef, {
+      teamSavedProgress: deleteField(),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
   }
 }
 

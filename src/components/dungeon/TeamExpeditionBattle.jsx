@@ -27,6 +27,7 @@ import {
   leaveTeamExpeditionRoom,
   cleanupTeamExpeditionRoom,
   claimTeamExpeditionResult,
+  saveTeamExpeditionProgress,
 } from "../../lib/expeditionTeamDb";
 import { trySetDungeonFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
 import { getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
@@ -73,7 +74,7 @@ function FlowErrorBanner({ message, onDismiss }) {
   );
 }
 
-function TeamRoomVotingBar({ teamRoom, myId, isHost, onForceAdvance }) {
+function TeamRoomVotingBar({ teamRoom, myId, isHost, onSaveProgress, onForceAdvance }) {
   if (!teamRoom || !teamRoom.members) return null;
 
   const members = Object.entries(teamRoom.members || {}).filter(([, m]) => m && m.alive !== false);
@@ -113,13 +114,24 @@ function TeamRoomVotingBar({ teamRoom, myId, isHost, onForceAdvance }) {
       </div>
 
       {isHost && (
-        <button
-          type="button"
-          onClick={onForceAdvance}
-          className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black rounded-xl text-xs hover:brightness-110 shadow-lg active:scale-95 transition-all shrink-0"
-        >
-          ⚡ 房主強制結算前進
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {onSaveProgress && (
+            <button
+              type="button"
+              onClick={onSaveProgress}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-xl text-xs hover:brightness-110 shadow-lg active:scale-95 transition-all"
+            >
+              💾 保存進度並解散
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onForceAdvance}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black rounded-xl text-xs hover:brightness-110 shadow-lg active:scale-95 transition-all"
+          >
+            ⚡ 房主強制結算前進
+          </button>
+        </div>
       )}
     </div>
   );
@@ -601,6 +613,29 @@ export default function TeamExpeditionBattle({
     if (!saved.ok) setFlowError(`無法建立探索地圖：${saved.reason}`);
   }, [isHost, teamRoom, dungeonDifficulty, dungeonFamily, dungeonBoss, teamRoomId]);
 
+  const handleSaveProgress = useCallback(async () => {
+    if (!isHost || !teamRoomId) return;
+    if (!window.confirm(`確定要【保存當前進度 (第 ${floorIndex + 1} 層)】並解散隊伍嗎？\n解散後您可以重新創建房間並邀請夥伴繼續推進！`)) return;
+
+    const res = await saveTeamExpeditionProgress(teamRoomId, myId, floorIndex);
+    if (res.ok) {
+      alert("✅ 進度已成功保存！隊伍已解散。您可以在地下城大廳繼續此進度。");
+      onAbandon?.();
+    } else {
+      setFlowError(`保存失敗：${res.reason}`);
+    }
+  }, [isHost, teamRoomId, myId, floorIndex, onAbandon]);
+
+  const handleForceAdvance = useCallback(async () => {
+    if (!isHost || !teamRoomId) return;
+    await updateTeamExpeditionRoom(teamRoomId, {
+      activeRoomId: null,
+      roomConfirms: {},
+      roomChoices: {},
+      currentEvent: null,
+    }).catch(() => {});
+  }, [isHost, teamRoomId]);
+
   const startRoomBattle = useCallback(async (room, baseMapState = teamRoom?.expeditionMapState) => {
     if (!isHost || !teamRoom || !room?.monster || floorStartingRef.current) return;
     const members = Object.entries(teamRoom.members || {})
@@ -633,6 +668,7 @@ export default function TeamExpeditionBattle({
 
     floorStartingRef.current = true;
     setFlowError("");
+
     try {
     const res = await createTeamExpeditionBattleRoom({
       members,
@@ -1096,6 +1132,13 @@ export default function TeamExpeditionBattle({
   if (mapState?.phase === "grid" && mapState.gridFloor) {
     return (
       <>
+        <TeamRoomVotingBar
+          teamRoom={teamRoom}
+          myId={myId}
+          isHost={isHost}
+          onSaveProgress={handleSaveProgress}
+          onForceAdvance={handleForceAdvance}
+        />
         <GridMapStage
           gridFloor={mapState.gridFloor}
           playerPos={mapState.playerPos}
@@ -1107,6 +1150,7 @@ export default function TeamExpeditionBattle({
           onCellClick={handleCellClick}
           onEnterRoom={handleEnterRoom}
           onDescend={handleDescend}
+          onSaveAndLeave={handleSaveProgress}
           onRetreat={handleAbandon}
           canControl={isHost}
           difficulty={dungeonDifficulty}
@@ -1120,6 +1164,13 @@ export default function TeamExpeditionBattle({
   if (mapState?.phase === "branch" && mapState.branchFloor) {
     return (
       <>
+        <TeamRoomVotingBar
+          teamRoom={teamRoom}
+          myId={myId}
+          isHost={isHost}
+          onSaveProgress={handleSaveProgress}
+          onForceAdvance={handleForceAdvance}
+        />
         <BranchStage
           branchFloor={mapState.branchFloor}
           branchChoice={mapState.branchChoice}

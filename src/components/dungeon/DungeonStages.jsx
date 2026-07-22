@@ -407,13 +407,19 @@ function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl,
 // ── 第 1、2 層：5×5 迷霧格子地圖 ────────────────────────
 export function GridMapStage({
   gridFloor, playerPos, visitedIds, floorIndex,
-  playerState, coins, lootMult, onCellClick, onEnterRoom, onDescend, onRetreat,
+  playerState, coins, lootMult, onCellClick, onEnterRoom, onDescend, onSaveAndLeave, onRetreat,
   canControl = true,
   difficulty = 1,
   family = "ghost",
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+  
+  const handleSaveLeaveClick = () => {
+    if (window.confirm("進度已自動儲存至雲端！確定要暫時離開地下城嗎？")) {
+      onSaveAndLeave ? onSaveAndLeave() : onRetreat?.();
+    }
+  };
 
 
   const rooms = gridFloor?.rooms || [];
@@ -472,14 +478,24 @@ export function GridMapStage({
             點擊相鄰格子移動 · 走過的房間可自由通行
           </div>
         </div>
-        <button onClick={() => setConfirmExit(true)}
-          style={{
-            flexShrink:0, padding:"6px 12px", borderRadius:10, fontSize:11, fontWeight:700,
-            background:"rgba(239,68,68,0.12)", color:"#f87171",
-            border:"1px solid rgba(239,68,68,0.3)", cursor:"pointer",
-          }}>
-          🏳️ 撤退
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={handleSaveLeaveClick}
+            style={{
+              padding:"6px 12px", borderRadius:10, fontSize:11, fontWeight:700,
+              background:"rgba(59,130,246,0.18)", color:"#93c5fd",
+              border:"1px solid rgba(59,130,246,0.35)", cursor:"pointer",
+            }}>
+            💾 儲存並暫離
+          </button>
+          <button onClick={() => setConfirmExit(true)}
+            style={{
+              padding:"6px 12px", borderRadius:10, fontSize:11, fontWeight:700,
+              background:"rgba(239,68,68,0.12)", color:"#f87171",
+              border:"1px solid rgba(239,68,68,0.3)", cursor:"pointer",
+            }}>
+            🏳️ 撤退
+          </button>
+        </div>
       </div>
 
       <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />

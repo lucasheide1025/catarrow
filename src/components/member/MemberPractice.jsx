@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, finalizePracticeShootingSession } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, addRoundArrows, finalizePracticeShootingSession } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
 import { CAT_PRACTICE_XP } from "../../lib/catLevel";
@@ -2373,6 +2373,9 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
 
     // 箭露在下課時由 DailyQuest.confirmClassEnd 統一結算
     const arrowCount = stats.arrows || 0;
+
+    // 累加今日與總發射箭數
+    if (!isGuestMode && arrowCount > 0) addRoundArrows(profile.id, arrowCount).catch(() => {});
 
     // 射手 XP（最低速率：每發箭 1 XP）
     if (!isGuestMode && arrowCount > 0) addArcherXP(profile.id, arrowCount * PRACTICE_ARCHER_XP_PER_ARROW).catch(() => {});

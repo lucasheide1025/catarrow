@@ -54,8 +54,15 @@ export default function DungeonTeamLobby({
     return () => unsubRef.current?.();
   }, [roomId]); // eslint-disable-line
 
-  const diff = getExcavationDifficulty(dungeon?.difficulty || 1);
-  const family = FAMILY_LABEL[dungeon?.family] || { emoji:"🏰", label:"地下城", color:"#38bdf8" };
+  const dungeonFamilyKey = room?.dungeonFamily || dungeon?.family || "ghost";
+  const dungeonDiffLevel = room?.dungeonDifficulty || dungeon?.difficulty || 1;
+  const dungeonIsHidden = room?.dungeonIsHidden ?? dungeon?.isHidden ?? false;
+  const dungeonBoss = room?.dungeonBoss || dungeon?.boss || null;
+  const lootMult = room?.lootMult || 2;
+
+  const diff = getExcavationDifficulty(dungeonDiffLevel);
+  const family = FAMILY_LABEL[dungeonFamilyKey] || { emoji:"🏰", label:"地下城", color:"#38bdf8" };
+  const dungeonName = dungeon?.name || `${family.label}探索地下城`;
   const memberEntries = room ? Object.entries(room.members || {}).filter(([, m]) => m !== null) : [];
   const memberCount = memberEntries.length;
 
@@ -140,7 +147,7 @@ export default function DungeonTeamLobby({
               <span>⚔️</span> 組隊遠征戰術大廳
             </div>
             <div className="text-sm font-black text-white flex items-center gap-2">
-              <span>{dungeon?.name || "遠征冒險"}</span>
+              <span>{dungeonName}</span>
             </div>
           </div>
         </div>
@@ -165,16 +172,16 @@ export default function DungeonTeamLobby({
 
       <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-6 space-y-6">
         {/* 地下城主題橫幅卡 */}
-        <div className="relative overflow-hidden rounded-3xl border border-amber-500/30 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-amber-950/40 p-5 shadow-2xl backdrop-blur-md">
+        <div className="relative overflow-hidden rounded-3xl border border-amber-500/30 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-amber-950/40 p-5 shadow-2xl backdrop-blur-md space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-4xl shadow-inner shrink-0">
-                {dungeon?.isHidden ? "🎁" : family.emoji}
+                {dungeonIsHidden ? "🎁" : family.emoji}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 border border-amber-400/30 text-amber-300">
-                    {dungeon?.isHidden ? "🎁 寶藏地窟" : family.label}
+                    {dungeonIsHidden ? "🎁 寶藏地窟" : family.label}
                   </span>
                   <span
                     className="px-2.5 py-0.5 rounded-full text-xs font-black flex items-center gap-1 border"
@@ -184,11 +191,14 @@ export default function DungeonTeamLobby({
                       color: diff?.color || "#94a3b8",
                     }}
                   >
-                    {diff?.icon} {diff?.label} (T{dungeon?.difficulty || 1})
+                    {diff?.icon} {diff?.label} (T{dungeonDiffLevel})
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 border border-amber-400/40 text-amber-300">
+                    🎰 寶箱掉落 ×{lootMult} 倍率
                   </span>
                 </div>
                 <h2 className="text-xl md:text-2xl font-black text-white mt-1">
-                  {dungeon?.name || "未知地下城"}
+                  {dungeonName}
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   全隊共享 HP 與技能，挑戰 3 層探索關卡與最終強大 Boss！
@@ -207,6 +217,26 @@ export default function DungeonTeamLobby({
               <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]" />
             </div>
           </div>
+
+          {/* BOSS & 掉落倍率預覽 */}
+          {dungeonBoss && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-amber-500/20 relative z-10">
+              <div className="flex items-center gap-3 bg-slate-950/60 p-3 rounded-2xl border border-rose-500/30">
+                <span className="text-3xl shrink-0">{dungeonBoss.icon || "👹"}</span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black text-rose-300 uppercase">守關 BOSS</div>
+                  <div className="text-sm font-black text-white truncate">{dungeonBoss.name || "未知首領"}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-slate-950/60 p-3 rounded-2xl border border-amber-500/30">
+                <span className="text-3xl shrink-0">📦</span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black text-amber-300 uppercase">地下城掉落加成</div>
+                  <div className="text-sm font-black text-amber-200">全場擊殺寶箱 ×{lootMult} 倍率</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 遠征規則設定區 */}

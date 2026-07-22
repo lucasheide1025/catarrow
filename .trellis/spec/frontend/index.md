@@ -34,6 +34,9 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Firestore Cost Optimization](./firestore-cost-optimization.md) | Session-cache pattern for the hottest write path (`computeExcavationPatch`), one-off-fetch vs live-listener convention, `limit()` over new-index tradeoffs | ✅ Active |
 | [Booking System](./booking-system.md) | Atomic slot-capacity transaction contract, three shared entry points, `bookingBetaAccess`/`accessControl.js` dual-gating, hidden-URL tradeoff, uniform-1hr known limitation | ✅ Active |
 
+| [Marketplace Security](./marketplace-security.md) | Atomic card-market escrow, payment, cancellation, and proceeds contracts enforced with Firestore `getAfter()` | Active |
+| [Bundle Boundaries](./bundle-boundaries.md) | Measured route-level lazy loading and the final-static-import rule for real initial-bundle reductions | Active |
+
 ---
 
 ## How to Fill These Guidelines

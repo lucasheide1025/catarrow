@@ -335,9 +335,127 @@ export function getTierProbabilities(dailyArrows = 0) {
   }));
 }
 
+export const CAT_DIG_SPECIALTIES = {
+  daming:   { id: "daming",   name: "大娘", type: "family", family: "ghost",     icon: "👻", label: "幽冥系專精", desc: "揭曉時大幅提升幽冥系地下城出現率" },
+  gege:     { id: "gege",     name: "哥哥", type: "family", family: "mountain",  icon: "⛰️", label: "山嶺系專精", desc: "揭曉時大幅提升山嶺系地下城出現率" },
+  meimei:   { id: "meimei",   name: "妹妹", type: "family", family: "insect",    icon: "🦋", label: "昆蟲系專精", desc: "揭曉時大幅提升昆蟲系地下城出現率" },
+  niuniu:   { id: "niuniu",   name: "妞妞", type: "family", family: "workplace", icon: "💼", label: "職場系專精", desc: "揭曉時大幅提升職場系地下城出現率" },
+  haji:     { id: "haji",     name: "哈吉", type: "family", family: "exam",      icon: "📝", label: "考試系專精", desc: "揭曉時大幅提升考試系地下城出現率" },
+  baobao:   { id: "baobao",   name: "寶寶", type: "family", family: "temple",    icon: "🏛️", label: "神廟系專精", desc: "揭曉時大幅提升神廟系地下城出現率" },
+  youyou:   { id: "youyou",   name: "悠悠", type: "family", family: "treasure",  icon: "📦", label: "寶藏系專精", desc: "揭曉時大幅提升寶箱族與隱藏地下城出現率" },
+  xiaoan:   { id: "xiaoan",   name: "小安", type: "treasure", lootType: "coins_materials", icon: "💰", label: "財富喵喵", desc: "揭曉時額外帶回大量金幣與隨機材料包" },
+  diandian: { id: "diandian", name: "點點", type: "treasure", lootType: "dew_crystals",    icon: "💧", label: "甘露喵喵", desc: "揭曉時額外帶回神聖箭露與罕見結晶" },
+};
+
 /**
- * 手動揭曉地下城（進度 100% 時鎖定 pendingReveal）
- * 使用新的 T1~T6 機率公式
+ * 指派地下城陪練貓
+ */
+export async function assignDigCat(memberId, catId) {
+  if (!memberId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const snap = await getDoc(doc(db, "members", memberId));
+    if (!snap.exists()) return { ok: false, reason: "找不到會員" };
+    const data = snap.data();
+    
+    // 防呆：檢查貓貓是否被常規遠征或組隊佔用
+    const expeditions = data.expeditions || {};
+    const activeCatIds = Object.values(expeditions).map(e => e.catId).filter(Boolean);
+    if (activeCatIds.includes(catId)) {
+      return { ok: false, reason: "這隻貓貓目前正在遠征中，無法同時指派為挖掘陪練貓！" };
+    }
+
+    await updateDoc(doc(db, "members", memberId), {
+      "dungeonExcavation.assignedCatId": catId || null,
+    });
+    _excavCache.delete(memberId);
+    return { ok: true, assignedCatId: catId };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+/**
+ * 貓貓專屬揭曉地下城 (貓貓獨立進度條達 100% 時執行)
+ */
+export async function revealCatExcavation(memberId) {
+  if (!memberId) return null;
+  try {
+    const snap = await getDoc(doc(db, "members", memberId));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    const excavation = data.dungeonExcavation || {};
+    const catDigProgress = excavation.catDigProgress || 0;
+    if (catDigProgress < 100) return null;
+
+    const assignedCatId = excavation.assignedCatId || "baobao";
+    const catSpec = CAT_DIG_SPECIALTIES[assignedCatId] || CAT_DIG_SPECIALTIES.baobao;
+    const dailyArrows = excavation.dailyArrowsUsed || 0;
+
+    const probs = getTierProbabilities(dailyArrows);
+    const totalPct = probs.reduce((s, p) => s + p.pct, 0);
+    const roll = Math.random() * totalPct;
+    let difficulty = probs[0]?.tier || 1;
+    let acc = 0;
+    for (const p of probs) {
+      acc += p.pct;
+      if (roll < acc) { difficulty = p.tier; break; }
+    }
+
+    const FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+    let isHidden = Math.random() < (catSpec?.family === "treasure" ? 0.35 : 0.05);
+    let family = isHidden
+      ? "treasure"
+      : (catSpec?.type === "family" && catSpec.family && catSpec.family !== "treasure")
+        ? (Math.random() < 0.85 ? catSpec.family : FAMILIES[Math.floor(Math.random() * FAMILIES.length)])
+        : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
+
+    let extraBonus = null;
+    if (catSpec?.type === "treasure") {
+      if (catSpec.lootType === "coins_materials") {
+        const bonusCoins = 1500 + Math.floor(Math.random() * 2000);
+        extraBonus = { type: "coins_materials", coins: bonusCoins, label: `${catSpec.name} 挖掘時發現了 ${bonusCoins} 金幣與稀有材料！` };
+        await updateDoc(doc(db, "members", memberId), { coins: increment(bonusCoins) }).catch(() => {});
+      } else if (catSpec.lootType === "dew_crystals") {
+        const bonusDew = 3 + Math.floor(Math.random() * 3);
+        extraBonus = { type: "dew_crystals", dew: bonusDew, label: `${catSpec.name} 幫你凝結了 ${bonusDew} 滴神聖箭露！` };
+        await updateDoc(doc(db, "members", memberId), { holyDew: increment(bonusDew) }).catch(() => {});
+      }
+    }
+
+    const bossRunId = makeBossRunId(family);
+    const rolled = isHidden
+      ? { boss: drawTreasureKing(difficulty), bossEncounter: null, miniStreak: null }
+      : rollExcavationBoss(difficulty, family, excavation, { runId: bossRunId });
+
+    const result = {
+      family,
+      difficulty,
+      isHidden,
+      boss: rolled.boss,
+      bossEncounter: rolled.bossEncounter,
+      bossRunId,
+      revealedAt: Date.now(),
+      catBonus: extraBonus,
+      fromCatDig: true,
+      catName: catSpec.name,
+    };
+
+    await updateDoc(doc(db, "members", memberId), {
+      "dungeonExcavation.catDigProgress": 0,
+      "dungeonExcavation.pendingReveal": result,
+      "dungeonExcavation.revealedAt": serverTimestamp(),
+    }).catch(() => {});
+    _excavCache.delete(memberId);
+
+    return result;
+  } catch (e) {
+    console.warn("revealCatExcavation:", e?.message);
+    return null;
+  }
+}
+
+/**
+ * 手動揭曉地下城（支援貓貓專長加成）
  */
 export async function revealExcavation(memberId) {
   if (!memberId) return null;
@@ -350,6 +468,8 @@ export async function revealExcavation(memberId) {
     if (progress < 100) return null;
 
     const dailyArrows = excavation.dailyArrowsUsed || 0;
+    const assignedCatId = excavation.assignedCatId || null;
+    const catSpec = CAT_DIG_SPECIALTIES[assignedCatId] || null;
 
     // 使用 T1~T6 機率系統
     const probs = getTierProbabilities(dailyArrows);
@@ -363,11 +483,32 @@ export async function revealExcavation(memberId) {
     }
 
     const FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
-    const isHidden = Math.random() < 0.05; // 5% 隱藏
-    // 隱藏地下城一律是寶箱族專屬（不再有「隱藏幽冥系」這種組合）
-    const family = isHidden ? "treasure" : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
+    let isHidden = Math.random() < (catSpec?.family === "treasure" ? 0.35 : 0.05); // 悠悠特長：隱藏地穴提升至 35%
+    
+    let family;
+    if (isHidden) {
+      family = "treasure";
+    } else if (catSpec?.type === "family" && catSpec.family && catSpec.family !== "treasure") {
+      // 專精貓貓：75% 出現該貓貓專精族系，25% 出現隨機種族
+      family = Math.random() < 0.75 ? catSpec.family : FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
+    } else {
+      family = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
+    }
 
-    // 隱藏地下城是寶箱族專屬王，不走族系抽王也不動小王保底計數
+    // 尋寶貓貓加成獎勵計算
+    let extraBonus = null;
+    if (catSpec?.type === "treasure") {
+      if (catSpec.lootType === "coins_materials") {
+        const bonusCoins = 1000 + Math.floor(Math.random() * 2000);
+        extraBonus = { type: "coins_materials", coins: bonusCoins, label: `小安挖到了 ${bonusCoins} 金幣與材料！` };
+        await updateDoc(doc(db, "members", memberId), { coins: increment(bonusCoins) }).catch(() => {});
+      } else if (catSpec.lootType === "dew_crystals") {
+        const bonusDew = 2 + Math.floor(Math.random() * 4);
+        extraBonus = { type: "dew_crystals", dew: bonusDew, label: `點點為你凝結了 ${bonusDew} 滴神聖箭露！` };
+        await updateDoc(doc(db, "members", memberId), { holyDew: increment(bonusDew) }).catch(() => {});
+      }
+    }
+
     const bossRunId = makeBossRunId(family);
     const rolled = isHidden
       ? { boss: drawTreasureKing(difficulty), bossEncounter: null, miniStreak: null }
@@ -380,6 +521,7 @@ export async function revealExcavation(memberId) {
       bossEncounter: rolled.bossEncounter,
       bossRunId,
       revealedAt: Date.now(),
+      catBonus: extraBonus,
     };
 
     await updateDoc(doc(db, "members", memberId), {

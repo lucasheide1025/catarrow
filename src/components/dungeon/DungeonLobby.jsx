@@ -1,5 +1,7 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城大廳（挖掘探索 + 進入地下城 + 圖鑑 + 遠征 + 組隊）
 import { useState, useEffect } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import DungeonDex from "./DungeonDex";
 import DungeonExcavationTab from "./DungeonExcavationTab";
@@ -19,6 +21,7 @@ import {
   subscribeTeamExpeditionRoom,
   subscribeOpenTeamExpeditionRooms,
   startTeamExpeditionRoom,
+  clearTeamExpeditionSavedProgress,
 } from "../../lib/expeditionTeamDb";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { normalizeDungeonRunSettings } from "../../lib/dungeonRunSettings";
@@ -122,10 +125,32 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
     };
   }, [myId, autoReconnectRoomId]);
 
-  // 偵測單人遠征中斷進度（見 dungeon 穩定性任務：不做地圖復原，只提供結算）
+  // 偵測單人遠征中斷進度（即時訂閱 members/{myId} + 本地 localStorage 雙重保障）
   useEffect(() => {
-    setSoloRecovery(profile?.activeExpedition || null);
-  }, [profile?.activeExpedition]);
+    let localData = null;
+    try {
+      const localSave = localStorage.getItem(`active_expedition_${myId || "guest"}`);
+      if (localSave) {
+        localData = JSON.parse(localSave);
+        setSoloRecovery(localData);
+      } else if (profile?.activeExpedition) {
+        setSoloRecovery(profile.activeExpedition);
+      }
+    } catch {}
+
+    if (!myId || isGuest) return;
+    const unsub = onSnapshot(doc(db, "members", myId), snap => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.activeExpedition) {
+        setSoloRecovery(data.activeExpedition);
+      } else if (!localData) {
+        // 只有當雲端為空且本機 localStorage 也沒有進度時，才設為 null
+        setSoloRecovery(null);
+      }
+    });
+    return unsub;
+  }, [myId, isGuest, profile?.activeExpedition]);
 
   // 訂閱開放的組隊房間
   useEffect(() => {
@@ -235,6 +260,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
   async function handleSettleSolo() {
     if (!soloRecovery || soloSettling) return;
     setSoloSettling(true);
+    try { localStorage.removeItem(`active_expedition_${myId || "guest"}`); } catch {}
     const { settleAbandonedExpedition } = await import("../../lib/expeditionDb");
     await settleAbandonedExpedition(myId, soloRecovery).catch(() => {});
     setSoloRecovery(null);
@@ -255,6 +281,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       resumeHp: soloRecovery.hp || 0,
       expansionRunId: soloRecovery.expansionRunId || null,
       bossEncounter: soloRecovery.bossEncounter || null,
+      mapState: soloRecovery.mapState || null,
       ...settings,
     });
   }
@@ -274,14 +301,29 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       );
     }
     // 單人遠征
+    const handleExitExpedition = () => {
+      setExpeditionStart(null);
+      setSelectedDungeon(null);
+      setTeamLobby(null);
+      // 即時重新抓取本地/雲端存檔狀態以更新大廳 UI
+      try {
+        const localSave = localStorage.getItem(`active_expedition_${myId || "guest"}`);
+        if (localSave) {
+          setSoloRecovery(JSON.parse(localSave));
+        } else if (profile?.activeExpedition) {
+          setSoloRecovery(profile.activeExpedition);
+        }
+      } catch {}
+    };
+
     return (
       <DungeonExpedition
         excavation={expeditionStart}
         profile={profile}
         isGuest={isGuest}
         tierCap={tierCap}
-        onComplete={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
-        onAbandon={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
+        onComplete={handleExitExpedition}
+        onAbandon={handleExitExpedition}
       />
     );
   }
@@ -399,38 +441,145 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
             </div>
           </section>
         )}
+        {profile?.teamSavedProgress && (
+          <section
+            aria-labelledby="dungeon-team-saved-title"
+            className="mb-4 rounded-2xl border border-blue-400/40 bg-blue-950/80 p-4 shadow-xl backdrop-blur-md"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-3xl" aria-hidden="true">📜</span>
+              <div className="min-w-0 flex-1">
+                <h2 id="dungeon-team-saved-title" className="text-base font-black text-blue-200">
+                  您有保存的組隊進度 (第 {(profile.teamSavedProgress.savedFloorIndex || 0) + 1} 層)
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-blue-200/80">
+                  地下城：<b className="text-amber-300">{
+                    {
+                      ghost: "👻 幽冥系",
+                      mountain: "⛰️ 山嶺系",
+                      insect: "🦋 昆蟲系",
+                      workplace: "💼 職場系",
+                      exam: "📝 考試系",
+                      temple: "🏛️ 神廟系",
+                      treasure: "📦 寶箱族",
+                    }[profile.teamSavedProgress.family] || profile.teamSavedProgress.family || "未知"
+                  } (T{profile.teamSavedProgress.difficulty || 1})</b><br />
+                  點擊下方按鈕即可創建新房間，邀請夥伴從此進度繼續挑戰！
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await createTeamExpeditionRoom({
+                        hostId: myId,
+                        hostName: myName,
+                        dungeon: {
+                          family: profile.teamSavedProgress.family,
+                          difficulty: profile.teamSavedProgress.difficulty,
+                          isHidden: profile.teamSavedProgress.isHidden,
+                          boss: profile.teamSavedProgress.boss,
+                          expansionRunId: profile.teamSavedProgress.expansionRunId,
+                          bossEncounter: profile.teamSavedProgress.bossEncounter,
+                          lootMult: profile.teamSavedProgress.lootMult,
+                          savedFloorIndex: profile.teamSavedProgress.savedFloorIndex,
+                          savedMapState: profile.teamSavedProgress.savedMapState,
+                          arrowsPerRound: profile.teamSavedProgress.arrowsPerRound,
+                          targetFmt: profile.teamSavedProgress.targetFmt,
+                        },
+                        memberData: buildMemberData(),
+                      });
+                      if (res.ok) {
+                        setTeamLobby({
+                          roomId: res.roomId,
+                          dungeon: restoreDungeonFromTeamRoom({
+                            dungeonFamily: profile.teamSavedProgress.family,
+                            dungeonDifficulty: profile.teamSavedProgress.difficulty,
+                            dungeonIsHidden: profile.teamSavedProgress.isHidden,
+                            dungeonBoss: profile.teamSavedProgress.boss,
+                            expansionRunId: profile.teamSavedProgress.expansionRunId,
+                            bossEncounter: profile.teamSavedProgress.bossEncounter,
+                            arrowsPerRound: profile.teamSavedProgress.arrowsPerRound,
+                            targetFmt: profile.teamSavedProgress.targetFmt,
+                          }),
+                          hostId: myId,
+                        });
+                        setTab("enter");
+                        setSelectedDungeon(null);
+                      } else {
+                        alert(`建立房間失敗：${res.reason}`);
+                      }
+                    }}
+                    className="min-h-11 flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ touchAction:"manipulation" }}
+                  >
+                    ⚔️ 載入存檔建立房間
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (window.confirm("確定要棄用/刪除這份組隊進度嗎？此操作無法復原。")) {
+                        await clearTeamExpeditionSavedProgress(myId);
+                      }
+                    }}
+                    className="min-h-11 rounded-xl border border-red-400/30 px-4 py-2.5 text-sm font-bold text-red-300 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    style={{ touchAction:"manipulation" }}
+                  >
+                    放棄進度
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+        {/* 🗺️ 單人地下城續戰通知卡片 */}
         {soloRecovery && (
           <section
             aria-labelledby="dungeon-solo-recovery-title"
-            className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-950/80 p-4 shadow-lg"
+            className="mb-4 rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 p-4 shadow-2xl backdrop-blur-md animate-pulse"
           >
             <div className="flex items-start gap-3">
-              <span className="text-2xl" aria-hidden="true">🎁</span>
+              <span className="text-3xl animate-bounce" aria-hidden="true">🗺️</span>
               <div className="min-w-0 flex-1">
-                <h2 id="dungeon-solo-recovery-title" className="text-base font-black text-amber-100">
-                  偵測到中斷的單人遠征
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-amber-100/80">
-                  已完成 {soloRecovery.floorsCleared || 0} 層。可以<b className="text-amber-100">回到地下城</b>從這一層繼續（HP 沿用離開前的狀態），或直接結算領取這部分的獎勵。
+                <div className="flex items-center gap-2">
+                  <h2 id="dungeon-solo-recovery-title" className="text-base font-black text-amber-200">
+                    偵測到進行中的單人地下城
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950">
+                    第 {(soloRecovery.mapState?.floorIndex || soloRecovery.floorsCleared || 0) + 1} 層
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-amber-200/80">
+                  地下城：<b className="text-amber-300">{
+                    {
+                      ghost: "👻 幽冥系",
+                      mountain: "⛰️ 山嶺系",
+                      insect: "🦋 昆蟲系",
+                      workplace: "💼 職場系",
+                      exam: "📝 考試系",
+                      temple: "🏛️ 神廟系",
+                      treasure: "📦 寶箱族",
+                    }[soloRecovery.family] || soloRecovery.family || "探索中"
+                  } (T{soloRecovery.difficultyTier || 1})</b><br />
+                  地圖狀態已完好保存！隨時可以回到地圖繼續探索。
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     onClick={handleResumeSolo}
                     disabled={soloSettling}
-                    className="min-h-11 flex-1 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-black text-slate-950 transition-colors hover:bg-amber-300 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="min-h-11 flex-1 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 px-4 py-2.5 text-sm font-black text-slate-950 shadow-lg transition-all hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     style={{ touchAction:"manipulation" }}
                   >
-                    🗺️ 回到地下城
+                    🗺️ 繼續地下城冒險
                   </button>
                   <button
                     type="button"
                     onClick={handleSettleSolo}
                     disabled={soloSettling}
-                    className="min-h-11 rounded-xl border border-amber-300/40 px-4 py-2.5 text-sm font-bold text-amber-100 transition-colors hover:bg-amber-400/10 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="min-h-11 rounded-xl border border-amber-300/40 px-4 py-2.5 text-sm font-bold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     style={{ touchAction:"manipulation" }}
                   >
-                    {soloSettling ? "結算中…" : "改為結算"}
+                    {soloSettling ? "結算中…" : "放棄並結算"}
                   </button>
                 </div>
               </div>

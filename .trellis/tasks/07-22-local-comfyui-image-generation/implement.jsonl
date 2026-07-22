@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"專案前端規範入口"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"生成工具、staging 與正式資產歸位規範"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"工具與產物品質閘門"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"圖片、程式引用、部署與 Rules 並行邊界"}

@@ -13,7 +13,11 @@ import {
   downgradeExcavationDifficulty,
   upgradeExcavationDifficulty,
   useDungeonScroll,
+  assignDigCat,
+  revealCatExcavation,
+  CAT_DIG_SPECIALTIES,
 } from "../../lib/dungeonExcavation";
+import { getDigSpeech } from "../cat/catSpeeches";
 import { getPendingArrowOperationCount, flushPendingArrowProgress } from "../../lib/db";
 
 // 待同步箭數橫幅：pending>0 才顯示;點擊立即重試同步（挖掘/終身箭數卡住的救援入口）
@@ -238,53 +242,264 @@ export default function DungeonExcavationTab({ profile }) {
     setScrollBusy(false);
   }
 
+  // 貓貓陪練狀態
+  const assignedCatId = excavation?.assignedCatId || null;
+  const currentCatSpec = CAT_DIG_SPECIALTIES[assignedCatId] || null;
+  const [catSpeech, setCatSpeech] = useState("");
+  const [showCatPicker, setShowCatPicker] = useState(false);
+  const [assigningCat, setAssigningCat] = useState(false);
+
+  // 定時輪播貓貓語錄
+  useEffect(() => {
+    if (!assignedCatId) { setCatSpeech(""); return; }
+    setCatSpeech(getDigSpeech(assignedCatId));
+    const speechTimer = setInterval(() => {
+      setCatSpeech(getDigSpeech(assignedCatId));
+    }, 12000);
+    return () => clearInterval(speechTimer);
+  }, [assignedCatId]);
+
+  async function handleSelectCat(catId) {
+    if (!myId || assigningCat) return;
+    setAssigningCat(true);
+    const res = await assignDigCat(myId, catId);
+    if (res.ok) {
+      setShowCatPicker(false);
+    } else {
+      alert(res.reason || "指派失敗");
+    }
+    setAssigningCat(false);
+  }
+
+  const catDigProgress = Math.min(100, Math.round(excavation?.catDigProgress || 0));
+  const isCatDigComplete = catDigProgress >= 100;
+
+  async function handleRevealCat() {
+    if (!myId || loading) return;
+    setLoading(true);
+    const result = await revealCatExcavation(myId);
+    if (result) {
+      setPendingReveal(result);
+      setRevealOpen(true);
+    }
+    setLoading(false);
+  }
+
   return (
     <div className="space-y-4 pb-4">
 
       {/* ⚠️ 待同步箭數（同步卡住時可見+手動重試;正常時不顯示） */}
       <PendingArrowSyncBanner myId={myId} />
 
-      {/* ═══════════ ① 定時生成 ═══════════ */}
-      <div className="rounded-2xl p-4 relative overflow-hidden"
-        style={{
-          background: "#101827",
-          border: autoDigStatus.ready
-            ? "1px solid rgba(251,191,36,0.3)"
-            : "1px solid rgba(148,163,184,0.16)",
-          boxShadow:`inset 4px 0 ${autoDigStatus.ready ? "#fbbf24" : "#64748b"}, 0 12px 26px rgba(0,0,0,.24)`,
-        }}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="text-3xl">{autoDigStatus.ready ? "⏰" : "⏳"}</div>
-          <div>
-            <div className="text-base font-black text-white">
-              定時生成
+      {/* 🐾 貓貓陪練與專長區塊 */}
+      <div className="rounded-2xl p-4 relative overflow-hidden bg-gradient-to-r from-purple-950/80 to-slate-900/90 border border-purple-500/30 shadow-xl backdrop-blur-md">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl">🐾</span>
+            <div>
+              <div className="text-base font-black text-purple-200">地下城貓貓隊長挖掘</div>
+              <div className="text-[10px] text-purple-300/70">貓貓擁有獨立挖掘進度條，練箭與時間均可推進</div>
             </div>
-            <div className="text-[10px]" style={{ color:"var(--text-secondary)" }}>
-              系統每 24~144 小時自動生成一個地下城
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCatPicker(true)}
+            className="px-3 py-1.5 rounded-xl bg-purple-600/40 hover:bg-purple-600/60 border border-purple-400/40 text-xs font-bold text-purple-200 transition-all active:scale-95"
+          >
+            {assignedCatId ? "更換隊長" : "+ 指派隊長"}
+          </button>
+        </div>
+
+        {assignedCatId && currentCatSpec ? (
+          <div className="mt-3 space-y-3 bg-purple-900/30 rounded-xl p-3 border border-purple-500/20">
+            <div className="flex items-start gap-3">
+              <div className="relative shrink-0">
+                <img
+                  src={`/cats/portraits/${assignedCatId}.webp`}
+                  alt={currentCatSpec.name}
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-purple-400/50 shadow-md animate-bounce"
+                  style={{ animationDuration: "3s" }}
+                />
+                <span className="absolute -bottom-1 -right-1 text-sm">{currentCatSpec.icon}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-sm text-purple-100">{currentCatSpec.name}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/30 text-purple-300 border border-purple-400/30">
+                    {currentCatSpec.label}
+                  </span>
+                </div>
+                <div className="text-xs text-purple-200/80 mt-0.5">{currentCatSpec.desc}</div>
+                
+                {/* 貓貓台詞氣泡 */}
+                {catSpeech && (
+                  <div className="mt-2.5 relative bg-purple-950/90 text-purple-100 px-3 py-1.5 rounded-xl text-xs font-bold border border-purple-400/40 shadow-inner animate-pulse">
+                    <span className="mr-1">💬</span>「{catSpeech}」
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 🐾 貓貓獨立挖掘進度條 */}
+            <div className="pt-2 border-t border-purple-500/20">
+              <StatBar
+                value={catDigProgress}
+                max={100}
+                color={isCatDigComplete ? "#c084fc" : "#a855f7"}
+                label={`🐾 ${currentCatSpec.name} 的獨立挖掘進度 ${catDigProgress}%`}
+                height={10}
+              />
+              <div className="flex items-center justify-between text-[10px] text-purple-300/70 mt-1">
+                <span>每箭陪伴 +0.5% · 時間自動推進</span>
+                <span>{isCatDigComplete ? "已解鎖專屬地下城！" : "挖掘中…"}</span>
+              </div>
+              {isCatDigComplete && !pendingReveal && !storageFull && (
+                <button
+                  type="button"
+                  onClick={handleRevealCat}
+                  disabled={loading}
+                  className="w-full mt-2.5 py-2.5 rounded-xl font-black text-xs bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-lg active:scale-95 transition-all disabled:opacity-40"
+                >
+                  {loading ? "揭曉中…" : `🎁 領取 ${currentCatSpec.name} 挖掘的地下城！`}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 p-3 rounded-xl bg-purple-900/10 border border-dashed border-purple-400/30 text-center text-xs text-purple-300/60">
+            目前尚未指派貓貓隊長。指派後貓貓將擁有「獨立挖掘進度條」，時間與射箭陪伴都會讓牠為你獨自挖掘地下城！
+          </div>
+        )}
+      </div>
+
+      {/* 🐾 選擇貓貓 Modal */}
+      {showCatPicker && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowCatPicker(false)}
+        >
+          <div
+            className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl space-y-4 max-h-[85dvh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <span>🐾</span> 選擇地下城陪練貓貓
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowCatPicker(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {Object.values(CAT_DIG_SPECIALTIES).map(cat => {
+                const isSelected = assignedCatId === cat.id;
+                // 檢查是否正處於遠征中
+                const activeExpeditions = profile?.expeditions || {};
+                const inExpedition = Object.values(activeExpeditions).some(e => e.catId === cat.id);
+
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    disabled={assigningCat || inExpedition}
+                    onClick={() => handleSelectCat(cat.id)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
+                      isSelected
+                        ? "bg-purple-900/60 border-purple-400 text-white ring-2 ring-purple-400/40"
+                        : inExpedition
+                        ? "bg-slate-950/40 border-slate-800 text-slate-500 opacity-60 cursor-not-allowed"
+                        : "bg-slate-950/70 border-slate-800 text-slate-200 hover:bg-purple-950/40 hover:border-purple-500/30"
+                    }`}
+                  >
+                    <img
+                      src={`/cats/portraits/${cat.id}.webp`}
+                      alt={cat.name}
+                      className="w-12 h-12 rounded-xl object-cover border border-white/10 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm text-white">{cat.name}</span>
+                        <span className="text-xs">{cat.icon}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-purple-300">
+                          {cat.label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">{cat.desc}</div>
+                      {inExpedition && (
+                        <div className="text-[10px] font-bold text-amber-400 mt-1">
+                          ⚔️ 正在遠征中（無法同時挖掘）
+                        </div>
+                      )}
+                    </div>
+                    {isSelected && <span className="text-purple-400 font-bold text-sm">✓ 使用中</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ ① 定時生成 ═══════════ */}
+      <div className={`rounded-2xl p-4 relative overflow-hidden transition-all duration-500 ${
+        autoDigStatus.ready
+          ? "bg-gradient-to-br from-amber-950/90 via-slate-900 to-amber-900/60 border-2 border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.35)] animate-pulse"
+          : "bg-gradient-to-br from-slate-900/90 via-indigo-950/40 to-slate-900 border border-indigo-500/20 shadow-xl backdrop-blur-md"
+      }`}>
+        {/* 背景微光粒子動畫裝飾 */}
+        {autoDigStatus.ready && (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.25),transparent_70%)] pointer-events-none" />
+        )}
+
+        <div className="flex items-center justify-between gap-3 mb-3 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className={`text-3xl transition-transform duration-500 ${autoDigStatus.ready ? "scale-125 animate-bounce" : "animate-spin-slow"}`}>
+              {autoDigStatus.ready ? "🎁" : "⏳"}
+            </div>
+            <div>
+              <div className="text-base font-black text-white flex items-center gap-2">
+                <span>定時自動探測</span>
+                {autoDigStatus.ready && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 animate-pulse">
+                    探測完成！
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                系統每 24~144 小時自動挖掘揭露神秘地下城
+              </div>
             </div>
           </div>
         </div>
 
         {autoDigStatus.ready ? (
           <button onClick={handleClaimAutoDig} disabled={loading}
-            className="w-full py-3 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-lg active:scale-95 transition-all disabled:opacity-50">
-            {loading ? "領取中…" : "🎁 領取自動生成的地下城！"}
+            className="w-full py-3.5 rounded-xl font-black text-sm bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(251,191,36,0.5)] hover:brightness-110 active:scale-98 transition-all disabled:opacity-50 relative z-10 flex items-center justify-center gap-2">
+            <span className="text-lg">✨</span>
+            <span>{loading ? "探索中…" : "領取自動生成的地下城！"}</span>
+            <span className="text-lg">✨</span>
           </button>
         ) : (
-          <div>
-            <div className="text-center py-3">
-              <div className="text-3xl font-black" style={{ color:"#818cf8" }}>
+          <div className="relative z-10 bg-slate-950/60 rounded-xl p-3 border border-indigo-500/10">
+            <div className="text-center py-1">
+              <div className="text-3xl font-black tracking-wider bg-gradient-to-r from-indigo-300 via-purple-200 to-indigo-300 bg-clip-text text-transparent drop-shadow-md">
                 {fmtRemaining(autoDigStatus.remainingMs)}
               </div>
-              <div className="text-[10px] mt-1" style={{ color:"var(--text-muted)" }}>
-                距離下次自動生成
+              <div className="text-[10px] mt-1 text-slate-400 font-bold flex items-center justify-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+                距離下次探測完成
               </div>
             </div>
-            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-400 rounded-full transition-all duration-1000"
+            <div className="h-2 bg-slate-800/80 rounded-full overflow-hidden mt-2.5 p-0.5 border border-indigo-500/20">
+              <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-amber-400 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(129,140,248,0.5)]"
                 style={{
                   width: `${autoDigStatus.remainingMs > 0
-                    ? Math.max(2, (1 - autoDigStatus.remainingMs / (144 * 3600000)) * 100)
+                    ? Math.max(3, (1 - autoDigStatus.remainingMs / (144 * 3600000)) * 100)
                     : 0}%`,
                 }} />
             </div>
@@ -456,6 +671,17 @@ export default function DungeonExcavationTab({ profile }) {
                 {TIER_LABEL[pendingReveal.difficulty]?.icon || ""} T{pendingReveal.difficulty} {TIER_LABEL[pendingReveal.difficulty]?.label || ""}
               </span>
             </div>
+
+            {/* 貓貓尋寶加成提示 */}
+            {pendingReveal.catBonus && (
+              <div className="mt-3 p-3 rounded-2xl bg-purple-950/90 border border-purple-400/50 shadow-lg text-left flex items-center gap-3">
+                <span className="text-2xl animate-bounce">🎁</span>
+                <div>
+                  <div className="text-xs font-black text-purple-200">🐾 貓貓陪練額外尋寶收穫！</div>
+                  <div className="text-xs font-bold text-amber-300 mt-0.5">{pendingReveal.catBonus.label}</div>
+                </div>
+              </div>
+            )}
 
             {/* 免費降級 + 金幣強化 */}
             <div className="mt-4 flex gap-2">

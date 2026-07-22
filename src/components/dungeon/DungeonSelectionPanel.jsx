@@ -251,7 +251,31 @@ export default function DungeonSelectionPanel({
         </div>
 
         {/* 單人遠征 */}
-        <button onClick={() => setShowConfirm(true)}
+        <button onClick={async () => {
+          // 1. 檢查是否有進行中的單人地下城
+          const activeExp = profile?.activeExpedition || (() => {
+            try {
+              const s = localStorage.getItem(`active_expedition_${myId || "guest"}`);
+              return s ? JSON.parse(s) : null;
+            } catch { return null; }
+          })();
+          if (activeExp) {
+            const floor = (activeExp.mapState?.floorIndex || activeExp.floorsCleared || 0) + 1;
+            if (!window.confirm(`⚠️ 警告：您目前有未完成的【單人地下城 (第 ${floor} 層)】！\n開啟新的遠征將會【覆蓋並清除】該單人進度。\n確定要開新關卡嗎？`)) {
+              return;
+            }
+          }
+          // 2. 檢查是否有保存的組隊進度
+          if (profile?.teamSavedProgress) {
+            const floor = (profile.teamSavedProgress.savedFloorIndex || 0) + 1;
+            if (!window.confirm(`⚠️ 警告：您目前有已保存的【組隊進度 (第 ${floor} 層)】。\n開啟新的單人遠征將會清除/覆蓋此組隊進度！\n確定要繼續嗎？`)) {
+              return;
+            }
+            const { clearTeamExpeditionSavedProgress } = await import("../../lib/expeditionTeamDb");
+            await clearTeamExpeditionSavedProgress(myId);
+          }
+          setShowConfirm(true);
+        }}
           className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
           style={{
             background:"rgba(59,130,246,0.10)",
@@ -269,12 +293,36 @@ export default function DungeonSelectionPanel({
         </button>
 
         {/* 組隊探索 */}
-        <button onClick={() => onStartTeam({
-          ...dungeon,
-          boss,
-          arrowsPerRound,
-          targetFmt,
-        })}
+        <button onClick={async () => {
+          // 1. 檢查是否有進行中的單人地下城
+          const activeExp = profile?.activeExpedition || (() => {
+            try {
+              const s = localStorage.getItem(`active_expedition_${myId || "guest"}`);
+              return s ? JSON.parse(s) : null;
+            } catch { return null; }
+          })();
+          if (activeExp) {
+            const floor = (activeExp.mapState?.floorIndex || activeExp.floorsCleared || 0) + 1;
+            if (!window.confirm(`⚠️ 警告：您目前有未完成的【單人地下城 (第 ${floor} 層)】！\n建立組隊房間將會【覆蓋並清除】該單人進度。\n確定要開新關卡嗎？`)) {
+              return;
+            }
+          }
+          // 2. 檢查是否有保存的組隊進度
+          if (profile?.teamSavedProgress) {
+            const floor = (profile.teamSavedProgress.savedFloorIndex || 0) + 1;
+            if (!window.confirm(`⚠️ 警告：您目前有已保存的【組隊進度 (第 ${floor} 層)】。\n建立新的組隊房間將會清除/覆蓋此組隊進度！\n確定要繼續嗎？`)) {
+              return;
+            }
+            const { clearTeamExpeditionSavedProgress } = await import("../../lib/expeditionTeamDb");
+            await clearTeamExpeditionSavedProgress(myId);
+          }
+          onStartTeam({
+            ...dungeon,
+            boss,
+            arrowsPerRound,
+            targetFmt,
+          });
+        }}
           className="w-full rounded-2xl p-4 text-left border transition-all active:scale-[0.98]"
           style={{
             background:"rgba(139,92,246,0.10)",

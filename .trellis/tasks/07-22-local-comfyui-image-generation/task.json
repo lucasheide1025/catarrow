@@ -1,0 +1,30 @@
+{
+  "id": "local-comfyui-image-generation",
+  "name": "local-comfyui-image-generation",
+  "title": "本機 ComfyUI 圖片生成遷移規劃",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-07-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-22-comfyui-pilot",
+    "07-22-firestore-rules-matrix-tests",
+    "07-22-deployment-asset-inventory"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/index.md","reason":"全範圍品質檢查入口"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"驗證 staging、生成工具與正式資產邊界"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"驗證程式、測試與產物品質"}
