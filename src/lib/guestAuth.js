@@ -28,6 +28,37 @@ export async function sha256(text) {
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// ── 學籍/正式帳號偵測（訪客流程共用，2026-07-23）───────────────────────
+// 學籍帳號絕對不可落進訪客帳戶。判斷訊號（任一成立即算「學籍/正式」）：
+//  (1) accountType 不是 guest/kid（教練 createMember 不寫 accountType，missing 也算正式）
+//  (2) 有 studentTier 欄位（受限/正式/退休）——createMember 與 convertGuestToOfficial 一定會寫，
+//      是比 accountType 更可靠的學籍指標（作者建議：目前只有正式帳號才有這個分級）。
+export function isEnrolledMemberDoc(data) {
+  if (!data) return false;
+  const t = data.accountType;
+  // guest/kid 理論上不會有 studentTier；若被誤植（例如轉換殘留）也一律當作正式擋下（安全方向）
+  if (t === "guest" || t === "kid") return data.studentTier != null;
+  return true; // 非 guest/kid（含 undefined = 教練建立的正式學員）
+}
+
+// 用 email 或 contactHash 找出這個人是否已有學籍/正式帳號（找不到回 null）。
+// email 欄位可能為空（教練建立的舊學員只有 contactHash），所以兩條都查。
+async function findEnrolledMemberDoc(trimmedEmail, contactHash) {
+  try {
+    if (trimmedEmail) {
+      const s1 = await getDocs(query(collection(db, C_MEMBERS), where("email", "==", trimmedEmail), limit(5)));
+      const d1 = s1.docs.find(d => isEnrolledMemberDoc(d.data()));
+      if (d1) return d1;
+    }
+    if (contactHash) {
+      const s2 = await getDocs(query(collection(db, C_MEMBERS), where("contactHash", "==", contactHash), limit(5)));
+      const d2 = s2.docs.find(d => isEnrolledMemberDoc(d.data()));
+      if (d2) return d2;
+    }
+  } catch { /* 查詢失敗就當作查不到，交給後續流程處理 */ }
+  return null;
+}
+
 // 掃碼進站的核心流程：匿名登入 → 用聯絡方式找回舊記錄，找不到就新建
 // accountType: "guest" | "kid"
 //
@@ -108,13 +139,16 @@ async function resolveLegacyGuestSession(contact, accountType, sessionSourceId =
     const uid = workingAuth.currentUser.uid;
     const contactHash = await sha256(normalizeContact(contact));
 
-    // Security Rules intentionally prohibit contact-hash enumeration. A website
-    // guest may resume only through the anonymous identity already persisted by
-    // Firebase Auth; contact remains a consistency check, not an ownership proof.
+    // ⚠️ 2026-07-23 修「同一信箱每次進來都新建一筆重複 guest 帳號」：
+    //   a226c41 把這個查詢從 contactHash 改成「匿名 uid」，但匿名 uid 每個 session 都會變 →
+    //   永遠查不到本尊 → 每次都走下面的 addDoc 新建 → 同一 email 冒出多筆重複訪客帳號。
+    //   改回用 contactHash（email 衍生，跨 session/裝置穩定）當身分索引。
+    //   合法性：firestore.rules 的 members list 規則允許「任何登入者讀 guest/kid 文件」
+    //   （正因匿名 uid 本就不穩定，見規則 line 48-49 註解），所以此查詢不違反規則。
     const q = query(
       collection(workingDb, C_MEMBERS),
       where("accountType", "==", accountType),
-      where("uid", "==", uid),
+      where("contactHash", "==", contactHash),
       limit(1)
     );
     const snap = await getDocs(q);
@@ -122,9 +156,6 @@ async function resolveLegacyGuestSession(contact, accountType, sessionSourceId =
     if (!snap.empty) {
       const existing = snap.docs[0];
       const data = existing.data();
-      if (data.contactHash !== contactHash) {
-        return { ok: false, reason: "此裝置的訪客身分與預約資料不符" };
-      }
       const starterPatch = data.starterCoinsGranted ? {} : {
         coins: (data.coins || 0) + GUEST_STARTER_COINS,
         starterCoinsGranted: true,
@@ -210,19 +241,10 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     const uid = cred.user.uid;
     const contactHash = await sha256(normalizeContact(trimmedEmail));
 
-    const dupCheck = await getDocs(query(
-      collection(db, C_MEMBERS),
-      where("email", "==", trimmedEmail),
-      limit(5)
-    ));
-    // ⚠️ 沒有 accountType 欄位的 = 教練用 createMember 建立的正式學員（該函式不寫此欄位）。
-    // 原本寫成 `t && t !== "guest"`，導致舊正式學員被判定成「非正式」而放行，
-    // 於是已有正式帳號的學生從官網註冊後會多出一筆訪客帳號，登入時被訪客分支擋住。
-    const hasOfficial = dupCheck.docs.some(d => {
-      const t = d.data()?.accountType;
-      return t !== "guest" && t !== "kid";
-    });
-    if (hasOfficial) {
+    // 學籍/正式帳號一律擋下（不可建立訪客帳號）。用 email + contactHash 兩路查（共用偵測器），
+    // 涵蓋教練 createMember 建立、email 欄位可能為空、只有 studentTier 的舊學員。
+    const enrolled = await findEnrolledMemberDoc(trimmedEmail, contactHash);
+    if (enrolled) {
       return { ok: false, reason: "這個 Email 已經是正式學員／教練帳號，請直接用「登入」或用主系統登入" };
     }
 
@@ -276,69 +298,41 @@ export async function loginGuestWithPassword(email, password) {
     // 密碼驗證通過後改用 contactHash 找回會員文件（不是靠這次登入拿到的 uid 反查）——
     // 理由同註冊那邊：這樣才能正確接續舊的匿名QR碼記錄，身份認定統一以 email 為準。
     const contactHash = await sha256(normalizeContact(trimmedEmail));
-    const q = query(
+
+    // ── 先檢查「學籍/正式帳號」：學籍帳號一律登入正式身分，絕不落進訪客帳戶 ──
+    // ⚠️ 順序很重要（2026-07-23 作者回報「學籍帳號被訪客蓋過去」後修正）：
+    //   舊版把學籍偵測放在「查無 guest 文件」之後，導致「同時擁有 guest 舊文件＋學籍」的 email
+    //   會先被下面的 guest 分支接走 → 繞過學籍偵測 → 學籍身分被當成訪客登入。把它提前到最前面。
+    const enrolledDoc = await findEnrolledMemberDoc(trimmedEmail, contactHash);
+    if (enrolledDoc) {
+      const mData = enrolledDoc.data();
+      await updateDoc(enrolledDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+      return { ok: true, id: enrolledDoc.id, name: mData.name || "", email: mData.email || trimmedEmail, phone: mData.phone || "", uid: cred.user.uid, bookingStats: mData.bookingStats || null, accountType: mData.accountType, isNew: false };
+    }
+
+    // ── 沒有學籍帳號，才走訪客流程 ──
+    const snap = await getDocs(query(
       collection(db, C_MEMBERS),
       where("accountType", "==", "guest"),
       where("contactHash", "==", contactHash),
       limit(1)
-    );
-    let snap = await getDocs(q);      // ⚠️ 2026-07-11 修復「有學籍學生無法預約登入」：若 guest 查不到，改查 Email
-    //   是否有正式學員/教練記錄。讓學生能用同一組 Email 登入預約頁面，
-    //   不用再建一個 guest 帳號，booking 會掛在學生原本的 memberId 上。
-    // ⚠️ 2026-07-12 作者回報「舊測試學生帳號登入依舊顯示找不到記錄」：
-    //   有些舊正式學員文件的 email 欄位為空（只有 contactHash），或者 accountType
-    //   為 "student" / undefined。新增第三道 fallback：用 contactHash 廣搜所有
-    //   accountType（不含 guest/kid 的正式學員），涵蓋 email 為空但已有接觸記錄的舊帳號。
-    if (snap.empty) {
-      const officialQ = query(
-        collection(db, C_MEMBERS),
-        where("email", "==", trimmedEmail),
-        limit(5)
-      );
-      const officialSnap = await getDocs(officialQ);
-      let officialDoc = officialSnap.docs.find(d => {
-        const t = d.data()?.accountType;
-        return t && t !== "guest" && t !== "kid";
-      });
-      // 第三道 fallback：用 contactHash 查正式學員（email 可能為空）
-      if (!officialDoc) {
-        const fallbackQ = query(
-          collection(db, C_MEMBERS),
-          where("contactHash", "==", contactHash),
-          limit(5)
-        );
-        const fallbackSnap = await getDocs(fallbackQ);
-        officialDoc = fallbackSnap.docs.find(d => {
-          const t = d.data()?.accountType;
-          // 沒有 accountType = 教練建立的正式學員（createMember 不寫此欄位），必須算正式帳號，
-          // 否則下方會替已有正式帳號的學生補建一筆 guest 文件，害他登入主系統時被訪客分支擋掉。
-          return t !== "guest" && t !== "kid";
-        });
-      }
-      if (officialDoc) {
-        const mData = officialDoc.data();
-        await updateDoc(officialDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
-        return { ok: true, id: officialDoc.id, name: mData.name || "", email: mData.email || trimmedEmail, phone: mData.phone || "", uid: cred.user.uid, bookingStats: mData.bookingStats || null, accountType: mData.accountType, isNew: false };
-      }
-      // ⚠️ 2026-07-12 登入端自我修復孤兒帳號：密碼驗證通過（＝這個 Email 確實是本人的
-      //   Firebase Auth 帳號），但查不到任何 member 文件——多半是上次註冊建立了 Auth 用戶
-      //   但 Firestore 建文件失敗留下的孤兒。這裡直接補建 guest 文件接回，不再回「找不到記錄」，
-      //   徹底打破「註冊叫你登入、登入叫你註冊」的死結。
-      //   （前面 officialQ + contactHash fallback 已確認沒有正式學員文件，補 guest 不會打架。）
-      //   缺點：登入沒收電話，補建的文件 phone 為空；使用者之後在會員中心補電話即可預約。
-      const displayName = cred.user.displayName || "訪客射手";
-      const ref = await addDoc(collection(db, C_MEMBERS), {
-        accountType: "guest", contactHash, contactRaw: trimmedEmail,
-        sessionSourceId: null, uid: cred.user.uid, hasPassword: true,
-        name: displayName, email: trimmedEmail, phone: "",
-        coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
-      });
-      return { ok: true, id: ref.id, accountType: "guest", uid: cred.user.uid, name: displayName, email: trimmedEmail, phone: "", coins: 0, isNew: true };
+    ));
+    if (!snap.empty) {
+      const existing = snap.docs[0];
+      await updateDoc(existing.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+      return { ok: true, id: existing.id, ...existing.data(), uid: cred.user.uid, isNew: false };
     }
 
-    const existing = snap.docs[0];
-    await updateDoc(existing.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
-    return { ok: true, id: existing.id, ...existing.data(), uid: cred.user.uid, isNew: false };
+    // 孤兒自我修復：密碼驗證通過但查無任何文件（前面已確認非學籍）→ 補建 guest 接回，
+    // 打破「註冊叫你登入、登入叫你註冊」的死結。登入沒收電話，phone 先留空，之後在會員中心補。
+    const displayName = cred.user.displayName || "訪客射手";
+    const ref = await addDoc(collection(db, C_MEMBERS), {
+      accountType: "guest", contactHash, contactRaw: trimmedEmail,
+      sessionSourceId: null, uid: cred.user.uid, hasPassword: true,
+      name: displayName, email: trimmedEmail, phone: "",
+      coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
+    });
+    return { ok: true, id: ref.id, accountType: "guest", uid: cred.user.uid, name: displayName, email: trimmedEmail, phone: "", coins: 0, isNew: true };
   } catch (e) {
     if (e?.code === "auth/invalid-credential" || e?.code === "auth/wrong-password" || e?.code === "auth/user-not-found") {
       return { ok: false, reason: "Email 或密碼不正確" };
@@ -381,17 +375,11 @@ export async function signInWithGoogle() {
     try {
       // 用 uid 查（教練/正式學員文件都有 uid）
       const dupSnap = await getDocs(query(collection(db, C_MEMBERS), where("uid", "==", uid), limit(5)));
-      let isOfficial = dupSnap.docs.some(d => {
-        const t = d.data()?.accountType;
-        return t !== "guest" && t !== "kid";
-      });
+      let isOfficial = dupSnap.docs.some(d => isEnrolledMemberDoc(d.data()));
       // 用 email 查（有些正式學員文件的 uid 欄位可能跟 Google 拿到的 uid 不一致）
       if (!isOfficial && email) {
         const emailSnap = await getDocs(query(collection(db, C_MEMBERS), where("email", "==", email), limit(5)));
-        isOfficial = emailSnap.docs.some(d => {
-          const t = d.data()?.accountType;
-          return t !== "guest" && t !== "kid";
-        });
+        isOfficial = emailSnap.docs.some(d => isEnrolledMemberDoc(d.data()));
       }
       if (isOfficial) {
         return { ok: false, reason: "這個 Google 帳號已經是正式學員／教練帳號，請改用主系統登入（登入頁也支援 Google 登入），不要走訪客預約。" };

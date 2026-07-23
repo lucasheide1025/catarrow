@@ -3,6 +3,34 @@
 
 ---
 
+## 2026-07-23（訪客登入回歸修復：學籍帳號被當訪客 + 同信箱重複建帳號）
+
+**背景**：作者回報 (1) 有學籍的帳號又能登入成訪客帳戶、(2) 同一 email `lin19991008` 冒出 3 筆不同 ID 的 guest 文件、(3) 某 uid 帳號「被訪客蓋過去」。根因都在 `guestAuth.js`，且與 `a226c41 (guest mode ui fixes)` 的改動有關。
+
+**① 學籍帳號被當訪客登入 → `loginGuestWithPassword` 判斷順序錯。**
+- 舊版：先查 guest 文件、找到就直接登入 guest，**只有查無 guest 時才檢查正式帳號**。→「同時有 guest 舊文件＋學籍」的 email 先被 guest 分支接走，繞過學籍偵測。
+- 修：把學籍檢查**提前到最前面**（`findEnrolledMemberDoc`），學籍帳號一律登入正式身分（仍可預約），永不落進 guest。
+
+**② 同信箱重複建帳號 → `resolveLegacyGuestSession` 用匿名 uid 查。**
+- `a226c41` 把 resume 查詢從 `contactHash` 改成 `where uid == 匿名uid`；匿名 uid 每個 session 都變 → 永遠查不到本尊 → 每次都 `addDoc` 新建 → 同一 email 多筆重複 guest（也是「被訪客蓋過去」的來源）。
+- 修：改回用 `contactHash`（email 衍生、跨 session 穩定）查。合法性：`firestore.rules` line 48-49 本就允許任何登入者 list guest/kid 文件（正因匿名 uid 不穩定），所以不違反規則、也非列舉漏洞。
+
+**③ 學籍偵測器統一化（作者建議：用 `studentTier`）。**
+- 新增 `isEnrolledMemberDoc(data)`：`accountType` 不是 guest/kid（含 undefined＝教練 createMember 建的正式生）**或** 有 `studentTier`（受限/正式/退休，createMember 與 convertGuestToOfficial 一定會寫）即算學籍。
+- 新增 `findEnrolledMemberDoc(email, contactHash)`：email + contactHash 兩路查（涵蓋 email 為空的舊學員）。
+- `registerGuestWithPassword` / `loginGuestWithPassword` / `signInWithGoogle` 全改用這組共用偵測器。**不需要新增欄位**——`studentTier` 已存在。
+
+**待辦（資料層，需後台/Console 手動，非程式可修）：**
+- `lin19991008@gmail.com` 3 筆：保留本尊 `NGFcbRq...`（林穎姿/500金幣/有預約），刪除兩筆 07/23 空帳號 `MlyMKs...`、`VL7NU1...`（部署後 contactHash 才會唯一命中本尊，故先部署再刪空帳號）。
+- uid `tvrtBfX0SyZY8tMqYQeLxOqNyky2` 被蓋案：待查 Firestore 實際文件才能決定還原方式。
+
+**踩過的坑（本次）：**
+- 訪客身分索引一律用 **contactHash（email 衍生穩定值）**，**絕不可用匿名 uid**（每 session 變 → 重複建帳號）。
+- 多分支登入函式，「學籍/正式帳號偵測」必須在 guest 分支**之前**，否則有舊 guest 文件的學籍帳號會被搶先接走。
+- 學籍最可靠訊號是 `studentTier`（教練建帳號不寫 accountType，但一定寫 studentTier）。
+
+---
+
 ## 2026-07-23（組隊地下城存檔/殘房修復 + 官網訪客忘記密碼 + 貓咪 XP 寫錯位置修復）
 
 **① 組隊地下城「存檔沒反應」→ firestore.rules 白名單漏 `teamSavedProgress`。**
