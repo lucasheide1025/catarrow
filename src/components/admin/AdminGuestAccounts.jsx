@@ -118,6 +118,12 @@ function GuestCard({ account: a, onConvert, onDelete }) {
   const lastLogin = a.lastLoginAt?.toDate?.() ? fmtDT(a.lastLoginAt) : "—";
   const joinDate = a.createdAt?.toDate?.() ? fmtDT(a.createdAt) : "—";
   const bookingStats = a.bookingStats || {};
+  // 最後一次預約時間（建立/改期時更新，取消不動；用於 14 天回訪提醒信對照）
+  const lastBookingMs = bookingStats.lastBookingAt?.toMillis?.() || 0;
+  const lastBooking = lastBookingMs ? fmtDT(bookingStats.lastBookingAt) : "—";
+  const daysSinceBooking = lastBookingMs ? Math.floor((Date.now() - lastBookingMs) / 86400000) : null;
+  // 逾 14 天未預約＝符合自動「回來玩玩」提醒信條件（functions/bookingReminder.js REMINDER_DELAY_DAYS=14）
+  const isDormant = daysSinceBooking != null && daysSinceBooking >= 14;
 
   return (
     <Card className="p-3 flex flex-col gap-2">
@@ -137,15 +143,25 @@ function GuestCard({ account: a, onConvert, onDelete }) {
       </div>
 
       {bookingStats.totalBookings > 0 ? (
-        <div className="flex gap-2 text-xs text-gray-500 mt-1">
-          <span className="bg-green-900/30 text-green-300 px-2 py-0.5 rounded-full">
-            📅 預約 {bookingStats.totalBookings} 次
-          </span>
-          {bookingStats.totalCompleted > 0 && (
-            <span className="bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full">
-              已完成 {bookingStats.totalCompleted}
-            </span>
-          )}
+        <div className="bg-slate-800/50 rounded-xl p-2 text-xs mt-1 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-gray-400 font-bold">📋 預約明細</span>
+            {isDormant && (
+              <span className="bg-amber-900/40 text-amber-300 px-2 py-0.5 rounded-full font-bold"
+                title="超過 14 天未預約，符合自動「回來玩玩」提醒信寄送條件">
+                😴 逾 {daysSinceBooking} 天未預約
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-1 text-gray-400">
+            <span>總筆數：{bookingStats.totalBookings || 0}</span>
+            <span>進行中：{bookingStats.totalActive || 0}</span>
+            <span>已完成：{bookingStats.totalCompleted || 0}</span>
+            <span>已取消：{bookingStats.totalCancelled || 0}</span>
+          </div>
+          <div className="text-gray-500 border-t border-white/5 pt-1">
+            🗓 最後一次預約：<span className="text-gray-300">{lastBooking}</span>
+          </div>
         </div>
       ) : (
         <div className="text-gray-500 text-xs">尚無預約紀錄</div>
@@ -159,17 +175,6 @@ function GuestCard({ account: a, onConvert, onDelete }) {
             <span>📅 加入：{joinDate}</span>
             <span>🔑 最近登入：{lastLogin}</span>
           </div>
-          {a.bookingStats && (
-            <div className="bg-slate-800/50 rounded-xl p-2 text-xs">
-              <div className="text-gray-500 font-bold mb-1">📋 預約明細</div>
-              <div className="grid grid-cols-2 gap-1 text-gray-400">
-                <span>總筆數：{bookingStats.totalBookings || 0}</span>
-                <span>進行中：{bookingStats.totalActive || 0}</span>
-                <span>已完成：{bookingStats.totalCompleted || 0}</span>
-                <span>已取消：{bookingStats.totalCancelled || 0}</span>
-              </div>
-            </div>
-          )}
           <div className="flex gap-2">
             <Btn v="primary" size="sm" className="flex-1" onClick={onConvert}>✅ 轉正式</Btn>
             <button onClick={onDelete} className="text-red-300 hover:text-red-500 text-xs px-1.5 py-1 flex-shrink-0">🗑 刪除</button>

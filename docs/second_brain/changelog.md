@@ -3,6 +3,15 @@
 
 ---
 
+## 2026-07-23（後台訪客帳號卡片：預約明細直顯 + 最後預約時間 + 逾14天標記）
+
+- `AdminGuestAccounts.jsx` `GuestCard`：把「📋 預約明細」（總筆數/進行中/已完成/已取消）從展開區移出、**直接顯示**；移除展開區內的重複那份。
+- 新增「🗓 最後一次預約」：讀 `bookingStats.lastBookingAt`（建立/改期更新、取消不動）。
+- 新增「😴 逾 N 天未預約」徽章：`daysSinceBooking >= 14` 時亮，對應既有 14 天自動回訪信（`functions/bookingReminder.js` `REMINDER_DELAY_DAYS=14`、`bookingEmail.js` `studentInactive`「好久不見，回來預約練習吧」）。
+- 註：回訪信 Cloud Function 依「最後完成課程」滿 14 天且無未來預約才寄；此徽章只是後台對照，不改寄信邏輯。
+
+---
+
 ## 2026-07-23（訪客登入回歸修復：學籍帳號被當訪客 + 同信箱重複建帳號）
 
 **背景**：作者回報 (1) 有學籍的帳號又能登入成訪客帳戶、(2) 同一 email `lin19991008` 冒出 3 筆不同 ID 的 guest 文件、(3) 某 uid 帳號「被訪客蓋過去」。根因都在 `guestAuth.js`，且與 `a226c41 (guest mode ui fixes)` 的改動有關。
