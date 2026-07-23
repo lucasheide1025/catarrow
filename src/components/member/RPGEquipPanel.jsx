@@ -10,6 +10,16 @@ import { sfxLevelUp } from "../../lib/sound";
 import EquipmentIcon from "../shared/EquipmentIcon";
 import { EQUIPMENT_RUNES, getEquipmentRune, getEquipmentRuneBonus } from "../../lib/equipmentRuneData";
 
+// 符文立繪（有 img 用圖，缺圖 fallback emoji）
+function RuneImg({ rune, size = 26 }) {
+  const [failed, setFailed] = useState(false);
+  if (rune?.img && !failed) {
+    return <img src={rune.img} alt="" width={size} height={size} onError={() => setFailed(true)}
+      className="inline-block shrink-0 object-contain align-middle" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,.5))" }} />;
+  }
+  return <span className="shrink-0" style={{ fontSize: size * 0.8 }}>{rune?.icon || "🔮"}</span>;
+}
+
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
   { stat: "def", label: "🛡️ 防禦裝備", color: "text-blue-400",   border: "border-blue-500/30",   bg: "bg-blue-900/10"   },
@@ -61,11 +71,11 @@ function EquipmentSocketControls({ memberId, slotId, equipped, kingSeals, invent
     {notice && <div role="status" className="mt-2 rounded-lg bg-violet-400/10 px-2 py-1.5 text-[10px] font-bold text-violet-100">{notice}</div>}
     <div className="mt-2 flex gap-2">{[0, 1, 2].map(index => {
       const rune = getEquipmentRune(sockets[index]);
-      return <button key={index} type="button" disabled={readOnly || index >= sockets.length || Boolean(busy)} onClick={() => setPicker(index)} className="min-h-14 flex-1 whitespace-pre-line rounded-xl border border-dashed border-violet-300/35 bg-black/20 px-1 text-center text-[10px] font-bold text-violet-100 disabled:opacity-45">{index >= sockets.length ? "未開洞" : rune ? `${rune.icon}\nT${rune.tier}` : "空洞\n鑲嵌"}</button>;
+      return <button key={index} type="button" disabled={readOnly || index >= sockets.length || Boolean(busy)} onClick={() => setPicker(index)} className="min-h-14 flex-1 flex flex-col items-center justify-center gap-0.5 whitespace-pre-line rounded-xl border border-dashed border-violet-300/35 bg-black/20 px-1 text-center text-[10px] font-bold text-violet-100 disabled:opacity-45">{index >= sockets.length ? "未開洞" : rune ? <><RuneImg rune={rune} size={30} /><span className="text-[9px]">T{rune.tier}</span></> : "空洞\n鑲嵌"}</button>;
     })}</div>
     <div className="mt-2 text-[10px] text-slate-400">符文加成：ATK +{Math.round(bonus.atk * 100)}%／DEF +{Math.round(bonus.def * 100)}%／HP +{Math.round(bonus.hp * 100)}%</div>
     {gradeIndex >= 2 && sockets.length < 3 ? <button type="button" disabled={readOnly || Boolean(busy) || (kingSeals || 0) < sockets.length + 1} onClick={socket} className="mt-3 min-h-10 w-full rounded-xl bg-amber-400 px-3 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{busy === "socket" ? "打洞中…" : `使用 ${sockets.length + 1} 枚王之印記打第 ${sockets.length + 1} 洞（成功率 ${[85, 65, 45][sockets.length]}%）`}</button> : <div className="mt-3 text-[10px] text-slate-500">{sockets.length >= 3 ? "此裝備已開滿 3 洞。" : "精良（Elite）以上裝備才能打洞。"}</div>}
-    {picker !== null && <div className="mt-2 rounded-xl border border-violet-300/25 bg-slate-950 p-2"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white">選擇第 {picker + 1} 洞的符文</span><button type="button" onClick={() => setPicker(null)} className="text-[10px] text-slate-400">關閉</button></div><button type="button" onClick={() => setRune(picker, null)} className="mt-2 min-h-9 w-full rounded-lg border border-white/10 px-2 text-left text-[11px] font-bold text-slate-300">卸下符文，放回背包</button>{availableRunes.map(rune => <button key={rune.id} type="button" onClick={() => setRune(picker, rune.id)} className="mt-2 min-h-9 w-full rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 text-left text-[11px] font-bold text-violet-100">{rune.icon} {rune.name} T{rune.tier} ×{inventory[rune.id]}</button>)}</div>}
+    {picker !== null && <div className="mt-2 rounded-xl border border-violet-300/25 bg-slate-950 p-2"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white">選擇第 {picker + 1} 洞的符文</span><button type="button" onClick={() => setPicker(null)} className="text-[10px] text-slate-400">關閉</button></div><button type="button" onClick={() => setRune(picker, null)} className="mt-2 min-h-9 w-full rounded-lg border border-white/10 px-2 text-left text-[11px] font-bold text-slate-300">卸下符文，放回背包</button>{availableRunes.map(rune => <button key={rune.id} type="button" onClick={() => setRune(picker, rune.id)} className="mt-2 min-h-9 w-full flex items-center gap-2 rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 text-left text-[11px] font-bold text-violet-100"><RuneImg rune={rune} size={24} /><span>{rune.name} T{rune.tier} ×{inventory[rune.id]}</span></button>)}</div>}
   </section>;
 }
 
