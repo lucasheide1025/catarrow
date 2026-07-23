@@ -14,7 +14,7 @@ import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } f
 import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
-import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES } from "./villageData";
+import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES, getWorkerCatMultiplier, CATDEX_PRODUCTION_MULT } from "./villageData";
 import { getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "./monsterCards";
 import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
@@ -4712,7 +4712,7 @@ export async function drawGachaCards(memberId, type = "single") {
 }
 
 // ─── 貓貓村 ────────────────────────────────────────────────
-export async function collectVillageResources(memberId, village) {
+export async function collectVillageResources(memberId, village, opts) {
   var now = Date.now();
   var lastMs = getVillageLastCollectedMs(village?.lastCollectedAt, now);
   var hours = Math.min((now - lastMs) / 3600000, MAX_COLLECT_HOURS);
@@ -4724,18 +4724,25 @@ export async function collectVillageResources(memberId, village) {
   var workers      = village?.workers    || {};
   var updates      = { "village.lastCollectedAt": serverTimestamp() };
   var workerXP     = {}; // { [catId]: xp }；貓咪 XP 走子集合 addCatXP，不能塞進 member updateDoc
+  // 工作貓/圖鑑加成：必須跟 calcPendingResources（預覽）同一套公式，否則預覽數字採集不到（2026-07-23 修）。
+  // myCats 由呼叫端傳入（cats 子集合資料），collectVillageResources 本身不讀子集合。
+  var myCats       = (opts && opts.myCats) || {};
+  var catDexMult   = CATDEX_PRODUCTION_MULT;
 
   for (var id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
     var lv     = buildings[id] || 1;
     var res    = VB[id]?.resource;
     if (!res) continue;
+    // 該建築駐紮貓的產能加成（無貓＝1.0）
+    var workerCat0 = workers[id];
+    var wMult      = workerCat0 ? getWorkerCatMultiplier(myCats[workerCat0]) : 1.0;
 
     // Gacha: accumulate to top-level gachaCoins
     if (id === "gacha") {
       var fracKey  = "gachaTokenFrac";
       var prevFrac = village?.resources?.[fracKey] || 0;
-      var rawAmt   = getProductionRate(id, lv) * hours + prevFrac;
+      var rawAmt   = getProductionRate(id, lv) * wMult * hours * catDexMult + prevFrac;
       var amt      = Math.floor(rawAmt);
       var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
       updates["village.resources." + fracKey] = remain;
@@ -4746,7 +4753,7 @@ export async function collectVillageResources(memberId, village) {
       continue;
     }
 
-    var rate    = getProductionRate(id, lv);
+    var rate    = getProductionRate(id, lv) * wMult;  // 套工作貓加成
     var maxTier = getBuildingStage(lv);
 
     if (!TIERED_RESOURCES.has(res)) {
@@ -4754,7 +4761,7 @@ export async function collectVillageResources(memberId, village) {
       var resKey  = res;
       var fracKey = resKey + "Frac";
       var prevFrac = village?.resources?.[fracKey] || 0;
-      var rawAmt   = rate * hours + prevFrac;
+      var rawAmt   = rate * hours * catDexMult + prevFrac;
       var amt      = Math.floor(rawAmt);
       var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
       updates["village.resources." + fracKey] = remain;
@@ -4765,7 +4772,7 @@ export async function collectVillageResources(memberId, village) {
     } else {
       // Tiered resources: pool * stageMult, split by allocation%
       var stageMult = getStageMultiplier(lv);
-      var pool      = rate * stageMult * hours;
+      var pool      = rate * stageMult * hours * catDexMult;
       var alloc     = normalizeBuildingAllocation(lv, allocations[id]);
       if (JSON.stringify(allocations[id] || null) !== JSON.stringify(alloc)) {
         updates["village.allocations." + id] = alloc;

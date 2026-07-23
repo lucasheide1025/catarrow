@@ -649,17 +649,18 @@ function getWorkerCatComplaint(catId, buildingId) {
 
 // ── 建築卡片 ─────────────────────────────────────────────────
 // 產能分層顯示（資源 tier breakdown）
-function ProductionBreakdown({ buildingId, level, allocations }) {
+function ProductionBreakdown({ buildingId, level, allocations, workerMult = 1 }) {
   const b     = BUILDINGS[buildingId];
   const hasTier = b && TIERED_RESOURCES.has(b.resource);
+  const round1 = n => Math.round(n * 10) / 10;
   if (!hasTier) {
-    // 非分層資源（煉金室/扭蛋亭）：只顯示總產率
-    const rate = getProductionRate(buildingId, level);
+    // 非分層資源（煉金室/扭蛋亭）：只顯示總產率（含工作貓加成）
+    const rate = round1(getProductionRate(buildingId, level) * workerMult);
     return <span className="text-xs" style={{ color: C.mid }}>{rate}/hr</span>;
   }
   const stageMult = getStageMultiplier(level);
   const maxTier   = getBuildingStage(level);
-  const baseRate  = getProductionRate(buildingId, level);
+  const baseRate  = getProductionRate(buildingId, level) * workerMult;  // 含工作貓加成
   const pool      = baseRate * stageMult;
   const alloc     = normalizeBuildingAllocation(level, allocations?.[buildingId]);
   const tiers     = [];
@@ -670,7 +671,7 @@ function ProductionBreakdown({ buildingId, level, allocations }) {
     tiers.push({ tier: t, rate: tierRate });
   }
   if (tiers.length === 0) {
-    return <span className="text-xs" style={{ color: C.mid }}>{baseRate}/hr</span>;
+    return <span className="text-xs" style={{ color: C.mid }}>{round1(baseRate)}/hr</span>;
   }
   return (
     <div className="flex flex-wrap gap-1 mt-1">
@@ -786,7 +787,7 @@ function BuildingCard({ buildingId, level, resources, onClick, village, pendingC
         </div>
 
         <div className="mt-2 pt-2 border-t border-amber-900/10 flex items-center justify-between">
-          <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} />
+          <ProductionBreakdown buildingId={buildingId} level={level} allocations={village?.allocations || {}} workerMult={workerMult} />
           <div className="text-[11px] font-black px-2 py-0.5 rounded-full"
             style={{
               background: maxed ? "rgba(0,0,0,0.05)" : check.ok ? "rgba(34,197,94,0.12)" : "rgba(212,147,58,0.12)",
@@ -2459,7 +2460,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
     sfxVillageCollect();
     setCollecting(true);
     try {
-      const res = await collectVillageResources(profile.id, village);
+      const res = await collectVillageResources(profile.id, village, { myCats });
       if (res.resources) {
         setLocalVillage(prev => ({
           ...(prev || village),
