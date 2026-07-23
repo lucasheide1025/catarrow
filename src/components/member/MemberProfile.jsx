@@ -6,7 +6,7 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX, getLevelStyle } from "../../lib/archerLevel";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle, EQUIP_SLOT_DEFS, EQUIP_GRADES, getEquipSlotBonus } from "../../lib/constants";
-import { KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
+import { KING_SEAL_BREAKTHROUGH_COST, EQUIP_UPGRADE_COST } from "../../lib/equipData";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
 import { auth } from "../../lib/firebase";
