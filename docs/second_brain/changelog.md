@@ -29,6 +29,26 @@
 
 ---
 
+## 2026-07-23（地下城美術重製 + 儲存槽 3→6 + 符文美術）
+
+**① 地下城房塊風格統一（GEMINI 方塊圖 → 圓石台）**
+- 作者回報：幽靈族（我的圓石台手繪風）好，其他 6 族是 GEMINI `addff2b` 生的方形等角草地方塊圖，風格不一致、族特色薄弱。
+- 用 `gen-dungeon-tiles.py` 重生 mountain/insect/workplace/exam/temple/treasure 全房型（11 房型/族），統一成圓石台手繪風、各族 creature 加強特色。幽靈族保留不動。
+- **踩坑**：`STYLE_CREATURE` 主體太搶焦會讓「圓石台」被 seed 省略（懸空）→ 強化「FULL round platform 完整可見 + 創作物中等大小 + 負面詞 no platform/square tile」才穩。地圖只畫細連接線不畫台座，故 tile 圖必須自帶石台。
+
+**② 地下城橫向外觀封面（7 族，新）**
+- `gen-dungeon-covers.py`：寬幅 2:1 手繪地下城入口場景（不去背、整張場景，風格同 map_bg）→ `public/assets/dungeon/cover_<family>.webp`。
+- `DungeonStorageTab`：保存卡從素色 emoji 卡改成**封面橫圖 + 漸層壓字**（族名/難度/T階徽章），缺圖 fallback emoji。
+
+**③ 地下城儲存槽 3 → 6**
+- `dungeonExcavation.js` 新增 `export const MAX_SAVED_DUNGEONS = 6`，取代三處寫死的 `>= 3`；`DungeonStorageTab` 改 2×3 grid、文案用常數。
+
+**④ 符文美術（16 顆，新）**
+- `gen-rune-tiles.py`：RPG 寫實符文石板（去背）+ 發光類型符號（攻=紅劍/防=藍盾/生命=綠心/貓靈=紫貓掌）+ 階級遞進 → `public/assets/runes/rune_<type>_t<tier>.webp`。
+- `equipmentRuneData.js` 每顆符文加 `img`；`EquipmentRunePanel` 製作格 + 背包列改 `RuneImg`（缺圖 fallback emoji）。
+
+---
+
 ## 2026-07-23（訪客登入回歸修復：學籍帳號被當訪客 + 同信箱重複建帳號）
 
 **背景**：作者回報 (1) 有學籍的帳號又能登入成訪客帳戶、(2) 同一 email `lin19991008` 冒出 3 筆不同 ID 的 guest 文件、(3) 某 uid 帳號「被訪客蓋過去」。根因都在 `guestAuth.js`，且與 `a226c41 (guest mode ui fixes)` 的改動有關。

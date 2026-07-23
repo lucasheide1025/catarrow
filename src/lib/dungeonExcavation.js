@@ -8,6 +8,9 @@ import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
 import { createLockedDungeonBossEncounter } from "./dungeonBossEncounter";
 import { addCatXP } from "./catDb";
 
+// 地下城儲存槽上限（2026-07-23 作者：3 → 6）
+export const MAX_SAVED_DUNGEONS = 6;
+
 // ── 王房抽王統一入口（2026-07-19）──────────────────────────────
 // 舊 drawExpeditionBoss 是「找該族該階第一隻怪再套 boss 倍率」，完全沒過濾
 // isKing/encounter，王房的王其實是一隻被放大的雜怪（實測 ghost_3 林投姐、
@@ -691,7 +694,7 @@ export async function saveExcavation(memberId) {
     if (!pending) return { ok: false, reason: "沒有待揭曉的地下城" };
 
     const saved = excavation.savedDungeons || [];
-    if (saved.length >= 3) return { ok: false, reason: "儲存槽已滿（最多 3 個）" };
+    if (saved.length >= MAX_SAVED_DUNGEONS) return { ok: false, reason: `儲存槽已滿（最多 ${MAX_SAVED_DUNGEONS} 個）` };
 
     const newDungeon = {
       id: `d${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -827,7 +830,7 @@ export async function useDungeonScroll(memberId) {
     const scrolls = excavation.scrolls || 0;
 
     if (scrolls <= 0) return { ok: false, reason: "沒有可使用的卷軸" };
-    if ((excavation.savedDungeons || []).length >= 3)
+    if ((excavation.savedDungeons || []).length >= MAX_SAVED_DUNGEONS)
       return { ok: false, reason: "儲存槽已滿，請先使用或移除已有地下城" };
 
     const FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
@@ -933,7 +936,7 @@ export async function adminSetSavedDungeon(memberId, dungeonEntry, index = null)
       updated = [...saved];
       updated[index] = { ...updated[index], ...preparedEntry };
     } else {
-      if (saved.length >= 3) return { ok: false, reason: "儲存槽已滿（最多 3 個）" };
+      if (saved.length >= MAX_SAVED_DUNGEONS) return { ok: false, reason: `儲存槽已滿（最多 ${MAX_SAVED_DUNGEONS} 個）` };
       updated = [...saved, preparedEntry];
     }
 

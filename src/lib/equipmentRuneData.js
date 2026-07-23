@@ -20,7 +20,9 @@ export const EQUIPMENT_RUNES = Object.fromEntries(
   Object.entries(EQUIPMENT_RUNE_TYPES).flatMap(([type, meta]) =>
     EQUIPMENT_RUNE_TIERS.map(config => {
       const id = `equipment_${type}_t${config.tier}`;
-      return [id, { id, type, ...meta, ...config }];
+      // 每類型每階專屬立繪（ComfyUI 生成，public/assets/runes/rune_<type>_t<tier>.webp）
+      const img = `/assets/runes/rune_${type}_t${config.tier}.webp`;
+      return [id, { id, type, img, ...meta, ...config }];
     }),
   ),
 );

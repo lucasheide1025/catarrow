@@ -18,17 +18,21 @@ _COMMON = ("cute stylized isometric 2.5D dungeon map tile, painterly friendly mo
            "high 3/4 top-down angle. ")
 # 物件房：大石台為主、物件小而置中（各房石台一致大小）
 STYLE_OBJECT = (_COMMON +
-    "A round floating stone platform is the consistent base (similar size every tile). In the CENTER on "
-    "top of the platform sits a clear MEDIUM-SIZED {subject}, obvious and instantly recognizable, taking "
-    "up the middle of the platform. A few small {theme} accents on the platform edge (props only, NOT a "
-    "building). Dark simple background, no text, no ui, no people.")
-# 小怪房：小怪醒目、佔比較大，站/飄在石台中央
+    "ALWAYS a round thick floating stone disc platform as the base — the FULL circular stone platform is "
+    "clearly visible and complete at the bottom, consistent size every tile. In the CENTER on top of the "
+    "platform sits a clear MEDIUM-SIZED {subject}, obvious and instantly recognizable. A few small {theme} "
+    "accents on the platform edge (props only, NOT a building). Dark simple background, no text, no ui, no people.")
+# 小怪房：小怪醒目但不遮住石台，坐/站在石台中央
 STYLE_CREATURE = (_COMMON +
-    "A round floating stone platform is the base. Floating in the CENTER as the clear main focus: {subject}. "
-    "The creature is prominent and medium-large (about half the tile height), cute and instantly recognizable. "
-    "A few tiny {theme} accents on the platform edge. Dark simple background, no text, no ui, no people.")
+    "ALWAYS a round thick floating stone disc platform as the base — the FULL circular stone platform is "
+    "clearly visible and complete at the bottom under the creature, consistent size every tile. Sitting ON TOP "
+    "of the platform in the CENTER as the clear main focus: {subject}. The cute creature is medium sized so the "
+    "whole round stone platform stays fully visible around and beneath it (creature does NOT float in empty "
+    "space). A few tiny {theme} accents on the platform edge. Dark simple background, no text, no ui, no people.")
 NEG = ("realistic, photorealistic, scary, horror, creepy, gore, blood, grim, ugly, "
        "text, watermark, ui, multiple platforms, bridges, people, "
+       "floating in empty space, no platform, missing platform, no ground base, "
+       "square tile, grass block, isometric grid tile, "
        "big building covering everything, blurry, lowres, deformed")
 # 功能物件房額外禁止出現生物/角色（戰鬥類房間不套用，因為要放小怪）
 NEG_OBJECT = ", monster, creature, animal, character, mascot, ghost, person"
@@ -37,12 +41,12 @@ NEG_OBJECT = ", monster, creature, animal, character, mascot, ghost, person"
 CREATURES = {
     "common":    "a cute small round monster with cat ears, a friendly smiling face, no legs (a wavy bottom)",
     "ghost":     "a cute classic bedsheet ghost, a smooth floating white teardrop body whose bottom is a WAVY RUFFLED SKIRT HEM (floating cloth, absolutely NO legs, NO feet, NO arms, NO hands), only small pointy CAT EARS on top of its head and cat whiskers, big cute round eyes, glowing soft white, floating in mid air",
-    "mountain":  "a cute little wild boar spirit with tiny tusks",
-    "insect":    "a cute little round rhino beetle",
-    "workplace": "a cute grumpy tiny office-suit monster",
-    "exam":      "a cute little walking book monster with big eyes",
-    "temple":    "a cute little cartoon skeleton, friendly not scary",
-    "treasure":  "a cute little mimic treasure-chest monster with a smiling face",
+    "mountain":  "a cute chunky wild boar spirit made of mossy grey mountain stone, small ivory tusks, glowing jade-green eyes, rocky pebble skin with green moss patches, sturdy and earthy",
+    "insect":    "a cute round rhino beetle with a glossy iridescent emerald-green shell, one small golden horn, tiny wings, big friendly sparkling eyes, honey-amber glow",
+    "workplace": "a cute grumpy tiny monster wearing a dark business suit and red necktie, holding a small briefcase, tired office-worker face, cold blue neon rim light",
+    "exam":      "a cute little monster whose body is an open book with big round eyes, tiny pencil arms, wearing small round glasses, floating exam papers around it, ink-blue and ivory tones",
+    "temple":    "a cute friendly little cartoon skeleton monk in a tiny grey robe holding a small glowing lantern, gentle smile, NOT scary, pale gothic candlelight",
+    "treasure":  "a cute mimic monster whose body is a wooden treasure chest, the open lid is a big smiling mouth with square teeth, two tiny eyes on the lid, gold coins spilling, golden sparkle",
 }
 CREATURE_TYPES = {"battle", "elite_battle", "boss_battle"}
 
@@ -151,11 +155,14 @@ def run_bg(family):
     print(f"  OK BG -> {outpath}", flush=True)
 
 
+GEN_BG = os.environ.get("GEN_BG", "0") == "1"  # 預設不重生背景，只生房塊
+
+
 def run(family, only_type=None):
     theme = FAMILIES[family]
     os.makedirs(OUTDIR, exist_ok=True)
-    # 若無指定單一房型，先生成族系專屬背景圖
-    if not only_type:
+    # 若無指定單一房型，且開啟 GEN_BG，才生成族系專屬背景圖
+    if not only_type and GEN_BG:
         try:
             run_bg(family)
         except Exception as e:
