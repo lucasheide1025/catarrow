@@ -15,7 +15,8 @@
 - **通用材料寶箱（同日追加）**：舊 wood/iron/gold/epic/mythic 五種箱**重新定位為「通用材料寶箱」**——`openChestContents` 改成依來源怪階級開出**六大族**（ghost/mountain/insect/workplace/exam/temple，**不含 treasure**）該階材料，kind 依箱等級放寬（木/鐵普通、金/史詩加小王、神話含大王），每族 1~maxPerTier 個。取代舊的「單一家族分層擴散」。CHEST_TYPES 名稱/desc 改「通用材料X箱」。移除已無用的 `RARITY_ORDER`。
   - **設計影響**：這些箱現在只從「傳統家族單人打怪」(forest/dragon…) 掉（地下城家族怪走新族系/王箱）；開出的是**地下城六大族素材**，非 legacy forest/dragon 素材（legacy 素材仍可由直接掉落 `rollFamilyMaterial` 取得，只是不再從這些箱開出）。
   - 測試 `expansionChestMaterials.test.js` 更新為驗證新通用箱行為（同階、跨族、不含寶箱族）。
-- **待辦**：新寶箱外觀（ComfyUI 每族特色圖）。
+- **族系箱美術（同日追加，ComfyUI）**：作者選「42 張、只族系箱、RPG 質感寫實」。`scripts/gen-chest-tiles.py`（沿用 gen-dungeon-tiles 管線：ComfyUI /prompt→rembg 去背→512 WebP）生 7 族×6 階 closed chest 立繪到 `public/assets/chests/chest_<family>_t<n>.webp`；風格寫實（負面詞排除 cartoon/chibi），族系材質主題（幽冥藍調鬼火/山嶺岩木/昆蟲甲殼/職場金屬藍/考試書卷/神廟白金神聖/寶箱族純金）+ 階級遞進（T1樸素→T6華麗發光）。小王/大王箱維持 emoji/顏色（作者選不另生圖）。
+  - `makeFamilyMaterialChest` 加 `img: /assets/chests/chest_<family>_t<n>.webp`；`MemberMaterials` 背包卡與開箱動畫改「有 img 用 `<img>`、無則 emoji」。小王/大王/舊通用箱無 img 走 emoji。
 
 ---
 

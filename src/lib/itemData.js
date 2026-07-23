@@ -319,6 +319,8 @@ export function makeFamilyMaterialChest(family, tierIndex, source = "掉落") {
     ts: now,
     name: `${name}T${tierIndex}素材箱`,
     icon: "📦",
+    // 每族每階專屬立繪（ComfyUI 生成，public/assets/chests/chest_<family>_t<n>.webp）
+    img: ALL_FAMILIES.includes(family) ? `/assets/chests/chest_${family}_t${tierIndex}.webp` : null,
     color: FAMILY_CHEST_COLORS[(tierIndex - 1) % FAMILY_CHEST_COLORS.length],
   };
 }

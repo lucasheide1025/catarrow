@@ -159,6 +159,7 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       name: ch.name || base.name,
       icon: ch.icon || base.icon,
       color: ch.color || base.color,
+      img: ch.img || null,   // 族系箱專屬立繪；無則用 emoji icon
     };
   }
 
@@ -169,7 +170,7 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       ? { icon: chest.icon || "🪙", color: chest.color || "#92400e", name: chest.name || "金幣寶箱" }
       : chestLookup(chest);
     setOpeningChest(chest.id);
-    setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name });
+    setChestAnim({ type: chest.type, icon: cc.icon, color: cc.color, name: cc.name, img: cc.img });
     sfxCast();
     const isBig = chest.coinTier === "fierce" || chest.coinTier === "boss" || chest.coinTier === "mythic"
       || chest.type === "gold" || chest.type === "mythic" || chest.type === "cat" || chest.type === "card_pack" || chest.type === "mimi_box"
@@ -534,7 +535,9 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
               const isOpening = openingChest === ch.id;
               return (
                 <div key={ch.id || idx} className="bg-white/5 rounded-2xl p-4 border border-white/15 flex items-center gap-4">
-                  <div className="text-4xl">{cc.icon}</div>
+                  {cc.img
+                    ? <img src={cc.img} alt="" className="w-14 h-14 object-contain shrink-0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,.5))" }} />
+                    : <div className="text-4xl">{cc.icon}</div>}
                   <div className="flex-1 min-w-0">
                     <div className="font-black text-sm" style={{ color: cc.color }}>{cc.name}</div>
                     {ch.from && <div className="text-gray-400 text-xs mt-0.5">來自 {ch.from}</div>}
@@ -887,9 +890,11 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       {chestAnim && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50">
           <div className="text-center select-none">
-            <div className="text-9xl mb-4 animate-bounce"
+            <div className="mb-4 animate-bounce flex items-center justify-center"
               style={{ filter: `drop-shadow(0 0 24px ${chestAnim.color})` }}>
-              {chestAnim.icon}
+              {chestAnim.img
+                ? <img src={chestAnim.img} alt="" className="w-40 h-40 object-contain" />
+                : <span className="text-9xl">{chestAnim.icon}</span>}
             </div>
             <div className="font-black text-2xl mb-3" style={{ color: chestAnim.color }}>
               {chestAnim.name}
