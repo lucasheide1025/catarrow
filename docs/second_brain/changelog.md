@@ -36,9 +36,13 @@
 - 用 `gen-dungeon-tiles.py` 重生 mountain/insect/workplace/exam/temple/treasure 全房型（11 房型/族），統一成圓石台手繪風、各族 creature 加強特色。幽靈族保留不動。
 - **踩坑**：`STYLE_CREATURE` 主體太搶焦會讓「圓石台」被 seed 省略（懸空）→ 強化「FULL round platform 完整可見 + 創作物中等大小 + 負面詞 no platform/square tile」才穩。地圖只畫細連接線不畫台座，故 tile 圖必須自帶石台。
 
-**② 地下城橫向外觀封面（7 族，新）**
-- `gen-dungeon-covers.py`：寬幅 2:1 手繪地下城入口場景（不去背、整張場景，風格同 map_bg）→ `public/assets/dungeon/cover_<family>.webp`。
-- `DungeonStorageTab`：保存卡從素色 emoji 卡改成**封面橫圖 + 漸層壓字**（族名/難度/T階徽章），缺圖 fallback emoji。
+**② 地下城橫向外觀封面（7 族 × 6 階 = 42 張，新）**
+- `gen-dungeon-covers.py`：寬幅 2:1 手繪地下城入口場景（不去背，風格同 map_bg）+ **階級遞進**（T1 樸素平靜 → T6 傳說級宏偉危險）→ `public/assets/dungeon/cover_<family>_t<tier>.webp`。（原先只做每族一張，作者要求每族每階不同 → 補到 42 張；每族通用圖 `cover_<family>.webp` 保留當 fallback）
+- `DungeonStorageTab`：保存卡改成**封面橫圖 + 漸層壓字**，封面優先「該族該階」→ 退「該族」→ 退 emoji。
+
+**②b 儲存槽鎖 3 的漏網（作者回報「還是鎖 3」）**
+- `DungeonExcavationTab.jsx` 有一處 `storageFull = savedCount >= 3` 寫死（沒用常數），揭曉/保存/卷軸都被它 gate → 改用 `MAX_SAVED_DUNGEONS`。連帶修 `AdminDungeon`（/3→常數）、`MemberGuide`（文案 3→6）。
+- **踩坑**：改「上限常數」時，除了 lib 的判斷，UI 元件裡各自的 `>= N` gate 也要一起搜（`DungeonExcavationTab` 就漏了一處，只改 lib 不夠）。
 
 **③ 地下城儲存槽 3 → 6**
 - `dungeonExcavation.js` 新增 `export const MAX_SAVED_DUNGEONS = 6`，取代三處寫死的 `>= 3`；`DungeonStorageTab` 改 2×3 grid、文案用常數。

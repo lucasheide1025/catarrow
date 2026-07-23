@@ -16,6 +16,7 @@ import {
   assignDigCat,
   revealCatExcavation,
   CAT_DIG_SPECIALTIES,
+  MAX_SAVED_DUNGEONS,
 } from "../../lib/dungeonExcavation";
 import { getDigSpeech } from "../cat/catSpeeches";
 import { getPendingArrowOperationCount, flushPendingArrowProgress } from "../../lib/db";
@@ -144,7 +145,7 @@ export default function DungeonExcavationTab({ profile }) {
   const dailyArrows = excavation?.dailyArrowsUsed || 0;
   const isComplete = progress >= 100;
   const savedCount = excavation?.savedDungeons?.length || 0;
-  const storageFull = savedCount >= 3;
+  const storageFull = savedCount >= MAX_SAVED_DUNGEONS;
   const scrolls = excavation?.scrolls || 0;
   const canUseScroll = scrolls > 0 && !storageFull;
 

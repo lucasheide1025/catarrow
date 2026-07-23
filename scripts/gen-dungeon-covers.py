@@ -1,7 +1,7 @@
 # scripts/gen-dungeon-covers.py
-# 地下城「橫向外觀封面」管線：ComfyUI 生成 → 直接存 RGB WebP（不去背）→ public/assets/dungeon/cover_<family>.webp
-#   風格：手繪氛圍風（與 map_bg 一致），寬幅地下城入口/外觀場景。7 族各一張。
-#   用法：<embedded_python> scripts/gen-dungeon-covers.py <family|all>
+# 地下城「橫向外觀封面」管線：ComfyUI 生成 → 直接存 RGB WebP（不去背）→ public/assets/dungeon/cover_<family>_t<tier>.webp
+#   風格：手繪氛圍風（與 map_bg 一致），寬幅地下城入口場景。7 族 × 6 階 = 42 張，高階更宏偉危險。
+#   用法：<embedded_python> scripts/gen-dungeon-covers.py <family|all> [tier 1-6]
 import sys, json, time, uuid, urllib.request, urllib.parse, io, os
 from PIL import Image
 
@@ -30,6 +30,17 @@ COVERS = {
     "treasure":  "the entrance of a golden vault dungeon, an ornate golden gateway with piles of gold coins and "
                  "gems glinting in dark mist, warm amber and gold radiant glow, luxurious",
 }
+# 階級遞進（T1 樸素平靜 → T6 傳說級宏偉危險）
+TIER_SCALE = {
+    1: "a modest small entrance, calm and quiet, dim soft light, humble scale, few details",
+    2: "a sturdier entrance, slightly larger, a touch more foreboding, gentle glow",
+    3: "a grander ornate entrance, more imposing, richer details, stronger ambient glow",
+    4: "a large imposing entrance, dramatic lighting, dangerous foreboding atmosphere, ominous mood",
+    5: "a massive epic entrance, towering scale, intense magical glow, very dangerous and dramatic",
+    6: "a colossal legendary entrance, overwhelming epic scale, blazing magical energy and swirling power, "
+       "the most dangerous and awe-inspiring, cinematic",
+}
+
 NEG = ("realistic, photorealistic, scary, horror, gore, blood, text, watermark, ui, people, mascot, character, "
        "close-up object, single item, blurry, lowres, deformed, frame border")
 
@@ -84,21 +95,25 @@ def save_cover(png_bytes, outpath):
     im.save(outpath, "WEBP", quality=86, method=6)
 
 
-def run(family):
+def run(family, only_tier=None):
     os.makedirs(OUTDIR, exist_ok=True)
-    outpath = os.path.abspath(os.path.join(OUTDIR, f"cover_{family}.webp"))
-    print(f"[cover/{family}] generating...", flush=True)
-    try:
-        png = generate(_COMMON + COVERS[family], NEG)
-        save_cover(png, outpath)
-        print(f"  OK -> {outpath}", flush=True)
-    except Exception as e:
-        print(f"  ERROR {family}: {e}", flush=True)
+    tiers = [only_tier] if only_tier else [1, 2, 3, 4, 5, 6]
+    for t in tiers:
+        outpath = os.path.abspath(os.path.join(OUTDIR, f"cover_{family}_t{t}.webp"))
+        print(f"[cover/{family}/T{t}] generating...", flush=True)
+        try:
+            pos = _COMMON + COVERS[family] + ". " + TIER_SCALE[t]
+            png = generate(pos, NEG)
+            save_cover(png, outpath)
+            print(f"  OK -> {outpath}", flush=True)
+        except Exception as e:
+            print(f"  ERROR {family} T{t}: {e}", flush=True)
 
 
 if __name__ == "__main__":
     fam = sys.argv[1] if len(sys.argv) > 1 else "all"
+    tier = int(sys.argv[2]) if len(sys.argv) > 2 else None
     fams = list(COVERS.keys()) if fam == "all" else [fam]
     for f in fams:
-        run(f)
+        run(f, tier)
     print("DONE", flush=True)

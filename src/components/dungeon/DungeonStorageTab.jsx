@@ -19,17 +19,27 @@ const FAMILY_LABEL = {
 };
 
 function SavedCard({ d, onSelect, onRemove, removing }) {
-  const [imgFailed, setImgFailed] = useState(false);
   const diff = getExcavationDifficulty(d.difficulty);
   const family = FAMILY_LABEL[d.family] || { emoji:"🏰", label:"未知", bg:"rgba(148,163,184,0.15)", border:"rgba(148,163,184,0.3)" };
-  const cover = `/assets/dungeon/cover_${d.family || "ghost"}.webp`;
+  // 封面優先用「該族該階」專屬圖，缺圖退回「該族」通用圖，再缺退回 emoji
+  const coverChain = [
+    d.family && d.difficulty && `/assets/dungeon/cover_${d.family}_t${d.difficulty}.webp`,
+    `/assets/dungeon/cover_${d.family || "ghost"}.webp`,
+  ].filter(Boolean);
+  const [coverIdx, setCoverIdx] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
+  const cover = coverChain[Math.min(coverIdx, coverChain.length - 1)];
+  const handleImgError = () => {
+    if (coverIdx < coverChain.length - 1) setCoverIdx(coverIdx + 1);
+    else setImgFailed(true);
+  };
   return (
     <div className="rounded-2xl border overflow-hidden transition-all active:scale-[0.98]"
       style={{ background:"#0b1220", borderColor:family.border, boxShadow:`0 10px 22px rgba(0,0,0,.28)` }}>
       <button onClick={() => onSelect(d)} className="block w-full text-left">
         <div className="relative w-full" style={{ aspectRatio:"2 / 1" }}>
           {!imgFailed ? (
-            <img src={cover} alt="" onError={() => setImgFailed(true)}
+            <img src={cover} alt="" onError={handleImgError}
               className="absolute inset-0 h-full w-full object-cover" draggable={false} />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-4xl"

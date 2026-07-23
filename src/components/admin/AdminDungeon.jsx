@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getMembers } from "../../lib/db";
-import { getSavedDungeons, removeSavedDungeon, adminSetSavedDungeon } from "../../lib/dungeonExcavation";
+import { getSavedDungeons, removeSavedDungeon, adminSetSavedDungeon, MAX_SAVED_DUNGEONS } from "../../lib/dungeonExcavation";
 
 const FAMILY_OPTIONS = [
   { id:"ghost",     label:"幽冥系", emoji:"👻", color:"#c084fc" },
@@ -235,7 +235,7 @@ export default function AdminDungeon() {
         <div className="bg-slate-800 rounded-2xl p-4 space-y-2">
           <div className="text-sm font-bold text-amber-300">
             📋 {selMember.nickname || selMember.name} 的儲存槽
-            <span className="text-slate-400 text-xs ml-2">（{savedDungeons.length}/3）</span>
+            <span className="text-slate-400 text-xs ml-2">（{savedDungeons.length}/{MAX_SAVED_DUNGEONS}）</span>
           </div>
           {loadingSaved ? (
             <div className="text-slate-400 text-sm text-center py-4">載入中…</div>
