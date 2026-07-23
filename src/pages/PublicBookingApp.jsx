@@ -14,7 +14,7 @@
 // 那邊已經處理好「隔離臨時Firebase App、不能動到這台裝置上教練自己的登入」這件事，
 // 這個檔案不需要、也不應該自己碰 Firebase Auth。
 import { useState, useEffect } from "react";
-import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial, getGuestProfile, updateGuestProfile, changeGuestPassword } from "../lib/guestAuth";
+import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial, getGuestProfile, updateGuestProfile, changeGuestPassword, sendGuestPasswordReset } from "../lib/guestAuth";
 import { createBooking, getBookingsForMember, cancelBooking, rescheduleBooking } from "../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
@@ -65,6 +65,8 @@ export default function PublicBookingApp() {
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authErr, setAuthErr]   = useState("");
+  // 忘記密碼：寄出重設信後顯示的提示訊息
+  const [resetMsg, setResetMsg] = useState("");
   // Google 登入：登入後拿到 {email,name,uid}，再讓客人補填電話才存檔
   const [googleInfo, setGoogleInfo]   = useState(null);
   const [googlePhone, setGooglePhone] = useState("");
@@ -133,6 +135,18 @@ export default function PublicBookingApp() {
       if (!res.ok) { setAuthErr(res.reason || "登入失敗，請稍後再試"); return; }
       finishAuth(res);
     }
+  }
+
+  async function handleForgotPassword() {
+    setAuthErr("");
+    setResetMsg("");
+    if (!email.trim()) { setAuthErr("請先在上方填入你註冊時用的 Email，再點忘記密碼"); return; }
+    setAuthBusy(true);
+    const res = await sendGuestPasswordReset(email);
+    setAuthBusy(false);
+    if (!res.ok) { setAuthErr(res.reason || "寄送失敗，請稍後再試"); return; }
+    // 為了避免洩漏「哪些信箱有註冊」，不論信箱是否存在都顯示同一句提示
+    setResetMsg(`若「${email.trim()}」有註冊過，重設密碼的信件已寄出。請至信箱點擊連結重設密碼。\n⚠️ 信件可能被歸類到「垃圾郵件／促銷內容」，若收件匣沒看到請務必檢查垃圾信件夾。\n（若你當初是用 Google 登入，則沒有密碼、不會收到信，請改用下方「用 Google 登入」。）`);
   }
 
   function finishAuth(res) {
@@ -579,9 +593,9 @@ export default function PublicBookingApp() {
           ) : (
             <>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { setAuthTab("register"); setAuthErr(""); }}
+                <button onClick={() => { setAuthTab("register"); setAuthErr(""); setResetMsg(""); }}
                   style={tabButtonStyle(authTab === "register")}>第一次來（註冊）</button>
-                <button onClick={() => { setAuthTab("login"); setAuthErr(""); }}
+                <button onClick={() => { setAuthTab("login"); setAuthErr(""); setResetMsg(""); }}
                   style={tabButtonStyle(authTab === "login")}>已有帳號（登入）</button>
               </div>
 
@@ -596,9 +610,16 @@ export default function PublicBookingApp() {
                 <>
                   <label style={labelStyle}>Email<input value={email} onChange={e => setEmail(e.target.value)} name="email" autoComplete="email" inputMode="email" placeholder="name@example.com" type="email" style={inputStyle} autoFocus /></label>
                   <label style={labelStyle}>密碼<input value={password} onChange={e => setPassword(e.target.value)} name="current-password" autoComplete="current-password" placeholder="密碼" type="password" style={inputStyle} /></label>
+                  <div style={{ textAlign: "right", marginTop: -4 }}>
+                    <button type="button" onClick={handleForgotPassword} disabled={authBusy}
+                      style={{ background: "none", border: "none", color: "rgba(255,255,255,.6)", fontSize: 12, textDecoration: "underline", cursor: authBusy ? "default" : "pointer" }}>
+                      忘記密碼？
+                    </button>
+                  </div>
                 </>
               )}
 
+              {resetMsg && <div role="status" aria-live="polite" style={{ whiteSpace: "pre-line", color: "#fcd34d", fontSize: 12.5, fontWeight: 600, lineHeight: 1.6, background: "rgba(251,191,36,.1)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 10, padding: "10px 12px" }}>{resetMsg}</div>}
               {authErr && <div role="alert" aria-live="polite" style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
               <button onClick={handleAuth} disabled={authBusy} style={submitButtonStyle(authBusy)}>
                 {authBusy ? "處理中…" : authTab === "register" ? "🚀 完成註冊並預約" : "🔑 登入並預約"}

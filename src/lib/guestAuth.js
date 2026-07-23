@@ -1,6 +1,6 @@
 // src/lib/guestAuth.js
 // 訪客/兒童帳號的匿名登入 + 跨次造訪接續邏輯（見 .trellis/tasks/07-09-guest-kid-mode-overhaul）
-import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updatePassword } from "firebase/auth";
+import { signInAnonymously, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updatePassword, sendPasswordResetEmail } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import {
@@ -493,6 +493,31 @@ export async function updateGuestProfile(memberId, { name, phone }) {
     return { ok: true, ...patch };
   } catch (e) {
     return { ok: false, reason: e?.message || "更新失敗，請稍後再試" };
+  }
+}
+
+// ── 忘記密碼：寄送 Firebase Auth 密碼重設信 ──────────────────
+// 訪客用 email＋密碼註冊的，是真正的 Firebase Auth 帳號，所以直接用 Firebase 內建
+// 的 sendPasswordResetEmail 就能自助重設，不需要後端函式。
+// sendPasswordResetEmail 是無狀態操作（不會更動 currentUser、不碰 Firestore），
+// 所以可以直接用主 auth，不必像註冊/登入那樣開隔離臨時 App。
+//
+// ⚠️ 隱私：為避免 email 列舉（洩漏「哪些信箱有註冊」），user-not-found 一律也回 ok，
+//   讓 UI 顯示同一句「若此信箱有註冊就會收到信」。實務上查無此信箱有兩種可能：
+//   (1) 根本沒註冊過；(2) 當初是用 Google 登入的（沒有密碼）→ UI 文案要一併提醒改用 Google。
+export async function sendGuestPasswordReset(email) {
+  const trimmedEmail = (email || "").trim().toLowerCase();
+  if (!trimmedEmail) return { ok: false, reason: "請先輸入 Email" };
+  if (!trimmedEmail.includes("@")) return { ok: false, reason: "Email 格式不正確" };
+  try {
+    await sendPasswordResetEmail(auth, trimmedEmail);
+    return { ok: true };
+  } catch (err) {
+    // 查無此信箱：不透露，一樣回 ok（避免 email 列舉）
+    if (err?.code === "auth/user-not-found") return { ok: true, notFound: true };
+    if (err?.code === "auth/invalid-email") return { ok: false, reason: "Email 格式不正確" };
+    if (err?.code === "auth/too-many-requests") return { ok: false, reason: "嘗試次數過多，請稍後再試" };
+    return { ok: false, reason: err?.message || "寄送失敗，請稍後再試" };
   }
 }
 

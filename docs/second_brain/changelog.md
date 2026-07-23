@@ -3,6 +3,33 @@
 
 ---
 
+## 2026-07-23（組隊地下城存檔/殘房修復 + 官網訪客忘記密碼 + 貓咪 XP 寫錯位置修復）
+
+**① 組隊地下城「存檔沒反應」→ firestore.rules 白名單漏 `teamSavedProgress`。**
+- `saveTeamExpeditionProgress` 寫 `members.teamSavedProgress`，但 members hasOnly 白名單沒這欄位 → permission-denied 靜默失敗。
+- 修：`firestore.rules` 兩個 members 更新區塊（official + guest/kid）都補 `"teamSavedProgress"`。**要手動貼 Console**（CLI 403）。
+
+**② 組隊地下城「房間殘留」→ 房主返回沒解散。**
+- `DungeonLobby.jsx` 等待室 `onBack={() => setTeamLobby(null)}` 只切畫面、不刪房 → `expedition_waiting` 房永久殘留（開放房列表 + 斷線重連 banner 一直冒）。
+- 修：`onBack` 改成房主 `disband+cleanup`、隊員 `leave`；`expeditionTeamDb.js` 新增 `isStaleWaitingRoom()`（等待房 >2h 視為殘房），`subscribeOpenTeamExpeditionRooms` 與 `findReconnectableTeamExpedition` 都過濾（防瀏覽器直接關、cleanup 跑不到的殘房）。
+
+**③ 官網（PublicBookingApp）訪客忘記密碼。**
+- 訪客 email＋密碼＝真正 Firebase Auth 帳號，直接用內建 `sendPasswordResetEmail`（無狀態、不碰 Firestore，直接用主 auth）。
+- `guestAuth.js` 新增 `sendGuestPasswordReset(email)`（user-not-found 也回 ok 防 email 列舉）；登入分頁加「忘記密碼？」連結，寄出後顯示提示，**明確提醒信可能在垃圾信件夾**，並提示「當初用 Google 登入的沒有密碼、不會收到信」。
+
+**④ 陪練貓 XP / 村莊工作貓 XP 完全沒進帳（寫錯位置）。**
+- 根因：`revealCatExcavation`（+150 XP）與 `collectVillageResources`（每小時 5 XP）都把 XP 寫成 **member 文件的 `cats.{id}.catXP` 欄位**。但貓咪 XP 的正解是 `members/{id}/cats/{catId}` **子集合**（`addCatXP` / `catRef`），且 `cats` 不在 member 白名單。
+- 後果：`collectVillageResources` **只要有派貓工作，整包 updateDoc 被規則擋掉 → 連資源都收不到**；陪練貓揭曉的 updateDoc 同樣被擋（`.catch` 吞掉）→ `pendingReveal`/進度重置也沒存成功。
+- 修：兩處都移除 `updates["cats..."]`，改在 member 寫入成功後用 `addCatXP()` 補進子集合（`dungeonExcavation.js` 新增 import `addCatXP`；`db.js` 已有 import，用 `workerXP` 暫存後迴圈補發）。
+- **✅ 本來就有效**：`catDigProgress`（`db.js:923` 每箭 +0.5×箭數）與 CAT_DIG_SPECIALTIES 家族偏好加成。
+
+**踩過的坑（本次）：**
+- **貓咪 XP 一律走 `addCatXP()`（子集合），永遠不要寫 member 文件的 `cats.X` 欄位**——位置錯 + 不在白名單，會讓整包 updateDoc 被拒（靜默）。
+- 任何寫入 `members` 的新欄位（如 `teamSavedProgress`）都要同步加進 `firestore.rules` 兩個 hasOnly 區塊，否則必現 permission-denied 靜默失敗。
+- 多人房間殘留類 bug：離開/返回路徑都要走「房主解散＋刪房 / 隊員離開」，並對「瀏覽器直接關」加時間過濾防禦。
+
+---
+
 ## 2026-07-21（地下城 2.5D 立繪地圖重做 + 兩段式移動 + 王 fix + ComfyUI 生圖管線）
 
 **① 地下城地圖改「等角 2.5D 立繪」（取代 Gemini 斜角 SVG 版）。**

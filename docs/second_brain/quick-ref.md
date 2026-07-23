@@ -83,6 +83,9 @@ toggleBattleSoundMode();  // 即時切換
 | 新頁面補教練路由 | AdminApp 的 `memberNav` 陣列要加新頁面 |
 | Firestore 規則手動貼 | CLI 有 403，到 Firebase Console 貼規則；規則必須在 `match /databases/{database}/documents { }` **內部**，放外面一律無效 |
 | **`totalArrowsAllTime` 要在 hasOnly 列表** | `addRoundArrows` 用 `increment("totalArrowsAllTime")` 但規則沒放行 → Firestore 靜默擋掉，終身箭數永遠不增加；**所有會員自己更新的新欄位都要加進 hasOnly** |
+| **貓咪 XP 一律走 `addCatXP()`（子集合）** | 貓咪 XP 存 `members/{id}/cats/{catId}` 子集合，**不可**寫成 member 文件的 `cats.X.catXP` 欄位（位置錯 + `cats` 不在白名單）→ 整包 updateDoc 被規則擋掉。2026-07-23 修過 `revealCatExcavation`（+150）與 `collectVillageResources`（工作貓每小時5）兩處，後者曾導致「有派貓工作就連資源都收不到」 |
+| **`teamSavedProgress` 要在白名單** | 組隊地下城存檔寫 `members.teamSavedProgress`，漏加 → 存檔「點了沒反應」（permission-denied 靜默）。2026-07-23 已補 |
+| **多人房間離開要清房** | 組隊等待室房主按返回若只切畫面不刪房 → `expedition_waiting` 永久殘留；離開路徑要「房主 disband+cleanup／隊員 leave」，並對「瀏覽器直接關」用 `isStaleWaitingRoom`（>2h）過濾 |
 | 快照比 .then() 早到 | 失敗重試鎖用 `useState` 而非 `useRef` |
 | `trySetDungeonFirstClear` 已改 transaction（2026-07-09） | 組隊多人同時領獎會併發呼叫，非 atomic 的「先查後寫」會產生重複首殺廣播；判斷依據是 `dungeonFirstClear/{dungeonId}` 是否存在，不要查 `dungeonBroadcasts` |
 | 首殺/世界王擊殺已同步寫入 `notifications`（2026-07-09） | `addDungeonBroadcast`/`attackWorldBoss` defeated 分支都會呼叫 `createNotification`；`MemberNotifications.jsx` FILTERS 有「地下城」「世界王」頁籤。`attackWorldBoss` 本身仍非 transaction，未來若要修世界王結算 race condition 要留意 |

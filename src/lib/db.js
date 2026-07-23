@@ -4723,6 +4723,7 @@ export async function collectVillageResources(memberId, village) {
   var collected    = {};
   var workers      = village?.workers    || {};
   var updates      = { "village.lastCollectedAt": serverTimestamp() };
+  var workerXP     = {}; // { [catId]: xp }；貓咪 XP 走子集合 addCatXP，不能塞進 member updateDoc
 
   for (var id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
@@ -4797,16 +4798,23 @@ export async function collectVillageResources(memberId, village) {
       }
     }
     // 若該建築有貓咪駐紮工作，給予極少量的貓咪經驗值（例如每小時 5 XP）
+    // ⚠️ 貓咪 XP 存在 members/{id}/cats/{catId} 子集合，不是 member 文件的 cats 欄位；
+    //    若寫成 updates["cats..."] 不但位置錯，cats 也不在白名單，會讓整包 updateDoc 被規則擋掉
+    //    （＝有派貓工作時連資源都收不到）。改先累計，member 寫入成功後再用 addCatXP 補進子集合。
     var workerCatId = workers[id];
     if (workerCatId && hours >= 0.1) {
       var earnedCatXP = Math.floor(hours * 5);
       if (earnedCatXP > 0) {
-        updates["cats." + workerCatId + ".catXP"] = increment(earnedCatXP);
+        workerXP[workerCatId] = (workerXP[workerCatId] || 0) + earnedCatXP;
       }
     }
   }
 
   await updateDoc(doc(db, C.members, memberId), updates);
+  // 資源寫入成功後，把工作貓 XP 補進子集合（addCatXP 內部會同步 equippedCat 快取）
+  for (var wcid in workerXP) {
+    await addCatXP(memberId, wcid, workerXP[wcid]).catch(function () {});
+  }
   var curResources = Object.assign({}, village?.resources || {});
   Object.keys(collected).forEach(function(k) { curResources[k] = (curResources[k] || 0) + collected[k]; });
   return { collected: collected, resources: curResources, hours: hours };

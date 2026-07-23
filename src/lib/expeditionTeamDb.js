@@ -18,6 +18,16 @@ import { getDungeonDewMultiplier } from "./dungeonKillRewards";
 
 const D = "dungeonRooms";
 
+// 等待中的組隊房間存活時間上限：超過視為殘房（房主直接關瀏覽器、cleanup 跑不到時的防禦）
+const STALE_WAITING_ROOM_MS = 2 * 60 * 60 * 1000; // 2 小時
+
+function isStaleWaitingRoom(room) {
+  if (room?.status !== "expedition_waiting") return false;
+  const createdMs = room.createdAt?.toMillis?.() ?? 0;
+  if (!createdMs) return false; // createdAt 尚未由 serverTimestamp 寫回時先當作新房
+  return Date.now() - createdMs > STALE_WAITING_ROOM_MS;
+}
+
 function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -573,18 +583,20 @@ export function subscribeOpenTeamExpeditionRooms(cb) {
     where("expeditionTeamMode", "==", true),
   );
   return onSnapshot(q, snap => {
-    const rooms = snap.docs.map(d => {
-      const data = d.data();
-      const memberCount = Object.values(data.members || {}).filter(Boolean).length;
-      return {
-        id: d.id, code: data.code, hostId: data.hostId,
-        hostName: data.hostName,
-        dungeonFamily: data.dungeonFamily,
-        dungeonDifficulty: data.dungeonDifficulty,
-        dungeonIsHidden: data.dungeonIsHidden,
-        memberCount, createdAt: data.createdAt,
-      };
-    });
+    const rooms = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(data => !isStaleWaitingRoom(data)) // 過濾殘房，不顯示在可加入清單
+      .map(data => {
+        const memberCount = Object.values(data.members || {}).filter(Boolean).length;
+        return {
+          id: data.id, code: data.code, hostId: data.hostId,
+          hostName: data.hostName,
+          dungeonFamily: data.dungeonFamily,
+          dungeonDifficulty: data.dungeonDifficulty,
+          dungeonIsHidden: data.dungeonIsHidden,
+          memberCount, createdAt: data.createdAt,
+        };
+      });
     cb(rooms);
   }, () => cb([]));
 }
@@ -601,6 +613,7 @@ export async function findReconnectableTeamExpedition(memberId) {
       .filter(room => {
         if (!room.members?.[memberId]) return false;
         if (!["expedition_waiting", "expedition_active"].includes(room.status)) return false;
+        if (isStaleWaitingRoom(room)) return false; // 殘房不再提示重連
         if (room.expeditionPhase === "result" && room.resultClaims?.[memberId]) return false;
         return true;
       })

@@ -6,6 +6,7 @@ import { doc, updateDoc, getDoc, increment, serverTimestamp, setDoc } from "fire
 import { db } from "./firebase";
 import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
 import { createLockedDungeonBossEncounter } from "./dungeonBossEncounter";
+import { addCatXP } from "./catDb";
 
 // ── 王房抽王統一入口（2026-07-19）──────────────────────────────
 // 舊 drawExpeditionBoss 是「找該族該階第一隻怪再套 boss 倍率」，完全沒過濾
@@ -451,8 +452,10 @@ export async function revealCatExcavation(memberId) {
       "dungeonExcavation.catDigProgress": 0,
       "dungeonExcavation.pendingReveal": result,
       "dungeonExcavation.revealedAt": serverTimestamp(),
-      [`cats.${assignedCatId}.catXP`]: increment(150),
     }).catch(() => {});
+    // 陪練貓 XP 必須寫到 members/{id}/cats/{catId} 子集合（addCatXP），
+    // 不能寫成 member 文件的 cats.X 欄位——那不但位置錯，cats 也不在白名單，會被規則整包擋掉。
+    await addCatXP(memberId, assignedCatId, 150).catch(() => {});
     _excavCache.delete(memberId);
 
     return result;

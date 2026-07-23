@@ -22,6 +22,9 @@ import {
   subscribeOpenTeamExpeditionRooms,
   startTeamExpeditionRoom,
   clearTeamExpeditionSavedProgress,
+  disbandTeamExpeditionRoom,
+  cleanupTeamExpeditionRoom,
+  leaveTeamExpeditionRoom,
 } from "../../lib/expeditionTeamDb";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { normalizeDungeonRunSettings } from "../../lib/dungeonRunSettings";
@@ -337,7 +340,20 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
         hostId={teamLobby.hostId}
         profile={profile}
         onStart={handleTeamStart}
-        onBack={() => setTeamLobby(null)}
+        onBack={async () => {
+          // 離開等待室時清理房間，避免留下無人的 expedition_waiting 殘房
+          const { roomId, hostId } = teamLobby;
+          if (roomId) {
+            if (hostId === myId) {
+              await disbandTeamExpeditionRoom(roomId, myId).catch(() => {});
+              await cleanupTeamExpeditionRoom(roomId).catch(() => {});
+            } else {
+              await leaveTeamExpeditionRoom(roomId, myId).catch(() => {});
+            }
+          }
+          setReconnectRoom(null);
+          setTeamLobby(null);
+        }}
       />
     );
   }
