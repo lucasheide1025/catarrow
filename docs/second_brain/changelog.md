@@ -29,6 +29,14 @@
 
 ---
 
+## 2026-07-23（修：我的>裝備展示 升級材料顯示原始 ID）
+
+- `MemberProfile.jsx` 升級材料需求原本 `MATERIALS[m.id]?.name`——但 `MATERIALS` 是**陣列不是 map**，索引永遠 undefined → 顯示原始 ID（`workplace_m4`、`mat_ghost_t4_normal_a`…）。且 `mat_*` 擴充素材根本不在 legacy `MATERIALS`。
+- 修：建 `MATERIAL_BY_ID`（合併 legacy `MATERIALS` + `EXPANSION_MATERIALS`）→ 顯示 icon + 中文名。
+- **踩坑**：`monsterEconomyCatalog.MATERIAL_BY_ID` 只含擴充素材；要同時顯示 legacy 家族素材（`家族_m階`）名稱得自建合併 map。
+
+---
+
 ## 2026-07-23（地下城美術重製 + 儲存槽 3→6 + 符文美術）
 
 **① 地下城房塊風格統一（GEMINI 方塊圖 → 圓石台）**

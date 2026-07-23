@@ -20,6 +20,12 @@ import { calcEquippedBonus, resolveEquippedCards, TIER_CARD_BONUS } from "../../
 import CardArtImage from "./cards/CardArt";
 import EquipmentIcon from "../shared/EquipmentIcon";
 import { MATERIALS } from "../../lib/monsterMaterials";
+import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
+
+// 材料名稱查詢：涵蓋 legacy 家族素材（ghost_m4…）與擴充素材（mat_ghost_t4_normal_a…）。
+// ⚠️ MATERIALS 是「陣列」不是 map，舊碼寫 MATERIALS[id] 永遠 undefined → 顯示原始 ID。
+const MATERIAL_BY_ID = {};
+[...MATERIALS, ...EXPANSION_MATERIALS].forEach(m => { if (m?.id && !MATERIAL_BY_ID[m.id]) MATERIAL_BY_ID[m.id] = m; });
 
 // 專精與解鎖
 import { SPECIALIZATION_TRACKS } from "../../lib/equipmentSpecializationCatalog";
@@ -474,7 +480,8 @@ export default function MemberProfile({
                       
                       {mats.materials?.map(m => {
                         const haveCount = matInv[m.id] || 0;
-                        const name = MATERIALS[m.id]?.name || m.id;
+                        const info = MATERIAL_BY_ID[m.id];
+                        const name = info ? `${info.icon || "🧩"} ${info.name}` : m.id;
                         const isOk = haveCount >= m.count;
                         return (
                           <div key={m.id} className="flex justify-between items-center text-xs">
