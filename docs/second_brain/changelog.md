@@ -3,6 +3,19 @@
 
 ---
 
+## 2026-07-23（怪物掉落改新族系/王素材箱 — 接線 FREEBUFF 設計）
+
+**背景**：FREEBUFF 設計的新素材箱（`itemData.js` commit 38cfbd0）只有定義+開箱邏輯，**沒接到掉落**。作者要：一般怪掉「該族該階族系箱」、小王掉小王箱、大王掉大王箱；舊箱保留不刪。
+
+- `makeChests(monster, mode)`（所有戰鬥共同入口）新增分箱：`ALL_FAMILIES`（ghost/mountain/insect/workplace/exam/temple/treasure）內的家族 → 依 `encounter` 給 `family_mat`/`mini_boss_mat`/`boss_mat`；傳統家族（forest/dragon/…）或缺 family → **沿用舊通用箱**（舊系統完整保留、既有背包舊箱照常開）。
+- `encounter`/`family`/`tierIndex` 優先讀怪物物件，缺就用 `EXPANSION_MONSTER_BY_ID[monster.id]` 回查圖鑑（戰鬥物件可能被精簡）。tier→tierIndex 用 `MONSTER_TIER_ORDER`。
+- **作者拍板**：`makeMiniBossChest`/`makeBossChest` 從「跨家族單 kind」改成**綁該族該階、開該族該階全部素材**（normal+miniBoss+boss 全 kind）；小王 2~4 個、大王 3~6 個。命名改「幽冥小王T3素材箱」等。
+- 顯示：`MemberMaterials` 已 `ch.name || base.name`（族系名正確顯示）；`MonsterBattle` 戰鬥 log 改用 `mainChest.name`。
+- **踩坑**：遊戲有**兩套家族**——傳統打怪 forest/dragon…、地下城/擴充 ghost/mountain…；新族系箱只吃擴充家族，用 `ALL_FAMILIES.includes(family)` 當守門，避免傳統打怪掉到空箱。
+- **待辦**：新寶箱外觀（ComfyUI 每族特色圖）。
+
+---
+
 ## 2026-07-23（後台訪客帳號卡片：預約明細直顯 + 最後預約時間 + 逾14天標記）
 
 - `AdminGuestAccounts.jsx` `GuestCard`：把「📋 預約明細」（總筆數/進行中/已完成/已取消）從展開區移出、**直接顯示**；移除展開區內的重複那份。

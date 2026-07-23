@@ -1141,7 +1141,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
       addLog({ type:"win",    text:`🏆 擊倒 ${monster.name}！激烈的戰鬥結束——你贏了！` });
       if (!isLimitedAccount) {
-        addLog({ type:"system", text:`${chestCfg.icon} 獲得「${chestCfg.name}」！已放進背包` });
+        addLog({ type:"system", text:`${mainChest.icon || chestCfg.icon} 獲得「${mainChest.name || chestCfg.name}」！已放進背包` });
         if (potionChest) addLog({ type:"event_good", text:`🧪 幸運！額外獲得「藥水箱」！` });
       }
 
