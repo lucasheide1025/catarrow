@@ -12,6 +12,9 @@
 - **作者拍板**：`makeMiniBossChest`/`makeBossChest` 從「跨家族單 kind」改成**綁該族該階、開該族該階全部素材**（normal+miniBoss+boss 全 kind）；小王 2~4 個、大王 3~6 個。命名改「幽冥小王T3素材箱」等。
 - 顯示：`MemberMaterials` 已 `ch.name || base.name`（族系名正確顯示）；`MonsterBattle` 戰鬥 log 改用 `mainChest.name`。
 - **踩坑**：遊戲有**兩套家族**——傳統打怪 forest/dragon…、地下城/擴充 ghost/mountain…；新族系箱只吃擴充家族，用 `ALL_FAMILIES.includes(family)` 當守門，避免傳統打怪掉到空箱。
+- **通用材料寶箱（同日追加）**：舊 wood/iron/gold/epic/mythic 五種箱**重新定位為「通用材料寶箱」**——`openChestContents` 改成依來源怪階級開出**六大族**（ghost/mountain/insect/workplace/exam/temple，**不含 treasure**）該階材料，kind 依箱等級放寬（木/鐵普通、金/史詩加小王、神話含大王），每族 1~maxPerTier 個。取代舊的「單一家族分層擴散」。CHEST_TYPES 名稱/desc 改「通用材料X箱」。移除已無用的 `RARITY_ORDER`。
+  - **設計影響**：這些箱現在只從「傳統家族單人打怪」(forest/dragon…) 掉（地下城家族怪走新族系/王箱）；開出的是**地下城六大族素材**，非 legacy forest/dragon 素材（legacy 素材仍可由直接掉落 `rollFamilyMaterial` 取得，只是不再從這些箱開出）。
+  - 測試 `expansionChestMaterials.test.js` 更新為驗證新通用箱行為（同階、跨族、不含寶箱族）。
 - **待辦**：新寶箱外觀（ComfyUI 每族特色圖）。
 
 ---

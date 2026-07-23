@@ -8,16 +8,16 @@ import { EXPANSION_MATERIALS, EXPANSION_MONSTER_BY_ID } from "./monsterExpansion
 
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
-  wood:   { id:"wood",   name:"木寶箱",   icon:"📦", color:"#a16207", potionChance:0,
-            desc:"普通木箱：普通材料 ×1。" },
-  iron:   { id:"iron",   name:"鐵寶箱",   icon:"🧰", color:"#64748b", potionChance:0,
-            desc:"鐵製箱：普通+非凡材料各 1~2 個。" },
-  gold:   { id:"gold",   name:"黃金寶箱", icon:"🎁", color:"#f59e0b", potionChance:0,
-            desc:"黃金箱：前三階段材料各 1~3 個。" },
-  epic:   { id:"epic",   name:"史詩寶箱", icon:"💜", color:"#a78bfa", potionChance:0,
-            desc:"史詩箱：前四階段材料各 1~4 個。" },
-  mythic: { id:"mythic", name:"神話寶箱", icon:"🔮", color:"#a855f7", potionChance:0,
-            desc:"神話箱：全五階段材料各 1~5 個。" },
+  wood:   { id:"wood",   name:"通用材料木箱",   icon:"📦", color:"#a16207", potionChance:0,
+            desc:"通用箱：開出六大族該階普通材料（每族 ×1）。" },
+  iron:   { id:"iron",   name:"通用材料鐵箱",   icon:"🧰", color:"#64748b", potionChance:0,
+            desc:"通用箱：開出六大族該階普通材料（每族 1~2 個）。" },
+  gold:   { id:"gold",   name:"通用材料金箱", icon:"🎁", color:"#f59e0b", potionChance:0,
+            desc:"通用箱：開出六大族該階普通+小王材料（每族 1~3 個）。" },
+  epic:   { id:"epic",   name:"通用材料史詩箱", icon:"💜", color:"#a78bfa", potionChance:0,
+            desc:"通用箱：開出六大族該階普通+小王材料（每族 1~4 個）。" },
+  mythic: { id:"mythic", name:"通用材料神話箱", icon:"🔮", color:"#a855f7", potionChance:0,
+            desc:"通用箱：開出六大族該階全部材料（每族 1~5 個）。" },
   cat:    { id:"cat",    name:"貓貓箱",   icon:"🐱", color:"#ec4899", potionChance:0,
             desc:"神秘的貓貓箱！90% 機率隨機掉落一種章碎片×1，集10片可合成對應章！" },
   potion:   { id:"potion",   name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
@@ -240,9 +240,7 @@ export const RAID_POTIONS = POTIONS.filter(p => p.kind === "raid");
 // 舊系統 MAX_POTIONS_PER_BATTLE = 3 已移除（新系統改為回合中消耗，無每戰上限）
 
 // ── 材料分層開箱設定 ─────────────────────────────────────
-// RARITY_ORDER[0]=tier1(普通) … [4]=tier5(傳說)
-const RARITY_ORDER = ["common","uncommon","rare","epic","legendary"];
-// 怪物 tier 詞彙（T1~T6）——與上面的 legacy 稀有度是兩套不同名稱，"rare" 在兩邊意義不同，勿混用
+// 怪物 tier 詞彙（T1~T6）
 const MONSTER_TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];
 
 // 每種寶箱開出的材料層數 + 每層最多幾個
@@ -295,6 +293,8 @@ const POTION_CHEST_TABLE = [
 ];
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple","treasure"];
+// 六大族（不含 treasure 寶箱族）——通用材料寶箱開箱範圍
+const SIX_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
 
 // 家族中文名稱對照（新素材箱命名用）
 const FAMILY_NAMES = {
@@ -469,32 +469,23 @@ export function openChestContents(chest) {
     return { materials, potions: [], fragments: [] };
   }
 
-  // 普通寶箱（wood / iron / gold / epic / mythic）
+  // ══ 通用材料寶箱（原 wood/iron/gold/epic/mythic，2026-07-23 作者拍板改）══
+  // 依「來源怪階級」開出「六大族」該階材料（treasure 寶箱族不含）。
+  // kind 依箱等級放寬（EXPANSION_KINDS_BY_CHEST：木/鐵只普通、金/史詩加小王、神話含大王），
+  // 每族數量 1~maxPerTier。取代舊的「單一家族分層」開箱。
   const tierCfg = CHEST_TIER_CFG[chest.type];
   if (!tierCfg) return { materials: [], potions: [], fragments: [] };
 
-  // 決定材料族：優先用寶箱附帶的 family，否則隨機選一族
-  const family = ALL_FAMILIES.includes(chest.family)
-    ? chest.family
-    : ALL_FAMILIES[Math.floor(Math.random() * ALL_FAMILIES.length)];
-
-  // 擴充素材的 Tier 以「寶箱來源怪物的 tier」為準（economy-loot-catalog：先依來源鎖定 maxTier,
-  // 禁止對 126 種平抽造成低 Tier 污染）。注意 chest.tier 用的是怪物 tier 詞彙
-  // （common/rare/elite/fierce/boss/mythic），與 legacy 的 RARITY_ORDER 不同套,不可混用索引。
-  const sourceTierIndex = MONSTER_TIER_ORDER.indexOf(chest.tier) + 1; // 0 = 寶箱未帶來源 tier
-
-  // 按稀有度分層抽材料：每層隨機 1~maxPerTier 個
+  const uniTierIndex = Math.max(1, MONSTER_TIER_ORDER.indexOf(chest.tier) + 1);
+  const uniKinds = EXPANSION_KINDS_BY_CHEST[chest.type] || new Set(["normal"]);
   const materials = [];
-  for (let t = 0; t < tierCfg.tierCount; t++) {
-    const rarity = RARITY_ORDER[t];
-    const legacyPool = MATERIALS.filter(m => m.family === family && m.rarity === rarity);
-    // 有來源 tier 就固定抽該 Tier（打 T2 怪不會掉 T1 素材）;沒有才沿用舊的逐層擴散
-    const expansionPool = getExpansionChestMaterialPool(chest.type, family, sourceTierIndex || (t + 1));
-    const pool = [...legacyPool, ...expansionPool];
+  for (const fam of SIX_FAMILIES) {
+    const pool = EXPANSION_MATERIALS.filter(m =>
+      m.family === fam && m.tierIndex === uniTierIndex && uniKinds.has(m.kind)
+    );
     if (!pool.length) continue;
-    const mat   = pool[Math.floor(Math.random() * pool.length)];
-    const count = Math.floor(Math.random() * tierCfg.maxPerTier) + 1;
-    for (let i = 0; i < count; i++) materials.push(mat);
+    const perFam = 1 + Math.floor(Math.random() * tierCfg.maxPerTier);
+    for (let i = 0; i < perFam; i++) materials.push(pool[Math.floor(Math.random() * pool.length)]);
   }
 
   return { materials, potions: [], fragments: [] };

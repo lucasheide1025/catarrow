@@ -9,13 +9,22 @@ describe("寶箱來源 Tier（打 T2 怪不該掉 T1 素材）", () => {
       expect(expansionMats.every(m => m.tierIndex === 2)).toBe(true);
     }
   });
-  test("沒有來源 tier 的寶箱維持舊的逐層擴散（不影響商店/舊寶箱）", () => {
-    const chest = { type: "iron", kind: "material", family: "ghost" };
+  test("通用材料寶箱：依來源 tier 開出六大族該階材料（同階、跨族、不含寶箱族）", () => {
+    // 2026-07-23 作者拍板：舊 wood/iron/gold/epic/mythic 改為「通用材料寶箱」，
+    // 依來源怪階級開出六大族（不含 treasure）該階材料。
+    const chest = { type: "gold", kind: "material", family: "ghost", tier: "rare" }; // rare = T2
+    const families = new Set();
     const tiers = new Set();
     for (let i = 0; i < 60; i += 1) {
-      openChestContents(chest).materials.filter(m => m.monsterId).forEach(m => tiers.add(m.tierIndex));
+      openChestContents(chest).materials.filter(m => m.monsterId).forEach(m => {
+        families.add(m.family);
+        tiers.add(m.tierIndex);
+      });
     }
-    expect(tiers.size).toBeGreaterThan(1);
+    expect(tiers.size).toBe(1);                    // 只開該階
+    expect([...tiers][0]).toBe(2);                 // T2
+    expect(families.size).toBeGreaterThan(1);      // 跨多族（六大族）
+    expect(families.has("treasure")).toBe(false);  // 不含寶箱族
   });
 });
 
