@@ -297,7 +297,7 @@ export default function DungeonTeamLobby({
               const isMe = id === myId;
               const isLeader = id === hostId;
               const mRole = m.role || "front";
-              const cos = m.battleCosmetics; // 世界王卡外觀：{ color, title, stars }
+              const cos = m.battleCosmetics?.wbFrame; // 世界王卡外觀：{ color, title, stars }
               // 外框顏色：有世界王卡→用卡片色；否則房主金 / 自己紫 / 一般灰
               const frameColor = cos?.color || (isLeader ? "#fbbf24" : isMe ? "#818cf8" : "#475569");
               return (
